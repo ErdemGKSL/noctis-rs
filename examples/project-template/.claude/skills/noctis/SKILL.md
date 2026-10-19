@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `fd1cb69d9e6fcfe8524c4fe00f4e7f7f33f29ff410eeb68479427a0e7cf05a40` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `a183011044c3d26a8894be62e1f635a051b96777b878c5e8c4c98e0f355a2845` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -334,7 +334,7 @@ Read only what the task touches.
 | `references/views-and-widgets.md` | write a View, Layout, Navbar, Wizard, Paginator, attachments, mentions; UI quality rulebook and patterns |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |
-| `references/adapters.md` | swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing, `ctx.kv()` and `ctx.cache()` |
+| `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing, `ctx.kv()` and `ctx.cache()` |
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |
 | `references/modules-middleware-ratelimits.md` | Modules, Boot Flags, enable/disable, Middleware and Extensions, Error Sinks, rate limits, events |
 | `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |

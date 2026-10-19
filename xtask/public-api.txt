@@ -672,6 +672,274 @@ impl core::marker::StructuralPartialEq for noctis::ports::ValueError
 pub fn noctis::ports::decode_template<T: noctis::ports::Template>(&[u8]) -> core::result::Result<T, noctis::ports::ValueError>
 pub fn noctis::ports::decode_value<T: serde_core::de::DeserializeOwned>(u8, &[u8]) -> core::result::Result<core::option::Option<T>, noctis::ports::ValueError>
 pub fn noctis::ports::encode_value<T: serde_core::ser::Serialize + ?core::marker::Sized>(u8, &T) -> core::result::Result<bytes::bytes::Bytes, noctis::ports::ValueError>
+pub mod noctis::ports::memory
+pub struct noctis::ports::memory::AllowAllGuilds
+impl core::clone::Clone for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::memory::AllowAllGuilds
+impl core::cmp::PartialEq for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::memory::AllowAllGuilds
+impl core::marker::StructuralPartialEq for noctis::ports::memory::AllowAllGuilds
+impl noctis::ports::GuildAccessList for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+impl noctis::ports::GuildAccessList for noctis::ports::memory::AllowAllGuilds
+pub fn noctis::ports::memory::AllowAllGuilds::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+pub struct noctis::ports::memory::DiscordCacheResources(_)
+impl noctis::ports::memory::DiscordCacheResources
+pub const noctis::ports::memory::DiscordCacheResources::CHANNEL: Self
+pub const noctis::ports::memory::DiscordCacheResources::GUILD: Self
+pub const noctis::ports::memory::DiscordCacheResources::MEMBER: Self
+pub const noctis::ports::memory::DiscordCacheResources::MESSAGE: Self
+pub const noctis::ports::memory::DiscordCacheResources::ROLE: Self
+pub const noctis::ports::memory::DiscordCacheResources::USER: Self
+pub const fn noctis::ports::memory::DiscordCacheResources::all() -> Self
+pub const fn noctis::ports::memory::DiscordCacheResources::contains(self, Self) -> bool
+pub const fn noctis::ports::memory::DiscordCacheResources::empty() -> Self
+pub const fn noctis::ports::memory::DiscordCacheResources::is_empty(self) -> bool
+pub const fn noctis::ports::memory::DiscordCacheResources::union(self, Self) -> Self
+impl core::clone::Clone for noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::memory::DiscordCacheResources
+impl core::cmp::PartialEq for noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::memory::DiscordCacheResources
+impl core::marker::StructuralPartialEq for noctis::ports::memory::DiscordCacheResources
+impl core::ops::bit::BitOr for noctis::ports::memory::DiscordCacheResources
+pub type noctis::ports::memory::DiscordCacheResources::Output = noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::bitor(self, Self) -> Self
+pub struct noctis::ports::memory::MemoryAssetStore
+impl noctis::ports::memory::MemoryAssetStore
+pub const noctis::ports::memory::MemoryAssetStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemoryAssetStore::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryAssetStore::new() -> Self
+pub fn noctis::ports::memory::MemoryAssetStore::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryAssetStore::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryAssetStore
+pub fn noctis::ports::memory::MemoryAssetStore::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryAssetStore
+pub fn noctis::ports::memory::MemoryAssetStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::AssetStore for noctis::ports::memory::MemoryAssetStore
+pub fn noctis::ports::memory::MemoryAssetStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryAssetStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::AssetStore for noctis::ports::memory::MemoryAssetStore
+pub fn noctis::ports::memory::MemoryAssetStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryAssetStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryCacheStore
+impl noctis::ports::memory::MemoryCacheStore
+pub const noctis::ports::memory::MemoryCacheStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemoryCacheStore::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryCacheStore::new() -> Self
+pub fn noctis::ports::memory::MemoryCacheStore::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryCacheStore::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryCacheStore
+pub fn noctis::ports::memory::MemoryCacheStore::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryCacheStore
+pub fn noctis::ports::memory::MemoryCacheStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::CacheStore for noctis::ports::memory::MemoryCacheStore
+pub fn noctis::ports::memory::MemoryCacheStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+impl noctis::ports::CacheStore for noctis::ports::memory::MemoryCacheStore
+pub fn noctis::ports::memory::MemoryCacheStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryCacheStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryDiscordCache
+impl noctis::ports::memory::MemoryDiscordCache
+pub const noctis::ports::memory::MemoryDiscordCache::DEFAULT_MESSAGE_CAP: usize
+pub const fn noctis::ports::memory::MemoryDiscordCache::message_cap(&self) -> usize
+pub fn noctis::ports::memory::MemoryDiscordCache::new(noctis::ports::memory::DiscordCacheResources) -> Self
+pub const fn noctis::ports::memory::MemoryDiscordCache::resources(&self) -> noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::MemoryDiscordCache::with_message_cap(noctis::ports::memory::DiscordCacheResources, usize) -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryDiscordCache
+pub fn noctis::ports::memory::MemoryDiscordCache::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::DiscordCache for noctis::ports::memory::MemoryDiscordCache
+pub fn noctis::ports::memory::MemoryDiscordCache::channel(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::Channel>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::channel_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::Guild>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::member(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::member::Member>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::member_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::message(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::message::Message>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::role(&self, twilight_model::id::Id<twilight_model::id::marker::RoleMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::role::Role>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::update<'a>(&'a self, &'a twilight_model::gateway::event::Event) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::user::User>, noctis::ports::PortError>>
+impl noctis::ports::DiscordCache for noctis::ports::memory::MemoryDiscordCache
+pub fn noctis::ports::memory::MemoryDiscordCache::channel(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::Channel>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::channel_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::Guild>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::member(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::member::Member>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::member_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::message(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::message::Message>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::role(&self, twilight_model::id::Id<twilight_model::id::marker::RoleMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::role::Role>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::update<'a>(&'a self, &'a twilight_model::gateway::event::Event) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryDiscordCache::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::user::User>, noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryLimits
+impl noctis::ports::memory::MemoryLimits
+pub const noctis::ports::memory::MemoryLimits::ENTRY_OVERHEAD: u64
+pub const fn noctis::ports::memory::MemoryLimits::max_bytes(&self) -> u64
+pub const fn noctis::ports::memory::MemoryLimits::max_ttl(&self) -> core::option::Option<core::time::Duration>
+pub const fn noctis::ports::memory::MemoryLimits::new(u64, core::option::Option<core::time::Duration>) -> Self
+pub const fn noctis::ports::memory::MemoryLimits::try_new(u64, core::option::Option<core::time::Duration>) -> core::option::Option<Self>
+impl core::clone::Clone for noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryLimits::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::memory::MemoryLimits
+impl core::cmp::PartialEq for noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryLimits::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryLimits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryLimits::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::memory::MemoryLimits
+impl core::marker::StructuralPartialEq for noctis::ports::memory::MemoryLimits
+pub struct noctis::ports::memory::MemoryModuleStateStore
+impl noctis::ports::memory::MemoryModuleStateStore
+pub const noctis::ports::memory::MemoryModuleStateStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemoryModuleStateStore::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryModuleStateStore::new() -> Self
+pub fn noctis::ports::memory::MemoryModuleStateStore::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryModuleStateStore::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryModuleStateStore
+pub fn noctis::ports::memory::MemoryModuleStateStore::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryModuleStateStore
+pub fn noctis::ports::memory::MemoryModuleStateStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::ModuleStateStore for noctis::ports::memory::MemoryModuleStateStore
+pub fn noctis::ports::memory::MemoryModuleStateStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryModuleStateStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryModuleStateStore::version(&self) -> noctis::ports::BoxFuture<'_, core::result::Result<u64, noctis::ports::PortError>>
+impl noctis::ports::ModuleStateStore for noctis::ports::memory::MemoryModuleStateStore
+pub fn noctis::ports::memory::MemoryModuleStateStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryModuleStateStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryModuleStateStore::version(&self) -> noctis::ports::BoxFuture<'_, core::result::Result<u64, noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryRateLimitStore
+impl noctis::ports::memory::MemoryRateLimitStore
+pub const noctis::ports::memory::MemoryRateLimitStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemoryRateLimitStore::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryRateLimitStore::new() -> Self
+pub fn noctis::ports::memory::MemoryRateLimitStore::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryRateLimitStore::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryRateLimitStore
+pub fn noctis::ports::memory::MemoryRateLimitStore::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryRateLimitStore
+pub fn noctis::ports::memory::MemoryRateLimitStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::RateLimitStore for noctis::ports::memory::MemoryRateLimitStore
+pub fn noctis::ports::memory::MemoryRateLimitStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRateLimitStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRateLimitStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::RateLimitStore for noctis::ports::memory::MemoryRateLimitStore
+pub fn noctis::ports::memory::MemoryRateLimitStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRateLimitStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRateLimitStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryRefStore
+impl noctis::ports::memory::MemoryRefStore
+pub const noctis::ports::memory::MemoryRefStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemoryRefStore::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryRefStore::new() -> Self
+pub fn noctis::ports::memory::MemoryRefStore::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryRefStore::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryRefStore
+pub fn noctis::ports::memory::MemoryRefStore::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryRefStore
+pub fn noctis::ports::memory::MemoryRefStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::RefStore for noctis::ports::memory::MemoryRefStore
+pub fn noctis::ports::memory::MemoryRefStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::take<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::touch<'a>(&'a self, &'a str, core::time::Duration) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+impl noctis::ports::RefStore for noctis::ports::memory::MemoryRefStore
+pub fn noctis::ports::memory::MemoryRefStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::take<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRefStore::touch<'a>(&'a self, &'a str, core::time::Duration) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryRenderCache
+impl noctis::ports::memory::MemoryRenderCache
+pub const noctis::ports::memory::MemoryRenderCache::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemoryRenderCache::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemoryRenderCache::new() -> Self
+pub fn noctis::ports::memory::MemoryRenderCache::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryRenderCache::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryRenderCache
+pub fn noctis::ports::memory::MemoryRenderCache::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryRenderCache
+pub fn noctis::ports::memory::MemoryRenderCache::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::RenderCache for noctis::ports::memory::MemoryRenderCache
+pub fn noctis::ports::memory::MemoryRenderCache::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRenderCache::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::RenderCache for noctis::ports::memory::MemoryRenderCache
+pub fn noctis::ports::memory::MemoryRenderCache::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemoryRenderCache::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemorySessionStore
+impl noctis::ports::memory::MemorySessionStore
+pub const noctis::ports::memory::MemorySessionStore::DEFAULT_LIMITS: noctis::ports::memory::MemoryLimits
+pub const fn noctis::ports::memory::MemorySessionStore::limits(&self) -> noctis::ports::memory::MemoryLimits
+pub fn noctis::ports::memory::MemorySessionStore::new() -> Self
+pub fn noctis::ports::memory::MemorySessionStore::usage(&self) -> noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemorySessionStore::with_limits(noctis::ports::memory::MemoryLimits) -> Self
+impl core::default::Default for noctis::ports::memory::MemorySessionStore
+pub fn noctis::ports::memory::MemorySessionStore::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemorySessionStore
+pub fn noctis::ports::memory::MemorySessionStore::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::SessionStore for noctis::ports::memory::MemorySessionStore
+pub fn noctis::ports::memory::MemorySessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemorySessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemorySessionStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::SessionStore for noctis::ports::memory::MemorySessionStore
+pub fn noctis::ports::memory::MemorySessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemorySessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::memory::MemorySessionStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryUsage
+pub noctis::ports::memory::MemoryUsage::bytes: u64
+pub noctis::ports::memory::MemoryUsage::entries: u64
+impl core::clone::Clone for noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryUsage::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::memory::MemoryUsage
+impl core::cmp::PartialEq for noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryUsage::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryUsage::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryUsage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::memory::MemoryUsage
+pub fn noctis::ports::memory::MemoryUsage::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::memory::MemoryUsage
+impl core::marker::StructuralPartialEq for noctis::ports::memory::MemoryUsage
+pub struct noctis::ports::memory::NoLocaleOverlay
+impl core::clone::Clone for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::memory::NoLocaleOverlay
+impl core::cmp::PartialEq for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::memory::NoLocaleOverlay
+impl core::marker::StructuralPartialEq for noctis::ports::memory::NoLocaleOverlay
+impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
+impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
+pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
 pub mod noctis::prelude
 pub trait noctis::prelude::Payload
 pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>

@@ -50,12 +50,22 @@
 //!
 //! [`encode_value`] and [`decode_value`] store a value as postcard with a
 //! leading schema byte; a schema mismatch reads as a miss.
+//!
+//! # Defaults
+//!
+//! [`memory`] holds a bounded in-memory default for every port except
+//! [`IdentifyQueue`]: seven byte stores with documented byte budgets and
+//! maximum TTLs, [`MemoryDiscordCache`](memory::MemoryDiscordCache) over
+//! `twilight-cache-inmemory`, and the trivial
+//! [`NoLocaleOverlay`](memory::NoLocaleOverlay) and
+//! [`AllowAllGuilds`](memory::AllowAllGuilds).
 
 mod access;
 mod discord_cache;
 mod error;
 mod identify;
 mod locale;
+pub mod memory;
 mod render;
 mod store;
 mod value;

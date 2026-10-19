@@ -1,4 +1,4 @@
-// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
+// NOTE: Compiles against the real `noctis::ports` API (checked by noctis-rs `crates/noctis/tests/template_adapter.rs`); only `noctis::testkit::conformance` is still planned.
 
 //! A custom `CacheStore` Adapter: a bounded in-process map with TTL.
 //!
@@ -134,24 +134,23 @@ impl CacheStore for BoundedCacheStore {
     ) -> BoxFuture<'a, Result<u64, PortError>> {
         let now = Instant::now();
         let mut map = self.lock();
-        let result = match map.get_mut(key).filter(|e| e.is_live(now)) {
-            // Existing counter: add, keep its TTL (TTL is set on create only).
-            Some(entry) => match <[u8; 8]>::try_from(entry.value.as_ref()) {
+        // Existing counter: add, keep its TTL (TTL is set on create only).
+        let result = if let Some(entry) = map.get_mut(key).filter(|e| e.is_live(now)) {
+            match <[u8; 8]>::try_from(entry.value.as_ref()) {
                 Ok(raw) => {
                     let next = u64::from_be_bytes(raw).saturating_add(by);
                     entry.value = Bytes::copy_from_slice(&next.to_be_bytes());
                     Ok(next)
                 }
                 Err(_) => Err(PortError::invalid_value(key, "not an 8-byte counter")),
-            },
-            None => {
-                let entry = Entry {
-                    value: Bytes::copy_from_slice(&by.to_be_bytes()),
-                    expires_at: expiry(ttl),
-                };
-                Self::insert(&mut map, self.capacity, key, entry);
-                Ok(by)
             }
+        } else {
+            let entry = Entry {
+                value: Bytes::copy_from_slice(&by.to_be_bytes()),
+                expires_at: expiry(ttl),
+            };
+            Self::insert(&mut map, self.capacity, key, entry);
+            Ok(by)
         };
         Box::pin(ready(result))
     }
@@ -165,7 +164,10 @@ mod tests {
     async fn evicts_instead_of_growing() {
         let store = BoundedCacheStore::new(2);
         for key in ["a", "b", "c"] {
-            store.put(key, Bytes::from_static(b"x"), None).await.unwrap();
+            store
+                .put(key, Bytes::from_static(b"x"), None)
+                .await
+                .unwrap();
         }
         assert_eq!(store.lock().len(), 2);
     }

@@ -169,6 +169,8 @@ pub mod ports {
     //!   [`Format`], [`AnimationSpec`], [`AnimatedFormat`], [`Frame`],
     //!   [`OutputFormat`], [`RenderOutput`], [`EncodeSettings`],
     //!   [`RenderError`] and the [`Renderer`] port.
+    //! - [`memory`]: the bounded in-memory default of every port except
+    //!   [`IdentifyQueue`].
     //!
     //! Every port is `Send + Sync + 'static` and dyn-compatible, so the App
     //! holds it as `Arc<dyn Port>`. Keys are opaque and stored verbatim, and no
@@ -194,6 +196,58 @@ pub mod ports {
         RenderCache, RenderError, RenderJob, RenderOutput, Renderer, SessionStore, Size, Template,
         TemplateDescriptor, ValueError, decode_template, decode_value, encode_value,
     };
+
+    pub mod memory {
+        //! The bounded in-memory defaults: what an App runs on when you swap
+        //! nothing.
+        //!
+        //! | Store | Port | `max_bytes` | `max_ttl` |
+        //! | --- | --- | --- | --- |
+        //! | [`MemoryRefStore`] | [`RefStore`](super::RefStore) | 32 MiB | 7 days |
+        //! | [`MemorySessionStore`] | [`SessionStore`](super::SessionStore) | 1 MiB | none |
+        //! | [`MemoryModuleStateStore`] | [`ModuleStateStore`](super::ModuleStateStore) | 16 MiB | none |
+        //! | [`MemoryRateLimitStore`] | [`RateLimitStore`](super::RateLimitStore) | 16 MiB | 1 day |
+        //! | [`MemoryCacheStore`] | [`CacheStore`](super::CacheStore) | 32 MiB | none |
+        //! | [`MemoryRenderCache`] | [`RenderCache`](super::RenderCache) | 64 MiB | 1 day |
+        //! | [`MemoryAssetStore`] | [`AssetStore`](super::AssetStore) | 32 MiB | 1 day |
+        //!
+        //! Each store has `DEFAULT_LIMITS`, `new()`, `with_limits(`[`MemoryLimits`]`)`,
+        //! `limits()` and `usage() -> `[`MemoryUsage`]. An entry weighs
+        //! `key.len() + value.len() + MemoryLimits::ENTRY_OVERHEAD` bytes; a
+        //! full budget evicts the least recently used entry, a single write
+        //! larger than the budget is a `PortError::InvalidValue`, and every TTL
+        //! is clamped to `max_ttl`. The defaults are caches: capacity may evict
+        //! any entry, swap a persistent adapter for durable data.
+        //!
+        //! [`MemoryDiscordCache`] caches only the chosen
+        //! [`DiscordCacheResources`] and at most a per-channel message cap.
+        //! [`NoLocaleOverlay`] and [`AllowAllGuilds`] are the defaults of
+        //! `LocaleSource` and `GuildAccessList`.
+        //!
+        //! ```
+        //! use std::sync::Arc;
+        //! use std::time::Duration;
+        //!
+        //! use noctis::ports::CacheStore;
+        //! use noctis::ports::memory::{MemoryCacheStore, MemoryLimits};
+        //!
+        //! let store: Arc<dyn CacheStore> = Arc::new(MemoryCacheStore::new());
+        //! # let _ = store;
+        //! assert_eq!(MemoryCacheStore::DEFAULT_LIMITS.max_bytes(), 32 * 1024 * 1024);
+        //! assert_eq!(MemoryCacheStore::DEFAULT_LIMITS.max_ttl(), None);
+        //!
+        //! const SMALL: MemoryLimits = MemoryLimits::new(1024 * 1024, Some(Duration::from_secs(60)));
+        //! let small = MemoryCacheStore::with_limits(SMALL);
+        //! assert_eq!(small.limits(), SMALL);
+        //! assert_eq!(small.usage().entries, 0);
+        //! ```
+
+        pub use noctis_ports::memory::{
+            AllowAllGuilds, DiscordCacheResources, MemoryAssetStore, MemoryCacheStore,
+            MemoryDiscordCache, MemoryLimits, MemoryModuleStateStore, MemoryRateLimitStore,
+            MemoryRefStore, MemoryRenderCache, MemorySessionStore, MemoryUsage, NoLocaleOverlay,
+        };
+    }
 }
 
 pub mod prelude {

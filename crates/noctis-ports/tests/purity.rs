@@ -18,8 +18,15 @@ const FORBIDDEN: &[&str] = &[
 /// Matched case-insensitively: no port method may take a secret (NFR-6).
 const FORBIDDEN_ANY_CASE: &[&str] = &["token", "secret", "password", "credential", "api_key"];
 
-const ALLOWED_DEPENDENCIES: &[&str] =
-    &["bytes", "postcard", "serde", "thiserror", "twilight-model"];
+const ALLOWED_DEPENDENCIES: &[&str] = &[
+    "bytes",
+    "moka",
+    "postcard",
+    "serde",
+    "thiserror",
+    "twilight-cache-inmemory",
+    "twilight-model",
+];
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

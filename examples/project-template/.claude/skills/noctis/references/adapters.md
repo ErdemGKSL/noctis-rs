@@ -8,7 +8,7 @@ data that must outlive one call goes through a port, never a `static` map.
 
 ## 1. The ports (`noctis::ports`)
 
-| Port | Stores | Ops it uses | Default | Swap with |
+| Port | Stores | Ops it uses | Default | Swap with [planned] |
 | --- | --- | --- | --- | --- |
 | `RefStore` | Payloads behind Refs (by_ref/spill Routes) | `put_if_absent`, `get`, `take`, `delete`, `touch` | bounded memory, TTL | `.ref_store(..)` |
 | `SessionStore` | shard `(session_id, seq, resume_url)` for resume | `get`, `put`, `delete` | memory (resume only within one process life) | `.session_store(..)` |
@@ -23,15 +23,90 @@ data that must outlive one call goes through a port, never a `static` map.
 | `GuildAccessList` | per-App guild allow/deny lists (white-label) | `allows(guild)` | allow all | `.guild_access(..)` |
 | `Renderer` (driven port, not a store) | turns a `RenderJob` into `RenderOutput` | `render(job)` | `noctis-image` local pool | `.renderer(..)` |
 
-All defaults are bounded by entries or bytes with documented capacities and TTLs;
-configure them with `noctis::ports::memory::MemoryRefStore::with_capacity(..)` etc.
-[planned].
+### 1.1 The in-memory defaults (`noctis::ports::memory`)
+
+Every port except `IdentifyQueue` (its default is [planned]) has a bounded in-memory
+default in `noctis::ports::memory`. An App that swaps nothing runs on these.
+
+| Default | Port | `max_bytes` | `max_ttl` |
+| --- | --- | --- | --- |
+| `MemoryRefStore` | `RefStore` | 32 MiB | 7 days |
+| `MemorySessionStore` | `SessionStore` | 1 MiB | none |
+| `MemoryModuleStateStore` | `ModuleStateStore` | 16 MiB | none |
+| `MemoryRateLimitStore` | `RateLimitStore` | 16 MiB | 1 day |
+| `MemoryCacheStore` | `CacheStore` | 32 MiB | none |
+| `MemoryRenderCache` | `RenderCache` | 64 MiB | 1 day |
+| `MemoryAssetStore` | `AssetStore` | 32 MiB | 1 day |
+| `MemoryDiscordCache` | `DiscordCache` | the chosen resources + 100 messages per channel | — |
+| `NoLocaleOverlay` | `LocaleSource` | `load` returns `Ok(vec![])` (no overlay) | — |
+| `AllowAllGuilds` | `GuildAccessList` | `allows` returns `true` | — |
+
+Each byte store has the same inherent API:
+
+```rust
+use std::time::Duration;
+use noctis::ports::memory::{MemoryCacheStore, MemoryLimits, MemoryUsage};
+
+MemoryCacheStore::DEFAULT_LIMITS;                 // the row above, as MemoryLimits
+let store = MemoryCacheStore::new();              // = with_limits(DEFAULT_LIMITS); also Default
+const LIMITS: MemoryLimits = MemoryLimits::new(8 * 1024 * 1024, Some(Duration::from_secs(3600)));
+let store = MemoryCacheStore::with_limits(LIMITS);
+store.limits().max_bytes();                       // 8 MiB
+store.limits().max_ttl();                         // Some(1h); None = uncapped
+let MemoryUsage { entries, bytes } = store.usage();  // current count and weight
+```
+
+- `MemoryLimits` (`Copy`, `Eq`): `const fn new(max_bytes: u64, max_ttl: Option<Duration>)`
+  panics on `max_bytes == 0` or `Some(Duration::ZERO)` (a compile error in a `const`);
+  `MemoryLimits::try_new(..) -> Option<MemoryLimits>` returns `None` instead; getters
+  `max_bytes()` and `max_ttl()`.
+- **Weight:** an entry weighs `key.len() + value.len() + MemoryLimits::ENTRY_OVERHEAD`
+  (64) bytes, in UTF-8 bytes. `usage()` returns `MemoryUsage { entries, bytes }` (public
+  `u64` fields) and never exceeds `max_bytes`.
+- **Eviction:** when the budget is full, the least recently used entry is evicted. A
+  single write heavier than `max_bytes` fails with `PortError::InvalidValue` and changes
+  nothing.
+- **TTL:** every TTL is clamped to `max_ttl`; with no TTL and a `max_ttl`, the entry
+  expires after `max_ttl`. `incr_with_ttl` on a live counter keeps its expiry.
+- `MemoryModuleStateStore`'s `version()` starts at 0 and grows by one on every
+  successful `put`.
+- `Debug` prints only the limits, never keys or values.
+- **The defaults are caches:** capacity may evict any entry; swap a persistent adapter
+  for durable data (and for anything a Cluster must share, see §7).
+
+`MemoryDiscordCache` wraps twilight's in-memory cache, restricted to a resource set:
+
+```rust
+use noctis::ports::memory::{DiscordCacheResources as R, MemoryDiscordCache};
+
+let cache = MemoryDiscordCache::new(R::GUILD | R::CHANNEL | R::ROLE);   // 100 messages/channel
+let cache = MemoryDiscordCache::with_message_cap(R::all(), 50);        // cap 0 = no MESSAGE
+cache.resources();     // what you asked for
+cache.message_cap();   // MemoryDiscordCache::DEFAULT_MESSAGE_CAP = 100 for new()
+```
+
+- `DiscordCacheResources` (`Copy`, `Eq`, `Hash`, `Default` = empty): consts `GUILD`,
+  `CHANNEL`, `ROLE`, `MEMBER`, `USER`, `MESSAGE`; const fns `empty()`, `all()`,
+  `union(other)`, `contains(other)`, `is_empty()`; and `|`. `MEMBER` also caches each
+  member's user internally, but `resources()` reports only what you asked for.
+- Getters return owned clones. What is lossy: a `Guild` has empty `channels`, `roles`,
+  `members`, `emojis`, `stickers`, `presences`, `voice_states`, `threads` and
+  `stage_instances` (use `channel_ids`/`role_ids`/`member_ids`, sorted ascending) and
+  `None` approximate counts; a `Member` has `avatar_decoration_data` and `banner` `None`
+  and `deaf`/`mute` `false` when unknown, and is `None` when its user is not cached.
+  `Channel`, `Role`, `User` and `Message` are stored whole.
+
+Wiring a default or your own Adapter into the App (`.cache_store(..)` etc. in the table
+above) is [planned].
+
+### 1.2 The Discord resource cache
 
 The Discord resource cache is its own port, `DiscordCache`, separate from
-`CacheStore`. Read it through `ctx.cache()` (`ctx.cache().guild(id).await?`,
+`CacheStore`. Read it through `ctx.cache()` [planned] (`ctx.cache().guild(id).await?`,
 `.roles(guild)`, `.member(guild, user)`, `.user(id)`, …); choose which resources are
-cached with `.discord_cache(DiscordCacheConfig::…)` (`none()` disables it), and replace
-its storage with `.discord_cache_backend(impl DiscordCache)`. Reads return owned values;
+cached with `.discord_cache(DiscordCacheConfig::…)` [planned] (`none()` disables it),
+and replace its storage with `.discord_cache_backend(impl DiscordCache)` [planned].
+Until then, `MemoryDiscordCache` (§1.1) is the default. Reads return owned values;
 no guard can be held across `.await`. It is typed, not bytes: an out-of-process
 implementation serializes the twilight-model values itself.
 
@@ -227,7 +302,7 @@ pub trait Renderer: Send + Sync + 'static {
 The render enums are closed (exhaustive `match` is fine); the render structs have
 public fields, except `Size`, which validates.
 
-## 3. Using ports from handlers
+## 3. Using ports from handlers [planned]
 
 You never call port traits directly; contexts give typed, namespaced handles:
 
@@ -252,8 +327,8 @@ database, injected as `State<Db>` or wrapped in your own port.
 
 ## 4. Implementing your own Adapter
 
-The template's `src/adapters/bounded_cache.rs` is a complete `CacheStore`. The
-essentials:
+The template's `src/adapters/bounded_cache.rs` is a complete `CacheStore`; it compiles
+against the real `noctis::ports` API today. The essentials:
 
 ```rust
 use std::future::ready;
@@ -302,13 +377,13 @@ impl CacheStore for RedisCache {
 }
 ```
 
-Wire it: `App::from_env()?.cache_store(RedisCache::new(pool))`. Handlers don't change.
+Wire it [planned]: `App::from_env()?.cache_store(RedisCache::new(pool))`. Handlers don't change.
 
 Checklist for any Adapter: bounded (or backed by bounded storage), atomic ops really
 atomic, TTL honoured on read, verbatim keys, no secrets, no blocking calls in async
 (use async clients or `spawn_blocking`), passes conformance.
 
-## 5. Conformance tests (FR-39)
+## 5. Conformance tests (FR-39) [planned]
 
 ```rust
 use noctis::testkit::conformance;
@@ -326,7 +401,7 @@ They test TTL, overwrite, delete, missing keys, concurrent callers (exactly one
 `take`/`put_if_absent` winner, no lost increments) and App namespacing. The factory is
 called per case, so return a fresh, empty store (for Redis: a fresh key prefix or DB).
 
-## 6. Namespacing and sharing (FR-71)
+## 6. Namespacing and sharing (FR-71) [planned]
 
 Two Apps sharing one Adapter instance never see each other's keys (`<app>:<port>:`).
 Opt one port into cross-App sharing with `Shared::new(adapter)` → prefix

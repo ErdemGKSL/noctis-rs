@@ -46,7 +46,7 @@ tokio = "1.53"
 twilight-gateway = { version = "0.17.1", default-features = false, features = ["rustls-platform-verifier", "twilight-http", "zstd"] }
 twilight-http = { version = "0.17.1", default-features = false, features = ["rustls-platform-verifier", "decompression"] }
 twilight-model = "0.17.1"
-twilight-cache-inmemory = "0.17.1"
+twilight-cache-inmemory = { version = "0.17.1", default-features = false }
 twilight-http-ratelimiting = "0.17.1"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 takumi = { version = "=2.17.0", default-features = false }
@@ -59,7 +59,7 @@ futures-util = "0.3"
 tracing = "0.1.44"
 metrics = "0.24"
 arc-swap = "1.9"
-moka = "0.12"
+moka = { version = "0.12", default-features = false }
 rayon = "1.12"
 blake3 = "1.8"
 bytes = "1.12"

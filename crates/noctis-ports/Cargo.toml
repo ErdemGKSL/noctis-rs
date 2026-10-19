@@ -9,10 +9,15 @@ repository.workspace = true
 
 [dependencies]
 bytes.workspace = true
+moka = { workspace = true, features = ["sync"] }
 postcard = { workspace = true, features = ["alloc"] }
 serde.workspace = true
 thiserror.workspace = true
+twilight-cache-inmemory = { workspace = true, default-features = false }
 twilight-model.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true
