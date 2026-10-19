@@ -28,7 +28,8 @@ with no I/O. Every storage-like concern is a **port** in `noctis-ports` with a b
 in-memory default. Discord I/O is concentrated in two adapters: the gateway (a driving
 adapter that `noctis-core` starts and owns) and the App's single twilight-http client
 (a driven adapter that `noctis-core` owns). Rendering is a driven port (`Renderer`)
-implemented by `noctis-image`.
+implemented by `noctis-image`. Optional crates above core (`noctis-image`,
+`noctis-prefix`) attach to an App only through core's `Plugin` seam (AD-24).
 
 The runtime around the core is **event-driven and lane-based**. Shard tasks feed
 lanes; a worker set in `noctis-core` drains them into handlers.
@@ -38,11 +39,18 @@ lanes; a worker set in `noctis-core` drains them into handlers.
 | 0 Rules | `noctis-rules` | none |
 | 1 Wire and ports | `noctis-codec`, `noctis-ports` | none (memory defaults only) |
 | 2 UI model | `noctis-ui` | none |
-| 3 Edge and services | `noctis-gateway`, `noctis-i18n`, `noctis-image` | gateway socket; image asset fetch and render pool |
-| 4 Application | `noctis-core` | Discord HTTP through the App's one client; storage through ports |
-| 5 Extensions | `noctis-prefix`, `noctis-testkit` | through core |
-| 6 Facade | `noctis` | none (re-exports) |
+| 3 Edge and services | `noctis-gateway`, `noctis-i18n` | gateway socket |
+| 4 Application | `noctis-core` (incl. `Runtime`, `Plugin`, `Dispatcher`) | Discord HTTP through the App's one client; storage through ports |
+| 5 Extensions | `noctis-image` (`render` feature), `noctis-prefix`, `noctis-testkit` | image asset fetch and render pool; the rest through core |
+| 6 Facade | `noctis` | none (re-exports, feature wiring) |
 | Compile time | `noctis-macros` (proc-macro) | reads the invoking crate's locale and theme files |
+
+`noctis-image` with its `render` feature off (its default) is only the takumi-free
+`tw` grammar module and has no workspace dependency, so `noctis-macros` can use it;
+the `render` feature adds takumi and the edges to `noctis-core`, `noctis-ports` and
+`noctis-ui`. The facade's `image` feature turns `render` on. Resolver 3 keeps
+proc-macro dependencies' features apart from normal ones, so `noctis-macros`' copy of
+`noctis-image` always builds with `render` off.
 | Tooling | `xtask` | CI and release only |
 
 ## Invariants & Rules
@@ -56,6 +64,7 @@ graph TD
   noctis --> prefix[noctis-prefix]
   noctis -.->|testkit feature, dev-dependencies only| testkit[noctis-testkit]
   prefix --> core
+  image -->|render feature| core
   testkit --> core
   testkit --> gateway
   testkit --> ports
@@ -65,8 +74,8 @@ graph TD
   core --> ports[noctis-ports]
   core --> codec[noctis-codec]
   core --> rules[noctis-rules]
-  image --> ui
-  image --> ports
+  image -->|render feature| ui
+  image -->|render feature| ports
   i18n --> ports
   i18n --> rules
   gateway --> ports
@@ -79,7 +88,9 @@ graph TD
 
 Arrows point from dependent to dependency. The drawn edges are the only allowed
 workspace edges, except that the facade may depend on any crate. Every edge points to
-a lower layer. No crate depends on `noctis`, except internal crates' own tests through
+a lower layer; a labelled edge exists only with that feature on. There is no
+`noctis-testkit → noctis-image` edge: the testkit reaches rendering only through the
+`Renderer` port an App's `ImagePlugin` installed (AD-24). No crate depends on `noctis`, except internal crates' own tests through
 `[dev-dependencies]`. Only the facade's `testkit` feature, which bot crates enable in
 `[dev-dependencies]` only, reaches `noctis-testkit`. `xtask deps-check` enforces this
 list in CI.
@@ -123,6 +134,10 @@ list in CI.
     released together (AD-28). Sub-crate docs say "internal; use `noctis`".
   - twilight is re-exported as `noctis::twilight`. Renderer types are reachable only
     through `noctis::image::unstable`, which semver doesn't cover.
+  - Feature crates add builder methods through extension traits that the facade
+    re-exports, and `noctis::prelude` includes them when their feature is on
+    (`noctis::image::AppBuilderImageExt` with `image`); they install a `Plugin`
+    (AD-24).
   - Macro output names runtime items only through `::noctis::__private::<crate>`
     paths. Internal crates that use derives in their own tests either dev-depend on
     `noctis` or pass `#[noctis(crate = path)]`.
@@ -167,20 +182,32 @@ list in CI.
 
   A compile-time check must fail under `cargo check`, because trybuild runs
   compile-fail suites with `cargo check`. The allowed mechanisms are proc-macro
-  errors, trait bounds and free `const _` items over concrete types:
+  errors, trait bounds, free `const _` items over concrete types, and construction
+  (the illegal value or call has no API):
   - Placement and arity rules are traits implemented only for legal shapes (for
     example the array-length trait behind `ActionRow::buttons([b; N])` exists only
     for `N` in 1..=5). Each such trait carries
     `#[diagnostic::on_unimplemented(message = "[<RULE-ID>] …")]`, so the rule id
     reaches the error text.
-  - Literal text goes through a proc macro (`label!("…")`, attribute literals) that
-    measures it with `noctis-rules` at expansion.
+  - Literal text goes through a proc macro (`label!("…")`, `rgb!(…)`, attribute
+    literals) that measures it with `noctis-rules` at expansion.
+  - Literal Components V2 trees go through `components!` (`noctis-macros`, AD-12),
+    which counts components and literal text, checks placement and arity, and
+    rejects duplicate literal `(Route, Payload)` pairs (CID-02) at expansion.
+  - **By construction:** the type has no field, method, variant or constructor for
+    the illegal thing (`V2Message` has no `content`; `Responder<Acked>` has no
+    `reply`), so rustc's own error (E0599, E0609, E0382, …) rejects it and can't
+    carry the rule id. The catalog marks these rows `Compile-time (by construction)`.
   - A `const` assertion inside generic code is evaluated only at monomorphization
     (`cargo build`), so it is never the enforcement point of a rule.
 
-  Compile-time checks have `trybuild` compile-fail tests. App-build and runtime
-  checks have unit tests. Every test names its rule id, and `xtask rules-catalog`
-  fails CI when a Compile-time or App-build row has no test citing its id.
+  Compile-time checks have compile-fail tests. For a check that Noctis diagnoses
+  (proc macro or `on_unimplemented`), the trybuild fixture's `.stderr` contains
+  `[<RULE-ID>]`. For a by-construction rule, the evidence is a `compile_fail` doctest
+  or a trybuild fixture whose source carries `// [<RULE-ID>]` on the offending line;
+  its `.stderr` is rustc's own error. App-build and runtime checks have unit tests.
+  Every test names its rule id, and `xtask rules-catalog` fails CI when a
+  Compile-time, App-build or Runtime row has no test of the kind its tier requires.
 
 ### AD-5 — `custom_id` wire format
 - **Binds:** `noctis-codec`, `noctis-core`, `noctis-ui`, `noctis-macros`; FR-15 to
@@ -340,6 +367,8 @@ list in CI.
   - `noctis-gateway` defines the lanes and the item
     `Inbound { shard, received_at: Instant, kind: Interaction(Box<Interaction>, RawJson) | Event(Box<Event>) }`.
     `RawJson` is the original `d` payload as `Bytes`, kept only for interactions.
+    It is a gateway type (layer 3); crates below it never name it. Core hands its
+    bytes (`RawJson::as_bytes() -> &[u8]`) to `noctis-ui`'s decoders (AD-12).
     `noctis-testkit` injects `Inbound` values into the same lanes, and its Discord
     fakes (AD-24) drive the real gateway and HTTP paths.
   - Interactions go to the **interaction lane**. It has priority, is never dropped,
@@ -413,11 +442,17 @@ list in CI.
     raw twilight-http body. Flag sets (`CreateFlags`, `EditFlags`, `CallbackFlags`)
     and mention sets (`Users::All | Users::Only(ids)`) are typed per endpoint.
   - twilight-model is used only for ids, interactions, events and commands.
-  - Modal submissions decode from `RawJson` (AD-10), so Radio Group, Checkbox Group
-    and Checkbox values reach the typed submission struct even when twilight drops
-    them (FR-64). Incoming component data that Noctis doesn't model is kept as
+  - Modal submissions decode from the raw interaction JSON as `&[u8]`
+    (`noctis-ui` and the `derive(Modal)` output take bytes, never a gateway type);
+    core passes the bytes of the interaction's `RawJson` (AD-10). Radio Group,
+    Checkbox Group and Checkbox values therefore reach the typed submission struct
+    even when twilight drops them (FR-64). Incoming component data that Noctis doesn't model is kept as
     `serde_json::Value`, never dropped.
   - Modal pre-fill values (FR-63) go through the same validator before sending.
+  - `components!` (in `noctis-macros`, specified in Story 4.4) is the static V2 tree
+    macro: it expands a literal tree into the same typed builder calls and checks
+    the static rules at expansion (AD-4). It is unrelated to the image Template
+    macro `view!` (AD-15), which builds takumi nodes.
 
 ### AD-13 — Error model
 - **Binds:** all crates; FR-19, FR-22, NFR-4.
@@ -485,16 +520,30 @@ list in CI.
   - stale cached images after a data, asset, theme or version change;
   - any Node or Tailwind-CLI tooling.
 - **Rule:**
-  - `noctis-image` wraps takumi `=2.17.0`. Renders run on the process-scoped rayon
+  - `noctis-image` wraps takumi `=2.17.0` together with `takumi-core = "=0.31.0"`
+    (takumi 2.17.0 is a thin facade over `takumi-core ^0.31`, so pinning only
+    `takumi` wouldn't freeze the parser). Both pins are exact on purpose: bot authors
+    get takumi fixes through Noctis patch releases, never by `cargo update` alone.
+    `Cargo.lock` is committed. Renders run on the process-scoped rayon
     pool (AD-24) behind a bounded queue; a full queue is a typed error. Admission
     weight is the frame count. Per-job caps (default ≤ 4 MP per job, ≤ 1 MP per
     frame, ≤ 90 frames, ≤ 6 s; fps cap 50 for GIF, 90 for WebP and APNG) are checked
     before enqueue. A job whose requester is gone is skipped; per-frame animations
     stop between frames.
   - Noctis owns a strict Tailwind v4 class grammar in `noctis_image::tw`, which is
-    takumi-free and builds with the `render` feature off. `xtask tw-grammar`
-    generates it from takumi's source, with theme-token checks and a v3 → v4 rename
-    table for suggestions. `tw!`/`view!` validate literal classes against it at
+    takumi-free and builds with the `render` feature off (`noctis-image`'s default
+    features are empty). `xtask tw-grammar` generates it from takumi's source, with
+    theme-token checks and a v3 → v4 rename table for suggestions:
+    - It finds the pinned `takumi-core` source through `cargo metadata`
+      (`manifest_path`) and `syn`-parses `src/style/tw/map.rs`: the
+      `FIXED_PROPERTIES` keys (exact utilities), the `PREFIX_PARSERS` table (prefix →
+      parser variants), the `property_parsers!` triples (variant → value parser
+      type) and `VAR_TARGETS` (theme namespaces).
+    - Each value parser type maps to a suffix grammar in a closed table kept in
+      `xtask` (spacing scale, fractions, colors with `/opacity`, keyword sets,
+      arbitrary `[…]`). A parser type the table doesn't know, or a file layout that
+      no longer matches, fails generation with a message naming it.
+    - The output is the committed `crates/noctis-image/src/tw/generated.rs`. `tw!`/`view!` validate literal classes against it at
     compile time, together with the tokens in the crate's `noctis-theme.css`
     (parsed with `cssparser`; only custom properties and `@keyframes` are read).
   - Every file a proc macro reads (theme, locale files) is also emitted as
@@ -502,19 +551,31 @@ list in CI.
     the crate. A newly added file is picked up on the next rebuild of the crate,
     which the Usage Skill documents.
     Runtime class strings use the same grammar: an unknown class warns once per
-    distinct string and fails tests under the testkit. Dynamic values use typed
+    distinct string, and is an error on an App whose `Runtime` is
+    `Runtime::for_test()` (the testkit), so tests fail. Dynamic values use typed
     style setters.
-  - CI job `tw-crosscheck` renders every grammar entry with takumi and fails on
-    drift.
+  - CI job `tw-crosscheck` compares the grammar with takumi's own parser. The oracle
+    is `takumi-core`'s public `TailwindValues` (`FromStr`), which silently drops
+    tokens it doesn't recognize: a class is recognized when parsing it alone yields
+    a non-empty value list. For every grammar entry's sample classes and a corpus of
+    near-misses (v3 names, typos, unknown tokens), grammar and takumi must agree;
+    any disagreement fails the job. A smoke render of every sample checks that
+    rendering doesn't panic.
   - Results are cached through `RenderCache`. The key is `blake3(KEY_SCHEMA,
     NOCTIS_VERSION, TAKUMI_VERSION, template_id, template_version, theme_digest,
-    postcard(data), sorted asset (id, version) pairs, size, format,
+    postcard(data), sorted asset (id, version) pairs, size, format, animation,
     encode_settings)`. Template data must serialize deterministically (the derive
     rejects `HashMap` fields). Single-flight deduplication is process-local.
   - Outputs are PNG, JPEG and WebP stills, animated WebP (default) and GIF or APNG.
     The size budget is the smaller of the Upload Budget and a target (default about
     2 MB); over budget, settings degrade in the order fps, size, quality, then still
     frame. The settings used are reported.
+  - Animation (FR-69) is described by the `RenderJob`'s optional `AnimationSpec`
+    (AD-22). CSS-driven animations come from the Template's classes and the Theme's
+    `@keyframes`. Code-driven animations compute one Template state per frame:
+    `TemplateView::view(&self, frame: Frame)` receives the frame index and count, so
+    one data value describes the whole animation. Every frame has the job's size; a
+    root node whose explicit size differs from it is a typed error.
   - No font is bundled unless `default-font` is on; no registered font is a startup
     error. The emoji font is opt-in (`image-emoji`), with a startup warning when
     absent. Theme keyframes come from `noctis-theme.css`; redefining a built-in
@@ -534,11 +595,18 @@ list in CI.
   - widgets hard-coding English or each crate defining its own `Locale`;
   - an overlay changing a published command name.
 - **Rule:**
-  - `i18n!(default = "en", dir = "locales")` compiles the crate's locale files
-    (YAML, named by Discord locale code, parsed with `yaml-rust2`) into typed
-    accessors and a `MessageKey` const per key. Both arguments are optional and
-    default to the values shown, relative to the crate root. A key missing from the
-    default locale is a compile error; other locales fall back with a build warning.
+  - `i18n!(default = "en-US", dir = "locales")` compiles the crate's locale files
+    (YAML, parsed with `yaml-rust2`) into typed accessors and a `MessageKey` const
+    per key. Both arguments are optional and default to the values shown, relative
+    to the crate root. A key missing from the default locale is a compile error;
+    other locales fall back with a build warning.
+  - **File names.** A locale file's stem is exactly one of Discord's 32 locale codes
+    (`en-US.yaml`, `en-GB.yaml`, `tr.yaml`, `pt-BR.yaml`, …), as `Locale` prints it;
+    `default` takes a code too. Any other stem, including a bare language such as
+    `en.yaml`, is a LOC-01 compile error whose help names the matching codes. There
+    is no base-language type: same-language fallback is the fixed sibling table
+    `Locale::sibling()` in `noctis-rules` (`en-US` ↔ `en-GB`, `es-ES` ↔ `es-419`;
+    every other code has none).
   - The `i18n` facade feature switches on `i18n!`, the public `noctis::i18n` items
     and locale-file reading in `#[command]`. Without it, core still uses
     `noctis-i18n` for the built-in `noctis.*` strings, so the `core → i18n` edge is
@@ -549,15 +617,22 @@ list in CI.
     ships default `noctis.*` strings.
   - Each Module's catalog is a descriptor. `App::build` merges catalogs per
     language; a key defined by two Modules fails with an error naming both (FR-72).
-  - Command localization keys are fixed: `cmd.<path>.name`, `cmd.<path>.desc`,
-    `cmd.<path>.opt.<opt>.name`, `cmd.<path>.opt.<opt>.desc`,
-    `cmd.<path>.opt.<opt>.choice.<value>`, per-word `cmdword.<word>` (which a
-    full-path key overrides), and `ctxcmd.<key>.name` for context-menu Commands,
-    whose `key = "…"` attribute names them.
+  - Command localization keys are fixed: `cmd.<path>.name`,
+    `cmd.<path>.description`, `cmd.<path>.opt.<opt>.name`,
+    `cmd.<path>.opt.<opt>.description`, `cmd.<path>.opt.<opt>.choice.<value>`,
+    per-word `cmdword.<word>` (which a full-path key overrides), and
+    `ctxcmd.<key>.name` for context-menu Commands, whose `key = "…"` attribute names
+    them. `<path>` is the Command Path's words joined by `.`, written as nested YAML
+    maps (`/setup start` → `cmd: { setup: { start: { description: … } } }`), so a
+    base or group key (`cmd.setup.description`) and its children share one map. A
+    Command word equal to `name`, `description` or `opt` would make its keys
+    ambiguous and is a compile error when locale files are read. `cmd.*`,
+    `cmdword.*` and `ctxcmd.*` keys get no typed accessors and no `keys::` consts;
+    only `#[command]` and Publish read them.
   - **Descriptions.** Without the `i18n` feature, a Command's description is the
     literal `description = "…"` on `#[command]` (option descriptions likewise on
     `#[option]`); a missing one is a CMD-04 compile error. With the `i18n` feature
-    and a default-locale file present, `cmd.<path>.desc` in that file is the
+    and a default-locale file present, `cmd.<path>.description` in that file is the
     source: a literal may be omitted, a literal that differs from the file is a
     compile error, and a missing key with no literal is CMD-04. `#[command]` reads
     the same `dir`/`default` as `i18n!`; a Module whose `i18n!` uses another `dir`
@@ -570,7 +645,9 @@ list in CI.
     `cmdword.*` key is rejected, and overlay values are checked against the compiled
     placeholder set when loaded.
   - Resolution (FR-43): User → Guild → default for interactions, Guild → default
-    for guild events; a regional code falls back to its base language first.
+    for guild events; a code with no file falls back to its sibling's file (when it
+    has one) before the next step. Publish emits a sibling's values for a code that
+    has no file of its own (FR-41).
 
 ### AD-17 — Project Template tracks the public API
 - **Binds:** `examples/project-template`, `xtask`, CI; FR-49, FR-50.
@@ -648,8 +725,17 @@ list in CI.
 - **Prevents:** twilight panics at startup, identify storms, double or out-of-order
   session writes, hooks fired by two crates, and lost interactions during shutdown.
 - **Rule:**
-  - `App::run` checks for a multi-thread tokio runtime and installs a rustls crypto
-    provider if none is installed; failures are typed errors, never panics.
+  - `App::run` checks for a multi-thread tokio runtime and, when no process-default
+    rustls crypto provider is installed, installs rustls's `ring` provider
+    (`rustls::crypto::ring::default_provider().install_default()`); failures are
+    typed errors, never panics.
+  - **TLS stack (pinned in the Stack):** `rustls` 0.23 with `default-features =
+    false` and features `ring`, `std`, `tls12`, `logging`. `ring` needs no cmake or
+    clang, unlike `aws-lc-rs`, and `cargo-deny` bans `aws-lc-rs`/`aws-lc-sys` so no
+    dependency switches it on. twilight is built with `default-features = false`:
+    `twilight-gateway` features `rustls-platform-verifier`, `twilight-http`, `zstd`;
+    `twilight-http` features `rustls-platform-verifier`, `decompression`. Neither
+    selects a provider, so the process default above serves both.
   - Startup reads `GET /gateway/bot`: shard count is the recommended one unless
     fixed (a too-small fixed count is a `BuildError`); identify goes through
     `IdentifyQueue` buckets built from `max_concurrency`, never
@@ -685,9 +771,12 @@ list in CI.
   - `noctis-ui` defines `Attachment { name, bytes: Bytes, content_type, alt }`.
     `Attachment::new(bytes, ext)` names it `<first 16 hex of blake3(bytes)>.<ext>`;
     `Attachment::with_digest` takes a render cache-key digest instead. No other
-    naming exists. `Attachment::rendered(RenderOutput)`, which `ctx.render` uses,
-    names it by digest and marks its origin `Rendered`; this marker is how the
-    validator tells a rendered image from any other (FR-30). A rendered View is `(MessageTree, AttachmentSet)` keyed by name,
+    naming exists. `Attachment::rendered(bytes, digest: [u8; 32], ext: &'static str)`
+    takes primitives only (`noctis-ui` has no edge to `noctis-ports`, where
+    `RenderOutput` lives); `ctx.render` calls it with the output's bytes, digest and
+    `format.extension()`. It names the attachment by digest and marks its origin
+    `Rendered`; this marker is how the validator tells a rendered image from any
+    other (FR-30). A rendered View is `(MessageTree, AttachmentSet)` keyed by name,
     so one image used twice uploads once.
   - `noctis-ui` validates only that every `attachment://` reference has a member.
     Core's Responder alone enforces the Upload Budget (the interaction's
@@ -697,24 +786,37 @@ list in CI.
     (`ctx.render(template).await`), so the auto-defer covers it.
   - `noctis-ports` owns the render contract, so core never depends on
     `noctis-image`:
-    - `trait Template: Serialize + Send + Sync + 'static { const ID: &'static str;
-      const VERSION: u32; const SIZE: Size; const FORMAT: Format; fn view() -> ErasedView; }`.
-      The value is the Template's data. `ErasedView` is an opaque `Arc<dyn Any + Send + Sync>`
-      that only the Renderer implementation interprets.
-    - `RenderJob { template_id, template_version, data: Bytes (postcard), size, format }`;
-      `Format` carries the encoder settings (fps, duration, quality).
+    - `trait Template: Serialize + DeserializeOwned + Send + Sync + 'static {
+      const ID: &'static str; const VERSION: u32; const SIZE: Size;
+      const FORMAT: Format; const ANIMATION: Option<AnimationSpec>;
+      fn view() -> ErasedView; }`. The value is the Template's data; the Renderer
+      postcard-decodes it back into `T`, hence `DeserializeOwned`.
+    - `ErasedView` is an opaque `Arc<dyn Any + Send + Sync>` that only the Renderer
+      implementation interprets. In `noctis-image` it holds the decoder
+      `fn(&[u8], Frame) -> Result<Node, RenderError>`, which postcard-decodes `T`
+      and calls `TemplateView::view(&self, frame)`.
+    - `RenderJob { template_id, template_version, data: Bytes (postcard), size,
+      format: Format, animation: Option<AnimationSpec> }`. `Format` is the still
+      encoding with its settings (`Png`, `Jpeg { quality }`, `Webp { quality }`,
+      `WebpLossless`). `AnimationSpec { duration: Duration, fps: u16, format:
+      AnimatedFormat }` (`AnimatedFormat::{Webp { quality }, Gif, Apng}`) makes the
+      job animated; `None` renders a still. `Frame { index: u32, count: u32 }` is
+      what the view receives (`Frame::STILL` for stills).
     - `Renderer::render(&self, RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>>`,
-      with `RenderOutput { bytes, digest, format, settings_used }`, and
+      with `RenderOutput { bytes, digest, format: OutputFormat, settings_used }`
+      (`OutputFormat::extension()` gives the file extension), and
       `Renderer::register(&self, &[TemplateDescriptor]) -> Result<(), RenderError>`.
   - `Module::template::<T>()` records a `TemplateDescriptor { id, version, view }`;
     `App::build` rejects duplicate ids and hands the descriptors to the Renderer,
     which fails the build for a Template it can't render.
   - `ctx.render(t)` postcard-encodes `t`, builds the `RenderJob` from `T`'s consts
-    (`ctx.render_with` overrides size and format), calls the App's
-    `Arc<dyn Renderer>` and returns `Attachment::rendered(output)`.
+    (`ctx.render_with(t, RenderOptions)` overrides size, format and animation),
+    calls the App's `Arc<dyn Renderer>` and returns
+    `Attachment::rendered(output.bytes, output.digest, output.format.extension())`.
   - `noctis-image` implements `Renderer`; `#[derive(Template)]` (image feature)
-    implements `Template` and supplies the `ErasedView`. Without a Renderer,
-    `ctx.render` returns a typed error.
+    implements `Template` and supplies the `ErasedView`. Its `ImagePlugin` installs
+    the Renderer on an App (AD-24). Without a Renderer, `ctx.render` returns a typed
+    error.
 
 ### AD-23 — Fixed interaction pipeline and Extensions
 - **Binds:** `noctis-core`, `noctis-prefix`; FR-14, FR-18 to FR-22, FR-43, FR-45,
@@ -743,7 +845,8 @@ list in CI.
   - Notices from stages 3, 5 and 8 are localized ephemeral replies; after an
     auto-defer they are sent as an ephemeral follow-up and the deferred original is
     deleted.
-  - Events run stages 3, 4, 7, 9 and 10. `noctis-prefix` reuses stages 3 to 10.
+  - Events run stages 3, 4, 7, 9 and 10. `noctis-prefix` reuses stages 3 to 10
+    through core's public `Dispatcher` (AD-24).
   - Extensions are a per-interaction type map of `Send + Sync + 'static` values.
     Inserting an existing type replaces it (the child Module wins) with a debug
     trace. Middleware descriptors declare the types they provide; `App::build`
@@ -751,11 +854,13 @@ list in CI.
     ancestor path provides, and `Option<Ext<T>>` opts out. Extensions reach
     after-Middleware and Error Sinks and are never written to a port.
 
-### AD-24 — Resource scoping and the one Discord HTTP client
-- **Binds:** `noctis-core`, `noctis-gateway`, `noctis-image`, `noctis-testkit`,
-  facade; FR-34, FR-47, FR-51, FR-52.
+### AD-24 — Resource scoping, plugins and the one Discord HTTP client
+- **Binds:** `noctis-core`, `noctis-gateway`, `noctis-image`, `noctis-prefix`,
+  `noctis-testkit`, facade; FR-14, FR-34, FR-35, FR-47, FR-51, FR-52.
 - **Prevents:** a request bypassing the configured proxy, N render pools for N Apps,
-  global caches reconfigured after first use, and merged metrics across Apps.
+  global caches reconfigured after first use, merged metrics across Apps, and each
+  feature crate inventing its own way into core (core can't depend on
+  `noctis-image`, `noctis-prefix` or the facade).
 - **Rule:**
   - Core builds each App's single `Arc<twilight_http::Client>`, with the proxy when
     configured (`proxy(url, true)` and `ratelimiter(None)`) and a request timeout
@@ -771,10 +876,42 @@ list in CI.
     proxies). Core has no test-only branch. End-to-end tests for Epics 5 to 7 live in
     `crates/noctis-testkit/tests/`, and `TestApp` (Story 8.6) runs on the same fakes.
   - Non-Discord HTTP exists only in `noctis-image`'s `AssetFetcher` (AD-15).
-  - **Process-scoped** (owned by `noctis::Runtime`, which Apps attach to): render
-    pool and queue, takumi global caches, font registry, emoji font, metrics
-    recorder. The first App's configuration freezes them; a later conflicting one is
-    a `BuildError`.
+  - **`Runtime`** is defined in `noctis-core` and re-exported as `noctis::Runtime`.
+    It owns the process-scoped resources: the metrics recorder plus a type map of
+    type-erased resources (`Arc<dyn Any + Send + Sync>` keyed by `TypeId`) that
+    plugins create through `Runtime::resource_or_init::<T>(config)`. Render pool and
+    queue, takumi global caches, font registry and emoji font are such resources,
+    owned by `noctis-image`. The first App's configuration freezes a resource; a
+    later conflicting one is a `BuildError`.
+    - `Runtime::global()` is the process-wide instance, used by `App::builder()` and
+      `App::from_env()`; `AppBuilder::runtime(&Runtime)` attaches an App to another.
+    - `Runtime::for_test()` is the public test constructor: an isolated Runtime that
+      is never the global one, so each test configures its own resources, and that
+      reports `is_test() == true` (plugins use it, for example to fail on unknown
+      runtime classes, AD-15).
+  - **Plugins.** `noctis-core` defines `trait Plugin: Send + Sync + 'static { fn
+    install(&self, app: &mut AppBuilder); }`. `AppBuilder::plugin(p)` registers a
+    plugin (one per type; `AppBuilder::plugin_mut::<P>()` reaches an installed one);
+    `build()` calls every `install` once, in registration order, before the
+    Registry fold and the App-build checks. `install` may use only public
+    `AppBuilder` methods: `renderer(Arc<dyn Renderer>)`, `module(..)`, port setters,
+    `intents(..)` and `runtime()`. Violations it finds join the `BuildError`.
+    - `noctis-image` ships `ImagePlugin` and the extension trait
+      `AppBuilderImageExt` with `.image(ImageConfig)` and `.theme(Theme)`; either
+      method registers the plugin (with defaults when only `.theme` is called).
+      Its `install` gets or creates the render pool, fonts and emoji font from the
+      App's `Runtime` and installs a per-App `Renderer` bound to the App's Theme.
+    - `noctis-prefix` ships `PrefixPlugin`, whose `install` mounts a `MESSAGE_CREATE`
+      Event Handler and requires the message-content intent. The handler parses the
+      prefix, Command Path and arguments and calls the `Dispatcher`.
+  - **`Dispatcher`** is core's public entry into the AD-23 pipeline:
+    `EventCtx::dispatcher()` returns it, and `Dispatcher::run_command(invocation)`
+    runs a resolved Command Path, with options decoded by the caller, through stages
+    3 to 10, replying through a message-reply Responder. Core keeps no prefix code.
+  - **Testkit.** `noctis-testkit` builds Apps on `Runtime::for_test()` with the
+    fakes above (`TestApp`). The bot's own builder function installs its plugins
+    exactly as in production, so the testkit reaches rendering only through the
+    App's installed `Renderer` port; it has no edge to `noctis-image`.
   - **App-scoped:** HTTP client, gateway and Shards, Registry, Responder, namespaced
     ports, Theme, `State<T>`, `Limits`, `AppId`.
 
@@ -864,10 +1001,12 @@ list in CI.
     Public types wrapping upstream enums are `#[non_exhaustive]`.
   - release-plz opens the release PR from `main` and, on merge, publishes all
     crates at the shared version in layer order. The crates.io token exists only in
-    the release job's protected environment.
+    the release job's protected environment. Creating that environment and token,
+    the repository settings, and merging the release PR are maintainer actions;
+    the stories that need them are marked maintainer-gated (Epic 14).
   - **Toolchain and builds.** `rust-toolchain.toml` pins stable 1.97.0 for
     development, clippy, tests and UI tests; `.stderr` files are blessed on it, and a
-    toolchain bump re-blesses them in the same PR. The MSRV stays 1.91 and is checked
+    toolchain bump re-blesses them in the same commit. The MSRV stays 1.91 and is checked
     by its own CI job. The workspace uses `resolver = "3"`. Every cargo command
     uses `--release`. trybuild never passes `--release` but runs cargo under
     `target/tests/trybuild/`, so the repo-root `.cargo/config.toml` sets
@@ -877,19 +1016,43 @@ list in CI.
     be weakened. `[profile.release]` stays the real release profile. trybuild suites
     are `compile_fail` only (`cargo check`, no codegen); boundary passes are ordinary
     integration tests. `cargo public-api` and `cargo semver-checks` run in CI only.
-  - Required PR gates: fmt; clippy `-D warnings` on all targets; tests and doctests;
-    `missing_docs` denied for `noctis`; each facade feature alone and all features
-    together; `cargo +1.91 check --release` (MSRV); trybuild UI tests on the pinned
-    toolchain; `cargo-semver-checks` on `noctis`; `cargo-deny` (advisories, licenses,
-    bans, sources); `xtask deps-check`, `rules-catalog`, `api-snapshot` and
-    `skill-check`; `tw-crosscheck`; the allocation test; `insta` View snapshots;
-    Project Template pixel snapshots; the template build.
+  - **CI gates.** `ci.yml` runs on every push to `main` and on every pull request
+    (the maintainer pushes to `main` directly). A gate is a `ci.yml` job whose
+    failure fails the run; a story is done only when the run on its pushed commit
+    is green. The gates: fmt; clippy `-D warnings` on all targets with all features;
+    tests and doctests with default features; `cargo hack test --release
+    --workspace --each-feature` (every crate's tests, feature-gated tests and
+    fixture suites with each feature alone, which also builds each facade feature
+    alone) plus a build with all features; `missing_docs` denied for `noctis`;
+    `cargo +1.91 check --release` (MSRV); trybuild UI tests on the pinned
+    toolchain; `cargo-semver-checks` on `noctis`; `cargo-deny` (advisories,
+    licenses, bans, sources); `xtask deps-check`, `rules-catalog`, `api-snapshot`
+    and `skill-check`; `tw-crosscheck`; the allocation test; `insta` View
+    snapshots; Project Template pixel snapshots; the template build.
+  - **Feature-gated tests.** trybuild builds fixtures with exactly the features of
+    the test run. Fixtures that need a feature live in `tests/ui-<feature>/`, whose
+    `compile_fail` test is `#[cfg(feature = "<feature>")]`, and their `.stderr`
+    files are blessed in the `cargo hack` run of exactly that feature. `tests/ui/`
+    holds featureless fixtures, blessed with default features; its test is skipped
+    when any optional facade feature is on.
+  - **Supply chain.** `Cargo.lock` is committed. `deny.toml` allows exactly the
+    licenses `MIT`, `Apache-2.0`, `Apache-2.0 WITH LLVM-exception`, `BSD-2-Clause`,
+    `BSD-3-Clause`, `ISC`, `Unicode-3.0`, `Zlib`, `MPL-2.0` (cssparser and its
+    dependencies, approved by the maintainer) and `CC0-1.0`; `[graph] targets`
+    lists the non-wasm tier-1 targets. A resolved Stack tree (2026-10-19, `cargo
+    metadata`) needs two crate-scoped exceptions beyond that list, recorded in
+    `deny.toml` as `exceptions` rather than global allows: `xxhash-rust`
+    (`BSL-1.0`) and `jpeg-encoder` (`IJG`, with MIT OR Apache-2.0), both from
+    takumi. (`webpki-root-certs`, `CDLA-Permissive-2.0`, is reached only on wasm32
+    and falls outside `[graph] targets`.) A new license needs the maintainer's approval. Workspace crates declare
+    `license = "MIT OR Apache-2.0"` in `[workspace.package]`. `bans` denies
+    `aws-lc-rs` and `aws-lc-sys` (AD-21).
   - On `main`: latency and memory benchmarks report against `budgets.toml` and gate
     once PRD Q3 confirms the numbers; a job builds against the latest takumi and
     reports.
   - The MSRV is the highest `rust-version` among dependencies (1.91 now). Raising it
     is a minor release noted in the changelog.
-  - A takumi bump is its own PR that regenerates the Tailwind grammar and passes
+  - A takumi bump (both pins together) is its own commit that regenerates the Tailwind grammar and passes
     `tw-crosscheck` and the pixel snapshots.
   - Every FR-74 guide exists at release and is linked from the README.
 
@@ -937,7 +1100,7 @@ list in CI.
 | Builds | `--release` for every cargo command; dev profile made release-equivalent by `.cargo/config.toml` (AD-28); toolchain from `rust-toolchain.toml` |
 | Features | additive only; default features build a working bot |
 | Docs | every public item has rustdoc; runnable examples are doctests |
-| Tests | trybuild `compile_fail` fixtures at `tests/ui/<area>/<RULE-ID>_<slug>.rs` with the id in `.stderr`; boundary passes as ordinary integration tests in `tests/boundary/` (modules of `tests/boundary.rs`); ports pass their conformance suite; Views are snapshot-tested with `insta`; Discord I/O is faked only through `noctis_testkit::fake` (AD-24) |
+| Tests | trybuild `compile_fail` fixtures at `tests/ui/<area>/<RULE-ID>_<slug>.rs` (feature-gated ones under `tests/ui-<feature>/`) with the id in `.stderr` for Noctis-diagnosed rules, or a `// [<RULE-ID>]` comment on the offending line for by-construction rules (also allowed as `compile_fail` doctests) (AD-4); boundary passes as ordinary integration tests in `tests/boundary/` (modules of `tests/boundary.rs`); ports pass their conformance suite; Views are snapshot-tested with `insta`; Discord I/O is faked only through `noctis_testkit::fake` (AD-24) |
 
 ## Stack
 
@@ -947,8 +1110,9 @@ list in CI.
 | Rust stable for development, clippy and UI tests (`rust-toolchain.toml`) | 1.97.0 |
 | Rust nightly (cargo public-api job only) | nightly-2026-10-15 |
 | tokio | 1.53 |
-| twilight-gateway / -http / -model / -cache-inmemory / -http-ratelimiting | 0.17.1 |
-| takumi | =2.17.0 |
+| twilight-gateway / -http / -model / -cache-inmemory / -http-ratelimiting | 0.17.1 (gateway and http with `default-features = false` and the AD-21 feature lists) |
+| rustls (crypto provider `ring` 0.17 through its `ring` feature; no `aws-lc-rs`) | 0.23.46 |
+| takumi / takumi-core | =2.17.0 / =0.31.0 |
 | serde / serde_json | 1.0 |
 | postcard | 1.1 |
 | thiserror | 2.0 |
@@ -962,13 +1126,16 @@ list in CI.
 | arrayvec | 0.7 |
 | getrandom | 0.4 |
 | regex (noctis-rules) | 1.13 |
-| syn / quote (macros) | 3.0 / 1.0 |
+| syn / quote / proc-macro2 (macros) | 3.0 / 1.0 / 1.0 |
 | trybuild / insta / proptest | 1.0 / 1.49 / 1.12 |
 | hyper / hyper-util / http-body-util (testkit HTTP fake) | 1.12 / 0.1.21 / 0.1.5 |
 | tokio-websockets (testkit gateway fake) | 0.13 |
 | yaml-rust2 (locale files, macros) | 0.13 |
 | cssparser (theme file, macros; MPL-2.0, allowed in `deny.toml`) | 0.38 |
 | criterion / dhat (benches) | 0.8 / 0.3 |
+| png (testkit pixel snapshots) | 0.18 |
+| toml / pulldown-cmark / cargo_metadata (xtask: `rules-pending.toml` and `budgets.toml`, catalog tables, workspace graph) | 1.1 / 0.13 / 0.23 |
+| cargo-hack (CI, `--each-feature`) | 0.6 |
 | cargo-public-api | 0.52 |
 | cargo-semver-checks / cargo-deny / release-plz | 0.51 / 0.20 / 0.3 |
 
@@ -976,26 +1143,27 @@ list in CI.
 
 ```text
 noctis-rs/
-  Cargo.toml                 # [workspace] resolver = "3", shared version, [workspace.dependencies], [workspace.lints]
+  Cargo.toml                 # [workspace] resolver = "3", shared version and license, [workspace.dependencies], [workspace.lints]
+  Cargo.lock                 # committed (AD-15, AD-28)
   rust-toolchain.toml        # stable 1.97.0 (AD-28)
   .cargo/config.toml         # release-equivalent [profile.dev] (AD-28)
   deny.toml                  # cargo-deny policy
   release-plz.toml
   crates/
-    noctis/                  # facade: re-exports, features, Runtime
+    noctis/                  # facade: re-exports, features, prelude (incl. feature extension traits)
     noctis-rules/            # Discord limits and validators (rule ids), Limits, Locale, MessageKey, Translate
     noctis-codec/            # custom_id layout, Route/Payload/Field traits, EncodedId, RefRecord, BoundedStr
     noctis-ui/               # V2 and modal model, Attachment, validator, View/Navbar/Wizard/Paginator
     noctis-ports/            # port traits incl. DiscordCache, Template/RenderJob/Renderer seam, memory defaults
     noctis-gateway/          # shard tasks, lanes, Inbound, identify, SessionStore writer
-    noctis-core/             # App, Module, Registry, pipeline, workers, Responder, HTTP client, publish
+    noctis-core/             # App, Runtime, Plugin, Dispatcher, Module, Registry, pipeline, workers, Responder, HTTP client, publish
       benches/               # allocation, memory, latency, render benches + budgets.toml
-    noctis-macros/           # command!, user/message_command, derive(Route/Payload/PayloadEnum/Options/Choices/Modal), view!/tw!, i18n!
+    noctis-macros/           # command!, user/message_command, derive(Route/Payload/PayloadEnum/Options/Choices/Modal), components!, label!/rgb!, view!/tw!, i18n!
     noctis-i18n/             # locale runtime, merged catalogs, default noctis.* strings
-    noctis-image/            # tw grammar (takumi-free), takumi renderer, render pool, fonts, AssetFetcher
+    noctis-image/            # tw grammar (takumi-free, default); `render`: takumi renderer, ImagePlugin, AppBuilderImageExt, render pool, fonts, AssetFetcher
       benches/               # reference card render bench
-    noctis-prefix/           # opt-in prefix commands (P2)
-    noctis-testkit/          # Discord HTTP/gateway fakes, simulated Inbound, conformance suites, snapshot helpers, assert_memory_flat
+    noctis-prefix/           # opt-in prefix commands (P2): PrefixPlugin
+    noctis-testkit/          # Discord HTTP/gateway fakes, TestApp on Runtime::for_test, simulated Inbound, conformance suites, snapshot helpers, assert_memory_flat
   examples/
     project-template/        # standalone bot + AGENTS.md + .claude/skills/{noctis,rust-best-practices}
     <feature>/               # small focused examples; workspace members with publish = false
@@ -1003,7 +1171,7 @@ noctis-rs/
     discord-rules.md         # rules catalog: rule, limit, source, enforcement point
     guides/                  # FR-74 guides: concept map, Cluster deployment
   xtask/                     # deps-check, rules-catalog, api-snapshot, skill-check, tw-grammar, tw-crosscheck, bench
-  .github/workflows/         # ci.yml (PR gates), main.yml (benches, latest takumi), release.yml (release-plz)
+  .github/workflows/         # ci.yml (gates; push to main and PRs), main.yml (benches, latest takumi), release.yml (release-plz)
 ```
 
 ```mermaid
@@ -1056,20 +1224,20 @@ flowchart LR
 | FR-54 Lifecycle Hooks | noctis-core | AD-21, AD-7 |
 | FR-7 to FR-12, FR-56, FR-57 commands, patterns, merge, options, metadata, context menus | noctis-macros, noctis-rules, noctis-core | AD-8, AD-7, AD-4, AD-26 |
 | FR-13 Publish | noctis-core | AD-7, AD-26 |
-| FR-14 prefix commands (P2) | noctis-prefix | AD-23 |
+| FR-14 prefix commands (P2) | noctis-prefix | AD-23, AD-24 |
 | FR-15 to FR-17, FR-58 to FR-60 Routes, Payloads, Refs, route-bound components, defaults, evolution | noctis-codec, noctis-ui, noctis-core | AD-5, AD-6, AD-18, AD-19 |
 | FR-18 to FR-22 Expired Handler, untrusted input, Middleware, auto-ack, error routing | noctis-core | AD-23, AD-11, AD-13 |
-| FR-23, FR-24, FR-29, FR-31, FR-63, FR-64 V2 builders, Limits, modals, raw escape hatch, pre-fill, Radio/Checkbox | noctis-ui, noctis-rules | AD-12, AD-3, AD-11 |
+| FR-23, FR-24, FR-29, FR-31, FR-63, FR-64 V2 builders, Limits, modals, raw escape hatch, pre-fill, Radio/Checkbox | noctis-ui, noctis-rules, noctis-macros (`components!`) | AD-12, AD-3, AD-4, AD-11 |
 | FR-25 to FR-28, FR-61, FR-62 Views, Navbar, Wizard, Paginator, View responses and overflow | noctis-ui, noctis-core | AD-20, AD-27, AD-11 |
 | FR-30 attachments | noctis-ui, noctis-core | AD-22 |
 | FR-65 Views over webhooks | noctis-core, noctis-ui | AD-11, AD-12 |
-| FR-32 to FR-37, FR-66 to FR-70 Templates, formats, render pool, fonts, cache, Renderer seam, Tailwind, remote images, emoji, animation, caps | noctis-image, noctis-macros, noctis-ports | AD-15, AD-22, AD-24 |
+| FR-32 to FR-37, FR-66 to FR-70 Templates, formats, render pool, fonts, cache, Renderer seam, Tailwind, remote images, emoji, animation, caps | noctis-image, noctis-macros, noctis-ports, noctis-core (`Plugin`, `Runtime`) | AD-15, AD-22, AD-24 |
 | FR-38 to FR-40, FR-71 Adapters, conformance, Discord cache (`DiscordCache`, `ctx.cache()`), namespacing | noctis-ports, noctis-testkit, noctis-core | AD-1, AD-14, AD-21 |
 | FR-41 to FR-43, FR-72 command localization, typed strings, resolution, Module-scoped Locales | noctis-i18n, noctis-macros, noctis-rules | AD-16 |
 | FR-44 to FR-47, FR-73 Modules, enable/disable, rate limits, multiple Apps, Boot Flags | noctis-core | AD-7, AD-23, AD-24, AD-14 |
 | FR-48 facade and features | noctis | AD-2, AD-28 |
 | FR-49, FR-50 Project Template, Usage Skill | examples, xtask | AD-17, AD-27 |
-| FR-51 testing kit | noctis-testkit | AD-10, AD-14, AD-25 |
+| FR-51 testing kit | noctis-testkit | AD-10, AD-14, AD-24, AD-25 |
 | FR-74 launch documentation | docs, CI | AD-28, AD-26 |
 | FR-75 to FR-79 enforcement points, provable length, compile-time commands and trees, rules catalog | noctis-rules, noctis-macros, noctis-codec, docs | AD-3, AD-4, AD-5, AD-6, AD-8 |
 | UD-1 to UD-6 UI Doctrine | noctis-ui, Project Template | AD-27, AD-20 |
