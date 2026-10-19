@@ -20,7 +20,8 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Running and verifying
 
 - Before writing, reviewing or refactoring any Rust (`.rs`, `Cargo.toml`, crate layout, crate choice), invoke the `rust-best-practices` skill and read only the `references/*.md` files the task touches.
-- TODO (no `Cargo.toml` yet): before calling Rust work done, run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings` and `cargo test`; replace this line with a hook or CI check once the crate exists.
+- TODO (no `Cargo.toml` yet): before calling Rust work done, run `cargo fmt`, `cargo clippy --release --all-targets --all-features -- -D warnings` and `cargo test --release`; replace this line with a hook or CI check once the crate exists.
+- Always build, test, check and run with `--release` (`cargo build --release`, `cargo test --release`, `cargo clippy --release`, `cargo run --release`); never create a debug build, because disk space in cloud sessions is limited and a second (debug) `target/` profile fills it. If the disk fills anyway, delete `target/debug/`.
 
 ## Conventions that differ from defaults
 
