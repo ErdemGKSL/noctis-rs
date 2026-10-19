@@ -2,7 +2,8 @@
 title: 'Story 4.3: Runtime Limit validator with path-precise errors'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'bbe6c8bcb89c929362eb89c524b67533cda1b14a'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
