@@ -2,7 +2,8 @@
 title: 'Story 1.6: Component, modal, message and attachment rules'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '9a45671d04a10abd24f649d6723569bc24b4a0bb'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
