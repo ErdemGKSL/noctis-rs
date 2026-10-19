@@ -1,5 +1,5 @@
 ---
-title: "Product Brief Addendum: Vesper"
+title: "Product Brief Addendum: Noctis"
 created: 2026-10-19
 updated: 2026-10-19
 ---

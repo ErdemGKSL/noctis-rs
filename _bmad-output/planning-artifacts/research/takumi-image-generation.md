@@ -1,6 +1,6 @@
-# takumi image and GIF generation for vesper
+# takumi image and GIF generation for noctis
 
-**Status:** research input for `vesper` (Rust Discord bot framework on twilight + tokio; primary UI = Components V2 + generated images).
+**Status:** research input for `noctis` (Rust Discord bot framework on twilight + tokio; primary UI = Components V2 + generated images).
 **Date:** 2026-10-19. **Verified against:** `takumi 2.17.0` (published 2026-10-19), `takumi-core 0.31.0`, `takumi-raster 0.5.8`, `takumi-html 0.5.0`, `taffy 0.15.0`, rustc 1.97.0, Linux x86_64, 4 cores.
 
 Evidence tags: **[S]** read in the crate source in `~/.cargo/registry`, **[R]** compiled and run in a scratch project, **[M]** crates.io metadata, **[I]** inference or recommendation.
@@ -18,7 +18,7 @@ Scratch project: `/tmp/claude-0/-home-user/dd8af539-19a8-5b5d-b835-27c3a80d0c45/
 - **Thread-safe in practice**: `Fonts`, `Node`, `ImageSource`, `StyleSheet` are `Send + Sync`; `RenderOptions<'g>` is `Send`. One `&Fonts` was shared by 4 threads rendering 64 cards concurrently. Glyph, Tailwind-parse and intercept caches are process-global and sharded. **[R][S]**
 - Measured (release build, 4 cores): 934x282 rank card **~1.7-2 ms render + ~1.5 ms PNG encode** warm; 64 cards in 84 ms on 4 threads (~760 cards/s). 600x300, 2 s @ 25 fps (50 frames): GIF 138 KB in 186 ms, WebP 132 KB in 67 ms, APNG 189 KB in 82 ms. **[R]**
 - Gotchas: no bundled default font in Rust (text renders as nothing until you register one); emoji need a registered color font (COLR/bitmap glyphs supported); GIF encoder uses per-frame NeuQuant palettes on full frames (no delta frames, no dithering), so GIF is the biggest and slowest format. **[R][S]**
-- There is no JSX/`html!` macro crate for takumi. Options: the `Node` builder API, `from_html` (runtime HTML parse, ~0.25-0.35 ms per card), or serde JSON. **vesper should ship its own `view!` macro that expands to `Node` builder calls at compile time.** **[S][M][I]**
+- There is no JSX/`html!` macro crate for takumi. Options: the `Node` builder API, `from_html` (runtime HTML parse, ~0.25-0.35 ms per card), or serde JSON. **noctis should ship its own `view!` macro that expands to `Node` builder calls at compile time.** **[S][M][I]**
 
 ---
 
@@ -111,7 +111,7 @@ fonts.register(FontResource::new(FontSource::from_static(bytes)))?; // TTF/OTF/T
 fonts.unregister_family("Inter");                    // 2.17.0
 ```
 
-- Verified: with no font registered, text draws **nothing** (0 dark pixels). vesper must ship or require a default font. [R]
+- Verified: with no font registered, text draws **nothing** (0 dark pixels). noctis must ship or require a default font. [R]
 - `unicode_range` subsets (Google Fonts style) supported since 2.16. Variable fonts, `opsz`, synthetic bold/italic/small-caps supported. [S]
 - Emoji: color glyphs from COLR layers and embedded bitmap glyphs are drawn. With only Inter registered, 🎉 rendered as tofu. Register a color emoji font (e.g. Noto Color Emoji COLRv1 or Twemoji COLR) as `GenericFamily` emoji / last-resort. There is no satori-style "load emoji as image from CDN" hook. [S][R]
 - `Fonts` is a cheap-to-clone registry. Each render takes a render-local snapshot (`Rc<RefCell<Fonts>>`), so concurrent renders never contend on the registry. Mutating requires `&mut Fonts`, so put the registry behind `ArcSwap<Fonts>` if runtime registration is needed. [S]
@@ -142,7 +142,7 @@ takumi::write_animation(&[scene], 25, AnimationFormat::Gif(AnimatedGifOptions::d
 | `ResourceCache` (decoded images, SVG rasters, parsed stylesheets) | per handle, `Clone` shares it, thread-safe `quick_cache` | 64 MiB default | `RenderOptions::resource_cache(ResourceCache::new(bytes))`; the type is reachable only via `unstable` |
 | Pre-decoded `images` map | per render (moved into an `Rc`) | caller | pass `ImageSource` clones (they are `Arc`s) |
 
-There is no output (encoded bytes) cache; that is vesper's job (§5.5).
+There is no output (encoded bytes) cache; that is noctis's job (§5.5).
 
 ---
 
@@ -186,7 +186,7 @@ Compared with the current TS stack (`packages/satori`: satori → SVG → resvg 
 
 ---
 
-## 5. Design recommendations for vesper [I]
+## 5. Design recommendations for noctis [I]
 
 ### 5.1 Cargo feature
 
@@ -203,17 +203,17 @@ takumi = { version = "=2.17", default-features = false, features = ["raster-back
 ```
 
 - Keep `image` off by default so non-image bots skip ~100 extra crates and the libwebp C build.
-- Everything image-related lives in `vesper::image` behind `#[cfg(feature = "image")]`; the Components V2 builder only gains an `attach(RenderedImage)` method behind the same flag. Never re-export takumi types in vesper's stable surface except through a `vesper::image::takumi` escape hatch, because takumi releases weekly.
+- Everything image-related lives in `noctis::image` behind `#[cfg(feature = "image")]`; the Components V2 builder only gains an `attach(RenderedImage)` method behind the same flag. Never re-export takumi types in noctis's stable surface except through a `noctis::image::takumi` escape hatch, because takumi releases weekly.
 - Pin `=2.17` (or `~2.17`) and bump deliberately with snapshot tests (§5.8).
 
 ### 5.2 Template API: a `view!` macro over a thin builder
 
-There is no `html!`-for-takumi crate. vesper should provide two layers.
+There is no `html!`-for-takumi crate. noctis should provide two layers.
 
-**Builder layer (plain Rust, no macro magic)**, a tiny wrapper that makes the takumi builder terse and keeps vesper's API stable:
+**Builder layer (plain Rust, no macro magic)**, a tiny wrapper that makes the takumi builder terse and keeps noctis's API stable:
 
 ```rust
-use vesper::image::prelude::*;
+use noctis::image::prelude::*;
 
 fn rank_card(u: &RankData) -> View {
     div("flex items-center gap-8 w-full h-full p-10 bg-slate-900 rounded-3xl").children([
@@ -230,7 +230,7 @@ fn rank_card(u: &RankData) -> View {
 }
 ```
 
-**Macro layer** (`vesper-macros`, proc macro) giving JSX-like ergonomics while expanding to the builder at compile time, so no HTML parsing at runtime:
+**Macro layer** (`noctis-macros`, proc macro) giving JSX-like ergonomics while expanding to the builder at compile time, so no HTML parsing at runtime:
 
 ```rust
 view! {
@@ -259,7 +259,7 @@ pub struct ImageAssets {
     fonts: ArcSwap<Fonts>,                               // read lock-free per render; swap on (rare) registration
     static_images: HashMap<Arc<str>, ImageSource>,       // logos, backgrounds: decoded once at startup
     remote: moka::future::Cache<AssetKey, ImageSource>,  // avatars, guild icons, fetched over HTTP, TTL + byte weigher
-    stylesheet: Arc<StyleSheet>,                         // vesper defaults: @theme tokens, extra @keyframes
+    stylesheet: Arc<StyleSheet>,                         // noctis defaults: @theme tokens, extra @keyframes
 }
 ```
 
@@ -272,11 +272,11 @@ pub struct ImageAssets {
 
 Rendering is CPU-bound (2-10 ms stills, 50-500 ms animations), and takumi itself fans out on the **current rayon pool** (frame batches, GIF quantize, libwebp, zlib, blur). Recommendation:
 
-- A **dedicated `rayon::ThreadPool`** (`image_threads`, default `num_cpus - 1`, named `vesper-render-N`) owned by the `Renderer`. Jobs run inside `pool.spawn(...)`, so takumi's inner `par_iter`s stay in that pool and never touch tokio workers or the global rayon pool. Result returned via `tokio::sync::oneshot`.
+- A **dedicated `rayon::ThreadPool`** (`image_threads`, default `num_cpus - 1`, named `noctis-render-N`) owned by the `Renderer`. Jobs run inside `pool.spawn(...)`, so takumi's inner `par_iter`s stay in that pool and never touch tokio workers or the global rayon pool. Result returned via `tokio::sync::oneshot`.
 - Avoid `spawn_blocking` as the primary mechanism: its pool is large (512) and unbounded in CPU terms, and nested rayon calls would land on the global pool.
 - **Admission control**: a `tokio::sync::Semaphore` with `queue_capacity` permits (for example 4x threads) acquired *before* submit. `render()` waits (bounded by a timeout), `try_render()` fails immediately with `RenderError::Overloaded`. Separate weights: a still costs 1 permit, an animation costs `ceil(frames / 8)` permits, so a burst of GIFs cannot starve stills. Optionally two lanes (still / animated) with their own semaphores.
 - Interaction flow: with a fresh cache miss and a busy queue, **defer the interaction first** (type 5/6) and then edit the original response with the attachment; the 3 s ACK window must never depend on render latency. Expose this as the default in the command context (`ctx.reply_image(...)` auto-defers when estimated wait > ~1.5 s).
-- Cancellation: if the caller drops the future, set an `AtomicBool` checked between frames when vesper drives frames itself (§5.6); a takumi `render` call cannot be interrupted mid-frame.
+- Cancellation: if the caller drops the future, set an `AtomicBool` checked between frames when noctis drives frames itself (§5.6); a takumi `render` call cannot be interrupted mid-frame.
 - Metrics via `tracing`: queue depth, wait time, render time, encode time, bytes, cache hit rate.
 - Horizontal scale: rendering is stateless apart from fonts and assets, so at "millions of guilds" scale the same `Renderer` trait can be backed by a remote render service (gRPC/HTTP) on separate machines. Keep `Renderer` a trait: `LocalRenderer` (rayon) and user-provided `RemoteRenderer`.
 
@@ -292,7 +292,7 @@ pub struct RenderedImage { pub bytes: bytes::Bytes, pub mime: &'static str, pub 
 
 ### 5.5 Render cache
 
-- Key = `xxh3_128(template_id, template_version, serialized data, size, output, asset versions, vesper+takumi version)`. Prefer hashing the *template inputs* (props struct deriving `Hash` or `serde` bytes) over hashing the `Node` tree; it is cheaper and stable. Fallback for ad-hoc views: hash `View` via its serde form.
+- Key = `xxh3_128(template_id, template_version, serialized data, size, output, asset versions, noctis+takumi version)`. Prefer hashing the *template inputs* (props struct deriving `Hash` or `serde` bytes) over hashing the `Node` tree; it is cheaper and stable. Fallback for ad-hoc views: hash `View` via its serde form.
 - Pluggable adapter trait, async, bytes-oriented:
 
 ```rust
@@ -304,25 +304,25 @@ pub trait RenderCache: Send + Sync + 'static {
 
   Built-ins: `NoCache`, `MemoryCache` (moka, byte-weighted, default 64-256 MiB), and an optional `RedisCache` behind a feature. Users can implement S3/R2 for cross-shard sharing.
 - **Single-flight**: coalesce concurrent identical keys (for example 50 users clicking the same leaderboard) so one render serves all waiters (moka's `get_with`/`try_get_with` gives this for the memory tier).
-- Optional **CDN URL cache**: after the first upload, Discord returns the attachment URL. For content that does not change, vesper can store `key → attachment CDN URL` and reference the URL instead of re-uploading. Discord CDN URLs are signed and expire (~24 h), so treat this as a short-TTL optimization only.
+- Optional **CDN URL cache**: after the first upload, Discord returns the attachment URL. For content that does not change, noctis can store `key → attachment CDN URL` and reference the URL instead of re-uploading. Discord CDN URLs are signed and expire (~24 h), so treat this as a short-TTL optimization only.
 - Filenames derive from the key (`rank-<hex12>.webp`), which also satisfies the Components V2 "unique filename per render" advice.
 
 ### 5.6 GIF and animation strategy
 
 - **Prefer animated WebP** for animated output: in the test it was 2.8x faster to encode than GIF, slightly smaller, full color with alpha. Discord renders animated WebP in Media Gallery and Thumbnail (see `discord-components-v2.md`). Offer GIF for maximum client compatibility and as an explicit choice.
-- Defaults: 12-20 fps, 1-3 s loops, 600x200 to 800x400 viewport. Cap fps at `AnimationFormat::max_fps()` (50 GIF / 90 WebP) and vesper's own limits (`max_frames` default 90, `max_pixels_per_frame` default 1 MP, `max_duration` 6 s).
+- Defaults: 12-20 fps, 1-3 s loops, 600x200 to 800x400 viewport. Cap fps at `AnimationFormat::max_fps()` (50 GIF / 90 WebP) and noctis's own limits (`max_frames` default 90, `max_pixels_per_frame` default 1 MP, `max_duration` 6 s).
 - Two animation modes in the API:
   1. **CSS-driven** (default): `Animation::css(duration, fps)` plus Tailwind `animate-*` or user `@keyframes`, rendered with `write_animation` (streams, parallel batches).
-  2. **Code-driven**: `Animation::frames(n, |i, t| view)` for data animations (counting XP up, progress filling). vesper renders each `View` to a `Bitmap` in the pool and feeds `write_animated_*`; it can check cancellation between frames.
+  2. **Code-driven**: `Animation::frames(n, |i, t| view)` for data animations (counting XP up, progress filling). noctis renders each `View` to a `Bitmap` in the pool and feeds `write_animated_*`; it can check cancellation between frames.
 - **Size budget loop**: Discord's default upload limit is 20 MiB per file (interaction `attachment_size_limit` gives the actual value); target far less for latency (< 1-2 MB). Strategy: estimate bytes after the first batch; if the projection exceeds the budget, re-render with lower fps, then smaller viewport, then lossy WebP quality, then fall back to a still frame. Return the chosen settings in `RenderedImage` metadata.
 - GIF quality caveats: per-frame palette and no dithering means gradients band and flat UI looks fine. Design GIF templates with flat colors, or use WebP. If GIF size matters, a later improvement is post-processing with `gifski`-style or frame-diff optimization; takumi does not do inter-frame diffing.
 - Animated avatars: pass the animated GIF/WebP avatar as an `ImageSource`; takumi plays it along the timeline. Choose the timeline duration as a multiple of the avatar loop to avoid a jump at the seam.
 
 ### 5.7 Attaching to Components V2
 
-- `RenderedImage` implements vesper's `Attachment` trait: `filename()`, `bytes()`, `mime()`. In twilight terms it becomes `twilight_model::http::attachment::Attachment { filename, file, id, description }` sent as `files[n]`, with the message carrying `flags: IS_COMPONENTS_V2`.
+- `RenderedImage` implements noctis's `Attachment` trait: `filename()`, `bytes()`, `mime()`. In twilight terms it becomes `twilight_model::http::attachment::Attachment { filename, file, id, description }` sent as `files[n]`, with the message carrying `flags: IS_COMPONENTS_V2`.
 - Builders reference it by filename: `MediaGallery::item(Media::attachment(&img).alt("Rank card"))`, `Section::accessory(Thumbnail::attachment(&img))` → `url: "attachment://rank-3f9c1a2b7d4e.webp"`. Because the reference is created from the `RenderedImage` value, a typo in the filename is impossible.
-- On edits, vesper's attachment manager (already planned in `discord-components-v2.md` §2.6) emits the `attachments` keep-list and new `files[n]` automatically; a re-render with new data gets a new hash-based filename.
+- On edits, noctis's attachment manager (already planned in `discord-components-v2.md` §2.6) emits the `attachments` keep-list and new `files[n]` automatically; a re-render with new data gets a new hash-based filename.
 - Alt text: require `alt` (max 1024 chars) on gallery items in debug builds or lint for it; it is the only accessible text for a generated image.
 - Use Thumbnail for small square renders (badges, avatars with frames), Media Gallery for cards and charts (1 component regardless of item count).
 
@@ -330,7 +330,7 @@ pub trait RenderCache: Send + Sync + 'static {
 
 - Snapshot tests for templates: render to PNG and compare against stored images with a small per-pixel tolerance (takumi's own tests do this); run them when bumping takumi.
 - Untrusted input: user-provided text goes only into text nodes (never into `from_html` strings or class strings) to avoid markup and class injection. Clamp user-controlled sizes. `from_html` has a `max_depth` guard; JSON `Node` deserialization has the same depth limit.
-- Viewport sanity: takumi rejects canvases over 64 MP; vesper should enforce a much lower cap (for example 4 MP) per job.
+- Viewport sanity: takumi rejects canvases over 64 MP; noctis should enforce a much lower cap (for example 4 MP) per job.
 
 ---
 

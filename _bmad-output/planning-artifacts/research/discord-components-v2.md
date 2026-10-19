@@ -1,8 +1,8 @@
-# Discord Components V2: Reference & UX Research for vesper
+# Discord Components V2: Reference & UX Research for noctis
 
-**Status:** research input for `vesper` (Rust Discord bot framework; primary UI = Components V2 + generated images)
+**Status:** research input for `noctis` (Rust Discord bot framework; primary UI = Components V2 + generated images)
 **As of:** 2026-10-19. Source snapshot: `discord/discord-api-docs` @ `f7416a2` (2026-10-16).
-**Confidence legend:** **[D]** = stated in official Discord docs; **[C]** = community/library-observed behavior (discord.js, JDA, Discord.Net, pycord), not written in Discord's docs; **[R]** = vesper recommendation / design opinion.
+**Confidence legend:** **[D]** = stated in official Discord docs; **[C]** = community/library-observed behavior (discord.js, JDA, Discord.Net, pycord), not written in Discord's docs; **[R]** = noctis recommendation / design opinion.
 
 Primary sources:
 
@@ -19,7 +19,7 @@ Primary sources:
 
 ---
 
-## 0. Cheat sheet (the numbers vesper must enforce)
+## 0. Cheat sheet (the numbers noctis must enforce)
 
 | Limit | Value | Src |
 |---|---|---|
@@ -93,7 +93,7 @@ Source: [Component Types table](https://discord.com/developers/docs/components/r
 
 Notes:
 
-- Types 15, 16 and 20 are unassigned in public docs. **[D]** vesper must treat unknown types as opaque (deserialize to `Unknown { raw }`), since Discord says "Don't hardcode `components` to contain only text components... `accessory` may be expanded" ([Section](https://discord.com/developers/docs/components/reference#section)).
+- Types 15, 16 and 20 are unassigned in public docs. **[D]** noctis must treat unknown types as opaque (deserialize to `Unknown { raw }`), since Discord says "Don't hardcode `components` to contain only text components... `accessory` may be expanded" ([Section](https://discord.com/developers/docs/components/reference#section)).
 - Container child list (official): Action Row, Text Display, Section, Media Gallery, Separator, File. No Container-in-Container. **[D]**
 - Component Embeds (link previews, 2026-10-05) reuse the same model but are display-only, max 40 components incl. the root Container, link buttons only. **[D]** ([Component Embeds](https://discord.com/developers/docs/link-previews/component-embeds))
 
@@ -221,7 +221,7 @@ One attached file per File component.
 
 ### 1.13 Unfurled Media Item **[D]**
 
-Only `url` is settable; `proxy_url`, `height`, `width`, `placeholder` (thumbhash), `placeholder_version`, `content_type`, `flags` (`IS_ANIMATED = 1<<0`), `attachment_id` are filled by Discord. `url` supports arbitrary URLs and `attachment://<filename>`. (Component Embeds additionally document http/https only, max 2048 chars; reasonable defaults for vesper's validator **[R]**.)
+Only `url` is settable; `proxy_url`, `height`, `width`, `placeholder` (thumbhash), `placeholder_version`, `content_type`, `flags` (`IS_ANIMATED = 1<<0`), `attachment_id` are filled by Discord. `url` supports arbitrary URLs and `attachment://<filename>`. (Component Embeds additionally document http/https only, max 2048 chars; reasonable defaults for noctis's validator **[R]**.)
 
 ### 1.14 Modal-only components
 
@@ -321,7 +321,7 @@ Example dashboard: Container(1) + header Text(1) + Separator(1) + nav Row of 5 b
 
 ### 2.4 Interaction callback types relevant to V2 **[D]**
 
-| Name | Value | Use in vesper |
+| Name | Value | Use in noctis |
 |---|---|---|
 | `CHANNEL_MESSAGE_WITH_SOURCE` | 4 | Send a new dashboard (with `flags: 32768` or `32832` for ephemeral) |
 | `DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE` | 5 | Slow render (image gen); only `EPHEMERAL` here, add V2 flag on edit-original |
@@ -440,7 +440,7 @@ In modal submits the child carries `type`; in message component interactions the
 | Returned in | message object; message-component interaction `data.id`; modal submit children | interaction `data.custom_id` |
 | Purpose | stable handle to locate/address a component in a received message (e.g. find the Text Display to read state, or a Label in a submit) | routing + state |
 
-**[R]** vesper should assign `id`s deterministically from the builder tree (e.g., the developer's named slot → stable int) so tests and handlers can find components by id. Don't put routing data in `id`.
+**[R]** noctis should assign `id`s deterministically from the builder tree (e.g., the developer's named slot → stable int) so tests and handlers can find components by id. Don't put routing data in `id`.
 
 ---
 
@@ -467,7 +467,7 @@ In modal submits the child carries `type`; in message component interactions the
   "resolved": { "users": {"111": {}}, "members": {"111": {}}, "roles": {"222": {}} } } }
 ```
 
-`interaction.message` contains the **full current component tree**, which vesper can use as a state carrier (e.g. read the hidden page number from the selected/disabled button). Partial members lack `user`, `deaf`, `mute`; partial channels include `app_permissions` (since 2026-07-16). **[D]**
+`interaction.message` contains the **full current component tree**, which noctis can use as a state carrier (e.g. read the hidden page number from the selected/disabled button). Partial members lack `user`, `deaf`, `mute`; partial channels include `app_permissions` (since 2026-07-16). **[D]**
 
 ---
 
@@ -602,7 +602,7 @@ v1|s|Q2x9            (store reference)
 ```
 
 - `ver` (1-2 chars) lets you change encoding without breaking live messages.
-- `route` = short registered handler key (vesper maps `"dash"` → handler at compile time; collision check).
+- `route` = short registered handler key (noctis maps `"dash"` → handler at compile time; collision check).
 - Separator: a char that can't appear in args (`|` or `\u001F`-like printable alternatives such as `:`); escape or forbid in args.
 
 ### 7.2 Packing techniques
@@ -633,7 +633,7 @@ Modal `custom_id` (1-100) plus each field's `custom_id` (1-100). Put the session
 
 ---
 
-## 8. Implications for vesper
+## 8. Implications for noctis
 
 ### 8.1 Typed component model
 
@@ -662,7 +662,7 @@ let view = Message::v2()
         .gallery(|g| g.item(Media::attachment(chart.filename()).alt("Messages per day")))
         .paginated(items, |item, row| row.section_button(item.title(), Btn::secondary("Configure", Route::Open(item.id))))
     )
-    .attach(chart)                // vesper tracks attachment:// refs and the `attachments` array
+    .attach(chart)                // noctis tracks attachment:// refs and the `attachments` array
     .build()?;                    // -> Result<Validated<Message>, LimitError>
 ```
 
@@ -712,7 +712,7 @@ Return rich errors (`LimitError { path: "components[0].components[3].accessory.l
 
 ## 9. Patterns from schwi-v2 (practical reference)
 
-`schwi-v2/apps/discord-bot` is a production TypeScript bot on `discord.js` + **tescord** (`tescord@0.0.6`, a thin "Pack" framework). Its Components V2 UIs (setup dashboards, temp-voice control panel, payload/component editor, punishment history) are the practical model for vesper. Files studied (paths relative to `/home/user/schwi-v2/apps/discord-bot/`): `src/modules/welcome/setup.ts`, `src/modules/temp-voice/{setup,trigger}.ts`, `src/modules/partnership/setup.ts`, `src/modules/punishHistory/commands.ts`, `src/modules/seacord/warn.ts`, `src/integrations/payload/editor/{generatePayloadEditor,payloadButtons}.ts`, `src/integrations/payload/editor/container/index.ts`, `src/types/components.d.ts`. (`components_v2.xml` and `components.txt` are just copies of the Discord docs for AI context; they hold no extra patterns, and the XML is out of date: it still lists the old 10/30 limits.)
+`schwi-v2/apps/discord-bot` is a production TypeScript bot on `discord.js` + **tescord** (`tescord@0.0.6`, a thin "Pack" framework). Its Components V2 UIs (setup dashboards, temp-voice control panel, payload/component editor, punishment history) are the practical model for noctis. Files studied (paths relative to `/home/user/schwi-v2/apps/discord-bot/`): `src/modules/welcome/setup.ts`, `src/modules/temp-voice/{setup,trigger}.ts`, `src/modules/partnership/setup.ts`, `src/modules/punishHistory/commands.ts`, `src/modules/seacord/warn.ts`, `src/integrations/payload/editor/{generatePayloadEditor,payloadButtons}.ts`, `src/integrations/payload/editor/container/index.ts`, `src/types/components.d.ts`. (`components_v2.xml` and `components.txt` are just copies of the Discord docs for AI context; they hold no extra patterns, and the XML is out of date: it still lists the old 10/30 limits.)
 
 ### 9.1 Architecture: pure `render(state) -> components`, handlers mutate then re-render
 
@@ -740,7 +740,7 @@ pack.channelSelectMenu({ id: "welcome-setup-channel-select",
   }});
 ```
 
-**vesper:** make this the core model: `trait View { type State; async fn render(&self, ctx, state) -> Message }` with handlers returning `Update::Rerender(state)`. The framework does the defer/edit and always adds the V2 flag (schwi repeats `flags: Ephemeral | IsComponentsV2` by hand in ~every handler).
+**noctis:** make this the core model: `trait View { type State; async fn render(&self, ctx, state) -> Message }` with handlers returning `Update::Rerender(state)`. The framework does the defer/edit and always adds the V2 flag (schwi repeats `flags: Ephemeral | IsComponentsV2` by hand in ~every handler).
 
 ### 9.2 Container layout conventions
 
@@ -768,7 +768,7 @@ accessory: tescord.buildComponent({ id: "partnership-setup-toggle-enabled",
   overrides: { label: enabled ? t.disable() : t.enable(), style: enabled ? "Danger" : "Success" } })
 ```
 
-**vesper helpers:** `Header::new(title).thumbnail(url)`, `EntitySwitcher` (auto-hidden when ≤1), `Field::channel(..)/role(..)/choice(..)` (caption + prefilled select), `SettingRow::value(label, Option<T>).edit(route)` (auto Primary/Secondary), `Toggle::new(label, bool, route)` (auto Success/Danger + label), `DangerRow`.
+**noctis helpers:** `Header::new(title).thumbnail(url)`, `EntitySwitcher` (auto-hidden when ≤1), `Field::channel(..)/role(..)/choice(..)` (caption + prefilled select), `SettingRow::value(label, Option<T>).edit(route)` (auto Primary/Secondary), `Toggle::new(label, bool, route)` (auto Success/Danger + label), `DangerRow`.
 
 ### 9.3 Navigation
 
@@ -776,7 +776,7 @@ accessory: tescord.buildComponent({ id: "partnership-setup-toggle-enabled",
 - **Drill-down + Back**: the payload editor lists sub-components in String Selects (value `edit-component:<id>`); choosing one replaces the message with a component-specific editor, which has `back-to-container-editor` / `back-to-payload-editor` / `payload-editor-back` buttons that re-render the parent view. Breadcrumb state is only the ids in `data`, so there's no server-side navigation stack.
 - **Sub-panel as ephemeral reply**: on the public temp-voice control panel, "Allow list" opens an **ephemeral** reply (`deferReply({ephemeral:true})` + `editReply`) holding a User Select. Its custom_id carries `[voiceProfileId, interaction.message?.id]` so the handler can find and refresh the parent public message.
 
-**vesper:** a `Nav` stack encoded in routes (`Back(Box<Route>)` or parent route id), `DrillDown` select helper, and `open_ephemeral_subpanel(parent_msg)` that wires parent refresh automatically.
+**noctis:** a `Nav` stack encoded in routes (`Back(Box<Route>)` or parent route id), `DrillDown` select helper, and `open_ephemeral_subpanel(parent_msg)` that wires parent refresh automatically.
 
 ### 9.4 Pagination
 
@@ -796,16 +796,16 @@ take: 25, skip: page * 25
 - **"Has next" heuristic** = page full (`length < 25` ⇒ last page), so no COUNT query is needed (it fails when the total is an exact multiple of 25).
 - **Settings split into fixed pages** (`temp-voice/setup.ts`: `maxPages = 2`, `switch (currentPage)`, Prev/Next with custom emoji, clamped page) when one entity's settings exceed the 40-component budget.
 - **Select chunking** (payload editor): >25 items → several String Selects of 25, placeholder "Components 26-50".
-- **Budget fallback**: `generatePayloadEditor` falls back to a simpler editor if the tree is too big. Bug: it checks `fullEditor.components.length > 40`, which only counts top-level components, so nested ones are missed and the check can pass while the real total is over 40. vesper should count recursively (§8.3).
+- **Budget fallback**: `generatePayloadEditor` falls back to a simpler editor if the tree is too big. Bug: it checks `fullEditor.components.length > 40`, which only counts top-level components, so nested ones are missed and the check can pass while the real total is over 40. noctis should count recursively (§8.3).
 
-**vesper:** `Pager { page, has_next }` widget (auto-disable, same route with page arg), `SettingsPages` for static multi-page forms, `ChunkedSelect` (auto split by 25 with range placeholders), and recursive budget counting with a declared fallback view.
+**noctis:** `Pager { page, has_next }` widget (auto-disable, same route with page arg), `SettingsPages` for static multi-page forms, `ChunkedSelect` (auto split by 25 with range placeholders), and recursive budget counting with a declared fallback view.
 
 ### 9.5 Step flows / modals
 
 - Button → `showModal` with the entity id in the modal's custom data; modal handler validates input, writes the DB, re-renders the dashboard (or replies with an ephemeral error).
-- Older modals still use **Action Row + Text Input with `label`**, which is deprecated (`temp_voice_limit_modal`). vesper should emit only Label-wrapped inputs.
-- Validation is manual (`parseInt`, range check, then an `invalidNumber()` reply). vesper can derive it from typed modal fields (`#[field(range = 0..=99)] limit: u8`).
-- Wizard-like setup is modelled as a **single dashboard** with Primary "Set" buttons on missing fields rather than a linear wizard. That works well for re-editable config, so vesper should offer both `Dashboard` and `Wizard`.
+- Older modals still use **Action Row + Text Input with `label`**, which is deprecated (`temp_voice_limit_modal`). noctis should emit only Label-wrapped inputs.
+- Validation is manual (`parseInt`, range check, then an `invalidNumber()` reply). noctis can derive it from typed modal fields (`#[field(range = 0..=99)] limit: u8`).
+- Wizard-like setup is modelled as a **single dashboard** with Primary "Set" buttons on missing fields rather than a linear wizard. That works well for re-editable config, so noctis should offer both `Dashboard` and `Wizard`.
 
 ### 9.6 custom_id / data passing (tescord encoding)
 
@@ -818,14 +818,14 @@ CUSTOM_DATA_NUMBER_INDICATOR = "㥻";  // prefix marks numbers -> decoded back t
 // strings raw, numbers "㥻"+n, other -> JSON.stringify; encode/decode hooks for custom types
 ```
 
-- Handlers are registered by base `id`; `data` arrives typed-ish as an array (`const [system, systemId, fieldKey] = data`). A global `Tescord.ComponentMap` (`src/types/components.d.ts`) maps each id to its component kind for type safety. vesper's `Route` enum + derive gives the same thing with real types.
-- **Cache-busting nonce**: selects are given `Math.random().toString(36).substring(2)` as extra data on every render. The changing custom_id makes the client drop its local selection state and show the server's `default`/`defaultValues` after a re-render. vesper should do this automatically for selects in re-rendered views (e.g. a 2-3 char render counter), within the 100-char budget.
-- **Risky usage**: `seacord-warn-dm-fallback` puts the free-text `reason` and several numbers in the custom_id. That can exceed 100 chars, or contain the splitter. vesper should reject unbounded strings in route fields at compile time and push them to the store (§7.3).
-- Ids are long kebab strings (`auto-partnership-setup-partnership-request-channel-select`, 56 chars). Fine with tescord, but they leave little room for data. vesper should use short route tags.
+- Handlers are registered by base `id`; `data` arrives typed-ish as an array (`const [system, systemId, fieldKey] = data`). A global `Tescord.ComponentMap` (`src/types/components.d.ts`) maps each id to its component kind for type safety. noctis's `Route` enum + derive gives the same thing with real types.
+- **Cache-busting nonce**: selects are given `Math.random().toString(36).substring(2)` as extra data on every render. The changing custom_id makes the client drop its local selection state and show the server's `default`/`defaultValues` after a re-render. noctis should do this automatically for selects in re-rendered views (e.g. a 2-3 char render counter), within the 100-char budget.
+- **Risky usage**: `seacord-warn-dm-fallback` puts the free-text `reason` and several numbers in the custom_id. That can exceed 100 chars, or contain the splitter. noctis should reject unbounded strings in route fields at compile time and push them to the store (§7.3).
+- Ids are long kebab strings (`auto-partnership-setup-partnership-request-channel-select`, 56 chars). Fine with tescord, but they leave little room for data. noctis should use short route tags.
 
 ### 9.7 Update vs reply
 
-| Situation | schwi-v2 does | vesper default |
+| Situation | schwi-v2 does | noctis default |
 |---|---|---|
 | Slash command opens dashboard | `deferReply({flags: Ephemeral\|IsComponentsV2})` then `editReply(render())` | Auto: send type 4 if render < ~2.5 s, else defer (EPHEMERAL only) and edit with the V2 flag |
 | Component changes dashboard | `deferUpdate()` + `editReply(render())` | `UPDATE_MESSAGE` (7) directly when fast, otherwise 6 + edit |
@@ -841,9 +841,9 @@ CUSTOM_DATA_NUMBER_INDICATOR = "㥻";  // prefix marks numbers -> decoded back t
 - **Errors**: one-line ephemeral V2 Text Display (`voiceProfileNotFound`, `noPermission`). Some old handlers still reply with legacy `content` and no V2 flag, which is inconsistent.
 - **Destructive success**: after delete, the panel is replaced by a single Text Display ("Payload X deleted").
 - **Render failures**: `try/catch` around render → simplified fallback view → final "loading error" text.
-- **Auth re-checked in every handler** (owner/moderator check before acting), never trusted from the custom_id. vesper should keep this.
+- **Auth re-checked in every handler** (owner/moderator check before acting), never trusted from the custom_id. noctis should keep this.
 
-### 9.9 What vesper should build in (summary)
+### 9.9 What noctis should build in (summary)
 
 1. `View`/`render` + automatic ACK/defer/edit with V2 + ephemeral flags handled by the framework.
 2. Layout widgets: `Header`, `EntitySwitcher`, `Field::*` (caption + prefilled select), `SettingRow`, `Toggle`, `DangerRow`, `EmptyState`, `ErrorNotice`.

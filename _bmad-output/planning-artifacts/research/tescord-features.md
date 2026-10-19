@@ -1,7 +1,7 @@
-# Research: tescord (primary) and dbi (lineage), a feature catalogue for vesper
+# Research: tescord (primary) and dbi (lineage), a feature catalogue for noctis
 
 - **Date:** 2026-10-19
-- **Purpose:** Input for designing **vesper**, a Rust Discord bot framework on twilight-rs that reproduces the developer experience of `tescord`.
+- **Purpose:** Input for designing **noctis**, a Rust Discord bot framework on twilight-rs that reproduces the developer experience of `tescord`.
 - **Primary reference:** `tescord@0.0.6` (npm), plus its companion `@tescord/type-gen@0.0.5`, plus how `/home/user/schwi-v2/apps/discord-bot` actually uses them.
 - **Secondary reference (lineage only):** `@mostfeatured/dbi@0.2.37` (npm, by the same author family, TheArmagan / "MostFeatured"). We used dbi only to fill gaps and to explain where tescord's design came from.
 - **Method:** We downloaded both npm tarballs and read them as data; nothing was executed. We read the compiled `dist/**/*.js` and `.d.ts`, the README, `.github/copilot-instructions.md` and `todo.md`. We read the schwi-v2 sources in full for the core files and sampled the modules.
@@ -19,7 +19,7 @@ tescord is the successor to dbi (and to "Tessen", per its README tagline). It is
 5. **Middleware via a result-collecting event bus.** `beforeEvent` and `beforeInteraction` listeners can return `false` to cancel, or return an object to merge into the context. Pack events propagate down to sub-packs. There are lifecycle events (`pack:loaded`, `interaction:registered`, `tescord:clientReady` and others) and error sinks (`tescord:interactionHandlerError`, `tescord:eventHandlerError`).
 6. **Multi-client.** `clients: [{ id, token, options }]`. Each command can target a `clientId`, and publish groups commands per client. Sharding is not built in; schwi-v2 uses discord.js `ShardingManager` (process mode) and spawns extra processes for per-guild "custom bots".
 
-Compared with dbi, tescord **dropped** several dbi features that vesper should bring back as opt-in modules:
+Compared with dbi, tescord **dropped** several dbi features that noctis should bring back as opt-in modules:
 - the reference store (objects in custom ids with TTL)
 - inline (anonymous, TTL'd) listeners
 - built-in rate limits
@@ -29,15 +29,15 @@ Compared with dbi, tescord **dropped** several dbi features that vesper should b
 - ordered/awaited event execution
 - Svelte/Eta "HTML Components V2"
 
-tescord keeps a *hook* for custom-data codecs (`tescord:customData:encode/decode`) but ships no storage. **This is exactly where vesper's pluggable storage-adapter trait belongs.**
+tescord keeps a *hook* for custom-data codecs (`tescord:customData:encode/decode`) but ships no storage. **This is exactly where noctis's pluggable storage-adapter trait belongs.**
 
 ---
 
 ## 2. Feature catalogue
 
-Legend: **T** = tescord, **D** = dbi only, **S** = how schwi-v2 uses it. "Vesper priority": P0 = must have for parity with schwi-v2, P1 = important, P2 = nice to have.
+Legend: **T** = tescord, **D** = dbi only, **S** = how schwi-v2 uses it. "Noctis priority": P0 = must have for parity with schwi-v2, P1 = important, P2 = nice to have.
 
-| # | Feature | Source | schwi-v2 uses? | Vesper priority |
+| # | Feature | Source | schwi-v2 uses? | Noctis priority |
 |---|---------|--------|----------------|-----------------|
 | 1 | Root framework object + config (`id`, `clients[]`, `defaults.language`) | T | yes | P0 |
 | 2 | Packs: nestable modules, `use()`, dispose callbacks, `destroy()` | T | yes (pack tree) | P0 |
@@ -162,7 +162,7 @@ options: {
 - Choices are `Record<value, displayName>`; the key is the value. Publish converts each entry to `{name, value}`, using `Number(key)` for Integer and Number options.
 - `choices` and `autoComplete` are mutually exclusive at the type level.
 - The map's insertion order is the option order. Required-before-optional ordering is not enforced by tescord, so Discord rejects a wrong order at publish time.
-- Handlers read values with raw discord.js (`interaction.options.getUser("user")`). There is **no typed option extraction**, which is an obvious place for vesper to improve.
+- Handlers read values with raw discord.js (`interaction.options.getUser("user")`). There is **no typed option extraction**, which is an obvious place for noctis to improve.
 - dbi uses builders instead: `ChatInputOptions.string|stringChoices|stringAutocomplete|integer...|user|channel|role|mentionable|attachment|boolean({ name, description, required, validate?, onComplete? })`.
 
 ### 3.5 Autocomplete (T)
@@ -184,7 +184,7 @@ How it works internally:
 
 - `defaultMemberPermissions: ["ViewAuditLog"]` is OR-ed into a bitfield string. `null` when empty.
 - `contexts: ["Guild" | "BotDM" | "PrivateChannel"]` maps to `InteractionContextType`. `nsfw: boolean`.
-- tescord does not expose `integration_types`. vesper should add it (guild install / user install).
+- tescord does not expose `integration_types`. noctis should add it (guild install / user install).
 - dbi uses `directMessages` (the deprecated `dm_permission`) and a global default `defaults.defaultMemberPermissions`. dbi's message commands also *enforce* these permissions client-side, because prefix commands have no Discord-side gate.
 
 ### 3.7 Context menus (T)
@@ -298,7 +298,7 @@ How it works internally:
 - At dispatch, positional args are zipped into a named context object, and locale is added.
 - Then `beforeEvent` middleware runs. For each matching registered event, `beforeEventHandle` runs first. The handler is **awaited sequentially**.
 - Finally the context is also emitted on the pack event bus under the raw event name.
-- Event ids are `${packId}:${event}:${Date.now()}`. Two registrations in the same millisecond collide, which is a bug vesper must avoid.
+- Event ids are `${packId}:${event}:${Date.now()}`. Two registrations in the same millisecond collide, which is a bug noctis must avoid.
 - dbi does the same zipping via `eventMap.json`. On top of that it has `ordered: { await, delayBefore, delayAfter }`, `disabled`, `triggerType: "OneByOne" | "OneByOneGlobal" | "Random"` (which client to pass as `nextClient`, for multi-bot load spreading), `CustomEvent`s via `dbi.emit(name, args)`, and `afterEvent`.
 
 ### 3.14 Middleware and the result-collecting event bus (T)
@@ -327,7 +327,7 @@ pack.use(inspector);
 inspector.emit({ type: "chatInput", id: "system start server", ctx });   // manual invocation
 ```
 
-Inspectors are secondary routers that run when no registered interaction matched. `domain` is stored but unused, and wildcards are not implemented. schwi-v2 does not use them. For vesper, wildcard/prefix component routing is worth providing as a real feature (P2).
+Inspectors are secondary routers that run when no registered interaction matched. `domain` is stored but unused, and wildcards are not implemented. schwi-v2 does not use them. For noctis, wildcard/prefix component routing is worth providing as a real feature (P2).
 
 ### 3.16 Multi-client (T) and sharding (D, S)
 
@@ -365,7 +365,7 @@ How it works internally:
 
 ### 3.19 Feature flags (D) vs schwi-v2's hand-rolled flags
 
-dbi: any registration can have `flag: "debug"`, and `dbi.load("debug")` or `load("all")` selects them. Unflagged items always load. schwi-v2 instead uses a yargs `--features a,b` / `--seacord` CLI with `features.has(x)`, which wraps `pack.use(...)` and individual `slashCommand` calls in `if`s. vesper should support this declaratively with a `.flag("seacord")` on registrations or packs, selected at startup.
+dbi: any registration can have `flag: "debug"`, and `dbi.load("debug")` or `load("all")` selects them. Unflagged items always load. schwi-v2 instead uses a yargs `--features a,b` / `--seacord` CLI with `features.has(x)`, which wraps `pack.use(...)` and individual `slashCommand` calls in `if`s. noctis should support this declaratively with a `.flag("seacord")` on registrations or packs, selected at startup.
 
 ### 3.20 Prefix message commands (D)
 
@@ -380,7 +380,7 @@ How it works internally:
 
 ### 3.21 Inline listeners (D)
 
-`createInlineButton({ onExecute, ttl? })` registers an anonymous component with the id `inline:<random>`. It can be rendered via `.toJSON()` and is auto-removed by a sweeper after `ttl`; the default is a check every 60 s and a 15 min TTL. The same exists for selects, modals and events. This is great for one-off confirm dialogs; vesper could offer it as closures stored in an in-memory map with TTL.
+`createInlineButton({ onExecute, ttl? })` registers an anonymous component with the id `inline:<random>`. It can be rendered via `.toJSON()` and is auto-removed by a sweeper after `ttl`; the default is a check every 60 s and a 15 min TTL. The same exists for selects, modals and events. This is great for one-off confirm dialogs; noctis could offer it as closures stored in an in-memory map with TTL.
 
 ### 3.22 Components V2 (S; D's HTML variant)
 
@@ -400,11 +400,11 @@ How it works internally:
   - channel and role mirrors
   - rate-limit counters
 
-  vesper should ship a typed KV/cache trait (memory + Redis adapters) used both by framework features (refs, rate limits) and by apps.
+  noctis should ship a typed KV/cache trait (memory + Redis adapters) used both by framework features (refs, rate limits) and by apps.
 
 ### 3.24 Images (S)
 
-`packages/satori` exposes `registerFonts(...)` and `render(jsx, { width, height, fonts, background })`. The pipeline is satori (JSX→SVG) → resvg (PNG) → sharp (WebP). It is not wired into the bot yet (`welcome/design.ts` is `// todo`). A Rust equivalent would be `resvg` + `tiny-skia`, with an HTML/flexbox layout via `taffy`. This should be a separate optional crate (`vesper-image`), not core.
+`packages/satori` exposes `registerFonts(...)` and `render(jsx, { width, height, fonts, background })`. The pipeline is satori (JSX→SVG) → resvg (PNG) → sharp (WebP). It is not wired into the bot yet (`welcome/design.ts` is `// todo`). A Rust equivalent would be `resvg` + `tiny-skia`, with an HTML/flexbox layout via `taffy`. This should be a separate optional crate (`noctis-image`), not core.
 
 ---
 
@@ -428,7 +428,7 @@ Discord custom_id: max **100 chars** (UTF-16 code units count per Discord docs; 
 
 Example from schwi-v2: `data: [userId, guildId || 0, page + 1]` → `punish-history-set䲜123456789012345678䲜㥻0䲜㥻2`. Payload-editor ids carry `[payloadId, componentId, "text-display"]`. All state is kept as **small primary keys in custom ids, with the real state in Postgres**. This is the dominant pattern.
 
-### 4.2 dbi (richer; the reference model vesper should generalise)
+### 4.2 dbi (richer; the reference model noctis should generalise)
 
 `buildCustomId(dbi, name, data, ttl, v2)`:
 
@@ -451,7 +451,7 @@ Example from schwi-v2: `data: [userId, guildId || 0, page + 1]` → `punish-hist
 - Ref ids are not namespaced per client/shard and are not persistent: a restart loses every ref, and buttons pointing at them get `undefined` data. Handlers must cope.
 - Inline listeners use the same TTL machinery (`inlineListeners.autoClear = { check: 60_000, ttl: 900_000 }` by default).
 
-### 4.3 Requirements derived for vesper's storage adapter
+### 4.3 Requirements derived for noctis's storage adapter
 
 1. **Codec layer (pure, sync).** A typed `CustomData` encoding with:
    - a versioned header byte
@@ -483,7 +483,7 @@ Example from schwi-v2: `data: [userId, guildId || 0, page + 1]` → `punish-hist
 
 1. **One Pack per module, split by role.** `modules/<name>/{index,setup,trigger,commands}.ts`: `setup` = admin slash command + setup UI components, `trigger` = gateway events, `index` = `pack.use(setup); pack.use(trigger)`. Pack ids are path-like (`modules/punish-history/commands`).
 2. **Render functions that return V2 component trees**, reused by the slash command (initial render) and by every button, select or modal handler (re-render after mutation via `deferUpdate` + `editReply`). Example: `renderSetupMenu(client, locale.user, guildId, systemId)`, `getPunishmentMessageComponents(target, locale, page)`. This is the "stateless UI = f(DB state, ids in custom_id)" pattern.
-3. **Pagination by re-encoding page numbers** in custom-id data: `data: [userId, guildId || 0, page ± 1]`, with `disabled` computed from bounds. There is no pagination helper; vesper could offer one.
+3. **Pagination by re-encoding page numbers** in custom-id data: `data: [userId, guildId || 0, page ± 1]`, with `disabled` computed from bounds. There is no pagination helper; noctis could offer one.
 4. **Button → modal → re-render chains** with suffixed ids (`x` → `x:1`), forwarding `data` unchanged, and pre-filling modal inputs via index-wise override merge.
 5. **All user-visible strings via typed locale accessors.** Placeholders are positional (`{0}`). Mentions are composed in code and passed in as args.
 6. **Dev/prod emoji id tables** selected at startup and referenced lazily from component options.
@@ -494,7 +494,7 @@ Example from schwi-v2: `data: [userId, guildId || 0, page + 1]` → `punish-hist
 11. **Generated types kept in-repo** and regenerated by a watcher. In Rust this becomes a compile-time macro, so no watcher is needed.
 12. **Translation scaffolding** generated from registered commands (`i18n/example/interactions.yaml`).
 
-Anti-patterns or gaps observed (and what vesper should do instead):
+Anti-patterns or gaps observed (and what noctis should do instead):
 - `as number` / `as string` casts on `data[i]` → **typed data tuples/structs** per component.
 - Untyped `interaction.options.getX("name")` → **typed option structs** derived from declarations.
 - Hard-coded "Todo localization" strings in modals → have the framework warn on missing translations.
@@ -503,7 +503,7 @@ Anti-patterns or gaps observed (and what vesper should do instead):
 
 ---
 
-## 6. Recommendations for a Rust equivalent (vesper)
+## 6. Recommendations for a Rust equivalent (noctis)
 
 1. **Core shape: an `App` root that is itself a `Pack`.** Packs are values that you compose with `app.mount(pack)` or `pack.mount(sub)`. Every registration returns a `Registration` handle that is RAII or explicitly `dispose()`-able. Keep a flattened, **truly O(1)** routing index rebuilt on mutation:
    - `HashMap<CommandPath, HandlerId>`
@@ -521,11 +521,11 @@ Anti-patterns or gaps observed (and what vesper should do instead):
    This replaces both `buildComponent` + `ComponentMap` codegen and the `data[i] as T` casts. Keep a JSON-patch-like `overrides` merge for modal pre-fill.
 5. **Custom-id codec plus pluggable `RefStore`** as specified in §4.3: inline compact encoding first, spill to the store when needed or when a field is `#[component(by_ref)]`, TTL per component, and a typed "expired" path. Provide memory and Redis adapters behind feature flags.
 6. **i18n.**
-   - YAML/JSON content files go through a proc-macro (`vesper::i18n!("locales")`) or `build.rs` into a typed `Locale` tree. Leaves become methods with arity from `{0}` / `{0:name}` placeholders, and **all occurrences** are replaced.
+   - YAML/JSON content files go through a proc-macro (`noctis::i18n!("locales")`) or `build.rs` into a typed `Locale` tree. Leaves become methods with arity from `{0}` / `{0:name}` placeholders, and **all occurrences** are replaced.
    - Missing keys fall back to the default language at build time, with warnings.
    - Interaction locale files translate names word by word per level, plus descriptions, options and choices. Map base language codes to the Discord locale variants exactly like tescord.
    - Every context exposes `ctx.locale.user()` / `ctx.locale.guild()`.
-   - Ship a `vesper i18n scaffold` CLI that emits a translation template from registered commands.
+   - Ship a `noctis i18n scaffold` CLI that emits a translation template from registered commands.
 7. **Events.** Provide typed per-event handlers over twilight `Event` variants (`pack.on::<VoiceStateUpdate>(|ctx, ev| ..)`), with guild/user/locale extraction helpers. Define ordering semantics (concurrent by default, `ordered`/awaited opt-in, as in dbi). Handler ids must be unique (not timestamp-based).
 8. **Middleware.** A tower-like or simple async chain: `before_interaction` and `before_event` return `Flow::Continue(ctx_ext) | Flow::Stop`. Add `after_*` hooks and error sinks (`on_interaction_error`, `on_event_error`, `on_autocomplete_error`). Typed context extensions (`ctx.ext::<T>()`, like `http::Extensions`) replace tescord's untyped object merge, and actually reach handlers.
 9. **Built-in opt-in modules (from dbi):**
@@ -541,7 +541,7 @@ Anti-patterns or gaps observed (and what vesper should do instead):
 11. **Publish.** `app.publish(Scope::Global | Scope::Guild(id))` does a bulk overwrite per client. Add a **diff/dry-run** mode (print JSON, compare with remote) and a CLI subcommand (`--publish`), mirroring schwi-v2's workflow.
 12. **Components V2 first-class.** Typed builders for Container, TextDisplay, Section (with accessory), Thumbnail, MediaGallery, File, Separator and ActionRow. Enforce the V2 limits from `components_v2.xml` (nesting rules, 40 total components, text lengths) at build time and in debug assertions. Provide a default `IS_COMPONENTS_V2` reply helper. A templating layer (dbi's Svelte/Eta idea) is P2; Rust macros (`v2! { container { text!("..") } }`) are the idiomatic analogue.
 13. **Cache/KV trait** shared by framework and app (`get/set/delete/has` + TTL), with memory and Redis adapters. Optionally typed "repositories" like schwi-v2's `cache.lateDeleteChannel`, but those stay app-level.
-14. **Images:** keep them out of core. Offer a `vesper-image` crate later (resvg/tiny-skia + font registry + WebP encode) mirroring `@misket/satori`'s `registerFonts` + `render`.
+14. **Images:** keep them out of core. Offer a `noctis-image` crate later (resvg/tiny-skia + font registry + WebP encode) mirroring `@misket/satori`'s `registerFonts` + `render`.
 15. **Fix tescord's known bugs by design:**
     - O(n) dispatch scans
     - `beforeInteraction` context never reaching handlers

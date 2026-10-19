@@ -10,3 +10,4 @@
 [core]
 communication_language = "Turkish"
 document_output_language = "English"
+project_name = "noctis-rs"

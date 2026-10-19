@@ -1,15 +1,15 @@
 <!-- bmad:context -->
 <!-- Verified 2026-10-19 against 053b23b. Managed by bmad-project-context; edits inside this block are replaced on refresh. Keep anything you want preserved outside the markers. -->
 
-## vesper-rs
+## noctis-rs
 
-Rust project, greenfield: no crate exists yet. Planning artifacts go to `_bmad-output/planning-artifacts/`, implementation artifacts to `_bmad-output/implementation-artifacts/`. Project-level skills live in `.claude/skills/`.
+Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, Components V2 UI kit, takumi image/GIF rendering). Greenfield: no crate exists yet. Published on crates.io as `noctis`, with `noctis-*` sub-crates enabled through its cargo features. Planning artifacts go to `_bmad-output/planning-artifacts/`, implementation artifacts to `_bmad-output/implementation-artifacts/`. Project-level skills live in `.claude/skills/`.
 
 ## Policy
 
 - Write everything that lands in the repo in English: code, comments, docs, BMad artifacts, skills. Chat with the user in Turkish.
 - Never hand-edit `_bmad/` (installer-managed); put overrides in `_bmad/custom/config.toml` or use the `bmad-customize` skill.
-- Every change to vesper's public API updates `examples/project-template/` in the same commit: its code, its `AGENTS.md` and its vesper usage skill. Bot authors' agents learn vesper from that skill alone, never from vesper's source.
+- Every change to noctis's public API updates `examples/project-template/` in the same commit: its code, its `AGENTS.md` and its noctis usage skill. Bot authors' agents learn noctis from that skill alone, never from noctis's source.
 
 ## Running and verifying
 

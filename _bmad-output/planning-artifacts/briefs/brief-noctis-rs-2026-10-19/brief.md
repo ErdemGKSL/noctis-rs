@@ -1,28 +1,28 @@
 ---
-title: "Product Brief: Vesper"
+title: "Product Brief: Noctis"
 status: final
 created: 2026-10-19
 updated: 2026-10-19
 ---
 
-# Product Brief: Vesper
+# Product Brief: Noctis
 
 ## Executive Summary
 
-Vesper is a Rust framework for building Discord bots that look and feel like small
+Noctis is a Rust framework for building Discord bots that look and feel like small
 applications. It sits on top of twilight-rs and handles the parts every serious bot
 rebuilds by hand: sharding across threads, command registration, interaction routing,
 UI state, and dynamic images.
 
 Discord's Components V2 lets a message act as a dashboard, with containers,
 sections, galleries and buttons instead of plain text and embeds. Few bots use it
-well, because the limits are strict and the state handling is tedious. Vesper makes
+well, because the limits are strict and the state handling is tedious. Noctis makes
 that UI the default. A slash command such as `/setup start` takes no parameters. It
 opens a rich container with navigation, steps and live state. Generated images,
 rendered with takumi and styled with Tailwind, show read-only data clearly.
 
 The goal is to give Rust developers the ergonomics of tescord, the TypeScript
-framework behind the author's schwi bot. Vesper should also run at the scale Rust
+framework behind the author's schwi bot. Noctis should also run at the scale Rust
 makes possible: millions of users on modest hardware, with memory use kept small by
 design.
 
@@ -56,7 +56,7 @@ A tokio-based framework, using twilight's recommended architecture, that provide
   queueing, resumes and shard ranges for multi-process deployments. Events dispatch
   to handlers while avoiding per-event allocations wherever possible.
 - **Tescord-style command authoring.** A command is declared with a name like
-  `"settings logs channel"`. Vesper splits it into command, subcommand group and
+  `"settings logs channel"`. Noctis splits it into command, subcommand group and
   subcommand, builds the Discord payload (options, localizations, permissions,
   contexts), and publishes it automatically, globally or per guild, only when it
   changed.
@@ -114,7 +114,7 @@ A tokio-based framework, using twilight's recommended architecture, that provide
   the PRD and measured by a benchmark in CI.
 - Image rendering is non-blocking for the gateway and bounded under load, with
   documented p50/p99 render times for a standard card.
-- The author's next production bot (the schwi successor) runs on Vesper.
+- The author's next production bot (the schwi successor) runs on Noctis.
   `[ASSUMPTION]`
 
 ## Scope
@@ -144,8 +144,8 @@ A tokio-based framework, using twilight's recommended architecture, that provide
 
 ## Vision
 
-Vesper becomes the default way to build "app-like" Discord bots in Rust. Its
-adapter ecosystem includes crates such as `vesper-redis` and `vesper-sqlx`, a
+Noctis becomes the default way to build "app-like" Discord bots in Rust. Its
+adapter ecosystem includes crates such as `noctis-redis` and `noctis-sqlx`, a
 library of reusable UI patterns and image templates, and tooling such as type
 generation for locales and custom-id payloads. Teams that outgrow TypeScript
 gain an order of magnitude in efficiency without losing ergonomics.
