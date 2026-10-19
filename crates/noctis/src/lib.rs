@@ -12,6 +12,10 @@
 //! - [`codec`]: Payload field encodings ([`codec::Field`],
 //!   [`codec::BoundedStr`]), the checks custom fields are tested with, and the
 //!   traits the derives implement.
+//! - [`ports`]: the Adapter port traits, the shared op vocabulary, typed
+//!   values and the render contract.
+//! - [`bytes`]: [`Bytes`](bytes::Bytes), the value type every byte-store port
+//!   takes and returns.
 //!
 //! # Routes
 //!
@@ -134,6 +138,61 @@ pub mod codec {
         BodyKind, BoundedStr, BoundedStrError, CodecError, Field, FieldDecode, FieldError,
         FieldReader, FieldWriter, Payload, PayloadDecode, Route, RouteId, RouteShape, Section,
         check,
+    };
+}
+
+pub mod bytes {
+    //! [`Bytes`]: the opaque value type of the byte-store ports (re-exported
+    //! from the `bytes` crate).
+
+    pub use bytes::Bytes;
+}
+
+pub mod ports {
+    //! Adapter ports: swappable storage, coordination and rendering seams.
+    //!
+    //! - Byte stores, each a subset of the shared op vocabulary (`get`,
+    //!   `put`, `put_if_absent`, `take`, `delete`, `touch`, `incr_with_ttl`):
+    //!   [`RefStore`], [`SessionStore`], [`ModuleStateStore`] (plus
+    //!   `version`), [`RateLimitStore`], [`CacheStore`], [`RenderCache`] and
+    //!   [`AssetStore`].
+    //! - [`IdentifyQueue`] and [`Lease`]: identify coordination per bucket.
+    //! - [`DiscordCache`]: the typed Discord resource cache.
+    //! - [`LocaleSource`]: runtime overlays of content strings.
+    //! - [`GuildAccessList`]: per-App guild allow and deny lists (sync).
+    //! - [`PortError`], [`ValueError`] and [`BoxFuture`]: what every port
+    //!   method returns.
+    //! - [`encode_value`] and [`decode_value`]: typed values as postcard with
+    //!   a leading schema byte; a schema mismatch reads as a miss.
+    //! - The render contract: [`Template`], [`ErasedView`],
+    //!   [`TemplateDescriptor`], [`RenderJob`], [`decode_template`], [`Size`],
+    //!   [`Format`], [`AnimationSpec`], [`AnimatedFormat`], [`Frame`],
+    //!   [`OutputFormat`], [`RenderOutput`], [`EncodeSettings`],
+    //!   [`RenderError`] and the [`Renderer`] port.
+    //!
+    //! Every port is `Send + Sync + 'static` and dyn-compatible, so the App
+    //! holds it as `Arc<dyn Port>`. Keys are opaque and stored verbatim, and no
+    //! method ever receives a secret.
+    //!
+    //! ```
+    //! use std::sync::Arc;
+    //!
+    //! use noctis::ports::{CacheStore, decode_value, encode_value};
+    //!
+    //! let _store: Option<Arc<dyn CacheStore>> = None;
+    //!
+    //! let raw = encode_value(1, &("profile", 42u32)).unwrap();
+    //! assert_eq!(raw[0], 1);
+    //! assert_eq!(decode_value::<(String, u32)>(1, &raw), Ok(Some(("profile".to_owned(), 42))));
+    //! assert_eq!(decode_value::<(String, u32)>(2, &raw), Ok(None));
+    //! ```
+
+    pub use noctis_ports::{
+        AnimatedFormat, AnimationSpec, AssetStore, BoxFuture, CacheStore, DiscordCache,
+        EncodeSettings, ErasedView, Format, Frame, GuildAccessList, IdentifyQueue, Lease,
+        LocaleSource, ModuleStateStore, OutputFormat, PortError, RateLimitStore, RefStore,
+        RenderCache, RenderError, RenderJob, RenderOutput, Renderer, SessionStore, Size, Template,
+        TemplateDescriptor, ValueError, decode_template, decode_value, encode_value,
     };
 }
 

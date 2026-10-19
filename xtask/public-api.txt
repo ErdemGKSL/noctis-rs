@@ -1,4 +1,6 @@
 pub mod noctis
+pub mod noctis::bytes
+pub use noctis::bytes::Bytes
 pub mod noctis::codec
 pub enum noctis::codec::BodyKind
 pub noctis::codec::BodyKind::ByRef
@@ -366,6 +368,310 @@ pub fn noctis::codec::check::assert_round_trip<T>(&T) where T: noctis::codec::Fi
 pub fn noctis::codec::check::assert_worst_case<T>(&T) where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub fn noctis::codec::check::round_trip<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub fn noctis::codec::check::worst_case<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
+pub mod noctis::ports
+pub enum noctis::ports::AnimatedFormat
+pub noctis::ports::AnimatedFormat::Apng
+pub noctis::ports::AnimatedFormat::Gif
+pub noctis::ports::AnimatedFormat::Webp
+pub noctis::ports::AnimatedFormat::Webp::quality: u8
+impl core::clone::Clone for noctis::ports::AnimatedFormat
+pub fn noctis::ports::AnimatedFormat::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::AnimatedFormat
+impl core::cmp::PartialEq for noctis::ports::AnimatedFormat
+pub fn noctis::ports::AnimatedFormat::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::AnimatedFormat
+pub fn noctis::ports::AnimatedFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::AnimatedFormat
+pub fn noctis::ports::AnimatedFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::AnimatedFormat
+impl core::marker::StructuralPartialEq for noctis::ports::AnimatedFormat
+pub struct noctis::ports::AnimationSpec
+pub noctis::ports::AnimationSpec::duration: core::time::Duration
+pub noctis::ports::AnimationSpec::format: noctis::ports::AnimatedFormat
+pub noctis::ports::AnimationSpec::fps: u16
+impl noctis::ports::AnimationSpec
+pub const fn noctis::ports::AnimationSpec::new(core::time::Duration, u16, noctis::ports::AnimatedFormat) -> Self
+impl core::clone::Clone for noctis::ports::AnimationSpec
+pub fn noctis::ports::AnimationSpec::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::AnimationSpec
+impl core::cmp::PartialEq for noctis::ports::AnimationSpec
+pub fn noctis::ports::AnimationSpec::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::AnimationSpec
+pub fn noctis::ports::AnimationSpec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::AnimationSpec
+pub fn noctis::ports::AnimationSpec::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::AnimationSpec
+impl core::marker::StructuralPartialEq for noctis::ports::AnimationSpec
+pub trait noctis::ports::AssetStore: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::AssetStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::AssetStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub type noctis::ports::BoxFuture<'a, T> = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = T> + core::marker::Send + 'a)>>
+pub trait noctis::ports::CacheStore: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::CacheStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::CacheStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::CacheStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::CacheStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::CacheStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub trait noctis::ports::DiscordCache: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::DiscordCache::channel(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::Channel>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::channel_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::Guild>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::member(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::member::Member>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::member_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::message(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::message::Message>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::role(&self, twilight_model::id::Id<twilight_model::id::marker::RoleMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::role::Role>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::update<'a>(&'a self, &'a twilight_model::gateway::event::Event) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::DiscordCache::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::user::User>, noctis::ports::PortError>>
+pub struct noctis::ports::EncodeSettings
+pub noctis::ports::EncodeSettings::fps: core::option::Option<u16>
+pub noctis::ports::EncodeSettings::frames: u32
+pub noctis::ports::EncodeSettings::quality: core::option::Option<u8>
+pub noctis::ports::EncodeSettings::size: noctis::ports::Size
+impl core::clone::Clone for noctis::ports::EncodeSettings
+pub fn noctis::ports::EncodeSettings::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::EncodeSettings
+impl core::cmp::PartialEq for noctis::ports::EncodeSettings
+pub fn noctis::ports::EncodeSettings::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::EncodeSettings
+pub fn noctis::ports::EncodeSettings::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::EncodeSettings
+pub fn noctis::ports::EncodeSettings::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::EncodeSettings
+impl core::marker::StructuralPartialEq for noctis::ports::EncodeSettings
+pub struct noctis::ports::ErasedView(_)
+impl noctis::ports::ErasedView
+pub fn noctis::ports::ErasedView::downcast_ref<T: core::any::Any>(&self) -> core::option::Option<&T>
+pub fn noctis::ports::ErasedView::new<T: core::any::Any + core::marker::Send + core::marker::Sync>(T) -> Self
+impl core::clone::Clone for noctis::ports::ErasedView
+pub fn noctis::ports::ErasedView::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ports::ErasedView
+pub fn noctis::ports::ErasedView::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum noctis::ports::Format
+pub noctis::ports::Format::Jpeg
+pub noctis::ports::Format::Jpeg::quality: u8
+pub noctis::ports::Format::Png
+pub noctis::ports::Format::Webp
+pub noctis::ports::Format::Webp::quality: u8
+pub noctis::ports::Format::WebpLossless
+impl core::clone::Clone for noctis::ports::Format
+pub fn noctis::ports::Format::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::Format
+impl core::cmp::PartialEq for noctis::ports::Format
+pub fn noctis::ports::Format::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::Format
+pub fn noctis::ports::Format::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::Format
+pub fn noctis::ports::Format::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::Format
+impl core::marker::StructuralPartialEq for noctis::ports::Format
+pub struct noctis::ports::Frame
+pub noctis::ports::Frame::count: u32
+pub noctis::ports::Frame::index: u32
+impl noctis::ports::Frame
+pub const noctis::ports::Frame::STILL: Self
+impl core::clone::Clone for noctis::ports::Frame
+pub fn noctis::ports::Frame::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::Frame
+impl core::cmp::PartialEq for noctis::ports::Frame
+pub fn noctis::ports::Frame::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::Frame
+pub fn noctis::ports::Frame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::Frame
+pub fn noctis::ports::Frame::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::Frame
+impl core::marker::StructuralPartialEq for noctis::ports::Frame
+pub trait noctis::ports::GuildAccessList: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::GuildAccessList::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
+pub trait noctis::ports::IdentifyQueue: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::IdentifyQueue::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
+pub struct noctis::ports::Lease
+impl noctis::ports::Lease
+pub const fn noctis::ports::Lease::bucket(&self) -> u32
+pub const fn noctis::ports::Lease::new(u32) -> Self
+impl core::cmp::Eq for noctis::ports::Lease
+impl core::cmp::PartialEq for noctis::ports::Lease
+pub fn noctis::ports::Lease::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::Lease
+pub fn noctis::ports::Lease::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ports::Lease
+pub trait noctis::ports::LocaleSource: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::LocaleSource::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
+pub trait noctis::ports::ModuleStateStore: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::ModuleStateStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::ModuleStateStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::ModuleStateStore::version(&self) -> noctis::ports::BoxFuture<'_, core::result::Result<u64, noctis::ports::PortError>>
+impl core::convert::From<noctis::ports::AnimatedFormat> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::ports::AnimatedFormat) -> Self
+impl core::convert::From<noctis::ports::Format> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::ports::Format) -> Self
+pub enum noctis::ports::OutputFormat
+pub noctis::ports::OutputFormat::Apng
+pub noctis::ports::OutputFormat::Gif
+pub noctis::ports::OutputFormat::Jpeg
+pub noctis::ports::OutputFormat::Png
+pub noctis::ports::OutputFormat::Webp
+impl noctis::ports::OutputFormat
+pub const fn noctis::ports::OutputFormat::extension(self) -> &'static str
+impl core::clone::Clone for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::OutputFormat
+impl core::cmp::PartialEq for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::eq(&self, &Self) -> bool
+impl core::convert::From<noctis::ports::AnimatedFormat> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::ports::AnimatedFormat) -> Self
+impl core::convert::From<noctis::ports::Format> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::ports::Format) -> Self
+impl core::fmt::Debug for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::OutputFormat
+impl core::marker::StructuralPartialEq for noctis::ports::OutputFormat
+#[non_exhaustive] pub enum noctis::ports::PortError
+pub noctis::ports::PortError::Backend(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::ports::PortError::InvalidValue
+pub noctis::ports::PortError::InvalidValue::key: alloc::string::String
+pub noctis::ports::PortError::InvalidValue::why: alloc::borrow::Cow<'static, str>
+pub noctis::ports::PortError::Unavailable
+pub noctis::ports::PortError::Unavailable::why: alloc::borrow::Cow<'static, str>
+pub noctis::ports::PortError::Value(noctis::ports::ValueError)
+impl noctis::ports::PortError
+pub fn noctis::ports::PortError::backend(impl core::convert::Into<alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>>) -> Self
+pub fn noctis::ports::PortError::invalid_value(&str, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ports::PortError::unavailable(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::convert::From<noctis::ports::ValueError> for noctis::ports::PortError
+pub fn noctis::ports::PortError::from(noctis::ports::ValueError) -> Self
+impl core::error::Error for noctis::ports::PortError
+pub fn noctis::ports::PortError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::ports::PortError
+pub fn noctis::ports::PortError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ports::PortError
+pub fn noctis::ports::PortError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::convert::From<noctis::ports::ValueError> for noctis::ports::PortError
+pub fn noctis::ports::PortError::from(noctis::ports::ValueError) -> Self
+pub trait noctis::ports::RateLimitStore: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::RateLimitStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::RateLimitStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::RateLimitStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub trait noctis::ports::RefStore: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::RefStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::RefStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::RefStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub fn noctis::ports::RefStore::take<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::RefStore::touch<'a>(&'a self, &'a str, core::time::Duration) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub trait noctis::ports::RenderCache: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::RenderCache::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::RenderCache::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+#[non_exhaustive] pub enum noctis::ports::RenderError
+pub noctis::ports::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::ports::RenderError::QueueFull
+pub noctis::ports::RenderError::UnknownTemplate
+pub noctis::ports::RenderError::UnknownTemplate::id: alloc::string::String
+pub noctis::ports::RenderError::UnknownTemplate::version: u32
+pub noctis::ports::RenderError::Unsupported
+pub noctis::ports::RenderError::Unsupported::id: alloc::string::String
+pub noctis::ports::RenderError::Unsupported::why: alloc::borrow::Cow<'static, str>
+impl noctis::ports::RenderError
+pub fn noctis::ports::RenderError::failed(impl core::convert::Into<alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>>) -> Self
+impl core::error::Error for noctis::ports::RenderError
+pub fn noctis::ports::RenderError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::ports::RenderError
+pub fn noctis::ports::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ports::RenderError
+pub fn noctis::ports::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::ports::RenderJob
+pub noctis::ports::RenderJob::animation: core::option::Option<noctis::ports::AnimationSpec>
+pub noctis::ports::RenderJob::data: bytes::bytes::Bytes
+pub noctis::ports::RenderJob::format: noctis::ports::Format
+pub noctis::ports::RenderJob::size: noctis::ports::Size
+pub noctis::ports::RenderJob::template_id: &'static str
+pub noctis::ports::RenderJob::template_version: u32
+impl noctis::ports::RenderJob
+pub fn noctis::ports::RenderJob::of<T: noctis::ports::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
+impl core::clone::Clone for noctis::ports::RenderJob
+pub fn noctis::ports::RenderJob::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::RenderJob
+impl core::cmp::PartialEq for noctis::ports::RenderJob
+pub fn noctis::ports::RenderJob::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::RenderJob
+pub fn noctis::ports::RenderJob::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ports::RenderJob
+pub struct noctis::ports::RenderOutput
+pub noctis::ports::RenderOutput::bytes: bytes::bytes::Bytes
+pub noctis::ports::RenderOutput::digest: [u8; 32]
+pub noctis::ports::RenderOutput::format: noctis::ports::OutputFormat
+pub noctis::ports::RenderOutput::settings_used: noctis::ports::EncodeSettings
+impl core::clone::Clone for noctis::ports::RenderOutput
+pub fn noctis::ports::RenderOutput::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::RenderOutput
+impl core::cmp::PartialEq for noctis::ports::RenderOutput
+pub fn noctis::ports::RenderOutput::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::RenderOutput
+pub fn noctis::ports::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ports::RenderOutput
+pub trait noctis::ports::Renderer: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::Renderer::register(&self, &[noctis::ports::TemplateDescriptor]) -> core::result::Result<(), noctis::ports::RenderError>
+pub fn noctis::ports::Renderer::render(&self, noctis::ports::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::RenderOutput, noctis::ports::RenderError>>
+pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::SessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::SessionStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub struct noctis::ports::Size
+impl noctis::ports::Size
+pub const fn noctis::ports::Size::height(self) -> u32
+pub const fn noctis::ports::Size::new(u32, u32) -> Self
+pub const fn noctis::ports::Size::try_new(u32, u32) -> core::option::Option<Self>
+pub const fn noctis::ports::Size::width(self) -> u32
+impl core::clone::Clone for noctis::ports::Size
+pub fn noctis::ports::Size::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::Size
+impl core::cmp::PartialEq for noctis::ports::Size
+pub fn noctis::ports::Size::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::Size
+pub fn noctis::ports::Size::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::Size
+pub fn noctis::ports::Size::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::Size
+impl core::marker::StructuralPartialEq for noctis::ports::Size
+pub trait noctis::ports::Template: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::marker::Send + core::marker::Sync + 'static
+pub const noctis::ports::Template::ANIMATION: core::option::Option<noctis::ports::AnimationSpec>
+pub const noctis::ports::Template::FORMAT: noctis::ports::Format
+pub const noctis::ports::Template::ID: &'static str
+pub const noctis::ports::Template::SIZE: noctis::ports::Size
+pub const noctis::ports::Template::VERSION: u32
+pub fn noctis::ports::Template::view() -> noctis::ports::ErasedView
+pub struct noctis::ports::TemplateDescriptor
+pub noctis::ports::TemplateDescriptor::id: &'static str
+pub noctis::ports::TemplateDescriptor::version: u32
+pub noctis::ports::TemplateDescriptor::view: noctis::ports::ErasedView
+impl noctis::ports::TemplateDescriptor
+pub fn noctis::ports::TemplateDescriptor::of<T: noctis::ports::Template>() -> Self
+impl core::clone::Clone for noctis::ports::TemplateDescriptor
+pub fn noctis::ports::TemplateDescriptor::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ports::TemplateDescriptor
+pub fn noctis::ports::TemplateDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::ports::ValueError
+pub noctis::ports::ValueError::Empty
+pub noctis::ports::ValueError::Malformed
+pub noctis::ports::ValueError::Serialize
+pub noctis::ports::ValueError::Trailing
+pub noctis::ports::ValueError::Trailing::extra: usize
+impl core::clone::Clone for noctis::ports::ValueError
+pub fn noctis::ports::ValueError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::ValueError
+impl core::cmp::PartialEq for noctis::ports::ValueError
+pub fn noctis::ports::ValueError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::ports::ValueError
+impl core::fmt::Debug for noctis::ports::ValueError
+pub fn noctis::ports::ValueError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ports::ValueError
+pub fn noctis::ports::ValueError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::ports::ValueError
+impl core::marker::StructuralPartialEq for noctis::ports::ValueError
+pub fn noctis::ports::decode_template<T: noctis::ports::Template>(&[u8]) -> core::result::Result<T, noctis::ports::ValueError>
+pub fn noctis::ports::decode_value<T: serde_core::de::DeserializeOwned>(u8, &[u8]) -> core::result::Result<core::option::Option<T>, noctis::ports::ValueError>
+pub fn noctis::ports::encode_value<T: serde_core::ser::Serialize + ?core::marker::Sized>(u8, &T) -> core::result::Result<bytes::bytes::Bytes, noctis::ports::ValueError>
 pub mod noctis::prelude
 pub trait noctis::prelude::Payload
 pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>

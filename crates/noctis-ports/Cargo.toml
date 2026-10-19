@@ -7,5 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+bytes.workspace = true
+postcard = { workspace = true, features = ["alloc"] }
+serde.workspace = true
+thiserror.workspace = true
+twilight-model.workspace = true
+
 [lints]
 workspace = true

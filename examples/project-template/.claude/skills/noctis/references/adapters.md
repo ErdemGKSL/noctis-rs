@@ -2,7 +2,7 @@
 
 Covers: every port, its in-memory default, how to swap one, the typed `ctx.kv()`
 key-value API, the Discord resource cache (`ctx.cache()`), namespacing and sharing
-across Apps, writing your own Adapter, conformance tests.
+across Apps, writing your own Adapter, conformance tests, the render contract.
 FR-38..40, FR-71; AD-1, AD-14. Rule: anything that stores, caches, queues or resumes
 data that must outlive one call goes through a port, never a `static` map.
 
@@ -35,9 +35,49 @@ its storage with `.discord_cache_backend(impl DiscordCache)`. Reads return owned
 no guard can be held across `.await`. It is typed, not bytes: an out-of-process
 implementation serializes the twilight-model values itself.
 
-## 2. Port shape (what every Adapter looks like)
+## 2. Port reference (`noctis::ports`)
+
+Every port is `Send + Sync + 'static` and dyn-compatible (no generic methods, no
+associated types or consts), so the App holds it as `Arc<dyn Port>`. Async methods
+return `noctis::ports::BoxFuture<'a, Result<T, PortError>>`, defined as
+`Pin<Box<dyn Future<Output = T> + Send + 'a>>`: the same type as
+`futures_util::future::BoxFuture`, so `Box::pin(async move { … })` and
+`futures_util`'s `.boxed()` both fit.
+
+### 2.1 The op vocabulary
+
+Keys are `&str`, values are `noctis::bytes::Bytes`, TTL is `Option<Duration>`
+(`None` = no expiry; the entry may still be evicted by capacity).
+
+| Op | Signature tail | Contract |
+| --- | --- | --- |
+| `get` | `(key) -> Option<Bytes>` | An expired or missing entry is `None`. |
+| `put` | `(key, value: Bytes, ttl: Option<Duration>) -> ()` | Overwrites the value and resets the TTL. |
+| `put_if_absent` | `(key, value, ttl) -> bool` | `true` only for the **one** caller that inserted; an expired entry counts as absent. |
+| `take` | `(key) -> Option<Bytes>` | Atomic get + delete; exactly one concurrent caller gets `Some`. |
+| `delete` | `(key) -> ()` | Removes the entry; a missing key is not an error. |
+| `touch` | `(key, ttl: Duration) -> bool` | `true` if a live entry existed, whose expiry becomes now + ttl; a missing or expired entry gives `false` and nothing is created. |
+| `incr_with_ttl` | `(key, by: u64, ttl: Option<Duration>) -> u64` | Atomic, no lost increments, returns the new value. TTL is set only when the call creates the entry (`by = 0` creates 0). Stored as an 8-byte big-endian `u64`; the add saturates at `u64::MAX`. A non-counter value gives `PortError::InvalidValue`. |
+
+Every op borrows `&'a self` and `key: &'a str` and returns
+`BoxFuture<'a, Result<_, PortError>>`.
+
+### 2.2 Byte-store ports (exactly these methods)
 
 ```rust
+pub trait RefStore: Send + Sync + 'static {         // put_if_absent, get, take, delete, touch
+    fn put_if_absent<'a>(&'a self, key: &'a str, value: Bytes, ttl: Option<Duration>) -> BoxFuture<'a, Result<bool, PortError>>;
+    fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>>;
+    fn take<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>>;
+    fn delete<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<(), PortError>>;
+    fn touch<'a>(&'a self, key: &'a str, ttl: Duration) -> BoxFuture<'a, Result<bool, PortError>>;
+}
+pub trait SessionStore: Send + Sync + 'static { /* get, put, delete */ }
+pub trait ModuleStateStore: Send + Sync + 'static {
+    /* get, put */
+    fn version(&self) -> BoxFuture<'_, Result<u64, PortError>>;  // 0 when empty, grows on every put
+}
+pub trait RateLimitStore: Send + Sync + 'static { /* incr_with_ttl, get, put */ }
 pub trait CacheStore: Send + Sync + 'static {
     fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>>;
     fn put<'a>(&'a self, key: &'a str, value: Bytes, ttl: Option<Duration>) -> BoxFuture<'a, Result<(), PortError>>;
@@ -45,23 +85,143 @@ pub trait CacheStore: Send + Sync + 'static {
     fn delete<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<(), PortError>>;
     fn incr_with_ttl<'a>(&'a self, key: &'a str, by: u64, ttl: Option<Duration>) -> BoxFuture<'a, Result<u64, PortError>>;
 }
+pub trait RenderCache: Send + Sync + 'static { /* get, put */ }
+pub trait AssetStore: Send + Sync + 'static { /* get, put */ }
 ```
 
-Contract [planned exact signatures; semantics fixed by AD-14]:
-- `Send + Sync + 'static`, dyn-compatible; the App holds `Arc<dyn Port>`.
-- Methods return `noctis::ports::BoxFuture` (re-export of `futures_util`'s).
-- **Keys are opaque and stored verbatim.** Core's `Namespaced` wrapper already prefixed
-  them with `<app>:<port>:`; never add your own prefix.
-- **Values are opaque `Bytes`** (`noctis::bytes::Bytes`). Typed values are postcard with
-  a leading schema byte; a schema mismatch reads as a miss. Counters are 8-byte
+### 2.3 The other ports
+
+```rust
+pub trait IdentifyQueue: Send + Sync + 'static {
+    fn acquire(&self, bucket: u32) -> BoxFuture<'_, Result<Lease, PortError>>;
+}
+// #[must_use], Debug + PartialEq + Eq, not Clone.
+impl Lease { pub const fn new(bucket: u32) -> Lease; pub const fn bucket(&self) -> u32; }
+
+pub trait LocaleSource: Send + Sync + 'static {
+    // `locale` is a Discord code such as "en-US"; pairs are (message key, value);
+    // an empty Vec means no overlay.
+    fn load<'a>(&'a self, locale: &'a str) -> BoxFuture<'a, Result<Vec<(String, String)>, PortError>>;
+}
+
+pub trait GuildAccessList: Send + Sync + 'static {
+    fn allows(&self, guild: Id<GuildMarker>) -> bool;   // sync
+}
+
+pub trait DiscordCache: Send + Sync + 'static {
+    fn update<'a>(&'a self, event: &'a Event) -> BoxFuture<'a, Result<(), PortError>>;
+    fn guild(&self, guild: Id<GuildMarker>) -> BoxFuture<'_, Result<Option<Guild>, PortError>>;
+    fn channel(&self, channel: Id<ChannelMarker>) -> BoxFuture<'_, Result<Option<Channel>, PortError>>;
+    fn role(&self, role: Id<RoleMarker>) -> BoxFuture<'_, Result<Option<Role>, PortError>>;
+    fn member(&self, guild: Id<GuildMarker>, user: Id<UserMarker>) -> BoxFuture<'_, Result<Option<Member>, PortError>>;
+    fn user(&self, user: Id<UserMarker>) -> BoxFuture<'_, Result<Option<User>, PortError>>;
+    fn message(&self, message: Id<MessageMarker>) -> BoxFuture<'_, Result<Option<Message>, PortError>>;
+    fn channel_ids(&self, guild: Id<GuildMarker>) -> BoxFuture<'_, Result<Option<Vec<Id<ChannelMarker>>>, PortError>>;
+    fn role_ids(&self, guild: Id<GuildMarker>) -> BoxFuture<'_, Result<Option<Vec<Id<RoleMarker>>>, PortError>>;
+    fn member_ids(&self, guild: Id<GuildMarker>) -> BoxFuture<'_, Result<Option<Vec<Id<UserMarker>>>, PortError>>;
+}
+```
+
+- A `Lease` grants one identify in its bucket (`shard_id % max_concurrency`). A Cluster
+  implementation of `IdentifyQueue` must serialize per bucket across processes.
+- `GuildAccessList::allows` is **synchronous**: it runs on a pipeline stage that does
+  no port I/O. Never block in it; a remote-backed implementation keeps a local snapshot
+  and refreshes it in the background.
+- `DiscordCache` uses only `twilight_model` types (`gateway::event::Event`,
+  `guild::{Guild, Member, Role}`, `channel::{Channel, Message}`, `user::User`). Getters
+  return owned values; `None` means not cached. `channel_ids`, `role_ids` and
+  `member_ids` return ids only (`None` = guild not cached), so a large guild is never
+  cloned per call.
+
+### 2.4 Errors
+
+```rust
+#[non_exhaustive]
+pub enum PortError {
+    Backend(Box<dyn Error + Send + Sync>),                // source() is the backend error
+    InvalidValue { key: String, why: Cow<'static, str> },
+    Unavailable { why: Cow<'static, str> },
+    Value(ValueError),                                    // From<ValueError>
+}
+PortError::backend(err)            // impl Into<Box<dyn Error + Send + Sync>>; use as map_err(PortError::backend)
+PortError::invalid_value(key, why) // why: impl Into<Cow<'static, str>>
+PortError::unavailable(why)
+
+#[non_exhaustive]  // Copy + Eq
+pub enum ValueError { Serialize, Empty, Malformed, Trailing { extra: usize } }
+```
+
+Core turns a `PortError` into a handler error / Error Sink event.
+
+### 2.5 Typed values
+
+```rust
+use noctis::ports::{decode_value, encode_value};
+
+let raw: Bytes = encode_value(1, &cfg)?;                  // [schema] ++ postcard(cfg)
+let cfg: Option<GuildConfig> = decode_value(1, &raw)?;    // other schema byte → Ok(None)
+```
+
+`encode_value<T: Serialize + ?Sized>(schema: u8, value: &T) -> Result<Bytes, ValueError>`
+fails with `ValueError::Serialize` (e.g. a sequence of unknown length).
+`decode_value<T: DeserializeOwned>(schema: u8, raw: &[u8]) -> Result<Option<T>, ValueError>`:
+empty input is `ValueError::Empty`, a body that does not decode is
+`ValueError::Malformed`, leftover bytes are `ValueError::Trailing { extra }`, and a
+different schema byte is a miss (`Ok(None)`). Bump the schema byte when the type
+changes incompatibly; old entries then read as misses.
+
+### 2.6 Rules every Adapter follows
+
+- **Keys are opaque and stored verbatim.** Core's `Namespaced` wrapper [planned]
+  already prefixed them with `<app>:<port>:`; never add your own prefix.
+- **Values are opaque `Bytes`** (`noctis::bytes::Bytes`). Counters are 8-byte
   big-endian `u64`.
-- `ttl = None` means no expiry (the entry may still be evicted by capacity).
 - `put_if_absent` and `take` must have **exactly one winner** under concurrency;
   `incr_with_ttl` is atomic, sets TTL only on create, and never loses increments.
 - An expired entry behaves exactly like a missing one.
-- Adapters never receive secrets (the token and payload key stay in core).
-- Errors: `PortError::backend(err)`, `PortError::invalid_value(key, why)`,
-  `PortError::unavailable(..)`; core turns them into handler errors / Error Sink events.
+- Adapters never receive secrets: no method takes the bot token, the payload key or
+  any other credential.
+
+## 2b. Render contract (`Renderer`)
+
+The seam between core and the image renderer, in `noctis::ports` with no image
+dependency. You normally write Templates with the image API (Epic 10, [planned]);
+implement `Renderer` only to replace the renderer.
+
+```rust
+pub trait Template: Serialize + DeserializeOwned + Send + Sync + 'static {
+    const ID: &'static str;
+    const VERSION: u32;                       // bump when fields change
+    const SIZE: Size;
+    const FORMAT: Format;
+    const ANIMATION: Option<AnimationSpec>;   // None = still image
+    fn view() -> ErasedView;
+}
+
+pub trait Renderer: Send + Sync + 'static {
+    fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>>;
+    fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError>;
+}
+```
+
+| Type | Shape |
+| --- | --- |
+| `ErasedView` | `ErasedView::new(view)`, `downcast_ref::<T>() -> Option<&T>`; `Clone` shares the value; `Debug` hides it |
+| `TemplateDescriptor` | `{ id: &'static str, version: u32, view: ErasedView }`, `TemplateDescriptor::of::<T>()` |
+| `RenderJob` | `{ template_id: &'static str, template_version: u32, data: Bytes, size: Size, format: Format, animation: Option<AnimationSpec> }`; `RenderJob::of(&template) -> Result<RenderJob, ValueError>`; `data` is plain postcard, no schema byte |
+| `decode_template` | `decode_template::<T>(data: &[u8]) -> Result<T, ValueError>` (`Malformed`, `Trailing`) |
+| `Size` | `Size::new(width, height)` (const; a zero side panics, a compile error in a `const`), `Size::try_new(..) -> Option<Size>`, `width()`, `height()` |
+| `Format` | `Png`, `Jpeg { quality: u8 }`, `Webp { quality: u8 }`, `WebpLossless` |
+| `AnimationSpec` | `{ duration: Duration, fps: u16, format: AnimatedFormat }`, const `AnimationSpec::new(duration, fps, format)` |
+| `AnimatedFormat` | `Webp { quality: u8 }`, `Gif`, `Apng` |
+| `Frame` | `{ index: u32, count: u32 }`; `Frame::STILL` = `{ index: 0, count: 1 }` |
+| `OutputFormat` | `Png`, `Jpeg`, `Webp`, `Gif`, `Apng`; `extension()` → `"png"`, `"jpg"`, `"webp"`, `"gif"`, `"png"` (Discord shows APNG as `.png`); `From<Format>`, `From<AnimatedFormat>` |
+| `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }` |
+| `EncodeSettings` | `{ size: Size, quality: Option<u8>, fps: Option<u16>, frames: u32 }` |
+| `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`; `RenderError::failed(err)` |
+
+The render enums are closed (exhaustive `match` is fine); the render structs have
+public fields, except `Size`, which validates.
 
 ## 3. Using ports from handlers
 
