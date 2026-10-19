@@ -2,7 +2,8 @@
 title: 'Story 3.1: Port traits and the shared op vocabulary'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'df4f822f680cf74d84439a2bf41ea6742ba3ed40'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
