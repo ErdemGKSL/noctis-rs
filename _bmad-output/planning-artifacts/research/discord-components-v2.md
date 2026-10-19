@@ -577,7 +577,7 @@ Because both custom_ids must be unique per message, disabled "label" buttons (e.
 - Label `description` position differs by platform (above/below) **[D]**.
 - Wide tables in code blocks scroll horizontally on mobile; render them as images instead.
 - Thumbnails are tiny on mobile; don't put information-bearing text in them.
-- Test light and dark themes for accent colors and generated images (use transparent/neutral backgrounds or theme-specific renders chosen per user's preference is not available—choose mid-contrast palettes).
+- Test light and dark themes for accent colors and generated images. The client theme is not exposed to bots, so use mid-contrast palettes or opaque card backgrounds that read on both.
 
 ### 6.9 State & lifecycle
 
@@ -707,6 +707,151 @@ Return rich errors (`LimitError { path: "components[0].components[3].accessory.l
 2. Per-Text-Display max length (some libraries assume 2000; Discord docs specify none). **[C]**
 3. Max `url` length for Media Gallery/Thumbnail in messages (2048 documented only for Component Embeds).
 4. Whether `UPDATE_MESSAGE` from a modal submit can switch a legacy message to V2 (Edit Message allows setting the flag).
+
+---
+
+## 9. Patterns from schwi-v2 (practical reference)
+
+`schwi-v2/apps/discord-bot` is a production TypeScript bot on `discord.js` + **tescord** (`tescord@0.0.6`, a thin "Pack" framework). Its Components V2 UIs (setup dashboards, temp-voice control panel, payload/component editor, punishment history) are the practical model for vesper. Files studied (paths relative to `/home/user/schwi-v2/apps/discord-bot/`): `src/modules/welcome/setup.ts`, `src/modules/temp-voice/{setup,trigger}.ts`, `src/modules/partnership/setup.ts`, `src/modules/punishHistory/commands.ts`, `src/modules/seacord/warn.ts`, `src/integrations/payload/editor/{generatePayloadEditor,payloadButtons}.ts`, `src/integrations/payload/editor/container/index.ts`, `src/types/components.d.ts`. (`components_v2.xml` and `components.txt` are just copies of the Discord docs for AI context; they hold no extra patterns, and the XML is out of date: it still lists the old 10/30 limits.)
+
+### 9.1 Architecture: pure `render(state) -> components`, handlers mutate then re-render
+
+Each screen is **one async render function** that loads state from the DB and returns the whole top-level tree. Every handler (button, select, modal) does **ACK → mutate DB → re-render the same screen → edit**. Nothing is diffed or patched; the message is regenerated each time.
+
+```ts
+// src/modules/welcome/setup.ts
+async function renderWelcomeSetup(guild, locale, selectedSystemId?: number) {
+  const welcomeSystems = await prisma.welcomeSystem.findMany({ where: { guild_id: guild.id }, take: 25 });
+  ...
+  return [{ type: ComponentType.Container, components: [
+      { type: ComponentType.Section,
+        components: [{ type: ComponentType.TextDisplay, content: "# " + locale.welcome.setup.title() }],
+        accessory: { type: 11, media: { url: "https://cdn.discordapp.com/attachments/.../raw.png" } } },
+      ...systemSelectorComponents, ...configComponents, ...managementComponents ] }];
+}
+
+pack.channelSelectMenu({ id: "welcome-setup-channel-select",
+  handle: async ({ interaction, data, locale }) => {
+    const [system, systemId] = data;
+    await interaction.deferUpdate();                                   // ACK, no loading state
+    await prisma.welcomeSystem.update({ where: { id: +systemId }, data: { channel_id: interaction.values[0] ?? null } });
+    await interaction.editReply({ components: await renderWelcomeSetup(interaction.guild, locale.user, +systemId),
+                                  flags: MessageFlags.Ephemeral | MessageFlags.IsComponentsV2 });
+  }});
+```
+
+**vesper:** make this the core model: `trait View { type State; async fn render(&self, ctx, state) -> Message }` with handlers returning `Update::Rerender(state)`. The framework does the defer/edit and always adds the V2 flag (schwi repeats `flags: Ephemeral | IsComponentsV2` by hand in ~every handler).
+
+### 9.2 Container layout conventions
+
+Recurring skeleton (welcome, temp-voice, partnership setup):
+
+1. **Header Section**: `# Title` Text Display + **Thumbnail accessory** (module icon).
+2. **Entity switcher** (only shown if >1 entity): Text Display caption + String Select of entities (`default: true` on current).
+3. **Field blocks**: each setting = a caption Text Display + an Action Row with one select (channel/role/payload), using `defaultValues`/`default` to show the current value.
+4. **Scalar settings as Sections**: text with the current value inline + an accessory button "Set"/"Edit". The button is `Primary` when unset and `Secondary` when set (calls attention to missing config).
+5. **Management Sections** at the bottom: "Add new …" (`Primary`) and "Delete current …" (`Danger`) as Section accessories.
+6. **Separators** between blocks (`spacing: Large` before major sections, `Small` inside).
+
+```ts
+// Scalar setting row (welcome/setup.ts)
+{ type: ComponentType.Section,
+  components: [{ type: ComponentType.TextDisplay,
+                 content: label + (sys.morph_in_seconds > 0 ? ` (${sys.morph_in_seconds}s)` : "") }],
+  accessory: tescord.buildComponent({ id: "welcome-setup-seconds-modal",
+    data: ["welcome", sys.id.toString(), "morph_in_seconds"],
+    overrides: { label: sys.morph_in_seconds > 0 ? t.edit() : t.set(),
+                 style: sys.morph_in_seconds > 0 ? "Secondary" : "Primary" } }) }
+
+// Toggle row (partnership/setup.ts): style encodes the action, not the state
+accessory: tescord.buildComponent({ id: "partnership-setup-toggle-enabled",
+  overrides: { label: enabled ? t.disable() : t.enable(), style: enabled ? "Danger" : "Success" } })
+```
+
+**vesper helpers:** `Header::new(title).thumbnail(url)`, `EntitySwitcher` (auto-hidden when ≤1), `Field::channel(..)/role(..)/choice(..)` (caption + prefilled select), `SettingRow::value(label, Option<T>).edit(route)` (auto Primary/Secondary), `Toggle::new(label, bool, route)` (auto Success/Danger + label), `DangerRow`.
+
+### 9.3 Navigation
+
+- **Entity tabs via select**: switching the edited entity re-renders with `selectedSystemId`; the select keeps the current item as `default`.
+- **Drill-down + Back**: the payload editor lists sub-components in String Selects (value `edit-component:<id>`); choosing one replaces the message with a component-specific editor, which has `back-to-container-editor` / `back-to-payload-editor` / `payload-editor-back` buttons that re-render the parent view. Breadcrumb state is only the ids in `data`, so there's no server-side navigation stack.
+- **Sub-panel as ephemeral reply**: on the public temp-voice control panel, "Allow list" opens an **ephemeral** reply (`deferReply({ephemeral:true})` + `editReply`) holding a User Select. Its custom_id carries `[voiceProfileId, interaction.message?.id]` so the handler can find and refresh the parent public message.
+
+**vesper:** a `Nav` stack encoded in routes (`Back(Box<Route>)` or parent route id), `DrillDown` select helper, and `open_ephemeral_subpanel(parent_msg)` that wires parent refresh automatically.
+
+### 9.4 Pagination
+
+Three variants, all stateless (page number in the custom_id):
+
+```ts
+// punishHistory/commands.ts: DB-offset paging, 25 rows rendered into ONE Text Display
+take: 25, skip: page * 25
+{ type: ActionRow, components: [
+  tescord.buildComponent({ id: "punish-history-set", data: [userId, guildId || 0, page - 1],
+                           overrides: { disabled: page <= 0, label: t.prevPage() } }),
+  tescord.buildComponent({ id: "punish-history-set", data: [userId, guildId || 0, page + 1],
+                           overrides: { disabled: punishments.length < 25, label: t.nextPage() } }) ] }
+```
+
+- **Same handler id, different data**: Prev and Next share `id` and differ only in the encoded page, which keeps custom_ids unique.
+- **"Has next" heuristic** = page full (`length < 25` ⇒ last page), so no COUNT query is needed (it fails when the total is an exact multiple of 25).
+- **Settings split into fixed pages** (`temp-voice/setup.ts`: `maxPages = 2`, `switch (currentPage)`, Prev/Next with custom emoji, clamped page) when one entity's settings exceed the 40-component budget.
+- **Select chunking** (payload editor): >25 items → several String Selects of 25, placeholder "Components 26-50".
+- **Budget fallback**: `generatePayloadEditor` falls back to a simpler editor if the tree is too big. Bug: it checks `fullEditor.components.length > 40`, which only counts top-level components, so nested ones are missed and the check can pass while the real total is over 40. vesper should count recursively (§8.3).
+
+**vesper:** `Pager { page, has_next }` widget (auto-disable, same route with page arg), `SettingsPages` for static multi-page forms, `ChunkedSelect` (auto split by 25 with range placeholders), and recursive budget counting with a declared fallback view.
+
+### 9.5 Step flows / modals
+
+- Button → `showModal` with the entity id in the modal's custom data; modal handler validates input, writes the DB, re-renders the dashboard (or replies with an ephemeral error).
+- Older modals still use **Action Row + Text Input with `label`**, which is deprecated (`temp_voice_limit_modal`). vesper should emit only Label-wrapped inputs.
+- Validation is manual (`parseInt`, range check, then an `invalidNumber()` reply). vesper can derive it from typed modal fields (`#[field(range = 0..=99)] limit: u8`).
+- Wizard-like setup is modelled as a **single dashboard** with Primary "Set" buttons on missing fields rather than a linear wizard. That works well for re-editable config, so vesper should offer both `Dashboard` and `Wizard`.
+
+### 9.6 custom_id / data passing (tescord encoding)
+
+tescord's `buildComponent({ id, data, overrides })` encodes `id + SPLIT + data.join(SPLIT)`:
+
+```js
+// tescord/dist/lib/types/ComponentBuilder.js
+CUSTOM_DATA_SPLITTER = "䲜";          // rare CJK char = 1 char, never in user data in practice
+CUSTOM_DATA_NUMBER_INDICATOR = "㥻";  // prefix marks numbers -> decoded back to Number
+// strings raw, numbers "㥻"+n, other -> JSON.stringify; encode/decode hooks for custom types
+```
+
+- Handlers are registered by base `id`; `data` arrives typed-ish as an array (`const [system, systemId, fieldKey] = data`). A global `Tescord.ComponentMap` (`src/types/components.d.ts`) maps each id to its component kind for type safety. vesper's `Route` enum + derive gives the same thing with real types.
+- **Cache-busting nonce**: selects are given `Math.random().toString(36).substring(2)` as extra data on every render. The changing custom_id makes the client drop its local selection state and show the server's `default`/`defaultValues` after a re-render. vesper should do this automatically for selects in re-rendered views (e.g. a 2-3 char render counter), within the 100-char budget.
+- **Risky usage**: `seacord-warn-dm-fallback` puts the free-text `reason` and several numbers in the custom_id. That can exceed 100 chars, or contain the splitter. vesper should reject unbounded strings in route fields at compile time and push them to the store (§7.3).
+- Ids are long kebab strings (`auto-partnership-setup-partnership-request-channel-select`, 56 chars). Fine with tescord, but they leave little room for data. vesper should use short route tags.
+
+### 9.7 Update vs reply
+
+| Situation | schwi-v2 does | vesper default |
+|---|---|---|
+| Slash command opens dashboard | `deferReply({flags: Ephemeral\|IsComponentsV2})` then `editReply(render())` | Auto: send type 4 if render < ~2.5 s, else defer (EPHEMERAL only) and edit with the V2 flag |
+| Component changes dashboard | `deferUpdate()` + `editReply(render())` | `UPDATE_MESSAGE` (7) directly when fast, otherwise 6 + edit |
+| Sub-panel / permission-gated action | `deferReply({ephemeral:true})` + `editReply` / `followUp` | `reply_ephemeral(view)` |
+| Error during component handling | `followUp({components:[TextDisplay], flags: V2\|Ephemeral})` | `Err(UserError)` → framework sends ephemeral V2 error |
+| Modal open | `showModal` (must be the first response, so no defer before) | Type-check: modal routes can't be preceded by a defer |
+| DM to user who may not render V2 | Sends V2 + a fallback button that re-sends as plain `content` | Optional `LegacyFallback` (text rendering of a view) |
+
+### 9.8 Error and empty states
+
+- **Empty list → disabled placeholder select**: `options: [{ label: "No payloads available", value: "none", description: "Create a payload first", default: true }], disabled: true`, which keeps the layout stable. (Note: `"none"` must then be handled as "clear" in the handler, which schwi does.)
+- **Empty text**: `noneFound()`, `noAllowedMembers()` and `noComponents` replace the content instead of hiding the block.
+- **Errors**: one-line ephemeral V2 Text Display (`voiceProfileNotFound`, `noPermission`). Some old handlers still reply with legacy `content` and no V2 flag, which is inconsistent.
+- **Destructive success**: after delete, the panel is replaced by a single Text Display ("Payload X deleted").
+- **Render failures**: `try/catch` around render → simplified fallback view → final "loading error" text.
+- **Auth re-checked in every handler** (owner/moderator check before acting), never trusted from the custom_id. vesper should keep this.
+
+### 9.9 What vesper should build in (summary)
+
+1. `View`/`render` + automatic ACK/defer/edit with V2 + ephemeral flags handled by the framework.
+2. Layout widgets: `Header`, `EntitySwitcher`, `Field::*` (caption + prefilled select), `SettingRow`, `Toggle`, `DangerRow`, `EmptyState`, `ErrorNotice`.
+3. Navigation: `Back`/drill-down routes, ephemeral sub-panels that refresh their parent message.
+4. Pagination: `Pager`, `SettingsPages`, `ChunkedSelect`, recursive 40-component / 4000-char budget with a declared fallback view.
+5. Typed routes (`#[derive(Route)]`) replacing tescord's splitter strings: compile-time max-length, automatic select nonce, store-backed fields for unbounded data.
+6. Modals: Label-only, typed fields with validation, modal-open routes that can't be deferred.
+7. Optional legacy text fallback for DM recipients on clients without V2 support.
 
 ---
 
