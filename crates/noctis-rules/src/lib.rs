@@ -24,11 +24,15 @@
 //!   webhook names (MSG-01, MSG-03..06, WH-04).
 //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
 //!   references (ATT-01..03, ATT-05, ATT-06).
+//! - [`cid`]: the route id grammar ([`cid::validate_route_id`]) and the
+//!   `custom_id` codec caps shared by the codec and `#[derive(Route)]`
+//!   (CID-01, CID-03).
 //!
 //! The crate is sync and does no I/O.
 
 pub mod attachment;
 mod check;
+pub mod cid;
 pub mod command;
 pub mod component;
 mod key;

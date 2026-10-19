@@ -1,0 +1,6 @@
+error: [CID-03] `schema` must be in 1..=61 (one base62 digit), found `62`
+         = help: write `schema = n` with an integer literal n in 1..=61
+ --> tests/ui/cid/CID-03_schema_62.rs:4:23
+  |
+4 | #[route("a", schema = 62)]
+  |                       ^^

@@ -126,10 +126,24 @@
 //! - a record of another route is [`DecodeError::Forged`] with
 //!   [`ForgedReason::RecordRouteMismatch`];
 //! - a different schema is [`DecodeError::Stale`].
+//!
+//! # Derive support
+//!
+//! A [`Payload`] declares its worst-case body width,
+//! [`Payload::MAX_ENCODED_LEN`]. The `noctis` derives (`#[derive(Route)]`,
+//! `#[derive(Payload)]`, `#[derive(PayloadEnum)]`) use a few hidden items of
+//! this crate through `::noctis::__private::codec`: `sum_fields` adds field
+//! widths, `route_width` and `RouteWidth` compute a Route's worst-case id
+//! section by section, and `assert_fits` fails const evaluation, naming the
+//! route id and the worst case, when a Route can exceed 100 characters
+//! (CID-01). `encode_variant` and `decode_variant` write and read a
+//! `PayloadEnum` variant index as one base62 digit, and `RouteRuntime` is
+//! the (still empty) runtime declaration of a derived Route.
 
 mod base62;
 mod bounded_str;
 pub mod check;
+mod derive;
 mod encoded;
 mod error;
 mod escape;
@@ -142,6 +156,11 @@ mod refs;
 mod route;
 
 pub use bounded_str::{BoundedStr, BoundedStrError};
+#[doc(hidden)]
+pub use derive::{
+    DeclaredRuntime, RouteRuntime, RouteWidth, assert_fits, decode_variant, encode_variant,
+    route_width, sum_fields,
+};
 pub use encoded::{EncodedId, MAX_REF_ID_LEN, PendingRef, encode_id, finish};
 pub use error::{
     CodecError, DecodeError, EncodeError, EnvelopeError, FieldError, ForgedReason, KeyError,

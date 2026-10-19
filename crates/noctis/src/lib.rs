@@ -6,8 +6,60 @@
 //! # Modules
 //!
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
+//! - [`prelude`]: `use noctis::prelude::*;` brings the [`Route`](prelude::Route),
+//!   [`Payload`](prelude::Payload) and [`PayloadEnum`](prelude::PayloadEnum)
+//!   derives and the `Route` and `Payload` traits into scope.
 //! - [`codec`]: Payload field encodings ([`codec::Field`],
-//!   [`codec::BoundedStr`]) and the checks custom fields are tested with.
+//!   [`codec::BoundedStr`]), the checks custom fields are tested with, and the
+//!   traits the derives implement.
+//!
+//! # Routes
+//!
+//! `#[derive(Route)]` turns a struct into a Route: a typed `custom_id` whose
+//! fields are its Payload. The derive proves at compile time that every id
+//! fits Discord's 100 characters (CID-01), and a struct that could exceed it
+//! fails `cargo check` with the route id and the worst case.
+//!
+//! ```
+//! use noctis::codec::RouteShape;
+//! use noctis::prelude::*;
+//! use twilight_model::id::Id;
+//!
+//! pub struct ItemMarker;
+//!
+//! /// `shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)`
+//! #[derive(Route, Debug, PartialEq)]
+//! #[route("shop.buy")]
+//! struct BuyButton {
+//!     item: Id<ItemMarker>,
+//!     qty: u8,
+//! }
+//!
+//! assert_eq!(BuyButton::ID.as_str(), "shop.buy");
+//! assert_eq!(BuyButton::SHAPE, RouteShape::INLINE);
+//! assert_eq!(<BuyButton as Payload>::MAX_ENCODED_LEN, Some(14));
+//!
+//! /// A unit enum is a one-character field.
+//! #[derive(PayloadEnum, Debug, Clone, Copy, PartialEq)]
+//! enum Size {
+//!     Small,
+//!     Large,
+//! }
+//!
+//! #[derive(Route)]
+//! #[route("shop.size", schema = 1, view)]
+//! struct SizePicker {
+//!     size: Size,
+//! }
+//! assert_eq!(SizePicker::SCHEMA, 1);
+//! ```
+//!
+//! `#[route("id", args…)]` takes the route id (1 to 24 characters of
+//! `[a-z0-9._-]`, not starting with `_`) and, in any order, the codec
+//! arguments `by_ref`, `overflow = spill`, `schema = n` (1..=61), `view`,
+//! `select` and `signed`. Each derived Route also gets a
+//! `__noctis_route_width_<Name>` test that prints its width breakdown
+//! (`cargo test -- --nocapture noctis_route_width`).
 //!
 //! # Cargo features
 //!
@@ -39,6 +91,15 @@ pub mod codec {
     //! - [`FieldError`]: why a field did not decode.
     //! - [`check`]: [`check::assert_round_trip`] and
     //!   [`check::assert_worst_case`] for the tests of custom fields.
+    //! - [`Route`], [`RouteId`], [`RouteShape`] and [`BodyKind`]: a Route's
+    //!   id, codec shape (inline, by Ref or spill, with optional View envelope,
+    //!   select nonce and integrity tag), schema and Payload; usually derived
+    //!   with `#[derive(Route)]` from the [`prelude`](crate::prelude).
+    //! - [`Payload`] and [`PayloadDecode`]: an ordered field list, its
+    //!   worst-case width [`Payload::MAX_ENCODED_LEN`], written through
+    //!   [`FieldWriter`] and read through [`FieldReader`].
+    //! - [`CodecError`] and [`Section`]: why an inline body or a `custom_id`
+    //!   did not decode, and which layout section was wrong.
     //!
     //! ```
     //! use noctis::codec::{BoundedStr, Field, FieldDecode, FieldError, check};
@@ -69,7 +130,31 @@ pub mod codec {
     //! check::assert_worst_case(&Percent(100));
     //! ```
 
-    pub use noctis_codec::{BoundedStr, BoundedStrError, Field, FieldDecode, FieldError, check};
+    pub use noctis_codec::{
+        BodyKind, BoundedStr, BoundedStrError, CodecError, Field, FieldDecode, FieldError,
+        FieldReader, FieldWriter, Payload, PayloadDecode, Route, RouteId, RouteShape, Section,
+        check,
+    };
+}
+
+pub mod prelude {
+    //! The derives and the traits they implement: `use noctis::prelude::*;`.
+    //!
+    //! - [`Route`]: the trait and `#[derive(Route)]`, which also derives the
+    //!   Payload and proves the 100-character bound at compile time.
+    //! - [`Payload`]: the trait and `#[derive(Payload)]`, for the Payload of a
+    //!   hand-written `Route`.
+    //! - [`PayloadEnum`]: `#[derive(PayloadEnum)]` on a unit enum of at most 62
+    //!   variants, a one-character [`Field`](crate::codec::Field).
+
+    pub use noctis_codec::{Payload, Route};
+    pub use noctis_macros::{Payload, PayloadEnum, Route};
+}
+
+/// Paths the derive macros expand to; not public API.
+#[doc(hidden)]
+pub mod __private {
+    pub use noctis_codec as codec;
 }
 
 pub mod rules {

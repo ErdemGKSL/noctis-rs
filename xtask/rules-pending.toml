@@ -284,19 +284,9 @@ evidence = "unit"
 story = "12.4"
 
 [[rule]]
-id = "CID-01"
-evidence = "diagnosed"
-story = "2.5"
-
-[[rule]]
 id = "CID-02"
 evidence = "diagnosed"
 story = "4.4"
-
-[[rule]]
-id = "CID-03"
-evidence = "diagnosed"
-story = "2.5"
 
 [[rule]]
 id = "CID-04"

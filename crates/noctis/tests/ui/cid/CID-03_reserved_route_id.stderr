@@ -1,0 +1,6 @@
+error: [CID-03] route id: limit an id that does not start with `_`, actual `_internal`
+         = help: ids starting with `_` are reserved for Noctis; rename the route
+ --> tests/ui/cid/CID-03_reserved_route_id.rs:4:9
+  |
+4 | #[route("_internal")]
+  |         ^^^^^^^^^^^

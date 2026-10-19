@@ -1,0 +1,16 @@
+error[E0080]: evaluation panicked: [CID-01] route `a` can exceed 100 characters: worst case 101
+                = help: shorten the route id or the fields (`PayloadEnum`, smaller integers), or add `by_ref` or `overflow = spill`; run the generated noctis_route_width test for the breakdown
+   --> tests/ui/cid/CID-01_worst_case_101.rs:6:8
+    |
+  6 | struct TooLong {
+    |        ^^^^^^^ evaluation of `_` failed inside this call
+    |
+note: inside `noctis::__private::noctis_codec::derive::assert_fits::<TooLong>`
+ --> $RUST/core/src/panic.rs
+  |
+  = note: the failure occurred here
+  |
+ ::: $WORKSPACE/crates/noctis-codec/src/derive.rs
+  |
+  |     panic!("{}", msg.as_str());
+  |     -------------------------- in this macro invocation

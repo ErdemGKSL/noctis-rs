@@ -33,8 +33,10 @@ pub fn module() -> Module {
 /// Width (CID-01, proven by the derive): owner 11 + log_channel 12 + mod_role 12
 /// + 2 separators = 37; `custom_id` ≤ 1 + 5 ("setup") + 1 + 5 (view envelope) + 37 = 49.
 /// `owner = owner` is a Route Guard: only the invoking admin can click (FR-19).
+///
+/// Width (`noctis_route_width`): `setup: F 1 + route 5 + sep 1 + S 0 + E 5 + N 0 + body 37 + T 0 = 49 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy, PartialEq, Eq)]
-#[route("setup", view, owner = owner)]
+#[route("setup", view, owner = owner)] // [planned]: runtime arguments are rejected until their release
 pub struct SetupState {
     pub owner: Id<UserMarker>,
     pub log_channel: Option<Id<ChannelMarker>>,
@@ -44,16 +46,20 @@ pub struct SetupState {
 /// Channel Select on Step 1. Carries the rest of the state; the picked channel arrives in
 /// `ctx.values()`. `select` reserves the per-render nonce so the client always shows the
 /// server's default after a re-render (FR-25).
+///
+/// Width (`noctis_route_width`): `setup.ch: F 1 + route 8 + sep 1 + S 0 + E 0 + N 2 + body 24 + T 0 = 36 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("setup.ch", select, owner = owner)]
+#[route("setup.ch", select, owner = owner)] // [planned]: runtime arguments are rejected until their release
 pub struct PickLogChannel {
     pub owner: Id<UserMarker>,
     pub mod_role: Option<Id<RoleMarker>>,
 }
 
 /// Role Select on Step 2.
+///
+/// Width (`noctis_route_width`): `setup.role: F 1 + route 10 + sep 1 + S 0 + E 0 + N 2 + body 24 + T 0 = 38 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("setup.role", select, owner = owner)]
+#[route("setup.role", select, owner = owner)] // [planned]: runtime arguments are rejected until their release
 pub struct PickModRole {
     pub owner: Id<UserMarker>,
     pub log_channel: Option<Id<ChannelMarker>>,
@@ -61,8 +67,10 @@ pub struct PickModRole {
 
 /// Finish button on Step 3. Only rendered once both values are set, so its fields are not
 /// `Option`s: the type proves the configuration is complete.
+///
+/// Width (`noctis_route_width`): `setup.done: F 1 + route 10 + sep 1 + S 0 + E 0 + N 0 + body 35 + T 0 = 47 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("setup.done", owner = owner)]
+#[route("setup.done", owner = owner)] // [planned]: runtime arguments are rejected until their release
 pub struct FinishSetup {
     pub owner: Id<UserMarker>,
     pub log_channel: Id<ChannelMarker>,

@@ -6,6 +6,9 @@ use crate::FieldError;
 pub(crate) const ALPHABET: &[u8; 62] =
     b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+// A `PayloadEnum` variant is one base62 digit.
+const _: () = assert!(ALPHABET.len() == noctis_rules::cid::PAYLOAD_ENUM_MAX_VARIANTS);
+
 /// Base62 digits needed for `u64::MAX`.
 pub(crate) const U64_WIDTH: usize = 11;
 

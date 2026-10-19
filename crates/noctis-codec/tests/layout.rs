@@ -87,6 +87,8 @@ fn encode_matrix() {
 struct Swallow(String);
 
 impl Payload for Swallow {
+    const MAX_ENCODED_LEN: Option<usize> = None;
+
     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
         let _ = out.field(&self.0);
         Ok(())
@@ -125,6 +127,8 @@ impl Field for Failing {
 struct FailP;
 
 impl Payload for FailP {
+    const MAX_ENCODED_LEN: Option<usize> = Failing::MAX_LEN;
+
     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
         out.field(&Failing)
     }

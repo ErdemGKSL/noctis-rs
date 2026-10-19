@@ -1,0 +1,6 @@
+error: [CID-03] unknown #[route] argument `colour`
+         = help: the codec arguments are `by_ref`, `overflow = spill`, `schema = n`, `view`, `select` and `signed`
+ --> tests/ui/cid/CID-03_unknown_argument.rs:4:14
+  |
+4 | #[route("a", colour)]
+  |              ^^^^^^

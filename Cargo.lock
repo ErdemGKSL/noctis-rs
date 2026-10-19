@@ -290,9 +290,12 @@ name = "noctis"
 version = "0.1.0"
 dependencies = [
  "noctis-codec",
+ "noctis-macros",
  "noctis-rules",
+ "proptest",
  "serde_json",
  "trybuild",
+ "twilight-model",
 ]
 
 [[package]]
@@ -328,6 +331,12 @@ version = "0.1.0"
 [[package]]
 name = "noctis-macros"
 version = "0.1.0"
+dependencies = [
+ "noctis-rules",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "noctis-ports"

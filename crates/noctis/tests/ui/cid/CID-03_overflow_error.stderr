@@ -1,0 +1,6 @@
+error: [CID-03] `overflow = error` is not a #[route] argument
+         = help: the plain inline Route (no `overflow`) is the error policy: leave `overflow` out
+ --> tests/ui/cid/CID-03_overflow_error.rs:4:25
+  |
+4 | #[route("a", overflow = error)]
+  |                         ^^^^^

@@ -7,7 +7,9 @@ use crate::base62::digit;
 use crate::layout::{
     FMT_LEN, SEP_LEN, check_inline, is_inline_byte, parse_format, parse_route, parse_schema,
 };
-use crate::parts::{DIGIT_MAX as MAX_SCHEMA, Flags};
+use noctis_rules::cid::SCHEMA_MAX as MAX_SCHEMA;
+
+use crate::parts::Flags;
 use crate::route::{FieldReader, MAX_ROUTE_LEN, PayloadDecode, Route, is_route_byte};
 use crate::{CodecError, DecodeError, EncodeError, ForgedReason, Section, StaleReason};
 
@@ -161,6 +163,7 @@ impl<'a> RefRecord<'a> {
 /// # #[derive(Debug, PartialEq)]
 /// # struct Qty(u8);
 /// # impl Payload for Qty {
+/// #     const MAX_ENCODED_LEN: Option<usize> = <u8 as noctis_codec::Field>::MAX_LEN;
 /// #     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result { out.field(&self.0) }
 /// # }
 /// # impl<'de> PayloadDecode<'de> for Qty {

@@ -14,6 +14,10 @@ macro_rules! payload {
         }
 
         impl ::noctis_codec::Payload for $name {
+            const MAX_ENCODED_LEN: Option<usize> = ::noctis_codec::sum_fields(&[
+                $(<$ty as ::noctis_codec::Field>::MAX_LEN,)*
+            ]);
+
             #[allow(unused_variables, reason = "zero-field payloads")]
             fn encode_fields(
                 &self,

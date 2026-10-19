@@ -12,10 +12,24 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 
 | Error | Cause | Fix |
 | --- | --- | --- |
-| `[CID-01] route \`x\` has unbounded fields` | `String`/`Vec` in an inline Route | `by_ref` (or `overflow = spill`), or store the data via a port and carry an id; `BoundedStr<N>` only for tiny ASCII |
-| `[CID-01] route \`x\` can exceed 100 characters` | too many/wide fields, long id | shorten the Route id, use `PayloadEnum`/smaller ints, or `by_ref`; run the generated width test to see the breakdown |
-| `[CID-03] invalid route id` | uppercase, spaces, `:`, > 24 chars, leading `_` | `[a-z0-9._-]{1,24}` |
-| `by_ref` with `signed` rejected | a Ref is already unguessable | drop `signed` |
+| ``[CID-01] route `x` has unbounded fields`` (`` = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to #[route] ``) | `String`/`Vec` in an inline Route | `by_ref` (or `overflow = spill`), or store the data via a port and carry an id; `BoundedStr<N>` only for tiny ASCII |
+| ``[CID-01] route `x` can exceed 100 characters: worst case 101`` (`` = help: shorten the route id or the fields (`PayloadEnum`, smaller integers), or add `by_ref` or `overflow = spill`; run the generated noctis_route_width test for the breakdown ``) | too many/wide fields, long id | shorten the Route id, use `PayloadEnum`/smaller ints, or `by_ref`; `cargo test --release -- --nocapture noctis_route_width` prints the breakdown |
+| ``[CID-01] `f32` is not a Payload field type`` | a field type without `Field` | use a built-in field, implement `Field` + `FieldDecode`, or derive `PayloadEnum` |
+| `[CID-01] a Route cannot be generic` (also `a Payload` / `a PayloadEnum`) | type, lifetime or const parameters, or a `where` clause | make the struct concrete |
+| `[CID-01] a Route must be a struct, not an enum` (or `not a union`) | `#[derive(Route)]`/`#[derive(Payload)]` on an enum | a struct; `PayloadEnum` for unit enums |
+| `[CID-01] a PayloadEnum has at most 62 variants (one base62 digit)` / ``PayloadEnum variant `B` has fields`` / `a PayloadEnum needs at least one variant` / `PayloadEnum must be derived on an enum` | variant 63, a tuple/struct variant, an empty enum, or a struct | split the enum or use an integer field; unit variants only |
+| ``[CID-03] route id: limit [a-z0-9._-], actual `Shop` `` with ``= note: `S` at byte 0 is not allowed`` | uppercase, spaces, `:`, `,`, `~`, `!`, non-ASCII | `[a-z0-9._-]` |
+| `[CID-03] route id: limit between 1 and 24, actual 25` | empty or too long id | 1 to 24 characters |
+| ``[CID-03] route id: limit an id that does not start with `_`, actual `_x` `` | `_` prefix is reserved for Noctis | rename |
+| `[CID-03] #[derive(Route)] needs a #[route("id")] attribute` / `a Route takes exactly one #[route] attribute` / `#[route] takes a list: the route id, then codec arguments` / `#[route] is missing the route id` / `the route id must be a string literal` | attribute missing, doubled or malformed | `#[route("shop.buy", args…)]` |
+| ``[CID-03] unknown #[route] argument `colour` `` | typo or unsupported argument | codec arguments: `by_ref`, `overflow = spill`, `schema = n`, `view`, `select`, `signed` |
+| ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet`` (also `one_shot`, `owner`, `permissions`, `guard`, `opens_modal`) | runtime arguments are [planned] | remove it until the release that supports it |
+| ``[CID-03] #[route] argument `view` is given twice`` / ``[CID-03] `view` is a flag and takes no value`` / ``malformed #[route] argument `by_ref` `` | duplicate argument, `view = true`, `by_ref()` | write each flag once, bare |
+| ``[CID-03] `overflow = error` is not a #[route] argument`` (`` = help: the plain inline Route (no `overflow`) is the error policy: leave `overflow` out ``) / ``the only `overflow` policy is `spill` `` / ``[CID-03] `overflow` needs a value`` | another overflow policy | `overflow = spill`, or nothing |
+| ``[CID-03] `schema` must be in 1..=61 (one base62 digit), found `62` `` / ``[CID-03] `schema = 0` is the default schema`` (`` = help: leave it out for schema 0 ``) / ``[CID-03] `schema` must be an integer literal`` / ``[CID-03] `schema` needs a value`` | schema out of range or not an integer literal | `schema = 1` … `schema = 61`; no `schema` for 0 |
+| ``[CID-03] `by_ref` and `overflow = spill` cannot be combined`` | both body policies | pick one |
+| ``[CID-03] a `by_ref` route cannot be `signed` `` | a Ref is already unguessable | drop `signed` |
+| conflicting implementations of `Payload` | `#[derive(Route)]` and `#[derive(Payload)]` on one struct | keep only `Route`; it includes the Payload |
 | `the trait Handled is not implemented for X` | building a component from a Route with no `#[handler]` | write the handler (and `.add(it())` to a Module) |
 | `[CMD-11] config set: limit a subcommand or a subcommand group, not both, actual \`set\`` followed by `= note: \`config set\` makes \`set\` a subcommand` and `= note: \`config set prefix\` makes \`set\` a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |

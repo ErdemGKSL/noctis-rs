@@ -1,0 +1,6 @@
+error: [CID-01] a PayloadEnum has at most 62 variants (one base62 digit); `V62` is variant 63
+         = help: split the enum, or use an integer field
+  --> tests/ui/cid/CID-01_payload_enum_63_variants.rs:67:5
+   |
+67 |     V62,
+   |     ^^^

@@ -27,8 +27,10 @@ pub fn module() -> Module {
 
 /// The dashboard's View Route. Tab and page ride in the view envelope (AD-20), so the
 /// Payload is only the guild. `permissions` is a Route Guard checked on every click.
+///
+/// Width (`noctis_route_width`): `dash: F 1 + route 4 + sep 1 + S 0 + E 5 + N 0 + body 11 + T 0 = 22 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("dash", view, permissions = MANAGE_GUILD)]
+#[route("dash", view, permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
 pub struct DashRoute {
     pub guild: Id<GuildMarker>,
 }
@@ -53,8 +55,10 @@ impl ModuleKey {
 }
 
 /// Enable/disable button on the Modules tab. Width: 11 + 1 + 1 + 2 separators = 15.
+///
+/// Width (`noctis_route_width`): `dash.mod: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 15 + T 0 = 25 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("dash.mod", permissions = MANAGE_GUILD)]
+#[route("dash.mod", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
 pub struct ToggleModule {
     pub guild: Id<GuildMarker>,
     pub module: ModuleKey,

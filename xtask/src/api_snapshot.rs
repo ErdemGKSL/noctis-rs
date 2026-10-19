@@ -488,6 +488,23 @@ fn is_ident_byte(b: u8) -> bool {
 /// Rewrites whole-path occurrences of each mapping's source (A6); `mappings`
 /// is sorted longest source first.
 pub(crate) fn rewrite(text: &str, mappings: &[(String, String)]) -> String {
+    // Derive and attribute proc macros are spelled `parent::#[derive(Name)]`.
+    let mut spelled = None;
+    for (source, target) in mappings {
+        let (Some(from), Some(to)) = (
+            public_api::proc_macro_spellings(source),
+            public_api::proc_macro_spellings(target),
+        ) else {
+            continue;
+        };
+        for (from, to) in from.iter().zip(&to) {
+            let current: &str = spelled.as_deref().unwrap_or(text);
+            if current.contains(from.as_str()) {
+                spelled = Some(current.replace(from.as_str(), to));
+            }
+        }
+    }
+    let text = spelled.as_deref().unwrap_or(text);
     let bytes = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -608,6 +625,49 @@ pub fn noctis_rules::LimitsExt::x(&noctis_rules::Limits)";
                 "pub trait noctis::rules::LimitsExt",
                 "pub fn noctis::rules::LimitsExt::x(&noctis::rules::Limits)",
             ]
+        );
+    }
+
+    #[test]
+    fn a13_proc_macro_beside_trait() {
+        // A derive and the trait it implements share `noctis::prelude::Route`.
+        let facade = api(
+            "pub mod noctis\npub mod noctis::prelude\npub use noctis::prelude::Route\npub use noctis::prelude::Route",
+            vec![
+                reexport("noctis::prelude::Route", "noctis_macros::Route"),
+                reexport("noctis::prelude::Route", "noctis_rules::Route"),
+            ],
+        );
+        let macros = api(
+            "pub mod noctis_macros\npub proc macro noctis_macros::#[derive(Route)]",
+            vec![],
+        );
+        let rules = api(
+            "pub mod noctis_rules\npub trait noctis_rules::Route\npub const noctis_rules::Route::ID: u8",
+            vec![],
+        );
+        let mut all = crates(facade, rules);
+        all.insert("noctis_macros".to_owned(), macros);
+        let out = assemble("noctis", &all).unwrap();
+        assert_eq!(
+            out,
+            [
+                "pub mod noctis",
+                "pub mod noctis::prelude",
+                "pub proc macro noctis::prelude::#[derive(Route)]",
+                "pub trait noctis::prelude::Route",
+                "pub const noctis::prelude::Route::ID: u8",
+            ]
+        );
+        assert_eq!(
+            rewrite(
+                "pub proc macro noctis_macros::#[handler]",
+                &[(
+                    "noctis_macros::handler".to_owned(),
+                    "noctis::handler".to_owned()
+                )]
+            ),
+            "pub proc macro noctis::#[handler]"
         );
     }
 

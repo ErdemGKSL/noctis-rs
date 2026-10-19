@@ -1,0 +1,6 @@
+error: [CID-03] a `by_ref` route cannot be `signed`
+         = help: remove `signed`: a Ref is already unguessable, and only inline bodies carry a tag
+ --> tests/ui/cid/CID-03_by_ref_signed.rs:4:22
+  |
+4 | #[route("a", by_ref, signed)]
+  |                      ^^^^^^

@@ -1,5 +1,20 @@
 pub mod noctis
 pub mod noctis::codec
+pub enum noctis::codec::BodyKind
+pub noctis::codec::BodyKind::ByRef
+pub noctis::codec::BodyKind::Inline
+pub noctis::codec::BodyKind::Spill
+impl core::clone::Clone for noctis::codec::BodyKind
+pub fn noctis::codec::BodyKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::BodyKind
+impl core::cmp::PartialEq for noctis::codec::BodyKind
+pub fn noctis::codec::BodyKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::codec::BodyKind
+pub fn noctis::codec::BodyKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::codec::BodyKind
+pub fn noctis::codec::BodyKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::codec::BodyKind
+impl core::marker::StructuralPartialEq for noctis::codec::BodyKind
 pub struct noctis::codec::BoundedStr<const N: usize>
 impl<const N: usize> noctis::codec::BoundedStr<N>
 pub const noctis::codec::BoundedStr<N>::CAPACITY: usize
@@ -70,6 +85,47 @@ impl core::fmt::Display for noctis::codec::BoundedStrError
 pub fn noctis::codec::BoundedStrError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::codec::BoundedStrError
 impl core::marker::StructuralPartialEq for noctis::codec::BoundedStrError
+#[non_exhaustive] pub enum noctis::codec::CodecError
+pub noctis::codec::CodecError::Empty
+pub noctis::codec::CodecError::EmptyRoute
+pub noctis::codec::CodecError::ExtraField
+pub noctis::codec::CodecError::ExtraField::field: usize
+pub noctis::codec::CodecError::Field
+pub noctis::codec::CodecError::Field::error: noctis::codec::FieldError
+pub noctis::codec::CodecError::Field::field: usize
+pub noctis::codec::CodecError::Generation
+pub noctis::codec::CodecError::Generation::generation: u8
+pub noctis::codec::CodecError::InvalidChar
+pub noctis::codec::CodecError::InvalidChar::index: usize
+pub noctis::codec::CodecError::MissingField
+pub noctis::codec::CodecError::MissingField::field: usize
+pub noctis::codec::CodecError::MissingSeparator
+pub noctis::codec::CodecError::NotAscii
+pub noctis::codec::CodecError::NotAscii::index: usize
+pub noctis::codec::CodecError::RefLength
+pub noctis::codec::CodecError::RefLength::len: usize
+pub noctis::codec::CodecError::RouteTooLong
+pub noctis::codec::CodecError::RouteTooLong::len: usize
+pub noctis::codec::CodecError::TagOnRef
+pub noctis::codec::CodecError::TooLong
+pub noctis::codec::CodecError::TooLong::len: usize
+pub noctis::codec::CodecError::Truncated
+pub noctis::codec::CodecError::Truncated::section: noctis::codec::Section
+pub noctis::codec::CodecError::UnexpectedSection
+pub noctis::codec::CodecError::UnexpectedSection::section: noctis::codec::Section
+pub noctis::codec::CodecError::ZeroSchema
+impl core::clone::Clone for noctis::codec::CodecError
+pub fn noctis::codec::CodecError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::CodecError
+impl core::cmp::PartialEq for noctis::codec::CodecError
+pub fn noctis::codec::CodecError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::codec::CodecError
+impl core::fmt::Debug for noctis::codec::CodecError
+pub fn noctis::codec::CodecError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::CodecError
+pub fn noctis::codec::CodecError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::codec::CodecError
+impl core::marker::StructuralPartialEq for noctis::codec::CodecError
 pub trait noctis::codec::Field
 pub const noctis::codec::Field::MAX_LEN: core::option::Option<usize>
 pub fn noctis::codec::Field::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
@@ -190,6 +246,91 @@ impl core::fmt::Display for noctis::codec::FieldError
 pub fn noctis::codec::FieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::codec::FieldError
 impl core::marker::StructuralPartialEq for noctis::codec::FieldError
+pub struct noctis::codec::FieldReader<'de>
+impl<'de> noctis::codec::FieldReader<'de>
+pub fn noctis::codec::FieldReader<'de>::field<F: noctis::codec::FieldDecode<'de>>(&mut self) -> core::result::Result<F, noctis::codec::CodecError>
+impl<'de> core::clone::Clone for noctis::codec::FieldReader<'de>
+pub fn noctis::codec::FieldReader<'de>::clone(&self) -> Self
+impl<'de> core::fmt::Debug for noctis::codec::FieldReader<'de>
+pub fn noctis::codec::FieldReader<'de>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::codec::FieldWriter<'w>
+impl<'w> noctis::codec::FieldWriter<'w>
+pub fn noctis::codec::FieldWriter<'w>::field(&mut self, &impl noctis::codec::Field) -> core::fmt::Result
+impl core::fmt::Debug for noctis::codec::FieldWriter<'_>
+pub fn noctis::codec::FieldWriter<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::codec::Payload
+pub const noctis::codec::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
+pub fn noctis::codec::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
+pub trait noctis::codec::PayloadDecode<'de>: noctis::codec::Payload + core::marker::Sized
+pub fn noctis::codec::PayloadDecode::decode_fields(&mut noctis::codec::FieldReader<'de>) -> core::result::Result<Self, noctis::codec::CodecError>
+pub trait noctis::codec::Route
+pub type noctis::codec::Route::Payload: noctis::codec::Payload
+pub const noctis::codec::Route::ID: noctis::codec::RouteId
+pub const noctis::codec::Route::SCHEMA: u8
+pub const noctis::codec::Route::SHAPE: noctis::codec::RouteShape
+pub struct noctis::codec::RouteId(_)
+impl noctis::codec::RouteId
+pub const fn noctis::codec::RouteId::as_str(self) -> &'static str
+pub const fn noctis::codec::RouteId::is_reserved(self) -> bool
+pub const fn noctis::codec::RouteId::new(&'static str) -> Self
+impl core::clone::Clone for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::RouteId
+impl core::cmp::Ord for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::codec::RouteId
+pub fn noctis::codec::RouteId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::codec::RouteId
+impl core::marker::StructuralPartialEq for noctis::codec::RouteId
+pub struct noctis::codec::RouteShape
+impl noctis::codec::RouteShape
+pub const noctis::codec::RouteShape::BY_REF: Self
+pub const noctis::codec::RouteShape::INLINE: Self
+pub const noctis::codec::RouteShape::SPILL: Self
+pub const fn noctis::codec::RouteShape::body(self) -> noctis::codec::BodyKind
+pub const fn noctis::codec::RouteShape::has_select(self) -> bool
+pub const fn noctis::codec::RouteShape::has_view(self) -> bool
+pub const fn noctis::codec::RouteShape::is_signed(self) -> bool
+pub const fn noctis::codec::RouteShape::select(self) -> Self
+pub const fn noctis::codec::RouteShape::signed(self) -> Self
+pub const fn noctis::codec::RouteShape::view(self) -> Self
+impl core::clone::Clone for noctis::codec::RouteShape
+pub fn noctis::codec::RouteShape::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::RouteShape
+impl core::cmp::PartialEq for noctis::codec::RouteShape
+pub fn noctis::codec::RouteShape::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::codec::RouteShape
+pub fn noctis::codec::RouteShape::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::codec::RouteShape
+pub fn noctis::codec::RouteShape::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::codec::RouteShape
+impl core::marker::StructuralPartialEq for noctis::codec::RouteShape
+#[non_exhaustive] pub enum noctis::codec::Section
+pub noctis::codec::Section::Envelope
+pub noctis::codec::Section::Nonce
+pub noctis::codec::Section::Schema
+pub noctis::codec::Section::Tag
+impl core::clone::Clone for noctis::codec::Section
+pub fn noctis::codec::Section::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::Section
+impl core::cmp::PartialEq for noctis::codec::Section
+pub fn noctis::codec::Section::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::codec::Section
+pub fn noctis::codec::Section::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::Section
+pub fn noctis::codec::Section::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::codec::Section
+pub fn noctis::codec::Section::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::codec::Section
+impl core::marker::StructuralPartialEq for noctis::codec::Section
 pub mod noctis::codec::check
 #[non_exhaustive] pub enum noctis::codec::check::CheckError
 pub noctis::codec::check::CheckError::Decode
@@ -225,6 +366,18 @@ pub fn noctis::codec::check::assert_round_trip<T>(&T) where T: noctis::codec::Fi
 pub fn noctis::codec::check::assert_worst_case<T>(&T) where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub fn noctis::codec::check::round_trip<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub fn noctis::codec::check::worst_case<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
+pub mod noctis::prelude
+pub trait noctis::prelude::Payload
+pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
+pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
+pub proc macro noctis::prelude::#[derive(Payload)]
+pub proc macro noctis::prelude::#[derive(PayloadEnum)]
+pub trait noctis::prelude::Route
+pub type noctis::prelude::Route::Payload: noctis::codec::Payload
+pub const noctis::prelude::Route::ID: noctis::codec::RouteId
+pub const noctis::prelude::Route::SCHEMA: u8
+pub const noctis::prelude::Route::SHAPE: noctis::codec::RouteShape
+pub proc macro noctis::prelude::#[derive(Route)]
 pub mod noctis::rules
 #[non_exhaustive] pub enum noctis::rules::Actual
 pub noctis::rules::Actual::Count(usize)

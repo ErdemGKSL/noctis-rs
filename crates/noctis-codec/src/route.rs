@@ -5,13 +5,11 @@ use core::fmt;
 
 use crate::{CodecError, Field, FieldDecode};
 
-/// Longest route id, in characters.
-pub(crate) const MAX_ROUTE_LEN: usize = 24;
-
-/// Whether `b` may appear in a route id (`[a-z0-9._-]`).
-pub(crate) const fn is_route_byte(b: u8) -> bool {
-    matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-')
-}
+/// Longest route id, in characters, and whether a byte may appear in one
+/// (`[a-z0-9._-]`); shared with `#[derive(Route)]` through `noctis-rules`.
+pub(crate) use noctis_rules::cid::{
+    ROUTE_ID_MAX_LEN as MAX_ROUTE_LEN, is_route_id_byte as is_route_byte,
+};
 
 /// A route id: 1 to 24 characters of `[a-z0-9._-]`. Ids starting with `_`
 /// are reserved for Noctis.
@@ -186,13 +184,15 @@ impl RouteShape {
 
 /// A Route: a route id, a codec shape, a schema version and a Payload type.
 ///
-/// Story 2.5 derives this; a hand implementation looks like this:
+/// `noctis` derives this with `#[derive(Route)]`, which also proves at
+/// compile time that every id fits 100 characters; a hand implementation
+/// looks like this:
 ///
 /// ```
 /// use core::fmt;
 /// use noctis_codec::{
-///     CodecError, FieldReader, FieldWriter, Parts, Payload, PayloadDecode,
-///     PayloadSource, Route, RouteId, RouteShape, decode_route, encode,
+///     CodecError, Field, FieldReader, FieldWriter, Parts, Payload, PayloadDecode,
+///     PayloadSource, Route, RouteId, RouteShape, decode_route, encode, sum_fields,
 /// };
 ///
 /// #[derive(Debug, PartialEq)]
@@ -202,6 +202,9 @@ impl RouteShape {
 /// }
 ///
 /// impl Payload for BuyV1 {
+///     const MAX_ENCODED_LEN: Option<usize> =
+///         sum_fields(&[<u64 as Field>::MAX_LEN, <u8 as Field>::MAX_LEN]);
+///
 ///     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
 ///         out.field(&self.item)?;
 ///         out.field(&self.qty)
@@ -248,6 +251,13 @@ pub trait Route {
 /// field is compatible with ids encoded before it existed (see
 /// [`FieldDecode::absent`]); every other change bumps the Route's schema.
 pub trait Payload {
+    /// Worst-case width of the encoded body in characters (the fields and
+    /// their `,` separators), or `None` when it is unbounded.
+    ///
+    /// For a list of fields it is `sum_fields` of their
+    /// [`Field::MAX_LEN`]s, in order.
+    const MAX_ENCODED_LEN: Option<usize>;
+
     /// Writes every field, in order, with [`FieldWriter::field`].
     ///
     /// # Errors

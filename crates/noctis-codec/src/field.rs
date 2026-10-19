@@ -47,6 +47,11 @@ use crate::escape::{EscapeWriter, escape, unescape};
 /// assert_eq!(Percent::decode("1c"), Ok(Percent(100)));
 /// assert_eq!(Percent::decode("1d"), Err(FieldError::Overflow)); // 101
 /// ```
+#[diagnostic::on_unimplemented(
+    message = "[CID-01] `{Self}` is not a Payload field type",
+    label = "not a Payload field",
+    note = "implement `Field` and `FieldDecode` from `noctis::codec`, or derive `PayloadEnum` on a unit enum"
+)]
 pub trait Field {
     /// Worst-case encoded width in characters, or `None` when unbounded.
     const MAX_LEN: Option<usize>;

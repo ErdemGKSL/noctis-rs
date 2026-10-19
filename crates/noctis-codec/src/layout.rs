@@ -10,7 +10,9 @@ use core::time::Duration;
 use arrayvec::ArrayString;
 
 use crate::base62::{digit, digit_value};
-use crate::parts::{DIGIT_MAX as MAX_SCHEMA, Flags, SelectNonce, Sign, Tag, Verify, ViewEnvelope};
+use noctis_rules::cid::SCHEMA_MAX as MAX_SCHEMA;
+
+use crate::parts::{Flags, SelectNonce, Sign, Tag, Verify, ViewEnvelope};
 use crate::refs::Ref;
 use crate::route::{
     BodyKind, FieldReader, FieldWriter, MAX_ROUTE_LEN, Payload, PayloadDecode, Route, is_route_byte,

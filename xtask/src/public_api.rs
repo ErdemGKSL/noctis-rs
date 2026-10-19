@@ -78,11 +78,11 @@ pub(crate) fn last_segment(path: &str) -> &str {
 /// Words that may sit between `pub` and an item's path.
 const KEYWORDS: &[&str] = &[
     "const", "fn", "unsafe", "async", "extern", "static", "mut", "type", "trait", "auto", "union",
-    "use", "macro", "struct", "enum", "mod",
+    "use", "macro", "struct", "enum", "mod", "proc",
 ];
 
 /// Keywords that do not define the item's kind on their own.
-const QUALIFIERS: &[&str] = &["unsafe", "async", "extern", "mut", "auto"];
+const QUALIFIERS: &[&str] = &["unsafe", "async", "extern", "mut", "auto", "proc"];
 
 /// Parses `cargo public-api` output (LF lines, an optional final newline;
 /// an empty line is an error); errors are `(1-based line, line text)`.
@@ -183,8 +183,31 @@ fn parse_item(s: &str) -> Option<(Option<&'static str>, String)> {
             keyword = Some(*kw);
         }
     }
-    let (path, _) = parse_path(rest)?;
+    let canonical = proc_macro_path(rest);
+    let (path, _) = parse_path(canonical.as_deref().unwrap_or(rest))?;
     Some((keyword, path))
+}
+
+/// The plain path of a derive or attribute proc macro, which the tool spells
+/// `parent::#[derive(Name)]` or `parent::#[Name]`: `parent::Name`.
+fn proc_macro_path(s: &str) -> Option<String> {
+    let (parent, attr) = s.split_once("::#[")?;
+    let inner = attr.strip_suffix(']')?;
+    let name = inner
+        .strip_prefix("derive(")
+        .and_then(|n| n.strip_suffix(')'))
+        .unwrap_or(inner);
+    Some(format!("{parent}::{name}"))
+}
+
+/// How `cargo public-api` spells derive (`parent::#[derive(Name)]`) and
+/// attribute (`parent::#[Name]`) proc macro `path`; `None` without a parent.
+pub(crate) fn proc_macro_spellings(path: &str) -> Option<[String; 2]> {
+    let (parent, name) = path.rsplit_once("::")?;
+    Some([
+        format!("{parent}::#[derive({name})]"),
+        format!("{parent}::#[{name}]"),
+    ])
 }
 
 /// `impl[<…>] …` → (self path, is a trait impl); `None` when not an impl
@@ -408,6 +431,29 @@ mod tests {
         let line = one("pub macro noctis::rgb!");
         assert_eq!(line.path, "noctis::rgb");
         assert_eq!(line.name(), "rgb");
+    }
+
+    #[test]
+    fn l7_proc_macros() {
+        for (text, name) in [
+            ("pub proc macro noctis::prelude::#[derive(Route)]", "Route"),
+            ("pub proc macro noctis::prelude::#[handler]", "handler"),
+            ("pub proc macro noctis::prelude::command!", "command"),
+        ] {
+            let line = one(text);
+            assert_eq!(line.kind, Kind::Item, "{text}");
+            assert_eq!(line.keyword, Some("macro"), "{text}");
+            assert_eq!(line.path, format!("noctis::prelude::{name}"), "{text}");
+            assert!(line.is_item());
+        }
+        assert_eq!(
+            proc_macro_spellings("noctis_macros::Route"),
+            Some([
+                "noctis_macros::#[derive(Route)]".to_owned(),
+                "noctis_macros::#[Route]".to_owned()
+            ])
+        );
+        assert_eq!(proc_macro_spellings("Route"), None);
     }
 
     #[test]

@@ -61,6 +61,8 @@ async fn show_profile(ctx: CommandCtx, target: TargetUser) -> HandlerResult<Prof
 
 /// The profile's View Route: the reload button re-runs the loader.
 /// `editable` remembers whether the invoker viewed their own profile.
+///
+/// Width (`noctis_route_width`): `profile: F 1 + route 7 + sep 1 + S 0 + E 5 + N 0 + body 13 + T 0 = 27 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
 #[route("profile", view)]
 pub struct ProfileRoute {
@@ -70,15 +72,19 @@ pub struct ProfileRoute {
 
 /// "Edit bio" button. `opens_modal` turns off the auto-defer for its handler, because a
 /// modal must be the first response (INT-05). `owner = user`: only that user may click.
+///
+/// Width (`noctis_route_width`): `profile.bio: F 1 + route 11 + sep 1 + S 0 + E 0 + N 0 + body 11 + T 0 = 24 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("profile.bio", opens_modal, owner = user)]
+#[route("profile.bio", opens_modal, owner = user)] // [planned]: runtime arguments are rejected until their release
 pub struct EditBio {
     pub user: Id<UserMarker>,
 }
 
 /// The modal's own Route: its submit lands in `save_bio`.
+///
+/// Width (`noctis_route_width`): `profile.save: F 1 + route 12 + sep 1 + S 0 + E 0 + N 0 + body 11 + T 0 = 25 (limit 100)`.
 #[derive(Route, Debug, Clone, Copy)]
-#[route("profile.save", owner = user)]
+#[route("profile.save", owner = user)] // [planned]: runtime arguments are rejected until their release
 pub struct SaveBio {
     pub user: Id<UserMarker>,
 }

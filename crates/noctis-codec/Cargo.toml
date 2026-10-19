@@ -12,11 +12,11 @@ arrayvec.workspace = true
 blake3.workspace = true
 bytes.workspace = true
 getrandom.workspace = true
+noctis-rules.workspace = true
 thiserror.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
-noctis-rules.workspace = true
 proptest.workspace = true
 
 [lints]

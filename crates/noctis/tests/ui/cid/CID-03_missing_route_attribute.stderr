@@ -1,0 +1,6 @@
+error: [CID-03] #[derive(Route)] needs a #[route("id")] attribute
+         = help: write #[route("shop.buy")], optionally followed by codec arguments such as #[route("shop.buy", schema = 1)]
+ --> tests/ui/cid/CID-03_missing_route_attribute.rs:4:8
+  |
+4 | struct NoAttribute;
+  |        ^^^^^^^^^^^

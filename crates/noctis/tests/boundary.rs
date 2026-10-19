@@ -4,3 +4,6 @@
 
 #[path = "boundary/msg.rs"]
 mod msg;
+
+#[path = "boundary/cid.rs"]
+mod cid;

@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `5b1d4b65cdac8491985d722db301d87b1faa25c1ee58721b7ea70caa872a9b8e` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `7eafb62e2a010339a5747218954644eb4616995a58ea0ca134059703db729fb7` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -125,7 +125,7 @@ literal that differs from the locale file is a compile error too.
 
 ```rust
 #[derive(Route, Debug, Clone, Copy)]
-#[route("dash.mod", permissions = MANAGE_GUILD)]   // id ≤ 24 chars [a-z0-9._-]; guard
+#[route("dash.mod", permissions = MANAGE_GUILD)]   // id ≤ 24 chars [a-z0-9._-]; guard [planned]
 pub struct ToggleModule { pub guild: Id<GuildMarker>, pub module: ModuleKey, pub enable: bool }
 
 // in a View's render:
@@ -218,7 +218,7 @@ MediaGallery::new([MediaItem::new(cx.attach(&self.card)).alt(s.profile.card_alt(
 ### 3.6 A modal with pre-fill
 
 ```rust
-#[derive(Route, Clone, Copy)] #[route("profile.bio", opens_modal, owner = user)]
+#[derive(Route, Clone, Copy)] #[route("profile.bio", opens_modal, owner = user)] // runtime args [planned]
 pub struct EditBio { pub user: Id<UserMarker> }
 #[derive(Route, Clone, Copy)] #[route("profile.save", owner = user)]
 pub struct SaveBio { pub user: Id<UserMarker> }

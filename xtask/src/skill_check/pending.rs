@@ -2,8 +2,9 @@
 //! implements. The only known check is `component-entries` (Story 4.1: every
 //! component builder has its entry in the skill). It must stay pending until
 //! then, and it is due, which fails, once the snapshot exports a component
-//! builder type (a `pub struct`/`pub enum` outside `noctis::rules::` named
-//! like a Components V2 component). This module implements only that
+//! builder type (a `pub struct`/`pub enum` outside `noctis::rules::` and
+//! `noctis::codec::` named like a Components V2 component; the codec's
+//! `Section` is a `custom_id` layout section, not a component). This module implements only that
 //! registration and trigger, never the check itself.
 
 use std::collections::BTreeSet;
@@ -104,7 +105,8 @@ pub(super) fn check(repo: &Repo<'_>, snapshot: Option<&[Line]>, problems: &mut P
     pending.len()
 }
 
-/// Component builder types the snapshot exports outside `noctis::rules`.
+/// Component builder types the snapshot exports outside `noctis::rules` and
+/// `noctis::codec`.
 fn due_builders(lines: &[Line]) -> impl Iterator<Item = &str> {
     lines
         .iter()
@@ -112,6 +114,7 @@ fn due_builders(lines: &[Line]) -> impl Iterator<Item = &str> {
             l.kind == crate::public_api::Kind::Item
                 && matches!(l.keyword, Some("struct" | "enum"))
                 && !l.path.starts_with("noctis::rules::")
+                && !l.path.starts_with("noctis::codec::")
                 && BUILDERS.contains(&l.name())
         })
         .map(|l| l.path.as_str())
@@ -127,7 +130,8 @@ mod tests {
         let lines = parse(
             "#[non_exhaustive] pub struct noctis::rules::component::Container<'a>\n\
              pub fn noctis::ui::Container()\n\
-             pub struct noctis::ui::Containers",
+             pub struct noctis::ui::Containers\n\
+             #[non_exhaustive] pub enum noctis::codec::Section",
         )
         .unwrap();
         assert_eq!(due_builders(&lines).count(), 0);

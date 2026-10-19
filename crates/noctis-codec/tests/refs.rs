@@ -130,6 +130,8 @@ impl Field for Colon {
 struct One<F>(F);
 
 impl<F: Field> Payload for One<F> {
+    const MAX_ENCODED_LEN: Option<usize> = F::MAX_LEN;
+
     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
         out.field(&self.0)
     }

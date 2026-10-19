@@ -120,6 +120,7 @@ impl PendingRef {
 /// # #[derive(Debug, PartialEq)]
 /// # struct Qty(u8);
 /// # impl Payload for Qty {
+/// #     const MAX_ENCODED_LEN: Option<usize> = <u8 as noctis_codec::Field>::MAX_LEN;
 /// #     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result { out.field(&self.0) }
 /// # }
 /// # impl<'de> PayloadDecode<'de> for Qty {

@@ -1,0 +1,7 @@
+error: [CID-03] route id: limit [a-z0-9._-], actual `Shop`
+         = note: `S` at byte 0 is not allowed
+         = help: use lowercase ASCII letters, digits, `.`, `_` and `-` only
+ --> tests/ui/cid/CID-03_uppercase_route_id.rs:4:9
+  |
+4 | #[route("Shop")]
+  |         ^^^^^^

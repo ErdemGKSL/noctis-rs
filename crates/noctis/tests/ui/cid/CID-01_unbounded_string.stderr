@@ -1,0 +1,16 @@
+error[E0080]: evaluation panicked: [CID-01] route `report.reason` has unbounded fields
+                = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to #[route]
+   --> tests/ui/cid/CID-01_unbounded_string.rs:5:8
+    |
+  5 | struct Report {
+    |        ^^^^^^ evaluation of `_` failed inside this call
+    |
+note: inside `noctis::__private::noctis_codec::derive::assert_fits::<Report>`
+ --> $RUST/core/src/panic.rs
+  |
+  = note: the failure occurred here
+  |
+ ::: $WORKSPACE/crates/noctis-codec/src/derive.rs
+  |
+  |     panic!("{}", msg.as_str());
+  |     -------------------------- in this macro invocation

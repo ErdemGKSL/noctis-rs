@@ -9,6 +9,9 @@ use crate::base62::{self, digit, digit_value};
 
 /// Largest value of one base62 digit.
 pub(crate) const DIGIT_MAX: u8 = 61;
+
+// The schema version `S` is one base62 digit.
+const _: () = assert!(DIGIT_MAX == noctis_rules::cid::SCHEMA_MAX);
 /// Largest value of two base62 digits.
 const TWO_DIGIT_MAX: u16 = 62 * 62 - 1;
 

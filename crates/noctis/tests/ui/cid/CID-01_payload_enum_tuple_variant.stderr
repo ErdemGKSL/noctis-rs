@@ -1,0 +1,6 @@
+error: [CID-01] PayloadEnum variant `B` has fields
+         = help: a PayloadEnum has unit variants only; use a struct Payload field list instead
+ --> tests/ui/cid/CID-01_payload_enum_tuple_variant.rs:6:5
+  |
+6 |     B(u8),
+  |     ^^^^^
