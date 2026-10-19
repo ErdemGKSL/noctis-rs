@@ -34,3 +34,14 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 - The Codex CLI that `image-gen` needs does not survive a new cloud container; if `codex` is missing or logged out, ask the user before installing it or starting `codex login --device-auth`.
 
 <!-- /bmad:context -->
+
+## Maintainer workflow
+
+These are the maintainer's standing preferences for agent sessions on this repo.
+
+- Push every commit to `main` immediately and automatically (`git push origin HEAD:main`), together with the session branch if there is one; no PRs and no waiting for approval.
+- Commit and push after every finished step, including `_bmad-output/`: cloud containers are ephemeral and anything unpushed is lost.
+- Work autonomously; ask the maintainer only about decisions that change the architecture or the feature set.
+- Delegate research on unfamiliar frameworks, large-document extraction and independent reviews to subagents, and keep only their conclusions in the main context.
+- Verify crate versions and that a technology still exists against crates.io, docs.rs or the official source before relying on them, never from memory.
+- Never send the maintainer's personal data (such as their email) to external services, including in HTTP headers like `User-Agent`.

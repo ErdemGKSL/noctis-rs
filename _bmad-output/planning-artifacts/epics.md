@@ -2585,3 +2585,465 @@ So that translators can ship text without a redeploy, without ever changing publ
 **Given** the new public API
 **When** the story is done
 **Then** the Usage Skill documents overlays, and `skill-check` passes
+
+## Epic 12: Clusters and scale
+
+A bot author scales from one process to a Cluster by configuration only: Shard Ranges,
+Cluster-wide identify, session resume across restarts, resumable shutdown, a shared
+HTTP proxy and a configurable Discord cache, with memory per guild measured in CI.
+Handler code never changes (UJ-3).
+
+### Story 12.1: Shard Ranges and Cluster-wide identify
+
+As a bot operator,
+I want each process to run one Shard Range while identifies are serialized per bucket across the whole Cluster,
+So that I can split a large bot across processes without identify storms.
+
+**Implements:** FR-3, FR-13 (designated publisher); AD-21, AD-14; rules GW-01.
+
+**Acceptance Criteria:**
+
+**Given** a configured Shard Range (for example shards 32–63 of 128) via the builder or `NOCTIS_SHARD_RANGE`
+**When** the process starts
+**Then** it runs only the shards in its range; a range not aligned to `max_concurrency` is accepted and logs a warning
+
+**Given** two in-process Apps standing in for two processes and sharing one `IdentifyQueue` implementation
+**When** both boot their ranges
+**Then** per-bucket identify concurrency holds across both (one identify per bucket per 5 s, paused-clock test)
+
+**Given** a Cluster configuration
+**When** exactly one process sets `publisher = true`
+**Then** only that process runs Publish on start; the others never publish
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill's app-and-sharding reference documents Shard Ranges and the publisher flag, and `skill-check` passes
+
+### Story 12.2: Session resume through the SessionStore
+
+As a bot operator,
+I want restarted processes to resume their shards' sessions,
+So that restarts within Discord's resume window don't spend identifies or miss events.
+
+**Implements:** FR-4; AD-21, AD-14; rules GW-02.
+
+**Acceptance Criteria:**
+
+**Given** a SessionStore holding `(session_id, seq, resume_url)` for a shard
+**When** the process restarts within the resume window (gateway stub)
+**Then** the shard resumes instead of identifying, and the identify budget is not consumed (GW-02)
+
+**Given** a stored session that Discord rejects (invalid session)
+**When** the shard starts
+**Then** it falls back to a fresh identify with no operator action and clears the stale entry
+
+**Given** the gateway
+**When** sessions are read or written
+**Then** `noctis-gateway` is the only reader and writer of the SessionStore
+
+### Story 12.3: Resumable shutdown
+
+As a bot operator,
+I want a graceful shutdown to leave every shard resumable, with an explicit fresh mode,
+So that rolling deploys resume and full resets are still possible.
+
+**Implements:** FR-55, FR-54 (shutdown order); AD-21.
+
+**Acceptance Criteria:**
+
+**Given** a graceful shutdown in default mode
+**When** shards close
+**Then** each closes with `CloseFrame::RESUME`, and after observing `GatewayClose` its session id, sequence (last received) and resume URL are written to the SessionStore before the process exits
+
+**Given** `--no-resume`
+**When** the process shuts down or starts
+**Then** shards close fresh and the stored sessions are cleared
+
+**Given** events dropped under back-pressure before shutdown
+**When** the session resumes
+**Then** they are not replayed (documented at-most-once semantics)
+
+### Story 12.4: Shared HTTP rate limiting through a proxy
+
+As a bot operator running a Cluster,
+I want every Discord HTTP request to go through a shared rate-limit proxy,
+So that processes sharing one token never exceed Discord's per-token limits.
+
+**Implements:** FR-52; AD-24; rules RL-01, RL-02, RL-03, INT-13.
+
+**Acceptance Criteria:**
+
+**Given** a proxy URL configured (builder or `NOCTIS_HTTP_PROXY`)
+**When** the App's single HTTP client is built
+**Then** it uses `proxy(url, true)` and `ratelimiter(None)`, and a test with a mock proxy shows no request bypasses it (including raw REST and webhook requests)
+
+**Given** a Cluster configuration (a Shard Range smaller than the total) without a proxy
+**When** the App starts
+**Then** a warning names the risk of exceeding the per-token global limit (RL-02)
+
+**Given** the HTTP client
+**When** a request timeout is configured
+**Then** it applies to every request (default 10 s)
+
+**Given** the Project Template
+**When** the story is done
+**Then** its `.env.example` and README document proxy mode as the Cluster setup, and the Usage Skill documents it, with `skill-check` passing
+
+### Story 12.5: Discord cache configuration and minimal intents
+
+As a bot author,
+I want to choose which Discord resources are cached, back the cache with my own storage, or disable it,
+So that memory stays proportional to what my features actually use.
+
+**Implements:** FR-40, FR-38 (Discord cache backend), FR-6 (intents); AD-1, AD-21, AD-25; rules GW-05.
+
+**Acceptance Criteria:**
+
+**Given** default configuration
+**When** the App is built
+**Then** only resources needed by enabled framework features are cached, and the default intents are the minimum required by registered Event Handlers and cache resources (`Intents::GUILDS` for an interaction-only bot)
+
+**Given** a cache resource or handler needing an intent that isn't enabled
+**When** `App::build` runs
+**Then** it fails with a typed error naming the resource and intent (GW-05)
+
+**Given** the cache API
+**When** a handler reads it
+**Then** it returns owned or shared values; no guard that could be held across `.await` is exposed (clippy lint test or compile-fail fixture)
+
+**Given** a Discord cache backed by an out-of-process implementation of the cache port
+**When** two in-process Apps standing in for Cluster processes read it
+**Then** they see the same data
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents cache configuration, and `skill-check` passes
+
+### Story 12.6: Memory-per-guild benchmark
+
+As a bot operator,
+I want framework memory per idle guild measured in CI with the Discord and render caches reported separately,
+So that I can size deployments and regressions are visible.
+
+**Implements:** NFR-1, UX-DR8; AD-25, AD-28.
+
+**Acceptance Criteria:**
+
+**Given** the memory bench in `noctis-core/benches` with a stated default cache configuration (no members, no messages)
+**When** it loads 10k idle guilds through the gateway stub
+**Then** it reports framework bytes per guild, Discord cache bytes and Renderer cache bytes separately against `budgets.toml` (initial goal ≤ 1 KiB per idle guild excluding the Discord cache)
+
+**Given** per-guild framework state
+**When** it is inspected
+**Then** it is a fixed-size record (Module bitset, locale) and no framework map is keyed unboundedly by guild, user, channel, message or interaction
+
+**Given** `main.yml`
+**When** it runs
+**Then** the bench reports on every push to `main` (gating is enabled in Story 14.3)
+
+## Epic 13: Module operations
+
+A bot author composes Module trees, selects features at boot, enables or disables
+Modules at runtime globally or per guild across a Cluster, rate-limits Commands and
+Routes, and observes the App's lifecycle through hooks.
+
+### Story 13.1: Module trees with unique path ids
+
+As a bot author,
+I want to nest Modules into a tree with unique path-like ids,
+So that features are organized like tescord Packs and every log line says which Module it came from.
+
+**Implements:** FR-44, NFR-5; AD-7, AD-26, AD-29; Conventions (Module ids).
+
+**Acceptance Criteria:**
+
+**Given** `Module::new("admin").module(Module::new("admin/logs"))`
+**When** the tree is mounted on the App
+**Then** registrations of every nested Module are folded into the Registry, and parent-before-child ordering applies to Middleware
+
+**Given** two Modules with the same id
+**When** `App::build` runs
+**Then** it fails with a typed error naming the id
+
+**Given** any registration
+**When** it logs, records a metric or returns an error
+**Then** the `module` span field and error context carry its Module id (metric labels carry it only where AD-29 allows)
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents Module trees, and `skill-check` passes
+
+### Story 13.2: Boot-time feature flags
+
+As a bot operator,
+I want to select which Modules and registrations exist in a run via Boot Flags,
+So that one binary can run different feature sets without code changes.
+
+**Implements:** FR-73, FR-13; AD-7.
+
+**Acceptance Criteria:**
+
+**Given** Modules and individual registrations carrying Boot Flags
+**When** the App starts with `--features a,b` (or `all`, or the equivalent config)
+**Then** registrations whose flags aren't selected are filtered out of the descriptors before the Registry fold, so they are not registered, dispatched or published
+
+**Given** `--publish --dry-run --features a`
+**When** it runs
+**Then** the printed JSON and diff reflect only the selected flags
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents Boot Flags, and `skill-check` passes
+
+### Story 13.3: Runtime Module enable and disable
+
+As a bot operator,
+I want to enable or disable a Module at runtime, globally or for one guild, across every process,
+So that I can switch features off without a deploy.
+
+**Implements:** FR-45, FR-13 (per-guild Publish), FR-38 (ModuleStateStore); AD-7, AD-14, AD-23; rules REG-02.
+
+**Acceptance Criteria:**
+
+**Given** `ctx.modules().set_enabled(module, guild, enabled)` writing through the `ModuleStateStore`
+**When** another process sharing the store polls its `version()` (default every 5 s)
+**Then** it refreshes its per-Module bitset snapshot (`arc-swap`), and the change takes effect within the documented propagation delay equal to the poll interval
+
+**Given** a Module disabled in a guild
+**When** a user invokes one of its global Commands there
+**Then** stage 3 replies with a localized ephemeral `noctis.module.disabled` notice and the handler doesn't run; its components and Event Handlers don't run either
+
+**Given** per-guild Publish
+**When** a Module is disabled for a guild
+**Then** only its guild-scoped Commands are left out of that guild's Publish (re-counted against REG-02); global Commands stay published
+
+**Given** `ctx.modules().is_enabled(module, guild)`
+**When** a handler reads it
+**Then** it answers from the cached snapshot without port I/O
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents runtime enable/disable, the template dashboard's Module toggles are reconciled, and `skill-check` passes
+
+### Story 13.4: Rate limits on Commands and Routes
+
+As a bot author,
+I want to declare "N uses per window" limits per user, member, channel, guild or message,
+So that abuse is throttled before my handler runs, consistently across a Cluster.
+
+**Implements:** FR-46; AD-14, AD-23.
+
+**Acceptance Criteria:**
+
+**Given** `#[command("profile", rate_limit(user, 3, per = "10s"))]` (or on a Route)
+**When** a user invokes it a fourth time within 10 s
+**Then** stage 5 increments through `RateLimitStore::incr_with_ttl` before any auto-defer and the handler, and the user gets an immediate localized ephemeral notice including the time remaining
+
+**Given** scopes user, member, channel, guild and message
+**When** limits are keyed
+**Then** each scope uses its own key and the store is App-namespaced
+
+**Given** a handler that sets or extends a limit dynamically (for example only after a successful action)
+**When** it calls the limit API
+**Then** the next invocation sees the updated limit
+
+**Given** a custom rate-limited response configured per App, Command or Route
+**When** a limit is hit
+**Then** the most specific override runs instead of the default notice
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents rate limits, the template's `/profile` rate limit is reconciled, and `skill-check` passes
+
+### Story 13.5: Lifecycle Hooks
+
+As a bot author,
+I want hooks for App start, shard state, Publish, Module toggles and shutdown,
+So that I can react to framework events (alerts, warm-ups, audits) without polling.
+
+**Implements:** FR-54, FR-1 (fatal close as a hook), NFR-5; AD-21, AD-7, AD-13.
+
+**Acceptance Criteria:**
+
+**Given** `#[hook]` registrations on a Module
+**When** a test App starts, publishes and shuts down
+**Then** it observes, in order and exactly once each: App started; Shard ready (and resumed or disconnected where simulated); all Shards ready; Publish completed or failed with the diff; shutdown started — each with typed data
+
+**Given** a Module enabled or disabled (global or per guild)
+**When** the change is applied
+**Then** the Module enabled/disabled hook fires once with the scope
+
+**Given** a shard closing fatally
+**When** core receives the `ShardEvent` from the gateway
+**Then** the fatally-closed hook fires (gateway never fires hooks itself)
+
+**Given** a hook that returns an error or panics
+**When** it runs
+**Then** the error goes to an Error Sink and the App keeps running
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents every hook and its data, and `skill-check` passes
+
+## Epic 14: v1 launch readiness
+
+Third-party adapters can prove correctness, benchmarks guard memory, latency and
+allocation, the Project Template and Usage Skill are complete and gated, the rules
+catalog has no pending rows, the launch documents exist, and `noctis` 0.1.0 is
+published to crates.io (PRD §8.3 launch criteria).
+
+### Story 14.1: Adapter conformance suites
+
+As an author of a Redis or SQL adapter,
+I want a reusable conformance suite per port,
+So that I can prove my implementation has the semantics Noctis relies on.
+
+**Implements:** FR-39, FR-71; AD-14.
+
+**Acceptance Criteria:**
+
+**Given** `noctis::testkit::conformance::<port>` suites for every store port and `IdentifyQueue`
+**When** an implementation runs its suite
+**Then** it is tested for TTL, overwrite, delete, missing key, atomicity under concurrent callers (exactly one `take`/`put_if_absent` winner, no lost increments), `version()` monotonicity where applicable, and App namespacing through `Namespaced<P>`
+
+**Given** each in-memory default
+**When** CI runs
+**Then** it passes its own suite
+
+**Given** deliberately broken implementations (one ignoring TTL, one with a non-atomic `take`)
+**When** they run the suite
+**Then** the suite fails them (meta-tests)
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents running the suites, the template's `tests/adapters.rs` runs the suite against `BoundedCacheStore`, and `skill-check` passes
+
+### Story 14.2: Project Template builds, runs and gates CI
+
+As a bot author starting a new bot,
+I want the Project Template to build, pass its tests and follow the UI Doctrine,
+So that copying it gives me a working, idiomatic bot.
+
+**Implements:** FR-49, FR-61, UX-DR1..UX-DR9, NFR-8, SM-1; AD-17, AD-27.
+
+**Acceptance Criteria:**
+
+**Given** `examples/project-template/`
+**When** CI runs `cargo build --release`, `cargo clippy --release --all-targets -- -D warnings` and `cargo test --release` in it against the workspace
+**Then** all pass, covering: an option-less entry Command opening a View (`/dashboard`), a Wizard (`/setup start`), a Navbar View with an overflowing list, a Template rendered into a Media Gallery (`/profile`), a custom Adapter (`BoundedCacheStore`) and `en`/`tr` Locale files
+**And** the `template-build` job switches from tracking mode to a required gate, and the "written against the planned API" notes are removed from the template sources
+
+**Given** the template
+**When** `xtask skill-check` lints it
+**Then** no handler responds with an embed or plain `content` as primary output, there is no manual response-type selection, and no per-message collector, await-component loop or inline listener exists
+
+**Given** the template's user code
+**When** its lines are counted (excluding tests, locales and the theme)
+**Then** the count for sharding, auto-published Commands, the 3-Step Wizard and the rendered card is reported against the SM-1 goal of ≤ 150 lines
+
+### Story 14.3: Dispatch latency, allocation and memory gates
+
+As a bot operator,
+I want Noctis's performance budgets measured and enforced in CI,
+So that regressions in latency, allocation or memory are caught before release.
+
+**Implements:** NFR-1, NFR-3, NFR-9, SM-4; AD-25, AD-28.
+
+**Acceptance Criteria:**
+
+**Given** the NFR-3 latency bench in `noctis-core/benches`
+**When** it runs at 10k events/s on 4 cores with the AD-25 mix (60% `MESSAGE_CREATE` with no handler, 25% handled guild events, 10% component interactions with inline Payloads, 5% command interactions, no-op handlers)
+**Then** it reports p99 event-arrival-to-handler-start against `budgets.toml` (target ≤ 1 ms)
+
+**Given** the dhat allocation test
+**When** it runs over the dispatch path
+**Then** Route lookup and fixed-width inline decode allocate nothing, and the documented per-interaction budget (at most one port call for the Payload and one boxed handler future) is asserted
+
+**Given** the first benchmark results (PRD Q3)
+**When** the maintainers record the confirmed or re-set targets in `budgets.toml`
+**Then** the latency, memory (Story 12.6) and allocation jobs switch from reporting to gating on `main`, and the PRD assumptions for NFR-1/3/9 are noted as confirmed in the changelog
+
+### Story 14.4: Rules catalog completeness audit
+
+As a Noctis maintainer,
+I want every catalog rule enforced and tested at its declared point before release,
+So that the NFR-10 promise "static input is always checked at compile time" holds for v1.
+
+**Implements:** FR-75, FR-79, NFR-10; AD-3, AD-4.
+
+**Acceptance Criteria:**
+
+**Given** `xtask/rules-pending.toml`
+**When** this story is done
+**Then** it is empty (P2-only rows such as prefix-command rules may remain only if tagged `p2`), and `xtask rules-catalog` passes with every Compile-time row covered by a trybuild fixture and every App-build or Runtime row by a unit test citing its id
+
+**Given** the audit
+**When** each rule with static input is reviewed
+**Then** none is checked only at runtime; any found is moved to compile time or recorded in the catalog with the reason its input is dynamic
+
+**Given** the catalog's Unconfirmed values table
+**When** PRD open questions Q1, Q4 and Q5 have answers
+**Then** the corresponding `Limits` defaults and catalog rows are updated; otherwise the conservative defaults remain documented
+
+### Story 14.5: Usage Skill completeness and agent trial
+
+As a coding agent given only the Project Template,
+I want the Usage Skill to cover the whole public API with working examples,
+So that I can write a leaderboard feature that compiles without reading Noctis source.
+
+**Implements:** FR-50, FR-43 (documented rule), UX-DR9, SM-3; AD-17, AD-26.
+
+**Acceptance Criteria:**
+
+**Given** the Usage Skill
+**When** `skill-check` runs
+**Then** every public item is mentioned, every FR-23/FR-29 component has an entry (where it may appear, its Limits, its builder), the Limits entries link `docs/discord-rules.md`, and the `[planned]` markers and `v0` status are removed
+
+**Given** the skill's references
+**When** they are reviewed
+**Then** they include the tescord → Noctis concept map, a limits cheatsheet and a troubleshooting page indexed by rule id, patterns and anti-patterns, and common mistakes, with no per-message listener in any example (UD-7)
+
+**Given** the UJ-5 task ("add a leaderboard: a Template, a View and a Command")
+**When** a coding agent with only the Project Template directory runs it 5 times
+**Then** the result compiles without the agent reading Noctis source in at least 4 of 5 trials, and the trial transcript summary is stored under `_bmad-output/implementation-artifacts/`
+
+### Story 14.6: Launch documentation
+
+As a bot author evaluating Noctis,
+I want complete API docs, a migration concept map, a Cluster deployment guide and a changelog,
+So that I can adopt Noctis from tescord, dbi, serenity or poise and deploy it at scale.
+
+**Implements:** FR-74, FR-52 (Cluster guide), FR-3; AD-28, AD-26.
+
+**Acceptance Criteria:**
+
+**Given** the `noctis` crate
+**When** CI builds docs
+**Then** `missing_docs` is denied, every public item has rustdoc, runnable examples are doctests, and sub-crate docs say "internal; use `noctis`"
+
+**Given** `docs/guides/`
+**When** the story is done
+**Then** it contains the tescord/dbi → Noctis concept map (Pack → Module, `buildComponent` → typed Payload, `locale.user` → User Locale, …) with a short serenity/poise → Noctis section, and a Cluster deployment guide (Shard Ranges, IdentifyQueue, HTTP proxy, shared Adapters, `NOCTIS_PAYLOAD_KEY`, single publisher)
+**And** `CHANGELOG.md` has migration notes, and the crate README links every guide (a CI link check verifies them)
+
+### Story 14.7: Release `noctis` 0.1.0
+
+As a bot author,
+I want `noctis` 0.1.0 on crates.io with all sub-crates published consistently,
+So that I can depend on it from my own bot.
+
+**Implements:** FR-48, NFR-7, NFR-8; AD-2, AD-28.
+
+**Acceptance Criteria:**
+
+**Given** the facade features
+**When** CI runs the final feature matrix
+**Then** each documented feature alone and all features together build and test (`image`, `image-gif`, `image-emoji`, `default-font`, `i18n`, `testkit`; `prefix` once Epic 15 lands), default features build without the image stack, and `cargo-semver-checks` runs on `noctis`
+
+**Given** release-plz on `main`
+**When** the release PR is merged
+**Then** all workspace crates are published at the shared version in layer order from the protected release environment holding the crates.io token, and the changelog entry is included
+
+**Given** the published crate
+**When** the Project Template's `noctis` dependency is switched to `version = "0.1"`
+**Then** the copied-out template builds with `cargo build --release`, and the README roadmap marks Milestones 1–4 done
