@@ -93,6 +93,10 @@
 //!   tag as [`ForgedReason::MissingTag`] and a tag that verifies under no
 //!   key as [`ForgedReason::BadTag`]; a tag on an unsigned Route stays
 //!   [`DecodeError::Stale`].
+//! - The tag is about 35.7 bits (6 base62 digits; a guess forges with
+//!   chance about 1.8e-11) and binds only the id's characters, not a user,
+//!   message or time, so whoever sees a valid id can replay it: a tag proves
+//!   integrity, not authorization.
 //! - Keys are redacted: `Debug` prints `PayloadKey(<redacted>)`, `Display`
 //!   prints `<redacted>`, there is no byte getter, and [`KeyError`] carries
 //!   only lengths and indices (AD-29, NFR-6).

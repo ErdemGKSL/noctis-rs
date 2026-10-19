@@ -2,7 +2,7 @@
 title: 'Story 2.4: Integrity tags for signed inline Payloads'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '3e7ac597d1f6e62ed6752c531e9699a077fc8dcf'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -170,6 +170,30 @@ Keys: `K1 = PayloadKey::from_bytes([1; 32])`, `K2 = [2; 32]`, `K3 = [3; 32]`. Fi
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 20 findings — high 0, medium 1, low 4, false 15, maybe-false 0
+- findings:
+  - `[false]` `[reject]` Public API changed without updating `examples/project-template/` — the facade `crates/noctis/src/lib.rs` re-exports only `BoundedStr`, `Field`, `FieldDecode`, `FieldError`, `check` from `noctis_codec`; none of the new or changed items reach noctis's public API, so the template policy does not apply (api-snapshot gate).
+  - `[false]` `[reject]` MissingTag before the flags check reports a newly signed Route's old id as `Forged` — the schema check runs first (`layout.rs` verified_payload) and AD-5 bumps `schema` whenever `signed` changes, so an untagged schema-matching id of a signed Route cannot be legitimate; the order is the intent's deliberate step 4 before 5.
+  - `[low]` `[reject]` `Tag::ct_eq` is `pub(crate)` so third-party `Verify` impls lack a constant-time compare — no other `Verify` implementor exists or is planned (core uses `PayloadKeys`); the fix adds public surface the intent fixed as `pub(crate)`.
+  - `[low]` `[reject]` Key material is never zeroized and `Clone` copies it — the intent forbids `zeroize` and mandates `Clone`; residual bytes in freed process memory need memory read access that already exposes the env var; the fix adds a manual `Drop` with volatile writes for a marginal gain.
+  - `[low]` `[patch]` Tag strength and replay model are undocumented — `lib.rs` "Integrity tags" section gives the formula but not the ~35.7-bit strength or that a valid id is replayable and is not authorization; patch adds one short doc paragraph.
+  - `[false]` `[reject]` No domain separation / key derivation — the key is used for exactly one purpose (Ref records and envelopes are never keyed), so no cross-protocol confusion occurs; the intent fixes "no prefix, no domain string".
+  - `[false]` `[reject]` `FakeSigner::verify` ignores `signed`, so a wrong slice passed to `verify` would go unnoticed — `tests/tags.rs` uses the real `PayloadKey` with golden `Ok` rows and the tampered-body row `8sig:2UU2sw1` → `BadTag`; passing the whole id or the body only fails those rows.
+  - `[low]` `[reject]` Tamper proptest skips encode failures silently and only asserts `is_err` — `is_err` is exactly the intent's property ("gives `Err`"); the skipped cases are oversized `MixAllSigned` encodes while `MixSigned`/`MixSpillSigned` and the golden matrix still cover each case; test-only, and a `prop_assume!` would reject the whole multi-route case.
+  - `[false]` `[reject]` `verified_payload` maps an impossible `(None, Some)` state to `BadTag` — `signed_part()` returns `None` only when `tag` is `None` (`layout.rs:429-431`, `body_end` within `raw` by construction), and `tag` is checked `Some` at step 4; the state is unreachable.
+  - `[false]` `[reject]` `key::tag` uses a zip loop instead of `first_chunk`; `KeyError::Length` wording — style only with no named harm; the message text is mandated verbatim by the intent.
+  - `[false]` `[reject]` No `PayloadKey::from_env` — the intent's Never list excludes reading `NOCTIS_PAYLOAD_KEY` from the environment (Story 7.2).
+  - `[false]` `[reject]` All-zero / placeholder key accepted (edge) — the intent's matrix requires `"00"×32` → `Ok`; deliberate.
+  - `[false]` `[reject]` Out-of-alphabet tamper of envelope/tag gives `Malformed`, flag-char tamper `Stale`, not `Forged` (edge) — the intent's matrix keeps phase-1 classification unchanged (`8sig:UU2sw` → `Malformed`) and its tamper property requires only `Err`; every such id is still rejected and never yields a Payload.
+  - `[medium]` `[patch]` Schema-before-MissingTag ordering is untested: no untagged, old-schema id of a signed Route is asserted (vgap, pre-verified) — patch adds rows to `cid_06_tampered_ids_are_forged` asserting `"1sig:21"` → `Stale(Schema{expected:0,found:2})` via both `decode_route_verified` and `decode_route`.
+  - `[false]` `[reject]` Intent divergence 1: "rejected like an unknown Route" lives at runtime dispatch — epics place dispatch on the unknown-Route path in Story 7.x; the codec returns the same `Forged` class as `RouteMismatch`; the spec settled this correctly.
+  - `[false]` `[reject]` Intent divergence 2: "configured previous key" implies App/env config — env/App wiring is Story 7.2 and excluded by the intent's Never list; `PayloadKeys::with_previous` is the codec-level rotation.
+  - `[false]` `[reject]` Intent divergence 3: fail-closed `decode_route` changes existing behaviour — required by the intent's AC "Given no keys ... `Forged`, never `Ok`"; deliberate.
+  - `[false]` `[reject]` Intent divergence 4: "Route declared signed" means `#[route(signed)]` — the macro is Story 2.5; the codec shape flag is the correct surface for this story.
+  - `[false]` `[reject]` Intent divergence 5: ordering contract beyond the AC wording — the intent's checks list and matrix state it explicitly; no contradiction.
+  - `[false]` `[reject]` Intent divergence 6: NFR-6 logging/port boundaries not exercised — no logging or port surface exists in this story; redaction is enforced structurally as the intent requires.
+
 ## Design Notes
 
 Decisions (logged to the memlog):
@@ -200,3 +224,23 @@ let got = decode_route_verified::<Sig>(&id, &keys)?; // Forged(BadTag) when tamp
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Keyed 6-char integrity tags (`T` segment) for signed inline Payloads in `noctis-codec`: `PayloadKey` (64-hex `NOCTIS_PAYLOAD_KEY` format, strict parse, no raw-byte accessor), `PayloadKeys` ring with `with_previous` rotation, constant-time compare, `Parts::with_signer` for encoding, `decode_route_verified`/`payload_verified` decoders; unkeyed `decode_route`/`payload` fail closed (`Forged`) on signed Routes. Missing tag on signed Route = `Forged(MissingTag)`, bad tag = `Forged(BadTag)`, schema checked first.
+- **Files changed:**
+  - `crates/noctis-codec/src/key.rs` — new: `PayloadKey`, `PayloadKeys`, `Verify`, tag computation, `KeyError`.
+  - `crates/noctis-codec/src/layout.rs` — tag emission and verified decode path with check ordering.
+  - `crates/noctis-codec/src/error.rs` — `Forged` reasons (`MissingTag`, `BadTag`) and key errors.
+  - `crates/noctis-codec/src/parts.rs` — `with_signer` on `Parts`.
+  - `crates/noctis-codec/src/lib.rs` — exports and "Integrity tags" docs (strength, replay model).
+  - `crates/noctis-codec/Cargo.toml`, `Cargo.lock` — keyed-hash dependency.
+  - `crates/noctis-codec/tests/tags.rs` — new golden matrix, rotation, tamper proptests.
+  - `crates/noctis-codec/tests/{common/mod.rs,layout.rs,refs.rs}` — adapted to fail-closed decode.
+- **Review findings:** 20 total (high 0, medium 1, low 4, false 15).
+  - Patched (2): [medium] untested schema-before-MissingTag ordering — added `"1sig:21"` → `Stale(Schema)` rows via both decoders; [low] tag strength/replay model undocumented — doc paragraph added.
+  - Deferred: none.
+  - Rejected (18): template policy N/A (no facade re-export); MissingTag-before-flags ordering intended (AD-5); `Tag::ct_eq` stays `pub(crate)`; no zeroize (intent forbids, `Clone` mandated); no domain separation needed (single-purpose key); `FakeSigner` covered by real-key golden rows; tamper proptest `is_err` matches intent; `(None, Some)` state unreachable; zip-loop/wording style only; no `from_env` (Story 7.2); all-zero key required by matrix; out-of-alphabet tamper classification kept per matrix; six intent-divergence items settled by spec (dispatch in 7.x, env wiring 7.2, fail-closed required by AC, macro in 2.5, ordering explicit, no logging surface).
+- **Follow-up review recommended:** false — patched counts by verdict: high 0, medium 1, low 1 (first pass; no high, fewer than two medium).
+- **Verification:** local gates via `gates.sh` (fmt, clippy `--release --all-targets --all-features -D warnings`, `cargo test --release`, deps/api checks) all green; CI paused by maintainer.
+- **Residual risks:** ~35.7-bit tags are guessable only online at ~1.8e-11 per guess; valid ids are replayable (not authorization); key bytes not zeroized in memory; core wiring of `PayloadKeys` and App-build error for signed Routes without a key land in Story 7.2.

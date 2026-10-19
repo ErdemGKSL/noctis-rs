@@ -195,6 +195,12 @@ fn cid_06_tampered_ids_are_forged() {
             found: 2
         }))
     );
+    let schema = Err(DecodeError::Stale(StaleReason::Schema {
+        expected: 0,
+        found: 2,
+    }));
+    assert_eq!(decode_route_verified::<Sig>("1sig:21", &k1()), schema);
+    assert_eq!(decode_route::<Sig>("1sig:21"), schema);
     assert_eq!(
         decode_route_verified::<Buy>("8shop.buy:47,3000000", &k1()),
         Err(DecodeError::Stale(StaleReason::Flags {
