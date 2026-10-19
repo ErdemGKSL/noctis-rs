@@ -71,6 +71,18 @@ pub trait FieldDecode<'de>: Field + Sized {
     /// Returns a [`FieldError`] for every input that is not the canonical
     /// encoding of a value.
     fn decode(raw: &'de str) -> Result<Self, FieldError>;
+
+    /// The value of this field when it is missing from the end of an older
+    /// `custom_id` (FR-60).
+    ///
+    /// Appending a field to a Payload is compatible only when the new field
+    /// has an absent value: an id encoded before the field existed then
+    /// decodes with it. Only `Option<T>` overrides this (to `Some(None)`), so
+    /// appended `Option` fields decode as `None` without a schema bump; every
+    /// other field returns `None` here, and a missing field stays an error.
+    fn absent() -> Option<Self> {
+        None
+    }
 }
 
 impl Field for bool {
@@ -183,6 +195,10 @@ impl<'de, T: FieldDecode<'de>> FieldDecode<'de> for Option<T> {
             Some(_) => Err(FieldError::InvalidChar { index: 0 }),
         }
     }
+
+    fn absent() -> Option<Self> {
+        Some(None)
+    }
 }
 
 impl Field for String {
@@ -265,6 +281,15 @@ mod tests {
         assert_copy::<Id<GenericMarker>>();
         assert_copy::<Option<Option<u32>>>();
     };
+
+    #[test]
+    fn only_option_has_an_absent_value() {
+        assert_eq!(<Option<u8>>::absent(), Some(None));
+        assert_eq!(<Option<Option<u8>>>::absent(), Some(None));
+        assert_eq!(<u8>::absent(), None);
+        assert_eq!(<String>::absent(), None);
+        assert_eq!(<bool>::absent(), None);
+    }
 
     #[test]
     fn cid_01_widths_match_ad_6() {

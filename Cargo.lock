@@ -299,6 +299,8 @@ dependencies = [
 name = "noctis-codec"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
+ "noctis-rules",
  "proptest",
  "thiserror",
  "twilight-model",

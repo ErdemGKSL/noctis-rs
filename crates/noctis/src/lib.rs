@@ -33,6 +33,9 @@ pub mod codec {
     //!   `String`, `Cow<str>` and `Vec<T>`.
     //! - [`BoundedStr`] and [`BoundedStrError`]: printable-ASCII text of at most
     //!   `N` characters, `2 * N` wide once escaped.
+    //!   [`FieldDecode::absent`] is a field's value when it is missing from
+    //!   the end of an older `custom_id`: `Some(None)` for `Option<T>`, `None`
+    //!   otherwise, so appending trailing `Option` fields needs no schema bump.
     //! - [`FieldError`]: why a field did not decode.
     //! - [`check`]: [`check::assert_round_trip`] and
     //!   [`check::assert_worst_case`] for the tests of custom fields.

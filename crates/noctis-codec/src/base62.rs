@@ -25,6 +25,23 @@ pub(crate) fn encode_u64(mut n: u64, buf: &mut [u8; U64_WIDTH]) -> &str {
     core::str::from_utf8(&buf[start..]).unwrap_or_default()
 }
 
+/// The base62 digit for `v`; the caller guarantees `v < 62`.
+pub(crate) const fn digit(v: u8) -> u8 {
+    ALPHABET[(v % 62) as usize]
+}
+
+/// Writes `n` as exactly `out.len()` zero-padded base62 digits, keeping the
+/// lowest digits; the caller guarantees `n < 62^out.len()` when every digit
+/// matters.
+pub(crate) const fn write_fixed(mut n: u64, out: &mut [u8]) {
+    let mut i = out.len();
+    while i > 0 {
+        i -= 1;
+        out[i] = ALPHABET[(n % 62) as usize];
+        n /= 62;
+    }
+}
+
 /// The value of one base62 digit, if `b` is one.
 pub(crate) const fn digit_value(b: u8) -> Option<u8> {
     match b {
@@ -72,7 +89,7 @@ pub(crate) fn decode_u64(raw: &str, max_len: usize) -> Result<u64, FieldError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{U64_WIDTH, decode_u64, encode_u64};
+    use super::{U64_WIDTH, decode_u64, digit, encode_u64, write_fixed};
     use crate::FieldError;
 
     #[test]
@@ -83,6 +100,25 @@ mod tests {
         assert_eq!(encode_u64(62, &mut buf), "10");
         assert_eq!(encode_u64(255, &mut buf), "47");
         assert_eq!(encode_u64(u64::MAX, &mut buf), "LygHa16AHYF");
+    }
+
+    #[test]
+    fn digit_and_fixed_width() {
+        assert_eq!(digit(0), b'0');
+        assert_eq!(digit(15), b'F');
+        assert_eq!(digit(61), b'z');
+        let mut two = [0; 2];
+        write_fixed(63, &mut two);
+        assert_eq!(&two, b"11");
+        write_fixed(0, &mut two);
+        assert_eq!(&two, b"00");
+        write_fixed(3843, &mut two);
+        assert_eq!(&two, b"zz");
+        let mut six = [0; 6];
+        write_fixed(u64::MAX, &mut six);
+        assert_eq!(&six, b"16AHYF");
+        let mut none: [u8; 0] = [];
+        write_fixed(5, &mut none);
     }
 
     #[test]

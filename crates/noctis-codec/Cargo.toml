@@ -8,10 +8,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arrayvec.workspace = true
 thiserror.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
+noctis-rules.workspace = true
 proptest.workspace = true
 
 [lints]

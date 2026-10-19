@@ -46,6 +46,15 @@ fn percent_rejects_out_of_range() {
 }
 
 #[test]
+fn option_field_is_absent_compatible() {
+    // A trailing `Option` field missing from an older id decodes as `None`.
+    assert_eq!(<Option<Percent>>::absent(), Some(None));
+    // Every other field has no absent value: missing stays an error.
+    assert_eq!(Percent::absent(), None);
+    assert_eq!(<BoundedStr<6>>::absent(), None);
+}
+
+#[test]
 fn bounded_str_round_trips() {
     const CODE: BoundedStr<6> = BoundedStr::from_static("a,b:c!");
     assert_round_trip(&CODE);

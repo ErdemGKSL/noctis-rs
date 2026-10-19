@@ -127,6 +127,9 @@ Your own type becomes a Payload field by implementing two traits from `noctis::c
 - `FieldDecode<'de>: Field + Sized { fn decode(raw: &'de str) -> Result<Self, FieldError>; }`
   (implement it for every `'de`, as `impl<'de> FieldDecode<'de> for T`, unless you
   borrow from the input; a borrowing type cannot be a `Vec` element).
+  It also has a provided `fn absent() -> Option<Self>` (default `None`): the value used
+  when the field is missing from the end of an older `custom_id`. Only `Option<T>`
+  overrides it (`Some(None)`); leave the default on your own types.
 
 Contract: every encoding is printable ASCII without `,`, `:` or `~`, at most `MAX_LEN`
 chars when `MAX_LEN` is `Some`; `decode` never panics and is canonical (when it
@@ -251,7 +254,8 @@ item id), which is natural for "same handler, different data" (Prev/Next).
 Messages live for months; old components still get clicked after a deploy.
 
 - **Compatible, no bump:** appending `Option<T>` fields at the end (old ids decode them
-  as `None`).
+  as `None`, through `FieldDecode::absent`; `<Option<T>>::absent()` is `Some(None)`,
+  every other field's is `None`, so a missing non-`Option` field stays an error).
 - **Everything else bumps `schema`:** removing/reordering/retyping fields, adding a
   non-`Option` field, and changing `view`, `select`, `signed` or `by_ref`.
 - A mismatched schema or shape decodes as **Stale**: it goes to the Route's `on_stale`

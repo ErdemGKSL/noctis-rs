@@ -43,11 +43,13 @@ impl<const N: usize> noctis::codec::Field for noctis::codec::BoundedStr<N>
 pub const noctis::codec::BoundedStr<N>::MAX_LEN: core::option::Option<usize>
 pub fn noctis::codec::BoundedStr<N>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
 impl<const N: usize> noctis::codec::FieldDecode<'_> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::absent() -> core::option::Option<Self>
 pub fn noctis::codec::BoundedStr<N>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl<const N: usize> noctis::codec::Field for noctis::codec::BoundedStr<N>
 pub const noctis::codec::BoundedStr<N>::MAX_LEN: core::option::Option<usize>
 pub fn noctis::codec::BoundedStr<N>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
 impl<const N: usize> noctis::codec::FieldDecode<'_> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::absent() -> core::option::Option<Self>
 pub fn noctis::codec::BoundedStr<N>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 #[non_exhaustive] pub enum noctis::codec::BoundedStrError
 pub noctis::codec::BoundedStrError::InvalidChar
@@ -114,34 +116,49 @@ impl<T> noctis::codec::Field for twilight_model::id::Id<T>
 pub const twilight_model::id::Id<T>::MAX_LEN: core::option::Option<usize>
 pub fn twilight_model::id::Id<T>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
 pub trait noctis::codec::FieldDecode<'de>: noctis::codec::Field + core::marker::Sized
+pub fn noctis::codec::FieldDecode::absent() -> core::option::Option<Self>
 pub fn noctis::codec::FieldDecode::decode(&'de str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for alloc::string::String
+pub fn alloc::string::String::absent() -> core::option::Option<Self>
 pub fn alloc::string::String::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for bool
+pub fn bool::absent() -> core::option::Option<Self>
 pub fn bool::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for i16
+pub fn i16::absent() -> core::option::Option<Self>
 pub fn i16::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for i32
+pub fn i32::absent() -> core::option::Option<Self>
 pub fn i32::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for i64
+pub fn i64::absent() -> core::option::Option<Self>
 pub fn i64::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for i8
+pub fn i8::absent() -> core::option::Option<Self>
 pub fn i8::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for u16
+pub fn u16::absent() -> core::option::Option<Self>
 pub fn u16::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for u32
+pub fn u32::absent() -> core::option::Option<Self>
 pub fn u32::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for u64
+pub fn u64::absent() -> core::option::Option<Self>
 pub fn u64::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl noctis::codec::FieldDecode<'_> for u8
+pub fn u8::absent() -> core::option::Option<Self>
 pub fn u8::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl<'de, T: noctis::codec::FieldDecode<'de>> noctis::codec::FieldDecode<'de> for core::option::Option<T>
+pub fn core::option::Option<T>::absent() -> core::option::Option<Self>
 pub fn core::option::Option<T>::decode(&'de str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl<'de> noctis::codec::FieldDecode<'de> for alloc::borrow::Cow<'de, str>
+pub fn alloc::borrow::Cow<'de, str>::absent() -> core::option::Option<Self>
 pub fn alloc::borrow::Cow<'de, str>::decode(&'de str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl<T: for<'x> noctis::codec::FieldDecode<'x>> noctis::codec::FieldDecode<'_> for alloc::vec::Vec<T>
+pub fn alloc::vec::Vec<T>::absent() -> core::option::Option<Self>
 pub fn alloc::vec::Vec<T>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 impl<T> noctis::codec::FieldDecode<'_> for twilight_model::id::Id<T>
+pub fn twilight_model::id::Id<T>::absent() -> core::option::Option<Self>
 pub fn twilight_model::id::Id<T>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
 #[non_exhaustive] pub enum noctis::codec::FieldError
 pub noctis::codec::FieldError::BadEscape
