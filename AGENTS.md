@@ -42,7 +42,9 @@ These are the maintainer's standing preferences for agent sessions on this repo.
 
 - Push every commit to `main` immediately and automatically (`git push origin HEAD:main`), together with the session branch if there is one; no PRs and no waiting for approval.
 - Commit and push after every finished step, including `_bmad-output/`: cloud containers are ephemeral and anything unpushed is lost.
-- Work autonomously; ask the maintainer only about decisions that change the architecture or the feature set.
+- CI (`ci.yml`) runs on every push to `main`; a story is done only when the run on its pushed commit is green (`gh run list --branch main`). Fix a red run before starting the next story.
+- Stories marked `[Maintainer-gated]` in `epics.md` (crates.io token or publish, repository settings) need the maintainer; skip them in unattended runs, report them as waiting, and continue.
+- Work autonomously. The maintainer has delegated every decision, including architecture and feature-set questions, until the project is finished: decide, log each decision as a `(decision)` line in the relevant memlog, and continue.
 - Delegate research on unfamiliar frameworks, large-document extraction and independent reviews to subagents, and keep only their conclusions in the main context.
 - Verify crate versions and that a technology still exists against crates.io, docs.rs or the official source before relying on them, never from memory.
 - Never send the maintainer's personal data (such as their email) to external services, including in HTTP headers like `User-Agent`.

@@ -33,6 +33,8 @@ pub fn configure(builder: AppBuilder) -> AppBuilder {
         .app_id("noctis-template")
         .locales(strings::catalog())
         // Theme tokens and keyframes for Templates; the same file the macros validate against.
+        // `.theme` comes from `AppBuilderImageExt` (image feature, in the prelude) and
+        // installs the ImagePlugin, which puts the Renderer on this App (AD-24).
         .theme(noctis::image::theme!())
         // Our own CacheStore Adapter replaces the in-memory default (FR-38).
         .cache_store(adapters::BoundedCacheStore::new(50_000))

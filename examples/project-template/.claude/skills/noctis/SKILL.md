@@ -118,7 +118,7 @@ pub fn module() -> Module {
 ```
 
 No response code: returning a View sends it (FR-61). With the `i18n` feature the
-description comes from `cmd.dashboard.desc` in `locales/en.yaml`; without it, write
+description comes from `cmd.dashboard.description` in `locales/en-US.yaml`; without it, write
 `description = "…"` in the attribute. A missing one is a compile error (CMD-04), and a
 literal that differs from the locale file is a compile error too.
 
@@ -163,7 +163,7 @@ impl View for DashboardView {
                 .into(),
         };
         Layout::new()
-            .accent(Rgb::new(0x5865_F2))
+            .accent(rgb!(0x5865_F2))
             .header(Text::new(format!("## {}", s.dashboard.title(&self.guild_name))))
             .navbar(navbar)
             .body(body)
@@ -195,12 +195,12 @@ Routes (`PickLogChannel { owner, mod_role }`), never in a listener.
 ### 3.5 A rendered image in a View
 
 ```rust
-#[derive(Template, Serialize)]
+#[derive(Template, Serialize, Deserialize)]   // the Renderer decodes the value it gets
 #[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
 pub struct ProfileCard { pub name: String, pub progress: f32, #[asset] pub avatar: RemoteImage }
 
 impl TemplateView for ProfileCard {
-    fn view(&self) -> Node {
+    fn view(&self, _frame: Frame) -> Node {     // Frame::STILL unless animated
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
                 <img src={&self.avatar} tw="w-40 h-40 rounded-full" />
@@ -327,11 +327,11 @@ Read only what the task touches.
 
 | File | Read when you… |
 | --- | --- |
-| `references/app-and-sharding.md` | build/run the App, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence, lifecycle hooks, shutdown, multiple Apps |
+| `references/app-and-sharding.md` | build/run the App, env vars, CLI modes, sharding, Clusters, HTTP proxy, presence, lifecycle hooks, shutdown, plugins (`.image`, `.theme`, `PrefixPlugin`), multiple Apps and `Runtime` |
 | `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |
-| `references/components-v2.md` | build any component: every type, where it may go, every field and limit, builder sketch |
+| `references/components-v2.md` | build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`rgb!` |
 | `references/views-and-widgets.md` | write a View, Layout, Navbar, Wizard, Paginator, attachments, mentions; UI quality rulebook and patterns |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |

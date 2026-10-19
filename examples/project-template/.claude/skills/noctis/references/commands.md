@@ -31,7 +31,7 @@ Compile-time checks on the literal (each error names its rule):
 | each word matches `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` (note: `ʼ` U+02BC, not ASCII `'`) | CMD-01 |
 | 1–32 chars per word, no empty words (`"a  b"`) | CMD-02 |
 | lowercase where the letter has a lowercase form | CMD-03 |
-| description 1–100 chars: `description = "…"`, or with the `i18n` feature `cmd.<path>.desc` in the default-locale file (a literal that differs from it is an error); missing = error | CMD-04 |
+| description 1–100 chars: `description = "…"`, or with the `i18n` feature `cmd.<path>.description` in the default-locale file (a literal that differs from it is an error); missing = error | CMD-04 |
 | total command size ≤ 8000 (name+desc+options+choices, longest localization per field) | CMD-05 |
 | ≤ 3 words | CMD-10 |
 
@@ -57,7 +57,7 @@ Compile-time checks on the literal (each error names its rule):
 (META-02). Every leaf under one base must agree, across all Modules, or App build fails
 (REG-04, FR-9). Declare them once explicitly with [planned]
 `Module::new("x").base("config", BaseMeta::new().permissions(Permissions::MANAGE_GUILD))`.
-Base and group descriptions come from `cmd.config.desc` and `cmd.config set.desc`; if
+Base and group descriptions come from `cmd.config.description` and `cmd.config.set.description`; if
 missing, a deterministic rule picks one and logs a warning (never registration order).
 
 ## 2. Command Patterns
@@ -119,7 +119,7 @@ Groups and plain subcommands side by side under one base are legal (CMD-14):
 #[derive(Options, Debug)]
 pub struct WarnOptions {
     /// Doc comments are rustdoc only. Descriptions: `#[option(description = "…")]`, or
-    /// with the `i18n` feature cmd.<path>.opt.<name>.desc.
+    /// with the `i18n` feature cmd.<path>.opt.<name>.description.
     pub member: ResolvedUser,                       // required (not Option)
     #[option(min = 1, max = 30)]
     pub days: Option<i64>,                          // optional

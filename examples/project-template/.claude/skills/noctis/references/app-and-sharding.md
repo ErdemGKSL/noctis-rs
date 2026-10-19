@@ -2,7 +2,7 @@
 
 Covers: `App`, `AppBuilder`, environment variables, CLI modes, Publish, sharding,
 Shard Ranges and Clusters, the HTTP proxy, presence and gateway commands, Lifecycle
-Hooks, shutdown, `State<T>`, multiple Apps and the process `Runtime`.
+Hooks, shutdown, `State<T>`, plugins, multiple Apps and the process `Runtime`.
 Rules: GW-01..07, RL-01..04, REG-01..06. Signatures marked [planned] may change.
 
 ## 1. Build and run
@@ -38,10 +38,12 @@ async fn main() -> anyhow::Result<()> {
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.module(Module)` | — | mount a Module tree (ids must be unique) |
 | `.state(T)` | — | typed shared state, extracted as `State<T>` (one per type) |
-| `.locales(Catalog)` / `.default_locale(Locale)` | — / `en` | see `i18n.md` |
+| `.locales(Catalog)` / `.default_locale(Locale)` | — / `Locale::EnglishUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` | none | per-guild language overrides (pipeline stage 4) |
-| `.theme(noctis::image::theme!())` | none | Template theme tokens and keyframes |
-| `.image(ImageConfig)` | — | fonts, emoji, render pool (process-scoped, see `images.md`) |
+| `.theme(noctis::image::theme!())` | none | Template theme tokens and keyframes; from `AppBuilderImageExt` (`image` feature), installs the `ImagePlugin` |
+| `.image(ImageConfig)` | — | fonts, emoji, render pool (process-scoped, see `images.md`); same extension trait, installs the `ImagePlugin` |
+| `.plugin(impl Plugin)` | — | attach a feature plugin, e.g. `noctis::prefix::PrefixPlugin::new("!")` (§12) |
+| `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.limits(Limits)` | `Limits::default()` | strict mode; see `limits-cheatsheet.md` |
 | `.ack_deadline(Duration)` | 2500 ms | auto-defer deadline, measured from gateway receipt |
 | `.ref_ttl(Duration)` | 24 h | default TTL for Refs without `ttl = …` |
@@ -218,9 +220,12 @@ mutability inside `T` (`tokio::sync::RwLock`, atomics) or, better, use a port.
 ## 10. Multiple Apps (white-label) [planned]
 
 ```rust
-let runtime = Runtime::builder().image(image_config).build()?;   // process-scoped
-let main = configure(App::from_env_prefixed("MAIN")?).build()?;  // MAIN_NOCTIS_TOKEN …
+let runtime = Runtime::global();                                  // process-scoped resources
+let main = configure(App::from_env_prefixed("MAIN")?)              // MAIN_NOCTIS_TOKEN …
+    .image(image_config.clone())                                   // first App freezes fonts/pool
+    .build()?;
 let white = configure(App::from_env_prefixed("ACME")?)
+    .image(image_config)                                           // same config: fine
     .guild_access(GuildAccess::allow([acme_guild]))
     .build()?;
 runtime.run([main, white]).await?;
@@ -230,8 +235,10 @@ runtime.run([main, white]).await?;
   with `#[command("…", apps = ["main"])]`.
 - Apps share Adapters only where you opt in (`.cache_store(Shared::new(store))`);
   otherwise keys are namespaced per App (FR-71).
-- Process-scoped resources (render pool, fonts, emoji font, metrics recorder) are frozen
-  by the first App's configuration; a conflicting later one is a `BuildError`.
+- Process-scoped resources (render pool, fonts, emoji font, metrics recorder) live in
+  the `Runtime` and are frozen by the first App's configuration; a conflicting later
+  one is a `BuildError`. Tests use `Runtime::for_test()` (what `TestApp` does), an
+  isolated Runtime per test.
 
 ## 11. Observability
 
@@ -241,3 +248,17 @@ Spans: `noctis.shard`, `noctis.interaction`, `noctis.event`, `noctis.render`,
 ack latency, auto-defer count, handler duration/errors, render duration/queue/rejections,
 Ref lookups (hit/miss/stale/forged), shard status, HTTP status classes. Install your own
 `metrics` recorder to export them.
+
+## 12. Plugins [planned]
+
+Optional features attach to an App through `Plugin` (`fn install(&self, app: &mut
+AppBuilder)`); `build()` runs every installed plugin once, in order, before the
+App-build checks.
+
+- `ImagePlugin` (`image` feature): installed by `.image(..)` or `.theme(..)`; adds the
+  Renderer and the process-scoped render pool and fonts.
+- `PrefixPlugin` (`prefix` feature, P2): `.plugin(PrefixPlugin::new("!"))` mounts a
+  `MESSAGE_CREATE` handler that runs your slash Commands from `!command` messages
+  through `ctx.dispatcher()`; it requires the message-content intent.
+
+You rarely write a plugin yourself; a Module is the unit for bot features.

@@ -8,7 +8,10 @@
 //! - `keys::*`: one `MessageKey` const per key (`keys::PROFILE_NOT_FOUND`);
 //! - `catalog()`: the descriptor `AppBuilder::locales` merges at App build.
 //!
-//! A key missing from `en.yaml` (the default locale) or a call with the wrong arguments is
-//! a compile error. A key missing from `tr.yaml` falls back to English with a build warning.
+//! File names are Discord locale codes (`en-US.yaml`, `tr.yaml`). A key missing from
+//! `en-US.yaml` (the default locale) or a call with the wrong arguments is a compile
+//! error. A key missing from `tr.yaml` falls back to English with a build warning.
+//! Keys under `cmd.`, `cmdword.` and `ctxcmd.` feed `#[command]` and Publish only; they
+//! get no accessors.
 
-noctis::i18n!(default = "en", dir = "locales");
+noctis::i18n!(default = "en-US", dir = "locales");

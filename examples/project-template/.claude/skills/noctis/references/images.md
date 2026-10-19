@@ -14,16 +14,19 @@ noctis = { version = "0.1", features = ["image", "default-font"] }
 ```
 
 `image` is off by default; it adds ~100 crates and the native WebP encoder needs a C
-compiler. Without a registered font and without `default-font`, startup fails (text
+compiler. With it, `noctis::prelude` brings in `AppBuilderImageExt`: calling
+`.image(ImageConfig)` or `.theme(Theme)` on your builder installs the `ImagePlugin`,
+which puts the Renderer on the App. Without either call, `ctx.render` returns a typed
+error. Without a registered font and without `default-font`, startup fails (text
 would otherwise render invisibly).
 
 ## 2. A Template
 
 ```rust
-use noctis::image::{Node, RemoteImage, Style, Template, TemplateView, view};
-use serde::Serialize;
+use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
+use serde::{Deserialize, Serialize};
 
-#[derive(Template, Serialize, Debug)]
+#[derive(Template, Serialize, Deserialize, Debug)]   // Deserialize: the Renderer decodes the data
 #[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
 pub struct ProfileCard {
     pub name: String,
@@ -36,7 +39,7 @@ pub struct ProfileCard {
 }
 
 impl TemplateView for ProfileCard {
-    fn view(&self) -> Node {
+    fn view(&self, _frame: Frame) -> Node {   // Frame::STILL for stills
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
                 <img src={&self.avatar} tw="w-40 h-40 rounded-full border-4 border-brand" />
@@ -57,9 +60,10 @@ Register it on its Module: `.template::<ProfileCard>()` (App build then checks f
 theme tokens and keyframes).
 
 `#[template(...)]`: `id` (stable, part of the cache key), `version` (**bump whenever
-`view` changes**, or cached images go stale), `size = (w, h)` in px, `format`
-(`Png` | `Jpeg { quality }` | `Webp { quality }` | `WebpLossless` | `AnimatedWebp` |
-`Gif` | `Apng`). Data must serialize deterministically: the derive rejects `HashMap`
+`view` changes**, or cached images go stale), `size = (w, h)` in px, `format` (the
+still encoding: `Png` | `Jpeg { quality }` | `Webp { quality }` | `WebpLossless`), and
+optionally `animation(duration_ms = 2000, fps = 20, format = Webp)` (animated
+`Webp { quality }` | `Gif` | `Apng`) to render animated by default. Data must serialize deterministically: the derive rejects `HashMap`
 fields (use `Vec` or `BTreeMap`).
 
 ## 3. `view!` syntax [planned]
@@ -161,9 +165,7 @@ App::from_env()?.image(
 ```rust
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;                    // template defaults
 let anim = ctx.render_with(card_data, RenderOptions::new()
-        .format(Format::AnimatedWebp)
-        .fps(20)
-        .duration(Duration::from_secs(2)))
+        .animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::Webp { quality: 80 })))
     .await?;
 let report = anim.render_report();   // format, size, fps, quality actually used, cache hit
 ```
@@ -182,8 +184,12 @@ let report = anim.render_report();   // format, size, fps, quality actually used
 - CSS-driven: `animate-spin|ping|pulse|bounce`, your theme `animate-*`, or arbitrary
   `animate-[slide_1s_ease-in-out_infinite_alternate]` with `@keyframes slide` in the
   theme. Render with an animated `format`, `fps` and `duration`.
-- Code-driven: `ctx.render_frames(Frames::new(30, |i| CounterCard { value: i * 10 }))` [planned]
-  — every frame the same size.
+- Code-driven: one data value, one Template state per frame. The view receives
+  `Frame { index, count }` and computes that frame's state, for example
+  `let value = self.target * (frame.index + 1) / frame.count;`. Render it animated with
+  `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::Webp { quality: 80 })))`
+  [planned]. Every frame has the job's size; a root node with a different explicit
+  size is a typed error.
 - Default animated format: animated WebP (smaller and ~3× faster than GIF); GIF with
   `image-gif` for maximum compatibility. Design GIF Templates with flat colours.
 
@@ -215,8 +221,9 @@ Section::new([Text::new(title)], Thumbnail::new(cx.attach(&self.badge)).alt(alt)
 
 ## 11. Testing
 
-`noctis::testkit::assert_render_snapshot!(renderer, "name", template, tolerance = 0.01)`
-with `test_renderer()` (default font, no network). See `testing.md`.
+`noctis::testkit::assert_render_snapshot!(app.renderer(), "name", template, tolerance = 0.01)`
+on a `TestApp` built from your own `configure` (its ImagePlugin installs the Renderer;
+default font, no network). See `testing.md`.
 
 ## 12. Unstable
 

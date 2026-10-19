@@ -32,8 +32,8 @@ Chrome and paginates (see `views-and-widgets.md`).
 
 Cost cheatsheet: Container 1, Text 1, Separator 1, Media Gallery 1 (any items),
 File 1, Section + 1 text + button = 3, Section + 3 texts + thumbnail = 5, Action Row + 5
-buttons = 6, Action Row + 1 select (25 options) = 2. Every type exposes
-`const COST`; `view.cost()` / the testkit report actual totals.
+buttons = 6, Action Row + 1 select (25 options) = 2. `components!` (§14) counts a
+literal tree at compile time; `view.cost()` / the testkit report actual totals.
 
 ---
 
@@ -45,13 +45,13 @@ buttons = 6, Action Row + 1 select (25 options) = 2. Every type exposes
   | Field | Builder | Limit |
   | --- | --- | --- |
   | `components` | `.push(child)`, `.text(..)`, `.section(..)`, `.row(..)`, `.gallery(..)`, `.file(..)`, `.separator(..)` | only the 40 total |
-  | `accent_color` | `.accent(Rgb::new(0x5865_F2))` | 0x000000–0xFFFFFF, checked in `const fn` (CV2-13) |
+  | `accent_color` | `.accent(rgb!(0x5865_F2))` | 0x000000–0xFFFFFF, checked by the `rgb!` macro at compile time; runtime values: `Rgb::try_from(u32)?` (CV2-13) |
   | `spoiler` | `.spoiler(true)` | — |
 - **Cost:** 1.
 - `ContainerChild` is an enum with `From` for every allowed child, so `vec![a.into(), b.into()]` works.
 
 ```rust
-Container::new().accent(Rgb::new(0x57_F287)).text("### Saved").separator(Separator::small())
+Container::new().accent(rgb!(0x57_F287)).text("### Saved").separator(Separator::small())
 ```
 
 Use one Container per View, an accent colour per state (neutral / success / danger).
@@ -220,3 +220,33 @@ interactive UI (UD-1).
 | Button 2 | no | no | accessory | 1–5 | no |
 | Selects 3,5–8 | no | no | — | alone | inside Label |
 | Label 18, Text Input 4, File Upload 19, Radio 21, Checkbox Group 22, Checkbox 23 | — | — | — | — | see `modals.md` |
+
+## 14. `components!`: literal trees checked at compile time [planned]
+
+For a fixed-shape message, write the tree with `components!` (FR-78). It expands to the
+builders above and fails `cargo check` with the rule id when the literal tree breaks a
+rule: placement (CV2-05), more than 40 components (CV2-03), more than 4000 literal text
+characters (CV2-04), row/section/gallery arity (CV2-06, CV2-07, CV2-10), over-long
+literal labels, placeholders or alt text (CV2-08, CV2-09, CV2-11), and two identical
+literal Route components (CID-02, same Route and same literal Payload).
+
+```rust
+let body = components! {
+    container(accent = rgb!(0x5865_F2)) [
+        text("### Server settings"),
+        separator(spacing = small),
+        section [ text("Logs go to the channel you pick."); accessory = SetLogs { guild }.button(label!("Change")) ],
+        row [ Save { guild }.button(label!("Save")), Cancel { guild }.button(label!("Cancel")) ],
+        ..extra_rows,                 // spread: an iterator of nodes, checked at runtime
+    ],
+    {footer},                         // hole: one node you built elsewhere
+};
+V2Message::new().components(body)
+```
+
+Node keywords: `container`, `section` (texts `;` `accessory = …`), `text`, `thumbnail`,
+`gallery [ item(..), … ]`, `file`, `separator`, `row`; buttons and selects are Route
+values with their constructor (`.button(..)`, `.string_select(..)`, …), plus
+`link(url = "…", label = "…")` and `premium(sku)`. A hole counts as 1 component, a
+spread as 0; their real size and all non-literal text are checked by the runtime
+validator before sending. `view!` is the unrelated image Template macro.

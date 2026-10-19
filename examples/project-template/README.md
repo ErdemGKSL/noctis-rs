@@ -15,7 +15,7 @@ image rendering.
 | `/dashboard` | `src/modules/dashboard.rs` | Navbar tabs, auto-paginated role list, module toggles |
 | `/profile`, "Show profile" | `src/modules/profile.rs` | Rendered card (Template) in a Media Gallery, bio modal with pre-fill, XP event handler, user command |
 | Custom Adapter | `src/adapters/bounded_cache.rs` | Implementing the `CacheStore` port yourself |
-| Locales | `locales/en.yaml`, `locales/tr.yaml` | Typed strings, word-by-word command translation |
+| Locales | `locales/en-US.yaml`, `locales/tr.yaml` | Typed strings, word-by-word command translation |
 | Tests | `tests/` | Testkit flows, Adapter conformance, pixel snapshot |
 | Agent setup | `AGENTS.md`, `.claude/skills/` | Noctis Usage Skill + rust-best-practices |
 

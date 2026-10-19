@@ -1,0 +1,181 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 10-19-2026 15:45
+last_updated: 10-19-2026 15:45
+project: noctis-rs
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: backlog
+  1-1-workspace-skeleton-and-baseline-ci: backlog
+  1-2-crate-layer-enforcement-with-xtask-deps-check: backlog
+  1-3-noctis-rules-foundations-limits-length-counting-rule-ids-and: backlog
+  1-4-command-naming-and-tree-rules: backlog
+  1-5-option-context-menu-and-command-metadata-rules: backlog
+  1-6-component-modal-message-and-attachment-rules: backlog
+  1-7-trybuild-harness-and-rules-catalog-cross-check: backlog
+  1-8-public-api-snapshot-and-usage-skill-gate: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-payload-field-encodings: backlog
+  2-2-custom_id-layout-encoder-and-total-decoder: backlog
+  2-3-refs-and-two-phase-encodedid: backlog
+  2-4-integrity-tags-for-signed-inline-payloads: backlog
+  2-5-derive-route-payload-and-payloadenum-with-compile-time-lengt: backlog
+  2-6-zero-allocation-inline-decode-guard: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-port-traits-and-the-shared-op-vocabulary: backlog
+  3-2-bounded-in-memory-store-defaults: backlog
+  3-3-in-memory-identifyqueue-with-identify-buckets: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-typed-v2-message-components-with-placement-in-the-type-syste: backlog
+  4-2-v2-messages-legacy-messages-flags-and-mentions: backlog
+  4-3-runtime-limit-validator-with-path-precise-errors: backlog
+  4-4-compile-time-checks-for-literals-arity-and-the-components-tr: backlog
+  4-5-modal-component-model-and-modal-validation: backlog
+  4-6-derive-modal-and-typed-modal-submissions-from-raw-json: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-app-builder-runtime-plugin-seam-and-startup-safety: backlog
+  5-2-discord-http-fake-and-the-test-runtime: backlog
+  5-3-discord-gateway-fake: backlog
+  5-4-automatic-sharding-with-bucketed-identify: backlog
+  5-5-interaction-lane-and-bounded-event-lane: backlog
+  5-6-modules-and-typed-event-handlers-with-derived-filters-and-in: backlog
+  5-7-observability-contract-and-error-sinks: backlog
+  5-8-graceful-shutdown-and-fatal-close-reporting: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-command-with-compile-time-command-path-and-pattern-validatio: backlog
+  6-2-typed-options-with-derive-options-and-derive-choices: backlog
+  6-3-command-metadata-and-context-menu-commands: backlog
+  6-4-app-build-merge-and-conflict-checks-for-commands: backlog
+  6-5-command-pipeline-and-the-responder-typestate: backlog
+  6-6-automatic-deferral-token-lifetime-and-follow-up-cap: backlog
+  6-7-autocomplete: backlog
+  6-8-user-facing-errors-built-in-notices-and-panics-as-responses: backlog
+  6-9-publish-with-diff-dry-run-and-cli-modes: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-route-handlers-and-o-1-component-dispatch: backlog
+  7-2-component-pipeline-untrusted-input-and-in-place-updates: backlog
+  7-3-expired-handler-and-stale-payload-routing: backlog
+  7-4-app-namespaced-ports: backlog
+  7-5-ref-minting-and-resolution: backlog
+  7-6-middleware-and-typed-extensions: backlog
+  7-7-route-guards: backlog
+  7-8-modal-routes-and-typed-submissions-end-to-end: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-views-and-view-responses: backlog
+  8-2-view-routes-widget-envelope-and-state-versions: backlog
+  8-3-paginator-and-the-default-overflow-policy: backlog
+  8-4-navbar: backlog
+  8-5-wizard: backlog
+  8-6-testing-kit-simulated-interactions-and-view-snapshots: backlog
+  8-7-ui-doctrine-example-and-the-ui-quality-rulebook: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-content-addressed-attachments-with-edit-diffs: backlog
+  9-2-raw-escape-hatch-for-components-and-rest: backlog
+  9-3-route-component-defaults-with-per-render-overrides: backlog
+  9-4-modal-pre-fill: backlog
+  9-5-views-over-webhooks: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-strict-tailwind-v4-grammar-and-takumi-cross-check: backlog
+  10-2-templates-with-compile-time-class-validation-and-a-theme: backlog
+  10-3-renderer-and-bounded-render-pool: backlog
+  10-4-output-formats-and-size-budget: backlog
+  10-5-per-job-caps-and-admission-control: backlog
+  10-6-animated-templates: backlog
+  10-7-fonts-and-static-assets: backlog
+  10-8-remote-image-fetching-through-the-assetfetcher: backlog
+  10-9-emoji-rendering: backlog
+  10-10-render-cache-and-single-flight-deduplication: backlog
+  10-11-pixel-snapshots-and-the-reference-card-benchmark: backlog
+  epic-10-retrospective: optional
+
+  epic-11: backlog
+  11-1-i18n-typed-content-strings: backlog
+  11-2-module-scoped-locale-catalogs: backlog
+  11-3-user-and-guild-locale-resolution: backlog
+  11-4-command-localization-in-publish: backlog
+  11-5-runtime-locale-overlays-through-localesource: backlog
+  epic-11-retrospective: optional
+
+  epic-12: backlog
+  12-1-shard-ranges-and-cluster-wide-identify: backlog
+  12-2-session-resume-through-the-sessionstore: backlog
+  12-3-resumable-shutdown: backlog
+  12-4-shared-http-rate-limiting-through-a-proxy: backlog
+  12-5-discord-cache-wiring-ctx-cache-configuration-and-minimal-int: backlog
+  12-6-memory-per-guild-benchmark: backlog
+  epic-12-retrospective: optional
+
+  epic-13: backlog
+  13-1-module-trees-with-unique-path-ids: backlog
+  13-2-boot-time-feature-flags: backlog
+  13-3-runtime-module-enable-and-disable: backlog
+  13-4-rate-limits-on-commands-and-routes: backlog
+  13-5-lifecycle-hooks: backlog
+  epic-13-retrospective: optional
+
+  epic-14: backlog
+  14-1-adapter-conformance-suites: backlog
+  14-2-project-template-builds-runs-and-gates-ci: backlog
+  14-3-dispatch-latency-allocation-and-memory-gates: backlog
+  14-4-rules-catalog-completeness-audit: backlog
+  14-5-usage-skill-completeness-and-agent-trial: backlog
+  14-6-launch-documentation: backlog
+  14-7-release-pipeline-ready-for-0-1-0: backlog
+  14-8-maintainer-gated-repository-settings-and-release-secrets: backlog
+  14-9-maintainer-gated-publish-noctis-0-1-0: backlog
+  epic-14-retrospective: optional
+
+  epic-15: backlog
+  15-1-renderer-seam: backlog
+  15-2-multiple-apps-per-process: backlog
+  15-3-presence-and-gateway-commands: backlog
+  15-4-prefix-commands: backlog
+  epic-15-retrospective: optional

@@ -436,8 +436,9 @@ list in CI.
 - **Rule:**
   - `noctis-ui` defines the V2 message and modal component types. Placement rules
     are encoded in types: `ContainerChild`, `SectionAccessory`, an `ActionRow`
-    enum, separate message and modal select types, const-generic arity and per-node
-    `const COST`.
+    enum, separate message and modal select types and const-generic arity. Static
+    budgets of literal trees are counted by `components!` (below), not by type-level
+    costs.
   - These types serialize directly to Discord JSON (unset fields omitted), sent as a
     raw twilight-http body. Flag sets (`CreateFlags`, `EditFlags`, `CallbackFlags`)
     and mention sets (`Users::All | Users::Only(ids)`) are typed per endpoint.

@@ -42,7 +42,7 @@ Locale), `nav() -> Nav`, `limits() -> &Limits`, `attach(&Attachment) -> Media`,
 
 ```rust
 Layout::new()
-    .accent(Rgb::new(0x5865_F2))       // Container accent
+    .accent(rgb!(0x5865_F2))       // Container accent
     .header(Text or Section)           // Chrome: first
     .navbar(navbar)                    // Chrome: top Action Row (UD-5)
     .wizard(wizard)                    // Chrome: "Step n of m: Title" + Back/Next/Cancel footer (UD-4)

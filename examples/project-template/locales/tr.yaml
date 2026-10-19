@@ -1,4 +1,4 @@
-# Turkish. Missing keys fall back to en.yaml with a build warning (LOC-04).
+# Turkish. Missing keys fall back to en-US.yaml with a build warning (LOC-04).
 
 # Command names are translated word by word (cmdword.*); a full-path key overrides it.
 cmdword:
@@ -8,16 +8,18 @@ cmdword:
   profile: profil
 
 cmd:
-  setup start:
-    desc: Botu bu sunucu için adım adım yapılandır
+  setup:
+    description: Botu bu sunucu için kur
+    start:
+      description: Botu bu sunucu için adım adım yapılandır
   dashboard:
-    desc: Sunucu panelini aç
+    description: Sunucu panelini aç
   profile:
-    desc: Bir üyenin profil kartını göster
+    description: Bir üyenin profil kartını göster
     opt:
       user:
         name: kullanıcı
-        desc: Kimin profili gösterilsin (varsayılan sensin)
+        description: Kimin profili gösterilsin (varsayılan sensin)
 
 ctxcmd:
   show_profile:

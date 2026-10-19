@@ -1,20 +1,25 @@
 # Default locale (AD-16). Every key used in code must exist here, or the build fails.
-# `en` covers en-US and en-GB at Publish unless a variant file exists (FR-41).
+# File names are Discord locale codes. This file also serves en-GB (its sibling) at
+# Publish and at runtime unless an en-GB.yaml exists (FR-41, FR-43).
 # Placeholders are {name}; generated methods take them in order of first appearance,
 # and every occurrence is replaced.
 
 # --- Command metadata: fixed key layout, validated against CMD-01..05 / LOC-02 --------
+# `cmd.<path>`: the Command Path's words as nested maps (`/setup start` → cmd.setup.start).
+# These keys feed #[command] and Publish only; they get no typed accessors.
 cmd:
-  setup start:
-    desc: Configure the bot for this server, step by step
+  setup:
+    description: Set up the bot for this server
+    start:
+      description: Configure the bot for this server, step by step
   dashboard:
-    desc: Open the server dashboard
+    description: Open the server dashboard
   profile:
-    desc: Show a member's profile card
+    description: Show a member's profile card
     opt:
       user:
         name: user
-        desc: Whose profile to show (default you)
+        description: Whose profile to show (default you)
 
 ctxcmd:
   show_profile:

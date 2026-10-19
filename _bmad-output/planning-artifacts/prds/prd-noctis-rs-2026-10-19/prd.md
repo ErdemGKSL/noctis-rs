@@ -94,8 +94,8 @@ rewriting handlers.
 - **UJ-4. Mert migrates a tescord module.** Mert ports a tescord Pack that registers
   `"config (set|get) (prefix|welcome)"`. The same pattern string expands to the same
   four commands in Noctis. His handler gets a typed enum telling it which variant
-  was invoked, and option values arrive as a typed struct. His Pack's `en` Locale
-  file works unchanged for `en-US` and `en-GB` users.
+  was invoked, and option values arrive as a typed struct. His Pack's English Locale
+  file, saved as `en-US.yaml`, works unchanged for `en-US` and `en-GB` users.
 - **UJ-5. A coding agent writes a leaderboard feature.** A Claude Code agent is given
   only the Project Template directory, with no access to Noctis source. It reads the
   Noctis Usage Skill and writes a Template, a View and a Command that compile on the
@@ -980,9 +980,10 @@ the default Locale.
 A bot author can localize Command names word by word, plus descriptions, option
 names, option descriptions and choices. Publish sends Discord's localization maps.
 **Consequences (testable):**
-- A Locale file for a base language (`en`) covers all Discord variants of it
-  (`en-US`, `en-GB`) at Publish unless a variant file exists; variant files override
-  base files.
+- Locale files are named by Discord locale code (`en-US.yaml`, `tr.yaml`). A file
+  for one variant of a language also covers that language's other Discord variant
+  (`en-US` covers `en-GB`, `es-ES` covers `es-419`, and the reverse) at Publish
+  unless that variant has its own file, which then wins.
 - A localized name that breaks Discord's name rules fails registration with a typed
   error naming the Locale.
 
@@ -1002,8 +1003,10 @@ them, for example with a per-guild setting stored by the bot.
 **Consequences (testable):**
 - For interactions, resolution is User Locale → Guild Locale → default Locale; for
   Event Handlers on guild events it is Guild Locale → default.
-- A regional runtime locale with no file of its own (for example `pt-BR`) resolves to
-  its base language before the default.
+- A runtime locale with no file of its own (for example `en-GB` with only
+  `en-US.yaml`) resolves to its same-language Discord variant's file, when one exists,
+  before the next step of the order; a locale with no such variant (for example
+  `pt-BR`) goes straight to the next step.
 - The Usage Skill documents the rule: User Locale for ephemeral single-user UI, Guild
   Locale for shared content.
 

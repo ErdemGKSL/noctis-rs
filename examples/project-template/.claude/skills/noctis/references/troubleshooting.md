@@ -21,7 +21,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
 | `[CMD-10]` more than 3 words | path too deep | flatten; use options or a View |
 | `[CMD-01]` / `[CMD-03]` | uppercase, ASCII `'`, punctuation in a name | lowercase; `ʼ` (U+02BC) if you need an apostrophe |
-| `[CMD-04] missing description` | no `description = "…"`, and (with the `i18n` feature) no `cmd.<path>.desc` in the default locale | add it to `locales/en.yaml`, or the literal without `i18n` |
+| `[CMD-04] missing description` | no `description = "…"`, and (with the `i18n` feature) no `cmd.<path>.description` in the default locale | add it to `locales/en-US.yaml`, or the literal without `i18n` |
 | description literal differs from the locale file | both sources set, with different text | delete the literal; the locale file is the source with `i18n` |
 | `[OPT-01] required option after optional` | field order | move required fields first (never reordered for you) |
 | `[OPT-10] choices and autocomplete` | both on one option | pick one |
@@ -33,8 +33,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[MOD-07]` radio options | enum with < 2 or > 10 variants | adjust the `Choices` enum |
 | unknown Tailwind class `bg-gradient-to-r`, help: `bg-linear-to-r` | v3 name | use the v4 name (see `images.md` §4) |
 | unknown class `bg-brand` | token missing from `noctis-theme.css` | add `--color-brand` under `@theme` |
-| `[LOC-01] unknown locale file` | file name not a Discord locale/base language | rename (`tr.yaml`, `pt-BR.yaml`, `en.yaml`) |
-| missing key / wrong number of arguments on `s.x.y(..)` | key absent in `en.yaml` or placeholders differ | add the key; match placeholders |
+| `[LOC-01] unknown locale file` | file name is not exactly a Discord locale code (`en.yaml` is not one) | rename (`tr.yaml`, `pt-BR.yaml`, `en-US.yaml`) |
+| missing key / wrong number of arguments on `s.x.y(..)` | key absent in `en-US.yaml` or placeholders differ | add the key; match placeholders |
 | `HashMap` field in a Template | non-deterministic cache key | `BTreeMap` or `Vec` |
 | a handler taking a Responder doesn't return `Responded` | macro contract | return `acked.done()` |
 | `modal` not found on `ComponentResponder` | Route not `opens_modal`, or the handler takes `ComponentResponder` instead of `ComponentResponder<OpensModal>` | declare `opens_modal` on the Route and take the `OpensModal` alias |

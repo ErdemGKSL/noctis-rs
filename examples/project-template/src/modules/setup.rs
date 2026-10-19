@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::strings::{Strings, keys};
 
-const ACCENT: Rgb = Rgb::new(0x5865_F2);
+const ACCENT: Rgb = rgb!(0x5865_F2);
 
 pub fn module() -> Module {
     Module::new("setup")
@@ -250,6 +250,6 @@ impl StaticView for SetupDone {
             format!("<#{}>", self.config.log_channel),
             format!("<@&{}>", self.config.mod_role),
         );
-        Ok(V2Message::new().container(Container::new().accent(Rgb::new(0x57_F287)).text(text)))
+        Ok(V2Message::new().container(Container::new().accent(rgb!(0x57_F287)).text(text)))
     }
 }

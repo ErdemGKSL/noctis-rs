@@ -25,8 +25,9 @@ Sources: the memlog and `../../research/`.
 - **twilight:** pin 0.17.1 for gateway, http, model, cache-inmemory and
   http-ratelimiting (`twilight-http-ratelimiting >= 0.17.1`; 0.17.0 can panic). Plan for 0.18,
   where `bucket()` replaces `create_recommended`.
-- **takumi:** pin 2.17.x (MSRV 1.91). It releases several times a week, so upgrade
-  deliberately.
+- **takumi:** pin exactly `takumi = "=2.17.0"` and `takumi-core = "=0.31.0"` (MSRV
+  1.91; architecture AD-15). It releases several times a week, so upgrade
+  deliberately; bot authors get takumi fixes through Noctis releases.
 - **Runtime:** tokio only, multi-threaded.
 - **Toolchain (NFR-7):** edition 2024; MSRV 1.91 (the higher of twilight's and
   takumi's). twilight's MSRV may move in semver-compatible releases, so the pin is

@@ -90,12 +90,17 @@ assert!(rendered.cost().components <= 40);
 ## 6. Template pixel snapshots
 
 ```rust
-let renderer = noctis::testkit::test_renderer()?;   // default font, no network, placeholder assets
-noctis::testkit::assert_render_snapshot!(renderer, "profile_card", card, tolerance = 0.01);
+// Build the App with your own `configure`, so its ImagePlugin installs the Renderer as in
+// production; TestApp runs on `Runtime::for_test()` (default font, no network,
+// placeholder assets) [planned].
+let app = TestApp::build(configure(App::builder()))?;
+noctis::testkit::assert_render_snapshot!(app.renderer(), "profile_card", card, tolerance = 0.01);
 ```
 
-First run writes `tests/snapshots/profile_card.png`; later runs compare. Runtime class
-strings with unknown Tailwind classes fail tests under the testkit.
+`app.renderer()` is the App's `Renderer` port; without the `image` feature (no
+ImagePlugin) it is an error. First run writes `tests/snapshots/profile_card.png`;
+later runs compare. Runtime class strings with unknown Tailwind classes are errors on
+a test Runtime, so they fail tests.
 
 ## 7. Adapter conformance
 

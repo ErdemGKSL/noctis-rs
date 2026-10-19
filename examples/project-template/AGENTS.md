@@ -6,7 +6,7 @@
 A Discord bot built on Noctis (Rust, tokio, twilight). It is a copy of the Noctis
 project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 `/profile` and "Show profile" (rendered card in a Media Gallery, bio modal), a custom
-`CacheStore` Adapter and `en`/`tr` Locale files.
+`CacheStore` Adapter and `en-US`/`tr` Locale files.
 
 ## Policy
 
@@ -18,7 +18,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 ## Where things are
 
 - `src/main.rs` thin entry; `src/lib.rs` `configure()` mounts Modules, Adapters and state (shared by main and tests).
-- `src/modules/{setup,dashboard,profile}.rs` one Module each; `src/adapters/` custom Adapters; `src/strings.rs` compiles `locales/*.yaml` (`en` is the default locale).
+- `src/modules/{setup,dashboard,profile}.rs` one Module each; `src/adapters/` custom Adapters; `src/strings.rs` compiles `locales/*.yaml` (`en-US` is the default locale; file names are Discord locale codes).
 - `noctis-theme.css` Theme tokens and keyframes for Templates.
 - `tests/` flows (testkit), Adapter conformance, Template pixel snapshots.
 
@@ -32,7 +32,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 ## Conventions that differ from defaults
 
 - Never hand-build a `custom_id`, response type or interaction callback; build components from Route values and return Views.
-- Every user-visible string goes through `locales/*.yaml`; add new keys to `en.yaml` first.
+- Every user-visible string goes through `locales/*.yaml`; add new keys to `en-US.yaml` first.
 - Inside the noctis-rs monorepo this crate is standalone (`[workspace]` in its `Cargo.toml`); the monorepo root `Cargo.toml` must keep `exclude = ["examples/project-template"]`. After copying it out, switch the `noctis` dependency to the crates.io form shown in `Cargo.toml`.
 
 <!-- /bmad:context -->

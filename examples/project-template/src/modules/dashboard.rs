@@ -12,7 +12,7 @@ use noctis::ui::escape_markdown;
 use crate::BotMeta;
 use crate::strings::{Strings, keys};
 
-const ACCENT: Rgb = Rgb::new(0x5865_F2);
+const ACCENT: Rgb = rgb!(0x5865_F2);
 
 pub fn module() -> Module {
     Module::new("dashboard")

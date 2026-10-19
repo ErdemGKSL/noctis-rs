@@ -9,14 +9,14 @@ use std::time::Duration;
 
 use noctis::events::MessageCreate;
 use noctis::id::marker::{GuildMarker, UserMarker};
-use noctis::image::{Node, RemoteImage, Style, Template, TemplateView, view};
+use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
 use noctis::prelude::*;
 use noctis::ui::escape_markdown;
 use serde::{Deserialize, Serialize};
 
 use crate::strings::{Strings, keys};
 
-const ACCENT: Rgb = Rgb::new(0xEB_459E);
+const ACCENT: Rgb = rgb!(0xEB_459E);
 const XP_PER_LEVEL: u64 = 100;
 
 pub fn module() -> Module {
@@ -200,8 +200,9 @@ fn guild_of(ctx: &impl Ctx) -> HandlerResult<Id<GuildMarker>> {
 // ---------------------------------------------------------------------------------------
 
 /// The profile card. Data must serialize deterministically (no `HashMap`), because it is
-/// part of the render cache key; bump `version` when `view` changes.
-#[derive(Template, Serialize, Debug)]
+/// part of the render cache key; bump `version` when `view` changes. `Deserialize` is
+/// required too: the Renderer decodes the value it was sent (AD-22).
+#[derive(Template, Serialize, Deserialize, Debug)]
 #[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
 pub struct ProfileCard {
     pub name: String,
@@ -218,7 +219,9 @@ pub struct ProfileCard {
 }
 
 impl TemplateView for ProfileCard {
-    fn view(&self) -> Node {
+    // A still card ignores `frame` (it is `Frame::STILL`); an animated Template can compute
+    // its state per frame from `frame.index` and `frame.count` (FR-69).
+    fn view(&self, _frame: Frame) -> Node {
         // Literal classes are checked at compile time against the Tailwind v4 grammar and
         // the tokens in noctis-theme.css (bg-surface, text-muted, from-brand, ...).
         view! {

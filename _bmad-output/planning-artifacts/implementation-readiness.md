@@ -847,3 +847,77 @@ Yes, once H-4 (the CI trigger) and L-1 (licenses) are folded in.
 | M-5 | `bmad-architecture` (AD-16), then `bmad-correct-course` (Stories 1.3, 11.1, 11.4) | Story 1.3 |
 | M-6, L-4, L-5 | `bmad-architecture` (AD-15, AD-28, Stack), then `bmad-correct-course` (spike before Story 10.1) | Epic 10 |
 | L-3, L-6 | `bmad-correct-course` | the owning story |
+
+## Gate 2 Resolution (2026-10-19)
+
+Every Gate 2 finding is applied, following the maintainer's Gate 2 decisions (the
+`Gate2 …` entries in the architecture `.memlog.md`; detail decisions are logged next
+to them). ADs were amended in place; the PRD changed only where its wording had to
+(logged as `change` in the PRD memlog). The plan now has 100 stories.
+
+| Finding | Fix | Where |
+| --- | --- | --- |
+| H-1 wiring feature crates into core | `Runtime` moved into `noctis-core` and is re-exported as `noctis::Runtime` (`global()`, public test constructor `for_test()`, type-erased `resource_or_init`). `trait Plugin { fn install(&self, &mut AppBuilder) }` is run by `build()`. Public `Dispatcher::run_command` runs stages 3–10. `noctis-image` ships `ImagePlugin` + `AppBuilderImageExt` (`.image()`, `.theme()`), which install the `Renderer` port; `noctis-prefix` ships `PrefixPlugin` (MESSAGE_CREATE → `Dispatcher`). The testkit builds Apps on `Runtime::for_test()` with the fakes and reaches rendering through the App's `Renderer` port. `noctis-image` became a layer-5 extension whose core/ports/ui edges exist only behind its `render` feature; graph and `deps-check` updated. | Spine layer table, Invariants, AD-2, AD-22, AD-23, AD-24, Seed; Stories 1.2, 5.1, 6.5, 8.6, 10.2, 10.3, 10.7, 10.11, 15.2, 15.4; skill `app-and-sharding.md`, `images.md`, `testing.md`; template `lib.rs`, `tests/templates.rs` |
+| H-2 static V2 tree macro | The image macro stays `view!`. The static Components V2 macro is `components!`, fully specified in Story 4.4: grammar, holes and spreads, and checks of CV2-03/04/05/06/07/08/09/10/11 and CID-02 at expansion. `assert_budget` and `const COST` are dropped. | AD-4, AD-12, Story 4.4, catalog rows CV2-03, CV2-04, CID-02 and §5, skill `components-v2.md` §14 |
+| H-3 unsatisfiable rules-catalog gate | New Enforcement value `Compile-time (by construction)` on 25 rows. Its evidence is a `compile_fail` doctest or a fixture with `// [ID]` in its source; only Noctis-diagnosed rules need the id in `.stderr`. MSG-02 is documentation-only (no embed API in v1). The alias rows LOC-05 and MOD-08 are covered by the rule they alias. | AD-4, Conventions (Tests), catalog tier text, rows and §6, Story conventions, Stories 1.6, 1.7, 4.2, 6.5, 14.4 |
+| H-4 CI vs the push-to-main workflow | `ci.yml` runs on `push` to `main` and on `pull_request`. Done means the local `--release` checks pass and CI is green on the pushed commit. Story 14.7 is split into 14.7 (release pipeline, agent work) and the `[Maintainer-gated]` Stories 14.8 (repo settings and secrets) and 14.9 (publish), which come last in Epic 14. Story 14.3 no longer waits for the maintainer. | AD-28, Story conventions, Stories 1.1, 1.2, 1.7, 1.8, 14.3, 14.7–14.9, root `AGENTS.md` |
+| M-1 render contract | `Template: Serialize + DeserializeOwned`. `RenderJob` gains `animation: Option<AnimationSpec { duration, fps, format }>`, and `Format` is now the still encoding only. `ErasedView` holds the decoder `fn(&[u8], Frame) -> Result<Node, _>`. Code-driven animation goes through `TemplateView::view(&self, Frame)`, and `render_frames` is dropped. | AD-15, AD-22, Stories 3.1, 10.2, 10.3, 10.6; skill `images.md`, `SKILL.md`; template `profile.rs` |
+| M-2 layering | `Attachment::rendered(bytes, digest, ext)` takes primitives. `RawJson` stays in the gateway, and the `noctis-ui` decoders take `&[u8]`. | AD-10, AD-12, AD-22; Stories 4.1, 4.6, 7.8, 9.1, 10.3 |
+| M-3 feature-gated tests | New CI job `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6). Fixtures in `tests/ui-<feature>/` are blessed under exactly that feature, `tests/ui/` under default features. `noctis-image`'s default features are empty. | AD-28, Conventions, catalog §6, Story conventions, Stories 1.1, 1.7 |
+| M-4 TLS stack | rustls 0.23.46 with `default-features = false` and features `ring`, `std`, `tls12`, `logging`; `App::run` installs the `ring` provider. The twilight gateway and http feature lists are recorded, and `aws-lc-rs`/`aws-lc-sys` are banned. Versions were checked on crates.io with a generic User-Agent. | AD-21, Stack, Story 5.1 |
+| M-5 locale file names and keys | Files are named by exact Discord code (`en-US.yaml`, `tr.yaml`), with `default = "en-US"`. `Locale::sibling()` (`en-US`↔`en-GB`, `es-ES`↔`es-419`) replaces base languages. Keys are `cmd.<path>.description`, where `<path>` is the command words as nested YAML keys joined by dots. `cmd.*`, `cmdword.*` and `ctxcmd.*` get no accessors. | AD-16, catalog CMD-04/LOC-01, PRD FR-41/FR-43/UJ-4, Stories 1.3, 11.1, 11.3, 11.4, 14.2; template locales (renamed), `strings.rs`, `AGENTS.md`, `README.md`; skill `i18n.md`, `commands.md`, `troubleshooting.md`, `SKILL.md` |
+| M-6 Story 10.1 spike / takumi pin | `takumi-core = "=0.31.0"` is pinned next to `takumi = "=2.17.0"`, and `Cargo.lock` is committed. Story 10.1 now states the generation approach (syn-parse the `takumi-core/src/style/tw/map.rs` tables, map them through a closed value-parser table) and the crosscheck oracle (`TailwindValues::from_str`), so no spike is needed. | AD-15, AD-28, Stack, Story 10.1 |
+| M-7 Story 5.1 oversized | Split into 5.1 (builder, Runtime, Plugin, startup safety), 5.2 (HTTP fake) and 5.3 (gateway fake). The old 5.2–5.6 are renumbered 5.4–5.8, with every cross-reference updated. | epics.md Epic 5, Story conventions, validation summary, Stories 7.6, 8.6, 12.5, 13.1 |
+| CV2-03 row (Gate 1 H-2 leftover) | Row rewritten to `components!` counting; the `const { assert! }` is gone. | catalog CV2-03 |
+| L-1 deny.toml licenses | The allow-list is exactly MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, Unicode-3.0, Zlib, MPL-2.0 and CC0-1.0. Resolving the Stack with `cargo metadata` showed two more licenses, both via takumi; they get crate-scoped exceptions: `xxhash-rust` (BSL-1.0) and `jpeg-encoder` (IJG). `webpki-root-certs` (CDLA-Permissive-2.0) is wasm-only and excluded by `[graph] targets`. `[workspace.package]` sets `license = "MIT OR Apache-2.0"`. | AD-28, Story 1.1 |
+| L-2 generic-const leftovers | Story 1.6 is reworded (rule functions are called by proc macros). CV2-13 uses `rgb!(…)` / `Rgb::try_from`. | Story 1.6, catalog CV2-13, skill and template (`rgb!`) |
+| L-3 sharing spelling | `.cache_store(Shared::new(store))`; there is no `.share(..)`. | Story 7.4 |
+| L-4 takumi pin mismatch | Exact pins in AD-15, and the addendum matches. | AD-15, PRD addendum |
+| L-5 supporting crates | proc-macro2 1.0, png 0.18, toml 1.1, pulldown-cmark 0.13, cargo_metadata 0.23 and cargo-hack 0.6 added to the Stack. | Stack, epics Additional Requirements, Stories 1.7, 10.1, 10.11 |
+| L-6 Discord cache memory | Measured as the dhat live-heap difference between a run with the default cache and a run with `DiscordCacheConfig::none()`. | Story 12.6 |
+
+## Gate 3 (2026-10-19)
+
+### Verdict: PASS
+
+The question is the same as before: could the team implement all 100 stories back to
+back without inventing a decision nothing records? After the Gate 2 Resolution, the
+answer is yes. Stories 14.8 and 14.9 are maintainer-gated by design, and an unattended
+run skips them as the Story conventions specify.
+
+### Method (round 1 of at most 3)
+
+- **Traceability by script.** FR-1..FR-79 and AD-1..AD-29 all appear in story
+  `Implements:` lines. Every catalog rule id is cited, with ranges expanded, and no
+  story cites an unknown id.
+  - Round 1 found that MSG-02 and REG-06 were cited only in AC text. They were added
+    to Story 14.4's `Implements:` as documentation-only confirmations.
+- **Forward references.** All mentions of later stories were scanned across the whole
+  order (100 stories). Every one is a "later extended by", "first user" or
+  informational note; none is a prerequisite. The notes cover:
+  - 1.7 → 2.2, 1.8 → 4.1, 2.5 → 7.5, 2.6 → 7.1, 3.1 → 10.2, 4.3 → 9.1, 4.6 → 7.8
+  - 5.1 → 5.6, 5.2 → 12.4, 5.6 → 12.5/13.1, 5.8 → 13.5
+  - 6.1/6.2 → 11.4, 6.5 → 15.4, 6.9 → 12.3/13.2
+  - 10.11 → 14.2, 12.6 → 14.3, 14.1 → 14.2, 14.7 → 14.8
+- **Gate 2 findings, re-checked one by one against the edited artifacts.** All are
+  closed:
+  - H-1: the plugin seam, Runtime and Dispatcher are recorded in AD-24, and the layer
+    graph allows every edge they use.
+  - H-2: Story 4.4 specifies `components!`.
+  - H-3: rules-catalog has satisfiable evidence for every tier.
+  - H-4: CI runs on push to `main`, and the maintainer actions are isolated.
+  - M-1 to M-7 and L-1 to L-6: closed.
+- **Fixed in round 1.**
+  - Fixtures that need a feature were moved to feature directories: Story 10.2 →
+    `tests/ui-image/tw/`, Story 11.1 → `tests/ui-i18n/loc/`.
+  - Stale names were grepped across the spine, epics, catalog, PRD, template and skill:
+    `.desc`, `en.yaml` as a valid file, `Runtime::builder`, `render_frames`,
+    `test_renderer`, `.share(`, `assert_budget`/`const COST`, "required job". None
+    remain, except where the text names them as rejected.
+- **Residual notes (not blockers).**
+  - The template and skill stay written against the planned API (tracking-mode build
+    until Story 14.2).
+  - `deny.toml`'s two crate-scoped license exceptions come from a 2026-10-19
+    resolution of the Stack. Story 1.1 re-verifies them with the real workspace.
+
+Ordered stories are listed in `_bmad-output/implementation-artifacts/sprint-status.yaml`.
