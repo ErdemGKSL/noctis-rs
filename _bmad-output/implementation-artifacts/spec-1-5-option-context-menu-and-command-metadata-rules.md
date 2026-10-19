@@ -2,7 +2,7 @@
 title: 'Story 1.5: Option, context-menu and command metadata rules'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '01bce9bdef7bd7f77102efa0cf526b9e533f639b'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -165,6 +165,41 @@ Order: CMD-13; then per option in input order: name rules (`validate_name` order
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 31 findings — high 0, medium 2, low 12, false 15, maybe-false 2
+- findings:
+  - `[low]` `[reject]` `channel_types` values are never validated (blind) — out of scope by intent: Never forbids `channel_types`-value checks (no catalog row); Design Notes leave typing to the Stories 6.2/6.3 macros.
+  - `[maybe-false]` `[reject]` STRING choice values are not checked against `min_length`/`max_length` (blind) — no catalog row; settling it needs Discord's behavior for a choice outside the length bounds (a user picks a choice and types nothing). If true it is only low.
+  - `[low]` `[reject]` Duplicate choices and duplicate `file_types` entries pass (blind) — the intent's Never excludes them explicitly ("no catalog row").
+  - `[low]` `[reject]` Float `Display` length overcounts CMD-05 for extreme magnitudes (blind) — the spec sets "numbers by their `Display` length". The overcount is conservative and needs both a choice like `1e20`/`1e-300` and a command near 4000 characters, which is unlikely.
+  - `[false]` `[reject]` Unused `&Limits` in `validate_meta` / `measure_options` (blind) — the intent requires `&Limits` on every new public function "even where it reads no field" (AD-3).
+  - `[false]` `[reject]` Inconsistent return types across the new functions (blind) — the intent fixes each signature; `validate_context_menu_name` mirrors the existing `validate_name -> Vec<Violation>`.
+  - `[low]` `[patch]` Unnamed options get inconsistent paths and actuals (blind) — `validate_options` docs say every path starts with the name or `options[i]`, but CMD-06 uses the raw name (path `""`, as the matrix requires), and OPT-01/OPT-10 put the empty raw name in `Actual::Text` (option.rs `check_required_order`, l.466). Fix: correct the doc and use `label()` for those actuals.
+  - `[false]` `[reject]` META-03 is reported once per declaration (blind) — the Design Notes and the merge matrix say "META-03 runs per declaration … (input order)".
+  - `[low]` `[reject]` META-03 path is `.contexts` for an empty command path (blind) — real (merge.rs `meta_03`), but an empty path is already rejected by `validate_tree`, nobody meets it in everyday use, and the fix adds a branch.
+  - `[false]` `[reject]` `render_set` sorts by declaration order instead of the Discord value (blind) — the variants are declared in value order (`Guild`=0, `BotDm`=1, `PrivateChannel`=2, meta.rs l.10-17), so derived `Ord` equals value order and no output is wrong. The concern is about a future change only.
+  - `[maybe-false]` `[reject]` CTX-01 empty path for an empty name; whitespace-only names pass (blind) — the empty-name path `""` is what the intent matrix specifies. Settling the whitespace part needs Discord's response to a `"   "` menu name. If true it is only low.
+  - `[low]` `[reject]` Localized option names are not validated (blind) — LOC-02 is explicitly excluded by the intent (Story 11.4).
+  - `[false]` `[reject]` `docs/discord-rules.md` enforcement entries were not updated (blind) — the rows name enforcement phases and macros (e.g. CTX-01 l.132, META-01 l.135), which are still correct. No limit was added or changed, and the two required ambiguity rows are present.
+  - `[low]` `[reject]` `compile_fail` doctests do not pin the error code (blind) — each doctest is one valid import plus the tagged line, so an unrelated failure is unlikely. Pinning codes is ignored on stable, and trybuild adds machinery the spec did not ask for.
+  - `[medium]` `[patch]` Explicit-base inheritance is tested only for `default_member_permissions` (blind) — same root cause as the vgap per-field gap below. Action: add a `meta_02_explicit_is_per_field` test.
+  - `[low]` `[reject]` Float choice of tiny/huge magnitude overcounts CMD-05 (edge) — grouped with the Float `Display` finding above; same reason.
+  - `[low]` `[reject]` META-03 for CMD-10-dropped or empty-path declarations (edge) — META-03 is true for a dropped declaration (it is per declaration). The `.contexts` path part is grouped with the empty-path finding above; same reason.
+  - `[false]` `[reject]` `option_length = 0` gives an unsatisfiable `Between{1,0}` (edge) — a limit of 0 allows no `max_length`, and reporting every one loudly is correct behavior for that configuration.
+  - `[medium]` `[patch]` (vgap, pre-verified) Per-field "explicit base declaration" in `check_base` is pinned only for permissions — action: add a meta.rs unit test: base meta decl with `perm(8)` + `nsfw(true)` handler + unset handler yields exactly `[CMD_07]` with the unset note and help, plus the converse (base sets `nsfw(true)`, perm set/unset split still yields META-01).
+  - `[low]` `[patch]` (vgap, pre-verified) Choice OPT-05 checks against only valid bounds are untested — action: extend `opt_05_choice_ranges` with `min_value(Int(I53+1))` and `min_value(Float(5.0))` on INTEGER, each with choice `0`, yielding only the bound's own violation.
+  - `[low]` `[patch]` (vgap other) CMD-06 path / OPT-01 actual for empty names contradict the `validate_options` doc — grouped with the unnamed-options finding; same fix.
+  - `[false]` `[reject]` "Derive and App build reject identically" is not exercised (intent) — the intent's Problem names Stories 6.2/6.3/6.4 as the later callers. The facade doc has described the intended callers in the present tense since Story 1.4.
+  - `[false]` `[reject]` `nsfw` conflicts carry CMD-07 instead of META-01/02 (intent) — settled by the spec and the catalog CMD-07 row ("nsfw consistent per base").
+  - `[false]` `[reject]` Set versus unset counts as differing (intent) — settled by the intent matrix ("set vs unset" row) and logged as an ambiguity in `docs/discord-rules.md` (FR-9).
+  - `[false]` `[reject]` Conflicts are checked per scope (intent) — settled by the merge matrix "scopes separate" row; Discord registers per scope.
+  - `[false]` `[reject]` META-03 also covers context menus and is absent from `validate_tree` (intent) — settled by the merge matrix ("META-03 menu") and Design Notes (macros call `validate_meta` with the attribute's scope).
+  - `[false]` `[reject]` OPT-12 has no surface (intent) — the intent's Never assigns it to Story 6.7 (`Partial<T>`), which it depends on.
+  - `[false]` `[reject]` OPT-07 values are not typed (intent) — the intent excludes value checks, and Design Notes leave typing to the 6.2/6.3 macros.
+  - `[false]` `[reject]` Not every violation names the offending option (intent) — the CMD-13 `options`, `options[i]` and CTX-01 `""` paths are what the intent matrix specifies.
+  - `[low]` `[patch]` `tests/options.rs` header claims OPT-01..13 coverage (intent) — it exercises only OPT-01/05/06/13, CTX-01, META-01, META-03. Action: make the header list the rule ids it exercises.
+  - `[false]` `[reject]` Template `src/` not changed (intent) — the template code uses none of the new items, and the intent forbids edits to the template's `src/`; the skill and `AGENTS.md` were updated.
+
 ## Design Notes
 
 **Decisions (logged to the memlog):**
@@ -187,3 +222,22 @@ Order: CMD-13; then per option in input order: name rules (`validate_name` order
 - `cargo deny check` -- expected: exit 0.
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Added option, context-menu and command-metadata rules to `noctis_rules::command`: `validate_options` (OPT-01..11, OPT-13, CMD-13 per options array, closed `OptionType`), `measure_options` for CMD-05, `validate_context_menu_name` (CTX-01), `validate_meta` (META-01..03, CMD-07 nsfw, per-field base inheritance, set comparison of contexts/integration types), merge integration, and `compile_fail` doctests for by-construction rules (OPT-14, CTX-02, CTX-03, META-05). No twilight types; every new public function takes `&Limits`.
+- **Files changed:**
+  - `crates/noctis-rules/src/command/option.rs`: new option/choice/number-bound validation and option measurement.
+  - `crates/noctis-rules/src/command/meta.rs`: new metadata model and META/CMD-07 checks.
+  - `crates/noctis-rules/src/command/merge.rs`, `tree.rs`, `name.rs`, `mod.rs`, `src/lib.rs`: META-03 per declaration in merge, CTX-01, re-exports.
+  - `crates/noctis-rules/tests/options.rs`: integration tests; header now lists the rule ids it exercises.
+  - `crates/noctis/src/lib.rs`: facade re-exports and docs.
+  - `docs/discord-rules.md`: two ambiguity rows (set vs unset metadata, FR-9).
+  - `examples/project-template/AGENTS.md` and the noctis skill (`commands.md`, `limits-cheatsheet.md`, `troubleshooting.md`): new API usage.
+- **Review findings:** 31 findings (high 0, medium 2, low 12, false 15, maybe-false 2).
+  - Patched (2 medium, 4 low): per-field explicit-base inheritance tests for `nsfw` and permissions (blind + vgap, grouped); OPT-05 choice checks against only valid bounds; unnamed options use `label()` in OPT-01/OPT-10 actuals and the `validate_options` doc is corrected (blind + vgap, grouped); `tests/options.rs` header fixed.
+  - Deferred: none.
+  - Rejected: `channel_types` values not validated (out of scope, macros 6.2/6.3); STRING choice vs min/max_length (maybe-false, no catalog row); duplicate choices/`file_types` (excluded by Never); Float `Display` overcount for CMD-05 (spec rule, conservative; twice); unused `&Limits` (AD-3 required); inconsistent return types (signatures fixed by intent); META-03 per declaration (by design); META-03 `.contexts` path for empty command path (already rejected by `validate_tree`; twice); `render_set` ordering (declaration order equals value order); CTX-01 empty/whitespace name (maybe-false, matrix specifies `""`); localized option names (LOC-02, Story 11.4); discord-rules enforcement entries (still correct); `compile_fail` codes not pinned (stable ignores them); `option_length = 0` (correct loud behavior); derive/App parity not exercised (Stories 6.2-6.4); nsfw as CMD-07 (catalog); set vs unset differs (FR-9); per-scope checks (matrix); META-03 for menus outside `validate_tree` (Design Notes); OPT-12 no surface (Story 6.7); OPT-07 untyped (macros); violation paths for CMD-13/CTX-01 (matrix); template `src/` unchanged (intent forbids).
+- **Follow-up review recommended:** false. Patched by verdict: high 0, medium 2, low 4. This is a follow-up pass after review, so only a patched high would trigger another pass, and none was patched.
+- **Verification:** local gates via `gates.sh` all green (`cargo fmt --check`, `cargo clippy --release --all-targets --all-features -D warnings`, `cargo test --release --workspace`, `cargo hack --each-feature`, `xtask deps-check`, `cargo tree` for noctis-rules, `cargo deny check`, MSRV 1.91 check, no `target/debug`). CI is paused by the maintainer, so it did not run.
+- **Residual risks:** behavior that only Discord can settle (STRING choice outside length bounds, whitespace-only menu names) is not checked; CMD-05 can overcount for extreme float choices; a caller running both `validate_options` and `validate_tree` on one oversized list gets CMD-13 twice; `channel_types`/OPT-07 typing and OPT-12 wait for Stories 6.2/6.3/6.7.

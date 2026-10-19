@@ -1,5 +1,5 @@
-//! The Story 1.5 acceptance criteria through the public API (OPT-01..13,
-//! CTX-01, META-01, META-03).
+//! The Story 1.5 acceptance criteria through the public API (OPT-01, OPT-05,
+//! OPT-06, OPT-13, CTX-01, META-01, META-03).
 
 use noctis_rules::command::{
     CommandDecl, CommandMeta, ContextMenuDecl, InteractionContext, LocalizedText, MenuKind,

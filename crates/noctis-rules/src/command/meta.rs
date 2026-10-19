@@ -492,6 +492,38 @@ mod tests {
     }
 
     #[test]
+    fn meta_02_explicit_is_per_field() {
+        assert_eq!(
+            check(&[
+                m("m0", "config").metadata(perm(8)),
+                h("m1", "config set").metadata(CommandMeta::new().nsfw(true)),
+                h("m2", "config get"),
+            ]),
+            [Violation::new(
+                RuleId::CMD_07,
+                "config",
+                Bound::Describe("one nsfw value per base command"),
+                Actual::Text("config".into())
+            )
+            .with_note("`config set` sets `true` (from `m1`)")
+            .with_note("`config get` leaves it unset (from `m2`)")
+            .with_help(HELP)]
+        );
+        assert_eq!(
+            check(&[
+                m("m0", "config").metadata(CommandMeta::new().nsfw(true)),
+                h("m1", "config set").metadata(perm(8)),
+                h("m2", "config get"),
+            ]),
+            [meta_01(&[
+                "`config set` sets `8` (from `m1`)",
+                "`config get` leaves it unset (from `m2`)"
+            ])
+            .with_help(HELP)]
+        );
+    }
+
+    #[test]
     fn meta_02_contexts_compare_as_sets() {
         let c = |contexts| CommandMeta::new().contexts(contexts);
         assert_eq!(

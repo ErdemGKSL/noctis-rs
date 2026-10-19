@@ -396,7 +396,8 @@ fn label(option: &OptionDecl<'_>, index: usize) -> String {
 ///
 /// Every violation's path starts with the option's name (or `options[i]` when
 /// the name is empty): `name`, `name.min_value`, `name.choices[j]`,
-/// `name.file_types[k]`, …; CMD-13 uses the path `options`. The order is
+/// `name.file_types[k]`, …; CMD-13 uses the path `options` and CMD-06 the
+/// duplicated name itself (`""` for duplicated empty names). The order is
 /// CMD-13; then per option in input order its name rules, CMD-04, `min_value`
 /// and `max_value` (OPT-05 misuse, integer bound, OPT-03/04 range), OPT-05
 /// ordering, `min_length` and `max_length`, OPT-06 ordering, OPT-07, OPT-08,
@@ -463,7 +464,7 @@ fn check_option(option: &OptionDecl<'_>, p: &str, limits: &Limits, out: &mut Vec
             RuleId::OPT_10,
             p,
             Bound::Describe("choices or autocomplete, not both"),
-            Actual::Text(option.name.to_owned()),
+            Actual::Text(p.to_owned()),
         ));
     }
     if option.autocomplete && !kind.is_choosable() {
@@ -783,7 +784,7 @@ fn check_required_order(options: &[OptionDecl<'_>], out: &mut Vec<Violation>) {
                     RuleId::OPT_01,
                     label(option, index),
                     Bound::Describe("required options before optional ones"),
-                    Actual::Text(option.name.to_owned()),
+                    Actual::Text(label(option, index)),
                 )
                 .with_note(format!("after optional `{optional}`")),
             ),
@@ -1397,6 +1398,28 @@ mod tests {
                 .min_value(Int(1))
                 .choices(&[Choice::new("n", CInt(0))])),
             [describe(RuleId::OPT_05, "a.choices[0]", within, "0")]
+        );
+        assert_eq!(
+            one(o("a", OptionType::Integer)
+                .min_value(Int(I53 + 1))
+                .choices(&[Choice::new("n", CInt(0))])),
+            [describe(
+                RuleId::OPT_03,
+                "a.min_value",
+                INTEGER_RANGE,
+                "9007199254740992"
+            )]
+        );
+        assert_eq!(
+            one(o("a", OptionType::Integer)
+                .min_value(Float(5.0))
+                .choices(&[Choice::new("n", CInt(0))])),
+            [describe(
+                RuleId::OPT_05,
+                "a.min_value",
+                "an integer bound on an INTEGER option",
+                "5"
+            )]
         );
     }
 
