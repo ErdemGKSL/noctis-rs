@@ -2,7 +2,8 @@
 title: 'Story 1.5: Option, context-menu and command metadata rules'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '01bce9bdef7bd7f77102efa0cf526b9e533f639b'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
