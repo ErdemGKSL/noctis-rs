@@ -531,12 +531,26 @@ tests/boundary/
 - App-build rules get unit tests asserting the exact `BuildError` variant; Runtime
   rules get unit and property tests (and Testing kit cases, FR-51) asserting the typed
   error is returned **before** any HTTP request.
-- A CI check (`xtask rules-catalog`) compares the rule IDs in this file against the
-  IDs found in tests, fixtures and doctests, and fails when a Compile-time,
-  App-build or Runtime rule has no test of the kind its tier requires. Rows whose
-  Enforcement column is a parenthesis only (permitted, out of scope, no API in v1)
-  are documentation-only; a row that says `see <ID>` or `as <ID>` (LOC-05, MOD-08)
-  is covered by that rule's tests, which also cite the aliasing id.
+- A CI check (`cargo run --release -p xtask -- rules-catalog`) compares the rule IDs
+  in this file against the IDs found in tests, fixtures and doctests, and fails when a
+  Compile-time, App-build or Runtime rule has no test of the kind its tier requires.
+  Rows whose Enforcement column is a parenthesis only (permitted, out of scope, no API
+  in v1) are documentation-only; a row that says `see <ID>` or `as <ID>` (LOC-05,
+  MOD-08) is covered by that rule's tests, and an alias row needs no test of its own.
+- How the check reads the Enforcement column: tiers are split at ` / ` outside
+  parentheses and code. A `Compile-time` tier is by construction when the text in its
+  parentheses before the first `;` says "by construction" (so INT-05's
+  "`#[command]`/`#[handler]` check; typestate by construction" is diagnosed);
+  otherwise Noctis diagnoses it. Every `App-build`, `Runtime` or `Startup` tier needs
+  a unit test, including `Runtime (by construction)` (LOC-06, INT-12, MSG-08, ATT-04).
+- Fixtures are named `tests/ui/<area>/<RULE-ID>_<slug>.rs` (or under
+  `tests/ui-<feature>/`), `<area>` being the id's area lowercased (`CV2-05` lives in
+  `cv2/`) and `<slug>` lowercase words joined by `_`, with the `.stderr` beside them.
+- A unit test cites a rule when its `#[test]` (or `#[tokio::test]`) function name
+  contains the id's snake token: `cv2_03` in `fn cv2_03_forty_one_fails()`.
+- A requirement whose test lands in a later story is listed in
+  `xtask/rules-pending.toml` with the story that adds it. An entry whose test already
+  exists fails the check, so the list only shrinks; it is empty by Story 14.4.
 
 ---
 

@@ -28,5 +28,9 @@ testkit = []
 [dependencies]
 noctis-rules.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+trybuild.workspace = true
+
 [lints]
 workspace = true

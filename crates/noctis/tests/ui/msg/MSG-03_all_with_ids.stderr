@@ -1,0 +1,7 @@
+error[E0618]: expected function, found `MentionIds<'_>`
+ --> tests/ui/msg/MSG-03_all_with_ids.rs:4:13
+  |
+4 |     let _ = MentionIds::All(&[1_u64]); // [MSG-03]
+  |             ^^^^^^^^^^^^^^^----------
+  |             |
+  |             call expression requires function

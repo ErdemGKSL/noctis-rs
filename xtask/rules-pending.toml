@@ -1,0 +1,573 @@
+# Pending rules-catalog requirements ().
+#
+# Each [[rule]] names a catalog requirement whose test a later story adds:
+#   id       = the rule id in docs/discord-rules.md
+#   evidence = "diagnosed" (fixture .stderr contains [ID]),
+#              "by-construction" (fixture or compile_fail doctest line carrying // [ID]),
+#              or "unit" (a #[test] fn whose name cites the snake id, e.g. cv2_03)
+#   story    = "<epic>.<story>" that adds the test
+# Each [[check]] keeps a whole check pending (name, story); the only check is
+# "custom-id-constants".
+#
+# An entry whose requirement already has a test fails the check, so this list
+# only shrinks: remove an entry in the story that adds its test. It must be
+# empty by Story 14.4.
+
+[[check]]
+name = "custom-id-constants"
+story = "2.2"
+
+[[rule]]
+id = "CMD-01"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-02"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-03"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-04"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-05"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-06"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "CMD-07"
+evidence = "diagnosed"
+story = "6.3"
+
+[[rule]]
+id = "CMD-10"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-11"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-12"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-13"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-15"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "CMD-16"
+evidence = "diagnosed"
+story = "6.1"
+
+[[rule]]
+id = "OPT-01"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-02"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-03"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-04"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-05"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-06"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-07"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-08"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-09"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-10"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-11"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "OPT-12"
+evidence = "by-construction"
+story = "6.7"
+
+[[rule]]
+id = "OPT-12"
+evidence = "unit"
+story = "6.7"
+
+[[rule]]
+id = "OPT-13"
+evidence = "diagnosed"
+story = "6.2"
+
+[[rule]]
+id = "LOC-01"
+evidence = "diagnosed"
+story = "11.1"
+
+[[rule]]
+id = "LOC-02"
+evidence = "diagnosed"
+story = "11.4"
+
+[[rule]]
+id = "LOC-02"
+evidence = "unit"
+story = "11.4"
+
+[[rule]]
+id = "LOC-03"
+evidence = "diagnosed"
+story = "11.4"
+
+[[rule]]
+id = "LOC-03"
+evidence = "unit"
+story = "11.4"
+
+[[rule]]
+id = "LOC-06"
+evidence = "unit"
+story = "6.5"
+
+[[rule]]
+id = "CTX-01"
+evidence = "diagnosed"
+story = "6.3"
+
+[[rule]]
+id = "META-01"
+evidence = "diagnosed"
+story = "6.3"
+
+[[rule]]
+id = "META-02"
+evidence = "diagnosed"
+story = "6.3"
+
+[[rule]]
+id = "META-03"
+evidence = "diagnosed"
+story = "6.3"
+
+[[rule]]
+id = "META-04"
+evidence = "unit"
+story = "6.9"
+
+[[rule]]
+id = "REG-05"
+evidence = "unit"
+story = "6.9"
+
+[[rule]]
+id = "INT-01"
+evidence = "unit"
+story = "6.6"
+
+[[rule]]
+id = "INT-02"
+evidence = "unit"
+story = "6.6"
+
+[[rule]]
+id = "INT-03"
+evidence = "by-construction"
+story = "6.5"
+
+[[rule]]
+id = "INT-03"
+evidence = "unit"
+story = "6.6"
+
+[[rule]]
+id = "INT-04"
+evidence = "by-construction"
+story = "6.5"
+
+[[rule]]
+id = "INT-05"
+evidence = "diagnosed"
+story = "6.6"
+
+[[rule]]
+id = "INT-05"
+evidence = "unit"
+story = "6.6"
+
+[[rule]]
+id = "INT-06"
+evidence = "by-construction"
+story = "6.7"
+
+[[rule]]
+id = "INT-06"
+evidence = "unit"
+story = "6.7"
+
+[[rule]]
+id = "INT-08"
+evidence = "by-construction"
+story = "6.5"
+
+[[rule]]
+id = "INT-09"
+evidence = "by-construction"
+story = "4.2"
+
+[[rule]]
+id = "INT-10"
+evidence = "by-construction"
+story = "6.5"
+
+[[rule]]
+id = "INT-11"
+evidence = "unit"
+story = "6.6"
+
+[[rule]]
+id = "INT-12"
+evidence = "unit"
+story = "6.5"
+
+[[rule]]
+id = "INT-13"
+evidence = "unit"
+story = "12.4"
+
+[[rule]]
+id = "CID-01"
+evidence = "diagnosed"
+story = "2.5"
+
+[[rule]]
+id = "CID-02"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CID-03"
+evidence = "diagnosed"
+story = "2.5"
+
+[[rule]]
+id = "CID-04"
+evidence = "unit"
+story = "7.1"
+
+[[rule]]
+id = "CID-05"
+evidence = "by-construction"
+story = "2.3"
+
+[[rule]]
+id = "CID-05"
+evidence = "unit"
+story = "2.3"
+
+[[rule]]
+id = "CID-06"
+evidence = "unit"
+story = "2.2"
+
+[[rule]]
+id = "CID-07"
+evidence = "by-construction"
+story = "2.1"
+
+[[rule]]
+id = "CV2-01"
+evidence = "by-construction"
+story = "4.2"
+
+[[rule]]
+id = "CV2-02"
+evidence = "by-construction"
+story = "4.2"
+
+[[rule]]
+id = "CV2-03"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-04"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-05"
+evidence = "diagnosed"
+story = "4.1"
+
+[[rule]]
+id = "CV2-06"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-07"
+evidence = "diagnosed"
+story = "4.1"
+
+[[rule]]
+id = "CV2-08"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-09"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-10"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-11"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-12"
+evidence = "by-construction"
+story = "4.1"
+
+[[rule]]
+id = "CV2-13"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-14"
+evidence = "by-construction"
+story = "4.1"
+
+[[rule]]
+id = "CV2-15"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "CV2-17"
+evidence = "diagnosed"
+story = "4.4"
+
+[[rule]]
+id = "MOD-01"
+evidence = "diagnosed"
+story = "4.6"
+
+[[rule]]
+id = "MOD-02"
+evidence = "diagnosed"
+story = "4.6"
+
+[[rule]]
+id = "MOD-03"
+evidence = "diagnosed"
+story = "4.5"
+
+[[rule]]
+id = "MOD-04"
+evidence = "diagnosed"
+story = "4.6"
+
+[[rule]]
+id = "MOD-05"
+evidence = "diagnosed"
+story = "4.6"
+
+[[rule]]
+id = "MOD-06"
+evidence = "diagnosed"
+story = "4.6"
+
+[[rule]]
+id = "MOD-07"
+evidence = "diagnosed"
+story = "4.6"
+
+[[rule]]
+id = "MOD-09"
+evidence = "unit"
+story = "4.6"
+
+[[rule]]
+id = "MSG-01"
+evidence = "diagnosed"
+story = "4.2"
+
+[[rule]]
+id = "MSG-05"
+evidence = "by-construction"
+story = "4.2"
+
+[[rule]]
+id = "MSG-07"
+evidence = "by-construction"
+story = "4.2"
+
+[[rule]]
+id = "MSG-08"
+evidence = "unit"
+story = "9.1"
+
+[[rule]]
+id = "ATT-04"
+evidence = "unit"
+story = "9.1"
+
+[[rule]]
+id = "ATT-05"
+evidence = "by-construction"
+story = "9.1"
+
+[[rule]]
+id = "ATT-06"
+evidence = "diagnosed"
+story = "9.1"
+
+[[rule]]
+id = "ATT-07"
+evidence = "by-construction"
+story = "10.4"
+
+[[rule]]
+id = "WH-01"
+evidence = "by-construction"
+story = "9.5"
+
+[[rule]]
+id = "WH-02"
+evidence = "diagnosed"
+story = "9.5"
+
+[[rule]]
+id = "WH-03"
+evidence = "by-construction"
+story = "9.5"
+
+[[rule]]
+id = "WH-04"
+evidence = "diagnosed"
+story = "9.5"
+
+[[rule]]
+id = "WH-05"
+evidence = "unit"
+story = "9.5"
+
+[[rule]]
+id = "RL-01"
+evidence = "unit"
+story = "12.4"
+
+[[rule]]
+id = "RL-02"
+evidence = "unit"
+story = "12.4"
+
+[[rule]]
+id = "RL-03"
+evidence = "unit"
+story = "12.4"
+
+[[rule]]
+id = "RL-04"
+evidence = "unit"
+story = "12.4"
+
+[[rule]]
+id = "GW-01"
+evidence = "unit"
+story = "5.4"
+
+[[rule]]
+id = "GW-02"
+evidence = "unit"
+story = "5.4"
+
+[[rule]]
+id = "GW-03"
+evidence = "unit"
+story = "5.4"
+
+[[rule]]
+id = "GW-04"
+evidence = "unit"
+story = "15.3"
+
+[[rule]]
+id = "GW-05"
+evidence = "unit"
+story = "5.6"
+
+[[rule]]
+id = "GW-06"
+evidence = "diagnosed"
+story = "15.3"
+
+[[rule]]
+id = "GW-07"
+evidence = "by-construction"
+story = "15.3"
+
+[[rule]]
+id = "GW-07"
+evidence = "unit"
+story = "15.3"
