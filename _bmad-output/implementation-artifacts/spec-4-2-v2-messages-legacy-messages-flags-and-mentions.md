@@ -2,7 +2,8 @@
 title: 'Story 4.2: V2 messages, legacy messages, flags and mentions'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '460541b1e718b408062954f69a285a5035119adc'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
