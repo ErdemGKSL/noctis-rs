@@ -189,13 +189,17 @@ When you must index, a single up-front assertion or re-slice lets the optimizer 
 the per-iteration checks:
 
 ```rust
-fn sum_first(v: &[u32], n: usize) -> u32 {
-    let v = &v[..n];          // one check here…
-    let mut s = 0;
-    for i in 0..n { s += v[i]; } // …none here
-    s
+fn add_into(dst: &mut [u32], a: &[u32], b: &[u32]) {
+    let n = dst.len();
+    let (a, b) = (&a[..n], &b[..n]); // one length check each, up front…
+    for i in 0..n {
+        dst[i] = a[i] + b[i];          // …so the optimizer can drop the per-iteration checks
+    }
 }
 ```
+
+(An iterator version — `for ((d, x), y) in dst.iter_mut().zip(a).zip(b)` — needs no
+re-slicing at all and is what clippy's `needless_range_loop` will suggest.)
 
 Use `chunks_exact` / `windows` / `split_at` for structured access. Reach for
 `get_unchecked` only with a benchmark proving it matters and a `// SAFETY:` comment.

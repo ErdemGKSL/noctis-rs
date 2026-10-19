@@ -215,15 +215,23 @@ use std::ffi::{c_char, CStr, CString};
 let name = CString::new("vesper")?;      // Err if the input contains '\0'
 unsafe_c_fn(name.as_ptr());               // `name` must outlive the call
 
-// C → Rust: borrow, then convert (may not be valid UTF-8).
-fn from_c(p: *const c_char) -> Option<String> {
+/// C → Rust: borrow, then convert (may not be valid UTF-8).
+///
+/// # Safety
+///
+/// `p` must be null or point to a valid NUL-terminated string that stays alive
+/// and unmodified for the duration of this call.
+unsafe fn from_c(p: *const c_char) -> Option<String> {
     if p.is_null() { return None; }
-    // SAFETY: caller guarantees `p` is a valid NUL-terminated string that lives
-    // for the duration of this call.
+    // SAFETY: non-null was checked above; validity is guaranteed by the caller.
     let s = unsafe { CStr::from_ptr(p) };
     Some(s.to_string_lossy().into_owned())
 }
 ```
+
+Note that `from_c` must itself be `unsafe fn`: a *safe* function that dereferences a
+raw pointer it was handed is unsound, because safe callers could pass any address.
+Clippy's `not_unsafe_ptr_arg_deref` (deny by default) catches exactly this mistake.
 
 Classic bug: `CString::new(s)?.as_ptr()` in one expression — the `CString` is dropped at
 the end of the statement and the pointer dangles. Bind it to a variable first.
