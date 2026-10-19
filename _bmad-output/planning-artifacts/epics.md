@@ -1,6 +1,6 @@
 ---
 status: draft
-stepsCompleted: [1, 2]
+stepsCompleted: [1, 2, 3]
 inputDocuments:
   - _bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/prd.md
   - _bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/addendum.md
@@ -37,6 +37,13 @@ recorded here.
 - **Step 2, epic structure approval and menu:** approved the 15-epic structure and
   chose [C] Continue (no Advanced Elicitation or Party Mode). Epic order and the
   placement of FR-51 and the V2 model are explained under Epic List.
+- **Step 3, story review and final menu:** each epic's stories were accepted as
+  written (96 stories in 15 epics) and [C] Continue was chosen (no Advanced
+  Elicitation or Party Mode). Story-level decisions: the Project Template build job
+  runs in tracking mode until Story 14.2 (see Story conventions); `xtask/rules-pending.toml`
+  lets the rules-catalog gate be required from Story 1.7 while rule tests land epic by
+  epic, and must be empty by Story 14.4; the HTTP client for `AssetFetcher` (deferred
+  by the architecture) is chosen in Story 10.8.
 
 ### Story conventions (apply to every story)
 
