@@ -1,6 +1,6 @@
 ---
 title: "PRD: Noctis"
-status: draft
+status: final
 created: 2026-10-19
 updated: 2026-10-19
 ---
@@ -19,12 +19,11 @@ the epic and story authors who come next, and it builds on these inputs:
   twilight-rs (`twilight-rs.md`) and takumi (`takumi-image-generation.md`).
 
 Features are grouped, and their FRs are numbered globally (FR-1 … FR-79) so later
-documents can refer to them. FR-1 to FR-51 keep the ids of the first draft; FR-52
-onwards were added in revision and sit inside the feature they belong to, so ids
-are unique and gap-free but not monotonic in reading order. Terms in §3 are used
-verbatim. Inline `[ASSUMPTION]` tags are collected in §11. Technical "how" (crate
-names, libraries, wire formats, data structures, version pins) lives in
-`addendum.md` and in the architecture document, not here.
+documents can refer to them. FR-52 onwards were added in revision and sit inside
+the feature they belong to, so ids are unique and gap-free but not in reading
+order. Terms in §3 are used verbatim. Inline `[ASSUMPTION]` tags are collected in
+§11. Technical "how" (crate names, libraries, wire formats, data structures,
+version pins) lives in `addendum.md` and in the architecture document, not here.
 
 ## 1. Vision
 
@@ -49,7 +48,7 @@ rewriting handlers.
 - **Bot author:** When I add a feature, I declare a command and a View and get a
   working, paginated, limit-safe dashboard. I don't hand-assemble JSON or count
   components.
-- **Bot author:** When my bot grows, I raise shard counts, split shards across
+- **Bot author:** When my bot grows, I raise shard counts, split Shards across
   processes, and swap in-memory stores for my database. I don't touch my handlers
   when I do.
 - **Bot author:** When I need a status card, profile or leaderboard, I write a
@@ -80,22 +79,22 @@ rewriting handlers.
   with `--publish-guild <test guild id>`, and `/setup start` appears in the test
   guild. **Edge case:** a user opens the wizard, leaves for two days and clicks
   "Next". The Ref has expired, so Noctis routes the click to the Expired Handler,
-  which re-renders step 1 with a notice.
+  which re-renders Step 1 with a notice.
 - **UJ-2. Deniz adds a server dashboard with tabs.** The Command
   `"dashboard"` sends a Container with a Navbar (Overview, Members, Logs). Members
   has 300 entries, so the View paginates them automatically under the component
   budget, and the Navbar stays on every page. The Overview tab embeds a generated
-  activity-chart image in a media gallery.
+  activity-chart image in a Media Gallery.
 - **UJ-3. Ece scales from one process to a cluster.** Ece's bot reaches 400k guilds.
   She changes configuration so each of four processes runs one Shard Range, points
   the App at a shared HTTP rate-limit proxy, and switches the RefStore,
   RateLimitStore, ModuleStateStore and IdentifyQueue to her Redis-backed
   implementations. Handler code is unchanged. Restarting a process resumes its
   Shards' sessions instead of re-identifying, using her SessionStore implementation.
-- **UJ-4. Mert migrates a tescord module.** Mert ports a tescord pack that registers
+- **UJ-4. Mert migrates a tescord module.** Mert ports a tescord Pack that registers
   `"config (set|get) (prefix|welcome)"`. The same pattern string expands to the same
   four commands in Noctis. His handler gets a typed enum telling it which variant
-  was invoked, and option values arrive as a typed struct. His pack's `en` locale
+  was invoked, and option values arrive as a typed struct. His Pack's `en` Locale
   file works unchanged for `en-US` and `en-GB` users.
 - **UJ-5. A coding agent writes a leaderboard feature.** A Claude Code agent is given
   only the Project Template directory, with no access to Noctis source. It reads the
@@ -118,7 +117,7 @@ rewriting handlers.
   ("settings logs channel"). It maps to Discord's command, subcommand group and
   subcommand. A **Command Pattern** is a Command Path with `(a|b)` alternatives and
   `?` optional groups.
-- **Publish** — Synchronising the registered Commands with Discord, globally or
+- **Publish** — Synchronizing the registered Commands with Discord, globally or
   per guild, only when they differ.
 - **Route** — The stable identifier of a Component Handler or Modal Handler. It
   forms the start of every `custom_id` the framework emits.
@@ -154,7 +153,7 @@ rewriting handlers.
   LocaleSource, CacheStore, ModuleStateStore, IdentifyQueue and DiscordCache.
 - **ModuleStateStore** — The Adapter holding Module enable/disable state, global and
   per guild.
-- **IdentifyQueue** — The Adapter that serialises Shard identifies per bucket, across
+- **IdentifyQueue** — The Adapter that serializes Shard identifies per bucket, across
   every process of a Cluster.
 - **DiscordCache** — The Adapter behind the cache of Discord resources (guilds,
   channels, roles, members, …).
@@ -190,7 +189,8 @@ rewriting handlers.
 - **Expired Handler** — The handler that runs when a component's Ref is missing or
   expired.
 - **Project Template** — `examples/project-template/`, a ready-to-copy bot
-  project. It includes the **Noctis Usage Skill** and an `AGENTS.md`.
+  project. It includes the **Noctis Usage Skill** (the **Usage Skill**) and an
+  `AGENTS.md`.
 - **UI Doctrine** — The rules in §4.0 for which surface and navigation pattern a
   bot uses.
 - **Enforcement Point** — Where a Discord rule is checked: compile time (static
@@ -254,7 +254,7 @@ it, and shut it down gracefully.
   within a configurable grace period.
 
 #### FR-2: Automatic sharding
-The App can start the recommended number of Shards, or an explicit total, honouring
+The App can start the recommended number of Shards, or an explicit total, honoring
 Discord's identify concurrency.
 **Consequences (testable):**
 - With `max_concurrency = 16`, Shards in the same bucket identify in parallel, not
@@ -268,7 +268,7 @@ Discord's identify concurrency.
 A bot author can run a configured Shard Range (for example, shards 32–63 of 128)
 in each process.
 **Consequences (testable):**
-- A process runs only Shards in its range, and Command Publish runs from exactly one
+- A process runs only Shards in its range, and Publish runs from exactly one
   designated process.
 - All processes of a Cluster identify through the IdentifyQueue Adapter, so
   per-bucket identify concurrency holds Cluster-wide, not per process.
@@ -302,9 +302,9 @@ bound. Interactions use the Interaction Lane.
 #### FR-6: Typed Event Handlers and derived event filtering
 A Module can register Event Handlers per gateway event type.
 **Consequences (testable):**
-- Noctis asks the gateway to deserialise only the event types that have a
+- Noctis asks the gateway to deserialize only the event types that have a
   registered handler (or that the cache needs). Unhandled event types are not
-  deserialised.
+  deserialized.
 - Event Handlers run concurrently by default. A Module can mark one ordered, so it
   runs before the concurrent handlers for that event.
 - Registering two Event Handlers for the same event keeps both; handler identity
@@ -372,9 +372,9 @@ A Module can register a chat-input Command by Command Path.
 A Module can register one handler for a Command Pattern such as
 `"config (set|get) (prefix|welcome)"`.
 **Consequences (testable):**
-- Expansion is defined here, not by reference: each `(a|b|…)` group yields one
-  alternative per word, a group followed by `?` also yields the path without it, and
-  combinations are produced left to right in declaration order. The example expands
+- Expansion: each `(a|b|…)` group yields one alternative per word, a group
+  followed by `?` also yields the path without it, and combinations are produced
+  left to right in declaration order. The example expands
   to `config set prefix`, `config set welcome`, `config get prefix` and
   `config get welcome`.
 - Every expanded Command Path is validated against FR-7 and against Discord's
@@ -452,7 +452,7 @@ dry run that prints the difference.
 **Consequences (testable):**
 - Publish makes no write request when the remote state equals the local state.
 - A dry run produces the full JSON and a human-readable diff without writing.
-- Publish can run as a CLI mode of the bot binary (e.g. `--publish`,
+- Publish can run as a CLI mode of the bot binary (for example `--publish`,
   `--publish-guild <id>`), and can remove all of an App's Commands globally or from
   a guild (`--publish-clear`).
 - With several Apps, Publish runs per App.
@@ -508,7 +508,7 @@ decoded value.
 - Strings in a Payload may contain the separator character; the encoding escapes it.
 - A `custom_id` built by Noctis never exceeds 100 characters. The maximum encoded
   length of each Route is proven at compile time (FR-76); only uniqueness within a
-  message, which depends on runtime data, is checked at run time.
+  message, which depends on runtime data, is checked at runtime.
 - A bot author can make their own type usable as a Payload field by implementing a
   Noctis trait; the round-trip property test and the 100-character check apply to
   it.
@@ -626,7 +626,7 @@ Noctis validates a message against all Limits before sending it.
 - Per-field limits are enforced: labels, placeholders, option counts, media items,
   `attachment://` references, Section shape (1–3 Text Displays and one accessory),
   Media Gallery item counts, link button `url` length, premium button rules, accent
-  colour range and select `default_values` counts.
+  color range and select `default_values` counts.
 - Both `custom_id` and numeric component `id` are unique within the message.
 - A violation returns an error that names the path, the limit and the actual value.
   A lenient mode can truncate text with "…".
@@ -807,7 +807,7 @@ silently.
 **Consequences (testable):**
 - The compile error for a known Tailwind v3 name suggests its v4 replacement (for
   example `bg-gradient-to-r` → `bg-linear-to-r`).
-- Dynamic values (widths, colours, percentages) are set through typed style setters,
+- Dynamic values (widths, colors, percentages) are set through typed style setters,
   not by formatting class strings.
 - A class string built at runtime that contains an unknown class logs a warning once
   per distinct string, and fails the test in the testing kit (FR-51).
@@ -868,7 +868,7 @@ are fetched and cached through the AssetStore Adapter (FR-67).
 Emoji in Template text render as glyphs or images, never as tofu boxes or raw
 markup.
 **Consequences (testable):**
-- A colour emoji font is opt-in (Twemoji). `[ASSUMPTION: emoji font stays opt-in]`
+- A color emoji font is opt-in (Twemoji). `[ASSUMPTION: emoji font stays opt-in]`
   Without one, Noctis logs a startup warning when any Template is registered, and the
   Usage Skill documents that emoji then render as boxes.
 - Discord custom emoji (`<:name:id>`) in Template text render as images fetched under
@@ -926,7 +926,7 @@ Noctis defines these Adapters in v1:
 - LocaleSource
 - CacheStore, a shared key-value store with TTL for bots and Modules
 - ModuleStateStore, holding Module enable/disable state (FR-45)
-- IdentifyQueue, serialising identifies per bucket across a Cluster (FR-3)
+- IdentifyQueue, serializing identifies per bucket across a Cluster (FR-3)
 - DiscordCache, the backend of the Discord resource cache (FR-40)
 
 Each has an in-memory default.
@@ -945,7 +945,7 @@ Adapter keys are namespaced by App by default.
 
 #### FR-39: Adapter conformance tests
 Noctis ships a reusable conformance test suite per Adapter trait. Third-party
-implementations (e.g. Redis, SQL) run it to prove correct semantics: TTL, overwrite,
+implementations (for example Redis, SQL) run it to prove correct semantics: TTL, overwrite,
 delete, missing key.
 **Consequences (testable):**
 - Each in-memory default passes its own suite in CI.
@@ -1007,7 +1007,7 @@ them, for example with a per-guild setting stored by the bot.
 #### FR-72: Module-scoped Locales
 Each Module can ship its own Locale files, merged per language with the App's.
 **Consequences (testable):**
-- A key defined by two Modules is a build-time error naming both.
+- A key defined by two Modules fails App build with an error naming both.
 - Disabling a Module doesn't remove its strings from Modules that still reference
   them.
 
@@ -1086,7 +1086,7 @@ features, for example images, GIF output, prefix commands and the default font.
 - an option-less entry Command opening a View;
 - a Wizard;
 - a Navbar View with an overflowing list;
-- a Template rendered into a media gallery;
+- a Template rendered into a Media Gallery;
 - a custom Adapter implementation;
 - Locale files.
 
@@ -1097,8 +1097,8 @@ features, for example images, GIF output, prefix commands and the default font.
   await-component loop or inline listener.
 
 #### FR-50: Noctis Usage Skill
-The Project Template contains a detailed skill that documents the whole public API.
-It covers:
+The Noctis Usage Skill in the Project Template documents the whole public API. It
+covers:
 - signatures and examples;
 - Limits, with one entry per Components V2 and modal component (where it may
   appear, its Limits and its builder);
@@ -1198,7 +1198,7 @@ component trees are validated at compile time.
 #### FR-79: Discord Rules Catalog
 The project maintains `docs/discord-rules.md`, listing every Discord rule Noctis
 enforces with its limit, source (Discord docs link or research finding) and
-Enforcement Point (compile-time, build-time or runtime).
+Enforcement Point (compile time, App build or runtime).
 **Consequences (testable):**
 - Every Limit in the configurable Limits value (FR-24) and every rule in FR-7 to
   FR-10, FR-16, FR-23, FR-24 and FR-29 has a catalog row.
@@ -1301,6 +1301,7 @@ the Priority Tier decides what slips first.
 - In-memory defaults for every Adapter.
 
 ### 8.2 Out of Scope for MVP
+
 - Official Redis and SQL Adapter crates. They are deferred to v1.x; the
   conformance suite makes third-party versions safe.
 - A cross-process request bus (a `broadcastEval` equivalent). This is deferred.
@@ -1312,13 +1313,14 @@ the Priority Tier decides what slips first.
   to v1.x; v1 reshards by restart.
 - Templates loaded at runtime from HTML or JSON (designer-editable cards). Deferred.
 - Fallback handlers for unmatched Routes and Route prefix handlers. Deferred; the
-  FR-19 typed error is the v1 behaviour.
+  FR-19 typed error is the v1 behavior.
 - A named-emoji registry with per-environment ids. Deferred.
 - Component Embeds (link previews) and a legacy text fallback for DMs. Deferred.
 - A library of reusable Views and Templates (cards, leaderboards, charts) beyond the
   Project Template examples. Deferred to v1.x.
 
 ### 8.3 Launch Criteria
+
 - All P0 and P1 FRs are done, with their consequences covered by tests.
 - The NFR-1, NFR-3 and NFR-9 benchmarks run in CI and their targets are confirmed or
   re-set from the first results.
@@ -1327,6 +1329,7 @@ the Priority Tier decides what slips first.
 ## 9. Success Metrics
 
 **Primary**
+
 - **SM-1:** The Project Template bot has sharding, auto-published Commands, a
   3-Step Wizard and a rendered card, all in ≤ 150 lines of user code. Validates
   FR-1, FR-7, FR-27, FR-32 and FR-49.
@@ -1337,6 +1340,7 @@ the Priority Tier decides what slips first.
   Validates FR-50.
 
 **Secondary**
+
 - **SM-4:** NFR-1, NFR-3 and NFR-9 benchmarks pass in CI against their confirmed
   targets.
 - **SM-5:** The SM-2 bot gets zero Limit-related 400 responses in its first 30 days
@@ -1347,6 +1351,7 @@ the Priority Tier decides what slips first.
   `[ASSUMPTION: threshold to revisit at launch]`
 
 **Counter-metrics (do not optimize)**
+
 - **SM-C1:** Number of features or builder methods. More API is not better; the
   Usage Skill must stay learnable. Counterbalances SM-1.
 - **SM-C2:** Benchmark memory reached by disabling caches users rely on.
@@ -1381,5 +1386,5 @@ the Priority Tier decides what slips first.
 - SM-2: the schwi successor is the first production consumer.
 - SM-6: 5 external bots in 90 days is the right adoption threshold.
 
-FR-14 is no longer an assumption: prefix commands ship as an opt-in P2 module by
-decision (dbi parity), overriding the brief's default of leaving them out.
+FR-14 is a decision, not an assumption: prefix commands ship as an opt-in P2
+feature for dbi parity, overriding the brief, which left them out.

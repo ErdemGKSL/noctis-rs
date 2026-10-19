@@ -23,14 +23,14 @@ Sources: the memlog and `../../research/`.
 ## Platform pins
 
 - **twilight:** pin 0.17.1 for gateway, http, model, cache-inmemory and
-  http-ratelimiting. Avoid http-ratelimiting 0.17.0 (it can panic). Plan for 0.18,
+  http-ratelimiting (`twilight-http-ratelimiting >= 0.17.1`; 0.17.0 can panic). Plan for 0.18,
   where `bucket()` replaces `create_recommended`.
 - **takumi:** pin 2.17.x (MSRV 1.91). It releases several times a week, so upgrade
   deliberately.
 - **Runtime:** tokio only, multi-threaded.
 - **Toolchain (NFR-7):** edition 2024; MSRV 1.91 (the higher of twilight's and
   takumi's). twilight's MSRV may move in semver-compatible releases, so the pin is
-  checked on every upgrade. Pin `twilight-http-ratelimiting >= 0.17.1`.
+  checked on every upgrade.
 - **Observability (NFR-5):** spans and metrics hooks go through `tracing`.
 
 ## Startup safety
@@ -51,7 +51,7 @@ Sources: the memlog and `../../research/`.
   request fast; `next_event` returning `None` means a fatal close (bad token,
   disallowed intents).
 - **IdentifyQueue (FR-3):** the in-memory default wraps `InMemoryQueue` with the
-  real `max_concurrency`; Cluster implementations serialise per bucket across
+  real `max_concurrency`; Cluster implementations serialize per bucket across
   processes (upstream HTTP-queue example, or Redis). Shard Ranges should be
   consecutive and aligned to multiples of `max_concurrency`.
 
@@ -73,7 +73,7 @@ Sources: the memlog and `../../research/`.
   **and** `resume_url`; after `close`, poll the shard until `GatewayClose` so the
   final sequence is saved.
 - **Intents / event filters / cache (FR-6, FR-40):** intents decide what Discord
-  sends, `EventTypeFlags` what twilight deserialises, cache `ResourceType`s need
+  sends, `EventTypeFlags` what twilight deserializes, cache `ResourceType`s need
   matching intents. The upstream intents→EventTypeFlags helper was reverted, so
   Noctis owns the mapping. Interaction-only default: `Intents::GUILDS`.
 - **Gateway commands (FR-53):** sent per shard through `MessageSender`, limited to
@@ -96,13 +96,13 @@ Sources: the memlog and `../../research/`.
 - **Refs (FR-17):** 11 base62 characters from a CSPRNG (62^11 ≈ 2^65.5), key
   prefixed by App id in the RefStore (FR-71).
 - **Payload schema version (FR-60):** the codec's version tag is per Payload type;
-  a mismatch routes to the Expired/stale handler.
+  a mismatch routes to the Expired Handler or the Route's stale handler.
 - **Select freshness (FR-25):** a per-render nonce in select `custom_id`s (within the
   100-char budget) makes clients show the server's `default_values`.
 - **Optional integrity tag (FR-19):** truncated HMAC over inline Payloads.
 - **`custom_id` codec:** a version tag, a short route id, a separator, then fields
   with escaping. Integers and snowflakes are base-62 packed. Field widths that are
-  provable are length-checked at compile time; a run-time check plus the overflow
+  provable are length-checked at compile time; a runtime check plus the overflow
   policy covers the rest (FR-16, FR-17).
 - **RefStore sketch (from research §4.3):**
   - methods `put(key, bytes, ttl)`, `get`, `delete` and an optional `touch`;
@@ -138,21 +138,21 @@ Sources: the memlog and `../../research/`.
 
 - **Parser:** native Tailwind only, through takumi's built-in `tw` parser. Literal
   classes are validated at compile time by a proc macro that uses the same parser.
-  Takumi uses Tailwind v4 class names (`bg-linear-to-r`, not
+  takumi uses Tailwind v4 class names (`bg-linear-to-r`, not
   `bg-gradient-to-r`).
 - **Render pool:** a dedicated rayon pool behind a semaphore.
-- **Render cache:** keyed by a hash of template, data and size, with deduplication
-  of identical concurrent requests (single-flight).
 - **Formats and budget (FR-33):** animated WebP is the default animated format
   (about 2.8x faster to encode than GIF and slightly smaller) and GIF the fallback.
   Degrade order: fps, viewport, lossy quality, still frame. Target about 2 MB.
 - **Animation (FR-69):** CSS-driven (`animate-*`, arbitrary `animate-[...]` with
   `@keyframes` from the Theme stylesheet) or code-driven (one scene per frame).
-  FPS caps: GIF 50, WebP/APNG 90. Redefining `spin` etc. yields a static result.
+  FPS caps: GIF 50, WebP/APNG 90. Redefining a built-in name such as `spin` yields a static result, hence the
+  FR-69 registration error.
 - **Per-job caps (FR-70):** defaults ≤ 4 MP per job, ≤ 90 frames, ≤ 1 MP per frame,
   ≤ 6 s duration. takumi accepts 1-64 MP and can't be interrupted mid-frame.
-- **Render cache key (FR-36):** hash of Template id + version, data, size, format and
-  settings, referenced asset versions (avatar hash), Noctis and takumi versions.
+- **Render cache (FR-36):** single-flight deduplication of identical concurrent
+  requests. Key: hash of Template id + version, data, size, format and settings,
+  referenced asset versions (avatar hash), Noctis and takumi versions.
 - **Inputs (FR-67):** takumi does not fetch URLs; it resolves `src` only against a
   pre-decoded image map or `data:` URIs. The AssetStore downloads, decodes (off the
   runtime) and caches remote images.
@@ -164,7 +164,7 @@ Sources: the memlog and `../../research/`.
 - **Global caches (NFR-1):** glyph cache 8 MiB (set before first render, unstable
   API), Tailwind parse cache 1 MiB, resource cache 64 MiB per handle.
 - **Build (FR-48):** native WebP encoder (`libwebp-sys`) needs a C compiler; the
-  image feature adds ~100 crates, so it is off by default. Takumi types stay behind
+  image feature adds ~100 crates, so it is off by default. takumi types stay behind
   an unstable module (§6).
 - **NFR-3 card benchmark:** measured ~2 ms render + ~1.5 ms PNG warm on 4 cores;
   WebP still encode at q85 is 6-10 ms, so the benchmark fixes PNG output.
@@ -173,7 +173,7 @@ Sources: the memlog and `../../research/`.
 
 - **Location:** `examples/project-template/` has its own `Cargo.toml`. In the
   workspace it uses a path dependency on `noctis`, swapped to a version dependency
-  when the template is copied out.
+  when the Project Template is copied out.
 - **Contents:** the Noctis Usage Skill, `AGENTS.md`, and a copy of the
   rust-best-practices skill.
 - **Sync rule:** every public API change updates the template in the same commit
