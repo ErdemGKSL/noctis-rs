@@ -33,7 +33,7 @@ use std::process::{Command, ExitCode};
 
 use serde_json::Value;
 
-use crate::public_api::{self, Line};
+use crate::public_api::{self, Kind};
 
 /// The pinned nightly toolchain.
 pub(crate) const NIGHTLY: &str = "nightly-2026-10-15";
@@ -94,12 +94,10 @@ pub(crate) fn run(bless: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let text = render(&lines);
-    let hash = public_api::hash(text.as_bytes());
     let path = root.join(SNAPSHOT);
     if bless {
-        return match fs::write(&path, &text) {
-            Ok(()) => {
+        return match bless_to(&path, &lines) {
+            Ok(hash) => {
                 eprintln!(
                     "api-snapshot: wrote {SNAPSHOT} ({} lines, hash {hash})",
                     lines.len()
@@ -113,22 +111,42 @@ pub(crate) fn run(bless: bool) -> ExitCode {
         };
     }
     let committed = fs::read(&path).ok();
-    if committed.as_deref() == Some(text.as_bytes()) {
-        eprintln!("api-snapshot: ok ({} lines, hash {hash})", lines.len());
-        return ExitCode::SUCCESS;
+    match verdict(committed.as_deref(), &lines) {
+        Ok(hash) => {
+            eprintln!("api-snapshot: ok ({} lines, hash {hash})", lines.len());
+            ExitCode::SUCCESS
+        }
+        Err(report) => {
+            for line in report {
+                eprintln!("{line}");
+            }
+            ExitCode::FAILURE
+        }
     }
-    let old = committed
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        .unwrap_or_default();
+}
+
+/// S4: writes `render(lines)` to `path`; returns its hash.
+fn bless_to(path: &Path, lines: &[String]) -> std::io::Result<String> {
+    let text = render(lines);
+    fs::write(path, &text)?;
+    Ok(public_api::hash(text.as_bytes()))
+}
+
+/// S1-S3: the hash when `committed` (absent for a missing file) equals the
+/// rendered `lines`, else the `-`/`+` lines followed by the stale message.
+pub(crate) fn verdict(committed: Option<&[u8]>, lines: &[String]) -> Result<String, Vec<String>> {
+    let text = render(lines);
+    if committed == Some(text.as_bytes()) {
+        return Ok(public_api::hash(text.as_bytes()));
+    }
+    let old = committed.map(String::from_utf8_lossy).unwrap_or_default();
     let old: Vec<&str> = old.lines().collect();
     let new: Vec<&str> = lines.iter().map(String::as_str).collect();
-    for line in diff(&old, &new) {
-        eprintln!("{line}");
-    }
-    eprintln!(
+    let mut report = diff(&old, &new);
+    report.push(format!(
         "api-snapshot: {SNAPSHOT} is stale; run cargo run --release -p xtask -- api-snapshot --bless, then update the Usage Skill and its API hash"
-    );
-    ExitCode::FAILURE
+    ));
+    Err(report)
 }
 
 /// The snapshot file's contents: LF lines, one trailing newline.
@@ -157,13 +175,21 @@ pub(crate) fn diff(old: &[&str], new: &[&str]) -> Vec<String> {
 /// assembles the snapshot.
 fn snapshot(root: &Path) -> Result<Vec<String>, Vec<String>> {
     check_tool(root).map_err(|e| vec![e])?;
+    let crates = discover(|name| run_crate(root, name)).map_err(|e| vec![e])?;
+    assemble(FACADE, &crates)
+}
+
+/// Fetches the facade and every internal crate its re-exports reach, each once.
+fn discover(
+    mut fetch: impl FnMut(&str) -> Result<CrateApi, String>,
+) -> Result<BTreeMap<String, CrateApi>, String> {
     let mut crates: BTreeMap<String, CrateApi> = BTreeMap::new();
     let mut queue = vec![FACADE.to_owned()];
     while let Some(name) = queue.pop() {
         if crates.contains_key(&name) {
             continue;
         }
-        let api = run_crate(root, &name).map_err(|e| vec![e])?;
+        let api = fetch(&name)?;
         for reexport in &api.reexports {
             if let Some(internal) = reexport.internal_crate(&name) {
                 queue.push(internal.to_owned());
@@ -171,7 +197,7 @@ fn snapshot(root: &Path) -> Result<Vec<String>, Vec<String>> {
         }
         crates.insert(name, api);
     }
-    assemble(FACADE, &crates)
+    Ok(crates)
 }
 
 /// `cargo +NIGHTLY …` with the parent's toolchain overrides removed.
@@ -372,12 +398,19 @@ fn expand(
     };
     let mut out = Vec::new();
     let mut mappings: Vec<(String, String)> = Vec::new();
+    // Each `pub use` line consumes one re-export, in order.
+    let mut used = vec![false; api.reexports.len()];
     for line in &parsed {
         if line.keyword != Some("use") {
             out.push(line.text.clone());
             continue;
         }
-        let Some(reexport) = api.reexports.iter().find(|r| r.line_path() == line.path) else {
+        let found =
+            (0..used.len()).find(|&i| !used[i] && api.reexports[i].line_path() == line.path);
+        let Some(reexport) = found.map(|i| {
+            used[i] = true;
+            &api.reexports[i]
+        }) else {
             errors.insert(format!(
                 "pub use {}: no re-export found in rustdoc JSON",
                 line.path
@@ -399,8 +432,9 @@ fn expand(
             ));
             continue;
         }
-        out.extend(block);
-        mappings.push((reexport.source.clone(), reexport.path.clone()));
+        let own = [(reexport.source.clone(), reexport.path.clone())];
+        out.extend(block.iter().map(|l| rewrite(l, &own)));
+        mappings.extend(own);
     }
     mappings.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.0.cmp(&b.0)));
     let out: Vec<String> = out.iter().map(|l| rewrite(l, &mappings)).collect();
@@ -409,17 +443,42 @@ fn expand(
 }
 
 /// The lines of `lines` whose owner is `source` or lies under it (a glob
-/// takes only what lies under it).
+/// takes only what lies under it), plus every impl whose self type lies
+/// outside the `noctis_*` crates but whose header names such a path, with its
+/// members.
 fn owned_by(lines: &[String], source: &str, is_glob: bool) -> Vec<String> {
     let Ok(parsed) = public_api::parse(&lines.join("\n")) else {
         return Vec::new();
     };
     let under = format!("{source}::");
-    parsed
-        .into_iter()
-        .filter(|l: &Line| (!is_glob && l.owner == source) || l.owner.starts_with(&under))
-        .map(|l| l.text)
-        .collect()
+    let mut in_foreign_impl = false;
+    let mut out = Vec::new();
+    for l in parsed {
+        let owned = (!is_glob && l.owner == source) || l.owner.starts_with(&under);
+        in_foreign_impl = match l.kind {
+            Kind::ImplHeader { .. } => {
+                let first = l.owner.split("::").next().unwrap_or_default();
+                !owned && !first.starts_with("noctis_") && names_path(&l.text, source, is_glob)
+            }
+            Kind::Member { .. } => in_foreign_impl,
+            Kind::Item => false,
+        };
+        if owned || in_foreign_impl {
+            out.push(l.text);
+        }
+    }
+    out
+}
+
+/// Whether `text` names `source` (a glob: a path under it) as a whole path.
+fn names_path(text: &str, source: &str, is_glob: bool) -> bool {
+    let bytes = text.as_bytes();
+    text.match_indices(source).any(|(i, _)| {
+        let boundary = i == 0 || !(is_ident_byte(bytes[i - 1]) || bytes[i - 1] == b':');
+        let rest = &text[i + source.len()..];
+        let whole = !rest.bytes().next().is_some_and(is_ident_byte);
+        boundary && whole && (!is_glob || rest.starts_with("::"))
+    })
 }
 
 fn is_ident_byte(b: u8) -> bool {
@@ -760,5 +819,151 @@ pub fn noctis_rules::LimitsExt::x(&noctis_rules::Limits)";
         );
         assert_eq!(diff(&[], &["a"]), ["+a"]);
         assert_eq!(render(&["a".to_owned(), "b".to_owned()]), "a\nb\n");
+    }
+
+    #[test]
+    fn one_source_at_two_paths() {
+        let facade = api(
+            "pub mod noctis\npub use noctis::prelude::Limits\npub use noctis::rules::Limits",
+            vec![
+                reexport("noctis::prelude::Limits", "noctis_rules::Limits"),
+                reexport("noctis::rules::Limits", "noctis_rules::Limits"),
+            ],
+        );
+        let rules = api(
+            "pub struct noctis_rules::Limits\npub fn noctis_rules::Limits::x(&noctis_rules::Limits)",
+            vec![],
+        );
+        assert_eq!(
+            assemble("noctis", &crates(facade, rules)).unwrap(),
+            [
+                "pub mod noctis",
+                "pub struct noctis::prelude::Limits",
+                "pub fn noctis::prelude::Limits::x(&noctis::prelude::Limits)",
+                "pub struct noctis::rules::Limits",
+                "pub fn noctis::rules::Limits::x(&noctis::rules::Limits)",
+            ]
+        );
+    }
+
+    #[test]
+    fn two_globs_in_one_module() {
+        let glob = |source: &str| Reexport {
+            path: "noctis::x".to_owned(),
+            source: source.to_owned(),
+            is_glob: true,
+        };
+        let facade = api(
+            "pub mod noctis\npub mod noctis::x\npub use noctis::x::*\npub use noctis::x::*",
+            vec![glob("noctis_a"), glob("noctis_b")],
+        );
+        let crates = BTreeMap::from([
+            ("noctis".to_owned(), facade),
+            (
+                "noctis_a".to_owned(),
+                api("pub mod noctis_a\npub fn noctis_a::f()", vec![]),
+            ),
+            (
+                "noctis_b".to_owned(),
+                api("pub mod noctis_b\npub fn noctis_b::g()", vec![]),
+            ),
+        ]);
+        assert_eq!(
+            assemble("noctis", &crates).unwrap(),
+            [
+                "pub mod noctis",
+                "pub mod noctis::x",
+                "pub fn noctis::x::f()",
+                "pub fn noctis::x::g()",
+            ]
+        );
+    }
+
+    #[test]
+    fn foreign_impl_naming_source() {
+        let facade = api(
+            "pub mod noctis\npub use noctis::rules::Violation",
+            vec![reexport(
+                "noctis::rules::Violation",
+                "noctis_rules::Violation",
+            )],
+        );
+        let rules = api(
+            "\
+pub struct noctis_rules::Violation
+impl core::convert::From<noctis_rules::Violation> for alloc::string::String
+pub fn alloc::string::String::from(noctis_rules::Violation) -> Self
+impl core::convert::From<noctis_rules::ViolationKind> for alloc::string::String
+pub fn alloc::string::String::from(noctis_rules::ViolationKind) -> Self
+pub fn noctis_rules::other()",
+            vec![],
+        );
+        assert_eq!(
+            assemble("noctis", &crates(facade, rules)).unwrap(),
+            [
+                "pub mod noctis",
+                "pub struct noctis::rules::Violation",
+                "impl core::convert::From<noctis::rules::Violation> for alloc::string::String",
+                "pub fn alloc::string::String::from(noctis::rules::Violation) -> Self",
+            ]
+        );
+    }
+
+    #[test]
+    fn s1_s3_verdict() {
+        let lines = vec!["a".to_owned(), "b".to_owned()];
+        let stale = "api-snapshot: xtask/public-api.txt is stale; run cargo run --release -p xtask -- api-snapshot --bless, then update the Usage Skill and its API hash";
+        // S1.
+        assert_eq!(
+            verdict(Some(b"a\nb\n"), &lines),
+            Ok(public_api::hash(b"a\nb\n"))
+        );
+        // S2, including a missing trailing newline.
+        assert_eq!(
+            verdict(Some(b"a\nc\n"), &lines).unwrap_err(),
+            ["-c", "+b", stale]
+        );
+        assert_eq!(verdict(Some(b"a\nb"), &lines).unwrap_err(), [stale]);
+        // S3.
+        assert_eq!(verdict(None, &lines).unwrap_err(), ["+a", "+b", stale]);
+    }
+
+    #[test]
+    fn s4_bless_writes_render() {
+        let path = std::env::temp_dir().join(format!("xtask-bless-{}.txt", std::process::id()));
+        let lines = vec!["a".to_owned(), "b".to_owned()];
+        let hash = bless_to(&path, &lines).unwrap();
+        let written = fs::read(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(written, render(&lines).as_bytes());
+        assert_eq!(hash, public_api::hash(&written));
+        assert_eq!(verdict(Some(&written), &lines), Ok(hash));
+    }
+
+    #[test]
+    fn discovery_fetches_each_crate_once() {
+        let mut fetched = Vec::new();
+        let crates = discover(|name| {
+            fetched.push(name.to_owned());
+            Ok(match name {
+                "noctis" => api(
+                    "",
+                    vec![
+                        reexport("noctis::View", "noctis_core::View"),
+                        reexport("noctis::Other", "noctis_core::Other"),
+                        reexport("noctis::Id", "twilight_model::id::Id"),
+                    ],
+                ),
+                "noctis_core" => api("", vec![reexport("noctis_core::View", "noctis_ui::View")]),
+                _ => api("", vec![reexport("noctis_ui::Me", "noctis_ui::inner::Me")]),
+            })
+        })
+        .unwrap();
+        assert_eq!(fetched, ["noctis", "noctis_core", "noctis_ui"]);
+        assert_eq!(
+            crates.keys().collect::<Vec<_>>(),
+            ["noctis", "noctis_core", "noctis_ui"]
+        );
+        assert_eq!(discover(|_| Err("boom".to_owned())).unwrap_err(), "boom");
     }
 }

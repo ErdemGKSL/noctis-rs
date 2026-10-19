@@ -2,10 +2,10 @@
 title: 'Story 1.8: Public API snapshot and Usage Skill gate'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'be651abca41d363ba1a4f81c9b435d1b2954128f'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
 warnings: ['oversized']
@@ -202,6 +202,56 @@ Rows X1-X4: `skill-check` CLI.
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 46 findings — high 0, medium 8, low 24, false 14, maybe-false 0
+- findings:
+  - `[low]` `[reject]` blind: `diff()` is a set diff, so reorder/duplicate-only changes print no `-`/`+` lines — real (duplicate `fmt` lines exist), but adding a type's impl always shows its new header line; pure reorders are rare and the fix adds a branch; `git diff` after `--bless` shows it.
+  - `[medium]` `[patch]` blind: `expand()` rewrites every re-export of the same source to the same facade path — verified: `mappings` gets two entries with one source and `rewrite` uses `find`; the spine (l.138) plans `noctis::prelude` re-exports, so this is reachable. Patch: rewrite each block with its own mapping first.
+  - `[medium]` `[patch]` blind: `owned_by()` drops impls with a foreign self type — verified: owner = self path, so `impl From<noctis_rules::X> for alloc::string::String` matches no re-export and is silently omitted. Patch: include impl blocks whose header names the source.
+  - `[medium]` `[patch]` blind: two globs in one module collapse — verified: `line_path()` is `M::*` for both and `find` returns the first. Patch: match `pub use` lines to re-exports one to one.
+  - `[false]` `[reject]` blind: `expand()` has no cycle guard — a re-export cycle needs crates that re-export each other, which needs a cargo dependency cycle; cargo rejects those, so the recursion cannot loop.
+  - `[low]` `[reject]` blind: `parse_impl` fails on tuple/slice/array/fn/dyn self types — no such impl exists in the 1161-line snapshot; a tuple/slice one fails loudly with "cannot parse", and `impl dyn noctis::Trait` is rare; the fix adds several branches.
+  - `[low]` `[reject]` blind: `skip_attributes` counts brackets inside string literals — needs an attribute printed by cargo public-api with a `[`/`]` in a string; none exists, it fails loudly, and the fix adds string/escape tracking.
+  - `[false]` `[reject]` blind: the mention check uses only the last segment, so common names pass — M1 inside `<intent-contract>` settles last-segment token matching, and the Design Notes record this as an accepted weakness.
+  - `[low]` `[reject]` blind: UD-7 spawn rule misses `spawn_blocking`, aliases, helpers — D17 names `spawn`/`spawn_local` idents; the lint only covers the noctis-maintained template, which spawns nothing; unlikely to be met.
+  - `[low]` `[reject]` blind: UD-1 `content` struct-literal rule misses shorthand `Msg { content }` — real, but template handlers return Views and build no message struct; the fix adds branches.
+  - `[low]` `[patch]` blind: `real_repo_passes` hard-codes `12 template files linted` — verified at `xtask/tests/skill_check.rs:171`; every template file added with an API change breaks it. Patch: derive the count or drop it from the assertion.
+  - `[low]` `[reject]` blind: problems sort `lib.rs:10` before `lib.rs:9` — cosmetic; every problem is still reported; zero-padding or a separate line key changes the output format copied from rules-catalog.
+  - `[low]` `[reject]` blind: `Repo::files` hides unreadable subdirectories and symlinks — real (`unwrap_or_default`, `file_type()` does not follow links), but a git checkout of the template has neither; the fix threads problems through the recursion and needs a symlink policy.
+  - `[false]` `[reject]` blind: `--bless` leaves the hash step manual — the `<intent-contract>` Never list says `--bless` never edits `SKILL.md`; deliberate, so the skill is touched by hand.
+  - `[false]` `[reject]` blind: the pending trigger misses non-struct/enum builders — P2 inside `<intent-contract>` settles the trigger as `pub struct`/`pub enum` with the listed names.
+  - `[low]` `[patch]` blind: the TOML parse error drops its location — verified: `err.message()` has no line/column. Patch: report the error's `Display` output.
+  - `[low]` `[reject]` blind: the CI `api-snapshot` job rebuilds cargo-public-api every run — CI is paused (`workflows-disabled`), so no one meets this today; the spec names `cargo install … --locked` for that job.
+  - `[low]` `[reject]` blind: an unreadable committed snapshot reads as missing; `api-snapshot` has no `--root` — the read error case is real but needs a permission/IO fault on a committed file, and the fix adds a branch; no `--root` is settled by S7 (`--root` is a bad arg).
+  - `[medium]` `[patch]` edge: duplicate re-export at two facade paths (api_snapshot.rs:403-406) — same defect as blind row 2; patched there.
+  - `[medium]` `[patch]` edge: two globs in one module share `line_path` (api_snapshot.rs:380) — same defect as blind row 4; patched there.
+  - `[low]` `[reject]` edge: an external glob `pub use noctis::x::*` gives an item named `*` that can never be mentioned (mention.rs:379) — real and loud, but the facade has no glob re-export today and the failure shows at once when one is added; the fix adds a branch.
+  - `[low]` `[reject]` edge: a snapshot that differs only by order, duplicates or CRLF prints no `-`/`+` lines — same root cause as blind row 1; rejected for the same reason (CRLF in a committed LF file also needs a misconfigured checkout).
+  - `[low]` `[reject]` edge: `fs::read` failure other than not-found is reported as stale — same as blind row 18; rejected for the same reason.
+  - `[medium]` `[patch]` edge: trait impl of an internal type for a foreign self type is dropped (api_snapshot.rs:411-422) — same defect as blind row 3; patched there.
+  - `[low]` `[reject]` edge: `[`/`]` inside a string literal in an attribute — same as blind row 7; rejected for the same reason.
+  - `[low]` `[reject]` edge: impl self type that is a tuple/slice/array/dyn/pointer — same as blind row 6; rejected for the same reason.
+  - `[false]` `[reject]` edge: non-ASCII identifier characters in a path truncate it — L15 inside `<intent-contract>` settles that only ASCII path chars matter, and noctis's API uses only ASCII identifiers.
+  - `[low]` `[reject]` edge: unreadable or symlinked subdirectories are silently skipped (mod.rs:118-126) — same as blind row 13; rejected for the same reason.
+  - `[low]` `[reject]` edge: handler generics with parentheses (`fn h<F: Fn(u8)>`) are taken as params — real, but `#[handler]`/`#[command]` fns are not generic over closures in noctis's handler model; the fix adds generic skipping.
+  - `[false]` `[reject]` edge: unrelated `.update(`/`.content(` calls inside a handler are flagged — D6/D9 inside `<intent-contract>` settle the token-level rule: any `.content(`/`.update(` call in an interactive handler is flagged.
+  - `[low]` `[reject]` edge: turbofish `r.reply::<T>(x)` and shorthand `Msg { content }` are not flagged — the shorthand part is blind row 10's defect; the turbofish form is not used by any Responder API; both fixes add branches.
+  - `[low]` `[reject]` edge: closure parameters `|a, content: &str|` inside a handler body trigger a false UD-1 finding — real (preceded by `,`, followed by a lone `:`), but no template handler has such a closure, and the fix adds pipe tracking.
+  - `[low]` `[reject]` edge: a listener-named call with a boolean `||` argument is a false UD-7 finding — needs `.on_x(a || b)` in the template; unlikely; the fix adds position logic.
+  - `[low]` `[reject]` edge: a Responder reached through a type alias or renamed import is not flagged — deliberate evasion inside the noctis-maintained template is unlikely; the fix needs alias collection.
+  - `[low]` `[patch]` edge: `real_repo_passes` hard-codes the template file count (tests/skill_check.rs:171) — same defect as blind row 11; patched there.
+  - `[medium]` `[patch]` vgap: the `api-snapshot` CLI outcomes S1-S6 and crate discovery have no automated test — pre-verified gap; inverting the ok branch, accepting a missing file, a missing trailing newline or a dropped `queue.push` keep `cargo test` green. Patch: pure `verdict` fn plus S1-S3/S4 tests, and an injectable crate fetcher with a discovery test.
+  - `[medium]` `[patch]` vgap other: the same internal item re-exported at two facade paths gets the same path — same defect as blind row 2; patched there.
+  - `[low]` `[reject]` vgap other: a glob `pub use … ::*` line kept in the snapshot can never be mentioned — same defect as edge row 3; rejected for the same reason.
+  - `[false]` `[reject]` intent: snapshot freshness is not exercised by any test — the spec deliberately keeps `api-snapshot` a nightly-only gate in `## Verification` and keeps `skill-check` nightly-free; the untested decision logic is the vgap finding above.
+  - `[false]` `[reject]` intent: record vs check split into default and `--bless` — the `<intent-contract>` Approach and S1-S4 settle it.
+  - `[false]` `[reject]` intent: the snapshot is post-processed, not raw tool output — the `<intent-contract>` Approach and A1-A12 settle inlining internal re-exports, since raw output only lists 19 `pub use` lines.
+  - `[false]` `[reject]` intent: "mentioned" is last-segment token presence — settled by M1-M3 and the accepted weakness in the Design Notes.
+  - `[false]` `[reject]` intent: the hash rule is a state equality check — settled by H1-H6 inside `<intent-contract>`.
+  - `[false]` `[reject]` intent: the CI gate is defined but not live — the `<intent-contract>` Never list says no re-enabled CI, and AGENTS.md keeps CI paused.
+  - `[false]` `[reject]` intent: the doctrine lint covers only template `.rs` files and flags some idents file-wide — settled by D1-D18 and the Design Notes.
+  - `[false]` `[reject]` intent: the pending check triggers on a name list, not on "builder without a skill entry" — P2 inside `<intent-contract>` settles the due-trigger; the real check is Story 4.1's.
+
 ## Design Notes
 
 **Decisions (logged to the memlog):** cargo public-api cannot inline cross-crate re-exports, so the snapshot inlines internal crates' APIs through the facade's rustdoc-JSON `use` items (the only way to make `noctis::rules::*` signature changes visible); `--all-features` and omitting blanket/auto-trait impls (derived impls stay, so a derive change changes the hash); snapshot at `xtask/public-api.txt` beside `rules-pending.toml`; hash = blake3 (Stack crate) of the file; "mentioned" = the item's last segment as a whole identifier anywhere in the skill's Markdown, trait-impl members excluded, rule-id consts also matched by their catalog id; doctrine lint is token-level (proc-macro2), scoped to `#[command]`/`#[user_command]`/`#[message_command]`/`#[handler]` fns for UD-1 `LegacyMessage`/`content` and UD-3 responder rules, file-wide for embeds, response types, collectors, await loops and listeners; component-entry check pending in its own `xtask/skill-pending.toml`, due when a component-builder type appears outside `noctis::rules`.
@@ -222,3 +272,40 @@ Weakness accepted: name-only mention matching lets a common member name (`new`) 
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug && test -f target/public-api/doc/noctis.json` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** added `xtask api-snapshot`, which records and checks `xtask/public-api.txt` (1161 lines). It is built from cargo-public-api 0.52.0 output, with the internal crates' APIs inlined through the facade's rustdoc-JSON `use` items, `--all-features` on, and blanket/auto-trait impls left out. Also added `xtask skill-check`, which runs four checks: a blake3 hash ties the template's noctis skill to the snapshot; every public item must be mentioned (matched by its last segment); a token-level doctrine lint covers UD-1/UD-3/UD-7 and the other rules in `examples/project-template/`; and a pending component-entry check reads `xtask/skill-pending.toml`. Both run as a CI job in the paused workflow.
+- **Files changed:**
+  - `xtask/src/api_snapshot.rs`: snapshot generation, re-export inlining, impl ownership, verdict and diff.
+  - `xtask/src/public_api.rs`: parses cargo public-api lines and impl headers.
+  - `xtask/src/skill_check/{mod,hash,mention,doctrine,pending}.rs`: the skill-check gate and its four checks.
+  - `xtask/src/main.rs`: wires up the subcommands. `xtask/Cargo.toml` and `Cargo.lock`: add blake3 and proc-macro2.
+  - `xtask/public-api.txt`, `xtask/skill-pending.toml`: the committed snapshot and the pending list.
+  - `xtask/tests/skill_check.rs`: integration tests.
+  - `examples/project-template/.claude/skills/noctis/SKILL.md` and `references/limits-cheatsheet.md`: add the hash line and the missing mentions.
+  - `.github/workflows-disabled/ci.yml`: the api-snapshot/skill-check job. `AGENTS.md`: updated verification notes. `xtask/src/rules_catalog/*`: small shared-helper tweaks.
+- **Review findings:** 46 total (high 0, medium 8, low 24, false 14).
+  - Patched: 8 medium entries and 3 low entries, which come down to 6 distinct fixes:
+    - each re-export of the same source gets its own facade path;
+    - impls whose self type is foreign but which name an internal type are kept;
+    - two globs in one module are matched to their re-exports one to one;
+    - a pure `verdict` fn with S1-S4 tests, plus an injectable crate fetcher with a discovery test;
+    - the test no longer hard-codes the template file count;
+    - TOML errors keep their location (`Display`).
+  - Deferred: none.
+  - Rejected: 21 low and 14 false. Each is recorded in the Review Triage Log with its reason. Main groups:
+    - The set diff ignores reorders and duplicates.
+    - Unusual impl self-type syntax and brackets inside attribute strings are not parsed; both fail loudly.
+    - Unreadable or symlinked directories are skipped.
+    - Some doctrine-lint gaps (shorthand fields, turbofish, aliases, closures, `spawn_blocking`) do not occur in the template.
+    - Re-running cargo-public-api in CI only matters once CI resumes.
+    - The rest were settled by the intent contract (M1, P2, D6/D9, L15, H1-H6, the Never list).
+- **Follow-up review recommended: true.** This is a first pass that patched 0 high, 8 medium and 3 low entries, and 2 or more patched medium entries call for a follow-up. Named risk: the patched re-export inlining in `api_snapshot.rs` (separate mapping per re-export, foreign-self-type impls, one-to-one glob matching) has not been reviewed independently. A regression there would silently drop or misattribute public items, and the snapshot and hash would not catch it.
+- **Verification:** all local gates in `/tmp/claude-0/-home-user/a6a0257c-fd4a-4940-b108-046dbf0fca6f/scratchpad/gates.sh` passed after the patches: fmt, clippy `--release -D warnings`, `cargo test --release`, cargo hack each-feature, `api-snapshot` ok, `skill-check` ok, rules-catalog, deps-check, cargo deny, MSRV 1.91 check, build-config check, and no `target/debug`. CI is paused by the maintainer (`workflows-disabled`), so these local gates are the whole check.
+- **Residual risks:**
+  - "Mentioned" only matches an item's last segment, so common member names such as `new` pass trivially.
+  - The doctrine lint is token-level and can be evaded.
+  - `api-snapshot` needs pinned nightly-2026-10-15 and cargo-public-api 0.52.0, and fails when they are missing.
+  - The real component-entry check is left to Story 4.1.
+  - The CI job has not run because CI is paused.

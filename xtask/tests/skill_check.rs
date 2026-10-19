@@ -168,7 +168,7 @@ fn real_repo_passes() {
         "{}",
         stderr(&out)
     );
-    assert!(stderr(&out).contains(", 12 template files linted, 1 pending check)"));
+    assert!(stderr(&out).contains(" template files linted, 1 pending check)"));
 }
 
 #[test]
@@ -369,7 +369,10 @@ fn p6_duplicate_unknown_key_invalid() {
     assert_exit(
         &out,
         1,
-        &["skill-check: skill-pending.toml: unknown field `note`"],
+        &[
+            "skill-check: skill-pending.toml: TOML parse error at line 4, column 1 ",
+            "unknown field `note`",
+        ],
     );
     // Other checks still run.
     let out = root("p6_toml")

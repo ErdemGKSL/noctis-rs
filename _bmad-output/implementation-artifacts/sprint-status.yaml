@@ -43,7 +43,7 @@ development_status:
   1-5-option-context-menu-and-command-metadata-rules: done
   1-6-component-modal-message-and-attachment-rules: done
   1-7-trybuild-harness-and-rules-catalog-cross-check: done
-  1-8-public-api-snapshot-and-usage-skill-gate: in-progress
+  1-8-public-api-snapshot-and-usage-skill-gate: done
   epic-1-retrospective: optional
 
   epic-2: backlog

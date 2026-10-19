@@ -66,7 +66,10 @@ pub(super) fn check(repo: &Repo<'_>, snapshot: Option<&[Line]>, problems: &mut P
     let file: File = match toml::from_str(&text) {
         Ok(file) => file,
         Err(err) => {
-            problems.add(SUBJECT, err.message().replace('\n', " ").trim().to_owned());
+            problems.add(
+                SUBJECT,
+                err.to_string().replace('\n', " ").trim().to_owned(),
+            );
             return 0;
         }
     };
