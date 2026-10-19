@@ -63,7 +63,7 @@ development_status:
 
   epic-4: in-progress
   4-1-typed-v2-message-components-with-placement-in-the-type-syste: done
-  4-2-v2-messages-legacy-messages-flags-and-mentions: in-progress
+  4-2-v2-messages-legacy-messages-flags-and-mentions: done
   4-3-runtime-limit-validator-with-path-precise-errors: backlog
   4-4-compile-time-checks-for-literals-arity-and-the-components-tr: backlog
   4-5-modal-component-model-and-modal-validation: backlog

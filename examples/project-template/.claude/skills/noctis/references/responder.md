@@ -137,9 +137,11 @@ and the deferred original is deleted.
 
 ## 6. `LegacyMessage`
 
-`LegacyMessage::new("…")` (≤ 2000 chars, MSG-01; see `components-v2.md` §12) for plain notices or prefix
-commands. Up to 5 legacy Action Rows (CV2-15). Never for dashboards. Editing a legacy
-message into a View is supported (content/embeds/poll are cleared in the same request);
+`LegacyMessage::new("…")` for plain notices or prefix commands; the 2000-character limit
+(MSG-01) is checked by the runtime validator [planned, Story 4.3] (literal check [planned,
+Story 4.4]); see `components-v2.md` §12. Up to 5 legacy Action Rows (CV2-15). Never for
+dashboards. Editing a legacy message into a View is supported (content/embeds/poll/sticker_ids
+are cleared in the same request);
 V2 → legacy is a typed error (CV2-01).
 
 ## 7. Webhooks (FR-65) [planned]

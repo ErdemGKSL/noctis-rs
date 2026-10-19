@@ -2,7 +2,7 @@
 title: 'Story 4.2: V2 messages, legacy messages, flags and mentions'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '460541b1e718b408062954f69a285a5035119adc'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,21 @@ context:
   - '{project-root}/docs/discord-rules.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/components-v2.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Bodies Discord rejects as empty (a V2Message with zero components, a LegacyMessage with empty content and no rows) serialize without any rule id or check.
+    evidence: |-
+      Discord answers both with a 400 (empty message / V2 needs at least one component). docs/discord-rules.md has no rule for an empty message, so neither the 4.3 runtime validator nor any later story is set to catch it; the 4.2 Matrix deliberately accepts both ("not a catalog rule") and the tests v2_empty_body and legacy_content_verbatim lock that in. Fix needs a new rule id in docs/discord-rules.md and noctis-rules plus runtime enforcement (Story 4.3 scope).
+    location: >-
+      crates/noctis-ui/src/message/mod.rs (V2Message::new, LegacyMessage::new); docs/discord-rules.md section 10/11
+    severity: medium
+  - summary: >-
+      Template modules use V2Message unqualified, but noctis::prelude does not re-export it and no module imports it from noctis::ui.
+    evidence: |-
+      examples/project-template/src/modules/{setup,profile,dashboard}.rs already wrote UiResult<V2Message> with only noctis::prelude::* before this story; 4.2 made V2Message real at noctis::ui::V2Message, and the prelude (crates/noctis/src/lib.rs pub mod prelude) holds only Route/Payload/PayloadEnum/RouteComponents. The template does not compile until Story 14.2; decide when Views land (View, ViewCx, UiResult) whether the prelude re-exports V2Message or each module imports it, and align the skill's recipes (SKILL.md 3.1 uses V2Message with the prelude alone).
+    location: >-
+      examples/project-template/src/modules/setup.rs:12
+    severity: low
 ---
 
 <intent-contract>
@@ -208,6 +222,36 @@ Ordering:
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 25 findings — high 0, medium 3, low 7, false 14, maybe-false 1
+- findings:
+  - `[low]` `[defer]` (blind) Template setup.rs uses `V2Message` without importing it; prelude does not re-export it — real, but pre-existing: profile.rs, dashboard.rs and setup.rs:175 already used `V2Message` via the prelude alone before this story; the prelude/import decision belongs with the View stories (template compiles from 14.2). Deferred.
+  - `[false]` `[reject]` (blind) MSG-04 has no check and no `Mentions` to `AllowedMentions` bridge — the intent's Never excludes the runtime validator (4.3) and the Matrix row "Mentions 101 ids" accepts 101 ids by design; the bridge is 4.3's input per the Code Map.
+  - `[medium]` `[defer]` (blind) Empty legacy and empty V2 bodies serialize though Discord rejects them with a 400 — real, but no catalog rule exists for it (pre-existing gap in docs/discord-rules.md) and runtime checks are excluded by the intent (4.3); the Matrix deliberately accepts both. Deferred with edge rows 1-2.
+  - `[low]` `[patch]` (blind) MSG-01 moved to 4.4 with no note; responder.md presents "≤ 2000 chars, MSG-01" as given while components-v2.md marks the check planned — the "no note" half is false (spec Task 10 and Design Notes record the move); the doc disagreement is real in responder.md §6, which this diff edited. Patch: mark the length check as planned in responder.md §6.
+  - `[false]` `[reject]` (blind) Legacy rows accept Route buttons/selects despite "never for interactive UI" — UD-1 is a doctrine rule enforced by review and skill-check on the template, not a type guarantee; CV2-15 allows buttons and selects in legacy rows and the spec Matrix row "Unresolved id" requires Route components in legacy rows.
+  - `[false]` `[reject]` (blind) `LegacyMessage::rows` takes only a fixed-size array; no `try_rows` — the intent's Never puts every `try_*` constructor in Story 4.4; the array bound is the CV2-15 compile-time tier the intent asks for.
+  - `[low]` `[patch]` (blind) responder.md §6 says only content/embeds/poll are cleared on a legacy→V2 edit, leaving out `sticker_ids` — confirmed at responder.md L142 while body.rs, discord-rules.md CV2-02 and components-v2.md list four fields. Patch: add `sticker_ids` to the list.
+  - `[low]` `[reject]` (blind) `MessageFormat::from_flags` takes only a raw `u64` — real ergonomic cost (`.bits()` at call sites) but no wrong outcome shown; the spec sets this exact signature and the fix adds public surface (`From<MessageFlags>`).
+  - `[false]` `[reject]` (blind) `LegacyMessage::custom_ids_mut` allocates a Vec while V2 is lazy — `Components::custom_ids_mut` (components.rs L62-68) also collects into a Vec and returns `into_iter()`; both paths behave the same.
+  - `[false]` `[reject]` (blind) Duplicate mention ids are kept — the Matrix row "Users only" fixes "order and duplicates verbatim"; any count over 100 is MSG-04, runtime in 4.3 per the intent's Never.
+  - `[false]` `[reject]` (blind) Callback type 7 / INT-08 deferred original: no guidance on deriving `MessageFormat` — the Responder is excluded by the intent's Never (Epics 6/7/9); no code in this diff derives a format, so no wrong derivation occurs here.
+  - `[false]` `[reject]` (blind) Webhook `with_components=true` requirement missing from the docs — WH-01 documents it in docs/discord-rules.md and the intent's Never excludes the `with_components` query (Epics 6/7/9).
+  - `[maybe-false]` `[reject]` (blind) `SUPPRESS_EMBEDS` is documented as hiding link embeds of `content` yet accepted on V2 bodies — would need Discord's behaviour for URLs inside Text Display on V2 messages to settle; if true it is only a doc wording issue (low), so rejected with this note.
+  - `[false]` `[reject]` (blind) public-api.txt lists the `LegacyRows` impls twice — it is generator output from `api-snapshot --bless`, which lists trait impls in both the type's block and the trait's block; the check compares the same output, so the hash matches what the gate verifies.
+  - `[medium]` `[defer]` (edge) V2Message from empty Components serializes `components: []`, which Discord rejects — same root cause as blind row 3 (no empty-message rule). Deferred.
+  - `[medium]` `[defer]` (edge) `LegacyMessage::new("")` with zero rows serializes, which Discord rejects — same root cause as blind row 3. Deferred.
+  - `[false]` `[reject]` (edge) Users/Roles `Only` with more than 100 ids serialize unchecked — MSG-04 is runtime (4.3), excluded by the intent's Never; Matrix row "Mentions 101 ids" requires acceptance.
+  - `[false]` `[reject]` (edge) Duplicate ids passed to `only()` serialize verbatim — the Matrix fixes duplicates verbatim; the count limit is MSG-04 (4.3).
+  - `[low]` `[reject]` (edge) A legacy→legacy edit leaves earlier embeds/poll/stickers in place — noctis has no embeds, poll or sticker API, so a legacy message noctis sent has none; only a message sent outside noctis could, which is unlikely, and the fix adds fields the Matrix's legacy edit body does not have.
+  - `[low]` `[defer]` (edge) Template setup.rs uses `V2Message` unqualified — same root cause as blind row 1 (pre-existing prelude assumption). Deferred.
+  - `[false]` `[reject]` (intent) The V2ToLegacy error depends on a caller-supplied `MessageFormat` — the spec deliberately settles the guarantee at `edit_body(MessageFormat, ..)` and the intent's Never excludes the Responder that reads the real flags; the epics AC ("a typed error") is met at this API.
+  - `[false]` `[reject]` (intent) "Never fail with a 400" is not exercised at the send surface — the intent's Never excludes the Responder/HTTP (Epics 6/7/9); the AC is stated at serialization.
+  - `[low]` `[patch]` (intent) MSG-01 listed under the story but moved to 4.4; responder.md still reads as a guarantee — the move is deliberate and recorded (Design Notes: the literal tier needs 4.4's macro); the responder.md wording is the real part, same root cause as blind row 4. Patch as there.
+  - `[false]` `[reject]` (intent) FR-25/UX-DR1 mention default proven on message types, not Views — Views are a later epic; the skill marks the View `mentions` hook [planned], and every body the View will produce already defaults to `parse: []`.
+  - `[false]` `[reject]` (intent) MSG-05 and CV2-01 compile_fail evidence covers a neighbouring property — the AC asks the fixture to try "the missing field, method or flag"; `.mentions(None)` and `IS_COMPONENTS_V2` are exactly the missing setter and flag, and the spec Tasks 8 name those fixtures.
+  - `[false]` `[reject]` (intent) Flag sets reject `IS_VOICE_MESSAGE`, which is valid — the spec's Boundaries deliberately leave it out ("not offered in v1"); omitting a valid flag cannot cause a 400.
+
 ## Design Notes
 
 - **Flags at body time, not on the message:** the same `V2Message` (e.g. a View render) goes out through create, callback or edit, and only the endpoint knows which flags are legal. So core passes the endpoint's flag set when it asks for the body. Callback type 7 is an edit of an existing message, so it takes `EditFlags`. Q5 (legacy→V2 on a modal submit) stays core's typed error.
@@ -231,3 +275,41 @@ Ordering:
 - `cargo deny check` -- exit 0.
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- exit 0 each.
 - `bash .github/scripts/check-build-config.sh` -- exit 0; `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Added `V2Message` and `LegacyMessage` bodies in noctis-ui with per-endpoint flag sets (`CreateFlags`, `CallbackFlags`, `EditFlags`; `IS_COMPONENTS_V2` cannot be set by hand), a typed `Mentions` model that defaults to `parse: []` and is required on every body, `MessageFormat`-aware edit bodies (legacy→V2 clears content/poll to `null` and embeds/sticker_ids to `[]`; V2→legacy returns `UiError::V2ToLegacy`), and a compile-time cap of 5 legacy Action Rows through the sealed `Arity<N>` bound (CV2-15). The MSG-01 length check moves to Stories 4.3 (runtime) and 4.4 (literal).
+- **Files changed:**
+  - `crates/noctis-ui/src/message/{mod,body,flags,mentions}.rs`: message bodies, flag sets, mentions and edit-body serialization.
+  - `crates/noctis-ui/src/arity.rs`: sealed `Arity<N>` bound that caps legacy rows (4.4 reuses it).
+  - `crates/noctis-ui/src/{lib,error,placement}.rs`: re-exports and the `UiError::V2ToLegacy` variant.
+  - `crates/noctis-ui/tests/messages.rs` plus 8 insta snapshots: tests for the serialization matrix.
+  - `crates/noctis/src/lib.rs`, `crates/noctis/tests/messages.rs`: facade re-exports and facade tests.
+  - `crates/noctis/tests/ui/{cv2,int,msg}/*`: compile_fail fixtures for CV2-01, CV2-02, CV2-15, INT-09, MSG-03, MSG-05 and MSG-07.
+  - `docs/discord-rules.md`, `xtask/rules-pending.toml`: where each rule is enforced.
+  - `xtask/public-api.txt`: re-blessed API snapshot.
+  - `examples/project-template/` (skill SKILL.md, components-v2.md, responder.md, views-and-widgets.md; src/modules/setup.rs): template and usage skill updated to the new API.
+- **Review findings (25: high 0, medium 3, low 7, false 14, maybe-false 1):**
+  - Patched (3 low; 0 high, 0 medium): responder.md §6 now marks the MSG-01 length check as planned (blind 4 and intent 3, same root cause) and lists `sticker_ids` among the fields cleared on a legacy→V2 edit.
+  - Deferred (5): empty V2/legacy bodies serialize although Discord rejects them (3 medium; no catalog rule exists, and runtime checks belong to 4.3). The template's `setup.rs` uses `V2Message` through the prelude only (2 low; this was already the case before this story, belongs with the View stories, and the template compiles from 14.2).
+  - Rejected (17):
+    - MSG-04 has no check and no AllowedMentions bridge: runtime check and bridge are Story 4.3.
+    - Route components accepted in legacy rows: UD-1 is a doctrine rule, and CV2-15 allows them.
+    - No `try_rows`: every `try_*` constructor is in 4.4.
+    - `from_flags` takes a raw `u64`: this is the signature the spec sets, and no wrong outcome was shown.
+    - `custom_ids_mut` allocates a Vec: same as `Components`.
+    - Duplicate mention ids are kept (x2): the Matrix keeps them verbatim.
+    - More than 100 mention ids are accepted: MSG-04 is runtime in 4.3.
+    - Callback type 7 format derivation: belongs to the Responder, which is excluded from this story.
+    - Webhook `with_components` missing: already documented in WH-01, and excluded from this story.
+    - `SUPPRESS_EMBEDS` on V2 bodies (maybe-false): at most a doc wording issue.
+    - public-api.txt lists impls twice: this is what the generator outputs.
+    - A legacy→legacy edit leaves old embeds in place: noctis has no embeds API.
+    - V2ToLegacy depends on a caller-supplied format: this is the guarantee the spec sets.
+    - The "no 400" acceptance criterion is not tested at send time: the HTTP layer is excluded from this story.
+    - Mention default is proven on message types, not Views: Views come in a later epic.
+    - The MSG-05/CV2-01 fixtures are adequate: they try exactly the missing setter and flag.
+    - `IS_VOICE_MESSAGE` is left out: it is not offered in v1.
+- **Follow-up review recommended:** false (patched entries: high 0, medium 0, low 3).
+- **Verification:** All local gates in gates.sh passed: fmt, clippy -D warnings, tests with `INSTA_UPDATE=no`, cargo hack each-feature, MSRV 1.91 check, cargo deny, the xtask checks (deps-check, rules-catalog, api-snapshot, skill-check) and the build-config check; no `target/debug` was created. CI is paused by the maintainer, so the local gates were the whole check.
+- **Residual risks:** Discord returns a 400 for empty bodies, and noctis does not reject them yet (needs a new catalog rule, at the latest in 4.3). MSG-01 and MSG-04 are not enforced until Stories 4.3 and 4.4. The `MessageFormat` passed to edits is supplied by the caller until the Responder reads the real message flags. Whether `SUPPRESS_EMBEDS` has any effect on V2 bodies has not been checked.
