@@ -4,7 +4,6 @@ type: 'feature'
 created: '2026-10-19'
 status: 'in-progress'
 baseline_revision: 'bae92290d44eb553048f354b0f06d821a39afc0a'
-baseline_revision: '5311006164af6abf4d9065438fff338419a72752'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
@@ -168,3 +167,29 @@ Ok(Lease::new(bucket))
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot` and `-- skill-check` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Review Triage Log
+
+### 2026-10-19 — Review pass
+- note: the staged review diff was the reverse of planning commit `bae9229` (`git diff bae9229 5311006`, `_bmad-output/` only); it contained no Story 3.3 code. Cause: the spec frontmatter carried two `baseline_revision` keys (`bae9229…` added by the start commit, `5311006…` from planning). Triage removed the duplicate `5311006…` key (frontmatter only) so the next staging diffs `bae9229..worktree`. The four layers therefore reviewed no Rust code; every finding about deleted files is refuted by the working tree.
+- verdicts: 19 findings — high 1, medium 0, low 1, false 17, maybe-false 0
+- findings:
+  - `false` `reject` (blind) Patch deletes the Story 3.3 spec — the spec exists at HEAD `e97e347`; the real change since baseline adds it, the reversed diff only made it look deleted.
+  - `false` `reject` (blind) epic-3-context loses the Story 3.2 moka / `MemoryDiscordCache` bullets — both bullets are present at `epic-3-context.md:41-42`.
+  - `false` `reject` (blind) Story 3.3 decision erased from the append-only memlog — the decision line is present at `.memlog.md:127`.
+  - `false` `reject` (blind) No record of why Story 3.3 is withdrawn — nothing is withdrawn; the story is implemented in `e97e347`.
+  - `false` `reject` (blind) epic-3-context inconsistent about memory defaults — the bullets it says are gone are still there.
+  - `false` `reject` (blind) Wrong "same bucket identify in parallel" sentence left untracked — the implementation fixed it (`app-and-sharding.md:119` now says "Shards in different buckets identify in parallel").
+  - `high` `patch` (edge) Review diff is the reverse of the planning commit, so identify.rs, purity.rs, tests and docs went unreviewed — confirmed (`git diff --stat 5311006 bae9229` matches the reversed hunks); root cause the duplicate `baseline_revision` key, repaired by triage; action: re-stage the diff from `bae9229` to the working tree and run a follow-up review on the real code.
+  - `false` `reject` (edge) Applying the diff deletes the spec — the diff is not the change; nothing applies it, and the spec is present.
+  - `false` `reject` (edge) Removed epic-3-context lines 41-42 — present at HEAD.
+  - `false` `reject` (edge) Removed memlog decision line — present at HEAD (`.memlog.md:127`).
+  - `high` `patch` (edge) Diff adds no code, so the story would be accepted without implementation evidence — same root cause as the mis-staged diff; same action (re-stage and follow-up review).
+  - `low` `reject` (edge) Dev-dep tokio enables `rt-multi-thread`, which the spec's exact feature list omits — real text divergence, but the spec's own multi-thread matrix row needs `rt-multi-thread`, so the code is right; the only fix is editing this build's spec.
+  - `high` `patch` (vgap other) Diff is the reversed planning commit; Story 3.3 code not reviewed for verification gaps — same root cause as the mis-staged diff; same action.
+  - `false` `reject` (intent 1) AC1 bucket concurrency not exercised — `crates/noctis-ports/tests/identify_queue.rs` (223 lines, `e97e347`) holds the matrix; absent only from the mis-staged diff.
+  - `false` `reject` (intent 2) AC2 serialization not exercised — same evidence: covered by `identify_queue.rs` at HEAD.
+  - `false` `reject` (intent 3) No Cluster-contract rustdoc / guide link — `crates/noctis-ports/src/identify.rs` and `memory/identify.rs` changed in `e97e347`; absent only from the mis-staged diff.
+  - `false` `reject` (intent 4) No facade re-export or template update — `crates/noctis/src/lib.rs`, template skill files, `AGENTS.md` and `xtask/public-api.txt` change in `e97e347`.
+  - `false` `reject` (intent 5) Change is purely subtractive — the real change is +641/-23 and additive; subtraction is an artifact of the reversed diff.
+  - `false` `reject` (intent 6) No tests — `identify_queue.rs` and `purity.rs` change in `e97e347`.
