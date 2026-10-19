@@ -3047,3 +3047,112 @@ So that I can depend on it from my own bot.
 **Given** the published crate
 **When** the Project Template's `noctis` dependency is switched to `version = "0.1"`
 **Then** the copied-out template builds with `cargo build --release`, and the README roadmap marks Milestones 1–4 done
+
+## Epic 15: Opt-in extras
+
+A bot author can opt into a remote-capable Renderer seam, several Apps per process for
+white-label bots, presence and gateway commands, and prefix commands that reuse slash
+handlers. Each ships behind a feature or as an extension and may slip without blocking
+v1 (PRD §8.1, P2).
+
+### Story 15.1: Renderer seam
+
+As a bot author,
+I want to replace local rendering with my own Renderer implementation,
+So that I can move rendering to a separate service later without touching Templates, Views or handlers.
+
+**Implements:** FR-37; AD-22, AD-1.
+
+**Acceptance Criteria:**
+
+**Given** the `Renderer` port from Epic 3
+**When** an App is configured with `.renderer(MyRenderer)`
+**Then** `ctx.render` routes Render Jobs to it with no change to Templates, Views or handlers (test Renderer returning fixed bytes)
+
+**Given** a custom Renderer
+**When** it returns `RenderOutput`
+**Then** the cache key, attachment naming and size budget logic still apply
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents the seam and its stability (renderer types only via `noctis::image::unstable`), and `skill-check` passes
+
+### Story 15.2: Multiple Apps per process
+
+As a bot operator running white-label bots,
+I want several Apps with different tokens in one process, sharing Adapters where I choose,
+So that customer bots and the main bot run on one deployment without interfering.
+
+**Implements:** FR-47, FR-71, FR-13 (per-App Publish); AD-24, AD-14, AD-23, AD-1.
+
+**Acceptance Criteria:**
+
+**Given** two Apps attached to one `noctis::Runtime`
+**When** both run
+**Then** each has its own HTTP client, shards, Registry, Responder, `Limits` and namespaced ports, while process-scoped resources (render pool, fonts, metrics recorder) are shared; metrics carry the `app` label
+
+**Given** the same Module tree
+**When** it is mounted on both Apps
+**Then** both work, and a Command restricted to a subset of Apps is published only for those Apps
+
+**Given** a `GuildAccessList` allow-list on App A and deny-list on App B
+**When** an interaction from the customer guild arrives on each
+**Then** App A serves it and App B skips it at stage 3
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents multiple Apps, and `skill-check` passes
+
+### Story 15.3: Presence and gateway commands
+
+As a bot author,
+I want to set presence and send gateway commands such as request guild members,
+So that my bot shows a status and can fetch members on demand.
+
+**Implements:** FR-53; AD-21; rules GW-04, GW-06, GW-07.
+
+**Acceptance Criteria:**
+
+**Given** an initial presence in the builder
+**When** shards identify
+**Then** they use it; `app.presence().set(..)` updates all shards or one shard at runtime
+
+**Given** a gateway command for a guild
+**When** it is sent
+**Then** it goes to the owning shard's sender; a guild outside this process's Shard Range returns a typed error
+
+**Given** the gateway send limit (120 per 60 s per shard, GW-04) or `Event::RateLimited` for request guild members (GW-07)
+**When** it is hit
+**Then** the caller receives a typed error, never a silent drop
+**And** `LargeThreshold::new::<N>()` outside 50–250 fails to compile (GW-06 fixture)
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents presence and gateway commands, and `skill-check` passes
+
+### Story 15.4: Prefix commands
+
+As a bot author migrating from dbi,
+I want to expose a slash Command as a prefix message command that runs the same handler,
+So that users who type `!command` keep working during migration.
+
+**Implements:** FR-14, FR-10 (same typed errors); AD-23; rules GW-05.
+
+**Acceptance Criteria:**
+
+**Given** the `prefix` feature off (default)
+**When** a bot builds
+**Then** no prefix parsing code is compiled and the App needs no message-content intent
+
+**Given** the `prefix` feature on and a Command opted into prefix mode
+**When** a message `<prefix><Command Path> <args>` arrives
+**Then** `noctis-prefix` runs pipeline stages 3 to 10 and the same handler through the shared response abstraction, and argument parse failures produce the same typed errors as FR-10
+**And** the message-content intent is required at App build when prefix Commands exist (GW-05)
+
+**Given** the final feature matrix
+**When** CI runs
+**Then** `prefix` alone and with all features builds and tests
+
+**Given** the new public API
+**When** the story is done
+**Then** the Usage Skill documents prefix commands as an opt-in P2 feature, and `skill-check` passes
