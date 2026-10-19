@@ -17,6 +17,13 @@ deferred:
     location: >-
       xtask/src/deps_check.rs:196 (Workspace::from_metadata); Cargo.toml:19 (exclude)
     severity: medium
+  - summary: >-
+      The AGENTS.md local-gate line chains its commands with a doubled "and", which makes the list hard to read.
+    evidence: |-
+      AGENTS.md line 23 reads "... `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6) and `cargo run --release -p xtask -- deps-check`; ...". Fix: comma-separate the list, keeping only the last "and". Deferred because the fix edits an agent-context file.
+    location: >-
+      AGENTS.md:23
+    severity: low
 ---
 
 <intent-contract>
@@ -162,6 +169,38 @@ deferred:
   - `[medium]` `[defer]` (intent D6) Scope ends at the cargo workspace; the template is never checked — grouped with the blind template finding.
   - `[false]` `[reject]` (intent D7) Scope additions beyond the ACs — each is an explicit spec matrix row or Design Notes decision derived from the spine prose; deliberately settled.
   - `[false]` `[reject]` (intent D8) "Runs as a gate" met only at the workflow file — the job has no `continue-on-error`; checking the pushed run is the spec's Verification step after the main session pushes, outside the diff by design.
+
+### 2026-10-19 — Review pass
+- verdicts: 28 findings — high 0, medium 8, low 13, false 7, maybe-false 0
+- findings:
+  - `[medium]` `[bad_spec]` (blind) Bot-side `testkit` check matches only the literal `testkit` and ignores the facade's own feature closure — verified: `check_non_internal` tests `dep.features.iter().any(|f| f == TESTKIT_FEATURE)` and the exact pair `(key, "testkit")`, never `ws.member(FACADE).closure(..)`; with facade `full = ["testkit"]`, a bot normal dep with `features = ["full"]`, or a bot feature `t = ["noctis/full"]`, exits 0 (contrast `check_render`'s `enables_render`). Root cause: Design Notes specify the literal match. Amendment: Design Notes bot rule resolves every requested facade feature (dep `features`, `default` when `uses_default_features`, `k/f` / `k?/f` from the bot's own closures) through the facade's closure; new Tasks fixture rows.
+  - `[medium]` `[bad_spec]` (blind) Nothing forbids the facade's `default` from enabling `testkit` — verified: `check_gate_features` accepts `default = ["testkit"]` (closure contains the gate) and there is no facade counterpart to image's `default`-closure `render-on` check, so every bot's normal `noctis` dep reaches `noctis-testkit` with exit 0. Same root cause (Design Notes omit it). Amendment: crate-level `ungated-edge` on `noctis` when its `default` closure contains `testkit`, plus fixture.
+  - `[low]` `[bad_spec]` (blind) Facade any-crate rule never checks the target is one of the 12 graph crates — verified: `check_edge` returns `None` for every `from == FACADE` (bar the testkit gate), and `from_metadata` keeps out-of-tree `noctis-*` deps and non-internal members, so `noctis -> noctis-foo` (outside path) or `noctis -> xtask` passes. Root cause: Design Notes "any `B`" wording. Amendment: facade rule allows only `B` in CRATES (except testkit), otherwise `undrawn-edge`; fixture.
+  - `[low]` `[reject]` (blind) `check_render`'s feature loop prints `(normal)` for a build/dev-dep and leaves macros dev-dep render undecided — real but a macros build-dep on `noctis-image` is not an everyday setup; the line still names the edge and rule, and the fix adds a kind lookup across possibly several deps with the same key.
+  - `[low]` `[reject]` (blind) `deps-check --help` / `-h` is a usage error (exit 2) — loud failure that still prints the full usage; supporting it changes the parser's return type for a rare input.
+  - `[false]` `[reject]` (blind) Tool failure and violations share exit code 1 — the intent contract's Boundaries mandate "1 violations or `cargo metadata` failure"; deliberately settled.
+  - `[low]` `[reject]` (blind) Tasks bullet still describes `Violation { rule, from, to, kind, reason }` — the fix is editing this build's spec (harmonised in the bad_spec amendment anyway, since Tasks is amended).
+  - `[low]` `[reject]` (blind) Deferred item and pass-1 triage rows cite stale line numbers — the fix is editing this build's spec.
+  - `[low]` `[defer]` (blind) AGENTS.md gate line has a doubled "and" — verified at AGENTS.md:23; the fix edits an agent-context file, deferred.
+  - `[false]` `[reject]` (blind) `path = {:?}` in `out_of_workspace_internal_dep_fails` breaks on non-ASCII paths — `str`'s `Debug` keeps printable Unicode such as "ö" unescaped and writes `\\` for backslashes, both valid in a TOML basic string; only control characters would differ, which a path under `CARGO_TARGET_TMPDIR` does not contain.
+  - `[low]` `[bad_spec]` (blind) No fixture for a facade build/dev dep on a graph crate nor for a bot relying on facade default features — verified by grep; the default-features half is the same defect as the testkit-closure finding. Amendment: both fixtures added to Tasks.
+  - `[medium]` `[bad_spec]` (edge) Bot normal dep requests a facade feature whose closure contains `testkit` — same as the blind testkit-closure finding.
+  - `[medium]` `[bad_spec]` (edge) Facade `default` reaching `testkit` plus a default-features bot dep passes — same as the blind facade-default finding.
+  - `[medium]` `[bad_spec]` (edge) Bot feature `noctis/full` (only literal `k/testkit` matched) passes — same as the blind testkit-closure finding.
+  - `[low]` `[reject]` (edge) `check_render` prints `(normal)` for a macros build-dep on image — same claim as the blind kind finding; rare setup, line still names edge and rule.
+  - `[low]` `[reject]` (edge) `std::env::args` panics on a non-UTF-8 argument — real, but a loud failure (exit 101) on an input nobody types into a repo tool; the fix switches the parser to `OsString`.
+  - `[low]` `[reject]` (edge) `deps-check --help` / `-h` exits 2 — same claim as the blind finding; usage is printed.
+  - `[low]` `[patch]` (vgap, pre-verified) The `names.contains` half of the `from_metadata` filter is unpinned: no fixture has a graph crate depending on a non-internal member — filed evidence: dropping it keeps every test green. Fix (folded into the bad_spec amendment as a Tasks row since code is re-derived): `noctis-core -> bot` fixture asserting exit 1, `noctis-core -> bot (normal)`, `[undrawn-edge]`.
+  - `[medium]` `[bad_spec]` (vgap other) Bot `testkit` rule ignores facade closures (feature `full`, bot feature `noctis/full`, facade `default`) — same as the blind testkit-closure and facade-default findings.
+  - `[false]` `[reject]` (intent D1) AC pass case on the real workspace is vacuous — carried: the spec deliberately settles this (no internal edges in this story; full-graph fixture plus the manual mutation AC).
+  - `[medium]` `[bad_spec]` (intent D2) Testkit reachable through the facade's own feature graph — same as the blind testkit-closure and facade-default findings.
+  - `[medium]` `[defer]` (intent D3) Bot rules never run on `examples/project-template` — carried: already deferred (frontmatter `deferred`, first item); not deferred again.
+  - `[low]` `[patch]` (intent D4) "tw module only" half not enforced — carried: the pass-1 patch (module doc line) is in place at `deps_check.rs` module doc; not patched again.
+  - `[false]` `[reject]` (intent D5) `depends-on-facade` covers only internal crates, narrowing "any crate" — the intent contract's matrix row "Non-internal member uses facade: `bot` -> `noctis`, exit 0" and AD-2 settle it; the spine's "No crate depends on `noctis`" cannot include bots, which AD-2 requires to depend on it.
+  - `[false]` `[reject]` (intent D6) Rule ids are tool-local — carried: the intent contract mandates kebab ids.
+  - `[low]` `[reject]` (intent D7) Allow-list hand-copied, not compared with the spine — carried: rare silent drift only for removed spine edges; fix is a mermaid parser.
+  - `[false]` `[reject]` (intent D8) CI gate shown only at the workflow file — carried: no `continue-on-error`; the pushed run is the spec's Verification step.
+  - `[false]` `[reject]` (intent D9) Scope additions beyond the ACs — carried: each is a spec matrix row or Design Notes decision.
 
 ## Design Notes
 
