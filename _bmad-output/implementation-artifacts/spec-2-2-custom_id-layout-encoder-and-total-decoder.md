@@ -2,7 +2,8 @@
 title: 'Story 2.2: `custom_id` layout encoder and total decoder'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '103e70498d270ae377eccaa4da9145482a729ac5'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

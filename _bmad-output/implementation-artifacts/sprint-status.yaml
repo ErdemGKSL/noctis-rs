@@ -48,7 +48,7 @@ development_status:
 
   epic-2: in-progress
   2-1-payload-field-encodings: done
-  2-2-custom_id-layout-encoder-and-total-decoder: backlog
+  2-2-custom_id-layout-encoder-and-total-decoder: in-progress
   2-3-refs-and-two-phase-encodedid: backlog
   2-4-integrity-tags-for-signed-inline-payloads: backlog
   2-5-derive-route-payload-and-payloadenum-with-compile-time-lengt: backlog
