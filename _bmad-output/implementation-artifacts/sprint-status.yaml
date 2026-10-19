@@ -55,7 +55,7 @@ development_status:
   2-6-zero-allocation-inline-decode-guard: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
+  epic-3: done
   3-1-port-traits-and-the-shared-op-vocabulary: done
   3-2-bounded-in-memory-store-defaults: done
   3-3-in-memory-identifyqueue-with-identify-buckets: done
