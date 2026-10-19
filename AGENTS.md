@@ -11,6 +11,12 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 - Never hand-edit `_bmad/` (installer-managed); put overrides in `_bmad/custom/config.toml` or use the `bmad-customize` skill.
 - Every change to noctis's public API updates `examples/project-template/` in the same commit: its code, its `AGENTS.md` and its noctis usage skill. Bot authors' agents learn noctis from that skill alone, never from noctis's source.
 
+## Where things are
+
+- Architecture contract: `_bmad-output/planning-artifacts/architecture/architecture-noctis-rs-2026-10-19/ARCHITECTURE-SPINE.md`; follow its ADs (crate layers, `custom_id` format, ports) when adding or moving code.
+- Requirements: `_bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/prd.md` (FR/NFR ids).
+- Discord rules and where each is enforced: `docs/discord-rules.md`; a new or changed limit updates this file and `noctis-rules` together, using the same rule id.
+
 ## Running and verifying
 
 - Before writing, reviewing or refactoring any Rust (`.rs`, `Cargo.toml`, crate layout, crate choice), invoke the `rust-best-practices` skill and read only the `references/*.md` files the task touches.

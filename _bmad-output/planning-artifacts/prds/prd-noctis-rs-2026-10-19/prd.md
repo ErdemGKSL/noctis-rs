@@ -293,9 +293,10 @@ bound. Interactions use the Interaction Lane.
   exempt from the event bound; with the event queue full, an interaction still
   reaches its handler within the FR-21 deadline.
 - When the event bound is reached, the per-event-type policy applies: buffer up to a
-  configured depth, then drop the oldest events of types marked droppable. Nothing
-  is dropped silently: a metric counts drops per event type, and types not marked
-  droppable are never dropped.
+  configured depth, then drop the oldest events of types marked droppable. Types not
+  marked droppable go to a metered overflow and are not dropped while it is below
+  its hard cap; past the cap the App is overloaded and drops them with an error log.
+  Nothing is dropped silently: a metric counts drops per event type.
 - A metric exposes queue depth per lane.
 - A set of Event Handlers can opt into per-guild ordered dispatch.
 

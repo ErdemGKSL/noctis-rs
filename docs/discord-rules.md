@@ -2,6 +2,10 @@
 
 **Status:** reference for Noctis implementers. Every Discord API rule or limit that
 Noctis must respect is listed here, mapped to the point where Noctis enforces it.
+**Authority:** where this catalog and the architecture spine
+(`_bmad-output/planning-artifacts/architecture/architecture-noctis-rs-2026-10-19/ARCHITECTURE-SPINE.md`)
+disagree, the spine wins and this file is corrected. The `custom_id` layout and its
+constants (AD-5, AD-6) are quoted here verbatim, and `xtask rules-catalog` checks them.
 **As of:** 2026-10-19. Verified against `discord/discord-api-docs` @ `f7416a2`
 (2026-10-16) and the research notes in
 `_bmad-output/planning-artifacts/research/` (`discord-components-v2.md`,
@@ -61,7 +65,7 @@ points straight back to this file.
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **CMD-01** Name charset | Must match `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` with the Unicode flag. Note: the official regex allows `ʼ` (U+02BC, modifier letter apostrophe), **not** the ASCII `'`. Applies to command, subcommand group, subcommand and option names. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (names from runtime-loaded Locale files) | `#[command("…")]` / `command!` splits the Command Pattern into words and matches each against the regex (compiled with `regex` + Unicode script tables inside the proc macro). Error spans point at the offending word. |
+| **CMD-01** Name charset | Must match `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` with the Unicode flag. Note: the official regex allows `ʼ` (U+02BC, modifier letter apostrophe), **not** the ASCII `'`. Applies to command, subcommand group, subcommand and option names. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (names from runtime-loaded Locale files) | `#[command("…")]` / `command!` splits the Command Pattern into words and matches each against the regex. The check lives in `noctis-rules` (which may depend on `regex` with Unicode tables); the proc macro and App-build call the same function. Error spans point at the offending word. |
 | **CMD-02** Name length | 1-32 characters per word **[D]** (counting unit **[U]**: Noctis counts both Unicode scalar values and UTF-16 units and takes the larger) | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal) / App-build (loaded locales) | Same macro pass as CMD-01. Empty words (`"config  set"`) are rejected. |
 | **CMD-03** Lowercase | If a letter has a lowercase variant, the lowercase form must be used. Uncased letters (e.g. CJK, Devanagari) are allowed. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (loaded locales) | Macro checks `c.to_lowercase() == c` for every `char`. The error suggests the lowercased word. |
 | **CMD-04** Description length | 1-100 characters for `CHAT_INPUT` commands, subcommands, groups and options **[D]** | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal, incl. doc comments used as descriptions) / App-build (loaded locales) | `description = "…"` or `///` doc comments are measured in the macro. A missing description is a compile error (Noctis never sends tescord's `"..."` placeholder **[N]**). |
@@ -78,13 +82,13 @@ points straight back to this file.
 | **CMD-12** Base command with subcommands is not invokable | Once a command has subcommands or groups, the base command itself cannot be used, and it cannot have its own non-subcommand options. **[D]** | [AC §Subcommands and Subcommand Groups](https://discord.com/developers/docs/interactions/application-commands#subcommands-and-subcommand-groups) | Compile-time (one pattern, e.g. `config (set)?`) / App-build (Module A registers `config`, Module B registers `config set`) | A pattern whose expansions contain both `x` and `x y` is a compile error. Across Modules this is a `BuildError` (FR-9: no silent dropping). |
 | **CMD-13** Max options / subcommands / groups per level | `options` array max **25** at every level (top-level options, subcommands + groups under a command, subcommands under a group, parameters under a subcommand). **[D]** | [AC §Option structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-structure) | Compile-time (per struct / per pattern) / App-build (after merge) | `derive(Options)` counts fields. The pattern macro counts distinct children per node. The merged tree is recounted in `App::build()`. |
 | **CMD-14** Mixing groups and subcommands | A command may hold groups and plain subcommands side by side. **[D]** | [AC §Subcommands and Subcommand Groups](https://discord.com/developers/docs/interactions/application-commands#subcommands-and-subcommand-groups) | (permitted; no check) | Documented so the validator does not reject a valid tree. |
-| **CMD-15** Pattern expansion bound | Noctis caps one Command Pattern at **64** expansions and rejects patterns where an optional group makes two expansions identical. **[N]** | — | Compile-time | Guards against accidental combinatorial patterns; the cap is a Noctis choice. |
+| **CMD-15** Pattern expansion bound | Noctis caps one Command Pattern at **25** expansions by default (FR-8), configurable with `#[command(max_expansions = n)]`, and rejects patterns where an optional group makes two expansions identical. **[N]** | — | Compile-time (literal patterns) / App-build (dynamically built patterns) | Guards against accidental combinatorial patterns. Expansion order is left to right in declaration order (FR-8). |
 
 ## 3. Command options
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **OPT-01** Required before optional | Required options must be listed before optional ones. **[D]** | [AC §Option structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-structure) | Compile-time | `derive(Options)`: non-`Option<T>` fields are required. The derive either rejects out-of-order fields or (default **[N]**) reorders them stably and documents it. Choice made in architecture; both are compile-time. |
+| **OPT-01** Required before optional | Required options must be listed before optional ones. **[D]** | [AC §Option structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-structure) | Compile-time | `derive(Options)`: non-`Option<T>` fields are required. A required field after an optional one is a compile error (FR-10); the derive never reorders fields. |
 | **OPT-02** Option types | `STRING 3, INTEGER 4, BOOLEAN 5, USER 6, CHANNEL 7, ROLE 8, MENTIONABLE 9, NUMBER 10, ATTACHMENT 11` (1, 2 are subcommand/group) **[D]** | [AC §Option type](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-type) | Compile-time | Field type → option type via a trait (`impl CommandOption for i64`, `Id<UserMarker>`, `Attachment`, …). Unsupported field types do not implement the trait. |
 | **OPT-03** INTEGER range | −2^53+1 … 2^53−1 **[D]** | [AC §Option type](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-type) | Compile-time (literal `min_value`/`max_value`, choice values) / Runtime (decoding) | Literal bounds checked in the derive. Decoded values outside `i64` range are a typed error. |
 | **OPT-04** NUMBER range | −2^53 … 2^53 (double) **[D]** | [AC §Option type](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-type) | Compile-time (literals) | As OPT-03. |
@@ -138,30 +142,30 @@ points straight back to this file.
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **INT-01** Initial response deadline | Initial response within **3 s**, or the token is invalidated **[D]** | [RR §Interaction Callback](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-callback) | Runtime | Auto-defer timer per interaction (FR-21), default below 3 s and configurable. |
-| **INT-02** Token lifetime | Token valid **15 min** for edits and follow-ups **[D]** | [RR §Followup Messages](https://discord.com/developers/docs/interactions/receiving-and-responding#followup-messages) | Runtime | The response handle stores the receive time; calls after expiry return `Error::TokenExpired` without an HTTP request. |
-| **INT-03** Exactly one initial callback | One callback per interaction; later output goes through edit-original or follow-ups **[D]** | [RR §Responding to an Interaction](https://discord.com/developers/docs/interactions/receiving-and-responding#responding-to-an-interaction) | Compile-time | Typestate: `Responder<Pending>` methods (`reply`, `defer`, `update`, `modal`) consume `self` and return `Responder<Acked>`, which only offers `edit_original` and `followup`. The auto-defer path shares the same state machine at runtime. |
+| **INT-01** Initial response deadline | Initial response within **3 s**, or the token is invalidated **[D]** | [RR §Interaction Callback](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-callback) | Runtime | Auto-defer deadline per interaction (FR-21): default 2500 ms measured from gateway receipt, configurable; disabled for `opens_modal` handlers (INT-05). |
+| **INT-02** Token lifetime | Token valid **15 min** for edits and follow-ups **[D]** | [RR §Followup Messages](https://discord.com/developers/docs/interactions/receiving-and-responding#followup-messages) | Runtime | The Responder's runtime state machine stores the gateway receive time; calls after expiry return `Error::TokenExpired` without an HTTP request. |
+| **INT-03** Exactly one initial callback | One callback per interaction; later output goes through edit-original or follow-ups **[D]** | [RR §Responding to an Interaction](https://discord.com/developers/docs/interactions/receiving-and-responding#responding-to-an-interaction) | Compile-time (typestate) / Runtime (auto-defer race) | Typestate: `Responder<Pending>` methods (`reply`, `defer`, `update`, `modal`) consume `self` and return `Responder<Acked>`, which only offers `edit_original`, `followup` and `delete_original`. A runtime state machine, shared by the handler and the auto-defer task, covers what types can't: when the auto-defer wins, the handler's `Pending` call becomes `edit_original`. |
 | **INT-04** Callback types per interaction type | `DEFERRED_UPDATE_MESSAGE 6` and `UPDATE_MESSAGE 7` only for component and modal-submit interactions; `MODAL 9` not for `MODAL_SUBMIT` or `PING`; `APPLICATION_COMMAND_AUTOCOMPLETE_RESULT 8` for autocomplete **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time | Each handler kind gets its own context type: `CommandCtx` has no `update()`, `ModalSubmitCtx` has no `modal()`, `AutocompleteCtx` has only `respond(choices)`. |
-| **INT-05** Modal must be the first response | A modal is an initial callback (type 9), so it cannot follow a defer or a reply. Modals cannot be chained from a modal submit. **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time (typestate) / Runtime (auto-defer race) | `modal()` exists only on `Responder<Pending>` of command and component contexts. A handler that opens a modal declares it (`#[route(opens_modal)]`), which disables auto-defer for that Route, because a defer would make the modal impossible. |
+| **INT-05** Modal must be the first response | A modal is an initial callback (type 9), so it cannot follow a defer or a reply. Modals cannot be chained from a modal submit. **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time (typestate) / Runtime (auto-defer race) | `modal()` exists only on `Responder<Pending>` of command and component contexts whose handler is declared `opens_modal` (for example `#[route("id", opens_modal)]`). The declaration disables auto-defer for that handler, because a defer would make the modal impossible. |
 | **INT-06** Autocomplete cannot be deferred | Only callback type 8 is valid; no defer type exists for autocomplete **[D]** (by the callback table) | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time (no `defer` on `AutocompleteCtx`) / Runtime (3 s timeout returns empty choices) | |
-| **INT-07** Autocomplete choices | Max **25** choices per response; choice rules as OPT-09 **[D]** | [RR §Autocomplete](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-autocomplete) | Runtime | `Choices` is a bounded collection (`try_push` fails at 25). FR-10 truncates to 25 with a warning; per review, this follows the strict/lenient switch. |
+| **INT-07** Autocomplete choices | Max **25** choices per response; choice rules as OPT-09 **[D]** | [RR §Autocomplete](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-autocomplete) | Runtime | `Choices` is a bounded collection (`try_push` fails at 25). Returned choices are always truncated to 25 with a warning (FR-10), in both Strict and Lenient mode. |
 | **INT-08** Flags on deferred reply | With `DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE (5)` the only valid flag is `EPHEMERAL`; `IS_COMPONENTS_V2` goes on the later edit **[D]** | [RR §Messages](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-messages) | Compile-time (by construction) | `defer()` takes only an `Ephemerality` value; the V2 flag is applied automatically on edit-original (FR-21). |
 | **INT-09** Allowed flags on callback messages | Only `SUPPRESS_EMBEDS`, `EPHEMERAL`, `IS_COMPONENTS_V2`, `IS_VOICE_MESSAGE`, `SUPPRESS_NOTIFICATIONS` **[D]** | [RR §Messages](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-messages) | Compile-time | Typed per-endpoint flag sets (see MSG-07). |
 | **INT-10** Ephemerality is fixed at creation | A message's ephemeral state cannot change after it is sent **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type), research §2.4 | Compile-time (static attribute) | Each Command and Route declares `ephemeral` (or the default) in its attribute; the auto-defer uses it. There is no API to toggle it on edit. |
-| **INT-11** Follow-up cap for user-installed apps | Max **5** follow-ups per interaction when the app is user-installed and not installed in the guild (`authorizing_integration_owners` has only `USER_INSTALL`) **[D]** | [RR §Create Followup Message](https://discord.com/developers/docs/interactions/receiving-and-responding#create-followup-message) | Runtime | The responder counts follow-ups and returns a typed error on the 6th in that context. |
+| **INT-11** Follow-up cap for user-installed apps | Max **5** follow-ups per interaction when the app is user-installed and not installed in the guild (`authorizing_integration_owners` has only `USER_INSTALL`) **[D]** | [RR §Create Followup Message](https://discord.com/developers/docs/interactions/receiving-and-responding#create-followup-message) | Runtime | The Responder's runtime state machine counts follow-ups and returns a typed error on the 6th in that context. |
 | **INT-12** Follow-up after defer edits the original | The first follow-up after a type-5 defer acts as edit-original **[D]** | [RR §Create Followup Message](https://discord.com/developers/docs/interactions/receiving-and-responding#create-followup-message) | Runtime (by construction) | Noctis always calls edit-original explicitly after a defer to avoid ambiguity. |
-| **INT-13** Interaction endpoints and the global rate limit | Interaction endpoints are not bound by the 50 req/s global limit **[D]** | [RL §Global Rate Limit](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit) | Runtime | Handled by twilight-http-ratelimiting. |
+| **INT-13** Interaction endpoints and the global rate limit | Interaction endpoints are not bound by the 50 req/s global limit **[D]** | [RL §Global Rate Limit](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit) | Runtime | Handled by twilight-http-ratelimiting, or by the shared proxy when one is configured (RL-02). |
 
 ## 8. `custom_id` and Routes
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **CID-01** Length | **1-100** characters on buttons, selects, text inputs, file uploads, radio/checkbox groups, checkboxes and modals **[D]** (counting unit **[U]**) | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time (bounded Payloads) / Runtime (unbounded Payloads) | `derive(Route)` computes `MAX_LEN = route.len() + 1 + Payload::MAX_ENCODED_LEN` and emits `const _: () = assert!(MAX_LEN <= 100)`. A Route with an unbounded field must declare `#[route(by_ref)]` or `#[route(overflow = spill)]`, in which case the worst case is `route.len() + 1 + 1 + 11` (Ref marker + 11-char Ref), also checked at compile time. See [Compile-time strategy §1-2](#1-fixed-length-refs). |
+| **CID-01** Length | **1-100** characters on buttons, selects, text inputs, file uploads, radio/checkbox groups, checkboxes and modals **[D]** (counting unit **[U]**) | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time | `derive(Route)` computes `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)` (see [Compile-time strategy §1-2](#1-the-custom_id-layout-and-fixed-length-refs)) and emits a const assertion that it is ≤ 100. An inline Route with an unbounded field does not compile; it must declare `#[route("id", by_ref)]` or `#[route("id", overflow = spill)]`. Because a Route id is at most 24 characters, a by-ref `custom_id` is at most 46 characters. |
 | **CID-02** Unique per message | No two components in one message may share a `custom_id` **[D]** | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time (static trees with literal Payloads) / Runtime (all other trees) | The `view!` macro rejects two identical (Route, literal Payload) pairs. The runtime validator hashes every `custom_id` in the tree before sending. Disabled "label" buttons (page indicator) still need a unique id. |
-| **CID-03** Route format | Route = `[a-z0-9_.-]+`, must not contain the Payload separator, length ≤ a configured budget **[N]** | — | Compile-time | `#[route("shop.buy")]` literal validated in the derive. |
+| **CID-03** Route format | Route id = `[a-z0-9._-]{1,24}` (so it never contains `:` `,` `~` `!`); ids starting with `_` are reserved for Noctis **[N]** | — | Compile-time | `#[route("shop.buy")]` literal validated in the derive. |
 | **CID-04** Route uniqueness | Exactly one handler per Route (FR-15) **[N]** | — | App-build | Routes from all Modules go into one map; duplicates are a `BuildError` naming both Modules. |
-| **CID-05** Ref entropy | Ref = 11 base62 characters from a CSPRNG (≈ 65.5 bits ≥ 64 bits), never sequential, never derived from interaction data; namespaced per App **[N]** (PRD triage) | — | Compile-time (fixed width) / Runtime (generation) | Ref width is a `const`, so every by-ref `custom_id` length is known at compile time. |
-| **CID-06** Untrusted input | `custom_id` comes back verbatim from the client and is attacker-controllable **[D]** (returned verbatim) + FR-19 | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Runtime | Decode never panics; malformed ids, unknown Routes and missing Refs produce typed errors / the Expired Handler. |
+| **CID-05** Ref entropy and binding | Ref = 11 base62 characters from the OS CSPRNG (`getrandom`, ≈ 65.5 bits ≥ 64 bits), never sequential, never derived from interaction data; namespaced per App. The stored `RefRecord` carries the Route id and schema version **[N]** (PRD triage) | — | Compile-time (fixed width) / Runtime (generation, record check) | Ref width is a `const`, so every by-ref `custom_id` length is known at compile time. Refs are minted in two phases: `noctis-ui` emits `RefSlot` placeholders and the Responder stores them and finalizes the `custom_id` before sending. A record whose Route differs from the `custom_id`'s Route is treated as forged; a schema mismatch is a Stale Payload. |
+| **CID-06** Untrusted input | `custom_id` comes back verbatim from the client and is attacker-controllable **[D]** (returned verbatim) + FR-19 | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Runtime | Decode never panics; malformed ids, unknown Routes, bad integrity tags and missing Refs produce typed errors / the Expired Handler. |
 | **CID-07** ASCII-only encoding | Noctis-encoded Routes, separators, Payload fields and Refs use ASCII only **[N]** | — | Compile-time (by construction) | Makes the CID-01 counting unit irrelevant: 1 char = 1 byte = 1 UTF-16 unit. User strings in Payloads are escaped into ASCII; their budget is the escaped width (see §1 below). |
 
 ## 9. Components V2 (messages)
@@ -242,7 +246,7 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
 | **RL-01** Per-route buckets | Track by `X-RateLimit-Bucket`; obey `Retry-After` on 429 **[D]** | [RL](https://discord.com/developers/docs/topics/rate-limits) | Runtime | twilight-http-ratelimiting (pin ≥ 0.17.1, see twilight research). |
-| **RL-02** Global limit | **50** requests/s per bot token, shared across processes **[D]** | [RL §Global Rate Limit](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit) | App-build (cluster config) / Runtime | Multi-process deployments must use a shared HTTP proxy; `App::build()` rejects a Cluster config without one **[N]**. |
+| **RL-02** Global limit | **50** requests/s per bot token, shared across processes **[D]** | [RL §Global Rate Limit](https://discord.com/developers/docs/topics/rate-limits#global-rate-limit) | Startup (cluster config) / Runtime | Multi-process deployments should use a shared HTTP proxy, which replaces the local limiter (FR-52). A Cluster config without one logs a startup warning naming the risk **[N]**. |
 | **RL-03** Invalid request limit | **10,000** responses with 401/403/429 per 10 minutes per IP → temporary Cloudflare ban **[D]** | [RL §Invalid Request Limit](https://discord.com/developers/docs/topics/rate-limits#invalid-request-limit-aka-cloudflare-bans) | Runtime | Counter + metric; Noctis' pre-send validation exists partly to keep 4xx counts down. |
 | **RL-04** Undocumented per-resource limits | e.g. channel name/topic edits ~2 per 10 min **[C]** | twilight / tescord research | Runtime | Surfaced as 429 with `X-RateLimit-Scope: shared`; not hard-coded. |
 
@@ -250,7 +254,7 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **GW-01** Identify concurrency | Shards identify in buckets `rate_limit_key = shard_id % max_concurrency`, one per bucket per **5 s**, buckets in order **[D]** | [GW §Sharding](https://discord.com/developers/docs/events/gateway#sharding) | App-build (fetch `GET /gateway/bot` at startup) / Runtime | The identify queue is built from `session_start_limit`, never `InMemoryQueue::default()` (twilight research §1.2). Cluster Shard Ranges must be aligned to `max_concurrency` (App-build check). |
+| **GW-01** Identify concurrency | Shards identify in buckets `rate_limit_key = shard_id % max_concurrency`, one per bucket per **5 s**, buckets in order **[D]** | [GW §Sharding](https://discord.com/developers/docs/events/gateway#sharding) | App-build (fetch `GET /gateway/bot` at startup) / Runtime | The identify queue goes through the `IdentifyQueue` port, with buckets built from `max_concurrency` in `session_start_limit`, never `InMemoryQueue::default()` (twilight research §1.2). A Cluster Shard Range not aligned to `max_concurrency` is accepted and logged as a warning at startup (FR-3). |
 | **GW-02** Daily identify budget | **1000** identifies per 24 h (higher for large bots), excluding RESUMEs **[D]** | [GW §Identifying](https://discord.com/developers/docs/events/gateway#identifying) | App-build / Runtime | Startup refuses to boot more shards than `remaining` allows; resumes are preferred (FR-4). |
 | **GW-03** Guilds per shard | ≤ **2500**; sharding mandatory beyond that **[D]** | [GW §Sharding](https://discord.com/developers/docs/events/gateway#sharding) | App-build (recommended shard count) | Uses the recommended count unless a fixed count is configured; a too-small fixed count is a `BuildError`. |
 | **GW-04** Gateway send rate | **120** events per connection per 60 s **[D]** | [GW §Rate Limiting](https://discord.com/developers/docs/events/gateway#rate-limiting) | Runtime | twilight-gateway's send ratelimiter. |
@@ -265,46 +269,84 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 The goal is: if the input is written in the source code, a violation must fail
 `cargo check`, not a Publish or a send. The building blocks below make that possible.
 
-### 1. Fixed-length Refs
+### 1. The `custom_id` layout and fixed-length Refs
 
-A Ref is always exactly **11 base62 characters** (CID-05). 62^11 ≈ 5.2 × 10^19, which
-is ≈ 65.5 bits, above the 64-bit entropy floor. Because the width is a constant, a
-by-ref `custom_id` has a length that is known at compile time:
+The layout is normative in the architecture spine (AD-5) and quoted here. Every
+character is ASCII (CID-07), so the CID-01 counting unit does not matter.
 
 ```text
-custom_id (inline) = <route> <SEP> <payload>
-custom_id (by ref) = <route> <SEP> <REF_MARKER> <11 base62 chars>
-max_len(by ref)    = route.len() + 1 + 1 + 11 = route.len() + 13
+custom_id = F route ":" [S] [E] [N] body [T]
+
+F      1 char    base62 digit = 16 * generation + flags
+                 flags: 1 = S present, 2 = E present, 4 = N present, 8 = T present
+                 v1 writes generation 0 (F < 16); F >= 16 is a CodecError
+route  1..24     [a-z0-9._-], unique per App; ids starting with "_" are reserved
+S      1 char    Route schema version 1..=61 (#[route(schema = n)]); absent = 0
+E      5 chars   View envelope: action 1, tab 1, page 2, state version 1
+N      2 chars   per-render select nonce (FR-25); select Routes only
+body   inline    field ("," field)*
+       by ref    "~" + 11 base62 Ref
+T      6 chars   integrity tag: base62 of truncated keyed BLAKE3 over all
+                 preceding chars; inline bodies of #[route(signed)] only
 ```
 
-So `#[route("wizard.step", by_ref)]` can never exceed 100 characters as long as the
-Route literal itself is ≤ 87 characters, and the derive proves it with a const
-assertion.
+| Constant (`noctis-codec`) | Value |
+|---|---|
+| `FMT_LEN` | 1 |
+| `SEP_LEN` | 1 |
+| `SCHEMA_LEN` | 1 |
+| `VIEW_ENV_LEN` | 5 |
+| `NONCE_LEN` | 2 |
+| `REF_MARKER_LEN` | 1 |
+| `REF_LEN` | 11 |
+| `TAG_LEN` | 6 |
+
+A Ref is always exactly **11 base62 characters** (CID-05). 62^11 ≈ 5.2 × 10^19, which
+is ≈ 65.5 bits, above the 64-bit entropy floor. Because every part except the inline
+body has a fixed width, the worst case is known at compile time:
+
+```text
+MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)
+inline  = Payload::MAX_ENCODED_LEN + T
+by_ref  = REF_MARKER_LEN + REF_LEN = 12
+S, E, N, T count only when the Route declares them (1, 5, 2, 6), else 0
+```
+
+A Route id is at most 24 characters, so a by-ref `custom_id` is at most
+1 + 24 + 1 + 1 + 5 + 2 + 12 = 46 characters: `#[route("wizard.step", by_ref)]` and
+`overflow = spill` Routes always fit, and the derive still proves it with a const
+assertion. A `signed` Route can't be `by_ref` (the Ref is already unguessable).
+
+Decoding is total. A flag set that doesn't match the Route's declared shape, or a
+schema that differs from the Route's, is a Stale Payload (FR-60). An unknown Route or
+a bad tag is a forged Payload (FR-19). Appending `Option<T>` fields is compatible and
+needs no schema bump; every other Payload change bumps `schema`.
 
 ### 2. Bounded Payload fields → computable `custom_id` max length
 
-Every type that can appear in a Payload implements a trait with an associated const
-for its worst-case encoded width:
+Every type that can appear in a Payload implements `noctis_codec::Field` with an
+associated const for its worst-case encoded width, escaping included:
 
 ```rust
-pub trait PayloadField {
+pub trait Field {
     /// Worst-case encoded width in ASCII chars, or `None` if unbounded.
-    const MAX_WIDTH: Option<usize>;
+    const MAX_LEN: Option<usize>;
 }
-// Examples (base62, ASCII):
+// Widths (base62, ASCII):
 // bool                → Some(1)
-// u8                  → Some(2)   // 255   = "47"
-// u16                 → Some(3)   // 62^3  = 238_328 > 65_535
-// u32                 → Some(6)   // 62^6  > 4_294_967_295
-// u64, Id<T>          → Some(11)  // 62^11 > 2^64 − 1
+// u8, i8              → Some(2)   // 255 = "47"; signed values are zig-zag encoded
+// u16, i16            → Some(3)   // 62^3  = 238_328 > 65_535
+// u32, i32            → Some(6)   // 62^6  > 4_294_967_295
+// u64, i64, Id<T>     → Some(11)  // 62^11 > 2^64 − 1
 // enum, ≤ 62 variants → Some(1)   // derive(PayloadEnum)
-// Option<T>           → T::MAX_WIDTH + 1 (presence tag)
-// BoundedStr<N>       → Some(2 * N)  // worst case after ASCII escaping
+// Option<T>           → T::MAX_LEN + 1 (presence tag)
+// BoundedStr<N>       → Some(2 * N)  // ASCII only; worst case after `!` escaping
 // String, Vec<T>      → None
 ```
 
-`derive(Route)` sums the field widths plus separators and emits a free (non-generic)
-const item, which rustc evaluates during `cargo check`:
+`derive(Route)` never inspects type names. It sums `<F as Field>::MAX_LEN` plus
+`fields − 1` separators through codec `const fn`s and emits a free (non-generic) const
+item, which rustc evaluates during `cargo check`:
 
 ```rust
 #[derive(Route)]
@@ -313,19 +355,27 @@ struct BuyButton { item: Id<ItemMarker>, qty: u8 }
 
 // expands (simplified) to:
 impl Route for BuyButton {
-    const ROUTE: &'static str = "shop.buy";
-    const MAX_LEN: Option<usize> = noctis::__sum_widths(&[
-        <Id<ItemMarker> as PayloadField>::MAX_WIDTH,
-        <u8 as PayloadField>::MAX_WIDTH,
-    ], /* route + separators */ 8 + 1 + 1);
+    const ID: RouteId = RouteId::new("shop.buy");
+    const SHAPE: RouteShape = RouteShape::INLINE;
+    const SCHEMA: u8 = 0;
+    type Payload = Self;
 }
-const _: () = noctis::__assert_custom_id_fits::<BuyButton>(); // CID-01
+impl Payload for BuyButton {
+    const MAX_ENCODED_LEN: Option<usize> = ::noctis::__private::codec::sum_fields(&[
+        <Id<ItemMarker> as Field>::MAX_LEN,
+        <u8 as Field>::MAX_LEN,
+    ]); // 11 + 2 + 1 separator = 14
+}
+// MAX_LEN = 1 + 8 + 1 + 14 = 24
+const _: () = ::noctis::__private::codec::assert_fits::<BuyButton>(); // CID-01
 ```
 
-If `MAX_LEN` is `None` (an unbounded field) and the Route is not `by_ref` or
-`overflow = spill`, `__assert_custom_id_fits` panics in const context with a message
-naming the rule ("CID-01: route `shop.buy` has unbounded fields; bound them
-(`BoundedStr<N>`) or add `#[route(by_ref)]`"). Notes:
+The one attribute syntax is `#[route("id")]`, `#[route("id", by_ref)]` or
+`#[route("id", overflow = spill)]`, optionally with `schema = n`, `view`, `signed`
+and `opens_modal`. If `MAX_ENCODED_LEN` is `None` (an unbounded field) or the bound
+exceeds 100 and the Route is not `by_ref` or `overflow = spill`, `assert_fits` panics
+in const context with a message naming the rule ("CID-01: route `shop.buy` has
+unbounded fields; bound them (`BoundedStr<N>`) or add `by_ref`"). Notes:
 
 - Const panic messages cannot format values, so the message cannot print the computed
   length. A companion `#[test]` generated by the derive prints the full width breakdown
@@ -333,8 +383,6 @@ naming the rule ("CID-01: route `shop.buy` has unbounded fields; bound them
 - The assertion is a free `const _` on a concrete type, so it fires under `cargo check`.
   Generic Routes are rejected by the derive; a post-monomorphization assertion
   would only fire under `cargo build`.
-- All encoded output is ASCII (CID-07), so the unconfirmed counting unit of CID-01
-  does not matter.
 
 ### 3. Command Pattern expansion and structural validation
 
@@ -342,12 +390,13 @@ naming the rule ("CID-01: route `shop.buy` has unbounded fields; bound them
 using the semantics FR-8 adopts from tescord, written out here:
 
 1. Groups are `(a|b|…)`; a trailing `?` adds the variant with the group removed.
-2. Expansion is breadth-first over the first group; whitespace is collapsed;
-   duplicates are rejected (CMD-15).
+2. Expansion is left to right in declaration order (FR-8); whitespace is collapsed;
+   duplicates are rejected, and more than 25 expansions (the default cap,
+   `#[command(max_expansions = n)]` changes it) is an error (CMD-15).
 3. Each expansion is split into words: 1 word = command, 2 = subcommand,
    3 = group + subcommand; more than 3 is CMD-10.
 4. All expansions are inserted into one tree, and the macro checks every node:
-   name rules (CMD-01..03), CMD-11 (a node may not be both a leaf and a group),
+   name rules (CMD-01..03, via `noctis-rules`), CMD-11 (a node may not be both a leaf and a group),
    CMD-12 (a base with children may not be a leaf), CMD-13 (≤ 25 children), and the
    size budget CMD-05.
 
