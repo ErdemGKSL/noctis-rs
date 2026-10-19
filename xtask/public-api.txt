@@ -1,0 +1,1161 @@
+pub mod noctis
+pub mod noctis::rules
+#[non_exhaustive] pub enum noctis::rules::Actual
+pub noctis::rules::Actual::Count(usize)
+pub noctis::rules::Actual::Text(alloc::string::String)
+impl core::clone::Clone for noctis::rules::Actual
+pub fn noctis::rules::Actual::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::Actual
+impl core::cmp::PartialEq for noctis::rules::Actual
+pub fn noctis::rules::Actual::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::Actual
+pub fn noctis::rules::Actual::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::Actual
+pub fn noctis::rules::Actual::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::rules::Actual
+#[non_exhaustive] pub enum noctis::rules::Bound
+pub noctis::rules::Bound::AtLeast(usize)
+pub noctis::rules::Bound::AtMost(usize)
+pub noctis::rules::Bound::Between
+pub noctis::rules::Bound::Between::max: usize
+pub noctis::rules::Bound::Between::min: usize
+pub noctis::rules::Bound::Describe(&'static str)
+pub noctis::rules::Bound::Exactly(usize)
+impl core::clone::Clone for noctis::rules::Bound
+pub fn noctis::rules::Bound::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::Bound
+impl core::cmp::PartialEq for noctis::rules::Bound
+pub fn noctis::rules::Bound::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::Bound
+pub fn noctis::rules::Bound::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::Bound
+pub fn noctis::rules::Bound::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::rules::Bound
+pub enum noctis::rules::LimitMode
+pub noctis::rules::LimitMode::Lenient
+pub noctis::rules::LimitMode::Strict
+impl core::clone::Clone for noctis::rules::LimitMode
+pub fn noctis::rules::LimitMode::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::LimitMode
+impl core::cmp::PartialEq for noctis::rules::LimitMode
+pub fn noctis::rules::LimitMode::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::rules::LimitMode
+pub fn noctis::rules::LimitMode::default() -> Self
+impl core::fmt::Debug for noctis::rules::LimitMode
+pub fn noctis::rules::LimitMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::LimitMode
+pub fn noctis::rules::LimitMode::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::LimitMode
+impl core::marker::StructuralPartialEq for noctis::rules::LimitMode
+#[non_exhaustive] pub struct noctis::rules::Limits
+pub noctis::rules::Limits::attachment_bytes: usize
+pub noctis::rules::Limits::attachment_description_len: usize
+pub noctis::rules::Limits::attachments: usize
+pub noctis::rules::Limits::autocomplete_choices: usize
+pub noctis::rules::Limits::button_label_len: usize
+pub noctis::rules::Limits::chat_input_commands: usize
+pub noctis::rules::Limits::checkbox_group_options: usize
+pub noctis::rules::Limits::checkbox_group_values: usize
+pub noctis::rules::Limits::choice_name_len: usize
+pub noctis::rules::Limits::choice_value_len: usize
+pub noctis::rules::Limits::command_description_len: usize
+pub noctis::rules::Limits::command_name_len: usize
+pub noctis::rules::Limits::command_options: usize
+pub noctis::rules::Limits::command_path_words: usize
+pub noctis::rules::Limits::command_size: usize
+pub noctis::rules::Limits::components: usize
+pub noctis::rules::Limits::content_len: usize
+pub noctis::rules::Limits::context_menu_name_len: usize
+pub noctis::rules::Limits::custom_id_len: usize
+pub noctis::rules::Limits::entry_point_commands: usize
+pub noctis::rules::Limits::file_upload_file_types: usize
+pub noctis::rules::Limits::file_upload_values: usize
+pub noctis::rules::Limits::gallery_description_len: usize
+pub noctis::rules::Limits::gallery_items: usize
+pub noctis::rules::Limits::label_description_len: usize
+pub noctis::rules::Limits::label_len: usize
+pub noctis::rules::Limits::legacy_action_rows: usize
+pub noctis::rules::Limits::link_url_len: usize
+pub noctis::rules::Limits::media_url_len: usize
+pub noctis::rules::Limits::mention_roles: usize
+pub noctis::rules::Limits::mention_users: usize
+pub noctis::rules::Limits::message_commands: usize
+pub noctis::rules::Limits::modal_components: usize
+pub noctis::rules::Limits::modal_option_text_len: usize
+pub noctis::rules::Limits::modal_title_len: usize
+pub noctis::rules::Limits::mode: noctis::rules::LimitMode
+pub noctis::rules::Limits::nonce_len: usize
+pub noctis::rules::Limits::option_choices: usize
+pub noctis::rules::Limits::option_file_types: usize
+pub noctis::rules::Limits::option_length: usize
+pub noctis::rules::Limits::pattern_expansions: usize
+pub noctis::rules::Limits::radio_options: usize
+pub noctis::rules::Limits::request_bytes: usize
+pub noctis::rules::Limits::row_buttons: usize
+pub noctis::rules::Limits::section_texts: usize
+pub noctis::rules::Limits::select_option_description_len: usize
+pub noctis::rules::Limits::select_option_label_len: usize
+pub noctis::rules::Limits::select_option_value_len: usize
+pub noctis::rules::Limits::select_options: usize
+pub noctis::rules::Limits::select_placeholder_len: usize
+pub noctis::rules::Limits::select_values: usize
+pub noctis::rules::Limits::sticker_ids: usize
+pub noctis::rules::Limits::text_input_len: usize
+pub noctis::rules::Limits::text_input_placeholder_len: usize
+pub noctis::rules::Limits::text_total_len: usize
+pub noctis::rules::Limits::thumbnail_description_len: usize
+pub noctis::rules::Limits::user_commands: usize
+pub noctis::rules::Limits::user_install_followups: usize
+pub noctis::rules::Limits::webhook_name_len: usize
+impl noctis::rules::Limits
+pub const fn noctis::rules::Limits::truncates(&self, noctis::rules::RuleId) -> bool
+impl core::clone::Clone for noctis::rules::Limits
+pub fn noctis::rules::Limits::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::Limits
+impl core::cmp::PartialEq for noctis::rules::Limits
+pub fn noctis::rules::Limits::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::rules::Limits
+pub fn noctis::rules::Limits::default() -> Self
+impl core::fmt::Debug for noctis::rules::Limits
+pub fn noctis::rules::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::rules::Limits
+pub enum noctis::rules::Locale
+pub noctis::rules::Locale::Bg
+pub noctis::rules::Locale::Cs
+pub noctis::rules::Locale::Da
+pub noctis::rules::Locale::De
+pub noctis::rules::Locale::El
+pub noctis::rules::Locale::EnGb
+pub noctis::rules::Locale::EnUs
+pub noctis::rules::Locale::Es419
+pub noctis::rules::Locale::EsEs
+pub noctis::rules::Locale::Fi
+pub noctis::rules::Locale::Fr
+pub noctis::rules::Locale::Hi
+pub noctis::rules::Locale::Hr
+pub noctis::rules::Locale::Hu
+pub noctis::rules::Locale::Id
+pub noctis::rules::Locale::It
+pub noctis::rules::Locale::Ja
+pub noctis::rules::Locale::Ko
+pub noctis::rules::Locale::Lt
+pub noctis::rules::Locale::Nl
+pub noctis::rules::Locale::No
+pub noctis::rules::Locale::Pl
+pub noctis::rules::Locale::PtBr
+pub noctis::rules::Locale::Ro
+pub noctis::rules::Locale::Ru
+pub noctis::rules::Locale::SvSe
+pub noctis::rules::Locale::Th
+pub noctis::rules::Locale::Tr
+pub noctis::rules::Locale::Uk
+pub noctis::rules::Locale::Vi
+pub noctis::rules::Locale::ZhCn
+pub noctis::rules::Locale::ZhTw
+impl noctis::rules::Locale
+pub const noctis::rules::Locale::ALL: [noctis::rules::Locale; 32]
+pub const fn noctis::rules::Locale::as_str(self) -> &'static str
+impl noctis::rules::Locale
+pub const fn noctis::rules::Locale::sibling(self) -> core::option::Option<noctis::rules::Locale>
+impl core::clone::Clone for noctis::rules::Locale
+pub fn noctis::rules::Locale::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::Locale
+impl core::cmp::Ord for noctis::rules::Locale
+pub fn noctis::rules::Locale::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::rules::Locale
+pub fn noctis::rules::Locale::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::rules::Locale
+pub fn noctis::rules::Locale::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::rules::Locale
+pub fn noctis::rules::Locale::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::Locale
+pub fn noctis::rules::Locale::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::Locale
+pub fn noctis::rules::Locale::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::Locale
+impl core::marker::StructuralPartialEq for noctis::rules::Locale
+impl core::str::traits::FromStr for noctis::rules::Locale
+pub type noctis::rules::Locale::Err = noctis::rules::ParseLocaleError
+pub fn noctis::rules::Locale::from_str(&str) -> core::result::Result<Self, Self::Err>
+pub struct noctis::rules::MessageKey(_)
+impl noctis::rules::MessageKey
+pub const fn noctis::rules::MessageKey::as_str(self) -> &'static str
+pub const fn noctis::rules::MessageKey::is_framework(self) -> bool
+pub const fn noctis::rules::MessageKey::new(&'static str) -> Self
+impl core::clone::Clone for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::MessageKey
+impl core::cmp::Ord for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::MessageKey
+pub fn noctis::rules::MessageKey::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::MessageKey
+impl core::marker::StructuralPartialEq for noctis::rules::MessageKey
+pub struct noctis::rules::ParseLocaleError
+impl noctis::rules::ParseLocaleError
+pub fn noctis::rules::ParseLocaleError::input(&self) -> &str
+pub fn noctis::rules::ParseLocaleError::suggestions(&self) -> &[noctis::rules::Locale]
+impl core::clone::Clone for noctis::rules::ParseLocaleError
+pub fn noctis::rules::ParseLocaleError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::ParseLocaleError
+impl core::cmp::PartialEq for noctis::rules::ParseLocaleError
+pub fn noctis::rules::ParseLocaleError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::rules::ParseLocaleError
+impl core::fmt::Debug for noctis::rules::ParseLocaleError
+pub fn noctis::rules::ParseLocaleError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::ParseLocaleError
+pub fn noctis::rules::ParseLocaleError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::rules::ParseLocaleError
+pub struct noctis::rules::RuleId(_)
+impl noctis::rules::RuleId
+pub const noctis::rules::RuleId::ALL: &[noctis::rules::RuleId]
+pub const noctis::rules::RuleId::ATT_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::ATT_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::ATT_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::ATT_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::ATT_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::ATT_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::ATT_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CID_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_10: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_11: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_12: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_13: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_14: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_15: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CMD_16: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CTX_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CTX_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CTX_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_08: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_09: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_10: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_11: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_12: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_13: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_14: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_15: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_16: noctis::rules::RuleId
+pub const noctis::rules::RuleId::CV2_17: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::GW_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_08: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_09: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_10: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_11: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_12: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_13: noctis::rules::RuleId
+pub const noctis::rules::RuleId::LOC_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::LOC_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::LOC_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::LOC_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::LOC_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::LOC_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::META_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::META_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::META_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::META_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::META_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_08: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MOD_09: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_08: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_08: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_09: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_10: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_11: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_12: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_13: noctis::rules::RuleId
+pub const noctis::rules::RuleId::OPT_14: noctis::rules::RuleId
+pub const noctis::rules::RuleId::REG_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::REG_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::REG_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::REG_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::REG_05: noctis::rules::RuleId
+pub const noctis::rules::RuleId::REG_06: noctis::rules::RuleId
+pub const noctis::rules::RuleId::RL_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::RL_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::RL_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::RL_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::WH_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::WH_02: noctis::rules::RuleId
+pub const noctis::rules::RuleId::WH_03: noctis::rules::RuleId
+pub const noctis::rules::RuleId::WH_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::WH_05: noctis::rules::RuleId
+impl noctis::rules::RuleId
+pub fn noctis::rules::RuleId::area(self) -> &'static str
+pub const fn noctis::rules::RuleId::as_str(self) -> &'static str
+pub const fn noctis::rules::RuleId::is_structural(self) -> bool
+pub const fn noctis::rules::RuleId::lookup(&str) -> core::option::Option<noctis::rules::RuleId>
+pub const fn noctis::rules::RuleId::number(self) -> u8
+impl core::clone::Clone for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::RuleId
+impl core::cmp::Ord for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::RuleId
+pub fn noctis::rules::RuleId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::RuleId
+impl core::marker::StructuralPartialEq for noctis::rules::RuleId
+pub trait noctis::rules::Translate: core::marker::Send + core::marker::Sync
+pub fn noctis::rules::Translate::translate(&self, noctis::rules::Locale, noctis::rules::MessageKey, &[(&str, &dyn core::fmt::Display)]) -> core::option::Option<alloc::string::String>
+#[non_exhaustive] pub struct noctis::rules::Violation
+pub noctis::rules::Violation::actual: noctis::rules::Actual
+pub noctis::rules::Violation::help: core::option::Option<alloc::string::String>
+pub noctis::rules::Violation::limit: noctis::rules::Bound
+pub noctis::rules::Violation::notes: alloc::vec::Vec<alloc::string::String>
+pub noctis::rules::Violation::path: alloc::string::String
+pub noctis::rules::Violation::rule: noctis::rules::RuleId
+impl noctis::rules::Violation
+pub fn noctis::rules::Violation::new(noctis::rules::RuleId, impl core::convert::Into<alloc::string::String>, noctis::rules::Bound, noctis::rules::Actual) -> Self
+pub fn noctis::rules::Violation::with_help(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::rules::Violation::with_note(self, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for noctis::rules::Violation
+pub fn noctis::rules::Violation::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::Violation
+impl core::cmp::PartialEq for noctis::rules::Violation
+pub fn noctis::rules::Violation::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::rules::Violation
+impl core::fmt::Debug for noctis::rules::Violation
+pub fn noctis::rules::Violation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::Violation
+pub fn noctis::rules::Violation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::rules::Violation
+pub mod noctis::rules::attachment
+#[non_exhaustive] pub struct noctis::rules::attachment::AttachmentDecl<'a>
+pub noctis::rules::attachment::AttachmentDecl::description: core::option::Option<&'a str>
+pub noctis::rules::attachment::AttachmentDecl::filename: &'a str
+pub noctis::rules::attachment::AttachmentDecl::size: usize
+impl<'a> noctis::rules::attachment::AttachmentDecl<'a>
+pub const fn noctis::rules::attachment::AttachmentDecl<'a>::description(self, &'a str) -> Self
+pub const fn noctis::rules::attachment::AttachmentDecl<'a>::new(&'a str, usize) -> Self
+impl<'a> core::clone::Clone for noctis::rules::attachment::AttachmentDecl<'a>
+pub fn noctis::rules::attachment::AttachmentDecl<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::attachment::AttachmentDecl<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::attachment::AttachmentDecl<'a>
+pub fn noctis::rules::attachment::AttachmentDecl<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::attachment::AttachmentDecl<'a>
+pub fn noctis::rules::attachment::AttachmentDecl<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::attachment::AttachmentDecl<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::attachment::AttachmentDecl<'a>
+pub fn noctis::rules::attachment::validate_attachment_description(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::attachment::validate_attachment_ref(&str, &[noctis::rules::attachment::AttachmentDecl<'_>], &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::attachment::validate_attachments(&[noctis::rules::attachment::AttachmentDecl<'_>], usize, core::option::Option<usize>, &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::attachment::validate_file_size(usize, core::option::Option<usize>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub mod noctis::rules::command
+pub enum noctis::rules::command::ChoiceValue<'a>
+pub noctis::rules::command::ChoiceValue::Float(f64)
+pub noctis::rules::command::ChoiceValue::Int(i64)
+pub noctis::rules::command::ChoiceValue::Str(&'a str)
+impl<'a> core::clone::Clone for noctis::rules::command::ChoiceValue<'a>
+pub fn noctis::rules::command::ChoiceValue<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::command::ChoiceValue<'a>
+pub fn noctis::rules::command::ChoiceValue<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::command::ChoiceValue<'a>
+pub fn noctis::rules::command::ChoiceValue<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::ChoiceValue<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::ChoiceValue<'a>
+#[non_exhaustive] pub enum noctis::rules::command::DeclKind
+pub noctis::rules::command::DeclKind::Handler
+pub noctis::rules::command::DeclKind::Handler::options: usize
+pub noctis::rules::command::DeclKind::Handler::options_size: usize
+pub noctis::rules::command::DeclKind::Meta
+impl core::clone::Clone for noctis::rules::command::DeclKind
+pub fn noctis::rules::command::DeclKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::DeclKind
+impl core::cmp::PartialEq for noctis::rules::command::DeclKind
+pub fn noctis::rules::command::DeclKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::command::DeclKind
+pub fn noctis::rules::command::DeclKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::rules::command::DeclKind
+impl core::marker::StructuralPartialEq for noctis::rules::command::DeclKind
+pub enum noctis::rules::command::IntegrationType
+pub noctis::rules::command::IntegrationType::GuildInstall
+pub noctis::rules::command::IntegrationType::UserInstall
+impl noctis::rules::command::IntegrationType
+pub const fn noctis::rules::command::IntegrationType::name(self) -> &'static str
+pub const fn noctis::rules::command::IntegrationType::value(self) -> u8
+impl core::clone::Clone for noctis::rules::command::IntegrationType
+pub fn noctis::rules::command::IntegrationType::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::IntegrationType
+impl core::cmp::Ord for noctis::rules::command::IntegrationType
+pub fn noctis::rules::command::IntegrationType::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::rules::command::IntegrationType
+pub fn noctis::rules::command::IntegrationType::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::rules::command::IntegrationType
+pub fn noctis::rules::command::IntegrationType::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::rules::command::IntegrationType
+pub fn noctis::rules::command::IntegrationType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::IntegrationType
+pub fn noctis::rules::command::IntegrationType::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::IntegrationType
+impl core::marker::StructuralPartialEq for noctis::rules::command::IntegrationType
+pub enum noctis::rules::command::InteractionContext
+pub noctis::rules::command::InteractionContext::BotDm
+pub noctis::rules::command::InteractionContext::Guild
+pub noctis::rules::command::InteractionContext::PrivateChannel
+impl noctis::rules::command::InteractionContext
+pub const fn noctis::rules::command::InteractionContext::name(self) -> &'static str
+pub const fn noctis::rules::command::InteractionContext::value(self) -> u8
+impl core::clone::Clone for noctis::rules::command::InteractionContext
+pub fn noctis::rules::command::InteractionContext::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::InteractionContext
+impl core::cmp::Ord for noctis::rules::command::InteractionContext
+pub fn noctis::rules::command::InteractionContext::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::rules::command::InteractionContext
+pub fn noctis::rules::command::InteractionContext::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::rules::command::InteractionContext
+pub fn noctis::rules::command::InteractionContext::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::rules::command::InteractionContext
+pub fn noctis::rules::command::InteractionContext::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::InteractionContext
+pub fn noctis::rules::command::InteractionContext::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::InteractionContext
+impl core::marker::StructuralPartialEq for noctis::rules::command::InteractionContext
+pub enum noctis::rules::command::MenuKind
+pub noctis::rules::command::MenuKind::Message
+pub noctis::rules::command::MenuKind::User
+impl core::clone::Clone for noctis::rules::command::MenuKind
+pub fn noctis::rules::command::MenuKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::MenuKind
+impl core::cmp::PartialEq for noctis::rules::command::MenuKind
+pub fn noctis::rules::command::MenuKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::command::MenuKind
+pub fn noctis::rules::command::MenuKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::MenuKind
+pub fn noctis::rules::command::MenuKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::MenuKind
+impl core::marker::StructuralPartialEq for noctis::rules::command::MenuKind
+pub enum noctis::rules::command::NumericValue
+pub noctis::rules::command::NumericValue::Float(f64)
+pub noctis::rules::command::NumericValue::Int(i64)
+impl core::clone::Clone for noctis::rules::command::NumericValue
+pub fn noctis::rules::command::NumericValue::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::rules::command::NumericValue
+pub fn noctis::rules::command::NumericValue::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::command::NumericValue
+pub fn noctis::rules::command::NumericValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::command::NumericValue
+pub fn noctis::rules::command::NumericValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::rules::command::NumericValue
+impl core::marker::StructuralPartialEq for noctis::rules::command::NumericValue
+pub enum noctis::rules::command::OptionType
+pub noctis::rules::command::OptionType::Attachment
+pub noctis::rules::command::OptionType::Boolean
+pub noctis::rules::command::OptionType::Channel
+pub noctis::rules::command::OptionType::Integer
+pub noctis::rules::command::OptionType::Mentionable
+pub noctis::rules::command::OptionType::Number
+pub noctis::rules::command::OptionType::Role
+pub noctis::rules::command::OptionType::String
+pub noctis::rules::command::OptionType::User
+impl noctis::rules::command::OptionType
+pub const noctis::rules::command::OptionType::ALL: [noctis::rules::command::OptionType; 9]
+pub const fn noctis::rules::command::OptionType::name(self) -> &'static str
+pub const fn noctis::rules::command::OptionType::value(self) -> u8
+impl core::clone::Clone for noctis::rules::command::OptionType
+pub fn noctis::rules::command::OptionType::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::OptionType
+impl core::cmp::PartialEq for noctis::rules::command::OptionType
+pub fn noctis::rules::command::OptionType::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::command::OptionType
+pub fn noctis::rules::command::OptionType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::OptionType
+pub fn noctis::rules::command::OptionType::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::OptionType
+impl core::marker::StructuralPartialEq for noctis::rules::command::OptionType
+pub enum noctis::rules::command::Scope
+pub noctis::rules::command::Scope::Global
+pub noctis::rules::command::Scope::Guild(u64)
+impl core::clone::Clone for noctis::rules::command::Scope
+pub fn noctis::rules::command::Scope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::Scope
+impl core::cmp::PartialEq for noctis::rules::command::Scope
+pub fn noctis::rules::command::Scope::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::rules::command::Scope
+pub fn noctis::rules::command::Scope::default() -> Self
+impl core::fmt::Debug for noctis::rules::command::Scope
+pub fn noctis::rules::command::Scope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::Scope
+pub fn noctis::rules::command::Scope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::Scope
+impl core::marker::StructuralPartialEq for noctis::rules::command::Scope
+#[non_exhaustive] pub struct noctis::rules::command::Choice<'a>
+pub noctis::rules::command::Choice::name: noctis::rules::command::LocalizedText<'a>
+pub noctis::rules::command::Choice::value: noctis::rules::command::ChoiceValue<'a>
+impl<'a> noctis::rules::command::Choice<'a>
+pub const fn noctis::rules::command::Choice<'a>::name_localized(self, &'a [&'a str]) -> Self
+pub const fn noctis::rules::command::Choice<'a>::new(&'a str, noctis::rules::command::ChoiceValue<'a>) -> Self
+impl<'a> core::clone::Clone for noctis::rules::command::Choice<'a>
+pub fn noctis::rules::command::Choice<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::command::Choice<'a>
+pub fn noctis::rules::command::Choice<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::command::Choice<'a>
+pub fn noctis::rules::command::Choice<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::Choice<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::Choice<'a>
+#[non_exhaustive] pub struct noctis::rules::command::CommandDecl<'a>
+pub noctis::rules::command::CommandDecl::description: core::option::Option<noctis::rules::command::LocalizedText<'a>>
+pub noctis::rules::command::CommandDecl::kind: noctis::rules::command::DeclKind
+pub noctis::rules::command::CommandDecl::metadata: noctis::rules::command::CommandMeta<'a>
+pub noctis::rules::command::CommandDecl::name_localized: &'a [&'a str]
+pub noctis::rules::command::CommandDecl::path: &'a str
+pub noctis::rules::command::CommandDecl::scope: noctis::rules::command::Scope
+pub noctis::rules::command::CommandDecl::source: &'a str
+impl<'a> noctis::rules::command::CommandDecl<'a>
+pub const fn noctis::rules::command::CommandDecl<'a>::description(self, noctis::rules::command::LocalizedText<'a>) -> Self
+pub const fn noctis::rules::command::CommandDecl<'a>::handler(&'a str, &'a str) -> Self
+pub const fn noctis::rules::command::CommandDecl<'a>::meta(&'a str, &'a str) -> Self
+pub const fn noctis::rules::command::CommandDecl<'a>::metadata(self, noctis::rules::command::CommandMeta<'a>) -> Self
+pub const fn noctis::rules::command::CommandDecl<'a>::name_localized(self, &'a [&'a str]) -> Self
+pub const fn noctis::rules::command::CommandDecl<'a>::scope(self, noctis::rules::command::Scope) -> Self
+pub const fn noctis::rules::command::CommandDecl<'a>::with_options(self, usize, usize) -> Self
+impl<'a> core::clone::Clone for noctis::rules::command::CommandDecl<'a>
+pub fn noctis::rules::command::CommandDecl<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::command::CommandDecl<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::command::CommandDecl<'a>
+pub fn noctis::rules::command::CommandDecl<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::command::CommandDecl<'a>
+pub fn noctis::rules::command::CommandDecl<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::CommandDecl<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::CommandDecl<'a>
+#[non_exhaustive] pub struct noctis::rules::command::CommandMeta<'a>
+pub noctis::rules::command::CommandMeta::contexts: core::option::Option<&'a [noctis::rules::command::InteractionContext]>
+pub noctis::rules::command::CommandMeta::default_member_permissions: core::option::Option<u64>
+pub noctis::rules::command::CommandMeta::integration_types: core::option::Option<&'a [noctis::rules::command::IntegrationType]>
+pub noctis::rules::command::CommandMeta::nsfw: core::option::Option<bool>
+impl<'a> noctis::rules::command::CommandMeta<'a>
+pub const fn noctis::rules::command::CommandMeta<'a>::contexts(self, &'a [noctis::rules::command::InteractionContext]) -> Self
+pub const fn noctis::rules::command::CommandMeta<'a>::default_member_permissions(self, u64) -> Self
+pub const fn noctis::rules::command::CommandMeta<'a>::integration_types(self, &'a [noctis::rules::command::IntegrationType]) -> Self
+pub const fn noctis::rules::command::CommandMeta<'a>::new() -> Self
+pub const fn noctis::rules::command::CommandMeta<'a>::nsfw(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::command::CommandMeta<'a>
+pub fn noctis::rules::command::CommandMeta<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::command::CommandMeta<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::command::CommandMeta<'a>
+pub fn noctis::rules::command::CommandMeta<'a>::eq(&self, &Self) -> bool
+impl<'a> core::default::Default for noctis::rules::command::CommandMeta<'a>
+pub fn noctis::rules::command::CommandMeta<'a>::default() -> Self
+impl<'a> core::fmt::Debug for noctis::rules::command::CommandMeta<'a>
+pub fn noctis::rules::command::CommandMeta<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::CommandMeta<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::CommandMeta<'a>
+#[non_exhaustive] pub struct noctis::rules::command::ContextMenuDecl<'a>
+pub noctis::rules::command::ContextMenuDecl::kind: noctis::rules::command::MenuKind
+pub noctis::rules::command::ContextMenuDecl::metadata: noctis::rules::command::CommandMeta<'a>
+pub noctis::rules::command::ContextMenuDecl::name: &'a str
+pub noctis::rules::command::ContextMenuDecl::scope: noctis::rules::command::Scope
+pub noctis::rules::command::ContextMenuDecl::source: &'a str
+impl<'a> noctis::rules::command::ContextMenuDecl<'a>
+pub const fn noctis::rules::command::ContextMenuDecl<'a>::metadata(self, noctis::rules::command::CommandMeta<'a>) -> Self
+pub const fn noctis::rules::command::ContextMenuDecl<'a>::new(&'a str, noctis::rules::command::MenuKind, &'a str) -> Self
+pub const fn noctis::rules::command::ContextMenuDecl<'a>::scope(self, noctis::rules::command::Scope) -> Self
+impl<'a> core::clone::Clone for noctis::rules::command::ContextMenuDecl<'a>
+pub fn noctis::rules::command::ContextMenuDecl<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::command::ContextMenuDecl<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::command::ContextMenuDecl<'a>
+pub fn noctis::rules::command::ContextMenuDecl<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::command::ContextMenuDecl<'a>
+pub fn noctis::rules::command::ContextMenuDecl<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::ContextMenuDecl<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::ContextMenuDecl<'a>
+pub struct noctis::rules::command::LocalizedText<'a>
+pub noctis::rules::command::LocalizedText::default: &'a str
+pub noctis::rules::command::LocalizedText::localized: &'a [&'a str]
+impl<'a> noctis::rules::command::LocalizedText<'a>
+pub fn noctis::rules::command::LocalizedText<'a>::longest(&self) -> usize
+pub const fn noctis::rules::command::LocalizedText<'a>::new(&'a str) -> Self
+pub const fn noctis::rules::command::LocalizedText<'a>::with_localized(self, &'a [&'a str]) -> Self
+impl<'a> core::clone::Clone for noctis::rules::command::LocalizedText<'a>
+pub fn noctis::rules::command::LocalizedText<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::command::LocalizedText<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::command::LocalizedText<'a>
+pub fn noctis::rules::command::LocalizedText<'a>::eq(&self, &Self) -> bool
+impl<'a> core::default::Default for noctis::rules::command::LocalizedText<'a>
+pub fn noctis::rules::command::LocalizedText<'a>::default() -> Self
+impl<'a> core::fmt::Debug for noctis::rules::command::LocalizedText<'a>
+pub fn noctis::rules::command::LocalizedText<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::LocalizedText<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::LocalizedText<'a>
+#[non_exhaustive] pub struct noctis::rules::command::OptionDecl<'a>
+pub noctis::rules::command::OptionDecl::autocomplete: bool
+pub noctis::rules::command::OptionDecl::channel_types: &'a [u8]
+pub noctis::rules::command::OptionDecl::choices: &'a [noctis::rules::command::Choice<'a>]
+pub noctis::rules::command::OptionDecl::description: noctis::rules::command::LocalizedText<'a>
+pub noctis::rules::command::OptionDecl::file_types: &'a [&'a str]
+pub noctis::rules::command::OptionDecl::kind: noctis::rules::command::OptionType
+pub noctis::rules::command::OptionDecl::max_length: core::option::Option<usize>
+pub noctis::rules::command::OptionDecl::max_value: core::option::Option<noctis::rules::command::NumericValue>
+pub noctis::rules::command::OptionDecl::min_length: core::option::Option<usize>
+pub noctis::rules::command::OptionDecl::min_value: core::option::Option<noctis::rules::command::NumericValue>
+pub noctis::rules::command::OptionDecl::name: &'a str
+pub noctis::rules::command::OptionDecl::name_localized: &'a [&'a str]
+pub noctis::rules::command::OptionDecl::required: bool
+impl<'a> noctis::rules::command::OptionDecl<'a>
+pub const fn noctis::rules::command::OptionDecl<'a>::autocomplete(self, bool) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::channel_types(self, &'a [u8]) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::choices(self, &'a [noctis::rules::command::Choice<'a>]) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::description_localized(self, &'a [&'a str]) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::file_types(self, &'a [&'a str]) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::max_length(self, usize) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::max_value(self, noctis::rules::command::NumericValue) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::min_length(self, usize) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::min_value(self, noctis::rules::command::NumericValue) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::name_localized(self, &'a [&'a str]) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::new(&'a str, noctis::rules::command::OptionType, &'a str) -> Self
+pub const fn noctis::rules::command::OptionDecl<'a>::required(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::command::OptionDecl<'a>
+pub fn noctis::rules::command::OptionDecl<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::command::OptionDecl<'a>
+pub fn noctis::rules::command::OptionDecl<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::command::OptionDecl<'a>
+pub fn noctis::rules::command::OptionDecl<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::command::OptionDecl<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::OptionDecl<'a>
+pub fn noctis::rules::command::expand(&str, &noctis::rules::Limits) -> core::result::Result<alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::command::measure_options(&[noctis::rules::command::OptionDecl<'_>], &noctis::rules::Limits) -> usize
+pub fn noctis::rules::command::validate_autocomplete(&[noctis::rules::command::Choice<'_>], noctis::rules::command::OptionType, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::command::validate_context_menu_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::command::validate_merge(&[noctis::rules::command::CommandDecl<'_>], &[noctis::rules::command::ContextMenuDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::command::validate_meta(&noctis::rules::command::CommandMeta<'_>, noctis::rules::command::Scope, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::command::validate_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::command::validate_options(&[noctis::rules::command::OptionDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::command::validate_tree(&[noctis::rules::command::CommandDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub mod noctis::rules::component
+pub enum noctis::rules::component::Accessory<'a>
+pub noctis::rules::component::Accessory::Button(noctis::rules::component::Button<'a>)
+pub noctis::rules::component::Accessory::Thumbnail(noctis::rules::component::Media<'a>)
+impl<'a> core::clone::Clone for noctis::rules::component::Accessory<'a>
+pub fn noctis::rules::component::Accessory<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Accessory<'a>
+pub fn noctis::rules::component::Accessory<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Accessory<'a>
+pub fn noctis::rules::component::Accessory<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Accessory<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Accessory<'a>
+pub enum noctis::rules::component::ButtonStyle<'a>
+pub noctis::rules::component::ButtonStyle::Danger
+pub noctis::rules::component::ButtonStyle::Link(&'a str)
+pub noctis::rules::component::ButtonStyle::Premium
+pub noctis::rules::component::ButtonStyle::Primary
+pub noctis::rules::component::ButtonStyle::Secondary
+pub noctis::rules::component::ButtonStyle::Success
+impl noctis::rules::component::ButtonStyle<'_>
+pub const fn noctis::rules::component::ButtonStyle<'_>::value(self) -> u8
+impl<'a> core::clone::Clone for noctis::rules::component::ButtonStyle<'a>
+pub fn noctis::rules::component::ButtonStyle<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::ButtonStyle<'a>
+pub fn noctis::rules::component::ButtonStyle<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::ButtonStyle<'a>
+pub fn noctis::rules::component::ButtonStyle<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::ButtonStyle<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::ButtonStyle<'a>
+pub enum noctis::rules::component::Component<'a>
+pub noctis::rules::component::Component::Button(noctis::rules::component::Button<'a>)
+pub noctis::rules::component::Component::Container(noctis::rules::component::Container<'a>)
+pub noctis::rules::component::Component::File(&'a str)
+pub noctis::rules::component::Component::Gallery(&'a [noctis::rules::component::Media<'a>])
+pub noctis::rules::component::Component::Opaque(usize)
+pub noctis::rules::component::Component::Row(&'a [noctis::rules::component::Component<'a>])
+pub noctis::rules::component::Component::Section(noctis::rules::component::Section<'a>)
+pub noctis::rules::component::Component::Select(noctis::rules::component::Select<'a>)
+pub noctis::rules::component::Component::Separator(noctis::rules::component::Separator)
+pub noctis::rules::component::Component::Text(&'a str)
+pub noctis::rules::component::Component::Thumbnail(noctis::rules::component::Media<'a>)
+impl noctis::rules::component::Component<'_>
+pub const fn noctis::rules::component::Component<'_>::kind(&self) -> &'static str
+impl<'a> core::clone::Clone for noctis::rules::component::Component<'a>
+pub fn noctis::rules::component::Component<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Component<'a>
+pub fn noctis::rules::component::Component<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Component<'a>
+pub fn noctis::rules::component::Component<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Component<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Component<'a>
+pub enum noctis::rules::component::SelectKind<'a>
+pub noctis::rules::component::SelectKind::Channel
+pub noctis::rules::component::SelectKind::Mentionable
+pub noctis::rules::component::SelectKind::Role
+pub noctis::rules::component::SelectKind::String(&'a [noctis::rules::component::SelectOption<'a>])
+pub noctis::rules::component::SelectKind::User
+impl<'a> core::clone::Clone for noctis::rules::component::SelectKind<'a>
+pub fn noctis::rules::component::SelectKind<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::SelectKind<'a>
+pub fn noctis::rules::component::SelectKind<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::SelectKind<'a>
+pub fn noctis::rules::component::SelectKind<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::SelectKind<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::SelectKind<'a>
+pub enum noctis::rules::component::Spacing
+pub noctis::rules::component::Spacing::Large
+pub noctis::rules::component::Spacing::Small
+impl noctis::rules::component::Spacing
+pub const fn noctis::rules::component::Spacing::value(self) -> u8
+impl core::clone::Clone for noctis::rules::component::Spacing
+pub fn noctis::rules::component::Spacing::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::component::Spacing
+impl core::cmp::PartialEq for noctis::rules::component::Spacing
+pub fn noctis::rules::component::Spacing::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::rules::component::Spacing
+pub fn noctis::rules::component::Spacing::default() -> Self
+impl core::fmt::Debug for noctis::rules::component::Spacing
+pub fn noctis::rules::component::Spacing::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::component::Spacing
+pub fn noctis::rules::component::Spacing::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::component::Spacing
+impl core::marker::StructuralPartialEq for noctis::rules::component::Spacing
+#[non_exhaustive] pub struct noctis::rules::component::Button<'a>
+pub noctis::rules::component::Button::emoji: bool
+pub noctis::rules::component::Button::label: core::option::Option<&'a str>
+pub noctis::rules::component::Button::style: noctis::rules::component::ButtonStyle<'a>
+impl<'a> noctis::rules::component::Button<'a>
+pub const fn noctis::rules::component::Button<'a>::emoji(self, bool) -> Self
+pub const fn noctis::rules::component::Button<'a>::label(self, &'a str) -> Self
+pub const fn noctis::rules::component::Button<'a>::new(noctis::rules::component::ButtonStyle<'a>) -> Self
+impl<'a> core::clone::Clone for noctis::rules::component::Button<'a>
+pub fn noctis::rules::component::Button<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Button<'a>
+pub fn noctis::rules::component::Button<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Button<'a>
+pub fn noctis::rules::component::Button<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Button<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Button<'a>
+#[non_exhaustive] pub struct noctis::rules::component::Container<'a>
+pub noctis::rules::component::Container::accent_color: core::option::Option<u32>
+pub noctis::rules::component::Container::children: &'a [noctis::rules::component::Component<'a>]
+pub noctis::rules::component::Container::spoiler: bool
+impl<'a> noctis::rules::component::Container<'a>
+pub const fn noctis::rules::component::Container<'a>::accent_color(self, u32) -> Self
+pub const fn noctis::rules::component::Container<'a>::new(&'a [noctis::rules::component::Component<'a>]) -> Self
+pub const fn noctis::rules::component::Container<'a>::spoiler(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::component::Container<'a>
+pub fn noctis::rules::component::Container<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Container<'a>
+pub fn noctis::rules::component::Container<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Container<'a>
+pub fn noctis::rules::component::Container<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Container<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Container<'a>
+#[non_exhaustive] pub struct noctis::rules::component::Cost
+pub noctis::rules::component::Cost::components: usize
+pub noctis::rules::component::Cost::text_len: usize
+impl core::clone::Clone for noctis::rules::component::Cost
+pub fn noctis::rules::component::Cost::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::component::Cost
+impl core::cmp::PartialEq for noctis::rules::component::Cost
+pub fn noctis::rules::component::Cost::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::component::Cost
+pub fn noctis::rules::component::Cost::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::rules::component::Cost
+impl core::marker::StructuralPartialEq for noctis::rules::component::Cost
+#[non_exhaustive] pub struct noctis::rules::component::Media<'a>
+pub noctis::rules::component::Media::description: core::option::Option<&'a str>
+pub noctis::rules::component::Media::spoiler: bool
+pub noctis::rules::component::Media::url: &'a str
+impl<'a> noctis::rules::component::Media<'a>
+pub const fn noctis::rules::component::Media<'a>::description(self, &'a str) -> Self
+pub const fn noctis::rules::component::Media<'a>::new(&'a str) -> Self
+pub const fn noctis::rules::component::Media<'a>::spoiler(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::component::Media<'a>
+pub fn noctis::rules::component::Media<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Media<'a>
+pub fn noctis::rules::component::Media<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Media<'a>
+pub fn noctis::rules::component::Media<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Media<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Media<'a>
+#[non_exhaustive] pub struct noctis::rules::component::Section<'a>
+pub noctis::rules::component::Section::accessory: noctis::rules::component::Accessory<'a>
+pub noctis::rules::component::Section::texts: &'a [&'a str]
+impl<'a> noctis::rules::component::Section<'a>
+pub const fn noctis::rules::component::Section<'a>::new(&'a [&'a str], noctis::rules::component::Accessory<'a>) -> Self
+impl<'a> core::clone::Clone for noctis::rules::component::Section<'a>
+pub fn noctis::rules::component::Section<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Section<'a>
+pub fn noctis::rules::component::Section<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Section<'a>
+pub fn noctis::rules::component::Section<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Section<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Section<'a>
+#[non_exhaustive] pub struct noctis::rules::component::Select<'a>
+pub noctis::rules::component::Select::default_values: usize
+pub noctis::rules::component::Select::disabled: bool
+pub noctis::rules::component::Select::kind: noctis::rules::component::SelectKind<'a>
+pub noctis::rules::component::Select::max_values: core::option::Option<usize>
+pub noctis::rules::component::Select::min_values: core::option::Option<usize>
+pub noctis::rules::component::Select::placeholder: core::option::Option<&'a str>
+impl<'a> noctis::rules::component::Select<'a>
+pub const fn noctis::rules::component::Select<'a>::default_values(self, usize) -> Self
+pub const fn noctis::rules::component::Select<'a>::disabled(self, bool) -> Self
+pub const fn noctis::rules::component::Select<'a>::max_values(self, usize) -> Self
+pub const fn noctis::rules::component::Select<'a>::min_values(self, usize) -> Self
+pub const fn noctis::rules::component::Select<'a>::new(noctis::rules::component::SelectKind<'a>) -> Self
+pub const fn noctis::rules::component::Select<'a>::placeholder(self, &'a str) -> Self
+impl<'a> core::clone::Clone for noctis::rules::component::Select<'a>
+pub fn noctis::rules::component::Select<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::Select<'a>
+pub fn noctis::rules::component::Select<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::Select<'a>
+pub fn noctis::rules::component::Select<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::Select<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::Select<'a>
+#[non_exhaustive] pub struct noctis::rules::component::SelectOption<'a>
+pub noctis::rules::component::SelectOption::default: bool
+pub noctis::rules::component::SelectOption::description: core::option::Option<&'a str>
+pub noctis::rules::component::SelectOption::label: &'a str
+pub noctis::rules::component::SelectOption::value: &'a str
+impl<'a> noctis::rules::component::SelectOption<'a>
+pub const fn noctis::rules::component::SelectOption<'a>::default(self, bool) -> Self
+pub const fn noctis::rules::component::SelectOption<'a>::description(self, &'a str) -> Self
+pub const fn noctis::rules::component::SelectOption<'a>::new(&'a str, &'a str) -> Self
+impl<'a> core::clone::Clone for noctis::rules::component::SelectOption<'a>
+pub fn noctis::rules::component::SelectOption<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::component::SelectOption<'a>
+pub fn noctis::rules::component::SelectOption<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::component::SelectOption<'a>
+pub fn noctis::rules::component::SelectOption<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::component::SelectOption<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::component::SelectOption<'a>
+#[non_exhaustive] pub struct noctis::rules::component::Separator
+pub noctis::rules::component::Separator::divider: bool
+pub noctis::rules::component::Separator::spacing: noctis::rules::component::Spacing
+impl noctis::rules::component::Separator
+pub const fn noctis::rules::component::Separator::divider(self, bool) -> Self
+pub const fn noctis::rules::component::Separator::new() -> Self
+pub const fn noctis::rules::component::Separator::spacing(self, noctis::rules::component::Spacing) -> Self
+impl core::clone::Clone for noctis::rules::component::Separator
+pub fn noctis::rules::component::Separator::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::rules::component::Separator
+pub fn noctis::rules::component::Separator::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::rules::component::Separator
+pub fn noctis::rules::component::Separator::default() -> Self
+impl core::fmt::Debug for noctis::rules::component::Separator
+pub fn noctis::rules::component::Separator::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::rules::component::Separator
+impl core::marker::StructuralPartialEq for noctis::rules::component::Separator
+pub fn noctis::rules::component::cost(&[noctis::rules::component::Component<'_>], &noctis::rules::Limits) -> noctis::rules::component::Cost
+pub fn noctis::rules::component::validate_accent_color(u32, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_button_label(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_components(&[noctis::rules::component::Component<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::component::validate_gallery_description(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_legacy_components(&[noctis::rules::component::Component<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::component::validate_link_url(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_media_url(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_select_placeholder(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_spacing(u8, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::component::validate_thumbnail_description(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::discord_len(&str) -> usize
+pub mod noctis::rules::message
+pub enum noctis::rules::message::MentionIds<'a>
+pub noctis::rules::message::MentionIds::All
+pub noctis::rules::message::MentionIds::None
+pub noctis::rules::message::MentionIds::Only(&'a [u64])
+impl<'a> core::clone::Clone for noctis::rules::message::MentionIds<'a>
+pub fn noctis::rules::message::MentionIds<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::message::MentionIds<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::message::MentionIds<'a>
+pub fn noctis::rules::message::MentionIds<'a>::eq(&self, &Self) -> bool
+impl<'a> core::default::Default for noctis::rules::message::MentionIds<'a>
+pub fn noctis::rules::message::MentionIds<'a>::default() -> Self
+impl<'a> core::fmt::Debug for noctis::rules::message::MentionIds<'a>
+pub fn noctis::rules::message::MentionIds<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::message::MentionIds<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::message::MentionIds<'a>
+#[non_exhaustive] pub struct noctis::rules::message::AllowedMentions<'a>
+pub noctis::rules::message::AllowedMentions::everyone: bool
+pub noctis::rules::message::AllowedMentions::replied_user: bool
+pub noctis::rules::message::AllowedMentions::roles: noctis::rules::message::MentionIds<'a>
+pub noctis::rules::message::AllowedMentions::users: noctis::rules::message::MentionIds<'a>
+impl<'a> noctis::rules::message::AllowedMentions<'a>
+pub const fn noctis::rules::message::AllowedMentions<'a>::everyone(self, bool) -> Self
+pub const fn noctis::rules::message::AllowedMentions<'a>::new() -> Self
+pub const fn noctis::rules::message::AllowedMentions<'a>::replied_user(self, bool) -> Self
+pub const fn noctis::rules::message::AllowedMentions<'a>::roles(self, noctis::rules::message::MentionIds<'a>) -> Self
+pub const fn noctis::rules::message::AllowedMentions<'a>::users(self, noctis::rules::message::MentionIds<'a>) -> Self
+impl<'a> core::clone::Clone for noctis::rules::message::AllowedMentions<'a>
+pub fn noctis::rules::message::AllowedMentions<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::message::AllowedMentions<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::message::AllowedMentions<'a>
+pub fn noctis::rules::message::AllowedMentions<'a>::eq(&self, &Self) -> bool
+impl<'a> core::default::Default for noctis::rules::message::AllowedMentions<'a>
+pub fn noctis::rules::message::AllowedMentions<'a>::default() -> Self
+impl<'a> core::fmt::Debug for noctis::rules::message::AllowedMentions<'a>
+pub fn noctis::rules::message::AllowedMentions<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::message::AllowedMentions<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::message::AllowedMentions<'a>
+pub fn noctis::rules::message::validate_content(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_mentions(&noctis::rules::message::AllowedMentions<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_nonce(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_sticker_ids(usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_webhook_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub mod noctis::rules::modal
+pub enum noctis::rules::modal::LabelChild<'a>
+pub noctis::rules::modal::LabelChild::Checkbox(noctis::rules::modal::Checkbox)
+pub noctis::rules::modal::LabelChild::CheckboxGroup(noctis::rules::modal::CheckboxGroup<'a>)
+pub noctis::rules::modal::LabelChild::FileUpload(noctis::rules::modal::FileUpload<'a>)
+pub noctis::rules::modal::LabelChild::RadioGroup(noctis::rules::modal::RadioGroup<'a>)
+pub noctis::rules::modal::LabelChild::Select(noctis::rules::modal::ModalSelect<'a>)
+pub noctis::rules::modal::LabelChild::TextInput(noctis::rules::modal::TextInput<'a>)
+impl<'a> core::clone::Clone for noctis::rules::modal::LabelChild<'a>
+pub fn noctis::rules::modal::LabelChild<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::LabelChild<'a>
+pub fn noctis::rules::modal::LabelChild<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::LabelChild<'a>
+pub fn noctis::rules::modal::LabelChild<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::LabelChild<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::LabelChild<'a>
+pub enum noctis::rules::modal::ModalComponent<'a>
+pub noctis::rules::modal::ModalComponent::Label(noctis::rules::modal::Label<'a>)
+pub noctis::rules::modal::ModalComponent::Message(noctis::rules::component::Component<'a>)
+pub noctis::rules::modal::ModalComponent::Text(&'a str)
+impl<'a> core::clone::Clone for noctis::rules::modal::ModalComponent<'a>
+pub fn noctis::rules::modal::ModalComponent<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::ModalComponent<'a>
+pub fn noctis::rules::modal::ModalComponent<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::ModalComponent<'a>
+pub fn noctis::rules::modal::ModalComponent<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::ModalComponent<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::ModalComponent<'a>
+pub enum noctis::rules::modal::TextInputStyle
+pub noctis::rules::modal::TextInputStyle::Paragraph
+pub noctis::rules::modal::TextInputStyle::Short
+impl noctis::rules::modal::TextInputStyle
+pub const fn noctis::rules::modal::TextInputStyle::value(self) -> u8
+impl core::clone::Clone for noctis::rules::modal::TextInputStyle
+pub fn noctis::rules::modal::TextInputStyle::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::modal::TextInputStyle
+impl core::cmp::PartialEq for noctis::rules::modal::TextInputStyle
+pub fn noctis::rules::modal::TextInputStyle::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::modal::TextInputStyle
+pub fn noctis::rules::modal::TextInputStyle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::modal::TextInputStyle
+pub fn noctis::rules::modal::TextInputStyle::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::modal::TextInputStyle
+impl core::marker::StructuralPartialEq for noctis::rules::modal::TextInputStyle
+#[non_exhaustive] pub struct noctis::rules::modal::Checkbox
+pub noctis::rules::modal::Checkbox::default: bool
+pub noctis::rules::modal::Checkbox::required: bool
+impl noctis::rules::modal::Checkbox
+pub const fn noctis::rules::modal::Checkbox::default(self, bool) -> Self
+pub const fn noctis::rules::modal::Checkbox::new() -> Self
+pub const fn noctis::rules::modal::Checkbox::required(self, bool) -> Self
+impl core::clone::Clone for noctis::rules::modal::Checkbox
+pub fn noctis::rules::modal::Checkbox::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::rules::modal::Checkbox
+pub fn noctis::rules::modal::Checkbox::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::rules::modal::Checkbox
+pub fn noctis::rules::modal::Checkbox::default() -> Self
+impl core::fmt::Debug for noctis::rules::modal::Checkbox
+pub fn noctis::rules::modal::Checkbox::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::rules::modal::Checkbox
+impl core::marker::StructuralPartialEq for noctis::rules::modal::Checkbox
+#[non_exhaustive] pub struct noctis::rules::modal::CheckboxGroup<'a>
+pub noctis::rules::modal::CheckboxGroup::max_values: core::option::Option<usize>
+pub noctis::rules::modal::CheckboxGroup::min_values: core::option::Option<usize>
+pub noctis::rules::modal::CheckboxGroup::options: &'a [noctis::rules::modal::ModalOption<'a>]
+pub noctis::rules::modal::CheckboxGroup::required: bool
+impl<'a> noctis::rules::modal::CheckboxGroup<'a>
+pub const fn noctis::rules::modal::CheckboxGroup<'a>::max_values(self, usize) -> Self
+pub const fn noctis::rules::modal::CheckboxGroup<'a>::min_values(self, usize) -> Self
+pub const fn noctis::rules::modal::CheckboxGroup<'a>::new(&'a [noctis::rules::modal::ModalOption<'a>]) -> Self
+pub const fn noctis::rules::modal::CheckboxGroup<'a>::required(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::CheckboxGroup<'a>
+pub fn noctis::rules::modal::CheckboxGroup<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::CheckboxGroup<'a>
+pub fn noctis::rules::modal::CheckboxGroup<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::CheckboxGroup<'a>
+pub fn noctis::rules::modal::CheckboxGroup<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::CheckboxGroup<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::CheckboxGroup<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::FileUpload<'a>
+pub noctis::rules::modal::FileUpload::file_types: &'a [&'a str]
+pub noctis::rules::modal::FileUpload::max_values: core::option::Option<usize>
+pub noctis::rules::modal::FileUpload::min_values: core::option::Option<usize>
+pub noctis::rules::modal::FileUpload::required: bool
+impl<'a> noctis::rules::modal::FileUpload<'a>
+pub const fn noctis::rules::modal::FileUpload<'a>::file_types(self, &'a [&'a str]) -> Self
+pub const fn noctis::rules::modal::FileUpload<'a>::max_values(self, usize) -> Self
+pub const fn noctis::rules::modal::FileUpload<'a>::min_values(self, usize) -> Self
+pub const fn noctis::rules::modal::FileUpload<'a>::new() -> Self
+pub const fn noctis::rules::modal::FileUpload<'a>::required(self, bool) -> Self
+impl core::default::Default for noctis::rules::modal::FileUpload<'_>
+pub fn noctis::rules::modal::FileUpload<'_>::default() -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::FileUpload<'a>
+pub fn noctis::rules::modal::FileUpload<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::FileUpload<'a>
+pub fn noctis::rules::modal::FileUpload<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::FileUpload<'a>
+pub fn noctis::rules::modal::FileUpload<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::FileUpload<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::FileUpload<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::Label<'a>
+pub noctis::rules::modal::Label::child: noctis::rules::modal::LabelChild<'a>
+pub noctis::rules::modal::Label::description: core::option::Option<&'a str>
+pub noctis::rules::modal::Label::label: &'a str
+impl<'a> noctis::rules::modal::Label<'a>
+pub const fn noctis::rules::modal::Label<'a>::description(self, &'a str) -> Self
+pub const fn noctis::rules::modal::Label<'a>::new(&'a str, noctis::rules::modal::LabelChild<'a>) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::Label<'a>
+pub fn noctis::rules::modal::Label<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::Label<'a>
+pub fn noctis::rules::modal::Label<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::Label<'a>
+pub fn noctis::rules::modal::Label<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::Label<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::Label<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::Modal<'a>
+pub noctis::rules::modal::Modal::components: &'a [noctis::rules::modal::ModalComponent<'a>]
+pub noctis::rules::modal::Modal::title: &'a str
+impl<'a> noctis::rules::modal::Modal<'a>
+pub const fn noctis::rules::modal::Modal<'a>::new(&'a str, &'a [noctis::rules::modal::ModalComponent<'a>]) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::Modal<'a>
+pub fn noctis::rules::modal::Modal<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::Modal<'a>
+pub fn noctis::rules::modal::Modal<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::Modal<'a>
+pub fn noctis::rules::modal::Modal<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::Modal<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::Modal<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::ModalOption<'a>
+pub noctis::rules::modal::ModalOption::default: bool
+pub noctis::rules::modal::ModalOption::description: core::option::Option<&'a str>
+pub noctis::rules::modal::ModalOption::label: &'a str
+pub noctis::rules::modal::ModalOption::value: &'a str
+impl<'a> noctis::rules::modal::ModalOption<'a>
+pub const fn noctis::rules::modal::ModalOption<'a>::default(self, bool) -> Self
+pub const fn noctis::rules::modal::ModalOption<'a>::description(self, &'a str) -> Self
+pub const fn noctis::rules::modal::ModalOption<'a>::new(&'a str, &'a str) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::ModalOption<'a>
+pub fn noctis::rules::modal::ModalOption<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::ModalOption<'a>
+pub fn noctis::rules::modal::ModalOption<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::ModalOption<'a>
+pub fn noctis::rules::modal::ModalOption<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::ModalOption<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::ModalOption<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::ModalSelect<'a>
+pub noctis::rules::modal::ModalSelect::required: bool
+pub noctis::rules::modal::ModalSelect::select: noctis::rules::component::Select<'a>
+impl<'a> noctis::rules::modal::ModalSelect<'a>
+pub const fn noctis::rules::modal::ModalSelect<'a>::new(noctis::rules::component::Select<'a>) -> Self
+pub const fn noctis::rules::modal::ModalSelect<'a>::required(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::ModalSelect<'a>
+pub fn noctis::rules::modal::ModalSelect<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::ModalSelect<'a>
+pub fn noctis::rules::modal::ModalSelect<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::ModalSelect<'a>
+pub fn noctis::rules::modal::ModalSelect<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::ModalSelect<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::ModalSelect<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::RadioGroup<'a>
+pub noctis::rules::modal::RadioGroup::options: &'a [noctis::rules::modal::ModalOption<'a>]
+pub noctis::rules::modal::RadioGroup::required: bool
+impl<'a> noctis::rules::modal::RadioGroup<'a>
+pub const fn noctis::rules::modal::RadioGroup<'a>::new(&'a [noctis::rules::modal::ModalOption<'a>]) -> Self
+pub const fn noctis::rules::modal::RadioGroup<'a>::required(self, bool) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::RadioGroup<'a>
+pub fn noctis::rules::modal::RadioGroup<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::RadioGroup<'a>
+pub fn noctis::rules::modal::RadioGroup<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::RadioGroup<'a>
+pub fn noctis::rules::modal::RadioGroup<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::RadioGroup<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::RadioGroup<'a>
+#[non_exhaustive] pub struct noctis::rules::modal::TextInput<'a>
+pub noctis::rules::modal::TextInput::max_length: core::option::Option<usize>
+pub noctis::rules::modal::TextInput::min_length: core::option::Option<usize>
+pub noctis::rules::modal::TextInput::placeholder: core::option::Option<&'a str>
+pub noctis::rules::modal::TextInput::required: bool
+pub noctis::rules::modal::TextInput::style: noctis::rules::modal::TextInputStyle
+pub noctis::rules::modal::TextInput::value: core::option::Option<&'a str>
+impl<'a> noctis::rules::modal::TextInput<'a>
+pub const fn noctis::rules::modal::TextInput<'a>::max_length(self, usize) -> Self
+pub const fn noctis::rules::modal::TextInput<'a>::min_length(self, usize) -> Self
+pub const fn noctis::rules::modal::TextInput<'a>::new(noctis::rules::modal::TextInputStyle) -> Self
+pub const fn noctis::rules::modal::TextInput<'a>::placeholder(self, &'a str) -> Self
+pub const fn noctis::rules::modal::TextInput<'a>::required(self, bool) -> Self
+pub const fn noctis::rules::modal::TextInput<'a>::value(self, &'a str) -> Self
+impl<'a> core::clone::Clone for noctis::rules::modal::TextInput<'a>
+pub fn noctis::rules::modal::TextInput<'a>::clone(&self) -> Self
+impl<'a> core::cmp::PartialEq for noctis::rules::modal::TextInput<'a>
+pub fn noctis::rules::modal::TextInput<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::modal::TextInput<'a>
+pub fn noctis::rules::modal::TextInput<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::modal::TextInput<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::TextInput<'a>
+pub fn noctis::rules::modal::validate_label_description(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::modal::validate_label_text(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::modal::validate_modal(&noctis::rules::modal::Modal<'_>, &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::modal::validate_modal_title(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::modal::validate_text_input(&noctis::rules::modal::TextInput<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::modal::validate_text_input_value(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::truncate(&str, usize) -> alloc::borrow::Cow<'_, str>

@@ -161,6 +161,7 @@ locale returns `None`.
 | REG-03 | unique names per type per scope (chat-input merges) | B |
 | REG-04 | merged trees must not conflict | B |
 | REG-05 | 200 creates / day / guild (Publish is diff-based) | R |
+| REG-06 | ≤ 100 permission overwrites per command per guild; needs a Bearer token (out of scope in v1) | — |
 | CTX-01 | context-menu name 1–32, mixed case/spaces ok | C / B |
 | CTX-02 | context menus: no description, no options | C |
 | META-01..05 | permissions, contexts, integration types per base; guild commands can't set contexts/integration types | C / B / R |

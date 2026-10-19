@@ -128,6 +128,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- rules-catalog
 
+  api-snapshot:
+    name: API snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # The only nightly use: cargo public-api reads rustdoc JSON (format 61).
+      - run: rustup toolchain install nightly-2026-10-15 --profile minimal
+      - run: cargo install cargo-public-api --version 0.52.0 --locked
+      - run: cargo run --release -p xtask -- api-snapshot
+
+  skill-check:
+    name: Skill check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p xtask -- skill-check
+
   template-build:
     name: Project template build
     runs-on: ubuntu-latest

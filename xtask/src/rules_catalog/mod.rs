@@ -42,7 +42,7 @@
 //! entries (one row can have several).
 
 mod catalog;
-mod pending;
+pub(crate) mod pending;
 mod scan;
 
 use std::collections::{BTreeMap, BTreeSet};

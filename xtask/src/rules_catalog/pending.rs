@@ -56,7 +56,7 @@ impl Pending {
 }
 
 /// `^[1-9][0-9]*\.[1-9][0-9]*$` (P7).
-fn is_story(story: &str) -> bool {
+pub(crate) fn is_story(story: &str) -> bool {
     let positive = |s: &str| {
         s.starts_with(|c: char| ('1'..='9').contains(&c)) && s.bytes().all(|b| b.is_ascii_digit())
     };

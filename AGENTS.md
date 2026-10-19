@@ -10,6 +10,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 - Write everything that lands in the repo in English: code, comments, docs, BMad artifacts, skills. Chat with the user in Turkish.
 - Never hand-edit `_bmad/` (installer-managed); put overrides in `_bmad/custom/config.toml` or use the `bmad-customize` skill.
 - Every change to noctis's public API updates `examples/project-template/` in the same commit: its code, its `AGENTS.md` and its noctis usage skill. Bot authors' agents learn noctis from that skill alone, never from noctis's source.
+- A public API change also re-blesses `xtask/public-api.txt` (`cargo run --release -p xtask -- api-snapshot --bless`) and updates the Usage Skill's `API hash` line to the hash it prints, in the same commit.
 
 ## Where things are
 
@@ -20,7 +21,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Running and verifying
 
 - Before writing, reviewing or refactoring any Rust (`.rs`, `Cargo.toml`, crate layout, crate choice), invoke the `rust-best-practices` skill and read only the `references/*.md` files the task touches.
-- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6), `cargo run --release -p xtask -- deps-check` and `cargo run --release -p xtask -- rules-catalog`; also run `cargo deny check` (cargo-deny 0.20) and the MSRV check `cargo +1.91 check --release --workspace`. The CI job definitions live in `.github/workflows-disabled/` (CI is paused until the end of the project); keep them in sync when a story adds or changes a gate.
+- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6), `cargo run --release -p xtask -- deps-check`, `cargo run --release -p xtask -- rules-catalog`, `cargo run --release -p xtask -- api-snapshot` and `cargo run --release -p xtask -- skill-check`; also run `cargo deny check` (cargo-deny 0.20) and the MSRV check `cargo +1.91 check --release --workspace`. The CI job definitions live in `.github/workflows-disabled/` (CI is paused until the end of the project); keep them in sync when a story adds or changes a gate.
 - Always build, test, check and run with `--release` (`cargo build --release`, `cargo test --release`, `cargo clippy --release`, `cargo run --release`); never create a debug build, because disk space in cloud sessions is limited and a second (debug) `target/` profile fills it. If the disk fills anyway, delete `target/debug/`.
 - trybuild (UI tests) never passes `--release`; it is covered by the repo-root `.cargo/config.toml` (created by Story 1.1), whose `[profile.dev]` is release-equivalent (`opt-level = 3`, no debug info, debug assertions, overflow checks or incremental). Never weaken that file. trybuild suites are `compile_fail` only.
 
@@ -32,6 +33,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 
 ## Known pitfalls
 
+- A new cloud container lacks `nightly-2026-10-15` and `cargo-public-api` 0.52.0, which `api-snapshot` needs; install them with `rustup toolchain install nightly-2026-10-15 --profile minimal && cargo install cargo-public-api --version 0.52.0 --locked`.
 - The Codex CLI that `image-gen` needs does not survive a new cloud container; if `codex` is missing or logged out, ask the user before installing it or starting `codex login --device-auth`.
 
 <!-- /bmad:context -->
