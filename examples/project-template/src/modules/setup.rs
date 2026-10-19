@@ -9,6 +9,7 @@
 
 use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 use noctis::prelude::*;
+use noctis::ui::{ActionRow, ButtonStyle, Container, ContainerComponent, TextDisplay};
 use serde::{Deserialize, Serialize};
 
 use crate::strings::{Strings, keys};
@@ -188,9 +189,9 @@ impl View for SetupWizard {
         .require(0, st.log_channel.is_some(), s.setup.need_channel())
         .require(1, st.mod_role.is_some(), s.setup.need_role());
 
-        let body: Vec<ContainerChild> = match wizard.step() {
+        let body: Vec<ContainerComponent> = match wizard.step() {
             0 => vec![
-                Text::new(s.setup.channel_help()).into(),
+                TextDisplay::new(s.setup.channel_help()).into(),
                 ActionRow::select(
                     PickLogChannel {
                         owner: st.owner,
@@ -204,7 +205,7 @@ impl View for SetupWizard {
                 .into(),
             ],
             1 => vec![
-                Text::new(s.setup.role_help()).into(),
+                TextDisplay::new(s.setup.role_help()).into(),
                 ActionRow::select(
                     PickModRole {
                         owner: st.owner,
@@ -216,7 +217,7 @@ impl View for SetupWizard {
                 )
                 .into(),
             ],
-            _ => vec![Text::new(summary(&s, st)).into()],
+            _ => vec![TextDisplay::new(summary(&s, st)).into()],
         };
 
         // Finish exists only when the state is complete; the Wizard puts it where Next
@@ -258,6 +259,6 @@ impl StaticView for SetupDone {
             format!("<#{}>", self.config.log_channel),
             format!("<@&{}>", self.config.mod_role),
         );
-        Ok(V2Message::new().container(Container::new().accent(rgb!(0x57_F287)).text(text)))
+        Ok(V2Message::new().container(Container::new().accent(rgb!(0x57_F287)).push(TextDisplay::new(text))))
     }
 }

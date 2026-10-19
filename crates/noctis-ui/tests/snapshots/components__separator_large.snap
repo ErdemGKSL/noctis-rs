@@ -1,0 +1,9 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "Separator::large().divider(false)"
+---
+{
+  "type": 14,
+  "divider": false,
+  "spacing": 2
+}

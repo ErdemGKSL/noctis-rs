@@ -1,0 +1,15 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "MediaGallery::new([MediaItem::new(Media::url(\"https://i/x.png\")).alt(\"x\")])"
+---
+{
+  "type": 12,
+  "items": [
+    {
+      "media": {
+        "url": "https://i/x.png"
+      },
+      "description": "x"
+    }
+  ]
+}

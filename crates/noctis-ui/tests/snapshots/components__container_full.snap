@@ -1,0 +1,15 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "Container::new().accent(Rgb::new(0x58, 0x65,\n0xF2)).spoiler(true).push(TextDisplay::new(\"a\"))"
+---
+{
+  "type": 17,
+  "components": [
+    {
+      "type": 10,
+      "content": "a"
+    }
+  ],
+  "accent_color": 5793266,
+  "spoiler": true
+}

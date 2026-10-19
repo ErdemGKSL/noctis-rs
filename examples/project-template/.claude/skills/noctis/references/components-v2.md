@@ -5,142 +5,238 @@ with its limit and rule id, its cost, and the Noctis builder. Modal-only compone
 are in `modals.md`. All limits live in `Limits` (see `limits-cheatsheet.md`); placement
 is enforced by types, so illegal nesting does not compile (CV2-05).
 
-Builder names are [planned] where the spine leaves them open; the shapes (typed
-placement, const-generic arity, construction from Routes) are fixed.
+Everything here is in `noctis::ui` (`use noctis::ui::*;` or name the items), plus
+`RouteComponents` in the prelude. Every builder takes text as `impl Into<Cow<'static,
+str>>` (a `&'static str` or a `String`), setters are by value and chainable, and every
+type is `Debug + Clone + Send + Sync` and serializes straight to Discord JSON with unset
+fields and `false` flags left out. Items marked **[planned]** do not exist yet.
 
-## 0. The message
+## 0. The message body: `Components`
 
 ```rust
-V2Message::new()                            // always IS_COMPONENTS_V2 (1<<15); can't be removed (CV2-01)
-    .container(Container::new() …)          // or .text(..), .section(..), .row(..), .gallery(..), .file(..), .separator(..)
-    .mentions(AllowedMentions::none())      // default for Views (MSG-05)
+use noctis::prelude::*;
+use noctis::ui::{Components, Container, Separator, TextDisplay};
+
+let body = Components::new()                 // a V2 message's top-level components
+    .push(Container::new().push(TextDisplay::new("### Saved")))
+    .push(Separator::small());
+assert_eq!(body.len(), 2);                   // also is_empty(), Default
 ```
+
+- `Components::push(c)` takes any top-level component (`TopLevel` bound, CV2-05).
+- Numeric ids (CV2-14): `Components` numbers every component in pre-order from 1
+  (Container 1, its first child 2, …, accessories included, select options and gallery
+  items not). No API sets an `id`, so ids are deterministic and unique; a component
+  serialized on its own has none.
+- `V2Message::new().components(body)` [planned, Story 4.2] sends it with
+  `IS_COMPONENTS_V2` (CV2-01) and no `content`/`embeds` (CV2-02).
 
 | Rule | Limit |
 | --- | --- |
-| CV2-02 | no `content`, `embeds`, `poll`, `sticker_ids` (the type has no such fields) |
+| CV2-02 | no `content`, `embeds`, `poll`, `sticker_ids` (the type has no such fields) [planned] |
 | CV2-03 | ≤ **40** components in total, counting every nesting level. Select options and gallery items don't count |
 | CV2-04 | ≤ **4000** characters across all Text Displays (larger of scalars and UTF-16 units) [U] |
 | CID-02 / CV2-14 | `custom_id`s and numeric `id`s unique per message (Noctis assigns `id`s deterministically) |
 | ATT-03 | ≤ 10 attachments [U] |
 
-Top level of a message: Container, Section, Text Display, Media Gallery, File,
-Separator, Action Row. No separate top-level cap (only the 40 total).
+Counts, lengths and the other per-field Limits are checked by the runtime validator
+before sending [planned, Story 4.3] and by `components!` for literal trees [planned,
+Story 4.4]; you can pre-check a tree today with the rule functions of §15.
 
-In Views you rarely build `V2Message` by hand: `Layout::new()…build(cx)` does it, adds
-Chrome and paginates (see `views-and-widgets.md`).
+In Views you rarely build the message by hand: `Layout::new()…build(cx)` does it, adds
+Chrome and paginates (see `views-and-widgets.md`) [planned].
 
-Cost cheatsheet: Container 1, Text 1, Separator 1, Media Gallery 1 (any items),
+Cost cheatsheet: Container 1, Text Display 1, Separator 1, Media Gallery 1 (any items),
 File 1, Section + 1 text + button = 3, Section + 3 texts + thumbnail = 5, Action Row + 5
-buttons = 6, Action Row + 1 select (25 options) = 2. `components!` (§14) counts a
-literal tree at compile time; `view.cost()` / the testkit report actual totals.
+buttons = 6, Action Row + 1 select (25 options) = 2.
 
----
+### Placement traits
 
-## 1. Container (type 17)
+Each placing method is bounded by a sealed trait; only Noctis types implement them, and
+a wrong component fails `cargo check` with the rule id:
 
-- **Where:** message top level only. **Not** inside another Container (CV2-05).
-- **Children:** Action Row, Text Display, Section, Media Gallery, Separator, File.
-- **Fields:**
-  | Field | Builder | Limit |
-  | --- | --- | --- |
-  | `components` | `.push(child)`, `.text(..)`, `.section(..)`, `.row(..)`, `.gallery(..)`, `.file(..)`, `.separator(..)` | only the 40 total |
-  | `accent_color` | `.accent(rgb!(0x5865_F2))` | 0x000000–0xFFFFFF, checked by the `rgb!` macro at compile time; runtime values: `Rgb::try_from(u32)?` (CV2-13) |
-  | `spoiler` | `.spoiler(true)` | — |
-- **Cost:** 1.
-- `ContainerChild` is an enum with `From` for every allowed child, so `vec![a.into(), b.into()]` works.
+| Trait | Bound on | Implemented by | Error |
+| --- | --- | --- | --- |
+| `TopLevel` | `Components::push` | `Container`, `Section`, `TextDisplay`, `MediaGallery`, `File`, `Separator`, `ActionRow`, `TopLevelComponent` | ``[CV2-05] `X` cannot be a top-level message component`` |
+| `ContainerChild` | `Container::push` | `Section`, `TextDisplay`, `MediaGallery`, `File`, `Separator`, `ActionRow`, `ContainerComponent` | ``[CV2-05] `X` cannot be a Container child`` |
+| `SectionAccessory` | `Section::new` | `RouteButton<R>`, `LinkButton`, `PremiumButton`, `Button`, `Thumbnail` | ``[CV2-07] `X` is not a Section accessory: …`` |
+| `RowItem` | `ActionRow::buttons` | `RouteButton<R>`, `LinkButton`, `PremiumButton`, `Button` | ``[CV2-05] `X` cannot be an Action Row button`` |
+| `RowSelect` | `ActionRow::select` | the five selects | ``[CV2-06] `X` is not a message select`` |
+
+For lists built at runtime, `ContainerComponent` holds any Container child and
+`TopLevelComponent` any top-level component; both convert with `From`/`.into()`:
 
 ```rust
-Container::new().accent(rgb!(0x57_F287)).text("### Saved").separator(Separator::small())
+let items: Vec<ContainerComponent> = vec![TextDisplay::new("a").into(), Separator::new().into()];
+let container = items.into_iter().fold(Container::new(), Container::push);
+```
+
+### Components from Routes: `RouteComponents`
+
+Buttons and selects that send an interaction are built only from a Route value (AD-19);
+there is no string `custom_id` constructor. `RouteComponents` (in the prelude, also
+`noctis::ui::RouteComponents`) adds `.button()`, `.string_select(options)`,
+`.user_select()`, `.role_select()`, `.mentionable_select()` and `.channel_select()` to
+every `#[derive(Route)]` struct.
+
+- The Route needs a handler. `#[handler]` [planned, Epic 7] marks its Route as handled;
+  building a component for a Route without one fails with
+  ``[CID-04] Route `X` has no handler, so no component can be built for it``
+  (`note: the #[handler] macro implements Handled; add a handler for X to a mounted
+  Module`). Never implement that marker by hand.
+- Selects need a Route declared `select` (`#[route("id", select)]`, which implements
+  `noctis::codec::SelectRoute`): otherwise ``route `X` is not declared `select` ``.
+- A plain Route (no `view`, `select` or `signed`) is encoded when you build the
+  component. Ids that need a View envelope, a select nonce, a signature or a Ref are
+  finalized by the Responder before sending [planned, Epic 7]; you never handle them
+  (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
+
+## 1. Container: `Container`
+
+- **Where:** message top level only. **Not** inside another Container (CV2-05).
+- **Limits:** children count toward the 40 total (CV2-03); `accent_color`
+  0x000000–0xFFFFFF (CV2-13, guaranteed by `Rgb`). Cost 1.
+- **Builder:** `Container::new()`, `.push(child)` (any `ContainerChild`: Section, Text
+  Display, Media Gallery, File, Separator, Action Row), `.accent(Rgb::new(r, g, b))`,
+  `.spoiler(bool)`. JSON type 17.
+- `Rgb::new(0x58, 0x65, 0xF2)` is `const`; `.value()` gives `0x5865F2`. `rgb!(0x5865F2)`
+  and `Rgb::try_from(u32)` [planned, Story 4.4].
+
+```rust
+Container::new()
+    .accent(Rgb::new(0x57, 0xF2, 0x87))
+    .push(TextDisplay::new("### Saved"))
+    .push(Separator::small())
 ```
 
 Use one Container per View, an accent colour per state (neutral / success / danger).
 
-## 2. Text Display (type 10)
+## 2. Text Display: `TextDisplay`
 
-- **Where:** top level, Container, Section (1–3), modals (top level).
-- **Fields:** `content` (Markdown: `#`/`##`/`###`, `-#` subtext, lists, code, mentions,
-  `<t:unix:R>` timestamps). No per-component maximum documented; counts toward the
-  4000 total (CV2-04).
-- **Builder:** `Text::new(impl Into<String>)`. Literal check: `lit!("…")` [planned].
-- **Cost:** 1.
+- **Where:** top level, Container, Section (1–3 texts), modals (top level).
+- **Limits:** no per-component maximum documented; counts toward the 4000 total
+  (CV2-04) and the 40 components. Empty text builds (the validator checks it). Cost 1.
+- **Builder:** `TextDisplay::new(content)`; `.content()` reads it back. JSON type 10.
+  Content is Markdown: `#`/`##`/`###`, `-#` subtext, lists, code, mentions,
+  `<t:unix:R>` timestamps. Literal check `lit!("…")` [planned].
 - Mentions inside Text Display **would ping**; Views send `parse: []` by default.
-  Escape user text with `noctis::ui::escape_markdown` / `escape_mentions`.
+  Escape user text with `noctis::ui::escape_markdown` / `escape_mentions` [planned].
 - Merge adjacent static text into one Text Display: saves components, not chars.
 
-## 3. Section (type 9)
+## 3. Section: `Section`
 
 - **Where:** top level or Container. Messages only.
-- **Fields:**
-  | Field | Limit | Rule |
-  | --- | --- | --- |
-  | `components` | 1–3 Text Displays | CV2-07 |
-  | `accessory` | exactly one: Button (any style) or Thumbnail | CV2-07 |
-- **Builder:** `Section::new([Text; N], accessory)` — `N` checked by const assert;
-  there is no constructor without an accessory. Runtime: `Section::try_new(Vec<Text>, acc)?`.
-- **Cost:** 1 + texts + 1.
+- **Limits:** 1–3 Text Displays and exactly one accessory, a button (any kind) or a
+  Thumbnail (CV2-07). Cost 1 + texts + 1.
+- **Builder:** `Section::new([TextDisplay; N], accessory)`. There is no constructor
+  without an accessory: passing anything else (even `()`) fails with
+  ``[CV2-07] `()` is not a Section accessory: a Section needs exactly one accessory, a
+  Button or a Thumbnail``. The `N` in 1..=3 check is the runtime validator's today
+  (compile-time arity trait [planned, Story 4.4]; `Section::try_new` [planned]).
+  JSON type 9.
 - Pattern: settings row = value text + "Edit"/"Set" button (Primary when unset,
   Secondary when set); toggle row = state text + Enable (Success) / Disable (Danger).
 
 ```rust
-Section::new([Text::new(format!("**{name}** · {state}"))], toggle_button)
+Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle_button)
 ```
 
-## 4. Thumbnail (type 11)
+## 4. Thumbnail: `Thumbnail`
 
-- **Where:** **only** as a Section accessory (CV2-05).
-- **Fields:**
-  | Field | Builder | Limit |
-  | --- | --- | --- |
-  | `media.url` | `Thumbnail::new(media)`; `media` = `cx.attach(&att)` or `Media::url(url)` | https or `attachment://` (ATT-05); URL ≤ 2048 [U] |
-  | `description` | `.alt(text)` | ≤ 1024 (CV2-11); missing alt = warning (strict: error for rendered images, FR-30) |
-  | `spoiler` | `.spoiler(true)` | — |
-- Images only (GIF/WebP animate), **no video**. Small on mobile: never put
-  information-bearing text in it. **Cost:** 1.
+- **Where:** **only** as a Section accessory (CV2-05); anywhere else fails with
+  ``[CV2-05] `Thumbnail` cannot be a Container child`` (or top-level component).
+- **Limits:** `media.url` https or `attachment://` (ATT-05), ≤ 2048 [U] (CV2-17);
+  `description` ≤ 1024 (CV2-11); missing alt = warning (strict: error for rendered
+  images, FR-30). Images only (GIF/WebP animate), **no video**. Cost 1.
+- **Builder:** `Thumbnail::new(media)` where `media` is a `Media` or an
+  `AttachmentRef`; `.alt(text)` (`description`), `.spoiler(bool)`. JSON type 11.
+- `Media::url(url)` is an `https` source; `Media::from(attachment_ref)` (or passing the
+  `AttachmentRef` directly) is `attachment://<name>`. `.as_str()` gives the URL and
+  `.attachment()` the `AttachmentRef` it came from, if any. It serializes as exactly
+  `{"url": …}`.
+- Small on mobile: never put information-bearing text in it.
 
-## 5. Media Gallery (type 12)
+## 5. Media Gallery: `MediaGallery`
 
 - **Where:** top level or Container.
-- **Fields:**
-  | Field | Limit | Rule |
-  | --- | --- | --- |
-  | `items` | 1–10 | CV2-10 |
-  | item `media.url` | https or `attachment://` | ATT-05 |
-  | item `description` (alt) | ≤ 1024 | CV2-10 |
-  | item `spoiler` | bool | — |
-- **Builder:** `MediaGallery::new([MediaItem; N])` (const assert 1..=10) or
-  `MediaGallery::try_from_vec(vec)?`. `MediaItem::new(media).alt(..).spoiler(..)`.
-- **Cost:** 1 regardless of items — the cheapest way to show visual data. 1 item = full
-  width; 2–4 = grid. Images and video.
+- **Limits:** 1–10 items (CV2-10); item `media.url` https or `attachment://` (ATT-05);
+  item `description` (alt) ≤ 1024 (CV2-10). Cost 1 regardless of items — the cheapest
+  way to show visual data. 1 item = full width; 2–4 = grid. Images and video.
+- **Builder:** `MediaGallery::new([MediaItem; N])`; `MediaItem::new(media).alt(..)
+  .spoiler(..)` (items carry no type or id). The `N` check is the validator's today
+  (arity trait and `MediaGallery::try_from_vec` [planned, Story 4.4]). JSON type 12.
 
 ```rust
-MediaGallery::new([MediaItem::new(cx.attach(&self.card)).alt(s.profile.card_alt(&name))])
+MediaGallery::new([MediaItem::new(card_ref).alt(s.profile.card_alt(&name))])
 ```
 
-## 6. File (type 13)
+## 6. File: `File`
 
 - **Where:** top level or Container.
-- **Fields:** `file` = **only** `attachment://<name>` (CV2-12); `spoiler`. `name`/`size`
-  are response-only.
-- **Builder:** `File::new(cx.attach(&att))` — an attachment reference can only come from
-  attaching, so dangling names are impossible. One file per File component. **Cost:** 1.
+- **Limits:** `file` is **only** `attachment://<name>` (CV2-12); one file per File
+  component. `name`/`size` are response-only. Cost 1.
+- **Builder:** `File::new(attachment_ref).spoiler(bool)`; `.attachment()` reads the
+  ref. It takes only an `AttachmentRef`, which only `AttachmentSet::add` returns, so a
+  dangling or hand-written `attachment://` name does not compile (E0308). JSON type 13.
 
-## 7. Separator (type 14)
+### Attachments: `Attachment`, `AttachmentSet`, `AttachmentRef`
+
+```rust
+use noctis::ui::{Attachment, AttachmentSet, File, MediaItem, MediaGallery};
+
+let mut files = AttachmentSet::new();
+let card = files.add(Attachment::new(png_bytes, "png")?.alt("Profile card"));
+let body = MediaGallery::new([MediaItem::new(card.clone())]);
+let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("text/csv")));
+```
+
+- `Attachment::new(bytes, ext)` names the file by its content:
+  `<first 16 hex digits of blake3(bytes)>.<ext>`; `Attachment::with_digest(bytes,
+  digest, ext)` uses a 32-byte digest you already have; `Attachment::rendered(bytes,
+  digest, ext)` marks a rendered image (`AttachmentOrigin::Rendered`, otherwise
+  `AttachmentOrigin::Plain`). `ext` is 1–10 ASCII letters or digits, kept verbatim;
+  anything else is `UiError::InvalidExtension { ext }`.
+- Setters `.alt(text)` and `.content_type(mime)`; getters `name()`, `bytes()`,
+  `alt_text()`, `mime()`, `origin()`.
+- `AttachmentSet::new()`, `.add(att) -> AttachmentRef` (the same name twice keeps the
+  first one and returns equal refs), `.get(name)`, `.iter()` (name order), `.len()`,
+  `.is_empty()`.
+- `AttachmentRef` has no public constructor: `.name()`, `.url()`
+  (`attachment://<name>`), `.origin()`; `Clone + Eq + Hash`.
+- In Views, `cx.attach(&att) -> AttachmentRef` adds to the View's set [planned]. The
+  Upload Budget (ATT-01..03) is checked by the Responder [planned].
+
+## 7. Separator: `Separator`
 
 - **Where:** top level or Container.
-- **Fields:** `divider` (default true), `spacing` 1 small / 2 large (CV2-13).
-- **Builder:** `Separator::small()`, `Separator::large()`, `.divider(false)`. **Cost:** 1.
+- **Limits:** `divider` bool; `spacing` 1 small / 2 large only (CV2-13, the `Spacing`
+  enum has no other value). Cost 1.
+- **Builder:** `Separator::new()` = `Separator::default()` = `Separator::small()`
+  (divider, small); `Separator::large()`; `.divider(false)`;
+  `.spacing(Spacing::Small | Spacing::Large)`. All `const`. JSON type 14.
 - Large before major sections, small inside.
 
-## 8. Action Row (type 1)
+## 8. Action Row: `ActionRow`
 
 - **Where:** top level or Container (in modals: deprecated; Noctis never emits it).
-- **Content:** 1–5 Buttons **or** exactly 1 select, never mixed (CV2-06).
-- **Builder:** `ActionRow::buttons([Button; N])` (const assert 1..=5),
-  `ActionRow::select(select)`, runtime `ActionRow::try_buttons(Vec<Button>)?`.
-- **Cost:** 1 + children. Rows wrap on mobile beyond ~3 labelled buttons; keep labels short.
+- **Limits:** 1–5 buttons **or** exactly 1 select, never mixed (CV2-06). The button
+  count is the validator's today (arity trait and `ActionRow::try_buttons` [planned,
+  Story 4.4]). Cost 1 + children. Rows wrap on mobile beyond ~3 labelled buttons; keep
+  labels short.
+- **Builder:** `ActionRow::buttons([b1, b2, …])` (an array of one button type; mix kinds
+  by converting each with `Button::from(..)`), `ActionRow::select(select)`. JSON type 1.
 
-## 9. Button (type 2)
+```rust
+ActionRow::buttons([
+    Button::from(Save { guild }.button().style(ButtonStyle::Primary).label("Save")),
+    Button::from(LinkButton::new("https://example.com/help").label("Help")),
+])
+```
+
+An optional button: build the row in each branch (`match extra { Some(b) =>
+ActionRow::buttons([a, b]), None => ActionRow::buttons([a]) }`).
+
+## 9. Buttons (type 2)
 
 | Field | Limit | Rule |
 | --- | --- | --- |
@@ -152,55 +248,119 @@ MediaGallery::new([MediaItem::new(cx.attach(&self.card)).alt(s.profile.card_alt(
 | `sku_id` | Premium only | CV2-08 |
 | `disabled` | bool | — |
 
-Builders:
-- Route button: `MyRoute { .. }.button()` → `Button`; `.label(..)`, `.style(ButtonStyle::Primary)`
-  (default Secondary), `.emoji(..)`, `.disabled(bool)`. Sends an interaction to the Route's handler.
-- Link: `Button::link(url).label(..)` — no interaction, no `custom_id`.
-- Premium: `PremiumButton::new(sku_id)` — no label/emoji/url (the type has no setters); `Into<Button>`.
-- View controls: `cx.reload_button()` (re-runs the View's loader with the current
-  tab/page/step); Navbar/Wizard/Paginator buttons are generated.
+Each kind is its own type (CV2-08), so a Link button cannot get a `custom_id` and a
+Premium button cannot get a label. `Button` is the opaque "any button" they all convert
+into (`Button::from(x)` / `.into()`), for mixed rows. Never in modals. Guidelines: one
+Primary per group; equal-weight actions all Secondary; Danger only for destructive
+actions. View controls (`cx.reload_button()`, Navbar/Wizard/Paginator buttons) are
+generated [planned].
 
-Where: Action Row or Section accessory. Never in modals. Guidelines: one Primary per
-group; equal-weight actions all Secondary; Danger only for destructive actions.
+### 9a. Route button: `RouteButton`
+
+- **Where:** Action Row (`RowItem`) or Section accessory (`SectionAccessory`).
+- **Limits:** styles 1–4; label ≤ 80 (CV2-08); `custom_id` ≤ 100, proven by the Route
+  derive (CID-01).
+- **Builder:** `MyRoute { .. }.button()` → `RouteButton<MyRoute>`; `.style(ButtonStyle::
+  Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)`,
+  `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`. A click reaches the Route's handler
+  with the decoded Payload. Default styles per Route (`ComponentRoute`) and
+  `button_with` [planned, Story 9.3]; `label!` literal check [planned, Story 4.4].
+
+```rust
+ToggleModule { guild, module, enable: !enabled }
+    .button()
+    .label(s.common.enable())
+    .style(ButtonStyle::Success)
+```
+
+### 9b. Link button: `LinkButton`
+
+- **Where:** Action Row or Section accessory.
+- **Limits:** `url` 1–512 (CV2-08), label ≤ 80; no `custom_id`, no interaction.
+- **Builder:** `LinkButton::new(url)`, `.label(..)`, `.emoji(..)`, `.disabled(bool)`.
+
+### 9c. Premium button: `PremiumButton`
+
+- **Where:** Action Row or Section accessory.
+- **Limits:** needs `sku_id`; no label, emoji, URL or `custom_id` (CV2-08: the type has
+  no such setters).
+- **Builder:** `PremiumButton::new(sku_id)` (`Id<SkuMarker>`), `.disabled(bool)`; `const`.
 
 ## 10. Select menus (types 3, 5, 6, 7, 8) — message variants
 
-Route must declare `select` (adds the per-render nonce).
+The Route must declare `select` (adds the per-render nonce, FR-25). A select sits alone
+in its row: `ActionRow::select(route.string_select(options))`.
 
-| Type | Builder | Values in handler |
-| --- | --- | --- |
-| 3 String Select | `route.string_select([SelectOption; N])` or `try_string_select(vec)?` | `ctx.values().strings()` |
-| 5 User Select | `route.user_select()` | `ctx.values().users()` + `ctx.resolved()` |
-| 6 Role Select | `route.role_select()` | `.roles()` |
-| 7 Mentionable Select | `route.mentionable_select()` | `.mentionables()` |
-| 8 Channel Select | `route.channel_select().channel_types([ChannelType::GuildText])` | `.channels()` |
-
-Shared fields:
+Shared fields of all five:
 
 | Field | Builder | Limit | Rule |
 | --- | --- | --- | --- |
 | `placeholder` | `.placeholder(..)` | ≤ 150 | CV2-09 |
-| `min_values` | `.min_values(n)` | 0–25 (default 1) | CV2-09 |
-| `max_values` | `.max_values(n)` | 1–25 (default 1), ≥ min | CV2-09 |
+| `min_values` | `.min_values(n: u8)` | 0–25 (default 1) | CV2-09 |
+| `max_values` | `.max_values(n: u8)` | 1–25 (default 1), ≥ min | CV2-09 |
 | `disabled` | `.disabled(bool)` | messages only | CV2-09 |
-| `default_values` (5–8) | `.default_users(..)`, `.default_roles(..)`, `.default_channels(..)` (any `IntoIterator<Item = Id<_>>`, `Option` works) | count within [min, max] | CV2-09 |
-| `options` (3) | `SelectOption::new(label, value).description(..).emoji(..).default(true)` | ≤ 25 options; label/value/description ≤ 100 | CV2-09 |
 
 - **Cost:** 2 (row + select). Options don't count.
 - After every re-render, selects show the View's defaults (nonce, FR-25); always set
   `default`/`default_*` to the current value (visible active state).
 - Empty list: render a disabled select with one explanatory option, or an empty-state
-  Text, never nothing.
-- More than 25 items: `Paginator::…as_select(..)` chunks into several selects.
+  Text Display, never nothing.
+- More than 25 items: `Paginator::…as_select(..)` chunks into several selects [planned].
 - `derive(Choices)` enums can produce options: `Severity::select_options(locale)` [planned].
+- Selected values in the handler: `ctx.values().strings()`, `.users()`, `.roles()`,
+  `.mentionables()`, `.channels()`, plus `ctx.resolved()` [planned].
 
-## 11. Raw escape hatch (FR-31)
+### 10a. String Select: `StringSelect`
+
+- **Where:** alone in an Action Row (`RowSelect`).
+- **Limits:** ≤ 25 options; option label/value/description ≤ 100; `default` count
+  within [min, max] (CV2-09). Zero options build (the validator checks them).
+- **Builder:** `route.string_select([SelectOption; N])` (any `IntoIterator<Item =
+  SelectOption>`, so a `Vec` works); `SelectOption::new(label, value).description(..)
+  .emoji(..).default(true)`. JSON type 3. `try_string_select` [planned, Story 4.4].
+
+```rust
+Size { item }.string_select([
+    SelectOption::new("Small", "s").default(current == Size::Small),
+    SelectOption::new("Large", "l").default(current == Size::Large),
+]).placeholder("Size")
+```
+
+### 10b. User Select: `UserSelect`
+
+- **Where:** alone in an Action Row.
+- **Limits:** shared fields; `default_values` count within [min, max] (CV2-09).
+- **Builder:** `route.user_select()`, `.default_users(ids)` (any `IntoIterator<Item =
+  Id<UserMarker>>`, so an `Option` works; appends). JSON type 5.
+
+### 10c. Role Select: `RoleSelect`
+
+- **Where:** alone in an Action Row.
+- **Limits:** as User Select.
+- **Builder:** `route.role_select()`, `.default_roles(ids)`. JSON type 6.
+
+### 10d. Mentionable Select: `MentionableSelect`
+
+- **Where:** alone in an Action Row.
+- **Limits:** as User Select.
+- **Builder:** `route.mentionable_select()`, `.default_users(ids)`, `.default_roles(ids)`
+  (appended in call order). JSON type 7.
+
+### 10e. Channel Select: `ChannelSelect`
+
+- **Where:** alone in an Action Row.
+- **Limits:** as User Select.
+- **Builder:** `route.channel_select()`, `.default_channels(ids)`,
+  `.channel_types([ChannelType::GuildText])` (twilight's `ChannelType`; none = every
+  type). JSON type 8.
+
+## 11. Raw escape hatch (FR-31) [planned]
 
 `RawComponent::new(serde_json::Value)` places JSON for a component type Noctis doesn't
 model; it still counts toward CV2-03. Received unknown components are available as raw
 JSON (`ctx.raw_message_components()`) and never re-sent on edit.
 
-## 12. Legacy messages
+## 12. Legacy messages [planned]
 
 `LegacyMessage` (content ≤ 2000, ≤ 5 Action Rows, types 1–8; CV2-15). Not for
 interactive UI (UD-1).

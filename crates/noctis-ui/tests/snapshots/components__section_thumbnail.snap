@@ -1,0 +1,19 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "Section::new([TextDisplay::new(\"a\")],\nThumbnail::new(Media::url(\"https://i/x.png\")))"
+---
+{
+  "type": 9,
+  "components": [
+    {
+      "type": 10,
+      "content": "a"
+    }
+  ],
+  "accessory": {
+    "type": 11,
+    "media": {
+      "url": "https://i/x.png"
+    }
+  }
+}

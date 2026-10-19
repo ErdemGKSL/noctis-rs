@@ -43,10 +43,10 @@ Locale), `nav() -> Nav`, `limits() -> &Limits`, `attach(&Attachment) -> Media`,
 ```rust
 Layout::new()
     .accent(rgb!(0x5865_F2))       // Container accent
-    .header(Text or Section)           // Chrome: first
+    .header(TextDisplay or Section)           // Chrome: first
     .navbar(navbar)                    // Chrome: top Action Row (UD-5)
     .wizard(wizard)                    // Chrome: "Step n of m: Title" + Back/Next/Cancel footer (UD-4)
-    .body(impl Into<Body>)             // Vec<ContainerChild> or a Paginator
+    .body(impl Into<Body>)             // Vec<ContainerComponent> or a Paginator
     .footer(ActionRow)                 // Chrome: last
     .overflow(Overflow::Paginate)      // default; Overflow::Error | Overflow::Truncate opt-in
     .build(cx)                         // -> UiResult<V2Message>
@@ -109,13 +109,13 @@ Layout::new().wizard(wizard).body(body_for(step)).build(cx)
 ## 5. Paginator (UD-6, FR-28)
 
 ```rust
-Paginator::new(&self.roles, |role| Text::new(format!("{} · `{}`", role.mention, escape_markdown(&role.name))))
-    .empty(Text::new(s.dashboard.no_roles()))       // designed empty state
+Paginator::new(&self.roles, |role| TextDisplay::new(format!("{} · `{}`", role.mention, escape_markdown(&role.name))))
+    .empty(TextDisplay::new(s.dashboard.no_roles()))       // designed empty state
     .into()                                         // Body
 ```
 
-- Items: any `IntoIterator`; the closure returns anything `Into<ContainerChild>`
-  (Text, Section, …) or `Vec<ContainerChild>` for multi-part items.
+- Items: any `IntoIterator`; the closure returns anything `Into<ContainerComponent>`
+  (TextDisplay, Section, …) or `Vec<ContainerComponent>` for multi-part items.
 - Packs by **budget** (components + characters), not a fixed count; reserves Chrome.
 - Pager row: `⏮ ◀ [n/N] ▶ ⏭` with the indicator inert (action `i`, unique id). ◀
   disabled on page 1, ▶ on the last. With > 5 pages, a jump **String Select** (never a
@@ -133,7 +133,8 @@ Paginator::new(&self.roles, |role| Text::new(format!("{} · `{}`", role.mention,
 - `Attachment` = `{ name, bytes, content_type, alt }`, named
   `<first 16 hex of blake3(bytes)>.<ext>` (`Attachment::new(bytes, "png")`); rendered
   images are named from the render cache key. `ctx.render(..)` returns one.
-- Reference only through `cx.attach(&att) -> Media` (Thumbnail, Media Gallery, File).
+- Reference only through `cx.attach(&att) -> AttachmentRef` (Thumbnail, Media Gallery, File;
+  see `components-v2.md` §6).
 - Same image used twice uploads once. On edit, unchanged names are kept without
   re-upload; unused ones are dropped (MSG-08).
 - Upload Budget: the interaction's `attachment_size_limit`, else 20 MiB (ATT-01);
@@ -187,10 +188,10 @@ reports it per response. Use it in tests to keep dashboards comfortably under 40
 ## 11. Proven layouts (from schwi-v2)
 
 **Settings panel** (re-editable config, one Container):
-1. Header: `# Title` Text (or Section + Thumbnail module icon).
+1. Header: `# Title` TextDisplay (or Section + Thumbnail module icon).
 2. Entity switcher, only if > 1 entity: caption + String Select with `default` on the
    current entity.
-3. Field blocks: caption Text + Action Row with one select showing the current value
+3. Field blocks: caption TextDisplay + Action Row with one select showing the current value
    (`default_channels(current)`).
 4. Scalar settings as Sections: "Join delay (30s)" + accessory "Edit" (Secondary when
    set, Primary "Set" when unset — draws attention to missing config).

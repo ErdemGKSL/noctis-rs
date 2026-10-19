@@ -11,7 +11,9 @@ use noctis::events::MessageCreate;
 use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
 use noctis::prelude::*;
-use noctis::ui::escape_markdown;
+use noctis::ui::{
+    ActionRow, Button, ButtonStyle, MediaGallery, MediaItem, Separator, TextDisplay, escape_markdown,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::strings::{Strings, keys};
@@ -337,26 +339,28 @@ impl View for ProfileView {
             escape_markdown,
         );
 
-        let mut buttons = Vec::with_capacity(2);
-        if self.route.editable {
-            buttons.push(
-                EditBio { user: self.route.user }
-                    .button()
-                    .label(s.profile.edit_bio())
-                    .style(ButtonStyle::Primary),
-            );
-        }
-        buttons.push(cx.reload_button().label(s.common.refresh()));
+        // A row takes a fixed-size array: one branch per shape. Mixed button kinds
+        // convert to `Button`.
+        let refresh = cx.reload_button().label(s.common.refresh());
+        let footer = if self.route.editable {
+            let edit = EditBio { user: self.route.user }
+                .button()
+                .label(s.profile.edit_bio())
+                .style(ButtonStyle::Primary);
+            ActionRow::buttons([Button::from(edit), Button::from(refresh)])
+        } else {
+            ActionRow::buttons([refresh])
+        };
 
         Layout::new()
             .accent(ACCENT)
-            .header(Text::new(format!("## {}", s.profile.title(&name))))
+            .header(TextDisplay::new(format!("## {}", s.profile.title(&name))))
             .body(vec![
                 card.into(),
-                Text::new(bio).into(),
+                TextDisplay::new(bio).into(),
                 Separator::small().into(),
             ])
-            .footer(ActionRow::try_buttons(buttons)?)
+            .footer(footer)
             .build(cx)
     }
 }

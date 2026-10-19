@@ -210,7 +210,7 @@ asset versions, size, format and settings — so upgrades never serve stale imag
 
 ```rust
 MediaGallery::new([MediaItem::new(cx.attach(&self.card)).alt(s.profile.card_alt(&name))])  // wide
-Section::new([Text::new(title)], Thumbnail::new(cx.attach(&self.badge)).alt(alt))         // small
+Section::new([TextDisplay::new(title)], Thumbnail::new(cx.attach(&self.badge)).alt(alt))         // small
 ```
 
 - Wide cards, charts, tables → Media Gallery (1 component, 0 text chars). 1 wide image

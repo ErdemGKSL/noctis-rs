@@ -1,0 +1,11 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: file
+---
+{
+  "type": 13,
+  "file": {
+    "url": "attachment://af1349b9f5f9a1a6.png"
+  },
+  "spoiler": true
+}

@@ -1,0 +1,14 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "buy().button().style(ButtonStyle::Danger).label(\"Buy\").emoji(Emoji::unicode(\"🛒\")).disabled(true)"
+---
+{
+  "type": 2,
+  "style": 4,
+  "label": "Buy",
+  "emoji": {
+    "name": "🛒"
+  },
+  "custom_id": "0shop.buy:47",
+  "disabled": true
+}

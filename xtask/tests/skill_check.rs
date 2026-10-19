@@ -1,5 +1,5 @@
-//! CLI tests for `xtask skill-check` over generated roots (Story 1.8's M, H, P,
-//! D and X rows) and `api-snapshot`'s argument errors (S7). Line grammar,
+//! CLI tests for `xtask skill-check` over generated roots (Story 1.8's M, H,
+//! D and X rows, Story 4.1's C rows) and `api-snapshot`'s argument errors (S7). Line grammar,
 //! assembly, matching and lint details have unit tests in the crate.
 
 #![allow(
@@ -27,7 +27,6 @@ pub fn noctis::rules::discord_len(&str) -> usize
 ";
 
 const SKILL_DIR: &str = "examples/project-template/.claude/skills/noctis";
-const PENDING: &str = "[[check]]\nname = \"component-entries\"\nstory = \"4.1\"\n";
 
 const HANDLERS: &str = r"
 #[handler]
@@ -42,8 +41,7 @@ async fn xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
 }
 ";
 
-const OK: &str =
-    "skill-check: ok (8 public items mentioned, 2 template files linted, 1 pending check)";
+const OK: &str = "skill-check: ok (8 public items mentioned, 0 component entries checked, 2 template files linted)";
 
 fn hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
@@ -69,7 +67,6 @@ fn root(test: &'static str) -> Root {
         files: BTreeMap::new(),
     }
     .with("xtask/public-api.txt", SNAPSHOT)
-    .with("xtask/skill-pending.toml", PENDING)
     .with(&format!("{SKILL_DIR}/SKILL.md"), &skill_md(SNAPSHOT))
     .with(
         &format!("{SKILL_DIR}/references/limits.md"),
@@ -168,7 +165,8 @@ fn real_repo_passes() {
         "{}",
         stderr(&out)
     );
-    assert!(stderr(&out).contains(" template files linted, 1 pending check)"));
+    assert!(stderr(&out).contains(" component entries checked, "));
+    assert!(stderr(&out).ends_with(" template files linted)\n"));
 }
 
 #[test]
@@ -294,108 +292,114 @@ fn h5_crlf_snapshot() {
     assert_problems(&out, &["xtask/public-api.txt: must use LF line endings"]);
 }
 
-// P rows.
+// C rows: component entries.
+
+const COMPONENTS_MD: &str =
+    "examples/project-template/.claude/skills/noctis/references/components-v2.md";
+const MODALS_MD: &str = "examples/project-template/.claude/skills/noctis/references/modals.md";
+
+/// A Container entry with every label.
+const CONTAINER_ENTRY: &str = "# Components\n\n## 1. Container: `Container`\n\n- **Where:** top level.\n- **Limits:** 40 total.\n- **Builder:** `Container::new()`.\n\n```rust\n# `Container` in code is not a heading\n```\n\n## 2. Other\n";
+
+/// The base root plus a snapshot exporting `noctis::ui::Container`.
+fn with_container(test: &'static str) -> Root {
+    let snapshot = format!("{SNAPSHOT}pub mod noctis::ui\npub struct noctis::ui::Container\n");
+    root(test).snapshot(&snapshot).with(
+        &format!("{SKILL_DIR}/c.md"),
+        "Use `noctis::ui` and `Container`.",
+    )
+}
 
 #[test]
-fn p2_due() {
-    let snapshot = format!("{SNAPSHOT}pub struct noctis::ui::Container\n");
-    let out = root("p2")
-        .snapshot(&snapshot)
-        .with(&format!("{SKILL_DIR}/c.md"), "Container")
+fn c1_no_builders() {
+    let out = root("c1").with(COMPONENTS_MD, "# Nothing\n").run();
+    assert_exit(&out, 0, &[OK]);
+}
+
+#[test]
+fn c2_full_entry() {
+    let out = with_container("c2")
+        .with(COMPONENTS_MD, CONTAINER_ENTRY)
         .run();
-    assert_problems(
+    assert_exit(
         &out,
+        0,
         &[
-            "skill-pending.toml: component-entries: the snapshot exports component builder noctis::ui::Container; implement the component-entry check and remove this entry (Story 4.1)",
+            "skill-check: ok (10 public items mentioned, 1 component entries checked, 2 template files linted)",
         ],
     );
 }
 
 #[test]
-fn p3_not_pending() {
-    let out = root("p3").with("xtask/skill-pending.toml", "").run();
+fn c3_missing_entry() {
+    let out = with_container("c3").run();
     assert_problems(
         &out,
-        &["skill-pending.toml: component-entries must stay pending until Story 4.1 implements it"],
+        &[&format!(
+            "{SKILL_DIR}: component-entries: Container has no entry"
+        )],
     );
 }
 
 #[test]
-fn p4_unknown_check() {
-    let out = root("p4")
-        .with(
-            "xtask/skill-pending.toml",
-            &format!("{PENDING}[[check]]\nname = \"other\"\nstory = \"4.1\"\n"),
-        )
-        .run();
-    assert_problems(&out, &["skill-pending.toml: unknown check other"]);
+fn c4_missing_label() {
+    let entry = CONTAINER_ENTRY.replace("**Limits:**", "Limits:");
+    let out = with_container("c4").with(COMPONENTS_MD, &entry).run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{COMPONENTS_MD}:3: component-entries: entry for Container lacks **Limits:**"
+        )],
+    );
+    // A label under the next heading of the same level does not count.
+    let entry = CONTAINER_ENTRY
+        .replace("- **Builder:** `Container::new()`.\n", "")
+        .replace("## 2. Other\n", "## 2. Other\n**Builder:**\n");
+    let out = with_container("c4_scope").with(COMPONENTS_MD, &entry).run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{COMPONENTS_MD}:3: component-entries: entry for Container lacks **Builder:**"
+        )],
+    );
 }
 
 #[test]
-fn p5_story_format() {
-    for (i, story) in ["4", "4.1.1", "0.1", "4.0", ""].into_iter().enumerate() {
-        let test = ["p5_a", "p5_b", "p5_c", "p5_d", "p5_e"][i];
-        let out = root(test)
-            .with(
-                "xtask/skill-pending.toml",
-                &PENDING.replace("\"4.1\"", &format!("\"{story}\"")),
-            )
-            .run();
-        assert_problems(
-            &out,
-            &[
-                "skill-pending.toml: component-entries must stay pending until Story 4.1 implements it",
-                "skill-pending.toml: component-entries: story must be <epic>.<story>",
-            ],
-        );
-    }
-}
-
-#[test]
-fn p6_duplicate_unknown_key_invalid() {
-    let out = root("p6_dup")
-        .with("xtask/skill-pending.toml", &format!("{PENDING}{PENDING}"))
+fn c5_duplicate_entry() {
+    let out = with_container("c5")
+        .with(COMPONENTS_MD, CONTAINER_ENTRY)
+        .with(MODALS_MD, "# Modals\n### `Container` again\n")
         .run();
     assert_problems(
         &out,
-        &["skill-pending.toml: duplicate entry component-entries"],
-    );
-    let out = root("p6_key")
-        .with(
-            "xtask/skill-pending.toml",
-            &format!("{PENDING}note = \"\"\n"),
-        )
-        .run();
-    assert_exit(
-        &out,
-        1,
         &[
-            "skill-check: skill-pending.toml: TOML parse error at line 4, column 1 ",
-            "unknown field `note`",
-        ],
-    );
-    // Other checks still run.
-    let out = root("p6_toml")
-        .with("xtask/skill-pending.toml", "[[check]\n")
-        .with(&format!("{SKILL_DIR}/SKILL.md"), "no hash")
-        .run();
-    assert_exit(
-        &out,
-        1,
-        &[
-            "skill-check: skill-pending.toml: ",
-            "skill-check: SKILL.md: expected exactly one **API hash:** line, found 0",
+            &format!("{COMPONENTS_MD}:3: component-entries: Container has 2 entries"),
+            &format!("{MODALS_MD}:2: component-entries: Container has 2 entries"),
         ],
     );
 }
 
 #[test]
-fn p7_missing_file() {
-    let out = root("p7").without("xtask/skill-pending.toml").run();
+fn c6_two_names_in_one_heading() {
+    let entry = CONTAINER_ENTRY.replace("## 2. Other", "## 2. `Label` and `TextInput`");
+    let out = with_container("c6").with(COMPONENTS_MD, &entry).run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{COMPONENTS_MD}:13: component-entries: heading names more than one component builder"
+        )],
+    );
+}
+
+#[test]
+fn c7_entry_in_modals() {
+    let out = with_container("c7").with(MODALS_MD, CONTAINER_ENTRY).run();
     assert_exit(
         &out,
-        1,
-        &["skill-check: xtask/skill-pending.toml: cannot read: "],
+        0,
+        &[
+            "skill-check: ok (10 public items mentioned, 1 component entries checked, 2 template files linted)",
+        ],
     );
 }
 
@@ -475,12 +479,14 @@ fn x3_bad_args() {
 #[test]
 fn x4_many_problems() {
     let out = root("x4")
-        .snapshot(&format!("{SNAPSHOT}pub fn noctis::rules::unmentioned()\n"))
+        .snapshot(&format!(
+            "{SNAPSHOT}pub fn noctis::rules::unmentioned()\npub mod noctis::ui\npub struct noctis::ui::Container\n"
+        ))
         .with(
             &format!("{SKILL_DIR}/SKILL.md"),
             &skill_md(SNAPSHOT).replace("API hash:** `", "API hash:** `x"),
         )
-        .with("xtask/skill-pending.toml", "")
+        .with(&format!("{SKILL_DIR}/c.md"), "Use `noctis::ui` and `Container`.")
         .with(
             "examples/project-template/src/bad.rs",
             "fn f() -> EmbedBuilder { x }\n",
@@ -498,7 +504,7 @@ fn x4_many_problems() {
         &[
             "noctis::rules::unmentioned: public item not mentioned",
             "SKILL.md: API hash must be",
-            "component-entries must stay pending",
+            "component-entries: Container has no entry",
             "bad.rs:1: [UD-1]",
         ],
     );

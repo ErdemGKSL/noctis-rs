@@ -189,4 +189,5 @@ pub use record::{RefRecord, decode_record};
 pub use refs::Ref;
 pub use route::{
     BodyKind, FieldReader, FieldWriter, Payload, PayloadDecode, Route, RouteId, RouteShape,
+    SelectRoute,
 };

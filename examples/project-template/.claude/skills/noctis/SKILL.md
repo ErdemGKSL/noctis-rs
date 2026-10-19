@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `8d8429e9c0b6f7bd37474a976211c71aa3530749d69ff11eac0a7648566036d4` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `6c03b537f7ab73d23772a08fd1c4c30c00f0f95757a1ab923ff9a66020bef253` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -156,14 +156,14 @@ impl View for DashboardView {
         let s = Strings::of(cx.locale());
         let navbar = Navbar::new(cx, [s.dashboard.tab.overview(), s.dashboard.tab.roles()])?;
         let body = match navbar.active() {
-            0 => Body::from(vec![Text::new(s.dashboard.overview(/* … */)).into()]),
-            _ => Paginator::new(&self.roles, |r| Text::new(r.mention.clone()))
-                .empty(Text::new(s.dashboard.no_roles()))
+            0 => Body::from(vec![TextDisplay::new(s.dashboard.overview(/* … */)).into()]),
+            _ => Paginator::new(&self.roles, |r| TextDisplay::new(r.mention.clone()))
+                .empty(TextDisplay::new(s.dashboard.no_roles()))
                 .into(),
         };
         Layout::new()
             .accent(rgb!(0x5865_F2))
-            .header(Text::new(format!("## {}", s.dashboard.title(&self.guild_name))))
+            .header(TextDisplay::new(format!("## {}", s.dashboard.title(&self.guild_name))))
             .navbar(navbar)
             .body(body)
             .footer(ActionRow::buttons([cx.reload_button().label(s.common.refresh())]))

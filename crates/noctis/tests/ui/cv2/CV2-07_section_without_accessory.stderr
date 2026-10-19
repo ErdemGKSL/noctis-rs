@@ -1,0 +1,22 @@
+error[E0277]: [CV2-07] `()` is not a Section accessory: a Section needs exactly one accessory, a Button or a Thumbnail
+ --> tests/ui/cv2/CV2-07_section_without_accessory.rs:4:51
+  |
+4 |     let _ = Section::new([TextDisplay::new("a")], ());
+  |             ------------                          ^^ not a Section accessory
+  |             |
+  |             required by a bound introduced by this call
+  |
+  = help: the trait `SectionAccessory` is not implemented for `()`
+  = note: pass a RouteButton, LinkButton, PremiumButton, Button or Thumbnail as the second argument of Section::new
+  = note: a Section without an accessory does not exist: use a TextDisplay instead
+  = help: the following other types implement trait `SectionAccessory`:
+            LinkButton
+            PremiumButton
+            RouteButton<R>
+            noctis::ui::Button
+            noctis::ui::Thumbnail
+note: required by a bound in `noctis::ui::Section::new`
+ --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
+  |
+  |     pub fn new<A: SectionAccessory, const N: usize>(texts: [TextDisplay; N], accessory: A) -> Self {
+  |                   ^^^^^^^^^^^^^^^^ required by this bound in `Section::new`

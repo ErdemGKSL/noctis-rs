@@ -245,6 +245,35 @@ pub trait Route {
     type Payload: Payload;
 }
 
+/// A Route declared `select`: its `custom_id`s carry a per-render select
+/// nonce, so a message select can be built from it.
+///
+/// `#[derive(Route)]` implements it for `#[route("…", select)]`; a
+/// hand-written Route whose [`Route::SHAPE`] has a select nonce
+/// ([`RouteShape::select`]) implements it by hand:
+///
+/// ```
+/// # use core::fmt;
+/// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape, SelectRoute};
+/// struct Pick;
+/// # impl Payload for Pick {
+/// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
+/// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
+/// # }
+/// impl Route for Pick {
+///     const ID: RouteId = RouteId::new("pick");
+///     const SHAPE: RouteShape = RouteShape::INLINE.select();
+///     const SCHEMA: u8 = 0;
+///     type Payload = Self;
+/// }
+/// impl SelectRoute for Pick {}
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "route `{Self}` is not declared `select`",
+    note = "declare it with #[route(\"…\", select)]: a message select carries a per-render nonce"
+)]
+pub trait SelectRoute: Route {}
+
 /// A Payload: an ordered list of [`Field`]s.
 ///
 /// Fields are written in order, separated by `,`. Appending an `Option`

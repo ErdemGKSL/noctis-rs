@@ -30,7 +30,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | ``[CID-03] `by_ref` and `overflow = spill` cannot be combined`` | both body policies | pick one |
 | ``[CID-03] a `by_ref` route cannot be `signed` `` | a Ref is already unguessable | drop `signed` |
 | conflicting implementations of `Payload` | `#[derive(Route)]` and `#[derive(Payload)]` on one struct | keep only `Route`; it includes the Payload |
-| `the trait Handled is not implemented for X` | building a component from a Route with no `#[handler]` | write the handler (and `.add(it())` to a Module) |
+| ``[CID-04] Route `X` has no handler, so no component can be built for it`` | building a component from a Route with no `#[handler]` | write the handler (and `.add(it())` to a Module) |
+| ``route `X` is not declared `select` `` | `.string_select(..)` / `.user_select()` … on a Route without `select` | `#[route("id", select)]` |
 | `[CMD-11] config set: limit a subcommand or a subcommand group, not both, actual \`set\`` followed by `= note: \`config set\` makes \`set\` a subcommand` and `= note: \`config set prefix\` makes \`set\` a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
 | `[CMD-10]` more than 3 words | path too deep | flatten; use options or a View |
@@ -50,9 +51,10 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | ``[META-02] config set: limit metadata only on the base command`` with ``= help: declare it on `config` `` | metadata on a meta declaration below the base | move it to the base path |
 | ``[META-03] ping.contexts: limit only on global commands, actual `[Guild]` `` with `= note: scope: guild 42` | `contexts` / `integration_types` on a guild-scoped command | drop them for guild commands, or publish globally |
 | `[CTX-01] Show …: limit between 1 and 32, actual 33` | context-menu name empty or longer than 32 | shorten it (mixed case and spaces are fine) |
-| `[CV2-05] Container cannot contain Container` / type mismatch on `.push` | illegal nesting | flatten; one Container per View |
+| ``[CV2-05] `Container` cannot be a Container child`` / ``… cannot be a top-level message component`` / ``… cannot be an Action Row button`` | illegal nesting: Container in Container, Thumbnail outside a Section accessory, button outside a row or accessory | flatten; one Container per View; Thumbnails go in `Section::new(.., thumbnail)`, buttons in `ActionRow::buttons` |
 | `[CV2-06]` unsatisfied bound in `ActionRow::buttons` | 0 or > 5 buttons, or button + select | split rows; selects alone |
-| `[CV2-07]` Section arity / no accessory | 0 or > 3 texts | merge texts; use plain Text if no accessory |
+| ``[CV2-07] `X` is not a Section accessory`` / Section arity | no accessory (e.g. `()`), or 0 or > 3 texts | pass a button or Thumbnail; merge texts; use a plain `TextDisplay` if there is no accessory |
+| mismatched types: expected `AttachmentRef`, found `&str` on `File::new` | hand-written `attachment://` name (CV2-12) | `File::new(set.add(Attachment::new(bytes, "png")?))` |
 | `[CV2-08] label too long` | literal > 80 | shorten (guideline ≤ 34 with emoji) |
 | `[MOD-02] more than 5 fields` | modal too big | split into a Wizard with two modal Steps |
 | `[MOD-07]` radio options | enum with < 2 or > 10 variants | adjust the `Choices` enum |

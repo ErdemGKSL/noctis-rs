@@ -25,9 +25,10 @@ async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<impl
 ```
 
 - The struct's fields **are** the Payload. The handler receives the decoded value.
-- Exactly one `#[handler]` per Route (CID-04, App build). The handler macro implements
-  `Handled` for the Route; components can only be built from `Handled` Routes, so a
-  button pointing at a Route with no handler does not compile (FR-58). Remember
+- Exactly one `#[handler]` per Route (CID-04, App build). The handler macro marks the
+  Route as handled; components can only be built from handled Routes, so a button
+  pointing at a Route with no handler does not compile (``[CID-04] Route `X` has no
+  handler``, FR-58). Remember
   `.add(toggle_module())` on the Module, or App build fails ("Route has no mounted
   handler").
 - Generic Routes are rejected (`[CID-01] a Route cannot be generic`), and so are enums
@@ -36,9 +37,9 @@ async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<impl
 - `#[derive(Route)]` implements the `Route` trait (`ID`, `SHAPE`, `SCHEMA`,
   `type Payload = Self`) and the `Payload`/`PayloadDecode` traits for the struct, and
   proves the length bound at compile time (§5). Today the codec traits and these
-  derives exist; encoding and decoding a Route happen internally, in the **[planned]**
-  component builders and dispatcher, and the `#[handler]`, `.button()` and the rest of
-  this file's runtime parts are **[planned]** too.
+  derives exist; the component builders (§9, `components-v2.md`) encode a Route's
+  `custom_id`; decoding happens in the **[planned]** dispatcher, and `#[handler]` and
+  the rest of this file's runtime parts are **[planned]** too.
 
 ### Route id (CID-03)
 
@@ -443,14 +444,17 @@ async fn open_setup(_ctx: ComponentCtx, state: SetupState) -> HandlerResult<Setu
 ## 9. Building components from Routes
 
 ```rust
-route.button()                 -> Button        // .label .style .emoji .disabled
-route.string_select(options)   -> StringSelect  // requires `select` on the Route
+route.button()                 -> RouteButton<R> // .label .style .emoji .disabled
+route.string_select(options)   -> StringSelect  // requires `select` on the Route (SelectRoute)
 route.user_select()            -> UserSelect
 route.role_select()            -> RoleSelect
 route.mentionable_select()     -> MentionableSelect
 route.channel_select()         -> ChannelSelect
-FormType::modal(route)         -> FormTypeModal // modals.md
+FormType::modal(route)         -> FormTypeModal // modals.md [planned]
 ```
+
+These are the `RouteComponents` methods (prelude; `components-v2.md` §0). Each requires
+a handler for the Route (`[CID-04]`), and the selects a Route declared `select`.
 
 Route component defaults (FR-59) [planned]: `impl ComponentRoute for ToggleModule { const
 DEFAULTS: ComponentDefaults = ComponentDefaults::new().style(ButtonStyle::Secondary); }`;

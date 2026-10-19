@@ -7,7 +7,9 @@ use std::time::UNIX_EPOCH;
 
 use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
-use noctis::ui::escape_markdown;
+use noctis::ui::{
+    ActionRow, ButtonStyle, ContainerComponent, Emoji, Section, TextDisplay, escape_markdown,
+};
 
 use crate::BotMeta;
 use crate::strings::{Strings, keys};
@@ -187,7 +189,7 @@ impl View for DashboardView {
             ],
         )?;
 
-        let header = Text::new(format!(
+        let header = TextDisplay::new(format!(
             "## {}\n-# {}",
             s.dashboard.title(escape_markdown(&self.guild_name)),
             s.dashboard.subtitle(self.version),
@@ -195,7 +197,7 @@ impl View for DashboardView {
 
         let body = match navbar.active() {
             0 => Body::from(vec![
-                Text::new(s.dashboard.overview(
+                TextDisplay::new(s.dashboard.overview(
                     self.roles.len(),
                     self.modules.iter().filter(|(_, on)| *on).count(),
                     format!("<t:{}:R>", self.started_unix),
@@ -206,9 +208,9 @@ impl View for DashboardView {
             // (header, Navbar, footer), packs as many rows as the Limits allow, and adds
             // the pager row and, past 5 pages, a jump select (FR-28).
             1 => Paginator::new(&self.roles, |role| {
-                Text::new(format!("{} · `{}`", role.mention, escape_markdown(&role.name)))
+                TextDisplay::new(format!("{} · `{}`", role.mention, escape_markdown(&role.name)))
             })
-            .empty(Text::new(s.dashboard.no_roles()))
+            .empty(TextDisplay::new(s.dashboard.no_roles()))
             .into(),
             _ => Body::from(
                 self.modules
@@ -234,7 +236,7 @@ impl View for DashboardView {
 impl DashboardView {
     /// One Section per Module: state as text, the action as the accessory. The style
     /// encodes the action (Success to enable, Danger to disable).
-    fn module_row(&self, s: &Strings, module: ModuleKey, enabled: bool) -> ContainerChild {
+    fn module_row(&self, s: &Strings, module: ModuleKey, enabled: bool) -> ContainerComponent {
         let name = match module {
             ModuleKey::Setup => s.dashboard.module.setup(),
             ModuleKey::Profile => s.dashboard.module.profile(),
@@ -249,6 +251,6 @@ impl DashboardView {
         .label(if enabled { s.common.disable() } else { s.common.enable() })
         .style(if enabled { ButtonStyle::Danger } else { ButtonStyle::Success });
 
-        Section::new([Text::new(format!("**{name}** · {state}"))], toggle).into()
+        Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle).into()
     }
 }

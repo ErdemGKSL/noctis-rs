@@ -1,0 +1,5 @@
+error[E0599]: no method named `id` found for struct `TextDisplay` in the current scope
+ --> tests/ui/cv2/CV2-14_set_numeric_id.rs:4:35
+  |
+4 |     let _ = TextDisplay::new("a").id(5); // [CV2-14]
+  |                                   ^^ method not found in `TextDisplay`

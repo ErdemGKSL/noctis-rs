@@ -18,8 +18,17 @@
 //! the re-export's source owns (see [`crate::public_api`]), and every mapped
 //! source path is rewritten to its facade path (whole paths only, longest
 //! source first). Internal crates are expanded the same way first, and each is
-//! run once. An external re-export stays a `pub use` line. The result must not
-//! name any `noctis_*` path.
+//! run once. An external re-export stays a `pub use` line.
+//!
+//! rustdoc names another crate's item by its defining path
+//! (`noctis_codec::route::Route`), so before expanding, every line is
+//! rewritten with each internal crate's canonical paths: the defining path of
+//! each item it re-exports from its own modules, mapped to the re-export's
+//! public path (`noctis_codec::Route`), which the facade mapping then turns
+//! into a facade path. Finally the [`HIDDEN`] paths, items that public
+//! signatures name on purpose but the facade only reaches through its hidden
+//! `__private` module, are rewritten. The result must not name any
+//! `noctis_*` path.
 //!
 //! # Output
 //!
@@ -47,6 +56,18 @@ pub(crate) const SNAPSHOT: &str = "xtask/public-api.txt";
 const FACADE: &str = "noctis";
 /// The target directory, relative to the repo root.
 const TARGET_DIR: &str = "target/public-api";
+/// Internal paths public signatures name on purpose although the facade
+/// re-exports them only through its hidden `__private` module (or not at
+/// all), with their snapshot spelling: the `#[handler]` marker that component
+/// constructors require (FR-58) and the sealed supertraits of the placement
+/// traits (CV2-05), which nothing outside `noctis-ui` can name.
+const HIDDEN: &[(&str, &str)] = &[
+    ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
+    (
+        "noctis_ui::placement::sealed",
+        "noctis::__private::ui::sealed",
+    ),
+];
 
 /// One `use` item of a crate's rustdoc JSON.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +101,9 @@ impl Reexport {
 pub(crate) struct CrateApi {
     pub(crate) lines: Vec<String>,
     pub(crate) reexports: Vec<Reexport>,
+    /// (defining path, public path) of each item the crate re-exports from
+    /// its own modules, when they differ.
+    pub(crate) canonical: Vec<(String, String)>,
 }
 
 /// Runs the task on this repository.
@@ -267,7 +291,13 @@ fn run_crate(root: &Path, name: &str) -> Result<CrateApi, String> {
         .map_err(|err| format!("{json_rel}: cannot read: {err}"))?;
     let reexports =
         reexports_from_rustdoc_json(&json, name).map_err(|err| format!("{json_rel}: {err}"))?;
-    Ok(CrateApi { lines, reexports })
+    let canonical =
+        canonical_from_rustdoc_json(&json, name).map_err(|err| format!("{json_rel}: {err}"))?;
+    Ok(CrateApi {
+        lines,
+        reexports,
+        canonical,
+    })
 }
 
 /// The `use` items reachable from the crate root, with their paths (A5, A11).
@@ -339,6 +369,62 @@ pub(crate) fn reexports_from_rustdoc_json(
     Ok(out)
 }
 
+/// (defining path, public path) of every non-glob `use` item reachable from
+/// the crate root that re-exports an item of `crate_name` itself, when the
+/// two differ (`noctis_codec::route::Route` -> `noctis_codec::Route`).
+pub(crate) fn canonical_from_rustdoc_json(
+    json: &str,
+    crate_name: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let doc: Value = serde_json::from_str(json).map_err(|err| format!("invalid JSON: {err}"))?;
+    let index = doc
+        .get("index")
+        .and_then(Value::as_object)
+        .ok_or("missing index")?;
+    let reexports = reexports_from_rustdoc_json(json, crate_name)?;
+    let mut out = Vec::new();
+    for item in index.values() {
+        let Some(u) = item.pointer("/inner/use") else {
+            continue;
+        };
+        if u.get("is_glob").and_then(Value::as_bool).unwrap_or(false) {
+            continue;
+        }
+        let (Some(source), Some(id)) = (
+            u.get("source").and_then(Value::as_str),
+            u.get("id").filter(|id| !id.is_null()),
+        ) else {
+            continue;
+        };
+        let Some(defined) = doc
+            .pointer(&format!("/paths/{}/path", id_key(id)?))
+            .and_then(Value::as_array)
+            .map(|segs| {
+                segs.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("::")
+            })
+        else {
+            continue;
+        };
+        if !defined.starts_with(&format!("{crate_name}::")) {
+            continue;
+        }
+        for r in reexports
+            .iter()
+            .filter(|r| !r.is_glob && r.source == source)
+        {
+            if r.path != defined {
+                out.push((defined.clone(), r.path.clone()));
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
 /// An id value as an `index` key.
 fn id_key(id: &Value) -> Result<String, String> {
     match id {
@@ -355,7 +441,19 @@ pub(crate) fn assemble(
 ) -> Result<Vec<String>, Vec<String>> {
     let mut memo = BTreeMap::new();
     let mut errors = BTreeSet::new();
-    let lines = expand(root, crates, &mut memo, &mut errors);
+    let mut canonical: Vec<(String, String)> = crates
+        .values()
+        .flat_map(|api| api.canonical.iter().cloned())
+        .collect();
+    canonical.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then(a.0.cmp(&b.0)));
+    let hidden: Vec<(String, String)> = HIDDEN
+        .iter()
+        .map(|&(a, b)| (a.to_owned(), b.to_owned()))
+        .collect();
+    let lines: Vec<String> = expand(root, crates, &canonical, &mut memo, &mut errors)
+        .iter()
+        .map(|l| rewrite(l, &hidden))
+        .collect();
     for line in &lines {
         if let Some(leak) = leaked_path(line) {
             errors.insert(format!(
@@ -374,6 +472,7 @@ pub(crate) fn assemble(
 fn expand(
     name: &str,
     crates: &BTreeMap<String, CrateApi>,
+    canonical: &[(String, String)],
     memo: &mut BTreeMap<String, Vec<String>>,
     errors: &mut BTreeSet<String>,
 ) -> Vec<String> {
@@ -387,7 +486,8 @@ fn expand(
         ));
         return Vec::new();
     };
-    let parsed = match public_api::parse(&api.lines.join("\n")) {
+    let raw: Vec<String> = api.lines.iter().map(|l| rewrite(l, canonical)).collect();
+    let parsed = match public_api::parse(&raw.join("\n")) {
         Ok(parsed) => parsed,
         Err(bad) => {
             for (_, line) in bad {
@@ -421,7 +521,7 @@ fn expand(
             out.push(line.text.clone());
             continue;
         };
-        let source_lines = expand(source_crate, crates, memo, errors);
+        let source_lines = expand(source_crate, crates, canonical, memo, errors);
         let block = owned_by(&source_lines, &reexport.source, reexport.is_glob);
         if block.is_empty() {
             errors.insert(format!(
@@ -568,6 +668,7 @@ mod tests {
         CrateApi {
             lines: lines.lines().map(str::to_owned).collect(),
             reexports,
+            canonical: Vec::new(),
         }
     }
 
@@ -819,6 +920,63 @@ pub fn noctis_rules::LimitsExt::x(&noctis_rules::Limits)";
         assert_eq!(leaked_path("a::noctis_x::Y"), None);
         assert_eq!(leaked_path("&noctis_x::Y"), Some("noctis_x"));
         assert_eq!(leaked_path("noctis_x"), None);
+    }
+
+    #[test]
+    fn a14_canonical_and_hidden_paths() {
+        let facade = api(
+            "pub mod noctis\npub use noctis::codec::Route\npub use noctis::ui::Make",
+            vec![
+                reexport("noctis::codec::Route", "noctis_codec::Route"),
+                reexport("noctis::ui::Make", "noctis_ui::Make"),
+            ],
+        );
+        let mut codec = api(
+            "pub mod noctis_codec\npub trait noctis_codec::Route",
+            vec![],
+        );
+        codec.canonical = vec![(
+            "noctis_codec::route::Route".to_owned(),
+            "noctis_codec::Route".to_owned(),
+        )];
+        let ui = api(
+            "pub mod noctis_ui\npub trait noctis_ui::Make: noctis_codec::route::Route + noctis_ui::placement::sealed::IntoTop\npub fn noctis_ui::Make::make(self) where Self: noctis_ui::Handled",
+            vec![],
+        );
+        let crates = BTreeMap::from([
+            ("noctis".to_owned(), facade),
+            ("noctis_codec".to_owned(), codec),
+            ("noctis_ui".to_owned(), ui),
+        ]);
+        assert_eq!(
+            assemble("noctis", &crates).unwrap(),
+            [
+                "pub mod noctis",
+                "pub trait noctis::codec::Route",
+                "pub trait noctis::ui::Make: noctis::codec::Route + noctis::__private::ui::sealed::IntoTop",
+                "pub fn noctis::ui::Make::make(self) where Self: noctis::__private::ui::Handled",
+            ]
+        );
+    }
+
+    #[test]
+    fn a15_canonical_from_json() {
+        let json = format!(
+            r#"{{"format_version": {RUSTDOC_FORMAT_VERSION}, "root": 0, "index": {{
+                "0": {{"name": "c", "inner": {{"module": {{"items": [1, 2, 3]}}}}}},
+                "1": {{"name": null, "inner": {{"use": {{"source": "route::Route", "name": "Route", "id": 7, "is_glob": false}}}}}},
+                "2": {{"name": null, "inner": {{"use": {{"source": "other::Id", "name": "Id", "id": 8, "is_glob": false}}}}}},
+                "3": {{"name": null, "inner": {{"use": {{"source": "top::Top", "name": "Top", "id": 9, "is_glob": false}}}}}}
+            }}, "paths": {{
+                "7": {{"path": ["c", "route", "Route"]}},
+                "8": {{"path": ["other", "Id"]}},
+                "9": {{"path": ["c", "Top"]}}
+            }}}}"#
+        );
+        assert_eq!(
+            canonical_from_rustdoc_json(&json, "c").unwrap(),
+            [("c::route::Route".to_owned(), "c::Route".to_owned())]
+        );
     }
 
     #[test]

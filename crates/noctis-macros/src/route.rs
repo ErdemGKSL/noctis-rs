@@ -383,6 +383,12 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let view = args.view.then(|| quote!(.view()));
     let select = args.select.then(|| quote!(.select()));
     let signed = args.signed.then(|| quote!(.signed()));
+    let select_impl = args.select.then(|| {
+        quote! {
+            #[automatically_derived]
+            impl #codec::SelectRoute for #ident {}
+        }
+    });
     let schema = args.schema;
     let payload = payload::impls(input, fields);
     let proof = quote_spanned! {ident.span()=>
@@ -397,6 +403,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             const SCHEMA: ::core::primitive::u8 = #schema;
             type Payload = Self;
         }
+
+        #select_impl
 
         #payload
 
@@ -747,5 +755,26 @@ mod tests {
         assert!(out.contains("cfg (test)"), "{out}");
         assert!(out.contains(":: core :: prelude :: v1 :: test"), "{out}");
         assert!(out.contains("fn __noctis_route_width_R"), "{out}");
+    }
+
+    #[test]
+    fn expand_emits_select_route_only_for_select() {
+        let plain = expand(&parse_quote!(
+            #[route("a")]
+            struct R;
+        ))
+        .unwrap()
+        .to_string();
+        assert!(!plain.contains("SelectRoute"), "{plain}");
+        let select = expand(&parse_quote!(
+            #[route("a", select)]
+            struct R;
+        ))
+        .unwrap()
+        .to_string();
+        assert!(
+            select.contains("impl :: noctis :: __private :: codec :: SelectRoute for R { }"),
+            "{select}"
+        );
     }
 }

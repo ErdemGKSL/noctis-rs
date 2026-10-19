@@ -314,19 +314,9 @@ evidence = "diagnosed"
 story = "4.4"
 
 [[rule]]
-id = "CV2-05"
-evidence = "diagnosed"
-story = "4.1"
-
-[[rule]]
 id = "CV2-06"
 evidence = "diagnosed"
 story = "4.4"
-
-[[rule]]
-id = "CV2-07"
-evidence = "diagnosed"
-story = "4.1"
 
 [[rule]]
 id = "CV2-08"
@@ -349,19 +339,9 @@ evidence = "diagnosed"
 story = "4.4"
 
 [[rule]]
-id = "CV2-12"
-evidence = "by-construction"
-story = "4.1"
-
-[[rule]]
 id = "CV2-13"
 evidence = "diagnosed"
 story = "4.4"
-
-[[rule]]
-id = "CV2-14"
-evidence = "by-construction"
-story = "4.1"
 
 [[rule]]
 id = "CV2-15"

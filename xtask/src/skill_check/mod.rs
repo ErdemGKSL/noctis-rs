@@ -9,8 +9,10 @@
 //!   the skill's Markdown;
 //! - **API hash** ([`hash`]): `SKILL.md`'s `**API hash:**` code span is the
 //!   snapshot's blake3 hash;
-//! - **pending checks** ([`pending`]): `xtask/skill-pending.toml` lists the
-//!   component-entry check, which Story 4.1 implements; it fails once due;
+//! - **component entries** ([`components`]): every component builder type
+//!   the snapshot exports has exactly one entry, with `**Where:**`,
+//!   `**Limits:**` and `**Builder:**`, in the skill's
+//!   `references/components-v2.md` or `references/modals.md`;
 //! - **UI Doctrine** ([`doctrine`]): UD-1, UD-3 and UD-7 over the template's
 //!   `src/` and `tests/`.
 //!
@@ -18,12 +20,13 @@
 //!
 //! Every problem is one stderr line `skill-check: <subject>: <message>`, sorted
 //! and deduplicated, and the exit code is 1. Success prints `skill-check: ok (<N>
-//! public items mentioned, <F> template files linted, <P> pending check)`.
+//! public items mentioned, <E> component entries checked, <F> template files
+//! linted)`.
 
+mod components;
 mod doctrine;
 mod hash;
 mod mention;
-mod pending;
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -150,7 +153,12 @@ fn check(repo: &Repo<'_>, problems: &mut Problems) -> String {
         hash::check(text, &public_api::hash(bytes), problems);
     }
 
-    let pending = pending::check(repo, snapshot.as_ref().map(|(_, l)| l.as_slice()), problems);
+    let entries = match (&snapshot, &skill) {
+        (Some((_, lines)), Some(files)) => {
+            components::check(SKILL_DIR, &components::due_builders(lines), files, problems)
+        }
+        _ => 0,
+    };
 
     let mut linted = 0;
     for dir in TEMPLATE_DIRS {
@@ -166,9 +174,8 @@ fn check(repo: &Repo<'_>, problems: &mut Problems) -> String {
         }
     }
 
-    let s = if pending == 1 { "" } else { "s" };
     format!(
-        "{mentioned} public items mentioned, {linted} template files linted, {pending} pending check{s}"
+        "{mentioned} public items mentioned, {entries} component entries checked, {linted} template files linted"
     )
 }
 

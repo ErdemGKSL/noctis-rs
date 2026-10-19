@@ -1,0 +1,12 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "Thumbnail::new(Media::url(\"https://i/x.png\")).alt(\"A\").spoiler(true)"
+---
+{
+  "type": 11,
+  "media": {
+    "url": "https://i/x.png"
+  },
+  "description": "A",
+  "spoiler": true
+}

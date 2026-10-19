@@ -1,0 +1,21 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: "ActionRow::buttons([b1, b2])"
+---
+{
+  "type": 1,
+  "components": [
+    {
+      "type": 2,
+      "style": 2,
+      "label": "1",
+      "custom_id": "0shop.buy:47"
+    },
+    {
+      "type": 2,
+      "style": 2,
+      "label": "2",
+      "custom_id": "0shop.buy:1"
+    }
+  ]
+}

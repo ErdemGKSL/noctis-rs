@@ -8,7 +8,11 @@
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
 //! - [`prelude`]: `use noctis::prelude::*;` brings the [`Route`](prelude::Route),
 //!   [`Payload`](prelude::Payload) and [`PayloadEnum`](prelude::PayloadEnum)
-//!   derives and the `Route` and `Payload` traits into scope.
+//!   derives, the `Route` and `Payload` traits and
+//!   [`RouteComponents`](prelude::RouteComponents) into scope.
+//! - [`ui`]: the Components V2 message model: one type per component,
+//!   placement checked by the compiler, components built from Routes, and
+//!   attachments.
 //! - [`codec`]: Payload field encodings ([`codec::Field`],
 //!   [`codec::BoundedStr`]), the checks custom fields are tested with, and the
 //!   traits the derives implement.
@@ -99,6 +103,8 @@ pub mod codec {
     //!   id, codec shape (inline, by Ref or spill, with optional View envelope,
     //!   select nonce and integrity tag), schema and Payload; usually derived
     //!   with `#[derive(Route)]` from the [`prelude`](crate::prelude).
+    //! - [`SelectRoute`]: a Route declared `select` (`#[route("…", select)]`
+    //!   implements it), the only kind a message select is built from.
     //! - [`Payload`] and [`PayloadDecode`]: an ordered field list, its
     //!   worst-case width [`Payload::MAX_ENCODED_LEN`], written through
     //!   [`FieldWriter`] and read through [`FieldReader`].
@@ -137,7 +143,7 @@ pub mod codec {
     pub use noctis_codec::{
         BodyKind, BoundedStr, BoundedStrError, CodecError, Field, FieldDecode, FieldError,
         FieldReader, FieldWriter, Payload, PayloadDecode, Route, RouteId, RouteShape, Section,
-        check,
+        SelectRoute, check,
     };
 }
 
@@ -272,15 +278,110 @@ pub mod prelude {
     //!   hand-written `Route`.
     //! - [`PayloadEnum`]: `#[derive(PayloadEnum)]` on a unit enum of at most 62
     //!   variants, a one-character [`Field`](crate::codec::Field).
+    //! - [`RouteComponents`]: `.button()`, `.string_select(..)`,
+    //!   `.user_select()`, `.role_select()`, `.mentionable_select()` and
+    //!   `.channel_select()` on a Route value (see [`ui`](crate::ui)).
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_macros::{Payload, PayloadEnum, Route};
+    pub use noctis_ui::RouteComponents;
 }
 
 /// Paths the derive macros expand to; not public API.
 #[doc(hidden)]
 pub mod __private {
     pub use noctis_codec as codec;
+    pub use noctis_ui as ui;
+}
+
+pub mod ui {
+    //! The Components V2 message model.
+    //!
+    //! Every component is its own type with by-value, chainable setters
+    //! (text is `impl Into<Cow<'static, str>>`), and serializes straight to
+    //! Discord's JSON with unset fields left out:
+    //!
+    //! - Layout: [`Container`] (type 17, [`Container::push`],
+    //!   [`Container::accent`] with an [`Rgb`], [`Container::spoiler`]),
+    //!   [`Section`] (type 9, `Section::new([TextDisplay; N], accessory)`) and
+    //!   [`ActionRow`] (type 1, [`ActionRow::buttons`] or [`ActionRow::select`]).
+    //! - Content: [`TextDisplay`] (type 10), [`Separator`] (type 14, with
+    //!   [`Spacing`]), [`Thumbnail`] (type 11), [`MediaGallery`] (type 12, of
+    //!   [`MediaItem`]s), [`File`] (type 13) and [`Media`] (a URL or an
+    //!   attachment).
+    //! - Buttons (type 2): [`RouteButton`] (styles 1-4, [`ButtonStyle`],
+    //!   [`Emoji`]), [`LinkButton`], [`PremiumButton`], and [`Button`] holding
+    //!   any of them.
+    //! - Selects: [`StringSelect`] (type 3, of [`SelectOption`]s),
+    //!   [`UserSelect`] (5), [`RoleSelect`] (6), [`MentionableSelect`] (7) and
+    //!   [`ChannelSelect`] (8).
+    //! - [`Components`]: a message body; it numbers every component in
+    //!   pre-order from 1, and no API sets a numeric id (CV2-14).
+    //! - [`ContainerComponent`] and [`TopLevelComponent`]: any component of a
+    //!   Container or of the top level, for lists built at runtime.
+    //! - [`Attachment`], [`AttachmentOrigin`], [`AttachmentSet`] and
+    //!   [`AttachmentRef`]: content-addressed files; [`File`] and [`Media`]
+    //!   take only an [`AttachmentRef`], which only [`AttachmentSet::add`]
+    //!   returns (CV2-12).
+    //! - [`UiError`]: a bad attachment extension or a mismatched Ref slot.
+    //!
+    //! # Placement
+    //!
+    //! The placing methods are bounded by sealed traits, so a misplaced
+    //! component fails `cargo check` with the rule id (CV2-05, CV2-07):
+    //!
+    //! | Component | Top level ([`TopLevel`]) | Container ([`ContainerChild`]) | Section accessory ([`SectionAccessory`]) | Action Row |
+    //! | --- | --- | --- | --- | --- |
+    //! | [`Container`] | yes | no | no | no |
+    //! | [`Section`], [`TextDisplay`], [`MediaGallery`], [`File`], [`Separator`], [`ActionRow`] | yes | yes | no | no |
+    //! | [`Thumbnail`] | no | no | yes | no |
+    //! | [`RouteButton`], [`LinkButton`], [`PremiumButton`], [`Button`] | no | no | yes | 1-5 ([`RowItem`]) |
+    //! | the five selects | no | no | no | alone ([`RowSelect`]) |
+    //!
+    //! # Components from Routes
+    //!
+    //! [`RouteComponents`] (also in the [`prelude`](crate::prelude)) builds
+    //! buttons and selects from a Route value; there is no string `custom_id`.
+    //! The Route needs a handler (`#[handler]`), or the call fails with
+    //! `[CID-04]`; a select also needs a Route declared `select`
+    //! ([`SelectRoute`](crate::codec::SelectRoute)). `custom_id`s that need a
+    //! View envelope, select nonce, signature or Ref are finalized by the
+    //! Responder before sending.
+    //!
+    //! ```
+    //! use noctis::prelude::*;
+    //! use noctis::ui::{
+    //!     ActionRow, ButtonStyle, Components, Container, LinkButton, Rgb, Section, Separator,
+    //!     TextDisplay,
+    //! };
+    //!
+    //! #[derive(Route)]
+    //! #[route("shop.buy")]
+    //! struct Buy {
+    //!     item: u64,
+    //! }
+    //! # impl noctis::__private::ui::Handled for Buy {}
+    //!
+    //! let body = Components::new().push(
+    //!     Container::new()
+    //!         .accent(Rgb::new(0x58, 0x65, 0xF2))
+    //!         .push(Section::new([TextDisplay::new("**Sword** · 255 g")], Buy { item: 255 }.button().label("Buy")))
+    //!         .push(Separator::small())
+    //!         .push(ActionRow::buttons([LinkButton::new("https://example.com").label("Docs")])),
+    //! );
+    //! let json = serde_json::to_value(&body).unwrap();
+    //! assert_eq!(json[0]["components"][0]["accessory"]["custom_id"], "0shop.buy:47");
+    //! # let _ = ButtonStyle::Primary;
+    //! ```
+
+    pub use noctis_ui::{
+        ActionRow, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button, ButtonStyle,
+        ChannelSelect, Components, Container, ContainerChild, ContainerComponent, Emoji, File,
+        LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, PremiumButton, Rgb,
+        RoleSelect, RouteButton, RouteComponents, RowItem, RowSelect, Section, SectionAccessory,
+        SelectOption, Separator, Spacing, StringSelect, TextDisplay, Thumbnail, TopLevel,
+        TopLevelComponent, UiError, UserSelect,
+    };
 }
 
 pub mod rules {

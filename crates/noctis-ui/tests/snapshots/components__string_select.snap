@@ -1,0 +1,32 @@
+---
+source: crates/noctis-ui/tests/components.rs
+expression: body
+---
+[
+  {
+    "type": 1,
+    "id": 1,
+    "components": [
+      {
+        "type": 3,
+        "id": 2,
+        "custom_id": "4pick:010",
+        "options": [
+          {
+            "label": "A",
+            "value": "a",
+            "description": "d",
+            "emoji": {
+              "name": "🅰"
+            },
+            "default": true
+          }
+        ],
+        "placeholder": "p",
+        "min_values": 1,
+        "max_values": 2,
+        "disabled": true
+      }
+    ]
+  }
+]

@@ -1,0 +1,50 @@
+error[E0277]: [CV2-05] `noctis::ui::Thumbnail` cannot be a Container child
+ --> tests/ui/cv2/CV2-05_thumbnail_outside_accessory.rs:5:35
+  |
+5 |     let _ = Container::new().push(thumbnail());
+  |                              ---- ^^^^^^^^^^^ not allowed inside a Container
+  |                              |
+  |                              required by a bound introduced by this call
+  |
+  = help: the trait `ContainerChild` is not implemented for `noctis::ui::Thumbnail`
+  = note: a Container takes a Section, TextDisplay, MediaGallery, File, Separator or ActionRow; never another Container
+  = note: a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow
+  = help: the following other types implement trait `ContainerChild`:
+            ActionRow
+            ContainerComponent
+            MediaGallery
+            TextDisplay
+            noctis::ui::File
+            noctis::ui::Section
+            noctis::ui::Separator
+note: required by a bound in `noctis::ui::Container::push`
+ --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
+  |
+  |     pub fn push<C: ContainerChild>(mut self, child: C) -> Self {
+  |                    ^^^^^^^^^^^^^^ required by this bound in `Container::push`
+
+error[E0277]: [CV2-05] `noctis::ui::Thumbnail` cannot be a top-level message component
+ --> tests/ui/cv2/CV2-05_thumbnail_outside_accessory.rs:6:36
+  |
+6 |     let _ = Components::new().push(thumbnail());
+  |                               ---- ^^^^^^^^^^^ not allowed at the top level of a message
+  |                               |
+  |                               required by a bound introduced by this call
+  |
+  = help: the trait `TopLevel` is not implemented for `noctis::ui::Thumbnail`
+  = note: the top level takes a Container, Section, TextDisplay, MediaGallery, File, Separator or ActionRow
+  = note: a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow
+  = help: the following other types implement trait `TopLevel`:
+            ActionRow
+            MediaGallery
+            TextDisplay
+            TopLevelComponent
+            noctis::ui::Container
+            noctis::ui::File
+            noctis::ui::Section
+            noctis::ui::Separator
+note: required by a bound in `noctis::ui::Components::push`
+ --> $WORKSPACE/crates/noctis-ui/src/components.rs
+  |
+  |     pub fn push<T: TopLevel>(mut self, component: T) -> Self {
+  |                    ^^^^^^^^ required by this bound in `Components::push`

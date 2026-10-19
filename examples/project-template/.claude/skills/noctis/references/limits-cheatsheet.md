@@ -219,7 +219,7 @@ locale returns `None`.
 | CID-01 | 1–100 chars; proven per Route at compile time | C |
 | CID-02 | unique per message | C / R |
 | CID-03 | Route id `[a-z0-9._-]{1,24}`, `_` prefix reserved | C |
-| CID-04 | one handler per Route | B |
+| CID-04 | one handler per Route; components only for Routes with a handler | C / B |
 | CID-05 | Ref = 11 base62 chars, CSPRNG ≥ 64 bits, App-namespaced | C / R |
 | CID-06 | `custom_id` is untrusted client input | R |
 | CID-07 | ASCII-only encoding | C |
