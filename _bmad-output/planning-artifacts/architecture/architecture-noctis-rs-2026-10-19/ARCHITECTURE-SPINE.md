@@ -266,7 +266,7 @@ depend on `noctis` or `noctis-testkit` except examples and tests.
   - The App holds `Arc<dyn Port>`.
   - Store ports operate on keys plus `Bytes` values with TTL. Typed access is a
     wrapper in `noctis-core`, which serializes with postcard.
-  - Keys are namespaced `"{app}:{port}:{key}"`.
+  - Keys are namespaced `<app>:<port>:<key>`.
   - Each port ships a conformance suite in `noctis-testkit`. The in-memory
     defaults must pass it, and so must any third-party adapter.
 
@@ -358,7 +358,7 @@ noctis-rs/
   Cargo.toml                 # [workspace], shared version, [workspace.dependencies], [workspace.lints]
   crates/
     noctis/                  # facade: re-exports + features
-    noctis-rules/            # Discord limits & validators (DR ids), Limits struct
+    noctis-rules/            # Discord limits & validators (rule ids), Limits struct
     noctis-codec/            # custom_id format, Payload trait, Ref keys, BoundedStr
     noctis-ui/               # V2 + modal model, builders, validator, View/Navbar/Wizard/Paginator
     noctis-ports/            # port traits + memory defaults
