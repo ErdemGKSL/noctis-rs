@@ -2,7 +2,8 @@
 title: 'Story 4.1: Typed V2 message components with placement in the type system'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '1f94f48221a87cf928d7e5ad8226a2b0b1e2cc34'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
