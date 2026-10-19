@@ -6,8 +6,9 @@ mod media;
 mod select;
 mod text;
 
+pub(crate) use button::ButtonNode;
 pub use button::{Button, ButtonStyle, Emoji, LinkButton, PremiumButton, RouteButton};
-pub(crate) use layout::AccessoryNode;
+pub(crate) use layout::{AccessoryNode, ChildNode, RowNode, TopNode};
 pub use layout::{ActionRow, Container, ContainerComponent, Rgb, Section, TopLevelComponent};
 pub use media::{File, Media, MediaGallery, MediaItem, Thumbnail};
 pub(crate) use select::SelectNode;

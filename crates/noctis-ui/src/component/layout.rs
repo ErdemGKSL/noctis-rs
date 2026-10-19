@@ -82,8 +82,8 @@ impl Wire for AccessoryNode {
 /// ```
 #[derive(Debug, Clone)]
 pub struct Section {
-    texts: Vec<TextDisplay>,
-    accessory: AccessoryNode,
+    pub(crate) texts: Vec<TextDisplay>,
+    pub(crate) accessory: AccessoryNode,
 }
 
 impl Section {
@@ -111,7 +111,7 @@ impl Wire for Section {
 }
 
 #[derive(Debug, Clone)]
-enum RowNode {
+pub(crate) enum RowNode {
     Buttons(Vec<Button>),
     Select(SelectNode),
 }
@@ -127,7 +127,7 @@ enum RowNode {
 /// assert_eq!(serde_json::to_value(&row).unwrap()["components"].as_array().unwrap().len(), 2);
 /// ```
 #[derive(Debug, Clone)]
-pub struct ActionRow(RowNode);
+pub struct ActionRow(pub(crate) RowNode);
 
 impl ActionRow {
     /// A row of `buttons`, in order. Mix kinds by converting each to
@@ -174,7 +174,7 @@ impl Wire for ActionRow {
 }
 
 #[derive(Debug, Clone)]
-enum ChildNode {
+pub(crate) enum ChildNode {
     Section(Section),
     Text(TextDisplay),
     Gallery(MediaGallery),
@@ -194,7 +194,7 @@ enum ChildNode {
 /// assert_eq!(serde_json::to_value(&container).unwrap()["components"][1]["type"], 14);
 /// ```
 #[derive(Debug, Clone)]
-pub struct ContainerComponent(ChildNode);
+pub struct ContainerComponent(pub(crate) ChildNode);
 
 impl Wire for ContainerComponent {
     fn wire<S: Serializer>(&self, ids: Option<&Ids>, s: S) -> Result<S::Ok, S::Error> {
@@ -250,9 +250,9 @@ impl Wire for ContainerComponent {
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Container {
-    children: Vec<ContainerComponent>,
-    accent: Option<Rgb>,
-    spoiler: bool,
+    pub(crate) children: Vec<ContainerComponent>,
+    pub(crate) accent: Option<Rgb>,
+    pub(crate) spoiler: bool,
 }
 
 impl Container {
@@ -303,7 +303,7 @@ impl Wire for Container {
 }
 
 #[derive(Debug, Clone)]
-enum TopNode {
+pub(crate) enum TopNode {
     Container(Container),
     Child(ContainerComponent),
 }
@@ -319,7 +319,7 @@ enum TopNode {
 /// assert_eq!(body.len(), 2);
 /// ```
 #[derive(Debug, Clone)]
-pub struct TopLevelComponent(TopNode);
+pub struct TopLevelComponent(pub(crate) TopNode);
 
 impl Wire for TopLevelComponent {
     fn wire<S: Serializer>(&self, ids: Option<&Ids>, s: S) -> Result<S::Ok, S::Error> {

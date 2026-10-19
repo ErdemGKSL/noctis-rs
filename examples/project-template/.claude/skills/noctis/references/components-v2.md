@@ -40,9 +40,11 @@ assert_eq!(body.len(), 2);                   // also is_empty(), Default
 | CID-02 / CV2-14 | `custom_id`s and numeric `id`s unique per message (Noctis assigns `id`s deterministically) |
 | ATT-03 | ≤ 10 attachments [U] |
 
-Counts, lengths and the other per-field Limits are checked by the runtime validator
-before sending [planned, Story 4.3] and by `components!` for literal trees [planned,
-Story 4.4]; you can pre-check a tree today with the rule functions of §15.
+Counts, lengths and the other per-field Limits are checked at runtime by
+`noctis::ui::validate(&mut msg, &limits)` (§16; the Responder will run it before every
+send [planned]) and by `components!` for literal trees [planned, Story 4.4];
+`noctis::ui::cost(&msg, &limits)` measures a message, and the rule functions of §15
+check bare descriptor trees.
 
 In Views you rarely build the message by hand: `Layout::new()…build(cx)` does it, adds
 Chrome and paginates (see `views-and-widgets.md`) [planned].
@@ -392,8 +394,8 @@ assert_eq!(notice.edit_body(MessageFormat::V2, EditFlags::empty()).unwrap_err(),
 stickers). Never use it for interactive UI or dashboards (UD-1); use it for plain
 notices.
 
-- `LegacyMessage::new(content)` (`content` length is checked by the runtime validator
-  [planned]); `.rows([ActionRow; N])` replaces the rows, N from 0 to 5;
+- `LegacyMessage::new(content)` (`content` length, MSG-01, is checked by
+  `noctis::ui::validate`, §16); `.rows([ActionRow; N])` replaces the rows, N from 0 to 5;
   `.mentions(Mentions)`; no `Default`.
 - Getters: `.content_text()`, `.allowed_mentions()`, `.row_count()`.
 - CV2-15: `.rows` is bounded by `Arity<N>: LegacyRows` (implemented for `Arity<0>` to
@@ -458,7 +460,7 @@ for the endpoint and adds attachments/`files` [planned]. You rarely call these y
 | `.replied_user(true)` | `{"parse":[],"replied_user":true}` |
 
 `parse` is always ordered users, roles, everyone. The 100-ids-per-list limit (MSG-04)
-is checked by the runtime validator [planned].
+is checked by `noctis::ui::validate` (§16).
 
 ## 13. Where each component may appear
 
@@ -512,7 +514,8 @@ The `noctis-ui` builders already make most shapes unrepresentable. These functio
 trees and values Noctis cannot see at compile time (dynamic trees, raw components,
 user-supplied labels, colours, attachments) with the same counts, paths and order that
 `components!` and the runtime validator use. They only report: they never truncate (in
-`LimitMode::Lenient` the Responder truncates display text, never structure). Every
+`LimitMode::Lenient`, `noctis::ui::validate` truncates display text, never structure;
+§16). Every
 function takes `&Limits`; never hard-code a limit.
 
 ```rust
@@ -601,6 +604,8 @@ inside a Container`, `only buttons and selects in an Action Row`.
 | Item | What it is |
 | --- | --- |
 | `validate_content(&str, &Limits) -> Vec<Violation>` | MSG-01 legacy `content` ≤ 2000, path `content` |
+| `validate_v2_not_empty(components: usize, &Limits) -> Vec<Violation>` | MSG-09: a V2 message has ≥ 1 top-level component; path `components`, `AtLeast(1)`, `Count(0)` |
+| `validate_legacy_not_empty(content: &str, rows: usize, &Limits) -> Vec<Violation>` | MSG-09: legacy `content` that is not empty or whitespace-only, or ≥ 1 Action Row; path `content`, `Describe("non-empty content or at least one Action Row")`, `Text(content)` |
 | `MentionIds<'a>` | `None` (default), `All` (`parse`) or `Only(&[u64])`; `parse` plus ids cannot be built (MSG-03) |
 | `AllowedMentions<'a>` | `#[non_exhaustive]` `{ users, roles: MentionIds, everyone, replied_user }`; `AllowedMentions::new()` = `Default` = pings nobody (MSG-05); `.users(..)`, `.roles(..)`, `.everyone(bool)`, `.replied_user(bool)` |
 | `validate_mentions(&AllowedMentions, &Limits)` | MSG-04 ≤ 100 ids each, paths `allowed_mentions.users`, `allowed_mentions.roles` |
@@ -618,3 +623,93 @@ Noctis has no embed API in v1 (MSG-02), so there is nothing to check for embeds.
 | `file_limit` | the interaction's `attachment_size_limit`; when `Some`, it replaces `Limits::attachment_bytes` (20 MiB) |
 | `validate_file_size(size, file_limit, &Limits)` / `validate_attachment_description(&str, &Limits)` | single ATT-01 / ATT-06 checks, path `""` |
 | `validate_attachment_ref(url, &[AttachmentDecl], &Limits) -> Vec<Violation>` | ATT-05: an `attachment://<name>` URL must name one of the files (exact, case-sensitive); other URLs pass |
+
+## 16. Runtime validation: validate and cost
+
+`noctis::ui::validate` checks a built message against `noctis::rules::Limits` before it
+is sent; `noctis::ui::cost` measures one. The Responder runs validate before every send
+[planned]; call it yourself to check a message early (tests, previews, budgets).
+
+```rust
+use noctis::rules::{LimitMode, Limits};
+use noctis::ui::{CostReport, LimitWarning, UiError, V2Message, cost, validate};
+
+let mut msg = V2Message::new(body).attachments(files);
+match validate(&mut msg, &limits) {
+    Ok(report) => assert!(report.components <= limits.components),
+    Err(UiError::Limits { violations }) => {
+        for v in &violations {
+            eprintln!("{v}"); // [CV2-08] container[0].section[2].accessory.label: limit at most 80, actual 81
+        }
+    }
+    Err(_) => unreachable!(),
+}
+let budget: CostReport = cost(&msg, &limits); // never changes or sends
+```
+
+| Item | What it is |
+| --- | --- |
+| `validate<M: Validate>(&mut M, &Limits) -> Result<CostReport, UiError>` | every check below; `&mut` only so Lenient mode can truncate |
+| `cost<M: Validate>(&M, &Limits) -> CostReport` | component count, text characters and missing-alt warnings; no truncation, no logging, no mutation |
+| `Validate` | sealed; implemented for `V2Message` and `LegacyMessage` only |
+| `CostReport` | `#[non_exhaustive]` `{ components: usize, text_chars: usize, warnings: Vec<LimitWarning> }`; V2: CV2-03 count at every depth and CV2-04 Text Display sum; legacy: rows plus their items, and `discord_len(content)` |
+| `LimitWarning::Truncated(Violation)` | Lenient mode truncated a field; the violation it avoided, with the length before (`Count`) |
+| `LimitWarning::MissingAlt { path }` | a Thumbnail or gallery item that is not a rendered image has no alt text of its own (`None`, `""` or whitespace); both modes, also from `cost` |
+| `LimitWarning::path()` / `.rule()` | the path; `Some(rule)` for `Truncated`, `None` for `MissingAlt` |
+| `UiError::Limits { violations: Vec<Violation> }` | the failure, never empty; `Display` joins each violation's `Display` with `\n` |
+
+Warnings display as `truncated to fit: <violation>` and `<path>: image has no alt text`.
+Every warning is returned in the `CostReport` and logged by `validate` with
+`tracing::warn!` (target `noctis::ui`, fields `rule` (empty for `MissingAlt`) and
+`path`), also when the message then fails.
+
+**What it checks.** The tree is lowered into `noctis::rules::component` descriptors and
+checked with `validate_components` (V2) or `validate_legacy_components` (legacy), so
+paths, counts and order match `components!` and §15 exactly. Then:
+
+| Rule | Check | Path |
+| --- | --- | --- |
+| CID-02 | two resolved `custom_id`s are equal (`Describe("a custom_id unique within the message")`, `Text(id)`, note `first used at <path>`); unresolved ids are skipped | `P.custom_id`, P the later button or select, e.g. `row[0].button[1].custom_id`, `section[0].accessory.custom_id` |
+| ATT-05 | an `attachment://` URL (File, Thumbnail, gallery item) names no file of the message's `AttachmentSet` (`Describe("attachment://<name> of a file in this message")`, `Text(url)`); `attachment://` alone fails too; `https://…` and `ATTACHMENT://…` are not references | `file[0].url`, `section[0].accessory.url`, `gallery[0].item[0].url` |
+| ATT-06 | an `Attachment::alt` over 1024 (note ``file `<name>` ``) | `attachments[k].description`, k in `AttachmentSet::iter()` (name) order |
+| MSG-01 | legacy content over 2000 | `content` |
+| MSG-09 | a V2 message with no top-level component (`AtLeast(1)`); a legacy message with empty or whitespace-only content and no row | `components` / `content` |
+| MSG-04 | more than 100 `Users::Only` / `Roles::Only` ids | `allowed_mentions.users`, `allowed_mentions.roles` |
+
+Violation order: the `noctis::rules::component` result in its own order, then CID-02
+(pre-order), ATT-05 (pre-order), ATT-06 (set order), MSG-01 (legacy), MSG-09, MSG-04
+(users, then roles). Nothing is dropped. CV2-05, CV2-13 and CV2-14 never fail for typed
+trees: placement and colours are typed, and numeric ids are assigned in pre-order when
+`Components` serializes, so duplicates cannot be built.
+
+Paths (`noctis::rules::component`'s scheme): `kind[i]`, `parent.kind[j]`, `.accessory`,
+`.item[k]`, `.options[k]`, `.label`, `.url`, `.description`, `.placeholder`,
+`.min_values`, `.max_values`, `.default_values`, `.custom_id`; kinds `container`,
+`section`, `text`, `thumbnail`, `gallery`, `file`, `separator`, `row`, `button`,
+`select`. A Section's text k is `P.text[k]` (used only in Lenient notes).
+
+**Strict and Lenient.** `LimitMode::Strict` (the default) never changes the message. In
+`LimitMode::Lenient` validate first truncates over-long display text with `…` (via
+`noctis::rules::truncate`, never splitting a surrogate pair), each truncation one
+`LimitWarning::Truncated` in this order:
+
+1. per field in pre-order: button labels of Route and Link buttons (CV2-08, `P.label`),
+   select placeholders (CV2-09, `P.placeholder`), String Select option labels and
+   descriptions (CV2-09, `P.options[k].label` / `.description`), gallery item alt
+   (CV2-10, `P.item[k].description`), Thumbnail alt (CV2-11, `P.accessory.description`);
+2. Text Display content to fit the CV2-04 total (one warning, path `components`, the
+   total before as `Count`, one `truncated <path>` note per changed text);
+3. `Attachment` alt text (ATT-06, note ``file `<name>` ``);
+4. legacy content (MSG-01).
+
+Everything else always fails in both modes: counts (CV2-03, CV2-06, CV2-07, CV2-10,
+options), URLs, option values, `min_values` / `max_values`, ids, CID-02, ATT-05, MSG-04,
+MSG-09. When a message is truncated and still fails, it stays truncated. A limit of 0
+truncates to `""`.
+
+CV2-04 in Lenient mode, with `n` Text Displays in pre-order and the limit `L`: text `j`
+may keep `L − used − (n − j − 1)` units (one unit stays reserved for each later text).
+The first text over its allowance is truncated to it and every later text to one unit
+(`…`, or itself when ≤ 1). It always fits when `L ≥ n`; when `L < n` nothing changes and
+CV2-04 fails. Example: `"a"×3990` then 20× `"bbbbbbbbbb"` → `"a"×3979 + "…"` then 20× `"…"`
+(4000 in total).

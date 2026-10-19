@@ -198,7 +198,7 @@ fn real_repo_passes() {
     let out = run(&["rules-catalog"]);
     assert_exit(&out, 0, &[]);
     assert!(
-        stderr(&out).starts_with("rules-catalog: ok (125 rules:"),
+        stderr(&out).starts_with("rules-catalog: ok (126 rules:"),
         "{}",
         stderr(&out)
     );

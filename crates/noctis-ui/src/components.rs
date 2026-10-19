@@ -30,7 +30,7 @@ use crate::wire::{Ids, Wire, WiredSeq};
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Components {
-    items: Vec<TopLevelComponent>,
+    pub(crate) items: Vec<TopLevelComponent>,
 }
 
 impl Components {

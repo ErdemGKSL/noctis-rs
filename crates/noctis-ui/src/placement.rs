@@ -45,6 +45,18 @@ pub(crate) mod sealed {
     pub trait IntoSelect: Sealed {
         fn into_select(self) -> SelectNode;
     }
+
+    /// The checks behind [`Validate`](crate::Validate), implemented in
+    /// `limits` for the two message types. It lives here so every sealed
+    /// supertrait of the public API has one path.
+    pub trait Check: Sealed {
+        fn validate_with(
+            &mut self,
+            limits: &noctis_rules::Limits,
+        ) -> Result<crate::CostReport, crate::UiError>;
+
+        fn cost_with(&self, limits: &noctis_rules::Limits) -> crate::CostReport;
+    }
 }
 
 /// A component that may sit at the top level of a message: Container,

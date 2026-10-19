@@ -32,6 +32,9 @@ fields; a struct literal does not compile. Every field is a `usize` maximum.
 - Macros check literals against the defaults. Lowering a field makes the runtime
   re-check every tree, static ones included; raising one never relaxes a
   compile-time check.
+- A built message is checked with `noctis::ui::validate(&mut msg, &limits)` (it
+  truncates in Lenient mode) and measured with `noctis::ui::cost(&msg, &limits)`;
+  see `components-v2.md` §16.
 
 | Field | Rule | Default | Maximum of |
 | --- | --- | --- | --- |
@@ -116,9 +119,9 @@ functions live in `noctis::rules::command` (see `commands.md` §2 "Rule function
 | `component::{validate_button_label, validate_link_url, validate_select_placeholder, validate_gallery_description, validate_thumbnail_description, validate_media_url, validate_accent_color, validate_spacing}` | single CV2 values (path `""`) (`components-v2.md` §15) |
 | `modal::{validate_modal, Modal, ModalComponent, Label, LabelChild, TextInput, TextInputStyle, ModalSelect, FileUpload, RadioGroup, CheckboxGroup, Checkbox, ModalOption}` | modals, MOD-01..07 and CV2-09 for modal selects (`modals.md` §7) |
 | `modal::{validate_modal_title, validate_label_text, validate_label_description, validate_text_input, validate_text_input_value}` | single modal values (`modals.md` §7) |
-| `message::{validate_content, validate_mentions, validate_nonce, validate_sticker_ids, validate_webhook_name, AllowedMentions, MentionIds}` | MSG-01, MSG-03..06, WH-04 (`components-v2.md` §15) |
+| `message::{validate_content, validate_mentions, validate_nonce, validate_sticker_ids, validate_v2_not_empty, validate_legacy_not_empty, validate_webhook_name, AllowedMentions, MentionIds}` | MSG-01, MSG-03..06, MSG-09, WH-04 (`components-v2.md` §15) |
 | `attachment::{validate_attachments, validate_file_size, validate_attachment_description, validate_attachment_ref, AttachmentDecl}` | ATT-01..03, ATT-05, ATT-06 (`components-v2.md` §15) |
-| `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (125, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
+| `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (126, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
 | `Violation` | `{ rule, path, limit, actual, notes: Vec<String>, help: Option<String> }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)` plus `.with_note(…)` (appends) and `.with_help(…)` (replaces); implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty), then a `\n  = note: …` line per note and a `\n  = help: …` line |
 | `Bound` | the broken limit: `AtMost(n)` "at most n", `AtLeast(n)` "at least n", `Between { min, max }` "between min and max", `Exactly(n)` "exactly n", `Describe(&str)` printed as is |
 | `Actual` | the offending value: `Count(n)` printed as `n`, `Text(String)` printed escaped in backticks |
@@ -277,6 +280,7 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 | MSG-06 | nonce ≤ 25; ≤ 3 stickers | R |
 | MSG-07 | flags per endpoint | C |
 | MSG-08 | edits replace components; attachments list rebuilt | R |
+| MSG-09 | a message is never empty: V2 needs ≥ 1 component; legacy needs non-blank content or ≥ 1 row | R |
 | ATT-01 | ≤ 20 MiB per file default; interaction `attachment_size_limit` wins | R |
 | ATT-02 | ≤ 25 MiB per request | R |
 | ATT-03 | ≤ 10 attachments per message [U] | R |

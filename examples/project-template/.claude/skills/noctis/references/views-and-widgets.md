@@ -159,6 +159,8 @@ from current state with a short notice instead of applying a stale action.
 
 `view.cost(&limits)` [planned] → `Cost { components, text_chars, pages }`; the testkit
 reports it per response. Use it in tests to keep dashboards comfortably under 40/4000.
+For a built message today: `noctis::ui::cost(&msg, &limits)` → `CostReport { components,
+text_chars, warnings }` (`components-v2.md` §16).
 
 ## 10. UI quality rulebook
 

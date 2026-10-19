@@ -26,11 +26,11 @@ use crate::wire::{Ids, Wire, flag, head, opt, serialize_via_wire};
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SelectOption {
-    label: Cow<'static, str>,
-    value: Cow<'static, str>,
-    description: Option<Cow<'static, str>>,
+    pub(crate) label: Cow<'static, str>,
+    pub(crate) value: Cow<'static, str>,
+    pub(crate) description: Option<Cow<'static, str>>,
     emoji: Option<Emoji>,
-    default: bool,
+    pub(crate) default: bool,
 }
 
 impl SelectOption {
@@ -84,12 +84,12 @@ impl Serialize for SelectOption {
 
 /// The fields every message select shares.
 #[derive(Debug, Clone)]
-struct Common {
-    custom_id: CustomId,
-    placeholder: Option<Cow<'static, str>>,
-    min_values: Option<u8>,
-    max_values: Option<u8>,
-    disabled: bool,
+pub(crate) struct Common {
+    pub(crate) custom_id: CustomId,
+    pub(crate) placeholder: Option<Cow<'static, str>>,
+    pub(crate) min_values: Option<u8>,
+    pub(crate) max_values: Option<u8>,
+    pub(crate) disabled: bool,
 }
 
 impl Common {
@@ -190,8 +190,8 @@ macro_rules! common_setters {
 /// Placement: alone in an Action Row ([`ActionRow::select`](crate::ActionRow::select)).
 #[derive(Debug, Clone)]
 pub struct StringSelect {
-    common: Common,
-    options: Vec<SelectOption>,
+    pub(crate) common: Common,
+    pub(crate) options: Vec<SelectOption>,
 }
 
 impl StringSelect {
@@ -209,7 +209,7 @@ impl StringSelect {
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
 pub struct UserSelect {
-    common: Common,
+    pub(crate) common: Common,
     defaults: Vec<DefaultValue>,
 }
 
@@ -236,7 +236,7 @@ impl UserSelect {
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
 pub struct RoleSelect {
-    common: Common,
+    pub(crate) common: Common,
     defaults: Vec<DefaultValue>,
 }
 
@@ -263,7 +263,7 @@ impl RoleSelect {
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
 pub struct MentionableSelect {
-    common: Common,
+    pub(crate) common: Common,
     defaults: Vec<DefaultValue>,
 }
 
@@ -300,7 +300,7 @@ impl MentionableSelect {
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
 pub struct ChannelSelect {
-    common: Common,
+    pub(crate) common: Common,
     defaults: Vec<DefaultValue>,
     channel_types: Vec<ChannelType>,
 }
@@ -401,6 +401,42 @@ pub enum SelectNode {
     Role(RoleSelect),
     Mentionable(MentionableSelect),
     Channel(ChannelSelect),
+}
+
+impl SelectNode {
+    /// The shared fields.
+    pub(crate) fn common(&self) -> &Common {
+        match self {
+            Self::String(x) => &x.common,
+            Self::User(x) => &x.common,
+            Self::Role(x) => &x.common,
+            Self::Mentionable(x) => &x.common,
+            Self::Channel(x) => &x.common,
+        }
+    }
+
+    /// The shared fields and, for a String Select, the options.
+    pub(crate) fn parts_mut(&mut self) -> (&mut Common, Option<&mut Vec<SelectOption>>) {
+        match self {
+            Self::String(x) => (&mut x.common, Some(&mut x.options)),
+            Self::User(x) => (&mut x.common, None),
+            Self::Role(x) => (&mut x.common, None),
+            Self::Mentionable(x) => (&mut x.common, None),
+            Self::Channel(x) => (&mut x.common, None),
+        }
+    }
+
+    /// The number of `default_values` (0 for a String Select, whose defaults
+    /// are flagged options).
+    pub(crate) fn default_count(&self) -> usize {
+        match self {
+            Self::String(_) => 0,
+            Self::User(x) => x.defaults.len(),
+            Self::Role(x) => x.defaults.len(),
+            Self::Mentionable(x) => x.defaults.len(),
+            Self::Channel(x) => x.defaults.len(),
+        }
+    }
 }
 
 impl Wire for SelectNode {

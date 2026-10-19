@@ -7,3 +7,6 @@ mod msg;
 
 #[path = "boundary/cid.rs"]
 mod cid;
+
+#[path = "boundary/cv2.rs"]
+mod cv2;

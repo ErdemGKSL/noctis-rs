@@ -100,12 +100,38 @@
 //! let notice = LegacyMessage::new("plain text");
 //! assert!(matches!(notice.edit_body(MessageFormat::V2, EditFlags::empty()), Err(UiError::V2ToLegacy)));
 //! ```
+//!
+//! # Limits
+//!
+//! [`validate`] checks a built [`V2Message`] or [`LegacyMessage`] against
+//! `noctis_rules::Limits` before it is sent, and [`cost`] measures one
+//! without changing it. Both lower the tree into `noctis_rules::component`
+//! descriptors, so counts, paths and violation order match `components!`;
+//! they add CID-02, ATT-05, ATT-06, MSG-01, MSG-04 and MSG-09. A failure is
+//! [`UiError::Limits`] with path-precise violations; Lenient mode truncates
+//! display text with `…` instead, as a [`LimitWarning::Truncated`]. Images
+//! without alt text are a [`LimitWarning::MissingAlt`] in both modes.
+//!
+//! ```
+//! use noctis_rules::{Limits, RuleId};
+//! use noctis_ui::{Components, TextDisplay, UiError, V2Message, cost, validate};
+//!
+//! let texts = (0..41).map(|_| TextDisplay::new("a"));
+//! let mut msg = V2Message::new(texts.fold(Components::new(), Components::push));
+//! assert_eq!(cost(&msg, &Limits::default()).components, 41);
+//! let Err(UiError::Limits { violations }) = validate(&mut msg, &Limits::default()) else {
+//!     panic!("41 components");
+//! };
+//! assert_eq!(violations[0].rule, RuleId::CV2_03);
+//! assert_eq!(violations[0].to_string().lines().next(), Some("[CV2-03] components: limit at most 40, actual 41"));
+//! ```
 
 mod arity;
 mod attachment;
 mod component;
 mod components;
 mod error;
+mod limits;
 mod message;
 mod placement;
 mod route;
@@ -121,6 +147,7 @@ pub use component::{
 };
 pub use components::Components;
 pub use error::UiError;
+pub use limits::{CostReport, LimitWarning, Validate, cost, validate};
 pub use message::{
     CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,
     Roles, Users, V2Message,

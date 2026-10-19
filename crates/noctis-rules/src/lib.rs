@@ -20,8 +20,8 @@
 //! - [`component`]: Components V2 trees and legacy Action Rows (CV2-03..13,
 //!   CV2-15..17).
 //! - [`modal`]: modals, Labels and their inputs (MOD-01..07).
-//! - [`message`]: legacy `content`, allowed mentions, nonce, stickers and
-//!   webhook names (MSG-01, MSG-03..06, WH-04).
+//! - [`message`]: legacy `content`, allowed mentions, nonce, stickers,
+//!   non-empty bodies and webhook names (MSG-01, MSG-03..06, MSG-09, WH-04).
 //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
 //!   references (ATT-01..03, ATT-05, ATT-06).
 //! - [`cid`]: the route id grammar ([`cid::validate_route_id`]) and the

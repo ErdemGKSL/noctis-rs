@@ -1294,6 +1294,7 @@ pub const noctis::rules::RuleId::MSG_05: noctis::rules::RuleId
 pub const noctis::rules::RuleId::MSG_06: noctis::rules::RuleId
 pub const noctis::rules::RuleId::MSG_07: noctis::rules::RuleId
 pub const noctis::rules::RuleId::MSG_08: noctis::rules::RuleId
+pub const noctis::rules::RuleId::MSG_09: noctis::rules::RuleId
 pub const noctis::rules::RuleId::OPT_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::OPT_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::OPT_03: noctis::rules::RuleId
@@ -1934,9 +1935,11 @@ pub fn noctis::rules::message::AllowedMentions<'a>::fmt(&self, &mut core::fmt::F
 impl<'a> core::marker::Copy for noctis::rules::message::AllowedMentions<'a>
 impl<'a> core::marker::StructuralPartialEq for noctis::rules::message::AllowedMentions<'a>
 pub fn noctis::rules::message::validate_content(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_legacy_not_empty(&str, usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_mentions(&noctis::rules::message::AllowedMentions<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_nonce(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_sticker_ids(usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_v2_not_empty(usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_webhook_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub mod noctis::rules::modal
 pub enum noctis::rules::modal::LabelChild<'a>
@@ -2407,6 +2410,18 @@ pub fn noctis::ui::ContainerComponent::from(noctis::ui::Separator) -> Self
 impl core::convert::From<noctis::ui::TextDisplay> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::TextDisplay) -> Self
 impl noctis::ui::ContainerChild for noctis::ui::ContainerComponent
+#[non_exhaustive] pub struct noctis::ui::CostReport
+pub noctis::ui::CostReport::components: usize
+pub noctis::ui::CostReport::text_chars: usize
+pub noctis::ui::CostReport::warnings: alloc::vec::Vec<noctis::ui::LimitWarning>
+impl core::clone::Clone for noctis::ui::CostReport
+pub fn noctis::ui::CostReport::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::CostReport
+impl core::cmp::PartialEq for noctis::ui::CostReport
+pub fn noctis::ui::CostReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::CostReport
+pub fn noctis::ui::CostReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::CostReport
 pub struct noctis::ui::CreateFlags(_)
 impl noctis::ui::CreateFlags
 pub const noctis::ui::CreateFlags::SUPPRESS_EMBEDS: Self
@@ -2510,7 +2525,26 @@ impl core::clone::Clone for noctis::ui::LegacyMessage
 pub fn noctis::ui::LegacyMessage::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::LegacyMessage
 pub fn noctis::ui::LegacyMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::Validate for noctis::ui::LegacyMessage
+impl noctis::ui::Validate for noctis::ui::LegacyMessage
 pub trait noctis::ui::LegacyRows: noctis::__private::ui::sealed::Sealed
+#[non_exhaustive] pub enum noctis::ui::LimitWarning
+pub noctis::ui::LimitWarning::MissingAlt
+pub noctis::ui::LimitWarning::MissingAlt::path: alloc::string::String
+pub noctis::ui::LimitWarning::Truncated(noctis::rules::Violation)
+impl noctis::ui::LimitWarning
+pub fn noctis::ui::LimitWarning::path(&self) -> &str
+pub fn noctis::ui::LimitWarning::rule(&self) -> core::option::Option<noctis::rules::RuleId>
+impl core::clone::Clone for noctis::ui::LimitWarning
+pub fn noctis::ui::LimitWarning::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::LimitWarning
+impl core::cmp::PartialEq for noctis::ui::LimitWarning
+pub fn noctis::ui::LimitWarning::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::LimitWarning
+pub fn noctis::ui::LimitWarning::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ui::LimitWarning
+pub fn noctis::ui::LimitWarning::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::LimitWarning
 pub struct noctis::ui::LinkButton
 impl noctis::ui::LinkButton
 pub fn noctis::ui::LinkButton::disabled(self, bool) -> Self
@@ -2909,6 +2943,8 @@ impl noctis::ui::TopLevel for noctis::ui::TopLevelComponent
 #[non_exhaustive] pub enum noctis::ui::UiError
 pub noctis::ui::UiError::InvalidExtension
 pub noctis::ui::UiError::InvalidExtension::ext: alloc::string::String
+pub noctis::ui::UiError::Limits
+pub noctis::ui::UiError::Limits::violations: alloc::vec::Vec<noctis::rules::Violation>
 pub noctis::ui::UiError::SlotMismatch
 pub noctis::ui::UiError::SlotMismatch::actual: noctis::codec::RouteId
 pub noctis::ui::UiError::SlotMismatch::expected: noctis::codec::RouteId
@@ -2975,3 +3011,8 @@ impl core::convert::From<noctis::ui::Components> for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::from(noctis::ui::Components) -> Self
 impl core::fmt::Debug for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::Validate for noctis::ui::V2Message
+impl noctis::ui::Validate for noctis::ui::V2Message
+pub trait noctis::ui::Validate: noctis::__private::ui::sealed::Check
+pub fn noctis::ui::cost<M: noctis::ui::Validate>(&M, &noctis::rules::Limits) -> noctis::ui::CostReport
+pub fn noctis::ui::validate<M: noctis::ui::Validate>(&mut M, &noctis::rules::Limits) -> core::result::Result<noctis::ui::CostReport, noctis::ui::UiError>

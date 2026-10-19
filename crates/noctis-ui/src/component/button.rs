@@ -85,7 +85,7 @@ pub enum ButtonStyle {
 }
 
 impl ButtonStyle {
-    const fn value(self) -> u8 {
+    pub(crate) const fn value(self) -> u8 {
         match self {
             Self::Primary => 1,
             Self::Secondary => 2,
@@ -97,12 +97,12 @@ impl ButtonStyle {
 
 /// The Route button's fields, shared by every `RouteButton<R>`.
 #[derive(Debug, Clone)]
-struct RouteButtonData {
-    style: ButtonStyle,
-    label: Option<Cow<'static, str>>,
-    emoji: Option<Emoji>,
+pub(crate) struct RouteButtonData {
+    pub(crate) style: ButtonStyle,
+    pub(crate) label: Option<Cow<'static, str>>,
+    pub(crate) emoji: Option<Emoji>,
     disabled: bool,
-    custom_id: CustomId,
+    pub(crate) custom_id: CustomId,
 }
 
 /// An interactive button (styles 1-4) whose click reaches the handler of
@@ -227,9 +227,9 @@ impl<R> Serialize for RouteButton<R> {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkButton {
-    url: Cow<'static, str>,
-    label: Option<Cow<'static, str>>,
-    emoji: Option<Emoji>,
+    pub(crate) url: Cow<'static, str>,
+    pub(crate) label: Option<Cow<'static, str>>,
+    pub(crate) emoji: Option<Emoji>,
     disabled: bool,
 }
 
@@ -341,10 +341,10 @@ impl Wire for PremiumButton {
 /// assert_eq!(serde_json::to_value(&row).unwrap()["components"][1]["style"], 6);
 /// ```
 #[derive(Debug, Clone)]
-pub struct Button(ButtonNode);
+pub struct Button(pub(crate) ButtonNode);
 
 #[derive(Debug, Clone)]
-enum ButtonNode {
+pub(crate) enum ButtonNode {
     Route(RouteButtonData),
     Link(LinkButton),
     Premium(PremiumButton),

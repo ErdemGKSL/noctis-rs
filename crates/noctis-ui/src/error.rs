@@ -1,6 +1,8 @@
-//! [`UiError`]: what a component, attachment or message builder can reject.
+//! [`UiError`]: what a component, attachment or message builder, or the
+//! runtime Limit validator, can reject.
 
 use noctis_codec::RouteId;
+use noctis_rules::Violation;
 
 /// An error from a `noctis-ui` builder.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -26,4 +28,19 @@ pub enum UiError {
         "a Components V2 message cannot be edited back into a legacy message (CV2-01: the IS_COMPONENTS_V2 flag cannot be removed)"
     )]
     V2ToLegacy,
+    /// The message breaks Discord Limits ([`validate`](crate::validate));
+    /// never empty. Displays each violation on its own line.
+    #[error("{}", display_violations(.violations))]
+    Limits {
+        /// Every violation, in the validator's order.
+        violations: Vec<Violation>,
+    },
+}
+
+fn display_violations(violations: &[Violation]) -> String {
+    violations
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
 }

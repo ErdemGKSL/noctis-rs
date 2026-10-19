@@ -92,9 +92,9 @@ impl Serialize for UrlObject<'_> {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Thumbnail {
-    media: Media,
-    alt: Option<Cow<'static, str>>,
-    spoiler: bool,
+    pub(crate) media: Media,
+    pub(crate) alt: Option<Cow<'static, str>>,
+    pub(crate) spoiler: bool,
 }
 
 impl Thumbnail {
@@ -146,9 +146,9 @@ impl Wire for Thumbnail {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaItem {
-    media: Media,
-    alt: Option<Cow<'static, str>>,
-    spoiler: bool,
+    pub(crate) media: Media,
+    pub(crate) alt: Option<Cow<'static, str>>,
+    pub(crate) spoiler: bool,
 }
 
 impl MediaItem {
@@ -202,7 +202,7 @@ impl Serialize for MediaItem {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaGallery {
-    items: Vec<MediaItem>,
+    pub(crate) items: Vec<MediaItem>,
 }
 
 impl MediaGallery {

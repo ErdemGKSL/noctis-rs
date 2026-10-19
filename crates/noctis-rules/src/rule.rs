@@ -66,6 +66,7 @@ rule_ids! {
     MOD_09 = "MOD-09",
     MSG_01 = "MSG-01", MSG_02 = "MSG-02", MSG_03 = "MSG-03", MSG_04 = "MSG-04",
     MSG_05 = "MSG-05", MSG_06 = "MSG-06", MSG_07 = "MSG-07", MSG_08 = "MSG-08",
+    MSG_09 = "MSG-09",
     ATT_01 = "ATT-01", ATT_02 = "ATT-02", ATT_03 = "ATT-03", ATT_04 = "ATT-04",
     ATT_05 = "ATT-05", ATT_06 = "ATT-06", ATT_07 = "ATT-07",
     WH_01 = "WH-01", WH_02 = "WH-02", WH_03 = "WH-03", WH_04 = "WH-04",
@@ -302,10 +303,10 @@ mod tests {
     }
 
     #[test]
-    fn all_has_125_unique_well_formed_ids() {
-        assert_eq!(RuleId::ALL.len(), 125);
+    fn all_has_126_unique_well_formed_ids() {
+        assert_eq!(RuleId::ALL.len(), 126);
         let unique: HashSet<_> = RuleId::ALL.iter().collect();
-        assert_eq!(unique.len(), 125);
+        assert_eq!(unique.len(), 126);
         for id in RuleId::ALL {
             assert!(has_id_shape(id.as_str()), "{id}");
         }

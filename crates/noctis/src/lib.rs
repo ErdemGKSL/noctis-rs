@@ -325,9 +325,10 @@ pub mod ui {
     //!   [`Media`] takes an [`AttachmentRef`] or a URL, and an `attachment://`
     //!   name given as a URL (or a ref from another set) is checked at runtime
     //!   by ATT-05.
-    //! - [`UiError`]: a bad attachment extension, a mismatched Ref slot, or
-    //!   an edit of a V2 message back into a legacy one
-    //!   ([`UiError::V2ToLegacy`]).
+    //! - [`UiError`]: a bad attachment extension, a mismatched Ref slot, an
+    //!   edit of a V2 message back into a legacy one
+    //!   ([`UiError::V2ToLegacy`]), or a message over its Limits
+    //!   ([`UiError::Limits`]).
     //!
     //! # Messages
     //!
@@ -349,6 +350,51 @@ pub mod ui {
     //!   legacy-to-V2 edit clears `content`, `embeds`, `poll` and
     //!   `sticker_ids`.
     //! - [`MessageBody`]: the borrowed JSON body core's Responder sends.
+    //!
+    //! # Limits
+    //!
+    //! - [`validate`]`(&mut msg, &limits)`: checks a built [`V2Message`] or
+    //!   [`LegacyMessage`] (the sealed [`Validate`] trait) against
+    //!   [`Limits`](crate::rules::Limits) before sending and returns a
+    //!   [`CostReport`], or [`UiError::Limits`]` { violations }` with every
+    //!   violation. It lowers the tree into
+    //!   [`rules::component`](crate::rules::component) descriptors, so counts,
+    //!   paths and order match `components!`, and adds CID-02 (duplicate
+    //!   `custom_id`s), ATT-05 (`attachment://` references), ATT-06, MSG-01,
+    //!   MSG-04 and MSG-09 (empty bodies).
+    //! - [`cost`]`(&msg, &limits)`: the [`CostReport`] (components at every
+    //!   depth, text characters, warnings) without changing or sending.
+    //! - Paths name each node by kind and position, as in
+    //!   `container[0].section[2].accessory.label`, `row[0].select[0].options[3].label`,
+    //!   `attachments[0].description` or `allowed_mentions.users`.
+    //! - Strict mode (the default) never changes the message. Lenient mode
+    //!   truncates display text with `…` first (Text Displays to the CV2-04
+    //!   total, button labels, select placeholders and option labels and
+    //!   descriptions, gallery, Thumbnail and attachment alt text, legacy
+    //!   content), each a [`LimitWarning::Truncated`]; counts, URLs, values
+    //!   and ids still fail.
+    //! - [`LimitWarning::MissingAlt`]: a Thumbnail or gallery item that is not
+    //!   a rendered image has no alt text (both modes). Every warning is also
+    //!   logged at WARN with target `noctis::ui`.
+    //!
+    //! ```
+    //! use noctis::rules::{LimitMode, Limits, RuleId};
+    //! use noctis::ui::{ActionRow, Components, LinkButton, UiError, V2Message, validate};
+    //!
+    //! let row = || ActionRow::buttons([LinkButton::new("https://x.y").label("a".repeat(81))]);
+    //! let mut msg = V2Message::new(Components::new().push(row()));
+    //! let Err(UiError::Limits { violations }) = validate(&mut msg, &Limits::default()) else {
+    //!     panic!("label too long");
+    //! };
+    //! assert_eq!(violations[0].rule, RuleId::CV2_08);
+    //! assert_eq!(violations[0].path, "row[0].button[0].label");
+    //!
+    //! let mut limits = Limits::default();
+    //! limits.mode = LimitMode::Lenient;
+    //! let report = validate(&mut msg, &limits).unwrap();
+    //! assert_eq!(report.components, 2);
+    //! assert_eq!(report.warnings.len(), 1);
+    //! ```
     //!
     //! # Placement
     //!
@@ -414,12 +460,12 @@ pub mod ui {
     pub use noctis_ui::{
         ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button,
         ButtonStyle, CallbackFlags, ChannelSelect, Components, Container, ContainerChild,
-        ContainerComponent, CreateFlags, EditFlags, Emoji, File, LegacyMessage, LegacyRows,
-        LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, Mentions, MessageBody,
-        MessageFormat, PremiumButton, Rgb, RoleSelect, Roles, RouteButton, RouteComponents,
-        RowItem, RowSelect, Section, SectionAccessory, SelectOption, Separator, Spacing,
-        StringSelect, TextDisplay, Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect,
-        Users, V2Message,
+        ContainerComponent, CostReport, CreateFlags, EditFlags, Emoji, File, LegacyMessage,
+        LegacyRows, LimitWarning, LinkButton, Media, MediaGallery, MediaItem, MentionableSelect,
+        Mentions, MessageBody, MessageFormat, PremiumButton, Rgb, RoleSelect, Roles, RouteButton,
+        RouteComponents, RowItem, RowSelect, Section, SectionAccessory, SelectOption, Separator,
+        Spacing, StringSelect, TextDisplay, Thumbnail, TopLevel, TopLevelComponent, UiError,
+        UserSelect, Users, V2Message, Validate, cost, validate,
     };
 }
 
@@ -450,8 +496,10 @@ pub mod rules {
     //!   [`component::validate_accent_color`] (CV2-03..13, CV2-15..17).
     //! - [`modal`]: modals ([`modal::validate_modal`]) and single modal values
     //!   (MOD-01..07).
-    //! - [`message`]: legacy `content`, allowed mentions, nonce, stickers and
-    //!   webhook names (MSG-01, MSG-03..06, WH-04).
+    //! - [`message`]: legacy `content`, allowed mentions, nonce, stickers,
+    //!   non-empty bodies ([`message::validate_v2_not_empty`],
+    //!   [`message::validate_legacy_not_empty`]) and webhook names (MSG-01,
+    //!   MSG-03..06, MSG-09, WH-04).
     //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
     //!   references (ATT-01..03, ATT-05, ATT-06).
     //!

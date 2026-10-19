@@ -1,6 +1,6 @@
 //! Message fields outside the component tree: legacy `content` (MSG-01),
-//! allowed mentions (MSG-03..05), nonce and stickers (MSG-06), and webhook
-//! names (WH-04).
+//! allowed mentions (MSG-03..05), nonce and stickers (MSG-06), non-empty
+//! bodies (MSG-09) and webhook names (WH-04).
 //!
 //! - MSG-02: Noctis has no embed API in v1, so there is nothing to check; an
 //!   embed builder added later must add its limits to this module.
@@ -15,11 +15,15 @@
 //!
 //! - MSG-05: [`AllowedMentions::new`] (also the [`Default`]) pings nobody;
 //!   pinging is opt-in.
+//! - MSG-09: a Components V2 message needs at least one top-level component
+//!   ([`validate_v2_not_empty`]); a legacy message needs non-blank `content`
+//!   or at least one Action Row ([`validate_legacy_not_empty`]). Whitespace-only
+//!   content counts as empty.
 //!
 //! The functions only report: they never truncate.
 
 use crate::check::{at_most, text_at_most, text_between};
-use crate::{Limits, RuleId, Violation};
+use crate::{Actual, Bound, Limits, RuleId, Violation};
 
 /// Which ids of one type (users or roles) may be pinged (MSG-03).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -151,6 +155,54 @@ pub fn validate_sticker_ids(count: usize, limits: &Limits) -> Vec<Violation> {
     out
 }
 
+/// MSG-09: a Components V2 message has at least one top-level component
+/// (path `components`).
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::message::validate_v2_not_empty;
+///
+/// assert!(validate_v2_not_empty(1, &Limits::default()).is_empty());
+/// assert_eq!(validate_v2_not_empty(0, &Limits::default())[0].rule, RuleId::MSG_09);
+/// ```
+pub fn validate_v2_not_empty(components: usize, limits: &Limits) -> Vec<Violation> {
+    let _ = limits;
+    if components > 0 {
+        return Vec::new();
+    }
+    vec![Violation::new(
+        RuleId::MSG_09,
+        "components",
+        Bound::AtLeast(1),
+        Actual::Count(components),
+    )]
+}
+
+/// MSG-09: a legacy message has `content` that is not empty or
+/// whitespace-only, or at least one Action Row (path `content`).
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::message::validate_legacy_not_empty;
+///
+/// let l = Limits::default();
+/// assert!(validate_legacy_not_empty("hi", 0, &l).is_empty());
+/// assert!(validate_legacy_not_empty("", 1, &l).is_empty());
+/// assert_eq!(validate_legacy_not_empty(" \n", 0, &l)[0].rule, RuleId::MSG_09);
+/// ```
+pub fn validate_legacy_not_empty(content: &str, rows: usize, limits: &Limits) -> Vec<Violation> {
+    let _ = limits;
+    if rows > 0 || !content.trim().is_empty() {
+        return Vec::new();
+    }
+    vec![Violation::new(
+        RuleId::MSG_09,
+        "content",
+        Bound::Describe("non-empty content or at least one Action Row"),
+        Actual::Text(content.to_owned()),
+    )]
+}
+
 /// WH-04: a webhook name of 1 to `webhook_name_len` characters (path `name`).
 pub fn validate_webhook_name(name: &str, limits: &Limits) -> Vec<Violation> {
     let mut out = Vec::new();
@@ -168,7 +220,6 @@ pub fn validate_webhook_name(name: &str, limits: &Limits) -> Vec<Violation> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Actual, Bound};
 
     fn max(rule: RuleId, path: &str, max: usize, count: usize) -> Violation {
         Violation::new(rule, path, Bound::AtMost(max), Actual::Count(count))
@@ -268,6 +319,44 @@ mod tests {
             validate_sticker_ids(2, &lowered),
             [max(RuleId::MSG_06, "sticker_ids", 1, 2)]
         );
+    }
+
+    #[test]
+    fn msg_09_v2_not_empty() {
+        let l = Limits::default();
+        assert_eq!(
+            validate_v2_not_empty(0, &l),
+            [Violation::new(
+                RuleId::MSG_09,
+                "components",
+                Bound::AtLeast(1),
+                Actual::Count(0)
+            )]
+        );
+        assert!(validate_v2_not_empty(1, &l).is_empty());
+        assert!(validate_v2_not_empty(40, &l).is_empty());
+    }
+
+    #[test]
+    fn msg_09_legacy_not_empty() {
+        let l = Limits::default();
+        let empty = |content: &str| {
+            Violation::new(
+                RuleId::MSG_09,
+                "content",
+                Bound::Describe("non-empty content or at least one Action Row"),
+                Actual::Text(content.to_owned()),
+            )
+        };
+        assert_eq!(validate_legacy_not_empty("", 0, &l), [empty("")]);
+        assert_eq!(validate_legacy_not_empty(" ", 0, &l), [empty(" ")]);
+        assert_eq!(
+            validate_legacy_not_empty("  \n\t", 0, &l),
+            [empty("  \n\t")]
+        );
+        assert!(validate_legacy_not_empty("", 1, &l).is_empty());
+        assert!(validate_legacy_not_empty(" ", 5, &l).is_empty());
+        assert!(validate_legacy_not_empty("x", 0, &l).is_empty());
     }
 
     #[test]

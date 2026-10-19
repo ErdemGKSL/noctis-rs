@@ -31,7 +31,7 @@ use crate::wire::{Ids, Wire, head, serialize_via_wire};
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextDisplay {
-    content: Cow<'static, str>,
+    pub(crate) content: Cow<'static, str>,
 }
 
 impl TextDisplay {
@@ -67,7 +67,7 @@ pub enum Spacing {
 }
 
 impl Spacing {
-    const fn value(self) -> u8 {
+    pub(crate) const fn value(self) -> u8 {
         match self {
             Self::Small => 1,
             Self::Large => 2,
@@ -93,8 +93,8 @@ impl Spacing {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Separator {
-    divider: bool,
-    spacing: Spacing,
+    pub(crate) divider: bool,
+    pub(crate) spacing: Spacing,
 }
 
 impl Separator {

@@ -68,9 +68,9 @@ use crate::{ActionRow, AttachmentSet, Components, UiError};
 /// ```
 #[derive(Debug, Clone)]
 pub struct V2Message {
-    components: Components,
-    attachments: AttachmentSet,
-    mentions: Mentions,
+    pub(crate) components: Components,
+    pub(crate) attachments: AttachmentSet,
+    pub(crate) mentions: Mentions,
 }
 
 impl V2Message {
@@ -189,9 +189,9 @@ impl From<Components> for V2Message {
 /// ```
 #[derive(Debug, Clone)]
 pub struct LegacyMessage {
-    content: Cow<'static, str>,
-    rows: Vec<ActionRow>,
-    mentions: Mentions,
+    pub(crate) content: Cow<'static, str>,
+    pub(crate) rows: Vec<ActionRow>,
+    pub(crate) mentions: Mentions,
 }
 
 impl LegacyMessage {

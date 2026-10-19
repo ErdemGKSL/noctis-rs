@@ -55,7 +55,7 @@ pub struct Attachment {
     url: ArrayString<MAX_URL_LEN>,
     bytes: Bytes,
     content_type: Option<Cow<'static, str>>,
-    alt: Option<Cow<'static, str>>,
+    pub(crate) alt: Option<Cow<'static, str>>,
     origin: AttachmentOrigin,
 }
 
@@ -254,6 +254,11 @@ impl AttachmentSet {
     /// The attachments, in name order.
     pub fn iter(&self) -> impl Iterator<Item = &Attachment> {
         self.files.values()
+    }
+
+    /// The attachments, in name order, for the Lenient validator.
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut Attachment> {
+        self.files.values_mut()
     }
 
     /// The number of attachments.

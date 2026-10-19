@@ -12,8 +12,10 @@ arrayvec.workspace = true
 blake3.workspace = true
 bytes.workspace = true
 noctis-codec.workspace = true
+noctis-rules.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
