@@ -13,7 +13,8 @@ use noctis_codec::{
     CodecError, DecodeError, EncodeError, EncodedId, Field, FieldError, FieldReader, FieldWriter,
     ForgedReason, MAX_REF_ID_LEN, Parts, Payload, PayloadDecode, PayloadSource, PendingRef,
     RawBody, Ref, RefPolicy, RefRecord, Route, RouteShape, Section, SelectNonce, StaleReason,
-    ViewEnvelope, decode, decode_record, decode_route, encode, encode_id, finish,
+    ViewEnvelope, decode, decode_record, decode_route, decode_route_verified, encode, encode_id,
+    finish,
 };
 use proptest::prelude::*;
 
@@ -402,7 +403,10 @@ where
     match encoded {
         Err(e) => panic!("{p:?} did not encode: {e}"),
         Ok(EncodedId::Inline(id)) => {
-            assert_eq!(decode_route::<R>(&id), Ok(PayloadSource::Inline(p.clone())));
+            assert_eq!(
+                decode_route_verified::<R>(&id, &signer),
+                Ok(PayloadSource::Inline(p.clone()))
+            );
         }
         Ok(EncodedId::RefSlot(slot)) => {
             let Ok(r) = Ref::mint() else {

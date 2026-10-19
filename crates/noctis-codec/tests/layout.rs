@@ -11,7 +11,8 @@ use common::*;
 use noctis_codec::{
     BodyKind, CodecError, DecodeError, EncodeError, Field, FieldError, FieldReader, FieldWriter,
     Flags, ForgedReason, Parts, Payload, PayloadDecode, PayloadSource, RawBody, Route, RouteShape,
-    SelectNonce, StaleReason, ViewEnvelope, decode, decode_route, encode,
+    SelectNonce, StaleReason, Verify, ViewEnvelope, decode, decode_route, decode_route_verified,
+    encode,
 };
 use proptest::prelude::*;
 
@@ -274,7 +275,7 @@ fn cid_06_payload_outcomes() {
     );
     assert_eq!(
         decode_route::<Sig>("0sig:1"),
-        Err(flags(Flags::T, Flags::EMPTY))
+        Err(DecodeError::Forged(ForgedReason::MissingTag))
     );
     assert_eq!(
         decode_route::<Sel>("0s:1"),
@@ -307,8 +308,9 @@ fn cid_06_payload_outcomes() {
     );
     assert_eq!(decode_route::<TextSpill>("0t:ab"), inline(text("ab")));
 
+    let zero = FakeSigner::new(0);
     assert_eq!(
-        decode_route::<SpillSigned>("8ss:a000000"),
+        decode_route_verified::<SpillSigned>("8ss:a000000", &zero),
         inline(text("a"))
     );
     assert_eq!(
@@ -317,9 +319,12 @@ fn cid_06_payload_outcomes() {
     );
     assert_eq!(
         decode_route::<SpillSigned>("0ss:a"),
-        Err(flags(Flags::T, Flags::EMPTY))
+        Err(DecodeError::Forged(ForgedReason::MissingTag))
     );
-    assert_eq!(decode_route::<Sig>("8sig:1000000"), inline(NumP { n: 1 }));
+    assert_eq!(
+        decode_route_verified::<Sig>("8sig:1000000", &zero),
+        inline(NumP { n: 1 })
+    );
 
     assert_eq!(decode_route::<Buy>(""), Err(malformed(CodecError::Empty)));
     assert_eq!(
@@ -365,13 +370,13 @@ fn rebuild(d: &noctis_codec::Decoded<'_>) -> String {
 }
 
 /// Encodes then decodes `p`; `None` when either step fails or yields a Ref.
-fn rt<R>(p: &R::Payload, parts: &Parts<'_>) -> Option<R::Payload>
+fn rt<R>(p: &R::Payload, parts: &Parts<'_>, keys: &dyn Verify) -> Option<R::Payload>
 where
     R: Route,
     R::Payload: for<'de> PayloadDecode<'de>,
 {
     let id = encode::<R>(p, parts).ok()?;
-    match decode_route::<R>(&id) {
+    match decode_route_verified::<R>(&id, keys) {
         Ok(PayloadSource::Inline(v)) => Some(v),
         _ => None,
     }
@@ -396,6 +401,7 @@ fn decode_total(raw: &str) {
             let _ = d.payload::<All>();
             let _ = d.payload::<Stored>();
             let _ = d.payload::<SpillSigned>();
+            let _ = d.verified_payload::<Sig>(&noctis_codec::PayloadKey::from_bytes([1; 32]));
         }
         Err(e) => {
             let _ = e.to_string();
@@ -431,7 +437,7 @@ where
         Ok(id) => {
             assert_eq!(id.len(), expected_len);
             assert!(id.len() <= 100);
-            assert_eq!(decode_route::<R>(&id), inline(p.clone()));
+            assert_eq!(decode_route_verified::<R>(&id, &signer), inline(p.clone()));
             let Ok(d) = decode(&id) else {
                 panic!("{id} did not decode")
             };
@@ -542,30 +548,30 @@ proptest! {
 
     #[test]
     fn fixtures_round_trip(item in any::<u64>(), qty in any::<u8>(), note in any::<Option<u8>>(), s in ".{0,8}") {
-        let b = buy(item, qty);
-        prop_assert_eq!(rt::<Buy>(&b, &Parts::new()), Some(b.clone()));
-        prop_assert_eq!(rt::<BuyS2>(&b, &Parts::new()), Some(b.clone()));
-        let o = OptP { v: note };
-        prop_assert_eq!(rt::<Opt>(&o, &Parts::new()), Some(o));
-        let t = text(&s);
-        prop_assert_eq!(rt::<Text>(&t, &Parts::new()), Some(t.clone()));
-        prop_assert_eq!(rt::<TextSpill>(&t, &Parts::new()), Some(t.clone()));
         let signer = FakeSigner::new(item);
+        let b = buy(item, qty);
+        prop_assert_eq!(rt::<Buy>(&b, &Parts::new(), &signer), Some(b.clone()));
+        prop_assert_eq!(rt::<BuyS2>(&b, &Parts::new(), &signer), Some(b.clone()));
+        let o = OptP { v: note };
+        prop_assert_eq!(rt::<Opt>(&o, &Parts::new(), &signer), Some(o));
+        let t = text(&s);
+        prop_assert_eq!(rt::<Text>(&t, &Parts::new(), &signer), Some(t.clone()));
+        prop_assert_eq!(rt::<TextSpill>(&t, &Parts::new(), &signer), Some(t.clone()));
         let parts = Parts::new().with_signer(&signer);
-        prop_assert_eq!(rt::<TextSigned>(&t, &parts), Some(t.clone()));
-        prop_assert_eq!(rt::<SpillSigned>(&t, &parts), Some(t));
+        prop_assert_eq!(rt::<TextSigned>(&t, &parts, &signer), Some(t.clone()));
+        prop_assert_eq!(rt::<SpillSigned>(&t, &parts, &signer), Some(t));
         let n = NumP { n: qty };
-        prop_assert_eq!(rt::<Sig>(&n, &parts), Some(n.clone()));
+        prop_assert_eq!(rt::<Sig>(&n, &parts, &signer), Some(n.clone()));
         let env = ViewEnvelope::new('_', 61, u16::from(qty), 0).unwrap();
         let view = Parts::new().with_envelope(env);
-        prop_assert_eq!(rt::<View>(&n, &view), Some(n.clone()));
+        prop_assert_eq!(rt::<View>(&n, &view, &signer), Some(n.clone()));
         let nonce = SelectNonce::new(u16::from(qty)).unwrap();
         let sel = Parts::new().with_nonce(nonce);
-        prop_assert_eq!(rt::<Sel>(&n, &sel), Some(n.clone()));
+        prop_assert_eq!(rt::<Sel>(&n, &sel, &signer), Some(n.clone()));
         let all = Parts::new().with_envelope(env).with_nonce(nonce).with_signer(&signer);
-        prop_assert_eq!(rt::<All>(&n, &all), Some(n));
+        prop_assert_eq!(rt::<All>(&n, &all, &signer), Some(n));
         let v2 = BuyV2Payload { item, qty, note, gift: note.map(|v| v % 2 == 0) };
-        prop_assert_eq!(rt::<BuyV2>(&v2, &Parts::new()), Some(v2));
-        prop_assert_eq!(rt::<Ping>(&PingP {}, &Parts::new()), Some(PingP {}));
+        prop_assert_eq!(rt::<BuyV2>(&v2, &Parts::new(), &signer), Some(v2));
+        prop_assert_eq!(rt::<Ping>(&PingP {}, &Parts::new(), &signer), Some(PingP {}));
     }
 }

@@ -3,7 +3,7 @@
 
 use core::cell::RefCell;
 
-use noctis_codec::{RouteShape, Sign, Tag};
+use noctis_codec::{RouteShape, Sign, Tag, Verify};
 
 /// Hand-implements `Payload` and `PayloadDecode` for a struct of owned fields.
 macro_rules! payload {
@@ -106,6 +106,12 @@ impl Sign for FakeSigner {
     fn sign(&self, signed: &str) -> Tag {
         signed.clone_into(&mut self.1.borrow_mut());
         Tag::from_u64(self.0)
+    }
+}
+
+impl Verify for FakeSigner {
+    fn verify(&self, _signed: &str, tag: Tag) -> bool {
+        tag.as_str() == Tag::from_u64(self.0).as_str()
     }
 }
 pub(crate) fn text(s: &str) -> TextP {

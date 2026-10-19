@@ -241,6 +241,12 @@ pub enum ForgedReason {
     /// (CID-05).
     #[error("ref record route does not match")]
     RecordRouteMismatch,
+    /// A signed Route's inline id has no integrity tag `T`.
+    #[error("integrity tag is missing")]
+    MissingTag,
+    /// The integrity tag `T` does not verify against any configured key.
+    #[error("integrity tag does not verify")]
+    BadTag,
 }
 
 /// The outcome of decoding a `custom_id` against a Route.
@@ -326,6 +332,26 @@ pub enum RefError {
     /// The random source gave too few usable bytes in 8 fills.
     #[error("random source exhausted")]
     Exhausted,
+}
+
+/// Why a [`PayloadKey`](crate::PayloadKey) could not be parsed from hex.
+///
+/// It never carries or prints key characters (AD-29).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum KeyError {
+    /// The input is not exactly 64 bytes long.
+    #[error("payload key is {len} bytes, 64 hex digits expected")]
+    Length {
+        /// The input's length in bytes.
+        len: usize,
+    },
+    /// The input has a byte that is not an ASCII hex digit.
+    #[error("payload key has a non-hex character at {index}")]
+    InvalidChar {
+        /// Byte index of the first non-hex byte.
+        index: usize,
+    },
 }
 
 /// Why a View envelope could not be built.

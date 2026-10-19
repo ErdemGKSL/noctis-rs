@@ -53,7 +53,8 @@
 //! (or [`decode_route`] in one call) then checks the id against a Route and
 //! classifies it:
 //!
-//! - [`DecodeError::Forged`]: a different route.
+//! - [`DecodeError::Forged`]: a different route, or a signed Route's
+//!   inline id whose tag is missing or does not verify.
 //! - [`DecodeError::Stale`]: a different schema, body kind or `E`/`N`/`T`
 //!   flags, because the Route changed since the id was sent (FR-60).
 //! - [`DecodeError::Malformed`]: a phase-1 error, or an inline body that is
@@ -63,6 +64,38 @@
 //! their [`FieldDecode::absent`] value, so appending an `Option` field to a
 //! Payload needs no schema bump, and an id with an explicit trailing `None`
 //! and one without it decode to the same Payload.
+//!
+//! [`Decoded::payload`] and [`decode_route`] hold no keys and fail closed;
+//! signed Routes decode through [`Decoded::verified_payload`] or
+//! [`decode_route_verified`] (see below).
+//!
+//! # Integrity tags
+//!
+//! The inline id of a `signed` Route ends in a [`Tag`] (AD-5, FR-19):
+//!
+//! ```text
+//! tag = Tag::from_u64(u64::from_le_bytes(blake3::keyed_hash(key, signed)[..8]))
+//! ```
+//!
+//! where `signed` is every character before `T` (no prefix, no domain
+//! string), so the tag binds `F`, the route, `S`, `E`, `N` and the body. Ref
+//! bodies are never tagged.
+//!
+//! - [`PayloadKey`] is the 32-byte key, parsed from 64 hex digits
+//!   (`NOCTIS_PAYLOAD_KEY`) by [`PayloadKey::from_hex`] or built by
+//!   [`PayloadKey::from_bytes`]. It implements [`Sign`] and [`Verify`].
+//! - [`PayloadKeys`] is the rotation ring: the current key signs; the
+//!   current key or one previous key ([`PayloadKeys::with_previous`])
+//!   verifies.
+//! - Tags are compared in constant time, and the ring checks both keys
+//!   without short-circuiting.
+//! - [`decode_route_verified`] reports a signed Route's inline id without a
+//!   tag as [`ForgedReason::MissingTag`] and a tag that verifies under no
+//!   key as [`ForgedReason::BadTag`]; a tag on an unsigned Route stays
+//!   [`DecodeError::Stale`].
+//! - Keys are redacted: `Debug` prints `PayloadKey(<redacted>)`, `Display`
+//!   prints `<redacted>`, there is no byte getter, and [`KeyError`] carries
+//!   only lengths and indices (AD-29, NFR-6).
 //!
 //! # Refs
 //!
@@ -97,6 +130,7 @@ mod encoded;
 mod error;
 mod escape;
 mod field;
+mod key;
 mod layout;
 mod parts;
 mod record;
@@ -106,15 +140,17 @@ mod route;
 pub use bounded_str::{BoundedStr, BoundedStrError};
 pub use encoded::{EncodedId, MAX_REF_ID_LEN, PendingRef, encode_id, finish};
 pub use error::{
-    CodecError, DecodeError, EncodeError, EnvelopeError, FieldError, ForgedReason, RefError,
-    Section, StaleReason,
+    CodecError, DecodeError, EncodeError, EnvelopeError, FieldError, ForgedReason, KeyError,
+    RefError, Section, StaleReason,
 };
 pub use field::{Field, FieldDecode};
+pub use key::{PayloadKey, PayloadKeys};
 pub use layout::{
     Decoded, FMT_LEN, MAX_ID_LEN, NONCE_LEN, Parts, PayloadSource, REF_LEN, REF_MARKER_LEN,
-    RawBody, RefPolicy, SCHEMA_LEN, SEP_LEN, TAG_LEN, VIEW_ENV_LEN, decode, decode_route, encode,
+    RawBody, RefPolicy, SCHEMA_LEN, SEP_LEN, TAG_LEN, VIEW_ENV_LEN, decode, decode_route,
+    decode_route_verified, encode,
 };
-pub use parts::{Flags, SelectNonce, Sign, Tag, ViewEnvelope};
+pub use parts::{Flags, SelectNonce, Sign, Tag, Verify, ViewEnvelope};
 pub use record::{RefRecord, decode_record};
 pub use refs::Ref;
 pub use route::{

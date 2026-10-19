@@ -260,6 +260,21 @@ impl Tag {
         Self(digits)
     }
 
+    /// Compares two tags in constant time: every byte is compared, with no
+    /// early exit.
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "mirrors `PartialEq::eq`; the spec fixes this signature"
+    )]
+    pub(crate) fn ct_eq(&self, other: &Tag) -> bool {
+        let diff = self
+            .0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b));
+        core::hint::black_box(diff) == 0
+    }
+
     /// The tag's 6 characters.
     pub fn as_str(&self) -> &str {
         // Every byte is a base62 digit, so the bytes are ASCII.
@@ -281,17 +296,36 @@ impl fmt::Display for Tag {
 
 /// Computes the integrity tag of a signed Route's `custom_id`.
 ///
-/// The encoder passes exactly the characters before `T`. Story 2.4
-/// implements this for the App's payload key.
+/// The encoder passes exactly the characters before `T`.
+/// [`PayloadKey`](crate::PayloadKey) and [`PayloadKeys`](crate::PayloadKeys)
+/// implement it with keyed BLAKE3.
 pub trait Sign {
     /// The tag for `signed`, every character before the tag.
     fn sign(&self, signed: &str) -> Tag;
+}
+
+/// Checks the integrity tag of a signed Route's `custom_id`.
+///
+/// [`PayloadKey`](crate::PayloadKey) and [`PayloadKeys`](crate::PayloadKeys)
+/// implement it in constant time.
+pub trait Verify {
+    /// Whether `tag` is a valid tag for `signed`, every character before the
+    /// tag.
+    fn verify(&self, signed: &str, tag: Tag) -> bool;
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Flags, SelectNonce, Tag, ViewEnvelope};
     use crate::EnvelopeError;
+
+    #[test]
+    fn tag_ct_eq() {
+        let a = Tag::from_digits(*b"abcdef");
+        assert!(a.ct_eq(&Tag::from_digits(*b"abcdef")));
+        assert!(!a.ct_eq(&Tag::from_digits(*b"Xbcdef")));
+        assert!(!a.ct_eq(&Tag::from_digits(*b"abcdeX")));
+    }
 
     #[test]
     fn envelope_display_and_getters() {

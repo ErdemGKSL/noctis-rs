@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 arrayvec.workspace = true
+blake3.workspace = true
 bytes.workspace = true
 getrandom.workspace = true
 thiserror.workspace = true

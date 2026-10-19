@@ -10,7 +10,7 @@ use core::time::Duration;
 use arrayvec::ArrayString;
 
 use crate::base62::{digit, digit_value};
-use crate::parts::{DIGIT_MAX as MAX_SCHEMA, Flags, SelectNonce, Sign, Tag, ViewEnvelope};
+use crate::parts::{DIGIT_MAX as MAX_SCHEMA, Flags, SelectNonce, Sign, Tag, Verify, ViewEnvelope};
 use crate::refs::Ref;
 use crate::route::{
     BodyKind, FieldReader, FieldWriter, MAX_ROUTE_LEN, Payload, PayloadDecode, Route, is_route_byte,
@@ -419,7 +419,8 @@ impl<'a> Decoded<'a> {
         }
     }
 
-    /// The integrity tag, when `T` is present. It is not verified here.
+    /// The integrity tag, when `T` is present. It is not verified here; see
+    /// [`Decoded::verified_payload`].
     pub const fn tag(&self) -> Option<Tag> {
         self.tag
     }
@@ -435,19 +436,50 @@ impl<'a> Decoded<'a> {
         self.raw
     }
 
-    /// Checks the id against Route `R` and decodes its Payload (phase 2).
+    /// Checks the id against Route `R` and decodes its Payload (phase 2),
+    /// with no keys.
     ///
-    /// The tag is not verified here.
+    /// This is [`Decoded::verified_payload`] with keys that verify nothing,
+    /// so it fails closed: unsigned Routes and Ref bodies decode as usual,
+    /// but an inline id of a `signed` Route is always
+    /// [`DecodeError::Forged`]. Use [`Decoded::verified_payload`] (or
+    /// [`decode_route_verified`]) with the App's
+    /// [`PayloadKeys`](crate::PayloadKeys) for signed Routes.
     ///
     /// # Errors
     ///
-    /// Checked in this order: a different route is
-    /// [`DecodeError::Forged`]; a different schema, a body kind the Route
-    /// does not use, or `E`/`N`/`T` flags that differ from the Route's (`T`
-    /// is expected for an inline body of a signed Route) are
-    /// [`DecodeError::Stale`]; an inline body that does not decode is
-    /// [`DecodeError::Malformed`].
+    /// The errors of [`Decoded::verified_payload`]; a signed Route's inline
+    /// id is [`ForgedReason::MissingTag`] or [`ForgedReason::BadTag`].
     pub fn payload<R: Route>(&self) -> Result<PayloadSource<R::Payload>, DecodeError>
+    where
+        R::Payload: PayloadDecode<'a>,
+    {
+        self.verified_payload::<R>(&NeverVerifies)
+    }
+
+    /// Checks the id against Route `R`, verifies its integrity tag with
+    /// `keys` and decodes its Payload (phase 2).
+    ///
+    /// # Errors
+    ///
+    /// Checked in this order:
+    ///
+    /// 1. a different route is [`DecodeError::Forged`]
+    ///    ([`ForgedReason::RouteMismatch`]);
+    /// 2. a different schema is [`DecodeError::Stale`];
+    /// 3. a body kind the Route does not use is [`DecodeError::Stale`];
+    /// 4. an inline id of a signed Route without `T` is
+    ///    [`DecodeError::Forged`] ([`ForgedReason::MissingTag`]);
+    /// 5. `E`/`N`/`T` flags that differ from the Route's (`T` is expected
+    ///    exactly for an inline body of a signed Route) are
+    ///    [`DecodeError::Stale`];
+    /// 6. a tag that `keys` does not verify is [`DecodeError::Forged`]
+    ///    ([`ForgedReason::BadTag`]);
+    /// 7. an inline body that does not decode is [`DecodeError::Malformed`].
+    pub fn verified_payload<R: Route>(
+        &self,
+        keys: &dyn Verify,
+    ) -> Result<PayloadSource<R::Payload>, DecodeError>
     where
         R::Payload: PayloadDecode<'a>,
     {
@@ -471,11 +503,15 @@ impl<'a> Decoded<'a> {
                 expected: shape.body(),
             }));
         }
+        let tagged = shape.is_signed() && !self.is_ref;
+        if tagged && self.tag.is_none() {
+            return Err(DecodeError::Forged(ForgedReason::MissingTag));
+        }
         let mut expected = Flags::EMPTY;
         for (present, flag) in [
             (shape.has_view(), Flags::E),
             (shape.has_select(), Flags::N),
-            (shape.is_signed() && !self.is_ref, Flags::T),
+            (tagged, Flags::T),
         ] {
             if present {
                 expected = expected | flag;
@@ -484,6 +520,15 @@ impl<'a> Decoded<'a> {
         let found = self.flags.intersection(Flags::E | Flags::N | Flags::T);
         if found != expected {
             return Err(DecodeError::Stale(StaleReason::Flags { expected, found }));
+        }
+        if tagged {
+            let verified = match (self.signed_part(), self.tag) {
+                (Some(signed), Some(tag)) => keys.verify(signed, tag),
+                _ => false,
+            };
+            if !verified {
+                return Err(DecodeError::Forged(ForgedReason::BadTag));
+            }
         }
         match self.body() {
             RawBody::Ref(r) => Ok(PayloadSource::Ref(r)),
@@ -703,7 +748,10 @@ pub fn decode(raw: &str) -> Result<Decoded<'_>, CodecError> {
     })
 }
 
-/// [`decode`] then [`Decoded::payload`] in one call.
+/// [`decode`] then [`Decoded::payload`] in one call, with no keys.
+///
+/// It fails closed: an inline id of a `signed` Route is always
+/// [`DecodeError::Forged`]. Use [`decode_route_verified`] for signed Routes.
 ///
 /// # Errors
 ///
@@ -714,6 +762,32 @@ where
     R::Payload: PayloadDecode<'a>,
 {
     decode(raw)?.payload::<R>()
+}
+
+/// [`decode`] then [`Decoded::verified_payload`] in one call: the decode
+/// for `signed` Routes, given the App's [`PayloadKeys`](crate::PayloadKeys).
+///
+/// # Errors
+///
+/// A phase-1 [`CodecError`] as [`DecodeError::Malformed`], then the errors of
+/// [`Decoded::verified_payload`].
+pub fn decode_route_verified<'a, R: Route>(
+    raw: &'a str,
+    keys: &dyn Verify,
+) -> Result<PayloadSource<R::Payload>, DecodeError>
+where
+    R::Payload: PayloadDecode<'a>,
+{
+    decode(raw)?.verified_payload::<R>(keys)
+}
+
+/// Keys that verify no tag: the fail-closed default of [`Decoded::payload`].
+struct NeverVerifies;
+
+impl Verify for NeverVerifies {
+    fn verify(&self, _signed: &str, _tag: Tag) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
