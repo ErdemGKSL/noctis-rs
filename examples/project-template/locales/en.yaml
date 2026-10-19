@@ -1,0 +1,84 @@
+# Default locale (AD-16). Every key used in code must exist here, or the build fails.
+# `en` covers en-US and en-GB at Publish unless a variant file exists (FR-41).
+# Placeholders are {name}; generated methods take them in order of first appearance,
+# and every occurrence is replaced.
+
+# --- Command metadata: fixed key layout, validated against CMD-01..05 / LOC-02 --------
+cmd:
+  setup start:
+    desc: Configure the bot for this server, step by step
+  dashboard:
+    desc: Open the server dashboard
+  profile:
+    desc: Show a member's profile card
+    opt:
+      user:
+        name: user
+        desc: Whose profile to show (default you)
+
+ctxcmd:
+  show_profile:
+    name: Show profile
+
+# --- Content ----------------------------------------------------------------------------
+common:
+  guild_only: This only works inside a server.
+  refresh: Refresh
+  enabled: enabled
+  disabled: disabled
+  enable: Enable
+  disable: Disable
+
+setup:
+  step:
+    channel: Log channel
+    roles: Moderator role
+    confirm: Confirm
+  channel_help: "Pick the channel where moderation logs should go."
+  channel_placeholder: Choose a text channel
+  role_help: "Pick the role that may use moderation commands."
+  role_placeholder: Choose a role
+  need_channel: Pick a log channel before continuing.
+  need_role: Pick a moderator role before continuing.
+  unset: not set
+  summary: "**Log channel:** {channel}\n**Moderator role:** {role}\n-# Press Finish to save."
+  finish: Finish
+  done: "### Setup complete\nLogs go to {channel}; {role} can moderate."
+
+dashboard:
+  tab:
+    overview: Overview
+    roles: Roles
+    modules: Modules
+  title: "{name} dashboard"
+  subtitle: "Noctis template v{version}"
+  overview: "**Roles:** {roles}\n**Enabled modules:** {modules}\n**Online since:** {started}"
+  no_roles: "-# This server has no roles yet."
+  module:
+    setup: Setup wizard
+    profile: Profiles and XP
+
+profile:
+  title: "{name}'s profile"
+  card_alt: "Profile card of {name} with level and XP progress"
+  no_bio: No bio yet.
+  edit_bio: Edit bio
+  card:
+    level: "Level {level}"
+    xp: "{current} / {total} XP"
+  bio_modal:
+    title: Edit your profile
+    bio: Bio
+    bio_hint: A few words about you
+    pronouns: Pronouns
+  pronouns:
+    he: he/him
+    she: she/her
+    they: they/them
+    any: any pronouns
+
+# --- Overrides of framework strings (optional) ------------------------------------------
+# Keys under `noctis.` are owned by Noctis widgets and ship with defaults; define one only
+# to change its wording (for example the expired notice).
+noctis:
+  expired: This panel has expired. Run the command again.

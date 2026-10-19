@@ -1,0 +1,80 @@
+# Turkish. Missing keys fall back to en.yaml with a build warning (LOC-04).
+
+# Command names are translated word by word (cmdword.*); a full-path key overrides it.
+cmdword:
+  setup: kurulum
+  start: başlat
+  dashboard: panel
+  profile: profil
+
+cmd:
+  setup start:
+    desc: Botu bu sunucu için adım adım yapılandır
+  dashboard:
+    desc: Sunucu panelini aç
+  profile:
+    desc: Bir üyenin profil kartını göster
+    opt:
+      user:
+        name: kullanıcı
+        desc: Kimin profili gösterilsin (varsayılan sensin)
+
+ctxcmd:
+  show_profile:
+    name: Profili göster
+
+common:
+  guild_only: Bu yalnızca bir sunucuda çalışır.
+  refresh: Yenile
+  enabled: açık
+  disabled: kapalı
+  enable: Aç
+  disable: Kapat
+
+setup:
+  step:
+    channel: Kayıt kanalı
+    roles: Moderatör rolü
+    confirm: Onay
+  channel_help: "Moderasyon kayıtlarının gideceği kanalı seç."
+  channel_placeholder: Bir metin kanalı seç
+  role_help: "Moderasyon komutlarını kullanabilecek rolü seç."
+  role_placeholder: Bir rol seç
+  need_channel: Devam etmeden önce bir kayıt kanalı seç.
+  need_role: Devam etmeden önce bir moderatör rolü seç.
+  unset: ayarlanmadı
+  summary: "**Kayıt kanalı:** {channel}\n**Moderatör rolü:** {role}\n-# Kaydetmek için Bitir'e bas."
+  finish: Bitir
+  done: "### Kurulum tamamlandı\nKayıtlar {channel} kanalına gider; {role} moderasyon yapabilir."
+
+dashboard:
+  tab:
+    overview: Genel
+    roles: Roller
+    modules: Modüller
+  title: "{name} paneli"
+  subtitle: "Noctis şablonu v{version}"
+  overview: "**Roller:** {roles}\n**Açık modüller:** {modules}\n**Çevrimiçi:** {started}"
+  no_roles: "-# Bu sunucuda henüz rol yok."
+  module:
+    setup: Kurulum sihirbazı
+    profile: Profiller ve XP
+
+profile:
+  title: "{name} profili"
+  card_alt: "{name} kullanıcısının seviye ve XP ilerlemesini gösteren profil kartı"
+  no_bio: Henüz biyografi yok.
+  edit_bio: Biyografiyi düzenle
+  card:
+    level: "Seviye {level}"
+    xp: "{current} / {total} XP"
+  bio_modal:
+    title: Profilini düzenle
+    bio: Biyografi
+    bio_hint: Kendinden birkaç kelime
+    pronouns: Zamirler
+  pronouns:
+    he: o (erkek)
+    she: o (kadın)
+    they: onlar
+    any: herhangi biri
