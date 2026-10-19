@@ -2,7 +2,8 @@
 title: 'Story 2.3: Refs and two-phase `EncodedId`'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'fe93a863cd1a2aad53e11b37c5a055a0cc8cc7f2'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
