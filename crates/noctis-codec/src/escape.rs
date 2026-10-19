@@ -103,9 +103,43 @@ pub(crate) fn unescape(raw: &str, allow_unicode: bool) -> Result<Cow<'_, str>, F
     Ok(owned.map_or(Cow::Borrowed(raw), Cow::Owned))
 }
 
+/// Reverses [`escape`] for `BoundedStr` (no `!u` form) into `buf`, without
+/// allocating.
+///
+/// Scans all of `raw`, so `InvalidChar`/`BadEscape` win over capacity. Returns
+/// the full decoded length, which may exceed `buf.len()`; only the first
+/// `buf.len()` decoded bytes are written.
+pub(crate) fn unescape_ascii_into(raw: &str, buf: &mut [u8]) -> Result<usize, FieldError> {
+    let bytes = raw.as_bytes();
+    let mut len = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        let (out, width) = if b == b'!' {
+            match bytes.get(i + 1) {
+                Some(b'0') => (b'!', 2),
+                Some(b'1') => (b',', 2),
+                Some(b'2') => (b':', 2),
+                Some(b'3') => (b'~', 2),
+                _ => return Err(FieldError::BadEscape { index: i }),
+            }
+        } else if is_printable(b) && !matches!(b, b',' | b':' | b'~') {
+            (b, 1)
+        } else {
+            return Err(FieldError::InvalidChar { index: i });
+        };
+        if let Some(slot) = buf.get_mut(len) {
+            *slot = out;
+        }
+        len += 1;
+        i += width;
+    }
+    Ok(len)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Cow, escape, unescape};
+    use super::{Cow, escape, unescape, unescape_ascii_into};
     use crate::FieldError;
 
     fn esc(s: &str) -> String {
@@ -145,6 +179,23 @@ mod tests {
         assert_eq!(
             unescape("aé", true),
             Err(FieldError::InvalidChar { index: 1 })
+        );
+    }
+
+    #[test]
+    fn unescape_ascii_into_matches_unescape() {
+        let mut buf = [0u8; 4];
+        assert_eq!(unescape_ascii_into("a!1b!0", &mut buf), Ok(4));
+        assert_eq!(&buf, b"a,b!");
+        let mut small = [0u8; 2];
+        assert_eq!(unescape_ascii_into("abc", &mut small), Ok(3));
+        assert_eq!(
+            unescape_ascii_into("abcé", &mut small),
+            Err(FieldError::InvalidChar { index: 3 })
+        );
+        assert_eq!(
+            unescape_ascii_into("abc!u0000e9", &mut small),
+            Err(FieldError::BadEscape { index: 3 })
         );
     }
 }

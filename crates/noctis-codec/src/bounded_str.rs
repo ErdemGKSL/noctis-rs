@@ -3,7 +3,7 @@
 use core::fmt::{self, Write};
 use core::str::FromStr;
 
-use crate::escape::{escape, is_printable, unescape};
+use crate::escape::{escape, is_printable, unescape_ascii_into};
 use crate::{Field, FieldDecode, FieldError};
 
 /// Why a string cannot become a [`BoundedStr`].
@@ -220,16 +220,17 @@ impl<const N: usize> FieldDecode<'_> for BoundedStr<N> {
                 actual: raw.len(),
             });
         }
-        let text = unescape(raw, false)?;
-        if text.len() > N {
+        let mut bytes = [0; N];
+        let len = unescape_ascii_into(raw, &mut bytes)?;
+        if len > N {
             return Err(FieldError::OverCapacity {
                 capacity: N,
-                actual: text.len(),
+                actual: len,
             });
         }
-        // `unescape` without `!u` yields printable ASCII only, so `new` cannot
-        // fail here; map defensively instead of panicking.
-        Self::new(&text).map_err(|_| FieldError::InvalidChar { index: 0 })
+        // `unescape_ascii_into` writes printable ASCII only, so `bytes[..len]`
+        // is valid text and the tail is still zero.
+        Ok(Self { bytes, len })
     }
 }
 

@@ -3,7 +3,9 @@
 /// Why a Payload field could not be decoded.
 ///
 /// Decoding is canonical: every input that is not exactly the encoding of some
-/// value is one of these errors. Byte indices are into the decoded `&str`.
+/// value is one of these errors. Byte indices are into the decoded `&str`,
+/// except for an error in a `Vec` element: there the index is relative to that
+/// element after the list is unescaped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FieldError {
@@ -23,7 +25,7 @@ pub enum FieldError {
     #[error("integer overflows the field type")]
     Overflow,
     /// The input is longer than the field's worst-case width.
-    #[error("field is {actual} characters, at most {max} allowed")]
+    #[error("field is {actual} bytes, at most {max} allowed")]
     TooLong {
         /// The field's `MAX_LEN`.
         max: usize,
@@ -103,7 +105,7 @@ mod tests {
         assert_eq!(FieldError::Empty.to_string(), "empty field");
         assert_eq!(
             FieldError::TooLong { max: 2, actual: 3 }.to_string(),
-            "field is 3 characters, at most 2 allowed"
+            "field is 3 bytes, at most 2 allowed"
         );
     }
 }

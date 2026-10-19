@@ -2,7 +2,7 @@
 title: 'Story 2.1: Payload field encodings'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '5e546dc326aad70776c4167c1b6899d9d60bb903'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -10,7 +10,21 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md'
   - '{project-root}/docs/discord-rules.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The api-snapshot generator emits the BoundedStr Field and FieldDecode impl blocks twice in xtask/public-api.txt.
+    evidence: |-
+      `cargo run --release -p xtask -- api-snapshot` reports ok on the committed file, so the generator (xtask expand/owned_by from Story 1.8, or cargo-public-api) produces the duplicate; the Locale/RuleId repeats are legitimate separate inherent impls, the BoundedStr ones are not. Fix the block assembly to drop an identical impl block already emitted, re-bless, and update the skill API hash.
+    location: >-
+      xtask/src/api_snapshot.rs (expand / owned_by); xtask/public-api.txt
+    severity: low
+  - summary: >-
+      examples/project-template/tests/payload_fields.rs is never compiled or run, so the custom-field pattern it shows can drift from noctis::codec unnoticed.
+    evidence: |-
+      The template is excluded from the root workspace and cannot compile until the rest of the planned facade lands (template-build is in tracking mode until Story 14.2, in a disabled workflow, and runs build, not test). Only the facade doctest in crates/noctis/src/lib.rs executes the pattern today. A facade integration test in crates/noctis/tests/ mirroring percent_rejects_out_of_range would close it early.
+    location: >-
+      examples/project-template/tests/payload_fields.rs
+    severity: low
 ---
 
 <intent-contract>
@@ -161,6 +175,38 @@ Check helpers (`noctis_codec::check`):
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 28 findings — high 0, medium 2, low 16, false 10, maybe-false 0
+- findings:
+  - `[low]` `[patch]` Vec<T>::decode returns element InvalidChar/BadEscape/TrailingInput indices relative to the unescaped element, not to raw (blind) — confirmed at field.rs:228-236 (`body.split(',').map(T::decode)` with no offset); FieldError docs say indices are into the decoded `&str`; grouped with the edge and verification-gap rows; patch: document element-relative indices for Vec.
+  - `[low]` `[patch]` FieldError::TooLong Display says "characters" while `actual` is a byte count (blind) — confirmed in error.rs (doc "length in bytes", message "{actual} characters"); bool "é" gives TooLong{actual:2}; the bool/u8 ordering difference itself follows the spec's length-first rule; patch: say bytes in the message and its test.
+  - `[low]` `[reject]` No FieldError variant for author domain validation; examples use Overflow for Percent(101) (blind) — the spec's golden example chose Overflow, which reads as "value does not fit the field"; the enum is #[non_exhaustive] so a variant can be added later without a break; the fix adds public surface for a naming nuance.
+  - `[low]` `[patch]` Vec<T> needs owned elements (`for<'x> FieldDecode<'x>`) for decode while Field accepts any T, undocumented (blind) — confirmed: Vec<Cow<'_, str>> implements Field but never FieldDecode and neither the Vec rustdoc nor the skill's custom-field section says so; patch: one sentence in both.
+  - `[low]` `[reject]` Nested string-like Vec fields grow exponentially with escaping (blind) — real but the encoding is the spec's settled design (matrix row `vec![vec![1u8]]` → `"1!01!1"`), Vec is already unbounded (MAX_LEN None) and the skill forbids free text in Payloads; nested lists of `!`-bearing strings are unlikely and a warning section is more than a correction.
+  - `[low]` `[reject]` compile_fail doctests on from_static are not pinned to E0080 (blind) — a passing doctest of the same const with valid input guards the import path, the repo's existing compile_fail doctests follow the same unpinned pattern, and rustdoc error-code pinning is not reliably checked on stable; the length assertion is not CID-07 so carries no id.
+  - `[low]` `[defer]` xtask/public-api.txt lists the BoundedStr Field/FieldDecode impl blocks twice (blind) — confirmed: `api-snapshot` reports ok, so the Story 1.8 generator produces the duplicate (not a hand edit); pre-existing tool quirk exposed here, harmless to the gate; deferred.
+  - `[false]` `[reject]` twilight-model becomes a public dependency without an Id re-export (blind) — the spec deliberately forbids re-exporting Id / adding noctis::id in this story (later story) and the spine names twilight-model for ids.
+  - `[low]` `[reject]` check has no helper for canonical decode of arbitrary raw strings (blind) — real gap for hand-written decoders, but authors delegating to built-ins (the taught pattern) are canonical by construction and the fix adds public API beyond the spec's helper set.
+  - `[false]` `[reject]` CID-07 removed from rules-pending without updating docs/discord-rules.md or noctis-rules (blind) — the rule text and enforcement ("Compile-time (by construction)") are unchanged; the spec required removing the pending entry because the new `// [CID-07]` compile_fail doctest is its by-construction evidence; no limit changed.
+  - `[false]` `[reject]` Option/BoundedStr MAX_LEN silently become None on overflow (blind) — the spec mandates `None` on overflow, and the overflow needs a capacity near usize::MAX/2, which no type can have in memory.
+  - `[low]` `[reject]` check::worst_case encodes twice (blind) — negligible cost in a test helper; field encodings are deterministic by contract.
+  - `[low]` `[reject]` Proptest strategies are redundant/weak, no mutation strategy (blind) — the regex is the spec's; adding a mutation strategy is new test machinery, not a correction, and canonicality is already covered by unit rows.
+  - `[low]` `[reject]` BoundedStr lacks reverse PartialEq, Borrow/Deref, compact len (blind) — feature requests beyond the spec's API list; no defect.
+  - `[low]` `[patch]` Vec element error index is relative to the unescaped element (edge) — same defect as the first row; grouped; patch as there.
+  - `[medium]` `[patch]` BoundedStr::decode allocates a String when the input contains `!` (edge) — confirmed: unescape() does `raw[..i].to_owned()` on the first `!`, and the spec's Boundaries list BoundedStr (and Option of it) among fixed-width fields that decode without heap allocation; Story 2.6's dhat guard would catch it; grouped with intent divergence 3; patch: decode straight into the inline array.
+  - `[low]` `[patch]` base62.rs module doc promises zig-zag helpers that do not exist (edge) — confirmed: zig-zag is inlined in signed_fields! in field.rs; patch: correct the module doc (later stories can add helpers when they need them).
+  - `[false]` `[reject]` escape() has no allow_unicode parameter (edge) — BoundedStr holds printable ASCII only, so escape never emits `!u` for it; output is identical to the specified signature's.
+  - `[low]` `[defer]` Template test payload_fields.rs never compiles or runs (verification-gap, pre-verified) — the whole template is in tracking mode until Story 14.2 and the facade doctest runs the same pattern; deferred as filed.
+  - `[low]` `[patch]` Vec<T>::decode does not shift element error indices (verification-gap other) — same defect as the first row; grouped; patch as there.
+  - `[false]` `[reject]` Enum Payload fields not implemented (intent 1) — PayloadEnum belongs to Story 2.5 per epics.md l.989-1014; the spec settled this correctly.
+  - `[false]` `[reject]` Zero-allocation decode is asserted structurally, not measured (intent 2) — the dhat guard is Story 2.6's per the epics; the spec settled this correctly.
+  - `[medium]` `[patch]` BoundedStr decode allocates on escaped input (intent 3) — same defect as the edge row; grouped; patch as there.
+  - `[low]` `[reject]` Worst-case width tests are per family, not per type (intent 4) — every bounded type is asserted; only test granularity differs, no user or developer harm beyond a slightly less specific failure name.
+  - `[false]` `[reject]` Composite-list proptest uses a manual join/split (intent 5) — the spec specifies exactly this; the layout encoder is Story 2.2's.
+  - `[false]` `[reject]` Width check is a runtime helper, not compile-time (intent 6) — matches the AC; compile-time assert_fits is Story 2.5's.
+  - `[false]` `[reject]` CID-07 evidence covers only BoundedStr construction (intent 7) — the catalog's by-construction evidence is the tagged compile_fail doctest as the spec requires; the encoding half is enforced by the escape code and cid_07_* tests.
+  - `[false]` `[reject]` Scope additions beyond the AC (intent 8) — descriptive; all follow from the spec, AD-5 and AD-25.
+
 ## Design Notes
 
 Decisions (logged to the memlog):
@@ -204,3 +250,21 @@ impl<'de> FieldDecode<'de> for Percent {
 - `cargo +1.91 check --release --workspace` -- expected: exit 0 (MSRV; `core::str::from_utf8` in const is stable since 1.87).
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** `noctis-codec` now has the Payload field layer: lifetime-free `Field` trait (encode into `core::fmt::Write`, `MAX_LEN`) plus `FieldDecode<'de>` (serde-style, borrows `Cow<'de, str>`), base62 integers (zig-zag signed), bool, `Id<T>`, `Option`, `BoundedStr<N>` (printable ASCII, const `from_static`), `String`/`Cow` with `!`-escapes (`!0..!3`, `!u`+6 hex), escaped-terminator `Vec<T>`, canonical (injective) decoding, a `FieldError` enum, and `check` test helpers (round-trip, worst-case width). Re-exported as `noctis::codec`; CID-07 is now enforced by construction (tagged `compile_fail` doctest) and removed from rules-pending.
+- **Files changed:**
+  - `crates/noctis-codec/src/{lib,field,base62,escape,bounded_str,error,check}.rs`: traits, encodings, escaping, BoundedStr, errors, test helpers.
+  - `crates/noctis-codec/tests/round_trip.rs`: proptest and matrix round-trip/canonicality tests.
+  - `crates/noctis-codec/Cargo.toml`, `Cargo.lock`: twilight-model (for `Id<T>`), proptest dev-dep.
+  - `crates/noctis/{Cargo.toml,src/lib.rs}`: `noctis::codec` re-export and facade doctest.
+  - `examples/project-template/` (AGENTS.md, noctis skill, routes-payloads-refs.md, tests/payload_fields.rs): author-facing field docs and example.
+  - `xtask/public-api.txt` (snapshot re-blessed), `xtask/rules-pending.toml` (CID-07 removed).
+- **Review findings (28: high 0, medium 2, low 16, false 10):**
+  - Patched (medium 2, low 7, grouped into 5 fixes): BoundedStr decode no longer allocates on escaped input (decodes straight into the inline array); Vec element error indices documented as element-relative; TooLong message says bytes; Vec owned-element (`for<'x> FieldDecode<'x>`) requirement documented in rustdoc and skill; base62 module doc no longer promises zig-zag helpers.
+  - Deferred (2): duplicate BoundedStr impl blocks in public-api.txt (Story 1.8 generator quirk); template test payload_fields.rs not compiled until Story 14.2.
+  - Rejected: no domain-validation error variant (Overflow is the spec's choice, enum non_exhaustive); nested Vec escape growth (settled design, Vec unbounded); unpinned compile_fail error codes (repo pattern, not reliably checkable on stable); no canonical-decode helper for arbitrary strings (API beyond spec); worst_case double encode (negligible); weaker proptest strategies (canonicality covered by unit rows); BoundedStr convenience traits (feature requests); per-family width tests (all types asserted). False: twilight-model Id not re-exported (deliberate, later story); CID-07 docs unchanged (rule text unchanged); MAX_LEN None on overflow (spec-mandated); escape allow_unicode param (output identical); PayloadEnum (Story 2.5); measured zero-alloc (Story 2.6 dhat); manual composite join (spec); runtime width check (compile-time in 2.5); CID-07 evidence scope (as spec requires); scope additions (follow spec/AD-5/AD-25).
+- **Follow-up review recommended:** false (first pass patched 0 high and 2 medium entries that are one grouped defect with one fix, verified by tests; no unverified risk can be named). Patched by verdict: high 0, medium 2, low 7.
+- **Verification:** all local gates via `gates.sh` green (fmt, clippy --release -D warnings, test --release incl. proptests and compile_fail doctests, cargo hack each-feature, xtask rules-catalog/deps-check/api-snapshot/skill-check, cargo deny, MSRV 1.91 check, build-config check, no target/debug). CI paused by maintainer, so not run.
+- **Residual risks:** no-allocation decode is proven by type/structure only until Story 2.6's dhat guard; template test not compiled until Story 14.2; hand-written author decoders can be non-canonical (no helper); nested string Vecs grow with escaping.

@@ -105,6 +105,8 @@ Fields are separated by 1 char. Encodings (normative, AD-5):
   printable ASCII (`0x20..=0x7E`) is written as is. `String` and `Cow<str>` write every
   other char as `!u` + 6 lowercase hex digits (`é` → `!u0000e9`).
 - `Vec<T>`: each element followed by `,`, the whole then escaped (`[1u8, 2]` → `"1!12!1"`).
+  List elements must be owned (implement `FieldDecode` for every `'de`): `Vec<Cow<str>>`
+  or a borrowing custom type encodes but does not decode.
 
 ### `BoundedStr<N>`
 
@@ -124,7 +126,7 @@ Your own type becomes a Payload field by implementing two traits from `noctis::c
 - `Field { const MAX_LEN: Option<usize>; fn encode<W: core::fmt::Write + ?Sized>(&self, out: &mut W) -> core::fmt::Result; }`
 - `FieldDecode<'de>: Field + Sized { fn decode(raw: &'de str) -> Result<Self, FieldError>; }`
   (implement it for every `'de`, as `impl<'de> FieldDecode<'de> for T`, unless you
-  borrow from the input).
+  borrow from the input; a borrowing type cannot be a `Vec` element).
 
 Contract: every encoding is printable ASCII without `,`, `:` or `~`, at most `MAX_LEN`
 chars when `MAX_LEN` is `Some`; `decode` never panics and is canonical (when it

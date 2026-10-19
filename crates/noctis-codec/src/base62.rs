@@ -1,4 +1,4 @@
-//! Minimal-digit base62 (`0-9A-Za-z`) and zig-zag helpers.
+//! Minimal-digit base62 (`0-9A-Za-z`).
 
 use crate::FieldError;
 

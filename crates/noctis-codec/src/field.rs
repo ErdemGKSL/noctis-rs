@@ -225,6 +225,10 @@ impl<T: Field> Field for Vec<T> {
     }
 }
 
+/// List elements must be owned: `T` implements `FieldDecode` for every `'de`,
+/// so `Vec<Cow<'_, str>>` or another borrowing element type does not decode.
+/// For an element's `InvalidChar`, `BadEscape` or `TrailingInput`, the index is
+/// relative to that element after the list is unescaped.
 impl<T: for<'x> FieldDecode<'x>> FieldDecode<'_> for Vec<T> {
     fn decode(raw: &str) -> Result<Self, FieldError> {
         let list = unescape(raw, true)?;
