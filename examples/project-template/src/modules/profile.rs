@@ -27,6 +27,8 @@ pub fn module() -> Module {
         .add(edit_bio())
         .add(save_bio())
         .add(award_xp())
+        // Registering the Template lets App build check fonts, theme tokens and keyframes.
+        .template::<ProfileCard>()
 }
 
 // ---------------------------------------------------------------------------------------
@@ -208,7 +210,8 @@ pub struct ProfileCard {
     /// formatting a class string (FR-66).
     pub progress: f32,
     /// Declared remote image: fetched from the Discord CDN and cached before rendering.
-    #[asset(fallback = "default-avatar")]
+    /// On failure the built-in placeholder is used (add `required` to fail instead).
+    #[asset]
     pub avatar: RemoteImage,
 }
 

@@ -32,6 +32,8 @@ pub fn configure(builder: AppBuilder) -> AppBuilder {
     builder
         .app_id("noctis-template")
         .locales(strings::catalog())
+        // Theme tokens and keyframes for Templates; the same file the macros validate against.
+        .theme(noctis::image::theme!())
         // Our own CacheStore Adapter replaces the in-memory default (FR-38).
         .cache_store(adapters::BoundedCacheStore::new(50_000))
         .state(BotMeta {
