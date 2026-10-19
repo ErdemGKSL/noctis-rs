@@ -1,0 +1,16 @@
+/* Theme tokens and keyframes for Templates (AD-15, FR-32, FR-69).
+   tw!/view! accept these tokens at compile time: bg-brand, text-muted, animate-rise, ... */
+@theme {
+  --color-brand: #5865f2;
+  --color-brand-soft: #8b93f8;
+  --color-surface: #11131a;
+  --color-muted: #9aa3b5;
+  --font-display: "Inter", sans-serif;
+  --animate-rise: rise 1.2s ease-out both;
+}
+
+/* Never redefine built-in names (spin, ping, pulse, bounce): registration error. */
+@keyframes rise {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}

@@ -1,0 +1,61 @@
+# Noctis bot template. Copy this directory out of the noctis-rs repository to start
+# a new bot; see README.md.
+[package]
+name = "noctis-bot-template"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+publish = false
+description = "Starter Discord bot built on Noctis: setup wizard, dashboard, rendered profile card."
+
+# Standalone: this crate is its own workspace, so it builds the same inside the
+# noctis-rs monorepo and after it is copied out. The monorepo root Cargo.toml must
+# list it in `[workspace] exclude = ["examples/project-template"]`.
+[workspace]
+
+[lib]
+name = "noctis_bot_template"
+path = "src/lib.rs"
+
+[[bin]]
+name = "noctis-bot-template"
+path = "src/main.rs"
+
+[dependencies]
+# Inside the monorepo the template builds against the workspace crate.
+# After copying the template out, replace the line below with:
+#   noctis = { version = "0.1", features = ["image", "default-font", "i18n"] }
+noctis = { path = "../../crates/noctis", features = ["image", "default-font", "i18n"] }
+# Optional Noctis features: "image-gif" (GIF/APNG output), "image-emoji" (Twemoji
+# colour emoji in Templates), "prefix" (prefix commands, P2).
+
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "signal"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+# The testkit feature is enabled for tests only (AD-2).
+noctis = { path = "../../crates/noctis", features = ["image", "default-font", "i18n", "testkit"] }
+insta = { version = "1.49", features = ["json"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_qualifications = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+
+[profile.release]
+# Rendering is CPU-bound; keep debug info small but useful for panics in logs.
+debug = "line-tables-only"
