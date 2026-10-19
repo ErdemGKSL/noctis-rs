@@ -26,6 +26,10 @@ const MAX_FILLS: usize = 8;
 /// let r = noctis_codec::Ref([b'0'; 11]); // [CID-05]
 /// ```
 ///
+/// ```compile_fail
+/// let r = noctis_codec::Ref::from_digits(*b"0123456789A"); // [CID-05]
+/// ```
+///
 /// ```
 /// let r = noctis_codec::Ref::mint()?;
 /// assert_eq!(r.as_str().len(), 11);

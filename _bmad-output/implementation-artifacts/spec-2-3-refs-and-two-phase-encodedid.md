@@ -2,7 +2,7 @@
 title: 'Story 2.3: Refs and two-phase `EncodedId`'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'fe93a863cd1a2aad53e11b37c5a055a0cc8cc7f2'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -10,7 +10,28 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md'
   - '{project-root}/docs/discord-rules.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The inline encoder never checks that a custom `Field` writes only inline-body bytes, so a fitting `spill` (or inline) Payload can emit an id that `decode` rejects, while the same Payload spilled gets `InvalidBody`.
+    evidence: |-
+      `Field` is an unsealed public trait (field.rs:50) and `encode` (layout.rs) pushes whatever `FieldWriter` writes into the id with no inline-grammar check; only the new Ref path validates via `RefRecord::new`. Pre-existing since Story 2.2's `encode`; encode_id's spill branch only forwards it.
+    location: >-
+      crates/noctis-codec/src/layout.rs encode; crates/noctis-codec/src/encoded.rs encode_id Spill branch
+    severity: medium
+  - summary: >-
+      `RefPolicy` accepts any non-zero TTL, including sub-second and `Duration::MAX`, and any payload size; a store with coarser granularity or `Instant + ttl` arithmetic may expire immediately or overflow.
+    evidence: |-
+      Unverified: the codec has no clock, and the harm only occurs in core's RefStore or an adapter (Epic 7, Story 7.5). Settle it by fixing the RefStore TTL and record-size contract there (minimum/maximum TTL, checked `Instant` arithmetic, max record size).
+    location: >-
+      crates/noctis-codec/src/layout.rs check_parts; noctis-core RefStore (Epic 7)
+    severity: medium (unverified)
+  - summary: >-
+      `PendingRef` equality lets core share one Ref between identical one-shot slots, so consuming the Ref on the first click may break every other identical component in the message.
+    evidence: |-
+      Unverified: AD-18 says identical slots in one message share one Ref and one-shot Refs are consumed with `take`; whether sharing a one-shot Ref is the intended behaviour is core's Responder decision (Epic 7). Settle it when the Responder dedups slots: either skip dedup for one-shot slots or document that one-shot means one use per message.
+    location: >-
+      crates/noctis-codec/src/encoded.rs PendingRef; noctis-core Responder (Epic 7)
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -263,6 +284,36 @@ The work also removes the two CID-05 pending entries.
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 26 findings — high 0, medium 2, low 9, false 12, maybe-false 3
+- findings:
+  - `[false]` `[reject]` By-Ref ids leave `E`/`N` unbound and untagged — AD-5 limits `T` to inline bodies of signed Routes and the spec settles that a Ref body is never tagged; the record binds route and schema only by design.
+  - `[false]` `[reject]` Signer required then dropped on the Ref path; `BY_REF.signed()` not refused — `RouteShape::signed` asserts against `ByRef` (route.rs:155-159, compile error in const); dropping `T` on a spilled body is AD-5's rule, and `Decoded::payload` already reports a tagged Ref body as `Stale(Flags)`.
+  - `[low]` `[reject]` `spill` overflow encodes the Payload twice and runs `check_parts` twice — real but only on the overflow path, the spec prescribes this flow, and a single-pass rewrite adds restructuring.
+  - `[maybe-false]` `[defer]` No upper bound on stored payload or TTL — grouped with the edge-case TTL finding; needs core's RefStore TTL/size contract (Epic 7) to settle; deferred as medium (unverified).
+  - `[low]` `[reject]` `getrandom::Error` in `RefError`'s public API — the spec mandates `Rng(getrandom::Error)` and the facade does not re-export it; the fix would edit the spec.
+  - `[false]` `[reject]` Silent fallbacks in `Decoded::body`, `PendingRef::record` and `finish` — every fallback is unreachable: `decode` checks the 11 base62 digits, `slot` validates the payload through `RefRecord::new`, and the const assertion bounds `finish` (the proptest pins exact length); the repo forbids `unwrap`/`expect`.
+  - `[false]` `[reject]` Project template and rule bookkeeping not updated — the `noctis` facade (crates/noctis/src/lib.rs:72) re-exports none of the new items, so noctis's public API and snapshot are unchanged; CID-05 already has its row in docs/discord-rules.md:178.
+  - `[low]` `[reject]` `PendingRef::record()` re-encodes and allocates per call — one small allocation per stored slot; caching changes the struct for negligible gain.
+  - `[low]` `[patch]` Missing tests for `ZeroTtl`/`UnexpectedRefPolicy` order and edge cases — grouped with the gap below; add the rows to `encode_id_matrix`.
+  - `[low]` `[reject]` Counter/clock detection in the 100k test is weak — the thresholds and successor check are the spec's; `cid_05_mint_rejection_sampling` pins the mapping deterministically; the fix would edit the spec.
+  - `[false]` `[reject]` No checked `Ref::parse` from text — not a defect; the spec allows only `mint` as a public constructor, and core's store keying is Epic 7.
+  - `[medium]` `[defer]` A fitting `spill` Payload whose custom `Field` writes `:`/`~`/non-printable bytes yields an id `decode` rejects — real (`Field` is unsealed, `encode` has no inline-grammar check) but pre-existing in Story 2.2's `encode`; deferred.
+  - `[maybe-false]` `[defer]` Identical one-shot slots sharing one Ref — whether sharing is wrong is core's Responder decision (AD-18, Epic 7); deferred as medium (unverified).
+  - `[maybe-false]` `[defer]` Sub-second or huge TTL breaks a second-granular store — the codec has no clock; settle in Story 7.5's RefStore contract; grouped with the payload/TTL bound finding.
+  - `[false]` `[reject]` `decode_record` accepts a record for an inline Route — `Decoded::payload` never returns `PayloadSource::Ref` for an inline Route (layout.rs:464-473), and records are only written by core under minted Refs, so the documented precondition is never met for one.
+  - `[false]` `[reject]` `finish` write failure is only `debug_assert!`ed — the failure is unreachable (`MAX_REF_ID_LEN == 46 <= 100` is const-asserted, the proptest pins exact length); the dead assertion itself is the low row below.
+  - `[low]` `[reject]` `finish_decodes_as_ref` lives in src/encoded.rs, not tests/refs.rs — it builds `PendingRef` with arbitrary routes, which needs crate-private access; placement is cosmetic.
+  - `[low]` `[patch]` (gap) Zero-TTL and inline-route policy checks pinned only for a `by_ref` Route via `encode_id` — add `TextSpill`+zero → `ZeroTtl`, `encode::<Stored>`+zero → `ZeroTtl`, `Buy`+zero → `UnexpectedRefPolicy`, `encode::<Stored>`+ttl policy → `NeedsRef`.
+  - `[medium]` `[patch]` (gap) CID-05 by-construction doctest pins only the tuple constructor, not `Ref::from_digits` visibility — add a second `compile_fail` doctest calling `Ref::from_digits`, tagged `// [CID-05]`.
+  - `[low]` `[patch]` `finish`'s `debug_assert!` never runs in this release-only repo (`.cargo/config.toml` disables debug assertions) — make it a plain `assert!`.
+  - `[false]` `[reject]` (intent) Record route check is Route-relative, not id-relative — the spec settles it: `decode_record` is documented to follow `decode_route::<R>` returning `Ref`, which already proved the id's route is `R::ID`.
+  - `[false]` `[reject]` (intent) `Ref` is also the type of parsed Refs — CID-05 constrains generation; a parsed Ref is the lookup key and cannot mint one; the spec types the phase-1 body as `Ref` deliberately. The doctest-coverage part is the medium gap above.
+  - `[false]` `[reject]` (intent) `PendingRef` has seven private fields, not AD-18's literal five — the spec's Design Notes settle it: `finish` needs `E`/`N`, and getters expose AD-18's five.
+  - `[false]` `[reject]` (intent) `ttl`/`one_shot` come from a runtime `RefPolicy` on `Parts` — AD-6 keeps `ttl`/`one_shot` out of the codec's `Route` trait (core reads `RouteRuntime`, Story 7.5), so core passing them per call is the supported bridge the spec chose.
+  - `[low]` `[reject]` (intent) χ² bounds are a gross-bias check, not a conventional significance test — the bounds are the spec's and rejection sampling is pinned deterministically; the fix would edit the spec.
+  - `[false]` `[reject]` (intent) `PayloadSource`/`RawBody` public shape changed — the spec mandates `RawBody::Ref(Ref)` and `PayloadSource<P>`, and the 2.2 tests were updated.
+
 ## Design Notes
 
 Decisions (logged to the memlog):
@@ -294,3 +345,22 @@ let id = match encode_id::<Stored>(&p, &Parts::new())? {
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** `noctis-codec` gains CSPRNG-minted 11-digit base62 `Ref`s (CID-05, rejection-sampled, only `Ref::mint` constructs one), a two-phase `EncodedId` (`Inline` id or `RefSlot(PendingRef)` -> `finish(&slot, ref)`), `RefPolicy` (ttl, one-shot) on `Parts`, a `RefRecord` codec (`record()` / `decode_record::<R>`) binding route and schema only, `RefError`, and `RawBody::Ref` / `PayloadSource<P>` on decode.
+- **Files changed:**
+  - `crates/noctis-codec/src/refs.rs` - `Ref` type, unbiased minting, CID-05 `compile_fail` doctests.
+  - `crates/noctis-codec/src/encoded.rs` - `EncodedId`, `PendingRef`, `encode_id`, `finish` (now a hard `assert!`).
+  - `crates/noctis-codec/src/record.rs` - stored-record encode/decode with route/schema check.
+  - `crates/noctis-codec/src/layout.rs`, `lib.rs`, `error.rs` - by-ref decode path, `PayloadSource`, `RefError`, exports.
+  - `crates/noctis-codec/tests/refs.rs`, `tests/common/mod.rs`, `tests/layout.rs` - 100k-Ref statistical test, proptests, policy matrix; shared fixtures.
+  - `crates/noctis-codec/Cargo.toml`, `Cargo.lock` - `getrandom` dependency.
+  - `xtask/rules-pending.toml` - CID-05 pending entries removed (now covered).
+- **Review findings:** 26 (high 0, medium 2, low 9, false 12, maybe-false 3).
+  - Patched (3 entries; medium 1, low 2): second CID-05 `compile_fail` doctest for `Ref::from_digits`; `ZeroTtl`/`UnexpectedRefPolicy`/`NeedsRef` rows added to `encode_id_matrix`; `finish`'s `debug_assert!` made `assert!` (release-only repo disables debug assertions).
+  - Deferred (4): `spill` with a custom `Field` writing `:`/`~`/non-printable bytes yields an undecodable id (pre-existing from 2.2); no upper bound on stored payload size or TTL and sub-second/huge TTL vs a second-granular store (Story 7.5 RefStore contract); identical one-shot slots sharing one Ref (core Responder, AD-18, Epic 7).
+  - Rejected (19): untagged By-Ref ids and dropped signer (AD-5 by design); double encode on spill overflow (spec flow, overflow-only); `getrandom::Error` in `RefError` (spec-mandated, not re-exported); silent fallbacks (unreachable); template/rules not updated (facade re-exports nothing new, CID-05 row exists); per-call allocation in `record()` (negligible); weak counter/clock detection and chi-square bounds (spec's thresholds); no `Ref::parse` (spec allows only `mint`); `decode_record` on inline Route (precondition never met); `finish_decodes_as_ref` placement (needs crate-private access); route-relative record check, `Ref` as parsed type, seven `PendingRef` fields, runtime `RefPolicy`, `PayloadSource`/`RawBody` shape change (all settled by spec/ADs).
+- **Follow-up review recommended:** false - first pass patched 0 high and 1 medium.
+- **Verification:** local gates via `gates.sh` all green (fmt, clippy -D warnings, release tests incl. 100k-Ref statistical test, proptests and doctests, cargo-hack each-feature, rules-catalog, deps-check, api-snapshot no diff, skill-check, cargo deny, MSRV 1.91 check, build-config check, no `target/debug`). CI paused by maintainer.
+- **Residual risks:** unsealed `Field` can still produce ids `decode` rejects; Ref store TTL/size bounds and one-shot Ref sharing remain undefined until Epic 7 (Story 7.5); statistical mint test is a gross-bias check only.

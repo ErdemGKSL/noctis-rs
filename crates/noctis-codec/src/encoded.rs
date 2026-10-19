@@ -192,6 +192,12 @@ fn slot<R: Route>(payload: &R::Payload, checked: &Checked<'_>) -> Result<Encoded
 ///
 /// `F` carries the `S`, `E` and `N` flags present, never `T`: a Ref body is
 /// never tagged. The id is at most [`MAX_REF_ID_LEN`] (46) characters.
+///
+/// # Panics
+///
+/// Never in practice: a by-ref id is at most [`MAX_REF_ID_LEN`] characters,
+/// which is compile-time asserted to fit [`MAX_ID_LEN`], so the internal
+/// capacity assertion cannot fire.
 pub fn finish(slot: &PendingRef, r: Ref) -> ArrayString<MAX_ID_LEN> {
     let mut flags = Flags::EMPTY;
     for (present, flag) in [
@@ -222,7 +228,7 @@ pub fn finish(slot: &PendingRef, r: Ref) -> ArrayString<MAX_ID_LEN> {
         out.write_char('~')?;
         out.write_str(r.as_str())
     })();
-    debug_assert!(written.is_ok(), "a by-ref id fits MAX_ID_LEN");
+    assert!(written.is_ok(), "a by-ref id fits MAX_ID_LEN");
     out
 }
 

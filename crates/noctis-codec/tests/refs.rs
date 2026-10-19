@@ -209,6 +209,25 @@ fn encode_id_matrix() {
         encode_id::<Stored>(&buy(1, 1), &zero),
         Err(EncodeError::ZeroTtl)
     );
+    assert_eq!(
+        encode_id::<TextSpill>(&text("a"), &zero),
+        Err(EncodeError::ZeroTtl)
+    );
+    assert_eq!(
+        encode::<Stored>(&buy(1, 1), &zero),
+        Err(EncodeError::ZeroTtl)
+    );
+    assert_eq!(
+        encode_id::<Buy>(&buy(1, 1), &zero),
+        Err(EncodeError::UnexpectedRefPolicy)
+    );
+    assert_eq!(
+        encode::<Stored>(
+            &buy(1, 1),
+            &Parts::new().with_ref_policy(RefPolicy::new().with_ttl(ttl))
+        ),
+        Err(EncodeError::NeedsRef)
+    );
 
     for p in [
         policy,
