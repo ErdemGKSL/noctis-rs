@@ -7,5 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+thiserror.workspace = true
+twilight-model.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true

@@ -3,6 +3,12 @@
 //!
 //! Bot code depends on this crate only; the `noctis-*` crates are internal.
 //!
+//! # Modules
+//!
+//! - [`rules`]: Discord limits, rule ids, text length and locales.
+//! - [`codec`]: Payload field encodings ([`codec::Field`],
+//!   [`codec::BoundedStr`]) and the checks custom fields are tested with.
+//!
 //! # Cargo features
 //!
 //! All features are additive, and the default features build without the image
@@ -17,6 +23,51 @@
 //! - `testkit`: Discord fakes and test helpers; enable it in
 //!   `[dev-dependencies]` only.
 #![deny(missing_docs)]
+
+pub mod codec {
+    //! Payload field encodings for `custom_id`s.
+    //!
+    //! - [`Field`] and [`FieldDecode`]: a Payload field's encoding, worst-case
+    //!   width (`MAX_LEN`) and canonical decoding. Built in for `bool`,
+    //!   `u8`..`u64`, `i8`..`i64`, Discord ids, `Option<T>`, [`BoundedStr`],
+    //!   `String`, `Cow<str>` and `Vec<T>`.
+    //! - [`BoundedStr`] and [`BoundedStrError`]: printable-ASCII text of at most
+    //!   `N` characters, `2 * N` wide once escaped.
+    //! - [`FieldError`]: why a field did not decode.
+    //! - [`check`]: [`check::assert_round_trip`] and
+    //!   [`check::assert_worst_case`] for the tests of custom fields.
+    //!
+    //! ```
+    //! use noctis::codec::{BoundedStr, Field, FieldDecode, FieldError, check};
+    //!
+    //! assert_eq!(<u8 as Field>::MAX_LEN, Some(2));
+    //! assert_eq!(<BoundedStr<6> as Field>::MAX_LEN, Some(12));
+    //! const SKU: BoundedStr<6> = BoundedStr::from_static("ab:12");
+    //! check::assert_round_trip(&SKU);
+    //!
+    //! #[derive(Debug, Clone, Copy, PartialEq)]
+    //! struct Percent(u8);
+    //!
+    //! impl Field for Percent {
+    //!     const MAX_LEN: Option<usize> = <u8 as Field>::MAX_LEN;
+    //!     fn encode<W: core::fmt::Write + ?Sized>(&self, out: &mut W) -> core::fmt::Result {
+    //!         self.0.encode(out)
+    //!     }
+    //! }
+    //!
+    //! impl<'de> FieldDecode<'de> for Percent {
+    //!     fn decode(raw: &'de str) -> Result<Self, FieldError> {
+    //!         let v = u8::decode(raw)?;
+    //!         if v <= 100 { Ok(Self(v)) } else { Err(FieldError::Overflow) }
+    //!     }
+    //! }
+    //!
+    //! check::assert_round_trip(&Percent(42));
+    //! check::assert_worst_case(&Percent(100));
+    //! ```
+
+    pub use noctis_codec::{BoundedStr, BoundedStrError, Field, FieldDecode, FieldError, check};
+}
 
 pub mod rules {
     //! Discord limits, rule ids, text length and locales.

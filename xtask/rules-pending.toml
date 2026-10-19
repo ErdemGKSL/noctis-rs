@@ -323,11 +323,6 @@ evidence = "unit"
 story = "2.2"
 
 [[rule]]
-id = "CID-07"
-evidence = "by-construction"
-story = "2.1"
-
-[[rule]]
 id = "CV2-01"
 evidence = "by-construction"
 story = "4.2"

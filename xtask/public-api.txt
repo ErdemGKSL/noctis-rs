@@ -1,4 +1,213 @@
 pub mod noctis
+pub mod noctis::codec
+pub struct noctis::codec::BoundedStr<const N: usize>
+impl<const N: usize> noctis::codec::BoundedStr<N>
+pub const noctis::codec::BoundedStr<N>::CAPACITY: usize
+pub fn noctis::codec::BoundedStr<N>::as_str(&self) -> &str
+pub const fn noctis::codec::BoundedStr<N>::from_static(&'static str) -> Self
+pub const fn noctis::codec::BoundedStr<N>::is_empty(&self) -> bool
+pub const fn noctis::codec::BoundedStr<N>::len(&self) -> usize
+pub fn noctis::codec::BoundedStr<N>::new(&str) -> core::result::Result<Self, noctis::codec::BoundedStrError>
+impl<const N: usize> core::clone::Clone for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::clone(&self) -> Self
+impl<const N: usize> core::cmp::Eq for noctis::codec::BoundedStr<N>
+impl<const N: usize> core::cmp::Ord for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::cmp(&self, &Self) -> core::cmp::Ordering
+impl<const N: usize> core::cmp::PartialEq for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::eq(&self, &Self) -> bool
+impl<const N: usize> core::cmp::PartialEq<&str> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::eq(&self, &&str) -> bool
+impl<const N: usize> core::cmp::PartialEq<str> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::eq(&self, &str) -> bool
+impl<const N: usize> core::cmp::PartialOrd for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl<const N: usize> core::convert::AsRef<str> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::as_ref(&self) -> &str
+impl<const N: usize> core::convert::TryFrom<&str> for noctis::codec::BoundedStr<N>
+pub type noctis::codec::BoundedStr<N>::Error = noctis::codec::BoundedStrError
+pub fn noctis::codec::BoundedStr<N>::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl<const N: usize> core::default::Default for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::default() -> Self
+impl<const N: usize> core::fmt::Debug for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::fmt::Display for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::hash::Hash for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl<const N: usize> core::marker::Copy for noctis::codec::BoundedStr<N>
+impl<const N: usize> core::marker::StructuralPartialEq for noctis::codec::BoundedStr<N>
+impl<const N: usize> core::str::traits::FromStr for noctis::codec::BoundedStr<N>
+pub type noctis::codec::BoundedStr<N>::Err = noctis::codec::BoundedStrError
+pub fn noctis::codec::BoundedStr<N>::from_str(&str) -> core::result::Result<Self, Self::Err>
+impl<const N: usize> noctis::codec::Field for noctis::codec::BoundedStr<N>
+pub const noctis::codec::BoundedStr<N>::MAX_LEN: core::option::Option<usize>
+pub fn noctis::codec::BoundedStr<N>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl<const N: usize> noctis::codec::FieldDecode<'_> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl<const N: usize> noctis::codec::Field for noctis::codec::BoundedStr<N>
+pub const noctis::codec::BoundedStr<N>::MAX_LEN: core::option::Option<usize>
+pub fn noctis::codec::BoundedStr<N>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl<const N: usize> noctis::codec::FieldDecode<'_> for noctis::codec::BoundedStr<N>
+pub fn noctis::codec::BoundedStr<N>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+#[non_exhaustive] pub enum noctis::codec::BoundedStrError
+pub noctis::codec::BoundedStrError::InvalidChar
+pub noctis::codec::BoundedStrError::InvalidChar::ch: char
+pub noctis::codec::BoundedStrError::InvalidChar::index: usize
+pub noctis::codec::BoundedStrError::TooLong
+pub noctis::codec::BoundedStrError::TooLong::actual: usize
+pub noctis::codec::BoundedStrError::TooLong::capacity: usize
+impl core::clone::Clone for noctis::codec::BoundedStrError
+pub fn noctis::codec::BoundedStrError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::BoundedStrError
+impl core::cmp::PartialEq for noctis::codec::BoundedStrError
+pub fn noctis::codec::BoundedStrError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::codec::BoundedStrError
+impl core::fmt::Debug for noctis::codec::BoundedStrError
+pub fn noctis::codec::BoundedStrError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::BoundedStrError
+pub fn noctis::codec::BoundedStrError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::codec::BoundedStrError
+impl core::marker::StructuralPartialEq for noctis::codec::BoundedStrError
+pub trait noctis::codec::Field
+pub const noctis::codec::Field::MAX_LEN: core::option::Option<usize>
+pub fn noctis::codec::Field::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for alloc::borrow::Cow<'_, str>
+pub const alloc::borrow::Cow<'_, str>::MAX_LEN: core::option::Option<usize>
+pub fn alloc::borrow::Cow<'_, str>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for alloc::string::String
+pub const alloc::string::String::MAX_LEN: core::option::Option<usize>
+pub fn alloc::string::String::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for bool
+pub const bool::MAX_LEN: core::option::Option<usize>
+pub fn bool::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for i16
+pub const i16::MAX_LEN: core::option::Option<usize>
+pub fn i16::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for i32
+pub const i32::MAX_LEN: core::option::Option<usize>
+pub fn i32::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for i64
+pub const i64::MAX_LEN: core::option::Option<usize>
+pub fn i64::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for i8
+pub const i8::MAX_LEN: core::option::Option<usize>
+pub fn i8::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for u16
+pub const u16::MAX_LEN: core::option::Option<usize>
+pub fn u16::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for u32
+pub const u32::MAX_LEN: core::option::Option<usize>
+pub fn u32::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for u64
+pub const u64::MAX_LEN: core::option::Option<usize>
+pub fn u64::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl noctis::codec::Field for u8
+pub const u8::MAX_LEN: core::option::Option<usize>
+pub fn u8::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl<T: noctis::codec::Field> noctis::codec::Field for alloc::vec::Vec<T>
+pub const alloc::vec::Vec<T>::MAX_LEN: core::option::Option<usize>
+pub fn alloc::vec::Vec<T>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl<T: noctis::codec::Field> noctis::codec::Field for core::option::Option<T>
+pub const core::option::Option<T>::MAX_LEN: core::option::Option<usize>
+pub fn core::option::Option<T>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+impl<T> noctis::codec::Field for twilight_model::id::Id<T>
+pub const twilight_model::id::Id<T>::MAX_LEN: core::option::Option<usize>
+pub fn twilight_model::id::Id<T>::encode<W: core::fmt::Write + ?core::marker::Sized>(&self, &mut W) -> core::fmt::Result
+pub trait noctis::codec::FieldDecode<'de>: noctis::codec::Field + core::marker::Sized
+pub fn noctis::codec::FieldDecode::decode(&'de str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for alloc::string::String
+pub fn alloc::string::String::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for bool
+pub fn bool::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for i16
+pub fn i16::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for i32
+pub fn i32::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for i64
+pub fn i64::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for i8
+pub fn i8::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for u16
+pub fn u16::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for u32
+pub fn u32::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for u64
+pub fn u64::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl noctis::codec::FieldDecode<'_> for u8
+pub fn u8::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl<'de, T: noctis::codec::FieldDecode<'de>> noctis::codec::FieldDecode<'de> for core::option::Option<T>
+pub fn core::option::Option<T>::decode(&'de str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl<'de> noctis::codec::FieldDecode<'de> for alloc::borrow::Cow<'de, str>
+pub fn alloc::borrow::Cow<'de, str>::decode(&'de str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl<T: for<'x> noctis::codec::FieldDecode<'x>> noctis::codec::FieldDecode<'_> for alloc::vec::Vec<T>
+pub fn alloc::vec::Vec<T>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+impl<T> noctis::codec::FieldDecode<'_> for twilight_model::id::Id<T>
+pub fn twilight_model::id::Id<T>::decode(&str) -> core::result::Result<Self, noctis::codec::FieldError>
+#[non_exhaustive] pub enum noctis::codec::FieldError
+pub noctis::codec::FieldError::BadEscape
+pub noctis::codec::FieldError::BadEscape::index: usize
+pub noctis::codec::FieldError::BadList
+pub noctis::codec::FieldError::Empty
+pub noctis::codec::FieldError::InvalidChar
+pub noctis::codec::FieldError::InvalidChar::index: usize
+pub noctis::codec::FieldError::LeadingZero
+pub noctis::codec::FieldError::OverCapacity
+pub noctis::codec::FieldError::OverCapacity::actual: usize
+pub noctis::codec::FieldError::OverCapacity::capacity: usize
+pub noctis::codec::FieldError::Overflow
+pub noctis::codec::FieldError::TooLong
+pub noctis::codec::FieldError::TooLong::actual: usize
+pub noctis::codec::FieldError::TooLong::max: usize
+pub noctis::codec::FieldError::TrailingInput
+pub noctis::codec::FieldError::TrailingInput::index: usize
+pub noctis::codec::FieldError::ZeroId
+impl core::clone::Clone for noctis::codec::FieldError
+pub fn noctis::codec::FieldError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::FieldError
+impl core::cmp::PartialEq for noctis::codec::FieldError
+pub fn noctis::codec::FieldError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::codec::FieldError
+impl core::fmt::Debug for noctis::codec::FieldError
+pub fn noctis::codec::FieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::FieldError
+pub fn noctis::codec::FieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::codec::FieldError
+impl core::marker::StructuralPartialEq for noctis::codec::FieldError
+pub mod noctis::codec::check
+#[non_exhaustive] pub enum noctis::codec::check::CheckError
+pub noctis::codec::check::CheckError::Decode
+pub noctis::codec::check::CheckError::Decode::encoded: alloc::string::String
+pub noctis::codec::check::CheckError::Decode::error: noctis::codec::FieldError
+pub noctis::codec::check::CheckError::Encode
+pub noctis::codec::check::CheckError::Mismatch
+pub noctis::codec::check::CheckError::Mismatch::encoded: alloc::string::String
+pub noctis::codec::check::CheckError::NotPrintable
+pub noctis::codec::check::CheckError::NotPrintable::ch: char
+pub noctis::codec::check::CheckError::NotPrintable::index: usize
+pub noctis::codec::check::CheckError::ReservedChar
+pub noctis::codec::check::CheckError::ReservedChar::ch: char
+pub noctis::codec::check::CheckError::ReservedChar::index: usize
+pub noctis::codec::check::CheckError::TooLong
+pub noctis::codec::check::CheckError::TooLong::actual: usize
+pub noctis::codec::check::CheckError::TooLong::max: usize
+pub noctis::codec::check::CheckError::WidthMismatch
+pub noctis::codec::check::CheckError::WidthMismatch::actual: usize
+pub noctis::codec::check::CheckError::WidthMismatch::max: core::option::Option<usize>
+impl core::clone::Clone for noctis::codec::check::CheckError
+pub fn noctis::codec::check::CheckError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::check::CheckError
+impl core::cmp::PartialEq for noctis::codec::check::CheckError
+pub fn noctis::codec::check::CheckError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::codec::check::CheckError
+impl core::fmt::Debug for noctis::codec::check::CheckError
+pub fn noctis::codec::check::CheckError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::check::CheckError
+pub fn noctis::codec::check::CheckError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::codec::check::CheckError
+pub fn noctis::codec::check::assert_round_trip<T>(&T) where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
+pub fn noctis::codec::check::assert_worst_case<T>(&T) where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
+pub fn noctis::codec::check::round_trip<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
+pub fn noctis::codec::check::worst_case<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub mod noctis::rules
 #[non_exhaustive] pub enum noctis::rules::Actual
 pub noctis::rules::Actual::Count(usize)

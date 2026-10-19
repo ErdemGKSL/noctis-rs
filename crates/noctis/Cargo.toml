@@ -26,6 +26,7 @@ prefix = []
 testkit = []
 
 [dependencies]
+noctis-codec.workspace = true
 noctis-rules.workspace = true
 
 [dev-dependencies]

@@ -80,7 +80,7 @@ simply doesn't compile (`[CID-01]`), which is the "error" policy.
 ## 2. Field types and widths (AD-6)
 
 Every field implements `noctis::codec::Field { const MAX_LEN: Option<usize> }`
-(worst-case encoded ASCII width, escaping included):
+(worst-case encoded ASCII width, escaping included) and `noctis::codec::FieldDecode`:
 
 | Type | Width |
 | --- | --- |
@@ -95,8 +95,102 @@ Every field implements `noctis::codec::Field { const MAX_LEN: Option<usize> }`
 | a `#[derive(Payload)]` struct | sum of fields + separators |
 | `String`, `Vec<T>` | unbounded (`None`) |
 
-Fields are separated by 1 char. Your own type joins by implementing `Field` plus
-encode/decode [planned]; the round-trip property test and the length check apply to it.
+Fields are separated by 1 char. Encodings (normative, AD-5):
+
+- Integers: minimal-digit base62 (`0-9A-Za-z`, no padding, `0` is `"0"`, `255u8` is `"47"`);
+  signed integers are zig-zag mapped first (`-1` is `"1"`, `1` is `"2"`).
+- `bool`: `"0"`/`"1"`. `Option<T>`: `None` is `"0"`, `Some(v)` is `"1"` + `v`.
+- `Id<T>`: its `u64`; `"0"` does not decode (`ZeroId`).
+- String-like fields escape: `!` → `!0`, `,` → `!1`, `:` → `!2`, `~` → `!3`; other
+  printable ASCII (`0x20..=0x7E`) is written as is. `String` and `Cow<str>` write every
+  other char as `!u` + 6 lowercase hex digits (`é` → `!u0000e9`).
+- `Vec<T>`: each element followed by `,`, the whole then escaped (`[1u8, 2]` → `"1!12!1"`).
+
+### `BoundedStr<N>`
+
+`noctis::codec::BoundedStr<N>`: printable ASCII (`0x20..=0x7E`) of at most `N` chars,
+stored inline, `Copy`. `BoundedStr::new(&str)` returns
+`Result<_, BoundedStrError>` (`BoundedStrError::InvalidChar { index, ch }` for a
+non-printable or non-ASCII char, checked first, then
+`BoundedStrError::TooLong { capacity, actual }`). `BoundedStr::from_static("abc")` is a
+`const fn`: an invalid literal in a `const` is a compile error. Also: `as_str`, `len`,
+`is_empty`, `BoundedStr::<N>::CAPACITY`, `Display`, `FromStr`, `TryFrom<&str>`,
+`AsRef<str>` and `==` with `&str`.
+
+### Custom field types
+
+Your own type becomes a Payload field by implementing two traits from `noctis::codec`:
+
+- `Field { const MAX_LEN: Option<usize>; fn encode<W: core::fmt::Write + ?Sized>(&self, out: &mut W) -> core::fmt::Result; }`
+- `FieldDecode<'de>: Field + Sized { fn decode(raw: &'de str) -> Result<Self, FieldError>; }`
+  (implement it for every `'de`, as `impl<'de> FieldDecode<'de> for T`, unless you
+  borrow from the input).
+
+Contract: every encoding is printable ASCII without `,`, `:` or `~`, at most `MAX_LEN`
+chars when `MAX_LEN` is `Some`; `decode` never panics and is canonical (when it
+returns `Ok(v)`, encoding `v` gives exactly the input). Delegating to a built-in
+field is the easy way to meet it:
+
+```rust
+use noctis::codec::{Field, FieldDecode, FieldError};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Percent(u8);
+
+impl Field for Percent {
+    const MAX_LEN: Option<usize> = <u8 as Field>::MAX_LEN;
+    fn encode<W: core::fmt::Write + ?Sized>(&self, out: &mut W) -> core::fmt::Result {
+        self.0.encode(out)
+    }
+}
+
+impl<'de> FieldDecode<'de> for Percent {
+    fn decode(raw: &'de str) -> Result<Self, FieldError> {
+        let v = u8::decode(raw)?;
+        if v <= 100 { Ok(Self(v)) } else { Err(FieldError::Overflow) }
+    }
+}
+```
+
+`FieldError` variants (`#[non_exhaustive]`): `Empty`, `InvalidChar { index }`,
+`LeadingZero`, `Overflow`, `TooLong { max, actual }`, `OverCapacity { capacity, actual }`,
+`ZeroId`, `BadEscape { index }`, `TrailingInput { index }`, `BadList`.
+
+### Testing a field: `noctis::codec::check`
+
+- `check::round_trip(&v)`: encodes, checks the contract, decodes and compares.
+- `check::worst_case(&v)`: `round_trip` plus "the encoding is exactly `MAX_LEN`
+  chars"; pass your worst-case value.
+- `check::assert_round_trip(&v)` / `check::assert_worst_case(&v)`: the same, panicking
+  with the error message (use these in tests).
+- Failures are `check::CheckError`: `Encode` (encode returned an error),
+  `NotPrintable { index, ch }`, `ReservedChar { index, ch }`, `TooLong { max, actual }`,
+  `Decode { encoded, error }`, `Mismatch { encoded }`,
+  `WidthMismatch { max, actual }`.
+
+```rust
+use noctis::codec::check::{assert_round_trip, assert_worst_case};
+
+#[test]
+fn percent_field() {
+    assert_round_trip(&Percent(0));
+    assert_round_trip(&Percent(42));
+    assert_worst_case(&Percent(100));
+}
+```
+
+With `proptest` in your `[dev-dependencies]`, check every value:
+
+```rust
+use proptest::prelude::*;
+
+proptest! {
+    #[test]
+    fn percent_round_trips(v in 0u8..=100) {
+        prop_assert_eq!(noctis::codec::check::round_trip(&Percent(v)), Ok(()));
+    }
+}
+```
 
 **Never put free text in a Payload.** `BoundedStr<N>` exists for tiny ASCII tokens
 (a short code). User text, reasons, names, URLs: store them via a port (or use
