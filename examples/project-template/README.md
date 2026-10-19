@@ -67,9 +67,9 @@ write when something changed:
 
 ```sh
 export NOCTIS_TOKEN=...
-cargo run -- --publish-guild 123456789012345678 --dry-run   # print JSON and the diff
-cargo run -- --publish-guild 123456789012345678             # write
-cargo run                                                   # start the bot
+cargo run --release -- --publish-guild 123456789012345678 --dry-run   # print JSON and the diff
+cargo run --release -- --publish-guild 123456789012345678             # write
+cargo run --release                                                   # start the bot
 ```
 
 Then try `/setup start`, `/dashboard` and `/profile` in the test guild.
@@ -89,9 +89,13 @@ Other CLI modes of the same binary:
 
 ```sh
 cargo fmt
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test
+cargo build --release
+cargo clippy --release --all-targets -- -D warnings
+cargo test --release
 ```
+
+Always build, test, check and run with `--release`; never create a debug build (disk
+space in cloud sessions is limited). If the disk fills anyway, delete `target/debug/`.
 
 Coding agents: read `AGENTS.md`. They learn Noctis from `.claude/skills/noctis/` and
 never from Noctis's source.

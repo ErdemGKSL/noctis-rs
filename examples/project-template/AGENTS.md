@@ -24,8 +24,9 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 
 ## Running and verifying
 
-- Before calling Rust work done, run `cargo fmt`, `cargo clippy --all-targets --all-features -- -D warnings` and `cargo test`.
-- Run locally with `NOCTIS_TOKEN` set: `cargo run -- --publish-guild <test guild id>` once, then `cargo run`. See `README.md`.
+- Before calling Rust work done, run `cargo fmt`, `cargo clippy --release --all-targets -- -D warnings` and `cargo test --release`.
+- Always build, test, check and run with `--release`; never create a debug build (disk space in cloud sessions is limited). If the disk fills anyway, delete `target/debug/`.
+- Run locally with `NOCTIS_TOKEN` set: `cargo run --release -- --publish-guild <test guild id>` once, then `cargo run --release`. See `README.md`.
 - Compile errors and `BuildError`s name a Discord rule id such as `[CID-01]` or `[CMD-11]`. Look the id up in `.claude/skills/noctis/references/limits-cheatsheet.md` (and `troubleshooting.md`); fix the cause the error's `help:` line names instead of working around the check.
 
 ## Conventions that differ from defaults
