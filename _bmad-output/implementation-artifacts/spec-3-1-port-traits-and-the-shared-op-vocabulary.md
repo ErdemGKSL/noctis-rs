@@ -2,14 +2,21 @@
 title: 'Story 3.1: Port traits and the shared op vocabulary'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'df4f822f680cf74d84439a2bf41ea6742ba3ed40'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-3-context.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The project template's AGENTS.md says nothing about the new ports, typed values or the Adapters reference.
+    evidence: |-
+      Root AGENTS.md requires every public-API change to update the template's code, AGENTS.md and usage skill in the same commit; this diff updated only the skill (adapters.md and the SKILL.md hash). The template code needs no change (bounded_cache.rs already matches the CacheStore signatures), but examples/project-template/AGENTS.md has no Adapters convention line. The fix edits an agent-context file, so it is deferred.
+    location: >-
+      examples/project-template/AGENTS.md
+    severity: low
 ---
 
 <intent-contract>
@@ -261,6 +268,43 @@ Precedent and checks:
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 33 findings — high 0, medium 0, low 12, false 21, maybe-false 0
+- findings:
+  - `false` `reject` Lease is forgeable via public `Lease::new` and has no release signal — the spec mandates a public const `Lease::new` (adapter crates and Story 3.3 must build Leases), and per-bucket spacing is enforced inside the queue's `acquire`, not by the Lease.
+  - `false` `reject` Format quality / AnimationSpec fps and duration are not validated — the spec deliberately keeps render structs with public fields and an unvalidated const `AnimationSpec::new`; no renderer exists in this diff, and `RenderError::Unsupported` is the contract's channel for rejecting bad settings (Epic 10).
+  - `false` `reject` `ValueError` is both `Copy` and `#[non_exhaustive]` — the spec explicitly requires `Copy + Eq` and that it never wraps data such as `postcard::Error`; that decision is recorded.
+  - `false` `reject` `public-api.txt` lists From impls twice — the file is `--bless` output of cargo-public-api, which lists a From impl between two local types under both types (the same generator, deterministic); not a hand edit.
+  - `low` `patch` Bot authors cannot name `twilight_model` / `serde` types through `noctis` alone — serde is already in the template's Cargo.toml; the twilight re-export is deferred by the spec's Never (later story), but adapters.md §2.3 does not say where the `twilight_model` types come from or which version to depend on. Patch: add that note to adapters.md.
+  - `false` `reject` `Renderer::register` is sync while `render` is async — AD-22 specifies a sync `register`; the spec settled it.
+  - `false` `reject` Duplicate `Template::ID` is not detected — nothing registers or renders in this diff; registration behavior is owned by Epic 10's core and renderer.
+  - `false` `reject` `RenderOutput` fields can be inconsistent — the spec mandates public fields so `noctis-image` can build them; no consumer of the digest exists in this diff.
+  - `low` `reject` Purity test is lexical: grouped `use std::{io}` evades it, trailing comments and `tokenize` false-positive — real but follows the noctis-rules precedent and the spec's token list; false positives fail loudly, and a syn-based parser is more than a direct correction for an unlikely case.
+  - `low` `reject` No conformance test for the op semantics — the intent's Never excludes conformance suites (Stories 3.2 and testkit).
+  - `false` `reject` Workspace `postcard` `default-features = false` breaks other crates — the verification-gap layer searched every Cargo.toml and `postcard::` use: noctis-ports is the only consumer and enables `alloc`.
+  - `false` `reject` `PortError` lacks op/port context and prints the key — the spec's matrix requires the `InvalidValue` Display to contain the key; context is added by core's wrappers (later story), as the crate docs' namespacing note says.
+  - `false` `reject` `decode_value` treats empty input as an error but a schema mismatch as a miss — the spec's value matrix settles `Empty` as `Err(ValueError::Empty)` deliberately; core's typed wrappers always write a schema byte.
+  - `low` `reject` purity.rs: grouped `std::{fs, net}` imports evade the I/O check — same as the lexical-purity row above; unlikely in this crate and the fix needs use-tree parsing.
+  - `low` `reject` purity.rs: `bytes = { package = "tokio" }` passes the dependency check — adversarial manifest edit nobody makes by accident; the fix adds parsing.
+  - `low` `patch` purity.rs: a `[dependencies.bytes]` table makes the exact-set check fail on a valid manifest — `found` is only filled in the `[dependencies]` branch. Patch: push the name into `found` when a `[dependencies.<name>]` header is seen.
+  - `false` `reject` Format quality 0 or >100 accepted — same refutation as the render-validation row: public fields are spec-mandated and `RenderError::Unsupported` covers rejection in Epic 10.
+  - `false` `reject` AnimationSpec with fps 0 or zero duration — no frame math exists in this diff; spec settled an unvalidated const `new`.
+  - `false` `reject` `Frame` with count 0 or index >= count — `Frame` is built by the renderer (Epic 10), not by users; no division exists in this diff.
+  - `low` `reject` An `IdentifyQueue` implementation could return a Lease for another bucket — no implementation exists yet (Story 3.3); a caller-side assert is a guard for an unshown state.
+  - `low` `patch` Purity test misses secret-named parameters such as `password` or `credential` — the AC says no secret-named parameters; the test greps only `token`/`secret`/`PayloadKey`. Patch: extend the case-insensitive list.
+  - `low` `patch` (verification-gap, other) `noctis` does not re-export `twilight_model` and the skill does not say how to get it — same root cause as the twilight/serde row; the adapters.md note fixes both.
+  - `low` `reject` Op semantics are declared but not exercised by any implementation — the intent's Never excludes memory defaults and conformance suites (Story 3.2).
+  - `false` `reject` `GuildAccessList::allows` is sync, not BoxFuture — the spec settles this (AD-23 stage 3 does no port I/O).
+  - `false` `reject` Own `BoxFuture` alias instead of `futures_util`'s — the spec settles it; the definitions are identical, so the types are the same.
+  - `false` `reject` DiscordCache per-guild lists return ids, not models — the spec and its Design Notes settle id lists deliberately.
+  - `low` `patch` NFR-6 is enforced lexically, not by type — same root cause as the secret-named-parameter row; the extended word list is the patch.
+  - `false` `reject` Schema mismatch is a miss only at the helper level — the port-level wrapper (`ctx.kv()`, `Namespaced`) is excluded by the intent's Never; the helper test covers the AC.
+  - `false` `reject` Template round-trip test shape and extra `RenderJob::of`/`decode_template` API — the spec requires both and the test matches the AC.
+  - `false` `reject` api-snapshot / skill-check passing is not shown — `real_repo_passes` (xtask/tests/skill_check.rs) runs both against the real repo under `cargo test --release`.
+  - `low` `defer` The project template's AGENTS.md was not updated for the new public API — the fix edits an agent-context file; recorded in `deferred`.
+  - `false` `reject` Unrequested public surface (`noctis::bytes`, `Lease::new`, `Size::try_new`, From impls, error constructors) — every item is listed in the spec's Boundaries.
+  - `false` `reject` DiscordCache, IdentifyQueue and LocaleSource are not opaque-key ports — the AD-14 carve-out and the spec's signatures settle these.
+
 ## Design Notes
 
 Decisions (all logged in the memlog):
@@ -300,3 +344,25 @@ pub trait RefStore: Send + Sync + 'static {
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot` and `-- skill-check` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Added the `noctis-ports` crate's port traits (RefStore, KvStore, ModuleStateStore, DiscordCache, IdentifyQueue + Lease, GuildAccessList, LocaleSource, Renderer/Template), the shared op vocabulary, `PortError`/`ValueError`, schema-byte value encoding (`encode_value`/`decode_value`), render types, and `noctis` facade re-exports; the bot-author skill's adapters.md documents the ports.
+- **Files changed:**
+  - `crates/noctis-ports/src/{lib,store,value,error,render,discord_cache,identify,access,locale}.rs`: the port traits, op vocabulary, error and value helpers, and render types.
+  - `crates/noctis-ports/tests/ports.rs`: tests for op semantics, values and templates; `tests/purity.rs`: dependency, I/O and secret-name purity checks.
+  - `crates/noctis-ports/Cargo.toml`, `Cargo.toml`, `Cargo.lock`: postcard/serde/bytes/twilight-model dependencies.
+  - `crates/noctis/{Cargo.toml,src/lib.rs}`: facade re-exports.
+  - `examples/project-template/.claude/skills/noctis/{SKILL.md,references/adapters.md}`: port docs for bot authors.
+  - `xtask/public-api.txt`: blessed API snapshot.
+- **Review findings:** 33 in total (high 0, medium 0, low 12, false 21).
+  - Patched (5 low, 3 root causes): adapters.md now says where `twilight_model` comes from and which version to use; purity.rs records `[dependencies.<name>]` table headers; the purity secret-name list now covers password/credential and similar names.
+  - Deferred (1): the project template's AGENTS.md was not updated for the new API (it is an agent-context file).
+  - Rejected (27): forgeable `Lease::new`, render settings without validation, `Copy` `ValueError`, From impls listed twice in the snapshot, sync `register`/`allows`, duplicate Template ids, inconsistent `RenderOutput`, a purity test that is lexical only (grouped `use` imports, a `package =` rename), no conformance tests (Story 3.2/testkit), postcard default-features, PortError context, Empty decoding to an error, Frame bounds, a wrong-bucket Lease, own BoxFuture alias, id-list cache getters, a schema mismatch counting as a miss only at the helper level, extra RenderJob API, no visible proof that api/skill-check ran, unrequested public surface, non-opaque-key ports. Each one is settled by the spec, its Never list or the Design Notes, or is out of scope for this diff (see the triage log).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 5).
+- **Verification:** all local gates in gates.sh pass (fmt, clippy --release -D warnings, test --release, cargo-hack each-feature, deny, MSRV 1.91 check, xtask deps-check/rules-catalog/api-snapshot/skill-check, build-config script, no target/debug). The maintainer has paused CI, so CI did not run.
+- **Residual risks:**
+  - The purity checks stay lexical, so grouped imports or renamed packages could get past them.
+  - No implementation exercises the op semantics until Story 3.2.
+  - The project template's AGENTS.md is deferred.
+  - Lease bucket correctness depends on the Story 3.3 queue.

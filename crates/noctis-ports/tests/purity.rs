@@ -16,7 +16,7 @@ const FORBIDDEN: &[&str] = &[
 ];
 
 /// Matched case-insensitively: no port method may take a secret (NFR-6).
-const FORBIDDEN_ANY_CASE: &[&str] = &["token", "secret"];
+const FORBIDDEN_ANY_CASE: &[&str] = &["token", "secret", "password", "credential", "api_key"];
 
 const ALLOWED_DEPENDENCIES: &[&str] =
     &["bytes", "postcard", "serde", "thiserror", "twilight-model"];
@@ -84,9 +84,11 @@ fn manifest_has_only_allowed_dependencies() {
             if let Some(name) = section
                 .strip_prefix("[dependencies.")
                 .and_then(|rest| rest.strip_suffix(']'))
-                && !ALLOWED_DEPENDENCIES.contains(&name.trim())
             {
-                problems.push(format!("Cargo.toml: dependency `{name}` is not allowed"));
+                found.push(name.trim().to_owned());
+                if !ALLOWED_DEPENDENCIES.contains(&name.trim()) {
+                    problems.push(format!("Cargo.toml: dependency `{name}` is not allowed"));
+                }
             }
             continue;
         }

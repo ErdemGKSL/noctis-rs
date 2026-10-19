@@ -132,6 +132,10 @@ pub trait DiscordCache: Send + Sync + 'static {
   return owned values; `None` means not cached. `channel_ids`, `role_ids` and
   `member_ids` return ids only (`None` = guild not cached), so a large guild is never
   cloned per call.
+- `Id`, the `*Marker` types, `Event` and the cached resource types come from the
+  `twilight-model` crate; `noctis` does not re-export it yet [planned]. Until it does,
+  add `twilight-model = "0.17"` to your bot's `Cargo.toml` (the same version noctis
+  uses), or your `GuildAccessList`/`DiscordCache` impl will not type-check.
 
 ### 2.4 Errors
 
