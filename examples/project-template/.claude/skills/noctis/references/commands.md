@@ -108,7 +108,7 @@ Other structural errors:
 | malformed pattern: `"a (b"`, `"a(b)"`, `"a (b c)"`, `"a ((b))"`, `"a ()"`, `"a ?"`, `"a \| b"` | CMD-16 (names the byte offset) |
 | `"a b c d"` | CMD-10 |
 | Module A registers `config`, Module B `config set` | CMD-12 at App build |
-| two registrations resolve to the same path | FR-56 at App build (names both Modules) |
+| two registrations resolve to the same path | REG-04 at App build (names both Modules) |
 | a base with its own options **and** subcommands | CMD-12 / FR-9 (never silently dropped) |
 
 Groups and plain subcommands side by side under one base are legal (CMD-14):
@@ -288,7 +288,7 @@ async fn report(ctx: CommandCtx, target: TargetMessage) -> HandlerResult<ReportV
 
 Commands sharing a base word merge into one Discord command (tescord semantics). App
 build fails, naming both Modules, when: metadata conflicts (META-01/02), a path is
-duplicated (FR-56), a base mixes options and subcommands (CMD-12), the merged tree
+duplicated (REG-04), a base mixes options and subcommands (CMD-12), the merged tree
 breaks CMD-11/13/05, or the App exceeds 100 global chat-input commands (REG-01).
 `App::build` runs `noctis::rules::command::validate_merge` on everything registered
 (see §2 "Rule functions"), so every conflict is reported at once.

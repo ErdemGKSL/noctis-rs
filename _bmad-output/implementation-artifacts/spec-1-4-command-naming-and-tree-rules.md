@@ -2,7 +2,7 @@
 title: 'Story 1.4: Command naming and tree rules'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '0b049d262d45e3ebcb64197821d4c8521e8b752b'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -166,6 +166,42 @@ Order: scopes in first appearance (commands, then menus); per scope: `validate_t
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 32 findings — high 0, medium 1, low 19, false 12, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) `name_localized` never runs through `validate_name` (LOC-02) — real, but out of scope by intent: Story 1.4's rule list omits LOC-02, which epics.md l.2792 assigns to the localization story.
+  - `[low]` `[reject]` (blind) REG-04 description-conflict notes print only `default`, so localized-only conflicts show identical texts — real but rare (same default, different localizations), and the fix adds a branch to the contracted note format.
+  - `[false]` `[reject]` (blind) CMD-04 `in localized description #N` cannot be mapped to a locale — the caller (App build, Story 6.4) builds the `localized` slice and knows its order, so it can map the index; nothing here loses that information.
+  - `[low]` `[reject]` (blind) REG-01/02 base count includes CMD-10-dropped declarations and an empty first word — real, but it only adds a second error to a build that already fails with CMD-10/CMD-02, and only at the 100-command boundary.
+  - `[low]` `[reject]` (blind) context-menu names get no CTX-01 length check — out of scope by intent: epics.md l.784 assigns CTX-01 to Story 1.5.
+  - `[low]` `[reject]` (blind) meta declared in a different scope than its handler gives an orphan REG-04 with only a scope note — the error is raised and the `scope:` note points at the cause; a cross-scope hint would add a search for negligible gain.
+  - `[low]` `[patch]` (blind) commands.md "Other structural errors" row says duplicate paths are "FR-56 at App build" while the code reports REG-04 — bot agents learn only from the skill; patch: the row (and §6's "(FR-56)") names REG-04.
+  - `[low]` `[patch]` (blind) troubleshooting.md CMD-11 row quotes a message the code never prints — patch: quote the real `Violation` Display text (grouped with intent #9).
+  - `[false]` `[reject]` (blind) skill/facade say `#[command]` and `App::build` call these functions although neither exists yet — the spec's Tasks require that statement, and the Usage Skill documents the framework's planned API as a whole (`#[command]`, `App::build` are documented throughout); it is not a claim a bot author can rely on before those exist.
+  - `[low]` `[reject]` (blind) CMD-01 note prints a combining mark raw after a backtick — cosmetic; the `U+0301` code point is in the note, and changing the spec-contracted note format is not a direct correction.
+  - `[low]` `[reject]` (blind) notes/help containing newlines break the `= note:` layout — needs a user path with a raw newline (which itself fails CMD-01); escaping adds logic for a case unlikely in practice.
+  - `[low]` `[reject]` (blind) CMD-15/16 `path` is the raw pattern, so a pattern with `\n` splits the header line — needs a literal newline inside a pattern that also fails; unlikely, fix adds normalization.
+  - `[low]` `[reject]` (blind) duplicate detection uses O(n^2) linear scans — inputs are capped (25 expansions by default, 15 menus per kind per scope); quadratic cost never matters at real sizes and a map adds complexity.
+  - `[low]` `[reject]` (blind) integration test does not cover REG-02 or a CMD-16 Display string — the unit tests drive the same public functions and pin REG-02's `scope: guild 42` note and CMD-16's fields; generic note Display is pinned in rule.rs.
+  - `[low]` `[reject]` (edge) count saturates to `usize::MAX` and passes when `pattern_expansions == usize::MAX`, then OOMs — only with a cap of `usize::MAX`, which no real `max_expansions` uses; the fix adds a guard.
+  - `[low]` `[reject]` (edge) localized names not validated — same as the blind LOC-02 finding; out of scope by intent.
+  - `[low]` `[reject]` (edge) 3+ consecutive spaces yield CMD-10 instead of CMD-02 — an error is still reported for the same declaration; only the rule id differs, and the fix adds a check.
+  - `[low]` `[reject]` (edge) CMD-10-dropped or leading-space handlers still counted for REG-01/02 — same as the blind count finding.
+  - `[low]` `[reject]` (edge) a handler path with a leading space gives CMD-02 with an empty path — the declaration still fails with CMD-02, and Display without a path is the existing Story 1.3 format; unlikely input.
+  - `[low]` `[reject]` (edge) localized-only description conflicts print identical notes — same as the blind REG-04 notes finding.
+  - `[medium]` `[patch]` (vgap) REG-04 orphan grouping (one violation per path, one `declared by` note per source) and its interleaving with duplicate-path violations is unpinned — patch: extend `reg_04_metadata_without_handler` with a two-source orphan case and add an orphan/duplicate ordering case.
+  - `[false]` `[reject]` (intent 1) no macro/App-build wiring — the intent's "so that" clause names the purpose; Stories 6.1/6.4 wire the calls (spec Design Notes), and the doc wording is covered by the blind finding above.
+  - `[false]` `[reject]` (intent 2) `validate_tree` takes `CommandDecl` rather than bare expansions — deliberate spec design: CMD-04/05 need descriptions and sources, and the tests wrap expansions exactly as the AC scenario requires.
+  - `[false]` `[reject]` (intent 3) merge validator takes flat declaration lists — deliberate: per-source trees are represented by the `source` field, which every merge note prints.
+  - `[false]` `[reject]` (intent 4) options size is caller-measured — deliberate: option types are Story 1.5, which provides the measurer; the longest-variant rule is applied to every field this story owns.
+  - `[false]` `[reject]` (intent 5) REG-04 omits META-01/02 conflicts — epics.md l.799 assigns those conflicts to Story 1.5; post-merge CMD-11/12/13/05 are reported under their own ids, which the catalog row allows.
+  - `[false]` `[reject]` (intent 6) CMD-16 and REG-02 added beyond the listed ids — CMD-16 is required so pattern syntax errors carry a rule id (AD-4), and REG-02 is the catalog's id for guild counts; both settled by the spec.
+  - `[false]` `[reject]` (intent 7) some tests do not cite a rule id — the AC says "name or message"; the two new Display tests assert strings that cite `[CMD-11]`/`[CMD-03]`, and the other names cite the rule area they belong to.
+  - `[false]` `[reject]` (intent 8) no per-pattern cap — the spec settles that `#[command(max_expansions = n)]` (Story 6.1) passes a `Limits` copy; the per-call `&Limits` is that override.
+  - `[low]` `[patch]` (intent 9) troubleshooting CMD-11 wording does not match the real output — grouped with the blind troubleshooting finding; patch quotes the real text.
+  - `[false]` `[reject]` (intent 10) REG-03 byte equality — settled in the spec Design Notes; CTX-01 allows mixed case, so case-distinct names are distinct.
+  - `[false]` `[reject]` (intent 11) absent-choice-last order chosen — the spec settles it (odometer order) and the AC leaves it open; no observable conflict with the intent.
+
 ## Design Notes
 
 **Exact `Bound::Describe` strings** (the matrix abbreviates them inside table code spans; these are authoritative): CMD-16: ``unclosed group``, ``unmatched `)` ``, `` `|` outside a group ``, `` `?` must directly follow a group ``, ``nested group``, ``empty alternative``, ``whitespace inside a group``, ``a group must be a whole word``. CMD-15: ``no duplicate expansions``. CMD-01: ``letters, numbers, `-`, `_`, `ʼ`, Devanagari or Thai only``. CMD-03: ``lowercase``. CMD-11: ``a subcommand or a subcommand group, not both``. CMD-12: ``a base command with subcommands is not invokable``. REG-04: ``one handler per command path``, ``one description per command or group``, ``metadata only for a registered command path``. REG-03: ``one context-menu command per name, type and scope``. Notes use backticks around paths, words, sources and values exactly as in the matrix; CMD-01's note is ``first invalid character `<c>` (U+XXXX)`` (uppercase hex, at least 4 digits).
@@ -204,3 +240,25 @@ assert_eq!(errs[0].rule, RuleId::CMD_11); // `set`, with both contributing paths
 
 **Manual checks:**
 - Temporarily delete the CMD-16 catalog row: `cargo test --release -p noctis-rules --test catalog` fails naming `CMD-16`; revert with `git checkout docs/discord-rules.md`.
+
+## Auto Run Result
+
+- **Summary:** `noctis-rules` gains a `command` module: CMD-16 strict pattern grammar and odometer `expand` (capped by `Limits::pattern_expansions`, CMD-15 duplicates), CMD-01/02/03/10 name rules, `validate_tree` (CMD-04/05/11/12, REG-04 duplicate handlers, description conflicts, orphan metadata) and `validate_merge` (REG-01/02 counts per `Scope`, REG-03 context-menu names). `Violation` gains additive `notes`/`help`. The facade re-exports it; catalog, skill and template docs are updated.
+- **Files changed:**
+  - `crates/noctis-rules/src/command/{mod,name,pattern,tree,merge}.rs`: new declaration types, the name rules, the pattern expander, the tree validator and the merge validator.
+  - `crates/noctis-rules/src/rule.rs`: `Violation` notes/help and the `= note:`/`= help:` Display output.
+  - `crates/noctis-rules/src/lib.rs`, `Cargo.toml`, `Cargo.lock`: module export and the `regex` dependency.
+  - `crates/noctis-rules/tests/command.rs`, `tests/catalog.rs`: integration test and catalog cross-check update.
+  - `crates/noctis/src/lib.rs`: facade re-exports and docs.
+  - `docs/discord-rules.md`: CMD-16 row and enforcement updates.
+  - `examples/project-template/` (`AGENTS.md`, skill `commands.md`, `limits-cheatsheet.md`, `troubleshooting.md`): Usage Skill updates.
+- **Review findings:** 32 findings (high 0, medium 1, low 19, false 12). Patched: 3 (medium 1, low 2), with the low troubleshooting entry from intent 9 grouped into one patch.
+  - Patch (medium): pinned REG-04 orphan grouping and orphan/duplicate ordering in `reg_04_metadata_without_handler`.
+  - Patch (low): commands.md now names REG-04, not "FR-56", for duplicate paths.
+  - Patch (low, blind + intent 9): troubleshooting.md CMD-11 row quotes the real `Violation` Display text.
+  - Deferred: none.
+  - Rejected, low: LOC-02 not checked on localized names (Story 11.x; reported twice); localized-only REG-04 notes look identical (reported twice); REG-01/02 counts include declarations already dropped by CMD-10 (reported twice); no CTX-01 check (Story 1.5); cross-scope meta gives only a scope note; raw combining mark in the CMD-01 note; newlines break the note layout; a newline in a CMD-15/16 path; O(n^2) duplicate scans on capped inputs; no integration test for REG-02/CMD-16 Display (unit tests cover them); `usize::MAX` cap saturation; 3+ spaces give CMD-10 instead of CMD-02; leading-space path gives CMD-02 with an empty path.
+  - Rejected, false: CMD-04 locale index; docs naming `#[command]`/`App::build` before they exist; no macro wiring (Stories 6.1/6.4); `CommandDecl` input; flat merge lists; options size measured by the caller; META conflicts belong to Story 1.5; CMD-16/REG-02 added beyond the listed ids; test names without a rule id; per-pattern cap via `&Limits`; REG-03 byte equality; absent-choice-last order. Each is settled in the spec Design Notes.
+- **Follow-up review recommended:** false. This is the first pass and no high entry was patched (patched by verdict: high 0, medium 1, low 2).
+- **Verification:** all local gates in `gates.sh` passed: fmt, clippy `--release -D warnings`, `cargo test --release`, cargo-hack each-feature, xtask deps-check, cargo deny, MSRV 1.91 check, no `target/debug`. CI is paused by the maintainer, so these local gates were the whole check.
+- **Residual risks:** the rules are not wired into `#[command]`/`App::build` yet (Stories 6.1/6.4). The options size is a number the caller passes until Story 1.5 provides the measurer. LOC-02, CTX-01 and META conflicts are still unenforced and wait for their own stories.

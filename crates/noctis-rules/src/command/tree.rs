@@ -818,6 +818,21 @@ mod tests {
     }
 
     #[test]
+    fn reg_04_orphan_groups_sources_per_path() {
+        let errs = check(&[m("m1", "zzz"), m("m2", "zzz")]);
+        assert_eq!(rules(&errs), [RuleId::REG_04]);
+        assert_eq!(errs[0].notes, ["declared by `m1`", "declared by `m2`"]);
+    }
+
+    #[test]
+    fn reg_04_orphans_and_duplicates_in_first_occurrence_order() {
+        let errs = check(&[m("m1", "zzz"), h("", "a b"), h("", "a b"), m("m2", "yyy")]);
+        assert!(errs.iter().all(|v| v.rule == RuleId::REG_04));
+        let paths: Vec<&str> = errs.iter().map(|v| v.path.as_str()).collect();
+        assert_eq!(paths, ["zzz", "a b", "yyy"]);
+    }
+
+    #[test]
     fn cmd_10_cmd_03_cmd_13_reported_at_once() {
         let children: Vec<String> = (0..26).map(|i| format!("base c{i}")).collect();
         let mut decls = vec![h("", "a b c d"), h("", "Ab x")];

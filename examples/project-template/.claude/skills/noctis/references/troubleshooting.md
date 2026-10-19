@@ -17,7 +17,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CID-03] invalid route id` | uppercase, spaces, `:`, > 24 chars, leading `_` | `[a-z0-9._-]{1,24}` |
 | `by_ref` with `signed` rejected | a Ref is already unguessable | drop `signed` |
 | `the trait Handled is not implemented for X` | building a component from a Route with no `#[handler]` | write the handler (and `.add(it())` to a Module) |
-| `[CMD-11] \`set\` would be both a subcommand and a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
+| `[CMD-11] config set: limit a subcommand or a subcommand group, not both, actual \`set\`` followed by `= note: \`config set\` makes \`set\` a subcommand` and `= note: \`config set prefix\` makes \`set\` a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
 | `[CMD-10]` more than 3 words | path too deep | flatten; use options or a View |
 | `[CMD-16]` malformed pattern, `= note: at byte N` | glued group (`a(b)`), space inside a group, nested or unclosed group, empty alternative, `?`/`\|`/`)` outside a group | fix the token at that byte offset: groups are whole words `(a\|b)` or `(a\|b)?` with single-word alternatives |
