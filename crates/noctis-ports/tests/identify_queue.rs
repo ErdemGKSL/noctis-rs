@@ -118,6 +118,22 @@ async fn buckets_are_independent() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn waiting_bucket_does_not_block_another() {
+    let q: Arc<dyn IdentifyQueue> = Arc::new(queue(2));
+    let start = Instant::now();
+    assert_eq!(granted_at(q.as_ref(), 0, start).await, secs(0));
+    sleep(secs(3)).await;
+    assert_eq!(granted_at(q.as_ref(), 1, start).await, secs(3));
+    let waiter = {
+        let q = Arc::clone(&q);
+        tokio::spawn(async move { granted_at(q.as_ref(), 1, start).await })
+    };
+    tokio::task::yield_now().await;
+    assert_eq!(granted_at(q.as_ref(), 0, start).await, secs(5));
+    assert_eq!(waiter.await.expect("task completes"), secs(8));
+}
+
+#[tokio::test(start_paused = true)]
 async fn interval_counts_from_the_grant() {
     let q = queue(1);
     let start = Instant::now();

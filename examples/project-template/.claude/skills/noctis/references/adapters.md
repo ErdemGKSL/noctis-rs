@@ -105,11 +105,13 @@ use noctis::ports::IdentifyQueue;
 use noctis::ports::memory::MemoryIdentifyQueue;
 
 // max_concurrency comes from GET /gateway/bot (session_start_limit.max_concurrency)
-let queue = MemoryIdentifyQueue::new(NonZeroU16::new(16).unwrap());
+let max_concurrency = NonZeroU16::new(16).unwrap();
+let queue = MemoryIdentifyQueue::new(max_concurrency);
 queue.max_concurrency();                        // 16; Default = 1 bucket
 MemoryIdentifyQueue::IDENTIFY_INTERVAL;         // 5 s
 let queue: Arc<dyn IdentifyQueue> = Arc::new(queue);
-let lease = queue.acquire(shard_id % 16).await?; // waits for its bucket's turn
+let bucket = shard_id % u32::from(max_concurrency.get());
+let lease = queue.acquire(bucket).await?;       // waits for its bucket's turn
 ```
 
 - Each bucket grants at most one `Lease` per `IDENTIFY_INTERVAL` (5 s, counted from the

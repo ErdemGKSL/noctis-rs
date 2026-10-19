@@ -2,7 +2,7 @@
 title: 'Story 3.3: In-memory IdentifyQueue with identify buckets'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'bae92290d44eb553048f354b0f06d821a39afc0a'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -10,7 +10,14 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-3-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-3-2-bounded-in-memory-store-defaults.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      PRD FR-2 says "Shards in the same bucket identify in parallel" and GW-01 says "buckets in order"; both contradict Discord's bucket semantics that Story 3.3 implements.
+    evidence: |-
+      prd.md:260-261 reads "With `max_concurrency = 16`, Shards in the same bucket identify in parallel"; docs/discord-rules.md:269 GW-01 reads "one per bucket per 5 s, buckets in order". The epics AC, the trait rustdoc and the Usage Skill (fixed in this story) say different buckets identify in parallel and each bucket once per 5 s. Pre-existing planning text; this story's spec forbids a discord-rules.md change. Risk: Epic 5's gateway work reads the wrong FR-2 consequence.
+    location: >-
+      _bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/prd.md:260; docs/discord-rules.md:269
+    severity: low
 ---
 
 <intent-contract>
@@ -193,3 +200,43 @@ Ok(Lease::new(bucket))
   - `false` `reject` (intent 4) No facade re-export or template update — `crates/noctis/src/lib.rs`, template skill files, `AGENTS.md` and `xtask/public-api.txt` change in `e97e347`.
   - `false` `reject` (intent 5) Change is purely subtractive — the real change is +641/-23 and additive; subtraction is an artifact of the reversed diff.
   - `false` `reject` (intent 6) No tests — `identify_queue.rs` and `purity.rs` change in `e97e347`.
+
+### 2026-10-19 — Review pass
+- verdicts: 19 findings — high 0, medium 2, low 8, false 9, maybe-false 0
+- findings:
+  - `false` `reject` (blind 1) Interval counts from the grant, not from the IDENTIFY sent; an unused Lease blocks its bucket 5 s — the spec settled grant-anchored timing (matrix row "Interval from grant"), the `Lease` doc says "one Lease, one identify", the skill says "counted from the previous grant"; no caller in the repo delays its identify (gateway wiring is Epic 5), and an unused Lease only makes the queue more conservative.
+  - `false` `reject` (blind 2) Cluster guide URL is a dead link until Story 14.6 — the epics AC requires "linking the (future) Cluster guide" and the spec fixes the URL and the "(written with Story 14.6)" note; `docs/guides/README.md` names the file.
+  - `medium` `patch` (blind 3) `distinct_buckets_on_many_threads` cannot fail under a global lock (each bucket acquired once, first acquire never waits) — confirmed in `tests/identify_queue.rs`; same root cause as the vgap finding (no test makes one bucket wait while another is acquired); action: add the staggered-deadline paused-clock test. The real-time 1 s flake claim is not established (64 uncontended first acquires).
+  - `low` `reject` (blind 4) `buckets_of_16_...` relies on spawn-order polling without `yield_now` — tokio's current-thread scheduler (the `start_paused` flavor) polls spawned tasks FIFO, so the order is deterministic today, and a scheduler change fails the test loudly rather than hiding a bug; not met in everyday use, and the fix adds test machinery.
+  - `low` `reject` (blind 5) No test cancels a waiter queued behind another, and `# Panics` is untested — queued-waiter cancellation is tokio `Mutex`'s own guarantee with no noctis code on that path; a no-runtime panic test needs a separate harness; unlikely to bite and the fix adds tests, not a correction.
+  - `low` `patch` (blind 6) Skill snippet computes `shard_id % 16` with a literal and cannot call `max_concurrency()` after erasing to `Arc<dyn IdentifyQueue>` — confirmed at `references/adapters.md:108-112`; agents copy skill snippets; action: bind the `NonZeroU16` once and compute `shard_id % u32::from(max_concurrency.get())`.
+  - `false` `reject` (blind 7) Spec frontmatter (`review_loop_iteration: 0`, `followup_review_recommended: false`) contradicts the triage log — this pass is the follow-up review the log asked for; the loop counter counts bad_spec loopbacks only and the follow-up flag is set at finalize; the fix would edit this build's spec.
+  - `low` `reject` (blind 8) carried — dev-dep tokio enables `rt-multi-thread`, which the spec's exact list omits; the spec's own multi-thread row needs it, so the code is right and the only fix edits this build's spec.
+  - `false` `reject` (blind 9) Purity checks are brittle (trailing comments, grouped tokio import, exact manifest line) — the spec mandates both rules exactly ("any `tokio` at all in another file is a hit", "the tokio line must equal …"); every mismatch fails loudly and names the file and line, so no violation passes silently.
+  - `low` `patch` (blind 10) `docs/guides/README.md:4` runs to 121 columns while the file is wrapped — confirmed; direct correction; action: rewrap the edited paragraph to the file's width.
+  - `low` `reject` (edge 1) One queue shared by runtimes with different clocks stores an Instant from another clock base — every caller builds one queue per App runtime; no path in the repo shares a queue across runtimes; the guard adds clamping logic for a state not shown reachable.
+  - `false` `reject` (edge 2) Purity test does not forbid `std::time::Instant`, so a real-clock Instant could slip in silently — the slot type `Mutex<Option<tokio::time::Instant>>` rejects a std Instant at compile time, and a wholesale switch to std time breaks the exact paused-clock grant times in `identify_queue.rs`, so it cannot pass silently.
+  - `low` `reject` (edge 3) carried — dev-dep tokio enables `rt-multi-thread` beyond the spec's list; same evidence as the earlier logged row.
+  - `medium` `patch` (vgap) "Different buckets grant in parallel" is unverified while a bucket waits; a cross-bucket lock passes every test — pre-verified; grouped with blind 3; action: add `waiting_bucket_does_not_block_another` (paused clock, `queue(2)`: bucket 0 at 0 s, sleep 3 s, bucket 1 at 3 s, spawn bucket 1 + `yield_now` (granted 8 s), bucket 0 granted at exactly 5 s).
+  - `false` `reject` (intent 1) App/gateway wiring (R2) not implemented or tested — the epics ACs are port-level, and the spec's Never list defers wiring and the `max_concurrency` fetch to Epic 5.
+  - `false` `reject` (intent 2) `Default` (1 bucket) conflicts with AD-21/GW-01 "never `InMemoryQueue::default()`" — the spec settled `Default` = 1; one bucket is the most conservative queue and can never exceed Discord's limit; GW-01's rule is enforced at App-build (Epic 5), which builds from the fetched `max_concurrency`.
+  - `low` `defer` (intent 3) PRD FR-2 "same bucket … in parallel" and GW-01 "buckets in order" still contradict the shipped semantics — pre-existing planning text (prd.md:260, discord-rules.md:269); the spec forbids a discord-rules.md change; deferred to the frontmatter list.
+  - `false` `reject` (intent 4) Cluster guide link resolves to a missing file — same refutation as blind 2: the AC asks for a link to the future guide.
+  - `false` `reject` (intent 5) Layer-1 purity relaxed by the same diff; spine does not allow tokio in layer 1 — the spine's layer-1 I/O column is "none (memory defaults only)" and tokio `sync`/`time` do no I/O; the AC demands a paused tokio clock, which the spec's design note resolves by allowing only those paths in one file and an exact manifest line.
+
+## Auto Run Result
+
+- **Summary:** Added `noctis_ports::memory::InMemoryQueue`, the default `IdentifyQueue`: `max_concurrency: NonZeroU16` buckets, each a `tokio::sync::Mutex<Option<tokio::time::Instant>>` held across the wait, granting one `Lease` per bucket per 5 s (interval counted from the previous grant), FIFO within a bucket, buckets in parallel; out-of-range bucket returns `PortError::invalid_value` (caller owns `shard_id % max_concurrency`, GW-01). `Default` = 1 bucket. Re-exported through the `noctis` facade; Cluster-contract rustdoc links the future Cluster guide (Story 14.6).
+- **Files changed:**
+  - `crates/noctis-ports/src/memory/identify.rs` - new `InMemoryQueue` implementation.
+  - `crates/noctis-ports/src/memory/mod.rs`, `src/lib.rs`, `src/identify.rs` - module wiring, re-exports, Cluster-contract docs.
+  - `crates/noctis-ports/Cargo.toml`, `Cargo.lock` - tokio (`sync`, `time` only) for layer 1.
+  - `crates/noctis-ports/tests/identify_queue.rs` - paused-clock matrix incl. new `waiting_bucket_does_not_block_another`.
+  - `crates/noctis-ports/tests/purity.rs` - allows tokio sync/time in one file with an exact manifest line.
+  - `crates/noctis/src/lib.rs`, `xtask/public-api.txt` - facade re-export and API snapshot.
+  - `examples/project-template/` (`AGENTS.md`, skill `SKILL.md`, `adapters.md`, `app-and-sharding.md`) - usage docs; bucket snippet fixed.
+  - `docs/guides/README.md` - guide index entry, rewrapped.
+- **Review findings:** pass 1 (diff mis-staged as reversed planning commit due to duplicate `baseline_revision` key; key removed): 3 high patched (same root cause, resolved by re-staging and a follow-up pass), 1 low rejected, 15 false rejected. Pass 2 (follow-up, real code): patched medium 2 (cross-bucket parallelism untested while a bucket waits -> added staggered paused-clock test), low 2 (skill snippet `% 16` literal -> `% u32::from(max_concurrency.get())`; README line rewrap); deferred low 1 (PRD FR-2 / GW-01 wording contradicts shipped bucket semantics; discord-rules.md change forbidden by spec); rejected low 5 (spawn-order polling, untested queued-waiter cancellation/panic, dev-dep `rt-multi-thread` x2, cross-runtime Instant) and false 9, each with reason in the triage log.
+- **Follow-up review recommended:** false - follow-up pass patched high 0 (medium 2, low 2), so the work has converged.
+- **Verification:** local gates via `gates.sh` all green (fmt, clippy --release -D warnings, test --release, cargo hack each-feature, deny, MSRV 1.91 check, dep tree checks, xtask deps-check/rules-catalog/api-snapshot/skill-check, build-config check, no `target/debug`). CI paused by maintainer.
+- **Residual risks:** grant-anchored interval means an unused or delayed Lease holds its bucket conservatively; planning text (PRD FR-2, GW-01) still describes old bucket semantics until the deferred fix; gateway wiring and `max_concurrency` fetch land in Epic 5; Cluster guide link dead until Story 14.6.
