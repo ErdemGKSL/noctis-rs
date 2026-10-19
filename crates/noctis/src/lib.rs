@@ -320,9 +320,11 @@ pub mod ui {
     //! - [`ContainerComponent`] and [`TopLevelComponent`]: any component of a
     //!   Container or of the top level, for lists built at runtime.
     //! - [`Attachment`], [`AttachmentOrigin`], [`AttachmentSet`] and
-    //!   [`AttachmentRef`]: content-addressed files; [`File`] and [`Media`]
-    //!   take only an [`AttachmentRef`], which only [`AttachmentSet::add`]
-    //!   returns (CV2-12).
+    //!   [`AttachmentRef`]: content-addressed files; [`File`] takes only an
+    //!   [`AttachmentRef`], which only [`AttachmentSet::add`] returns (CV2-12);
+    //!   [`Media`] takes an [`AttachmentRef`] or a URL, and an `attachment://`
+    //!   name given as a URL (or a ref from another set) is checked at runtime
+    //!   by ATT-05.
     //! - [`UiError`]: a bad attachment extension or a mismatched Ref slot.
     //!
     //! # Placement

@@ -2,7 +2,7 @@
 title: 'Story 4.1: Typed V2 message components with placement in the type system'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '1f94f48221a87cf928d7e5ad8226a2b0b1e2cc34'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -152,6 +152,40 @@ Serialization rows show `serde_json::to_value` output; `Components` assigns `id`
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 30 findings — high 0, medium 1, low 12, false 17, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `Media::url` accepts `attachment://`, and an `AttachmentRef` is not tied to its set, so the docs' claim that an `attachment://` URL always names a file of the message is false — `Media::url` takes any string (media.rs:36); the runtime membership check is ATT-05 (pending, Story 9.1). Patch: correct the claims in `noctis-ui/src/lib.rs` and the facade `ui` docs (File takes only an `AttachmentRef`; `Media` also takes a URL, whose `attachment://` names are checked at runtime by ATT-05).
+  - `[false]` `[reject]` (blind) `AttachmentSet::add` silently drops a different attachment with the same name — the Matrix row "Set duplicate name" settles it: same bytes or same digest keep the first member; names are content addresses chosen by the caller's digest, and a 64-bit prefix collision is not reachable in practice.
+  - `[false]` `[reject]` (blind) `CustomId::new` swallows `EncodeError` — the spec sets "slot or error → unresolved"; core's `resolve` with the real Parts returns the same typed error, so the cause is not lost.
+  - `[false]` `[reject]` (blind) `Handled` is not sealed — the spec requires a plain `pub trait Handled` that the `#[handler]` macro implements from the user's crate through `::noctis::__private::ui::Handled`; sealing would make that impossible, and the manual impl in tests is the Epic 4 convention.
+  - `[low]` `[reject]` (blind) CV2-06/CV2-10 rows and troubleshooting rows describe arity errors that do not exist yet — those rows describe the target enforcement tracked by pending entries for Story 4.4; nobody meets a nonexistent error in everyday use, and the gap is closed by 4.4.
+  - `[low]` `[reject]` (blind) CV2-07 removed from rules-pending.toml although its arity half is 4.4 — the spec lists the removal; the CV2-07 compile-time tier now has diagnosed evidence and the rules row states the arity trait comes in 4.4; no check or user is misled in practice.
+  - `[false]` `[reject]` (blind) No runtime-sized constructors for Section/ActionRow/MediaGallery — `try_buttons`/`try_new`/`try_from_vec` are explicitly Story 4.4 (spec Never); `ContainerComponent`/`TopLevelComponent` already cover runtime lists of children.
+  - `[false]` `[reject]` (blind) component-entry check uses a hand-kept `BUILDERS` list — the spec mandates reusing `BUILDERS` (16 message + 6 modal builders); the omitted types (`Button`, `Media`, `Rgb`, `Components`, …) are not component builders that need an entry.
+  - `[low]` `[reject]` (blind) template imports `escape_markdown`, uses `rgb!`, and a long unformatted line — the spec keeps `V2Message`/`rgb!` as [planned] and the skill marks `escape_markdown` [planned]; the template does not compile before Story 14.2 and is outside the formatted workspace.
+  - `[false]` `[reject]` (blind) `SelectRoute` diagnostic has no rule id and no trybuild for `RowItem`/`RowSelect` — the spec dictates that message verbatim and forbids fixtures citing still-pending ids (CV2-06); the `compile_fail` doctest is the spec'd coverage.
+  - `[false]` `[reject]` (blind) `Attachment::rendered` takes `Bytes` and `&'static str` unlike its siblings — exactly the signature the spec's Tasks prescribe (Renderer output, primitives only).
+  - `[low]` `[reject]` (blind) composite types lack `PartialEq` — not required by the spec; tests compare JSON; adding derives across the tree plus a `CustomId` impl is more than a direct correction for a convenience.
+  - `[false]` `[reject]` (blind) `RouteComponents` only works when `Payload = Self` — settled in Design Notes; derived Routes always have `Payload = Self`.
+  - `[low]` `[reject]` (edge) `finish` accepts a `PendingRef` from a sibling `CustomId` of the same Route — only a core (Epic 7) caller bug could do this and core does not exist yet; the guard adds state the spec does not call for.
+  - `[low]` `[reject]` (edge) a hand-written `SelectRoute` impl on a non-select shape bypasses the nonce — requires a deliberate wrong hand impl documented against; the proposed `const` assertion is forbidden by the spec.
+  - `[false]` `[reject]` (edge) `add()` drops a different Attachment under an existing name — same refutation as the blind finding: the Matrix settles first-kept for equal names.
+  - `[false]` `[reject]` (edge) an `AttachmentRef` from set A can go in a message that ships set B — message assembly is `V2Message` (4.2, excluded) and the membership check is ATT-05 (pending, Story 9.1).
+  - `[low]` `[patch]` (edge) `Media::url("attachment://ghost.png")` compiles — same root cause as the first blind finding (docs promise a guarantee `Media` does not give); grouped, patched by the doc correction; the runtime check is ATT-05.
+  - `[false]` `[reject]` (edge) arity N = 0 or above the limit for Section, row, gallery — owned by Story 4.4 (arity traits) and 4.3 (validator), as the Matrix row "Action Row arity not yet bounded" states.
+  - `[false]` `[reject]` (edge) select min/max/options ranges unchecked — the Matrix says "0 options accepted (4.3 checks)"; runtime validation is Story 4.3.
+  - `[low]` `[reject]` (edge) four-backtick fence closes early in the component-entry check — no skill file uses four-backtick or longer fences; fixing needs run-length tracking, more than a direct correction.
+  - `[low]` `[reject]` (edge) `canonical_from_rustdoc_json` matches re-exports by source string — two same-source `use` items in different modules naming different items do not occur in the internal crates, and a wrong mapping would show in the committed `public-api.txt` diff; fixing means carrying use-item ids through `Reexport`.
+  - `[false]` `[reject]` (edge) claim: `Handled` is implemented only by `#[handler]` — same as the blind finding; the spec defines `Handled` as the macro's hidden hook, not a sealed trait.
+  - `[low]` `[patch]` (edge) claim: the facade doc says `File` and `Media` take only an `AttachmentRef` (noctis/src/lib.rs:321-323) — false for `Media::url`; grouped with the first blind finding, fixed by the doc correction.
+  - `[medium]` `[patch]` (verification-gap) no test walks a Section accessory `custom_id` that needs resolving — pre-verified: dropping `Section::custom_ids_mut` or the `ChildNode::Section` arm leaves every test green. Patch: add a test in `crates/noctis-ui/tests/components.rs` with an unresolved Route button as a Section accessory inside a Container and at top level, asserting `custom_ids_mut` yields both in pre-order and the body serializes after resolution.
+  - `[false]` `[reject]` (intent) CID-04 reused for "Route has a handler" — the spec's Design Notes settle it deliberately (exactly one handler implies at least one; CID-04 gains a compile-time tier).
+  - `[false]` `[reject]` (intent) `Attachment` constructors are fallible — the spec's Tasks and Matrix (`InvalidExtension`) settle it.
+  - `[false]` `[reject]` (intent) non-inline Route components serialize only after hidden resolution hooks — the spec settles this (AD-18; core finalizes; serde error naming "unresolved").
+  - `[low]` `[reject]` (intent) the button-outside-row fixture covers only `Container::push(LinkButton)` — the same sealed bounds are exercised by the Thumbnail fixture at top level and in a Container; the spec lists exactly these fixtures; the code is correct, so users do not meet a defect.
+  - `[false]` `[reject]` (intent) `Handled` is re-exported unhidden at the `noctis_ui` root and most tests use it directly — `noctis-ui` is an internal sub-crate; the facade exposes it only under `__private` and the spec requires only the facade test to use that path.
+
 ## Design Notes
 
 - **Why `SectionAccessory` cites CV2-07:** CV2-07 defines a Section as texts plus exactly one Button-or-Thumbnail accessory; with a two-argument constructor the only way to "omit" an accessory is to pass a non-accessory (e.g. `()`), and that error names CV2-07. CV2-05 fixtures cover misplaced Thumbnails/Buttons through `ContainerChild`/`TopLevel`.
@@ -180,3 +214,15 @@ Serialization rows show `serde_json::to_value` output; `Components` assigns `id`
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- exit 0.
 - `bash .github/scripts/check-build-config.sh` -- exit 0.
 - `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** New `noctis-ui` crate with typed Components V2 message builders (Container, Section, TextDisplay, Thumbnail, MediaGallery, File, Separator, ActionRow, buttons, selects) whose placement rules (CV2-05/07/12/14) are enforced by sealed placement traits; Route-bound buttons/selects via `RouteComponents` (requires `Handled`, CID-04 compile-time tier); `AttachmentSet`/`AttachmentRef`; unresolved `custom_id` hooks (`custom_ids_mut`/`resolve`/`finish`) for core (AD-18); facade `noctis::ui` re-exports; skill, rules docs, template and xtask checks updated.
+- **Files changed:** `crates/noctis-ui/**` (new crate, builders, tests, insta snapshots); `crates/noctis/src/lib.rs` (facade `ui` + `__private`); `crates/noctis/tests/components.rs` and `tests/ui/{cid,cv2}/*` (trybuild compile_fail fixtures); `docs/discord-rules.md` (rule tiers); `examples/project-template/**` (skill references, modules); `xtask/src/api_snapshot.rs`, `xtask/public-api.txt` (re-export mapping, API snapshot); `xtask/src/skill_check/components.rs` (component-entry check replacing pending.rs); `xtask/rules-pending.toml`, `xtask/skill-pending.toml` (entries resolved).
+- **Review findings:** 30 total (high 0, medium 1, low 12, false 17).
+  - Patched (4, grouped into 2 fixes): medium — test for Section accessory `custom_id` walking (Container and top level, pre-order, serializes after resolution); low x3 — doc claims that `attachment://` URLs always name a message file corrected in `noctis-ui` and facade docs (`Media::url` checked at runtime by ATT-05, Story 9.1).
+  - Deferred: none.
+  - Rejected (26): duplicate-name first-kept settled by Matrix; `CustomId::new` error mapping per spec; `Handled` intentionally unsealed (macro hook); arity/CV2-06/CV2-10 rows and runtime-sized constructors belong to Story 4.4; CV2-07 removal from pending per spec; `BUILDERS` list mandated; template `[planned]` items not compiled before 14.2; `SelectRoute` diagnostic verbatim per spec; `Attachment::rendered` signature per spec; `PartialEq` not required; `Payload = Self` settled in Design Notes; sibling `PendingRef` misuse only reachable by core (Epic 7); hand-written `SelectRoute` misuse documented; cross-set `AttachmentRef` is ATT-05/4.2; select ranges are Story 4.3; four-backtick fences unused; re-export source-string matching safe for internal crates; CID-04 reuse settled; fallible `Attachment` constructors per spec; resolution hooks per AD-18; fixture set matches spec; `Handled` root re-export in internal crate.
+- **Follow-up review recommended:** false (patched by verdict: high 0, medium 1, low 3; first pass, below threshold).
+- **Verification:** local gates via `gates.sh` all green (fmt, clippy -D warnings, release tests incl. snapshots/trybuild/doctests, cargo hack each-feature, MSRV 1.91 check, cargo deny, xtask deps-check/rules-catalog/api-snapshot/skill-check, build-config check, no `target/debug`); CI paused by maintainer.
+- **Residual risks:** arity bounds unenforced until Story 4.4; runtime limits until 4.3; `attachment://` membership (ATT-05) until 9.1; resolution hooks unexercised by a real core until Epic 7; hand-written Routes with `Payload != Self` cannot build components.

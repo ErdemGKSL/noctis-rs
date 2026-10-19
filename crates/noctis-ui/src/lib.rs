@@ -42,9 +42,10 @@
 //! # Attachments
 //!
 //! An [`Attachment`] is named by its content (`<16 hex of blake3>.<ext>`).
-//! Adding it to an [`AttachmentSet`] returns the [`AttachmentRef`] that
-//! [`File`] and [`Media`] take, so an `attachment://` URL always names a file
-//! of the message (CV2-12).
+//! Adding it to an [`AttachmentSet`] returns an [`AttachmentRef`]. [`File`]
+//! takes only an [`AttachmentRef`] (CV2-12); [`Media`] takes an
+//! [`AttachmentRef`] or a URL, and an `attachment://` name given as a URL (or
+//! a ref from another set) is checked at runtime by ATT-05.
 //!
 //! ```
 //! use noctis_ui::{

@@ -515,6 +515,33 @@ fn signed_and_view_routes_resolve() {
 }
 
 #[test]
+fn section_accessory_ids_resolve() {
+    let key = PayloadKey::from_bytes([7; 32]);
+    let mut body = Components::new()
+        .push(Container::new().push(Section::new(
+            [TextDisplay::new("a")],
+            Signed { n: 1 }.button(),
+        )))
+        .push(Section::new(
+            [TextDisplay::new("b")],
+            Viewed { n: 1 }.button(),
+        ));
+    let envelope = ViewEnvelope::new('a', 0, 0, 0).expect("valid envelope");
+    let ids: Vec<_> = body.custom_ids_mut().collect();
+    assert_eq!(
+        ids.iter().map(|id| id.route()).collect::<Vec<_>>(),
+        [RouteId::new("signed"), RouteId::new("viewed")]
+    );
+    let [signed, viewed] = <[_; 2]>::try_from(ids).expect("exactly two ids");
+    assert_eq!(signed.resolve(&Parts::new().with_signer(&key)), Ok(None));
+    assert_eq!(
+        viewed.resolve(&Parts::new().with_envelope(envelope)),
+        Ok(None)
+    );
+    assert!(serde_json::to_string(&body).is_ok());
+}
+
+#[test]
 fn spill_route() {
     let mut fits = Components::new().push(ActionRow::buttons([Spilled {
         text: "short".to_owned(),
