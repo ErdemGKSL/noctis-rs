@@ -2,7 +2,8 @@
 title: 'Story 3.3: In-memory IdentifyQueue with identify buckets'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'bae92290d44eb553048f354b0f06d821a39afc0a'
 baseline_revision: '5311006164af6abf4d9065438fff338419a72752'
 review_loop_iteration: 0
 followup_review_recommended: false
