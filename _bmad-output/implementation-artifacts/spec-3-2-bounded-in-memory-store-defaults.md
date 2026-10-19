@@ -2,15 +2,22 @@
 title: 'Story 3.2: Bounded in-memory store defaults'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'd716808b45ba4554b36f4931ee20f5d2262cf2ef'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-3-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-3-1-port-traits-and-the-shared-op-vocabulary.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      MemoryDiscordCache message memory grows with every channel ever seen, because twilight-cache-inmemory never purges a channel's message list on CHANNEL_DELETE or GUILD_DELETE, and DM channels are never deleted.
+    evidence: |-
+      twilight-cache-inmemory 0.17.1 touches `channel_messages` only in event/message.rs (create/delete/update) and in `clear()` (lib.rs l.291); no channel or guild delete handler removes it. The per-channel cap (AC5) holds, but total messages = cap x channels ever seen. Upstream behaviour exposed, not caused, by Story 3.2; AC5 bounds the cache by resource set plus the per-channel cap. Address with Story 12.5 (DiscordCacheConfig), e.g. purge on delete or cap channels with cached messages.
+    location: >-
+      crates/noctis-ports/src/memory/discord.rs (MemoryDiscordCache::update / with_message_cap)
+    severity: medium
 ---
 
 <intent-contract>
@@ -231,6 +238,46 @@ Facade, template and tooling:
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 36 findings — high 0, medium 5, low 14, false 17, maybe-false 0
+- findings:
+  - `low` `patch` blind: `resources()` rustdoc ("as requested") and skill ("what you asked for") contradict `with_message_cap(.., 0)` removing MESSAGE — doc-only wording fix in discord.rs and adapters.md §1.1.
+  - `low` `reject` blind: weigher clamps to u32::MAX while `check_fits` compares u64 — real only for single entries over 4 GiB, which the spec's Design Notes already call approximate; a guard adds a branch for a case nobody meets.
+  - `low` `reject` blind: ENTRY_OVERHEAD = 64 understates resident memory — the bound still holds within a constant factor and the constant is fixed by the spec; changing it means editing the spec.
+  - `false` `reject` blind: skill overstates "usage() never exceeds max_bytes" — `usage()` runs `run_pending_tasks()` before reading, so the reported value is within budget; `usage_stays_within_the_budget` asserts it.
+  - `low` `reject` blind: `usage()` runs maintenance synchronously — the spec mandates `run_pending_tasks()` in `usage()`; the work is bounded by pending writes and no async caller exists yet.
+  - `false` `reject` blind: `version()` not linearised with `put` — the bump happens after the write, so any reader that sees the new version re-reads the new value; eviction leaving the version unchanged is spec-mandated.
+  - `low` `reject` blind: module state can be silently evicted from the 16 MiB LRU — covered by the documented "defaults are caches" note in rustdoc and the skill; needs 16 MiB of module-state entries first.
+  - `false` `reject` blind: `put_if_absent` returns InvalidValue for an oversized value on a live key — the spec matrix ("Budget +1 ... applies to put, put_if_absent and incr") mandates the check first.
+  - `low` `patch` blind: timing tests `touch_extends_a_live_entry` / `incr_sets_the_ttl_on_create_only` leave 70 ms margin, below the spec's own 2x rule — widen the initial TTL to 400 ms and the final incr sleep to 500 ms.
+  - `low` `reject` blind: `member()` does two non-atomic lookups — a transient `None` only when a concurrent update removes the user mid-call, which is also what the next read returns; atomicity needs holding twilight guards, which the spec forbids.
+  - `low` `reject` blind: `DiscordCacheResources::all()` is a literal and `Debug` prints raw bits — all six constants are in `all()` (tested by `resource_set_ops`); a flag-name `Debug` adds a manual impl for cosmetic gain.
+  - `false` `reject` blind: no default resource set for the App's DiscordCache — App wiring and `DiscordCacheConfig` belong to Story 12.5 per epics; nothing constructs a default App cache yet.
+  - `medium` `patch` blind: discord_cache tests leave Guild/Member field mapping and other cases unasserted — grouped with the verification-gap Guild/Member finding; patched there (full struct equality against the payload).
+  - `low` `reject` blind: defaults table written three times with no drift check — the spec requires the table in rustdoc and the skill; generating it adds tooling for a table that changes rarely.
+  - `low` `reject` blind: `xtask/public-api.txt` lists trait impls twice — cargo-public-api output for traits reachable by two paths; `api-snapshot` passes and the duplication is stable, fixing it means changing the generator.
+  - `low` `reject` edge: `check_fits` admits entries over u32::MAX that the weigher clamps — same root cause as the blind weigher-width row; rejected with it.
+  - `false` `reject` edge: `max_bytes` below ENTRY_OVERHEAD makes every write fail — that is a loud typed `InvalidValue`, and `L(1, None)` is a spec-listed valid edge.
+  - `false` `reject` edge: `put_if_absent`/`incr` with ttl ZERO insert a dead entry — the port contract treats an expired entry as absent and the spec matrix requires zero TTL to be dead immediately; this is the specified behaviour.
+  - `low` `reject` edge: resident memory transiently exceeds `max_bytes` before moka housekeeping — bounded by moka's write-log flush and invisible through `usage()`; forcing maintenance per write adds cost and a branch.
+  - `medium` `defer` edge: message memory grows with every channel ever seen (twilight never purges `channel_messages` on channel/guild delete) — verified in twilight-cache-inmemory 0.17.1 sources; upstream behaviour within AC5's bound; deferred to Story 12.5.
+  - `medium` `defer` edge: claim that AC1 "bounded" fails for MemoryDiscordCache — same root cause as the previous row; deferred with it.
+  - `false` `reject` edge: MEMBER caches users so `user()` answers without USER — spec-mandated ("MEMBER also turns on USER internally, but resources() reports what the caller asked for").
+  - `low` `reject` edge: claim that the u32 weigher clamp breaks AC1 — same root cause as the blind weigher-width row; rejected with it.
+  - `medium` `patch` vgap: LRU admission of fresh writes under a full budget is untested — add `full_budget_admits_the_newest_write` to memory_stores.rs.
+  - `low` `patch` vgap: expired entries leaving `usage()` is untested — add `expired_entries_leave_usage` to memory_stores.rs.
+  - `medium` `patch` vgap: Guild and Member conversion fields are mostly unasserted — add full-struct equality against the GUILD_CREATE payload with the documented lossy fields cleared.
+  - `false` `reject` intent: "runs out of the box" vs port-only surface — epics assign App builder setters and ctx wiring to Stories 7.x-12.5; the spec settled this.
+  - `false` `reject` intent: MemoryDiscordCache has no byte/entry bound — AC5 defines its bound as the resource set plus twilight's per-channel cap; the concrete leak is the deferred edge row.
+  - `false` `reject` intent: three stores have `max_ttl` none — "none" is a documented default, as the spec table settles.
+  - `false` `reject` intent: 100 OS threads instead of 100 tasks — the store futures are ready on first poll; the spec deliberately chose threads for real parallelism.
+  - `false` `reject` intent: `version()` counts puts, not state changes — the port contract says "greater after every put" and the spec settled eviction behaviour.
+  - `false` `reject` intent: Guild/Member are lossy reconstructions — spec-mandated and documented; the missing field assertions are the patched vgap row.
+  - `false` `reject` intent: fixtures are synthetic, not captured traffic — the spec defines the recorded-frame fixtures and their shape.
+  - `false` `reject` intent: template reconciled via facade test, not by building the template crate — the spec settled this (template_adapter.rs with `#[path]`).
+  - `false` `reject` intent: skill sections relabelled [planned] and workspace default-features changed — the relabels describe APIs that do not exist yet, and the Cargo entries are spec-mandated.
+  - `false` `reject` intent: byte-only capacity configuration — the AC allows bytes and the spec's design note chose bytes.
+
 ## Design Notes
 
 Decisions (logged in the memlog):
@@ -266,3 +313,21 @@ self.cache.entry_by_ref(key).and_compute_with(|cur| match cur.filter(|e| e.value
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot` and `-- skill-check` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** noctis-ports now ships bounded in-memory defaults for every port: moka-backed byte-budgeted LRU stores (`max_bytes` weigher with `ENTRY_OVERHEAD`, optional `max_ttl` clamp computed by noctis, deadlines in the value, all mutations through `and_compute_with`), oversized writes rejected as typed `InvalidValue`, `usage()` running pending maintenance, a `MemoryDiscordCache` over twilight-cache-inmemory gated by noctis's own `DiscordCacheResources` bitset (Guild/Member converted with documented lossy fields, `Message` newtype, MEMBER implies USER internally), plus trivial `NoLocaleOverlay` and `AllowAllGuilds`. The facade re-exports them, and the project template, its AGENTS.md and the noctis skill (adapters.md §1.1 defaults table) are updated.
+- **Files changed:**
+  - `crates/noctis-ports/src/memory/{mod,byte_store,stores,discord,trivial}.rs`: the byte-budgeted store core, the per-port stores, the Discord cache and the trivial defaults.
+  - `crates/noctis-ports/src/lib.rs`, `crates/noctis-ports/Cargo.toml`, `Cargo.toml`, `Cargo.lock`: module wiring and the moka/twilight-cache-inmemory deps.
+  - `crates/noctis-ports/tests/{memory_stores,discord_cache,purity}.rs` and `tests/fixtures/gateway/*.json`: contract, budget, TTL, concurrency and gateway-fixture tests.
+  - `crates/noctis/src/lib.rs`, `crates/noctis/Cargo.toml`, `crates/noctis/tests/template_adapter.rs`: facade re-exports and the template reconciliation test.
+  - `examples/project-template/{AGENTS.md,src/adapters/bounded_cache.rs}` and `.claude/skills/noctis/{SKILL.md,references/adapters.md}`: template and usage skill.
+  - `xtask/public-api.txt`: API snapshot; `.memlog.md`: design decisions.
+- **Review findings (36: high 0, medium 5, low 14, false 17):**
+  - Patched (6; at entry verdict medium 2, low 4, plus 1 medium grouped into a patched row): `resources()` doc wording; widened TTL margins in two timing tests; new `full_budget_admits_the_newest_write`; new `expired_entries_leave_usage`; full-struct Guild/Member equality against the GUILD_CREATE payload (absorbs the blind discord_cache coverage row).
+  - Deferred (2 medium, one root cause): twilight never purges `channel_messages` on channel/guild delete, so message memory grows with every channel seen; deferred to Story 12.5 (`DiscordCacheConfig`).
+  - Rejected (28): u32 weigher clamp for >4 GiB entries (approximate by design, 3 rows); ENTRY_OVERHEAD understates resident memory (spec-fixed constant); synchronous maintenance in `usage()` (spec-mandated); module state evictable from the LRU (documented "defaults are caches"); non-atomic `member()` lookup (transient, guards forbidden); `all()` literal and raw-bit Debug (tested, cosmetic); defaults table not drift-checked (rare change); duplicate trait impls in public-api.txt (generator behaviour, stable); transient resident overshoot before moka housekeeping (invisible via `usage()`); and 17 `false` rows that the spec already settles (usage within budget, version semantics, `put_if_absent` size check order, zero-TTL dead entries, `max_bytes` below overhead, MEMBER implies USER, App wiring belongs to Stories 7.x-12.5, byte-only budget, `max_ttl` none, threads instead of tasks, lossy Guild/Member, synthetic fixtures, facade-based template check, [planned] relabels and Cargo entries).
+- **Follow-up review recommended: true.** First pass patched 2 medium entries (0 high). Named risk: the new Guild/Member full-struct equality test and the LRU full-budget admission test were written during review and have not been independently re-reviewed; if the test's "lossy fields cleared" list is wrong, it could mask a conversion bug, and the admission test relies on moka eviction timing.
+- **Verification:** local gates via the scratchpad `gates.sh` all green (`cargo fmt --check`, `cargo clippy --release --workspace --all-targets --all-features -D warnings`, `cargo test --release --workspace`, `cargo hack --each-feature`, `cargo deny check`, MSRV 1.91 check, `noctis-ports` dep-count check, xtask deps-check/rules-catalog/api-snapshot/skill-check, build-config check, no `target/debug`). CI is paused by the maintainer, so the local gates are the whole check.
+- **Residual risks:** unbounded per-channel message growth in `MemoryDiscordCache` until Story 12.5; byte accounting is approximate (fixed per-entry overhead, clamp above 4 GiB, transient overshoot before moka maintenance); timing-based TTL tests may still flake on a heavily loaded runner.

@@ -12,6 +12,8 @@ use noctis_ports::DiscordCache;
 use noctis_ports::memory::{DiscordCacheResources as R, MemoryDiscordCache};
 use serde::de::DeserializeSeed;
 use twilight_model::gateway::event::{Event, GatewayEventDeserializer};
+use twilight_model::gateway::payload::incoming::GuildCreate;
+use twilight_model::guild::Guild;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 
@@ -118,6 +120,47 @@ fn guild_create_with_every_resource() {
         now(cache.member_ids(GUILD)).unwrap(),
         Some(ids::<UserMarker>(&[30]))
     );
+}
+
+/// The `Guild` the `guild_create` fixture carries.
+fn guild_payload() -> Guild {
+    match event("guild_create") {
+        Event::GuildCreate(create) => match *create {
+            GuildCreate::Available(guild) => guild,
+            GuildCreate::Unavailable(_) => panic!("fixture guild is unavailable"),
+        },
+        other => panic!("not GUILD_CREATE: {other:?}"),
+    }
+}
+
+#[test]
+fn cached_guild_and_member_match_the_payload_but_for_lossy_fields() {
+    let cache = MemoryDiscordCache::new(R::all());
+    apply(&cache, &[event("guild_create")]);
+    let mut expected = guild_payload();
+
+    let mut member = expected
+        .members
+        .iter()
+        .find(|m| m.user.id == USER)
+        .cloned()
+        .expect("payload member 30");
+    member.avatar_decoration_data = None;
+    member.banner = None;
+    assert_eq!(now(cache.member(GUILD, USER)).unwrap(), Some(member));
+
+    expected.channels.clear();
+    expected.roles.clear();
+    expected.members.clear();
+    expected.emojis.clear();
+    expected.stickers.clear();
+    expected.presences.clear();
+    expected.voice_states.clear();
+    expected.threads.clear();
+    expected.stage_instances.clear();
+    expected.approximate_member_count = None;
+    expected.approximate_presence_count = None;
+    assert_eq!(now(cache.guild(GUILD)).unwrap(), Some(expected));
 }
 
 #[test]

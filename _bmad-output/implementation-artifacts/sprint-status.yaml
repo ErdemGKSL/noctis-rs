@@ -57,7 +57,7 @@ development_status:
 
   epic-3: in-progress
   3-1-port-traits-and-the-shared-op-vocabulary: done
-  3-2-bounded-in-memory-store-defaults: in-progress
+  3-2-bounded-in-memory-store-defaults: done
   3-3-in-memory-identifyqueue-with-identify-buckets: backlog
   epic-3-retrospective: optional
 

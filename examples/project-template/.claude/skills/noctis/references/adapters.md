@@ -81,7 +81,7 @@ use noctis::ports::memory::{DiscordCacheResources as R, MemoryDiscordCache};
 
 let cache = MemoryDiscordCache::new(R::GUILD | R::CHANNEL | R::ROLE);   // 100 messages/channel
 let cache = MemoryDiscordCache::with_message_cap(R::all(), 50);        // cap 0 = no MESSAGE
-cache.resources();     // what you asked for
+cache.resources();     // the requested set, without MESSAGE when the cap is 0
 cache.message_cap();   // MemoryDiscordCache::DEFAULT_MESSAGE_CAP = 100 for new()
 ```
 

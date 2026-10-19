@@ -216,7 +216,7 @@ impl MemoryDiscordCache {
         }
     }
 
-    /// The cached resources, as requested.
+    /// The cached resources: the requested set, without `MESSAGE` when the cap is 0.
     pub const fn resources(&self) -> DiscordCacheResources {
         self.resources
     }

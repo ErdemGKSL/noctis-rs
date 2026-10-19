@@ -214,6 +214,18 @@ fn usage_stays_within_the_budget() {
     assert!(usage.entries > 0, "{usage:?}");
 }
 
+#[test]
+fn full_budget_admits_the_newest_write() {
+    let store = MemoryRefStore::with_limits(MemoryLimits::new(10 * (64 + 4 + 8), None));
+    for i in 0..1000 {
+        let key = format!("k{i:03}");
+        now(store.put_if_absent(&key, Bytes::from_static(b"12345678"), None)).unwrap();
+    }
+    store.usage();
+    assert!(now(store.get("k999")).unwrap().is_some());
+    assert_eq!(now(store.get("k000")).unwrap(), None);
+}
+
 // --- TTL ---
 
 #[test]
@@ -330,9 +342,18 @@ fn delete_missing_and_live() {
 }
 
 #[test]
+fn expired_entries_leave_usage() {
+    let store = ref_store(None);
+    now(store.put_if_absent("k", b("v"), Some(TTL))).unwrap();
+    // moka's timer wheel evicts at ~1.07 s granularity.
+    sleep(Duration::from_millis(1500));
+    assert_eq!(store.usage(), MemoryUsage::default());
+}
+
+#[test]
 fn touch_extends_a_live_entry() {
     let store = ref_store(None);
-    now(store.put_if_absent("k", b("v"), Some(Duration::from_millis(150)))).unwrap();
+    now(store.put_if_absent("k", b("v"), Some(Duration::from_millis(400)))).unwrap();
     sleep(Duration::from_millis(80));
     assert!(now(store.touch("k", Duration::from_secs(1))).unwrap());
     sleep(Duration::from_millis(150));
@@ -390,12 +411,12 @@ fn incr_race_loses_nothing() {
 #[test]
 fn incr_sets_the_ttl_on_create_only() {
     let store = MemoryRateLimitStore::new();
-    let first = now(store.incr_with_ttl("k", 1, Some(Duration::from_millis(150))));
+    let first = now(store.incr_with_ttl("k", 1, Some(Duration::from_millis(400))));
     assert_eq!(first.unwrap(), 1);
     sleep(Duration::from_millis(80));
     let second = now(store.incr_with_ttl("k", 1, Some(Duration::from_secs(10))));
     assert_eq!(second.unwrap(), 2);
-    sleep(Duration::from_millis(120));
+    sleep(Duration::from_millis(500));
     assert_eq!(now(store.get("k")).unwrap(), None);
 }
 
