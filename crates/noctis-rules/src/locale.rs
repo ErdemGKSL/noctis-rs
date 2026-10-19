@@ -154,7 +154,11 @@ impl ParseLocaleError {
 
 impl fmt::Display for ParseLocaleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[LOC-01] `{}` is not a Discord locale code", self.input)?;
+        write!(
+            f,
+            "[LOC-01] `{}` is not a Discord locale code",
+            self.input.escape_debug()
+        )?;
         for (i, locale) in self.suggestions.iter().enumerate() {
             let sep = if i == 0 { "; matching codes: " } else { ", " };
             write!(f, "{sep}`{locale}`")?;

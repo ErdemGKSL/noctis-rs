@@ -9,12 +9,13 @@ pub enum LimitMode {
     /// and nothing reaches Discord. The default.
     #[default]
     Strict,
-    /// Truncate over-long text fields with `…` (via [`truncate`](crate::len::truncate))
-    /// and log a warning.
+    /// Truncate over-long display-text length fields with `…` (via
+    /// [`truncate`](crate::len::truncate)) and log a warning.
     ///
-    /// Never applies to the structural rules CV2-03, CV2-05, CV2-06, CID-01 and
-    /// CID-02, which always fail (see [`Limits::truncates`]). It does not affect
-    /// autocomplete either: INT-07 always truncates choices to 25.
+    /// Only display-text lengths are truncated. Counts, byte sizes, patterns,
+    /// URLs, values and ids always fail, as do the structural rules CV2-03,
+    /// CV2-05, CV2-06, CID-01 and CID-02 (see [`Limits::truncates`]). It does not
+    /// affect autocomplete either: INT-07 always truncates choices to 25.
     Lenient,
 }
 
@@ -64,13 +65,13 @@ macro_rules! limits {
             }
         }
 
-        /// Every limit field with the rule id it documents.
+        /// Every limit field with the rule id it documents and its default.
         #[cfg_attr(not(test), expect(dead_code, reason = "read by the unit tests only for now"))]
-        pub(crate) const FIELDS: &[(&str, RuleId)] = &[
+        pub(crate) const FIELDS: &[(&str, RuleId, usize)] = &[
             $((stringify!($field), match RuleId::lookup($rule) {
                 Some(rule) => rule,
                 None => panic!("Limits field names an unknown rule id"),
-            }),)*
+            }, $default),)*
         ];
     };
 }
@@ -136,10 +137,16 @@ limits! {
 }
 
 impl Limits {
-    /// Whether text over the limit of `rule` is truncated instead of failing.
+    /// Whether the mode permits truncating text over the limit of `rule`.
     ///
     /// True only in [`LimitMode::Lenient`] and only for non-structural rules
-    /// ([`RuleId::is_structural`]).
+    /// ([`RuleId::is_structural`]). It answers only whether the mode allows it:
+    /// a validator truncates display-text length fields only, and counts, byte
+    /// sizes, patterns, URLs, values and ids always fail, whatever this returns.
+    ///
+    /// It does not govern INT-07: the 25-choice autocomplete truncation is
+    /// unconditional, in both modes, even though this returns `false` for
+    /// `INT-07` in [`LimitMode::Strict`].
     pub const fn truncates(&self, rule: RuleId) -> bool {
         matches!(self.mode, LimitMode::Lenient) && !rule.is_structural()
     }
@@ -215,15 +222,48 @@ mod tests {
         ];
         for (i, (actual, want)) in expected.into_iter().enumerate() {
             assert_eq!(actual, want, "field {} ({})", i, FIELDS[i].0);
+            assert_eq!(FIELDS[i].2, actual, "FIELDS default of {}", FIELDS[i].0);
         }
+    }
+
+    const CHEATSHEET: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/project-template/.claude/skills/noctis/references/limits-cheatsheet.md"
+    ));
+
+    #[test]
+    fn cheatsheet_limits_table_matches_fields() {
+        let start = CHEATSHEET
+            .find("## Limits value")
+            .expect("Limits value section");
+        let section = &CHEATSHEET[start..];
+        let end = section.find("## Rules types").expect("Rules types section");
+        let rows: Vec<(String, String, usize)> = section[..end]
+            .lines()
+            .filter_map(|line| line.strip_prefix("| `"))
+            .map(|rest| {
+                let cells: Vec<&str> = rest.split('|').map(str::trim).collect();
+                let field = cells[0].trim_end_matches('`').to_owned();
+                let default = cells[2].replace(',', "").parse().expect("numeric default");
+                (field, cells[1].to_owned(), default)
+            })
+            .collect();
+        let expected: Vec<(String, String, usize)> = FIELDS
+            .iter()
+            .map(|(name, rule, default)| ((*name).to_owned(), rule.as_str().to_owned(), *default))
+            .collect();
+        assert_eq!(
+            rows, expected,
+            "limits-cheatsheet.md Limits table differs from Limits"
+        );
     }
 
     #[test]
     fn field_table_has_57_unique_fields_with_catalog_ids() {
         assert_eq!(FIELDS.len(), 57);
-        let names: HashSet<_> = FIELDS.iter().map(|(name, _)| name).collect();
+        let names: HashSet<_> = FIELDS.iter().map(|(name, _, _)| name).collect();
         assert_eq!(names.len(), 57);
-        for (name, rule) in FIELDS {
+        for (name, rule, _) in FIELDS {
             assert!(RuleId::ALL.contains(rule), "{name}: {rule}");
         }
     }
@@ -233,8 +273,8 @@ mod tests {
         let rule_of = |field: &str| {
             FIELDS
                 .iter()
-                .find(|(name, _)| *name == field)
-                .map(|(_, rule)| *rule)
+                .find(|(name, _, _)| *name == field)
+                .map(|(_, rule, _)| *rule)
         };
         assert_eq!(rule_of("components"), Some(RuleId::CV2_03));
         assert_eq!(rule_of("media_url_len"), Some(RuleId::CV2_17));

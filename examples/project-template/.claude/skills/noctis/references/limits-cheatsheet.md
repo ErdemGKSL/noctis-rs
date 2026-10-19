@@ -22,11 +22,13 @@ fields; a struct literal does not compile. Every field is a `usize` maximum.
 
 - `LimitMode::Strict` (default) fails before sending with a `Violation`; nothing
   reaches Discord.
-- `LimitMode::Lenient` truncates over-long text with `…` (via `truncate`) and warns,
-  but never relaxes the structural rules CV2-03, CV2-05, CV2-06, CID-01 and CID-02.
-  `limits.truncates(rule)` answers that question: `true` only in Lenient mode and only
-  for a non-structural rule.
-- Autocomplete is always truncated to 25 (INT-07), in both modes.
+- `LimitMode::Lenient` truncates over-long display-text length fields with `…` (via
+  `truncate`) and warns. Counts, byte sizes, patterns, URLs, values and ids always
+  fail, and so do the structural rules CV2-03, CV2-05, CV2-06, CID-01 and CID-02.
+  `limits.truncates(rule)` answers only whether the mode permits truncation for that
+  rule: `true` only in Lenient mode and only for a non-structural rule.
+- Autocomplete is always truncated to 25 (INT-07), in both modes; `truncates` does
+  not govern it (it returns `false` for INT-07 in Strict mode).
 - Macros check literals against the defaults. Lowering a field makes the runtime
   re-check every tree, static ones included; raising one never relaxes a
   compile-time check.
@@ -111,7 +113,7 @@ All in `noctis::rules`:
 | `Locale` | Discord's 32 codes, one variant per code (table below); `Locale::ALL`; `as_str()` / `Display` → the code; `FromStr` is exact and case-sensitive |
 | `ParseLocaleError` | `input()`, `suggestions()` (codes with the same language part); prints `` [LOC-01] `en` is not a Discord locale code; matching codes: `en-GB`, `en-US` `` |
 | `MessageKey` | `MessageKey::new("setup.step.channel")`, a `const fn` that panics (a compile error in a `const`) unless the key is `.`-separated non-empty ASCII `[A-Za-z0-9_-]` segments; `as_str()`; `is_framework()` for the reserved `noctis.` namespace |
-| `Translate` | `fn translate(&self, Locale, MessageKey, &[(&str, &dyn Display)]) -> Option<String>`; object-safe; implementations fall back to `sibling()` then the default locale and replace every `{name}` |
+| `Translate` | `fn translate(&self, Locale, MessageKey, &[(&str, &dyn Display)]) -> Option<String>`; object-safe, `Send + Sync`; implementations fall back to `sibling()` then the default locale and replace every `{name}` |
 
 `Locale` variants and codes, in Discord's order: `Id` id, `Da` da, `De` de, `EnGb`
 en-GB, `EnUs` en-US, `EsEs` es-ES, `Es419` es-419, `Fr` fr, `Hr` hr, `It` it, `Lt` lt,

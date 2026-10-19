@@ -73,6 +73,13 @@ fn manifest_has_only_allowed_dependencies() {
             if section == "[build-dependencies]" || section.starts_with("[target.") {
                 problems.push(format!("Cargo.toml: forbidden section {section}"));
             }
+            if let Some(name) = section
+                .strip_prefix("[dependencies.")
+                .and_then(|rest| rest.strip_suffix(']'))
+                && !ALLOWED_DEPENDENCIES.contains(&name.trim())
+            {
+                problems.push(format!("Cargo.toml: dependency `{name}` is not allowed"));
+            }
             continue;
         }
         if section == "[dependencies]" && !line.is_empty() && !line.starts_with('#') {

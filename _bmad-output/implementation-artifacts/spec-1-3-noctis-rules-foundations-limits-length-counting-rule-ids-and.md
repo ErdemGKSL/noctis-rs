@@ -2,10 +2,10 @@
 title: 'Story 1.3: noctis-rules foundations: Limits, length counting, rule ids and locales'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '687b2f8f43c7824b37d0db90edffc89784ed57fe'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -134,6 +134,41 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 31 findings — high 0, medium 9, low 9, false 13, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) `Limits::truncates` returns `true` in Lenient for count, byte and pattern rules (CV2-10, CV2-07, MSG-04, ATT-01, REG-01, CMD-03) — verified: `truncates` is `Lenient && !is_structural()` (limits.rs:143) while its doc says "whether text over the limit of `rule` is truncated"; group G1 (rule-level predicate over-claims). Patch: narrow the `truncates`/`Lenient`/cheatsheet docs to "mode permits truncation for this rule; only display-text length fields are truncated, everything else fails".
+  - `[medium]` `[patch]` (blind) INT-07 is documented as "always truncated, in every mode" but `truncates(INT_07)` is `false` in Strict — verified (limits.rs:17, :95, :143; `strict_never_truncates`); the matrix pins `false` for every id, so group G2 patches the docs to say `truncates` does not govern INT-07.
+  - `[false]` `[reject]` (blind) raised overrides are accepted without clamping or validation — raising a field above today's Discord value is the designed escape hatch (FR-24: "a Discord limit change needs no Noctis release"); clamping would defeat it, and a `0` override fails loudly, which is the caller's explicit choice.
+  - `[medium]` `[patch]` (blind) `defaults_match_the_catalog` compares against a copy in the same test and labels by `FIELDS[i]` order; the cheatsheet's 57-row table is unchecked — verified (limits.rs:151-218, no test reads the cheatsheet); group G3 with the verification-gap finding. Patch: unit test that parses the cheatsheet `Limits` table against `FIELDS` and `Limits::default()`.
+  - `[low]` `[patch]` (blind) purity test skips `[dependencies.foo]` table headers (and substring scan misses grouped imports) — `[dependencies.` part verified at purity.rs `manifest_has_only_allowed_dependencies` (only `section == "[dependencies]"` is inspected); group G4, direct one-condition fix. Grouped-import part is triaged in the edge/vgap rows below.
+  - `[medium]` `[patch]` (blind) `Translate` has no `Send + Sync` supertraits — verified (message.rs:99); widgets take `&dyn Translate` inside async handlers on multi-threaded tokio, so a borrow held across `.await` needs `Sync`, and adding it later is a breaking change; group G5, one-line supertrait plus the cheatsheet row.
+  - `[false]` `[reject]` (blind) `Translate` fallback chain disagrees with `i18n.md` (Guild Locale step) — the trait handles key fallback (locale → sibling → default, AD-16), while `i18n.md` §1/§7 describe locale resolution (User → Guild → default, FR-43) done by the caller/`LocaleResolver` before `translate` is called; the implementor (`noctis-i18n`) knows its compiled default.
+  - `[false]` `[reject]` (blind) `MessageKey` has no fallible/owned constructor for runtime keys — AD-16 generates a `MessageKey` const per key at compile time; no design path builds keys at runtime, and `new` documents `# Panics` as the spec decided.
+  - `[false]` `[reject]` (blind) `Locale` is not `#[non_exhaustive]` and `ALL` is `[Locale; 32]` — deliberately settled: AD-16 and LOC-01 define a closed 32-code enum, and the spec's Design Notes log the decision.
+  - `[false]` `[reject]` (blind) locale suggestions inconsistent for whitespace and `nb` — the matrix pins exactly this behavior (`" tr"` → no suggestions, `"nb"` → none, no trimming), and the Never list forbids trimmed parsing.
+  - `[low]` `[reject]` (blind) `Actual::Text` embeds the whole offending text in `Display` — real but unlikely: length rules report `Actual::Count`; `Text` is for pattern rules on short names, and the fix adds truncation logic to `Display`.
+  - `[false]` `[reject]` (blind) no field-to-rule reverse mapping, `FIELDS` is `pub(crate)` — the promise "every field names its rule id" is met by each field's rustdoc and the cheatsheet table; no current caller needs the reverse lookup, and the validator's `Violation.path` names the field.
+  - `[low]` `[reject]` (blind) duplicated id-shape helpers, non-const `area`, alphabetical `Ord` — `has_id_shape` is test-only and integration tests cannot share it without new public surface; nothing sorts violations today.
+  - `[false]` `[reject]` (blind) `ALLOWED_DEPENDENCIES` pre-approves unused `regex` — the matrix purity row prescribes `[dependencies]` ⊆ {`regex`} with Story 1.4 adding it.
+  - `[medium]` `[patch]` (edge) `truncates()` true for count/byte rules ATT-01/03, CV2-07/10, REG-01 — same as G1 (limits.rs:143); docs patch above.
+  - `[medium]` `[patch]` (edge) Lenient on `link_url_len`, `media_url_len`, `choice_value_len`, `select_option_value_len` would truncate URLs/values that share ids with label fields — verified: CV2-08/CV2-09/OPT-09 cover both text and URL/value fields, so a rule-level predicate cannot exclude them; group G1, the docs patch states URLs, values and ids are never truncated.
+  - `[medium]` `[patch]` (edge) `truncates(INT_07)` false in Strict despite "always truncates" — same as G2.
+  - `[false]` `[reject]` (edge) runtime raise above Discord's value passes payloads Discord rejects — same refutation as the blind raised-overrides row (FR-24 intends raising).
+  - `[low]` `[patch]` (edge) `ParseLocaleError` `Display` prints `input` unescaped (newlines/backticks garble the message) — verified (locale.rs:157), unlike `Actual::Text`; group G6, direct `escape_debug()` fix.
+  - `[low]` `[reject]` (edge) grouped import `use std::{fs, io}` evades the purity token scan — real, but nobody adds I/O to this crate by accident in that form, and a `std::{` token would false-flag legitimate grouped std imports, so the fix adds parsing complexity.
+  - `[low]` `[patch]` (edge) `[dependencies.foo]` header passes the manifest check — same as G4.
+  - `[medium]` `[patch]` (vgap) `Limits` defaults and field rule ids are pinned only against in-test copies, not the cheatsheet bot authors read — pre-verified gap (no test reads `limits-cheatsheet.md`); group G3.
+  - `[low]` `[patch]` (vgap) `[dependencies.tokio]` dotted table skips the dependency check — same as G4.
+  - `[low]` `[reject]` (vgap) grouped `use std::{fs, io};` not flagged — same reasoning as the edge grouped-import row.
+  - `[medium]` `[patch]` (vgap) `truncates(INT_07)` false in Strict while docs say INT-07 always truncates — same as G2.
+  - `[false]` `[reject]` (intent D1) `regex` not a dependency yet — the spec reads "depends only on" as a ceiling, consistent with Story 1.4 adding `regex`; deliberately and correctly settled.
+  - `[false]` `[reject]` (intent D2) not every catalog numeric is a `Limits` field (MSG-02, CID-03, minima) — the Design Notes log the exclusions (minima, codec widths, documentation-only MSG-02), consistent with AD-3 "configurable maxima".
+  - `[false]` `[reject]` (intent D3) Lenient truncation not wired end to end — the epics AC asks only that Lenient is documented; truncation is Story 4.3's validator (epics l.1219).
+  - `[low]` `[patch]` (intent D4) facade `rules` module doc says Limits are "configurable on the App builder" with no `[planned]` marker — verified (crates/noctis/src/lib.rs:25); no App builder hook exists yet; group G7, direct doc correction.
+  - `[false]` `[reject]` (intent D5) template code reconciled only by grep — template `src/` names none of the types (re-verified), so there is no code to reconcile.
+  - `[false]` `[reject]` (intent D6) CV2-17 added beyond the named ids — required by the AGENTS.md rule that a new limit lands with its catalog row; deliberately and correctly settled.
+
 ## Design Notes
 
 **Limits fields** (all `usize`; byte sizes fit 32-bit `usize`): `command_name_len` 32 CMD-02 · `command_description_len` 100 CMD-04 · `command_size` 8000 CMD-05 · `command_path_words` 3 CMD-10 · `command_options` 25 CMD-13 · `pattern_expansions` 25 CMD-15 · `context_menu_name_len` 32 CTX-01 · `chat_input_commands` 100 REG-01 · `user_commands` 15 REG-01 · `message_commands` 15 REG-01 · `entry_point_commands` 1 REG-01 · `option_length` 6000 OPT-06 · `option_choices` 25 OPT-08 · `choice_name_len` 100 OPT-09 · `choice_value_len` 100 OPT-09 · `option_file_types` 10 OPT-13 · `autocomplete_choices` 25 INT-07 · `user_install_followups` 5 INT-11 · `custom_id_len` 100 CID-01 · `components` 40 CV2-03 · `text_total_len` 4000 CV2-04 · `row_buttons` 5 CV2-06 · `section_texts` 3 CV2-07 · `button_label_len` 80 CV2-08 · `link_url_len` 512 CV2-08 · `select_placeholder_len` 150 CV2-09 · `select_options` 25 CV2-09 · `select_values` 25 CV2-09 · `select_option_label_len` 100 CV2-09 · `select_option_value_len` 100 CV2-09 · `select_option_description_len` 100 CV2-09 · `gallery_items` 10 CV2-10 · `gallery_description_len` 1024 CV2-10 · `thumbnail_description_len` 1024 CV2-11 · `legacy_action_rows` 5 CV2-15 · `media_url_len` 2048 CV2-17 · `modal_title_len` 45 MOD-01 · `modal_components` 5 MOD-02 · `label_len` 45 MOD-04 · `label_description_len` 100 MOD-04 · `text_input_len` 4000 MOD-05 · `text_input_placeholder_len` 100 MOD-05 · `file_upload_values` 10 MOD-06 · `file_upload_file_types` 10 MOD-06 · `radio_options` 10 MOD-07 · `checkbox_group_options` 10 MOD-07 · `checkbox_group_values` 10 MOD-07 · `content_len` 2000 MSG-01 · `mention_users` 100 MSG-04 · `mention_roles` 100 MSG-04 · `nonce_len` 25 MSG-06 · `sticker_ids` 3 MSG-06 · `attachment_bytes` 20971520 ATT-01 · `request_bytes` 26214400 ATT-02 · `attachments` 10 ATT-03 · `attachment_description_len` 1024 ATT-06 · `webhook_name_len` 80 WH-04. REG-01 counts also serve REG-02, and `custom_id_len` also serves MOD-08.
@@ -169,3 +204,12 @@ CI is paused (workflows live in `.github/workflows-disabled/`), so the local gat
 
 **Manual checks:**
 - Delete the CV2-17 row temporarily: `cargo test --release -p noctis-rules --test catalog` fails and names `CV2-17`. Revert with `git checkout docs/discord-rules.md`.
+
+## Auto Run Result
+
+- **Summary:** `noctis-rules` foundations: `RuleId` (124 catalog ids incl. new CV2-17), `Bound`/`Actual`/`Violation`, `Limits` (57 `#[non_exhaustive]` maxima from one macro table + `LimitMode`), `discord_len`/`truncate`, `Locale` (32 Discord codes, `FromStr` with `ParseLocaleError`), `MessageKey` and `Translate: Send + Sync`; facade `noctis::rules` re-exports; Usage Skill limits cheatsheet rewritten.
+- **Files changed:** `crates/noctis-rules/src/{lib,rule,limits,len,locale,message}.rs`, `crates/noctis-rules/tests/{catalog,purity}.rs`, `crates/noctis-rules/Cargo.toml`, `crates/noctis/{Cargo.toml,src/lib.rs}`, `docs/discord-rules.md` (CV2-17), template Usage Skill references and `AGENTS.md`.
+- **Review findings:** 31 (medium 9, low 9, false 13). Patched 14 rows in 7 fixes (4 medium: Lenient/truncates docs scope, INT-07 note, cheatsheet-vs-FIELDS test, `Translate: Send + Sync`; 3 low: `[dependencies.x]` purity check, `escape_debug` in parse error, facade doc). Rejected 17 (see triage log). Deferred 0.
+- **Follow-up review recommendation:** true by the rule (4 medium patched); named risk: the new cheatsheet-parsing test and the `Send + Sync` supertrait were added in the patch round without a second review. Orchestrator policy runs follow-up passes only after a patched high, so none is run.
+- **Verification:** all local gates green (fmt, clippy `-D warnings`, workspace tests, `cargo hack --each-feature`, MSRV 1.91, `cargo deny`, build-config script, deps-check `1 internal edges`), no `target/debug/`.
+- **Residual risks:** `FIELDS` is test-only until Story 1.7 consumes it.

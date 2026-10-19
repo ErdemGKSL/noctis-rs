@@ -89,14 +89,16 @@ impl fmt::Display for MessageKey {
 
 /// Looks up and formats a localized message.
 ///
-/// The trait is object-safe; widgets take `&dyn Translate`. `noctis-i18n` is the
+/// The trait is object-safe and requires `Send + Sync`, so a `&dyn Translate`
+/// can be held across `.await` on a multi-threaded runtime; widgets take
+/// `&dyn Translate`. `noctis-i18n` is the
 /// implementation (AD-16). Implementors:
 ///
 /// - look the key up in `locale`, then in its [`Locale::sibling`], then in the
 ///   default locale (AD-16, FR-43);
 /// - replace every `{name}` placeholder with the matching entry of `args`;
 /// - return `None` only when no fallback has the key.
-pub trait Translate {
+pub trait Translate: Send + Sync {
     /// The message for `key` in `locale`, with `args` substituted, or `None` when
     /// no locale in the fallback chain has the key.
     fn translate(

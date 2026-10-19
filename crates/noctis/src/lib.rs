@@ -21,8 +21,9 @@
 pub mod rules {
     //! Discord limits, rule ids, text length and locales.
     //!
-    //! - [`Limits`] and [`LimitMode`]: every numeric Discord limit, configurable on
-    //!   the App builder; each field names its rule id.
+    //! - [`Limits`] and [`LimitMode`]: every numeric Discord limit, each field
+    //!   naming its rule id; the App builder hook that takes them is planned for a
+    //!   later story.
     //! - [`RuleId`], [`Violation`], [`Bound`] and [`Actual`]: the rule ids of the
     //!   Discord Rules Catalog and the error that cites them.
     //! - [`discord_len`] and [`truncate`]: the only length function for user text,
