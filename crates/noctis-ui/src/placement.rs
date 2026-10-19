@@ -17,7 +17,8 @@ pub(crate) mod sealed {
         AccessoryNode, Button, ContainerComponent, SelectNode, TopLevelComponent,
     };
 
-    /// Implemented only by Noctis component types.
+    /// Implemented only by Noctis component types and the legal
+    /// [`Arity`](crate::Arity) values.
     pub trait Sealed {}
 
     /// Conversion behind [`TopLevel`](super::TopLevel).

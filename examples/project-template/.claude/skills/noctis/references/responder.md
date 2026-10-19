@@ -137,7 +137,7 @@ and the deferred original is deleted.
 
 ## 6. `LegacyMessage`
 
-`LegacyMessage::text("…")` (≤ 2000 chars, MSG-01) for plain notices or prefix
+`LegacyMessage::new("…")` (≤ 2000 chars, MSG-01; see `components-v2.md` §12) for plain notices or prefix
 commands. Up to 5 legacy Action Rows (CV2-15). Never for dashboards. Editing a legacy
 message into a View is supported (content/embeds/poll are cleared in the same request);
 V2 → legacy is a typed error (CV2-01).

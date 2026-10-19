@@ -1,0 +1,21 @@
+---
+source: crates/noctis-ui/tests/messages.rs
+expression: body
+---
+{
+  "flags": 32768,
+  "content": null,
+  "embeds": [],
+  "poll": null,
+  "sticker_ids": [],
+  "components": [
+    {
+      "type": 10,
+      "id": 1,
+      "content": "hi"
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}

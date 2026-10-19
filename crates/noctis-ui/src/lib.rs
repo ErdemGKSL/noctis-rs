@@ -68,15 +68,50 @@
 //! assert_eq!(json[0]["components"][0]["accessory"]["id"], 4);
 //! # Ok::<(), noctis_ui::UiError>(())
 //! ```
+//!
+//! # Messages
+//!
+//! A [`V2Message`] wraps [`Components`], its [`AttachmentSet`] and its
+//! [`Mentions`]. It has no `content`, `embeds`, `poll`, `sticker_ids` or
+//! `shared_client_theme` (CV2-02), and every body it gives sets
+//! `IS_COMPONENTS_V2` (CV2-01). [`LegacyMessage`] is the only legacy path:
+//! plain `content` and at most 5 Action Rows (`Arity<N>: LegacyRows`,
+//! CV2-15), never for interactive UI.
+//!
+//! Flags are typed per endpoint and passed when a body is asked for:
+//! [`CreateFlags`] (Create Message, Execute Webhook), [`EditFlags`] (every
+//! edit and callback type 7) and [`CallbackFlags`] (callback type 4 and
+//! follow-ups); each has consts only for the flags its endpoints accept
+//! (MSG-07). Mentions ping nobody unless opted in through [`Users`] and
+//! [`Roles`] (MSG-03, MSG-05). An edit takes the existing message's
+//! [`MessageFormat`]: legacy-to-V2 clears the legacy fields, V2-to-legacy is
+//! [`UiError::V2ToLegacy`].
+//!
+//! ```
+//! use noctis_ui::{
+//!     Components, EditFlags, LegacyMessage, MessageFormat, TextDisplay, UiError, V2Message,
+//! };
+//!
+//! let msg = V2Message::new(Components::new().push(TextDisplay::new("hi")));
+//! let json = serde_json::to_value(msg.edit_body(MessageFormat::Legacy, EditFlags::empty())).unwrap();
+//! assert_eq!(json["flags"], 32768);
+//! assert_eq!(json["sticker_ids"], serde_json::json!([]));
+//!
+//! let notice = LegacyMessage::new("plain text");
+//! assert!(matches!(notice.edit_body(MessageFormat::V2, EditFlags::empty()), Err(UiError::V2ToLegacy)));
+//! ```
 
+mod arity;
 mod attachment;
 mod component;
 mod components;
 mod error;
+mod message;
 mod placement;
 mod route;
 mod wire;
 
+pub use arity::{Arity, LegacyRows};
 pub use attachment::{Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet};
 pub use component::{
     ActionRow, Button, ButtonStyle, ChannelSelect, Container, ContainerComponent, Emoji, File,
@@ -86,6 +121,10 @@ pub use component::{
 };
 pub use components::Components;
 pub use error::UiError;
+pub use message::{
+    CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,
+    Roles, Users, V2Message,
+};
 pub use placement::{ContainerChild, RowItem, RowSelect, SectionAccessory, TopLevel};
 #[doc(hidden)]
 pub use route::CustomId;

@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/ui/msg/MSG-05_message_without_mentions.rs:4:56
+  |
+4 |     let _ = V2Message::new(Components::new()).mentions(None); // [MSG-05]
+  |                                               -------- ^^^^ expected `Mentions`, found `Option<_>`
+  |                                               |
+  |                                               arguments to this method are incorrect
+  |
+  = note: expected struct `Mentions`
+               found enum `Option<_>`
+note: method defined here
+ --> $WORKSPACE/crates/noctis-ui/src/message/mod.rs
+  |
+  |     pub fn mentions(mut self, mentions: Mentions) -> Self {
+  |            ^^^^^^^^

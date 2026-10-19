@@ -1,4 +1,4 @@
-//! [`UiError`]: what a component or attachment builder can reject.
+//! [`UiError`]: what a component, attachment or message builder can reject.
 
 use noctis_codec::RouteId;
 
@@ -21,4 +21,9 @@ pub enum UiError {
         /// The Route the slot belongs to.
         actual: RouteId,
     },
+    /// An edit would turn a Components V2 message back into a legacy one.
+    #[error(
+        "a Components V2 message cannot be edited back into a legacy message (CV2-01: the IS_COMPONENTS_V2 flag cannot be removed)"
+    )]
+    V2ToLegacy,
 }

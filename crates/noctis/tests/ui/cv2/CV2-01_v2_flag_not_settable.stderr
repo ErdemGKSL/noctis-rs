@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `IS_COMPONENTS_V2` found for struct `EditFlags` in the current scope
+ --> tests/ui/cv2/CV2-01_v2_flag_not_settable.rs:2:36
+  |
+2 |     let _ = noctis::ui::EditFlags::IS_COMPONENTS_V2; // [CV2-01]
+  |                                    ^^^^^^^^^^^^^^^^ associated function or constant not found in `EditFlags`

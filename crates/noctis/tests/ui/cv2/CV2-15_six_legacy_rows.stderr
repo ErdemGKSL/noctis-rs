@@ -1,0 +1,32 @@
+error[E0277]: [CV2-15] a LegacyMessage holds at most 5 Action Rows
+  --> tests/ui/cv2/CV2-15_six_legacy_rows.rs:5:42
+   |
+ 5 |       let _ = LegacyMessage::new("x").rows([
+   |  _____________________________________----_^
+   | |                                     |
+   | |                                     required by a bound introduced by this call
+ 6 | |         row.clone(),
+ 7 | |         row.clone(),
+ 8 | |         row.clone(),
+...  |
+11 | |         row,
+12 | |     ]);
+   | |_____^ more than 5 Action Rows
+   |
+   = help: the trait `LegacyRows` is not implemented for `Arity<6>`
+   = note: `Arity<6>` is the number of rows; send the rest in another message, or build a V2Message
+   = help: the following other types implement trait `LegacyRows`:
+             Arity<0>
+             Arity<1>
+             Arity<2>
+             Arity<3>
+             Arity<4>
+             Arity<5>
+note: required by a bound in `LegacyMessage::rows`
+  --> $WORKSPACE/crates/noctis-ui/src/message/mod.rs
+   |
+   |     pub fn rows<const N: usize>(mut self, rows: [ActionRow; N]) -> Self
+   |            ---- required by a bound in this associated function
+   |     where
+   |         Arity<N>: LegacyRows,
+   |                   ^^^^^^^^^^ required by this bound in `LegacyMessage::rows`

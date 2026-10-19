@@ -16,7 +16,7 @@ pub trait View: Send + 'static {
     // provided [planned]
     fn at(self, nav: Nav) -> Positioned<Self> where Self: Sized;      // start on tab/page/step
     fn with_notice(self, key: MessageKey) -> Positioned<Self> where Self: Sized; // one-line notice on top
-    fn mentions(&self) -> AllowedMentions { AllowedMentions::none() } // opt in to pings per View
+    fn mentions(&self) -> Mentions { Mentions::none() } // opt in to pings per View
 }
 ```
 
@@ -144,9 +144,9 @@ Paginator::new(&self.roles, |role| TextDisplay::new(format!("{} · `{}`", role.m
 ## 7. Mentions and user text
 
 Views ping nobody by default (`parse: []`, MSG-05) even though Text Display mentions
-render. Opt in per View with `fn mentions(&self) -> AllowedMentions {
-AllowedMentions::new().users(Users::Only(vec![id])) }` (`Users::All | Users::Only`,
-≤ 100 ids, MSG-03/04). Escape user-supplied text: `escape_markdown`, `escape_mentions`.
+render. Opt in per View with `fn mentions(&self) -> Mentions {
+Mentions::none().users(Users::Only(vec![id])) }` (`Users::{None, All, Only}`, likewise
+`Roles`; ≤ 100 ids, MSG-03/04; see `components-v2.md` §12). Escape user-supplied text: `escape_markdown`, `escape_mentions`.
 
 ## 8. State versions (FR-25)
 

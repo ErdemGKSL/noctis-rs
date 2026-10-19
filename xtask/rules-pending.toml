@@ -259,11 +259,6 @@ evidence = "by-construction"
 story = "6.5"
 
 [[rule]]
-id = "INT-09"
-evidence = "by-construction"
-story = "4.2"
-
-[[rule]]
 id = "INT-10"
 evidence = "by-construction"
 story = "6.5"
@@ -292,16 +287,6 @@ story = "4.4"
 id = "CID-04"
 evidence = "unit"
 story = "7.1"
-
-[[rule]]
-id = "CV2-01"
-evidence = "by-construction"
-story = "4.2"
-
-[[rule]]
-id = "CV2-02"
-evidence = "by-construction"
-story = "4.2"
 
 [[rule]]
 id = "CV2-03"
@@ -340,11 +325,6 @@ story = "4.4"
 
 [[rule]]
 id = "CV2-13"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-15"
 evidence = "diagnosed"
 story = "4.4"
 
@@ -396,17 +376,7 @@ story = "4.6"
 [[rule]]
 id = "MSG-01"
 evidence = "diagnosed"
-story = "4.2"
-
-[[rule]]
-id = "MSG-05"
-evidence = "by-construction"
-story = "4.2"
-
-[[rule]]
-id = "MSG-07"
-evidence = "by-construction"
-story = "4.2"
+story = "4.4"
 
 [[rule]]
 id = "MSG-08"

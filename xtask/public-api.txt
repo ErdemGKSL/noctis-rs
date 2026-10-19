@@ -2155,6 +2155,32 @@ impl serde_core::ser::Serialize for noctis::ui::ActionRow
 pub fn noctis::ui::ActionRow::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::ActionRow
 impl noctis::ui::TopLevel for noctis::ui::ActionRow
+pub struct noctis::ui::Arity<const N: usize>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<0>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<1>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<2>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<3>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<4>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<5>
+impl<const N: usize> core::clone::Clone for noctis::ui::Arity<N>
+pub fn noctis::ui::Arity<N>::clone(&self) -> Self
+impl<const N: usize> core::cmp::Eq for noctis::ui::Arity<N>
+impl<const N: usize> core::cmp::PartialEq for noctis::ui::Arity<N>
+pub fn noctis::ui::Arity<N>::eq(&self, &Self) -> bool
+impl<const N: usize> core::default::Default for noctis::ui::Arity<N>
+pub fn noctis::ui::Arity<N>::default() -> Self
+impl<const N: usize> core::fmt::Debug for noctis::ui::Arity<N>
+pub fn noctis::ui::Arity<N>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const N: usize> core::hash::Hash for noctis::ui::Arity<N>
+pub fn noctis::ui::Arity<N>::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl<const N: usize> core::marker::Copy for noctis::ui::Arity<N>
+impl<const N: usize> core::marker::StructuralPartialEq for noctis::ui::Arity<N>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<0>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<1>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<2>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<3>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<4>
+impl noctis::ui::LegacyRows for noctis::ui::Arity<5>
 pub struct noctis::ui::Attachment
 impl noctis::ui::Attachment
 pub fn noctis::ui::Attachment::alt(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
@@ -2271,6 +2297,35 @@ impl core::hash::Hash for noctis::ui::ButtonStyle
 pub fn noctis::ui::ButtonStyle::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ui::ButtonStyle
 impl core::marker::StructuralPartialEq for noctis::ui::ButtonStyle
+pub struct noctis::ui::CallbackFlags(_)
+impl noctis::ui::CallbackFlags
+pub const noctis::ui::CallbackFlags::EPHEMERAL: Self
+pub const noctis::ui::CallbackFlags::SUPPRESS_EMBEDS: Self
+pub const noctis::ui::CallbackFlags::SUPPRESS_NOTIFICATIONS: Self
+impl noctis::ui::CallbackFlags
+pub const fn noctis::ui::CallbackFlags::bits(self) -> u64
+pub const fn noctis::ui::CallbackFlags::contains(self, Self) -> bool
+pub const fn noctis::ui::CallbackFlags::empty() -> Self
+pub const fn noctis::ui::CallbackFlags::is_empty(self) -> bool
+pub const fn noctis::ui::CallbackFlags::union(self, Self) -> Self
+impl core::clone::Clone for noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::CallbackFlags
+impl core::cmp::PartialEq for noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::default() -> Self
+impl core::fmt::Debug for noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ui::CallbackFlags
+impl core::marker::StructuralPartialEq for noctis::ui::CallbackFlags
+impl core::ops::bit::BitOr for noctis::ui::CallbackFlags
+pub type noctis::ui::CallbackFlags::Output = noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::bitor(self, Self) -> Self
+impl core::ops::bit::BitOrAssign for noctis::ui::CallbackFlags
+pub fn noctis::ui::CallbackFlags::bitor_assign(&mut self, Self)
 pub struct noctis::ui::ChannelSelect
 impl noctis::ui::ChannelSelect
 pub fn noctis::ui::ChannelSelect::channel_types(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::channel::channel_type::ChannelType>) -> Self
@@ -2352,6 +2407,61 @@ pub fn noctis::ui::ContainerComponent::from(noctis::ui::Separator) -> Self
 impl core::convert::From<noctis::ui::TextDisplay> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::TextDisplay) -> Self
 impl noctis::ui::ContainerChild for noctis::ui::ContainerComponent
+pub struct noctis::ui::CreateFlags(_)
+impl noctis::ui::CreateFlags
+pub const noctis::ui::CreateFlags::SUPPRESS_EMBEDS: Self
+pub const noctis::ui::CreateFlags::SUPPRESS_NOTIFICATIONS: Self
+impl noctis::ui::CreateFlags
+pub const fn noctis::ui::CreateFlags::bits(self) -> u64
+pub const fn noctis::ui::CreateFlags::contains(self, Self) -> bool
+pub const fn noctis::ui::CreateFlags::empty() -> Self
+pub const fn noctis::ui::CreateFlags::is_empty(self) -> bool
+pub const fn noctis::ui::CreateFlags::union(self, Self) -> Self
+impl core::clone::Clone for noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::CreateFlags
+impl core::cmp::PartialEq for noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::default() -> Self
+impl core::fmt::Debug for noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ui::CreateFlags
+impl core::marker::StructuralPartialEq for noctis::ui::CreateFlags
+impl core::ops::bit::BitOr for noctis::ui::CreateFlags
+pub type noctis::ui::CreateFlags::Output = noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::bitor(self, Self) -> Self
+impl core::ops::bit::BitOrAssign for noctis::ui::CreateFlags
+pub fn noctis::ui::CreateFlags::bitor_assign(&mut self, Self)
+pub struct noctis::ui::EditFlags(_)
+impl noctis::ui::EditFlags
+pub const noctis::ui::EditFlags::SUPPRESS_EMBEDS: Self
+impl noctis::ui::EditFlags
+pub const fn noctis::ui::EditFlags::bits(self) -> u64
+pub const fn noctis::ui::EditFlags::contains(self, Self) -> bool
+pub const fn noctis::ui::EditFlags::empty() -> Self
+pub const fn noctis::ui::EditFlags::is_empty(self) -> bool
+pub const fn noctis::ui::EditFlags::union(self, Self) -> Self
+impl core::clone::Clone for noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::EditFlags
+impl core::cmp::PartialEq for noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::default() -> Self
+impl core::fmt::Debug for noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ui::EditFlags
+impl core::marker::StructuralPartialEq for noctis::ui::EditFlags
+impl core::ops::bit::BitOr for noctis::ui::EditFlags
+pub type noctis::ui::EditFlags::Output = noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::bitor(self, Self) -> Self
+impl core::ops::bit::BitOrAssign for noctis::ui::EditFlags
+pub fn noctis::ui::EditFlags::bitor_assign(&mut self, Self)
 pub struct noctis::ui::Emoji(_)
 impl noctis::ui::Emoji
 pub fn noctis::ui::Emoji::custom(twilight_model::id::Id<twilight_model::id::marker::EmojiMarker>, impl core::convert::Into<alloc::borrow::Cow<'static, str>>, bool) -> Self
@@ -2385,6 +2495,22 @@ impl serde_core::ser::Serialize for noctis::ui::File
 pub fn noctis::ui::File::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::File
 impl noctis::ui::TopLevel for noctis::ui::File
+pub struct noctis::ui::LegacyMessage
+impl noctis::ui::LegacyMessage
+pub fn noctis::ui::LegacyMessage::allowed_mentions(&self) -> &noctis::ui::Mentions
+pub fn noctis::ui::LegacyMessage::callback_body(&self, noctis::ui::CallbackFlags) -> noctis::ui::MessageBody<'_>
+pub fn noctis::ui::LegacyMessage::content_text(&self) -> &str
+pub fn noctis::ui::LegacyMessage::create_body(&self, noctis::ui::CreateFlags) -> noctis::ui::MessageBody<'_>
+pub fn noctis::ui::LegacyMessage::edit_body(&self, noctis::ui::MessageFormat, noctis::ui::EditFlags) -> core::result::Result<noctis::ui::MessageBody<'_>, noctis::ui::UiError>
+pub fn noctis::ui::LegacyMessage::mentions(self, noctis::ui::Mentions) -> Self
+pub fn noctis::ui::LegacyMessage::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::LegacyMessage::row_count(&self) -> usize
+pub fn noctis::ui::LegacyMessage::rows<const N: usize>(self, [noctis::ui::ActionRow; N]) -> Self where noctis::ui::Arity<N>: noctis::ui::LegacyRows
+impl core::clone::Clone for noctis::ui::LegacyMessage
+pub fn noctis::ui::LegacyMessage::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::LegacyMessage
+pub fn noctis::ui::LegacyMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::ui::LegacyRows: noctis::__private::ui::sealed::Sealed
 pub struct noctis::ui::LinkButton
 impl noctis::ui::LinkButton
 pub fn noctis::ui::LinkButton::disabled(self, bool) -> Self
@@ -2473,6 +2599,52 @@ impl noctis::ui::RowSelect for noctis::ui::MentionableSelect
 impl serde_core::ser::Serialize for noctis::ui::MentionableSelect
 pub fn noctis::ui::MentionableSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::MentionableSelect
+pub struct noctis::ui::Mentions
+impl noctis::ui::Mentions
+pub fn noctis::ui::Mentions::everyone(self, bool) -> Self
+pub const fn noctis::ui::Mentions::none() -> Self
+pub fn noctis::ui::Mentions::pings_everyone(&self) -> bool
+pub fn noctis::ui::Mentions::pings_replied_user(&self) -> bool
+pub fn noctis::ui::Mentions::replied_user(self, bool) -> Self
+pub fn noctis::ui::Mentions::role_mentions(&self) -> &noctis::ui::Roles
+pub fn noctis::ui::Mentions::roles(self, noctis::ui::Roles) -> Self
+pub fn noctis::ui::Mentions::user_mentions(&self) -> &noctis::ui::Users
+pub fn noctis::ui::Mentions::users(self, noctis::ui::Users) -> Self
+impl core::clone::Clone for noctis::ui::Mentions
+pub fn noctis::ui::Mentions::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::Mentions
+impl core::cmp::PartialEq for noctis::ui::Mentions
+pub fn noctis::ui::Mentions::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ui::Mentions
+pub fn noctis::ui::Mentions::default() -> Self
+impl core::fmt::Debug for noctis::ui::Mentions
+pub fn noctis::ui::Mentions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::Mentions
+impl serde_core::ser::Serialize for noctis::ui::Mentions
+pub fn noctis::ui::Mentions::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+pub struct noctis::ui::MessageBody<'a>(_)
+impl serde_core::ser::Serialize for noctis::ui::MessageBody<'_>
+pub fn noctis::ui::MessageBody<'_>::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'a> core::clone::Clone for noctis::ui::MessageBody<'a>
+pub fn noctis::ui::MessageBody<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for noctis::ui::MessageBody<'a>
+pub fn noctis::ui::MessageBody<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum noctis::ui::MessageFormat
+pub noctis::ui::MessageFormat::Legacy
+pub noctis::ui::MessageFormat::V2
+impl noctis::ui::MessageFormat
+pub const fn noctis::ui::MessageFormat::from_flags(u64) -> Self
+impl core::clone::Clone for noctis::ui::MessageFormat
+pub fn noctis::ui::MessageFormat::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::MessageFormat
+impl core::cmp::PartialEq for noctis::ui::MessageFormat
+pub fn noctis::ui::MessageFormat::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::MessageFormat
+pub fn noctis::ui::MessageFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::MessageFormat
+pub fn noctis::ui::MessageFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ui::MessageFormat
+impl core::marker::StructuralPartialEq for noctis::ui::MessageFormat
 pub struct noctis::ui::PremiumButton
 impl noctis::ui::PremiumButton
 pub const fn noctis::ui::PremiumButton::disabled(self, bool) -> Self
@@ -2523,6 +2695,22 @@ impl noctis::ui::RowSelect for noctis::ui::RoleSelect
 impl serde_core::ser::Serialize for noctis::ui::RoleSelect
 pub fn noctis::ui::RoleSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::RoleSelect
+pub enum noctis::ui::Roles
+pub noctis::ui::Roles::All
+pub noctis::ui::Roles::None
+pub noctis::ui::Roles::Only(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>)
+impl noctis::ui::Roles
+pub fn noctis::ui::Roles::only(impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+impl core::clone::Clone for noctis::ui::Roles
+pub fn noctis::ui::Roles::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::Roles
+impl core::cmp::PartialEq for noctis::ui::Roles
+pub fn noctis::ui::Roles::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ui::Roles
+pub fn noctis::ui::Roles::default() -> Self
+impl core::fmt::Debug for noctis::ui::Roles
+pub fn noctis::ui::Roles::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::Roles
 pub struct noctis::ui::RouteButton<R>
 impl<R> noctis::ui::RouteButton<R>
 pub fn noctis::ui::RouteButton<R>::disabled(self, bool) -> Self
@@ -2724,6 +2912,7 @@ pub noctis::ui::UiError::InvalidExtension::ext: alloc::string::String
 pub noctis::ui::UiError::SlotMismatch
 pub noctis::ui::UiError::SlotMismatch::actual: noctis::codec::RouteId
 pub noctis::ui::UiError::SlotMismatch::expected: noctis::codec::RouteId
+pub noctis::ui::UiError::V2ToLegacy
 impl core::clone::Clone for noctis::ui::UiError
 pub fn noctis::ui::UiError::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ui::UiError
@@ -2751,3 +2940,38 @@ impl noctis::ui::RowSelect for noctis::ui::UserSelect
 impl serde_core::ser::Serialize for noctis::ui::UserSelect
 pub fn noctis::ui::UserSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::UserSelect
+pub enum noctis::ui::Users
+pub noctis::ui::Users::All
+pub noctis::ui::Users::None
+pub noctis::ui::Users::Only(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>)
+impl noctis::ui::Users
+pub fn noctis::ui::Users::only(impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+impl core::clone::Clone for noctis::ui::Users
+pub fn noctis::ui::Users::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::Users
+impl core::cmp::PartialEq for noctis::ui::Users
+pub fn noctis::ui::Users::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::ui::Users
+pub fn noctis::ui::Users::default() -> Self
+impl core::fmt::Debug for noctis::ui::Users
+pub fn noctis::ui::Users::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::Users
+impl core::convert::From<noctis::ui::Components> for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::from(noctis::ui::Components) -> Self
+pub struct noctis::ui::V2Message
+impl noctis::ui::V2Message
+pub fn noctis::ui::V2Message::allowed_mentions(&self) -> &noctis::ui::Mentions
+pub fn noctis::ui::V2Message::attachment_set(&self) -> &noctis::ui::AttachmentSet
+pub fn noctis::ui::V2Message::attachments(self, noctis::ui::AttachmentSet) -> Self
+pub fn noctis::ui::V2Message::callback_body(&self, noctis::ui::CallbackFlags) -> noctis::ui::MessageBody<'_>
+pub fn noctis::ui::V2Message::components(&self) -> &noctis::ui::Components
+pub fn noctis::ui::V2Message::create_body(&self, noctis::ui::CreateFlags) -> noctis::ui::MessageBody<'_>
+pub fn noctis::ui::V2Message::edit_body(&self, noctis::ui::MessageFormat, noctis::ui::EditFlags) -> noctis::ui::MessageBody<'_>
+pub fn noctis::ui::V2Message::mentions(self, noctis::ui::Mentions) -> Self
+pub fn noctis::ui::V2Message::new(noctis::ui::Components) -> Self
+impl core::clone::Clone for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::clone(&self) -> Self
+impl core::convert::From<noctis::ui::Components> for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::from(noctis::ui::Components) -> Self
+impl core::fmt::Debug for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

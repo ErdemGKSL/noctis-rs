@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `CROSSPOSTED` found for struct `CallbackFlags` in the current scope
+ --> tests/ui/int/INT-09_callback_crossposted.rs:4:28
+  |
+4 |     let _ = CallbackFlags::CROSSPOSTED; // [INT-09]
+  |                            ^^^^^^^^^^^ associated function or constant not found in `CallbackFlags`

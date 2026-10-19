@@ -28,12 +28,13 @@ assert_eq!(body.len(), 2);                   // also is_empty(), Default
   (Container 1, its first child 2, …, accessories included, select options and gallery
   items not). No API sets an `id`, so ids are deterministic and unique; a component
   serialized on its own has none.
-- `V2Message::new().components(body)` [planned, Story 4.2] sends it with
-  `IS_COMPONENTS_V2` (CV2-01) and no `content`/`embeds` (CV2-02).
+- `V2Message::new(body)` (or `V2Message::from(body)`) wraps it into a message whose
+  every body sets `IS_COMPONENTS_V2` (CV2-01) and has no `content`/`embeds` (CV2-02);
+  see §12.
 
 | Rule | Limit |
 | --- | --- |
-| CV2-02 | no `content`, `embeds`, `poll`, `sticker_ids` (the type has no such fields) [planned] |
+| CV2-02 | no `content`, `embeds`, `poll`, `sticker_ids`, `shared_client_theme` (`V2Message` has no such fields) |
 | CV2-03 | ≤ **40** components in total, counting every nesting level. Select options and gallery items don't count |
 | CV2-04 | ≤ **4000** characters across all Text Displays (larger of scalars and UTF-16 units) [U] |
 | CID-02 / CV2-14 | `custom_id`s and numeric `id`s unique per message (Noctis assigns `id`s deterministically) |
@@ -360,10 +361,104 @@ Size { item }.string_select([
 model; it still counts toward CV2-03. Received unknown components are available as raw
 JSON (`ctx.raw_message_components()`) and never re-sent on edit.
 
-## 12. Legacy messages [planned]
+## 12. Messages: `V2Message`, `LegacyMessage`, flags and mentions
 
-`LegacyMessage` (content ≤ 2000, ≤ 5 Action Rows, types 1–8; CV2-15). Not for
-interactive UI (UD-1).
+```rust
+use noctis::ui::{
+    ActionRow, CallbackFlags, Components, CreateFlags, EditFlags, LegacyMessage, LinkButton,
+    Mentions, MessageFormat, Roles, TextDisplay, UiError, Users, V2Message,
+};
+
+let msg = V2Message::new(Components::new().push(TextDisplay::new("Saved")))
+    .mentions(Mentions::none().users(Users::All));          // default: pings nobody
+let body = msg.callback_body(CallbackFlags::EPHEMERAL);     // a MessageBody<'_>
+// {"flags":32832,"components":[{"type":10,"id":1,"content":"Saved"}],"allowed_mentions":{"parse":["users"]}}
+
+let notice = LegacyMessage::new("Plain text notice")
+    .rows([ActionRow::buttons([LinkButton::new("https://example.com").label("Docs")])]);
+assert_eq!(notice.edit_body(MessageFormat::V2, EditFlags::empty()).unwrap_err(), UiError::V2ToLegacy);
+```
+
+**`V2Message`** (the message of every View and every interactive surface):
+
+- `V2Message::new(components)`, `V2Message::from(components)`; no `Default`.
+- Setters: `.attachments(set)` replaces its `AttachmentSet` (the files the tree
+  references; bodies never carry it), `.mentions(Mentions)`.
+- Getters: `.components()`, `.attachment_set()`, `.allowed_mentions()`.
+- No `content`, `embeds`, `poll`, `sticker_ids` or `shared_client_theme` exist on it
+  (CV2-02, compile error E0599).
+
+**`LegacyMessage`** (the only legacy path: plain text only, no embeds, polls or
+stickers). Never use it for interactive UI or dashboards (UD-1); use it for plain
+notices.
+
+- `LegacyMessage::new(content)` (`content` length is checked by the runtime validator
+  [planned]); `.rows([ActionRow; N])` replaces the rows, N from 0 to 5;
+  `.mentions(Mentions)`; no `Default`.
+- Getters: `.content_text()`, `.allowed_mentions()`, `.row_count()`.
+- CV2-15: `.rows` is bounded by `Arity<N>: LegacyRows` (implemented for `Arity<0>` to
+  `Arity<5>`). Six rows fail with
+  ``[CV2-15] a LegacyMessage holds at most 5 Action Rows`` (note: `` `Arity<6>` is the
+  number of rows; send the rest in another message, or build a V2Message ``).
+
+**Bodies.** Flags are chosen per endpoint when you ask for the body, so one message can
+be sent, replied or edited. Each body method returns a `MessageBody<'_>` (borrowed,
+`#[must_use]`, `Serialize`) that core's Responder sends; the Responder picks the body
+for the endpoint and adds attachments/`files` [planned]. You rarely call these yourself.
+
+| Method | Endpoints | Flag set and its consts |
+| --- | --- | --- |
+| `create_body(CreateFlags)` | Create Message, Execute Webhook | `CreateFlags::SUPPRESS_EMBEDS` (4), `CreateFlags::SUPPRESS_NOTIFICATIONS` (4096) |
+| `callback_body(CallbackFlags)` | callback type 4 data, follow-up messages | `CallbackFlags::SUPPRESS_EMBEDS` (4), `CallbackFlags::EPHEMERAL` (64), `CallbackFlags::SUPPRESS_NOTIFICATIONS` (4096) |
+| `edit_body(MessageFormat, EditFlags)` | Edit Message, Edit Original Interaction Response, Edit Webhook Message, callback type 7 (`UPDATE_MESSAGE`) data | `EditFlags::SUPPRESS_EMBEDS` (4) |
+
+- Every flag set is `Copy + Default + Eq + Hash` with `empty()`, `union(other)` (const),
+  `|`, `|=`, `contains(other)`, `is_empty()` and `bits()`. Only the consts above exist
+  (MSG-07, INT-09): no `IS_COMPONENTS_V2` (CV2-01), no `IS_VOICE_MESSAGE`, no
+  `from_bits`, `all` or `remove`. `const F: CreateFlags =
+  CreateFlags::SUPPRESS_EMBEDS.union(CreateFlags::SUPPRESS_NOTIFICATIONS);` works.
+- V2 bodies always send `flags = 32768 | your bits` (`bits()` never includes 32768).
+  Legacy bodies never set 32768; `create_body`/`callback_body` leave `flags` out when
+  empty, `edit_body` always sends it (so an unset `SUPPRESS_EMBEDS` is cleared).
+- Every body sends `allowed_mentions`. Key order: V2 `flags`, legacy clears,
+  `components`, `allowed_mentions`; legacy `flags`, `content`, `components`,
+  `allowed_mentions`. Legacy rows carry no numeric `id`s.
+- An unresolved Route `custom_id` makes serializing the body an error; core resolves
+  them before sending.
+
+**Edits and `MessageFormat`.** An edit names the format of the message it replaces:
+`MessageFormat::{Legacy, V2}`, read from its flags with
+`MessageFormat::from_flags(bits)` (V2 when bit 32768 is set).
+
+- `V2Message::edit_body(MessageFormat::Legacy, ..)` turns a legacy message into V2 and
+  clears its legacy fields in the same request:
+  `{"flags":32768,"content":null,"embeds":[],"poll":null,"sticker_ids":[],"components":[..],"allowed_mentions":{..}}`.
+- `LegacyMessage::edit_body(MessageFormat::V2, ..)` returns `Err(UiError::V2ToLegacy)`
+  ("a Components V2 message cannot be edited back into a legacy message (CV2-01: the
+  IS_COMPONENTS_V2 flag cannot be removed)"); with `MessageFormat::Legacy` it is `Ok`.
+
+**Mentions** (MSG-03, MSG-05). `Mentions::default()` = `Mentions::none()` pings nobody
+(`{"parse":[]}`), even though mentions in the text still render. `.mentions` takes a
+`Mentions`, never an `Option`. Opt in per type:
+
+- `.users(Users)` and `.roles(Roles)`, each `None` (default), `All` or `Only(ids)`;
+  `Users::only([id, ..])` / `Roles::only([id, ..])` build `Only` from any iterator of
+  `Id`s. `All` takes no ids, so `parse` plus explicit ids cannot be built (MSG-03).
+- `.everyone(bool)` (`@everyone`/`@here`), `.replied_user(bool)`.
+- Getters: `.user_mentions()`, `.role_mentions()`, `.pings_everyone()`,
+  `.pings_replied_user()`.
+
+| Mentions | JSON |
+| --- | --- |
+| `Mentions::none()` | `{"parse":[]}` |
+| `.users(Users::All)` | `{"parse":["users"]}` |
+| `.users(Users::only([Id::new(1), Id::new(2)]))` | `{"parse":[],"users":["1","2"]}` |
+| `.users(Users::Only(vec![]))` | `{"parse":[]}` |
+| `.users(Users::All).roles(Roles::only([Id::new(5)])).everyone(true)` | `{"parse":["users","everyone"],"roles":["5"]}` |
+| `.replied_user(true)` | `{"parse":[],"replied_user":true}` |
+
+`parse` is always ordered users, roles, everyone. The 100-ids-per-list limit (MSG-04)
+is checked by the runtime validator [planned].
 
 ## 13. Where each component may appear
 
@@ -401,7 +496,7 @@ let body = components! {
     ],
     {footer},                         // hole: one node you built elsewhere
 };
-V2Message::new().components(body)
+V2Message::new(body)
 ```
 
 Node keywords: `container`, `section` (texts `;` `accessory = …`), `text`, `thumbnail`,

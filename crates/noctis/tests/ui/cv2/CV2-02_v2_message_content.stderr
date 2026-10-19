@@ -1,0 +1,5 @@
+error[E0599]: no method named `content` found for struct `V2Message` in the current scope
+ --> tests/ui/cv2/CV2-02_v2_message_content.rs:4:47
+  |
+4 |     let _ = V2Message::new(Components::new()).content("hi"); // [CV2-02]
+  |                                               ^^^^^^^ method not found in `V2Message`

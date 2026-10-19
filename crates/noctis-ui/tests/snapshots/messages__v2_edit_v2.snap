@@ -1,0 +1,17 @@
+---
+source: crates/noctis-ui/tests/messages.rs
+expression: body
+---
+{
+  "flags": 32768,
+  "components": [
+    {
+      "type": 10,
+      "id": 1,
+      "content": "hi"
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}

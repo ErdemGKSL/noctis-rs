@@ -325,7 +325,30 @@ pub mod ui {
     //!   [`Media`] takes an [`AttachmentRef`] or a URL, and an `attachment://`
     //!   name given as a URL (or a ref from another set) is checked at runtime
     //!   by ATT-05.
-    //! - [`UiError`]: a bad attachment extension or a mismatched Ref slot.
+    //! - [`UiError`]: a bad attachment extension, a mismatched Ref slot, or
+    //!   an edit of a V2 message back into a legacy one
+    //!   ([`UiError::V2ToLegacy`]).
+    //!
+    //! # Messages
+    //!
+    //! - [`V2Message`]: [`Components`] plus an [`AttachmentSet`] and
+    //!   [`Mentions`]; every body sets `IS_COMPONENTS_V2` (CV2-01), and it has
+    //!   no `content`, `embeds`, `poll`, `sticker_ids` or
+    //!   `shared_client_theme` (CV2-02).
+    //! - [`LegacyMessage`]: plain `content` and at most 5 Action Rows
+    //!   ([`Arity`]`<N>: `[`LegacyRows`], CV2-15); the only legacy path, never
+    //!   for interactive UI.
+    //! - Flags per endpoint (MSG-07): [`CreateFlags`] (Create Message, Execute
+    //!   Webhook), [`EditFlags`] (Edit Message, Edit Original Interaction
+    //!   Response, Edit Webhook Message, callback type 7) and
+    //!   [`CallbackFlags`] (callback type 4 and follow-ups, INT-09). None
+    //!   offers `IS_COMPONENTS_V2`.
+    //! - [`Mentions`], [`Users`], [`Roles`]: pings are opt-in; the default is
+    //!   `parse: []` (MSG-05), and `Users::All` cannot carry ids (MSG-03).
+    //! - [`MessageFormat`]: the format of the message an edit replaces; a
+    //!   legacy-to-V2 edit clears `content`, `embeds`, `poll` and
+    //!   `sticker_ids`.
+    //! - [`MessageBody`]: the borrowed JSON body core's Responder sends.
     //!
     //! # Placement
     //!
@@ -375,14 +398,28 @@ pub mod ui {
     //! assert_eq!(json[0]["components"][0]["accessory"]["custom_id"], "0shop.buy:47");
     //! # let _ = ButtonStyle::Primary;
     //! ```
+    //!
+    //! A V2 create body:
+    //!
+    //! ```
+    //! use noctis::ui::{Components, CreateFlags, Mentions, TextDisplay, Users, V2Message};
+    //!
+    //! let msg = V2Message::new(Components::new().push(TextDisplay::new("Saved")))
+    //!     .mentions(Mentions::none().users(Users::All));
+    //! let json = serde_json::to_value(msg.create_body(CreateFlags::SUPPRESS_NOTIFICATIONS)).unwrap();
+    //! assert_eq!(json["flags"], 32768 | 4096);
+    //! assert_eq!(json["allowed_mentions"], serde_json::json!({"parse": ["users"]}));
+    //! ```
 
     pub use noctis_ui::{
-        ActionRow, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button, ButtonStyle,
-        ChannelSelect, Components, Container, ContainerChild, ContainerComponent, Emoji, File,
-        LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, PremiumButton, Rgb,
-        RoleSelect, RouteButton, RouteComponents, RowItem, RowSelect, Section, SectionAccessory,
-        SelectOption, Separator, Spacing, StringSelect, TextDisplay, Thumbnail, TopLevel,
-        TopLevelComponent, UiError, UserSelect,
+        ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button,
+        ButtonStyle, CallbackFlags, ChannelSelect, Components, Container, ContainerChild,
+        ContainerComponent, CreateFlags, EditFlags, Emoji, File, LegacyMessage, LegacyRows,
+        LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, Mentions, MessageBody,
+        MessageFormat, PremiumButton, Rgb, RoleSelect, Roles, RouteButton, RouteComponents,
+        RowItem, RowSelect, Section, SectionAccessory, SelectOption, Separator, Spacing,
+        StringSelect, TextDisplay, Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect,
+        Users, V2Message,
     };
 }
 

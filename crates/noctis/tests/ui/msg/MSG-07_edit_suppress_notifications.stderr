@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `SUPPRESS_NOTIFICATIONS` found for struct `EditFlags` in the current scope
+ --> tests/ui/msg/MSG-07_edit_suppress_notifications.rs:4:24
+  |
+4 |     let _ = EditFlags::SUPPRESS_NOTIFICATIONS; // [MSG-07]
+  |                        ^^^^^^^^^^^^^^^^^^^^^^ associated function or constant not found in `EditFlags`

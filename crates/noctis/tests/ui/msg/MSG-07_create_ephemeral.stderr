@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `EPHEMERAL` found for struct `CreateFlags` in the current scope
+ --> tests/ui/msg/MSG-07_create_ephemeral.rs:4:26
+  |
+4 |     let _ = CreateFlags::EPHEMERAL; // [MSG-07]
+  |                          ^^^^^^^^^ associated function or constant not found in `CreateFlags`
