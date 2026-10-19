@@ -2,7 +2,8 @@
 title: 'Story 2.1: Payload field encodings'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '5e546dc326aad70776c4167c1b6899d9d60bb903'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
