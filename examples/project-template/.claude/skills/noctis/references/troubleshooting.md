@@ -80,6 +80,16 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | select shows old choice after update | missing `select` on the Route or no `default_*` set | add `select` and set defaults to the current value |
 | mentions in a View don't ping | Views default to `parse: []` | override `View::mentions` |
 | `Violation { rule, path, limit, actual }`, printed as `[CV2-03] components: limit at most 40, actual 41` (`[RULE-ID] path: limit …, actual …`) | dynamic content exceeds a Limit | let the Paginator handle lists; shorten text; `LimitMode::Lenient` truncates text only |
+| `[CV2-03] components: limit at most 40, actual 41` with notes `container[0]: 38` … | the tree has too many nodes (Section texts and accessories count) | paginate or split the message; see the per-node notes for the biggest subtree |
+| `[CV2-04] components: limit at most 4000, actual 4210` | Text Displays together are too long | shorten text, paginate, or move long text into a modal or image |
+| `[CV2-06] row[1]: limit between 1 and 5, actual 6` / `limit exactly one select, alone in its row, actual 2` | too many buttons in one row, or a select shares its row | split into several rows; give each select its own row |
+| `` [CV2-09] row[0].select[0]: limit min_values ≤ max_values, actual `3 > 1` `` | `min_values` set without `max_values` (max defaults to 1) | set `max_values` too |
+| `[CV2-09] row[0].select[0].options: limit between 1 and 25, actual 30` | too many (or no) String Select options | paginate the options or use an auto-populated select |
+| `` [MOD-05] label[0].text_input: limit min_length ≤ max_length, actual `10 > 5` `` | Text Input bounds reversed | swap the bounds |
+| `[ATT-01] attachments[0].size: limit at most 20971520, actual 31457280` (``= note: file `card.gif` ``) | one file over the per-file limit (or the interaction's `attachment_size_limit`) | render smaller (fewer frames, lower size) |
+| `[ATT-02] request: limit at most 26214400, actual 27000000` | all files plus JSON over 25 MiB | send fewer files per message |
+| `` [ATT-05] limit attachment://<name> of a file in this message, actual `attachment://card.png` `` | the URL names a file that is not attached (names are case-sensitive) | attach the file in the same message, or fix the name |
+| `[INT-07] choices: limit at most 25, actual 40` (`= help: Noctis sends the first 25 choices and logs this as a warning`) | the autocomplete returned too many suggestions | filter or `take(25)` before `respond` |
 | `UiError::ItemTooLarge` | a single list item can't fit beside the Chrome | render it as an image or a detail View |
 | `UiError::TooManyTabs` | > 5 Navbar tabs | select-based nav or split Views |
 | `RenderError::Overloaded` | render queue full | show the busy notice; raise pool/queue in `ImageConfig`; cache more |

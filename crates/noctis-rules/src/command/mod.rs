@@ -1,6 +1,6 @@
-//! Command Pattern expansion, chat-input command tree, option, context-menu and
-//! metadata rules (CMD-01..07, CMD-10..16, OPT-01, OPT-03..11, OPT-13, CTX-01,
-//! META-01..03, REG-01..04).
+//! Command Pattern expansion, chat-input command tree, option, context-menu,
+//! metadata and autocomplete rules (CMD-01..07, CMD-10..16, OPT-01, OPT-03..11,
+//! OPT-13, CTX-01, META-01..03, REG-01..04, INT-07).
 //!
 //! The `#[command]` macro and the App-build merge both call these functions, so
 //! the two can never disagree. Every function takes [`Limits`](crate::Limits),
@@ -84,6 +84,14 @@
 //! assert_eq!(validate_tree(&[decl], &limits), Ok(()));
 //! ```
 //!
+//! # Autocomplete
+//!
+//! [`validate_autocomplete`] checks the choices an autocomplete handler
+//! returns for an option of a given [`OptionType`]: more than
+//! `autocomplete_choices` is INT-07, reported for the caller to truncate and
+//! log as a warning in every mode; each kept choice follows OPT-09 (and OPT-03 /
+//! OPT-04 for numbers); a type that cannot autocomplete is OPT-11.
+//!
 //! # Context menus
 //!
 //! [`validate_context_menu_name`] checks a context-menu name (CTX-01: length
@@ -113,8 +121,10 @@ pub use merge::validate_merge;
 pub use meta::{CommandMeta, IntegrationType, InteractionContext, validate_meta};
 pub use name::{validate_context_menu_name, validate_name};
 pub use option::{
-    Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, measure_options, validate_options,
+    Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, measure_options,
+    validate_autocomplete, validate_options,
 };
+pub(crate) use option::{FILE_TYPE, is_file_type};
 pub use pattern::expand;
 pub use tree::validate_tree;
 

@@ -35,6 +35,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 - Every user-visible string goes through `locales/*.yaml`; add new keys to `en-US.yaml` first.
 - Limits and Locales come from `noctis::rules` (`Locale::EnUs` = `en-US`); override limits on the App builder with `Limits`, never with hard-coded numbers.
 - Dynamically built Command Patterns are checked with `noctis::rules::command::{expand, validate_tree}` before registering; never hand-split patterns. Dynamically declared options go through `noctis::rules::command::validate_options` and `measure_options` (as `with_options(opts.len(), measure_options(&opts, &limits))`) before registering.
+- Dynamic component trees, modals, attachments and webhook names can be pre-checked with `noctis::rules::{component, modal, attachment, message}` (`validate_components`, `validate_modal`, `validate_attachments`, `validate_webhook_name`, …) and autocomplete responses with `noctis::rules::command::validate_autocomplete`; never hard-code their limits.
 - Inside the noctis-rs monorepo this crate is standalone (`[workspace]` in its `Cargo.toml`); the monorepo root `Cargo.toml` must keep `exclude = ["examples/project-template"]`. After copying it out, switch the `noctis` dependency to the crates.io form shown in `Cargo.toml`.
 
 <!-- /bmad:context -->

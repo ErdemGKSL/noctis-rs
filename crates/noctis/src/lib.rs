@@ -35,8 +35,20 @@ pub mod rules {
     //!   [`command::validate_tree`], [`command::validate_merge`]), the option
     //!   rules ([`command::validate_options`], [`command::measure_options`]), the
     //!   context-menu name rule ([`command::validate_context_menu_name`]) and the
-    //!   command metadata rules ([`command::validate_meta`]) that `#[command]`,
+    //!   command metadata rules ([`command::validate_meta`]) and the autocomplete
+    //!   response rules ([`command::validate_autocomplete`]) that `#[command]`,
     //!   `derive(Options)` and `App::build` call.
+    //! - [`component`]: Components V2 trees and legacy Action Rows
+    //!   ([`component::validate_components`],
+    //!   [`component::validate_legacy_components`], [`component::cost`]) and
+    //!   single values such as [`component::validate_button_label`] and
+    //!   [`component::validate_accent_color`] (CV2-03..13, CV2-15..17).
+    //! - [`modal`]: modals ([`modal::validate_modal`]) and single modal values
+    //!   (MOD-01..07).
+    //! - [`message`]: legacy `content`, allowed mentions, nonce, stickers and
+    //!   webhook names (MSG-01, MSG-03..06, WH-04).
+    //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
+    //!   references (ATT-01..03, ATT-05, ATT-06).
     //!
     //! ```
     //! use noctis::rules::{discord_len, LimitMode, Limits, Locale, RuleId};
@@ -84,11 +96,25 @@ pub mod rules {
     //! assert_eq!(errs[0].rule, RuleId::OPT_01);
     //! assert_eq!(errs[0].path, "days");
     //! ```
+    //!
+    //! ```
+    //! use noctis::rules::component::{Component, validate_components};
+    //! use noctis::rules::modal::validate_modal_title;
+    //! use noctis::rules::{Limits, RuleId};
+    //!
+    //! let limits = Limits::default();
+    //! let tree = vec![Component::Text("a"); 41];
+    //! let errs = validate_components(&tree, &limits).unwrap_err();
+    //! assert_eq!(errs[0].rule, RuleId::CV2_03);
+    //! assert_eq!(errs[0].path, "components");
+    //!
+    //! assert_eq!(validate_modal_title(&"a".repeat(46), &limits)[0].rule, RuleId::MOD_01);
+    //! ```
 
-    pub use noctis_rules::command;
     pub use noctis_rules::len::{discord_len, truncate};
     pub use noctis_rules::{
         Actual, Bound, LimitMode, Limits, Locale, MessageKey, ParseLocaleError, RuleId, Translate,
         Violation,
     };
+    pub use noctis_rules::{attachment, command, component, message, modal};
 }

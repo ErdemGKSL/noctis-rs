@@ -250,3 +250,116 @@ values with their constructor (`.button(..)`, `.string_select(..)`, …), plus
 `link(url = "…", label = "…")` and `premium(sku)`. A hole counts as 1 component, a
 spread as 0; their real size and all non-literal text are checked by the runtime
 validator before sending. `view!` is the unrelated image Template macro.
+
+## 15. Rule functions (`noctis::rules::component`, `message`, `attachment`)
+
+The `noctis-ui` builders already make most shapes unrepresentable. These functions check
+trees and values Noctis cannot see at compile time (dynamic trees, raw components,
+user-supplied labels, colours, attachments) with the same counts, paths and order that
+`components!` and the runtime validator use. They only report: they never truncate (in
+`LimitMode::Lenient` the Responder truncates display text, never structure). Every
+function takes `&Limits`; never hard-code a limit.
+
+```rust
+use noctis::rules::Limits;
+use noctis::rules::component::{
+    Accessory, Button, ButtonStyle, Component, Container, Section, cost, validate_components,
+};
+
+let limits = Limits::default();
+let texts = ["Logs go to the channel you pick."];
+let row = [Component::Button(Button::new(ButtonStyle::Primary).label("Save"))];
+let children = [
+    Component::Text("### Server settings"),
+    Component::Section(Section::new(&texts, Accessory::Button(Button::new(ButtonStyle::Secondary).label("Change")))),
+    Component::Row(&row),
+    Component::Opaque(1), // a node built elsewhere (raw JSON or a hole)
+];
+let tree = [Component::Container(Container::new(&children).accent_color(0x5865F2))];
+validate_components(&tree, &limits).map_err(report)?;   // Err(Vec<Violation>), never empty
+assert_eq!(cost(&tree, &limits).components, 8);
+```
+
+### Descriptor types
+
+All are `Clone + Copy + Debug + PartialEq` and borrow their data; structs are
+`#[non_exhaustive]` with pub fields, a `const fn new` and by-value `const` setters named
+after the fields.
+
+| Item | What it is |
+| --- | --- |
+| `Component<'a>` | `Container(Container)`, `Section(Section)`, `Text(&str)`, `Thumbnail(Media)` (valid only as an accessory), `Gallery(&[Media])`, `File(&str)` (`attachment://` URL), `Separator(Separator)`, `Row(&[Component])`, `Button(Button)`, `Select(Select)`, `Opaque(usize)`; `.kind()` → the path name (`container`, `section`, `text`, `thumbnail`, `gallery`, `file`, `separator`, `row`, `button`, `select`, `opaque`) |
+| `Opaque(n)` | `n` raw/unknown components (CV2-16) or a `components!` hole: counts `max(n, 1)` toward CV2-03, allowed anywhere, one Action Row item |
+| `Container<'a>` | `{ children, accent_color: Option<u32>, spoiler }`; `Container::new(&children)`, `.accent_color(0x5865F2)`, `.spoiler(bool)` |
+| `Section<'a>` | `{ texts: &[&str], accessory: Accessory }`; `Section::new(&texts, accessory)` (no constructor without an accessory, CV2-07) |
+| `Accessory<'a>` | `Button(Button)` or `Thumbnail(Media)` |
+| `Media<'a>` | gallery item or thumbnail: `{ url, description: Option<&str>, spoiler }`; `Media::new(url)`, `.description(..)`, `.spoiler(..)` |
+| `Separator` | `{ divider: bool, spacing: Spacing }`; `Separator::new()` / `Default` = divider, small; `.divider(..)`, `.spacing(..)` |
+| `Spacing` | `Small` (default, `.value()` 1) or `Large` (2); no other value exists (CV2-13) |
+| `ButtonStyle<'a>` | `Primary`, `Secondary`, `Success`, `Danger`, `Link(url)`, `Premium`; `.value()` → 1..=6 |
+| `Button<'a>` | `{ style, label: Option<&str>, emoji: bool }`; `Button::new(style)`, `.label(..)`, `.emoji(bool)`; no `custom_id` (Routes own it) |
+| `SelectKind<'a>` | `String(&[SelectOption])`, `User`, `Role`, `Mentionable`, `Channel` |
+| `Select<'a>` | `{ kind, placeholder, min_values: Option<usize>, max_values: Option<usize>, default_values: usize, disabled }`; `Select::new(kind)`, `.placeholder(..)`, `.min_values(n)`, `.max_values(n)`, `.default_values(count)` (auto-populated selects only), `.disabled(bool)` |
+| `SelectOption<'a>` | `{ label, value, description, default }`; `SelectOption::new(label, value)`, `.description(..)`, `.default(bool)` |
+| `Cost` | `{ components, text_len }` (`#[non_exhaustive]`, `Copy`, `PartialEq`) |
+
+### Functions
+
+| Function | Rules |
+| --- | --- |
+| `validate_components(&[Component], &Limits) -> Result<(), Vec<Violation>>` | a V2 message body: CV2-03..13, CV2-16, CV2-17 |
+| `validate_legacy_components(&[Component], &Limits) -> Result<(), Vec<Violation>>` | a legacy message: CV2-15 (≤ `legacy_action_rows` top-level rows, nothing else; `Opaque` counts as a row), then each row as above; never CV2-03/CV2-04 |
+| `cost(&[Component], &Limits) -> Cost` | CV2-03 count (every node at every depth, Section texts and accessory included, `Opaque(n)` = `max(n, 1)`, options and gallery items not counted) and CV2-04 `discord_len` sum of every Text Display; saturating |
+| `validate_button_label(&str, &Limits) -> Vec<Violation>` | CV2-08 label ≤ 80 (empty is fine); path `""` (what `label!` calls) |
+| `validate_link_url(&str, &Limits)` | CV2-08 link URL 1–512 |
+| `validate_select_placeholder(&str, &Limits)` | CV2-09 placeholder ≤ 150 |
+| `validate_gallery_description(&str, &Limits)` / `validate_thumbnail_description(&str, &Limits)` | CV2-10 / CV2-11 alt text ≤ 1024 |
+| `validate_media_url(&str, &Limits)` | CV2-17 media URL 1–2048 |
+| `validate_accent_color(u32, &Limits)` | CV2-13 `0x000000..=0xFFFFFF` (what `rgb!` calls); actual printed as `` `0x1000000` `` |
+| `validate_spacing(u8, &Limits)` | CV2-13 raw spacing 1 or 2 |
+
+Paths: top-level node `i` is `kind[i]`, a child `parent.kind[j]` (`j` counts all
+siblings), a Section accessory `P.accessory`, a gallery item `P.item[k]`, a select option
+`P.options[k]`; fields append `.label`, `.url`, `.emoji`, `.placeholder`, `.min_values`,
+`.max_values`, `.options`, `.default_values`, `.description`, `.accent_color`. Child
+counts use the node path; CV2-03 and CV2-04 use `components`. Example:
+`container[0].row[2].button[1].label`.
+
+Order: CV2-03 (`AtMost(40)`, one note per top-level node such as `text[0]: 1`), CV2-04,
+then a pre-order walk; per node its CV2-05 placement check, then its own checks:
+Container CV2-13 then children; Section CV2-07 (1–3 texts) then the accessory; Gallery
+CV2-10 count (1–10), then per item URL (CV2-17) and description (CV2-10); File CV2-12
+(`attachment://<filename>`); Row CV2-06 (1–5 items, or one select alone: `exactly one
+select, alone in its row`) then items; Button label (≤ 80, or `no label on a premium
+button`), link URL, premium emoji; Select placeholder, `min_values` (0–25), `max_values`
+(1–25), `min_values ≤ max_values` (effective defaults min 1, max 1; only when both are in
+range), String options (1–25; label and value 1–100, description ≤ 100), then the default
+count (`default_values`, or `default`-flagged String options) within `[min, max]` when
+there is at least one and the order passed (`default_values` on a String Select is
+CV2-09); a misplaced Thumbnail is still checked (URL, description). `disabled` is fine in
+messages. Placement texts: `a Thumbnail only as a Section accessory`, `a Button only in an
+Action Row or as a Section accessory`, `a select only in an Action Row`, `no Container
+inside a Container`, `only buttons and selects in an Action Row`.
+
+### Messages, webhooks (`noctis::rules::message`)
+
+| Item | What it is |
+| --- | --- |
+| `validate_content(&str, &Limits) -> Vec<Violation>` | MSG-01 legacy `content` ≤ 2000, path `content` |
+| `MentionIds<'a>` | `None` (default), `All` (`parse`) or `Only(&[u64])`; `parse` plus ids cannot be built (MSG-03) |
+| `AllowedMentions<'a>` | `#[non_exhaustive]` `{ users, roles: MentionIds, everyone, replied_user }`; `AllowedMentions::new()` = `Default` = pings nobody (MSG-05); `.users(..)`, `.roles(..)`, `.everyone(bool)`, `.replied_user(bool)` |
+| `validate_mentions(&AllowedMentions, &Limits)` | MSG-04 ≤ 100 ids each, paths `allowed_mentions.users`, `allowed_mentions.roles` |
+| `validate_nonce(&str, &Limits)` / `validate_sticker_ids(count, &Limits)` | MSG-06 nonce ≤ 25 (path `nonce`), ≤ 3 stickers (path `sticker_ids`) |
+| `validate_webhook_name(&str, &Limits)` | WH-04 1–80, path `name` |
+
+Noctis has no embed API in v1 (MSG-02), so there is nothing to check for embeds.
+
+### Attachments (`noctis::rules::attachment`)
+
+| Item | What it is |
+| --- | --- |
+| `AttachmentDecl<'a>` | `#[non_exhaustive]` `{ filename, size: usize, description: Option<&str> }`; `AttachmentDecl::new("card.png", bytes.len())`, `.description(alt)` |
+| `validate_attachments(&[AttachmentDecl], json_len, file_limit: Option<usize>, &Limits) -> Result<(), Vec<Violation>>` | ATT-03 count (≤ 10, path `attachments`), per file ATT-01 size (`attachments[k].size`) and ATT-06 alt text ≤ 1024 (`attachments[k].description`), each with note ``file `name` ``, then ATT-02 request total (files + `json_len`, saturating, ≤ 25 MiB, path `request`) |
+| `file_limit` | the interaction's `attachment_size_limit`; when `Some`, it replaces `Limits::attachment_bytes` (20 MiB) |
+| `validate_file_size(size, file_limit, &Limits)` / `validate_attachment_description(&str, &Limits)` | single ATT-01 / ATT-06 checks, path `""` |
+| `validate_attachment_ref(url, &[AttachmentDecl], &Limits) -> Vec<Violation>` | ATT-05: an `attachment://<name>` URL must name one of the files (exact, case-sensitive); other URLs pass |

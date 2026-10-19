@@ -14,19 +14,32 @@
 //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes (LOC-01).
 //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
 //! - [`command`]: Command Pattern expansion, command name and tree rules,
-//!   option, context-menu and metadata rules (CMD-01..07, CMD-10..16, OPT-01,
-//!   OPT-03..11, OPT-13, CTX-01, META-01..03, REG-01..04).
+//!   option, context-menu and metadata rules, and autocomplete responses
+//!   (CMD-01..07, CMD-10..16, OPT-01, OPT-03..11, OPT-13, CTX-01, META-01..03,
+//!   REG-01..04, INT-07).
+//! - [`component`]: Components V2 trees and legacy Action Rows (CV2-03..13,
+//!   CV2-15..17).
+//! - [`modal`]: modals, Labels and their inputs (MOD-01..07).
+//! - [`message`]: legacy `content`, allowed mentions, nonce, stickers and
+//!   webhook names (MSG-01, MSG-03..06, WH-04).
+//! - [`attachment`]: file sizes, counts, alt text and `attachment://`
+//!   references (ATT-01..03, ATT-05, ATT-06).
 //!
 //! The crate is sync and does no I/O.
 
+pub mod attachment;
+mod check;
 pub mod command;
+pub mod component;
+mod key;
 pub mod len;
 mod limits;
 mod locale;
-mod message;
+pub mod message;
+pub mod modal;
 mod rule;
 
+pub use key::{MessageKey, Translate};
 pub use limits::{LimitMode, Limits};
 pub use locale::{Locale, ParseLocaleError};
-pub use message::{MessageKey, Translate};
 pub use rule::{Actual, Bound, RuleId, Violation};

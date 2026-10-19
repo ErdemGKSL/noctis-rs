@@ -1,212 +1,305 @@
-//! Localization keys and the [`Translate`] port.
+//! Message fields outside the component tree: legacy `content` (MSG-01),
+//! allowed mentions (MSG-03..05), nonce and stickers (MSG-06), and webhook
+//! names (WH-04).
+//!
+//! - MSG-02: Noctis has no embed API in v1, so there is nothing to check; an
+//!   embed builder added later must add its limits to this module.
+//! - MSG-03: [`MentionIds`] is either "all" or "only these ids", so `parse`
+//!   and an id list can never be combined for one type:
+//!
+//! ```compile_fail
+//! use noctis_rules::message::MentionIds;
+//!
+//! let _ = MentionIds::All(&[1_u64]); // [MSG-03]
+//! ```
+//!
+//! - MSG-05: [`AllowedMentions::new`] (also the [`Default`]) pings nobody;
+//!   pinging is opt-in.
+//!
+//! The functions only report: they never truncate.
 
-use std::fmt;
+use crate::check::{at_most, text_at_most, text_between};
+use crate::{Limits, RuleId, Violation};
 
-use crate::Locale;
+/// Which ids of one type (users or roles) may be pinged (MSG-03).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MentionIds<'a> {
+    /// Nobody. The default.
+    #[default]
+    None,
+    /// Everyone of this type mentioned in the message (`parse`).
+    All,
+    /// Only these ids (≤ 100, MSG-04).
+    Only(&'a [u64]),
+}
 
-/// A validated localization key, such as `setup.step.channel`.
-///
-/// A key is one or more non-empty segments of ASCII letters, digits, `_` and `-`,
-/// joined by `.`. Keys whose first segment is `noctis` are reserved for the
-/// framework ([`MessageKey::is_framework`]).
-///
-/// ```
-/// use noctis_rules::MessageKey;
-///
-/// const STEP: MessageKey = MessageKey::new("setup.step.channel");
-/// assert_eq!(STEP.as_str(), "setup.step.channel");
-/// assert!(!STEP.is_framework());
-/// ```
-///
-/// An invalid key in a `const` item is a compile error:
-///
-/// ```compile_fail
-/// const BAD: noctis_rules::MessageKey = noctis_rules::MessageKey::new("a..b");
-/// ```
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MessageKey(&'static str);
+/// The `allowed_mentions` of a message; the default pings nobody (MSG-05).
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AllowedMentions<'a> {
+    /// User mentions.
+    pub users: MentionIds<'a>,
+    /// Role mentions.
+    pub roles: MentionIds<'a>,
+    /// Whether `@everyone` / `@here` ping.
+    pub everyone: bool,
+    /// Whether the replied-to user is pinged.
+    pub replied_user: bool,
+}
 
-impl MessageKey {
-    /// Creates a key, validating it.
-    ///
-    /// # Panics
-    ///
-    /// Panics when `key` is empty, has an empty segment (`".a"`, `"a."`,
-    /// `"a..b"`) or contains anything other than ASCII `[A-Za-z0-9_-]` and `.`.
-    /// In a `const` item the panic is a compile error.
-    pub const fn new(key: &'static str) -> Self {
-        let bytes = key.as_bytes();
-        assert!(!bytes.is_empty(), "MessageKey must not be empty");
-        let mut i = 0;
-        let mut segment_len = 0;
-        while i < bytes.len() {
-            let b = bytes[i];
-            if b == b'.' {
-                assert!(segment_len > 0, "MessageKey has an empty segment");
-                segment_len = 0;
-            } else {
-                assert!(
-                    b.is_ascii_alphanumeric() || b == b'_' || b == b'-',
-                    "MessageKey segments may only contain ASCII letters, digits, `_` and `-`"
-                );
-                segment_len += 1;
-            }
-            i += 1;
+impl<'a> AllowedMentions<'a> {
+    /// Pings nobody.
+    pub const fn new() -> Self {
+        Self {
+            users: MentionIds::None,
+            roles: MentionIds::None,
+            everyone: false,
+            replied_user: false,
         }
-        assert!(segment_len > 0, "MessageKey has an empty segment");
-        Self(key)
     }
 
-    /// The key as written.
-    pub const fn as_str(self) -> &'static str {
-        self.0
+    /// Sets the user mentions.
+    #[must_use]
+    pub const fn users(self, users: MentionIds<'a>) -> Self {
+        Self { users, ..self }
     }
 
-    /// Whether the key is in the reserved `noctis` namespace (its first segment is
-    /// exactly `noctis`).
-    pub const fn is_framework(self) -> bool {
-        const NS: &[u8] = b"noctis";
-        let bytes = self.0.as_bytes();
-        if bytes.len() < NS.len() {
-            return false;
+    /// Sets the role mentions.
+    #[must_use]
+    pub const fn roles(self, roles: MentionIds<'a>) -> Self {
+        Self { roles, ..self }
+    }
+
+    /// Sets whether `@everyone` / `@here` ping.
+    #[must_use]
+    pub const fn everyone(self, everyone: bool) -> Self {
+        Self { everyone, ..self }
+    }
+
+    /// Sets whether the replied-to user is pinged.
+    #[must_use]
+    pub const fn replied_user(self, replied_user: bool) -> Self {
+        Self {
+            replied_user,
+            ..self
         }
-        let mut i = 0;
-        while i < NS.len() {
-            if bytes[i] != NS[i] {
-                return false;
-            }
-            i += 1;
-        }
-        bytes.len() == NS.len() || bytes[NS.len()] == b'.'
     }
 }
 
-impl fmt::Display for MessageKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
+/// MSG-01: legacy `content` of at most `content_len` characters (path
+/// `content`).
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::message::validate_content;
+///
+/// assert!(validate_content("hi", &Limits::default()).is_empty());
+/// assert_eq!(validate_content(&"a".repeat(2001), &Limits::default())[0].rule, RuleId::MSG_01);
+/// ```
+pub fn validate_content(content: &str, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    text_at_most(
+        RuleId::MSG_01,
+        "content",
+        limits.content_len,
+        content,
+        &mut out,
+    );
+    out
 }
 
-/// Looks up and formats a localized message.
-///
-/// The trait is object-safe and requires `Send + Sync`, so a `&dyn Translate`
-/// can be held across `.await` on a multi-threaded runtime; widgets take
-/// `&dyn Translate`. `noctis-i18n` is the
-/// implementation (AD-16). Implementors:
-///
-/// - look the key up in `locale`, then in its [`Locale::sibling`], then in the
-///   default locale (AD-16, FR-43);
-/// - replace every `{name}` placeholder with the matching entry of `args`;
-/// - return `None` only when no fallback has the key.
-pub trait Translate: Send + Sync {
-    /// The message for `key` in `locale`, with `args` substituted, or `None` when
-    /// no locale in the fallback chain has the key.
-    fn translate(
-        &self,
-        locale: Locale,
-        key: MessageKey,
-        args: &[(&str, &dyn fmt::Display)],
-    ) -> Option<String>;
+/// MSG-04: at most `mention_users` user ids and `mention_roles` role ids
+/// (paths `allowed_mentions.users`, then `allowed_mentions.roles`).
+pub fn validate_mentions(mentions: &AllowedMentions<'_>, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    for (ids, max, path) in [
+        (
+            mentions.users,
+            limits.mention_users,
+            "allowed_mentions.users",
+        ),
+        (
+            mentions.roles,
+            limits.mention_roles,
+            "allowed_mentions.roles",
+        ),
+    ] {
+        if let MentionIds::Only(ids) = ids {
+            at_most(RuleId::MSG_04, path, max, ids.len(), &mut out);
+        }
+    }
+    out
+}
+
+/// MSG-06: a nonce of at most `nonce_len` characters (path `nonce`).
+pub fn validate_nonce(nonce: &str, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    text_at_most(RuleId::MSG_06, "nonce", limits.nonce_len, nonce, &mut out);
+    out
+}
+
+/// MSG-06: at most `sticker_ids` stickers (path `sticker_ids`).
+pub fn validate_sticker_ids(count: usize, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    at_most(
+        RuleId::MSG_06,
+        "sticker_ids",
+        limits.sticker_ids,
+        count,
+        &mut out,
+    );
+    out
+}
+
+/// WH-04: a webhook name of 1 to `webhook_name_len` characters (path `name`).
+pub fn validate_webhook_name(name: &str, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    text_between(
+        RuleId::WH_04,
+        "name",
+        1,
+        limits.webhook_name_len,
+        name,
+        &mut out,
+    );
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::{Actual, Bound};
+
+    fn max(rule: RuleId, path: &str, max: usize, count: usize) -> Violation {
+        Violation::new(rule, path, Bound::AtMost(max), Actual::Count(count))
+    }
 
     #[test]
-    fn valid_keys_construct() {
-        const KEY: MessageKey = MessageKey::new("setup.step.channel");
-        assert_eq!(KEY.as_str(), "setup.step.channel");
-        assert_eq!(KEY.to_string(), "setup.step.channel");
-        for key in ["a", "A-b_9", "noctis.error.generic"] {
-            assert_eq!(MessageKey::new(key).as_str(), key);
+    fn msg_01_content_length() {
+        let l = Limits::default();
+        for ok in [String::new(), "a".repeat(2000), "😀".repeat(1000)] {
+            assert!(validate_content(&ok, &l).is_empty());
         }
-    }
-
-    #[test]
-    #[should_panic(expected = "must not be empty")]
-    fn empty_key_panics() {
-        let _ = MessageKey::new("");
-    }
-
-    #[test]
-    #[should_panic(expected = "empty segment")]
-    fn leading_dot_panics() {
-        let _ = MessageKey::new(".a");
-    }
-
-    #[test]
-    #[should_panic(expected = "empty segment")]
-    fn trailing_dot_panics() {
-        let _ = MessageKey::new("a.");
-    }
-
-    #[test]
-    #[should_panic(expected = "empty segment")]
-    fn double_dot_panics() {
-        let _ = MessageKey::new("a..b");
-    }
-
-    #[test]
-    #[should_panic(expected = "may only contain")]
-    fn space_panics() {
-        let _ = MessageKey::new("a b");
-    }
-
-    #[test]
-    #[should_panic(expected = "may only contain")]
-    fn non_ascii_panics() {
-        let _ = MessageKey::new("ğ");
-    }
-
-    #[test]
-    #[should_panic(expected = "may only contain")]
-    fn slash_panics() {
-        let _ = MessageKey::new("a/b");
-    }
-
-    #[test]
-    fn framework_namespace() {
-        assert!(MessageKey::new("noctis.expired").is_framework());
-        assert!(MessageKey::new("noctis").is_framework());
-        assert!(!MessageKey::new("noctisx.a").is_framework());
-        assert!(!MessageKey::new("a.noctis").is_framework());
-    }
-
-    struct Table(HashMap<(Locale, &'static str), &'static str>);
-
-    impl Translate for Table {
-        fn translate(
-            &self,
-            locale: Locale,
-            key: MessageKey,
-            args: &[(&str, &dyn fmt::Display)],
-        ) -> Option<String> {
-            let template = self.0.get(&(locale, key.as_str()))?;
-            let mut out = (*template).to_owned();
-            for (name, value) in args {
-                out = out.replace(&format!("{{{name}}}"), &value.to_string());
-            }
-            Some(out)
-        }
-    }
-
-    #[test]
-    fn translate_is_object_safe() {
-        let table = Table(HashMap::from([(
-            (Locale::Tr, "greet"),
-            "Merhaba {name}, {name}!",
-        )]));
-        let t: &dyn Translate = &table;
-        let name: &dyn fmt::Display = &"Ada";
         assert_eq!(
-            t.translate(Locale::Tr, MessageKey::new("greet"), &[("name", name)]),
-            Some("Merhaba Ada, Ada!".to_owned())
+            validate_content(&"a".repeat(2001), &l),
+            [max(RuleId::MSG_01, "content", 2000, 2001)]
         );
         assert_eq!(
-            t.translate(Locale::Tr, MessageKey::new("missing"), &[]),
-            None
+            validate_content(&"😀".repeat(1001), &l),
+            [max(RuleId::MSG_01, "content", 2000, 2002)]
+        );
+        let lowered = Limits {
+            content_len: 5,
+            ..Limits::default()
+        };
+        assert_eq!(
+            validate_content("abcdef", &lowered),
+            [max(RuleId::MSG_01, "content", 5, 6)]
+        );
+    }
+
+    #[test]
+    fn msg_04_mention_ids() {
+        let l = Limits::default();
+        let ids: Vec<u64> = (0..101).collect();
+        for ok in [
+            AllowedMentions::new(),
+            AllowedMentions::new().users(MentionIds::Only(&ids[..100])),
+            AllowedMentions::new().users(MentionIds::All),
+            AllowedMentions::new().roles(MentionIds::Only(&[])),
+        ] {
+            assert!(validate_mentions(&ok, &l).is_empty());
+        }
+        let users = max(RuleId::MSG_04, "allowed_mentions.users", 100, 101);
+        let roles = max(RuleId::MSG_04, "allowed_mentions.roles", 100, 101);
+        let m = AllowedMentions::new().users(MentionIds::Only(&ids));
+        assert_eq!(validate_mentions(&m, &l), std::slice::from_ref(&users));
+        let m = AllowedMentions::new().roles(MentionIds::Only(&ids));
+        assert_eq!(validate_mentions(&m, &l), std::slice::from_ref(&roles));
+        let m = m.users(MentionIds::Only(&ids));
+        assert_eq!(validate_mentions(&m, &l), [users, roles]);
+        let lowered = Limits {
+            mention_users: 1,
+            ..Limits::default()
+        };
+        let m = AllowedMentions::new().users(MentionIds::Only(&ids[..2]));
+        assert_eq!(
+            validate_mentions(&m, &lowered),
+            [max(RuleId::MSG_04, "allowed_mentions.users", 1, 2)]
+        );
+    }
+
+    #[test]
+    fn msg_05_default_parses_nothing() {
+        let d = AllowedMentions::default();
+        assert_eq!(d, AllowedMentions::new());
+        assert_eq!(d.users, MentionIds::None);
+        assert_eq!(d.roles, MentionIds::None);
+        assert!(!d.everyone);
+        assert!(!d.replied_user);
+    }
+
+    #[test]
+    fn msg_06_nonce_and_stickers() {
+        let l = Limits::default();
+        let mixed = format!("{}a", "😀".repeat(12));
+        for ok in ["", "aaaaaaaaaaaaaaaaaaaaaaaaa", mixed.as_str()] {
+            assert!(validate_nonce(ok, &l).is_empty(), "{ok}");
+        }
+        assert_eq!(
+            validate_nonce(&"a".repeat(26), &l),
+            [max(RuleId::MSG_06, "nonce", 25, 26)]
+        );
+        assert_eq!(
+            validate_nonce(&"😀".repeat(13), &l),
+            [max(RuleId::MSG_06, "nonce", 25, 26)]
+        );
+        assert!(validate_sticker_ids(0, &l).is_empty());
+        assert!(validate_sticker_ids(3, &l).is_empty());
+        assert_eq!(
+            validate_sticker_ids(4, &l),
+            [max(RuleId::MSG_06, "sticker_ids", 3, 4)]
+        );
+        let lowered = Limits {
+            sticker_ids: 1,
+            ..Limits::default()
+        };
+        assert_eq!(
+            validate_sticker_ids(2, &lowered),
+            [max(RuleId::MSG_06, "sticker_ids", 1, 2)]
+        );
+    }
+
+    #[test]
+    fn wh_04_webhook_name() {
+        let l = Limits::default();
+        let between = |max, count| {
+            Violation::new(
+                RuleId::WH_04,
+                "name",
+                Bound::Between { min: 1, max },
+                Actual::Count(count),
+            )
+        };
+        for ok in ["a".to_owned(), "a".repeat(80), "😀".repeat(40)] {
+            assert!(validate_webhook_name(&ok, &l).is_empty());
+        }
+        assert_eq!(validate_webhook_name("", &l), [between(80, 0)]);
+        assert_eq!(
+            validate_webhook_name(&"a".repeat(81), &l),
+            [between(80, 81)]
+        );
+        assert_eq!(
+            validate_webhook_name(&"😀".repeat(41), &l),
+            [between(80, 82)]
+        );
+        let lowered = Limits {
+            webhook_name_len: 10,
+            ..Limits::default()
+        };
+        assert_eq!(
+            validate_webhook_name(&"a".repeat(11), &lowered),
+            [between(10, 11)]
         );
     }
 }

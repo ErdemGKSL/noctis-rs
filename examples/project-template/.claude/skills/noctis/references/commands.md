@@ -331,6 +331,25 @@ async fn rule_suggest(ctx: AutocompleteCtx, focused: Focused<String>, partial: P
   empty list and routes the error to the Autocomplete Error Sink.
 - Register the autocomplete fn in the Module too: `.add(rule_suggest())`.
 
+Rule function: `noctis::rules::command::validate_autocomplete(&choices, OptionType::String,
+&limits) -> Vec<Violation>` checks a response the way `respond` does. More than
+`autocomplete_choices` (25) choices is one INT-07 violation at path `choices`
+(`help: Noctis sends the first 25 choices and logs this as a warning`): the caller
+truncates and warns, in every mode. Each kept choice (`choices[j]`) follows OPT-09 (name
+1–100 and localized names, value type, string value ≤ 100) and OPT-03 / OPT-04 for
+numbers; dropped choices are not checked. On an option type other than STRING, INTEGER or
+NUMBER the only violation is OPT-11 (`autocomplete only on STRING, INTEGER or NUMBER
+options`).
+
+```rust
+use noctis::rules::command::{Choice, ChoiceValue, OptionType, validate_autocomplete};
+
+let choices: Vec<Choice<'_>> = rules.iter().map(|r| Choice::new(&r.name, ChoiceValue::Str(&r.id))).collect();
+for v in validate_autocomplete(&choices, OptionType::String, &limits) {
+    tracing::warn!("{v}");
+}
+```
+
 ## 5. Context-menu commands
 
 ```rust

@@ -162,3 +162,68 @@ Wizard state). The modal's submit Route also carries the state; its handler retu
 - Modals batch several inputs into one atomic submit and collect free text.
 - Use a modal for 2+ related inputs, free text, numbers, files; message selects for
   single picks with live feedback.
+
+## 7. Rule functions (`noctis::rules::modal`)
+
+`derive(Modal)` and the runtime validator check modals with these functions; use them for
+modals built from dynamic data (localized titles, pre-filled values, generated option
+lists). Every function takes `&Limits` and only reports.
+
+```rust
+use noctis::rules::Limits;
+use noctis::rules::modal::{
+    Label, LabelChild, Modal, ModalComponent, ModalOption, RadioGroup, TextInput, TextInputStyle,
+    validate_modal,
+};
+
+let options = [ModalOption::new("Low", "low"), ModalOption::new("High", "high")];
+let components = [
+    ModalComponent::Text("Tell us what happened."),
+    ModalComponent::Label(Label::new("Reason", LabelChild::TextInput(
+        TextInput::new(TextInputStyle::Paragraph).min_length(10).max_length(500),
+    ))),
+    ModalComponent::Label(Label::new("Severity", LabelChild::RadioGroup(RadioGroup::new(&options)))),
+];
+validate_modal(&Modal::new(&title, &components), &Limits::default()).map_err(report)?;
+```
+
+| Item | What it is |
+| --- | --- |
+| `Modal<'a>` | `{ title, components: &[ModalComponent] }`; `Modal::new(title, &components)` |
+| `ModalComponent<'a>` | `Label(Label)`, `Text(&str)`, or `Message(Component)` (a message component from `noctis::rules::component`; only `Component::Text` is allowed, anything else is MOD-03) |
+| `Label<'a>` | `{ label, description: Option<&str>, child: LabelChild }`; `Label::new(text, child)`, `.description(..)` |
+| `LabelChild<'a>` | `TextInput(TextInput)`, `Select(ModalSelect)`, `FileUpload(FileUpload)`, `RadioGroup(RadioGroup)`, `CheckboxGroup(CheckboxGroup)`, `Checkbox(Checkbox)`; no button variant exists (MOD-03) |
+| `TextInputStyle` | `Short` (1) / `Paragraph` (2), `.value()` |
+| `TextInput<'a>` | `{ style, min_length, max_length: Option<usize>, required (default true), value, placeholder: Option<&str> }`; `TextInput::new(style)`, setters `.min_length(n)`, `.max_length(n)`, `.required(bool)`, `.value(..)`, `.placeholder(..)` |
+| `ModalSelect<'a>` | `{ select: component::Select, required (default true) }`; `ModalSelect::new(select)`, `.required(bool)` |
+| `FileUpload<'a>` | `{ min_values, max_values: Option<usize>, required (default true), file_types: &[&str] }`; `FileUpload::new()` / `Default`, setters |
+| `ModalOption<'a>` | `{ label, value, description, default }`; `ModalOption::new(label, value)`, `.description(..)`, `.default(bool)` |
+| `RadioGroup<'a>` | `{ options, required (default true) }`; `RadioGroup::new(&options)` |
+| `CheckboxGroup<'a>` | `{ options, min_values, max_values, required (default true) }`; `CheckboxGroup::new(&options)`, setters |
+| `Checkbox` | `{ default, required (default false) }`; `Checkbox::new()`; `required(true)` is MOD-07 |
+| `validate_modal(&Modal, &Limits) -> Result<(), Vec<Violation>>` | the whole modal, every violation at once |
+| `validate_modal_title(&str, &Limits) -> Vec<Violation>` | MOD-01 1–45, path `""` |
+| `validate_label_text(&str, &Limits)` / `validate_label_description(&str, &Limits)` | MOD-04 1–45 / ≤ 100 |
+| `validate_text_input(&TextInput, &Limits)` | MOD-05 on its own; paths `min_length`, `max_length`, `value`, `placeholder`, `""` for the order |
+| `validate_text_input_value(&str, &Limits)` | MOD-05 pre-fill ≤ 4000 |
+
+Paths: `title`, `components`, then per top-level component `label[i]`, `text[i]` or
+`kind[i]` of a `Message` component; a Label child is `label[i].text_input`, `.select`,
+`.file_upload`, `.radio_group`, `.checkbox_group` or `.checkbox`, followed by the field
+(`.min_length`, `.min_values`, `.file_types[k]`, `.options[k].label`, `.disabled`,
+`.required`, …).
+
+Order: MOD-01 title (1–45), MOD-02 count (1–5), then per component in input order:
+MOD-03 for a `Message` (`only Labels or Text Displays at the top level of a modal`, not
+walked); for a Label: text (1–45), description (≤ 100), then the child. Text Input:
+`min_length` (0–4000), `max_length` (1–4000), `min_length ≤ max_length` (only when both
+are set and valid), `value` (≤ 4000), `placeholder` (≤ 100). Select: MOD-03 `no disabled
+in a modal`, the CV2-09 select checks (`components-v2.md` §15), then CV2-09 `min_values ≥
+1 when required` for `min_values(0)` on a required select. File Upload: `min_values`
+(0–10), `max_values` (1–10), order, MOD-06 `min_values ≥ 1 when required`, `file_types`
+count (≤ 10), then each entry (`image`, `video`, `audio` or `.ext`, as OPT-13). Radio
+Group: 2–10 options, then per option label and value (1–100), description (≤ 100;
+`modal_option_text_len`). Checkbox Group: 1–10 options, `min_values` (0–10), `max_values`
+(1–10), order, required, then per option. Checkbox: `a Checkbox is never required`.
+Effective defaults: selects and File Uploads min 1 / max 1, Checkbox Groups min 1 / max =
+option count; `min ≤ max` runs only when both effective values are in range.

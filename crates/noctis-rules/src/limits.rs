@@ -124,6 +124,7 @@ limits! {
     radio_options = 10, "MOD-07", "options per Radio Group.";
     checkbox_group_options = 10, "MOD-07", "options per Checkbox Group.";
     checkbox_group_values = 10, "MOD-07", "`max_values` of a Checkbox Group.";
+    modal_option_text_len = 100, "MOD-07", "characters in a Radio or Checkbox Group option label, value or description.";
     content_len = 2000, "MSG-01", "characters in legacy message `content`.";
     mention_users = 100, "MSG-04", "user ids in allowed mentions.";
     mention_roles = 100, "MSG-04", "role ids in allowed mentions.";
@@ -161,7 +162,7 @@ mod tests {
     fn defaults_match_the_catalog() {
         let l = Limits::default();
         assert_eq!(l.mode, LimitMode::Strict);
-        let expected: [(usize, usize); 57] = [
+        let expected: [(usize, usize); 58] = [
             (l.command_name_len, 32),
             (l.command_description_len, 100),
             (l.command_size, 8000),
@@ -209,6 +210,7 @@ mod tests {
             (l.radio_options, 10),
             (l.checkbox_group_options, 10),
             (l.checkbox_group_values, 10),
+            (l.modal_option_text_len, 100),
             (l.content_len, 2000),
             (l.mention_users, 100),
             (l.mention_roles, 100),
@@ -259,10 +261,10 @@ mod tests {
     }
 
     #[test]
-    fn field_table_has_57_unique_fields_with_catalog_ids() {
-        assert_eq!(FIELDS.len(), 57);
+    fn field_table_has_58_unique_fields_with_catalog_ids() {
+        assert_eq!(FIELDS.len(), 58);
         let names: HashSet<_> = FIELDS.iter().map(|(name, _, _)| name).collect();
-        assert_eq!(names.len(), 57);
+        assert_eq!(names.len(), 58);
         for (name, rule, _) in FIELDS {
             assert!(RuleId::ALL.contains(rule), "{name}: {rule}");
         }

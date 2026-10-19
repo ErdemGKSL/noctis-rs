@@ -16,7 +16,7 @@ const NUMBER_MAX_F: f64 = 9_007_199_254_740_992.0;
 
 const INTEGER_RANGE: &str = "between -9007199254740991 and 9007199254740991";
 const NUMBER_RANGE: &str = "a finite number between -9007199254740992 and 9007199254740992";
-const FILE_TYPE: &str = "`image`, `video`, `audio` or a dot-prefixed extension";
+pub(crate) const FILE_TYPE: &str = "`image`, `video`, `audio` or a dot-prefixed extension";
 
 /// The value type of a chat-input command option (OPT-02).
 ///
@@ -766,7 +766,7 @@ fn check_file_types(option: &OptionDecl<'_>, p: &str, limits: &Limits, out: &mut
 
 /// `image`, `video`, `audio`, or `.` followed by one or more ASCII letters or
 /// digits.
-fn is_file_type(entry: &str) -> bool {
+pub(crate) fn is_file_type(entry: &str) -> bool {
     matches!(entry, "image" | "video" | "audio")
         || entry
             .strip_prefix('.')
@@ -851,6 +851,69 @@ pub fn measure_options(options: &[OptionDecl<'_>], limits: &Limits) -> usize {
             .saturating_add(option.description.longest())
             .saturating_add(choices)
     })
+}
+
+/// Checks an autocomplete response for an option of `kind` (INT-07).
+///
+/// On a type other than STRING, INTEGER or NUMBER the only violation is OPT-11
+/// (path `choices`). Otherwise more than `autocomplete_choices` choices is an
+/// INT-07 violation (path `choices`) whose help says Noctis sends the first
+/// ones: the caller truncates to `autocomplete_choices` and logs it as a
+/// warning, in every [`LimitMode`](crate::LimitMode). Then each kept choice
+/// (`choices[j]`) is checked as OPT-09 (name, localized names, value type and
+/// length) and OPT-03 / OPT-04 (numeric range); dropped choices are not
+/// checked.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::command::{Choice, ChoiceValue, OptionType, validate_autocomplete};
+///
+/// let choices = vec![Choice::new("a", ChoiceValue::Str("a")); 26];
+/// let errs = validate_autocomplete(&choices, OptionType::String, &Limits::default());
+/// assert_eq!(errs.len(), 1);
+/// assert_eq!(errs[0].rule, RuleId::INT_07);
+/// ```
+pub fn validate_autocomplete(
+    choices: &[Choice<'_>],
+    kind: OptionType,
+    limits: &Limits,
+) -> Vec<Violation> {
+    if !kind.is_choosable() {
+        return vec![Violation::new(
+            RuleId::OPT_11,
+            "choices",
+            Bound::Describe("autocomplete only on STRING, INTEGER or NUMBER options"),
+            Actual::Text(kind.name().to_owned()),
+        )];
+    }
+    let mut out = Vec::new();
+    let max = limits.autocomplete_choices;
+    if choices.len() > max {
+        out.push(
+            Violation::new(
+                RuleId::INT_07,
+                "choices",
+                Bound::AtMost(max),
+                Actual::Count(choices.len()),
+            )
+            .with_help(format!(
+                "Noctis sends the first {max} choices and logs this as a warning"
+            )),
+        );
+    }
+    for (j, choice) in choices.iter().take(max).enumerate() {
+        let path = format!("choices[{j}]");
+        check_choice_names(choice, &path, limits, &mut out);
+        check_choice_value(
+            choice.value,
+            kind,
+            &path,
+            ValidBounds::default(),
+            limits,
+            &mut out,
+        );
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1644,6 +1707,124 @@ mod tests {
                 &l
             ),
             1 + 100
+        );
+    }
+
+    #[test]
+    fn int_07_autocomplete_count() {
+        let l = Limits::default();
+        let choices = vec![Choice::new("a", Str("a")); 26];
+        assert_eq!(validate_autocomplete(&[], OptionType::String, &l), []);
+        assert_eq!(
+            validate_autocomplete(&choices[..25], OptionType::String, &l),
+            []
+        );
+        let errs = validate_autocomplete(&choices, OptionType::String, &l);
+        assert_eq!(
+            errs,
+            [Violation::new(
+                RuleId::INT_07,
+                "choices",
+                Bound::AtMost(25),
+                Actual::Count(26)
+            )
+            .with_help("Noctis sends the first 25 choices and logs this as a warning")]
+        );
+        let lowered = Limits {
+            autocomplete_choices: 2,
+            ..Limits::default()
+        };
+        let errs = validate_autocomplete(&choices[..3], OptionType::String, &lowered);
+        assert_eq!(
+            errs,
+            [Violation::new(
+                RuleId::INT_07,
+                "choices",
+                Bound::AtMost(2),
+                Actual::Count(3)
+            )
+            .with_help("Noctis sends the first 2 choices and logs this as a warning")]
+        );
+    }
+
+    #[test]
+    fn int_07_autocomplete_kept_choices() {
+        let l = Limits::default();
+        let mut choices = vec![Choice::new("a", Str("a")); 26];
+        choices[25] = Choice::new("", Str("a"));
+        assert_eq!(
+            rules(&validate_autocomplete(&choices, OptionType::String, &l)),
+            [RuleId::INT_07]
+        );
+        choices[0] = Choice::new("", Str("a"));
+        let errs = validate_autocomplete(&choices, OptionType::String, &l);
+        assert_eq!(rules(&errs), [RuleId::INT_07, RuleId::OPT_09]);
+        assert_eq!(
+            errs[1],
+            Violation::new(
+                RuleId::OPT_09,
+                "choices[0]",
+                Bound::Between { min: 1, max: 100 },
+                Actual::Count(0)
+            )
+            .with_note("in the choice name")
+        );
+    }
+
+    #[test]
+    fn int_07_autocomplete_choice_rules() {
+        let l = Limits::default();
+        let one = |c: Choice<'_>, kind| validate_autocomplete(&[c], kind, &l);
+        let a101 = "a".repeat(101);
+        let errs = one(Choice::new(&a101, Str("a")), OptionType::String);
+        assert_eq!(rules(&errs), [RuleId::OPT_09]);
+        assert_eq!(errs[0].actual, Actual::Count(101));
+        let localized = [a101.as_str()];
+        let errs = one(
+            Choice::new("a", Str("a")).name_localized(&localized),
+            OptionType::String,
+        );
+        assert_eq!(errs[0].notes, ["in localized choice name #0"]);
+        assert_eq!(
+            one(Choice::new("a", CInt(1)), OptionType::String),
+            [describe(
+                RuleId::OPT_09,
+                "choices[0]",
+                "a choice value of the option's type",
+                "integer"
+            )
+            .with_note("option type STRING")]
+        );
+        assert_eq!(
+            one(Choice::new("a", Str(&a101)), OptionType::String),
+            [Violation::new(
+                RuleId::OPT_09,
+                "choices[0]",
+                Bound::AtMost(100),
+                Actual::Count(101)
+            )
+            .with_note("in the choice value")]
+        );
+        let errs = one(Choice::new("a", CInt(I53 + 1)), OptionType::Integer);
+        assert_eq!(rules(&errs), [RuleId::OPT_03]);
+        assert_eq!(errs[0].path, "choices[0]");
+        let errs = one(Choice::new("a", CFloat(f64::NAN)), OptionType::Number);
+        assert_eq!(rules(&errs), [RuleId::OPT_04]);
+        assert_eq!(errs[0].actual, text("NaN"));
+        assert_eq!(one(Choice::new("a", CInt(1)), OptionType::Number), []);
+    }
+
+    #[test]
+    fn int_07_opt_11_autocomplete_on_boolean() {
+        let choices = vec![Choice::new("", CInt(1)); 26];
+        assert_eq!(
+            validate_autocomplete(&choices, OptionType::Boolean, &Limits::default()),
+            [describe(
+                RuleId::OPT_11,
+                "choices",
+                "autocomplete only on STRING, INTEGER or NUMBER options",
+                "BOOLEAN"
+            )]
         );
     }
 

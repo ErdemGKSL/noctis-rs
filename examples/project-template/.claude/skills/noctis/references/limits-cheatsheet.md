@@ -82,6 +82,7 @@ fields; a struct literal does not compile. Every field is a `usize` maximum.
 | `radio_options` | MOD-07 | 10 | options per Radio Group |
 | `checkbox_group_options` | MOD-07 | 10 | options per Checkbox Group |
 | `checkbox_group_values` | MOD-07 | 10 | `max_values` of a Checkbox Group |
+| `modal_option_text_len` | MOD-07 | 100 | characters in a Radio or Checkbox Group option label, value or description |
 | `content_len` | MSG-01 | 2000 | characters in legacy message `content` |
 | `mention_users` | MSG-04 | 100 | user ids in allowed mentions |
 | `mention_roles` | MSG-04 | 100 | role ids in allowed mentions |
@@ -110,6 +111,13 @@ functions live in `noctis::rules::command` (see `commands.md` §2 "Rule function
 | `command::{validate_options, measure_options, OptionDecl, OptionType, Choice, ChoiceValue, NumericValue}` | options (`commands.md` §3) |
 | `command::validate_context_menu_name` | CTX-01 (`commands.md` §5) |
 | `command::{validate_meta, CommandMeta, InteractionContext, IntegrationType}` | base-command metadata (`commands.md` §6) |
+| `command::validate_autocomplete` | an autocomplete response: INT-07 count, OPT-09/03/04 per kept choice, OPT-11 (`commands.md` §4) |
+| `component::{validate_components, validate_legacy_components, cost, Component, Container, Section, Accessory, Media, Separator, Spacing, Button, ButtonStyle, Select, SelectKind, SelectOption, Cost}` | Components V2 trees and legacy rows, CV2-03..13, CV2-15..17 (`components-v2.md` §15) |
+| `component::{validate_button_label, validate_link_url, validate_select_placeholder, validate_gallery_description, validate_thumbnail_description, validate_media_url, validate_accent_color, validate_spacing}` | single CV2 values (path `""`) (`components-v2.md` §15) |
+| `modal::{validate_modal, Modal, ModalComponent, Label, LabelChild, TextInput, TextInputStyle, ModalSelect, FileUpload, RadioGroup, CheckboxGroup, Checkbox, ModalOption}` | modals, MOD-01..07 and CV2-09 for modal selects (`modals.md` §7) |
+| `modal::{validate_modal_title, validate_label_text, validate_label_description, validate_text_input, validate_text_input_value}` | single modal values (`modals.md` §7) |
+| `message::{validate_content, validate_mentions, validate_nonce, validate_sticker_ids, validate_webhook_name, AllowedMentions, MentionIds}` | MSG-01, MSG-03..06, WH-04 (`components-v2.md` §15) |
+| `attachment::{validate_attachments, validate_file_size, validate_attachment_description, validate_attachment_ref, AttachmentDecl}` | ATT-01..03, ATT-05, ATT-06 (`components-v2.md` §15) |
 | `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (125, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
 | `Violation` | `{ rule, path, limit, actual, notes: Vec<String>, help: Option<String> }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)` plus `.with_note(…)` (appends) and `.with_help(…)` (replaces); implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty), then a `\n  = note: …` line per note and a `\n  = help: …` line |
 | `Bound` | the broken limit: `AtMost(n)` "at most n", `AtLeast(n)` "at least n", `Between { min, max }` "between min and max", `Exactly(n)` "exactly n", `Describe(&str)` printed as is |
@@ -252,7 +260,7 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 | MOD-04 | Label ≤ 45, description ≤ 100 | C / B / R |
 | MOD-05 | Text Input min 0–4000, max 1–4000, value ≤ 4000, placeholder ≤ 100 | C / R |
 | MOD-06 | File Upload min 0–10, max 1–10, `file_types` ≤ 10 | C |
-| MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required | C |
+| MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required; option label/value 1–100, description ≤ 100 | C |
 | MOD-08 | modal `custom_id` 1–100 | C |
 | MOD-09 | submitted values untrusted; upload URLs ephemeral | R |
 
