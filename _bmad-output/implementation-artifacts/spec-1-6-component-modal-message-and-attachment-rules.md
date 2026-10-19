@@ -2,7 +2,7 @@
 title: 'Story 1.6: Component, modal, message and attachment rules'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '9a45671d04a10abd24f649d6723569bc24b4a0bb'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -10,7 +10,56 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
   - '{project-root}/docs/discord-rules.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      String Select min_values / max_values are not checked against the number of options.
+    evidence: |-
+      Real Discord 400 (max_values or min_values above the option count), but the intent-contract Never list excludes a Discord-side `max_values <= options` check because the catalog has no row. Needs a catalog row (CV2-09) before code; same applies to Checkbox Group explicit max_values above its option count.
+    location: >-
+      crates/noctis-rules/src/component.rs check_select
+    severity: medium
+  - summary: >-
+      A non-link, non-premium Button with neither label nor emoji passes validation.
+    evidence: |-
+      The intent matrix accepts label `None` and the CV2-08 catalog row has no label-or-emoji requirement. Settle by confirming in Discord's Button reference that styles 1-5 need a label or an emoji, then add it to the CV2-08 row and check_button.
+    location: >-
+      crates/noctis-rules/src/component.rs check_button
+    severity: medium
+  - summary: >-
+      Radio Group options with several `default: true` flags pass, and `RadioGroup::required` is never read.
+    evidence: |-
+      No catalog row covers radio defaults. Settle by checking Discord's Radio Group reference (at most one default option; any required semantics) and adding a MOD-07 catalog entry if confirmed.
+    location: >-
+      crates/noctis-rules/src/modal.rs check_label RadioGroup arm
+    severity: medium (unverified)
+  - summary: >-
+      Checkbox Group default-flagged option count is not compared with the effective [min_values, max_values].
+    evidence: |-
+      String Select defaults are checked (CV2-09 interpretation row) but Checkbox Group defaults are not; no catalog row says Discord rejects it. Settle with Discord's Checkbox Group reference and extend the MOD-07 row if confirmed.
+    location: >-
+      crates/noctis-rules/src/modal.rs check_checkbox_group
+    severity: medium (unverified)
+  - summary: >-
+      Modal Text Displays are never length-checked.
+    evidence: |-
+      validate_modal has an empty arm for ModalComponent::Text and Message(Text); CV2-04 is a message budget and no catalog row states a modal text limit. Settle by confirming whether Discord applies the 4000 Text Display budget (or another limit) to modals.
+    location: >-
+      crates/noctis-rules/src/modal.rs validate_modal
+    severity: medium (unverified)
+  - summary: >-
+      A Text Input pre-fill `value` is not checked against the input's own min_length / max_length.
+    evidence: |-
+      Only the global 4000 bound (MOD-05) is checked. Settle by confirming whether Discord rejects a modal whose pre-filled value violates the input's own length bounds, then extend MOD-05.
+    location: >-
+      crates/noctis-rules/src/modal.rs check_text_input
+    severity: medium (unverified)
+  - summary: >-
+      An empty Container (and an empty Components V2 message) passes validation.
+    evidence: |-
+      The intent matrix accepts `&[]` and `C()` without a violation and the catalog has no minimum-children row. Settle by confirming in Discord's Container reference whether `components` needs at least one child.
+    location: >-
+      crates/noctis-rules/src/component.rs validate_components
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -202,6 +251,48 @@ Order: MOD-01, MOD-02, then per top-level component in input order: MOD-03 for a
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 38 findings — high 0, medium 5, low 5, false 19, maybe-false 9
+- findings:
+  - `[false]` `[reject]` (blind) ATT-02 ignores a boosted `file_limit` — the intent matrix row `Some(104_857_600)` + 52_428_800 explicitly expects ATT-02 `Cnt(52428800)`; the request ceiling staying `request_bytes` is the specified behavior.
+  - `[medium]` `[defer]` (blind) String Select min/max not checked against option count — real Discord 400, but the intent-contract Never list excludes a `max_values ≤ options` check (no catalog row); deferred for a catalog row.
+  - `[medium]` `[defer]` (blind) Button with neither label nor emoji passes — real, but the intent matrix accepts label `None` and CV2-08 has no such row; deferred until the catalog row exists.
+  - `[low]` `[reject]` (blind) `Checkbox::default()` shadowed by the `default(bool)` setter — descriptors are macro/runtime lowering targets built with `new()`; the fix renames spec-named setters (public surface), disproportionate for a clear compile error.
+  - `[maybe-false]` `[defer]` (blind) Radio Group multiple defaults / unread `required` — no catalog row; needs Discord's Radio Group reference to settle.
+  - `[maybe-false]` `[defer]` (blind) Checkbox Group bounds/defaults vs options — explicit max above option count is excluded by the intent (no `max ≤ options` check); default-count rule unconfirmed for Checkbox Groups.
+  - `[maybe-false]` `[defer]` (blind) Modal Text Displays never length-checked — no catalog limit for modal text; needs Discord confirmation.
+  - `[maybe-false]` `[defer]` (blind) Text Input `value` not checked against own min/max_length — MOD-05 states only `value ≤ 4000`; needs Discord confirmation.
+  - `[false]` `[reject]` (blind) `Opaque(n)` counts one legacy row — `Opaque(n)` is n raw components, not n rows (a row of 4 buttons is 5 components); the intent matrix specifies `[O(1)]` counts as a row.
+  - `[maybe-false]` `[defer]` (blind) Empty Container / empty V2 message pass — the intent matrix accepts both and no catalog row exists; needs Discord's Container reference.
+  - `[false]` `[reject]` (blind) File/media URLs not linked to attachments — `validate_attachment_ref` reports a missing file when called; the intent Never list excludes URL-scheme checks and no combined API is specified.
+  - `[low]` `[reject]` (blind) Duplicated min/max range logic in component.rs and modal.rs — no divergence exists today; a shared-helper refactor is not a direct correction and fixes no observed defect.
+  - `[low]` `[patch]` (blind) INT-07 warnings share the Vec with errors — return type is spec-settled, but the template `commands.md` §4 example warns on every violation incl. OPT-09; patched: example warns only on INT-07 and treats others as errors.
+  - `[false]` `[reject]` (blind) `let _ = limits;` hides intent — the spec requires `&Limits` even where no field is read; no behavioral or API harm named.
+  - `[false]` `[reject]` (blind) No V2 message-level checks / aggregate `validate_message` — CV2-01/02 are excluded by the intent Never list; the granular API is the specified shape.
+  - `[medium]` `[defer]` (edge) Button without label or emoji passes — same root cause as the blind finding; deferred with it.
+  - `[medium]` `[defer]` (edge) String Select min/max above option count — same root cause as the blind finding; deferred with it.
+  - `[false]` `[reject]` (edge) String Select `default_values` misuse unreported when ordering fails — the intent order text checks default values only when the ordering check ran and passed.
+  - `[false]` `[reject]` (edge) Legacy top-level `Opaque(n)` counted as one row — see the blind row; n components are not n rows.
+  - `[false]` `[reject]` (edge) Row items `Opaque(n)` counted as one item — Design Notes settle "counts as one row item".
+  - `[maybe-false]` `[defer]` (edge) Radio Group multiple defaults — grouped with the blind radio finding.
+  - `[maybe-false]` `[defer]` (edge) Checkbox Group default count outside min/max — grouped with the blind checkbox-group finding.
+  - `[maybe-false]` `[defer]` (edge) Text Input pre-fill vs own bounds — grouped with the blind text-input finding.
+  - `[maybe-false]` `[defer]` (edge) Modal Text Display length — grouped with the blind modal-text finding.
+  - `[medium]` `[reject]` (edge) Duplicate attachment filenames make `attachment://` ambiguous — the intent Never list says "no filename rules".
+  - `[false]` `[reject]` (edge) Autocomplete choices not checked against the option's own bounds — the intent signature `validate_autocomplete(&[Choice], OptionType, &L)` carries no option bounds by design.
+  - `[low]` `[patch]` (vgap) Checkbox Group option text (MOD-07, `modal_option_text_len`) untested — patched: `mod_07_checkbox_group` gains label/value/description boundary and lowered-limit cases.
+  - `[low]` `[patch]` (vgap) String Select options not shown checked when ordering fails — patched: one CV2-09 case with a mis-ordered empty String Select asserting both violations.
+  - `[false]` `[reject]` (intent) CV2-14 not implemented — the intent Never list excludes CV2-14 ids.
+  - `[false]` `[reject]` (intent) ATT-04 only prose — the intent Never list excludes ATT-04 code (by construction).
+  - `[false]` `[reject]` (intent) ATT-05 ignores retained attachments — `validate_attachment_ref` takes its own `&[AttachmentDecl]`, so callers pass retained files there without adding them to `validate_attachments`.
+  - `[false]` `[reject]` (intent) ATT-01 interaction limit overrides a lowered `Limits` — specified by the intent (`file_limit` replaces the field) and recorded as a catalog interpretation row.
+  - `[false]` `[reject]` (intent) CV2-08 custom_id/sku_id rules partial — the intent excludes `custom_id`s from descriptors; the `compile_fail` doctest is the one the spec mandates.
+  - `[false]` `[reject]` (intent) INT-07 outside the four modules — the intent Approach places it in `command::validate_autocomplete`.
+  - `[false]` `[reject]` (intent) Scope additions (CV2-17, `modal_option_text_len`, catalog rows) — all required by the intent-contract (CV2-03..17, 58 Limits fields, matrix rows).
+  - `[false]` `[reject]` (intent) AC2 proc-macro surface asserted by shape only — no macro exists yet; the intent's AD-4 constraint is structural and satisfied.
+  - `[false]` `[reject]` (intent) Functions accept `&Limits` but ignore it — the intent requires `&Limits` "even where it reads no field".
+  - `[false]` `[reject]` (intent) Diff partial / in progress — descriptive; status is managed by the workflow and the diff covers every task.
+
 ## Design Notes
 
 **Decisions (logged to the memlog):**
@@ -225,3 +316,24 @@ Order: MOD-01, MOD-02, then per top-level component in input order: MOD-03 for a
 - `cargo deny check` -- expected: exit 0.
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- Summary: `noctis-rules` now validates Components V2 descriptors (CV2-03..17), modals (MOD-*), message content/embeds and attachments (ATT-01/02/05), plus autocomplete choices (INT-07), all through `&Limits` with stable rule ids; docs/discord-rules.md and the project-template skill were updated alongside.
+- Files changed:
+  - `crates/noctis-rules/src/component.rs` (+ `component/tests.rs`): component descriptors and CV2 checks.
+  - `crates/noctis-rules/src/modal.rs` (+ `modal/tests.rs`): modal and modal-component checks (MOD-*).
+  - `crates/noctis-rules/src/message.rs`: message content and embed checks.
+  - `crates/noctis-rules/src/attachment.rs`: attachment size/count and `attachment://` reference checks.
+  - `crates/noctis-rules/src/check.rs`, `key.rs`, `limits.rs`, `lib.rs`: shared check helpers, rule keys, new Limits fields, exports.
+  - `crates/noctis-rules/src/command/{mod,option}.rs`: `validate_autocomplete` (INT-07).
+  - `crates/noctis-rules/tests/components.rs`: integration matrix tests.
+  - `crates/noctis/src/lib.rs`: re-exports.
+  - `docs/discord-rules.md`, `examples/project-template/` (AGENTS.md, skill references components-v2, modals, commands, limits-cheatsheet, troubleshooting): docs for the new rules.
+- Review findings (38: high 0, medium 5, low 5, false 19, maybe-false 9):
+  - Patched (3, all low): the commands.md §4 example warns only on INT-07; MOD-07 Checkbox Group option-text boundary tests; a CV2-09 mis-ordered empty String Select test.
+  - Deferred (11 entries, grouped into 7 issues): String Select/Checkbox Group min/max vs option count; Button with neither label nor emoji; Radio Group multiple defaults; Checkbox Group default count; modal Text Display length; Text Input value vs its own bounds; empty Container/V2 message. Each one needs a catalog row or Discord confirmation first.
+  - Rejected (24 entries), with the reason recorded in the triage log for each: specified intent behavior (ATT-02 boosted limit, Opaque(n) counting, ATT-01 override, ATT-05 retained files), intent Never-list exclusions (CV2-01/02/14, ATT-04, filename rules, URL schemes), Checkbox::default shadowing, duplicated range logic, `let _ = limits`, autocomplete option bounds, and the scope/placement findings.
+- Follow-up review recommended: false (patched by verdict: high 0, medium 0, low 3).
+- Verification: local gates (fmt, clippy --release -D warnings, test --release, xtask) via gates.sh all green; CI paused by the maintainer.
+- Residual risks: the deferred medium items (select min/max vs option count, label-less Button) can still reach Discord and fail with a 400 until catalog rows exist; Discord-side behavior for Radio/Checkbox Group defaults and modal text length is unconfirmed.

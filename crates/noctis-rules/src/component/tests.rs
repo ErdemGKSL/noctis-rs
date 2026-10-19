@@ -511,6 +511,22 @@ fn cv2_09_string_options() {
         [field("description", Bound::AtMost(100), 101)]
     );
     assert_eq!(string(&[SelectOption::new("l", "v").description("")]), []);
+    assert_eq!(
+        select(
+            Select::new(SelectKind::String(&[]))
+                .min_values(3)
+                .max_values(2)
+        ),
+        [
+            v(
+                RuleId::CV2_09,
+                "row[0].select[0]",
+                Bound::Describe("min_values ≤ max_values"),
+                txt("3 > 2")
+            ),
+            count(0)
+        ]
+    );
     let l = lowered(|l| l.select_options = 2);
     let s = Select::new(SelectKind::String(&opts[..3]));
     assert_eq!(

@@ -419,6 +419,35 @@ fn mod_07_checkbox_group() {
         child_with(LabelChild::CheckboxGroup(g(3).max_values(4)), &low),
         [v(RuleId::MOD_07, &at("max_values"), btw(1, 3), cnt(4))]
     );
+    let field = |f: &str, bound, n| {
+        v(
+            RuleId::MOD_07,
+            &at(&format!("options[0].{f}")),
+            bound,
+            cnt(n),
+        )
+    };
+    let one = |o: ModalOption<'_>| group(CheckboxGroup::new(&[o]));
+    let (a100, a101) = ("a".repeat(100), "a".repeat(101));
+    assert_eq!(one(opt("", "a")), [field("label", btw(1, 100), 0)]);
+    assert_eq!(one(opt(&a100, "a")), []);
+    assert_eq!(one(opt(&a101, "a")), [field("label", btw(1, 100), 101)]);
+    assert_eq!(one(opt("a", "")), [field("value", btw(1, 100), 0)]);
+    assert_eq!(one(opt("a", &a100)), []);
+    assert_eq!(one(opt("a", &a101)), [field("value", btw(1, 100), 101)]);
+    assert_eq!(one(opt("a", "a").description(&a100)), []);
+    assert_eq!(
+        one(opt("a", "a").description(&a101)),
+        [field("description", Bound::AtMost(100), 101)]
+    );
+    let low = lowered(|l| l.modal_option_text_len = 5);
+    assert_eq!(
+        child_with(
+            LabelChild::CheckboxGroup(CheckboxGroup::new(&[opt("abcdef", "a")])),
+            &low
+        ),
+        [field("label", btw(1, 5), 6)]
+    );
 }
 
 #[test]

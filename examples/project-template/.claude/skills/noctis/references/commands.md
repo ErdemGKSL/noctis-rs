@@ -342,13 +342,22 @@ NUMBER the only violation is OPT-11 (`autocomplete only on STRING, INTEGER or NU
 options`).
 
 ```rust
+use noctis::rules::RuleId;
 use noctis::rules::command::{Choice, ChoiceValue, OptionType, validate_autocomplete};
 
-let choices: Vec<Choice<'_>> = rules.iter().map(|r| Choice::new(&r.name, ChoiceValue::Str(&r.id))).collect();
+let mut choices: Vec<Choice<'_>> = rules.iter().map(|r| Choice::new(&r.name, ChoiceValue::Str(&r.id))).collect();
 for v in validate_autocomplete(&choices, OptionType::String, &limits) {
-    tracing::warn!("{v}");
+    if v.rule == RuleId::INT_07 {
+        tracing::warn!("{v}"); // too many choices: truncate below
+    } else {
+        tracing::error!("{v}"); // Discord rejects the response: fix or drop that choice
+    }
 }
+choices.truncate(limits.autocomplete_choices);
 ```
+
+Only INT-07 is a truncate-and-warn case; any other violation (OPT-09, OPT-03, OPT-04,
+OPT-11) means Discord rejects the response, so fix or drop the offending choices first.
 
 ## 5. Context-menu commands
 
