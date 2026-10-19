@@ -2,7 +2,8 @@
 title: 'Story 2.5: `#[derive(Route)]`, `Payload` and `PayloadEnum` with compile-time length proof'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '46288835d01de9cffcc2b10e4eb5598477fa829e'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
