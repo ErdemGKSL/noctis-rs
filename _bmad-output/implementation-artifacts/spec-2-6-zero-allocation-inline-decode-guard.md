@@ -2,7 +2,8 @@
 title: 'Story 2.6: Zero-allocation inline decode guard'
 type: 'chore'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '106abb935372faa6c9a8b739c45bcdb14c91132c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
