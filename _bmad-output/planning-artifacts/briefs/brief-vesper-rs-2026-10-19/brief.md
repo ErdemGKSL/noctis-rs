@@ -1,6 +1,6 @@
 ---
 title: "Product Brief: Vesper"
-status: draft
+status: final
 created: 2026-10-19
 updated: 2026-10-19
 ---
@@ -18,8 +18,8 @@ Discord's Components V2 lets a message act as a dashboard, with containers,
 sections, galleries and buttons instead of plain text and embeds. Few bots use it
 well, because the limits are strict and the state handling is tedious. Vesper makes
 that UI the default. A slash command such as `/setup start` takes no parameters. It
-opens a rich container with navigation, steps and live state, and generated images
-(rendered with takumi and styled with Tailwind) show read-only data clearly.
+opens a rich container with navigation, steps and live state. Generated images,
+rendered with takumi and styled with Tailwind, show read-only data clearly.
 
 The goal is to give Rust developers the ergonomics of tescord, the TypeScript
 framework behind the author's schwi bot. Vesper should also run at the scale Rust
@@ -40,9 +40,9 @@ design.
 - **Rust lacks a high-ergonomics option.** Rust bot developers today pick between
   serenity/poise and raw twilight. Neither treats Components V2, UI navigation
   patterns or image generation as first-class. TypeScript developers using tescord
-  or dbi get space-separated command names, auto-publishing, references in custom
-  ids, and locale and feature loading out of the box. Moving to Rust for performance
-  means losing all of that.
+  or dbi get space-separated command names, auto-publishing, references in
+  `custom_id` values, and locale and feature loading out of the box. Moving to
+  Rust for performance means losing all of that.
 - **Dynamic images are bolted on.** Generating status cards, profiles or leaderboards
   usually means a separate service (satori, a headless browser) with its own
   latency, memory and deployment cost.
@@ -54,7 +54,7 @@ A tokio-based framework, using twilight's recommended architecture, that provide
 - **Gateway and scale built in.** Sharding is configured up front. Shards run
   concurrently on a multi-threaded runtime, and the framework handles identify
   queueing, resumes and shard ranges for multi-process deployments. Events dispatch
-  to handlers without per-event allocation overhead where it can be avoided.
+  to handlers while avoiding per-event allocations wherever possible.
 - **Tescord-style command authoring.** A command is declared with a name like
   `"settings logs channel"`. Vesper splits it into command, subcommand group and
   subcommand, builds the Discord payload (options, localizations, permissions,
@@ -145,7 +145,7 @@ A tokio-based framework, using twilight's recommended architecture, that provide
 ## Vision
 
 Vesper becomes the default way to build "app-like" Discord bots in Rust. Its
-adapter ecosystem would include crates such as `vesper-redis` and `vesper-sqlx`, a
+adapter ecosystem includes crates such as `vesper-redis` and `vesper-sqlx`, a
 library of reusable UI patterns and image templates, and tooling such as type
-generation for locales and custom-id payloads. Teams that outgrow TypeScript would
+generation for locales and custom-id payloads. Teams that outgrow TypeScript
 gain an order of magnitude in efficiency without losing ergonomics.

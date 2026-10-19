@@ -24,10 +24,11 @@ the PRD and architecture work.
   progress indicator over pagination.
 - **General-purpose views that don't fit one container use a navbar.** A row of
   buttons sits at the top, and clicking one swaps the container's content.
-- **There is never a listener per component.** Each component id has one global
-  listener. Extra data goes after the base id, separated by a special character.
-  When the data is large, a reference id goes there instead, and the data is looked
-  up in a HashMap-like store and returned to the user.
+- **There is never a listener per message or component instance.** Each
+  component id has one global listener. Extra data goes after the base id,
+  separated by a special character. When the data is large, a reference id goes
+  there instead, and the data is looked up in a HashMap-like store and returned to
+  the user.
 - **Memory allocation stays small.** The framework uses allocation-conscious
   algorithms throughout, and everything is designed for a bot serving millions of
   users.
@@ -53,7 +54,8 @@ the PRD and architecture work.
 
 ## Research inputs
 
-`../../research/`:
+The research reports live in `../../research/`:
+
 - `tescord-features.md`
 - `twilight-rs.md`
 - `discord-components-v2.md`
