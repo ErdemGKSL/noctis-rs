@@ -5,3 +5,8 @@
 #
 # [agents.bmad-agent-pm]
 # description = "Prefers short, bulleted PRDs over narrative drafts."
+
+# Chat with the user in Turkish; every written artifact (docs, specs, stories, code) stays English.
+[core]
+communication_language = "Turkish"
+document_output_language = "English"
