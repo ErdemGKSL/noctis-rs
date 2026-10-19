@@ -63,28 +63,60 @@
 //! their [`FieldDecode::absent`] value, so appending an `Option` field to a
 //! Payload needs no schema bump, and an id with an explicit trailing `None`
 //! and one without it decode to the same Payload.
+//!
+//! # Refs
+//!
+//! A `by_ref` Route, or a `spill` Route whose Payload does not fit inline,
+//! stores its Payload under a [`Ref`]: 11 base62 characters minted by
+//! [`Ref::mint`] from the OS CSPRNG (`getrandom`) by unbiased rejection
+//! sampling (≈ 65.5 bits), never derived from a counter, a clock or
+//! interaction data (CID-05). Encoding takes two phases (AD-18):
+//!
+//! 1. [`encode_id`] returns [`EncodedId::Inline`] for an id that is
+//!    complete, or [`EncodedId::RefSlot`] with a [`PendingRef`] carrying the
+//!    route, schema, payload, TTL and one-shot flag (set through
+//!    [`Parts::with_ref_policy`] and [`RefPolicy`]).
+//! 2. Core mints a [`Ref`], stores [`PendingRef::record`] under it, and
+//!    calls [`finish`], which writes `F route ":" [S] [E] [N] "~" ref`, at
+//!    most [`MAX_REF_ID_LEN`] (46) characters and never tagged.
+//!
+//! The stored [`RefRecord`] is `F route ":" [S] body` in the id's grammar,
+//! with no length cap and no `E`, `N` or `T`. Decoding a by-Ref id gives
+//! [`PayloadSource::Ref`]; after resolving the Ref, [`decode_record`]
+//! checks the record against the Route:
+//!
+//! - a malformed record or body is [`DecodeError::Malformed`];
+//! - a record of another route is [`DecodeError::Forged`] with
+//!   [`ForgedReason::RecordRouteMismatch`];
+//! - a different schema is [`DecodeError::Stale`].
 
 mod base62;
 mod bounded_str;
 pub mod check;
+mod encoded;
 mod error;
 mod escape;
 mod field;
 mod layout;
 mod parts;
+mod record;
+mod refs;
 mod route;
 
 pub use bounded_str::{BoundedStr, BoundedStrError};
+pub use encoded::{EncodedId, MAX_REF_ID_LEN, PendingRef, encode_id, finish};
 pub use error::{
-    CodecError, DecodeError, EncodeError, EnvelopeError, FieldError, ForgedReason, Section,
-    StaleReason,
+    CodecError, DecodeError, EncodeError, EnvelopeError, FieldError, ForgedReason, RefError,
+    Section, StaleReason,
 };
 pub use field::{Field, FieldDecode};
 pub use layout::{
     Decoded, FMT_LEN, MAX_ID_LEN, NONCE_LEN, Parts, PayloadSource, REF_LEN, REF_MARKER_LEN,
-    RawBody, SCHEMA_LEN, SEP_LEN, TAG_LEN, VIEW_ENV_LEN, decode, decode_route, encode,
+    RawBody, RefPolicy, SCHEMA_LEN, SEP_LEN, TAG_LEN, VIEW_ENV_LEN, decode, decode_route, encode,
 };
 pub use parts::{Flags, SelectNonce, Sign, Tag, ViewEnvelope};
+pub use record::{RefRecord, decode_record};
+pub use refs::Ref;
 pub use route::{
     BodyKind, FieldReader, FieldWriter, Payload, PayloadDecode, Route, RouteId, RouteShape,
 };

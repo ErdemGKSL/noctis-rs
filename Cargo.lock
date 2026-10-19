@@ -300,6 +300,8 @@ name = "noctis-codec"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "bytes",
+ "getrandom",
  "noctis-rules",
  "proptest",
  "thiserror",

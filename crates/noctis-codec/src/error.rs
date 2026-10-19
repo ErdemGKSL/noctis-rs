@@ -192,6 +192,13 @@ pub enum CodecError {
         /// The field's error; its indices are relative to the field.
         error: FieldError,
     },
+    /// A [`RefRecord`](crate::RefRecord) announces a section only ids carry
+    /// (`E`, `N` or `T`); the first such section is named.
+    #[error("ref record carries a {section} section")]
+    UnexpectedSection {
+        /// The first announced section a record never carries.
+        section: Section,
+    },
 }
 
 /// Why a well-formed `custom_id` does not match the Route it was decoded
@@ -230,6 +237,10 @@ pub enum ForgedReason {
     /// The id names a different route.
     #[error("route does not match")]
     RouteMismatch,
+    /// The stored Ref record names a different route than the `custom_id`
+    /// (CID-05).
+    #[error("ref record route does not match")]
+    RecordRouteMismatch,
 }
 
 /// The outcome of decoding a `custom_id` against a Route.
@@ -285,6 +296,36 @@ pub enum EncodeError {
     /// A Payload field's `encode` returned an error of its own.
     #[error("a payload field failed to encode")]
     Field,
+    /// A non-default [`RefPolicy`](crate::RefPolicy) was given for a Route
+    /// whose body is always inline.
+    #[error("route never stores its payload by ref")]
+    UnexpectedRefPolicy,
+    /// The [`RefPolicy`](crate::RefPolicy) TTL is zero.
+    #[error("ref ttl is zero")]
+    ZeroTtl,
+    /// A [`RefRecord`](crate::RefRecord) route is not 1 to 24 characters of
+    /// `[a-z0-9._-]`.
+    #[error("invalid route id")]
+    InvalidRoute,
+    /// A [`RefRecord`](crate::RefRecord) payload byte is outside printable
+    /// ASCII or is `:` or `~`.
+    #[error("invalid payload byte at {index}")]
+    InvalidBody {
+        /// Byte index into the payload.
+        index: usize,
+    },
+}
+
+/// Why a [`Ref`](crate::Ref) could not be minted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum RefError {
+    /// The OS random source failed.
+    #[error("os random source failed: {0}")]
+    Rng(getrandom::Error),
+    /// The random source gave too few usable bytes in 8 fills.
+    #[error("random source exhausted")]
+    Exhausted,
 }
 
 /// Why a View envelope could not be built.

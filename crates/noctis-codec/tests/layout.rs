@@ -2,104 +2,18 @@
 //! property tests that decoding is total and round-trips (CID-06, FR-16,
 //! FR-19, FR-60).
 
-use core::cell::RefCell;
+#[macro_use]
+mod common;
+
 use core::fmt;
 
+use common::*;
 use noctis_codec::{
     BodyKind, CodecError, DecodeError, EncodeError, Field, FieldError, FieldReader, FieldWriter,
-    Flags, ForgedReason, Parts, Payload, PayloadDecode, PayloadSource, RawBody, Route, RouteId,
-    RouteShape, SelectNonce, Sign, StaleReason, Tag, ViewEnvelope, decode, decode_route, encode,
+    Flags, ForgedReason, Parts, Payload, PayloadDecode, PayloadSource, RawBody, Route, RouteShape,
+    SelectNonce, StaleReason, ViewEnvelope, decode, decode_route, encode,
 };
 use proptest::prelude::*;
-
-/// Hand-implements `Payload` and `PayloadDecode` for a struct of owned fields.
-macro_rules! payload {
-    ($name:ident { $($field:ident: $ty:ty),* $(,)? }) => {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        struct $name {
-            $($field: $ty,)*
-        }
-
-        impl Payload for $name {
-            #[allow(unused_variables, reason = "zero-field payloads")]
-            fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
-                $(out.field(&self.$field)?;)*
-                Ok(())
-            }
-        }
-
-        impl<'de> PayloadDecode<'de> for $name {
-            #[allow(unused_variables, reason = "zero-field payloads")]
-            fn decode_fields(f: &mut FieldReader<'de>) -> Result<Self, CodecError> {
-                Ok(Self { $($field: f.field()?,)* })
-            }
-        }
-    };
-}
-
-/// Declares a marker Route.
-macro_rules! route {
-    ($name:ident, $id:literal, $shape:expr, $schema:literal, $payload:ty) => {
-        struct $name;
-
-        impl Route for $name {
-            const ID: RouteId = RouteId::new($id);
-            const SHAPE: RouteShape = $shape;
-            const SCHEMA: u8 = $schema;
-            type Payload = $payload;
-        }
-    };
-}
-
-payload!(BuyV1 { item: u64, qty: u8 });
-payload!(BuyV2Payload { item: u64, qty: u8, note: Option<u8>, gift: Option<bool> });
-payload!(TextP { s: String });
-payload!(PingP {});
-payload!(OptP { v: Option<u8> });
-payload!(NumP { n: u8 });
-payload!(MixP { a: u8, b: i64, c: Option<u64>, d: String });
-
-route!(Buy, "shop.buy", RouteShape::INLINE, 0, BuyV1);
-route!(BuyV2, "shop.buy", RouteShape::INLINE, 0, BuyV2Payload);
-route!(BuyS2, "shop.buy", RouteShape::INLINE, 2, BuyV1);
-route!(Text, "t", RouteShape::INLINE, 0, TextP);
-route!(TextSpill, "t", RouteShape::SPILL, 0, TextP);
-route!(TextSigned, "t", RouteShape::INLINE.signed(), 0, TextP);
-route!(Ping, "ping", RouteShape::INLINE, 0, PingP);
-route!(Opt, "o", RouteShape::INLINE, 0, OptP);
-route!(View, "v", RouteShape::INLINE.view(), 0, NumP);
-route!(Sel, "s", RouteShape::INLINE.select(), 0, NumP);
-route!(Sig, "sig", RouteShape::INLINE.signed(), 0, NumP);
-route!(
-    All,
-    "all",
-    RouteShape::INLINE.view().select().signed(),
-    61,
-    NumP
-);
-route!(Stored, "r", RouteShape::BY_REF, 0, BuyV1);
-route!(SpillSigned, "ss", RouteShape::SPILL.signed(), 0, TextP);
-route!(BadSchema, "x", RouteShape::INLINE, 62, NumP);
-
-/// Returns `Tag::from_u64(n)` and records what it was asked to sign.
-struct FakeSigner(u64, RefCell<String>);
-
-impl FakeSigner {
-    fn new(n: u64) -> Self {
-        Self(n, RefCell::new(String::new()))
-    }
-
-    fn saw(&self) -> String {
-        self.1.borrow().clone()
-    }
-}
-
-impl Sign for FakeSigner {
-    fn sign(&self, signed: &str) -> Tag {
-        signed.clone_into(&mut self.1.borrow_mut());
-        Tag::from_u64(self.0)
-    }
-}
 
 fn enc<R: Route>(p: &R::Payload, parts: &Parts<'_>) -> Result<String, EncodeError> {
     encode::<R>(p, parts).map(|id| id.as_str().to_owned())
@@ -107,18 +21,6 @@ fn enc<R: Route>(p: &R::Payload, parts: &Parts<'_>) -> Result<String, EncodeErro
 
 fn plain<R: Route>(p: &R::Payload) -> Result<String, EncodeError> {
     enc::<R>(p, &Parts::new())
-}
-
-fn text(s: &str) -> TextP {
-    TextP { s: s.to_owned() }
-}
-
-fn x(n: usize) -> TextP {
-    text(&"x".repeat(n))
-}
-
-fn buy(item: u64, qty: u8) -> BuyV1 {
-    BuyV1 { item, qty }
 }
 
 #[test]
@@ -266,7 +168,7 @@ fn encode_parts_mismatch() {
     clippy::unnecessary_wraps,
     reason = "compared with `decode_route` results"
 )]
-fn inline<P>(p: P) -> Result<PayloadSource<'static, P>, DecodeError> {
+fn inline<P>(p: P) -> Result<PayloadSource<P>, DecodeError> {
     Ok(PayloadSource::Inline(p))
 }
 
@@ -294,7 +196,10 @@ fn v2(note: Option<u8>, gift: Option<bool>) -> BuyV2Payload {
 #[test]
 #[allow(clippy::too_many_lines, reason = "one row per matrix line")]
 fn cid_06_payload_outcomes() {
-    const REF: &str = "0123456789A";
+    let RawBody::Ref(r0) = decode("0a:~0123456789A").unwrap().body() else {
+        panic!("not a ref body")
+    };
+    assert_eq!(r0.as_str(), "0123456789A");
     let flags = |expected, found| stale(StaleReason::Flags { expected, found });
 
     assert_eq!(decode_route::<Buy>("0shop.buy:47,3"), inline(buy(255, 3)));
@@ -394,11 +299,11 @@ fn cid_06_payload_outcomes() {
     );
     assert_eq!(
         decode_route::<Stored>("0r:~0123456789A"),
-        Ok(PayloadSource::Ref(REF))
+        Ok(PayloadSource::Ref(r0))
     );
     assert_eq!(
         decode_route::<TextSpill>("0t:~0123456789A"),
-        Ok(PayloadSource::Ref(REF))
+        Ok(PayloadSource::Ref(r0))
     );
     assert_eq!(decode_route::<TextSpill>("0t:ab"), inline(text("ab")));
 
@@ -408,7 +313,7 @@ fn cid_06_payload_outcomes() {
     );
     assert_eq!(
         decode_route::<SpillSigned>("0ss:~0123456789A"),
-        Ok(PayloadSource::Ref(REF))
+        Ok(PayloadSource::Ref(r0))
     );
     assert_eq!(
         decode_route::<SpillSigned>("0ss:a"),
@@ -450,7 +355,7 @@ fn rebuild(d: &noctis_codec::Decoded<'_>) -> String {
         RawBody::Inline(b) => out.push_str(b),
         RawBody::Ref(r) => {
             out.push('~');
-            out.push_str(r);
+            out.push_str(r.as_str());
         }
     }
     if let Some(t) = d.tag() {

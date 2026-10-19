@@ -9,6 +9,8 @@ repository.workspace = true
 
 [dependencies]
 arrayvec.workspace = true
+bytes.workspace = true
+getrandom.workspace = true
 thiserror.workspace = true
 twilight-model.workspace = true
 
