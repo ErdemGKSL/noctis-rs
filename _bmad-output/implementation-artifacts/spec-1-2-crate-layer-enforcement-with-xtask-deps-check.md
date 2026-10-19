@@ -2,7 +2,8 @@
 title: 'Story 1.2: Crate layer enforcement with xtask deps-check'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '88b429c92cadafc030db8dccb54a12123e360379'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
