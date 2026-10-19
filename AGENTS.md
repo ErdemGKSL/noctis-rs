@@ -20,7 +20,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Running and verifying
 
 - Before writing, reviewing or refactoring any Rust (`.rs`, `Cargo.toml`, crate layout, crate choice), invoke the `rust-best-practices` skill and read only the `references/*.md` files the task touches.
-- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6) and `cargo run --release -p xtask -- deps-check`; CI (`.github/workflows/ci.yml`) runs the same gates plus `cargo deny check` (cargo-deny 0.20) and the MSRV check `cargo +1.91 check --release --workspace`.
+- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6) and `cargo run --release -p xtask -- deps-check`; also run `cargo deny check` (cargo-deny 0.20) and the MSRV check `cargo +1.91 check --release --workspace`. The CI job definitions live in `.github/workflows-disabled/` (CI is paused until the end of the project); keep them in sync when a story adds or changes a gate.
 - Always build, test, check and run with `--release` (`cargo build --release`, `cargo test --release`, `cargo clippy --release`, `cargo run --release`); never create a debug build, because disk space in cloud sessions is limited and a second (debug) `target/` profile fills it. If the disk fills anyway, delete `target/debug/`.
 - trybuild (UI tests) never passes `--release`; it is covered by the repo-root `.cargo/config.toml` (created by Story 1.1), whose `[profile.dev]` is release-equivalent (`opt-level = 3`, no debug info, debug assertions, overflow checks or incremental). Never weaken that file. trybuild suites are `compile_fail` only.
 
@@ -42,7 +42,7 @@ These are the maintainer's standing preferences for agent sessions on this repo.
 
 - Push every commit to `main` immediately and automatically (`git push origin HEAD:main`), together with the session branch if there is one; no PRs and no waiting for approval.
 - Commit and push after every finished step, including `_bmad-output/`: cloud containers are ephemeral and anything unpushed is lost.
-- CI (`ci.yml`) runs on every push to `main`; a story is done only when the run on its pushed commit is green (`gh run list --branch main`). Fix a red run before starting the next story.
+- CI is paused by the maintainer until the end of the project: workflows sit in `.github/workflows-disabled/` and GitHub runs none of them. A story is done when every local gate above passes. Before the final launch stories (Epic 14), move them back to `.github/workflows/` and fix every failure.
 - Stories marked `[Maintainer-gated]` in `epics.md` (crates.io token or publish, repository settings) need the maintainer; skip them in unattended runs, report them as waiting, and continue.
 - Work autonomously. The maintainer has delegated every decision, including architecture and feature-set questions, until the project is finished: decide, log each decision as a `(decision)` line in the relevant memlog, and continue.
 - Delegate research on unfamiliar frameworks, large-document extraction and independent reviews to subagents, and keep only their conclusions in the main context.
