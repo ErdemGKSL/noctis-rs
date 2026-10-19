@@ -2,7 +2,8 @@
 title: 'Story 1.4: Command naming and tree rules'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '0b049d262d45e3ebcb64197821d4c8521e8b752b'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
