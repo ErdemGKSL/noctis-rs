@@ -102,6 +102,16 @@ jobs:
       - run: rustup toolchain install 1.91 --profile minimal
       - run: cargo +1.91 check --release --workspace
 
+  deps-check:
+    name: Deps check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p xtask -- deps-check
+
   template-build:
     name: Project template build
     runs-on: ubuntu-latest
