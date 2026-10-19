@@ -72,7 +72,7 @@ async fn audit_join(ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> { … }
   deserialize it; unhandled event types are never parsed. A privileged intent
   (`MemberAdd` → `GUILD_MEMBERS`) must also be enabled in the Developer Portal.
 - Several handlers per event are fine; all run. Concurrent by default.
-- `EventCtx` has `guild_id()`, `guild_locale()`, `cache()`, `discord()`, `http()`,
+- `EventCtx` has `guild_id()`, `guild_locale()`, `kv()`, `cache()`, `http()`,
   `modules()`; no Responder.
 - Under overload, droppable events (presence, typing…) may be dropped; design event
   handlers to be idempotent and to tolerate gaps.
@@ -85,7 +85,7 @@ pub struct GuildSettings { pub premium: bool }
 
 async fn load_settings(ctx: &mut BeforeCtx<'_>) -> HandlerResult<Flow> {
     let Some(guild) = ctx.guild_id() else { return Ok(Flow::Continue) };
-    let settings = ctx.cache().get(&format!("settings:{guild}")).await?.unwrap_or(GuildSettings { premium: false });
+    let settings = ctx.kv().get(&format!("settings:{guild}")).await?.unwrap_or(GuildSettings { premium: false });
     ctx.insert(settings);                       // typed Extension
     Ok(Flow::Continue)
 }

@@ -48,7 +48,9 @@ async fn main() -> anyhow::Result<()> {
 | `.expired_handler(f)` | localized ephemeral notice | see `routes-payloads-refs.md` |
 | `.error_sink(Origin, impl ErrorSink)` | log at `error` | see `modules-middleware-ratelimits.md` |
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)`, `.renderer(..)` | bounded memory defaults | see `adapters.md` |
-| `.discord_cache(DiscordCacheConfig)` | only what features need | `DiscordCacheConfig::none()`, `.resources([ResourceType::ROLE, …])` |
+| `.discord_cache(DiscordCacheConfig)` | only what features need | `DiscordCacheConfig::none()`, `.resources([ResourceType::ROLE, …])`; read with `ctx.cache()` |
+| `.discord_cache_backend(impl DiscordCache)` | in-memory (twilight-cache-inmemory) | replace the Discord cache's storage (e.g. one shared by a Cluster) |
+| `.gateway_url(url)` | Discord | gateway proxy, or the testkit's `FakeGateway` |
 | `.intents(Intents)` | derived | extra intents; derived ones are always added; default for interaction-only bots is `GUILDS` |
 | `.shards(ShardRange)` / `.shard_total(u32)` | all / recommended | see §4 |
 | `.http_proxy(url)` / `.http_timeout(Duration)` | none / 10 s | see §5 |
@@ -88,6 +90,12 @@ No config file is needed. Secrets come only from the environment.
 | `--dry-run` | with a publish flag: print the full JSON and a human diff, write nothing; runs every App-build check |
 | `--features a,b` / `all` | Boot Flags |
 | `--no-resume` | non-resumable shutdown; clears stored sessions |
+
+For tests or several Apps, pass arguments explicitly with
+`app.run_with_args(["--publish-guild", "123"])`. To add your own flags, split first:
+`let (noctis_args, mine) = noctis::cli::NoctisArgs::split(std::env::args_os());`, parse
+`mine` with your parser, and call `app.run_with_args(noctis_args)`. An unknown flag
+reaching `App::run` is an error.
 
 Publish is **diff-based**: it reads the remote commands and writes nothing when equal
 (REG-05: 200 creates/day/guild). It **never** runs on shard ready. In production either

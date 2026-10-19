@@ -128,9 +128,9 @@ impl DashboardView {
         route: DashRoute,
         meta: &BotMeta,
     ) -> HandlerResult<Self> {
-        let guild = ctx.discord().guild(route.guild).await?;
+        let guild = ctx.cache().guild(route.guild).await?;
         let mut roles: Vec<RoleRow> = ctx
-            .discord()
+            .cache()
             .roles(route.guild)
             .await?
             .into_iter()

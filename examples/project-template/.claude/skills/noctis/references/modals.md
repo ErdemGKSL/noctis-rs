@@ -48,8 +48,8 @@ The **opening** Route must be declared `opens_modal` (no auto-defer, INT-05):
 pub struct EditBio { pub user: Id<UserMarker> }
 
 #[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder) -> HandlerResult<Responded> {
-    let stored: StoredProfile = ctx.cache().get(&key).await?.unwrap_or_default();
+async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
+    let stored: StoredProfile = ctx.kv().get(&key).await?.unwrap_or_default();
     let modal = BioForm::modal(SaveBio { user: e.user })   // generated BioFormModal builder
         .bio(stored.bio)                                     // pre-fill (FR-63), one setter per field
         .pronouns(stored.pronouns);
@@ -57,7 +57,9 @@ async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder) -> Handl
 }
 ```
 
-Commands can open modals too: `#[command("feedback", opens_modal)]` + `CommandResponder`.
+Commands can open modals too: `#[command("feedback", opens_modal)]` +
+`CommandResponder<OpensModal>`. The `OpensModal` alias is required exactly when
+`opens_modal` is declared (INT-05).
 Do your I/O fast: a modal must be the first response within 3 s.
 
 Pre-filled values go through the same validator before sending; a value that breaks a

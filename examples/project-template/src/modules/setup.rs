@@ -137,7 +137,7 @@ async fn finish_setup(ctx: ComponentCtx, done: FinishSetup) -> HandlerResult<Set
         log_channel: done.log_channel,
         mod_role: done.mod_role,
     };
-    ctx.cache().put(&config_key(guild), &config, None).await?;
+    ctx.kv().put(&config_key(guild), &config, None).await?;
     Ok(SetupDone { config })
 }
 

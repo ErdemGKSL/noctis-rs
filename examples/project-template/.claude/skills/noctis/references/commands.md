@@ -31,7 +31,7 @@ Compile-time checks on the literal (each error names its rule):
 | each word matches `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` (note: `ʼ` U+02BC, not ASCII `'`) | CMD-01 |
 | 1–32 chars per word, no empty words (`"a  b"`) | CMD-02 |
 | lowercase where the letter has a lowercase form | CMD-03 |
-| description 1–100 chars (from `cmd.<path>.desc` in the default locale; missing = error) | CMD-04 |
+| description 1–100 chars: `description = "…"`, or with the `i18n` feature `cmd.<path>.desc` in the default-locale file (a literal that differs from it is an error); missing = error | CMD-04 |
 | total command size ≤ 8000 (name+desc+options+choices, longest localization per field) | CMD-05 |
 | ≤ 3 words | CMD-10 |
 
@@ -39,8 +39,10 @@ Compile-time checks on the literal (each error names its rule):
 
 | Argument | Meaning |
 | --- | --- |
+| `description = "…"` | the description; required without the `i18n` feature, optional (must match the file) with it |
+| `locales = "<dir>"` | where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
 | `ephemeral` | reply privately (default public). Fixed at registration (INT-10); the auto-defer uses it |
-| `opens_modal` | the handler answers with a modal; disables auto-defer (INT-05) |
+| `opens_modal` | the handler answers with a modal and takes `CommandResponder<OpensModal>`; disables auto-defer (INT-05) |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01); unknown names are compile errors |
 | `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used |
 | `integration_types = [GuildInstall, UserInstall]` | install types (META-04: must be enabled on the app) |
@@ -116,7 +118,8 @@ Groups and plain subcommands side by side under one base are legal (CMD-14):
 ```rust
 #[derive(Options, Debug)]
 pub struct WarnOptions {
-    /// Doc comments are rustdoc only; descriptions come from cmd.<path>.opt.<name>.desc.
+    /// Doc comments are rustdoc only. Descriptions: `#[option(description = "…")]`, or
+    /// with the `i18n` feature cmd.<path>.opt.<name>.desc.
     pub member: ResolvedUser,                       // required (not Option)
     #[option(min = 1, max = 30)]
     pub days: Option<i64>,                          // optional
@@ -185,16 +188,18 @@ String`. Integer choices: `#[choice(1)]` with `#[repr(i64)]`-like values. [plann
 ```rust
 #[autocomplete]
 async fn rule_suggest(ctx: AutocompleteCtx, focused: Focused<String>, partial: Partial<WarnOptions>)
-    -> HandlerResult<Suggestions<String>>
+    -> HandlerResult<Responded>
 {
     let rules = load_rules(ctx.guild_id()).await?;
-    Ok(rules
+    let choices = rules
         .into_iter()
         .filter(|r| r.name.contains(focused.as_str()))
-        .map(|r| Suggestion::new(r.name.clone(), r.id.to_string()))
-        .collect())
+        .map(|r| Choice::new(r.name.clone(), r.id.to_string()));
+    Ok(ctx.respond(choices).await?)
 }
 ```
+
+`AutocompleteCtx` has exactly one response method, `respond` (INT-04, INT-06).
 
 - `Partial<T>` has every field as `Option`, because Discord may omit required options
   (OPT-12). Re-validate in the real handler: autocomplete values are not constrained.
@@ -238,6 +243,7 @@ and answer "disabled here".
 
 Shared accessors (trait `Ctx`, also on every other context): `user_id()`, `user()`,
 `guild_id()`, `channel_id()`, `user_locale()`, `guild_locale()`, `response_locale()`,
-`cache()`, `modules()`, `rate_limits()`, `discord()`, `render(..)`, `http()`,
+`kv()` (your key-value data), `cache()` (Discord resources), `modules()`,
+`rate_limits()`, `render(..)`, `http()`,
 `gateway()`, `app_permissions()`, `member()`. Command-only: `command_path()`,
 `attachment_size_limit()`.

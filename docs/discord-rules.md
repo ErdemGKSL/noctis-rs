@@ -19,7 +19,7 @@ Noctis checks every rule at the **earliest point where all the inputs are known*
 
 | Tier | When | Applies when | Failure looks like |
 |---|---|---|---|
-| **Compile-time** | `cargo check` / `cargo build` | The input is static: string literals in attributes or macros, field types of a `derive`d struct, const generics, the shape of a typed component tree. | `compile_error!` from a proc macro, a failed `const` assertion, or a missing trait impl (type error). |
+| **Compile-time** | `cargo check` (AD-4: a check that fires only under `cargo build` doesn't count) | The input is static: string literals in attributes or macros, field types of a `derive`d struct, const generics, the shape of a typed component tree. | `compile_error!` from a proc macro, a failed free `const _` item over a concrete type, or a missing trait impl whose `#[diagnostic::on_unimplemented]` message starts with the rule id. |
 | **App-build** | `App::builder()...build()`, before any gateway connection or HTTP write | The rule depends on combining Modules (merging Commands across Modules, global counts, Route uniqueness, intents versus handlers). | `Err(BuildError)` that lists **all** violations (not just the first), each naming the rule ID, the Modules involved and the actual value. `--publish --dry-run` runs the same checks. |
 | **Runtime** | While handling an interaction or sending a request | The data is genuinely dynamic: user input, database rows, `Vec`s of unknown length, timers, Discord-side quotas. | A typed `Error` returned before the request is sent (never a 400 from Discord, never a panic). Some rules have a lenient mode (truncate with `…`) as FR-24 allows. |
 
@@ -68,7 +68,7 @@ points straight back to this file.
 | **CMD-01** Name charset | Must match `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` with the Unicode flag. Note: the official regex allows `ʼ` (U+02BC, modifier letter apostrophe), **not** the ASCII `'`. Applies to command, subcommand group, subcommand and option names. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (names from runtime-loaded Locale files) | `#[command("…")]` / `command!` splits the Command Pattern into words and matches each against the regex. The check lives in `noctis-rules` (which may depend on `regex` with Unicode tables); the proc macro and App-build call the same function. Error spans point at the offending word. |
 | **CMD-02** Name length | 1-32 characters per word **[D]** (counting unit **[U]**: Noctis counts both Unicode scalar values and UTF-16 units and takes the larger) | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal) / App-build (loaded locales) | Same macro pass as CMD-01. Empty words (`"config  set"`) are rejected. |
 | **CMD-03** Lowercase | If a letter has a lowercase variant, the lowercase form must be used. Uncased letters (e.g. CJK, Devanagari) are allowed. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (loaded locales) | Macro checks `c.to_lowercase() == c` for every `char`. The error suggests the lowercased word. |
-| **CMD-04** Description length | 1-100 characters for `CHAT_INPUT` commands, subcommands, groups and options **[D]** | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal, incl. doc comments used as descriptions) / App-build (loaded locales) | `description = "…"` or `///` doc comments are measured in the macro. A missing description is a compile error (Noctis never sends tescord's `"..."` placeholder **[N]**). |
+| **CMD-04** Description length | 1-100 characters for `CHAT_INPUT` commands, subcommands, groups and options **[D]** | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal; default-locale file with the `i18n` feature) / App-build (merged and non-default locales) | Source per AD-16: the literal `description = "…"` without the `i18n` feature; with it, `cmd.<path>.desc` in the default-locale file, where a differing literal is a compile error. Doc comments are rustdoc only. The macro measures the description; a missing one is a compile error (Noctis never sends tescord's `"..."` placeholder **[N]**). |
 | **CMD-05** Per-command size budget | Combined `name` + `description` + choice `value` of the command, all options (incl. subcommands and groups) and all choices ≤ **8000** characters. With localizations, only the **longest** variant per field (including the default) counts. **[D]** (counting unit **[U]**) | [AC §Slash Commands](https://discord.com/developers/docs/interactions/application-commands#slash-commands) | Compile-time (one pattern, static locales) / App-build (after merging Modules, or with runtime-loaded locales) | Macro emits `const SIZE: usize` per registration. Merging changes the total, so `App::build()` recomputes the budget on the merged tree using `max(len(default), len(each localization))` per field. |
 | **CMD-06** Unique option names | `name` unique within each options array **[D]** | [AC §Option structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-structure) | Compile-time (within one struct) / App-build (merged) | `derive(Options)` uses field names (or `#[option(rename)]`) and rejects duplicates. Two Modules contributing the same subcommand name under one base fail at App-build (see REG-04). |
 | **CMD-07** Age-restricted flag | `nsfw: bool` per command. Apps with discovery enabled cannot contain any age-restricted commands. **[D]** | [AC §Age-Restricted Commands](https://discord.com/developers/docs/interactions/application-commands#age-restricted-commands) | Compile-time (type) / App-build (merge conflicts) | `nsfw` is a `bool` attribute. Conflicting values on one base command fail at App-build (FR-9). The discovery restriction is not checkable locally and is only documented. |
@@ -145,8 +145,8 @@ points straight back to this file.
 | **INT-01** Initial response deadline | Initial response within **3 s**, or the token is invalidated **[D]** | [RR §Interaction Callback](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-callback) | Runtime | Auto-defer deadline per interaction (FR-21): default 2500 ms measured from gateway receipt, configurable; disabled for `opens_modal` handlers (INT-05). |
 | **INT-02** Token lifetime | Token valid **15 min** for edits and follow-ups **[D]** | [RR §Followup Messages](https://discord.com/developers/docs/interactions/receiving-and-responding#followup-messages) | Runtime | The Responder's runtime state machine stores the gateway receive time; calls after expiry return `Error::TokenExpired` without an HTTP request. |
 | **INT-03** Exactly one initial callback | One callback per interaction; later output goes through edit-original or follow-ups **[D]** | [RR §Responding to an Interaction](https://discord.com/developers/docs/interactions/receiving-and-responding#responding-to-an-interaction) | Compile-time (typestate) / Runtime (auto-defer race) | Typestate: `Responder<Pending>` methods (`reply`, `defer`, `update`, `modal`) consume `self` and return `Responder<Acked>`, which only offers `edit_original`, `followup` and `delete_original`. A runtime state machine, shared by the handler and the auto-defer task, covers what types can't: when the auto-defer wins, the handler's `Pending` call becomes `edit_original`. |
-| **INT-04** Callback types per interaction type | `DEFERRED_UPDATE_MESSAGE 6` and `UPDATE_MESSAGE 7` only for component and modal-submit interactions; `MODAL 9` not for `MODAL_SUBMIT` or `PING`; `APPLICATION_COMMAND_AUTOCOMPLETE_RESULT 8` for autocomplete **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time | Each handler kind gets its own context type: `CommandCtx` has no `update()`, `ModalSubmitCtx` has no `modal()`, `AutocompleteCtx` has only `respond(choices)`. |
-| **INT-05** Modal must be the first response | A modal is an initial callback (type 9), so it cannot follow a defer or a reply. Modals cannot be chained from a modal submit. **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time (typestate) / Runtime (auto-defer race) | `modal()` exists only on `Responder<Pending>` of command and component contexts whose handler is declared `opens_modal` (for example `#[route("id", opens_modal)]`). The declaration disables auto-defer for that handler, because a defer would make the modal impossible. |
+| **INT-04** Callback types per interaction type | `DEFERRED_UPDATE_MESSAGE 6` and `UPDATE_MESSAGE 7` only for component and modal-submit interactions; `MODAL 9` not for `MODAL_SUBMIT` or `PING`; `APPLICATION_COMMAND_AUTOCOMPLETE_RESULT 8` for autocomplete **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time | Each handler kind gets its own context and responder kind (AD-11): `CommandResponder` has no `update()`, `ModalResponder` (modal submit) has no `modal()`, `AutocompleteCtx` has only `respond(choices)`. |
+| **INT-05** Modal must be the first response | A modal is an initial callback (type 9), so it cannot follow a defer or a reply. Modals cannot be chained from a modal submit. **[D]** | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time (typestate) / Runtime (auto-defer race) | `modal()` exists only on `CommandResponder<OpensModal>` and `ComponentResponder<OpensModal>` (AD-11). `opens_modal` is declared on the `#[command]` or the `#[route]` (for example `#[route("id", opens_modal)]`); the handler macro requires the `OpensModal` responder exactly when it is declared. The declaration disables auto-defer for that handler, because a defer would make the modal impossible. |
 | **INT-06** Autocomplete cannot be deferred | Only callback type 8 is valid; no defer type exists for autocomplete **[D]** (by the callback table) | [RR §Callback Type](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type) | Compile-time (no `defer` on `AutocompleteCtx`) / Runtime (3 s timeout returns empty choices) | |
 | **INT-07** Autocomplete choices | Max **25** choices per response; choice rules as OPT-09 **[D]** | [RR §Autocomplete](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-autocomplete) | Runtime | `Choices` is a bounded collection (`try_push` fails at 25). Returned choices are always truncated to 25 with a warning (FR-10), in both Strict and Lenient mode. |
 | **INT-08** Flags on deferred reply | With `DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE (5)` the only valid flag is `EPHEMERAL`; `IS_COMPONENTS_V2` goes on the later edit **[D]** | [RR §Messages](https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-messages) | Compile-time (by construction) | `defer()` takes only an `Ephemerality` value; the V2 flag is applied automatically on edit-original (FR-21). |
@@ -179,12 +179,12 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 | **CV2-02** No `content`, `embeds`, `poll`, `sticker_ids` with V2 | 400 if present **[D]** | [CR](https://discord.com/developers/docs/components/reference), research §2.1 | Compile-time | `V2Message` has no such fields. Switching an existing legacy message to V2 nulls them explicitly. |
 | **CV2-03** Total components | ≤ **40** per message, counting nested components at every depth (select options and gallery items do not count) **[D]** | [CR](https://discord.com/developers/docs/components/reference), research §2.2 | Compile-time (static trees) / Runtime (dynamic children) | Each node type has `const COST: usize`; tuples sum their elements' costs; `const { assert!(T::COST <= 40) }` in `view!`. Trees containing `Vec`/iterators are counted by the runtime validator, which reports the path and actual count (FR-24). |
 | **CV2-04** Text budget | Total Text Display content ≤ **4000** characters per message **[C][U]** (not in Discord docs; counting unit unknown) | research §1.7 (discord.js / JDA / Discord.Net) | Compile-time (literal texts) / Runtime (dynamic text) | Literals summed in the macro using the stricter of chars vs UTF-16 units. Runtime validator does the same. The limit is configurable. |
-| **CV2-05** Placement | Container children: Action Row, Text Display, Section, Media Gallery, Separator, File; no Container in Container; Thumbnail only as Section accessory; Button only in Action Row or as accessory **[D]** | [CR §Component Types](https://discord.com/developers/docs/components/reference#component-object-component-types) | Compile-time | Marker traits: `ContainerChild`, `TopLevel`, `Accessory`, `RowItem`. `Container` does not implement `ContainerChild`, so nesting is a type error (FR-23). |
-| **CV2-06** Action Row content | 1-5 Buttons, **or** exactly 1 select; never mixed **[D]** | [CR §Action Row](https://discord.com/developers/docs/components/reference#action-row) | Compile-time (arrays) / Runtime (`Vec`) | `ActionRow::buttons([Button; N])` with `const { assert!(1 <= N && N <= 5) }`; `ActionRow::select(S)` takes exactly one select. |
-| **CV2-07** Section | 1-3 Text Displays + exactly one accessory (Button or Thumbnail) **[D]** | [CR §Section](https://discord.com/developers/docs/components/reference#section) | Compile-time | `Section::new(texts: [Text; N], accessory: impl Accessory)` with a const assert on N; no constructor without an accessory. |
+| **CV2-05** Placement | Container children: Action Row, Text Display, Section, Media Gallery, Separator, File; no Container in Container; Thumbnail only as Section accessory; Button only in Action Row or as accessory **[D]** | [CR §Component Types](https://discord.com/developers/docs/components/reference#component-object-component-types) | Compile-time | Marker traits: `ContainerChild`, `TopLevel`, `Accessory`, `RowItem`, each with `#[diagnostic::on_unimplemented(message = "[CV2-05] …")]`. `Container` does not implement `ContainerChild`, so nesting is a type error naming the rule (FR-23). |
+| **CV2-06** Action Row content | 1-5 Buttons, **or** exactly 1 select; never mixed **[D]** | [CR §Action Row](https://discord.com/developers/docs/components/reference#action-row) | Compile-time (arrays) / Runtime (`Vec`) | `ActionRow::buttons([Button; N])` bounded by an arity trait implemented only for `N` in 1..=5 (`[CV2-06]` via `on_unimplemented`, so it fails under `cargo check`); `ActionRow::select(S)` takes exactly one select. |
+| **CV2-07** Section | 1-3 Text Displays + exactly one accessory (Button or Thumbnail) **[D]** | [CR §Section](https://discord.com/developers/docs/components/reference#section) | Compile-time | `Section::new(texts: [Text; N], accessory: impl Accessory)` with an arity trait implemented only for `N` in 1..=3; no constructor without an accessory. |
 | **CV2-08** Button rules | Styles 1-4 need `custom_id`, no `url`/`sku_id`; Link (5) needs `url` ≤ 512, no `custom_id`; Premium (6) needs `sku_id`, no `custom_id`/`label`/`url`/`emoji`; `label` ≤ 80 **[D]** | [CR §Button](https://discord.com/developers/docs/components/reference#button) | Compile-time (types; literal labels) / Runtime (dynamic labels, URLs) | Separate types `RouteButton<R>`, `LinkButton`, `PremiumButton`. |
 | **CV2-09** Select menus | `placeholder` ≤ 150; `min_values` 0-25, `max_values` 1-25, `min ≤ max`; String Select `options` ≤ 25; option `label`/`value`/`description` ≤ 100; `default_values` count within `[min, max]`; `disabled` only in messages **[D]** | [CR §String Select](https://discord.com/developers/docs/components/reference#string-select) | Compile-time (literals, `derive(Choices)` enums) / Runtime (dynamic options) | Select options from an enum are counted by the derive; `Vec` options checked at runtime. |
-| **CV2-10** Media Gallery | 1-10 items; item `description` ≤ 1024 **[D]** | [CR §Media Gallery](https://discord.com/developers/docs/components/reference#media-gallery) | Compile-time (arrays) / Runtime (`Vec`) | Const generic `N` with a const assert. |
+| **CV2-10** Media Gallery | 1-10 items; item `description` ≤ 1024 **[D]** | [CR §Media Gallery](https://discord.com/developers/docs/components/reference#media-gallery) | Compile-time (arrays) / Runtime (`Vec`) | Const generic `N` bounded by an arity trait implemented only for 1..=10. |
 | **CV2-11** Thumbnail | `description` ≤ 1024; images only **[D]** | [CR §Thumbnail](https://discord.com/developers/docs/components/reference#thumbnail) | Compile-time (literal) / Runtime | |
 | **CV2-12** File component | `attachment://<filename>` only **[D]** | [CR §File](https://discord.com/developers/docs/components/reference#file) | Compile-time (type) / Runtime (attachment exists) | `File::new(AttachmentRef)`; `AttachmentRef` can only be obtained by adding an attachment (FR-30). |
 | **CV2-13** Separator, Container colour | `spacing` 1 or 2; `accent_color` 0x000000-0xFFFFFF **[D]** | [CR §Separator](https://discord.com/developers/docs/components/reference#separator), [CR §Container](https://discord.com/developers/docs/components/reference#container) | Compile-time | `Spacing` enum; `Rgb(u32)` constructor checks range in `const fn`. |
@@ -259,7 +259,7 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 | **GW-03** Guilds per shard | ≤ **2500**; sharding mandatory beyond that **[D]** | [GW §Sharding](https://discord.com/developers/docs/events/gateway#sharding) | App-build (recommended shard count) | Uses the recommended count unless a fixed count is configured; a too-small fixed count is a `BuildError`. |
 | **GW-04** Gateway send rate | **120** events per connection per 60 s **[D]** | [GW §Rate Limiting](https://discord.com/developers/docs/events/gateway#rate-limiting) | Runtime | twilight-gateway's send ratelimiter. |
 | **GW-05** Privileged intents | Must be enabled in the Developer Portal and passed explicitly **[D]** | [GW §Privileged Intents](https://discord.com/developers/docs/events/gateway#privileged-intents) | App-build | Required intents are derived from registered Event Handlers (FR-6); `build()` errors when a handler needs an intent the App did not request. Portal state is checked at connect (close code 4014). |
-| **GW-06** `large_threshold` | 50-250 **[D]** | [GWE §Identify](https://discord.com/developers/docs/events/gateway-events#identify) | Compile-time (literal) | `LargeThreshold::new::<N>()` with a const assert. |
+| **GW-06** `large_threshold` | 50-250 **[D]** | [GWE §Identify](https://discord.com/developers/docs/events/gateway-events#identify) | Compile-time (literal) | `LargeThreshold::new::<N>()` bounded by a trait implemented only for 50..=250 (generated impls), so it fails under `cargo check`. |
 | **GW-07** Request Guild Members | One `guild_id` per request; `user_ids` up to 100; full list needs `GUILD_MEMBERS`; rate-limited opcode **[D]** | [GWE §Request Guild Members](https://discord.com/developers/docs/events/gateway-events#request-guild-members) | Compile-time (types) / Runtime | `Event::RateLimited` surfaced to the caller. |
 
 ---
@@ -371,8 +371,10 @@ const _: () = ::noctis::__private::codec::assert_fits::<BuyButton>(); // CID-01
 ```
 
 The one attribute syntax is `#[route("id")]`, `#[route("id", by_ref)]` or
-`#[route("id", overflow = spill)]`, optionally with `schema = n`, `view`, `signed`
-and `opens_modal`. If `MAX_ENCODED_LEN` is `None` (an unbounded field) or the bound
+`#[route("id", overflow = spill)]`, optionally with the other codec arguments
+`schema = n`, `view`, `select` and `signed`, plus the runtime arguments (`ttl`,
+`one_shot`, `owner`, `permissions`, `guard`, `opens_modal`) that AD-6 lists and that
+don't change the length. If `MAX_ENCODED_LEN` is `None` (an unbounded field) or the bound
 exceeds 100 and the Route is not `by_ref` or `overflow = spill`, `assert_fits` panics
 in const context with a message naming the rule ("CID-01: route `shop.buy` has
 unbounded fields; bound them (`BoundedStr<N>`) or add `by_ref`"). Notes:
@@ -445,28 +447,31 @@ It counts both Unicode scalar values and UTF-16 code units and compares the larg
 against the limit, because the counting unit is not confirmed for several limits
 (see [Unconfirmed values](#unconfirmed-values)).
 
-Builders that accept `&'static str` do it with `const fn` plus an inline `const`
-block, so the check happens at compile time even outside a macro:
+Outside attributes, literals go through small proc macros that measure them at
+expansion, so the check fires under `cargo check` (AD-4):
 
 ```rust
-let label = const { Label::lit("Configure") }; // const fn asserts len <= 80 (CV2-08)
-let label = Label::try_from(db_name)?;          // runtime path, same limit
+let label = label!("Configure");          // [CV2-08] if longer than 80
+let label = Label::try_from(db_name)?;    // runtime path, same noctis-rules function
 ```
 
-A `const fn` assertion only fails the build when it is evaluated in a const context,
-so the public API takes `Label` (not `&str`) and the macros always wrap literals in
-`const { … }`.
+The public API takes `Label` (not `&str`), so a literal can only enter through the
+macro or the checked runtime conversion.
 
 ### 5. Static component trees via types and const generics
 
 - **Placement** (CV2-05, MOD-03, WH-02) is encoded with marker traits; an illegal
-  child does not implement the parent's child trait, so it is a type error.
-- **Arity** uses const generics: `ActionRow::buttons::<N>`, `Section::new([Text; N], _)`,
-  `MediaGallery::new([Item; N])`, each with `const { assert!(…) }` (CV2-06/07/10).
+  child does not implement the parent's child trait, so it is a type error. Each trait
+  carries `#[diagnostic::on_unimplemented]` with the rule id.
+- **Arity** uses const generics bounded by traits implemented only for the legal
+  lengths: `ActionRow::buttons::<N>`, `Section::new([Text; N], _)`,
+  `MediaGallery::new([Item; N])` (CV2-06/07/10). A `const { assert!(…) }` on `N`
+  would be post-monomorphization and invisible to `cargo check`, so it is not used.
 - **Budget**: every node type has `const COST: usize` and
-  `const TEXT: Option<usize>` (None if dynamic). Tuples and arrays sum them, so a
-  fully static `view!` gets `const { assert!(<V as Node>::COST <= 40) }` (CV2-03) and
-  the literal text sum against 4000 (CV2-04).
+  `const TEXT: Option<usize>` (None if dynamic). Tuples and arrays sum them, and the
+  static tree macro emits a free `const _: () = assert_budget::<V>();` over the
+  concrete tree type (CV2-03 against 40, CV2-04 against 4000), which fires under
+  `cargo check`.
 - **Dynamic parts** (`Vec`, iterators, `Paginator` pages) have no static cost. The
   type then reports a static **lower bound**, which is still asserted at compile time,
   and the runtime validator checks the actual tree before sending (FR-24).
@@ -485,17 +490,19 @@ tests/ui/
   cid/CID-01_unbounded_payload.rs     + .stderr
   cv2/CV2-05_container_in_container.rs + .stderr
   ...
-tests/ui-pass/
+tests/boundary/
   boundary values: exactly 32-char name, 100-char description, 25 options,
   25 choices, 5 buttons, 40 components, 100-char custom_id
 ```
 
-- One `trybuild::TestCases::compile_fail("tests/ui/**/*.rs")` test and one
-  `pass("tests/ui-pass/**/*.rs")` test.
+- One `trybuild::TestCases::compile_fail("tests/ui/**/*.rs")` test. trybuild runs it
+  with `cargo check`. There is no trybuild `pass` suite: boundary passes are ordinary
+  integration tests in `tests/boundary/`, compiled by `cargo test --release`.
 - Each `.stderr` must contain the rule ID, so the mapping from error to this catalog is
   tested too.
-- `.stderr` output varies across rustc versions, so the UI tests run on the pinned
-  MSRV toolchain in CI only.
+- `.stderr` output varies across rustc versions, so the UI tests run on the toolchain
+  pinned in `rust-toolchain.toml` (stable 1.97.0), locally and in CI; a toolchain bump
+  re-blesses them in the same PR (AD-28).
 - App-build rules get unit tests asserting the exact `BuildError` variant; Runtime
   rules get unit and property tests (and Testing kit cases, FR-51) asserting the typed
   error is returned **before** any HTTP request.

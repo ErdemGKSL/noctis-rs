@@ -65,10 +65,15 @@ recorded here.
   rule ids), BDD acceptance criteria with typed-error, boundary and edge cases,
   trybuild fixtures for every compile-time rule, and an explicit template/Usage Skill
   criterion when it changes the public API.
-- **Dependencies:** no story depends on a later story in its own epic; the five
-  cross-epic mentions of later stories (1.7 → 2.2, 1.8 → 4.1, 2.6 → 7.1, 5.6 → 13.5,
-  12.6 → 14.3) are "later extended by" notes, not prerequisites. Each epic uses only
-  earlier epics' outputs.
+- **Dependencies:** no story depends on a later story in its own epic; the
+  cross-epic mentions of later stories (1.7 → 2.2, 1.8 → 4.1, 2.5 → 7.5/7.7/7.8,
+  2.6 → 7.1, 4.3 → 9.1, 5.4 → 12.5/13.1, 5.6 → 13.5, 6.1 → 11.4, 6.9 → 12.3/13.2, 12.6 → 14.3)
+  are "later extended by" notes, not prerequisites. Each epic uses only
+  earlier epics' outputs. The readiness fixes (`implementation-readiness.md`,
+  Resolution) removed three hidden ones: basic Module nesting moved from Story 13.1
+  into Story 5.4 (Story 7.6 needs it), Epic 4 tests implement `Handled` through the
+  hidden `__private` path the handler macro uses (Story 4.1), and Story 5.1 no longer
+  mounts Modules before Story 5.4 defines them.
 - **File churn:** `noctis-core` is touched by Epics 5–9, 12 and 13. Consolidation was
   considered and rejected: each epic owns a distinct core subsystem (lanes and
   workers; command resolution and Responder; Route dispatch and Refs; View
@@ -81,13 +86,26 @@ recorded here.
   rule ids (`docs/discord-rules.md`) a story delivers. Tests cite the same rule ids.
 - **Release builds only:** every cargo command in a story, in CI and in local
   verification uses `--release` (`cargo build|test|clippy|run --release`); no story
-  creates a debug build.
+  creates a debug build. trybuild never passes `--release`, so the repo-root
+  `.cargo/config.toml` (Story 1.1, AD-28) makes the dev profile release-equivalent
+  for every cargo invocation in the repo; no story weakens it.
 - **Done means** `cargo fmt --check`, `cargo clippy --release --all-targets --all-features -- -D warnings`
   and `cargo test --release` pass, plus every CI gate that exists at that point.
-- **Compile-time rules** get trybuild fixtures at `tests/ui/<area>/<RULE-ID>_<slug>.rs`
-  whose `.stderr` contains the rule id, with boundary passes in `tests/ui-pass/`
-  (run on the 1.91 toolchain). App-build and runtime rules get unit tests that assert
-  the typed error variant and name the rule id.
+- **Compile-time rules** get trybuild `compile_fail` fixtures at
+  `tests/ui/<area>/<RULE-ID>_<slug>.rs` whose `.stderr` contains the rule id (run on
+  the toolchain pinned in `rust-toolchain.toml`, locally and in CI). trybuild checks
+  them with `cargo check`, so every compile-time rule must fire under `cargo check`
+  (AD-4: proc macros, trait bounds with `#[diagnostic::on_unimplemented]`, free
+  `const _` items). Boundary passes are ordinary integration tests in
+  `tests/boundary/`. App-build and runtime rules get unit tests that assert the typed
+  error variant and name the rule id.
+- **API names without a story:** names the template or skill uses only as spellings
+  (`IntoResponse`, `ViewCx`, `Nav`, `.with_notice(..)`, `ModuleScope`, `ref_ttl`,
+  `theme!()`, `.locales(..)`) are settled by the story that delivers the behavior
+  behind them, which reconciles the template and skill. Behaviors have acceptance
+  criteria (for example `#[handler(response = …)]` in Story 7.2).
+- **Discord in tests:** tests that need Discord use the testkit fakes from Story 5.1
+  (`noctis_testkit::fake`, AD-24); no story builds its own mock.
 - **Public API changes** (AD-2, AD-17, repo policy): the same story updates
   `examples/project-template/` code that uses the API, its `AGENTS.md` when
   conventions change, and the Noctis Usage Skill
@@ -237,12 +255,17 @@ From the architecture spine (29 ADs), the PRD addendum and repo policy.
 gives a **Structural Seed** instead. The first story creates the Cargo workspace
 exactly as seeded: `Cargo.toml` (`[workspace]`, shared `version.workspace = true`,
 `[workspace.dependencies]` with the Stack pins, `[workspace.lints]`,
-`exclude = ["examples/project-template"]`), `deny.toml`, `release-plz.toml`,
+`resolver = "3"`, `exclude = ["examples/project-template"]`), `rust-toolchain.toml`
+(stable 1.97.0), `.cargo/config.toml` (release-equivalent `[profile.dev]`),
+`deny.toml`, `release-plz.toml`,
 `crates/{noctis, noctis-rules, noctis-codec, noctis-ui, noctis-ports, noctis-gateway,
 noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-testkit}`,
 `xtask/`, `docs/guides/`, `.github/workflows/{ci.yml, main.yml, release.yml}`.
 
-- **Toolchain and pins (AD-28, Stack):** edition 2024, MSRV 1.91; tokio 1.53;
+- **Toolchain and pins (AD-28, Stack):** edition 2024, MSRV 1.91, development
+  toolchain stable 1.97.0 (`rust-toolchain.toml`); hyper 1.12 / hyper-util 0.1.21 /
+  http-body-util 0.1.5 and tokio-websockets 0.13 (testkit fakes); yaml-rust2 0.13 and
+  cssparser 0.38 (macros); tokio 1.53;
   twilight-* 0.17.1 (`twilight-http-ratelimiting >= 0.17.1`); takumi `=2.17.0`;
   serde 1.0, postcard 1.1, thiserror 2.0, futures-util 0.3, tracing 0.1.44,
   metrics 0.24, arc-swap 1.9, moka 0.12, rayon 1.12, blake3 1.8, bytes 1.12,
@@ -250,10 +273,12 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   insta 1.49, proptest 1.12, criterion 0.8, dhat 0.3, cargo-public-api 0.52 on
   nightly-2026-10-15, cargo-semver-checks 0.51, cargo-deny 0.20, release-plz 0.3.
 - **Repo rule:** every cargo build/test/check/clippy/run uses `--release`; no debug
-  builds (disk limits). CI follows the same rule.
+  builds (disk limits). CI follows the same rule. The repo `.cargo/config.toml` makes
+  `[profile.dev]` release-equivalent (`opt-level = 3`, no debug info, assertions or
+  incremental), which covers trybuild's own cargo runs; it must not be weakened.
 - **CI gates (AD-28):** fmt; clippy `-D warnings` on all targets; tests and doctests;
   `missing_docs` denied for `noctis`; each facade feature alone and all together;
-  `cargo +1.91 check` (MSRV); trybuild UI tests on the 1.91 toolchain only;
+  `cargo +1.91 check --release` (MSRV); trybuild UI tests on the pinned toolchain;
   `cargo-semver-checks` on `noctis`; `cargo-deny` (advisories, licenses, bans,
   sources); `xtask deps-check`, `rules-catalog`, `api-snapshot` (nightly),
   `skill-check`; `tw-crosscheck`; the allocation test; `insta` View snapshots;
@@ -270,8 +295,10 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   `Arc<dyn Port>`; op vocabulary `get`, `put(ttl)`, `put_if_absent`, `take`,
   `delete`, `touch`, `incr_with_ttl`, `version()`; `IdentifyQueue::acquire(bucket) -> Lease`;
   v1 ports: RefStore, SessionStore, IdentifyQueue, ModuleStateStore, RateLimitStore,
-  CacheStore (Discord cache backend), RenderCache, AssetStore, LocaleSource,
-  GuildAccessList, plus the `Renderer` driven port; bounded memory defaults in
+  CacheStore (general key-value store, `ctx.kv()`), DiscordCache (typed Discord
+  resource cache, memory default wraps twilight-cache-inmemory, `ctx.cache()`),
+  RenderCache, AssetStore, LocaleSource, GuildAccessList, plus the `Renderer` driven
+  port with the `Template`/`RenderJob` contract (AD-22); bounded memory defaults in
   `noctis_ports::memory` (moka, byte weighers); `Namespaced<P>` (`<app>:<port>:`) and
   `Shared<P>` (`_shared:<port>:`) wrappers only in core; postcard + schema byte for
   typed values.
@@ -297,8 +324,10 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
 - **AD-10 lanes:** `Inbound { shard, received_at, kind }`, shard tasks only `try_send`,
   interaction lane priority, bounded event lane with droppable/overflow policy,
   semaphore-bounded worker set in core, guild-keyed ordered sub-queues.
-- **AD-11 Responder:** per-kind ctx types, `Responder<Pending>` → `Responder<Acked>`
-  typestate, atomic runtime state machine shared with auto-defer, follow-up counting,
+- **AD-11 Responder:** per-kind ctx types, `Responder<K, S = Pending>` taken as a
+  handler parameter (`CommandResponder<M>`, `ComponentResponder<M>`, `ModalResponder`,
+  `M = NoModal | OpensModal`), `Responder<Pending>` → `Responder<Acked>`
+  typestate, `opens_modal` declared on `#[command]` or `#[route]`, atomic runtime state machine shared with auto-defer, follow-up counting,
   `TokenExpired`, typed flag sets, webhook serializer with `with_components=true`.
 - **AD-12 V2 model:** Noctis's own component types serialized directly (raw
   twilight-http body); twilight-model only for ids, interactions, events, commands;
@@ -310,9 +339,11 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   frame-weighted admission, per-job caps; `noctis_image::tw` grammar generated by
   `xtask tw-grammar`, takumi-free; `tw-crosscheck` CI; blake3 cache key; deterministic
   Template data (no `HashMap`); `AssetFetcher` the only non-Discord HTTP.
-- **AD-16 i18n:** `i18n!("locales")`, `Locale` (32 codes) / `MessageKey` / `Translate`
-  in `noctis-rules`, reserved `noctis.*` keys, fixed `cmd.*` / `cmdword.*` keys,
-  overlays content-only.
+- **AD-16 i18n:** `i18n!(default = "en", dir = "locales")` (both optional), YAML via
+  `yaml-rust2`, `Locale` (32 codes) / `MessageKey` / `Translate` in `noctis-rules`,
+  reserved `noctis.*` keys, fixed `cmd.*` / `cmdword.*` / `ctxcmd.<key>.name` keys,
+  descriptions literal without the `i18n` feature and from the default-locale file
+  with it (a conflicting literal is a compile error), overlays content-only.
 - **AD-17 template tracking:** `xtask api-snapshot` (cargo public-api on the pinned
   nightly) and `xtask skill-check` (every public item mentioned in
   `examples/project-template/.claude/skills/noctis/`, recorded API hash updated);
@@ -324,7 +355,10 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   `twilight_gateway::parse`, `ShardEvent` channel, SessionStore written only by the
   gateway, core-owned shutdown order.
 - **AD-22 attachments:** content-addressed names, `(MessageTree, AttachmentSet)`,
-  Upload Budget and edit diff only in the Responder, `ctx.render(...).await`.
+  Upload Budget and edit diff only in the Responder, `ctx.render(...).await`;
+  `Template` trait, `RenderJob { template_id, template_version, data (postcard),
+  size, format }` and `Renderer` in `noctis-ports`, implemented by `noctis-image`;
+  `Attachment::rendered` marks rendered images.
 - **AD-23 pipeline:** fixed 10-stage interaction pipeline; Extensions type map with
   App-build check of `Ext<T>` providers.
 - **AD-24 resource scoping:** one `Arc<twilight_http::Client>` per App (proxy mode,
@@ -345,8 +379,10 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
 - **Conventions:** crate/feature naming (`image`, `prefix`, `i18n`, `testkit`,
   `image-gif`, `image-emoji`, `default-font`), Route/Module/App id formats, compile
   error format `[<RULE-ID>] …` with note/help lines, `BuildError` lists all violations,
-  `App::from_env()` with `NOCTIS_*`, additive features, trybuild fixtures at
-  `tests/ui/<area>/<RULE-ID>_<slug>.rs` and `tests/ui-pass/`, `insta` View snapshots.
+  `App::from_env()` with `NOCTIS_*`, the built-in command-line parser
+  (`App::run_with_args`, `noctis::cli::NoctisArgs::split`), additive features, trybuild
+  `compile_fail` fixtures at `tests/ui/<area>/<RULE-ID>_<slug>.rs`, boundary passes in
+  `tests/boundary/`, `insta` View snapshots.
 - **Deferred decisions to settle in stories:** HTTP client crate for `AssetFetcher`
   (image epic); PRD open questions Q1–Q6 keep their conservative defaults
   (configurable Limits, WebP default, benches report until confirmed, legacy → V2 on
@@ -398,7 +434,7 @@ is mapped.
 | FR-14 | P2 | E15 | Prefix commands behind the `prefix` feature |
 | FR-15 | P0 | E7 | One handler per Route, O(1) dispatch |
 | FR-16 | P0 | E2 | Field encodings, escaping, round-trip property tests (+E7 runtime use) |
-| FR-17 | P0 | E2 + E7 | Ref format and `EncodedId` (E2); RefStore minting, TTL, one-shot, overflow policy (E7) |
+| FR-17 | P0 | E2 + E7 | Ref format, `EncodedId`, `spill`, and the "error" policy as a compile-time rejection (E2); RefStore minting, TTL, one-shot (E7) |
 | FR-18 | P0 | E7 | Expired Handler, defaults and overrides |
 | FR-19 | P0 | E2 + E7 | Total decoding and integrity tag (E2); pipeline handling and Route Guards (E7) |
 | FR-20 | P0 | E7 | Middleware and typed Extensions |
@@ -418,21 +454,21 @@ is mapped.
 | FR-34 | P1 | E10 | Bounded render pool |
 | FR-35 | P1 | E10 | Fonts, fallback fonts, static assets |
 | FR-36 | P1 | E10 | RenderCache key and single-flight deduplication |
-| FR-37 | P2 | E15 | Renderer seam proven with a test Renderer (port defined in E3) |
-| FR-38 | P0 | E3 | Port traits with bounded in-memory defaults (+E12 DiscordCache configuration) |
+| FR-37 | P2 | E15 | Renderer seam proven with a test Renderer (port and `Template`/`RenderJob` contract defined in E3) |
+| FR-38 | P0 | E3 | Port traits with bounded in-memory defaults, incl. `DiscordCache` over twilight-cache-inmemory (+E7 typed `ctx.kv()` over CacheStore; +E12 DiscordCache wiring and `ctx.cache()`) |
 | FR-39 | P1 | E14 | Conformance suites in the testkit |
-| FR-40 | P1 | E12 | Discord cache configuration and minimal intents |
+| FR-40 | P1 | E12 | DiscordCache wiring, `ctx.cache()`, configuration, backend swap and minimal intents (port from E3) |
 | FR-41 | P1 | E11 | Command localization in Publish |
 | FR-42 | P1 | E11 | `i18n!` typed content strings |
 | FR-43 | P1 | E11 | User/Guild Locale resolution |
-| FR-44 | P1 | E13 | Module tree, unique ids, ids in logs/metrics/errors (basic `Module` from E5) |
+| FR-44 | P1 | E13 | Module tree, unique ids, ids in logs/metrics/errors (basic `Module` and nesting from E5) |
 | FR-45 | P1 | E13 | Runtime enable/disable through ModuleStateStore |
 | FR-46 | P1 | E13 | Rate limits through RateLimitStore |
 | FR-47 | P2 | E15 | Multiple Apps per process, GuildAccessList |
 | FR-48 | P0 | E1 | Facade crate, features, feature-matrix CI (+E14 final matrix) |
 | FR-49 | P0 | E1 + all + E14 | CI template job (E1); each API story reconciles the template; template green and gate required (E14) |
 | FR-50 | P0 | E1 + all + E14 | `api-snapshot`/`skill-check` gates (E1); each API story updates the Usage Skill; completeness audit (E14) |
-| FR-51 | P1 | E8 + E10 | Testkit simulated interactions and View snapshots (E8, per roadmap M2); pixel snapshots (E10) |
+| FR-51 | P1 | E5 + E8 + E10 | Discord HTTP and gateway fakes (E5); testkit simulated interactions and View snapshots (E8, per roadmap M2); pixel snapshots (E10) |
 | FR-52 | P1 | E12 | HTTP proxy mode, Cluster warning, timeout |
 | FR-53 | P2 | E15 | Presence and gateway commands |
 | FR-54 | P1 | E13 | Lifecycle Hooks API (shard status events produced in E5) |
@@ -452,7 +488,7 @@ is mapped.
 | FR-68 | P1 | E10 | Emoji font and custom emoji images |
 | FR-69 | P1 | E10 | Animated Templates |
 | FR-70 | P1 | E10 | Per-job caps and admission weights |
-| FR-71 | P0 | E7 | `Namespaced<P>` and `Shared<P>` wrappers in core (port keys opaque since E3) |
+| FR-71 | P0 | E7 | `Namespaced<P>` and `Shared<P>` wrappers and the typed `ctx.kv()` handle in core (port keys opaque since E3) |
 | FR-72 | P1 | E11 | Module-scoped Locale catalogs |
 | FR-73 | P1 | E13 | Boot Flags |
 | FR-74 | P1 | E14 | Launch documentation |
@@ -512,7 +548,7 @@ illegal structures don't compile and every Limit is checked before sending.
 A bot author builds an App, runs it sharded across all cores with correct identify
 concurrency, and handles gateway events without ever stalling heartbeats or dropping
 interactions.
-**FRs covered:** FR-1, FR-2, FR-5, FR-6, FR-22 (Error Sinks); NFR-4, NFR-5.
+**FRs covered:** FR-1, FR-2, FR-5, FR-6, FR-22 (Error Sinks), FR-51 (Discord fakes); NFR-4, NFR-5.
 
 ### Epic 6: Slash commands and Publish (P0, roadmap M1)
 A bot author declares tescord-style Commands, Patterns, typed options, autocomplete and
@@ -580,14 +616,21 @@ As a Noctis contributor,
 I want the Cargo workspace, crate skeletons and baseline CI laid out exactly as the structural seed,
 So that every later story lands in the right crate behind the same quality gates.
 
-**Implements:** FR-48, FR-49 (CI job), NFR-7, NFR-8; AD-2, AD-28, Stack, Structural Seed.
+**Implements:** FR-48, FR-49 (CI job), NFR-7, NFR-8; AD-2, AD-28 (toolchain and builds), Stack, Structural Seed.
 
 **Acceptance Criteria:**
 
 **Given** an empty repository apart from docs, planning artifacts and `examples/project-template/`
 **When** the story is done
-**Then** the root `Cargo.toml` declares a `[workspace]` with members `crates/{noctis, noctis-rules, noctis-codec, noctis-ui, noctis-ports, noctis-gateway, noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-testkit}` and `xtask`, `exclude = ["examples/project-template"]`, `version.workspace = true` in every crate, `edition = "2024"`, `rust-version = "1.91"`, `[workspace.dependencies]` pinned to the Stack table and shared `[workspace.lints]`
-**And** each sub-crate is a compiling `lib` whose crate docs say "internal; use `noctis`", `noctis-macros` is a `proc-macro` crate, and `deny.toml`, `release-plz.toml` and `docs/guides/` exist
+**Then** the root `Cargo.toml` declares a virtual `[workspace]` with `resolver = "3"`, members `crates/{noctis, noctis-rules, noctis-codec, noctis-ui, noctis-ports, noctis-gateway, noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-testkit}` and `xtask`, `exclude = ["examples/project-template"]`, `version.workspace = true` in every crate, `edition = "2024"`, `rust-version = "1.91"`, `[workspace.dependencies]` pinned to the Stack table and shared `[workspace.lints]`
+**And** each sub-crate is a compiling `lib` whose crate docs say "internal; use `noctis`", `noctis-macros` is a `proc-macro` crate, `xtask` has `publish = false`, and `deny.toml`, `release-plz.toml` and `docs/guides/` (with a placeholder file so it exists in git) exist
+**And** `cargo metadata` shows `examples/project-template` is not a workspace member (it keeps its own empty `[workspace]`)
+
+**Given** the toolchain and build profiles (AD-28)
+**When** the repository root is inspected
+**Then** `rust-toolchain.toml` pins `channel = "1.97.0"` with `rustfmt` and `clippy`, and `/.cargo/config.toml` sets `[profile.dev] opt-level = 3, debug = false, debug-assertions = false, overflow-checks = false, incremental = false`, so any cargo invocation in the repo that isn't `--release` (trybuild's own runs under `target/tests/trybuild/`) still builds release-grade; `[profile.release]` in the root `Cargo.toml` stays the real release profile
+**And** a CI step asserts both files exist with those values, so the dev profile can't be weakened silently
+**And** the story's dev notes record the `[workspace.lints]` set, the `deny.toml` license allow-list (MIT, Apache-2.0 and the other licenses of the Stack, plus MPL-2.0 for `cssparser`) and the release-plz skip for `xtask`
 
 **Given** the facade crate `noctis`
 **When** its `Cargo.toml` is inspected
@@ -595,13 +638,13 @@ So that every later story lands in the right crate behind the same quality gates
 
 **Given** a pull request
 **When** `.github/workflows/ci.yml` runs
-**Then** it executes `cargo fmt --check`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` (tests and doctests), `cargo +1.91 check --release --workspace` (MSRV), `cargo deny check` (advisories, licenses, bans, sources), and a build of each facade feature alone plus all features together, every cargo invocation using `--release`
+**Then** it executes, on the toolchain from `rust-toolchain.toml`, `cargo fmt --check`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` (tests and doctests), `cargo deny check` (advisories, licenses, bans, sources), and a build of each facade feature alone plus all features together, plus a separate MSRV job `cargo +1.91 check --release --workspace`; every cargo invocation uses `--release`
 **And** a `template-build` job runs `cargo build --release` in `examples/project-template/` in tracking mode (non-blocking, result reported) as decided in Story conventions
 **And** `main.yml` and `release.yml` exist as stubs referencing the jobs later epics fill in
 
 **Given** the root `AGENTS.md`
 **When** the workspace exists
-**Then** its TODO line about missing `Cargo.toml` is replaced by the real verification commands (all `--release`)
+**Then** its TODO line about missing `Cargo.toml` is replaced by the real verification commands (all `--release`), and its line on the repo `.cargo/config.toml` dev profile is kept
 
 ### Story 1.2: Crate layer enforcement with `xtask deps-check`
 
@@ -736,13 +779,14 @@ As a Noctis maintainer,
 I want CI to prove every catalog rule has a test at its enforcement point,
 So that the catalog and the code can never silently diverge.
 
-**Implements:** FR-75, FR-79, NFR-10; AD-3, AD-4, AD-5 (constants quote), Conventions (Tests).
+**Implements:** FR-75, FR-79, NFR-10; AD-3, AD-4, AD-5 (constants quote), AD-28 (UI tests), Conventions (Tests).
 
 **Acceptance Criteria:**
 
 **Given** the workspace
 **When** the trybuild harness is added
-**Then** a single `compile_fail("tests/ui/**/*.rs")` and `pass("tests/ui-pass/**/*.rs")` pair exists in the facade's test suite, runs on the 1.91 toolchain only in CI, and requires each `.stderr` to contain the rule id of its file name
+**Then** a single `compile_fail("tests/ui/**/*.rs")` test exists in the facade's test suite with no trybuild `pass` cases (so trybuild runs only `cargo check`), boundary passes live in `tests/boundary/` as ordinary integration tests, the suite runs inside `cargo test --release` on the toolchain pinned by `rust-toolchain.toml` both locally and in CI, and each `.stderr` must contain the rule id of its file name
+**And** a test proves the repo `.cargo/config.toml` dev profile applies to trybuild's runs (for example by asserting `target/tests/trybuild/` holds no debug info), and a toolchain bump re-blesses `.stderr` files in the same PR
 
 **Given** `docs/discord-rules.md`
 **When** `cargo run --release -p xtask -- rules-catalog` runs
@@ -782,7 +826,7 @@ So that the skill always describes the real API and I never need Noctis source.
 
 **Given** CI
 **When** a pull request runs
-**Then** `api-snapshot` and `skill-check` are required jobs, and the skill's `API hash` line is updated from `pending` to the current hash in this story
+**Then** `api-snapshot` and `skill-check` are required jobs, and the skill's `API hash` line is updated from `pending` to the current hash in this story; its wording says the hash is updated with every public API change (not "once `noctis` is published")
 
 ## Epic 2: Typed, length-proven `custom_id`s
 
@@ -908,12 +952,13 @@ So that a length bug fails `cargo check` instead of failing in production.
 
 **Given** trybuild fixtures under `tests/ui/cid/`
 **When** the UI tests run
-**Then** a Route whose worst case is 101 characters fails to compile and one of exactly 100 compiles (`tests/ui-pass/`), an unbounded `String` field without `by_ref`/`overflow = spill` fails with CID-01, `by_ref` together with `signed` fails, a generic Route fails, and a route id violating `[a-z0-9._-]{1,24}` or starting with `_` fails with CID-03
+**Then** a Route whose worst case is 101 characters fails to compile and one of exactly 100 compiles (`tests/boundary/`), an unbounded `String` field without `by_ref`/`overflow = spill` fails with CID-01, `by_ref` together with `signed` fails, a generic Route fails, and a route id violating `[a-z0-9._-]{1,24}` or starting with `_` fails with CID-03
 **And** every `.stderr` follows `[<RULE-ID>] <what is wrong>` with a `help:` line
 
-**Given** the attribute options `by_ref`, `overflow = spill`, `schema = n` (1..=61), `view`, `signed`
+**Given** the codec arguments of AD-6: `by_ref`, `overflow = spill`, `schema = n` (1..=61), `view`, `select`, `signed`
 **When** they are combined legally
-**Then** the derived `SHAPE` and the length bound include `S`, `E`, `N`, `T` only when declared, and `spill` Routes encode inline when the value fits and by Ref otherwise
+**Then** the derived `SHAPE` and the length bound include `S`, `E`, `N`, `T` only when declared (`select` sets the `N` nonce section), and `spill` Routes encode inline when the value fits and by Ref otherwise
+**And** the derive emits an empty `RouteRuntime` const that later stories fill (runtime arguments `ttl`/`one_shot` in Story 7.5, `owner`/`permissions`/`guard` in 7.7, `opens_modal` in 7.8), and any argument not yet in AD-6's grammar is a compile error naming it
 
 **Given** `#[derive(PayloadEnum)]` on an enum
 **When** it has at most 62 unit variants
@@ -953,18 +998,19 @@ As a bot author,
 I want every storage concern defined as a small dyn-compatible trait with a shared op vocabulary,
 So that I can implement Redis or SQL versions with clear, uniform semantics.
 
-**Implements:** FR-38, NFR-6; AD-1, AD-14, AD-22 (Renderer port types).
+**Implements:** FR-38, NFR-6; AD-1, AD-14, AD-22 (render contract).
 
 **Acceptance Criteria:**
 
 **Given** `noctis-ports`
 **When** it is built
-**Then** it defines `RefStore`, `SessionStore`, `IdentifyQueue`, `ModuleStateStore`, `RateLimitStore`, `CacheStore`, `RenderCache`, `AssetStore`, `LocaleSource` and `GuildAccessList`, each `Send + Sync + 'static` and dyn-compatible, with async methods returning `BoxFuture<'_, Result<T, PortError>>`
-**And** each store port exposes only its subset of `get`, `put(ttl)`, `put_if_absent(ttl) -> bool`, `take`, `delete`, `touch`, `incr_with_ttl(key, by, ttl) -> u64` as listed in AD-14, `ModuleStateStore` adds `version() -> u64`, and `IdentifyQueue` is `acquire(bucket) -> Lease`
+**Then** it defines `RefStore`, `SessionStore`, `IdentifyQueue`, `ModuleStateStore`, `RateLimitStore`, `CacheStore`, `DiscordCache`, `RenderCache`, `AssetStore`, `LocaleSource` and `GuildAccessList`, each `Send + Sync + 'static` and dyn-compatible, with async methods returning `BoxFuture<'_, Result<T, PortError>>`
+**And** each store port exposes only its subset of `get`, `put(ttl)`, `put_if_absent(ttl) -> bool`, `take`, `delete`, `touch`, `incr_with_ttl(key, by, ttl) -> u64` as listed in AD-14 (`CacheStore`: `get`, `put`, `put_if_absent`, `delete`, `incr_with_ttl`), `ModuleStateStore` adds `version() -> u64`, and `IdentifyQueue` is `acquire(bucket) -> Lease`
+**And** `DiscordCache` is the typed port of AD-14: `update(&Event)` and owned getters (`guild`, `channel`, `role`, `member`, `user`, `message`, per-guild lists) returning twilight-model values, with no reference or guard in any signature
 
-**Given** the `Renderer` driven port
-**When** it is declared
-**Then** it takes a `RenderJob` and returns `RenderOutput { bytes, digest, format, settings_used }`, without depending on takumi
+**Given** the render contract of AD-22
+**When** it is declared in `noctis-ports`
+**Then** it defines `trait Template` (`ID`, `VERSION`, `SIZE`, `FORMAT`, `view() -> ErasedView`), `RenderJob { template_id, template_version, data: Bytes, size, format }` (data is postcard), `Format` with its encoder settings, `TemplateDescriptor`, `RenderOutput { bytes, digest, format, settings_used }` and `trait Renderer` (`render`, `register`), without depending on takumi or on `noctis-image`; Stories 10.2 and 10.3 build on exactly these types
 
 **Given** port values
 **When** typed values are stored
@@ -1000,6 +1046,10 @@ So that my bot runs out of the box and stays within memory budgets.
 **Given** `ModuleStateStore`
 **When** state changes
 **Then** `version()` increases monotonically
+
+**Given** `noctis_ports::memory::MemoryDiscordCache`
+**When** it is built for a set of resource types
+**Then** it wraps `twilight-cache-inmemory` limited to those types (and twilight's per-channel message cap), `update(&Event)` applies events, and every getter returns an owned clone (unit tests over recorded events)
 
 **Given** the Project Template's `adapters/bounded_cache.rs` custom `CacheStore`
 **When** the story is done
@@ -1055,7 +1105,8 @@ So that I can't build a structure Discord will reject.
 
 **Given** a Route `R`
 **When** a component is built from it
-**Then** the only constructor is from an `R` value (`BuyButton { .. }.button()`, `.select()`), it requires `R: Handled`, and there is no string `custom_id` constructor (AD-19); a fixture shows a Route without `Handled` failing to compile (FR-58 compile-time half)
+**Then** the only constructor is from an `R` value (`BuyButton { .. }.button()`, `.string_select(..)` and the other selects, which also require a Route declared `select`), it requires `R: Handled`, and there is no string `custom_id` constructor (AD-19); a fixture shows a Route without `Handled` failing to compile (FR-58 compile-time half)
+**And** Epic 4's own tests make a Route `Handled` through the `#[doc(hidden)]` path the handler macro will emit (`impl ::noctis::__private::ui::Handled for R {}`), which is documented as not public API; `Handled` carries `#[diagnostic::on_unimplemented]` pointing to `#[handler]`
 **And** `noctis-ui` defines `Attachment { name, bytes: Bytes, content_type, alt }` named `<first 16 hex of blake3(bytes)>.<ext>` (or `Attachment::with_digest`), an `AttachmentSet` keyed by name, and `AttachmentRef`, obtainable only by adding an attachment; `File` accepts only an `AttachmentRef` (CV2-12), and numeric component ids are assigned deterministically from the tree (CV2-14)
 
 **Given** the new public API
@@ -1117,8 +1168,8 @@ So that dynamic content never produces a Limit-related 400 from Discord.
 **Then** it is truncated with `…` and a warning is logged, while structural rules (CV2-03, CV2-05, CV2-06, CID-01, CID-02) still fail
 
 **Given** Strict mode
-**When** a Thumbnail or gallery item has no alt text
-**Then** a warning is emitted and appears in the cost report
+**When** a Thumbnail or gallery item that isn't marked `Rendered` has no alt text
+**Then** a warning is emitted and appears in the cost report (rendered images are an error from Story 9.1)
 
 **Given** any tree
 **When** `cost(&tree)` is called
@@ -1127,7 +1178,7 @@ So that dynamic content never produces a Limit-related 400 from Discord.
 ### Story 4.4: Compile-time checks for literals, arity and static budgets
 
 As a bot author,
-I want literal labels, placeholders and fixed-shape component trees checked by `cargo check`,
+I want literal labels, placeholders and fixed-shape component trees checked by `cargo check` (AD-4 mechanisms only),
 So that static mistakes never reach runtime.
 
 **Implements:** FR-75, FR-78, NFR-10; AD-3, AD-4; rules CV2-03, CV2-04, CV2-06, CV2-07, CV2-08, CV2-09, CV2-10, CV2-11, CV2-13, CV2-15.
@@ -1135,20 +1186,20 @@ So that static mistakes never reach runtime.
 **Acceptance Criteria:**
 
 **Given** builders that take `Label`, `Placeholder` and similar newtypes
-**When** a literal is passed through `const { Label::lit("…") }`
-**Then** an over-length literal (81-char button label, 151-char placeholder, 1025-char description) fails to compile, and the runtime `try_from` path enforces the same limit via the same `noctis-rules` function
+**When** a literal is passed through `label!("…")`, `placeholder!("…")` or a builder macro attribute
+**Then** the proc macro measures it with `noctis-rules`, so an over-length literal (81-char button label, 151-char placeholder, 1025-char description) fails under `cargo check`, and the runtime `try_from` path enforces the same limit via the same function
 
 **Given** const-generic arity
 **When** `ActionRow::buttons([b; N])`, `Section::new([t; N], accessory)` or `MediaGallery::new([i; N])` is built
-**Then** `N` outside 1–5, 1–3 or 1–10 fails to compile (CV2-06, CV2-07, CV2-10), and `Rgb(u32)` outside 0x000000–0xFFFFFF fails in `const fn` (CV2-13)
+**Then** `N` outside 1–5, 1–3 or 1–10 fails under `cargo check` because the arity trait bounding `N` is implemented only for legal lengths, and the error text starts with `[CV2-06]`, `[CV2-07]` or `[CV2-10]` through `#[diagnostic::on_unimplemented]`; `rgb!(0x…)` outside 0x000000–0xFFFFFF fails in the macro (CV2-13)
 
 **Given** node types with `const COST: usize` and `const TEXT: Option<usize>`
 **When** a fully static tree exceeds 40 components or its literal text exceeds 4000
-**Then** a `const { assert!(..) }` fails to compile (CV2-03, CV2-04); trees containing `Vec`s assert their static lower bound and leave the rest to the runtime validator
+**Then** the free `const _: () = assert_budget::<V>();` item that the static tree macro emits over the concrete tree type fails under `cargo check` (CV2-03, CV2-04); trees containing `Vec`s assert their static lower bound and leave the rest to the runtime validator; no rule here relies on a `const` assertion in generic code
 
-**Given** `tests/ui/cv2/` and `tests/ui-pass/`
+**Given** `tests/ui/cv2/` and `tests/boundary/`
 **When** the UI tests run
-**Then** each rule above has a failing fixture and a boundary-pass fixture (exactly 5 buttons, exactly 40 components, 80-char label), each `.stderr` names the rule id, and the matching `rules-pending.toml` entries are removed
+**Then** each rule above has a failing fixture and a boundary-pass integration test (exactly 5 buttons, exactly 40 components, 80-char label), each `.stderr` names the rule id, and the matching `rules-pending.toml` entries are removed
 
 ### Story 4.5: Modal component model and modal validation
 
@@ -1205,8 +1256,8 @@ So that modal input is parsed for me, including component types twilight doesn't
 
 A bot author builds an App, runs it sharded across every core with correct identify
 concurrency, and handles gateway events without ever stalling heartbeats or dropping
-interactions. Tests use a local mock of Discord (an HTTP mock server plus an in-process
-gateway stub) so no network is needed.
+interactions. Tests use the testkit's Discord fakes, built in Story 5.1 (AD-24), so no
+network is needed.
 
 ### Story 5.1: App builder, process Runtime and startup safety
 
@@ -1219,7 +1270,7 @@ So that misconfiguration fails clearly instead of panicking.
 **Acceptance Criteria:**
 
 **Given** `App::builder()` and `App::from_env()` (reading `NOCTIS_*` variables)
-**When** a bot author sets the token, Modules, `State<T>` values and any port implementation (`.ref_store(..)`, `.cache_store(..)`, …)
+**When** a bot author sets the token, `State<T>` values and any port implementation (`.ref_store(..)`, `.cache_store(..)`, …) (Modules are mounted from Story 5.4)
 **Then** `.build()` returns an `App` or a `BuildError` listing every violation at once, and unset ports default to the bounded memory implementations
 **And** the token is a newtype whose `Debug`/`Display` are redacted and that is never logged (NFR-6)
 
@@ -1236,6 +1287,11 @@ So that misconfiguration fails clearly instead of panicking.
 **When** the story is done
 **Then** the Usage Skill's `references/app-and-sharding.md` documents the builder, `from_env` variables and errors, the template's `main.rs`/`lib.rs` `configure()` are reconciled with the real builder, and `skill-check` passes
 
+**Given** `noctis-testkit` (AD-24)
+**When** the story is done
+**Then** `noctis_testkit::fake` provides `FakeDiscordHttp` (a local `hyper` server with per-test routes, canned `GET /gateway/bot` and a request log for assertions) and `FakeGateway` (a local `tokio-websockets` server speaking HELLO, IDENTIFY/READY, RESUME, heartbeat ACKs, dispatches and close codes), pinned in `[workspace.dependencies]` as the Stack lists
+**And** the App reaches them only through twilight's override points (HTTP `proxy(url, true)` and the gateway `proxy_url`, exposed as `.gateway_url(..)`), with no test-only branch in core, and a smoke test in `crates/noctis-testkit/tests/` builds an App against both fakes; end-to-end tests of Epics 5 to 7 live in that directory
+
 ### Story 5.2: Automatic sharding with bucketed identify
 
 As a bot author,
@@ -1246,7 +1302,7 @@ So that a large bot boots quickly without identify storms.
 
 **Acceptance Criteria:**
 
-**Given** a mocked `GET /gateway/bot` returning a shard count and `max_concurrency = 16`
+**Given** `FakeDiscordHttp` answering `GET /gateway/bot` with a shard count and `max_concurrency = 16`
 **When** the App starts without a fixed shard total
 **Then** it starts the recommended number of shards, each in its own tokio task, identifying through the `IdentifyQueue` port with buckets `shard_id % 16` so same-bucket shards identify in parallel (GW-01)
 
@@ -1278,7 +1334,7 @@ So that slow handlers never cost heartbeats or user-visible interactions.
 
 **Given** shard tasks
 **When** they enqueue
-**Then** they only `try_send`; they never await lane capacity or a handler, so a handler sleeping 10 s doesn't delay heartbeats (test with the gateway stub's heartbeat timing)
+**Then** they only `try_send`; they never await lane capacity or a handler, so a handler sleeping 10 s doesn't delay heartbeats (test with `FakeGateway`'s heartbeat timing)
 
 **Given** the event lane is full
 **When** a droppable event type (presence, typing, others marked droppable) arrives
@@ -1299,13 +1355,17 @@ As a bot author,
 I want to register typed Event Handlers in a Module and have Noctis derive the event filter and required intents,
 So that unhandled events are never deserialized and missing intents fail before connecting.
 
-**Implements:** FR-5 (worker set, per-guild ordering), FR-6, FR-44 (basic Module), NFR-4; AD-7, AD-9, AD-10, AD-13, AD-21; rules GW-05.
+**Implements:** FR-5 (worker set, per-guild ordering), FR-6, FR-44 (basic Module and nesting), NFR-4; AD-7, AD-9, AD-10, AD-13, AD-21, AD-23 (ancestor order); rules GW-05.
 
 **Acceptance Criteria:**
 
-**Given** `Module::new("a/b")` with `#[event]` handlers added
+**Given** `Module::new("a/b")` with `#[event]` handlers added, mounted with `AppBuilder::module(..)`
 **When** the App is built
-**Then** the Registry is folded once from descriptors, and Noctis asks the gateway to deserialize only event types with a handler (or needed by the cache), so an unhandled type is never deserialized (test with counting deserialization)
+**Then** the Registry is folded once from descriptors, and Noctis asks the gateway to deserialize only event types with a handler, so an unhandled type is never deserialized (test with counting deserialization); Story 12.5 later adds the types the Discord cache needs
+
+**Given** a parent Module with a child mounted through `Module::module(child)`
+**When** the App is built
+**Then** the child's registrations are folded with the parent's, in parent-before-child order, and each registration records its ancestor path for AD-23 ordering (Story 13.1 later adds unique-id checks and Module ids in logs, metrics and errors)
 
 **Given** a handler needing an intent the App did not request
 **When** `App::build` runs
@@ -1321,7 +1381,7 @@ So that unhandled events are never deserialized and missing intents fail before 
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill documents `Module`, `#[event]`, ordering and intent derivation, the template's event handler (profile XP on message) is reconciled, and `skill-check` passes
+**Then** the Usage Skill documents `Module`, `.module(..)` nesting, `#[event]`, ordering and intent derivation, the template's event handler (profile XP on message) is reconciled, and `skill-check` passes
 
 ### Story 5.5: Observability contract and Error Sinks
 
@@ -1381,13 +1441,14 @@ As a bot author,
 I want to declare a Command as an `async fn` with a Command Path or Pattern that is validated at compile time,
 So that illegal command structures fail `cargo check` and my handler knows which variant ran.
 
-**Implements:** FR-7, FR-8, FR-75, FR-77, UX-DR3; AD-4, AD-8, AD-26; rules CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-10, CMD-11, CMD-12, CMD-13, CMD-15, OPT-14.
+**Implements:** FR-7, FR-8, FR-75, FR-77, UX-DR3; AD-4, AD-8, AD-16 (description source without `i18n`), AD-26; rules CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-10, CMD-11, CMD-12, CMD-13, CMD-15, OPT-14.
 
 **Acceptance Criteria:**
 
 **Given** `#[command("settings logs channel", description = "…")]` on an `async fn`
 **When** it compiles
 **Then** it produces a command descriptor whose word count maps to command, subcommand, or group plus subcommand (FR-7), with subcommand `required` not settable (OPT-14)
+**And** the literal `description = "…"` is the description (AD-16); doc comments are rustdoc only, and Epic 6 reads no locale file (the `i18n` source and the conflict rule arrive in Story 11.4)
 
 **Given** `#[command("config (set|get) (prefix|welcome)")]`
 **When** it compiles
@@ -1401,7 +1462,7 @@ So that illegal command structures fail `cargo check` and my handler knows which
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill's `references/commands.md` documents `#[command]`, patterns and the variant enum, the template's commands are reconciled, and `api-snapshot`/`skill-check` pass
+**Then** the Usage Skill's `references/commands.md` documents `#[command]`, `description = "…"`, patterns and the variant enum, the template's commands are reconciled, and `api-snapshot`/`skill-check` pass
 
 ### Story 6.2: Typed options with `derive(Options)` and `derive(Choices)`
 
@@ -1416,6 +1477,7 @@ So that missing or wrong option values are typed errors, never panics.
 **Given** `#[derive(Options)]` with field types implementing the option trait (`i64`, `f64`, `bool`, `String`, `Id<UserMarker>`, channel, role, mentionable, attachment)
 **When** the Command is invoked
 **Then** the handler receives the parsed struct; a missing required option or a wrong option type is a typed error (OPT-02, OPT-03 runtime decode)
+**And** each option's description is the literal `#[option(description = "…")]` (AD-16; a missing or 101-char one fails with CMD-04), with the locale-file source added in Story 11.4
 
 **Given** trybuild fixtures under `tests/ui/opt/`
 **When** the UI tests run
@@ -1492,10 +1554,10 @@ So that double acknowledgements and illegal callback types can't happen.
 **When** core dispatches it
 **Then** it resolves the Command from the Registry's O(1) map by default (unlocalized) names (LOC-06) and runs the AD-23 stages that apply to Commands at this point (resolve, locale default, auto-defer arm point, handler, error routing)
 
-**Given** `CommandCtx`
+**Given** a Command handler taking a `CommandResponder` parameter (AD-11: `Responder<Command<NoModal>, Pending>`)
 **When** the handler responds
-**Then** `Responder<Pending>` offers `reply` and `defer` (and `modal` only for `opens_modal` handlers), each consuming `self` and returning `Responder<Acked>`, which offers only `edit_original`, `followup` and `delete_original` (INT-03)
-**And** `CommandCtx` has no `update` (INT-04, trybuild fixture), `defer` takes only an `Ephemerality` value (INT-08), and every V2 send or edit carries `IS_COMPONENTS_V2`
+**Then** `Responder<Pending>` offers `reply` and `defer`, each consuming `self` and returning `Responder<Acked>`, which offers only `edit_original`, `followup(msg, Visibility) -> FollowupHandle` and `delete_original` (INT-03), and `done()` yields the `Responded` the handler returns
+**And** `CommandResponder` has no `update` and `CommandResponder<NoModal>` has no `modal` (INT-04, trybuild fixtures), `defer` takes only an `Ephemerality` value (INT-08), and every V2 send or edit carries `IS_COMPONENTS_V2`
 
 **Given** a handler that returns a `V2Message`
 **When** it completes
@@ -1503,7 +1565,7 @@ So that double acknowledgements and illegal callback types can't happen.
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill documents `CommandCtx`, `Responder` states and ephemerality, and `skill-check` passes
+**Then** the Usage Skill documents `CommandCtx`, `Responder<K, S>`, its aliases and states, and ephemerality, matching AD-11, and `skill-check` passes
 
 ### Story 6.6: Automatic deferral, token lifetime and follow-up cap
 
@@ -1520,9 +1582,9 @@ So that users never see "interaction failed" and late updates still land.
 **Then** core sends a type-5 deferred response with only the declared `EPHEMERAL` flag (INT-08), and the handler's later `reply` becomes `edit_original` carrying the V2 flag (runtime state machine shared by the handler and the auto-defer task)
 **And** a handler responding after 5 s still delivers its message (test with paused clock), and `noctis_autodefer_total` and `noctis_ack_latency_seconds` are recorded
 
-**Given** a handler declared `opens_modal`
+**Given** `#[command(.., opens_modal)]` whose handler takes `CommandResponder<OpensModal>`
 **When** it is dispatched
-**Then** auto-defer is never armed (INT-05); if it misses the deadline, an error naming the handler is logged
+**Then** auto-defer is never armed and `modal(..)` is available (INT-05); if it misses the deadline, an error naming the handler is logged; declaring `opens_modal` without the `OpensModal` responder, or the reverse, fails to compile (INT-05 fixture)
 
 **Given** 15 minutes have passed since `received_at`
 **When** the handler edits a public response
@@ -1542,9 +1604,9 @@ So that suggestions are easy to write and never break the interaction.
 
 **Acceptance Criteria:**
 
-**Given** `#[option(autocomplete = handler)]` on a supported field
+**Given** `#[option(autocomplete = handler)]` on a supported field, where `handler` is an `#[autocomplete]` fn
 **When** an autocomplete interaction arrives for an option of a 3-word Command Path
-**Then** the handler receives an `AutocompleteCtx` (which offers only `respond`, no defer: INT-06) with the focused value and a `Partial<Options>` whose fields are all `Option<T>` (OPT-12)
+**Then** the handler receives an `AutocompleteCtx` (which offers only `respond(choices) -> Responded`, no defer: INT-06) with the focused value and a `Partial<Options>` whose fields are all `Option<T>` (OPT-12), and returns the `Responded` from `respond`
 
 **Given** a handler returning 30 choices
 **When** it responds
@@ -1594,7 +1656,7 @@ As a bot author,
 I want to publish my Commands globally or to a test guild only when they changed, and preview the diff,
 So that iteration is fast and I never burn Discord's command-create quota.
 
-**Implements:** FR-11 (JSON), FR-13, FR-61 (empty option list); AD-7, AD-26, AD-29; rules META-04, REG-05.
+**Implements:** FR-11 (JSON), FR-13, FR-61 (empty option list); AD-7, AD-26, AD-29, Conventions (Command line); rules META-04, REG-05.
 
 **Acceptance Criteria:**
 
@@ -1602,7 +1664,7 @@ So that iteration is fast and I never burn Discord's command-create quota.
 **When** Publish builds the command JSON
 **Then** it is generated only from the Registry; each metadata field set on a Command appears exactly as declared and unset fields are omitted; an option-less Command publishes an empty option list; guild-scoped Commands are published only to their guilds
 
-**Given** remote commands equal to the local definition (mocked HTTP)
+**Given** remote commands equal to the local definition (`FakeDiscordHttp`)
 **When** Publish runs
 **Then** it makes no write request; when they differ it writes once and logs the diff
 
@@ -1613,6 +1675,10 @@ So that iteration is fast and I never burn Discord's command-create quota.
 **Given** the CLI modes `--publish`, `--publish-guild <id>` and `--publish-clear`
 **When** `App::run` sees them
 **Then** it performs that Publish mode and returns without connecting shards; Publish never runs on shard ready, and in normal runs it runs only when the App is configured as the publisher
+
+**Given** the built-in command-line parser (Conventions, no clap)
+**When** `App::run()` reads `std::env::args()`, a test calls `App::run_with_args([..])`, or a bot calls `noctis::cli::NoctisArgs::split(args)` before its own parser
+**Then** Noctis's flags are recognized in all three, `split` returns the remaining arguments untouched, and an unknown flag reaching `App::run` is a typed error naming it (later flags `--features` and `--no-resume` join the same parser in Stories 13.2 and 12.3)
 **And** before writing, Publish reads the application object and reports a typed error when a declared `integration_types` value isn't enabled for the app (META-04), and emits a `noctis.publish` span
 
 **Given** the new public API
@@ -1675,9 +1741,13 @@ So that forged or malformed ids never crash the bot and clicks feel instant.
 **When** a signed Route's id is verified
 **Then** a valid tag passes, a tag from the previous key passes during rotation, a bad tag takes the unknown-Route path, and the key is never logged or passed to a port
 
-**Given** `ComponentCtx`
+**Given** a component handler taking `ComponentResponder` (AD-11)
 **When** the handler responds
 **Then** `Responder<Pending>` offers `update` (type 7), `defer` (type 6 in-place) and `reply`; the declared default for components is update-in-place; the auto-defer uses type 6 at the deadline and later updates become `edit_original` with the V2 flag
+
+**Given** `#[handler(response = ephemeral)]` or `#[handler(response = public)]` (AD-6 handler arguments)
+**When** the handler returns a View
+**Then** it is sent as a new ephemeral or public message (type 4, auto-defer type 5 with only the declared `EPHEMERAL` flag) instead of updating in place; `response = update` is the default, and the skill's sub-panel pattern uses this
 **And** spans `noctis.interaction` cover every stage, and `noctis_handler_duration_seconds{kind}` and `noctis_handler_errors_total{kind}` are recorded
 
 ### Story 7.3: Expired Handler and stale Payload routing
@@ -1692,13 +1762,13 @@ So that months-old messages degrade gracefully.
 
 **Given** a `custom_id` that decodes as `Stale` (schema or shape mismatch)
 **When** it is dispatched
-**Then** it goes to the Route's stale handler when declared, else to the Expired Handler, never to a generic decode error
+**Then** it goes to the Route's stale handler when declared (`#[handler(on_stale = fn)]`), else to the Expired Handler, never to a generic decode error
 
 **Given** the default Expired Handler
 **When** it runs
 **Then** it replies with a short ephemeral notice from `noctis.expired`
 
-**Given** an App-level or Route-level override
+**Given** an App-level override or a Route-level `#[handler(on_expired = fn)]`
 **When** a Route's interaction expires
 **Then** the override runs instead, and can return a View-like response such as re-rendering a starting message (test with a `V2Message`)
 
@@ -1712,7 +1782,7 @@ As a bot author running several bots on shared storage,
 I want every port key namespaced by App unless I opt into sharing,
 So that two Apps never read or overwrite each other's Refs, sessions, counters or Module state.
 
-**Implements:** FR-71, NFR-6; AD-14; Conventions (App ids).
+**Implements:** FR-71, FR-38 (typed CacheStore handle), NFR-6; AD-1, AD-14; Conventions (App ids).
 
 **Acceptance Criteria:**
 
@@ -1732,13 +1802,18 @@ So that two Apps never read or overwrite each other's Refs, sessions, counters o
 **When** the story is done
 **Then** the Usage Skill documents `app_id`, namespacing and sharing, the template's `app_id("noctis-template")` is reconciled, and `skill-check` passes
 
+**Given** a handler or Middleware calling `ctx.kv()` (AD-1)
+**When** it uses the typed handle over the App's `Namespaced<CacheStore>`
+**Then** `get::<T>` and `put(&T, ttl)` use postcard plus a schema byte (a schema mismatch reads as a miss), `put_if_absent` returns whether it won, `incr(key, by, ttl)` and `counter(key)` (0 when missing) use `incr_with_ttl`/`get` with 8-byte big-endian values, and `delete` removes; each maps to one `CacheStore` call (unit tests with a counting store)
+**And** the Usage Skill's adapters reference documents `ctx.kv()`, and the template's profile and setup code that stores data uses it
+
 ### Story 7.5: Ref minting and resolution
 
 As a bot author,
 I want large or by-ref Payloads stored and resolved for me with TTLs and one-shot semantics,
 So that I can carry rich state in components without hitting the 100-character limit.
 
-**Implements:** FR-17, FR-18 (missing Ref), NFR-5, NFR-6; AD-18, AD-23; rules CID-05.
+**Implements:** FR-17, FR-18 (missing Ref), NFR-5, NFR-6; AD-6 (runtime arguments), AD-18, AD-23; rules CID-05.
 
 **Acceptance Criteria:**
 
@@ -1746,13 +1821,13 @@ So that I can carry rich state in components without hitting the 100-character l
 **When** the Responder finalizes it before validation and sending
 **Then** it stores each slot with `RefStore::put_if_absent` (retrying on collision), calls `codec::finish` for the final `custom_id`, and identical slots in one message share one Ref; no crate below `noctis-core` holds a `RefStore` handle
 
-**Given** per-Route TTL and the App default TTL
+**Given** the runtime arguments `ttl = "…"` and `one_shot`, which this story adds to `#[derive(Route)]` (AD-6), and the App default TTL
 **When** Refs are stored
-**Then** the Route's TTL applies when declared, else the App default; a Route marked `one_shot` resolves with `take` so the Ref is deleted on use
+**Then** the Route's TTL applies when declared, else the App default; a Route marked `one_shot` resolves with `take` so the Ref is deleted on use; `ttl` or `one_shot` on a plain inline Route fails to compile
 
-**Given** a Route with `overflow = error`
-**When** its Payload doesn't fit inline
-**Then** the render returns a typed error instead of spilling
+**Given** a plain inline Route (no `by_ref`, no `spill`)
+**When** its Payload could exceed 100 characters
+**Then** it doesn't compile (Story 2.5, CID-01): this is FR-17's "error" overflow policy, and no runtime `overflow = error` exists (AD-6)
 
 **Given** a Ref that is missing, expired, or created by another App
 **When** stage 2 resolves it
@@ -1773,7 +1848,7 @@ So that cross-cutting concerns (auth, settings, metrics) live in one place.
 
 **Acceptance Criteria:**
 
-**Given** before- and after-Middleware registered on a parent Module and a child Module
+**Given** before- and after-Middleware registered on a parent Module and a child Module (nesting from Story 5.4)
 **When** an interaction or event runs
 **Then** before-Middleware run parent first, then registration order; after-Middleware run in reverse order; and a before-Middleware can stop processing so the handler doesn't run
 
@@ -1799,7 +1874,7 @@ So that unauthorized clicks are rejected before my handler runs.
 
 **Acceptance Criteria:**
 
-**Given** `#[route("dash.mod", permissions = MANAGE_GUILD)]` or `owner = user` (Payload-carried invoking user)
+**Given** the runtime arguments this story adds to `#[derive(Route)]` (AD-6): `#[route("dash.mod", permissions = MANAGE_GUILD)]`, `owner = user` (Payload-carried invoking user) or `guard = path::to::fn`
 **When** a user without the permission, or a different user, clicks
 **Then** stage 8 rejects it with a localized ephemeral notice (`noctis.guard.*`) and the handler doesn't run
 
@@ -1821,14 +1896,14 @@ So that data entry works across restarts with no per-message state.
 
 **Acceptance Criteria:**
 
-**Given** a Command or Route declared `opens_modal`
+**Given** a Route declared `#[route(.., opens_modal)]` (the runtime argument this story adds to the derive; Commands declare it on `#[command]` since Story 6.6)
 **When** its handler runs
-**Then** only its context's `Responder<Pending>` offers `modal(..)`, auto-defer is disabled for it, and a non-`opens_modal` handler calling `modal` fails to compile (INT-05 trybuild fixture)
+**Then** it takes `ComponentResponder<OpensModal>`, whose `Responder<Pending>` alone offers `modal(..)`, auto-defer is disabled for it, and a handler taking `ComponentResponder<NoModal>` calling `modal` fails to compile, as does a mismatch between the declaration and the alias (INT-05 trybuild fixtures)
 
 **Given** a modal-submit interaction
 **When** it is dispatched to the modal Route's handler
-**Then** the handler receives `ModalSubmitCtx` and the typed `derive(Modal)` struct decoded from the interaction's `RawJson`, including Radio Group, Checkbox Group and Checkbox values that twilight drops (FR-64 end-to-end test through the gateway stub)
-**And** `ModalSubmitCtx` has no `modal` method (INT-04), so responding to a submit with another modal can't be expressed; a dynamic attempt is a typed error
+**Then** the handler receives `ModalSubmitCtx` and the typed `derive(Modal)` struct decoded from the interaction's `RawJson`, including Radio Group, Checkbox Group and Checkbox values that twilight drops (FR-64 end-to-end test through `FakeGateway`)
+**And** `ModalResponder` has no `modal` method (INT-04), so responding to a submit with another modal can't be expressed; a dynamic attempt is a typed error
 
 **Given** a modal submit
 **When** the handler is slow
@@ -2012,7 +2087,7 @@ So that I can verify flows, response types and Limit costs in CI.
 
 **Given** `noctis::testkit` enabled through the facade's `testkit` feature in `[dev-dependencies]`
 **When** a test builds `TestApp` from an `AppBuilder` with test guilds, channels, roles and users
-**Then** it injects simulated `Inbound` interactions into the same lanes the gateway uses, with a mocked Discord HTTP layer, and no network access
+**Then** it injects simulated `Inbound` interactions into the same lanes the gateway uses, answers Discord HTTP with `FakeDiscordHttp` from Story 5.1, and needs no network access
 
 **Given** a test
 **When** it calls `app.command("setup start").by(user).in_guild(guild).run()` or clicks a component by Route or label
@@ -2040,7 +2115,7 @@ So that my first bot follows the UI Doctrine and compiles on the first attempt.
 
 **Acceptance Criteria:**
 
-**Given** `examples/views/` (a small focused example built in CI)
+**Given** `examples/views/` (a small focused example, added to the root `members` list with `publish = false`, so the workspace commands build and test it)
 **When** it builds and its testkit tests run (`cargo test --release`)
 **Then** it demonstrates an option-less entry Command opening a View, a 3-Step Wizard, and a Navbar View with a list that overflows into pages, using only Payloads and Refs (no collectors or inline listeners)
 
@@ -2080,9 +2155,9 @@ So that edits keep unchanged images without re-uploading and drop unused ones.
 **When** the response is prepared
 **Then** it is rejected with a typed error before any HTTP request (ATT-01, ATT-02, ATT-03)
 
-**Given** an image placed in a Thumbnail or Media Gallery without alt text
+**Given** a rendered attachment (`Attachment::rendered`, origin `Rendered`, AD-22) placed in a Thumbnail or Media Gallery without alt text
 **When** it is validated
-**Then** Strict mode returns a validation error and Lenient mode a warning; alt text over 1024 is rejected (ATT-06)
+**Then** Strict mode returns a validation error and Lenient mode a warning (FR-30); any other image without alt text keeps Story 4.3's warning; alt text over 1024 is rejected (ATT-06)
 
 **Given** the new public API
 **When** the story is done
@@ -2223,13 +2298,14 @@ As a bot author,
 I want to write image Templates in Rust with Tailwind classes that are checked by `cargo check`,
 So that a typo in a class fails the build instead of rendering nothing.
 
-**Implements:** FR-32, FR-66, FR-75, UX-DR2; AD-2, AD-15; rules ATT-07.
+**Implements:** FR-32, FR-66, FR-75, UX-DR2; AD-2, AD-15, AD-22 (Template contract); rules ATT-07.
 
 **Acceptance Criteria:**
 
 **Given** `#[derive(Template)]` with `#[template(id, version, size, format)]` and a `view!`/`tw!` body
 **When** it compiles
-**Then** literal class strings are validated against `noctis_image::tw` and the tokens declared in the crate's `noctis-theme.css`; an unknown class is a compile error, and a known v3 name's error suggests its v4 replacement (trybuild fixtures under `tests/ui/tw/`)
+**Then** literal class strings are validated against `noctis_image::tw` and the tokens declared in the crate's `noctis-theme.css` (parsed with `cssparser`, tracked with `include_bytes!` so edits rebuild); an unknown class is a compile error, and a known v3 name's error suggests its v4 replacement (trybuild fixtures under `tests/ui/tw/`)
+**And** the derive implements `noctis_ports::Template` (the Story 3.1 contract: `ID`, `VERSION`, `SIZE`, `FORMAT`, `view()` returning the `ErasedView` that wraps the `TemplateView`), and `Module::template::<T>()` records its `TemplateDescriptor`; `App::build` rejects two Templates with one id
 
 **Given** user-supplied data
 **When** it enters a Template
@@ -2259,11 +2335,11 @@ So that renders never block the gateway or the async runtime and slow renders ar
 
 **Given** the `image` feature
 **When** the App is built
-**Then** `noctis-image` implements the `Renderer` port with takumi `=2.17.0` on the process-scoped rayon pool owned by `noctis::Runtime`, never on tokio workers or a pool shared with the author
+**Then** `noctis-image` implements the `Renderer` port from Story 3.1 with takumi `=2.17.0` on the process-scoped rayon pool owned by `noctis::Runtime`, never on tokio workers or a pool shared with the author; `Renderer::register` receives every `TemplateDescriptor` at App build and fails the build for one it can't render
 
-**Given** a handler calling `ctx.render(template, data).await`
+**Given** a handler calling `ctx.render(template).await`
 **When** the render takes longer than the ack deadline
-**Then** the FR-21 auto-defer covers it, and the returned image becomes an `Attachment` placed in a Thumbnail or Media Gallery
+**Then** core postcard-encodes the Template value into a `RenderJob { template_id, template_version, data, size, format }`, calls the App's `Arc<dyn Renderer>` (core has no dependency on `noctis-image`; `deps-check` proves it), the FR-21 auto-defer covers the wait, and the result is `Attachment::rendered(output)` placed in a Thumbnail or Media Gallery
 **And** without a Renderer configured, `ctx.render` returns a typed error
 
 **Given** the render queue is full
@@ -2368,7 +2444,7 @@ So that text always renders visibly in every script I support.
 
 **Given** no registered font and the `default-font` feature off
 **When** the App starts with a Template registered
-**Then** startup fails with a clear typed error; with `default-font` on, the bundled default font is used
+**Then** startup fails with a clear typed error; with `default-font` on, the bundled default font is used, and its license is recorded in the crate's `NOTICE` and accepted in `deny.toml`
 
 **Given** fallback fonts registered with a priority order and Unicode ranges (for example CJK)
 **When** a Template renders mixed-script text
@@ -2428,7 +2504,7 @@ So that cards never show tofu boxes or raw `<:name:id>` markup.
 
 **Given** the `image-emoji` feature (Twemoji COLR font)
 **When** Template text contains Unicode emoji
-**Then** they render as color glyphs (pixel test)
+**Then** they render as color glyphs (pixel test), and the Twemoji graphics' CC-BY-4.0 attribution is recorded in the crate's `NOTICE` and the feature docs
 
 **Given** `image-emoji` is off and a Template is registered
 **When** the App starts
@@ -2475,7 +2551,7 @@ So that renderer upgrades never change my images unnoticed.
 **Then** it compares against a stored PNG with a configurable tolerance and fails beyond it
 
 **Given** the reference card Template (a copy of the Project Template's profile card, ≈934×282, PNG, warm caches, kept with the benches)
-**When** the reference card bench in `noctis-core/benches` runs on `main`
+**When** the reference card bench in `noctis-image/benches` (AD-25; it needs no core, so no forbidden edge) runs on `main`
 **Then** it reports p50 and p99 against `budgets.toml` (targets p50 ≤ 10 ms, p99 ≤ 50 ms with the pool saturated), reporting only until PRD Q3 confirms the numbers
 
 **Given** a pull request that bumps takumi
@@ -2503,9 +2579,9 @@ So that a missing key or wrong placeholder fails the build instead of showing a 
 
 **Acceptance Criteria:**
 
-**Given** `noctis::i18n!(default = "en", dir = "locales")` and YAML files named by Discord locale code
+**Given** `noctis::i18n!(default = "en", dir = "locales")` (both arguments optional with these defaults, AD-16) and YAML files named by Discord locale code
 **When** the crate compiles
-**Then** it generates `Strings::of(locale)` with nested accessors mirroring the YAML tree (one method per leaf, arguments in placeholder order, named or positional), a `MessageKey` const per key in `keys::*`, and a `catalog()` descriptor
+**Then** the macro parses them with `yaml-rust2`, emits `include_bytes!` for every file it read so edits rebuild the crate, and generates `Strings::of(locale)` with nested accessors mirroring the YAML tree (one method per leaf, arguments in placeholder order, named or positional), a `MessageKey` const per key in `keys::*`, and a `catalog()` descriptor
 
 **Given** trybuild fixtures under `tests/ui/loc/`
 **When** the UI tests run
@@ -2577,13 +2653,17 @@ As a bot author,
 I want Command names translated word by word and descriptions, options and choices localized from my Locale files,
 So that users see commands in their own language.
 
-**Implements:** FR-41, FR-12 (whole-name context menus), FR-13; AD-16; rules LOC-02, LOC-03, LOC-05, LOC-06, CMD-01..CMD-05, CTX-01, OPT-09.
+**Implements:** FR-41, FR-12 (whole-name context menus), FR-13, FR-77 (descriptions from locale files); AD-16; rules LOC-02, LOC-03, LOC-05, LOC-06, CMD-01..CMD-05, CTX-01, OPT-09.
 
 **Acceptance Criteria:**
 
-**Given** keys `cmd.<path>.name`, `cmd.<path>.desc`, `cmd.<path>.opt.<opt>.name|desc|choice.<value>` and per-word `cmdword.<word>`
+**Given** keys `cmd.<path>.name`, `cmd.<path>.desc`, `cmd.<path>.opt.<opt>.name|desc|choice.<value>`, per-word `cmdword.<word>` and `ctxcmd.<key>.name` (from `#[user_command(.., key = "…")]`/`#[message_command]`)
 **When** Publish builds JSON from the merged catalog
 **Then** it emits Discord's `name_localizations`/`description_localizations`, a full-path key overrides the per-word translation, and context-menu names localize as whole names
+
+**Given** the `i18n` feature and a default-locale file (AD-16)
+**When** `#[command]` compiles
+**Then** it reads `cmd.<path>.desc` (and option descriptions) from that file, using the same `dir`/`default` as `i18n!` or `#[command(.., locales = "<dir>")]`; the literal `description = "…"` may be omitted, a literal that differs from the file fails to compile, and a missing key with no literal fails with CMD-04 (trybuild fixtures); without the feature, or without a default-locale file, Story 6.1's literal rule applies unchanged
 
 **Given** an `en` file and no `en-GB` file
 **When** Publish runs
@@ -2667,7 +2747,7 @@ So that restarts within Discord's resume window don't spend identifies or miss e
 **Acceptance Criteria:**
 
 **Given** a SessionStore holding `(session_id, seq, resume_url)` for a shard
-**When** the process restarts within the resume window (gateway stub)
+**When** the process restarts within the resume window (`FakeGateway`)
 **Then** the shard resumes instead of identifying, and the identify budget is not consumed (GW-02)
 
 **Given** a stored session that Discord rejects (invalid session)
@@ -2692,7 +2772,7 @@ So that rolling deploys resume and full resets are still possible.
 **When** shards close
 **Then** each closes with `CloseFrame::RESUME`, and after observing `GatewayClose` its session id, sequence (last received) and resume URL are written to the SessionStore before the process exits
 
-**Given** `--no-resume`
+**Given** `--no-resume` (added to the Story 6.9 command-line parser)
 **When** the process shuts down or starts
 **Then** shards close fresh and the stored sessions are cleared
 
@@ -2727,15 +2807,20 @@ So that processes sharing one token never exceed Discord's per-token limits.
 **When** the story is done
 **Then** its `.env.example` and README document proxy mode as the Cluster setup, and the Usage Skill documents it, with `skill-check` passing
 
-### Story 12.5: Discord cache configuration and minimal intents
+### Story 12.5: Discord cache wiring, `ctx.cache()`, configuration and minimal intents
 
 As a bot author,
-I want to choose which Discord resources are cached, back the cache with my own storage, or disable it,
+I want to read cached Discord resources through `ctx.cache()`, choose which resources are cached, back the cache with my own storage, or disable it,
 So that memory stays proportional to what my features actually use.
 
-**Implements:** FR-40, FR-38 (Discord cache backend), FR-6 (intents); AD-1, AD-21, AD-25; rules GW-05.
+**Implements:** FR-40, FR-38 (DiscordCache port), FR-6 (intents); AD-1, AD-14, AD-21, AD-25; rules GW-05.
 
 **Acceptance Criteria:**
+
+**Given** the `DiscordCache` port and `MemoryDiscordCache` from Stories 3.1 and 3.2
+**When** the App runs
+**Then** core feeds the cache every gateway event its configured resources need (these event types join the Story 5.4 filter), before the event reaches handlers, and every context (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `AutocompleteCtx`, `EventCtx`) exposes `ctx.cache()`, a typed read handle with owned getters (`guild`, `channel`, `role`, `member`, `user`, `message`, per-guild lists)
+**And** `.discord_cache(DiscordCacheConfig::…)` chooses resources or `none()`, and `.discord_cache_backend(impl DiscordCache)` replaces the storage; with the cache disabled, getters return a typed `CacheDisabled` error
 
 **Given** default configuration
 **When** the App is built
@@ -2749,13 +2834,13 @@ So that memory stays proportional to what my features actually use.
 **When** a handler reads it
 **Then** it returns owned or shared values; no guard that could be held across `.await` is exposed (clippy lint test or compile-fail fixture)
 
-**Given** a Discord cache backed by an out-of-process implementation of the cache port
+**Given** a Discord cache backed by an out-of-process `DiscordCache` implementation
 **When** two in-process Apps standing in for Cluster processes read it
 **Then** they see the same data
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill documents cache configuration, and `skill-check` passes
+**Then** the Usage Skill documents `ctx.cache()`, cache configuration and the backend swap, the template's `ctx.cache()` reads (dashboard roles, profile user) are reconciled, and `skill-check` passes
 
 ### Story 12.6: Memory-per-guild benchmark
 
@@ -2768,7 +2853,7 @@ So that I can size deployments and regressions are visible.
 **Acceptance Criteria:**
 
 **Given** the memory bench in `noctis-core/benches` with a stated default cache configuration (no members, no messages)
-**When** it loads 10k idle guilds through the gateway stub
+**When** it loads 10k idle guilds through `FakeGateway`
 **Then** it reports framework bytes per guild, Discord cache bytes and Renderer cache bytes separately against `budgets.toml` (initial goal ≤ 1 KiB per idle guild excluding the Discord cache)
 
 **Given** per-guild framework state
@@ -2795,9 +2880,9 @@ So that features are organized like tescord Packs and every log line says which 
 
 **Acceptance Criteria:**
 
-**Given** `Module::new("admin").module(Module::new("admin/logs"))`
+**Given** a tree three or more levels deep built with `Module::module(..)` (basic nesting exists since Story 5.4)
 **When** the tree is mounted on the App
-**Then** registrations of every nested Module are folded into the Registry, and parent-before-child ordering applies to Middleware
+**Then** registrations of every nested Module are folded into the Registry, each Module's id is its full path, and parent-before-child ordering applies to Middleware at every level
 
 **Given** two Modules with the same id
 **When** `App::build` runs
@@ -2822,7 +2907,7 @@ So that one binary can run different feature sets without code changes.
 **Acceptance Criteria:**
 
 **Given** Modules and individual registrations carrying Boot Flags
-**When** the App starts with `--features a,b` (or `all`, or the equivalent config)
+**When** the App starts with `--features a,b` (or `all`, or the equivalent config; the flag joins the Story 6.9 parser)
 **Then** registrations whose flags aren't selected are filtered out of the descriptors before the Registry fold, so they are not registered, dispatched or published
 
 **Given** `--publish --dry-run --features a`
@@ -2873,7 +2958,7 @@ So that abuse is throttled before my handler runs, consistently across a Cluster
 
 **Acceptance Criteria:**
 
-**Given** `#[command("profile", rate_limit(user, 3, per = "10s"))]` (or on a Route)
+**Given** `#[command("profile", rate_limit(user, 3, per = "10s"))]` or `#[handler(rate_limit(..))]` on a Route's handler (AD-6: never on `#[route]`)
 **When** a user invokes it a fourth time within 10 s
 **Then** stage 5 increments through `RateLimitStore::incr_with_ttl` before any auto-defer and the handler, and the user gets an immediate localized ephemeral notice including the time remaining
 
@@ -2940,7 +3025,7 @@ So that I can prove my implementation has the semantics Noctis relies on.
 
 **Acceptance Criteria:**
 
-**Given** `noctis::testkit::conformance::<port>` suites for every store port and `IdentifyQueue`
+**Given** `noctis::testkit::conformance::<port>` suites for every store port, `IdentifyQueue` and `DiscordCache` (owned reads, event updates, disabled resources)
 **When** an implementation runs its suite
 **Then** it is tested for TTL, overwrite, delete, missing key, atomicity under concurrent callers (exactly one `take`/`put_if_absent` winner, no lost increments), `version()` monotonicity where applicable, and App namespacing through `Namespaced<P>`
 

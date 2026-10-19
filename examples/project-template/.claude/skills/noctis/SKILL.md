@@ -18,7 +18,8 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `pending` (set by `xtask skill-check` once `noctis` is published).
+> **API hash:** `pending` (replaced by the snapshot hash when the `skill-check` gate
+> starts, then updated with every public API change).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -58,7 +59,8 @@ your handler ──returns──▶ View / StaticView / Responded ──▶ Resp
   View's own Route (`#[route("id", view)]`): tab, page and step travel in the
   `custom_id`, so they need no handler code and no storage.
 - **Handlers are stateless.** No collectors, no per-message closures, no timers. State
-  lives in Payloads/Refs, in ports (`ctx.cache()`), or in `State<T>`.
+  lives in Payloads/Refs, in ports (`ctx.kv()` for your key-value data), or in
+  `State<T>`. Cached Discord resources are read with `ctx.cache()`.
 - **Adapters (ports)** are traits for anything that stores data, each with a bounded
   in-memory default; swap in Redis/SQL without touching handlers.
 - **Templates** are Tailwind-styled images written in Rust (`view!`), rendered off the
@@ -115,8 +117,10 @@ pub fn module() -> Module {
 }
 ```
 
-No response code: returning a View sends it (FR-61). The description comes from
-`cmd.dashboard.desc` in `locales/en.yaml` (a missing one is a compile error, CMD-04).
+No response code: returning a View sends it (FR-61). With the `i18n` feature the
+description comes from `cmd.dashboard.desc` in `locales/en.yaml`; without it, write
+`description = "…"` in the attribute. A missing one is a compile error (CMD-04), and a
+literal that differs from the locale file is a compile error too.
 
 ### 3.2 A Route, a button, its handler
 
@@ -229,7 +233,7 @@ pub struct BioForm {
 }
 
 #[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder) -> HandlerResult<Responded> {
+async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
     let modal = BioForm::modal(SaveBio { user: e.user }).bio(current_bio);
     Ok(r.modal(modal).await?.done())
 }
@@ -306,7 +310,7 @@ to **act** on an item → a Section with an accessory button or a select option.
 | `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
 | `pack.slashCommand({ name: "a (b\|c)" })` | `#[command("a (b\|c)")]`; the handler gets a generated `APath` enum |
 | `options: { user: { type: "User" } }` | `#[derive(Options)] struct … { user: ResolvedUser }` |
-| `autoComplete` | `#[option(autocomplete = fn)]` + `#[autocomplete]` fn |
+| `autoComplete` | `#[option(autocomplete = fn)]` + `#[autocomplete]` fn calling `ctx.respond(..)` |
 | `pack.button({ id, options })` + `buildComponent({ id, data, overrides })` | `#[derive(Route)]` + `Route { .. }.button().label(..)` + `#[handler]` |
 | `data[i] as number` | typed Payload fields |
 | dbi references / store | `by_ref` Routes + `RefStore` |
@@ -331,7 +335,7 @@ Read only what the task touches.
 | `references/views-and-widgets.md` | write a View, Layout, Navbar, Wizard, Paginator, attachments, mentions; UI quality rulebook and patterns |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |
-| `references/adapters.md` | swap or implement a port (RefStore, CacheStore, …), conformance tests, namespacing, typed cache API |
+| `references/adapters.md` | swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing, `ctx.kv()` and `ctx.cache()` |
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |
 | `references/modules-middleware-ratelimits.md` | Modules, Boot Flags, enable/disable, Middleware and Extensions, Error Sinks, rate limits, events |
 | `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |

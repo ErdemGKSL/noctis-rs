@@ -21,11 +21,12 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
 | `[CMD-10]` more than 3 words | path too deep | flatten; use options or a View |
 | `[CMD-01]` / `[CMD-03]` | uppercase, ASCII `'`, punctuation in a name | lowercase; `ʼ` (U+02BC) if you need an apostrophe |
-| `[CMD-04] missing description` | no `cmd.<path>.desc` in the default locale | add it to `locales/en.yaml` |
+| `[CMD-04] missing description` | no `description = "…"`, and (with the `i18n` feature) no `cmd.<path>.desc` in the default locale | add it to `locales/en.yaml`, or the literal without `i18n` |
+| description literal differs from the locale file | both sources set, with different text | delete the literal; the locale file is the source with `i18n` |
 | `[OPT-01] required option after optional` | field order | move required fields first (never reordered for you) |
 | `[OPT-10] choices and autocomplete` | both on one option | pick one |
 | `[CV2-05] Container cannot contain Container` / type mismatch on `.push` | illegal nesting | flatten; one Container per View |
-| `[CV2-06]` const assert in `ActionRow::buttons` | 0 or > 5 buttons, or button + select | split rows; selects alone |
+| `[CV2-06]` unsatisfied bound in `ActionRow::buttons` | 0 or > 5 buttons, or button + select | split rows; selects alone |
 | `[CV2-07]` Section arity / no accessory | 0 or > 3 texts | merge texts; use plain Text if no accessory |
 | `[CV2-08] label too long` | literal > 80 | shorten (guideline ≤ 34 with emoji) |
 | `[MOD-02] more than 5 fields` | modal too big | split into a Wizard with two modal Steps |
@@ -36,7 +37,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | missing key / wrong number of arguments on `s.x.y(..)` | key absent in `en.yaml` or placeholders differ | add the key; match placeholders |
 | `HashMap` field in a Template | non-deterministic cache key | `BTreeMap` or `Vec` |
 | a handler taking a Responder doesn't return `Responded` | macro contract | return `acked.done()` |
-| `modal` not found on `ComponentResponder` | Route not `opens_modal` | add `opens_modal` to the opening Route |
+| `modal` not found on `ComponentResponder` | Route not `opens_modal`, or the handler takes `ComponentResponder` instead of `ComponentResponder<OpensModal>` | declare `opens_modal` on the Route and take the `OpensModal` alias |
+| `[INT-05]` responder alias doesn't match `opens_modal` | one declared without the other | declare both or neither |
 | `update` not found on `CommandResponder` | commands can't update | `reply` |
 
 ## App build errors (`BuildError`, all violations listed at once)

@@ -535,7 +535,9 @@ by-ref, Noctis stores the Payload in the RefStore and encodes a Ref.
 - Each Route can set a TTL; otherwise the App default applies. A Route can also mark
   its Refs one-shot (deleted on use).
 - The overflow policy is configurable per Route: spill to the RefStore, or return an
-  error.
+  error. The error policy is the default for an inline Route and is enforced at
+  compile time: an inline Route whose Payload could exceed the limit does not compile
+  (FR-76).
 
 #### FR-18: Expired Handler
 When a Ref is missing or expired, the interaction goes to the Expired Handler.

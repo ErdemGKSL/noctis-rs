@@ -39,6 +39,12 @@ live component using it.** Ids starting with `_` are reserved. Use short dotted 
 
 ### `#[route(...)]` arguments
 
+Codec arguments (they change the `custom_id` and count toward the length proof):
+`view`, `select`, `by_ref`, `overflow = spill`, `signed`, `schema = n`. Runtime
+arguments (no effect on the length): `ttl`, `one_shot`, `opens_modal`, `owner`,
+`permissions`, `guard`. Anything else is a compile error; rate limits go on
+`#[handler]`, not here.
+
 | Argument | Meaning |
 | --- | --- |
 | `"id"` | Route id (required, first) |
@@ -50,7 +56,7 @@ live component using it.** Ids starting with `_` are reserved. Use short dotted 
 | `one_shot` | Ref is deleted on first use (`take`); for confirmations |
 | `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`); not with `by_ref` |
 | `schema = n` | Payload schema version 1..=61 (see §5) |
-| `opens_modal` | the handler answers with a modal; no auto-defer (INT-05) |
+| `opens_modal` | the handler answers with a modal and takes `ComponentResponder<OpensModal>`; no auto-defer (INT-05) |
 | `owner = field` | Route Guard: only the user whose id is in `field` may click |
 | `permissions = A \| B` | Route Guard: the clicking member needs these permissions |
 | `guard = path::to::fn` | custom guard `async fn(&ComponentCtx, &Self) -> Result<(), MessageKey>` [planned] |
@@ -58,6 +64,9 @@ live component using it.** Ids starting with `_` are reserved. Use short dotted 
 Guards run before the handler on every interaction; a failure sends a localized
 ephemeral notice and the handler does not run. Still re-check authorization for
 anything sensitive: Payloads are client input (CID-06).
+
+There is no `overflow = error`: a plain inline Route that could exceed 100 characters
+simply doesn't compile (`[CID-01]`), which is the "error" policy.
 
 ### `#[handler(...)]` arguments [planned]
 

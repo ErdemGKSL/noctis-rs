@@ -55,19 +55,28 @@ Locale for ephemeral responses and the Guild Locale for public ones.
 
 ## 4. The Responder (typestate, INT-03/04) [planned]
 
-Take it as a handler parameter; the alias fixes the handler kind:
+The type is `Responder<K, S = Pending>`: `K` is the handler kind, `S` the state
+(`Pending` or `Acked`). Take it as a handler parameter through an alias; a handler that
+returns a View takes none.
 
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
-| `CommandResponder` | `reply(msg)`, `defer()`, `modal(m)` (only if `opens_modal`) | chat input / context menu |
-| `ComponentResponder` | `reply(msg)`, `update(msg)`, `defer()`, `modal(m)` (only if Route is `opens_modal`) | buttons, selects |
+| `CommandResponder` (= `CommandResponder<NoModal>`) | `reply(msg)`, `defer(ephemerality)` | chat input / context menu |
+| `CommandResponder<OpensModal>` | the above plus `modal(m)`; required when the command is `#[command(.., opens_modal)]` | command that opens a modal |
+| `ComponentResponder` (= `ComponentResponder<NoModal>`) | `reply(msg)`, `update(msg)`, `defer()` | buttons, selects |
+| `ComponentResponder<OpensModal>` | the above plus `modal(m)`; required when the Route is `#[route(.., opens_modal)]` | component that opens a modal |
 | `ModalResponder` | `reply(msg)`, `update(msg)`, `defer()` — **no** `modal` (no modal chaining) | modal submit |
-| `AutocompleteCtx` | none: return `Suggestions` | autocomplete |
 
-Every Pending method consumes the responder and returns `Responder<_, Acked>`:
+Autocomplete has no Responder: `AutocompleteCtx` offers only
+`ctx.respond(choices).await? -> Responded` (`commands.md` §4).
+
+The handler macro checks that the alias matches the declaration: `opens_modal` without
+`OpensModal`, or `OpensModal` without `opens_modal`, is a compile error (INT-05).
+
+Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 
 ```rust
-acked.edit_original(msg).await?        -> Responder<_, Acked>
+acked.edit_original(msg).await?        -> Responder<K, Acked>
 acked.followup(msg, Visibility::Ephemeral).await? -> FollowupHandle
 acked.delete_original().await?
 acked.done()                           -> Responded   // return this from the handler
@@ -101,7 +110,7 @@ Example: open a modal (Route declared `opens_modal`):
 
 ```rust
 #[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder) -> HandlerResult<Responded> {
+async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
     Ok(r.modal(BioForm::modal(SaveBio { user: e.user })).await?.done())
 }
 ```

@@ -117,15 +117,17 @@ async fn open_profile(ctx: ComponentCtx, route: ProfileRoute) -> HandlerResult<P
 
 /// Opens the modal pre-filled with the stored values (FR-63). A modal is a response
 /// type of its own, so this handler takes the Responder instead of returning a View.
+/// `EditBio` is declared `opens_modal`, so the handler must take the `OpensModal`
+/// responder, the only one with `modal()` (INT-05).
 #[handler]
 async fn edit_bio(
     ctx: ComponentCtx,
     edit: EditBio,
-    responder: ComponentResponder,
+    responder: ComponentResponder<OpensModal>,
 ) -> HandlerResult<Responded> {
     let guild = guild_of(&ctx)?;
     let stored: StoredProfile = ctx
-        .cache()
+        .kv()
         .get(&profile_key(guild, edit.user))
         .await?
         .unwrap_or_default();
@@ -145,7 +147,7 @@ async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerR
         bio: form.bio.filter(|b| !b.trim().is_empty()),
         pronouns: form.pronouns,
     };
-    ctx.cache().put(&profile_key(guild, save.user), &stored, None).await?;
+    ctx.kv().put(&profile_key(guild, save.user), &stored, None).await?;
     ProfileView::load(&ctx, save.user).await.map(|v| v.editable(true))
 }
 
@@ -159,13 +161,13 @@ async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
     if msg.author.bot {
         return Ok(());
     }
-    let cache = ctx.cache();
+    let kv = ctx.kv();
     let cooldown = format!("xpcd:{guild}:{}", msg.author.id);
-    if cache
+    if kv
         .put_if_absent(&cooldown, &(), Some(Duration::from_secs(60)))
         .await?
     {
-        cache.incr(&xp_key(guild, msg.author.id), 1, None).await?;
+        kv.incr(&xp_key(guild, msg.author.id), 1, None).await?;
     }
     Ok(())
 }
@@ -257,13 +259,13 @@ impl ProfileView {
     /// the auto-defer covers a slow render (AD-22, FR-34).
     pub async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<Self> {
         let guild = guild_of(ctx)?;
-        let user = ctx.discord().user(user_id).await?;
+        let user = ctx.cache().user(user_id).await?;
         let stored: StoredProfile = ctx
-            .cache()
+            .kv()
             .get(&profile_key(guild, user_id))
             .await?
             .unwrap_or_default();
-        let xp = ctx.cache().counter(&xp_key(guild, user_id)).await?;
+        let xp = ctx.kv().counter(&xp_key(guild, user_id)).await?;
         let level = xp / XP_PER_LEVEL;
 
         // The card's text follows the response's locale: the User Locale for ephemeral
