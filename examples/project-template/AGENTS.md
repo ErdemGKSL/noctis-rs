@@ -33,6 +33,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 
 - Never hand-build a `custom_id`, response type or interaction callback; build components from Route values and return Views.
 - Every user-visible string goes through `locales/*.yaml`; add new keys to `en-US.yaml` first.
+- Limits and Locales come from `noctis::rules` (`Locale::EnUs` = `en-US`); override limits on the App builder with `Limits`, never with hard-coded numbers.
 - Inside the noctis-rs monorepo this crate is standalone (`[workspace]` in its `Cargo.toml`); the monorepo root `Cargo.toml` must keep `exclude = ["examples/project-template"]`. After copying it out, switch the `noctis` dependency to the crates.io form shown in `Cargo.toml`.
 
 <!-- /bmad:context -->

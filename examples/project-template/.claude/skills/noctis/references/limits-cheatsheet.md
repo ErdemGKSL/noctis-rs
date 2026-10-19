@@ -9,13 +9,118 @@ counts the larger of Unicode scalars and UTF-16 units and keeps the value in `Li
 ## Limits value
 
 ```rust
-App::from_env()?.limits(Limits { mode: LimitMode::Lenient, ..Limits::default() });
+use noctis::rules::{LimitMode, Limits};
+
+let mut limits = Limits::default();     // Discord's defaults, LimitMode::Strict
+limits.mode = LimitMode::Lenient;       // truncate text instead of failing
+limits.components = 30;                 // lower a limit (stricter than Discord)
+App::from_env()?.limits(limits);        // [planned] App builder hook
 ```
 
-`Strict` (default) fails before sending; `Lenient` truncates text with `…` and warns,
-but never relaxes structural rules (CV2-03, CV2-05, CV2-06, CID-01, CID-02).
-Autocomplete is always truncated to 25. Lowering a limit at runtime re-checks every
-tree; raising one never relaxes a compile-time check.
+`Limits` is `#[non_exhaustive]`: always start from `Limits::default()` and assign
+fields; a struct literal does not compile. Every field is a `usize` maximum.
+
+- `LimitMode::Strict` (default) fails before sending with a `Violation`; nothing
+  reaches Discord.
+- `LimitMode::Lenient` truncates over-long text with `…` (via `truncate`) and warns,
+  but never relaxes the structural rules CV2-03, CV2-05, CV2-06, CID-01 and CID-02.
+  `limits.truncates(rule)` answers that question: `true` only in Lenient mode and only
+  for a non-structural rule.
+- Autocomplete is always truncated to 25 (INT-07), in both modes.
+- Macros check literals against the defaults. Lowering a field makes the runtime
+  re-check every tree, static ones included; raising one never relaxes a
+  compile-time check.
+
+| Field | Rule | Default | Maximum of |
+| --- | --- | --- | --- |
+| `command_name_len` | CMD-02 | 32 | characters per command name word |
+| `command_description_len` | CMD-04 | 100 | characters in a command description |
+| `command_size` | CMD-05 | 8000 | characters per command, options and longest localizations included |
+| `command_path_words` | CMD-10 | 3 | words in a command path (command, group, subcommand) |
+| `command_options` | CMD-13 | 25 | options, subcommands or groups per level |
+| `pattern_expansions` | CMD-15 | 25 | expansions of one command name pattern |
+| `context_menu_name_len` | CTX-01 | 32 | characters in a context-menu command name |
+| `chat_input_commands` | REG-01 | 100 | chat-input commands per scope (also REG-02) |
+| `user_commands` | REG-01 | 15 | user commands per scope (also REG-02) |
+| `message_commands` | REG-01 | 15 | message commands per scope (also REG-02) |
+| `entry_point_commands` | REG-01 | 1 | entry-point commands per scope (also REG-02) |
+| `option_length` | OPT-06 | 6000 | `min_length` / `max_length` of a string option |
+| `option_choices` | OPT-08 | 25 | choices per option |
+| `choice_name_len` | OPT-09 | 100 | characters in a choice name |
+| `choice_value_len` | OPT-09 | 100 | characters in a string choice value |
+| `option_file_types` | OPT-13 | 10 | `file_types` entries of an attachment option |
+| `autocomplete_choices` | INT-07 | 25 | autocomplete choices (always truncated, in every mode) |
+| `user_install_followups` | INT-11 | 5 | follow-ups for a user-installed app outside the guild |
+| `custom_id_len` | CID-01 | 100 | characters in a `custom_id` (also MOD-08) |
+| `components` | CV2-03 | 40 | components per message, nested ones included |
+| `text_total_len` | CV2-04 | 4000 | characters across all Text Displays of a message |
+| `row_buttons` | CV2-06 | 5 | buttons per Action Row |
+| `section_texts` | CV2-07 | 3 | Text Displays per Section |
+| `button_label_len` | CV2-08 | 80 | characters in a button label |
+| `link_url_len` | CV2-08 | 512 | characters in a link button URL |
+| `select_placeholder_len` | CV2-09 | 150 | characters in a select placeholder |
+| `select_options` | CV2-09 | 25 | options per String Select |
+| `select_values` | CV2-09 | 25 | `max_values` of a select |
+| `select_option_label_len` | CV2-09 | 100 | characters in a select option label |
+| `select_option_value_len` | CV2-09 | 100 | characters in a select option value |
+| `select_option_description_len` | CV2-09 | 100 | characters in a select option description |
+| `gallery_items` | CV2-10 | 10 | items per Media Gallery |
+| `gallery_description_len` | CV2-10 | 1024 | characters in a Media Gallery item description |
+| `thumbnail_description_len` | CV2-11 | 1024 | characters in a Thumbnail description |
+| `legacy_action_rows` | CV2-15 | 5 | Action Rows in a legacy (non-V2) message |
+| `media_url_len` | CV2-17 | 2048 | characters in a Media Gallery item or Thumbnail URL |
+| `modal_title_len` | MOD-01 | 45 | characters in a modal title |
+| `modal_components` | MOD-02 | 5 | top-level components of a modal |
+| `label_len` | MOD-04 | 45 | characters in a Label |
+| `label_description_len` | MOD-04 | 100 | characters in a Label description |
+| `text_input_len` | MOD-05 | 4000 | characters in a Text Input value (`min_length` / `max_length`) |
+| `text_input_placeholder_len` | MOD-05 | 100 | characters in a Text Input placeholder |
+| `file_upload_values` | MOD-06 | 10 | files per File Upload (`max_values`) |
+| `file_upload_file_types` | MOD-06 | 10 | `file_types` entries of a File Upload |
+| `radio_options` | MOD-07 | 10 | options per Radio Group |
+| `checkbox_group_options` | MOD-07 | 10 | options per Checkbox Group |
+| `checkbox_group_values` | MOD-07 | 10 | `max_values` of a Checkbox Group |
+| `content_len` | MSG-01 | 2000 | characters in legacy message `content` |
+| `mention_users` | MSG-04 | 100 | user ids in allowed mentions |
+| `mention_roles` | MSG-04 | 100 | role ids in allowed mentions |
+| `nonce_len` | MSG-06 | 25 | characters in a message nonce |
+| `sticker_ids` | MSG-06 | 3 | stickers per message |
+| `attachment_bytes` | ATT-01 | 20,971,520 | bytes per file (20 MiB; an interaction's `attachment_size_limit` wins) |
+| `request_bytes` | ATT-02 | 26,214,400 | bytes per request (25 MiB) |
+| `attachments` | ATT-03 | 10 | attachments per message |
+| `attachment_description_len` | ATT-06 | 1024 | characters in attachment alt text |
+| `webhook_name_len` | WH-04 | 80 | characters in a webhook name |
+
+REG-01 counts also apply per guild (REG-02); `custom_id_len` also covers modal ids
+(MOD-08). Minima (0, 1, 2), protocol constants, timings, rate limits and codec widths
+are not `Limits` fields.
+
+## Rules types
+
+All in `noctis::rules`:
+
+| Item | What it is |
+| --- | --- |
+| `Limits`, `LimitMode` | the limits above and Strict/Lenient handling |
+| `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (124, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
+| `Violation` | `{ rule, path, limit, actual }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)`; implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty) |
+| `Bound` | the broken limit: `AtMost(n)` "at most n", `AtLeast(n)` "at least n", `Between { min, max }` "between min and max", `Exactly(n)` "exactly n", `Describe(&str)` printed as is |
+| `Actual` | the offending value: `Count(n)` printed as `n`, `Text(String)` printed escaped in backticks |
+| `discord_len(&str) -> usize` | the only length function for user text: the larger of Unicode scalars and UTF-16 units (`discord_len("😀") == 2`, `"👍🏽"` = 4) |
+| `truncate(&str, max) -> Cow<str>` | fits text into `max` `discord_len` units, ending with `…` (one unit); unchanged and borrowed when it fits; cuts between scalars (not grapheme-aware) |
+| `Locale` | Discord's 32 codes, one variant per code (table below); `Locale::ALL`; `as_str()` / `Display` → the code; `FromStr` is exact and case-sensitive |
+| `ParseLocaleError` | `input()`, `suggestions()` (codes with the same language part); prints `` [LOC-01] `en` is not a Discord locale code; matching codes: `en-GB`, `en-US` `` |
+| `MessageKey` | `MessageKey::new("setup.step.channel")`, a `const fn` that panics (a compile error in a `const`) unless the key is `.`-separated non-empty ASCII `[A-Za-z0-9_-]` segments; `as_str()`; `is_framework()` for the reserved `noctis.` namespace |
+| `Translate` | `fn translate(&self, Locale, MessageKey, &[(&str, &dyn Display)]) -> Option<String>`; object-safe; implementations fall back to `sibling()` then the default locale and replace every `{name}` |
+
+`Locale` variants and codes, in Discord's order: `Id` id, `Da` da, `De` de, `EnGb`
+en-GB, `EnUs` en-US, `EsEs` es-ES, `Es419` es-419, `Fr` fr, `Hr` hr, `It` it, `Lt` lt,
+`Hu` hu, `Nl` nl, `No` no, `Pl` pl, `PtBr` pt-BR, `Ro` ro, `Fi` fi, `SvSe` sv-SE, `Vi`
+vi, `Tr` tr, `Cs` cs, `El` el, `Bg` bg, `Ru` ru, `Uk` uk, `Hi` hi, `Th` th, `ZhCn`
+zh-CN, `Ja` ja, `ZhTw` zh-TW, `Ko` ko. A bare language (`en`, `zh`), another region
+(`es-MX`), a different case (`en-us`) or separator (`en_US`) and surrounding spaces do
+not parse. `sibling()` pairs only `EnUs` ↔ `EnGb` and `EsEs` ↔ `Es419`; every other
+locale returns `None`.
 
 ## Commands
 
@@ -126,7 +231,7 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 | CV2-14 | numeric `id` 32-bit, unique (assigned by Noctis) | C |
 | CV2-15 | legacy: ≤ 5 Action Rows, types 1–8 | C |
 | CV2-16 | unknown component types round-trip as raw JSON | R |
-| — | media URL ≤ 2048 [U] | R |
+| CV2-17 | media URL (Media Gallery item, Thumbnail) ≤ 2048 [U] | C / R |
 
 ## Modals
 

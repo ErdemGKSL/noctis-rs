@@ -68,7 +68,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | clicks on another user's panel say "not allowed" | `owner = …` guard working as designed | make the View ephemeral or remove the guard |
 | select shows old choice after update | missing `select` on the Route or no `default_*` set | add `select` and set defaults to the current value |
 | mentions in a View don't ping | Views default to `parse: []` | override `View::mentions` |
-| `LimitError { path: "components[0]…", limit, actual }` | dynamic content exceeds a Limit | let the Paginator handle lists; shorten text; `LimitMode::Lenient` truncates text only |
+| `Violation { rule, path, limit, actual }`, printed as `[CV2-03] components: limit at most 40, actual 41` (`[RULE-ID] path: limit …, actual …`) | dynamic content exceeds a Limit | let the Paginator handle lists; shorten text; `LimitMode::Lenient` truncates text only |
 | `UiError::ItemTooLarge` | a single list item can't fit beside the Chrome | render it as an image or a detail View |
 | `UiError::TooManyTabs` | > 5 Navbar tabs | select-based nav or split Views |
 | `RenderError::Overloaded` | render queue full | show the busy notice; raise pool/queue in `ImageConfig`; cache more |

@@ -25,5 +25,8 @@ prefix = []
 # Test kit (noctis-testkit); enable it in `[dev-dependencies]` only.
 testkit = []
 
+[dependencies]
+noctis-rules.workspace = true
+
 [lints]
 workspace = true

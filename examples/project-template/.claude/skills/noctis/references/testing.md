@@ -82,7 +82,7 @@ assert!(roles.cost().components <= 40);
 
 ```rust
 let view = SetupWizard::new(SetupState { owner: ADMIN, log_channel: None, mod_role: None });
-let rendered = noctis::testkit::render_view(&view, Nav::step(0), Locale::EnglishUs)?;
+let rendered = noctis::testkit::render_view(&view, Nav::step(0), Locale::EnUs)?;
 insta::assert_json_snapshot!(rendered.json());
 assert!(rendered.cost().components <= 40);
 ```

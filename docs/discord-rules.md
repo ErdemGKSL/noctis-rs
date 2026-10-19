@@ -53,6 +53,7 @@ and the runtime validator checks everything else.
 Every rule has a stable ID (for example `CMD-03`). Compile errors, `BuildError`
 variants, runtime errors and trybuild fixtures all cite this ID, so a failing build
 points straight back to this file.
+`noctis_rules::RuleId` holds exactly these ids (a test compares it with this file), and every `Limits` field names its rule id.
 
 ### Source abbreviations
 
@@ -200,6 +201,7 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 | **CV2-14** Numeric `id` | 32-bit int, unique per message; 0 means unset **[D]** | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time (by construction) | Noctis assigns ids deterministically from the builder tree. |
 | **CV2-15** Legacy messages | Without V2: up to **5** Action Rows, only types 1-8 **[D]** | research §2.7 | Compile-time | `LegacyMessage` accepts only `[ActionRow; N]` with N ≤ 5. |
 | **CV2-16** Unknown component types | Must round-trip as opaque raw JSON **[D]** | [CR §Section](https://discord.com/developers/docs/components/reference#section) | Runtime | Raw escape hatch (FR-31) is still counted against CV2-03. |
+| **CV2-17** Media URL length | Media Gallery item and Thumbnail media `url` ≤ **2048** characters **[U]** (2048 is documented only for Component Embeds) | research `discord-components-v2.md` §Media | Compile-time (literal) / Runtime (dynamic) | Measured with `discord_len`; the default sits in `Limits` (PRD Q4). |
 
 ## 10. Modals
 
@@ -548,4 +550,5 @@ tests/boundary/
 | CMD-11 | Discord does not state "a name cannot be both a subcommand and a group" in one sentence; it follows from the option tree (a `SUB_COMMAND` cannot hold subcommands). | Enforced as a hard error. |
 | INT-06 | "Autocomplete cannot be deferred" is implied by the callback-type table, not stated. | No defer for autocomplete. |
 | ATT-03 | 10 attachments per message is widely used but not in the current docs. | Configurable constant, default 10. |
+| CV2-17 | 2048 characters for Media Gallery item and Thumbnail URLs is documented only for Component Embeds, not for messages; the counting unit is unspecified. | Default 2048 in `Limits::media_url_len`, counted with `discord_len`; configurable. |
 | RL-04 | Per-resource limits such as channel renames are undocumented. | Not hard-coded; handled as 429s. |

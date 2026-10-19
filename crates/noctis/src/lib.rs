@@ -17,3 +17,36 @@
 //! - `testkit`: Discord fakes and test helpers; enable it in
 //!   `[dev-dependencies]` only.
 #![deny(missing_docs)]
+
+pub mod rules {
+    //! Discord limits, rule ids, text length and locales.
+    //!
+    //! - [`Limits`] and [`LimitMode`]: every numeric Discord limit, configurable on
+    //!   the App builder; each field names its rule id.
+    //! - [`RuleId`], [`Violation`], [`Bound`] and [`Actual`]: the rule ids of the
+    //!   Discord Rules Catalog and the error that cites them.
+    //! - [`discord_len`] and [`truncate`]: the only length function for user text,
+    //!   and `…` truncation that respects it.
+    //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes.
+    //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
+    //!
+    //! ```
+    //! use noctis::rules::{discord_len, LimitMode, Limits, Locale, RuleId};
+    //!
+    //! assert_eq!(Limits::default().mode, LimitMode::Strict);
+    //! let mut limits = Limits::default();
+    //! limits.mode = LimitMode::Lenient;
+    //! assert!(!limits.truncates(RuleId::CV2_03));
+    //! assert!(limits.truncates(RuleId::CV2_04));
+    //!
+    //! assert_eq!("en-US".parse::<Locale>(), Ok(Locale::EnUs));
+    //! assert_eq!(Locale::EnUs.sibling(), Some(Locale::EnGb));
+    //! assert_eq!(discord_len("😀"), 2);
+    //! ```
+
+    pub use noctis_rules::len::{discord_len, truncate};
+    pub use noctis_rules::{
+        Actual, Bound, LimitMode, Limits, Locale, MessageKey, ParseLocaleError, RuleId, Translate,
+        Violation,
+    };
+}

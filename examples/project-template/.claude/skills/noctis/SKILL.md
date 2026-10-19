@@ -70,8 +70,8 @@ your handler ──returns──▶ View / StaticView / Responded ──▶ Resp
   (`[CMD-11]`, `[CID-01]`, `[CV2-03]`) from `references/limits-cheatsheet.md`.
 
 Everything is imported from one crate: `use noctis::prelude::*;` plus a few modules
-(`noctis::id`, `noctis::ui`, `noctis::image`, `noctis::ports`, `noctis::events`,
-`noctis::testkit`). Never depend on `noctis-*` sub-crates.
+(`noctis::rules`, `noctis::id`, `noctis::ui`, `noctis::image`, `noctis::ports`,
+`noctis::events`, `noctis::testkit`). Never depend on `noctis-*` sub-crates.
 
 ## 2. UI Doctrine (normative rules)
 

@@ -38,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.module(Module)` | — | mount a Module tree (ids must be unique) |
 | `.state(T)` | — | typed shared state, extracted as `State<T>` (one per type) |
-| `.locales(Catalog)` / `.default_locale(Locale)` | — / `Locale::EnglishUs` (`en-US`) | see `i18n.md` |
+| `.locales(Catalog)` / `.default_locale(Locale)` | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` | none | per-guild language overrides (pipeline stage 4) |
 | `.theme(noctis::image::theme!())` | none | Template theme tokens and keyframes; from `AppBuilderImageExt` (`image` feature), installs the `ImagePlugin` |
 | `.image(ImageConfig)` | — | fonts, emoji, render pool (process-scoped, see `images.md`); same extension trait, installs the `ImagePlugin` |
