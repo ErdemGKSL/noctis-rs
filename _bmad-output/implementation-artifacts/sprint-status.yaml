@@ -46,7 +46,7 @@ development_status:
   1-8-public-api-snapshot-and-usage-skill-gate: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   2-1-payload-field-encodings: done
   2-2-custom_id-layout-encoder-and-total-decoder: done
   2-3-refs-and-two-phase-encodedid: done
