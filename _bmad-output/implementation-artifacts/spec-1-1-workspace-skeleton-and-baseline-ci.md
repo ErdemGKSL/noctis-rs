@@ -2,7 +2,8 @@
 title: 'Story 1.1: Workspace skeleton and baseline CI'
 type: 'chore'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'fe105e9f2b6b32edcd68e9527742080a2513f77e'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
