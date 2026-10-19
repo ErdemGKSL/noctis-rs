@@ -9,9 +9,9 @@ use core::fmt::{self, Write};
 use arrayvec::ArrayString;
 
 use crate::base62::{digit, digit_value};
-use crate::parts::{Flags, SelectNonce, Sign, Tag, ViewEnvelope};
+use crate::parts::{DIGIT_MAX as MAX_SCHEMA, Flags, SelectNonce, Sign, Tag, ViewEnvelope};
 use crate::route::{
-    BodyKind, FieldReader, FieldWriter, Payload, PayloadDecode, Route, is_route_byte,
+    BodyKind, FieldReader, FieldWriter, MAX_ROUTE_LEN, Payload, PayloadDecode, Route, is_route_byte,
 };
 use crate::{CodecError, DecodeError, EncodeError, ForgedReason, Section, StaleReason};
 
@@ -33,11 +33,6 @@ pub const REF_LEN: usize = 11;
 pub const TAG_LEN: usize = 6;
 /// Longest `custom_id`, in characters (CID-01).
 pub const MAX_ID_LEN: usize = 100;
-
-/// Longest route id.
-const MAX_ROUTE_LEN: usize = 24;
-/// Largest schema version.
-const MAX_SCHEMA: u8 = 61;
 
 /// The per-render sections of a `custom_id` that are not part of the Payload.
 ///
@@ -208,15 +203,13 @@ pub fn encode<R: Route>(
         limit,
         overflow: false,
     };
-    if payload
-        .encode_fields(&mut FieldWriter::new(&mut sink))
-        .is_err()
-    {
-        return Err(match (sink.overflow, shape.body()) {
-            (false, _) => EncodeError::Field,
-            (true, BodyKind::Spill) => EncodeError::NeedsRef,
-            (true, _) => EncodeError::TooLong,
-        });
+    let fields = payload.encode_fields(&mut FieldWriter::new(&mut sink));
+    // Overflow wins even when the Payload swallowed the writer's error.
+    match (sink.overflow, shape.body(), fields) {
+        (true, BodyKind::Spill, _) => return Err(EncodeError::NeedsRef),
+        (true, _, _) => return Err(EncodeError::TooLong),
+        (false, _, Err(_)) => return Err(EncodeError::Field),
+        (false, _, Ok(())) => {}
     }
 
     if let Some(signer) = signer {
@@ -669,9 +662,12 @@ mod tests {
         assert_eq!(err("2a:!0000"), bad(3));
         assert_eq!(err("2a:__000"), bad(4));
         assert_eq!(err("2a:_0!00"), bad(5));
+        assert_eq!(err("2a:_00!0"), bad(6));
+        assert_eq!(err("2a:_000!"), bad(7));
 
         assert_eq!(err("6a:_0000z"), trunc(Section::Nonce));
         assert_eq!(err("4a:!0"), bad(3));
+        assert_eq!(err("4a:0!"), bad(4));
 
         assert_eq!(err("8a:12345"), trunc(Section::Tag));
         assert_eq!(err("8a:~12"), trunc(Section::Tag));

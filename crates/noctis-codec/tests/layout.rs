@@ -166,12 +166,80 @@ fn encode_matrix() {
     let parts = Parts::new().with_signer(&signer);
     assert_eq!(enc::<TextSigned>(&x(91), &parts).unwrap().len(), 100);
     assert_eq!(enc::<TextSigned>(&x(92), &parts), Err(EncodeError::TooLong));
+    assert_eq!(enc::<SpillSigned>(&x(90), &parts).unwrap().len(), 100);
+    assert_eq!(
+        enc::<SpillSigned>(&x(91), &parts),
+        Err(EncodeError::NeedsRef)
+    );
 
     assert_eq!(plain::<Stored>(&buy(1, 1)), Err(EncodeError::NeedsRef));
     assert_eq!(
         plain::<BadSchema>(&NumP { n: 1 }),
         Err(EncodeError::InvalidSchema { schema: 62 })
     );
+}
+
+/// A Payload that ignores the writer's error and reports success.
+#[derive(Debug)]
+struct Swallow(String);
+
+impl Payload for Swallow {
+    fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
+        let _ = out.field(&self.0);
+        Ok(())
+    }
+}
+
+impl PayloadDecode<'_> for Swallow {
+    fn decode_fields(f: &mut FieldReader<'_>) -> Result<Self, CodecError> {
+        Ok(Self(f.field()?))
+    }
+}
+
+route!(SwallowInline, "w", RouteShape::INLINE, 0, Swallow);
+route!(SwallowSpill, "w", RouteShape::SPILL, 0, Swallow);
+
+#[test]
+fn encode_swallowed_overflow() {
+    let p = Swallow("x".repeat(98));
+    assert_eq!(plain::<SwallowInline>(&p), Err(EncodeError::TooLong));
+    assert_eq!(plain::<SwallowSpill>(&p), Err(EncodeError::NeedsRef));
+}
+
+/// A field whose own `encode` fails without the id overflowing.
+#[derive(Debug)]
+struct Failing;
+
+impl Field for Failing {
+    const MAX_LEN: Option<usize> = Some(0);
+
+    fn encode<W: fmt::Write + ?Sized>(&self, _out: &mut W) -> fmt::Result {
+        Err(fmt::Error)
+    }
+}
+
+#[derive(Debug)]
+struct FailP;
+
+impl Payload for FailP {
+    fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result {
+        out.field(&Failing)
+    }
+}
+
+impl PayloadDecode<'_> for FailP {
+    fn decode_fields(_f: &mut FieldReader<'_>) -> Result<Self, CodecError> {
+        Ok(Self)
+    }
+}
+
+route!(FailInline, "f", RouteShape::INLINE, 0, FailP);
+route!(FailSpill, "f", RouteShape::SPILL, 0, FailP);
+
+#[test]
+fn encode_field_error() {
+    assert_eq!(plain::<FailInline>(&FailP), Err(EncodeError::Field));
+    assert_eq!(plain::<FailSpill>(&FailP), Err(EncodeError::Field));
 }
 
 #[test]
@@ -302,6 +370,14 @@ fn cid_06_payload_outcomes() {
     assert_eq!(
         decode_route::<Sig>("0sig:1"),
         Err(flags(Flags::T, Flags::EMPTY))
+    );
+    assert_eq!(
+        decode_route::<Sel>("0s:1"),
+        Err(flags(Flags::N, Flags::EMPTY))
+    );
+    assert_eq!(
+        decode_route::<Buy>("4shop.buy:0047,3"),
+        Err(flags(Flags::EMPTY, Flags::N))
     );
 
     assert_eq!(
@@ -512,6 +588,7 @@ fn envelope() -> impl Strategy<Value = ViewEnvelope> {
         prop_oneof![
             Just('_'),
             proptest::char::range('0', '9'),
+            proptest::char::range('A', 'Z'),
             proptest::char::range('a', 'z')
         ],
         0..=61u8,

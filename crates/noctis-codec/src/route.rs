@@ -6,7 +6,7 @@ use core::fmt;
 use crate::{CodecError, Field, FieldDecode};
 
 /// Longest route id, in characters.
-const MAX_ROUTE_LEN: usize = 24;
+pub(crate) const MAX_ROUTE_LEN: usize = 24;
 
 /// Whether `b` may appear in a route id (`[a-z0-9._-]`).
 pub(crate) const fn is_route_byte(b: u8) -> bool {

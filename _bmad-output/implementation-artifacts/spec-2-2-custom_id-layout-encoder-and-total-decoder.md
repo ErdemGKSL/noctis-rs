@@ -2,7 +2,7 @@
 title: 'Story 2.2: `custom_id` layout encoder and total decoder'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '103e70498d270ae377eccaa4da9145482a729ac5'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -265,6 +265,37 @@ Value types:
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 27 findings — high 0, medium 2, low 11, false 14, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `encode` ignores `sink.overflow` when `encode_fields` returns `Ok`, so a Payload/Field that swallows a writer error ships a truncated id — confirmed at layout.rs `encode` (overflow read only in the `is_err()` branch); grouped with the edge finding below; patch: return `TooLong`/`NeedsRef` whenever `sink.overflow` is set, plus a test.
+  - `[low]` `[reject]` (blind) `encode` does not validate that the written body matches the decode grammar (custom Field emitting `:`/`~`/non-ASCII) — only reachable when a Field breaks its documented contract (field.rs implementor contract), and decode then fails loudly as `Malformed`; the fix adds a new validation guard.
+  - `[medium]` `[reject]` (blind) the tag is never verified, so `decode_route` on a signed Route accepts any tag — real, but the intent assigns tag verification and `Forged` on a bad tag to Story 2.4 (epics.md Story 2.4 ACs); `payload` already documents "the tag is not verified here".
+  - `[false]` `[reject]` (blind) `SCHEMA > 61` should be a compile-time error — the spec settles it as runtime `EncodeError::InvalidSchema` (matrix row `BadSchema`), and that fails loudly on every encode; no silent bad outcome.
+  - `[low]` `[patch]` (blind) duplicated limits: `MAX_ROUTE_LEN` (24) in layout.rs and route.rs, 61 as `MAX_SCHEMA` (layout.rs) and `DIGIT_MAX` (parts.rs) — confirmed by grep; harm: `RouteId::new` and `decode` grammar can drift; patch: one `pub(crate)` definition each, imported elsewhere.
+  - `[false]` `[reject]` (blind) phase 2 is not injective (`"0o:"` and `"0o:0"` decode alike) — the intent's FR-60 AC requires omitted trailing `Option`s to decode as `None`, the spec matrix lists both rows, and lib.rs documents the exception; the tag covers the phase-1 spelling as designed.
+  - `[low]` `[patch]` (blind) proptest gaps: action strategy lacks `A-Z`; Spill shapes not fuzzed — Spill and SpillSigned round-trips are in fact covered by `fixtures_round_trip`; the upper-case action gap is real; patch: add `'A'..='Z'` to the `envelope()` strategy.
+  - `[low]` `[patch]` (blind) unit matrix misses `SpillSigned` overflow to `NeedsRef`, an `N`-only Stale flag mismatch, `EncodeError::Field` and Display text — confirmed by grep for the first two (the `Field` arm is the verification-gap finding below; Display assertions are cosmetic); patch: add the SpillSigned 91/92×'x' rows and `Sel`/`Buy` N-flag Stale rows.
+  - `[false]` `[reject]` (blind) `FieldReader`/`FieldWriter` constructors are `pub(crate)`, so hand impls cannot be unit-tested in isolation — the spec deliberately keeps `new`/`finish` `pub(crate)`; hand impls are testable through `encode`/`decode_route`, and a public constructor would add surface.
+  - `[low]` `[reject]` (blind) `EncodeError::Field` drops the failing field index — diagnostic-only, rarely met (only fallible custom fields), and the fix changes a public variant's shape.
+  - `[false]` `[reject]` (blind) the prefix closure maps an impossible error to `TooLong` — the prefix is at most 34 characters into a 100-capacity buffer, so the branch cannot fire.
+  - `[false]` `[reject]` (blind) unchecked arithmetic in `check_body` — `is_ref` implies a non-empty body and positions are bounded by `raw.len() <= 100`; no overflow or panic is reachable.
+  - `[false]` `[reject]` (blind) spec frontmatter status/`review_loop_iteration` do not match the review stage — the workflow sets them at its own steps; the fix would edit this build's spec.
+  - `[low]` `[patch]` (edge) overflow flag ignored on the `Ok` path of `encode_fields` — same root cause as the first blind finding; patched with it.
+  - `[low]` `[reject]` (edge) custom Field writing `:`/`~`/non-printable bytes gets `Ok` from `encode` — same as the blind body-grammar finding: contract violation, loud `Malformed` at decode, fix adds a guard.
+  - `[low]` `[reject]` (edge) `payload::<R>` with `R::SCHEMA > 61` reports `Stale` instead of a misconfiguration — such a Route can never encode (loud `InvalidSchema`), so only foreign ids reach it; the fix adds a branch for a rare author error.
+  - `[low]` `[patch]` (vgap) the `EncodeError::Field` arm of `encode` is never exercised — pre-verified; patch: `encode_field_error` test with a failing field on INLINE and SPILL routes.
+  - `[low]` `[patch]` (vgap) `InvalidChar` indices for envelope page-low/version digits and the nonce low digit are unpinned — pre-verified; patch: three `cid_06_decode_matrix` rows and two `ViewEnvelope::parse` assertions.
+  - `[false]` `[reject]` (intent D1) layout API not reachable through the `noctis` facade — the story's ACs are codec-level and the spec deliberately limits the facade change to `FieldDecode::absent`; bot-author surface comes with the derive and core stories.
+  - `[false]` `[reject]` (intent D2) encoder never writes a Ref body — Ref minting and `finish` are Story 2.3 per epics.md; `NeedsRef` is the agreed hook.
+  - `[false]` `[reject]` (intent D3) two decode entry points — AC2 (`Ok(Decoded)`/`Err(CodecError)`) and AC3 (`Stale` distinct from `CodecError`) are both met; totality of user `FieldDecode` impls is their documented contract.
+  - `[false]` `[reject]` (intent D4) an `S` mismatch is reported as `Stale(Schema)` not `Stale(Flags)` — AC3 requires only `Stale`, which is returned; tests cover it.
+  - `[medium]` `[reject]` (intent D5) integrity tag not verified — same as the blind tag finding: assigned to Story 2.4 by the intent.
+  - `[false]` `[reject]` (intent D6) Payload evolution simulated with two types; explicit and omitted `None` decode alike — this is the FR-60 behaviour the AC asks for, tested by `trailing_option_compat`.
+  - `[false]` `[reject]` (intent D7) no recorded `rules-catalog` run — ran `cargo run --release -p xtask -- rules-catalog`: `ok (125 rules: 18 covered, 109 pending, ...)`, with the constant comparison active.
+  - `[false]` `[reject]` (intent D8) CID-01/CID-03 enforcement not complete — compile-time length proof and reserved-route rejection belong to Story 2.5 per epics.md; their pending entries name 2.5.
+  - `[false]` `[reject]` (intent D9) schema 0 carries no `S` digit — matches AC1 ("sections appear only when their flags are set") and AD-5.
+
 ## Design Notes
 
 Decisions (logged to the memlog):
@@ -298,3 +329,36 @@ impl<'de> PayloadDecode<'de> for BuyV1 {
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** `noctis-codec` now defines the `Route`, `Payload` and `PayloadDecode<'de>` traits, the `custom_id` layout constants, an `encode` function for Inline/Signed/Spill/SpillSigned bodies (it returns `EncodeError::NeedsRef` when an id would exceed 100 chars), and a total two-phase decoder: `decode` handles grammar only and returns `Decoded`/`CodecError`, and `payload::<R>` classifies an id as `Stale` (schema/flags) or decodes it. Omitted trailing `Option`s decode as `None` (FR-60).
+- **Files changed:**
+  - `crates/noctis-codec/src/layout.rs`: encoder, phase-1 decoder and body checks.
+  - `crates/noctis-codec/src/route.rs`: `Route`/`Payload`/`PayloadDecode` traits and `RouteId`.
+  - `crates/noctis-codec/src/parts.rs`: the prefix, flags, schema, envelope and nonce parsers.
+  - `crates/noctis-codec/src/error.rs`: the `EncodeError`, `CodecError` and `Stale` types.
+  - `crates/noctis-codec/src/field.rs`, `base62.rs`, `lib.rs`: `FieldDecode::absent`, digit helpers and docs.
+  - `crates/noctis-codec/tests/layout.rs`: the CID-06 matrix, proptests, fixtures and FR-60 compat tests.
+  - `crates/noctis/src/lib.rs`, `examples/project-template/` (AGENTS.md, skill, `payload_fields.rs`): the facade re-export and template updates.
+  - `xtask/public-api.txt`, `xtask/rules-pending.toml`: the API snapshot and rule coverage.
+- **Review findings:** 27 in total (high 0, medium 2, low 11, false 14).
+  - **Patched (6 low, 0 medium, 0 high):**
+    - `encode` now honours `sink.overflow` on the `Ok` path.
+    - The duplicated limits (`MAX_ROUTE_LEN`, schema max 61) are now defined once.
+    - Upper-case actions are added to the proptest envelope strategy.
+    - New tests: SpillSigned `NeedsRef` rows, N-flag Stale rows, the `EncodeError::Field` arm (`encode_field_error`), and the `InvalidChar` index rows for the envelope and nonce digits.
+  - **Deferred:** none.
+  - **Rejected:**
+    - Tag not verified (medium, twice): assigned to Story 2.4.
+    - Body-grammar validation of custom Fields (2 findings): a contract violation that fails loudly as `Malformed`.
+    - `EncodeError::Field` has no field index: diagnostic only, and the fix would change a public variant.
+    - `payload` with `SCHEMA > 61` returns `Stale`: such a Route can never encode.
+    - The remaining 14 were false: the compile-time schema check, phase-2 non-injectivity (FR-60 by design), `pub(crate)` constructors, an unreachable `TooLong` branch, unchecked arithmetic, spec status, the facade surface, Ref writing (2.3), two entry points, `Stale(Schema)` vs `Stale(Flags)`, the Option evolution test, the rules-catalog run, CID-01/03 (2.5) and schema 0 having no `S` digit.
+- **Follow-up review recommended:** false. No high and only 0 medium findings were patched (patched counts: high 0, medium 0, low 6).
+- **Verification:** local gates (`gates.sh`: fmt, clippy `--release -D warnings`, `test --release`, xtask checks) are all green, and `rules-catalog` passes (125 rules, 18 covered). CI is paused by the maintainer, so it did not run.
+- **Residual risks:**
+  - Integrity tags are not verified until Story 2.4, so signed routes accept any tag.
+  - Ref bodies are not minted until Story 2.3 (`NeedsRef` is the hook).
+  - A custom Field that breaks its contract can encode an id that only fails later, at decode.
+  - CI has not validated this change.

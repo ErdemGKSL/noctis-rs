@@ -8,7 +8,7 @@ use crate::EnvelopeError;
 use crate::base62::{self, digit, digit_value};
 
 /// Largest value of one base62 digit.
-const DIGIT_MAX: u8 = 61;
+pub(crate) const DIGIT_MAX: u8 = 61;
 /// Largest value of two base62 digits.
 const TWO_DIGIT_MAX: u16 = 62 * 62 - 1;
 
@@ -306,6 +306,8 @@ mod tests {
         assert_eq!(ViewEnvelope::parse(*b"_zzzz"), Ok(max));
         assert_eq!(ViewEnvelope::parse(*b"__zzz"), Err(1));
         assert_eq!(ViewEnvelope::parse(*b"!zzzz"), Err(0));
+        assert_eq!(ViewEnvelope::parse(*b"_zz!z"), Err(3));
+        assert_eq!(ViewEnvelope::parse(*b"_zzz!"), Err(4));
     }
 
     #[test]
