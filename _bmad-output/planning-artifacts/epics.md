@@ -1,6 +1,6 @@
 ---
-status: draft
-stepsCompleted: [1, 2, 3]
+status: final
+stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
   - _bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/prd.md
   - _bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/addendum.md
@@ -44,6 +44,36 @@ recorded here.
   lets the rules-catalog gate be required from Story 1.7 while rule tests land epic by
   epic, and must be empty by Story 14.4; the HTTP client for `AssetFetcher` (deferred
   by the architecture) is chosen in Story 10.8.
+- **Step 4, final validation:** all checks passed after three fixes made during
+  validation (rule ids CMD-07, RL-04 and REG-06 were not cited by any story; the
+  `Attachment` type moved into Story 4.1 because Story 4.3 validates
+  `attachment://` references; the reference-card bench and pixel gates no longer rely
+  on the Project Template compiling before Story 14.2). [C] Complete Workflow chosen;
+  status set to `final`.
+
+### Validation summary (step 4)
+
+- **FR coverage:** FR-1..FR-79 each appear in at least one story's Implements line
+  and acceptance criteria; NFR-1..NFR-10, UX-DR1..UX-DR9 and AD-1..AD-29 are all
+  cited; every rule id in `docs/discord-rules.md` is cited by a story (documentation-only
+  rows are confirmed in Story 14.4).
+- **Starter template:** none in the architecture; Story 1.1 lays out the structural
+  seed. Creating all twelve crate skeletons up front is deliberate: the seed and the
+  `deps-check` layer graph need every crate to exist, and each skeleton is an empty,
+  documented `lib`; real code lands only in the story that needs it.
+- **Story quality:** every story has a user story, an Implements line (FR/NFR, AD,
+  rule ids), BDD acceptance criteria with typed-error, boundary and edge cases,
+  trybuild fixtures for every compile-time rule, and an explicit template/Usage Skill
+  criterion when it changes the public API.
+- **Dependencies:** no story depends on a later story in its own epic; the five
+  cross-epic mentions of later stories (1.7 → 2.2, 1.8 → 4.1, 2.6 → 7.1, 5.6 → 13.5,
+  12.6 → 14.3) are "later extended by" notes, not prerequisites. Each epic uses only
+  earlier epics' outputs.
+- **File churn:** `noctis-core` is touched by Epics 5–9, 12 and 13. Consolidation was
+  considered and rejected: each epic owns a distinct core subsystem (lanes and
+  workers; command resolution and Responder; Route dispatch and Refs; View
+  re-rendering; attachments; Cluster configuration; Module state), follows the crate
+  layer order the architecture mandates, and is a feedback point (P0 → P1 → P2).
 
 ### Story conventions (apply to every story)
 
@@ -1026,7 +1056,7 @@ So that I can't build a structure Discord will reject.
 **Given** a Route `R`
 **When** a component is built from it
 **Then** the only constructor is from an `R` value (`BuyButton { .. }.button()`, `.select()`), it requires `R: Handled`, and there is no string `custom_id` constructor (AD-19); a fixture shows a Route without `Handled` failing to compile (FR-58 compile-time half)
-**And** `File` accepts only an `AttachmentRef` (CV2-12), and numeric component ids are assigned deterministically from the tree (CV2-14)
+**And** `noctis-ui` defines `Attachment { name, bytes: Bytes, content_type, alt }` named `<first 16 hex of blake3(bytes)>.<ext>` (or `Attachment::with_digest`), an `AttachmentSet` keyed by name, and `AttachmentRef`, obtainable only by adding an attachment; `File` accepts only an `AttachmentRef` (CV2-12), and numeric component ids are assigned deterministically from the tree (CV2-14)
 
 **Given** the new public API
 **When** the story is done
@@ -1405,13 +1435,13 @@ As a bot author,
 I want to set permissions, contexts, integration types, nsfw and guild scope per Command, and register user and message context menus,
 So that each Command appears exactly where and for whom I intend.
 
-**Implements:** FR-11, FR-12; AD-26; rules META-01, META-02, META-03, META-05, CTX-01, CTX-02, CTX-03.
+**Implements:** FR-11, FR-12; AD-26; rules META-01, META-02, META-03, META-05, CMD-07, CTX-01, CTX-02, CTX-03.
 
 **Acceptance Criteria:**
 
 **Given** `#[command(.., permissions = MANAGE_GUILD | BAN_MEMBERS, contexts = [Guild], integration_types = [..], nsfw = true, guilds = [..])]`
 **When** it compiles
-**Then** permissions parse into typed bitflags and an unknown permission name fails to compile (META-01), and `contexts`/`integration_types` on a guild-scoped Command fail to compile (META-03); `dm_permission` is not exposed (META-05)
+**Then** permissions parse into typed bitflags and an unknown permission name fails to compile (META-01), `nsfw` is a typed `bool` attribute (CMD-07; the discovery restriction is documented only), and `contexts`/`integration_types` on a guild-scoped Command fail to compile (META-03); `dm_permission` is not exposed (META-05)
 
 **Given** `#[user_command("Show Profile")]` and `#[message_command("…")]`
 **When** they compile
@@ -2038,9 +2068,9 @@ So that edits keep unchanged images without re-uploading and drop unused ones.
 
 **Acceptance Criteria:**
 
-**Given** `Attachment::new(bytes, ext)`
-**When** it is created
-**Then** its name is `<first 16 hex of blake3(bytes)>.<ext>`, `Attachment::with_digest` accepts a precomputed digest, and a rendered View is `(MessageTree, AttachmentSet)` keyed by name so one image used twice uploads once
+**Given** the content-addressed `Attachment` and `AttachmentSet` from Story 4.1
+**When** a View with attachments is rendered and sent
+**Then** it is `(MessageTree, AttachmentSet)` keyed by name, so one image used twice uploads once, and the multipart body is built by the Responder
 
 **Given** an edit of a View
 **When** the Responder computes the attachment diff
@@ -2444,13 +2474,13 @@ So that renderer upgrades never change my images unnoticed.
 **When** a test pixel-snapshots a Template
 **Then** it compares against a stored PNG with a configurable tolerance and fails beyond it
 
-**Given** the Project Template's profile card Template (≈934×282, PNG, warm caches)
+**Given** the reference card Template (a copy of the Project Template's profile card, ≈934×282, PNG, warm caches, kept with the benches)
 **When** the reference card bench in `noctis-core/benches` runs on `main`
 **Then** it reports p50 and p99 against `budgets.toml` (targets p50 ≤ 10 ms, p99 ≤ 50 ms with the pool saturated), reporting only until PRD Q3 confirms the numbers
 
 **Given** a pull request that bumps takumi
 **When** CI runs
-**Then** `tw-crosscheck` and the Project Template pixel snapshots are required to pass (NFR-8), and `main.yml` builds against the latest takumi and reports
+**Then** `tw-crosscheck` and the pixel snapshots of the reference card and `examples/` Templates are required to pass (NFR-8; the Project Template's own pixel snapshots join this gate in Story 14.2), and `main.yml` builds against the latest takumi and reports
 
 **Given** the new public API
 **When** the story is done
@@ -2676,13 +2706,14 @@ As a bot operator running a Cluster,
 I want every Discord HTTP request to go through a shared rate-limit proxy,
 So that processes sharing one token never exceed Discord's per-token limits.
 
-**Implements:** FR-52; AD-24; rules RL-01, RL-02, RL-03, INT-13.
+**Implements:** FR-52; AD-24; rules RL-01, RL-02, RL-03, RL-04, INT-13.
 
 **Acceptance Criteria:**
 
 **Given** a proxy URL configured (builder or `NOCTIS_HTTP_PROXY`)
 **When** the App's single HTTP client is built
 **Then** it uses `proxy(url, true)` and `ratelimiter(None)`, and a test with a mock proxy shows no request bypasses it (including raw REST and webhook requests)
+**And** 429 responses with `X-RateLimit-Scope: shared` are surfaced as typed errors and counted, never hard-coded as limits (RL-04), and 401/403/429 counts feed a metric toward the invalid-request limit (RL-03)
 
 **Given** a Cluster configuration (a Shard Range smaller than the total) without a proxy
 **When** the App starts
@@ -2923,7 +2954,7 @@ So that I can prove my implementation has the semantics Noctis relies on.
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill documents running the suites, the template's `tests/adapters.rs` runs the suite against `BoundedCacheStore`, and `skill-check` passes
+**Then** the Usage Skill documents running the suites, the template's `tests/adapters.rs` is reconciled to run the suite against `BoundedCacheStore` (it runs as a gate from Story 14.2), and `skill-check` passes
 
 ### Story 14.2: Project Template builds, runs and gates CI
 
@@ -2938,7 +2969,7 @@ So that copying it gives me a working, idiomatic bot.
 **Given** `examples/project-template/`
 **When** CI runs `cargo build --release`, `cargo clippy --release --all-targets -- -D warnings` and `cargo test --release` in it against the workspace
 **Then** all pass, covering: an option-less entry Command opening a View (`/dashboard`), a Wizard (`/setup start`), a Navbar View with an overflowing list, a Template rendered into a Media Gallery (`/profile`), a custom Adapter (`BoundedCacheStore`) and `en`/`tr` Locale files
-**And** the `template-build` job switches from tracking mode to a required gate, and the "written against the planned API" notes are removed from the template sources
+**And** the `template-build` job switches from tracking mode to a required gate, the template's Template pixel snapshots and Adapter conformance test join the required gates (NFR-8), and the "written against the planned API" notes are removed from the template sources
 
 **Given** the template
 **When** `xtask skill-check` lints it
@@ -2987,6 +3018,7 @@ So that the NFR-10 promise "static input is always checked at compile time" hold
 **Given** the audit
 **When** each rule with static input is reviewed
 **Then** none is checked only at runtime; any found is moved to compile time or recorded in the catalog with the reason its input is dynamic
+**And** documentation-only rows are confirmed as such in the catalog: the discovery restriction of CMD-07, REG-06 (out of scope for v1) and CMD-14/LOC-04 (permitted, no check)
 
 **Given** the catalog's Unconfirmed values table
 **When** PRD open questions Q1, Q4 and Q5 have answers
