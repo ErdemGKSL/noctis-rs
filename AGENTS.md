@@ -20,7 +20,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Running and verifying
 
 - Before writing, reviewing or refactoring any Rust (`.rs`, `Cargo.toml`, crate layout, crate choice), invoke the `rust-best-practices` skill and read only the `references/*.md` files the task touches.
-- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace`, `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6) and `cargo run --release -p xtask -- deps-check`; CI (`.github/workflows/ci.yml`) runs the same gates plus `cargo deny check` (cargo-deny 0.20) and the MSRV check `cargo +1.91 check --release --workspace`.
+- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6); CI (`.github/workflows/ci.yml`) runs the same gates plus `cargo deny check` and the MSRV check.
 - Always build, test, check and run with `--release` (`cargo build --release`, `cargo test --release`, `cargo clippy --release`, `cargo run --release`); never create a debug build, because disk space in cloud sessions is limited and a second (debug) `target/` profile fills it. If the disk fills anyway, delete `target/debug/`.
 - trybuild (UI tests) never passes `--release`; it is covered by the repo-root `.cargo/config.toml` (created by Story 1.1), whose `[profile.dev]` is release-equivalent (`opt-level = 3`, no debug info, debug assertions, overflow checks or incremental). Never weaken that file. trybuild suites are `compile_fail` only.
 
