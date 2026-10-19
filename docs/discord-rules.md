@@ -554,3 +554,5 @@ tests/boundary/
 | ATT-03 | 10 attachments per message is widely used but not in the current docs. | Configurable constant, default 10. |
 | CV2-17 | 2048 characters for Media Gallery item and Thumbnail URLs is documented only for Component Embeds, not for messages; the counting unit is unspecified. | Default 2048 in `Limits::media_url_len`, counted with `discord_len`; configurable. |
 | RL-04 | Per-resource limits such as channel renames are undocumented. | Not hard-coded; handled as 429s. |
+| OPT-13 | Allowed extension syntax is not specified. | A dot followed by one or more ASCII letters or digits (`.pdf`, `.PNG`, `.7z`); `.tar.gz` and bare `pdf` are rejected. |
+| META-02 | Whether a leaf that leaves a field unset conflicts with one that sets it. | Without an explicit base declaration every command under a base must agree, unset included; with one, unset leaves inherit it and set ones must match. |

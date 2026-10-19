@@ -30,10 +30,13 @@ pub mod rules {
     //!   and `…` truncation that respects it.
     //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes.
     //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
-    //! - [`command`]: Command Pattern expansion ([`command::expand`]) and the
+    //! - [`command`]: Command Pattern expansion ([`command::expand`]), the
     //!   command name and tree rules ([`command::validate_name`],
-    //!   [`command::validate_tree`], [`command::validate_merge`]) that
-    //!   `#[command]` and `App::build` call.
+    //!   [`command::validate_tree`], [`command::validate_merge`]), the option
+    //!   rules ([`command::validate_options`], [`command::measure_options`]), the
+    //!   context-menu name rule ([`command::validate_context_menu_name`]) and the
+    //!   command metadata rules ([`command::validate_meta`]) that `#[command]`,
+    //!   `derive(Options)` and `App::build` call.
     //!
     //! ```
     //! use noctis::rules::{discord_len, LimitMode, Limits, Locale, RuleId};
@@ -67,6 +70,19 @@ pub mod rules {
     //!     .collect();
     //! let errs = validate_tree(&decls, &limits).unwrap_err();
     //! assert_eq!(errs[0].rule, RuleId::CMD_11);
+    //! ```
+    //!
+    //! ```
+    //! use noctis::rules::command::{OptionDecl, OptionType, validate_options};
+    //! use noctis::rules::{Limits, RuleId};
+    //!
+    //! let options = [
+    //!     OptionDecl::new("reason", OptionType::String, "Why"),
+    //!     OptionDecl::new("days", OptionType::Integer, "How long").required(true),
+    //! ];
+    //! let errs = validate_options(&options, &Limits::default()).unwrap_err();
+    //! assert_eq!(errs[0].rule, RuleId::OPT_01);
+    //! assert_eq!(errs[0].path, "days");
     //! ```
 
     pub use noctis_rules::command;

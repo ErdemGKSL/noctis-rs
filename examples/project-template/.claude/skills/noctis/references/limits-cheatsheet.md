@@ -99,12 +99,17 @@ are not `Limits` fields.
 
 ## Rules types
 
-All in `noctis::rules`; the command pattern and tree functions live in
-`noctis::rules::command` (see `commands.md` §2 "Rule functions"):
+All in `noctis::rules`; the command pattern, tree, option, context-menu and metadata
+functions live in `noctis::rules::command` (see `commands.md` §2 "Rule functions", §3
+"Rule functions (options)", §5 and §6 "Metadata rules"):
 
 | Item | What it is |
 | --- | --- |
 | `Limits`, `LimitMode` | the limits above and Strict/Lenient handling |
+| `command::{expand, validate_name, validate_tree, validate_merge}` | Command Patterns and trees (`commands.md` §2) |
+| `command::{validate_options, measure_options, OptionDecl, OptionType, Choice, ChoiceValue, NumericValue}` | options (`commands.md` §3) |
+| `command::validate_context_menu_name` | CTX-01 (`commands.md` §5) |
+| `command::{validate_meta, CommandMeta, InteractionContext, IntegrationType}` | base-command metadata (`commands.md` §6) |
 | `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (125, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
 | `Violation` | `{ rule, path, limit, actual, notes: Vec<String>, help: Option<String> }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)` plus `.with_note(…)` (appends) and `.with_help(…)` (replaces); implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty), then a `\n  = note: …` line per note and a `\n  = help: …` line |
 | `Bound` | the broken limit: `AtMost(n)` "at most n", `AtLeast(n)` "at least n", `Between { min, max }` "between min and max", `Exactly(n)` "exactly n", `Describe(&str)` printed as is |
@@ -135,7 +140,7 @@ locale returns `None`.
 | CMD-04 | description 1–100 | C / B |
 | CMD-05 | ≤ 8000 chars per command incl. options, choices, longest localization per field [U] | C / B |
 | CMD-06 | unique option names per level | C / B |
-| CMD-07 | `nsfw` consistent per base | C / B |
+| CMD-07 | `nsfw` consistent per base (unset counts) | C / B |
 | CMD-10 | ≤ 3 words (command → group → subcommand) | C |
 | CMD-11 | a name can't be both subcommand and group | C / B |
 | CMD-12 | a base with children can't be invoked or have options | C / B |
@@ -167,7 +172,7 @@ locale returns `None`.
 | OPT-10 | choices xor autocomplete | C |
 | OPT-11 | autocomplete on string/integer/number only | C |
 | OPT-12 | autocomplete input is unvalidated (`Partial<T>`) | C / R |
-| OPT-13 | `file_types` ≤ 10, attachment only | C |
+| OPT-13 | `file_types` ≤ 10, attachment only; each `image`/`video`/`audio` or `.ext` | C |
 | INT-07 | ≤ 25 autocomplete choices (always truncated) | R |
 
 ## Localization

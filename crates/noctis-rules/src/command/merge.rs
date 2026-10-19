@@ -1,9 +1,12 @@
-//! Every registration of an App: [`validate_merge`] (REG-01..04 plus the tree
-//! rules per scope).
+//! Every registration of an App: [`validate_merge`] (REG-01..04, META-03,
+//! CTX-01 plus the tree rules per scope).
 
 use std::collections::HashSet;
 
-use super::{CommandDecl, ContextMenuDecl, DeclKind, MenuKind, Scope, source_name, validate_tree};
+use super::{
+    CommandDecl, CommandMeta, ContextMenuDecl, DeclKind, MenuKind, Scope, source_name,
+    validate_context_menu_name, validate_meta, validate_tree,
+};
 use crate::{Actual, Bound, Limits, RuleId, Violation};
 
 fn scope_note(scope: Scope) -> String {
@@ -17,7 +20,12 @@ fn scope_note(scope: Scope) -> String {
 ///
 /// Scopes are checked in first appearance (commands, then menus). Per scope:
 /// [`validate_tree`] on that scope's commands (every violation gains a
-/// `scope: global` / `scope: guild <id>` note), then the counts against
+/// `scope: global` / `scope: guild <id>` note), then META-03 per command and
+/// then per context-menu command ([`validate_meta`](super::validate_meta) with
+/// the declaration's scope; the path is `<path or name>.<field>`), then CTX-01
+/// per context-menu name ([`validate_context_menu_name`](super::validate_context_menu_name);
+/// the path is the name), each in input order with a ``declared by `src` ``
+/// note before the scope note, then the counts against
 /// `limits.chat_input_commands` (distinct first words of non-empty handler
 /// paths, so a merged base counts once), `limits.user_commands` and
 /// `limits.message_commands` (REG-01 for the global scope, REG-02 for a guild),
@@ -67,6 +75,10 @@ pub fn validate_merge(
         if let Err(errs) = validate_tree(&in_scope, limits) {
             out.extend(errs.into_iter().map(|v| v.with_note(note.clone())));
         }
+        let menus_in_scope: Vec<&ContextMenuDecl<'_>> =
+            menus.iter().filter(|m| m.scope == scope).collect();
+
+        check_declarations(&in_scope, &menus_in_scope, scope, &note, limits, &mut out);
 
         let count_rule = match scope {
             Scope::Global => RuleId::REG_01,
@@ -77,8 +89,6 @@ pub fn validate_merge(
             .filter(|c| matches!(c.kind, DeclKind::Handler { .. }) && !c.path.is_empty())
             .filter_map(|c| c.path.split(' ').next())
             .collect();
-        let menus_in_scope: Vec<&ContextMenuDecl<'_>> =
-            menus.iter().filter(|m| m.scope == scope).collect();
         let count_of = |kind| menus_in_scope.iter().filter(|m| m.kind == kind).count();
         for (what, count, max) in [
             (
@@ -130,6 +140,60 @@ pub fn validate_merge(
     }
 
     if out.is_empty() { Ok(()) } else { Err(out) }
+}
+
+/// META-03 for commands, then for menus, then CTX-01 per menu name.
+fn check_declarations(
+    commands: &[CommandDecl<'_>],
+    menus: &[&ContextMenuDecl<'_>],
+    scope: Scope,
+    note: &str,
+    limits: &Limits,
+    out: &mut Vec<Violation>,
+) {
+    let metas = commands
+        .iter()
+        .map(|c| (c.source, c.path, &c.metadata))
+        .chain(menus.iter().map(|m| (m.source, m.name, &m.metadata)));
+    for (source, path, metadata) in metas {
+        out.extend(meta_03(source, path, metadata, scope, limits));
+    }
+    for menu in menus {
+        for v in validate_context_menu_name(menu.name, limits) {
+            out.push(
+                Violation {
+                    path: menu.name.to_owned(),
+                    ..v
+                }
+                .with_note(format!("declared by {}", source_name(menu.source)))
+                .with_note(note),
+            );
+        }
+    }
+}
+
+/// META-03 for one declaration: `path.field`, a ``declared by `src` `` note
+/// before the scope note.
+fn meta_03(
+    source: &str,
+    path: &str,
+    metadata: &CommandMeta<'_>,
+    scope: Scope,
+    limits: &Limits,
+) -> impl Iterator<Item = Violation> {
+    let declared = format!("declared by {}", source_name(source));
+    let path = path.to_owned();
+    validate_meta(metadata, scope, limits)
+        .into_iter()
+        .map(move |v| {
+            let mut notes = vec![declared.clone()];
+            notes.extend(v.notes.iter().cloned());
+            Violation {
+                path: format!("{path}.{}", v.path),
+                notes,
+                ..v
+            }
+        })
 }
 
 #[cfg(test)]
@@ -395,5 +459,153 @@ mod tests {
             [RuleId::REG_02, RuleId::CMD_03, RuleId::REG_03]
         );
         assert_eq!(errs[0].notes, ["scope: guild 7"]);
+    }
+
+    fn perm(p: u64) -> CommandMeta<'static> {
+        CommandMeta::new().default_member_permissions(p)
+    }
+
+    #[test]
+    fn meta_01_scopes_are_separate() {
+        assert_eq!(
+            check(
+                &[
+                    h("m1", "config").metadata(perm(8)),
+                    h("m2", "config").metadata(perm(32)).scope(Scope::Guild(1)),
+                ],
+                &[]
+            ),
+            []
+        );
+    }
+
+    #[test]
+    fn meta_01_same_scope_conflicts() {
+        let errs = check(
+            &[
+                h("m1", "config set").metadata(perm(8)),
+                h("m2", "config get").metadata(perm(32)),
+            ],
+            &[],
+        );
+        assert_eq!(rules(&errs), [RuleId::META_01]);
+        assert_eq!(
+            errs[0].notes.last().map(String::as_str),
+            Some("scope: global")
+        );
+        // The same path twice is a REG-04 duplicate as well.
+        let errs = check(
+            &[
+                h("m1", "config").metadata(perm(8)),
+                h("m2", "config").metadata(perm(32)),
+            ],
+            &[],
+        );
+        assert_eq!(rules(&errs), [RuleId::REG_04, RuleId::META_01]);
+        assert_eq!(
+            errs[1].notes.last().map(String::as_str),
+            Some("scope: global")
+        );
+    }
+
+    #[test]
+    fn meta_03_guild_command_with_contexts() {
+        use crate::command::InteractionContext;
+        let meta = CommandMeta::new().contexts(&[InteractionContext::Guild]);
+        let errs = check(
+            &[h("m1", "ping").scope(Scope::Guild(42)).metadata(meta)],
+            &[],
+        );
+        assert_eq!(
+            errs,
+            [Violation::new(
+                RuleId::META_03,
+                "ping.contexts",
+                Bound::Describe("only on global commands"),
+                Actual::Text("[Guild]".into())
+            )
+            .with_note("declared by `m1`")
+            .with_note("scope: guild 42")]
+        );
+        let errs = check(&[h("", "ping").scope(Scope::Guild(42)).metadata(meta)], &[]);
+        assert_eq!(errs[0].notes[0], "declared by (unnamed)");
+    }
+
+    #[test]
+    fn meta_03_guild_context_menu_with_integration_types() {
+        use crate::command::IntegrationType;
+        let menu = ContextMenuDecl::new("m1", MenuKind::User, "Show Profile")
+            .scope(Scope::Guild(42))
+            .metadata(CommandMeta::new().integration_types(&[IntegrationType::GuildInstall]));
+        let errs = check(&[], &[menu]);
+        assert_eq!(rules(&errs), [RuleId::META_03]);
+        assert_eq!(errs[0].path, "Show Profile.integration_types");
+        assert_eq!(errs[0].notes, ["declared by `m1`", "scope: guild 42"]);
+    }
+
+    #[test]
+    fn ctx_01_context_menu_names() {
+        let a33 = "a".repeat(33);
+        let errs = check(&[], &[ContextMenuDecl::new("m1", MenuKind::User, &a33)]);
+        assert_eq!(
+            errs,
+            [Violation::new(
+                RuleId::CTX_01,
+                a33.as_str(),
+                Bound::Between { min: 1, max: 32 },
+                Actual::Count(33)
+            )
+            .with_note("declared by `m1`")
+            .with_note("scope: global")]
+        );
+        let errs = check(&[], &[ContextMenuDecl::new("m1", MenuKind::Message, "")]);
+        assert_eq!(rules(&errs), [RuleId::CTX_01]);
+        assert_eq!(errs[0].path, "");
+        assert_eq!(errs[0].actual, Actual::Count(0));
+        assert_eq!(
+            check(
+                &[],
+                &[ContextMenuDecl::new("m1", MenuKind::User, "Show Profile")]
+            ),
+            []
+        );
+    }
+
+    #[test]
+    fn meta_03_ctx_01_order_per_scope() {
+        use crate::command::InteractionContext;
+        let guild = Scope::Guild(7);
+        let ctx = CommandMeta::new().contexts(&[InteractionContext::Guild]);
+        let a33 = "a".repeat(33);
+        let limits = Limits {
+            user_commands: 1,
+            ..Limits::default()
+        };
+        let commands = [
+            h("", "Ping").scope(guild),
+            h("", "b").scope(guild).metadata(ctx),
+            h("", "c").scope(guild).metadata(ctx),
+        ];
+        let menus = [
+            ContextMenuDecl::new("", MenuKind::User, &a33).scope(guild),
+            ContextMenuDecl::new("", MenuKind::User, "X")
+                .scope(guild)
+                .metadata(ctx),
+            ContextMenuDecl::new("", MenuKind::User, "X").scope(guild),
+        ];
+        let errs = check_with(&commands, &menus, &limits);
+        let got: Vec<(RuleId, &str)> = errs.iter().map(|v| (v.rule, v.path.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                (RuleId::CMD_03, "Ping"),
+                (RuleId::META_03, "b.contexts"),
+                (RuleId::META_03, "c.contexts"),
+                (RuleId::META_03, "X.contexts"),
+                (RuleId::CTX_01, a33.as_str()),
+                (RuleId::REG_02, "user commands"),
+                (RuleId::REG_03, "X"),
+            ]
+        );
     }
 }

@@ -1,5 +1,6 @@
-//! Command Pattern expansion and chat-input command tree rules (CMD-01..05,
-//! CMD-10..16, REG-01..04).
+//! Command Pattern expansion, chat-input command tree, option, context-menu and
+//! metadata rules (CMD-01..07, CMD-10..16, OPT-01, OPT-03..11, OPT-13, CTX-01,
+//! META-01..03, REG-01..04).
 //!
 //! The `#[command]` macro and the App-build merge both call these functions, so
 //! the two can never disagree. Every function takes [`Limits`](crate::Limits),
@@ -46,21 +47,74 @@
 //! duplicate handler paths and metadata for unregistered paths (first
 //! occurrence); then every node in first-appearance pre-order with its name
 //! rules (CMD-01..03), CMD-04, CMD-11/CMD-12 and CMD-13 (children, then
-//! options), and CMD-05 for each base after its subtree; last, REG-04
-//! description conflicts.
+//! options), and CMD-05 for each base after its subtree; then REG-04
+//! description conflicts; last, per base in first-appearance order, the
+//! metadata checks: misplaced metadata (META-02, input order), then META-01,
+//! META-02 `contexts`, META-02 `integration_types` and CMD-07 conflicts.
 //!
 //! [`validate_merge`] groups declarations by [`Scope`] (first appearance,
 //! commands before menus) and reports per scope the tree violations (with a
-//! `scope: …` note), the REG-01/REG-02 counts and REG-03 context-menu name
+//! `scope: …` note), META-03 for commands then menus (input order), CTX-01 per
+//! menu (input order), the REG-01/REG-02 counts and REG-03 context-menu name
 //! clashes.
+//!
+//! # Options
+//!
+//! [`validate_options`] checks one options array of [`OptionDecl`]s in
+//! isolation (CMD-01..04 for names and descriptions, CMD-06, CMD-13, OPT-01,
+//! OPT-03..11, OPT-13); the order is on the function. [`measure_options`]
+//! computes the array's CMD-05 share for [`CommandDecl::with_options`]:
+//!
+//! ```
+//! use noctis_rules::Limits;
+//! use noctis_rules::command::{
+//!     CommandDecl, LocalizedText, NumericValue, OptionDecl, OptionType, measure_options,
+//!     validate_options, validate_tree,
+//! };
+//!
+//! let limits = Limits::default();
+//! let options = [OptionDecl::new("days", OptionType::Integer, "How long")
+//!     .required(true)
+//!     .min_value(NumericValue::Int(1))
+//!     .max_value(NumericValue::Int(30))];
+//! assert_eq!(validate_options(&options, &limits), Ok(()));
+//! let decl = CommandDecl::handler("mod", "mod ban")
+//!     .description(LocalizedText::new("Ban a member"))
+//!     .with_options(options.len(), measure_options(&options, &limits));
+//! assert_eq!(validate_tree(&[decl], &limits), Ok(()));
+//! ```
+//!
+//! # Context menus
+//!
+//! [`validate_context_menu_name`] checks a context-menu name (CTX-01: length
+//! only, mixed case and spaces allowed). Context-menu commands have no
+//! description or options (CTX-02), and their type is only `USER` or `MESSAGE`
+//! (CTX-03), by construction.
+//!
+//! # Metadata
+//!
+//! [`CommandMeta`] holds `default_member_permissions`, `contexts`,
+//! `integration_types` and `nsfw`, which Discord keeps only on the base
+//! command. Every [`CommandDecl`] under one base must agree (META-01, META-02,
+//! CMD-07; lists compare as sets). Without an explicit base declaration (a
+//! [`CommandDecl::meta`] at the 1-word path that sets the field) "unset" is a
+//! value and must agree too; with one, unset handlers inherit it. Metadata on a
+//! meta declaration below the base is META-02. [`validate_meta`] rejects
+//! `contexts` and `integration_types` on guild-scoped declarations (META-03).
 
 mod merge;
+mod meta;
 mod name;
+mod option;
 mod pattern;
 mod tree;
 
 pub use merge::validate_merge;
-pub use name::validate_name;
+pub use meta::{CommandMeta, IntegrationType, InteractionContext, validate_meta};
+pub use name::{validate_context_menu_name, validate_name};
+pub use option::{
+    Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, measure_options, validate_options,
+};
 pub use pattern::expand;
 pub use tree::validate_tree;
 
@@ -144,6 +198,8 @@ pub struct CommandDecl<'a> {
     pub description: Option<LocalizedText<'a>>,
     /// Localized variants of the last word of `path` (counted by CMD-05).
     pub name_localized: &'a [&'a str],
+    /// Base-command metadata (META-01..03, CMD-07); default: all unset.
+    pub metadata: CommandMeta<'a>,
 }
 
 impl<'a> CommandDecl<'a> {
@@ -159,6 +215,7 @@ impl<'a> CommandDecl<'a> {
             },
             description: None,
             name_localized: &[],
+            metadata: CommandMeta::new(),
         }
     }
 
@@ -194,6 +251,12 @@ impl<'a> CommandDecl<'a> {
         Self { scope, ..self }
     }
 
+    /// Sets the base-command metadata.
+    #[must_use]
+    pub const fn metadata(self, metadata: CommandMeta<'a>) -> Self {
+        Self { metadata, ..self }
+    }
+
     /// Makes this a handler with `count` options whose CMD-05 contribution is
     /// `size`.
     #[must_use]
@@ -209,6 +272,15 @@ impl<'a> CommandDecl<'a> {
 }
 
 /// The type of a context-menu command.
+///
+/// Only `USER` and `MESSAGE` exist; `PRIMARY_ENTRY_POINT` is out of scope
+/// (CTX-03):
+///
+/// ```compile_fail
+/// use noctis_rules::command::MenuKind;
+///
+/// let _ = MenuKind::PrimaryEntryPoint; // [CTX-03]
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MenuKind {
     /// A `USER` command.
@@ -218,6 +290,14 @@ pub enum MenuKind {
 }
 
 /// One context-menu command declaration.
+///
+/// It has no description and no options (CTX-02):
+///
+/// ```compile_fail
+/// use noctis_rules::command::{ContextMenuDecl, MenuKind};
+///
+/// let _ = ContextMenuDecl::new("m", MenuKind::User, "X").description("d"); // [CTX-02]
+/// ```
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContextMenuDecl<'a> {
@@ -227,8 +307,10 @@ pub struct ContextMenuDecl<'a> {
     pub scope: Scope,
     /// User or message command.
     pub kind: MenuKind,
-    /// The command name (compared byte for byte).
+    /// The command name (CTX-01; compared byte for byte by REG-03).
     pub name: &'a str,
+    /// Command metadata (META-03); default: all unset.
+    pub metadata: CommandMeta<'a>,
 }
 
 impl<'a> ContextMenuDecl<'a> {
@@ -239,6 +321,7 @@ impl<'a> ContextMenuDecl<'a> {
             scope: Scope::Global,
             kind,
             name,
+            metadata: CommandMeta::new(),
         }
     }
 
@@ -246,6 +329,12 @@ impl<'a> ContextMenuDecl<'a> {
     #[must_use]
     pub const fn scope(self, scope: Scope) -> Self {
         Self { scope, ..self }
+    }
+
+    /// Sets the command metadata.
+    #[must_use]
+    pub const fn metadata(self, metadata: CommandMeta<'a>) -> Self {
+        Self { metadata, ..self }
     }
 }
 

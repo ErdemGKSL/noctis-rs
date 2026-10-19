@@ -55,7 +55,7 @@ Compile-time checks on the literal (each error names its rule):
 
 `permissions`, `contexts`, `integration_types` and `nsfw` belong to the **base** command
 (META-02). Every leaf under one base must agree, across all Modules, or App build fails
-(REG-04, FR-9). Declare them once explicitly with [planned]
+(META-01, META-02, CMD-07, REG-04, FR-9; see §6 "Metadata rules"). Declare them once explicitly with [planned]
 `Module::new("x").base("config", BaseMeta::new().permissions(Permissions::MANAGE_GUILD))`.
 Base and group descriptions come from `cmd.config.description` and `cmd.config.set.description`; if
 missing, a deterministic rule picks one and logs a warning (never registration order).
@@ -141,14 +141,14 @@ one CMD-15 (`= note: produced N times`). `""` expands to `[""]` (CMD-10 later).
 | --- | --- |
 | `expand(pattern, &Limits) -> Result<Vec<String>, Vec<Violation>>` | pattern → ordered Command Paths; CMD-16, else CMD-15 cap, else CMD-15 duplicates; never checks names |
 | `validate_name(word, &Limits) -> Vec<Violation>` | one name word, path `""`; order CMD-02 (length via `discord_len`), CMD-01 (charset; note `` first invalid character `'` (U+0027) ``, help `` use `ʼ` (U+02BC) instead of `'` `` for ASCII `'`), CMD-03 (help `` use `config` ``); an empty word gives CMD-02 only |
-| `validate_tree(&[CommandDecl], &Limits) -> Result<(), Vec<Violation>>` | one tree set (scope ignored): CMD-10 per decl (that decl is then skipped), REG-04 duplicate handler paths (notes `` registered by `m1` ``; the first counts for the budget) and metadata for unregistered paths, then per node in first-appearance pre-order: names (CMD-01..03, path = node path), CMD-04, CMD-11 / CMD-12 (notes name both contributing paths and `` (from `module`) ``), CMD-13 (children, then handler options), CMD-05 per base after its subtree (`= note: longest variant per field`); last, REG-04 conflicting descriptions |
-| `validate_merge(&[CommandDecl], &[ContextMenuDecl], &Limits) -> Result<(), Vec<Violation>>` | the whole App: per `Scope` (first appearance, commands then menus) `validate_tree` with a `= note: scope: global` / `scope: guild 42`, then counts (REG-01 global / REG-02 guild; paths `chat-input commands`, `user commands`, `message commands`; a merged base counts once; meta decls and empty paths don't count), then REG-03 for two context-menu commands with the same type and exact name |
-| `CommandDecl<'a>` | `#[non_exhaustive]`, pub fields `source` (Module name, `""` = unnamed), `path` (words split on single ASCII spaces, so `"config  set"` has an empty word → CMD-02), `scope`, `kind`, `description: Option<LocalizedText>`, `name_localized: &[&str]` (localized names of the last word; only counted by CMD-05). `CommandDecl::handler(source, path)` (no options), `CommandDecl::meta(source, path)`; by-value `const` setters `.description(text)`, `.name_localized(&[…])`, `.scope(Scope)`, `.with_options(count, size)` (makes it a handler) |
+| `validate_tree(&[CommandDecl], &Limits) -> Result<(), Vec<Violation>>` | one tree set (scope ignored): CMD-10 per decl (that decl is then skipped), REG-04 duplicate handler paths (notes `` registered by `m1` ``; the first counts for the budget) and metadata for unregistered paths, then per node in first-appearance pre-order: names (CMD-01..03, path = node path), CMD-04, CMD-11 / CMD-12 (notes name both contributing paths and `` (from `module`) ``), CMD-13 (children, then handler options), CMD-05 per base after its subtree (`= note: longest variant per field`); then REG-04 conflicting descriptions; last, per base in first-appearance order, the metadata checks (§6 "Metadata rules") |
+| `validate_merge(&[CommandDecl], &[ContextMenuDecl], &Limits) -> Result<(), Vec<Violation>>` | the whole App: per `Scope` (first appearance, commands then menus) `validate_tree` with a `= note: scope: global` / `scope: guild 42`, then META-03 per command, then per context-menu command (input order; path `` `<path or name>.contexts` `` / `.integration_types`, notes `` declared by `m1` `` then the scope), then CTX-01 per context-menu name (path = the name, same notes), then counts (REG-01 global / REG-02 guild; paths `chat-input commands`, `user commands`, `message commands`; a merged base counts once; meta decls and empty paths don't count), then REG-03 for two context-menu commands with the same type and exact name |
+| `CommandDecl<'a>` | `#[non_exhaustive]`, pub fields `source` (Module name, `""` = unnamed), `path` (words split on single ASCII spaces, so `"config  set"` has an empty word → CMD-02), `scope`, `kind`, `description: Option<LocalizedText>`, `name_localized: &[&str]` (localized names of the last word; only counted by CMD-05), `metadata: CommandMeta` (default all unset). `CommandDecl::handler(source, path)` (no options), `CommandDecl::meta(source, path)`; by-value `const` setters `.description(text)`, `.name_localized(&[…])`, `.scope(Scope)`, `.metadata(CommandMeta)`, `.with_options(count, size)` (makes it a handler; pass `with_options(opts.len(), measure_options(&opts, &limits))`) |
 | `DeclKind` | `#[non_exhaustive]`: `Handler { options, options_size }` (`options_size` = your computed CMD-05 share of the options: names, descriptions, choice names/values, longest variant each) or `Meta` (description / localized names for a node handlers create) |
 | `LocalizedText<'a>` | `{ default, localized: &[&str] }`; `LocalizedText::new("d")`, `.with_localized(&[…])`, `.longest()` (max `discord_len`) |
 | `Scope` | `Global` (default) or `Guild(u64)` |
-| `ContextMenuDecl<'a>` | `#[non_exhaustive]` `{ source, scope, kind, name }`; `ContextMenuDecl::new(source, MenuKind::User, "Show Profile")`, `.scope(Scope)` |
-| `MenuKind` | `User` or `Message` |
+| `ContextMenuDecl<'a>` | `#[non_exhaustive]` `{ source, scope, kind, name, metadata }`; `ContextMenuDecl::new(source, MenuKind::User, "Show Profile")`, `.scope(Scope)`, `.metadata(CommandMeta)`; no description or options exist (CTX-02) |
+| `MenuKind` | `User` or `Message` only (CTX-03: no entry-point commands) |
 
 Tree model: every word prefix of a handler path is a node (1 word base, 2 subcommand or
 group, 3 subcommand in a group); meta decls attach to an existing node. A node's
@@ -223,6 +223,69 @@ Compile-time rules: required fields before optional ones — the derive never re
 attachment only (OPT-13); choices **or** autocomplete, never both (OPT-10); autocomplete
 only on string/integer/number (OPT-11).
 
+### Rule functions (options)
+
+`derive(Options)` and dynamically declared options share these functions in
+`noctis::rules::command`. Check a dynamic options array with `validate_options`, then
+feed its size into the tree check:
+
+```rust
+use noctis::rules::Limits;
+use noctis::rules::command::{
+    Choice, ChoiceValue, CommandDecl, LocalizedText, NumericValue, OptionDecl, OptionType,
+    measure_options, validate_options, validate_tree,
+};
+
+let limits = Limits::default();
+let severity = [Choice::new("Low", ChoiceValue::Str("low"))];
+let opts = [
+    OptionDecl::new("days", OptionType::Integer, "How long")
+        .required(true)
+        .min_value(NumericValue::Int(1))
+        .max_value(NumericValue::Int(30)),
+    OptionDecl::new("severity", OptionType::String, "How bad").choices(&severity),
+];
+validate_options(&opts, &limits).map_err(report)?;
+let decl = CommandDecl::handler("mod", "mod warn")
+    .description(LocalizedText::new("Warn a member"))
+    .with_options(opts.len(), measure_options(&opts, &limits));
+validate_tree(&[decl], &limits).map_err(report)?;
+```
+
+| Item | What it is |
+| --- | --- |
+| `validate_options(&[OptionDecl], &Limits) -> Result<(), Vec<Violation>>` | one options array in isolation; every violation at once (order below) |
+| `measure_options(&[OptionDecl], &Limits) -> usize` | the array's CMD-05 share (saturating): per option the longest of name and `name_localized` + longest description variant + per choice (longest name variant + value length: `discord_len` of a string, the `Display` length of a number, `2.0` → `2` = 1) |
+| `OptionDecl<'a>` | `#[non_exhaustive]`, pub fields `name`, `name_localized: &[&str]` (only measured), `description: LocalizedText`, `kind: OptionType`, `required`, `min_value` / `max_value: Option<NumericValue>`, `min_length` / `max_length: Option<usize>`, `channel_types: &[u8]` (raw Discord channel type values), `choices: &[Choice]`, `autocomplete`, `file_types: &[&str]`; empty slices mean unset. `OptionDecl::new(name, OptionType::String, "description")` (optional, everything unset), by-value `const` setters `.name_localized(&[…])`, `.description_localized(&[…])`, `.required(bool)`, `.min_value(v)`, `.max_value(v)`, `.min_length(n)`, `.max_length(n)`, `.channel_types(&[0, 5])`, `.choices(&[…])`, `.autocomplete(bool)`, `.file_types(&["image", ".pdf"])` |
+| `OptionType` | `String`, `Integer`, `Boolean`, `User`, `Channel`, `Role`, `Mentionable`, `Number`, `Attachment` (OPT-02; no subcommand types, OPT-14); `OptionType::ALL`; `.value()` → 3..=11; `.name()` → `"STRING"`, … |
+| `NumericValue` | `Int(i64)` or `Float(f64)`; `Display` (`1.0` → `1`, NaN → `NaN`, ∞ → `inf`) |
+| `ChoiceValue<'a>` | `Str(&str)`, `Int(i64)` or `Float(f64)` |
+| `Choice<'a>` | `#[non_exhaustive]` `{ name: LocalizedText, value: ChoiceValue }`; `Choice::new("Low", ChoiceValue::Str("low"))`, `.name_localized(&[…])` |
+
+Paths: `P` is the option name, or `options[i]` (0-based) when the name is empty; violations
+use `P`, `P.min_value`, `P.max_value`, `P.min_length`, `P.max_length`, `P.channel_types`,
+`P.choices`, `P.choices[j]`, `P.autocomplete`, `P.file_types`, `P.file_types[k]`; CMD-13
+uses `options`. Order: CMD-13 (`AtMost(25)`); then per option in input order: name rules
+(as `validate_name`), CMD-04 (default, then localized, notes `in the default description`
+/ `in localized description #i`), `min_value` then `max_value` (OPT-05 "only on INTEGER or
+NUMBER", else OPT-05 "an integer bound on an INTEGER option" for a `Float` on INTEGER, else
+OPT-03 ±(2^53−1) for INTEGER / OPT-04 finite ±2^53 for NUMBER), OPT-05 `min_value ≤
+max_value` (actual `` `6 > 5` ``), `min_length` then `max_length` (OPT-06 "only on STRING
+options", else `Between{0,6000}` / `Between{1,6000}`), OPT-06 `min_length ≤ max_length`,
+OPT-07 (`channel_types` on a non-CHANNEL), OPT-08 (choices on a non-STRING/INTEGER/NUMBER,
+then more than 25), per choice: OPT-09 name 1–100 (notes `in the choice name` / `in
+localized choice name #k`), then for STRING/INTEGER/NUMBER only: OPT-09 value type (actual
+`` `integer` ``/`` `string` ``/`` `number` ``, note `option type STRING`), else OPT-09 string
+value ≤ 100 (empty is fine, note `in the choice value`) / OPT-03 / OPT-04, then OPT-05 "a
+choice value within min_value and max_value"; then OPT-10 (choices and autocomplete),
+OPT-11 (autocomplete on another type), OPT-13 (`file_types` on a non-ATTACHMENT, then more
+than 10, then each entry that isn't `image`, `video`, `audio` or `.` + ASCII letters/digits:
+`.pdf`, `.PNG`, `.7z` pass, `pdf`, `.tar.gz`, `Image` fail); then OPT-01 for each required
+option after an optional one (``= note: after optional `b` ``); then CMD-06 per duplicate
+name, first-occurrence order (`= note: declared at positions 0, 2`). Orderings run only when
+both bounds passed their own checks. Localized option names are not validated here
+(LOC-02, planned).
+
 Runtime: a missing required option or wrong type is a typed error, never a panic. A
 failing `validate = fn` (`fn(&T, &CommandCtx) -> Result<(), MessageKey>`) sends a
 localized ephemeral message and the handler doesn't run. File-type filters are
@@ -280,6 +343,10 @@ async fn report(ctx: CommandCtx, target: TargetMessage) -> HandlerResult<ReportV
 
 - Name 1–32 chars, mixed case and spaces allowed (CTX-01); no description, no options
   (CTX-02). Localized as a whole: `ctxcmd.<key>.name`.
+- Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
+  &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
+  `Limits::context_menu_name_len`), path `""`, CTX-01 `Between{1,32}` / `Count(n)`;
+  `"Show Profile"`, `"It's"`, `"Report 🚩"` pass. `validate_merge` runs it on every menu.
 - `TargetUser { user, member: Option<PartialMember> }`, `TargetMessage { message }`.
 - Same name + same type twice is a `BuildError` (REG-03). Limits: 15 user and 15
   message commands globally (REG-01).
@@ -292,6 +359,36 @@ duplicated (REG-04), a base mixes options and subcommands (CMD-12), the merged t
 breaks CMD-11/13/05, or the App exceeds 100 global chat-input commands (REG-01).
 `App::build` runs `noctis::rules::command::validate_merge` on everything registered
 (see §2 "Rule functions"), so every conflict is reported at once.
+
+### Metadata rules
+
+| Item | What it is |
+| --- | --- |
+| `CommandMeta<'a>` | `#[non_exhaustive]`, `Default`; pub fields `default_member_permissions: Option<u64>` (raw permission bits), `contexts: Option<&[InteractionContext]>`, `integration_types: Option<&[IntegrationType]>`, `nsfw: Option<bool>`; `None` = unset. `CommandMeta::new()` plus by-value `const` setters of the same names; no `dm_permission` (META-05: use `contexts`) |
+| `InteractionContext` | `Guild` (0), `BotDm` (1), `PrivateChannel` (2); `.value()`, `.name()` (variant name) |
+| `IntegrationType` | `GuildInstall` (0), `UserInstall` (1); `.value()`, `.name()` |
+| `validate_meta(&CommandMeta, Scope, &Limits) -> Vec<Violation>` | META-03: a `Scope::Guild` declaration may not set `contexts` or `integration_types`; paths `contexts`, `integration_types` (that order), `Describe("only on global commands")`, actual the set sorted by value and deduplicated (`` `[Guild, PrivateChannel]` ``, `` `[]` ``), note `scope: guild 42` |
+
+Attach metadata with `CommandDecl::handler(..).metadata(CommandMeta::new().nsfw(true))`
+or, once for the whole base, `CommandDecl::meta("m0", "config").metadata(…)`.
+`validate_tree` checks per base (first-appearance order), after REG-04 description
+conflicts:
+
+1. META-02 for every meta declaration **below** the base that sets metadata (input order;
+   path = its path, ``= note: declared by `m1` ``, ``= help: declare it on `config` ``);
+   it takes no further part.
+2. Per field — META-01 `default_member_permissions`, META-02 `contexts`, META-02
+   `integration_types`, CMD-07 `nsfw` (path and actual = the base): without an explicit
+   base declaration (a meta decl at the 1-word path that sets the field) **unset is a
+   value**: every handler under the base must agree, so `8` vs unset conflicts
+   (``= note: `config get` leaves it unset (from `m2`)``, ``= help: set it on every
+   command under `config`, or once on `config` with a metadata declaration``). With one,
+   unset handlers inherit it and every declaration that sets it must match. Notes list
+   each participant in input order: `` `config set` sets `8` (from `m1`) ``. Lists compare
+   as sets (`[Guild, BotDm]` = `[BotDm, Guild, Guild]`).
+
+CMD-10-dropped declarations, orphan meta declarations and empty paths never take part.
+Different scopes and different bases never conflict.
 
 ## 7. Publish
 

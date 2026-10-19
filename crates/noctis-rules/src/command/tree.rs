@@ -1,9 +1,9 @@
-//! One chat-input command tree set: [`validate_tree`] (CMD-01..05, CMD-10..14,
-//! REG-04).
+//! One chat-input command tree set: [`validate_tree`] (CMD-01..05, CMD-07,
+//! CMD-10..14, META-01, META-02, REG-04).
 
 use std::collections::HashMap;
 
-use super::{CommandDecl, DeclKind, LocalizedText, from_suffix, source_name, validate_name};
+use super::{CommandDecl, DeclKind, LocalizedText, from_suffix, meta, source_name, validate_name};
 use crate::len::discord_len;
 use crate::{Actual, Bound, Limits, RuleId, Violation};
 
@@ -216,6 +216,24 @@ impl<'a> Tree<'_, 'a> {
             self.check_descriptions(child, out);
         }
     }
+
+    /// The indices of the declarations attached to the subtree at `index`.
+    fn subtree_decls(&self, index: usize, into: &mut Vec<usize>) {
+        let node = &self.nodes[index];
+        into.extend_from_slice(&node.decls);
+        for &child in &node.children {
+            self.subtree_decls(child, into);
+        }
+    }
+
+    /// META-01, META-02 and CMD-07 for the base at `root`.
+    fn check_metadata(&self, root: usize, out: &mut Vec<Violation>) {
+        let mut indices = Vec::new();
+        self.subtree_decls(root, &mut indices);
+        indices.sort_unstable();
+        let decls: Vec<&CommandDecl<'a>> = indices.into_iter().map(|i| self.decl(i)).collect();
+        meta::check_base(self.nodes[root].path, &decls, out);
+    }
 }
 
 /// Checks one set of chat-input command declarations as a single tree set.
@@ -232,8 +250,15 @@ impl<'a> Tree<'_, 'a> {
 /// and metadata for unregistered paths, the name rules for every node word,
 /// CMD-04, CMD-11 (a subcommand that is also a group), CMD-12 (an invokable
 /// base with subcommands), CMD-13 (children per node, options per handler),
-/// CMD-05 per base, and REG-04 conflicting descriptions. The order is in the
-/// [module docs](super).
+/// CMD-05 per base, REG-04 conflicting descriptions, and per base the
+/// metadata checks: META-02 for metadata on a meta declaration below the base,
+/// then META-01 (`default_member_permissions`), META-02 (`contexts`,
+/// `integration_types`) and CMD-07 (`nsfw`) conflicts between the declarations
+/// attached to the base's subtree (CMD-10-dropped and orphan declarations take
+/// no part). Without an explicit base declaration (a meta declaration at the
+/// base path that sets the field) every handler must agree, unset included;
+/// with one, unset handlers inherit it and set ones must match. Lists compare
+/// as sets. The order is in the [module docs](super).
 ///
 /// # Errors
 ///
@@ -260,6 +285,9 @@ pub fn validate_tree(decls: &[CommandDecl<'_>], limits: &Limits) -> Result<(), V
     }
     for &root in &tree.roots {
         tree.check_descriptions(root, &mut out);
+    }
+    for &root in &tree.roots {
+        tree.check_metadata(root, &mut out);
     }
     if out.is_empty() { Ok(()) } else { Err(out) }
 }

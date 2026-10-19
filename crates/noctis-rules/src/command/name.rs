@@ -1,4 +1,5 @@
-//! One command name word: [`validate_name`] (CMD-01, CMD-02, CMD-03).
+//! One command name word: [`validate_name`] (CMD-01, CMD-02, CMD-03), and a
+//! context-menu name: [`validate_context_menu_name`] (CTX-01).
 
 use std::sync::LazyLock;
 
@@ -81,6 +82,36 @@ pub fn validate_name(word: &str, limits: &Limits) -> Vec<Violation> {
         );
     }
     out
+}
+
+/// Checks a context-menu command name (CTX-01).
+///
+/// Only the length counts: 1 to `limits.context_menu_name_len` units of
+/// [`discord_len`]. Mixed case, spaces and any character are allowed (CMD-01
+/// and CMD-03 do not apply). The violation has an empty path.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::command::validate_context_menu_name;
+///
+/// let limits = Limits::default();
+/// assert!(validate_context_menu_name("Show Profile", &limits).is_empty());
+/// let errs = validate_context_menu_name(&"a".repeat(33), &limits);
+/// assert_eq!(errs[0].rule, RuleId::CTX_01);
+/// ```
+pub fn validate_context_menu_name(name: &str, limits: &Limits) -> Vec<Violation> {
+    let len = discord_len(name);
+    let max = limits.context_menu_name_len;
+    if len == 0 || len > max {
+        vec![Violation::new(
+            RuleId::CTX_01,
+            "",
+            Bound::Between { min: 1, max },
+            Actual::Count(len),
+        )]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Whether `c` lowercases to exactly itself.
@@ -247,6 +278,59 @@ mod tests {
         let l = Limits::default();
         assert_eq!(rules("It's", &l), [RuleId::CMD_01, RuleId::CMD_03]);
         assert_eq!(rules(&"A".repeat(33), &l), [RuleId::CMD_02, RuleId::CMD_03]);
+    }
+
+    fn ctx_01(max: usize, count: usize) -> Vec<Violation> {
+        vec![Violation::new(
+            RuleId::CTX_01,
+            "",
+            Bound::Between { min: 1, max },
+            Actual::Count(count),
+        )]
+    }
+
+    #[test]
+    fn ctx_01_valid_context_menu_names() {
+        let a32 = "a".repeat(32);
+        let valid = [
+            "Show Profile",
+            "show profile",
+            "A",
+            a32.as_str(),
+            "プロフィールを表示",
+            "Report 🚩",
+            "It's",
+        ];
+        for name in valid {
+            assert_eq!(
+                validate_context_menu_name(name, &Limits::default()),
+                [],
+                "{name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ctx_01_context_menu_name_length() {
+        let l = Limits::default();
+        assert_eq!(
+            validate_context_menu_name(&"a".repeat(33), &l),
+            ctx_01(32, 33)
+        );
+        assert_eq!(validate_context_menu_name("", &l), ctx_01(32, 0));
+        assert_eq!(validate_context_menu_name(&"𠀀".repeat(16), &l), []);
+        assert_eq!(
+            validate_context_menu_name(&"𠀀".repeat(17), &l),
+            ctx_01(32, 34)
+        );
+        let custom = Limits {
+            context_menu_name_len: 10,
+            ..Limits::default()
+        };
+        assert_eq!(
+            validate_context_menu_name(&"a".repeat(11), &custom),
+            ctx_01(10, 11)
+        );
     }
 
     #[test]
