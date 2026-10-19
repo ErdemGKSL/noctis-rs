@@ -2,7 +2,8 @@
 title: 'Story 1.7: trybuild harness and rules-catalog cross-check'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'b3e6d993d2dab8bccdaed7689e8208f1a8e8fbd4'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
