@@ -2,7 +2,8 @@
 title: 'Story 3.2: Bounded in-memory store defaults'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'd716808b45ba4554b36f4931ee20f5d2262cf2ef'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
