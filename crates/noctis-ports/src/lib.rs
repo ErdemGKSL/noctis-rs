@@ -53,10 +53,12 @@
 //!
 //! # Defaults
 //!
-//! [`memory`] holds a bounded in-memory default for every port except
-//! [`IdentifyQueue`]: seven byte stores with documented byte budgets and
-//! maximum TTLs, [`MemoryDiscordCache`](memory::MemoryDiscordCache) over
-//! `twilight-cache-inmemory`, and the trivial
+//! [`memory`] holds a bounded in-memory default for every port: seven byte
+//! stores with documented byte budgets and maximum TTLs,
+//! [`MemoryDiscordCache`](memory::MemoryDiscordCache) over
+//! `twilight-cache-inmemory`,
+//! [`MemoryIdentifyQueue`](memory::MemoryIdentifyQueue) for identify buckets
+//! in one process, and the trivial
 //! [`NoLocaleOverlay`](memory::NoLocaleOverlay) and
 //! [`AllowAllGuilds`](memory::AllowAllGuilds).
 

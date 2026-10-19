@@ -12,7 +12,7 @@ data that must outlive one call goes through a port, never a `static` map.
 | --- | --- | --- | --- | --- |
 | `RefStore` | Payloads behind Refs (by_ref/spill Routes) | `put_if_absent`, `get`, `take`, `delete`, `touch` | bounded memory, TTL | `.ref_store(..)` |
 | `SessionStore` | shard `(session_id, seq, resume_url)` for resume | `get`, `put`, `delete` | memory (resume only within one process life) | `.session_store(..)` |
-| `IdentifyQueue` | identify coordination per bucket (Cluster-wide) | `acquire(bucket) -> Lease` | in-process queue with real `max_concurrency` | `.identify_queue(..)` |
+| `IdentifyQueue` | identify coordination per bucket (Cluster-wide) | `acquire(bucket) -> Lease` | `MemoryIdentifyQueue` (built from `max_concurrency`) | `.identify_queue(..)` |
 | `ModuleStateStore` | Module enabled/disabled, global and per guild | `get`, `put`, `version() -> u64` (polled, default 5 s) | memory | `.module_state_store(..)` |
 | `RateLimitStore` | your declared rate-limit counters | `incr_with_ttl`, `get`, `put` | memory | `.rate_limit_store(..)` |
 | `CacheStore` | general key-value data with TTL for bots and Modules (`ctx.kv()`) | `get`, `put`, `put_if_absent`, `delete`, `incr_with_ttl` | bounded memory | `.cache_store(..)` |
@@ -25,8 +25,7 @@ data that must outlive one call goes through a port, never a `static` map.
 
 ### 1.1 The in-memory defaults (`noctis::ports::memory`)
 
-Every port except `IdentifyQueue` (its default is [planned]) has a bounded in-memory
-default in `noctis::ports::memory`. An App that swaps nothing runs on these.
+Every port has a bounded in-memory default in `noctis::ports::memory`. An App that swaps nothing runs on these.
 
 | Default | Port | `max_bytes` | `max_ttl` |
 | --- | --- | --- | --- |
@@ -40,6 +39,7 @@ default in `noctis::ports::memory`. An App that swaps nothing runs on these.
 | `MemoryDiscordCache` | `DiscordCache` | the chosen resources + 100 messages per channel | — |
 | `NoLocaleOverlay` | `LocaleSource` | `load` returns `Ok(vec![])` (no overlay) | — |
 | `AllowAllGuilds` | `GuildAccessList` | `allows` returns `true` | — |
+| `MemoryIdentifyQueue` | `IdentifyQueue` | one slot per bucket (`max_concurrency`) | — |
 
 Each byte store has the same inherent API:
 
@@ -95,6 +95,34 @@ cache.message_cap();   // MemoryDiscordCache::DEFAULT_MESSAGE_CAP = 100 for new(
   `None` approximate counts; a `Member` has `avatar_decoration_data` and `banner` `None`
   and `deaf`/`mute` `false` when unknown, and is `None` when its user is not cached.
   `Channel`, `Role`, `User` and `Message` are stored whole.
+
+`MemoryIdentifyQueue` grants identifies by Discord's buckets in one process:
+
+```rust
+use std::num::NonZeroU16;
+use std::sync::Arc;
+use noctis::ports::IdentifyQueue;
+use noctis::ports::memory::MemoryIdentifyQueue;
+
+// max_concurrency comes from GET /gateway/bot (session_start_limit.max_concurrency)
+let queue = MemoryIdentifyQueue::new(NonZeroU16::new(16).unwrap());
+queue.max_concurrency();                        // 16; Default = 1 bucket
+MemoryIdentifyQueue::IDENTIFY_INTERVAL;         // 5 s
+let queue: Arc<dyn IdentifyQueue> = Arc::new(queue);
+let lease = queue.acquire(shard_id % 16).await?; // waits for its bucket's turn
+```
+
+- Each bucket grants at most one `Lease` per `IDENTIFY_INTERVAL` (5 s, counted from the
+  previous grant); different buckets grant in parallel; waiters in one bucket are
+  granted in arrival order (FIFO). The first acquire in a bucket never waits.
+- A bucket at or above `max_concurrency` is `PortError::InvalidValue` (key = the bucket
+  in decimal); it is never folded with `%`, so compute `shard_id % max_concurrency`
+  yourself.
+- A dropped `acquire` future takes nothing (cancel-safe). Waiting needs a tokio runtime
+  with the time driver; a paused tokio clock (`#[tokio::test(start_paused = true)]`)
+  drives it.
+- **In-process only:** it does not cover several processes. A Cluster implementation
+  must serialize per bucket across processes (§7).
 
 Wiring a default or your own Adapter into the App (`.cache_store(..)` etc. in the table
 above) is [planned].
@@ -198,7 +226,9 @@ pub trait DiscordCache: Send + Sync + 'static {
 ```
 
 - A `Lease` grants one identify in its bucket (`shard_id % max_concurrency`). A Cluster
-  implementation of `IdentifyQueue` must serialize per bucket across processes.
+  implementation of `IdentifyQueue` must serialize per bucket across processes: at most
+  one Lease per bucket per 5 s across the whole Cluster, different buckets in parallel.
+  See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md) (written with Story 14.6).
 - `GuildAccessList::allows` is **synchronous**: it runs on a pipeline stage that does
   no port I/O. Never block in it; a remote-backed implementation keeps a local snapshot
   and refreshes it in the background.
@@ -414,3 +444,7 @@ on process B), `RateLimitStore`, `ModuleStateStore`, `IdentifyQueue`, and usuall
 `CacheStore`/`RenderCache`/`AssetStore`. `SessionStore` must persist across restarts to
 resume. Official Redis/SQL adapters are planned for v1.x; until then write them as
 above and run the conformance suites.
+
+`MemoryIdentifyQueue` does not cover several processes. A Cluster `IdentifyQueue` must
+serialize per bucket across processes: at most one Lease per bucket per 5 s across the
+whole Cluster, different buckets in parallel. See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md) (written with Story 14.6).

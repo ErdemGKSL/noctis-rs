@@ -791,6 +791,19 @@ pub fn noctis::ports::memory::MemoryDiscordCache::role(&self, twilight_model::id
 pub fn noctis::ports::memory::MemoryDiscordCache::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::ports::PortError>>
 pub fn noctis::ports::memory::MemoryDiscordCache::update<'a>(&'a self, &'a twilight_model::gateway::event::Event) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::memory::MemoryDiscordCache::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::user::User>, noctis::ports::PortError>>
+pub struct noctis::ports::memory::MemoryIdentifyQueue
+impl noctis::ports::memory::MemoryIdentifyQueue
+pub const noctis::ports::memory::MemoryIdentifyQueue::IDENTIFY_INTERVAL: core::time::Duration
+pub const fn noctis::ports::memory::MemoryIdentifyQueue::max_concurrency(&self) -> core::num::nonzero::NonZeroU16
+pub fn noctis::ports::memory::MemoryIdentifyQueue::new(core::num::nonzero::NonZeroU16) -> Self
+impl core::default::Default for noctis::ports::memory::MemoryIdentifyQueue
+pub fn noctis::ports::memory::MemoryIdentifyQueue::default() -> Self
+impl core::fmt::Debug for noctis::ports::memory::MemoryIdentifyQueue
+pub fn noctis::ports::memory::MemoryIdentifyQueue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ports::IdentifyQueue for noctis::ports::memory::MemoryIdentifyQueue
+pub fn noctis::ports::memory::MemoryIdentifyQueue::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
+impl noctis::ports::IdentifyQueue for noctis::ports::memory::MemoryIdentifyQueue
+pub fn noctis::ports::memory::MemoryIdentifyQueue::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
 pub struct noctis::ports::memory::MemoryLimits
 impl noctis::ports::memory::MemoryLimits
 pub const noctis::ports::memory::MemoryLimits::ENTRY_OVERHEAD: u64

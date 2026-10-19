@@ -169,8 +169,7 @@ pub mod ports {
     //!   [`Format`], [`AnimationSpec`], [`AnimatedFormat`], [`Frame`],
     //!   [`OutputFormat`], [`RenderOutput`], [`EncodeSettings`],
     //!   [`RenderError`] and the [`Renderer`] port.
-    //! - [`memory`]: the bounded in-memory default of every port except
-    //!   [`IdentifyQueue`].
+    //! - [`memory`]: the bounded in-memory default of every port.
     //!
     //! Every port is `Send + Sync + 'static` and dyn-compatible, so the App
     //! holds it as `Arc<dyn Port>`. Keys are opaque and stored verbatim, and no
@@ -224,12 +223,20 @@ pub mod ports {
         //! [`NoLocaleOverlay`] and [`AllowAllGuilds`] are the defaults of
         //! `LocaleSource` and `GuildAccessList`.
         //!
+        //! [`MemoryIdentifyQueue`] grants identifies by bucket
+        //! (`shard_id % max_concurrency`) in one process: one Lease per bucket
+        //! per [`IDENTIFY_INTERVAL`](MemoryIdentifyQueue::IDENTIFY_INTERVAL)
+        //! (5 s), buckets in parallel, FIFO within a bucket. It does not cover
+        //! several processes: a Cluster implementation must serialize per
+        //! bucket across processes (see the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md)).
+        //!
         //! ```
+        //! use std::num::NonZeroU16;
         //! use std::sync::Arc;
         //! use std::time::Duration;
         //!
-        //! use noctis::ports::CacheStore;
-        //! use noctis::ports::memory::{MemoryCacheStore, MemoryLimits};
+        //! use noctis::ports::{CacheStore, IdentifyQueue};
+        //! use noctis::ports::memory::{MemoryCacheStore, MemoryIdentifyQueue, MemoryLimits};
         //!
         //! let store: Arc<dyn CacheStore> = Arc::new(MemoryCacheStore::new());
         //! # let _ = store;
@@ -240,12 +247,18 @@ pub mod ports {
         //! let small = MemoryCacheStore::with_limits(SMALL);
         //! assert_eq!(small.limits(), SMALL);
         //! assert_eq!(small.usage().entries, 0);
+        //!
+        //! let identify = MemoryIdentifyQueue::new(NonZeroU16::new(16).unwrap());
+        //! assert_eq!(identify.max_concurrency().get(), 16);
+        //! let q: Arc<dyn IdentifyQueue> = Arc::new(identify);
+        //! # let _ = q;
         //! ```
 
         pub use noctis_ports::memory::{
             AllowAllGuilds, DiscordCacheResources, MemoryAssetStore, MemoryCacheStore,
-            MemoryDiscordCache, MemoryLimits, MemoryModuleStateStore, MemoryRateLimitStore,
-            MemoryRefStore, MemoryRenderCache, MemorySessionStore, MemoryUsage, NoLocaleOverlay,
+            MemoryDiscordCache, MemoryIdentifyQueue, MemoryLimits, MemoryModuleStateStore,
+            MemoryRateLimitStore, MemoryRefStore, MemoryRenderCache, MemorySessionStore,
+            MemoryUsage, NoLocaleOverlay,
         };
     }
 }

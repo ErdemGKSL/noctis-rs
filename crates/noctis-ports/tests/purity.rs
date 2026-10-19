@@ -10,7 +10,6 @@ const FORBIDDEN: &[&str] = &[
     "std::process",
     "std::thread",
     "std::env",
-    "tokio",
     "unsafe",
     "PayloadKey",
 ];
@@ -24,9 +23,18 @@ const ALLOWED_DEPENDENCIES: &[&str] = &[
     "postcard",
     "serde",
     "thiserror",
+    "tokio",
     "twilight-cache-inmemory",
     "twilight-model",
 ];
+
+/// The one file allowed to name tokio, and the only paths it may use (timers
+/// and the FIFO mutex do no I/O).
+const TOKIO_FILE: &str = "identify.rs";
+const TOKIO_ALLOWED_PATHS: &[&str] = &["::sync::Mutex", "::time::"];
+
+/// The exact `[dependencies]` line for tokio: no runtime, I/O or macros.
+const TOKIO_DEPENDENCY: &str = r#"tokio = { workspace = true, features = ["sync", "time"] }"#;
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -60,6 +68,7 @@ fn source_has_no_io_unsafe_or_secret() {
             let any_case = FORBIDDEN_ANY_CASE
                 .iter()
                 .filter(|word| lower.contains(*word));
+            check_tokio(file, number + 1, line, &mut hits);
             for word in FORBIDDEN
                 .iter()
                 .filter(|word| line.contains(*word))
@@ -74,6 +83,29 @@ fn source_has_no_io_unsafe_or_secret() {
         "forbidden tokens in noctis-ports:\n{}",
         hits.join("\n")
     );
+}
+
+/// tokio may appear only in `src/memory/identify.rs`, and only as
+/// `tokio::sync::Mutex` or `tokio::time::…`.
+fn check_tokio(file: &Path, number: usize, line: &str, hits: &mut Vec<String>) {
+    let in_allowed_file = file.ends_with(Path::new("memory").join(TOKIO_FILE));
+    for (at, _) in line.match_indices("tokio") {
+        let rest = &line[at + "tokio".len()..];
+        if !in_allowed_file {
+            hits.push(format!(
+                "{}:{number}: `tokio` outside src/memory/{TOKIO_FILE}",
+                file.display()
+            ));
+        } else if !TOKIO_ALLOWED_PATHS
+            .iter()
+            .any(|path| rest.starts_with(path))
+        {
+            hits.push(format!(
+                "{}:{number}: `tokio{rest}` is not tokio::sync::Mutex or tokio::time::",
+                file.display()
+            ));
+        }
+    }
 }
 
 #[test]
@@ -93,6 +125,9 @@ fn manifest_has_only_allowed_dependencies() {
                 .and_then(|rest| rest.strip_suffix(']'))
             {
                 found.push(name.trim().to_owned());
+                if name.trim() == "tokio" {
+                    problems.push(format!("Cargo.toml: write tokio as `{TOKIO_DEPENDENCY}`"));
+                }
                 if !ALLOWED_DEPENDENCIES.contains(&name.trim()) {
                     problems.push(format!("Cargo.toml: dependency `{name}` is not allowed"));
                 }
@@ -101,6 +136,11 @@ fn manifest_has_only_allowed_dependencies() {
         }
         if section == "[dependencies]" && !line.is_empty() && !line.starts_with('#') {
             let name = line.split(['=', '.']).next().unwrap_or_default().trim();
+            if name == "tokio" && line != TOKIO_DEPENDENCY {
+                problems.push(format!(
+                    "Cargo.toml: `{line}`, expected `{TOKIO_DEPENDENCY}`"
+                ));
+            }
             found.push(name.to_owned());
             if !ALLOWED_DEPENDENCIES.contains(&name) {
                 problems.push(format!("Cargo.toml: dependency `{name}` is not allowed"));

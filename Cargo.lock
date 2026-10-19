@@ -557,6 +557,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "twilight-cache-inmemory",
  "twilight-model",
 ]

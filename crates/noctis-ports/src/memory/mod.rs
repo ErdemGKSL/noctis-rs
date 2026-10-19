@@ -1,4 +1,4 @@
-//! Bounded in-memory defaults for every port except `IdentifyQueue`.
+//! Bounded in-memory defaults for every port.
 //!
 //! An App that swaps nothing runs on these. Each byte store is bounded by a
 //! byte budget and a maximum TTL ([`MemoryLimits`]); [`MemoryDiscordCache`] is
@@ -27,15 +27,22 @@
 //! [`NoLocaleOverlay`] (no runtime overlay) and [`AllowAllGuilds`] (serve
 //! every guild) are the trivial defaults of `LocaleSource` and
 //! `GuildAccessList`.
+//!
+//! [`MemoryIdentifyQueue`] grants identifies by Discord's buckets in one
+//! process: one Lease per bucket per 5 s, buckets in parallel, FIFO within a
+//! bucket. Its memory is one slot per bucket (`max_concurrency`). It does not
+//! cover several processes; a Cluster needs a shared `IdentifyQueue`.
 
 mod byte_store;
 mod discord;
+mod identify;
 mod stores;
 mod trivial;
 
 use std::time::Duration;
 
 pub use discord::{DiscordCacheResources, MemoryDiscordCache};
+pub use identify::MemoryIdentifyQueue;
 pub use stores::{
     MemoryAssetStore, MemoryCacheStore, MemoryModuleStateStore, MemoryRateLimitStore,
     MemoryRefStore, MemoryRenderCache, MemorySessionStore,

@@ -4,8 +4,16 @@ use crate::{BoxFuture, PortError};
 
 /// Grants gateway identifies, one bucket at a time.
 ///
-/// A bucket is `shard_id % max_concurrency`. A Cluster implementation must
-/// serialize per bucket across processes.
+/// A bucket is `shard_id % max_concurrency`. Each bucket grants at most one
+/// [`Lease`] per 5 s; different buckets grant in parallel.
+///
+/// [`memory::MemoryIdentifyQueue`](crate::memory::MemoryIdentifyQueue) is the
+/// in-process default; it does not cover several processes.
+///
+/// A Cluster implementation must serialize per bucket across processes: at
+/// most one Lease per bucket per 5 s across the whole Cluster, different
+/// buckets in parallel. See the [Cluster deployment guide](https://github.com/ErdemGKSL/noctis-rs/blob/main/docs/guides/cluster.md)
+/// (written with Story 14.6).
 pub trait IdentifyQueue: Send + Sync + 'static {
     /// Waits until `bucket` may identify, and returns the [`Lease`] for it.
     fn acquire(&self, bucket: u32) -> BoxFuture<'_, Result<Lease, PortError>>;

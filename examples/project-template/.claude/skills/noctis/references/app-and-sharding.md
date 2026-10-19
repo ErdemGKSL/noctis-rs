@@ -116,7 +116,8 @@ without `--dry-run`, then `cargo run --release`. Always build and run with `--re
 
 Automatic: startup calls `GET /gateway/bot`, uses the recommended shard count (unless
 `shard_total` is set), and identifies through the `IdentifyQueue` in buckets of
-`max_concurrency` (GW-01). Shards with the same bucket identify in parallel.
+`max_concurrency` (GW-01). Shards in different buckets identify in parallel; each
+bucket identifies once per 5 s.
 
 - A fixed total smaller than Discord requires (2500 guilds/shard, GW-03) is a
   `BuildError`. A total that isn't a multiple of `max_concurrency` warns.
