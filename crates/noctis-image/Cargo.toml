@@ -1,0 +1,16 @@
+[package]
+name = "noctis-image"
+description = "Image rendering for Noctis. Internal; use `noctis`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Adds takumi and the noctis-core/-ports/-ui edges in Epic 10.
+render = []
+
+[lints]
+workspace = true

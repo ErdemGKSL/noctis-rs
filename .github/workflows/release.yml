@@ -1,0 +1,15 @@
+name: Release
+
+# Stub: the filling stories add triggers.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Story 14.7 fills this in; it runs in a protected environment per Story 14.8.
+  release-plz:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "release-plz lands in Story 14.7"

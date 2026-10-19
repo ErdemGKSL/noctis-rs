@@ -1,0 +1,102 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/noctis",
+    "crates/noctis-rules",
+    "crates/noctis-codec",
+    "crates/noctis-ui",
+    "crates/noctis-ports",
+    "crates/noctis-gateway",
+    "crates/noctis-core",
+    "crates/noctis-macros",
+    "crates/noctis-i18n",
+    "crates/noctis-image",
+    "crates/noctis-prefix",
+    "crates/noctis-testkit",
+    "xtask",
+]
+# The template is a standalone bot with its own empty `[workspace]`.
+exclude = ["examples/project-template"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ErdemGKSL/noctis-rs"
+
+[workspace.dependencies]
+# Internal crates.
+noctis = { path = "crates/noctis", version = "0.1.0" }
+noctis-rules = { path = "crates/noctis-rules", version = "0.1.0" }
+noctis-codec = { path = "crates/noctis-codec", version = "0.1.0" }
+noctis-ui = { path = "crates/noctis-ui", version = "0.1.0" }
+noctis-ports = { path = "crates/noctis-ports", version = "0.1.0" }
+noctis-gateway = { path = "crates/noctis-gateway", version = "0.1.0" }
+noctis-core = { path = "crates/noctis-core", version = "0.1.0" }
+noctis-macros = { path = "crates/noctis-macros", version = "0.1.0" }
+noctis-i18n = { path = "crates/noctis-i18n", version = "0.1.0" }
+noctis-image = { path = "crates/noctis-image", version = "0.1.0" }
+noctis-prefix = { path = "crates/noctis-prefix", version = "0.1.0" }
+noctis-testkit = { path = "crates/noctis-testkit", version = "0.1.0" }
+
+# Stack (architecture spine, §Stack). Only AD-21's TLS crates and takumi turn
+# default features off here; members opt into the features they need.
+tokio = "1.53"
+twilight-gateway = { version = "0.17.1", default-features = false, features = ["rustls-platform-verifier", "twilight-http", "zstd"] }
+twilight-http = { version = "0.17.1", default-features = false, features = ["rustls-platform-verifier", "decompression"] }
+twilight-model = "0.17.1"
+twilight-cache-inmemory = "0.17.1"
+twilight-http-ratelimiting = "0.17.1"
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+takumi = { version = "=2.17.0", default-features = false }
+takumi-core = { version = "=0.31.0", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+postcard = "1.1"
+thiserror = "2.0"
+futures-util = "0.3"
+tracing = "0.1.44"
+metrics = "0.24"
+arc-swap = "1.9"
+moka = "0.12"
+rayon = "1.12"
+blake3 = "1.8"
+bytes = "1.12"
+arrayvec = "0.7"
+getrandom = "0.4"
+regex = "1.13"
+syn = "3.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+trybuild = "1.0"
+insta = "1.49"
+proptest = "1.12"
+hyper = "1.12"
+hyper-util = "0.1.21"
+http-body-util = "0.1.5"
+tokio-websockets = "0.13"
+yaml-rust2 = "0.13"
+cssparser = "0.38"
+criterion = "0.8"
+dhat = "0.3"
+png = "0.18"
+toml = "1.1"
+pulldown-cmark = "0.13"
+cargo_metadata = "0.23"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unused_qualifications = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+undocumented_unsafe_blocks = "warn"

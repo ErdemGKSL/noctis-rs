@@ -1,0 +1,6 @@
+# Release configuration for release-plz. Story 14.7 completes it.
+[workspace]
+
+[[package]]
+name = "xtask"
+release = false

@@ -1,0 +1,55 @@
+# cargo-deny 0.20 policy.
+
+[graph]
+# The Rust 1.97 tier-1 targets. Listing them keeps wasm-only dependencies such as
+# `webpki-root-certs` (CDLA-Permissive-2.0) out of the graph.
+targets = [
+    "aarch64-apple-darwin",
+    "aarch64-pc-windows-msvc",
+    "aarch64-unknown-linux-gnu",
+    "i686-pc-windows-msvc",
+    "i686-unknown-linux-gnu",
+    "x86_64-pc-windows-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+]
+
+[advisories]
+
+[licenses]
+# A new license needs maintainer approval.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    # For cssparser; maintainer-approved.
+    "MPL-2.0",
+    "CC0-1.0",
+]
+# Crate-scoped exceptions, both reached through takumi.
+exceptions = [
+    { crate = "xxhash-rust", allow = ["BSL-1.0"] },
+    { crate = "jpeg-encoder", allow = ["IJG"] },
+]
+# The allowlist and exceptions are policy for crates later stories add.
+unused-allowed-license = "allow"
+unused-license-exception = "allow"
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+deny = [
+    { crate = "aws-lc-rs", reason = "AD-21: ring only" },
+    { crate = "aws-lc-sys", reason = "AD-21: ring only" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

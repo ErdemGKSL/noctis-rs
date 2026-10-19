@@ -1,0 +1,21 @@
+name: Main
+
+# Stub: the filling stories add triggers.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Stories 10.11, 12.6 and 14.3: benches against budgets.toml.
+  benches:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "benches land in Stories 10.11, 12.6 and 14.3"
+
+  # Story 10.11: build and test against the latest takumi.
+  latest-takumi:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "latest-takumi lands in Story 10.11"

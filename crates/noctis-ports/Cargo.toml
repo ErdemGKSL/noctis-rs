@@ -1,0 +1,11 @@
+[package]
+name = "noctis-ports"
+description = "Port traits and memory defaults for Noctis. Internal; use `noctis`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

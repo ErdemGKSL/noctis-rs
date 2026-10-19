@@ -1,0 +1,8 @@
+# Release-equivalent dev profile so trybuild's non-`--release` runs stay
+# release-grade and never create a debug-grade build (AD-28). Never weaken this.
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = false

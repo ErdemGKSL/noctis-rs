@@ -3,7 +3,7 @@
 
 ## noctis-rs
 
-Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, Components V2 UI kit, takumi image/GIF rendering). Greenfield: no crate exists yet. Published on crates.io as `noctis`, with `noctis-*` sub-crates enabled through its cargo features. Planning artifacts go to `_bmad-output/planning-artifacts/`, implementation artifacts to `_bmad-output/implementation-artifacts/`. Project-level skills live in `.claude/skills/`.
+Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, Components V2 UI kit, takumi image/GIF rendering). Crates live in `crates/`, repo tooling in `xtask/`. Published on crates.io as `noctis`, with `noctis-*` sub-crates enabled through its cargo features. Planning artifacts go to `_bmad-output/planning-artifacts/`, implementation artifacts to `_bmad-output/implementation-artifacts/`. Project-level skills live in `.claude/skills/`.
 
 ## Policy
 
@@ -20,7 +20,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Running and verifying
 
 - Before writing, reviewing or refactoring any Rust (`.rs`, `Cargo.toml`, crate layout, crate choice), invoke the `rust-best-practices` skill and read only the `references/*.md` files the task touches.
-- TODO (no `Cargo.toml` yet): before calling Rust work done, run `cargo fmt`, `cargo clippy --release --all-targets --all-features -- -D warnings` and `cargo test --release`; replace this line with a hook or CI check once the crate exists.
+- Before calling Rust work done, run `cargo fmt --all`, `cargo clippy --release --workspace --all-targets --all-features -- -D warnings`, `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6); CI (`.github/workflows/ci.yml`) runs the same gates plus `cargo deny check` and the MSRV check.
 - Always build, test, check and run with `--release` (`cargo build --release`, `cargo test --release`, `cargo clippy --release`, `cargo run --release`); never create a debug build, because disk space in cloud sessions is limited and a second (debug) `target/` profile fills it. If the disk fills anyway, delete `target/debug/`.
 - trybuild (UI tests) never passes `--release`; it is covered by the repo-root `.cargo/config.toml` (created by Story 1.1), whose `[profile.dev]` is release-equivalent (`opt-level = 3`, no debug info, debug assertions, overflow checks or incremental). Never weaken that file. trybuild suites are `compile_fail` only.
 
