@@ -9,6 +9,7 @@ Rust project, greenfield: no crate exists yet. Planning artifacts go to `_bmad-o
 
 - Write everything that lands in the repo in English: code, comments, docs, BMad artifacts, skills. Chat with the user in Turkish.
 - Never hand-edit `_bmad/` (installer-managed); put overrides in `_bmad/custom/config.toml` or use the `bmad-customize` skill.
+- Every change to vesper's public API updates `examples/project-template/` in the same commit: its code, its `AGENTS.md` and its vesper usage skill. Bot authors' agents learn vesper from that skill alone, never from vesper's source.
 
 ## Running and verifying
 
