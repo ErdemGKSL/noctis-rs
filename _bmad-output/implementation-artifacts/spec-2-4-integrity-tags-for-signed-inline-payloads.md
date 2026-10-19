@@ -2,7 +2,8 @@
 title: 'Story 2.4: Integrity tags for signed inline Payloads'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '3e7ac597d1f6e62ed6752c531e9699a077fc8dcf'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
