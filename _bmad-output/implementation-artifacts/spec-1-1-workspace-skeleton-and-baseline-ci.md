@@ -2,10 +2,10 @@
 title: 'Story 1.1: Workspace skeleton and baseline CI'
 type: 'chore'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'fe105e9f2b6b32edcd68e9527742080a2513f77e'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
 warnings: ['oversized']
@@ -147,3 +147,12 @@ Decisions (also logged in the architecture `.memlog.md`): workspace starts at `0
 
 **Manual checks:**
 - `(cd examples/project-template && cargo build --release)` may fail (template uses unlanded API); only confirm it fails in compilation, not in resolving `noctis` features.
+
+## Auto Run Result
+
+- **Summary:** Virtual Cargo workspace (resolver 3) with the 12 `noctis*` library crates and `xtask`, pinned toolchain 1.97.0, release-equivalent `[profile.dev]` in `.cargo/config.toml`, `deny.toml`, `release-plz.toml`, `clippy.toml`, `docs/guides/`, `ci.yml` with every baseline gate plus `main.yml`/`release.yml` stubs, `.github/scripts/check-build-config.sh`, and the AGENTS.md verification line.
+- **Files changed:** root `Cargo.toml`/`Cargo.lock`/`rust-toolchain.toml`/`clippy.toml`/`deny.toml`/`release-plz.toml`/`.gitignore`; `.cargo/config.toml`; `crates/*` (12 empty documented crates); `xtask/`; `.github/workflows/{ci,main,release}.yml`; `.github/scripts/check-build-config.sh`; `docs/guides/README.md`; `AGENTS.md`.
+- **Review findings:** 30 findings (high 0, medium 6, low 7, false 17). Patched 2 entries (both medium): the build-config script now allowlists `.cargo/config.toml` lines and rejects `[profile.*]` in the root manifest; `ci.yml` gained a blocking `cargo metadata` check on the template. Deferred 1 (AGENTS.md verification line detail). Rejected 23 (see triage log).
+- **Follow-up review recommendation:** true by the rule (two medium entries patched). Named risk: the new allowlist logic in `check-build-config.sh` is only hand-tested. The orchestrator ran the script on the real tree and logged hand checks for six mutation cases; no follow-up pass is run in this loop (orchestrator decision: follow-up passes run only when a `high` was patched).
+- **Verification:** fmt, clippy `-D warnings`, workspace tests, `cargo hack --each-feature`, all-features build, `cargo +1.91 check`, `cargo deny check`, build-config script, no `target/debug/` — all exit 0 locally. CI run 39275495804 on `778d502` green.
+- **Residual risks:** GitHub Action tags `Swatinem/rust-cache@v2` and `taiki-e/install-action@v2` were not verified by API (CI run succeeded with them).

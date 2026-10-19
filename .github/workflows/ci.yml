@@ -21,6 +21,9 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: bash .github/scripts/check-build-config.sh
+      # Checks that the template's dependency graph and the facade feature names
+      # it uses resolve, without compiling (template-build stays tracking-only).
+      - run: cargo metadata --format-version 1 --manifest-path examples/project-template/Cargo.toml > /dev/null
 
   fmt:
     name: Format
