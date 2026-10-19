@@ -142,13 +142,14 @@
 //!
 //! # Allocation
 //!
-//! Decoding an inline id whose fields are all fixed-width (every field's
-//! [`Field::MAX_LEN`] is `Some`) allocates nothing: [`decode`],
-//! [`decode_route`], [`decode_route_verified`] and the fields read from
-//! `&str` slices into stack values, and every error is `Copy` (AD-25,
-//! NFR-9). `String` fields, `Cow<str>` fields with escapes and `Vec` fields
-//! may allocate. The crate's `tests/alloc_decode.rs` guards this with a
-//! counting allocator.
+//! Decoding a fixed-width inline id allocates nothing (AD-25, NFR-9):
+//! [`decode`], [`decode_route`], [`decode_route_verified`],
+//! [`Decoded::payload`] and [`Decoded::verified_payload`] read the crate's
+//! built-in fixed-width fields and `PayloadEnum` fields straight from `&str`
+//! slices into stack values, and every error is `Copy`. A custom
+//! [`FieldDecode`] impl must keep this guarantee itself. `String` fields,
+//! `Cow<str>` fields with escapes and `Vec` fields may allocate. The crate's
+//! `tests/alloc_decode.rs` guards this with a counting allocator.
 
 mod base62;
 mod bounded_str;

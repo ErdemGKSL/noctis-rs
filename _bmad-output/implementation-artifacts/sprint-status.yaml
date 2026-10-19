@@ -52,7 +52,7 @@ development_status:
   2-3-refs-and-two-phase-encodedid: done
   2-4-integrity-tags-for-signed-inline-payloads: done
   2-5-derive-route-payload-and-payloadenum-with-compile-time-lengt: done
-  2-6-zero-allocation-inline-decode-guard: in-progress
+  2-6-zero-allocation-inline-decode-guard: done
   epic-2-retrospective: optional
 
   epic-3: backlog

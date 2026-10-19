@@ -2,14 +2,21 @@
 title: 'Story 2.6: Zero-allocation inline decode guard'
 type: 'chore'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '106abb935372faa6c9a8b739c45bcdb14c91132c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The zero-allocation guard decodes only hand-written test Payloads, not the decode code that #[derive(Payload)] and #[derive(PayloadEnum)] generate for bot Routes.
+    evidence: |-
+      Verification-gap layer (pre-verified): alloc_decode.rs builds FixedP with tests/common payload! and Kind by hand; no dhat test touches noctis-macros output (payload.rs l.80-86, payload_enum.rs l.94-104), so an allocation added to derive output passes every test. Codec cannot depend on the facade (Design Notes), so Story 7.1's core Route-lookup test in the Allocation job should decode a derived Route with a derived PayloadEnum field under the same dhat delta check.
+    location: >-
+      crates/noctis-macros/src/payload.rs:80; crates/noctis-macros/src/payload_enum.rs:94
+    severity: medium
 ---
 
 <intent-contract>
@@ -138,6 +145,30 @@ Pin every expected error variant against `src/error.rs` and adjust a row's input
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 20 findings — high 0, medium 1, low 10, false 9, maybe-false 0
+- findings:
+  - `[false]` `[reject]` Stripped trailing-None F ids are always even, so the absent path never runs through `decode(id)?.payload()` — `decode_route` is literally `decode(raw)?.payload::<R>()` (layout.rs l.762-768), so the even ids already exercise `Decoded::payload`'s absent path.
+  - `[low]` `[reject]` No reject rows for FV sections and several `CodecError` variants (Truncated, InvalidChar, EmptyRoute, ...) — real coverage gap, but the spec matrix settled the reject set, every error type is `Copy`, and adding rows is new test surface rather than a direct correction.
+  - `[false]` `[reject]` Signed Route never decoded through `decode(id)?.verified_payload()` — `decode_route_verified` is exactly `decode(raw)?.verified_payload::<R>(keys)` (layout.rs l.776-784); same code path.
+  - `[low]` `[patch]` Test hard-codes 6, 101, 97 and `"1f.s:".len()` instead of the public `TAG_LEN`/`MAX_ID_LEN` layout constants — a second source of truth the boundary rows must track; patch derives the inputs from the constants.
+  - `[low]` `[reject]` `missing_tag`/`generation` fixtures assume flag-char values without asserting the FT prefix — each row matches one exact error variant, so a layout change fails loudly instead of passing for the wrong reason; fix would add guard asserts.
+  - `[low]` `[patch]` Crate-doc "Allocation" paragraph reads awkwardly and promises zero allocation for any field with `MAX_LEN = Some`, though a custom `FieldDecode` impl may allocate — patch rewords it to the built-in fixed-width fields and `PayloadEnum`, with custom impls keeping the guarantee themselves (grouped with intent D4).
+  - `[low]` `[reject]` `Rejected::check` takes an unused third key-ring argument — test-only style with no named harm; the fix is a refactor, not a direct correction.
+  - `[low]` `[reject]` Redundant ok-count asserts and thin failure diagnostics — the redundant assert is harmless; richer diagnostics add code to a test that already names the route/index or id that failed.
+  - `[false]` `[reject]` Dedicated Allocation CI job duplicates the workspace test — the intent AC asks for the test to be part of a required allocation job, Story 7.1 extends it, and the job already runs `--release`.
+  - `[low]` `[reject]` Manual probe result not recorded in the spec — the fix edits this build's spec; the probe is recorded in the Auto Run Result at finalize.
+  - `[false]` `[reject]` Error paths of two-phase `decode(id).payload()` never measured — `decode_route` is that exact call, so every `decode_route` reject row measures them.
+  - `[low]` `[reject]` No reject row for FV sections or a tag on an unsigned Route (same root as the missing-variant finding) — rejected for the same reason.
+  - `[false]` `[reject]` Stripped F ids never two-phase (duplicate of the first finding) — same refutation.
+  - `[low]` `[reject]` dhat's global counter would count libtest's 60 s slow-test warning — the measured region runs in milliseconds on release builds; documenting it or measuring per thread adds complexity for a case nobody meets.
+  - `[false]` `[reject]` Intent D1: Allocation job sits in the paused `workflows-disabled/ci.yml` — AGENTS.md pauses all CI until Epic 14; the spec deliberately and correctly adds the job there.
+  - `[false]` `[reject]` Intent D2: 2,500 ids over four Routes instead of 10,000 of one Route — the spec deliberately reads "a fixed-width Route" generically to cover every inline decode path; 10,000 total is asserted.
+  - `[false]` `[reject]` Intent D3: dispatch path not measured — the epics place this test in noctis-codec and Story 7.1 extends the job with core's Route-lookup test.
+  - `[low]` `[patch]` Intent D4: crate-doc guarantee broader than the tested field types — grouped with the crate-doc overclaim finding; same reword.
+  - `[false]` `[reject]` Intent D5: reject rows and negative control go beyond the AC — descriptive; the spec deliberately added them, no defect.
+  - `[medium]` `[defer]` Guard never decodes `#[derive(Payload)]`/`#[derive(PayloadEnum)]` output (verification-gap layer, pre-verified) — codec cannot depend on the facade; deferred to Story 7.1's core allocation test in the same job.
+
 ## Design Notes
 
 - **Location (decision, memlog).** The epics place the test in `noctis-codec`, and AD-25 lists a core bench that covers lookup plus decode. The codec test guards the decoder now. Story 7.1 adds core's Route-lookup test to the same `Allocation` job, and its 7.1 AC wording "extended from Story 2.6" refers to that job.
@@ -160,3 +191,27 @@ Pin every expected error variant against `src/error.rs` and adjust a row's input
 
 **Manual checks:**
 - The probe AC above: the test fails with a probe in place and passes once the probe is reverted.
+
+## Auto Run Result
+
+- **Summary:** Added a dhat counting-allocator integration test (`alloc_decode`) to `noctis-codec`. It decodes 10,000 valid fixed-width inline `custom_id`s across four Routes (unsigned, signed/verified, stripped trailing-None, `PayloadEnum`), plus a matrix of rejected ids, and asserts a zero-allocation delta (AD-25, NFR-9). A negative control proves the counter is live. An `Allocation` job was added to the paused `ci.yml`. The decoder needed no change, because the test found no allocation.
+- **Files changed:**
+  - `crates/noctis-codec/tests/alloc_decode.rs`: the new zero-allocation guard test, with boundary inputs derived from `TAG_LEN`/`MAX_ID_LEN` (review patch).
+  - `crates/noctis-codec/Cargo.toml`: `dhat` dev-dependency.
+  - `crates/noctis-codec/src/lib.rs`: crate-doc "Allocation" paragraph. It now limits the guarantee to the built-in fixed-width fields and `PayloadEnum`; custom `FieldDecode` impls must keep the guarantee themselves (review patch).
+  - `.github/workflows-disabled/ci.yml`: new `Allocation` job (paused, like all CI).
+  - `Cargo.lock`: the dhat dependency tree.
+- **Review findings:** 20 total (high 0, medium 1, low 10, false 9).
+  - Patched (low): 2 entries. One replaced the hard-coded 6/101/97 values with the layout constants. The other reworded the crate-doc overclaim, grouped with intent D4.
+  - Deferred (medium): the guard never decodes `#[derive(Payload)]`/`#[derive(PayloadEnum)]` output. This moves to Story 7.1's core allocation test, which runs in the same `Allocation` job.
+  - Rejected:
+    - Missing reject rows for FV sections and several `CodecError` variants: the spec settled the reject set.
+    - Unasserted flag-char fixture assumptions: each row matches one exact error variant.
+    - Unused key-ring argument: style only.
+    - Redundant asserts and thin diagnostics: harmless.
+    - Probe result not recorded in the spec: it is recorded here.
+    - libtest slow-test warning counted by dhat: the measured region runs in milliseconds.
+    - 9 false findings, refuted: `decode_route`/`decode_route_verified` are exactly the two-phase path. The job sits in paused CI by design. 2,500 ids × 4 Routes = 10,000. Dispatch is covered in Story 7.1. The extra rows and the control are deliberate.
+- **Follow-up review recommended:** false. Patched by verdict: high 0, medium 0, low 2.
+- **Verification:** `gates.sh` local gates all green (fmt, clippy `--release -D warnings`, `cargo test --release --workspace` including `alloc_decode`, cargo-hack each-feature, cargo-deny). A manual probe confirmed the negative control detects an injected allocation. CI is paused by the maintainer.
+- **Residual risks:** derive-generated decode code is not under the zero-allocation guard until Story 7.1. A custom `FieldDecode` impl may still allocate.

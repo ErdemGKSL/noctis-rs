@@ -16,10 +16,10 @@ use std::hint::black_box;
 
 use arrayvec::ArrayString;
 use noctis_codec::{
-    BoundedStr, BoundedStrError, CodecError, DecodeError, Field, FieldDecode, FieldError,
-    ForgedReason, Parts, Payload, PayloadKey, PayloadKeys, PayloadSource, RouteShape, SelectNonce,
-    StaleReason, ViewEnvelope, decode, decode_route, decode_route_verified, decode_variant, encode,
-    encode_variant,
+    BoundedStr, BoundedStrError, CodecError, DecodeError, FMT_LEN, Field, FieldDecode, FieldError,
+    ForgedReason, MAX_ID_LEN, Parts, Payload, PayloadKey, PayloadKeys, PayloadSource, RouteShape,
+    SEP_LEN, SelectNonce, StaleReason, TAG_LEN, ViewEnvelope, decode, decode_route,
+    decode_route_verified, decode_variant, encode, encode_variant,
 };
 use twilight_model::id::{Id, marker::UserMarker};
 
@@ -313,15 +313,15 @@ fn inline_decode_allocates_nothing() {
     let f_prefix = "0f:".len();
 
     let mut stale_schema = String::from(schema_id.as_str());
-    stale_schema.remove("1f.s:".len());
+    stale_schema.remove(FMT_LEN + "f.s".len() + SEP_LEN);
     stale_schema.replace_range(0..1, "0");
     let mut missing_tag = String::from("0");
-    missing_tag.push_str(&signed_id[1..signed_id.len() - 6]);
+    missing_tag.push_str(&signed_id[1..signed_id.len() - TAG_LEN]);
     let mut bad_tag = String::from(signed_id.as_str());
     let last = if bad_tag.ends_with('0') { "1" } else { "0" };
     bad_tag.replace_range(bad_tag.len() - 1.., last);
     let mut too_long = String::from(max_ft.as_str());
-    while too_long.len() < 101 {
+    while too_long.len() < MAX_ID_LEN + 1 {
         too_long.push('x');
     }
     let mut generation = String::from(full_f.as_str());
@@ -406,15 +406,19 @@ fn inline_decode_allocates_nothing() {
         rejected(&too_long, |id, keys, _| {
             matches!(
                 black_box(decode_route_verified::<FT>(id, keys)),
-                Err(DecodeError::Malformed(CodecError::TooLong { len: 101 }))
+                Err(DecodeError::Malformed(CodecError::TooLong { len }))
+                    if len == MAX_ID_LEN + 1
             )
         }),
-        rejected(&format!("0f:{}", "x".repeat(97)), |id, _, _| {
-            matches!(
-                black_box(decode_route::<F>(id)),
-                Err(DecodeError::Malformed(CodecError::Field { .. }))
-            )
-        }),
+        rejected(
+            &format!("0f:{}", "x".repeat(MAX_ID_LEN - "0f:".len())),
+            |id, _, _| {
+                matches!(
+                    black_box(decode_route::<F>(id)),
+                    Err(DecodeError::Malformed(CodecError::Field { .. }))
+                )
+            },
+        ),
         rejected("0f:é", |id, _, _| {
             matches!(
                 black_box(decode_route::<F>(id)),
@@ -436,7 +440,7 @@ fn inline_decode_allocates_nothing() {
             )
         }),
     ];
-    assert_eq!(too_long.len(), 101);
+    assert_eq!(too_long.len(), MAX_ID_LEN + 1);
 
     // --- Measured region: no allocation, no formatting on success. ---
     let mut ok = 0_usize;
