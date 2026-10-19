@@ -9,7 +9,14 @@ followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      AGENTS.md "Running and verifying" does not name the local cargo-deny version or the MSRV command, so agents cannot reproduce those two CI gates from AGENTS.md alone.
+    evidence: |-
+      The new bullet says CI runs the listed gates "plus `cargo deny check` and the MSRV check" but gives neither `cargo +1.91 check --release --workspace` nor `cargo install --locked cargo-deny@0.20.x`; those live only in ci.yml and this spec's Verification section. Fix edits an agent-context file, so it is deferred.
+    location: >-
+      AGENTS.md (Running and verifying)
+    severity: low
 ---
 
 <intent-contract>
@@ -84,6 +91,40 @@ Everything is new except the two edits marked (edit).
 ## Spec Change Log
 
 ## Review Triage Log
+
+### 2026-10-19 — Review pass
+- verdicts: 30 findings — high 0, medium 6, low 7, false 17, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) Facade features are empty and have no edges to sub-crates — intent says the features are "(initially empty)" and the intent-contract forbids internal edges in this story; wiring lands in Epic 10 and later.
+  - `[false]` `[reject]` (blind) Cargo.lock missing, no `--locked` in CI — `Cargo.lock` is committed in 778d502 (only the diff file omits it); the graph has no external crates, so nothing resolves fresh.
+  - `[low]` `[reject]` (blind) License files not shipped in packages / README missing — LICENSE-MIT, LICENSE-APACHE and README.md exist at the root; only per-crate packaging of license texts remains, which nobody hits before publishing (Story 14.7) and whose fix adds per-crate files/config.
+  - `[false]` `[reject]` (blind) examples/project-template never created; public API policy not followed — the template exists in the repo and already names these exact feature names; the spec forbids editing it.
+  - `[medium]` `[patch]` (blind) check-build-config.sh only greps for present lines, so a later override or `[profile.dev.package."*"]` weakens the dev profile unnoticed — confirmed by reading the script (grep -qxF anywhere in the file, never checks absence, never reads root Cargo.toml); grouped with the dev-profile-guard root cause; patch: whitelist-check `.cargo/config.toml` content and reject any profile table in root `Cargo.toml`. (CARGO_PROFILE_DEV_* env and "toolchain install for a bash job" sub-claims: no such env in ci.yml; the per-job setup is spec-mandated.)
+  - `[false]` `[reject]` (blind) twilight TLS features leave no ring provider — the features are exactly AD-21's (spine l.730-738), which installs `rustls::crypto::ring::default_provider()` at runtime in core; no crate consumes these deps yet and deny bans aws-lc-*.
+  - `[low]` `[reject]` (blind) No rustdoc gate, MSRV without `--all-features`, no concurrency group — the intent fixes the MSRV command verbatim and all features are empty today; `missing_docs` already fails clippy `-D warnings`; doc/concurrency jobs are extra gates with no current harm.
+  - `[false]` `[reject]` (blind) `#![deny(missing_docs)]` duplicates workspace lint; `undocumented_unsafe_blocks` is dead — the intent requires `#![deny(missing_docs)]` on the facade; `unsafe_code = "deny"` (not forbid) deliberately allows a justified exception, which is where `undocumented_unsafe_blocks` applies.
+  - `[low]` `[reject]` (blind) xtask prints help to stderr and no usage on unknown task — behavior is exactly what the spec prescribes; xtask has no tasks yet, so the harm is negligible.
+  - `[low]` `[defer]` (blind) AGENTS.md verification line omits cargo-deny version and the MSRV command — real but minor; fix edits an agent-context file, so deferred (see frontmatter `deferred`).
+  - `[low]` `[reject]` (edge) Non-UTF-8 argument makes `std::env::args` panic in xtask — true, but nobody passes non-UTF-8 task names in everyday use and the fix adds an `args_os` branch.
+  - `[low]` `[reject]` (edge) `-h`/`--help` exit 2 and trailing args are ignored — the spec defines exactly this contract (any arg other than `help` exits 2); no tasks exist, harm negligible, fix adds branches.
+  - `[medium]` `[patch]` (edge) Required line present but under another table passes check-build-config.sh — same root cause as the blind dev-profile-guard finding; same patch.
+  - `[medium]` `[patch]` (edge) Root Cargo.toml gaining `[profile.dev.package.*]` passes the check — same root cause; patch also rejects any `[profile` table/`profile.` key in root Cargo.toml (the spec's "No `[profile.*]` in root Cargo.toml").
+  - `[false]` `[reject]` (edge) MSRV job misses feature-gated code — no feature-gated code exists (all features are `[]`), and the intent fixes the MSRV command as `cargo +1.91 check --release --workspace`.
+  - `[false]` `[reject]` (edge) Unresolved workspace dependency versions may not exist (e.g. syn 3.0) — checked the crates.io sparse index on 2026-10-19: syn 3.0.9, toml 1.1.8, getrandom 0.4.3, takumi 2.17.0, takumi-core 0.31.0, twilight-gateway 0.17.1, cssparser 0.38.0, yaml-rust2 0.13.0, cargo_metadata 0.23.1, criterion 0.8.2, png 0.18.1 all exist; resolution is enforced when Story 1.2+ consume them.
+  - `[false]` `[reject]` (edge) `image-gif`/`image-emoji`/`default-font` do not imply `image` — intent says the features are initially empty; implications arrive with the code they gate (Epic 10), nothing breaks today.
+  - `[low]` `[reject]` (edge) No `timeout-minutes` on CI jobs — a hang is unlikely with empty crates, and the fix adds a guard to every job.
+  - `[medium]` `[patch]` (verification-gap) Template-build is non-blocking, so no blocking CI check pins the facade feature names the template needs — pre-verified; ran `cargo metadata --format-version 1` in examples/project-template locally: it resolves (rc 0), so a blocking resolution step passes today; patch: add a blocking step that resolves the template graph without compiling.
+  - `[medium]` `[patch]` (verification-gap) check-build-config.sh checks only line presence, not the effective dev profile — pre-verified; same root cause as the blind/edge dev-profile-guard findings; same patch.
+  - `[false]` `[reject]` (intent) Cargo.lock outside the reviewed surface — the lockfile is committed in 778d502 (55 lines, workspace crates only); the omission is in the staged diff file only.
+  - `[false]` `[reject]` (intent) Runtime ACs have no exercised surface — they are verified by the spec's Verification commands, not by code; `cargo metadata --no-deps` reports 13 workspace members.
+  - `[medium]` `[patch]` (intent) Dev-profile guard checks text lines while the intent ("can't be weakened silently") is about the effective profile — same root cause as the dev-profile-guard group; same patch.
+  - `[false]` `[reject]` (intent) Deny policy not exercised against the Stack — the spec deliberately settled this (Design Notes: unused-license settings `allow`, policy for later crates); the intent's exceptions were found by resolving the Stack at planning time.
+  - `[false]` `[reject]` (intent) Stack pins textual and unresolved — the intent asks for pins "to the Stack table", which the diff matches; sampled pins exist on crates.io (see edge row above); resolution comes with their first consumer.
+  - `[false]` `[reject]` (intent) Facade features are empty markers — matches the intent's "(initially empty)"; the intent-contract forbids internal edges in this story.
+  - `[false]` `[reject]` (intent) `[profile.release]` "stays" could mean an explicit section — the spec deliberately and correctly settled it as "no override" (Cargo's built-in release profile is the real one; AGENTS.md says build with `--release`).
+  - `[false]` `[reject]` (intent) Template-build "result reported" has no explicit report step — a job with job-level `continue-on-error: true` still shows its failed conclusion in the run UI and checks list, which is the report.
+  - `[false]` `[reject]` (intent) Dev notes on lints and release-plz skip are not in the diff — the spec's Tasks section records the `[workspace.lints]` set and the `xtask` `release = false` entry; fixing it would only edit this spec.
+  - `[false]` `[reject]` (intent) Crate-doc wording paraphrased — every sub-crate doc reads "This crate is internal; use `noctis` instead.", which contains the exact phrase "internal; use `noctis`".
 
 ## Design Notes
 
