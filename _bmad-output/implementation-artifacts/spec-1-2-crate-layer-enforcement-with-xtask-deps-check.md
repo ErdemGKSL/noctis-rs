@@ -2,7 +2,7 @@
 title: 'Story 1.2: Crate layer enforcement with xtask deps-check'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '88b429c92cadafc030db8dccb54a12123e360379'
 review_loop_iteration: 2
 followup_review_recommended: false
@@ -21,6 +21,13 @@ deferred:
       The AGENTS.md local-gate line chains its commands with a doubled "and", which makes the list hard to read.
     evidence: |-
       AGENTS.md line 23 reads "... `cargo test --release --workspace` and `cargo hack test --release --workspace --each-feature` (cargo-hack 0.6) and `cargo run --release -p xtask -- deps-check`; ...". Fix: comma-separate the list, keeping only the last "and". Deferred because the fix edits an agent-context file.
+    location: >-
+      AGENTS.md:23
+    severity: low
+  - summary: >-
+      AGENTS.md lists the deps-check gate but gives no guidance for a failing run: that a crate or edge change edits the spine's Invariants graph and CRATES/GRAPH/GATED in xtask/src/deps_check.rs together.
+    evidence: |-
+      The `unknown-crate` reason names the constants, but the `undrawn-edge` reason only says "edge is not drawn in the spine's Invariants graph", and AGENTS.md has no paired-file line like the one it states for docs/discord-rules.md and noctis-rules. Fix: one line under "Where things are" or "Running and verifying". Deferred because the fix edits an agent-context file.
     location: >-
       AGENTS.md:23
     severity: low
@@ -234,6 +241,35 @@ deferred:
   - `[false]` `[reject]` (intent D8) CI gate shown only at the workflow file — carried: no `continue-on-error`; the pushed run is the spec's Verification step.
   - `[false]` `[reject]` (intent D9) Scope additions beyond the ACs — carried: each is a spec matrix row or Design Notes decision.
 
+### 2026-10-19 — Review pass
+- verdicts: 25 findings — high 0, medium 1, low 14, false 10, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) `xtask` gets the bot rule, which blocks later xtask tasks (`rules-catalog`) that might want `noctis-codec` — the intent contract's matrix row "Non-internal member: member `xtask` -> `noctis-core` (any kind), exit 1, `bot-dependency`" mandates exactly this; no current task needs the edge, and a later story that does must amend the spine and intent first.
+  - `[low]` `[reject]` (blind) Any `noctis-*` package, including a third-party registry crate, counts as internal — real (`is_internal` is prefix-only and `from_metadata` keeps such deps), but the inspected workspace is noctis-rs itself, whose graph crates and tooling members have no reason to depend on community `noctis-*` crates; telling sources apart adds branches over `source`/`path`.
+  - `[low]` `[reject]` (blind) Integration tests assert substrings only, never the absence of extra lines — real test weakness (`assert_exit` uses `contains`), but every pass fixture already fails on any spurious line (`assert_ok` needs exit 0), and switching ~60 failing fixtures to exact line sets is a broad rework, not a direct correction.
+  - `[false]` `[reject]` (blind) Rule logic has no in-memory unit tests — Tasks deliberately prescribe CLI tests over generated fixture workspaces (one per matrix/Tasks row), which pin the `cargo metadata` mapping the finding itself wants kept; no wrong outcome is named beyond speed and style.
+  - `[low]` `[patch]` (blind) `full_graph`'s doc says "Every drawn edge" but it also gives the facade edges to all 10 non-testkit crates (32 edges) — verified at `xtask/tests/deps_check.rs:133`; the fixture itself follows the intent's "Full graph" row ("facade depends on all other crates"), and a subset of it passes a fortiori (rules are per edge), so only the comment misleads. Fix: correct the doc comment.
+  - `[low]` `[reject]` (blind) Reasons print `k/f` for a weak `k?/f` request — real (`Member::closure` strips `?` before recording `dep_features`), but the line still names the member feature, edge and rule, weak requests are rare, and the fix threads a weak flag through the closure tuple and three reason sites.
+  - `[low]` `[patch]` (blind) `main.rs` branch `[flag, _, extra, ..]` ("unexpected argument: <extra>") is untested — verified: `usage_errors_exit_2` covers only `--bogus` and a bare `--manifest-path`. Fix: add `deps-check --manifest-path a b` -> exit 2 with `unexpected argument: b`. The default-manifest half is already exercised by the CI `deps-check` job, which runs without `--manifest-path`; no test added for it.
+  - `[low]` `[patch]` (blind) Test module doc claims "one per row of Story 1.2's I/O matrix" though about 35 tests come from Tasks rows — verified at `xtask/tests/deps_check.rs:1-2`. Fix: doc says the tests cover the I/O matrix rows and the extra rows listed in the spec's Tasks.
+  - `[low]` `[defer]` (blind) AGENTS.md lists the deps-check gate but says nothing about pairing the spine graph with `CRATES`/`GRAPH`/`GATED` when deps-check fails — real for `undrawn-edge` (its reason does not name the constants; `unknown-crate`'s does); the fix edits an agent-context file, so deferred. The doubled-"and" half is carried (deferred in pass 2, frontmatter `deferred` second item) and not deferred again.
+  - `[low]` `[reject]` (blind) Spec uses short commit hashes, unnumbered triage-pass titles and stale line numbers — the fix is editing this build's spec.
+  - `[false]` `[reject]` (blind) Facade `default` reuses `ungated-edge` as a crate-level line instead of an edge line or new id — deliberately settled: Design Notes "Facade `default`" mandates a crate-level `ungated-edge` on `noctis` firing in addition to `check_gate_features`, the Tasks row pins the no-`->` form, and the rule-id list is fixed (KEEP).
+  - `[false]` `[reject]` (edge) A dep on a registry/out-of-tree package with a CRATES name (e.g. facade -> `noctis-core = "0.1"`) passes as a drawn edge — no layering breach occurs: the edge is the drawn one, and a crates.io `noctis-core` is this project's own published crate (the workspace publishes `noctis-*`), so the layer order deps-check guards is unchanged.
+  - `[low]` `[reject]` (edge) A bot depending on a registry `noctis` is judged against the workspace facade's feature table — real (`check_non_internal` always uses `ws.member(FACADE)`), but non-internal workspace members (`xtask`, `examples/<feature>`) use the in-tree facade; a registry facade dep there is not an everyday setup, and `testkit` itself is still caught by name; the fix adds a source check.
+  - `[low]` `[reject]` (edge) `check_render`'s feature loop prints `(normal)` for a macros build/dev-dep on image — carried: pass-2 row (same claim, `deps_check.rs:549` still hardcodes `Kind::Normal`); rare setup, line names the edge and rule.
+  - `[false]` `[reject]` (edge) An unknown `noctis-*` member's own edges are skipped (`continue` after `unknown-crate`) — a crate outside the graph has no allow-list entry, so none of its edges can be judged until the step the reason prescribes (add it to the spine and CRATES/GRAPH/GATED) is done; edges into it from graph crates are still reported (`undrawn-edge`). The skip is the specified `check()` structure (KEEP).
+  - `[low]` `[reject]` (edge) `--manifest-path ""` or `--manifest-path --bogus` exits 1 as a metadata failure instead of 2 — real but loud: the message `cargo metadata failed: ...` names the bad path; the spec's usage rule covers only the missing-value form; the fix adds a guard for an input nobody types.
+  - `[low]` `[patch]` (vgap, pre-verified) The `*key == dep.key` filter on bot `k/f` requests (source (c)) is unpinned — filed evidence: dropping the key comparison keeps all 60 tests green, and a bot with `t = ["helper/full"]` then fails falsely. Fix: add `bot_feature_requesting_other_dep_feature_passes` (testkit facade with `full = ["testkit"]`, member `helper` with `full = []`, `bot` with normal deps on `noctis` and `helper` and `t = ["helper/full"]`, `assert_ok`).
+  - `[false]` `[reject]` (intent D1) AC1 pass case on the real workspace is vacuous — carried: the spec deliberately settles this (no internal edges in this story; full-graph fixture plus the manual mutation AC).
+  - `[false]` `[reject]` (intent D2) `depends-on-facade` covers only internal crates, narrowing "any crate" — carried: the intent matrix row "Non-internal member uses facade, exit 0" and AD-2 settle it.
+  - `[medium]` `[defer]` (intent D3) Bot rules never run on `examples/project-template` — carried: already deferred (frontmatter `deferred`, first item); not deferred again.
+  - `[low]` `[patch]` (intent D4) "tw module only" half not enforced — carried: the pass-1 patch (module doc lines 9-12 of `deps_check.rs`) is in place; not patched again.
+  - `[false]` `[reject]` (intent D5) Reachability by feature closure, not a resolved graph — carried: pass-1 refutation (every other edge into `noctis-testkit` is undrawn and fails on its own; resolver 3 keeps proc-macro features apart).
+  - `[false]` `[reject]` (intent D6) CI gate shown only at the workflow file — carried: no `continue-on-error`; the pushed run is the spec's Verification step.
+  - `[low]` `[reject]` (intent D7) Allow-list hand-copied, not compared with the spine — carried: rare silent drift only for removed spine edges; fix is a mermaid parser.
+  - `[false]` `[reject]` (intent D8) Scope additions beyond the ACs, notably the facade limited to CRATES targets against AC1's "any crate" — the additions are carried (pass-1/2: spec matrix rows or Design Notes decisions); the facade limit is settled by the intent contract's Always bullet ("the facade `noctis` may depend on any internal crate", internal = a workspace member named `noctis`/`noctis-*`), which excludes `xtask`, `bot` and out-of-tree packages.
+
 ## Design Notes
 
 Allow-list (from -> to). Ungated: `noctis-prefix -> noctis-core`; `noctis-testkit -> noctis-core, noctis-gateway, noctis-ports`; `noctis-core -> noctis-gateway, noctis-i18n, noctis-ui, noctis-ports, noctis-codec, noctis-rules`; `noctis-i18n -> noctis-ports, noctis-rules`; `noctis-gateway -> noctis-ports`; `noctis-ui -> noctis-codec, noctis-rules`; `noctis-codec -> noctis-rules`; `noctis-macros -> noctis-rules, noctis-image` (18; the facade's drawn ungated edges are covered by its any-crate rule). Gated: `noctis-image -> noctis-core | noctis-ports | noctis-ui` by `render`; `noctis -> noctis-testkit` by `testkit`.
@@ -269,3 +305,12 @@ Decisions (log in the architecture `.memlog.md`): kebab rule ids; dev-deps of in
 
 **Manual checks:**
 - The mutation AC above (ui -> core), then revert with `git checkout crates/noctis-ui/Cargo.toml`.
+
+## Auto Run Result
+
+- **Summary:** `cargo run --release -p xtask -- deps-check [--manifest-path <p>]` reads workspace metadata (`cargo_metadata` 0.23.1, `--no-deps`) and checks every internal dependency edge against the spine's layer graph (18 drawn edges, gated edges behind their features, facade any-crate rule), facade `default`/testkit closure rules, and the bot rule (testkit only from dev-dependencies, rename-aware, through every feature path). Kebab rule ids: `undrawn-edge`, `depends-on-facade`, `ungated-edge`, `render-on`, `unknown-crate`, `missing-crate`, `bot-dependency`. Exit 0/1/2. Blocking CI job `Deps check`.
+- **Files changed:** `xtask/src/deps_check.rs` (new), `xtask/src/main.rs`, `xtask/tests/deps_check.rs` (new, 55 fixture tests), `xtask/Cargo.toml`, `Cargo.lock`, `.github/workflows/ci.yml`, `AGENTS.md`.
+- **Review findings:** three passes. Pass 1: 26 findings → bad_spec (bot testkit via normal deps). Pass 2: 28 findings → bad_spec (testkit reachable through facade feature closures/default). Pass 3: 25 findings (medium 1, low 14, false 10) → 4 low patches in tests/docs, 1 new defer; 18 rejected (see triage log). Deferred total 3 (template not checked, AGENTS.md wording ×2).
+- **Follow-up review recommendation:** false (pass 3 patched only low entries).
+- **Verification:** fmt, clippy `-D warnings`, workspace tests, `cargo hack --each-feature`, `cargo +1.91 check`, `cargo deny check`, build-config script, deps-check on the real tree (`ok (12 internal crates, 0 internal edges)`), mutation check (`noctis-ui -> noctis-core` → exit 1 `[undrawn-edge]`), no `target/debug/`.
+- **Residual risks:** the "tw module only" half of the macros→image rule is documented as unchecked; `examples/project-template` not checked by deps-check (deferred).

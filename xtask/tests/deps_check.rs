@@ -1,5 +1,6 @@
-//! CLI tests for `xtask deps-check` over generated fixture workspaces, one per row
-//! of Story 1.2's I/O matrix.
+//! CLI tests for `xtask deps-check` over generated fixture workspaces. They cover
+//! every row of Story 1.2's I/O matrix plus the extra rows listed in the spec's
+//! Tasks.
 
 #![allow(
     clippy::expect_used,
@@ -130,7 +131,9 @@ fn assert_ok(out: &Output) {
     assert_exit(out, 0, &["deps-check: ok ("]);
 }
 
-/// Every drawn edge, with the gated ones behind their features.
+/// Every drawn edge, with the gated ones behind their features, plus facade edges
+/// to every other graph crate (its any-crate rule), as the intent's "Full graph"
+/// row specifies.
 fn full_graph(test: &'static str) -> Fixture {
     let deps = |names: &[&str]| -> String {
         let mut toml = "[dependencies]\n".to_owned();
@@ -558,6 +561,11 @@ fn usage_errors_exit_2() {
     ] {
         assert_exit(&run(args), 2, &["usage: "]);
     }
+    assert_exit(
+        &run(&["deps-check", "--manifest-path", "a", "b"]),
+        2,
+        &["unexpected argument: b", "usage: "],
+    );
 }
 
 #[test]
@@ -1070,4 +1078,20 @@ fn graph_crate_dep_on_non_internal_member_fails() {
         )
         .run();
     assert_exit(&out, 1, &["noctis-core -> bot (normal)", "[undrawn-edge]"]);
+}
+
+#[test]
+fn bot_feature_requesting_other_dep_feature_passes() {
+    let out = testkit_facade("bot_other_dep_full", FULL_TESTKIT)
+        .with("helper", "[features]\nfull = []\n")
+        .with(
+            "bot",
+            &format!(
+                "[features]\nt = [\"helper/full\"]\n\n[dependencies]\n{}{}",
+                path_dep("noctis"),
+                path_dep("helper")
+            ),
+        )
+        .run();
+    assert_ok(&out);
 }
