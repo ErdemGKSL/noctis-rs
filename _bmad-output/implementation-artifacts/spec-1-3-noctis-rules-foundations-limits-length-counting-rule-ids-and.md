@@ -2,7 +2,8 @@
 title: 'Story 1.3: noctis-rules foundations: Limits, length counting, rule ids and locales'
 type: 'feature'
 created: '2026-10-19'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '687b2f8f43c7824b37d0db90edffc89784ed57fe'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
