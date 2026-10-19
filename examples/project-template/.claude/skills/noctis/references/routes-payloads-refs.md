@@ -35,8 +35,10 @@ async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<impl
   (`struct Ping;`).
 - `#[derive(Route)]` implements the `Route` trait (`ID`, `SHAPE`, `SCHEMA`,
   `type Payload = Self`) and the `Payload`/`PayloadDecode` traits for the struct, and
-  proves the length bound at compile time (§5). Today Routes encode and decode; the
-  `#[handler]`, `.button()` and the rest of this file's runtime parts are **[planned]**.
+  proves the length bound at compile time (§5). Today the codec traits and these
+  derives exist; encoding and decoding a Route happen internally, in the **[planned]**
+  component builders and dispatcher, and the `#[handler]`, `.button()` and the rest of
+  this file's runtime parts are **[planned]** too.
 
 ### Route id (CID-03)
 
@@ -305,6 +307,9 @@ impl Route for PickRoute {
 }
 ```
 
+A hand-written `Route` gets no compile-time length proof (only `#[derive(Route)]` emits
+it), so an overlong id fails only at encode time; prefer `#[derive(Route)]`.
+
 ## 4. The `custom_id` format (normative, AD-5)
 
 ```text
@@ -338,7 +343,10 @@ The derive emits a constant assertion, so `cargo check --release` fails on an ov
 with the route id and the worst case. Each derived Route also gets a generated
 `#[test] fn __noctis_route_width_<StructName>` that prints the width breakdown and
 asserts it fits; run all of them with
-`cargo test --release -- --nocapture noctis_route_width`. The breakdown line:
+`cargo test --release -- --nocapture noctis_route_width`. The width test runs only
+for module-level Routes: a Route declared inside a function body gets the compile-time
+proof but no runnable width test, and rustc warns `cannot test inner items` unless that
+function carries `#[allow(unnameable_test_items)]`. The breakdown line:
 
 ```text
 shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)

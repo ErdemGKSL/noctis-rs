@@ -33,7 +33,8 @@ fn variants(input: &DeriveInput) -> syn::Result<Vec<&Ident>> {
                         format!("PayloadEnum variant `{}` has fields", v.ident),
                         "a PayloadEnum has unit variants only; use a struct Payload field list instead",
                     ));
-                } else if i == PAYLOAD_ENUM_MAX_VARIANTS {
+                }
+                if i == PAYLOAD_ENUM_MAX_VARIANTS {
                     errors.push(error(
                         v,
                         RuleId::CID_01,
@@ -157,6 +158,12 @@ mod tests {
         );
         assert!(m.contains("`V62` is variant 63"), "{m}");
         assert!(m.contains("\n  = help: "), "{m}");
+        // A 63rd variant with fields reports both errors, the count once.
+        let names = (0..62).map(|i| quote::format_ident!("V{i}"));
+        let m = message(&parse_quote!(enum K { #(#names,)* V62(u8), V63 }));
+        assert!(m.contains("variant `V62` has fields"), "{m}");
+        assert_eq!(m.matches("at most 62 variants").count(), 1, "{m}");
+        assert!(m.contains("`V62` is variant 63"), "{m}");
 
         let m = message(&parse_quote!(
             enum K {

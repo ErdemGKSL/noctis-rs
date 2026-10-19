@@ -2,10 +2,10 @@
 title: 'Story 2.5: `#[derive(Route)]`, `Payload` and `PayloadEnum` with compile-time length proof'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '46288835d01de9cffcc2b10e4eb5598477fa829e'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -248,6 +248,45 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 35 findings — high 0, medium 7, low 21, false 7, maybe-false 0
+- findings:
+  - `[false]` `[reject]` Blind: template Routes keep `permissions`/`owner`/`opens_modal`, which the derive rejects — the template is excluded from the workspace (`Cargo.toml` `exclude`), every module file is headed "written against the planned Noctis API", and the Design Notes deliberately keep runtime arguments as `[planned]`; nothing that is supposed to build breaks.
+  - `[low]` `[patch]` Blind: no public encode/decode path, yet the skill says "Today Routes encode and decode" — `noctis::codec` re-exports no `encode`/`decode_route` (only `__private` does), so the skill sentence in `routes-payloads-refs.md` l.38 misleads bot authors' agents; patch: reword the sentence (encoding/decoding is internal, done by the [planned] component builders and dispatcher).
+  - `[low]` `[patch]` Blind: hand-written Payloads/Routes get no length proof and the docs never say so — `assert_fits` is emitted only by `#[derive(Route)]` and is doc-hidden; skill §3 shows the hand `PickRoute` without saying it is unproven (grouped with Edge hand-Route row); patch: one sentence in skill §3/§5.
+  - `[low]` `[reject]` Blind: spill total overstated when the inline form is shorter than a Ref (`ss` → 16) — real but conservative; the intent-contract matrix row pins total 16 and `total()` formula, so the fix edits this build's spec.
+  - `[low]` `[reject]` Blind: generated code hard-codes `::noctis::__private::codec`, breaking a renamed dependency — the intent itself requires `::noctis::__private::<crate>` paths; renaming the dependency is uncommon and the escape hatch adds an argument (Epic 7 per Never list).
+  - `[medium]` `[patch]` Blind: generated `__noctis_route_width_<Name>` test is fragile (inner items, `allow` without reason, redundant assert) — reproduced: a `#[derive(Route)]` struct inside a `#[test] fn` fails `#![deny(warnings)]` with `cannot test inner items` (`unnameable_test_items`); the `allow` without reason is not flagged (clippy skips external-macro expansions, checked with `allow_attributes_without_reason` denied); the redundant assert is spec-mandated and harmless; patch: add `unnameable_test_items` to the generated `allow`, plus a function-local Route test.
+  - `[low]` `[patch]` Blind: PayloadEnum variant-count error hidden when the 63rd variant has fields — `payload_enum.rs` uses `else if i == PAYLOAD_ENUM_MAX_VARIANTS` after the fields check (grouped with Edge row); patch: make the count check an independent `if`.
+  - `[low]` `[reject]` Blind: `schema = 3usize` reported as out of range — real (`parse_schema` maps a non-`u8` suffix to `None`), but a suffixed schema literal is rare and the fix adds a branch.
+  - `[medium]` `[patch]` Blind: `FieldDecode` has no `#[diagnostic::on_unimplemented]` — `CID-01_not_a_field_type.stderr` ends with an untagged `f32: FieldDecode<'_>` error, contradicting the intent's "every `.stderr` follows `[<RULE-ID>]`" (grouped with Edge FieldDecode row and Intent D2); patch: annotate `FieldDecode` and re-bless.
+  - `[low]` `[reject]` Blind: trybuild misses several documented diagnostics — they are covered by `cid_03_route_attribute_matrix`/`cid_01_structure_errors` unit tests; no wrong span was shown, and adding 8+ fixtures is more than a direct correction.
+  - `[low]` `[reject]` Blind: unbounded-fields message does not name the field — the message format is pinned by the spec; per-field const checks add complexity for a rare diagnostic nicety.
+  - `[low]` `[reject]` Blind: lifetimes rejected, blocking borrowed fields — the intent contract rejects all generics including lifetimes on purpose; only the help wording ("width must be known") is imprecise, a cosmetic point.
+  - `[false]` `[reject]` Blind: `decode_variant("é")` reports `TooLong` — the intent-contract matrix explicitly specifies `"é"` → `TooLong{1,2}` and the check order.
+  - `[low]` `[reject]` Blind: xtask proc-macro spelling rewrite has no path boundary — no crate whose name ends in `noctis_macros` appears in the snapshot, so the mis-rewrite is unreachable in practice; fix adds a boundary branch.
+  - `[medium]` `[patch]` Edge: generated test on a function-local Route triggers `unnameable_test_items` — reproduced (see Blind row); same patch.
+  - `[medium]` `[patch]` Edge: bare `#[test]` resolves to an imported `test` attribute — reproduced: `use std::prelude::v1::derive as test;` in the Route's module makes the derive fail with E0774, so `use tokio::test;` breaks every derived Route in test builds (AD-2 hygiene); patch: emit `#[::core::prelude::v1::test]`.
+  - `[low]` `[reject]` Edge: `#![forbid(clippy::print_stdout)]`/`forbid(non_snake_case)` makes the generated `allow` an error — real but rare in bot crates; the fix needs a renamed test and a non-`println!` writer.
+  - `[low]` `[reject]` Edge: `#[cfg]` on PayloadEnum variants shifts indexes per feature set — real but rare, same class as reordering variants (documented to bump `schema`); the fix adds a rejection branch.
+  - `[low]` `[reject]` Edge: `#[cfg]` on Payload/Route fields changes the layout per build — same reasoning as the variant row.
+  - `[low]` `[patch]` Edge: hand Route with `#[derive(Payload)]` gets no CID-01 proof — grouped with the Blind hand-Payload row; doc sentence patch.
+  - `[medium]` `[patch]` Edge: `FieldDecode` lacks `on_unimplemented` — grouped with Blind `FieldDecode` row.
+  - `[low]` `[reject]` Edge: renamed `noctis` dependency breaks every expansion — same as Blind crate-path row.
+  - `[low]` `[reject]` Edge: suffixed route id literal `"a"x` accepted — real (`parse_id` ignores the suffix) but nobody writes it; fix adds a guard.
+  - `[low]` `[reject]` Edge: `schema = 3usize` misleading error — same as Blind schema row.
+  - `[low]` `[patch]` Edge: 63rd variant with fields hides the count error — grouped with Blind PayloadEnum row.
+  - `[low]` `[reject]` Edge: xtask substring rewrite — same as Blind xtask row.
+  - `[low]` `[patch]` Vgap: nothing checks that `#[derive(Route)]` emits `__noctis_route_width_<Name>` (pre-verified, disposition patch) — patch: a `route.rs` unit test asserting the expansion contains `#[cfg(test)]`, the test attribute and `fn __noctis_route_width_R`.
+  - `[medium]` `[patch]` Vgap other: width test not collected for function-local Routes — reproduced through the derive: it is a hard error under `-D warnings`; grouped with the Blind generated-test row.
+  - `[false]` `[reject]` Intent D1: runtime arguments rejected instead of accepted — the spec deliberately and correctly settled it (Design Notes: ignoring `owner`/`permissions` would silently drop a security guard); the intent's "not yet in AD-6's grammar" supports "not yet in this release".
+  - `[medium]` `[patch]` Intent D2: `.stderr` format not met by `CID-01_not_a_field_type.stderr` — grouped with Blind `FieldDecode` row; the embedded `= help:` text is the spec's chosen format.
+  - `[false]` `[reject]` Intent D3: template not reconciled to compilable syntax — same refutation as Blind template row (planned-API template, excluded from workspace).
+  - `[low]` `[patch]` Intent D4: no test checks that the generated width test exists — grouped with the Vgap row (the inner-item half is the medium generated-test group).
+  - `[false]` `[reject]` Intent D5: spill/encode verified only through `__private` — bot authors never call `encode` directly (component builders do, Epic 4); the intent-contract matrix names `__private::codec` as the test surface on purpose.
+  - `[false]` `[reject]` Intent D6: by_ref/spill proof covers only prefix + Ref — the runtime `encode_id` picks the Ref form whenever the inline form exceeds 100, so no derived id can exceed 100; the spec settled it.
+  - `[false]` `[reject]` Intent D7: alias `__private::codec` vs `__private::noctis_codec` — functionally identical; the spec pins the alias, and rustc printing the real path harms nobody.
+
 ## Design Notes
 
 Decisions (also in the memlog):
@@ -285,3 +324,21 @@ struct BuyButton { item: Id<ItemMarker>, qty: u8 }
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0.
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Added `#[derive(Route)]`, `#[derive(Payload)]` and `#[derive(PayloadEnum)]` in `noctis-macros`, with a compile-time length proof (`assert_fits`, formatted const panic naming route id and worst case, CID-01) and `#[route("id", schema = N, by_ref | signed)]` grammar validation (CID-03); runtime arguments (`owner`, `permissions`, `opens_modal`) are rejected until their stories land; derived Routes emit a `#[cfg(test)]` width test.
+- **Files changed:**
+  - `crates/noctis-macros/src/{lib,common,route,payload,payload_enum}.rs` - derive implementations and diagnostics.
+  - `crates/noctis-codec/src/{derive,field,lib,route,...}.rs` - `RouteWidth`, `assert_fits`, `RouteRuntime`/`DeclaredRuntime`, `FieldDecode` `on_unimplemented`.
+  - `crates/noctis-rules/src/cid.rs` - route-grammar and cap constants moved to `noctis_rules::cid`.
+  - `crates/noctis/src/lib.rs`, `crates/noctis/tests/{derive.rs,derive_hygiene.rs,boundary/cid.rs,ui/cid/*}` - derive, hygiene, proptest and trybuild compile_fail suites.
+  - `docs/discord-rules.md`, `xtask/{rules-pending.toml,public-api.txt,src/*}` - rule coverage, API snapshot, xtask updates.
+  - `examples/project-template/` - noctis skill (routes-payloads-refs, troubleshooting, SKILL.md), AGENTS.md, module syntax.
+- **Review findings:** 35 total (high 0, medium 7, low 21, false 7).
+  - Patched (5 groups; mediums patched: 7 entries, highs: 0): generated width test now allows `unnameable_test_items` and uses `#[::core::prelude::v1::test]` (fixes function-local Routes under `-D warnings` and imported `test` attributes); `FieldDecode` gets `#[diagnostic::on_unimplemented]` tagged CID-01 and `.stderr` re-blessed; PayloadEnum variant-count check made independent of the fields check; route.rs unit test asserts the width test is emitted; skill reworded (encode/decode is internal; hand-written Payloads/Routes get no length proof).
+  - Deferred: none.
+  - Rejected: template keeps planned runtime args (template is planned-API, excluded from workspace); spill total conservative for short inline (pinned by spec); hard-coded `::noctis::__private` path / renamed dependency (intent-mandated); `schema = 3usize` misleading error (rare); missing extra trybuild fixtures (unit-test covered); unbounded-field message not naming field (pinned format); lifetimes rejected (intent contract); `"é"` -> TooLong (spec matrix); xtask substring rewrite (unreachable); `forbid(...)` vs generated allow (rare); `#[cfg]` on variants/fields (rare, same class as reordering); suffixed id literal (nobody writes it); D1 runtime args rejected (spec decision); D5 `__private` test surface (intended); D6 by_ref proof (runtime picks Ref above 100); D7 alias naming (equivalent).
+- **Follow-up review recommended: true** - first pass patched 2+ medium groups (0 high). Unverified risk: the changed generated test attribute (`#[::core::prelude::v1::test]` + `allow(unnameable_test_items)`) inside user crates with unusual lint/prelude setups, and the new `on_unimplemented` text on `FieldDecode`, have only been checked by the added hygiene test and one re-blessed `.stderr`.
+- **Verification:** local gates via `gates.sh` all green (fmt, clippy `--release -D warnings`, `cargo test --release --workspace` incl. ui/trybuild, derive, hygiene and proptests, cargo-hack each-feature, xtask rules-catalog/api-snapshot/skill-check/deps-check, cargo deny, MSRV 1.91 check, build-config check, no `target/debug`). CI paused by maintainer, so no CI run.
+- **Residual risks:** renamed `noctis` dependency breaks expansions; `#[cfg]` on fields/variants changes layout per build without a schema bump; spill total overstated for very short inline forms; `RouteRuntime` may move to core in Stories 7.5/7.7/7.8.

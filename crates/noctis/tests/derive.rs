@@ -227,6 +227,24 @@ fn payload_enum_matrix() {
     assert_eq!(codec::decode_variant("0", 1), Ok(0));
 }
 
+// rustc reports `unnameable_test_items` on the generated width test only
+// through an enclosing item's lint level, so a function-local Route needs this
+// `allow` on its function (documented in the Usage Skill §5).
+#[test]
+#[allow(
+    unnameable_test_items,
+    reason = "the function-local Route's width test cannot run"
+)]
+fn function_local_route_compiles_clean() {
+    #[derive(Route, Debug, PartialEq)]
+    #[route("local")]
+    struct Local {
+        n: u8,
+    }
+    assert_eq!(Local::ID.as_str(), "local");
+    assert_eq!(Local { n: 1 }.n, 1);
+}
+
 #[test]
 fn derive_payload_standalone() {
     assert_eq!(DerivedPayload::MAX_ENCODED_LEN, Some(1 + 1 + 4));

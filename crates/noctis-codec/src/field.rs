@@ -68,6 +68,11 @@ pub trait Field {
 ///
 /// The `'de` lifetime lets borrowed fields such as `Cow<'de, str>` point into
 /// the input; owned fields implement it for every `'de`.
+#[diagnostic::on_unimplemented(
+    message = "[CID-01] `{Self}` is not a Payload field type",
+    label = "not a Payload field",
+    note = "implement `Field` and `FieldDecode` from `noctis::codec`, or derive `PayloadEnum` on a unit enum"
+)]
 pub trait FieldDecode<'de>: Field + Sized {
     /// Decodes a value from exactly `raw`.
     ///

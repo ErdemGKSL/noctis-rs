@@ -408,7 +408,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         #proof
 
         #[cfg(test)]
-        #[test]
+        #[::core::prelude::v1::test]
         #[allow(non_snake_case, clippy::print_stdout)]
         fn #test() {
             let width = #codec::route_width::<#ident>();
@@ -732,5 +732,20 @@ mod tests {
             ))
             .is_ok()
         );
+    }
+
+    #[test]
+    fn expand_emits_the_width_test() {
+        let out = expand(&parse_quote!(
+            #[route("a")]
+            struct R {
+                a: u8,
+            }
+        ))
+        .unwrap()
+        .to_string();
+        assert!(out.contains("cfg (test)"), "{out}");
+        assert!(out.contains(":: core :: prelude :: v1 :: test"), "{out}");
+        assert!(out.contains("fn __noctis_route_width_R"), "{out}");
     }
 }

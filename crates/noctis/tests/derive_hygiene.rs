@@ -19,6 +19,10 @@ mod shadowed {
     mod noctis_codec {}
     mod std {}
     mod core {}
+    // An imported `test` attribute (like `use tokio::test;`) must not
+    // replace the generated width test's `#[test]`.
+    #[allow(unused_imports, reason = "shadowing the test attribute only")]
+    use ::std::prelude::v1::derive as test;
 
     #[derive(noctis::prelude::PayloadEnum, Debug, PartialEq)]
     pub(crate) enum Kind {
