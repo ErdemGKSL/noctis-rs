@@ -99,13 +99,14 @@ are not `Limits` fields.
 
 ## Rules types
 
-All in `noctis::rules`:
+All in `noctis::rules`; the command pattern and tree functions live in
+`noctis::rules::command` (see `commands.md` §2 "Rule functions"):
 
 | Item | What it is |
 | --- | --- |
 | `Limits`, `LimitMode` | the limits above and Strict/Lenient handling |
-| `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (124, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
-| `Violation` | `{ rule, path, limit, actual }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)`; implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty) |
+| `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (125, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
+| `Violation` | `{ rule, path, limit, actual, notes: Vec<String>, help: Option<String> }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)` plus `.with_note(…)` (appends) and `.with_help(…)` (replaces); implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty), then a `\n  = note: …` line per note and a `\n  = help: …` line |
 | `Bound` | the broken limit: `AtMost(n)` "at most n", `AtLeast(n)` "at least n", `Between { min, max }` "between min and max", `Exactly(n)` "exactly n", `Describe(&str)` printed as is |
 | `Actual` | the offending value: `Count(n)` printed as `n`, `Text(String)` printed escaped in backticks |
 | `discord_len(&str) -> usize` | the only length function for user text: the larger of Unicode scalars and UTF-16 units (`discord_len("😀") == 2`, `"👍🏽"` = 4) |
@@ -141,6 +142,7 @@ locale returns `None`.
 | CMD-13 | ≤ 25 options / subcommands / groups per level | C / B |
 | CMD-14 | groups and subcommands may coexist | — |
 | CMD-15 | pattern ≤ 25 expansions (`max_expansions`), no duplicates | C / B |
+| CMD-16 | pattern syntax: whole-word groups, single-word alternatives, `?` only after a group | C / B |
 | REG-01 | 100 global chat-input, 15 user, 15 message commands | B |
 | REG-02 | same per guild | B / R |
 | REG-03 | unique names per type per scope (chat-input merges) | B |

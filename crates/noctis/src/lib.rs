@@ -30,6 +30,10 @@ pub mod rules {
     //!   and `…` truncation that respects it.
     //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes.
     //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
+    //! - [`command`]: Command Pattern expansion ([`command::expand`]) and the
+    //!   command name and tree rules ([`command::validate_name`],
+    //!   [`command::validate_tree`], [`command::validate_merge`]) that
+    //!   `#[command]` and `App::build` call.
     //!
     //! ```
     //! use noctis::rules::{discord_len, LimitMode, Limits, Locale, RuleId};
@@ -44,7 +48,28 @@ pub mod rules {
     //! assert_eq!(Locale::EnUs.sibling(), Some(Locale::EnGb));
     //! assert_eq!(discord_len("😀"), 2);
     //! ```
+    //!
+    //! ```
+    //! use noctis::rules::command::{CommandDecl, LocalizedText, expand, validate_tree};
+    //! use noctis::rules::{Limits, RuleId};
+    //!
+    //! let limits = Limits::default();
+    //! let paths = expand("config (set|get) (prefix|welcome)", &limits).unwrap();
+    //! assert_eq!(
+    //!     paths,
+    //!     ["config set prefix", "config set welcome", "config get prefix", "config get welcome"]
+    //! );
+    //!
+    //! let paths = expand("config (set|get) (prefix|welcome)?", &limits).unwrap();
+    //! let decls: Vec<_> = paths
+    //!     .iter()
+    //!     .map(|p| CommandDecl::handler("config", p).description(LocalizedText::new("d")))
+    //!     .collect();
+    //! let errs = validate_tree(&decls, &limits).unwrap_err();
+    //! assert_eq!(errs[0].rule, RuleId::CMD_11);
+    //! ```
 
+    pub use noctis_rules::command;
     pub use noctis_rules::len::{discord_len, truncate};
     pub use noctis_rules::{
         Actual, Bound, LimitMode, Limits, Locale, MessageKey, ParseLocaleError, RuleId, Translate,

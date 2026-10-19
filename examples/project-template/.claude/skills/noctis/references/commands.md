@@ -105,6 +105,7 @@ Other structural errors:
 | more than 25 children under one node | CMD-13 |
 | `"a (b\|b)"` or an optional group making two expansions identical | CMD-15 |
 | more than `max_expansions` (25) expansions | CMD-15 |
+| malformed pattern: `"a (b"`, `"a(b)"`, `"a (b c)"`, `"a ((b))"`, `"a ()"`, `"a ?"`, `"a \| b"` | CMD-16 (names the byte offset) |
 | `"a b c d"` | CMD-10 |
 | Module A registers `config`, Module B `config set` | CMD-12 at App build |
 | two registrations resolve to the same path | FR-56 at App build (names both Modules) |
@@ -112,6 +113,65 @@ Other structural errors:
 
 Groups and plain subcommands side by side under one base are legal (CMD-14):
 `"mod ban"` and `"mod case show"` together are fine.
+
+### Rule functions (`noctis::rules::command`)
+
+`#[command]` and `App::build` call these functions, so a pattern you build at runtime
+gets exactly the checks a literal one does. Call `expand` and then `validate_tree`
+before registering a dynamically built pattern; never split patterns by hand. Every
+function takes `&Limits` (pass the same value the App builder gets) and returns
+**every** violation at once as `Vec<Violation>` (never empty on `Err`).
+
+**Pattern grammar (CMD-16).** Tokens are separated by Unicode whitespace (collapsed;
+paths are joined with one ASCII space). A token is a word or a group `(a|b|…)`,
+optionally followed directly by `?`. A group is a whole token (`a(b)`, `(b)c`, `(a)(b)`
+are errors), its alternatives are non-empty single words (no spaces inside), groups
+don't nest, and `|`, `)` or `?` anywhere else is an error. `expand` reports only the
+first syntax error, with a `= note: at byte N`.
+
+**Expansion order.** Odometer: the leftmost group varies slowest, alternatives in
+declaration order, an optional group's "absent" choice after its alternatives:
+`"config (set|get) (prefix|welcome)?"` → `config set prefix`, `config set welcome`,
+`config set`, `config get prefix`, `config get welcome`, `config get`. The count is
+checked against `Limits::pattern_expansions` (25) before anything is built (CMD-15,
+`AtMost(cap)` / `Count(n)`, saturating); then each expansion produced more than once is
+one CMD-15 (`= note: produced N times`). `""` expands to `[""]` (CMD-10 later).
+
+| Item | What it is |
+| --- | --- |
+| `expand(pattern, &Limits) -> Result<Vec<String>, Vec<Violation>>` | pattern → ordered Command Paths; CMD-16, else CMD-15 cap, else CMD-15 duplicates; never checks names |
+| `validate_name(word, &Limits) -> Vec<Violation>` | one name word, path `""`; order CMD-02 (length via `discord_len`), CMD-01 (charset; note `` first invalid character `'` (U+0027) ``, help `` use `ʼ` (U+02BC) instead of `'` `` for ASCII `'`), CMD-03 (help `` use `config` ``); an empty word gives CMD-02 only |
+| `validate_tree(&[CommandDecl], &Limits) -> Result<(), Vec<Violation>>` | one tree set (scope ignored): CMD-10 per decl (that decl is then skipped), REG-04 duplicate handler paths (notes `` registered by `m1` ``; the first counts for the budget) and metadata for unregistered paths, then per node in first-appearance pre-order: names (CMD-01..03, path = node path), CMD-04, CMD-11 / CMD-12 (notes name both contributing paths and `` (from `module`) ``), CMD-13 (children, then handler options), CMD-05 per base after its subtree (`= note: longest variant per field`); last, REG-04 conflicting descriptions |
+| `validate_merge(&[CommandDecl], &[ContextMenuDecl], &Limits) -> Result<(), Vec<Violation>>` | the whole App: per `Scope` (first appearance, commands then menus) `validate_tree` with a `= note: scope: global` / `scope: guild 42`, then counts (REG-01 global / REG-02 guild; paths `chat-input commands`, `user commands`, `message commands`; a merged base counts once; meta decls and empty paths don't count), then REG-03 for two context-menu commands with the same type and exact name |
+| `CommandDecl<'a>` | `#[non_exhaustive]`, pub fields `source` (Module name, `""` = unnamed), `path` (words split on single ASCII spaces, so `"config  set"` has an empty word → CMD-02), `scope`, `kind`, `description: Option<LocalizedText>`, `name_localized: &[&str]` (localized names of the last word; only counted by CMD-05). `CommandDecl::handler(source, path)` (no options), `CommandDecl::meta(source, path)`; by-value `const` setters `.description(text)`, `.name_localized(&[…])`, `.scope(Scope)`, `.with_options(count, size)` (makes it a handler) |
+| `DeclKind` | `#[non_exhaustive]`: `Handler { options, options_size }` (`options_size` = your computed CMD-05 share of the options: names, descriptions, choice names/values, longest variant each) or `Meta` (description / localized names for a node handlers create) |
+| `LocalizedText<'a>` | `{ default, localized: &[&str] }`; `LocalizedText::new("d")`, `.with_localized(&[…])`, `.longest()` (max `discord_len`) |
+| `Scope` | `Global` (default) or `Guild(u64)` |
+| `ContextMenuDecl<'a>` | `#[non_exhaustive]` `{ source, scope, kind, name }`; `ContextMenuDecl::new(source, MenuKind::User, "Show Profile")`, `.scope(Scope)` |
+| `MenuKind` | `User` or `Message` |
+
+Tree model: every word prefix of a handler path is a node (1 word base, 2 subcommand or
+group, 3 subcommand in a group); meta decls attach to an existing node. A node's
+description is the first `Some` in input order; a handler node without one is CMD-04
+(`= note: missing description`), a base or group without a handler may lack one. CMD-05
+per base = Σ nodes (longest of word and `name_localized`) + (longest description
+variant) + Σ handler `options_size`.
+
+```rust
+use noctis::rules::Limits;
+use noctis::rules::command::{CommandDecl, LocalizedText, expand, validate_tree};
+
+let limits = Limits::default();
+let paths = expand(&pattern, &limits).map_err(report)?;
+let decls: Vec<_> = paths
+    .iter()
+    .map(|p| CommandDecl::handler("settings", p).description(LocalizedText::new("Settings")))
+    .collect();
+validate_tree(&decls, &limits).map_err(report)?;
+```
+
+Each `Violation` prints ``[CMD-11] config set: limit …, actual `set` ``, then one
+`= note: …` line per note and a `= help: …` line (`notes`, `help`).
 
 ## 3. Options
 
@@ -230,6 +290,8 @@ Commands sharing a base word merge into one Discord command (tescord semantics).
 build fails, naming both Modules, when: metadata conflicts (META-01/02), a path is
 duplicated (FR-56), a base mixes options and subcommands (CMD-12), the merged tree
 breaks CMD-11/13/05, or the App exceeds 100 global chat-input commands (REG-01).
+`App::build` runs `noctis::rules::command::validate_merge` on everything registered
+(see §2 "Rule functions"), so every conflict is reported at once.
 
 ## 7. Publish
 

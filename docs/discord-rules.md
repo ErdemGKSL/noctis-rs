@@ -93,6 +93,7 @@ points straight back to this file.
 | **CMD-13** Max options / subcommands / groups per level | `options` array max **25** at every level (top-level options, subcommands + groups under a command, subcommands under a group, parameters under a subcommand). **[D]** | [AC §Option structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-option-structure) | Compile-time (per struct / per pattern) / App-build (after merge) | `derive(Options)` counts fields. The pattern macro counts distinct children per node. The merged tree is recounted in `App::build()`. |
 | **CMD-14** Mixing groups and subcommands | A command may hold groups and plain subcommands side by side. **[D]** | [AC §Subcommands and Subcommand Groups](https://discord.com/developers/docs/interactions/application-commands#subcommands-and-subcommand-groups) | (permitted; no check) | Documented so the validator does not reject a valid tree. |
 | **CMD-15** Pattern expansion bound | Noctis caps one Command Pattern at **25** expansions by default (FR-8), configurable with `#[command(max_expansions = n)]`, and rejects patterns where an optional group makes two expansions identical. **[N]** | — | Compile-time (literal patterns) / App-build (dynamically built patterns) | Guards against accidental combinatorial patterns. Expansion order is left to right in declaration order (FR-8). |
+| **CMD-16** Command Pattern syntax | A pattern is whitespace-separated words and groups; a group is a whole word `(a\|b\|…)`, optionally followed by `?`, whose alternatives are non-empty single words; no nesting, no `\|` or `?` outside that shape **[N]** | — | Compile-time (literal patterns) / App-build (dynamically built patterns) | `noctis_rules::command::expand` reports the first syntax error with its byte offset. |
 
 ## 3. Command options
 
@@ -403,6 +404,7 @@ unbounded fields; bound them (`BoundedStr<N>`) or add `by_ref`"). Notes:
 using the semantics FR-8 adopts from tescord, written out here:
 
 1. Groups are `(a|b|…)`; a trailing `?` adds the variant with the group removed.
+   Malformed patterns fail with CMD-16.
 2. Expansion is left to right in declaration order (FR-8); whitespace is collapsed;
    duplicates are rejected, and more than 25 expansions (the default cap,
    `#[command(max_expansions = n)]` changes it) is an error (CMD-15).

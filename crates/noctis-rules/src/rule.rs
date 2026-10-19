@@ -38,7 +38,7 @@ rule_ids! {
     CMD_01 = "CMD-01", CMD_02 = "CMD-02", CMD_03 = "CMD-03", CMD_04 = "CMD-04",
     CMD_05 = "CMD-05", CMD_06 = "CMD-06", CMD_07 = "CMD-07", CMD_10 = "CMD-10",
     CMD_11 = "CMD-11", CMD_12 = "CMD-12", CMD_13 = "CMD-13", CMD_14 = "CMD-14",
-    CMD_15 = "CMD-15",
+    CMD_15 = "CMD-15", CMD_16 = "CMD-16",
     OPT_01 = "OPT-01", OPT_02 = "OPT-02", OPT_03 = "OPT-03", OPT_04 = "OPT-04",
     OPT_05 = "OPT-05", OPT_06 = "OPT-06", OPT_07 = "OPT-07", OPT_08 = "OPT-08",
     OPT_09 = "OPT-09", OPT_10 = "OPT-10", OPT_11 = "OPT-11", OPT_12 = "OPT-12",
@@ -204,13 +204,21 @@ impl fmt::Display for Actual {
 /// A broken Discord rule: which rule, where, the limit and the actual value.
 ///
 /// Displays as `[RULE-ID] path: limit <bound>, actual <actual>`; the `path: ` part
-/// is left out when the path is empty.
+/// is left out when the path is empty. Each note adds a `\n  = note: …` line and
+/// the help adds a final `\n  = help: …` line, the format compile errors use.
 ///
 /// ```
 /// use noctis_rules::{Actual, Bound, RuleId, Violation};
 ///
 /// let v = Violation::new(RuleId::CV2_03, "components", Bound::AtMost(40), Actual::Count(41));
 /// assert_eq!(v.to_string(), "[CV2-03] components: limit at most 40, actual 41");
+///
+/// let v = v.with_note("in the top-level container").with_help("split the message");
+/// assert_eq!(
+///     v.to_string(),
+///     "[CV2-03] components: limit at most 40, actual 41\n  \
+///      = note: in the top-level container\n  = help: split the message"
+/// );
 /// ```
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -223,17 +231,37 @@ pub struct Violation {
     pub limit: Bound,
     /// The value that broke it.
     pub actual: Actual,
+    /// Extra context lines, printed as `= note: …` (may be empty).
+    pub notes: Vec<String>,
+    /// A suggested fix, printed as `= help: …`.
+    pub help: Option<String>,
 }
 
 impl Violation {
-    /// Creates a violation.
+    /// Creates a violation without notes or help.
     pub fn new(rule: RuleId, path: impl Into<String>, limit: Bound, actual: Actual) -> Self {
         Self {
             rule,
             path: path.into(),
             limit,
             actual,
+            notes: Vec::new(),
+            help: None,
         }
+    }
+
+    /// Appends a `= note:` line.
+    #[must_use]
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.notes.push(note.into());
+        self
+    }
+
+    /// Sets the `= help:` line, replacing any earlier one.
+    #[must_use]
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
     }
 }
 
@@ -243,7 +271,14 @@ impl fmt::Display for Violation {
         if !self.path.is_empty() {
             write!(f, "{}: ", self.path)?;
         }
-        write!(f, "limit {}, actual {}", self.limit, self.actual)
+        write!(f, "limit {}, actual {}", self.limit, self.actual)?;
+        for note in &self.notes {
+            write!(f, "\n  = note: {note}")?;
+        }
+        if let Some(help) = &self.help {
+            write!(f, "\n  = help: {help}")?;
+        }
+        Ok(())
     }
 }
 
@@ -267,10 +302,10 @@ mod tests {
     }
 
     #[test]
-    fn all_has_124_unique_well_formed_ids() {
-        assert_eq!(RuleId::ALL.len(), 124);
+    fn all_has_125_unique_well_formed_ids() {
+        assert_eq!(RuleId::ALL.len(), 125);
         let unique: HashSet<_> = RuleId::ALL.iter().collect();
-        assert_eq!(unique.len(), 124);
+        assert_eq!(unique.len(), 125);
         for id in RuleId::ALL {
             assert!(has_id_shape(id.as_str()), "{id}");
         }
@@ -377,5 +412,42 @@ mod tests {
             "[CMD-03] name: limit lowercase only, actual `Ab\\n`"
         );
         let _: &dyn Error = &v;
+    }
+
+    #[test]
+    fn violation_display_with_notes_and_help() {
+        let v = Violation::new(
+            RuleId::CMD_11,
+            "config set",
+            Bound::Describe("a subcommand or a subcommand group, not both"),
+            Actual::Text("set".into()),
+        )
+        .with_note("first")
+        .with_note("second")
+        .with_help("fix it");
+        assert_eq!(v.notes, ["first", "second"]);
+        assert_eq!(v.help.as_deref(), Some("fix it"));
+        assert_eq!(
+            v.to_string(),
+            "[CMD-11] config set: limit a subcommand or a subcommand group, not both, \
+             actual `set`\n  = note: first\n  = note: second\n  = help: fix it"
+        );
+    }
+
+    #[test]
+    fn violation_display_with_help_only() {
+        let v = Violation::new(
+            RuleId::CMD_03,
+            "",
+            Bound::Describe("lowercase"),
+            Actual::Text("Ab".into()),
+        )
+        .with_help("use `ab`")
+        .with_help("use `ab` instead");
+        assert!(v.notes.is_empty());
+        assert_eq!(
+            v.to_string(),
+            "[CMD-03] limit lowercase, actual `Ab`\n  = help: use `ab` instead"
+        );
     }
 }

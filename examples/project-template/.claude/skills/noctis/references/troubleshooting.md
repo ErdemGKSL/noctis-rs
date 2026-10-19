@@ -20,6 +20,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CMD-11] \`set\` would be both a subcommand and a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
 | `[CMD-10]` more than 3 words | path too deep | flatten; use options or a View |
+| `[CMD-16]` malformed pattern, `= note: at byte N` | glued group (`a(b)`), space inside a group, nested or unclosed group, empty alternative, `?`/`\|`/`)` outside a group | fix the token at that byte offset: groups are whole words `(a\|b)` or `(a\|b)?` with single-word alternatives |
+| `[CMD-15]` duplicate or too many expansions | two expansions identical (`(a\|a)`, `(a)? (a)?`) or more than `max_expansions` (25) | drop the duplicate alternative or the redundant `?`; split the pattern or raise `max_expansions` |
 | `[CMD-01]` / `[CMD-03]` | uppercase, ASCII `'`, punctuation in a name | lowercase; `ʼ` (U+02BC) if you need an apostrophe |
 | `[CMD-04] missing description` | no `description = "…"`, and (with the `i18n` feature) no `cmd.<path>.description` in the default locale | add it to `locales/en-US.yaml`, or the literal without `i18n` |
 | description literal differs from the locale file | both sources set, with different text | delete the literal; the locale file is the source with `i18n` |

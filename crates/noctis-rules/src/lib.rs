@@ -13,9 +13,12 @@
 //!   [`len::truncate`].
 //! - [`Locale`] and [`ParseLocaleError`]: Discord's 32 locale codes (LOC-01).
 //! - [`MessageKey`] and [`Translate`]: localization keys and the translation port.
+//! - [`command`]: Command Pattern expansion and command name and tree rules
+//!   (CMD-01..05, CMD-10..16, REG-01..04).
 //!
 //! The crate is sync and does no I/O.
 
+pub mod command;
 pub mod len;
 mod limits;
 mod locale;
