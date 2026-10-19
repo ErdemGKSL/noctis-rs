@@ -139,6 +139,16 @@
 //! (CID-01). `encode_variant` and `decode_variant` write and read a
 //! `PayloadEnum` variant index as one base62 digit, and `RouteRuntime` is
 //! the (still empty) runtime declaration of a derived Route.
+//!
+//! # Allocation
+//!
+//! Decoding an inline id whose fields are all fixed-width (every field's
+//! [`Field::MAX_LEN`] is `Some`) allocates nothing: [`decode`],
+//! [`decode_route`], [`decode_route_verified`] and the fields read from
+//! `&str` slices into stack values, and every error is `Copy` (AD-25,
+//! NFR-9). `String` fields, `Cow<str>` fields with escapes and `Vec` fields
+//! may allocate. The crate's `tests/alloc_decode.rs` guards this with a
+//! counting allocator.
 
 mod base62;
 mod bounded_str;

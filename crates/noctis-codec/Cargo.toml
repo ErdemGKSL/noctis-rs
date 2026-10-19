@@ -17,6 +17,7 @@ thiserror.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
+dhat.workspace = true
 proptest.workspace = true
 
 [lints]

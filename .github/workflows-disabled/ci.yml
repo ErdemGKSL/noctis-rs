@@ -61,6 +61,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release --workspace
 
+  allocation:
+    name: Allocation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      # Zero-allocation guard of fixed-width inline decode (AD-25, NFR-9).
+      # Story 7.1 adds the Route lookup test to this job.
+      - run: cargo test --release -p noctis-codec --test alloc_decode
+
   each-feature:
     name: Test each feature
     runs-on: ubuntu-latest
