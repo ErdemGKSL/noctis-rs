@@ -24,7 +24,7 @@ Every storage-like concern in noctis (anything that stores, caches, queues or re
 
 ## Technical Decisions
 
-- Port traits are `Send + Sync + 'static`, dyn-compatible; async methods return `futures_util::future::BoxFuture<'_, Result<T, PortError>>`. The App holds `Arc<dyn Port>`.
+- Port traits are `Send + Sync + 'static`, dyn-compatible; async methods return `BoxFuture<'_, Result<T, PortError>>` (noctis-ports' own alias, identical to futures_util's; no futures-util dependency). Deps: bytes, postcard (`alloc` only), serde, thiserror, twilight-model; a purity test forbids I/O and secret-named parameters. The App holds `Arc<dyn Port>`.
 - Shared op vocabulary: `get`, `put(ttl)`, `put_if_absent(ttl) -> bool`, `take` (atomic get+delete), `delete`, `touch`, `incr_with_ttl(key, by, ttl) -> u64`. Subsets: `RefStore` = put_if_absent, get, take, delete, touch; `RateLimitStore` = incr_with_ttl, get, put; `CacheStore` = get, put, put_if_absent, delete, incr_with_ttl; `ModuleStateStore` adds `version() -> u64` (monotonic, polled by core).
 - `IdentifyQueue` is a coordination port: `acquire(bucket) -> Lease`.
 - `DiscordCache` is typed, not a byte store: `update(&Event)` plus owned getters (`guild`, `channel`, `role`, `member`, `user`, `message`, per-guild lists) returning `Option` of twilight-model values; no references or guards cross the port. Memory default wraps `twilight-cache-inmemory` restricted to configured resource types and twilight's per-channel message cap. Not namespaced; each App owns its instance.
@@ -33,6 +33,11 @@ Every storage-like concern in noctis (anything that stores, caches, queues or re
 - Key namespacing (`<app>:<port>:`, `_shared:<port>:`) is done only by core's `Namespaced<P>`/`Shared<P>` wrappers; adapters store keys verbatim and never prefix.
 - Render contract lives in `noctis-ports` with no dependency on takumi or `noctis-image`: `Template` trait (`ID`, `VERSION`, `SIZE`, `FORMAT`, `ANIMATION`, `view() -> ErasedView`), `RenderJob` (postcard `data: Bytes`), `Format`, `AnimationSpec`, `Frame` (`Frame::STILL`), `TemplateDescriptor`, `RenderOutput` with `OutputFormat::extension()`, and `trait Renderer` (`render`, `register`).
 - Exempt from ports: twilight-http rate-limiter state, per-connection gateway state, request-scoped in-flight coordination.
+- Op contracts: `touch(key, ttl) -> bool` never creates; `incr_with_ttl` stores an 8-byte big-endian counter saturating at `u64::MAX`. `ModuleStateStore` = get, put, `version()` (0 when empty, grows on every put); `SessionStore` = get, put, delete; `RenderCache`/`AssetStore` = get, put. `IdentifyQueue::acquire(bucket: u32) -> Lease` (non-Clone, `Lease::new`, `bucket()`). `LocaleSource::load(code) -> Vec<(key, value)>`. `GuildAccessList::allows(guild) -> bool` is synchronous.
+- `DiscordCache` per-guild lists return ids (`channel_ids`, `role_ids`, `member_ids`); getters never return twilight-cache-inmemory `Cached*` types, so 3.2 converts them or uses custom cacheable models.
+- `PortError` is non_exhaustive (`Backend`, `InvalidValue{key, why}`, `Unavailable{why}`, `Value(ValueError)`) with `backend`/`invalid_value`/`unavailable` constructors. Typed values via `encode_value(schema, &T)` / `decode_value(schema, raw) -> Option<T>`: schema mismatch = miss; empty, malformed or trailing bytes = `ValueError`; postcard errors are not exposed.
+- Render types live in `noctis_ports::render`: closed enums, non-zero validated `Size`, `OutputFormat::extension()` (APNG -> "png", JPEG -> "jpg"), `EncodeSettings` as `settings_used`, non_exhaustive `RenderError`, no serde; template data is plain postcard (`RenderJob::of`, `decode_template`).
+- Facade exposes `noctis::ports` (flat) and `noctis::bytes::Bytes`.
 - `noctis-ports` is layer 1 (wire and ports): no I/O beyond memory defaults.
 
 ## Cross-Story Dependencies
