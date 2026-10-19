@@ -2,10 +2,10 @@
 title: 'Story 1.7: trybuild harness and rules-catalog cross-check'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'b3e6d993d2dab8bccdaed7689e8208f1a8e8fbd4'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -205,6 +205,57 @@ Rows T1-T5: facade harness (`crates/noctis/tests/ui.rs`).
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 47 findings — high 0, medium 5, low 25, false 17, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `rules-pending.toml`/`docs/discord-rules.md` say the list is "empty by Story 14.4" while GW-04/GW-06/GW-07 are pending for 15.3 — real: Epic 15 follows 14.4; fix: reword both to "empty by Story 14.4 except entries for Epic 15 stories".
+  - `[low]` `[patch]` (blind) `rules-pending.toml` line 1 has empty `()` placeholder — real leftover; fix: fill with the FR/AD reference or drop the parentheses.
+  - `[medium]` `[patch]` (blind) `scan::test_fns` misses `#[ignore]` placed before `#[test]` or on the same line — real (only lines after the attribute are checked, and the same-line fast path skips the check); an ignored test satisfies a unit requirement; grouped with edge #3 and vgap other #1; fix: also reject when `after` or the contiguous attribute/comment lines above `#[test]` contain `#[ignore`, plus a unit test.
+  - `[low]` `[reject]` (blind) `catalog::parse` silently drops a row whose bold id is malformed — C1 prescribes the skip and `real_catalog_classification` (125 rows, in the `cargo test` gate) catches a typo; reporting it needs a new branch.
+  - `[low]` `[reject]` (blind) "by construction" matched case-sensitively — a near-miss is classified Diagnosed and then fails loudly for missing evidence, and the 25-id list is pinned by a unit test; normalisation adds complexity for an unlikely typo.
+  - `[low]` `[patch]` (blind) `assert_trybuild_dev_profile` relies on undocumented trybuild internals — real; a `cargo update` of trybuild 1.0.x can break it with a cargo error; fix: comment naming trybuild 1.0.122 as the version whose paths/flags were checked.
+  - `[false]` `[reject]` (blind) dev-profile proof does not check "no incremental" and hides it with `CARGO_INCREMENTAL=0` — trybuild itself sets `CARGO_INCREMENTAL=0`, so the profile key cannot affect its runs, and `check-build-config.sh` already requires `incremental = false`.
+  - `[false]` `[reject]` (blind) `assert_pinned_toolchain` fails on non-`x.y.z` channels or commented/inline-comment lines — `check-build-config.sh` requires the exact line `channel = "1.97.0"`; a `# channel` line has key `# channel` and is skipped.
+  - `[low]` `[reject]` (blind) feature list duplicated in two cfg blocks and checked by substring — only bites when a new feature appears in just one block or a feature suite exists; a file-level cfg cannot work once feature suites share `ui.rs`; a real fix means cfg-block parsing.
+  - `[low]` `[reject]` (blind) `check_registration` counts `.pass(`/`compile_fail(...)` inside comments — needs a commented-out suite call, unlikely; F12 prescribes substring checks.
+  - `[low]` `[reject]` (blind) `scan::tags` accepts a tag inside a string literal; fixture line not tied to the error — the string case is contrived; the intent (Story 14.4 AC) defines by-construction evidence as a source line carrying `// [ID]`.
+  - `[low]` `[reject]` (blind) `pub_const` reads only single-line decimal consts; no reverse check — comparison stays pending until Story 2.2 and an unparsed const fails loudly ("not defined") then; codec may hold non-catalog consts, so a reverse check would be wrong.
+  - `[low]` `[reject]` (blind) docs/discord-rules.md under-describes the citation rule (token boundaries, `#[ignore]`, 10-line window, other test attributes) — authors following the documented `cv2_03` naming are counted; missing nuances only surface as a loud missing-test error.
+  - `[low]` `[reject]` (blind) `boundary/msg.rs` hard-codes `[1_u64; 100]` with identical ids — the spec prescribes this test; 100 is Discord's fixed limit and dedup-validation is speculative.
+  - `[false]` `[reject]` (blind) MSG-03 `.stderr` is a plain E0618, any compile error counts — the intent defines by-construction evidence by the source tag, not the diagnostic; the blessed `.stderr` is reviewed.
+  - `[low]` `[reject]` (blind) fixture for an unclassifiable row reports "has no Compile-time tier" — the real parse error is reported too; only reachable with a malformed catalog cell and the fix is a new guard.
+  - `[low]` `[reject]` (blind) `Repo::list` swallows non-NotFound errors and treats symlinked dirs as files — permission errors and symlinks are not expected in the repo tree; reporting them adds error plumbing.
+  - `[false]` `[reject]` (blind) spec status left `in-progress` — the workflow sets status in review/finalize, not the implementation diff.
+  - `[low]` `[reject]` (edge) `split_tiers` panics on `Compile-time / / Runtime` (`cell[15..14]`) — real but only on a doubled-separator typo in the catalog; fix is a new guard.
+  - `[low]` `[patch]` (edge) `tags` treats `/// [MSG-03]` or `// note // [MSG-03]` as after-code — real: `line[..at]` is `/`; fix: `after_code` also false when `line[..at].trim_start()` starts with `//`, plus a unit test.
+  - `[medium]` `[patch]` (edge) ignored test counted when `#[ignore]` precedes `#[test]` or shares its line — same root cause as blind #3; grouped.
+  - `[false]` `[reject]` (edge) `#[test]` on a macro invocation lets a later helper fn count — rustc rejects `#[test]` on non-fn items, so such code never compiles; `proptest!` inner `#[test] fn` is handled.
+  - `[low]` `[reject]` (edge) featureless-gate check satisfied by a feature-suite `#[cfg(feature = "image")]` — same as blind #9; needs a feature suite plus an omission, and the fix is cfg-block parsing.
+  - `[low]` `[reject]` (edge) commented-out registration passes F12 — same as blind #10.
+  - `[low]` `[reject]` (edge) `pub const` with trailing comment / wrapped / hex reported missing — same as blind #12; loud failure at Story 2.2.
+  - `[low]` `[reject]` (edge) code span containing a backtick inverts `in_code` — real catalog has none and the 125-row classification test pins it; fix needs event-level span tracking.
+  - `[low]` `[reject]` (edge) fixture for class-None row gets spurious "no Compile-time tier" — same as blind #16.
+  - `[low]` `[reject]` (edge) pending entry for class-None row gets spurious "does not require" — same shape as blind #16; the parse error is reported as well; new guard for a malformed-catalog case.
+  - `[low]` `[reject]` (edge) non-UTF-8 names, `file_type()` errors, symlinked dirs skipped silently — same as blind #17.
+  - `[medium]` `[patch]` (edge) dev-profile proof panics once the facade gains a proc-macro dependency — demonstrated: with `serde_derive`, `cargo check --target <host>` reports `syn`/`quote`/`proc_macro2`/`unicode_ident` as kind `lib` with `opt_level "0"` (build-override host deps, built into `<target-dir>/debug/`), so the assertion fires with a false "restore .cargo/config.toml"; fix: also exempt from the opt-level check every artifact whose `filenames` are not under `<target>/tests/trybuild/<host>/` (host-built units).
+  - `[false]` `[reject]` (edge) `rust-toolchain.toml` inline comment breaks T4 — `check-build-config.sh` requires the exact line `channel = "1.97.0"`.
+  - `[low]` `[reject]` (edge, claim) problems sorted by (subject, message), not by printed line — output is deterministic and sorted by subject; the prefix-subject difference is negligible.
+  - `[false]` `[reject]` (edge, claim) T3 exempts build scripts and proc macros from opt-level — those units use build-override opt-level 0 under `--release` too, so no regression goes undetected; the exemption is required.
+  - `[medium]` `[patch]` (vgap) unit evidence from `crates/*/tests` and the UI-suite exclusion are never exercised — pre-verified gap; fix: CLI test in `xtask/tests/rules_catalog.rs` with a Runtime row cited only from `crates/x/tests/it.rs` (expect OK) and a `#[test] fn int_01_x()` only under `crates/noctis/tests/ui/int/` (expect the INT-01 missing-unit-test line).
+  - `[medium]` `[patch]` (vgap other) `#[ignore]` before `#[test]` / same line not seen — same root cause as blind #3; grouped.
+  - `[low]` `[reject]` (vgap other) featureless-gate and registration substring checks — same as blind #9/#10.
+  - `[low]` `[reject]` (vgap other) orphan `tests/sub/x.rs` not compiled by any target still counts — real but needs a stray uncompiled test file; module-tree resolution is far beyond a direct fix.
+  - `[false]` `[reject]` (intent D1) CI gate not live — AGENTS.md pauses CI; spec deliberately keeps the job in `.github/workflows-disabled/`.
+  - `[false]` `[reject]` (intent D2) alias rows no longer need the aliasing id cited — intent says alias rows "are covered by that rule's tests"; spec Never-list settles it.
+  - `[false]` `[reject]` (intent D3) "citing its id" narrowed to the fn name — intent leaves the citation form open; spec U-rows settle it and it is documented in the catalog.
+  - `[false]` `[reject]` (intent D4) `.stderr` must contain `[ID]` — matches the catalog's tag convention; stricter, not a gap.
+  - `[false]` `[reject]` (intent D5) Startup / Runtime (by construction) / first-`;` clause — spec R3/R5 settle these and reproduce Story 14.4's 25-id list.
+  - `[false]` `[reject]` (intent D6) dev-profile proof re-runs cargo in trybuild's dirs — the intent's "for example" allows any proof; feature runs skip trybuild entirely, so nothing is left unproved.
+  - `[false]` `[reject]` (intent D7) re-bless-in-same-commit enforced only at run time — a bump without re-bless fails the `ui` test on the new toolchain, and the guard fails runs on any other toolchain.
+  - `[false]` `[reject]` (intent D8) constants check exercised only synthetically — pending for 2.2 per intent; auditor marks it non-defect.
+  - `[false]` `[reject]` (intent D9) one real fixture — consistent with the intent's pending mechanism; auditor marks it non-defect.
+  - `[false]` `[reject]` (intent D10) seven features gate the suite, not four — intent says "any optional facade feature"; the parenthetical is an example.
+
 ## Design Notes
 
 **Decisions (logged to the memlog):** classification by the first `;` clause (keeps INT-05 diagnosed, matching Story 14.4's 25 by-construction rows); `Runtime (by construction)` rows (LOC-06, INT-12, MSG-08, ATT-04) need unit tests; all seven optional facade features gate the featureless suite (spine: "any optional facade feature"); the constants comparison is implemented now and skipped while pending; the dev-profile proof re-runs cargo in trybuild's own project and target dirs (a flag mismatch only costs a re-check, never a wrong verdict); a `rustc` guard makes toolchain bumps re-bless.
@@ -227,3 +278,27 @@ If the implemented scanner finds a different unmet set than this list, the scann
 - `cargo +1.91 check --release --workspace` -- expected: exit 0.
 - `bash .github/scripts/check-build-config.sh` -- expected: exit 0 (`.cargo/config.toml` untouched).
 - `test ! -d target/debug && test -d target/tests/trybuild` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Added the trybuild `compile_fail` harness (`crates/noctis/tests/ui.rs`) with toolchain pin guard, featureless-suite gating and a proof that trybuild's dev profile is release-equivalent; added the `boundary` test target; added `cargo xtask rules-catalog`, which parses `docs/discord-rules.md` (125 rows), classifies each rule by evidence kind (by-construction / diagnosed / unit), scans fixtures, `// [ID]` tags and unit tests citing ids, and cross-checks against `xtask/rules-pending.toml` (111 pending entries keyed to the owning later story). First real fixture: MSG-03.
+- **Files changed:**
+  - `crates/noctis/tests/ui.rs` - trybuild harness, toolchain and dev-profile guards (patched: host-built units exempt from opt-level check).
+  - `crates/noctis/tests/ui/msg/MSG-03_all_with_ids.rs` / `.stderr` - first compile_fail fixture.
+  - `crates/noctis/tests/boundary.rs`, `crates/noctis/tests/boundary/msg.rs` - boundary test target.
+  - `crates/noctis/Cargo.toml`, `xtask/Cargo.toml`, `Cargo.lock` - trybuild and xtask deps.
+  - `xtask/src/main.rs` - `rules-catalog` subcommand.
+  - `xtask/src/rules_catalog/{mod,catalog,pending,scan}.rs` - catalog parser, classifier, evidence scanner, pending list (patched: `#[ignore]` detection, doc-comment tag handling).
+  - `xtask/rules-pending.toml` - 111 pending entries (patched wording/placeholder).
+  - `xtask/tests/rules_catalog.rs` - CLI tests (patched: crates/*/tests evidence and UI-suite exclusion, ignore and tag cases).
+  - `docs/discord-rules.md` - evidence/citation rules and pending policy.
+  - `.github/workflows-disabled/ci.yml` - rules-catalog job (CI paused).
+  - `AGENTS.md` - running/verifying note.
+- **Review findings (47: high 0, medium 5, low 25, false 17):**
+  - Patched (8 entries, 3 distinct medium fixes + 3 low): `#[ignore]` before/on the `#[test]` line counted as evidence (medium x3, grouped); dev-profile proof false-fires once the facade gains a proc-macro dep (medium); unit evidence from `crates/*/tests` and UI-suite exclusion untested (medium); "empty by 14.4" wording ignores Epic 15 entries (low); empty `()` placeholder in pending file (low); trybuild-internals comment naming 1.0.122 (low); `///` / `// .. //` tags treated as after-code (low).
+  - Deferred: none.
+  - Rejected (low): silent skip of malformed bold id (C1 prescribes, 125-row test catches); case-sensitive "by construction" (pinned 25-id list); duplicated feature cfg lists / substring registration checks (needs cfg parsing, unlikely); tag inside string literal (contrived); single-line decimal `pub const` parsing (fails loudly at 2.2); docs under-describe citation nuances (loud failure); `[1_u64;100]` boundary test (prescribed); spurious secondary errors on malformed catalog cells (real error also reported); `Repo::list` swallows non-NotFound/symlinks (not expected); `split_tiers` panic on doubled separator (typo only); backtick in code span (none in catalog, pinned); problem sort order (deterministic); orphan uncompiled test files (module-tree resolution out of scope).
+  - Rejected (false): incremental check (trybuild sets CARGO_INCREMENTAL=0, config script checks it); toolchain channel parsing (config script requires exact line); MSG-03 stderr content (evidence defined by tag); spec status (workflow-managed); `#[test]` on macro (rustc rejects); T3 build-script exemption (required); intent D1-D10 (CI paused by maintainer; spec settles alias rows, citation form, classification, proof method, re-bless, pending constants check, single fixture, seven features).
+- **Follow-up review recommended: true** (patched by verdict: high 0, medium 5 entries / 3 distinct fixes, low 4). Named risk: the reworked host-unit exemption in the dev-profile proof (filenames outside `<target>/tests/trybuild/<host>/`) and the new `#[ignore]` lookback over attribute/comment lines are unverified against a real proc-macro dependency and unusual attribute layouts; a too-broad exemption could hide a weakened `.cargo/config.toml`.
+- **Verification:** local gates via `gates.sh` all green: `cargo fmt --all --check`, `cargo clippy --release --workspace --all-targets --all-features -D warnings`, `cargo test --release --workspace` (ui, boundary, rules_catalog), `cargo hack test --release --each-feature`, `cargo xtask rules-catalog` (ok, 125 rules), `deps-check`, `cargo deny check`, MSRV 1.91 check, `check-build-config.sh`, no `target/debug`. CI paused by maintainer; not run.
+- **Residual risks:** trybuild dev-profile proof depends on trybuild 1.0.x internals (a `cargo update` may break it); substring-based feature-gate/registration checks; scanner does not resolve module trees; constants comparison stays inactive until Story 2.2; pending list must shrink story by story or the gate fails.

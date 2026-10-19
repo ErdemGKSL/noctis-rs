@@ -561,11 +561,26 @@ fn u_ignored_and_excluded_tests_are_not_evidence() {
         )
         .with("xtask/src/lib.rs", "#[test]\nfn int_01_x() {}\n")
         .with("examples/a/src/lib.rs", "#[test]\nfn int_01_x() {}\n")
+        // A UI fixture is no unit evidence; reuse a valid one to hold the test fn.
+        .with(
+            MSG03,
+            "fn main() {\n    let _ = MentionIds::All(&[1_u64]); // [MSG-03]\n}\n\
+             #[test]\nfn int_01_x() {}\n",
+        )
         .run();
     assert_problems(
         &out,
         &["INT-01: App-build or Runtime row has no unit test citing int_01"],
     );
+}
+
+#[test]
+fn u_integration_tests_are_evidence() {
+    let out = repo("u_integration")
+        .with("crates/x/src/lib.rs", "#[test]\nfn cv2_03_count() {}\n")
+        .with("crates/x/tests/it.rs", "#[test]\nfn int_01_deadline() {}\n")
+        .run();
+    assert_exit(&out, 0, &[OK]);
 }
 
 #[test]

@@ -116,11 +116,18 @@ mod harness {
     /// T3: re-runs `cargo check` in trybuild's own project and target dirs and
     /// asserts every compiled artifact used the release-equivalent dev profile, so
     /// trybuild never produced a debug-grade build. At least one artifact must be
-    /// seen; build scripts and proc macros are exempt from the `opt-level` check
-    /// only, exactly as under `--release`.
+    /// seen; host-only artifacts are exempt from the `opt-level` check only,
+    /// exactly as under `--release`.
+    ///
+    /// The trybuild internals mirrored here (project dir
+    /// `<target>/tests/trybuild/noctis`, bin `noctis-tests`, `--target <host>`,
+    /// `--offline`, `CARGO_INCREMENTAL=0`) were checked against trybuild 1.0.122;
+    /// a trybuild upgrade must re-check them.
     pub(super) fn assert_trybuild_dev_profile() {
         let target = target_dir();
         let project = target.join("tests/trybuild/noctis");
+        let host = host();
+        let target_artifacts = target.join("tests/trybuild").join(&host);
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let out = Command::new(cargo)
             .current_dir(&project)
@@ -128,7 +135,7 @@ mod harness {
             .env("CARGO_INCREMENTAL", "0")
             .env_remove("RUSTFLAGS")
             .args(["check", "--message-format=json", "--offline", "--target"])
-            .arg(host())
+            .arg(&host)
             .args(["--bin", "noctis-tests"])
             .output()
             .expect("run cargo check in the trybuild project");
@@ -145,13 +152,23 @@ mod harness {
             }
             artifacts += 1;
             let profile = &message["profile"];
-            // Build scripts and proc macros use `build-override`, whose `opt-level`
-            // defaults to 0 under `--release` too; their other settings must match.
-            let host_only = message["target"]["kind"].as_array().is_some_and(|kinds| {
+            // Host-only artifacts use `build-override`, whose `opt-level` defaults
+            // to 0 under `--release` too; their other settings must match. They are
+            // build scripts, proc macros and the host-built dependencies of proc
+            // macros (`syn`, `quote`, ...): kind `lib`, but written under
+            // `<target>/tests/trybuild/debug/` instead of `.../<host>/`.
+            let build_kind = message["target"]["kind"].as_array().is_some_and(|kinds| {
                 kinds
                     .iter()
                     .any(|k| k == "custom-build" || k == "proc-macro")
             });
+            let in_target_dir = message["filenames"].as_array().is_some_and(|files| {
+                files.iter().any(|f| {
+                    f.as_str()
+                        .is_some_and(|f| Path::new(f).starts_with(&target_artifacts))
+                })
+            });
+            let host_only = build_kind || !in_target_dir;
             let release_like = (host_only || profile["opt_level"] == "3")
                 && profile["debuginfo"] == 0
                 && profile["debug_assertions"] == false

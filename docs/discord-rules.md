@@ -550,7 +550,7 @@ tests/boundary/
   contains the id's snake token: `cv2_03` in `fn cv2_03_forty_one_fails()`.
 - A requirement whose test lands in a later story is listed in
   `xtask/rules-pending.toml` with the story that adds it. An entry whose test already
-  exists fails the check, so the list only shrinks; it is empty by Story 14.4.
+  exists fails the check, so the list only shrinks; it is empty by Story 14.4, except entries for Epic 15 stories.
 
 ---
 

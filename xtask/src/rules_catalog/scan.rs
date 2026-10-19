@@ -23,7 +23,8 @@ pub(crate) fn tags(line: &str) -> Vec<Tag> {
         {
             out.push(Tag {
                 id: rest[..end].to_owned(),
-                after_code: !line[..at].trim().is_empty(),
+                // A line that starts with `//` (incl. `///`) is all comment.
+                after_code: !line[..at].trim().is_empty() && !line.trim_start().starts_with("//"),
             });
         }
         from = at + 4;
@@ -132,6 +133,17 @@ fn fn_name(text: &str) -> Option<&str> {
     None
 }
 
+/// Whether the contiguous attribute and comment lines directly above a test
+/// attribute (the end of `above`) hold an `#[ignore`.
+fn ignored_above(above: &[&str]) -> bool {
+    above
+        .iter()
+        .rev()
+        .map(|l| l.trim_start())
+        .take_while(|l| l.starts_with("#[") || l.starts_with("//"))
+        .any(|l| l.starts_with("#[ignore"))
+}
+
 /// The names of the non-ignored test functions in `source` (U1-U7).
 pub(crate) fn test_fns(source: &str) -> Vec<String> {
     let lines: Vec<&str> = source.lines().collect();
@@ -140,6 +152,9 @@ pub(crate) fn test_fns(source: &str) -> Vec<String> {
         let Some(after) = test_attr(line.trim_start()) else {
             continue;
         };
+        if after.contains("#[ignore") || ignored_above(&lines[..ix]) {
+            continue;
+        }
         if let Some(name) = fn_name(after) {
             out.push(name.to_owned());
             continue;
@@ -250,6 +265,8 @@ mod tests {
         assert!(tags("x(); // [not-an-id]").is_empty());
         assert_eq!(tags("x(); // [MSG-03]")[0].id, "MSG-03");
         assert!(!tags("   // [MSG-03]")[0].after_code);
+        assert!(!tags("/// [MSG-03]")[0].after_code);
+        assert!(!tags("// note // [MSG-03]")[0].after_code);
     }
 
     #[test]
@@ -289,8 +306,13 @@ mod tests {
 
     #[test]
     fn u5_ignored() {
-        let src = "#[test]\n#[ignore = \"slow\"]\nfn msg_05_x() {}\n";
-        assert!(test_fns(src).is_empty());
+        for src in [
+            "#[test]\n#[ignore = \"slow\"]\nfn msg_05_x() {}\n",
+            "#[ignore]\n#[test]\nfn msg_05_x() {}\n",
+            "#[test] #[ignore] fn msg_05_x() {}\n",
+        ] {
+            assert!(test_fns(src).is_empty(), "{src}");
+        }
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# Pending rules-catalog requirements ().
+# Pending rules-catalog requirements.
 #
 # Each [[rule]] names a catalog requirement whose test a later story adds:
 #   id       = the rule id in docs/discord-rules.md
@@ -11,7 +11,7 @@
 #
 # An entry whose requirement already has a test fails the check, so this list
 # only shrinks: remove an entry in the story that adds its test. It must be
-# empty by Story 14.4.
+# empty by Story 14.4, except entries for Epic 15 stories.
 
 [[check]]
 name = "custom-id-constants"
