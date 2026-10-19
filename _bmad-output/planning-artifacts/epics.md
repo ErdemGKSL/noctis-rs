@@ -67,13 +67,16 @@ recorded here.
   criterion when it changes the public API.
 - **Dependencies:** no story depends on a later story in its own epic; the
   cross-epic mentions of later stories (1.7 → 2.2, 1.8 → 4.1, 2.5 → 7.5/7.7/7.8,
-  2.6 → 7.1, 4.3 → 9.1, 5.4 → 12.5/13.1, 5.6 → 13.5, 6.1 → 11.4, 6.9 → 12.3/13.2, 12.6 → 14.3)
+  2.6 → 7.1, 4.3 → 9.1, 5.2 → 12.4, 5.6 → 12.5/13.1, 5.8 → 13.5, 6.1 → 11.4, 6.5 → 15.4,
+  6.9 → 12.3/13.2, 12.6 → 14.3)
   are "later extended by" notes, not prerequisites. Each epic uses only
   earlier epics' outputs. The readiness fixes (`implementation-readiness.md`,
   Resolution) removed three hidden ones: basic Module nesting moved from Story 13.1
-  into Story 5.4 (Story 7.6 needs it), Epic 4 tests implement `Handled` through the
+  into Story 5.6 (Story 7.6 needs it), Epic 4 tests implement `Handled` through the
   hidden `__private` path the handler macro uses (Story 4.1), and Story 5.1 no longer
-  mounts Modules before Story 5.4 defines them.
+  mounts Modules before Story 5.6 defines them. Gate 2 split the old Story 5.1 into
+  Stories 5.1 to 5.3 (the old 5.2 to 5.6 became 5.4 to 5.8) and added the
+  maintainer-gated Stories 14.8 and 14.9; no story depends on a later one.
 - **File churn:** `noctis-core` is touched by Epics 5–9, 12 and 13. Consolidation was
   considered and rejected: each epic owns a distinct core subsystem (lanes and
   workers; command resolution and Responder; Route dispatch and Refs; View
@@ -90,22 +93,40 @@ recorded here.
   `.cargo/config.toml` (Story 1.1, AD-28) makes the dev profile release-equivalent
   for every cargo invocation in the repo; no story weakens it.
 - **Done means** `cargo fmt --check`, `cargo clippy --release --all-targets --all-features -- -D warnings`
-  and `cargo test --release` pass, plus every CI gate that exists at that point.
-- **Compile-time rules** get trybuild `compile_fail` fixtures at
-  `tests/ui/<area>/<RULE-ID>_<slug>.rs` whose `.stderr` contains the rule id (run on
-  the toolchain pinned in `rust-toolchain.toml`, locally and in CI). trybuild checks
-  them with `cargo check`, so every compile-time rule must fire under `cargo check`
-  (AD-4: proc macros, trait bounds with `#[diagnostic::on_unimplemented]`, free
-  `const _` items). Boundary passes are ordinary integration tests in
-  `tests/boundary/`. App-build and runtime rules get unit tests that assert the typed
-  error variant and name the rule id.
+  and `cargo test --release` pass locally (plus `cargo hack test --release
+  --each-feature -p <crate>` for every crate whose feature-gated code the story
+  touches), the commit is pushed to `main`, and the CI run on that pushed commit is
+  green: every CI gate that exists at that point (AD-28; `ci.yml` runs on every push
+  to `main` and on every pull request).
+- **Compile-time rules** get compile-fail tests (run on the toolchain pinned in
+  `rust-toolchain.toml`, locally and in CI). trybuild checks fixtures with
+  `cargo check`, so every compile-time rule must fire under `cargo check` (AD-4:
+  proc macros, trait bounds with `#[diagnostic::on_unimplemented]`, free `const _`
+  items, or construction).
+  - A rule Noctis diagnoses gets a trybuild fixture at
+    `tests/ui/<area>/<RULE-ID>_<slug>.rs` whose `.stderr` contains `[<RULE-ID>]`.
+  - A rule the catalog marks `Compile-time (by construction)` gets a `compile_fail`
+    doctest or a trybuild fixture whose source carries `// [<RULE-ID>]` on the
+    offending line; its `.stderr` is rustc's own error.
+  - Fixtures that need a facade feature live in `tests/ui-<feature>/` behind
+    `#[cfg(feature = "<feature>")]` and are blessed in the `cargo hack` run of
+    exactly that feature; `tests/ui/` is blessed with default features.
+  - Boundary passes are ordinary integration tests in `tests/boundary/`. App-build
+    and runtime rules get unit tests that assert the typed error variant and name
+    the rule id.
+- **Maintainer-gated stories** need an action only the maintainer can take
+  (crates.io token or publish, repository settings, merging the release PR). They
+  carry `[Maintainer-gated]` in their title, sit last in Epic 14 (Stories 14.8 and
+  14.9), and nothing else depends on them; an unattended run skips them, continues
+  with Epic 15, and reports them as waiting for the maintainer.
 - **API names without a story:** names the template or skill uses only as spellings
   (`IntoResponse`, `ViewCx`, `Nav`, `.with_notice(..)`, `ModuleScope`, `ref_ttl`,
   `theme!()`, `.locales(..)`) are settled by the story that delivers the behavior
   behind them, which reconciles the template and skill. Behaviors have acceptance
   criteria (for example `#[handler(response = …)]` in Story 7.2).
-- **Discord in tests:** tests that need Discord use the testkit fakes from Story 5.1
-  (`noctis_testkit::fake`, AD-24); no story builds its own mock.
+- **Discord in tests:** tests that need Discord use the testkit fakes from Stories 5.2
+  and 5.3 (`noctis_testkit::fake`, AD-24) on an App built on `Runtime::for_test()`;
+  no story builds its own mock.
 - **Public API changes** (AD-2, AD-17, repo policy): the same story updates
   `examples/project-template/` code that uses the API, its `AGENTS.md` when
   conventions change, and the Noctis Usage Skill
@@ -205,9 +226,9 @@ Priority tier from PRD §8 in brackets.
 
 **4.7 Localization**
 
-- FR-41 [P1]: Command localization — names word by word, descriptions, option names/descriptions, choices; Publish sends localization maps; a base-language file (`en`) covers its variants unless a variant file exists (variant overrides base); invalid localized names are a typed error naming the Locale.
+- FR-41 [P1]: Command localization — names word by word, descriptions, option names/descriptions, choices; Publish sends localization maps; a file for one variant of a language (`en-US.yaml`) also covers its Discord sibling (`en-GB`) unless the sibling has its own file; invalid localized names are a typed error naming the Locale.
 - FR-42 [P1]: Typed content strings — Locale strings called as typed functions with named/positional arguments; missing default-Locale key or wrong arguments is a compile error; key missing in another Locale falls back with a build warning; every placeholder occurrence replaced.
-- FR-43 [P1]: Locale resolution — User and Guild Locale readable in every handler, Middleware can override; interactions: User → Guild → default, guild events: Guild → default; regional codes resolve to base language first; Usage Skill documents User Locale for ephemeral single-user UI, Guild Locale for shared content.
+- FR-43 [P1]: Locale resolution — User and Guild Locale readable in every handler, Middleware can override; interactions: User → Guild → default, guild events: Guild → default; a code with no file of its own resolves to its same-language sibling's file (`en-GB` → `en-US`) first; Usage Skill documents User Locale for ephemeral single-user UI, Guild Locale for shared content.
 - FR-72 [P1]: Module-scoped Locales — per-Module Locale files merged per language; a key defined by two Modules fails App build naming both; disabling a Module keeps its strings for Modules still referencing them.
 
 **4.8 Modules, Feature Flags and Rate Limits**
@@ -266,18 +287,24 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   toolchain stable 1.97.0 (`rust-toolchain.toml`); hyper 1.12 / hyper-util 0.1.21 /
   http-body-util 0.1.5 and tokio-websockets 0.13 (testkit fakes); yaml-rust2 0.13 and
   cssparser 0.38 (macros); tokio 1.53;
-  twilight-* 0.17.1 (`twilight-http-ratelimiting >= 0.17.1`); takumi `=2.17.0`;
+  twilight-* 0.17.1 (`twilight-http-ratelimiting >= 0.17.1`; gateway and http with
+  `default-features = false` and the AD-21 TLS features); rustls 0.23.46 (`ring`
+  provider, no `aws-lc-rs`); takumi `=2.17.0` and takumi-core `=0.31.0`;
   serde 1.0, postcard 1.1, thiserror 2.0, futures-util 0.3, tracing 0.1.44,
   metrics 0.24, arc-swap 1.9, moka 0.12, rayon 1.12, blake3 1.8, bytes 1.12,
   arrayvec 0.7, getrandom 0.4, regex 1.13, syn 3.0 / quote 1.0, trybuild 1.0,
-  insta 1.49, proptest 1.12, criterion 0.8, dhat 0.3, cargo-public-api 0.52 on
-  nightly-2026-10-15, cargo-semver-checks 0.51, cargo-deny 0.20, release-plz 0.3.
+  insta 1.49, proptest 1.12, criterion 0.8, dhat 0.3, proc-macro2 1.0, png 0.18,
+  toml 1.1, pulldown-cmark 0.13, cargo_metadata 0.23, cargo-hack 0.6,
+  cargo-public-api 0.52 on nightly-2026-10-15, cargo-semver-checks 0.51,
+  cargo-deny 0.20, release-plz 0.3. `Cargo.lock` is committed.
 - **Repo rule:** every cargo build/test/check/clippy/run uses `--release`; no debug
   builds (disk limits). CI follows the same rule. The repo `.cargo/config.toml` makes
   `[profile.dev]` release-equivalent (`opt-level = 3`, no debug info, assertions or
   incremental), which covers trybuild's own cargo runs; it must not be weakened.
-- **CI gates (AD-28):** fmt; clippy `-D warnings` on all targets; tests and doctests;
-  `missing_docs` denied for `noctis`; each facade feature alone and all together;
+- **CI gates (AD-28):** `ci.yml` runs on every push to `main` and on every pull
+  request; fmt; clippy `-D warnings` on all targets; tests and doctests;
+  `cargo hack test --release --workspace --each-feature` plus an all-features build;
+  `missing_docs` denied for `noctis`;
   `cargo +1.91 check --release` (MSRV); trybuild UI tests on the pinned toolchain;
   `cargo-semver-checks` on `noctis`; `cargo-deny` (advisories, licenses, bans,
   sources); `xtask deps-check`, `rules-catalog`, `api-snapshot` (nightly),
@@ -285,11 +312,13 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   Project Template pixel snapshots; template build. `main.yml`: latency/memory
   benches reporting against `budgets.toml`, latest-takumi build. `release.yml`:
   release-plz publishing in layer order, crates.io token only in the protected
-  release environment.
+  release environment (set up by the maintainer, Story 14.8).
 - **Crate layering (Invariants graph):** only the drawn edges are allowed
-  (`xtask deps-check`); every edge points to a lower layer; no crate depends on
-  `noctis` except via dev-dependencies; testkit reachable only via the facade's
-  `testkit` feature in `[dev-dependencies]`.
+  (`xtask deps-check`); every edge points to a lower layer; `noctis-image` is a
+  layer-5 extension whose edges to core, ports and ui exist only with its `render`
+  feature (off by default, so `noctis-macros` uses the takumi-free `tw` module); no
+  `testkit → image` edge; no crate depends on `noctis` except via dev-dependencies;
+  testkit reachable only via the facade's `testkit` feature in `[dev-dependencies]`.
 - **AD-1 / AD-14 ports:** every storage concern is a `noctis-ports` trait,
   `Send + Sync + 'static`, dyn-compatible, `BoxFuture<'_, Result<T, PortError>>`,
   `Arc<dyn Port>`; op vocabulary `get`, `put(ttl)`, `put_if_absent`, `take`,
@@ -307,8 +336,11 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   `::noctis::__private::<crate>` paths; sub-crate docs say "internal; use `noctis`".
 - **AD-3 / AD-4 rules:** one sync, I/O-free `noctis-rules` crate with stable rule ids,
   `Limits` (Strict/Lenient), `discord_len`; macros call it directly; compile-time →
-  App-build → runtime ladder; every test names its rule id; `xtask rules-catalog`
-  fails CI when a Compile-time or App-build row has no citing test.
+  App-build → runtime ladder; every test names its rule id; Noctis-diagnosed
+  compile errors carry `[<RULE-ID>]` in `.stderr`, by-construction rules carry
+  `// [<RULE-ID>]` in the fixture or `compile_fail` doctest source; `components!`
+  checks literal V2 trees (CV2-03, CV2-04, CID-02, …) at expansion; `xtask
+  rules-catalog` fails CI when a row has no test of the kind its tier requires.
 - **AD-5 / AD-6 / AD-18 / AD-19 / AD-20 codec:** normative `custom_id` layout
   (`F route ":" [S] [E] [N] body [T]`), `pub const` layout constants checked against
   the catalog, total decoding, `Field::MAX_LEN` widths, `#[derive(Route)]` with
@@ -331,17 +363,24 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   `TokenExpired`, typed flag sets, webhook serializer with `with_components=true`.
 - **AD-12 V2 model:** Noctis's own component types serialized directly (raw
   twilight-http body); twilight-model only for ids, interactions, events, commands;
-  modal submissions decoded from `RawJson`; unknown data kept as `serde_json::Value`.
+  modal submissions decoded from the raw interaction JSON bytes (`&[u8]`; core passes
+  the gateway's `RawJson` bytes); unknown data kept as `serde_json::Value`.
 - **AD-13 errors:** per-crate `thiserror` enums, `noctis::Error` `#[non_exhaustive]`,
   `HandlerError` the only type-erased public error, `catch_unwind` around every
   handler/hook/event future and Render Job, no `unwrap`/`expect` on external input.
-- **AD-15 rendering:** takumi `=2.17.0` on a process-scoped rayon pool, bounded queue,
-  frame-weighted admission, per-job caps; `noctis_image::tw` grammar generated by
-  `xtask tw-grammar`, takumi-free; `tw-crosscheck` CI; blake3 cache key; deterministic
-  Template data (no `HashMap`); `AssetFetcher` the only non-Discord HTTP.
-- **AD-16 i18n:** `i18n!(default = "en", dir = "locales")` (both optional), YAML via
-  `yaml-rust2`, `Locale` (32 codes) / `MessageKey` / `Translate` in `noctis-rules`,
-  reserved `noctis.*` keys, fixed `cmd.*` / `cmdword.*` / `ctxcmd.<key>.name` keys,
+- **AD-15 rendering:** takumi `=2.17.0` with takumi-core `=0.31.0` on a
+  process-scoped rayon pool, bounded queue, frame-weighted admission, per-job caps;
+  `noctis_image::tw` grammar generated by `xtask tw-grammar` (syn-parsing takumi-core's
+  `src/style/tw/map.rs`), takumi-free; `tw-crosscheck` CI against takumi-core's
+  public `TailwindValues` parser; blake3 cache key; deterministic Template data (no
+  `HashMap`); code-driven animation through `TemplateView::view(&self, Frame)`;
+  `AssetFetcher` the only non-Discord HTTP.
+- **AD-16 i18n:** `i18n!(default = "en-US", dir = "locales")` (both optional), YAML
+  via `yaml-rust2`, files named by exact Discord locale code (`en-US.yaml`,
+  `tr.yaml`), `Locale` (32 codes, `Locale::sibling()` for `en-US`↔`en-GB` and
+  `es-ES`↔`es-419`) / `MessageKey` / `Translate` in `noctis-rules`, reserved
+  `noctis.*` keys, fixed `cmd.<path>.description`-style keys with `<path>` as
+  dot-joined nested words, `cmdword.*` / `ctxcmd.<key>.name` keys (no typed accessors),
   descriptions literal without the `i18n` feature and from the default-locale file
   with it (a conflicting literal is a compile error), overlays content-only.
 - **AD-17 template tracking:** `xtask api-snapshot` (cargo public-api on the pinned
@@ -356,14 +395,20 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   gateway, core-owned shutdown order.
 - **AD-22 attachments:** content-addressed names, `(MessageTree, AttachmentSet)`,
   Upload Budget and edit diff only in the Responder, `ctx.render(...).await`;
-  `Template` trait, `RenderJob { template_id, template_version, data (postcard),
-  size, format }` and `Renderer` in `noctis-ports`, implemented by `noctis-image`;
-  `Attachment::rendered` marks rendered images.
+  `Template: Serialize + DeserializeOwned` trait, `RenderJob { template_id,
+  template_version, data (postcard), size, format, animation: Option<AnimationSpec> }`
+  and `Renderer` in `noctis-ports`, implemented by `noctis-image`;
+  `Attachment::rendered(bytes, digest, ext)` (primitives only) marks rendered images.
 - **AD-23 pipeline:** fixed 10-stage interaction pipeline; Extensions type map with
   App-build check of `Ext<T>` providers.
-- **AD-24 resource scoping:** one `Arc<twilight_http::Client>` per App (proxy mode,
-  timeout 10 s default); process-scoped `noctis::Runtime` (render pool, takumi
-  caches, fonts, emoji font, metrics recorder) frozen by the first App.
+- **AD-24 resource scoping and plugins:** one `Arc<twilight_http::Client>` per App
+  (proxy mode, timeout 10 s default); `Runtime` defined in `noctis-core` and
+  re-exported as `noctis::Runtime` (`global()`, `for_test()`, type-erased process
+  resources such as the render pool, takumi caches, fonts, emoji font, metrics
+  recorder, frozen by the first App); `trait Plugin { fn install(&self, &mut
+  AppBuilder) }` with `ImagePlugin` + `AppBuilderImageExt` (`.image()`, `.theme()`)
+  in `noctis-image` and `PrefixPlugin` in `noctis-prefix`; public `Dispatcher` for
+  stages 3 to 10; testkit Apps on `Runtime::for_test()` with the fakes.
 - **AD-25 allocation:** zero-allocation Route lookup and inline decode (dhat test),
   bounded caches, fixed-size per-guild state, benches in `noctis-core/benches` with
   `budgets.toml`, testkit `assert_memory_flat`.
@@ -390,7 +435,7 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
 - **Project Template (FR-49, AD-17):** `examples/project-template/` already exists as
   a scaffold written against the planned API (modules `setup`, `dashboard`,
   `profile`, `adapters/bounded_cache.rs`, `strings.rs`, tests `flows.rs`,
-  `adapters.rs`, `templates.rs`, `noctis-theme.css`, `locales/{en,tr}.yaml`, the
+  `adapters.rs`, `templates.rs`, `noctis-theme.css`, `locales/{en-US,tr}.yaml`, the
   Noctis Usage Skill at `.claude/skills/noctis/` with `references/`). Stories
   reconcile it with the real API as each API lands, and it must build in CI once the
   features it uses exist.
@@ -1256,43 +1301,84 @@ So that modal input is parsed for me, including component types twilight doesn't
 
 A bot author builds an App, runs it sharded across every core with correct identify
 concurrency, and handles gateway events without ever stalling heartbeats or dropping
-interactions. Tests use the testkit's Discord fakes, built in Story 5.1 (AD-24), so no
+interactions. Tests use the testkit's Discord fakes, built in Stories 5.2 and 5.3 (AD-24), so no
 network is needed.
 
-### Story 5.1: App builder, process Runtime and startup safety
+### Story 5.1: App builder, Runtime, Plugin seam and startup safety
 
 As a bot author,
-I want to build an App from a token, Modules and Adapters and get typed errors for every startup mistake,
-So that misconfiguration fails clearly instead of panicking.
+I want to build an App from a token, state and Adapters and get typed errors for every startup mistake,
+So that misconfiguration fails clearly instead of panicking, and optional features attach through one seam.
 
 **Implements:** FR-1, FR-38 (Adapter injection), NFR-4, NFR-6; AD-9, AD-13, AD-21, AD-24, AD-29; Conventions (Config).
 
 **Acceptance Criteria:**
 
 **Given** `App::builder()` and `App::from_env()` (reading `NOCTIS_*` variables)
-**When** a bot author sets the token, `State<T>` values and any port implementation (`.ref_store(..)`, `.cache_store(..)`, …) (Modules are mounted from Story 5.4)
+**When** a bot author sets the token, `State<T>` values and any port implementation (`.ref_store(..)`, `.cache_store(..)`, …) (Modules are mounted from Story 5.6)
 **Then** `.build()` returns an `App` or a `BuildError` listing every violation at once, and unset ports default to the bounded memory implementations
 **And** the token is a newtype whose `Debug`/`Display` are redacted and that is never logged (NFR-6)
 
 **Given** `App::run` is called outside a multi-thread tokio runtime
 **When** it starts
-**Then** it returns a typed error instead of panicking; when no rustls crypto provider is installed, Noctis installs one, and a failure to do so is a typed error
+**Then** it returns a typed error instead of panicking; when no process-default rustls crypto provider is installed, Noctis installs rustls's `ring` provider, and a failure to do so is a typed error (AD-21)
+**And** `[workspace.dependencies]` pins `rustls` 0.23.46 with `default-features = false, features = ["ring", "std", "tls12", "logging"]`, `twilight-gateway` with `default-features = false, features = ["rustls-platform-verifier", "twilight-http", "zstd"]` and `twilight-http` with `default-features = false, features = ["rustls-platform-verifier", "decompression"]`, and `cargo deny` bans `aws-lc-rs` and `aws-lc-sys`
 
 **Given** the App
 **When** it is built
 **Then** core constructs exactly one `Arc<twilight_http::Client>` per App with a configurable request timeout (default 10 s), and no other crate constructs a Discord HTTP client (AD-24)
-**And** process-scoped resources live in `noctis::Runtime`, the first App's configuration freezes them, and a later conflicting configuration is a `BuildError`
+
+**Given** `noctis_core::Runtime`, re-exported as `noctis::Runtime` (AD-24)
+**When** Apps are built
+**Then** `App::builder()`/`App::from_env()` attach to `Runtime::global()`, `AppBuilder::runtime(&Runtime)` attaches to another one, and `Runtime::resource_or_init::<T>(config)` creates a type-erased process resource on first use; the first App's configuration freezes it, and a later conflicting configuration is a `BuildError` (unit test with a dummy resource)
+**And** `Runtime::for_test()` returns an isolated Runtime that is never the global one and reports `is_test() == true`, so two tests can configure conflicting resources without interfering (unit test)
+
+**Given** the `Plugin` trait (`fn install(&self, app: &mut AppBuilder)`)
+**When** a plugin is registered with `AppBuilder::plugin(p)` (one per type, reachable through `plugin_mut::<P>()`)
+**Then** `build()` calls every `install` exactly once, in registration order, before the App-build checks; `install` uses only public `AppBuilder` methods (`renderer(Arc<dyn Renderer>)`, port setters, `intents(..)`, `runtime()`, and `module(..)` once Story 5.6 adds it), and violations it reports join the one `BuildError` (unit test with a test plugin that installs a fake Renderer)
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill's `references/app-and-sharding.md` documents the builder, `from_env` variables and errors, the template's `main.rs`/`lib.rs` `configure()` are reconciled with the real builder, and `skill-check` passes
+**Then** the Usage Skill's `references/app-and-sharding.md` documents the builder, `from_env` variables, `Runtime`, plugins and errors, the template's `main.rs`/`lib.rs` `configure()` are reconciled with the real builder, and `skill-check` passes
+
+### Story 5.2: Discord HTTP fake and the test Runtime
+
+As a Noctis contributor,
+I want a local fake of Discord's HTTP API that a real App talks to through its normal client,
+So that every later story can test REST behavior end to end without network access.
+
+**Implements:** FR-51 (Discord HTTP fake); AD-24, AD-14; Conventions (Tests).
+
+**Acceptance Criteria:**
 
 **Given** `noctis-testkit` (AD-24)
 **When** the story is done
-**Then** `noctis_testkit::fake` provides `FakeDiscordHttp` (a local `hyper` server with per-test routes, canned `GET /gateway/bot` and a request log for assertions) and `FakeGateway` (a local `tokio-websockets` server speaking HELLO, IDENTIFY/READY, RESUME, heartbeat ACKs, dispatches and close codes), pinned in `[workspace.dependencies]` as the Stack lists
-**And** the App reaches them only through twilight's override points (HTTP `proxy(url, true)` and the gateway `proxy_url`, exposed as `.gateway_url(..)`), with no test-only branch in core, and a smoke test in `crates/noctis-testkit/tests/` builds an App against both fakes; end-to-end tests of Epics 5 to 7 live in that directory
+**Then** `noctis_testkit::fake::FakeDiscordHttp` is a local `hyper` server (hyper 1.12, hyper-util 0.1.21, http-body-util 0.1.5, pinned in `[workspace.dependencies]` as the Stack lists) with per-test routes, a canned `GET /gateway/bot` (configurable shard count and `max_concurrency`, `session_start_limit`) and a request log for assertions
 
-### Story 5.2: Automatic sharding with bucketed identify
+**Given** an App built on `Runtime::for_test()` with `.http_proxy(fake.url())` (this story adds the `http_proxy` setter, which configures `proxy(url, true)` and `ratelimiter(None)`; Story 12.4 adds the Cluster semantics around it)
+**When** it sends a request
+**Then** the request reaches the fake only through twilight's HTTP `proxy(url, true)` override, with no test-only branch in core, and a smoke test in `crates/noctis-testkit/tests/` asserts it in the request log
+**And** end-to-end tests of Epics 5 to 7 live in `crates/noctis-testkit/tests/`
+
+### Story 5.3: Discord gateway fake
+
+As a Noctis contributor,
+I want a local fake of Discord's gateway that a real App's shards connect to,
+So that sharding, lanes, resume and shutdown can be tested end to end without network access.
+
+**Implements:** FR-51 (Discord gateway fake); AD-21, AD-24; Conventions (Tests).
+
+**Acceptance Criteria:**
+
+**Given** `noctis_testkit::fake::FakeGateway`
+**When** a test starts it
+**Then** it is a local `tokio-websockets` 0.13 server speaking HELLO, IDENTIFY/READY, RESUME/RESUMED, heartbeat ACKs (with a controllable interval and a hook to observe heartbeat timing), scripted dispatches and close codes (including 4004, 4014 and a resumable close), and records every frame it receives
+
+**Given** an App built on `Runtime::for_test()` with `.gateway_url(fake.url())` and `.http_proxy(http_fake.url())`
+**When** it connects
+**Then** it reaches the fake only through twilight's gateway `proxy_url` (exposed as `.gateway_url(..)`, also used for real gateway proxies), with no test-only branch in core, and a smoke test in `crates/noctis-testkit/tests/` connects one shard to both fakes, receives READY and one dispatch, and closes cleanly
+
+### Story 5.4: Automatic sharding with bucketed identify
 
 As a bot author,
 I want Noctis to start the recommended number of shards and identify them as fast as Discord allows,
@@ -1322,7 +1408,7 @@ So that a large bot boots quickly without identify storms.
 **When** they receive gateway messages
 **Then** they parse raw messages themselves with `twilight_gateway::parse`, keeping the raw `d` JSON for interactions as `RawJson`, and produce `Inbound { shard, received_at, kind }`
 
-### Story 5.3: Interaction Lane and bounded event lane
+### Story 5.5: Interaction Lane and bounded event lane
 
 As a bot author,
 I want interactions on a priority lane that never drops and events on a bounded lane with explicit drop policy,
@@ -1349,7 +1435,7 @@ So that slow handlers never cost heartbeats or user-visible interactions.
 **When** metrics are scraped
 **Then** `noctis_lane_depth{lane}` reports each lane's depth with the `app` label
 
-### Story 5.4: Modules and typed Event Handlers with derived filters and intents
+### Story 5.6: Modules and typed Event Handlers with derived filters and intents
 
 As a bot author,
 I want to register typed Event Handlers in a Module and have Noctis derive the event filter and required intents,
@@ -1383,7 +1469,7 @@ So that unhandled events are never deserialized and missing intents fail before 
 **When** the story is done
 **Then** the Usage Skill documents `Module`, `.module(..)` nesting, `#[event]`, ordering and intent derivation, the template's event handler (profile XP on message) is reconciled, and `skill-check` passes
 
-### Story 5.5: Observability contract and Error Sinks
+### Story 5.7: Observability contract and Error Sinks
 
 As a bot operator,
 I want consistent spans, metrics and a configurable Error Sink per error origin,
@@ -1409,7 +1495,7 @@ So that I can monitor and alert on a Noctis bot without reading its code.
 **When** the story is done
 **Then** the Usage Skill documents spans, metrics and Error Sinks, and `skill-check` passes
 
-### Story 5.6: Graceful shutdown and fatal-close reporting
+### Story 5.8: Graceful shutdown and fatal-close reporting
 
 As a bot operator,
 I want shutdown to finish in-flight work within a grace period and fatal shard closes to be reported,
@@ -1848,7 +1934,7 @@ So that cross-cutting concerns (auth, settings, metrics) live in one place.
 
 **Acceptance Criteria:**
 
-**Given** before- and after-Middleware registered on a parent Module and a child Module (nesting from Story 5.4)
+**Given** before- and after-Middleware registered on a parent Module and a child Module (nesting from Story 5.6)
 **When** an interaction or event runs
 **Then** before-Middleware run parent first, then registration order; after-Middleware run in reverse order; and a before-Middleware can stop processing so the handler doesn't run
 
@@ -2087,7 +2173,7 @@ So that I can verify flows, response types and Limit costs in CI.
 
 **Given** `noctis::testkit` enabled through the facade's `testkit` feature in `[dev-dependencies]`
 **When** a test builds `TestApp` from an `AppBuilder` with test guilds, channels, roles and users
-**Then** it injects simulated `Inbound` interactions into the same lanes the gateway uses, answers Discord HTTP with `FakeDiscordHttp` from Story 5.1, and needs no network access
+**Then** it injects simulated `Inbound` interactions into the same lanes the gateway uses, answers Discord HTTP with `FakeDiscordHttp` from Story 5.2, and needs no network access
 
 **Given** a test
 **When** it calls `app.command("setup start").by(user).in_guild(guild).run()` or clicks a component by Route or label
@@ -2819,7 +2905,7 @@ So that memory stays proportional to what my features actually use.
 
 **Given** the `DiscordCache` port and `MemoryDiscordCache` from Stories 3.1 and 3.2
 **When** the App runs
-**Then** core feeds the cache every gateway event its configured resources need (these event types join the Story 5.4 filter), before the event reaches handlers, and every context (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `AutocompleteCtx`, `EventCtx`) exposes `ctx.cache()`, a typed read handle with owned getters (`guild`, `channel`, `role`, `member`, `user`, `message`, per-guild lists)
+**Then** core feeds the cache every gateway event its configured resources need (these event types join the Story 5.6 filter), before the event reaches handlers, and every context (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `AutocompleteCtx`, `EventCtx`) exposes `ctx.cache()`, a typed read handle with owned getters (`guild`, `channel`, `role`, `member`, `user`, `message`, per-guild lists)
 **And** `.discord_cache(DiscordCacheConfig::…)` chooses resources or `none()`, and `.discord_cache_backend(impl DiscordCache)` replaces the storage; with the cache disabled, getters return a typed `CacheDisabled` error
 
 **Given** default configuration
@@ -2880,7 +2966,7 @@ So that features are organized like tescord Packs and every log line says which 
 
 **Acceptance Criteria:**
 
-**Given** a tree three or more levels deep built with `Module::module(..)` (basic nesting exists since Story 5.4)
+**Given** a tree three or more levels deep built with `Module::module(..)` (basic nesting exists since Story 5.6)
 **When** the tree is mounted on the App
 **Then** registrations of every nested Module are folded into the Registry, each Module's id is its full path, and parent-before-child ordering applies to Middleware at every level
 
