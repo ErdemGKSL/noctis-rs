@@ -2,7 +2,8 @@
 title: 'Story 6.7: Autocomplete'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '7d38de2a1ccb830a33ec1196e18a22aa2884815e'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
