@@ -2,7 +2,7 @@
 title: 'Story 5.6: Modules and typed Event Handlers with derived filters and intents'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '5a343f04ef66f5d9d4dde950db6fbebae47db260'
 review_loop_iteration: 1
 followup_review_recommended: false
@@ -54,6 +54,34 @@ deferred:
     location: >-
       examples/project-template/src/bootstrap.rs
     severity: medium
+  - summary: >-
+      HandlerError accepts only `E: Error + Send + Sync + 'static`, so `?` on `Box<dyn Error + Send + Sync>` or `anyhow::Error` does not compile and there is no constructor from a plain message.
+    evidence: |-
+      Box<dyn Error + Send + Sync> and anyhow::Error do not implement Error, and String/&str do not either; the workaround is HandlerError::new(io::Error::other(..)). The fix adds public API (e.g. HandlerError::msg or a From<Box<dyn Error + Send + Sync>> impl, coherence to be checked), which belongs to Story 6.8 (HandlerError and error-handling patterns, AD-13/AD-16).
+    location: >-
+      crates/noctis-core/src/handler.rs:73
+    severity: medium
+  - summary: >-
+      Event handler failure logs use `error = %error`, which prints only the outermost error and drops the source() chain.
+    evidence: |-
+      HandlerError's Display delegates to the inner error's Display. Logging the full chain (or Debug) belongs with Story 6.8 ("the full error is logged through structured tracing") and Story 5.7 Error Sinks, both excluded from 5.6 by the intent's Never list.
+    location: >-
+      crates/noctis-core/src/worker.rs:235
+    severity: low
+  - summary: >-
+      docs/discord-rules.md INT-13 and ARCHITECTURE-SPINE.md (AD-24 "Discord edge", test-fakes paragraph) describe the Discord edge as current behaviour although Story 5.9 has not implemented it.
+    evidence: |-
+      No code in the workspace implements the edge; the wording came from commit f9e3658 (Plan Story 5.9), not Story 5.6. Mark it [planned, Story 5.9] or let Story 5.9 make it true.
+    location: >-
+      docs/discord-rules.md:168
+    severity: low
+  - summary: >-
+      research/http-warm-transport.md cites probe code at an ephemeral session scratchpad path, so its measurements cannot be reproduced.
+    evidence: |-
+      Line 7 points at /tmp/claude-0/.../scratchpad/http-probe ("scratch, not in the repo"). From commit 45140a7, not Story 5.6; commit the probe sources or inline them when Story 5.9 starts.
+    location: >-
+      _bmad-output/planning-artifacts/research/http-warm-transport.md:7
+    severity: low
 ---
 
 <intent-contract>
@@ -240,6 +268,40 @@ deferred:
   - `[false]` `[reject]` (intent D7) CV2 placement matrix out of scope — separate commit dfdf9ca.
   - `[false]` `[reject]` (intent D8) Public API beyond the ACs — the intent's Approach explicitly names `event_lane`, `handler_concurrency`, `droppable` and the payload re-exports.
 
+### 2026-10-20 — Review pass
+- verdicts: 30 findings — high 0, medium 3, low 14, false 13, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) `subqueue` shift `>> 58` not derived from `SUBQUEUES`; out-of-range index or failed `tx.send` drops a job silently — with `SUBQUEUES = 64` and the spec-prescribed formula every index is `< 64` (Matrix 38), so `ordered.get(..)` is always `Some`; `send` fails only after the sub-queue task ends at runtime shutdown. Only a future edit of the constant would expose it; guards and logs add code for an unreachable path.
+  - `[low]` `[reject]` (blind) Handler failure/panic logs lack `shard` and `guild_id` — real, but the spine (L1074) puts `shard`/`guild_id` on the `noctis.event` span of Story 5.7, which the intent's Never list excludes; adding them to the event now would duplicate the span fields.
+  - `[low]` `[defer]` (blind) `error = %error` drops the `source()` chain — real (Display delegates to the inner error only); full-error logging belongs to Story 6.8 / 5.7 Error Sinks, excluded by the intent's Never list. Added to `deferred`.
+  - `[medium]` `[defer]` (blind) No `HandlerError` constructor from a plain message — real (`String`/`&str` are not `Error`; workaround `HandlerError::new(io::Error::other(..))`); the fix adds public API, and AD-13 plus Story 6.8 own `HandlerError`'s constructors and error-handling patterns. Grouped with edge 5; added to `deferred`.
+  - `[false]` `[reject]` (blind) One `MissingIntent` per handler, not per intent — the intent contract prescribes "one `MissingIntent` per handler" and Matrix 14 expects two violations; each names a different handler, so they are not duplicates.
+  - `[false]` `[reject]` (blind) `ordered` + `droppable` interaction undocumented — the `droppable` rustdoc (facade lib.rs L212-214) already says the event may be dropped; ordering then trivially covers delivered events only, no further outcome.
+  - `[low]` `[patch]` (blind) Public doctests teach the hidden `EventHandler::__new` — real: `noctis::Module` re-exports core's rustdoc, so docs.rs shows `__new` and `noctis_core::` paths to bot authors (module.rs L51-63, L20-30; handler.rs L186-198). Patch: hide the `__new` construction behind rustdoc `# ` lines and point the prose at `#[event]`.
+  - `[low]` `[patch]` (blind) Architecture memlog L171 states the rejected `from(KIND)` droppable design — real, contradicted by the loopback-1 line L175. Patch: mark L171's droppable/`PARSE` test sentences as superseded by L175.
+  - `[low]` `[defer]` (blind) INT-13 and the spine describe the Story 5.9 Discord edge as current — real, but from commit f9e3658 (Plan Story 5.9), not this story. Added to `deferred`.
+  - `[low]` `[defer]` (blind) Research doc cites probe code at an ephemeral scratchpad path — real, from commit 45140a7, not this story. Added to `deferred`.
+  - `[low]` `[reject]` (blind) No test for interactions while permits are held by jobs parked behind a blocked ordered sub-queue — the bypass is structural (`select!` over `recv_interaction` regardless of where permits sit) and `interaction_bypasses_permits` pins it; the hazard is documented, a second test adds no protection.
+  - `[false]` `[reject]` (blind) Unrelated planning changes (FR-21, Story 5.9, CV2 table) in the 5.6 diff — they are separate commits with their own messages (45140a7, f9e3658, dfdf9ca) that fall inside the baseline range; the proposed fix edits this spec.
+  - `[low]` `[reject]` (edge) Hung concurrent handler leaks its permit — carried: a hung user future holding its permit is the normal semantics of a bounded pool; a timeout adds config surface no AD asks for.
+  - `[low]` `[reject]` (edge) Drain acquires a permit before the handler lookup — carried: handlerless parsed types are unreachable (twilight `parse` skips unwanted dispatches; every parsed type has a slot after loopback 1).
+  - `[medium]` `[defer]` (edge) Spawned handler tasks outlive `App::run` — carried: shutdown draining is Story 5.8 per the intent's Never list (already in `deferred`).
+  - `[low]` `[reject]` (edge) `let _ = tx.send(job)` drops an event silently — `send` fails only once the sub-queue task has ended, which happens only at runtime shutdown (the code comment says so); a log there adds code for a shutdown-only path.
+  - `[medium]` `[defer]` (edge) `?` on `Box<dyn Error + Send + Sync>` / `anyhow::Error` does not compile — real (neither implements `Error`); same root as the blind `HandlerError` constructor row; deferred to Story 6.8 with it.
+  - `[low]` `[reject]` (edge) `#[event]` attributes land on the descriptor fn — carried: spec-prescribed; only `#[tracing::instrument]` misses and 5.7 adds `noctis.event` spans.
+  - `[low]` `[reject]` (edge) Recursive self-call / `Self` inside an `#[event]` body — carried: rare, rustc still errors (the zero-arg descriptor fn or nested-fn `Self`); a check adds macro logic.
+  - `[low]` `[reject]` (edge) `#[event(,)]` accepted as no flags — real (parse_args pops the trailing empty segment), but rare and the outcome equals an empty argument list; a guard adds a branch.
+  - `[false]` `[reject]` (edge) Payload trybuild cases in `tests/types` skipped when a facade feature is on — they run in the same `ui()` test as `tests/ui` (ui.rs L47), under the same featureless gate the spec's "existing suite" has; the directory is required because `rules-catalog` admits only `<RULE-ID>_` fixtures in `tests/ui` (memlog L176).
+  - `[false]` `[reject]` (intent 1) Out-of-story planning changes in the diff — separate commits 45140a7 and f9e3658 with their own messages, inside the baseline range only.
+  - `[false]` `[reject]` (intent 2) Template bootstrap and CV2 placement matrix in the diff — carried: separate commits 9b82e43, dfdf9ca.
+  - `[false]` `[reject]` (intent 3) AC1 counting via parse-failure warnings — carried: settled in Matrix 45; twilight `parse` skips unwanted types before deserializing.
+  - `[false]` `[reject]` (intent 4) GW-05 privileged-only — carried: Design Notes "Privileged-only GW-05", FR-6 "derived".
+  - `[false]` `[reject]` (intent 5) 64 hashed sub-queues — carried: AD-10 prescribes guild ids hashed to fixed sub-queues.
+  - `[false]` `[reject]` (intent 6) Interactions bypass permits and are traced and dropped — carried: Never list excludes interaction handlers; the biased-select test is already deferred.
+  - `[false]` `[reject]` (intent 7) Ancestor paths stored but unused — the AC says "records its ancestor path"; Middleware ordering (7.6) is excluded by the Never list, and Matrix 4-5 pin the recorded paths.
+  - `[false]` `[reject]` (intent 8) Template still calls `ctx.kv()` and is not compiled — carried: `kv()` excluded by the intent, marked `[planned, Epic 7]`.
+  - `[false]` `[reject]` (intent 9) `UnavailableGuild` dispatched from `GUILD_DELETE` — deliberately settled by Spec Change Log 1 and Design Note "Dispatch key", pinned by registry, worker and `unavailable_guild_e2e` tests.
+
 ## Design Notes
 
 - **Privileged-only GW-05:** auto-adding non-privileged intents is the "derived" half; GW-05 itself is about privileged intents that need Portal enablement, so only those fail the build. `MessageCreate` derives `GUILD_MESSAGES` (template comment); DMs need an explicit `.intents(DIRECT_MESSAGES)`.
@@ -270,3 +332,13 @@ deferred:
 - `cargo +1.91 check --release --workspace --all-targets` -- exit 0. `cargo deny check` -- exit 0.
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`, `-- deps-check`, `-- rules-catalog` (GW-05 covered) and `-- skill-check` -- each exit 0 (needs `nightly-2026-10-15` + `cargo-public-api` 0.52.0, see AGENTS.md pitfalls).
 - `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Story 5.6 delivers `Module` trees (pre-order fold with recorded ancestor paths), typed event handlers over a sealed `EventPayload` set of 64 Discord event types via `#[event]` (flags `ordered`, `droppable`), gateway event filters and intents derived from registered handlers, privileged-only GW-05 `MissingIntent` startup violations, `event_lane`/`handler_concurrency` builder bounds, and a worker set: bounded permits, interactions bypassing permits through a biased select, 64 hashed per-guild ordered sub-queues, and `catch_unwind` panic isolation. Handlers are keyed by the dispatched type (`UnavailableGuild` is extracted from `GUILD_DELETE` with `unavailable == Some(true)`, decided in bad_spec loopback 1).
+- **Files changed:** `crates/noctis-core/src/{events.rs,handler.rs,module.rs,registry.rs,app.rs,lane.rs}` (payloads, handlers, modules, registry, workers); `crates/noctis-macros` (`#[event]`); `crates/noctis/src/lib.rs` (facade re-exports and docs); `crates/noctis/tests/{ui,types}` (trybuild cases); `crates/noctis-testkit` E2Es (Matrix 45-47, `unavailable_guild_e2e`); `docs/discord-rules.md` and noctis-rules GW-05; `examples/project-template/` (code, AGENTS.md, usage skill, API hash); `xtask/public-api.txt`, `xtask/rules-pending.toml`, `xtask/src/api_snapshot.rs`; architecture memlog.
+- **Review findings, pass 1 (39):** 3 high, 8 medium, 15 low, 12 false, 1 maybe-false. Bad_spec loopback 1 for the `UnavailableGuild` dispatch-key defect (it covered the 3 high and 2 medium rows). Patches: ordered-hang hazard docs, `App::run` lane-config test, sync-panic `catch_unwind` test, trybuild `on_unimplemented` cases, DM-intents sentence, `droppable` rustdoc clause. Defers: template bootstrap `.env` issues, unverified template dependency versions and untested `bootstrap.rs` (all from commit 9b82e43), handler tasks outliving `App::run` (Story 5.8), biased-select order test (Epic 6). Rejects: the reason for each one is recorded in the triage log (spec-prescribed attrs/diagnostics, unreachable paths, deliberate closed event set, separate commits, settled intents).
+- **Review findings, pass 2 (30):** 0 high, 3 medium, 14 low, 13 false. Patches (2 low): hid `EventHandler::__new` in public doctests, marked the superseded memlog line. Defers: `HandlerError` message constructor / `anyhow` interop (Story 6.8), `source()` chain logging (5.7/6.8), the INT-13/spine wording for Story 5.9, the research doc's scratchpad path. Rejects: the reason for each one is recorded in the triage log.
+- **Follow-up review recommended:** false. This pass patched 0 high, 0 medium and 2 low entries.
+- **Verification:** all local gates in `gates.sh` pass: fmt, clippy `-D warnings`, the release workspace tests, `cargo hack --each-feature`, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, and the MSRV 1.91 check. CI is paused by the maintainer.
+- **Residual risks:** spawned handler tasks are not drained at shutdown (5.8). A hung ordered handler can absorb every permit (documented, no timeout). No ergonomic `HandlerError` from a message (6.8). The biased-select order is untested until Epic 6.

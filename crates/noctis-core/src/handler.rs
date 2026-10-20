@@ -183,16 +183,19 @@ type ErasedHandler =
 /// Opaque and cheap to clone. `Debug` prints the handler path, the event
 /// name and the `ordered`/`droppable` flags.
 ///
+/// Handlers come from `#[event]`: annotating `async fn on_delete` gives a
+/// `fn on_delete()` that returns its `EventHandler`.
+///
 /// ```
-/// use noctis_core::events::{EventCtx, EventHandler, MessageDelete};
-/// use noctis_core::{HandlerResult, Module};
-///
-/// async fn on_delete(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
-///     Ok(())
-/// }
-///
-/// // `#[event]` writes this call; bot code uses the attribute.
-/// let handler = EventHandler::__new("bot::on_delete", false, false, on_delete);
+/// # use noctis_core::events::{EventCtx, EventHandler, MessageDelete};
+/// # use noctis_core::{HandlerResult, Module};
+/// # async fn on_delete_fn(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
+/// #     Ok(())
+/// # }
+/// # fn on_delete() -> EventHandler {
+/// #     EventHandler::__new("bot::on_delete", false, false, on_delete_fn)
+/// # }
+/// let handler = on_delete();
 /// assert!(format!("{handler:?}").contains("MESSAGE_DELETE"));
 /// let module = Module::new("audit").add(handler);
 /// ```

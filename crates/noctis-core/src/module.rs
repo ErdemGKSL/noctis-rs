@@ -17,16 +17,20 @@ pub(crate) mod sealed {
 /// Something [`Module::add`] accepts: an `#[event]` handler today; commands,
 /// Routes and hooks join later. Sealed.
 ///
+/// Event handlers come from `#[event]`: annotating `async fn on_user` gives
+/// a `fn on_user()` that returns the handler.
+///
 /// ```
-/// use noctis_core::events::{EventCtx, EventHandler, UserUpdate};
-/// use noctis_core::{Descriptor, HandlerResult};
-///
-/// async fn on_user(_: EventCtx, _: UserUpdate) -> HandlerResult<()> {
-///     Ok(())
-/// }
-///
+/// # use noctis_core::events::{EventCtx, EventHandler, UserUpdate};
+/// # use noctis_core::{Descriptor, HandlerResult};
+/// # async fn on_user_fn(_: EventCtx, _: UserUpdate) -> HandlerResult<()> {
+/// #     Ok(())
+/// # }
+/// # fn on_user() -> EventHandler {
+/// #     EventHandler::__new("bot::on_user", false, false, on_user_fn)
+/// # }
 /// fn is_descriptor(_: impl Descriptor) {}
-/// is_descriptor(EventHandler::__new("bot::on_user", false, false, on_user));
+/// is_descriptor(on_user());
 /// ```
 pub trait Descriptor: sealed::Sealed {}
 
@@ -48,16 +52,20 @@ impl Descriptor for EventHandler {}
 /// `module` order. The same tree can be mounted on several Apps (it is
 /// `Clone`). Ids are not validated yet.
 ///
+/// Event handlers come from `#[event]`: annotating `async fn award_xp`
+/// gives a `fn award_xp()` that returns the handler to [`add`](Self::add).
+///
 /// ```
-/// use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
-/// use noctis_core::{HandlerResult, Module};
-///
-/// async fn award_xp(_: EventCtx, _: MessageCreate) -> HandlerResult<()> {
-///     Ok(())
-/// }
-///
+/// # use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
+/// # use noctis_core::{HandlerResult, Module};
+/// # async fn award_xp_fn(_: EventCtx, _: MessageCreate) -> HandlerResult<()> {
+/// #     Ok(())
+/// # }
+/// # fn award_xp() -> EventHandler {
+/// #     EventHandler::__new("bot::award_xp", false, false, award_xp_fn)
+/// # }
 /// let profile = Module::new("profile")
-///     .add(EventHandler::__new("bot::award_xp", false, false, award_xp))
+///     .add(award_xp())
 ///     .module(Module::new("profile/badges"));
 /// assert_eq!(profile.id(), "profile");
 /// ```
