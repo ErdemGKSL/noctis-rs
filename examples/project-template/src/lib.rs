@@ -13,6 +13,7 @@
 pub mod adapters;
 pub mod bootstrap;
 pub mod modules;
+pub mod observability;
 pub mod strings;
 
 use std::time::SystemTime;
@@ -30,7 +31,8 @@ pub struct BotMeta {
 /// Mount every Module and Adapter. Token, shards and keys come from the builder the
 /// caller passes in (`App::from_env()` in production, `App::builder()` for `TestApp` in tests).
 pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
-    builder
+    // Event and Render failures go to our AlertSink; other origins log at `error`.
+    observability::install(builder)
         .app_id("noctis-template")
         .locales(strings::catalog())
         // Theme tokens and keyframes for Templates; the same file the macros validate against.

@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 futures-util.workspace = true
+metrics.workspace = true
 noctis-gateway.workspace = true
 noctis-ports.workspace = true
 rustls.workspace = true
@@ -20,6 +21,7 @@ twilight-model.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
+metrics-util = { workspace = true, features = ["debugging"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }

@@ -135,10 +135,14 @@ Module::new("profile").add(award_xp()).add(audit_join()).add(on_reaction());
 - **Bounded:** at most `.handler_concurrency(n)` events (default 256) run their handlers
   at once; further events wait in the event lane. Interactions never wait for this
   bound.
-- **Errors and panics:** an `Err` is logged at `error` (target `noctis::event`, fields
-  `module`, `handler`, `event_type`, `error`, message `event handler failed`); a panic is
-  caught and logged as `event handler panicked` with its `&str`/`String` message. Other
-  handlers and the shard keep running. Error Sinks [planned, Story 5.7].
+- **Errors and panics:** an `Err` or a caught panic goes to the `ErrorOrigin::Event`
+  Error Sink (§6). The default `LogSink` logs at `error` (target `noctis::event`, fields
+  `app`, `shard`, `guild_id` (when the event has one), `module`, `handler`, `event_type`,
+  plus `error` (the error and its `source()` chain joined with `": "`) or `panic` (the
+  `&str`/`String` message, else `"<non-string panic>"`); messages `event handler failed` /
+  `event handler panicked`). Other handlers and the shard keep running. Each run is in
+  span `noctis.event` and counted in `noctis_handler_duration_seconds` /
+  `noctis_handler_errors_total` (`app-and-sharding.md` §11).
 - **Droppable:** under overload the event lane drops presence updates, typing starts
   (always, whatever the flag says), and every event type whose handlers are **all**
   `droppable`; any other event waits in the overflow. Design handlers to be idempotent and to tolerate gaps.
@@ -223,22 +227,67 @@ async fn h(ctx: ComponentCtx, p: MyRoute, settings: Ext<GuildSettings>) -> Handl
 
 ## 6. Error Sinks (FR-22)
 
+Every handler error, handler panic and event dropped by a full overflow becomes an
+`ErrorReport` for the `ErrorSink` of its `ErrorOrigin`. Unset origins use `LogSink`,
+which logs at `error`.
+
 ```rust
-struct SentrySink;
-impl ErrorSink for SentrySink {
-    fn report(&self, report: ErrorReport<'_>) {
-        // report.origin, report.module, report.route_or_command, report.error, report.extensions
+use std::sync::Arc;
+
+use noctis::prelude::*; // ErrorSink, ErrorOrigin
+use noctis::{ErrorReport, ReportKind};
+
+struct AlertSink {
+    tx: tokio::sync::mpsc::UnboundedSender<String>, // forward; never block in `report`
+}
+
+impl ErrorSink for AlertSink {
+    fn report(&self, r: ErrorReport<'_>) {
+        let what = match r.kind {
+            ReportKind::Error(e) => format!("failed: {e}"),
+            ReportKind::Panic(msg) => format!("panicked: {msg}"),
+            ReportKind::Dropped => "event dropped (overflow full)".to_owned(),
+            _ => "other".to_owned(), // #[non_exhaustive]
+        };
+        let _ = self.tx.send(format!("{} {:?} {what}", r.origin, r.handler));
     }
 }
 
+let sink = Arc::new(AlertSink { tx });
 builder
-    .error_sink(Origin::Command, SentrySink)
-    .error_sink(Origin::Render, SentrySink);
+    .error_sink(ErrorOrigin::Event, Arc::clone(&sink)) // an `Arc` shares one sink
+    .error_sink(ErrorOrigin::Render, sink);
 ```
 
-Origins: `Command`, `Component` (components and modal submits), `Autocomplete`,
-`Event`, `Render`, `Hook`, `Overflow` (dropped events). Default sink logs at `error`.
-Panics become error reports too. The user still sees the localized ephemeral error.
+- **`ErrorOrigin`** (`#[non_exhaustive]`, `Copy`): `Command`, `Component` (component
+  interactions and modal submits), `Autocomplete`, `Event` (event handlers, and events
+  dropped by a full overflow), `Render`. `ErrorOrigin::ALL` lists them; `as_str()` /
+  `Display` give `command`, `component`, `autocomplete`, `event`, `render`. Only `Event`
+  reports are produced today; the other origins report once their handlers land
+  (Epics 6, 7 and 10).
+- **`ErrorReport<'_>`** (`#[non_exhaustive]`, `Copy`, built only by noctis): `origin`,
+  `kind: ReportKind`, `app: &str` (`"default"` for now), `shard: Option<u32>`,
+  `guild_id: Option<Id<GuildMarker>>`, `module: Option<&str>`, `handler: Option<&str>`
+  (handler, command or Route path), `event_type: Option<&str>` (Discord name, e.g.
+  `MESSAGE_DELETE`). It never carries a payload or token. Copy what you need out of it;
+  it borrows.
+- **`ReportKind<'_>`** (`#[non_exhaustive]`): `Error(&HandlerError)`, `Panic(&str)`,
+  `Dropped` (a non-droppable event dropped because the overflow was full; `module` and
+  `handler` are `None`).
+- **`ErrorSink`**: `trait ErrorSink: Send + Sync + 'static { fn report(&self, report:
+  ErrorReport<'_>); }`. Synchronous: it runs on the worker task (handlers) or the shard
+  task (drops), so it must not block or await; spawn a task or forward to a channel for
+  I/O. `Arc<S>` implements it. A panicking sink is caught and logged
+  (`noctis::error_sink`, `"error sink panicked"`); it never stops a worker or shard.
+- **`.error_sink(origin, impl ErrorSink)`**: the last call per origin wins; plugins may
+  call it in `install`; `build()` resets the builder to `LogSink` everywhere.
+- **`LogSink`** (the default, `Copy`): target `noctis::<origin>`, fields `app` plus
+  `shard`, `guild_id`, `module`, `handler`, `event_type` when known, and `error` (source
+  chain, at most 16 links) or `panic`. Messages `"<origin> handler failed"`,
+  `"<origin> handler panicked"`, `"event overflow is full; event dropped"`.
+- Hook errors (Story 13.5) will report as `Event`; shutdown cancellations [planned,
+  Story 5.8]. The user-facing localized ephemeral error for interactions arrives with
+  Epic 6 [planned].
 
 ## 7. Rate limits (FR-46)
 

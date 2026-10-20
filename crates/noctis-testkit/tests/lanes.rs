@@ -47,6 +47,7 @@ async fn heartbeats_unaffected_by_a_stalled_consumer() {
         ..LaneConfig::default()
     });
     let options = GatewayOptions {
+        app: Arc::from("default"),
         token: "fake-token".to_owned(),
         intents: Intents::GUILDS,
         gateway_url: Some(gw.url()),

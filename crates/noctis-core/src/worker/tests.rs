@@ -736,3 +736,420 @@ async fn ordered_sync_panic_is_caught() {
     assert_eq!(log.count("after:1"), 1);
     h.close().await;
 }
+
+// ---- Story 5.7: spans, handler metrics and Error Sinks ----
+
+mod observability {
+    use metrics_util::MetricKind;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+    use tracing_subscriber::fmt::format::FmtSpan;
+
+    use super::*;
+    use crate::test_support::{Recording, Seen};
+    use crate::{ErrorOrigin, ErrorReport, ErrorSink};
+
+    /// The handler of Matrix 8: `bot::h` in Module `audit`.
+    fn failing() -> EventHandler {
+        handler("bot::h", false, |_, _: MessageDelete| async {
+            Err(HandlerError::new(std::io::Error::other("disk full")))
+        })
+    }
+
+    fn sink_app(recording: &Arc<Recording>, module: Module) -> Harness {
+        Harness::start(
+            App::builder()
+                .error_sink(ErrorOrigin::Event, Arc::clone(recording))
+                .module(module),
+        )
+    }
+
+    fn on_shard_3(h: &Harness, event: Event) {
+        h.push_on(ShardId::new(3, 4), InboundKind::Event(Box::new(event)));
+    }
+
+    /// Matrix 8: an `Err` reaches the custom sink with every context
+    /// field; siblings run; `LogSink` stays silent.
+    #[tokio::test]
+    async fn error_reaches_custom_sink() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let recording = Arc::new(Recording::default());
+        let log = Log::default();
+        let h = sink_app(
+            &recording,
+            Module::new("audit")
+                .add(failing())
+                .add(logging("ok", false, &log)),
+        );
+        on_shard_3(&h, message_delete(3, Some(GA)));
+        until("report", || recording.seen().len() == 1).await;
+        until("sibling", || log.count("ok:3") == 1).await;
+        assert_eq!(
+            recording.seen(),
+            [Seen {
+                origin: ErrorOrigin::Event,
+                kind: "error:disk full".to_owned(),
+                app: "default".to_owned(),
+                shard: Some(3),
+                guild_id: Some(GA),
+                module: Some("audit".to_owned()),
+                handler: Some("bot::h".to_owned()),
+                event_type: Some("MESSAGE_DELETE".to_owned()),
+            }]
+        );
+        assert!(capture.lines_with(&["event handler failed"]).is_empty());
+        h.close().await;
+    }
+
+    /// Matrix 13: every panic form reaches the sink; the next event runs.
+    #[tokio::test]
+    async fn panics_reach_custom_sink() {
+        let recording = Arc::new(Recording::default());
+        let log = Log::default();
+        let panicking = {
+            let log = log.clone();
+            EventHandler::__new(
+                "bot::p",
+                false,
+                false,
+                move |_: EventCtx, e: MessageDelete| {
+                    assert!(e.id.get() != 4, "boom");
+                    let log = log.clone();
+                    async move {
+                        let s = String::from("dynamic message");
+                        match e.id.get() {
+                            1 => panic!("boom"),
+                            2 => panic!("{}", s),
+                            3 => std::panic::panic_any(5_u8),
+                            _ => log.push(format!("ok:{}", e.id)),
+                        }
+                        Ok(())
+                    }
+                },
+            )
+        };
+        let h = sink_app(&recording, Module::new("m").add(panicking));
+        for n in 1..=5 {
+            h.push(message_delete(n, Some(GA)));
+        }
+        until("next event", || log.count("ok:5") == 1).await;
+        until("four panics", || recording.seen().len() == 4).await;
+        let mut kinds: Vec<_> = recording.seen().into_iter().map(|s| s.kind).collect();
+        kinds.sort();
+        assert_eq!(
+            kinds,
+            [
+                "panic:<non-string panic>",
+                "panic:boom",
+                "panic:boom",
+                "panic:dynamic message"
+            ]
+        );
+        h.close().await;
+    }
+
+    /// Matrix 14: a guildless event has no `guild_id` anywhere.
+    #[tokio::test]
+    async fn guildless_report_and_log() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let recording = Arc::new(Recording::default());
+        let fails = handler("bot::user", false, |_, _: UserUpdate| async {
+            Err(HandlerError::new(std::io::Error::other("nope")))
+        });
+        let h = sink_app(&recording, Module::new("m").add(fails.clone()));
+        h.push(user_update(5));
+        until("report", || recording.seen().len() == 1).await;
+        assert_eq!(recording.seen()[0].guild_id, None);
+        assert_eq!(
+            recording.seen()[0].event_type.as_deref(),
+            Some("USER_UPDATE")
+        );
+        h.close().await;
+
+        let h = Harness::start(App::builder().module(Module::new("m").add(fails)));
+        h.push(user_update(5));
+        until("log", || {
+            !capture.lines_with(&["event handler failed"]).is_empty()
+        })
+        .await;
+        let line = &capture.lines_with(&["event handler failed"])[0];
+        assert!(!line.contains("guild_id"), "{line}");
+        h.close().await;
+    }
+
+    /// Matrix 15 and 16: duration samples for every run, errors for `Err`
+    /// and panics only.
+    #[tokio::test]
+    async fn handler_metrics() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        let recording = Arc::new(Recording::default());
+        let log = Log::default();
+        let mixed = {
+            let log = log.clone();
+            handler("bot::mixed", false, move |_, e: MessageDelete| {
+                let log = log.clone();
+                async move {
+                    match e.id.get() {
+                        1 => Err(HandlerError::new(std::io::Error::other("x"))),
+                        2 => panic!("boom"),
+                        n => {
+                            log.push(format!("ok:{n}"));
+                            Ok(())
+                        }
+                    }
+                }
+            })
+        };
+        let h = sink_app(&recording, Module::new("m").add(mixed.clone()));
+        h.push(message_delete(3, Some(GA)));
+        // The duration is recorded in the same poll that ran the handler.
+        until("ok run", || log.count("ok:3") == 1).await;
+        h.close().await;
+        let snap = snapshotter.snapshot().into_vec();
+        let samples = |snap: &[(metrics_util::CompositeKey, _, _, DebugValue)]| {
+            snap.iter()
+                .find(|(k, ..)| k.key().name() == "noctis_handler_duration_seconds")
+                .map_or_else(Vec::new, |(.., v)| match v {
+                    DebugValue::Histogram(values) => values.iter().map(|v| v.0).collect(),
+                    other => panic!("{other:?}"),
+                })
+        };
+        assert_eq!(samples(&snap).len(), 1, "Matrix 15");
+        assert!(
+            !snap
+                .iter()
+                .any(|(k, ..)| k.key().name() == "noctis_handler_errors_total"),
+            "Matrix 15: {snap:?}"
+        );
+
+        let h = sink_app(
+            &recording,
+            Module::new("m").add(handler(
+                "bot::mixed",
+                false,
+                |_, e: MessageDelete| async move {
+                    match e.id.get() {
+                        1 => Err(HandlerError::new(std::io::Error::other("x"))),
+                        2 => panic!("boom"),
+                        _ => Ok(()),
+                    }
+                },
+            )),
+        );
+        for n in 1..=3 {
+            h.push(message_delete(n, Some(GA)));
+        }
+        until("two reports", || recording.seen().len() == 2).await;
+        h.close().await;
+        // Every handler has ended once the reports are in and the drain is
+        // closed; give the last Ok run its sample.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let snap = snapshotter.snapshot().into_vec();
+        let durations: Vec<f64> = samples(&snap);
+        assert_eq!(durations.len(), 3, "{snap:?}");
+        assert!(durations.iter().all(|d| *d >= 0.0));
+        let errors = snap
+            .iter()
+            .find(|(k, ..)| {
+                k.kind() == MetricKind::Counter && k.key().name() == "noctis_handler_errors_total"
+            })
+            .unwrap();
+        let labels: Vec<_> = errors
+            .0
+            .key()
+            .labels()
+            .map(|l| (l.key().to_owned(), l.value().to_owned()))
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                ("app".to_owned(), "default".to_owned()),
+                ("kind".to_owned(), "event".to_owned())
+            ]
+        );
+        assert!(matches!(errors.3, DebugValue::Counter(2)), "{:?}", errors.3);
+    }
+
+    /// Panics on every report.
+    struct Panicking(AtomicUsize);
+
+    impl ErrorSink for Panicking {
+        fn report(&self, _: ErrorReport<'_>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            panic!("sink broke");
+        }
+    }
+
+    /// Matrix 17: a panicking sink never stops the drain or the handlers.
+    #[tokio::test]
+    async fn panicking_sink_keeps_workers_running() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let sink = Arc::new(Panicking(AtomicUsize::new(0)));
+        let log = Log::default();
+        let h = Harness::start(
+            App::builder()
+                .error_sink(ErrorOrigin::Event, Arc::clone(&sink))
+                .module(
+                    Module::new("audit")
+                        .add(failing())
+                        .add(logging("ok", false, &log)),
+                ),
+        );
+        h.push(message_delete(1, Some(GA)));
+        until("first", || log.count("ok:1") == 1).await;
+        h.push(message_delete(2, Some(GA)));
+        until("second", || log.count("ok:2") == 1).await;
+        until("two sink panics", || {
+            capture.lines_with(&["error sink panicked"]).len() == 2
+        })
+        .await;
+        assert_eq!(sink.0.load(Ordering::SeqCst), 2);
+        for line in capture.lines_with(&["error sink panicked"]) {
+            for needle in [
+                "noctis::error_sink",
+                "origin=\"event\"",
+                "panic=\"sink broke\"",
+            ] {
+                assert!(line.contains(needle), "{needle} missing from {line}");
+            }
+        }
+        h.close().await;
+    }
+
+    /// A subscriber that also logs span creation.
+    fn span_subscriber(capture: &Capture) -> impl tracing::Subscriber + Send + Sync + 'static {
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .with_span_events(FmtSpan::NEW)
+            .with_writer(capture.clone())
+            .finish()
+    }
+
+    /// Matrix 27: the `noctis.event` span and the failure line inside it.
+    #[tokio::test]
+    async fn event_span_fields() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(span_subscriber(&capture));
+        let h = Harness::start(App::builder().module(Module::new("audit").add(failing())));
+        on_shard_3(&h, message_delete(3, Some(GA)));
+        until("failure", || {
+            !capture.lines_with(&["event handler failed"]).is_empty()
+        })
+        .await;
+        h.close().await;
+        let fields = format!(
+            "noctis.event{{app=\"default\" shard=3 guild_id={GA} module=\"audit\" handler=\"bot::h\" event_type=\"MESSAGE_DELETE\"}}"
+        );
+        let created = capture.lines_with(&[&fields, "new"]);
+        assert_eq!(created.len(), 1, "{}", capture.text());
+        let failure = &capture.lines_with(&["event handler failed"])[0];
+        assert!(failure.contains(&fields), "{failure}");
+    }
+
+    /// Matrix 28: the `noctis.interaction` span, with and without a guild.
+    #[tokio::test]
+    async fn interaction_span_fields() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(span_subscriber(&capture));
+        let h = Harness::start(&mut App::builder());
+        let interaction = |id: u64, guild: Option<u64>| {
+            let mut d = json!({
+                "id": id.to_string(),
+                "application_id": "1",
+                "type": 1,
+                "token": "t",
+                "version": 1,
+                "authorizing_integration_owners": {},
+                "entitlements": [],
+            });
+            if let Some(guild) = guild {
+                d["guild_id"] = json!(guild.to_string());
+            }
+            let raw = RawJson::new(bytes::Bytes::from(d.to_string()));
+            InboundKind::Interaction(Box::new(serde_json::from_value(d).unwrap()), raw)
+        };
+        h.push_on(ShardId::new(2, 4), interaction(1, Some(GA)));
+        h.push_on(ShardId::new(2, 4), interaction(2, None));
+        until("two spans", || {
+            capture.lines_with(&["noctis.interaction", "new"]).len() == 2
+        })
+        .await;
+        h.close().await;
+        let spans = capture.lines_with(&["noctis.interaction", "new"]);
+        assert!(
+            spans[0].contains(&format!(
+                "noctis.interaction{{app=\"default\" shard=2 guild_id={GA}}}"
+            )),
+            "{}",
+            spans[0]
+        );
+        assert!(
+            spans[1].contains("noctis.interaction{app=\"default\" shard=2}"),
+            "{}",
+            spans[1]
+        );
+    }
+
+    /// Matrix 28: `module` and `path` are declared on the span.
+    #[test]
+    fn interaction_span_declares_module_and_path() {
+        #[derive(Default)]
+        struct Fields(Mutex<Vec<Vec<String>>>);
+        impl tracing::Subscriber for Fields {
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                if span.metadata().name() == "noctis.interaction" {
+                    let names = span
+                        .metadata()
+                        .fields()
+                        .iter()
+                        .map(|f| f.name().to_owned())
+                        .collect();
+                    self.0.lock().unwrap().push(names);
+                }
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+            fn event(&self, _: &tracing::Event<'_>) {}
+            fn enter(&self, _: &tracing::span::Id) {}
+            fn exit(&self, _: &tracing::span::Id) {}
+        }
+        let fields = Arc::new(Fields::default());
+        let dispatch = tracing::Dispatch::from(Arc::clone(&fields));
+        tracing::dispatcher::with_default(&dispatch, || {
+            let d = json!({
+                "id": "1",
+                "application_id": "1",
+                "type": 1,
+                "token": "t",
+                "version": 1,
+                "authorizing_integration_owners": {},
+                "entitlements": [],
+            });
+            let raw = RawJson::new(bytes::Bytes::from(d.to_string()));
+            interaction_unhandled(
+                Inbound {
+                    shard: ShardId::ONE,
+                    received_at: Instant::now(),
+                    kind: InboundKind::Interaction(
+                        Box::new(serde_json::from_value(d).unwrap()),
+                        raw,
+                    ),
+                },
+                "default",
+            );
+        });
+        assert_eq!(
+            *fields.0.lock().unwrap(),
+            [["app", "shard", "guild_id", "module", "path"]]
+        );
+    }
+}

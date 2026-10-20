@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use metrics::Gauge;
 use tokio::sync::Notify;
-use twilight_gateway::{EventType, EventTypeFlags};
+use twilight_gateway::{Event, EventType, EventTypeFlags};
 
 use crate::inbound::{Inbound, InboundKind, InboundSink};
 
@@ -47,7 +47,41 @@ pub const DEFAULT_EVENT_CAPACITY: NonZeroUsize = match NonZeroUsize::new(4096) {
 /// ```
 pub const DEFAULT_OVERFLOW_CAPACITY: usize = 16384;
 
+/// Observes non-droppable events dropped because the event overflow is full.
+///
+/// [`LaneConfig::drop_observer`] installs one. The lane calls
+/// [`overflow_dropped`](Self::overflow_dropped) on the pushing shard task,
+/// after it released its lock, and logs nothing itself; without an observer
+/// it logs the drop at `error`. Droppable evictions never reach it. The call
+/// must not block: the shard task reads the socket and heartbeats.
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use noctis_gateway::{DropObserver, LaneConfig};
+/// use twilight_gateway::Event;
+///
+/// struct Count;
+/// impl DropObserver for Count {
+///     fn overflow_dropped(&self, shard: u32, event: &Event) {
+///         println!("shard {shard} dropped {:?}", event.kind());
+///     }
+/// }
+///
+/// let config = LaneConfig {
+///     drop_observer: Some(Arc::new(Count)),
+///     ..LaneConfig::default()
+/// };
+/// assert!(format!("{config:?}").contains("drop_observer: true"));
+/// ```
+pub trait DropObserver: Send + Sync + 'static {
+    /// Called once per event dropped because the overflow was full.
+    fn overflow_dropped(&self, shard: u32, event: &Event);
+}
+
 /// How [`lanes`] bounds the event lane and labels its metrics.
+///
+/// `Debug` shows only whether a [`DropObserver`] is set.
 ///
 /// ```
 /// use noctis_gateway::{DEFAULT_EVENT_CAPACITY, DROPPABLE_EVENTS, LaneConfig};
@@ -57,8 +91,9 @@ pub const DEFAULT_OVERFLOW_CAPACITY: usize = 16384;
 /// assert_eq!(config.event_capacity, DEFAULT_EVENT_CAPACITY);
 /// assert_eq!(config.overflow_capacity, 16384);
 /// assert_eq!(config.droppable, DROPPABLE_EVENTS);
+/// assert!(config.drop_observer.is_none());
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LaneConfig {
     /// The `app` label value of every lane metric (not validated).
     pub app: Arc<str>,
@@ -69,6 +104,9 @@ pub struct LaneConfig {
     pub overflow_capacity: usize,
     /// The event types dropped (oldest first) when the event lane is full.
     pub droppable: EventTypeFlags,
+    /// Receives every event dropped because the overflow is full, instead
+    /// of the lane's own `error` log (default `None`).
+    pub drop_observer: Option<Arc<dyn DropObserver>>,
 }
 
 impl Default for LaneConfig {
@@ -78,7 +116,20 @@ impl Default for LaneConfig {
             event_capacity: DEFAULT_EVENT_CAPACITY,
             overflow_capacity: DEFAULT_OVERFLOW_CAPACITY,
             droppable: DROPPABLE_EVENTS,
+            drop_observer: None,
         }
+    }
+}
+
+impl fmt::Debug for LaneConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LaneConfig")
+            .field("app", &self.app)
+            .field("event_capacity", &self.event_capacity)
+            .field("overflow_capacity", &self.overflow_capacity)
+            .field("droppable", &self.droppable)
+            .field("drop_observer", &self.drop_observer.is_some())
+            .finish()
     }
 }
 
@@ -242,8 +293,9 @@ enum Pushed {
     Evicted(Inbound),
     /// The droppable item was dropped: no droppable event was queued.
     DroppedDroppable(EventType),
-    /// The non-droppable item was dropped: the overflow is full.
-    OverflowFull(EventType),
+    /// The non-droppable item was dropped: the overflow is full. It is
+    /// carried out of the lock for the [`DropObserver`].
+    OverflowFull(EventType, Inbound),
 }
 
 /// The shard-task end of the lanes; implements [`InboundSink`].
@@ -303,7 +355,7 @@ impl LaneSender {
                     queues.overflow.push_back(inbound);
                     Pushed::Queued
                 } else {
-                    Pushed::OverflowFull(kind)
+                    Pushed::OverflowFull(kind, inbound)
                 }
             }
         };
@@ -338,14 +390,20 @@ impl InboundSink for LaneSender {
                 );
                 return;
             }
-            Pushed::OverflowFull(kind) => {
+            Pushed::OverflowFull(kind, dropped) => {
                 shared.count_drop(kind);
-                tracing::error!(
-                    target: "noctis::lanes",
-                    event_type = type_label(kind),
-                    overflow_capacity = shared.config.overflow_capacity,
-                    "event overflow is full; event dropped"
-                );
+                if let (Some(observer), InboundKind::Event(event)) =
+                    (&shared.config.drop_observer, &dropped.kind)
+                {
+                    observer.overflow_dropped(dropped.shard.number(), event);
+                } else {
+                    tracing::error!(
+                        target: "noctis::lanes",
+                        event_type = type_label(kind),
+                        overflow_capacity = shared.config.overflow_capacity,
+                        "event overflow is full; event dropped"
+                    );
+                }
                 return;
             }
         }

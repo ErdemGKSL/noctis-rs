@@ -15,6 +15,7 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::State;
 use crate::events::EventPayload;
+use crate::sink::ErrorSinks;
 use crate::state::StateMap;
 
 /// What every handler returns: `Ok(T)` or a type-erased [`HandlerError`].
@@ -90,9 +91,13 @@ impl fmt::Debug for HandlerError {
     }
 }
 
-/// What every handler invocation shares with its App: the one HTTP client
-/// and the typed state.
+/// What every handler invocation shares with its App: its name, the one
+/// HTTP client, the typed state and the Error Sinks.
 pub(crate) struct AppShared {
+    /// The `app` span field, metric label and report field (`"default"`
+    /// until `AppId`, Story 7.4).
+    pub(crate) app: Arc<str>,
+    pub(crate) sinks: ErrorSinks,
     pub(crate) http: Arc<twilight_http::Client>,
     pub(crate) states: StateMap,
 }

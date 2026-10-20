@@ -467,6 +467,7 @@ async fn gateway_start_parses_into_the_sink() {
         .unwrap();
     let (tx, mut inbound) = mpsc::unbounded_channel();
     let options = GatewayOptions {
+        app: Arc::from("default"),
         token: "fake-token".to_owned(),
         intents: Intents::GUILDS,
         gateway_url: Some(gw.url()),

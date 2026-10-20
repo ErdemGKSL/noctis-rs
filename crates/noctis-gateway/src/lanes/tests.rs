@@ -101,6 +101,7 @@ fn config(event_capacity: usize, overflow_capacity: usize) -> LaneConfig {
         event_capacity: NonZeroUsize::new(event_capacity).unwrap(),
         overflow_capacity,
         droppable: DROPPABLE_EVENTS,
+        drop_observer: None,
     }
 }
 
@@ -729,4 +730,148 @@ async fn recv_interaction_pending() {
         .unwrap();
     assert_eq!(tag(&got), "M1");
     drop(sender);
+}
+
+/// Records every `overflow_dropped` call as `(shard, tag)`.
+#[derive(Default)]
+struct Recorder {
+    calls: Mutex<Vec<(u32, String, Option<u64>)>>,
+}
+
+impl DropObserver for Recorder {
+    fn overflow_dropped(&self, shard: u32, event: &Event) {
+        let tag = tag(&item(InboundKind::Event(Box::new(event.clone()))));
+        let guild = event.guild_id().map(Id::get);
+        self.calls.lock().unwrap().push((shard, tag, guild));
+    }
+}
+
+fn observed_config(
+    event_capacity: usize,
+    overflow_capacity: usize,
+    observer: &Arc<Recorder>,
+) -> LaneConfig {
+    LaneConfig {
+        drop_observer: Some(Arc::clone(observer) as Arc<dyn DropObserver>),
+        ..config(event_capacity, overflow_capacity)
+    }
+}
+
+/// A non-droppable `MESSAGE_DELETE` tagged `n` on shard 2 in guild `guild`.
+fn m_on(n: u64, guild: u64) -> Inbound {
+    Inbound {
+        shard: ShardId::new(2, 4),
+        received_at: Instant::now(),
+        kind: InboundKind::Event(Box::new(Event::MessageDelete(MessageDelete {
+            channel_id: Id::new(1),
+            guild_id: Some(Id::new(guild)),
+            id: Id::new(n),
+        }))),
+    }
+}
+
+/// Story 5.7 Matrix 20: a full overflow hands the drop to the observer
+/// instead of the lane's own `error` log.
+#[test]
+fn observer_receives_overflow_drop() {
+    let observer = Arc::new(Recorder::default());
+    let ((), logs) = observed(|metrics| {
+        let (sender, receiver) = lanes(observed_config(1, 0, &observer));
+        push_all(&sender, [m_on(1, 77), m_on(2, 77)]);
+        assert_eq!(event_tags(&receiver), ["M1"]);
+        assert_eq!(
+            dropped(&snapshot(metrics), "test", "MESSAGE_DELETE"),
+            Some(1)
+        );
+    });
+    assert_eq!(
+        *observer.calls.lock().unwrap(),
+        [(2, "M2".to_owned(), Some(77))]
+    );
+    assert!(logs.errors().is_empty(), "{}", logs.text());
+}
+
+/// Story 5.7 Matrix 21: without an observer the 5.5 `error` line stays.
+#[test]
+fn no_observer_logs_overflow_drop() {
+    let ((), logs) = observed(|_| {
+        let (sender, _receiver) = lanes(config(1, 0));
+        push_all(&sender, [m_on(1, 77), m_on(2, 77)]);
+    });
+    let errors = logs.errors();
+    assert_eq!(errors.len(), 1, "{}", logs.text());
+    assert!(errors[0].contains("noctis::lanes"), "{}", errors[0]);
+    assert!(errors[0].contains("event overflow is full; event dropped"));
+}
+
+/// Story 5.7 Matrix 22: an overflow cap above zero calls the observer once
+/// per event beyond it.
+#[test]
+fn observer_called_per_drop_beyond_cap() {
+    let observer = Arc::new(Recorder::default());
+    observed(|metrics| {
+        let (sender, receiver) = lanes(observed_config(1, 2, &observer));
+        push_all(&sender, [m(10), m(1), m(2), m(3), m(4)]);
+        assert_eq!(event_tags(&receiver), ["M10"]);
+        assert_eq!(overflow_tags(&receiver), ["M1", "M2"]);
+        assert_eq!(
+            dropped(&snapshot(metrics), "test", "MESSAGE_DELETE"),
+            Some(2)
+        );
+    });
+    let calls = observer.calls.lock().unwrap();
+    let tags: Vec<_> = calls.iter().map(|(_, tag, _)| tag.as_str()).collect();
+    assert_eq!(tags, ["M3", "M4"]);
+}
+
+/// Story 5.7 Matrix 23: droppable evictions never reach the observer.
+#[test]
+fn observer_skips_evictions() {
+    let observer = Arc::new(Recorder::default());
+    observed(|metrics| {
+        let (sender, receiver) = lanes(observed_config(1, 0, &observer));
+        push_all(&sender, [t(1), t(2)]);
+        assert_eq!(event_tags(&receiver), ["T2"]);
+        assert_eq!(dropped(&snapshot(metrics), "test", "TYPING_START"), Some(1));
+    });
+    assert!(observer.calls.lock().unwrap().is_empty());
+}
+
+/// Clones and drops a `LaneSender` it holds from inside the callback.
+#[derive(Default)]
+struct Reentrant {
+    sender: std::sync::OnceLock<LaneSender>,
+    calls: AtomicUsize,
+}
+
+impl DropObserver for Reentrant {
+    fn overflow_dropped(&self, _shard: u32, _event: &Event) {
+        if let Some(sender) = self.sender.get() {
+            drop(sender.clone());
+        }
+        self.calls.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Story 5.7 Matrix 26: the observer runs after the lock is released, so
+/// locking the lanes from inside it does not deadlock.
+#[test]
+fn observer_runs_outside_the_lock() {
+    let observer = Arc::new(Reentrant::default());
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let thread_observer = Arc::clone(&observer);
+    std::thread::spawn(move || {
+        let (sender, receiver) = lanes(LaneConfig {
+            drop_observer: Some(Arc::clone(&thread_observer) as Arc<dyn DropObserver>),
+            ..config(1, 0)
+        });
+        assert!(thread_observer.sender.set(sender.clone()).is_ok());
+        push_all(&sender, [m(1), m(2), m(3)]);
+        drop(receiver);
+        let _ = done_tx.send(());
+    });
+    done_rx
+        .recv_timeout(Duration::from_secs(15))
+        .expect("the observer deadlocked");
+    assert_eq!(observer.calls.load(Ordering::SeqCst), 2);
 }

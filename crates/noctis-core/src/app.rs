@@ -24,16 +24,19 @@ use twilight_model::gateway::Intents;
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
 use crate::module::Module;
+use crate::observe::{describe_metrics, set_shard_status};
 use crate::plugin::PluginEntry;
 use crate::ports::{PortOverrides, PortSlot, Ports};
 use crate::proxy::normalize_http_proxy;
 use crate::registry::Registry;
 use crate::sharding::{GatewayInfo, plan};
+use crate::sink::{ErrorSinks, EventDropObserver};
 use crate::startup::{check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
 use crate::worker::{AbortOnDrop, Workers, drain};
 use crate::{
-    BuildError, BuildViolation, EnvError, Error, Plugin, Runtime, StartError, State, Token,
+    BuildError, BuildViolation, EnvError, Error, ErrorOrigin, ErrorSink, Plugin, Runtime,
+    StartError, State, Token,
 };
 
 /// The environment variable [`App::from_env`] reads the token from.
@@ -254,6 +257,12 @@ impl App {
         &self.registry
     }
 
+    /// The Error Sinks.
+    #[cfg(test)]
+    pub(crate) fn sinks(&self) -> &ErrorSinks {
+        &self.shared.sinks
+    }
+
     /// The handler concurrency.
     #[cfg(test)]
     pub(crate) fn handler_concurrency(&self) -> usize {
@@ -263,10 +272,14 @@ impl App {
     /// The lane configuration `run` passes to the lanes.
     pub(crate) fn lane_config(&self) -> LaneConfig {
         LaneConfig {
+            app: Arc::clone(&self.shared.app),
             event_capacity: self.event_capacity,
             overflow_capacity: self.overflow_capacity,
             droppable: self.registry.droppable(),
-            ..LaneConfig::default()
+            drop_observer: Some(Arc::new(EventDropObserver {
+                app: Arc::clone(&self.shared.app),
+                sinks: self.shared.sinks.clone(),
+            })),
         }
     }
 
@@ -340,6 +353,7 @@ impl App {
                 Arc::clone(&self.ports().identify_queue)
             };
         let options = GatewayOptions {
+            app: Arc::clone(&self.shared.app),
             token: token.expose().to_owned(),
             intents: self.intents,
             gateway_url: self.gateway_url.clone(),
@@ -348,16 +362,21 @@ impl App {
             total: plan.total,
             max_concurrency: plan.max_concurrency,
         };
-        // `app` stays "default" until `AppId` exists (Story 7.4).
+        describe_metrics();
         let (sender, receiver) = noctis_gateway::lanes(self.lane_config());
         let _drain = AbortOnDrop(tokio::spawn(drain(receiver, self.workers())));
         let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).map_err(|error| {
             tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
             StartError::GatewayStopped
         })?;
-        await_startup(&mut events, total).await?;
+        let status = ShardStatus {
+            app: Arc::clone(&self.shared.app),
+            total,
+        };
+        status.init();
+        await_startup(&mut events, &status).await?;
         tracing::info!(target: "noctis::app", "all {total} shards ready");
-        supervise(&mut events).await;
+        supervise(&mut events, &status).await;
         drop(gateway);
         Ok(())
     }
@@ -400,17 +419,46 @@ fn start_error(shard: u32, close_code: Option<u16>) -> StartError {
     }
 }
 
+/// Keeps `noctis_shard_status{app, shard}` for shards `0..total`.
+pub(crate) struct ShardStatus {
+    pub(crate) app: Arc<str>,
+    pub(crate) total: u32,
+}
+
+impl ShardStatus {
+    /// Sets every shard's gauge to 0 (down).
+    pub(crate) fn init(&self) {
+        for shard in 0..self.total {
+            set_shard_status(&self.app, shard, self.total, false);
+        }
+    }
+
+    /// Updates the gauge of the event's shard: 1 on `Ready`/`Resumed`, 0
+    /// on `Disconnected`/`Ended`.
+    pub(crate) fn update(&self, event: &ShardEvent) {
+        let (shard, up) = match *event {
+            ShardEvent::Ready { shard } | ShardEvent::Resumed { shard } => (shard, true),
+            ShardEvent::Disconnected { shard, .. } | ShardEvent::Ended { shard, .. } => {
+                (shard, false)
+            }
+            _ => return,
+        };
+        set_shard_status(&self.app, shard, self.total, up);
+    }
+}
+
 /// Waits until every shard in `0..total` has sent `Ready` at least once.
 async fn await_startup(
     events: &mut mpsc::UnboundedReceiver<ShardEvent>,
-    total: u32,
+    status: &ShardStatus,
 ) -> Result<(), StartError> {
-    let mut ready = vec![false; usize::try_from(total).unwrap_or(usize::MAX)];
+    let mut ready = vec![false; usize::try_from(status.total).unwrap_or(usize::MAX)];
     let mut missing = ready.len();
     while missing > 0 {
         let Some(event) = events.recv().await else {
             return Err(StartError::GatewayStopped);
         };
+        status.update(&event);
         match event {
             ShardEvent::Ready { shard } => {
                 tracing::debug!(target: "noctis::app", shard, "shard ready");
@@ -450,8 +498,9 @@ async fn await_startup(
 }
 
 /// Logs shard events after startup until every shard task has ended.
-async fn supervise(events: &mut mpsc::UnboundedReceiver<ShardEvent>) {
+async fn supervise(events: &mut mpsc::UnboundedReceiver<ShardEvent>, status: &ShardStatus) {
     while let Some(event) = events.recv().await {
+        status.update(&event);
         match event {
             ShardEvent::Ended { shard, close_code } => {
                 tracing::error!(target: "noctis::app", shard, ?close_code, "shard ended");
@@ -487,6 +536,7 @@ impl fmt::Debug for App {
             .field("event_capacity", &self.event_capacity)
             .field("overflow_capacity", &self.overflow_capacity)
             .field("handler_concurrency", &self.handler_concurrency)
+            .field("error_sinks", &self.shared.sinks)
             .finish_non_exhaustive()
     }
 }
@@ -534,6 +584,8 @@ pub struct AppBuilder {
     event_lane: (usize, usize),
     /// The raw handler concurrency; `build` checks it.
     handler_concurrency: usize,
+    /// The custom Error Sinks, by origin.
+    error_sinks: ErrorSinks,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -576,6 +628,7 @@ impl AppBuilder {
             modules: Vec::new(),
             event_lane: (DEFAULT_EVENT_CAPACITY.get(), DEFAULT_OVERFLOW_CAPACITY),
             handler_concurrency: DEFAULT_HANDLER_CONCURRENCY,
+            error_sinks: ErrorSinks::default(),
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -762,6 +815,32 @@ impl AppBuilder {
     /// ```
     pub fn handler_concurrency(&mut self, limit: usize) -> &mut Self {
         self.handler_concurrency = limit;
+        self
+    }
+
+    /// Routes the failures of `origin` (handler errors and panics, and for
+    /// [`ErrorOrigin::Event`] also events dropped by a full overflow) to
+    /// `sink` instead of [`LogSink`](crate::LogSink). The last call per
+    /// origin wins; plugins may call it in `install`. Pass an `Arc` clone
+    /// to share one sink between origins.
+    ///
+    /// ```
+    /// use noctis_core::{App, ErrorOrigin, ErrorReport, ErrorSink, ReportKind};
+    ///
+    /// struct Alert;
+    /// impl ErrorSink for Alert {
+    ///     fn report(&self, report: ErrorReport<'_>) {
+    ///         if let ReportKind::Panic(message) = report.kind {
+    ///             tracing::error!(origin = %report.origin, message, "page on-call");
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let mut builder = App::builder();
+    /// builder.error_sink(ErrorOrigin::Event, Alert);
+    /// ```
+    pub fn error_sink(&mut self, origin: ErrorOrigin, sink: impl ErrorSink) -> &mut Self {
+        self.error_sinks.set(origin, Arc::new(sink));
         self
     }
 
@@ -996,6 +1075,9 @@ impl AppBuilder {
             runtime: config.runtime,
             token: config.token,
             shared: Arc::new(AppShared {
+                // "default" until `AppId` exists (Story 7.4).
+                app: Arc::from("default"),
+                sinks: config.error_sinks,
                 http: Arc::new(http.build()),
                 states: config.states,
             }),
@@ -1049,6 +1131,7 @@ impl fmt::Debug for AppBuilder {
             .field("modules", &self.modules.len())
             .field("event_lane", &self.event_lane)
             .field("handler_concurrency", &self.handler_concurrency)
+            .field("error_sinks", &self.error_sinks)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

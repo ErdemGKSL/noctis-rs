@@ -80,6 +80,7 @@ async fn shard_warnings_omit_the_payload() {
         .build()
         .unwrap();
     let options = GatewayOptions {
+        app: Arc::from("default"),
         token: "fake-token".to_owned(),
         intents: Intents::GUILDS,
         gateway_url: Some(gw.url()),

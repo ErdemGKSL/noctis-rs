@@ -922,12 +922,12 @@ async fn startup_waits_for_every_ready_and_maps_closed_channel() {
     ] {
         tx.send(event).unwrap();
     }
-    assert_eq!(await_startup(&mut rx, 2).await, Ok(()));
+    assert_eq!(await_startup(&mut rx, &status(2)).await, Ok(()));
 
     tx.send(ShardEvent::Ready { shard: 0 }).unwrap();
     drop(tx);
     assert_eq!(
-        await_startup(&mut rx, 2).await,
+        await_startup(&mut rx, &status(2)).await,
         Err(StartError::GatewayStopped)
     );
 
@@ -938,7 +938,7 @@ async fn startup_waits_for_every_ready_and_maps_closed_channel() {
     })
     .unwrap();
     assert_eq!(
-        await_startup(&mut rx, 2).await,
+        await_startup(&mut rx, &status(2)).await,
         Err(StartError::DisallowedIntents { shard: 1 })
     );
 }
@@ -989,4 +989,12 @@ fn start_error_messages_name_cause_and_fix() {
                 "enable the privileged intents in the Developer Portal or stop requesting them"
             )
     );
+}
+
+/// A `ShardStatus` of App `"default"` over `total` shards.
+fn status(total: u32) -> ShardStatus {
+    ShardStatus {
+        app: Arc::from("default"),
+        total,
+    }
 }

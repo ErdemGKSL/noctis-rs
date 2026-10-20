@@ -31,6 +31,14 @@
 //! runs under `catch_unwind`, so a panic is logged and the shard keeps
 //! running. The payload types are in [`events`].
 //!
+//! # Observability and Error Sinks
+//!
+//! Handler errors, handler panics and events dropped by a full overflow go
+//! to the [`ErrorSink`] of their [`ErrorOrigin`]
+//! ([`AppBuilder::error_sink`]); unset origins use [`LogSink`], which logs
+//! at `error`. Spans (`noctis.shard`, `noctis.event`,
+//! `noctis.interaction`) and metrics follow the contract in [`observe`].
+//!
 //! ```no_run
 //! use noctis_core::{App, AppBuilder, Error, State};
 //!
@@ -56,12 +64,14 @@ pub mod events;
 mod gateway_url;
 mod handler;
 mod module;
+pub mod observe;
 mod plugin;
 mod ports;
 mod proxy;
 mod registry;
 mod runtime;
 mod sharding;
+mod sink;
 mod startup;
 mod state;
 #[cfg(test)]
@@ -78,5 +88,6 @@ pub use module::{Descriptor, Module};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use runtime::{Resource, ResourceConflict, Runtime};
+pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};
 pub use state::State;
 pub use token::{Token, TokenError};

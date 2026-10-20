@@ -5,12 +5,15 @@
 use std::any::Any;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
+use std::time::Instant;
 
 use futures_util::FutureExt;
 use futures_util::future::join_all;
 use noctis_gateway::{Inbound, InboundKind, LaneReceiver};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::JoinHandle;
+use tracing::Instrument;
+use tracing::field::Empty;
 use twilight_model::gateway::event::Event;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
@@ -18,6 +21,7 @@ use twilight_model::id::marker::GuildMarker;
 use crate::events::EventCtx;
 use crate::handler::AppShared;
 use crate::registry::{Entry, Handlers, Registry};
+use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 
 /// How many ordered sub-queues exist (a power of two: `subqueue` takes the
 /// top 6 bits of a multiplicative hash).
@@ -131,7 +135,7 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
                 let permit = loop {
                     tokio::select! {
                         biased;
-                        Some(interaction) = receiver.recv_interaction() => interaction_unhandled(interaction),
+                        Some(interaction) = receiver.recv_interaction() => interaction_unhandled(interaction, &workers.app.app),
                         permit = Arc::clone(&workers.semaphore).acquire_owned() => break permit,
                     }
                 };
@@ -139,19 +143,37 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
                 let Ok(permit) = permit else { return };
                 workers.dispatch(shard, *event, permit);
             }
-            _ => interaction_unhandled(inbound),
+            _ => interaction_unhandled(inbound, &workers.app.app),
         }
     }
 }
 
-/// No interaction handler exists before Epic 6: traced and dropped.
-fn interaction_unhandled(inbound: Inbound) {
-    tracing::trace!(
-        target: "noctis::app",
-        shard = inbound.shard.number(),
-        kind = ?inbound.kind,
-        "no handler registered"
+/// Handles one interaction in span `noctis.interaction` (Epic 6 records
+/// its `module` and `path`). No interaction handler exists before Epic 6:
+/// traced and dropped.
+fn interaction_unhandled(inbound: Inbound, app: &str) {
+    let shard = inbound.shard.number();
+    let guild_id = match &inbound.kind {
+        InboundKind::Interaction(interaction, _) => interaction.guild_id.map(Id::get),
+        InboundKind::Event(event) => event.guild_id().map(Id::get),
+        _ => None,
+    };
+    let span = tracing::info_span!(
+        "noctis.interaction",
+        app,
+        shard,
+        guild_id,
+        module = Empty,
+        path = Empty,
     );
+    span.in_scope(|| {
+        tracing::trace!(
+            target: "noctis::app",
+            shard,
+            kind = ?inbound.kind,
+            "no handler registered"
+        );
+    });
     drop(inbound);
 }
 
@@ -219,7 +241,8 @@ fn take_event(event: &mut Option<Event>, last: bool) -> Option<Event> {
     if last { event.take() } else { event.clone() }
 }
 
-/// Runs one handler, catching its panic; logs an error or a panic.
+/// Runs one handler in span `noctis.event`, catching its panic; records
+/// its duration and reports an error or a panic to the `Event` sink.
 async fn run_handler(
     entry: &Entry,
     shard: u32,
@@ -230,31 +253,58 @@ async fn run_handler(
     let handler = &entry.handler;
     let ctx = EventCtx::new(shard, guild_id, entry.module, Arc::clone(app));
     let event_type = handler.kind().name().unwrap_or("UNKNOWN");
-    let started = std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event)));
+    let span = tracing::info_span!(
+        "noctis.event",
+        app = &*app.app,
+        shard,
+        guild_id = guild_id.map(Id::get),
+        module = entry.module,
+        handler = handler.name(),
+        event_type,
+    );
+    let started_at = Instant::now();
+    let started =
+        span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event))));
     let outcome = match started {
-        Ok(Some(fut)) => AssertUnwindSafe(fut).catch_unwind().await,
+        Ok(Some(fut)) => {
+            AssertUnwindSafe(fut)
+                .catch_unwind()
+                .instrument(span.clone())
+                .await
+        }
         Ok(None) => return,
         Err(panic) => Err(panic),
     };
-    match outcome {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => tracing::error!(
-            target: "noctis::event",
-            module = entry.module,
-            handler = handler.name(),
-            event_type,
-            error = %error,
-            "event handler failed"
-        ),
-        Err(panic) => tracing::error!(
-            target: "noctis::event",
-            module = entry.module,
-            handler = handler.name(),
-            event_type,
-            panic = panic_message(&*panic),
-            "event handler panicked"
-        ),
-    }
+    let kind = ErrorOrigin::Event.as_str();
+    metrics::histogram!(
+        "noctis_handler_duration_seconds",
+        "app" => Arc::clone(&app.app),
+        "kind" => kind
+    )
+    .record(started_at.elapsed().as_secs_f64());
+    let report_kind = match &outcome {
+        Ok(Ok(())) => return,
+        Ok(Err(error)) => ReportKind::Error(error),
+        Err(panic) => ReportKind::Panic(panic_message(&**panic)),
+    };
+    metrics::counter!(
+        "noctis_handler_errors_total",
+        "app" => Arc::clone(&app.app),
+        "kind" => kind
+    )
+    .increment(1);
+    span.in_scope(|| {
+        app.sinks.report(ErrorReport {
+            origin: ErrorOrigin::Event,
+            kind: report_kind,
+            app: &app.app,
+            shard: Some(shard),
+            guild_id,
+            module: Some(entry.module),
+            handler: Some(handler.name()),
+            event_type: Some(event_type),
+        });
+    });
 }
 
 /// A panic payload's message: `&str` or `String`, else a placeholder.

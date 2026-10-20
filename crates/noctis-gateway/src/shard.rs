@@ -113,11 +113,12 @@ pub(crate) fn classify(
 /// Runs one shard until its stream ends, in span `noctis.shard`.
 pub(crate) async fn run(
     shard: Shard<PortQueue>,
+    app: Arc<str>,
     wanted: EventTypeFlags,
     sink: Arc<dyn InboundSink>,
     events: UnboundedSender<ShardEvent>,
 ) {
-    let span = tracing::info_span!("noctis.shard", shard = shard.id().number());
+    let span = tracing::info_span!("noctis.shard", app = &*app, shard = shard.id().number());
     drive(shard, wanted, sink, events).instrument(span).await;
 }
 

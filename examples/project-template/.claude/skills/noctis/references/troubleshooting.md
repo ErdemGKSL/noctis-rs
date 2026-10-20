@@ -115,6 +115,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `TokenExpired` | > 15 min since the interaction | public Views fall back to bot-token edits automatically; ephemeral can't — re-open |
 | `FollowupCap` | user-installed app outside a guild, > 5 follow-ups | combine into one View |
 | events missing under load | droppable events dropped by back-pressure | metrics `noctis_events_dropped_total`; make handlers tolerate gaps |
+| `ERROR noctis::event: event overflow is full; event dropped` | a non-droppable event arrived while the event lane and its overflow were full | raise `.event_lane(capacity, overflow)` or `.handler_concurrency(n)`, speed up slow handlers; route drops with `.error_sink(ErrorOrigin::Event, ..)` |
+| `ERROR noctis::error_sink: error sink panicked` | your `ErrorSink::report` panicked (caught; workers keep running) | fix the sink; never `unwrap` inside it |
 | commands don't appear | not published | `cargo run --release -- --publish-guild <id>`; global publish can take time |
 | shard closes with 4014 | privileged intent not enabled in the portal | enable it, or drop the handler that needs it |
 | `run()` returns `StartError::DisallowedIntents { shard }` | close 4014 during startup: a privileged intent is not enabled in the portal | enable it, or stop requesting it |

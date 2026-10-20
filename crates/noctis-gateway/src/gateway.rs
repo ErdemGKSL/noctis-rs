@@ -24,6 +24,7 @@ use crate::{ShardConfigError, shard, shard_config};
 /// use twilight_gateway::Intents;
 ///
 /// let options = GatewayOptions {
+///     app: Arc::from("default"),
 ///     token: "SECRET".to_owned(),
 ///     intents: Intents::GUILDS,
 ///     gateway_url: None,
@@ -36,6 +37,8 @@ use crate::{ShardConfigError, shard, shard_config};
 /// ```
 #[derive(Clone)]
 pub struct GatewayOptions {
+    /// The `app` field of every `noctis.shard` span.
+    pub app: Arc<str>,
     /// The bot token (a `Bot ` prefix is optional).
     pub token: String,
     /// The intents every shard identifies with.
@@ -55,6 +58,7 @@ pub struct GatewayOptions {
 impl fmt::Debug for GatewayOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GatewayOptions")
+            .field("app", &self.app)
             .field("token", &"<redacted>")
             .field("intents", &self.intents)
             .field("gateway_url", &self.gateway_url)
@@ -82,6 +86,7 @@ impl fmt::Debug for GatewayOptions {
 ///
 /// # #[tokio::main] async fn main() -> Result<(), noctis_gateway::ShardConfigError> {
 /// let options = GatewayOptions {
+///     app: Arc::from("default"),
 ///     token: "token".to_owned(),
 ///     intents: Intents::GUILDS,
 ///     gateway_url: None,
@@ -122,6 +127,7 @@ impl Gateway {
     /// # impl InboundSink for Discard { fn push(&self, _: Inbound) {} }
     /// # #[tokio::main] async fn main() -> Result<(), noctis_gateway::ShardConfigError> {
     /// # let options = GatewayOptions {
+    /// #     app: Arc::from("default"),
     /// #     token: "token".to_owned(),
     /// #     intents: twilight_gateway::Intents::GUILDS,
     /// #     gateway_url: None,
@@ -156,6 +162,7 @@ impl Gateway {
             let shard = Shard::with_config(id, config.clone());
             tasks.spawn(shard::run(
                 shard,
+                Arc::clone(&options.app),
                 options.event_types,
                 Arc::clone(&sink),
                 tx.clone(),
@@ -173,6 +180,7 @@ impl Gateway {
     /// # impl InboundSink for Discard { fn push(&self, _: Inbound) {} }
     /// # #[tokio::main] async fn main() -> Result<(), noctis_gateway::ShardConfigError> {
     /// # let options = GatewayOptions {
+    /// #     app: Arc::from("default"),
     /// #     token: "token".to_owned(),
     /// #     intents: twilight_gateway::Intents::GUILDS,
     /// #     gateway_url: None,

@@ -83,6 +83,7 @@ Implemented:
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
 | `.report(BuildViolation)` | — | record a violation (plugins); `build()` returns it with the others |
 | `.renderer(Arc<dyn Renderer>)` | none | usually set by the image plugin |
+| `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
 | `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
 | `.build()` | — | `Result<App, BuildError>` |
@@ -92,7 +93,6 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
-| `.error_sink(Origin, impl ErrorSink)` [planned, Story 5.7] | log at `error` | see `modules-middleware-ratelimits.md` |
 | `.shutdown_grace(Duration)` [planned, Story 5.8] | 10 s | drain time on shutdown |
 | `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
@@ -456,19 +456,50 @@ runtime.run([main, white]).await?;                            // [planned]
 
 ## 11. Observability
 
-Spans: `noctis.shard`, `noctis.interaction`, `noctis.event`, `noctis.render`,
-`noctis.publish` (fields `app`, `shard`, `guild_id`, `module`, route/command). Metrics
-(via the `metrics` facade, prefix `noctis_`, label `app`): lane depth, dropped events,
-ack latency, auto-defer count, handler duration/errors, render duration/queue/rejections,
-Ref lookups (hit/miss/stale/forged), shard status, HTTP status classes. Install your own
-`metrics` recorder to export them.
+noctis installs no tracing subscriber and no `metrics` recorder: install your own (e.g.
+`tracing-subscriber`, `metrics-exporter-prometheus`) to collect them. Never put ids or
+free text in your own metric labels either.
 
-Live now:
+Spans (live):
 
-- `noctis_lane_depth{app, lane}` (gauge; `lane` = `interaction` | `event`).
-- `noctis_event_overflow_depth{app}` (gauge).
-- `noctis_events_dropped_total{app, event_type}` (counter; `event_type` is the Discord
-  name, such as `TYPING_START`).
+- `noctis.shard{app, shard}` around each shard task.
+- `noctis.event{app, shard, guild_id, module, handler, event_type}` around each event
+  handler run (the `LogSink` failure line is inside it). `guild_id` is empty for
+  guildless events.
+- `noctis.interaction{app, shard, guild_id, module, path}` around each interaction;
+  `module` and `path` are declared but empty until command and Route handlers land
+  (Epic 6) [planned].
+- `noctis.render` [planned, Epic 10], `noctis.publish` [planned, Story 6.9].
+
+Metrics (live; every name starts with `noctis_`, every metric has an `app` label, and no
+label carries a user, guild, channel or message id or free text):
+
+| Metric | Type | Labels | Meaning |
+| --- | --- | --- | --- |
+| `noctis_lane_depth` | gauge | `app`, `lane` (`interaction` \| `event`) | items queued in each lane |
+| `noctis_event_overflow_depth` | gauge | `app` | non-droppable events waiting behind a full event lane |
+| `noctis_events_dropped_total` | counter | `app`, `event_type` | events dropped by back-pressure (`event_type` is the Discord name, e.g. `TYPING_START`; gateway-only kinds are `UNKNOWN`) |
+| `noctis_handler_duration_seconds` | histogram | `app`, `kind` | handler run time in seconds, for `Ok`, errors and panics |
+| `noctis_handler_errors_total` | counter | `app`, `kind` | handler runs that returned `Err` or panicked |
+| `noctis_shard_status` | gauge | `app`, `shard` | `1` after READY/RESUMED, `0` at start and after a disconnect or end; alert on `== 0` |
+
+`kind` is the handler kind (`ErrorOrigin::as_str()`): only `event` is emitted today;
+`command`, `component`, `autocomplete` and `render` join with their handlers. Planned:
+`noctis_http_requests_total` [planned, Story 5.9], ack latency and auto-defer counts
+[planned, Story 6.6], Ref lookups [planned, Story 7.5], render metrics [planned, Epic 10].
+
+The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `name`,
+`metric_type: MetricType` (`Counter` | `Gauge` | `Histogram`), `labels` and
+`description`) lists every emitted metric, so you can build dashboards from it.
+`noctis::observe::describe_metrics()` registers descriptions and units (`Seconds` for
+`_seconds`, `Count` for `_total`) with your recorder; `App::run` calls it, so call it
+yourself only if you install the recorder later.
+
+```rust
+for m in noctis::observe::METRICS {
+    println!("{} {:?} {:?}", m.name, m.metric_type, m.labels);
+}
+```
 
 `app` is `"default"` until `.app_id(..)` [planned, Story 7.4] sets it.
 

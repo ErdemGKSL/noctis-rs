@@ -21,7 +21,8 @@
 //! lane, bounded by [`LaneConfig::event_capacity`]: when it is full, a
 //! droppable event ([`DROPPABLE_EVENTS`] by default) evicts the oldest
 //! queued droppable event, and any other event waits in a capped overflow,
-//! beyond which it is dropped with an `error` log. Every drop is counted in
+//! beyond which it is dropped with an `error` log, or handed to the
+//! [`DropObserver`] set in [`LaneConfig::drop_observer`]. Every drop is counted in
 //! `noctis_events_dropped_total{app, event_type}`, and the depths are the
 //! gauges `noctis_lane_depth{app, lane}` and `noctis_event_overflow_depth{app}`.
 //! The single [`LaneReceiver`] always takes interactions first.
@@ -66,8 +67,8 @@ mod shard_config;
 pub use gateway::{Gateway, GatewayOptions};
 pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 pub use lanes::{
-    DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, DROPPABLE_EVENTS, LaneConfig, LaneDepths,
-    LaneReceiver, LaneSender, lanes,
+    DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, DROPPABLE_EVENTS, DropObserver, LaneConfig,
+    LaneDepths, LaneReceiver, LaneSender, lanes,
 };
 pub use shard_config::{ShardConfigError, shard_config};
 /// Which gateway event types shard tasks parse (twilight's flags,

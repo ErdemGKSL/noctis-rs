@@ -919,6 +919,8 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "futures-util",
+ "metrics",
+ "metrics-util",
  "noctis-gateway",
  "noctis-ports",
  "rustls",

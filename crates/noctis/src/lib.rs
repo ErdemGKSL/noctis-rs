@@ -132,7 +132,8 @@
 //! others concurrently. At most
 //! [`handler_concurrency`](AppBuilder::handler_concurrency) events run at
 //! once (default 256); interactions never wait for that bound. A handler
-//! error or panic is logged at `error` and the shard keeps running.
+//! error or panic goes to the `Event` [`ErrorSink`] (by default logged at
+//! `error`) and the shard keeps running.
 //!
 //! ```no_run
 //! use noctis::events::{EventCtx, MemberAdd, MessageCreate};
@@ -174,6 +175,45 @@
 //! }
 //! ```
 //!
+//! # Observability and Error Sinks
+//!
+//! Every handler error, handler panic and event dropped by a full event
+//! overflow becomes an [`ErrorReport`] for the [`ErrorSink`] of its
+//! [`ErrorOrigin`] (`Command`, `Component` (components and modals),
+//! `Autocomplete`, `Event`, `Render`). Unset origins use [`LogSink`], which
+//! logs at `error` with target `noctis::<origin>`. A sink is synchronous
+//! and runs on the worker or shard task: spawn or forward to a channel for
+//! I/O. Pass an `Arc` clone to share one sink between origins.
+//!
+//! noctis installs no tracing subscriber and no metrics recorder. Its spans
+//! are `noctis.shard`, `noctis.event` and `noctis.interaction`, and its
+//! metrics are listed in [`observe::METRICS`]: every name starts with
+//! `noctis_`, every metric has an `app` label, and no label carries an id
+//! or free text.
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use noctis::prelude::*;
+//! use noctis::{ErrorReport, ReportKind};
+//!
+//! struct Alert;
+//!
+//! impl ErrorSink for Alert {
+//!     fn report(&self, report: ErrorReport<'_>) {
+//!         if let ReportKind::Panic(message) = report.kind {
+//!             eprintln!("page on-call: {} handler panicked: {message}", report.origin);
+//!         }
+//!     }
+//! }
+//!
+//! let alert = Arc::new(Alert);
+//! let mut builder = App::builder();
+//! builder
+//!     .error_sink(ErrorOrigin::Event, Arc::clone(&alert))
+//!     .error_sink(ErrorOrigin::Render, alert);
+//! ```
+//!
 //! # Cargo features
 //!
 //! All features are additive, and the default features build without the image
@@ -190,10 +230,31 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error, GatewayUrlError,
-    HandlerError, HandlerResult, HttpProxyError, Module, Plugin, Resource, ResourceConflict,
-    Runtime, StartError, State, Token, TokenError,
+    App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error, ErrorOrigin,
+    ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpProxyError, LogSink,
+    Module, Plugin, ReportKind, Resource, ResourceConflict, Runtime, StartError, State, Token,
+    TokenError,
 };
+
+pub mod observe {
+    //! The observability contract: the metric catalog ([`METRICS`]) and
+    //! [`describe_metrics`].
+    //!
+    //! Metrics go through the `metrics` facade; install a recorder (e.g.
+    //! `metrics-exporter-prometheus`) to collect them. Spans:
+    //! `noctis.shard{app, shard}`,
+    //! `noctis.event{app, shard, guild_id, module, handler, event_type}` and
+    //! `noctis.interaction{app, shard, guild_id, module, path}`.
+    //!
+    //! ```
+    //! for metric in noctis::observe::METRICS {
+    //!     assert!(metric.name.starts_with("noctis_"));
+    //!     assert_eq!(metric.labels[0], "app");
+    //! }
+    //! ```
+
+    pub use noctis_core::observe::{METRICS, MetricInfo, MetricType, describe_metrics};
+}
 
 /// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
 /// into `fn name() -> EventHandler`, which [`Module::add`] takes. See
@@ -579,10 +640,13 @@ pub mod prelude {
     //! - [`event`](macro@event), [`Module`], [`EventCtx`], [`HandlerError`]
     //!   and [`HandlerResult`]: typed gateway Event Handlers grouped in
     //!   Modules.
+    //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
-    pub use noctis_core::{App, AppBuilder, HandlerError, HandlerResult, Module, State};
+    pub use noctis_core::{
+        App, AppBuilder, ErrorOrigin, ErrorSink, HandlerError, HandlerResult, Module, State,
+    };
     pub use noctis_macros::event;
     pub use noctis_macros::{Choices, Modal, Payload, PayloadEnum, Route};
     pub use noctis_macros::{components, content, label, placeholder, rgb};

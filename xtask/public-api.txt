@@ -22,6 +22,7 @@ pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App,
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
@@ -151,6 +152,46 @@ impl core::convert::From<noctis::StartError> for noctis::Error
 pub fn noctis::Error::from(noctis::StartError) -> Self
 impl core::convert::From<noctis::BuildError> for noctis::Error
 pub fn noctis::Error::from(noctis::BuildError) -> Self
+#[non_exhaustive] pub enum noctis::ErrorOrigin
+pub noctis::ErrorOrigin::Autocomplete
+pub noctis::ErrorOrigin::Command
+pub noctis::ErrorOrigin::Component
+pub noctis::ErrorOrigin::Event
+pub noctis::ErrorOrigin::Render
+impl noctis::ErrorOrigin
+pub const noctis::ErrorOrigin::ALL: [noctis::ErrorOrigin; 5]
+pub const fn noctis::ErrorOrigin::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::ErrorOrigin
+pub fn noctis::ErrorOrigin::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ErrorOrigin
+impl core::cmp::PartialEq for noctis::ErrorOrigin
+pub fn noctis::ErrorOrigin::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ErrorOrigin
+pub fn noctis::ErrorOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ErrorOrigin
+pub fn noctis::ErrorOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ErrorOrigin
+pub fn noctis::ErrorOrigin::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ErrorOrigin
+impl core::marker::StructuralPartialEq for noctis::ErrorOrigin
+#[non_exhaustive] pub struct noctis::ErrorReport<'a>
+pub noctis::ErrorReport::app: &'a str
+pub noctis::ErrorReport::event_type: core::option::Option<&'a str>
+pub noctis::ErrorReport::guild_id: core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub noctis::ErrorReport::handler: core::option::Option<&'a str>
+pub noctis::ErrorReport::kind: noctis::ReportKind<'a>
+pub noctis::ErrorReport::module: core::option::Option<&'a str>
+pub noctis::ErrorReport::origin: noctis::ErrorOrigin
+pub noctis::ErrorReport::shard: core::option::Option<u32>
+impl<'a> core::clone::Clone for noctis::ErrorReport<'a>
+pub fn noctis::ErrorReport<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for noctis::ErrorReport<'a>
+pub fn noctis::ErrorReport<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::ErrorReport<'a>
+pub trait noctis::ErrorSink: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ErrorSink::report(&self, noctis::ErrorReport<'_>)
+impl<S: noctis::ErrorSink + ?core::marker::Sized> noctis::ErrorSink for alloc::rcs::arc::Arc<S>
+pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
 #[non_exhaustive] pub enum noctis::GatewayUrlError
 pub noctis::GatewayUrlError::Empty
 pub noctis::GatewayUrlError::InvalidChar
@@ -206,6 +247,18 @@ impl core::fmt::Display for noctis::HttpProxyError
 pub fn noctis::HttpProxyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::HttpProxyError
 impl core::marker::StructuralPartialEq for noctis::HttpProxyError
+pub struct noctis::LogSink
+impl core::clone::Clone for noctis::LogSink
+pub fn noctis::LogSink::clone(&self) -> Self
+impl core::default::Default for noctis::LogSink
+pub fn noctis::LogSink::default() -> Self
+impl core::fmt::Debug for noctis::LogSink
+pub fn noctis::LogSink::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::LogSink
+impl noctis::ErrorSink for noctis::LogSink
+pub fn noctis::LogSink::report(&self, noctis::ErrorReport<'_>)
+impl noctis::ErrorSink for noctis::LogSink
+pub fn noctis::LogSink::report(&self, noctis::ErrorReport<'_>)
 pub struct noctis::Module
 impl noctis::Module
 pub fn noctis::Module::add(self, impl noctis::Descriptor) -> Self
@@ -218,6 +271,15 @@ impl core::fmt::Debug for noctis::Module
 pub fn noctis::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
+#[non_exhaustive] pub enum noctis::ReportKind<'a>
+pub noctis::ReportKind::Dropped
+pub noctis::ReportKind::Error(&'a noctis::HandlerError)
+pub noctis::ReportKind::Panic(&'a str)
+impl<'a> core::clone::Clone for noctis::ReportKind<'a>
+pub fn noctis::ReportKind<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for noctis::ReportKind<'a>
+pub fn noctis::ReportKind<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::ReportKind<'a>
 pub trait noctis::Resource: core::marker::Send + core::marker::Sync + 'static
 pub type noctis::Resource::Config: core::cmp::PartialEq + core::fmt::Debug + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Resource::init(&Self::Config) -> Self
@@ -926,6 +988,38 @@ pub use noctis::events::UserUpdate
 pub use noctis::events::VoiceServerUpdate
 pub use noctis::events::VoiceStateUpdate
 pub use noctis::events::WebhooksUpdate
+pub mod noctis::observe
+pub const noctis::observe::METRICS: &[noctis::observe::MetricInfo]
+#[non_exhaustive] pub struct noctis::observe::MetricInfo
+pub noctis::observe::MetricInfo::description: &'static str
+pub noctis::observe::MetricInfo::labels: &'static [&'static str]
+pub noctis::observe::MetricInfo::metric_type: noctis::observe::MetricType
+pub noctis::observe::MetricInfo::name: &'static str
+impl core::clone::Clone for noctis::observe::MetricInfo
+pub fn noctis::observe::MetricInfo::clone(&self) -> Self
+impl core::cmp::Eq for noctis::observe::MetricInfo
+impl core::cmp::PartialEq for noctis::observe::MetricInfo
+pub fn noctis::observe::MetricInfo::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::observe::MetricInfo
+pub fn noctis::observe::MetricInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::observe::MetricInfo
+impl core::marker::StructuralPartialEq for noctis::observe::MetricInfo
+#[non_exhaustive] pub enum noctis::observe::MetricType
+pub noctis::observe::MetricType::Counter
+pub noctis::observe::MetricType::Gauge
+pub noctis::observe::MetricType::Histogram
+impl core::clone::Clone for noctis::observe::MetricType
+pub fn noctis::observe::MetricType::clone(&self) -> Self
+impl core::cmp::Eq for noctis::observe::MetricType
+impl core::cmp::PartialEq for noctis::observe::MetricType
+pub fn noctis::observe::MetricType::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::observe::MetricType
+pub fn noctis::observe::MetricType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::observe::MetricType
+pub fn noctis::observe::MetricType::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::observe::MetricType
+impl core::marker::StructuralPartialEq for noctis::observe::MetricType
+pub fn noctis::observe::describe_metrics()
 pub mod noctis::ports
 pub enum noctis::ports::AnimatedFormat
 pub noctis::ports::AnimatedFormat::Apng
@@ -1535,6 +1629,7 @@ pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noc
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::prelude::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
@@ -1568,6 +1663,32 @@ pub fn noctis::prelude::Choices::description(&self) -> core::option::Option<&'st
 pub fn noctis::prelude::Choices::from_value(&str) -> core::option::Option<Self>
 pub fn noctis::prelude::Choices::label(&self) -> &'static str
 pub fn noctis::prelude::Choices::value(&self) -> &'static str
+#[non_exhaustive] pub enum noctis::prelude::ErrorOrigin
+pub noctis::prelude::ErrorOrigin::Autocomplete
+pub noctis::prelude::ErrorOrigin::Command
+pub noctis::prelude::ErrorOrigin::Component
+pub noctis::prelude::ErrorOrigin::Event
+pub noctis::prelude::ErrorOrigin::Render
+impl noctis::prelude::ErrorOrigin
+pub const noctis::prelude::ErrorOrigin::ALL: [noctis::prelude::ErrorOrigin; 5]
+pub const fn noctis::prelude::ErrorOrigin::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::prelude::ErrorOrigin
+pub fn noctis::prelude::ErrorOrigin::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::ErrorOrigin
+impl core::cmp::PartialEq for noctis::prelude::ErrorOrigin
+pub fn noctis::prelude::ErrorOrigin::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::ErrorOrigin
+pub fn noctis::prelude::ErrorOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::prelude::ErrorOrigin
+pub fn noctis::prelude::ErrorOrigin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::prelude::ErrorOrigin
+pub fn noctis::prelude::ErrorOrigin::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::prelude::ErrorOrigin
+impl core::marker::StructuralPartialEq for noctis::prelude::ErrorOrigin
+pub trait noctis::prelude::ErrorSink: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::prelude::ErrorSink::report(&self, noctis::ErrorReport<'_>)
+impl<S: noctis::prelude::ErrorSink + ?core::marker::Sized> noctis::prelude::ErrorSink for alloc::rcs::arc::Arc<S>
+pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
 pub struct noctis::prelude::EventCtx(_)
 pub struct noctis::prelude::HandlerError(_)
 impl noctis::prelude::HandlerError

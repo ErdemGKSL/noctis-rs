@@ -10,8 +10,8 @@ use twilight_model::gateway::payload::incoming::MessageDelete;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
-use crate::HandlerResult;
 use crate::events::{EventCtx, EventHandler, EventPayload};
+use crate::{ErrorOrigin, ErrorReport, ErrorSink, HandlerResult, ReportKind};
 
 /// A handler of `P` that does nothing.
 pub(crate) fn noop<P: EventPayload>(name: &'static str) -> EventHandler {
@@ -93,5 +93,49 @@ impl<'a> MakeWriter<'a> for Capture {
 
     fn make_writer(&'a self) -> Self::Writer {
         self.clone()
+    }
+}
+
+/// The owned fields of one report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Seen {
+    pub(crate) origin: ErrorOrigin,
+    /// `error:<display>`, `panic:<message>` or `dropped`.
+    pub(crate) kind: String,
+    pub(crate) app: String,
+    pub(crate) shard: Option<u32>,
+    pub(crate) guild_id: Option<u64>,
+    pub(crate) module: Option<String>,
+    pub(crate) handler: Option<String>,
+    pub(crate) event_type: Option<String>,
+}
+
+/// A sink recording every report.
+#[derive(Default)]
+pub(crate) struct Recording(pub(crate) Mutex<Vec<Seen>>);
+
+impl Recording {
+    pub(crate) fn seen(&self) -> Vec<Seen> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+impl ErrorSink for Recording {
+    fn report(&self, report: ErrorReport<'_>) {
+        let kind = match report.kind {
+            ReportKind::Error(error) => format!("error:{error}"),
+            ReportKind::Panic(message) => format!("panic:{message}"),
+            ReportKind::Dropped => "dropped".to_owned(),
+        };
+        self.0.lock().unwrap().push(Seen {
+            origin: report.origin,
+            kind,
+            app: report.app.to_owned(),
+            shard: report.shard,
+            guild_id: report.guild_id.map(Id::get),
+            module: report.module.map(str::to_owned),
+            handler: report.handler.map(str::to_owned),
+            event_type: report.event_type.map(str::to_owned),
+        });
     }
 }
