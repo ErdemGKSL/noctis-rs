@@ -134,6 +134,29 @@ pub fn noctis::BuildViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core
 impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
+pub struct noctis::CommandCtx(_)
+impl noctis::CommandCtx
+pub fn noctis::CommandCtx::command_path(&self) -> &'static str
+impl core::clone::Clone for noctis::CommandCtx
+pub fn noctis::CommandCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::CommandCtx
+pub fn noctis::CommandCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::CommandHandler
+impl noctis::CommandHandler
+pub fn noctis::CommandHandler::description(&self) -> &'static str
+pub fn noctis::CommandHandler::name(&self) -> &'static str
+pub fn noctis::CommandHandler::paths(&self) -> &'static [&'static str]
+pub fn noctis::CommandHandler::pattern(&self) -> &'static str
+impl core::clone::Clone for noctis::CommandHandler
+pub fn noctis::CommandHandler::clone(&self) -> Self
+impl core::fmt::Debug for noctis::CommandHandler
+pub fn noctis::CommandHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::Descriptor for noctis::CommandHandler
+impl noctis::Descriptor for noctis::CommandHandler
+pub trait noctis::CommandPath: core::marker::Copy + core::marker::Send + core::marker::Sync + 'static
+pub const noctis::CommandPath::PATHS: &'static [&'static str]
+pub fn noctis::CommandPath::as_str(self) -> &'static str
+pub fn noctis::CommandPath::from_path(&str) -> core::option::Option<Self>
 pub trait noctis::Descriptor: noctis::__private::core::module::sealed::Sealed
 #[non_exhaustive] pub enum noctis::EnvError
 pub noctis::EnvError::InvalidShardTotal
@@ -473,6 +496,16 @@ pub fn noctis::TokenError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fm
 impl core::fmt::Display for noctis::TokenError
 pub fn noctis::TokenError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::TokenError
+pub struct noctis::UnknownCommandPath
+impl noctis::UnknownCommandPath
+pub fn noctis::UnknownCommandPath::command(&self) -> &'static str
+pub fn noctis::UnknownCommandPath::path(&self) -> &str
+impl core::error::Error for noctis::UnknownCommandPath
+impl core::fmt::Debug for noctis::UnknownCommandPath
+pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::UnknownCommandPath
+pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub proc macro noctis::#[command]
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::#[event]
@@ -1757,6 +1790,13 @@ pub fn noctis::prelude::Choices::description(&self) -> core::option::Option<&'st
 pub fn noctis::prelude::Choices::from_value(&str) -> core::option::Option<Self>
 pub fn noctis::prelude::Choices::label(&self) -> &'static str
 pub fn noctis::prelude::Choices::value(&self) -> &'static str
+pub struct noctis::prelude::CommandCtx(_)
+impl noctis::prelude::CommandCtx
+pub fn noctis::prelude::CommandCtx::command_path(&self) -> &'static str
+impl core::clone::Clone for noctis::prelude::CommandCtx
+pub fn noctis::prelude::CommandCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::CommandCtx
+pub fn noctis::prelude::CommandCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::prelude::ErrorOrigin
 pub noctis::prelude::ErrorOrigin::Autocomplete
 pub noctis::prelude::ErrorOrigin::Command
@@ -1864,6 +1904,7 @@ pub fn noctis::prelude::State<T>::clone(&self) -> Self
 impl<T> core::ops::deref::Deref for noctis::prelude::State<T>
 pub type noctis::prelude::State<T>::Target = T
 pub fn noctis::prelude::State<T>::deref(&self) -> &T
+pub proc macro noctis::prelude::#[command]
 pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
 pub proc macro noctis::prelude::#[event]
@@ -2404,6 +2445,24 @@ impl core::hash::Hash for noctis::rules::command::OptionType
 pub fn noctis::rules::command::OptionType::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::rules::command::OptionType
 impl core::marker::StructuralPartialEq for noctis::rules::command::OptionType
+pub enum noctis::rules::command::PathKind
+pub noctis::rules::command::PathKind::Command
+pub noctis::rules::command::PathKind::GroupSubcommand
+pub noctis::rules::command::PathKind::Subcommand
+impl noctis::rules::command::PathKind
+pub fn noctis::rules::command::PathKind::of(&str) -> core::option::Option<Self>
+pub const fn noctis::rules::command::PathKind::words(self) -> usize
+impl core::clone::Clone for noctis::rules::command::PathKind
+pub fn noctis::rules::command::PathKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::command::PathKind
+impl core::cmp::PartialEq for noctis::rules::command::PathKind
+pub fn noctis::rules::command::PathKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::rules::command::PathKind
+pub fn noctis::rules::command::PathKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::rules::command::PathKind
+pub fn noctis::rules::command::PathKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::rules::command::PathKind
+impl core::marker::StructuralPartialEq for noctis::rules::command::PathKind
 pub enum noctis::rules::command::Scope
 pub noctis::rules::command::Scope::Global
 pub noctis::rules::command::Scope::Guild(u64)
@@ -2561,6 +2620,7 @@ pub fn noctis::rules::command::validate_merge(&[noctis::rules::command::CommandD
 pub fn noctis::rules::command::validate_meta(&noctis::rules::command::CommandMeta<'_>, noctis::rules::command::Scope, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_options(&[noctis::rules::command::OptionDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
+pub fn noctis::rules::command::validate_pattern_spacing(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_tree(&[noctis::rules::command::CommandDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
 pub mod noctis::rules::component
 pub enum noctis::rules::component::Accessory<'a>

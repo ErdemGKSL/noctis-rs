@@ -8,39 +8,61 @@ Doctrine: commands are **entry points** that open Views (UD-3).
 ## 1. Command Paths
 
 ```rust
-#[command("dashboard")]                       // 1 word  → command
-#[command("setup start")]                     // 2 words → subcommand of /setup
-#[command("settings logs channel")]           // 3 words → group "logs" + subcommand "channel"
+#[command("dashboard", description = "Open the dashboard")]          // 1 word  → command
+#[command("setup start", description = "Start the setup")]           // 2 words → subcommand of /setup
+#[command("settings logs channel", description = "Set the log channel")] // 3 words → group "logs" + subcommand "channel"
 ```
 
-The handler is an `async fn` taking `CommandCtx`, optionally an options struct, and
-extractors; it returns `HandlerResult<T>` where `T: IntoResponse` (usually a View).
+Words are separated by exactly one ASCII space. `noctis::rules::command::PathKind::of(path)`
+tells the kind: `Command` (1 word), `Subcommand` (2), `GroupSubcommand` (3), `None` otherwise;
+`.words()` gives 1/2/3. Subcommand and group nodes come only from paths: nothing sets
+`required` on them (OPT-14).
+
+The handler forms that work now: a path takes `(ctx: CommandCtx)`, a pattern with a group
+takes `(ctx: CommandCtx, path: <Fn>Path)` (§2); both return `HandlerResult<()>`. Doc
+comments stay rustdoc and never become the description.
 
 ```rust
-#[command("setup start", ephemeral, permissions = MANAGE_GUILD, contexts = [Guild])]
-async fn setup_start(ctx: CommandCtx) -> HandlerResult<SetupWizard> { … }
+use noctis::prelude::*;
+
+/// Rustdoc only.
+#[command("setup start", description = "Start the setup")]
+pub async fn setup_start(ctx: CommandCtx) -> HandlerResult<()> {
+    let _ = ctx.command_path(); // "setup start"
+    Ok(())
+}
 ```
 
+[planned] Options structs and extractors as further parameters (Story 6.2), returning a
+View (`HandlerResult<T>` where `T: IntoResponse`) and the Responder (Story 6.5).
+
 Register it: `Module::new("setup").add(setup_start())` (the macro turns the fn into a
-descriptor constructor; call it with `()`).
+descriptor constructor `fn setup_start() -> CommandHandler`; call it with `()`).
+`CommandHandler` has `name()` (`module_path::fn`), `pattern()` (the literal),
+`description()` and `paths()` (every Command Path, expansion order).
 
 Compile-time checks on the literal (each error names its rule):
 
 | Check | Rule |
 | --- | --- |
 | each word matches `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` (note: `ʼ` U+02BC, not ASCII `'`) | CMD-01 |
-| 1–32 chars per word, no empty words (`"a  b"`) | CMD-02 |
+| 1–32 chars per word, no empty words: a leading, trailing or doubled space (`"a  b"`) is CMD-02, any other whitespace (tab, U+00A0) CMD-01 | CMD-02 |
 | lowercase where the letter has a lowercase form | CMD-03 |
-| description 1–100 chars: `description = "…"`, or with the `i18n` feature `cmd.<path>.description` in the default-locale file (a literal that differs from it is an error); missing = error | CMD-04 |
+| description 1–100 chars (UTF-16 counted): `description = "…"` (literal only; doc comments never count); missing = error with `help: add description = "…"`. [planned] With the `i18n` feature, `cmd.<path>.description` from the default-locale file (Story 11.4) | CMD-04 |
 | total command size ≤ 8000 (name+desc+options+choices, longest localization per field) | CMD-05 |
 | ≤ 3 words | CMD-10 |
 
-### Attribute arguments [planned]
+### Attribute arguments
+
+The first argument is the path or pattern, a string literal (raw strings work). Landed:
+`description` and `max_expansions`. Every other argument below is [planned] and is a
+compile error today (`` `#[command]` argument `ephemeral` is planned and not supported yet ``).
 
 | Argument | Meaning |
 | --- | --- |
-| `description = "…"` | the description; required without the `i18n` feature, optional (must match the file) with it |
-| `locales = "<dir>"` | where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
+| `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
+| `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
+| `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
 | `ephemeral` | reply privately (default public). Fixed at registration (INT-10); the auto-defer uses it |
 | `opens_modal` | the handler answers with a modal and takes `CommandResponder<OpensModal>`; disables auto-defer (INT-05) |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01); unknown names are compile errors |
@@ -51,7 +73,6 @@ Compile-time checks on the literal (each error names its rule):
 | `rate_limit(user, 3, per = "10s")` | see `modules-middleware-ratelimits.md` |
 | `flags = ["beta"]` | Boot Flags |
 | `apps = ["main"]` | publish only for these Apps (multi-App) |
-| `max_expansions = n` | Command Pattern cap (default 25) |
 
 `permissions`, `contexts`, `integration_types` and `nsfw` belong to the **base** command
 (META-02). Every leaf under one base must agree, across all Modules, or App build fails
@@ -66,20 +87,38 @@ One handler for several paths. `(a|b)` gives one alternative per word; `?` after
 also yields the path without it. Expansion is left to right in declaration order.
 
 ```rust
-#[command("config (set|get) (prefix|welcome)", permissions = MANAGE_GUILD)]
-async fn config(ctx: CommandCtx, path: ConfigPath, opts: ConfigOptions)
-    -> HandlerResult<ConfigView>
-{
+#[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
+async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> {
     match path {
         ConfigPath::SetPrefix | ConfigPath::SetWelcome => { … }
         ConfigPath::GetPrefix | ConfigPath::GetWelcome => { … }
     }
+    Ok(())
 }
 ```
 
-The macro generates `enum ConfigPath` (fn name in UpperCamelCase + `Path`) with one
-variant per expansion (alternative words in UpperCamelCase, concatenated) and
-`fn as_str(&self) -> &'static str` (`"config set prefix"`). [planned]
+A pattern with at least one group generates the path enum next to the fn; a plain path
+generates none.
+
+- Name: the fn name (`r#` stripped) split on `_`, each part's first letter uppercased,
+  plus `Path`: `config` → `ConfigPath`, `set_prefix` → `SetPrefixPath`, `r#type` →
+  `TypePath`. Same visibility and `#[cfg]` as the fn; every item is documented.
+- Variants: the chosen alternatives of each expansion, in order, each word split on `-`
+  and `_` and UpperCamelCased, concatenated (`set-prefix` → `SetPrefix`, `a_b` → `AB`,
+  `ğüncelle` → `Ğüncelle`, `ßa` → `SSa`). An expansion whose optional groups are all
+  absent is `Bare` (`"(a|b)? c"` → `A`, `B`, `Bare`). A leading digit gets `_` (`2fa` →
+  `_2fa`); `self` → `Self_`. Two alternatives giving the same name are a compile error
+  (`` `#[command]` path variants collide: `x a-b` and `x a_b` both name `AB`; rename one
+  alternative ``): rename one, there is no positional fallback.
+- `ConfigPath::ALL`: every variant in expansion order; `path.as_str()` → `"config set
+  prefix"` (const fn); it implements `noctis::CommandPath` (`PATHS`, `from_path(&str)`
+  exact byte match, `as_str`).
+- The second parameter must be this enum (else `` the second parameter must be
+  `ConfigPath`, the enum `#[command]` generates for this pattern ``).
+
+Invoked with a path the handler does not declare, the descriptor returns
+`Err(HandlerError)` wrapping `noctis::UnknownCommandPath` (`path()`, `command()`;
+`` `config nope` is not a path of the Command `bot::config` ``) and the handler does not run.
 
 Expands to: `config set prefix`, `config set welcome`, `config get prefix`,
 `config get welcome`.
@@ -90,12 +129,16 @@ Expands to: `config set prefix`, `config set welcome`, `config get prefix`,
 #[command("config (set|get) (prefix|welcome)?")]
 ```
 ```text
-error: [CMD-11] `set` would be both a subcommand and a subcommand group of `/config`
-  = note: `config set` makes `set` a subcommand
-  = note: `config set prefix` makes `set` a subcommand group
-  = help: remove the `?`: "config (set|get) (prefix|welcome)",
-          or move the bare form to a separate path such as "config show"
+error: [CMD-11] config set: limit a subcommand or a subcommand group, not both, actual `set`
+         = note: `config set` makes `set` a subcommand
+         = note: `config set prefix` makes `set` a subcommand group
+         = help: remove the `?`: "config (set|get) (prefix|welcome)"
 ```
+
+The same error follows for `get`: every violation is reported in one compile, spanned on the
+pattern (CMD-04 on the `description` literal). To keep a bare form, move it to a separate
+path such as `"config show"`. Over the cap, CMD-15 suggests `` raise the cap with
+`max_expansions = 26` or split the pattern ``.
 
 Other structural errors:
 
@@ -117,13 +160,15 @@ Groups and plain subcommands side by side under one base are legal (CMD-14):
 ### Rule functions (`noctis::rules::command`)
 
 `#[command]` and `App::build` call these functions, so a pattern you build at runtime
-gets exactly the checks a literal one does. Call `expand` and then `validate_tree`
-before registering a dynamically built pattern; never split patterns by hand. Every
+gets exactly the checks a literal one does. Call `validate_pattern_spacing`, `expand` and
+then `validate_tree` before registering a dynamically built pattern; never split patterns
+by hand. Every
 function takes `&Limits` (pass the same value the App builder gets) and returns
 **every** violation at once as `Vec<Violation>` (never empty on `Err`).
 
-**Pattern grammar (CMD-16).** Tokens are separated by Unicode whitespace (collapsed;
-paths are joined with one ASCII space). A token is a word or a group `(a|b|…)`,
+**Pattern grammar (CMD-16).** Tokens are separated by Unicode whitespace (collapsed by
+`expand`; paths are joined with one ASCII space, and `validate_pattern_spacing` rejects
+anything but single ASCII spaces first). A token is a word or a group `(a|b|…)`,
 optionally followed directly by `?`. A group is a whole token (`a(b)`, `(b)c`, `(a)(b)`
 are errors), its alternatives are non-empty single words (no spaces inside), groups
 don't nest, and `|`, `)` or `?` anywhere else is an error. `expand` reports only the
@@ -139,6 +184,8 @@ one CMD-15 (`= note: produced N times`). `""` expands to `[""]` (CMD-10 later).
 
 | Item | What it is |
 | --- | --- |
+| `validate_pattern_spacing(pattern, &Limits) -> Vec<Violation>` | run before `expand` (which collapses whitespace); path = pattern, help `separate words with exactly one ASCII space`: one CMD-02 for the first empty word (leading, trailing or doubled space; `between 1 and 32`, actual 0, note `empty word at byte N`), then one CMD-01 for the first whitespace other than U+0020 (note `at byte N`); `""` → none |
+| `PathKind` | `Command` / `Subcommand` / `GroupSubcommand`; `PathKind::of(path) -> Option<PathKind>` (`None` for empty, an empty word or > 3 words), `.words()` |
 | `expand(pattern, &Limits) -> Result<Vec<String>, Vec<Violation>>` | pattern → ordered Command Paths; CMD-16, else CMD-15 cap, else CMD-15 duplicates; never checks names |
 | `validate_name(word, &Limits) -> Vec<Violation>` | one name word, path `""`; order CMD-02 (length via `discord_len`), CMD-01 (charset; note `` first invalid character `'` (U+0027) ``, help `` use `ʼ` (U+02BC) instead of `'` `` for ASCII `'`), CMD-03 (help `` use `config` ``); an empty word gives CMD-02 only |
 | `validate_tree(&[CommandDecl], &Limits) -> Result<(), Vec<Violation>>` | one tree set (scope ignored): CMD-10 per decl (that decl is then skipped), REG-04 duplicate handler paths (notes `` registered by `m1` ``; the first counts for the budget) and metadata for unregistered paths, then per node in first-appearance pre-order: names (CMD-01..03, path = node path), CMD-04, CMD-11 / CMD-12 (notes name both contributing paths and `` (from `module`) ``), CMD-13 (children, then handler options), CMD-05 per base after its subtree (`= note: longest variant per field`); then REG-04 conflicting descriptions; last, per base in first-appearance order, the metadata checks (§6 "Metadata rules") |
@@ -159,9 +206,15 @@ variant) + Σ handler `options_size`.
 
 ```rust
 use noctis::rules::Limits;
-use noctis::rules::command::{CommandDecl, LocalizedText, expand, validate_tree};
+use noctis::rules::command::{
+    CommandDecl, LocalizedText, expand, validate_pattern_spacing, validate_tree,
+};
 
 let limits = Limits::default();
+let spacing = validate_pattern_spacing(&pattern, &limits);
+if !spacing.is_empty() {
+    return Err(report(spacing));
+}
 let paths = expand(&pattern, &limits).map_err(report)?;
 let decls: Vec<_> = paths
     .iter()
@@ -426,11 +479,13 @@ Flags and `apps = [...]` filter what is published. Disabled Modules: only their
 guild-scoped commands are left out of a guild publish; global commands stay published
 and answer "disabled here".
 
-## 8. Handler context (`CommandCtx`) [planned]
+## 8. Handler context (`CommandCtx`)
 
-Shared accessors (trait `Ctx`, also on every other context): `user_id()`, `user()`,
+Available now: `ctx.command_path() -> &'static str`, the invoked Command Path (`"config set
+prefix"`). `CommandCtx` is `Clone` and `Debug`.
+
+[planned] Shared accessors (trait `Ctx`, also on every other context): `user_id()`, `user()`,
 `guild_id()`, `channel_id()`, `user_locale()`, `guild_locale()`, `response_locale()`,
 `kv()` (your key-value data), `cache()` (Discord resources), `modules()`,
 `rate_limits()`, `render(..)`, `http()`,
-`gateway()`, `app_permissions()`, `member()`. Command-only: `command_path()`,
-`attachment_size_limit()`.
+`gateway()`, `app_permissions()`, `member()`. Command-only: `attachment_size_limit()`.

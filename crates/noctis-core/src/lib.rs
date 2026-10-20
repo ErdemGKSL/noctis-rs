@@ -37,6 +37,16 @@
 //! runs under `catch_unwind`, so a panic is logged and the shard keeps
 //! running. The payload types are in [`events`].
 //!
+//! # Commands
+//!
+//! A [`CommandHandler`] (written with `#[command]` in `noctis`) is one slash
+//! Command handler for a Command Path or Pattern, whose paths the macro
+//! checked at compile time; [`Module::add`] takes it like an event handler.
+//! A pattern with a group gives the handler a [`CommandPath`] enum naming
+//! the invoked path; an invocation with a path the handler does not declare
+//! fails with [`UnknownCommandPath`]. The handler receives a [`CommandCtx`].
+//! The Registry and dispatch of Commands arrive with the Command pipeline.
+//!
 //! # Discord HTTP
 //!
 //! Every request of the App's one HTTP client passes a loopback edge that
@@ -77,6 +87,7 @@
 
 mod app;
 mod authority;
+mod command;
 mod edge;
 mod error;
 pub mod events;
@@ -100,6 +111,7 @@ mod token;
 mod worker;
 
 pub use app::{App, AppBuilder};
+pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
     AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, RunError, StartError,
@@ -122,4 +134,17 @@ pub mod __testing {
         CallbackAck, CallbackBody, CallbackError, CallbackRequest, KeepWarm, interaction_callback,
         keep_warm,
     };
+
+    use futures_util::future::BoxFuture;
+
+    use crate::{CommandHandler, HandlerResult};
+
+    /// Runs `handler` as if `path` had been invoked: its handler with the
+    /// path's variant, or an `UnknownCommandPath` error.
+    pub fn call_command(
+        handler: &CommandHandler,
+        path: &'static str,
+    ) -> BoxFuture<'static, HandlerResult<()>> {
+        crate::command::call_command(handler, path)
+    }
 }

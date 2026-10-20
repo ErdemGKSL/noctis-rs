@@ -21,6 +21,11 @@
 //! `pattern_expansions` before any path is built (CMD-15); identical expansions
 //! are CMD-15 too.
 //!
+//! Because [`expand`] collapses whitespace, `#[command]` and the App build
+//! first run [`validate_pattern_spacing`] on the pattern as written: words
+//! must be separated by exactly one ASCII space, so a leading, trailing or
+//! doubled space is an empty word (CMD-02) and any other whitespace is CMD-01.
+//!
 //! ```
 //! use noctis_rules::Limits;
 //! use noctis_rules::command::expand;
@@ -34,6 +39,13 @@
 //!     ]
 //! );
 //! ```
+//!
+//! # Path kinds
+//!
+//! A Command Path's word count decides what it registers ([`PathKind`]):
+//! 1 word is a base command, 2 a subcommand of the base, 3 a subcommand in a
+//! group of the base. Subcommand and group nodes exist only through paths;
+//! nothing sets `required` on them (OPT-14).
 //!
 //! # Trees
 //!
@@ -125,10 +137,57 @@ pub use option::{
     validate_autocomplete, validate_options,
 };
 pub(crate) use option::{FILE_TYPE, is_file_type};
-pub use pattern::expand;
+pub use pattern::{expand, validate_pattern_spacing};
 pub use tree::validate_tree;
 
 use crate::len::discord_len;
+
+/// What a Command Path of 1, 2 or 3 words registers (CMD-10).
+///
+/// ```
+/// use noctis_rules::command::PathKind;
+///
+/// assert_eq!(PathKind::of("ping"), Some(PathKind::Command));
+/// assert_eq!(PathKind::of("setup start"), Some(PathKind::Subcommand));
+/// assert_eq!(PathKind::of("settings logs channel"), Some(PathKind::GroupSubcommand));
+/// assert_eq!(PathKind::of("a b c d"), None);
+/// assert_eq!(PathKind::GroupSubcommand.words(), 3);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PathKind {
+    /// 1 word: a base command (`/ping`).
+    Command,
+    /// 2 words: a subcommand of a base (`/setup start`).
+    Subcommand,
+    /// 3 words: a subcommand in a subcommand group (`/settings logs channel`).
+    GroupSubcommand,
+}
+
+impl PathKind {
+    /// The kind of `path`, split on single ASCII spaces; `None` when it is
+    /// empty, has an empty word (`"a  b"`, `" a"`) or has more than 3 words.
+    pub fn of(path: &str) -> Option<Self> {
+        if path.is_empty() || path.split(' ').any(str::is_empty) {
+            return None;
+        }
+        match path.split(' ').count() {
+            1 => Some(Self::Command),
+            2 => Some(Self::Subcommand),
+            3 => Some(Self::GroupSubcommand),
+            _ => None,
+        }
+    }
+
+    /// The number of words of a path of this kind (1, 2 or 3).
+    #[must_use]
+    pub const fn words(self) -> usize {
+        match self {
+            Self::Command => 1,
+            Self::Subcommand => 2,
+            Self::GroupSubcommand => 3,
+        }
+    }
+}
 
 /// A text with its default value and localized variants.
 ///
@@ -369,6 +428,25 @@ fn source_name(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cmd_10_path_kind_by_word_count() {
+        for (path, kind) in [
+            ("a", PathKind::Command),
+            ("a b", PathKind::Subcommand),
+            ("a b c", PathKind::GroupSubcommand),
+        ] {
+            assert_eq!(PathKind::of(path), Some(kind), "{path:?}");
+            assert_eq!(kind.words(), path.split(' ').count());
+        }
+    }
+
+    #[test]
+    fn cmd_10_path_kind_rejects_malformed_paths() {
+        for path in ["", "a b c d", "a  b", " a"] {
+            assert_eq!(PathKind::of(path), None, "{path:?}");
+        }
+    }
 
     #[test]
     fn cmd_05_longest_counts_the_longest_variant() {

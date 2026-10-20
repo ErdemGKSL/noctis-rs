@@ -1,0 +1,6 @@
+error: [CMD-15] a (b|c) (d|e): limit at most 3, actual 4
+         = help: raise the cap with `max_expansions = 4` or split the pattern
+ --> tests/ui/cmd/CMD-15_custom_cap.rs:3:11
+  |
+3 | #[command("a (b|c) (d|e)", description = "d", max_expansions = 3)]
+  |           ^^^^^^^^^^^^^^^

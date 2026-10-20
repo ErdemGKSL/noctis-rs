@@ -14,31 +14,6 @@
 # empty by Story 14.4, except entries for Epic 15 stories.
 
 [[rule]]
-id = "CMD-01"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-02"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-03"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-04"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-05"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
 id = "CMD-06"
 evidence = "diagnosed"
 story = "6.2"
@@ -47,36 +22,6 @@ story = "6.2"
 id = "CMD-07"
 evidence = "diagnosed"
 story = "6.3"
-
-[[rule]]
-id = "CMD-10"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-11"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-12"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-13"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-15"
-evidence = "diagnosed"
-story = "6.1"
-
-[[rule]]
-id = "CMD-16"
-evidence = "diagnosed"
-story = "6.1"
 
 [[rule]]
 id = "OPT-01"

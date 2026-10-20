@@ -1,0 +1,951 @@
+//! `#[command]`: checks a Command Path or Pattern at expansion with
+//! `noctis_rules::command` and turns an `async fn(ctx: CommandCtx[, path:
+//! <Fn>Path])` into a descriptor function returning a `CommandHandler`
+//! (FR-7, FR-8, FR-75, FR-77, AD-8, AD-16, AD-26).
+
+use noctis_rules::command::{
+    self as rules, CommandDecl, LocalizedText, validate_pattern_spacing, validate_tree,
+};
+use noctis_rules::{Actual, Bound, Limits, RuleId, Violation};
+use proc_macro2::{Span, TokenStream, TokenTree};
+use quote::{ToTokens, quote, quote_spanned};
+use syn::spanned::Spanned;
+use syn::{FnArg, Ident, ItemFn, LitInt, LitStr, ReturnType, Safety, Type};
+use unicode_ident::{is_xid_continue, is_xid_start};
+
+use crate::common::combine;
+
+const PLAIN: &str = "`#[command]` handlers must be a plain `async fn`";
+const MISSING_PATTERN: &str = "`#[command]` needs a Command Path or Pattern as its first argument: `#[command(\"ping\", description = \"…\")]`";
+const NOT_A_LITERAL: &str = "`#[command]` needs its Command Path or Pattern as a string literal; check runtime-built patterns with `noctis::rules::command::{validate_pattern_spacing, expand, validate_tree}`";
+const DESCRIPTION_LITERAL: &str = "`description` takes a string literal";
+const CAP_LITERAL: &str =
+    "`max_expansions` takes an integer literal, such as `max_expansions = 30`";
+const CAP_ZERO: &str = "`max_expansions` must be at least 1";
+
+/// `#[command]` arguments that later stories add.
+const PLANNED: [&str; 11] = [
+    "ephemeral",
+    "opens_modal",
+    "permissions",
+    "contexts",
+    "integration_types",
+    "nsfw",
+    "guilds",
+    "rate_limit",
+    "flags",
+    "apps",
+    "locales",
+];
+
+/// The parsed `#[command(..)]` arguments.
+struct Args {
+    pattern: LitStr,
+    description: Option<LitStr>,
+    max_expansions: Option<usize>,
+}
+
+/// Splits `args` on top-level commas, dropping one trailing empty segment.
+fn segments(args: TokenStream) -> Vec<Vec<TokenTree>> {
+    let mut segments: Vec<Vec<TokenTree>> = vec![Vec::new()];
+    for tt in args {
+        match &tt {
+            TokenTree::Punct(p) if p.as_char() == ',' => segments.push(Vec::new()),
+            _ => {
+                if let Some(last) = segments.last_mut() {
+                    last.push(tt);
+                }
+            }
+        }
+    }
+    if segments.len() > 1 && segments.last().is_some_and(Vec::is_empty) {
+        segments.pop();
+    }
+    segments
+}
+
+fn span_of(segment: &[TokenTree]) -> Span {
+    segment
+        .first()
+        .map_or_else(Span::call_site, TokenTree::span)
+}
+
+/// The name of a `name`, `name = …` or `name(…)` argument.
+fn arg_name(segment: &[TokenTree]) -> Option<String> {
+    match segment.first() {
+        Some(TokenTree::Ident(ident)) => Some(ident.to_string()),
+        _ => None,
+    }
+}
+
+/// The tokens after `name =`, or `None` without `=`.
+fn value_of(segment: &[TokenTree]) -> Option<TokenStream> {
+    match segment {
+        [_, TokenTree::Punct(eq), rest @ ..] if eq.as_char() == '=' => {
+            Some(rest.iter().cloned().collect())
+        }
+        _ => None,
+    }
+}
+
+/// Parses `"pattern"[, description = "…"][, max_expansions = n]`.
+fn parse_args(args: TokenStream) -> syn::Result<Args> {
+    let segments = segments(args);
+    let mut iter = segments.into_iter();
+    let first = iter.next().unwrap_or_default();
+    let pattern = if first.is_empty() {
+        return Err(syn::Error::new(Span::call_site(), MISSING_PATTERN));
+    } else if matches!(first.get(1), Some(TokenTree::Punct(p)) if p.as_char() == '=') {
+        return Err(syn::Error::new(span_of(&first), MISSING_PATTERN));
+    } else {
+        let tokens: TokenStream = first.iter().cloned().collect();
+        syn::parse2::<LitStr>(tokens)
+            .map_err(|_| syn::Error::new(span_of(&first), NOT_A_LITERAL))?
+    };
+    let mut parsed = Args {
+        pattern,
+        description: None,
+        max_expansions: None,
+    };
+    let mut seen: Vec<String> = Vec::new();
+    for segment in iter {
+        let span = span_of(&segment);
+        let Some(name) = arg_name(&segment) else {
+            let tokens: TokenStream = segment.iter().cloned().collect();
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "unknown `#[command]` argument `{tokens}`: expected `description` or `max_expansions`"
+                ),
+            ));
+        };
+        match name.as_str() {
+            "description" | "max_expansions" => {}
+            planned if PLANNED.contains(&planned) => {
+                return Err(syn::Error::new(
+                    span,
+                    format!("`#[command]` argument `{name}` is planned and not supported yet"),
+                ));
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    span,
+                    format!(
+                        "unknown `#[command]` argument `{name}`: expected `description` or `max_expansions`"
+                    ),
+                ));
+            }
+        }
+        if seen.contains(&name) {
+            return Err(syn::Error::new(
+                span,
+                format!("duplicate `#[command]` argument `{name}`"),
+            ));
+        }
+        seen.push(name.clone());
+        let value = value_of(&segment);
+        if name == "description" {
+            let lit = value
+                .and_then(|v| syn::parse2::<LitStr>(v).ok())
+                .ok_or_else(|| syn::Error::new(span, DESCRIPTION_LITERAL))?;
+            parsed.description = Some(lit);
+        } else {
+            let lit = value
+                .and_then(|v| syn::parse2::<LitInt>(v).ok())
+                .ok_or_else(|| syn::Error::new(span, CAP_LITERAL))?;
+            let cap = lit
+                .base10_parse::<usize>()
+                .map_err(|_| syn::Error::new(lit.span(), CAP_LITERAL))?;
+            if cap == 0 {
+                return Err(syn::Error::new(lit.span(), CAP_ZERO));
+            }
+            parsed.max_expansions = Some(cap);
+        }
+    }
+    Ok(parsed)
+}
+
+/// Checks the signature shape: a plain, non-generic `async fn`.
+fn check_shape(item: &ItemFn) -> syn::Result<()> {
+    let sig = &item.sig;
+    if let Some(constness) = &sig.constness {
+        return Err(syn::Error::new_spanned(constness, PLAIN));
+    }
+    if let Safety::Unsafe(unsafety) = &sig.safety {
+        return Err(syn::Error::new_spanned(unsafety, PLAIN));
+    }
+    if let Safety::Safe(safety) = &sig.safety {
+        return Err(syn::Error::new_spanned(safety, PLAIN));
+    }
+    if let Some(abi) = &sig.abi {
+        return Err(syn::Error::new_spanned(abi, PLAIN));
+    }
+    if item.modifiers.require_empty().is_err() {
+        return Err(syn::Error::new(sig.fn_token.span(), PLAIN));
+    }
+    if sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            sig.fn_token,
+            "`#[command]` needs an `async fn`",
+        ));
+    }
+    if !sig.generics.params.is_empty() || sig.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            &sig.generics,
+            "`#[command]` handlers cannot be generic",
+        ));
+    }
+    if let Some(variadic) = &sig.variadic {
+        return Err(syn::Error::new_spanned(variadic, PLAIN));
+    }
+    Ok(())
+}
+
+/// Adds the macro's help to a violation that has none (see the spec's
+/// "Always" list): the `?` removal for CMD-11/CMD-12, the `description`
+/// argument for a missing CMD-04, and the cap for an over-cap CMD-15.
+fn add_help(violation: &mut Violation, pattern: &str, limits: &Limits) {
+    if violation.help.is_some() {
+        return;
+    }
+    let help = match violation.rule {
+        RuleId::CMD_11 | RuleId::CMD_12 if pattern.contains('?') => {
+            Some(format!("remove the `?`: \"{}\"", pattern.replace('?', "")))
+        }
+        RuleId::CMD_04 if violation.notes.iter().any(|n| n == "missing description") => {
+            Some(format!(
+                "add `description = \"…\"` with 1 to {} characters (doc comments are rustdoc only)",
+                limits.command_description_len
+            ))
+        }
+        RuleId::CMD_15 => match (&violation.limit, &violation.actual) {
+            (Bound::AtMost(_), Actual::Count(n)) => Some(format!(
+                "raise the cap with `max_expansions = {n}` or split the pattern"
+            )),
+            _ => None,
+        },
+        _ => None,
+    };
+    violation.help = help;
+}
+
+/// Steps 3-4: the spacing check, `expand` and `validate_tree`; every
+/// violation, with the macro's help added.
+fn check_pattern(args: &Args) -> Result<Vec<String>, Vec<Violation>> {
+    let defaults = Limits::default();
+    let mut cap = Limits::default();
+    if let Some(n) = args.max_expansions {
+        cap.pattern_expansions = n;
+    }
+    let pattern = args.pattern.value();
+    let description = args.description.as_ref().map(LitStr::value);
+    let mut violations = validate_pattern_spacing(&pattern, &defaults);
+    let paths = match rules::expand(&pattern, &cap) {
+        Ok(paths) => {
+            let decls: Vec<CommandDecl<'_>> = paths
+                .iter()
+                .map(|path| {
+                    let decl = CommandDecl::handler("", path);
+                    match &description {
+                        Some(d) => decl.description(LocalizedText::new(d)),
+                        None => decl,
+                    }
+                })
+                .collect();
+            if let Err(tree) = validate_tree(&decls, &defaults) {
+                violations.extend(tree);
+            }
+            Some(paths)
+        }
+        Err(errors) => {
+            violations.extend(errors);
+            None
+        }
+    };
+    match paths {
+        Some(paths) if violations.is_empty() => Ok(paths),
+        _ => {
+            for v in &mut violations {
+                add_help(v, &pattern, &defaults);
+            }
+            Err(violations)
+        }
+    }
+}
+
+/// The violations as one error: on the description literal for CMD-04 when
+/// one is given, else on the pattern literal.
+fn report(args: &Args, violations: &[Violation]) -> syn::Error {
+    let errors = violations
+        .iter()
+        .map(|v| {
+            let span = match (&args.description, v.rule) {
+                (Some(d), RuleId::CMD_04) => d.span(),
+                _ => args.pattern.span(),
+            };
+            syn::Error::new(span, v.to_string())
+        })
+        .collect();
+    combine(errors).err().unwrap_or_else(|| {
+        syn::Error::new(args.pattern.span(), "`#[command]` pattern check failed")
+    })
+}
+
+/// One word in `UpperCamelCase`: split on `seps`, each non-empty segment's
+/// first char uppercased (full mapping), concatenated.
+fn camel(word: &str, seps: &[char]) -> String {
+    word.split(seps)
+        .filter(|s| !s.is_empty())
+        .flat_map(|segment| {
+            let mut chars = segment.chars();
+            chars
+                .next()
+                .into_iter()
+                .flat_map(char::to_uppercase)
+                .chain(chars)
+        })
+        .collect()
+}
+
+/// Makes `raw` an identifier: drops non-`XID_Continue` chars, `Bare` when
+/// empty, `_` before a non-`XID_Start` first char, `Self_` for `Self`.
+fn identifier(raw: &str) -> String {
+    let kept: String = raw.chars().filter(|&c| is_xid_continue(c)).collect();
+    match kept.chars().next() {
+        None => "Bare".to_owned(),
+        Some(_) if kept == "Self" => "Self_".to_owned(),
+        Some(c) if !is_xid_start(c) => format!("_{kept}"),
+        Some(_) => kept,
+    }
+}
+
+/// The name of the path enum of the handler fn `fn_name` (`r#` stripped).
+fn enum_name(fn_name: &str) -> String {
+    let name = fn_name.strip_prefix("r#").unwrap_or(fn_name);
+    identifier(&format!("{}Path", camel(name, &['_'])))
+}
+
+/// The variant name of an expansion from its chosen alternatives.
+fn variant_name(alternatives: &[&str]) -> String {
+    let joined: String = alternatives
+        .iter()
+        .map(|word| camel(word, &['-', '_']))
+        .collect();
+    identifier(&joined)
+}
+
+/// The chosen alternatives of every expansion of a well-spaced, valid
+/// pattern, in `expand`'s odometer order (absent optional groups add none).
+fn alternatives(pattern: &str) -> Vec<Vec<&str>> {
+    let mut partial: Vec<Vec<&str>> = vec![Vec::new()];
+    for token in pattern.split(' ') {
+        let Some(group) = token.strip_prefix('(') else {
+            continue;
+        };
+        let optional = group.ends_with('?');
+        let group = group.trim_end_matches('?').trim_end_matches(')');
+        let choices: Vec<Option<&str>> = group
+            .split('|')
+            .map(Some)
+            .chain(optional.then_some(None))
+            .collect();
+        partial = partial
+            .into_iter()
+            .flat_map(|prefix| {
+                choices.iter().map(move |choice| {
+                    let mut next = prefix.clone();
+                    next.extend(*choice);
+                    next
+                })
+            })
+            .collect();
+    }
+    partial
+}
+
+/// Step 5: one variant name per path (same order); a collision is an error.
+fn variants(pattern: &str, paths: &[String]) -> Result<Vec<String>, String> {
+    let chosen = alternatives(pattern);
+    if chosen.len() != paths.len() {
+        return Err(format!(
+            "`#[command]` could not name the paths of `{pattern}`; please report this"
+        ));
+    }
+    let names: Vec<String> = chosen.iter().map(|alts| variant_name(alts)).collect();
+    for (i, name) in names.iter().enumerate() {
+        if let Some(j) = names[..i].iter().position(|n| n == name) {
+            return Err(format!(
+                "`#[command]` path variants collide: `{}` and `{}` both name `{name}`; rename one alternative",
+                paths[j], paths[i]
+            ));
+        }
+    }
+    Ok(names)
+}
+
+fn ident(name: &str, span: Span) -> syn::Result<Ident> {
+    let mut ident: Ident = syn::parse_str(name).map_err(|_| {
+        syn::Error::new(span, format!("`#[command]` cannot use `{name}` as a name"))
+    })?;
+    ident.set_span(span);
+    Ok(ident)
+}
+
+/// Step 6: the parameter count and the path parameter's type.
+fn check_params(item: &ItemFn, pattern: &str, path_enum: Option<&str>) -> syn::Result<()> {
+    let sig = &item.sig;
+    let (count, message) = match path_enum {
+        None => (
+            1,
+            format!("`#[command({pattern:?})]` handlers take `(ctx: CommandCtx)`"),
+        ),
+        Some(name) => (
+            2,
+            format!("`#[command({pattern:?})]` handlers take `(ctx: CommandCtx, path: {name})`"),
+        ),
+    };
+    if let Some(receiver) = sig.receiver() {
+        return Err(syn::Error::new_spanned(receiver, message));
+    }
+    if sig.inputs.len() != count || !sig.inputs.iter().all(|a| matches!(a, FnArg::Typed(_))) {
+        let span = if sig.inputs.is_empty() {
+            sig.ident.span()
+        } else {
+            sig.inputs.span()
+        };
+        return Err(syn::Error::new(span, message));
+    }
+    if let (Some(name), Some(FnArg::Typed(param))) = (path_enum, sig.inputs.iter().nth(1)) {
+        let ok = match &*param.ty {
+            Type::Path(path) => {
+                path.qself.is_none()
+                    && path
+                        .path
+                        .segments
+                        .last()
+                        .is_some_and(|s| s.ident == name && s.arguments.is_none())
+            }
+            _ => false,
+        };
+        if !ok {
+            return Err(syn::Error::new_spanned(
+                &param.ty,
+                format!(
+                    "the second parameter must be `{name}`, the enum `#[command]` generates for this pattern"
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The generated `<Fn>Path` enum and its impls.
+fn path_enum(
+    item: &ItemFn,
+    enum_ident: &Ident,
+    fn_name: &str,
+    pattern: &str,
+    paths: &[String],
+    variants: &[Ident],
+) -> TokenStream {
+    let vis = &item.vis;
+    let cfgs = item.attrs.iter().filter(|a| a.path().is_ident("cfg"));
+    let doc = format!(" The Command Paths of `{fn_name}`: `{pattern}`.");
+    let variant_docs = paths.iter().map(|p| format!(" `/{p}`"));
+    let count = paths.len();
+    let cfgs2 = cfgs.clone();
+    let cfgs3 = cfgs.clone();
+    quote! {
+        #(#cfgs)*
+        #[doc = #doc]
+        #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug, ::core::cmp::PartialEq, ::core::cmp::Eq, ::core::hash::Hash)]
+        #[allow(non_camel_case_types, clippy::enum_variant_names)]
+        #vis enum #enum_ident {
+            #( #[doc = #variant_docs] #variants, )*
+        }
+
+        #(#cfgs2)*
+        impl #enum_ident {
+            /// Every path, in expansion order.
+            pub const ALL: [Self; #count] = [#(Self::#variants),*];
+
+            /// The Command Path, words joined by one space.
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    #(Self::#variants => #paths,)*
+                }
+            }
+        }
+
+        #(#cfgs3)*
+        impl ::noctis::__private::core::CommandPath for #enum_ident {
+            const PATHS: &'static [&'static str] = &[#(#paths),*];
+
+            fn from_path(path: &str) -> ::core::option::Option<Self> {
+                match path {
+                    #(#paths => ::core::option::Option::Some(Self::#variants),)*
+                    _ => ::core::option::Option::None,
+                }
+            }
+
+            fn as_str(self) -> &'static str {
+                Self::as_str(self)
+            }
+        }
+    }
+}
+
+/// Expands `#[command(args)] item`.
+pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let args = parse_args(args)?;
+    let item: ItemFn = syn::parse2(item)?;
+    check_shape(&item)?;
+    let paths = check_pattern(&args).map_err(|violations| report(&args, &violations))?;
+    let pattern = args.pattern.value();
+    let name = item.sig.ident.clone();
+    let fn_name = name.to_string();
+    let fn_name = fn_name.strip_prefix("r#").unwrap_or(&fn_name).to_owned();
+    let has_group = pattern.contains('(');
+    let enum_ident = if has_group {
+        let names = variants(&pattern, &paths)
+            .map_err(|message| syn::Error::new(args.pattern.span(), message))?;
+        let enum_ident = ident(&enum_name(&fn_name), name.span())?;
+        let variants = names
+            .iter()
+            .map(|n| ident(n, args.pattern.span()))
+            .collect::<syn::Result<Vec<_>>>()?;
+        Some((enum_ident, variants))
+    } else {
+        None
+    };
+    check_params(
+        &item,
+        &pattern,
+        enum_ident.as_ref().map(|(e, _)| e.to_string()).as_deref(),
+    )?;
+
+    let ItemFn {
+        attrs,
+        vis,
+        sig,
+        block,
+        ..
+    } = &item;
+    let mut inner = sig.clone();
+    inner.ident = Ident::new("__noctis_command", name.span());
+    let output_span = match &sig.output {
+        ReturnType::Default => sig.ident.span(),
+        ReturnType::Type(_, ty) => ty.span(),
+    };
+    let description = args
+        .description
+        .as_ref()
+        .map(LitStr::value)
+        .unwrap_or_default();
+    let inner = inner.into_token_stream();
+    let (generated, call) = if let Some((enum_ident, variants)) = &enum_ident {
+        let generated = path_enum(&item, enum_ident, &fn_name, &pattern, &paths, variants);
+        let new = quote_spanned! {output_span=>
+            ::noctis::__private::core::CommandHandler::__new::<#enum_ident, _, _>
+        };
+        (
+            generated,
+            quote! { #new(::core::concat!(::core::module_path!(), "::", #fn_name), #pattern, #description, __noctis_command) },
+        )
+    } else {
+        let new = quote_spanned! {output_span=>
+            ::noctis::__private::core::CommandHandler::__new_plain
+        };
+        (
+            TokenStream::new(),
+            quote! { #new(::core::concat!(::core::module_path!(), "::", #fn_name), &[#(#paths),*], #description, __noctis_command) },
+        )
+    };
+    Ok(quote! {
+        #generated
+
+        #(#attrs)*
+        #vis fn #name() -> ::noctis::__private::core::CommandHandler {
+            #inner #block
+            #call
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(src: &str) -> TokenStream {
+        src.parse().unwrap()
+    }
+
+    const PING: &str = "async fn ping(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }";
+    const CONFIG: &str =
+        "async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> { Ok(()) }";
+
+    fn error(args: TokenStream, src: &str) -> String {
+        expand(args, item(src)).unwrap_err().to_string()
+    }
+
+    /// Every message of a combined error.
+    fn messages(args: TokenStream, src: &str) -> Vec<String> {
+        expand(args, item(src))
+            .unwrap_err()
+            .into_iter()
+            .map(|e| e.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn expands_a_plain_path() {
+        let out = expand(
+            quote!("ping", description = "d"),
+            item(&format!("/// docs\npub {PING}")),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            out.contains("pub fn ping () -> :: noctis :: __private :: core :: CommandHandler"),
+            "{out}"
+        );
+        assert!(out.contains("__new_plain"), "{out}");
+        assert!(
+            out.contains("& [\"ping\"] , \"d\" , __noctis_command"),
+            "{out}"
+        );
+        assert!(!out.contains("enum"), "{out}");
+        assert!(out.contains("doc"), "{out}");
+    }
+
+    #[test]
+    fn expands_a_pattern() {
+        let out = expand(
+            quote!(
+                "config (set|get) (prefix|welcome)",
+                description = "Configure"
+            ),
+            item(&format!("pub(crate) {CONFIG}")),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            out.contains(
+                "pub (crate) enum ConfigPath { # [doc = \" `/config set prefix`\"] SetPrefix ,"
+            ),
+            "{out}"
+        );
+        assert!(out.contains("GetWelcome"), "{out}");
+        assert!(out.contains("__new :: < ConfigPath , _ , _ >"), "{out}");
+        assert!(
+            out.contains("\"config (set|get) (prefix|welcome)\" , \"Configure\""),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn cfg_attributes_reach_the_enum() {
+        let out = expand(
+            quote!("x (a|b)", description = "d"),
+            item(
+                "#[cfg(test)] async fn x(c: CommandCtx, p: XPath) -> HandlerResult<()> { Ok(()) }",
+            ),
+        )
+        .unwrap()
+        .to_string();
+        assert_eq!(out.matches("# [cfg (test)]").count(), 4, "{out}");
+    }
+
+    /// Matrix 11: no `?` help without a `?`.
+    #[test]
+    fn cmd_11_no_question_mark_help_without_question_mark() {
+        let limits = Limits::default();
+        for rule in [RuleId::CMD_11, RuleId::CMD_12] {
+            let mut v = Violation::new(rule, "config", Bound::Describe("x"), Actual::Count(0));
+            add_help(&mut v, "config set", &limits);
+            assert_eq!(v.help, None);
+            add_help(&mut v, "config (set)?", &limits);
+            assert_eq!(v.help.as_deref(), Some("remove the `?`: \"config (set)\""));
+        }
+    }
+
+    /// Matrix 20: an empty description.
+    #[test]
+    fn cmd_04_empty_description() {
+        let errs = messages(quote!("ping", description = ""), PING);
+        assert_eq!(
+            errs,
+            [
+                "[CMD-04] ping: limit between 1 and 100, actual 0\n  = note: in the default description"
+            ]
+        );
+    }
+
+    /// Matrix 19 (help text) and 24: one CMD-04 per handler path.
+    #[test]
+    fn cmd_04_missing_description_per_expansion() {
+        let errs = messages(quote!("config (set|get) (prefix|welcome)"), CONFIG);
+        assert_eq!(errs.len(), 4, "{errs:?}");
+        assert_eq!(
+            errs[0],
+            "[CMD-04] config set prefix: limit between 1 and 100, actual 0\n  = note: missing description\n  \
+             = help: add `description = \"…\"` with 1 to 100 characters (doc comments are rustdoc only)"
+        );
+    }
+
+    /// Matrix 23: UTF-16 length.
+    #[test]
+    fn cmd_04_unicode_over() {
+        let desc = "😀".repeat(51);
+        let errs = messages(quote!("ping", description = #desc), PING);
+        assert_eq!(errs.len(), 1);
+        assert!(errs[0].starts_with("[CMD-04] ping: limit between 1 and 100, actual 102"));
+    }
+
+    /// Matrix 17: 33 × `ğ`.
+    #[test]
+    fn cmd_02_unicode_word_33() {
+        let word = "ğ".repeat(33);
+        let errs = messages(quote!(#word, description = "d"), PING);
+        assert_eq!(
+            errs,
+            [format!(
+                "[CMD-02] {word}: limit between 1 and 32, actual 33"
+            )]
+        );
+    }
+
+    /// Matrix 27: an empty pattern is CMD-10 only.
+    #[test]
+    fn cmd_10_empty_pattern() {
+        let errs = messages(quote!("", description = "d"), PING);
+        assert_eq!(errs, ["[CMD-10] limit between 1 and 3, actual 0"]);
+    }
+
+    /// Matrix 36: spacing, then tree violations, all in one error.
+    #[test]
+    fn cmd_02_several_rules_at_once() {
+        let errs = messages(quote!("Config  it's", description = "d"), PING);
+        let rules: Vec<_> = errs.iter().map(|e| &e[..8]).collect();
+        assert_eq!(rules, ["[CMD-02]", "[CMD-03]", "[CMD-01]"], "{errs:?}");
+    }
+
+    #[test]
+    fn cmd_15_over_cap_help() {
+        let alts: Vec<String> = (1..=26).map(|i| format!("a{i}")).collect();
+        let pattern = format!("b ({})", alts.join("|"));
+        let errs = messages(quote!(#pattern, description = "d"), CONFIG);
+        assert_eq!(
+            errs,
+            [format!(
+                "[CMD-15] {pattern}: limit at most 25, actual 26\n  \
+                 = help: raise the cap with `max_expansions = 26` or split the pattern"
+            )]
+        );
+    }
+
+    /// Matrix 37-40: argument errors.
+    #[test]
+    fn argument_errors() {
+        let cases: [(TokenStream, &str); 17] = [
+            (quote!(), MISSING_PATTERN),
+            (quote!(PATTERN), NOT_A_LITERAL),
+            (quote!(description = "d"), MISSING_PATTERN),
+            (quote!(b"x"), NOT_A_LITERAL),
+            (quote!("ping", max_expansions = 0), CAP_ZERO),
+            (quote!("ping", max_expansions = -1), CAP_LITERAL),
+            (quote!("ping", max_expansions = "3"), CAP_LITERAL),
+            (quote!("ping", max_expansions = N), CAP_LITERAL),
+            (quote!("ping", max_expansions = 3.0), CAP_LITERAL),
+            (quote!("ping", max_expansions), CAP_LITERAL),
+            (
+                quote!("ping", description = "a", description = "b"),
+                "duplicate `#[command]` argument `description`",
+            ),
+            (
+                quote!("ping", foo = 1),
+                "unknown `#[command]` argument `foo`: expected `description` or `max_expansions`",
+            ),
+            (
+                quote!("ping", ephemeral),
+                "`#[command]` argument `ephemeral` is planned and not supported yet",
+            ),
+            (
+                quote!("ping", permissions = X),
+                "`#[command]` argument `permissions` is planned and not supported yet",
+            ),
+            (
+                quote!("ping", rate_limit(user, 3)),
+                "`#[command]` argument `rate_limit` is planned and not supported yet",
+            ),
+            (
+                quote!("ping", description = concat!("a")),
+                DESCRIPTION_LITERAL,
+            ),
+            (quote!("ping", description), DESCRIPTION_LITERAL),
+        ];
+        for (args, expected) in cases {
+            assert_eq!(error(args.clone(), PING), expected, "{args}");
+        }
+    }
+
+    /// Matrix 40: raw strings.
+    #[test]
+    fn raw_strings_are_accepted() {
+        let args: TokenStream = "r\"ping\", description = r#\"a \"b\"\"#".parse().unwrap();
+        let out = expand(args, item(PING)).unwrap().to_string();
+        assert!(out.contains("\"a \\\"b\\\"\""), "{out}");
+        let parsed = parse_args(quote!("ping", max_expansions = 30)).unwrap();
+        assert_eq!(parsed.max_expansions, Some(30));
+    }
+
+    /// Matrix 41: signature shape.
+    #[test]
+    fn signature_errors() {
+        let args = || quote!("ping", description = "d");
+        for (src, expected) in [
+            (
+                "fn ping(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }",
+                "`#[command]` needs an `async fn`",
+            ),
+            (
+                "const async fn ping(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }",
+                PLAIN,
+            ),
+            (
+                "async unsafe fn ping(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }",
+                PLAIN,
+            ),
+            (
+                "async extern \"C\" fn ping(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }",
+                PLAIN,
+            ),
+            (
+                "async fn ping<T>(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }",
+                "`#[command]` handlers cannot be generic",
+            ),
+            (
+                "async fn ping(ctx: CommandCtx) -> HandlerResult<()> where u8: Copy { Ok(()) }",
+                "`#[command]` handlers cannot be generic",
+            ),
+            (
+                "async fn ping(&self) -> HandlerResult<()> { Ok(()) }",
+                "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx)`",
+            ),
+        ] {
+            assert_eq!(error(args(), src), expected, "{src}");
+        }
+    }
+
+    /// Matrix 42 and 43: parameter count and the path parameter.
+    #[test]
+    fn parameter_errors() {
+        const PLAIN_PARAMS: &str = "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx)`";
+        const PATTERN_PARAMS: &str = "`#[command(\"config (set|get)\")]` handlers take `(ctx: CommandCtx, path: ConfigPath)`";
+        let ping = || quote!("ping", description = "d");
+        let config = || quote!("config (set|get)", description = "d");
+        for (args, src, expected) in [
+            (
+                ping(),
+                "async fn ping() -> HandlerResult<()> { Ok(()) }",
+                PLAIN_PARAMS,
+            ),
+            (
+                ping(),
+                "async fn ping(c: CommandCtx, x: u8) -> HandlerResult<()> { Ok(()) }",
+                PLAIN_PARAMS,
+            ),
+            (
+                config(),
+                "async fn config(c: CommandCtx) -> HandlerResult<()> { Ok(()) }",
+                PATTERN_PARAMS,
+            ),
+            (
+                config(),
+                "async fn config(c: CommandCtx, p: ConfigPath, x: u8) -> HandlerResult<()> { Ok(()) }",
+                PATTERN_PARAMS,
+            ),
+            (
+                config(),
+                "async fn config(c: CommandCtx, p: String) -> HandlerResult<()> { Ok(()) }",
+                "the second parameter must be `ConfigPath`, the enum `#[command]` generates for this pattern",
+            ),
+        ] {
+            assert_eq!(error(args, src), expected, "{src}");
+        }
+    }
+
+    /// Matrix 45: variant naming.
+    #[test]
+    fn variant_names() {
+        for (word, expected) in [
+            ("set-prefix", "SetPrefix"),
+            ("a_b", "AB"),
+            ("ğüncelle", "Ğüncelle"),
+            ("straße", "Straße"),
+            ("ßa", "SSa"),
+            ("2fa", "_2fa"),
+            ("self", "Self_"),
+            ("汉字", "汉字"),
+            ("ʼa", "ʼa"),
+        ] {
+            assert_eq!(variant_name(&[word]), expected, "{word}");
+        }
+        assert_eq!(variant_name(&[]), "Bare");
+        assert_eq!(variant_name(&["set", "prefix"]), "SetPrefix");
+        let out = expand(
+            quote!("x (self|2fa)", description = "d"),
+            item("async fn x(c: CommandCtx, p: XPath) -> HandlerResult<()> { Ok(()) }"),
+        )
+        .unwrap()
+        .to_string();
+        assert!(out.contains("Self_"), "{out}");
+        assert!(out.contains("# [allow (non_camel_case_types , clippy :: enum_variant_names)]"));
+    }
+
+    /// Matrix 8: an absent optional group gives `Bare`.
+    #[test]
+    fn optional_group_variants() {
+        let paths = expand_paths("(a|b)? c");
+        assert_eq!(variants("(a|b)? c", &paths).unwrap(), ["A", "B", "Bare"]);
+    }
+
+    fn expand_paths(pattern: &str) -> Vec<String> {
+        rules::expand(pattern, &Limits::default()).unwrap()
+    }
+
+    /// Matrix 46: variant collision.
+    #[test]
+    fn variant_collision() {
+        assert_eq!(
+            error(
+                quote!("x (a-b|a_b)", description = "d"),
+                "async fn x(c: CommandCtx, p: XPath) -> HandlerResult<()> { Ok(()) }"
+            ),
+            "`#[command]` path variants collide: `x a-b` and `x a_b` both name `AB`; rename one alternative"
+        );
+    }
+
+    /// Matrix 47: enum names.
+    #[test]
+    fn enum_names() {
+        for (fn_name, expected) in [
+            ("config", "ConfigPath"),
+            ("set_prefix", "SetPrefixPath"),
+            ("r#type", "TypePath"),
+            ("grüße", "GrüßePath"),
+            ("_1", "_1Path"),
+        ] {
+            assert_eq!(enum_name(fn_name), expected, "{fn_name}");
+        }
+        let out = expand(
+            quote!("t (a|b)", description = "d"),
+            item("async fn r#type(c: CommandCtx, p: TypePath) -> HandlerResult<()> { Ok(()) }"),
+        )
+        .unwrap()
+        .to_string();
+        assert!(out.contains("enum TypePath"), "{out}");
+        assert!(out.contains("\"type\""), "{out}");
+    }
+}

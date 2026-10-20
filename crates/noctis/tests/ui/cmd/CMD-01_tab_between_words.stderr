@@ -1,0 +1,7 @@
+error: [CMD-01] config    set: limit words separated by single ASCII spaces, actual `\t`
+         = note: at byte 6
+         = help: separate words with exactly one ASCII space
+ --> tests/ui/cmd/CMD-01_tab_between_words.rs:3:11
+  |
+3 | #[command("config\tset", description = "d")]
+  |           ^^^^^^^^^^^^^

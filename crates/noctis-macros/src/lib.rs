@@ -5,8 +5,8 @@
 //!
 //! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
 //! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
-//! `components!`, the `Modal` and `Choices` derives, and the `#[event]`
-//! attribute.
+//! `components!`, the `Modal` and `Choices` derives, and the `#[event]` and
+//! `#[command]` attributes.
 //!
 //! Generated code names runtime items only through
 //! `::noctis::__private::{codec, ui, core}` and std items through `::core`/`::std`
@@ -17,6 +17,7 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
 mod choices;
+mod command;
 mod common;
 mod components;
 mod event;
@@ -151,6 +152,21 @@ pub fn components(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn event(args: TokenStream, item: TokenStream) -> TokenStream {
     event::expand(args.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Checks a Command Path or Pattern at expansion (CMD-01..05, CMD-10..13,
+/// CMD-15, CMD-16) and turns `async fn name(ctx: CommandCtx[, path:
+/// <Fn>Path]) -> HandlerResult<()>` into `fn name() -> CommandHandler`, a
+/// descriptor for `Module::add`.
+///
+/// Takes the path or pattern literal first, then `description = "…"` and
+/// `max_expansions = n`; a pattern with a group also generates the
+/// `<Fn>Path` enum. See `noctis::command`.
+#[proc_macro_attribute]
+pub fn command(args: TokenStream, item: TokenStream) -> TokenStream {
+    command::expand(args.into(), item.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -2,20 +2,21 @@
 
 use std::fmt;
 
+use crate::command::CommandHandler;
 use crate::events::EventHandler;
 
 pub(crate) mod sealed {
-    use crate::events::EventHandler;
+    use crate::Module;
 
     /// How a descriptor adds itself to a Module.
     pub trait Sealed {
-        /// Appends the registration to `handlers`.
-        fn register(self, handlers: &mut Vec<EventHandler>);
+        /// Appends the registration to `module`.
+        fn register(self, module: &mut Module);
     }
 }
 
-/// Something [`Module::add`] accepts: an `#[event]` handler today; commands,
-/// Routes and hooks join later. Sealed.
+/// Something [`Module::add`] accepts: an `#[event]` handler or a
+/// `#[command]` descriptor today; Routes and hooks join later. Sealed.
 ///
 /// Event handlers come from `#[event]`: annotating `async fn on_user` gives
 /// a `fn on_user()` that returns the handler.
@@ -35,12 +36,20 @@ pub(crate) mod sealed {
 pub trait Descriptor: sealed::Sealed {}
 
 impl sealed::Sealed for EventHandler {
-    fn register(self, handlers: &mut Vec<EventHandler>) {
-        handlers.push(self);
+    fn register(self, module: &mut Module) {
+        module.handlers.push(self);
     }
 }
 
 impl Descriptor for EventHandler {}
+
+impl sealed::Sealed for CommandHandler {
+    fn register(self, module: &mut Module) {
+        module.commands.push(self);
+    }
+}
+
+impl Descriptor for CommandHandler {}
 
 /// A group of registrations under a path-like id (`"a/b/c"`), mounted on an
 /// App with `AppBuilder::module`.
@@ -54,6 +63,7 @@ impl Descriptor for EventHandler {}
 ///
 /// Event handlers come from `#[event]`: annotating `async fn award_xp`
 /// gives a `fn award_xp()` that returns the handler to [`add`](Self::add).
+/// Slash Commands come from `#[command]` the same way.
 ///
 /// ```
 /// # use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
@@ -73,6 +83,7 @@ impl Descriptor for EventHandler {}
 pub struct Module {
     id: &'static str,
     handlers: Vec<EventHandler>,
+    commands: Vec<CommandHandler>,
     children: Vec<Module>,
 }
 
@@ -86,19 +97,20 @@ impl Module {
         Self {
             id,
             handlers: Vec::new(),
+            commands: Vec::new(),
             children: Vec::new(),
         }
     }
 
-    /// Adds a registration (an `#[event]` handler). Adding the same
-    /// descriptor twice registers it twice.
+    /// Adds a registration: an `#[event]` handler or a `#[command]`
+    /// descriptor. Adding the same descriptor twice registers it twice.
     #[must_use = "Module::add returns the Module with the registration added"]
     #[expect(
         clippy::should_implement_trait,
         reason = "`Module::add` is the registration verb of the public API (AD-7), not `+`"
     )]
     pub fn add(mut self, descriptor: impl Descriptor) -> Self {
-        descriptor.register(&mut self.handlers);
+        descriptor.register(&mut self);
         self
     }
 
@@ -127,6 +139,15 @@ impl Module {
         &self.handlers
     }
 
+    /// Its own Commands, in `add` order.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "Story 6.4 folds commands into the Registry")
+    )]
+    pub(crate) fn commands(&self) -> &[CommandHandler] {
+        &self.commands
+    }
+
     /// Its children, in `module` order.
     pub(crate) fn children(&self) -> &[Module] {
         &self.children
@@ -136,9 +157,11 @@ impl Module {
 impl fmt::Debug for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let handlers: Vec<&str> = self.handlers.iter().map(EventHandler::name).collect();
+        let commands: Vec<&str> = self.commands.iter().map(CommandHandler::name).collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
+            .field("commands", &commands)
             .field("children", &self.children)
             .finish()
     }

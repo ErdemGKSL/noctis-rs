@@ -1,0 +1,17 @@
+error: [CMD-11] config set: limit a subcommand or a subcommand group, not both, actual `set`
+         = note: `config set` makes `set` a subcommand
+         = note: `config set prefix` makes `set` a subcommand group
+         = help: remove the `?`: "config (set|get) (prefix|welcome)"
+ --> tests/ui/cmd/CMD-11_optional_group.rs:3:11
+  |
+3 | #[command("config (set|get) (prefix|welcome)?", description = "d")]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [CMD-11] config get: limit a subcommand or a subcommand group, not both, actual `get`
+         = note: `config get` makes `get` a subcommand
+         = note: `config get prefix` makes `get` a subcommand group
+         = help: remove the `?`: "config (set|get) (prefix|welcome)"
+ --> tests/ui/cmd/CMD-11_optional_group.rs:3:11
+  |
+3 | #[command("config (set|get) (prefix|welcome)?", description = "d")]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

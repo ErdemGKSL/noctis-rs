@@ -7,7 +7,8 @@
 //!
 //! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
 //!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`event`](macro@event),
-//!   [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
+//!   [`command`](macro@command), [`CommandHandler`], [`CommandCtx`],
+//!   [`CommandPath`], [`UnknownCommandPath`], [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
 //!   edge's tuning) and the errors ([`Error`], [`BuildError`],
 //!   [`BuildViolation`], [`StartError`], [`RunError`], [`EnvError`],
 //!   [`TokenError`], [`ResourceConflict`], [`HttpConfigError`],
@@ -22,7 +23,8 @@
 //!   derives, the `Route` and `Payload` traits,
 //!   [`RouteComponents`](prelude::RouteComponents), [`Rgb`](ui::Rgb) and the
 //!   macros [`components!`], [`label!`], [`placeholder!`], [`content!`] and
-//!   [`rgb!`] into scope.
+//!   [`rgb!`], and the [`event`](macro@event) and [`command`](macro@command)
+//!   attributes with [`CommandCtx`] into scope.
 //! - [`ui`]: the Components V2 message model: one type per component,
 //!   placement checked by the compiler, components built from Routes, and
 //!   attachments.
@@ -293,10 +295,11 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error,
-    ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
-    HttpConfigError, HttpProxyError, LogSink, Module, Plugin, ReportKind, Resource,
-    ResourceConflict, RunError, Runtime, StartError, State, Token, TokenError,
+    AckDeadlineMissed, App, AppBuilder, BuildError, BuildViolation, CommandCtx, CommandHandler,
+    CommandPath, Descriptor, EnvError, Error, ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError,
+    HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, LogSink, Module,
+    Plugin, ReportKind, Resource, ResourceConflict, RunError, Runtime, StartError, State, Token,
+    TokenError, UnknownCommandPath,
 };
 
 pub mod observe {
@@ -322,6 +325,60 @@ pub mod observe {
 
     pub use noctis_core::observe::{METRICS, MetricInfo, MetricType, describe_metrics};
 }
+
+/// Declares a slash Command: checks its Command Path or Pattern at compile
+/// time and turns the `async fn` into `fn name() -> CommandHandler`, which
+/// [`Module::add`] takes.
+///
+/// ```
+/// use noctis::prelude::*;
+///
+/// /// Rustdoc only: never the Command's description.
+/// #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
+/// async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> {
+///     match path {
+///         ConfigPath::SetPrefix | ConfigPath::SetWelcome => {}
+///         ConfigPath::GetPrefix | ConfigPath::GetWelcome => {}
+///     }
+///     assert_eq!(ctx.command_path(), path.as_str());
+///     Ok(())
+/// }
+///
+/// #[command("ping", description = "Check that the bot answers")]
+/// async fn ping(_ctx: CommandCtx) -> HandlerResult<()> {
+///     Ok(())
+/// }
+///
+/// assert_eq!(ConfigPath::ALL[0].as_str(), "config set prefix");
+/// assert_eq!(config().paths(), ["config set prefix", "config set welcome", "config get prefix", "config get welcome"]);
+/// let _module = Module::new("settings").add(config()).add(ping());
+/// ```
+///
+/// The first argument is a string literal: a Command Path of 1 to 3 words
+/// separated by single ASCII spaces (1 word a command, 2 a subcommand, 3 a
+/// subcommand in a group; see [`rules::command::PathKind`]), or a Command
+/// Pattern with groups `(a|b)` and optional groups `(a|b)?`, expanded left to
+/// right by [`rules::command::expand`]. Then, in any order, each at most
+/// once:
+///
+/// - `description = "…"`: the description, 1 to 100 characters, required.
+///   Doc comments stay rustdoc and never become it.
+/// - `max_expansions = n`: the pattern's expansion cap (default 25).
+///
+/// Every check of [`rules::command::validate_pattern_spacing`],
+/// [`rules::command::expand`] and [`rules::command::validate_tree`] runs at
+/// expansion; each violation is a compile error naming its rule id, all of
+/// them at once.
+///
+/// A path (no group) takes `(ctx: CommandCtx)`. A pattern with a group
+/// generates `enum <Fn>Path` (the fn name in `UpperCamelCase` plus `Path`,
+/// with the fn's visibility) and takes `(ctx: CommandCtx, path: <Fn>Path)`.
+/// Its variants concatenate the chosen alternatives in `UpperCamelCase`
+/// (words split on `-` and `_`; `Bare` when every group is absent; `_` before
+/// a leading digit; `Self_` for `Self`); two equal names are a compile error.
+/// The enum has `ALL` (expansion order), `as_str()` and implements
+/// [`CommandPath`]. Both forms return `HandlerResult<()>`.
+pub use noctis_macros::command;
 
 /// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
 /// into `fn name() -> EventHandler`, which [`Module::add`] takes. See
@@ -707,15 +764,17 @@ pub mod prelude {
     //! - [`event`](macro@event), [`Module`], [`EventCtx`], [`HandlerError`]
     //!   and [`HandlerResult`]: typed gateway Event Handlers grouped in
     //!   Modules.
+    //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands.
     //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
-        App, AppBuilder, ErrorOrigin, ErrorSink, HandlerError, HandlerResult, Module, State,
+        App, AppBuilder, CommandCtx, ErrorOrigin, ErrorSink, HandlerError, HandlerResult, Module,
+        State,
     };
-    pub use noctis_macros::event;
     pub use noctis_macros::{Choices, Modal, Payload, PayloadEnum, Route};
+    pub use noctis_macros::{command, event};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};
 }

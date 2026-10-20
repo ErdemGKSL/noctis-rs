@@ -1,0 +1,8 @@
+error: [CMD-12] config: limit a base command with subcommands is not invokable, actual `config`
+         = note: `config` makes `config` invokable
+         = note: `config set` gives `config` subcommands
+         = help: remove the `?`: "config (set)"
+ --> tests/ui/cmd/CMD-12_optional_single_group.rs:3:11
+  |
+3 | #[command("config (set)?", description = "d")]
+  |           ^^^^^^^^^^^^^^^

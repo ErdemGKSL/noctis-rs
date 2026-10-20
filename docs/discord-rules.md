@@ -75,8 +75,8 @@ points straight back to this file.
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **CMD-01** Name charset | Must match `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` with the Unicode flag. Note: the official regex allows `ʼ` (U+02BC, modifier letter apostrophe), **not** the ASCII `'`. Applies to command, subcommand group, subcommand and option names. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (names from runtime-loaded Locale files) | `#[command("…")]` / `command!` splits the Command Pattern into words and matches each against the regex. The check lives in `noctis-rules` (which may depend on `regex` with Unicode tables); the proc macro and App-build call the same function. Error spans point at the offending word. |
-| **CMD-02** Name length | 1-32 characters per word **[D]** (counting unit **[U]**: Noctis counts both Unicode scalar values and UTF-16 units and takes the larger) | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal) / App-build (loaded locales) | Same macro pass as CMD-01. Empty words (`"config  set"`) are rejected. |
+| **CMD-01** Name charset | Must match `^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$` with the Unicode flag. Note: the official regex allows `ʼ` (U+02BC, modifier letter apostrophe), **not** the ASCII `'`. Applies to command, subcommand group, subcommand and option names. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (names from runtime-loaded Locale files) | `#[command("…")]` / `command!` splits the Command Pattern into words and matches each against the regex. The check lives in `noctis-rules` (which may depend on `regex` with Unicode tables); the proc macro and App-build call the same function. Error spans point at the pattern literal. Whitespace other than U+0020 between words (`"config\tset"`, U+00A0) is CMD-01 too, reported by `validate_pattern_spacing` before expansion. |
+| **CMD-02** Name length | 1-32 characters per word **[D]** (counting unit **[U]**: Noctis counts both Unicode scalar values and UTF-16 units and takes the larger) | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal) / App-build (loaded locales) | Same macro pass as CMD-01. Leading, trailing or doubled spaces are empty words (`"config  set"`, `" ping"`), rejected by `noctis_rules::command::validate_pattern_spacing` before expansion (note `empty word at byte N`). |
 | **CMD-03** Lowercase | If a letter has a lowercase variant, the lowercase form must be used. Uncased letters (e.g. CJK, Devanagari) are allowed. **[D]** | [AC §Naming](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-naming) | Compile-time (literal) / App-build (loaded locales) | Macro checks `c.to_lowercase() == c` for every `char`. The error suggests the lowercased word. |
 | **CMD-04** Description length | 1-100 characters for `CHAT_INPUT` commands, subcommands, groups and options **[D]** | [AC §Command structure](https://discord.com/developers/docs/interactions/application-commands#application-command-object-application-command-structure) | Compile-time (literal; default-locale file with the `i18n` feature) / App-build (merged and non-default locales) | Source per AD-16: the literal `description = "…"` without the `i18n` feature; with it, `cmd.<path>.description` in the default-locale file, where a differing literal is a compile error. Doc comments are rustdoc only. The macro measures the description; a missing one is a compile error (Noctis never sends tescord's `"..."` placeholder **[N]**). |
 | **CMD-05** Per-command size budget | Combined `name` + `description` + choice `value` of the command, all options (incl. subcommands and groups) and all choices ≤ **8000** characters. With localizations, only the **longest** variant per field (including the default) counts. **[D]** (counting unit **[U]**) | [AC §Slash Commands](https://discord.com/developers/docs/interactions/application-commands#slash-commands) | Compile-time (one pattern, static locales) / App-build (after merging Modules, or with runtime-loaded locales) | Macro emits `const SIZE: usize` per registration. Merging changes the total, so `App::build()` recomputes the budget on the merged tree using `max(len(default), len(each localization))` per field. |
@@ -444,8 +444,10 @@ using the semantics FR-8 adopts from tescord, written out here:
 
 1. Groups are `(a|b|…)`; a trailing `?` adds the variant with the group removed.
    Malformed patterns fail with CMD-16.
-2. Expansion is left to right in declaration order (FR-8); whitespace is collapsed;
-   duplicates are rejected, and more than 25 expansions (the default cap,
+2. Expansion is left to right in declaration order (FR-8). `expand` collapses whitespace,
+   so `#[command]` and App-build first run `validate_pattern_spacing` on the pattern as
+   written (words separated by exactly one ASCII space: CMD-02 for an empty word, CMD-01
+   for other whitespace); duplicates are rejected, and more than 25 expansions (the default cap,
    `#[command(max_expansions = n)]` changes it) is an error (CMD-15).
 3. Each expansion is split into words: 1 word = command, 2 = subcommand,
    3 = group + subcommand; more than 3 is CMD-10.
@@ -457,8 +459,8 @@ using the semantics FR-8 adopts from tescord, written out here:
 **Example that fails.** The PRD's own example:
 
 ```rust
-#[command("config (set|get) (prefix|welcome)?")]
-async fn config(ctx: CommandCtx, which: ConfigPath) -> Result<()> { … }
+#[command("config (set|get) (prefix|welcome)?", description = "Configure")]
+async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> { … }
 ```
 
 expands to:
@@ -476,16 +478,18 @@ config get          → get = SUBCOMMAND   ✗ already a GROUP
 `config set prefix`). Discord has no way to express that, so the macro emits:
 
 ```text
-error: [CMD-11] `set` would be both a subcommand and a subcommand group of `/config`
+error: [CMD-11] config set: limit a subcommand or a subcommand group, not both, actual `set`
+         = note: `config set` makes `set` a subcommand
+         = note: `config set prefix` makes `set` a subcommand group
+         = help: remove the `?`: "config (set|get) (prefix|welcome)"
  --> src/modules/config.rs:1:11
   |
-1 | #[command("config (set|get) (prefix|welcome)?")]
-  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: `config set` makes `set` a subcommand
-  = note: `config set prefix` makes `set` a subcommand group
-  = help: remove the `?`: "config (set|get) (prefix|welcome)",
-          or move the bare form to a separate path such as "config show"
+1 | #[command("config (set|get) (prefix|welcome)?", description = "Configure")]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
+
+The same error follows for `get`; every violation is reported in one compile. To keep a
+bare form, move it to a separate path such as `"config show"`.
 
 The same tree check runs again in `App::build()` on the **merged** trees, because two
 patterns that are each valid can collide once Modules are combined (e.g. Module A:

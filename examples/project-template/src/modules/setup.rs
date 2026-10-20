@@ -96,7 +96,13 @@ pub fn config_key(guild: Id<GuildMarker>) -> String {
 
 /// Entry point (UD-3): no options, returns a View, no response code (FR-61).
 /// `ephemeral`: a single-admin flow, so it is private and uses the User Locale.
-#[command("setup start", ephemeral, permissions = MANAGE_GUILD, contexts = [Guild])]
+#[command(
+    "setup start",
+    description = "Configure the bot for this server, step by step",
+    ephemeral,                  // [planned]: rejected until its release
+    permissions = MANAGE_GUILD, // [planned]: rejected until its release
+    contexts = [Guild],         // [planned]: rejected until its release
+)]
 async fn setup_start(ctx: CommandCtx) -> HandlerResult<SetupWizard> {
     Ok(SetupWizard::new(SetupState {
         owner: ctx.user_id(),

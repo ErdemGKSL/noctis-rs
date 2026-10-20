@@ -1,0 +1,6 @@
+error: [CMD-15] b (a1|a2|a3|a4|a5|a6|a7|a8|a9|a10|a11|a12|a13|a14|a15|a16|a17|a18|a19|a20|a21|a22|a23|a24|a25|a26): limit at most 25, actual 26
+         = help: raise the cap with `max_expansions = 26` or split the pattern
+ --> tests/ui/cmd/CMD-15_over_cap.rs:3:11
+  |
+3 | #[command("b (a1|a2|a3|a4|a5|a6|a7|a8|a9|a10|a11|a12|a13|a14|a15|a16|a17|a18|a19|a20|a21|a22|a23|a24|a25|a26)", description = "d")]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

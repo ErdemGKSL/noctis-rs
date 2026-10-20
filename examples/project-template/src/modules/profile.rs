@@ -44,7 +44,12 @@ pub struct ProfileOptions {
     pub user: Option<ResolvedUser>,
 }
 
-#[command("profile", contexts = [Guild], rate_limit(user, 3, per = "10s"))]
+#[command(
+    "profile",
+    description = "Show a member's profile card",
+    contexts = [Guild],                    // [planned]: rejected until its release
+    rate_limit(user, 3, per = "10s"),      // [planned]: rejected until its release
+)]
 async fn profile(ctx: CommandCtx, opts: ProfileOptions) -> HandlerResult<ProfileView> {
     let target = opts.user.map_or_else(|| ctx.user_id(), |u| u.user.id);
     ProfileView::load(&ctx, target).await

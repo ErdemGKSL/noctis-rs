@@ -1,0 +1,6 @@
+error: [CMD-03] Config: limit lowercase, actual `Config`
+         = help: use `config`
+ --> tests/ui/cmd/CMD-03_uppercase.rs:3:11
+  |
+3 | #[command("Config", description = "d")]
+  |           ^^^^^^^^

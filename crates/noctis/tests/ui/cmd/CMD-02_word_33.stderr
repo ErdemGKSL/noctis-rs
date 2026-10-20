@@ -1,0 +1,5 @@
+error: [CMD-02] aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: limit between 1 and 32, actual 33
+ --> tests/ui/cmd/CMD-02_word_33.rs:3:11
+  |
+3 | #[command("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", description = "d")]
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

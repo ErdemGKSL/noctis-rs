@@ -72,7 +72,12 @@ pub struct ToggleModule {
 // ---------------------------------------------------------------------------------------
 
 /// Public by default: the dashboard is shared content, so it renders in the Guild Locale.
-#[command("dashboard", permissions = MANAGE_GUILD, contexts = [Guild])]
+#[command(
+    "dashboard",
+    description = "Open the server dashboard",
+    permissions = MANAGE_GUILD, // [planned]: rejected until its release
+    contexts = [Guild],         // [planned]: rejected until its release
+)]
 async fn dashboard(ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<DashboardView> {
     let guild = ctx
         .guild_id()

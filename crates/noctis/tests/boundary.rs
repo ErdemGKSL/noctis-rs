@@ -13,3 +13,6 @@ mod cv2;
 
 #[path = "boundary/modal.rs"]
 mod modal;
+
+#[path = "boundary/cmd.rs"]
+mod cmd;

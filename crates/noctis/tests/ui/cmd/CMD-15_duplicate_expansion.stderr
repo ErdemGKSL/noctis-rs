@@ -1,0 +1,6 @@
+error: [CMD-15] a (b|b): limit no duplicate expansions, actual `a b`
+         = note: produced 2 times
+ --> tests/ui/cmd/CMD-15_duplicate_expansion.rs:3:11
+  |
+3 | #[command("a (b|b)", description = "d")]
+  |           ^^^^^^^^^
