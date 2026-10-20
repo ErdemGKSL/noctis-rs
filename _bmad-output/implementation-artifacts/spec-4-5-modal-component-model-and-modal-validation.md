@@ -2,7 +2,8 @@
 title: 'Story 4.5: Modal component model and modal validation'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '5911db8d264ce7b04169a5f7a877246171ec7634'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
