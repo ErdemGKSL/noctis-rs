@@ -2,10 +2,10 @@
 title: 'Story 6.2: Typed options with `derive(Options)` and `derive(Choices)`'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '7b308e1b9f4f117418268afd237dc30fd2c98baa'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-6-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -314,6 +314,34 @@ JSON is the interaction `d` object. "Err X" means `Err(OptionError::X{..})`. Its
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 24 findings — high 0, medium 4, low 9, false 11, maybe-false 0
+- findings:
+  - `[false]` `[reject]` CMD-05 per-command budget ignores the options struct — the intent's Never list defers option-inclusive CMD-05/CMD-13 of a whole Command to 6.4; docs/discord-rules.md CMD-05 claims only the expanded pattern at `#[command]` plus an App-build recompute, not options.
+  - `[medium]` `[patch]` Integration tests share `static WARNED` and assert on its last element (flaky under parallel libtest; weak "handler not run" checks) — confirmed at crates/noctis/tests/options.rs:56/213/295/320/472/487, no `--test-threads=1` anywhere; grouped with the vgap race finding. Patch: per-test unique markers or per-test handler/static.
+  - `[false]` `[reject]` Non-integral JSON numbers on INTEGER reported as OPT-03 `OutOfRange` — Matrix row 50 deliberately specifies `1.5` and `1e3` → `OutOfRange`.
+  - `[false]` `[reject]` Strict eager deserialization of `data.resolved` fails the whole invocation — Matrix row 55 specifies malformed `resolved` → `Malformed`; Discord payloads match twilight's model.
+  - `[false]` `[reject]` Macro places spans by matching `noctis-rules` note text — the CMD-06 and OPT-09 trybuild `.stderr` fixtures pin those spans and the unit tests pin the note text, so a rewording fails the suite rather than moving silently.
+  - `[low]` `[reject]` Wrong `options[i]` index when an earlier field fails to parse — real (`check_field` enumerates `parsed`, crates/noctis-macros/src/options.rs:673), but only reachable alongside another error on the same compile and the fix threads the original index through `OptField`; not worth it.
+  - `[low]` `[reject]` Expansion-time OPT-13 entry errors span the attribute's `#` instead of the literal — real (OPT-13_invalid_file_type.stderr), but the line still points at the attribute and fixing it needs per-argument span storage.
+  - `[low]` `[reject]` Cascading duplicate diagnostics (two identical OPT-02 E0277s; extra "not an options struct" when the impl is dropped) — real but cosmetic; dropping the impl on error is what the intent's Boundaries require, and gating needs extra generated guards.
+  - `[low]` `[reject]` No trybuild fixtures for validator E0308, autocomplete E0425, >25-field CMD-13, combined `#[command]` param message — the intent's fixture list does not include them and macro unit tests cover the generated tokens; adding fixtures is more than a direct correction for a non-defect.
+  - `[false]` `[reject]` User-input failures surface as handler errors in the Error Sink — the intent assigns the notice and its routing to 6.8; 6.2 delivers the typed error and skips the handler.
+  - `[low]` `[reject]` `InvalidOption` lacks `PartialEq`/`Eq` — the derive set is fixed by the spec (`Debug, Clone`); tests compare via `option()`/`key()` without harm, and adding impls widens public surface.
+  - `[low]` `[reject]` `channel_types` accepts any path whose last segment is a known name — the spec mandates copying the modal parser (last path segment); a wrong qualifier still yields a valid channel type, rarely met.
+  - `[low]` `[reject]` A type alias for `Option<T>` is treated as required with a misleading OPT-02 note — Boundaries define optionality syntactically; aliases for option fields are unusual and the note text is spec-fixed.
+  - `[low]` `[reject]` `min_value`/`max_value` float literal overflowing f64 (`1e400`) panics the proc macro via `Literal::f64_unsuffixed(inf)` — real (crates/noctis-macros/src/options.rs:59/223), compile still fails with a panic message; unlikely input and the fix adds a guard.
+  - `[low]` `[reject]` `options[i]` path names the wrong field when an earlier field fails to parse (edge layer) — same as the blind finding above; same reasoning.
+  - `[medium]` `[patch]` Renamed and raw-ident option fields are never decoded by name in any test (vgap, pre-verified) — Patch: end-to-end `call_command_json` test sending `silent`/`type`, plus a validator on the renamed field reporting `option() == "silent"`.
+  - `[medium]` `[patch]` Required-field validator branch of `derive(Options)` never expanded or run (vgap, pre-verified) — Patch: derived struct with a required `i64` + `validate = positive`, tested for failing (InvalidOption, handler skipped) and passing values.
+  - `[medium]` `[patch]` End-to-end option tests race on shared `WARNED` last entry (vgap, pre-verified) — same root cause as the blind flaky-test finding; same patch.
+  - `[false]` `[reject]` Intent D1: validator failure yields a typed error, not an ephemeral message — the intent contract explicitly assigns the notice to 6.8 (epics list FR-10 "validator notice" under 6.8).
+  - `[false]` `[reject]` Intent D2: only a test seam fills `CommandInput` — real dispatch is Story 6.5 per the intent's Never list; the AC names `call_command_json`.
+  - `[false]` `[reject]` Intent D3: CMD-04/CMD-06 fixtures live in `tests/ui/cmd/` not `tests/ui/opt/` — `rules-catalog` requires the directory to match the rule id (memlog decision); coverage is intact, and the only fix would edit this build's spec.
+  - `[false]` `[reject]` Intent D4: boundary passes are integration tests, not trybuild — the intent forbids trybuild `pass` suites; compiled boundary tests are the settled form.
+  - `[false]` `[reject]` Intent D5: Choices are STRING only — the intent's Never list excludes integer/number choice values in 6.2.
+  - `[false]` `[reject]` Intent D6: CMD-04 description literal — the auditor reports it as aligned; no divergence.
+
 ## Design Notes
 
 **Partition and generated shape (decision).** For field *i*, the macro builds `decl_i(K)` for each `K` in `OptionType::ALL`. Each decl carries:
@@ -371,3 +399,39 @@ impl ::noctis::__private::core::Options for W {
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok (MSRV; `#[diagnostic::on_unimplemented]` and const panics are stable there)
+
+## Auto Run Result
+
+- **Summary:** Typed slash-command options. `derive(Options)` generates `OptionDecl` arrays, `from_input` decoding and per-field sync validators. `derive(Choices)` now serves both modals and commands, with STRING choices only. Compile-time rule checks (OPT-01..OPT-13, CMD-04/06/13) reuse `noctis-rules` through const-panic arms keyed on `CommandOption::KIND`. `CommandInput`, `OptionError` and `InvalidOption` live in `noctis-core`. Resolved entities gained public `from_resolved` constructors.
+- **Files changed:**
+  - `crates/noctis-core/src/options.rs`, `command.rs`, `lib.rs`: option traits, `CommandInput`, decoding helpers and errors.
+  - `crates/noctis-macros/src/options.rs`, `choices.rs`, `command.rs`, `lib.rs`: the `Options` derive, the shared `Choices` derive, and wiring `#[command]` to the options struct.
+  - `crates/noctis-rules/src/command/{mod,option}.rs`: the option rule helpers.
+  - `crates/noctis-ui/src/modal/{form,resolved}.rs`: shared choices and the public resolved constructors.
+  - `crates/noctis/src/lib.rs`: re-exports and the `__private` paths.
+  - `crates/noctis/tests/options.rs`, `boundary/opt.rs`, `ui/opt/*`, `ui/cmd/CMD-04*`/`CMD-06*`, `types/command_options_not_derived.*`: end-to-end, boundary and trybuild coverage.
+  - `docs/discord-rules.md`, `xtask/rules-pending.toml`, `xtask/public-api.txt`: rule enforcement points and the re-blessed API snapshot.
+  - `examples/project-template/` (`AGENTS.md`, the noctis skill with `commands.md`/`modals.md`, `profile.rs`): updated bot-author docs.
+- **Review findings:** 24 in total: high 0, medium 4, low 9, false 11.
+  - Patched (4 medium, 3 root causes):
+    - The end-to-end tests shared the `WARNED` static. They now use per-test markers, so the "handler not run" checks are race-free.
+    - New end-to-end decode tests cover a renamed field (`silent`) and a raw-ident field (`type`), including the validator path.
+    - A test now runs the validator on a required field, for both the failing and the passing case.
+  - Deferred: none.
+  - Rejected (low, with the reason recorded in the triage log):
+    - wrong `options[i]` index after a parse error, reported twice (only reachable together with another error);
+    - OPT-13 span on the attribute's `#` (the line is still right);
+    - cascading duplicate diagnostics (cosmetic);
+    - missing extra trybuild fixtures (not in the intent's fixture list);
+    - `InvalidOption` has no `PartialEq` (the derive set is fixed by the spec);
+    - `channel_types` matches on the last path segment (mandated by the spec);
+    - a type alias for `Option<T>` is treated as required (optionality is syntactic by design);
+    - an `f64` literal overflow panics the proc macro (unlikely input).
+  - Rejected (false): per-command CMD-05 budget (moved to 6.4), non-integral INTEGER values reported as OutOfRange, strict `resolved` parsing, span lookup by note text, notice routing (moved to 6.8), the test-seam-only dispatch (6.5), the CMD fixture directory, boundary passes as integration tests, STRING-only choices, and CMD-04 (already aligned).
+- **Follow-up review recommended: true.** This first pass patched 4 medium and 0 high. The named risk: the patches added new end-to-end tests for renamed and raw-ident decoding and for required-field validators, and only this pass has checked them, so they are unverified. The decode path for renamed/raw-ident fields and the required-validator expansion went untested before this pass.
+- **Verification:** every local gate passed via `gates.sh`: fmt, clippy `-D warnings`, `cargo test --release` (including trybuild `opt/` and `cmd/`), cargo-hack `--each-feature`, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, and the MSRV 1.91 check. CI is paused by the maintainer.
+- **Residual risks:**
+  - Option-inclusive CMD-05/CMD-13 per Command is not enforced until 6.4.
+  - A user-facing validator notice waits for 6.8. Real dispatch waits for 6.5, so 6.2 is exercised only through `call_command_json`.
+  - Integer and number choices are not supported.
+  - Diagnostics have small span and index inaccuracies when there are multiple errors.

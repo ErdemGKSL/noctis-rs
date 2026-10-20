@@ -210,8 +210,15 @@ fn option_error(err: &HandlerError) -> &OptionError {
         .unwrap_or_else(|| panic!("not an OptionError: {err}"))
 }
 
-fn last_warned() -> Option<W> {
-    WARNED.lock().unwrap().last().cloned()
+/// The warned struct whose `reason` is `marker`; each test sends its own
+/// marker, so parallel tests never read each other's pushes.
+fn warned(marker: &str) -> Option<W> {
+    WARNED
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|w| w.reason.as_deref() == Some(marker))
+        .cloned()
 }
 
 /// Matrix 1: declarations in order, kind by field type.
@@ -287,18 +294,19 @@ async fn parsed_struct_reaches_the_handler() {
         &json!([
             { "name": "member", "type": 6, "value": "42" },
             { "name": "days", "type": 4, "value": 3 },
+            { "name": "reason", "type": 3, "value": "p57" },
             { "name": "foo", "type": 3, "value": "ignored" }
         ]),
         Some(&resolved_member()),
     );
     run(&warn(), &json).await.unwrap();
-    let got = last_warned().unwrap();
+    let got = warned("p57").unwrap();
     assert_eq!(got.member.user.id.get(), 42);
     assert_eq!(
         got.member.member.as_ref().and_then(|m| m.nick.as_deref()),
         Some("nick")
     );
-    assert_eq!((got.days, got.reason), (Some(3), None));
+    assert_eq!(got.days, Some(3));
 }
 
 /// Matrix 58: a missing required option.
@@ -306,7 +314,10 @@ async fn parsed_struct_reaches_the_handler() {
 async fn missing_required() {
     let json = interaction(
         "warn",
-        &json!([{ "name": "days", "type": 4, "value": 777 }]),
+        &json!([
+            { "name": "days", "type": 4, "value": 777 },
+            { "name": "reason", "type": 3, "value": "m58" }
+        ]),
         None,
     );
     let err = run(&warn(), &json).await.unwrap_err();
@@ -317,7 +328,7 @@ async fn missing_required() {
         }
     );
     assert_eq!(err.to_string(), "required option `member` is missing");
-    assert!(last_warned().is_none_or(|w| w.days != Some(777)));
+    assert!(warned("m58").is_none());
 }
 
 /// Matrix 60 and 61: wrong types.
@@ -465,15 +476,23 @@ async fn validators() {
     let member = json!({ "name": "member", "type": 6, "value": "42" });
     run(
         &warn(),
-        &call(json!([member, { "name": "days", "type": 4, "value": 5 }])),
+        &call(json!([
+            member,
+            { "name": "days", "type": 4, "value": 5 },
+            { "name": "reason", "type": 3, "value": "v67" }
+        ])),
     )
     .await
     .unwrap();
-    assert_eq!(last_warned().and_then(|w| w.days), Some(5));
+    assert_eq!(warned("v67").and_then(|w| w.days), Some(5));
 
     let err = run(
         &warn(),
-        &call(json!([member, { "name": "days", "type": 4, "value": -1 }])),
+        &call(json!([
+            member,
+            { "name": "days", "type": 4, "value": -1 },
+            { "name": "reason", "type": 3, "value": "v67n" }
+        ])),
     )
     .await
     .unwrap_err();
@@ -484,7 +503,7 @@ async fn validators() {
         err.to_string(),
         "option `days` failed validation: warn.days.positive"
     );
-    assert_ne!(last_warned().and_then(|w| w.days), Some(-1));
+    assert!(warned("v67n").is_none());
 
     // An absent optional value is not validated.
     run(&warn(), &call(json!([member]))).await.unwrap();
@@ -510,6 +529,89 @@ async fn validators() {
     .await
     .unwrap_err();
     assert!(matches!(option_error(&err), OptionError::Missing { .. }));
+}
+
+#[derive(Options)]
+struct Renamed {
+    #[option(description = "d")]
+    r#type: i64,
+    #[option(description = "d", rename = "silent", validate = loud)]
+    quiet: bool,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "validators take `&T` of the field type"
+)]
+fn loud(quiet: &bool, _ctx: &CommandCtx) -> Result<(), MessageKey> {
+    if *quiet {
+        Ok(())
+    } else {
+        Err(MessageKey::new("renamed.silent"))
+    }
+}
+
+static RENAMED: Mutex<Vec<(i64, bool)>> = Mutex::new(Vec::new());
+
+#[command("renamed", description = "d")]
+async fn renamed(_ctx: CommandCtx, o: Renamed) -> HandlerResult<()> {
+    RENAMED.lock().unwrap().push((o.r#type, o.quiet));
+    Ok(())
+}
+
+/// Matrix 9 at runtime: raw idents and `rename` decode by option name.
+#[tokio::test]
+async fn raw_ident_and_rename_decode() {
+    let json = |ty: i64, silent: bool| {
+        interaction(
+            "renamed",
+            &json!([
+                { "name": "type", "type": 4, "value": ty },
+                { "name": "silent", "type": 5, "value": silent }
+            ]),
+            None,
+        )
+    };
+    run(&renamed(), &json(7, true)).await.unwrap();
+    assert!(RENAMED.lock().unwrap().contains(&(7, true)));
+    let err = run(&renamed(), &json(8, false)).await.unwrap_err();
+    assert_eq!(invalid(&err).option(), "silent");
+    assert!(!RENAMED.lock().unwrap().contains(&(8, false)));
+}
+
+#[derive(Options)]
+struct Required {
+    #[option(description = "d", validate = positive)]
+    count: i64,
+}
+
+static REQUIRED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+
+#[command("required", description = "d")]
+async fn required(_ctx: CommandCtx, o: Required) -> HandlerResult<()> {
+    REQUIRED.lock().unwrap().push(o.count);
+    Ok(())
+}
+
+/// Matrix 67 on a required field.
+#[tokio::test]
+async fn validator_on_required_field() {
+    let json = |count: i64| {
+        interaction(
+            "required",
+            &json!([{ "name": "count", "type": 4, "value": count }]),
+            None,
+        )
+    };
+    run(&required(), &json(9)).await.unwrap();
+    assert!(REQUIRED.lock().unwrap().contains(&9));
+    let err = run(&required(), &json(-9)).await.unwrap_err();
+    let e = invalid(&err);
+    assert_eq!(
+        (e.option(), e.key()),
+        ("count", MessageKey::new("warn.days.positive"))
+    );
+    assert!(!REQUIRED.lock().unwrap().contains(&-9));
 }
 
 /// Matrix 72-74: the seam's path check, bad JSON and no-options handlers.
