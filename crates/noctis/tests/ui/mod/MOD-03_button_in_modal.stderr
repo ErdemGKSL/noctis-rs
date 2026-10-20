@@ -16,7 +16,7 @@ help: the following other types implement trait `ModalTopLevel`
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ModalLabel`
 ...
    | impl ModalTopLevel for TextDisplay {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `TextDisplay`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::ui::TextDisplay`
 ...
    | impl ModalTopLevel for ModalComponent {}
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::ui::ModalComponent`

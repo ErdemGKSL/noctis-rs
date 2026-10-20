@@ -33,6 +33,8 @@ struct Fixture {
     test: &'static str,
     /// Member name -> extra manifest TOML appended after `[package]`.
     members: BTreeMap<String, String>,
+    /// Member name -> contents of its `src/lib.rs` (empty when absent).
+    sources: BTreeMap<String, String>,
 }
 
 fn fixture(test: &'static str) -> Fixture {
@@ -42,6 +44,7 @@ fn fixture(test: &'static str) -> Fixture {
             .iter()
             .map(|c| ((*c).to_owned(), String::new()))
             .collect(),
+        sources: BTreeMap::new(),
     }
 }
 
@@ -56,6 +59,12 @@ impl Fixture {
         let entry = self.members.entry(member.to_owned()).or_default();
         entry.push_str(toml);
         entry.push('\n');
+        self
+    }
+
+    /// Sets the `src/lib.rs` contents of `member`.
+    fn with_source(mut self, member: &str, source: &str) -> Self {
+        self.sources.insert(member.to_owned(), source.to_owned());
         self
     }
 
@@ -87,7 +96,10 @@ impl Fixture {
                     "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n{extra}"
                 ),
             );
-            write(&dir.join("src/lib.rs"), "");
+            write(
+                &dir.join("src/lib.rs"),
+                self.sources.get(name).map_or("", String::as_str),
+            );
         }
         root.join("Cargo.toml")
     }
@@ -1091,6 +1103,43 @@ fn bot_feature_requesting_other_dep_feature_passes() {
                 path_dep("noctis"),
                 path_dep("helper")
             ),
+        )
+        .run();
+    assert_ok(&out);
+}
+
+#[test]
+fn http_client_outside_core_fails() {
+    let out = fixture("http_client_outside_core")
+        .with("noctis-ui", "[dependencies]\ntwilight-http = \"0.17.1\"\n")
+        .with_source(
+            "noctis-gateway",
+            "pub fn f() { let _ = twilight_http::Client::builder(); }\n",
+        )
+        .run();
+    assert_exit(
+        &out,
+        1,
+        &[
+            "deps-check: noctis-ui -> twilight-http (normal): only noctis-core, noctis-gateway \
+             and noctis may depend on twilight-http",
+            "deps-check: noctis-gateway: crates/noctis-gateway/src/lib.rs:1 constructs a \
+             twilight HTTP client",
+            "[http-client]",
+        ],
+    );
+}
+
+#[test]
+fn http_client_in_core_gateway_facade_passes() {
+    let dep = "[dependencies]\ntwilight-http = \"0.17.1\"\n";
+    let out = fixture("http_client_allowed")
+        .with("noctis-core", dep)
+        .with("noctis-gateway", dep)
+        .with("noctis", dep)
+        .with_source(
+            "noctis-core",
+            "pub fn f() { let _ = twilight_http::Client::builder(); }\n",
         )
         .run();
     assert_ok(&out);

@@ -409,7 +409,7 @@ impl CacheStore for RedisCache {
 }
 ```
 
-Wire it [planned]: `App::from_env()?.cache_store(RedisCache::new(pool))`. Handlers don't change.
+Wire it in `configure(builder: &mut AppBuilder)`: `builder.cache_store(RedisCache::new(pool))` (the last `cache_store` call wins). Handlers don't change.
 
 Checklist for any Adapter: bounded (or backed by bounded storage), atomic ops really
 atomic, TTL honoured on read, verbatim keys, no secrets, no blocking calls in async

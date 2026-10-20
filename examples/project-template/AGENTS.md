@@ -17,7 +17,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 
 ## Where things are
 
-- `src/main.rs` thin entry; `src/lib.rs` `configure()` mounts Modules, Adapters and state (shared by main and tests).
+- `src/main.rs` thin entry; `src/lib.rs` `configure(&mut AppBuilder) -> &mut AppBuilder` mounts Modules, Adapters and state (shared by main and tests).
 - `src/modules/{setup,dashboard,profile}.rs` one Module each; `src/adapters/` custom Adapters; `src/strings.rs` compiles `locales/*.yaml` (`en-US` is the default locale; file names are Discord locale codes).
 - `noctis-theme.css` Theme tokens and keyframes for Templates.
 - `tests/` flows (testkit), Adapter conformance, Template pixel snapshots.

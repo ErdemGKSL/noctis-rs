@@ -10,13 +10,13 @@ error[E0277]: [CV2-05] `LinkButton` cannot be a Container child
   = note: a Container takes a Section, TextDisplay, MediaGallery, File, Separator or ActionRow; never another Container
   = note: a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow
   = help: the following other types implement trait `ContainerChild`:
-            ActionRow
             ContainerComponent
-            MediaGallery
-            TextDisplay
+            noctis::ui::ActionRow
             noctis::ui::File
+            noctis::ui::MediaGallery
             noctis::ui::Section
             noctis::ui::Separator
+            noctis::ui::TextDisplay
 note: required by a bound in `noctis::ui::Container::push`
  --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
   |

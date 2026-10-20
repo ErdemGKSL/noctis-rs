@@ -13,68 +13,135 @@ use noctis::prelude::*;
 #[tokio::main]                                   // multi-thread runtime is required
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
-    let app = configure(App::from_env()?).build()?;   // Result<App, BuildError>
-    app.run().await?;                                 // Result<(), noctis::Error>
+    // `configure(&mut AppBuilder) -> &mut AppBuilder`; the temporary builder lives to
+    // the end of the statement.
+    let app = configure(&mut App::from_env()?).build()?;   // Result<App, BuildError>
+    app.run().await?;                                      // Result<(), noctis::Error>
     Ok(())
+}
+
+pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
+    builder
+        .state(BotMeta { version: env!("CARGO_PKG_VERSION") })
+        .cache_store(MyCacheStore::new())
 }
 ```
 
-- `App::builder()` → empty `AppBuilder` (no token; fine for `TestApp`).
-- `App::from_env()` → `Result<AppBuilder, noctis::Error>`: `App::builder()` plus every
-  `NOCTIS_*` variable below. Code settings applied after it win.
-- `AppBuilder::build()` runs every **App-build** check (merged command trees, duplicate
-  Routes, Routes with no handler, missing Extensions, Locale clashes, intents) and
-  returns **all** violations at once in one `BuildError`. No connection is made.
-- `App::run()` checks the tokio runtime (multi-thread) and installs a rustls crypto
-  provider if none is set (typed errors, never panics), parses CLI flags, then either
-  runs a CLI mode or starts the shards and blocks until shutdown.
+`AppBuilder` is a **mutable builder** (like tokio's `runtime::Builder`): every setter
+takes and returns `&mut AppBuilder`, so you can chain, or call setters one by one on a
+`let mut builder`.
 
-### AppBuilder methods [planned]
+- `App::builder()` → empty `AppBuilder` attached to `Runtime::global()` (no token; fine
+  for `TestApp`).
+- `App::from_env()` → `Result<AppBuilder, noctis::Error>`: `App::builder()` plus the
+  `NOCTIS_*` variables below. Setters called after it win.
+- `AppBuilder::build()` installs every Plugin (§12), runs every **App-build** check and
+  returns the `App` or **all** violations at once in one `BuildError`. It must run inside
+  a tokio runtime (any flavor): the App's one HTTP client is created there. No
+  connection is made. `build()` moves the configuration out and leaves the builder
+  empty (still attached to its Runtime), so a second `build()` gives a fresh App.
+- `App::run()` checks, in order: a tokio runtime is current (`StartError::NoRuntime`),
+  it is multi-thread (`StartError::NotMultiThread`), a rustls crypto provider is
+  installed (installs `ring`'s if none is set; `StartError::CryptoProvider`), and a token
+  is set (`StartError::MissingToken`). Typed errors, never panics. **Until shard startup
+  lands (Story 5.4) it then logs a warning and returns `Ok(())`.** [planned: parses CLI
+  flags, runs a CLI mode or starts the shards and blocks until shutdown]
+
+The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
+`Arc<noctis::twilight::http::Client>`, the same `Arc` on every call), `app.http_timeout()`,
+`app.intents()`, `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
+(whether a Plugin or `.renderer(..)` set a `Renderer`).
+
+### AppBuilder methods
+
+Implemented:
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.token(Token)` | env `NOCTIS_TOKEN` | `Token` has redacted `Debug`/`Display`; never logged |
-| `.app_id("my-bot")` | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
-| `.payload_key(PayloadKey)` / `.previous_payload_key(..)` | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
-| `.module(Module)` | — | mount a Module tree (ids must be unique) |
-| `.state(T)` | — | typed shared state, extracted as `State<T>` (one per type) |
-| `.locales(Catalog)` / `.default_locale(Locale)` | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
-| `.locale_resolver(impl LocaleResolver)` | none | per-guild language overrides (pipeline stage 4) |
-| `.theme(noctis::image::theme!())` | none | Template theme tokens and keyframes; from `AppBuilderImageExt` (`image` feature), installs the `ImagePlugin` |
-| `.image(ImageConfig)` | — | fonts, emoji, render pool (process-scoped, see `images.md`); same extension trait, installs the `ImagePlugin` |
-| `.plugin(impl Plugin)` | — | attach a feature plugin, e.g. `noctis::prefix::PrefixPlugin::new("!")` (§12) |
+| `.token(Token)` | env `NOCTIS_TOKEN` | `Token::new(s)` / `s.parse::<Token>()`; redacted `Debug`/`Display`; never logged |
+| `.state(T)` | — | typed shared state, read as `State<T>` (one per type; a second is `BuildViolation::DuplicateState`) |
+| `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it |
+| `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
-| `.limits(Limits)` | `Limits::default()` | strict mode; see `limits-cheatsheet.md` |
-| `.ack_deadline(Duration)` | 2500 ms | auto-defer deadline, measured from gateway receipt |
-| `.ref_ttl(Duration)` | 24 h | default TTL for Refs without `ttl = …` |
-| `.expired_handler(f)` | localized ephemeral notice | see `routes-payloads-refs.md` |
-| `.error_sink(Origin, impl ErrorSink)` | log at `error` | see `modules-middleware-ratelimits.md` |
-| `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)`, `.renderer(..)` | bounded memory defaults | see `adapters.md` |
-| `.discord_cache(DiscordCacheConfig)` | only what features need | `DiscordCacheConfig::none()`, `.resources([ResourceType::ROLE, …])`; read with `ctx.cache()` |
-| `.discord_cache_backend(impl DiscordCache)` | in-memory (twilight-cache-inmemory) | replace the Discord cache's storage (e.g. one shared by a Cluster) |
-| `.gateway_url(url)` | Discord | gateway proxy, or the testkit's `FakeGateway` |
-| `.intents(Intents)` | derived | extra intents; derived ones are always added; default for interaction-only bots is `GUILDS` |
-| `.shards(ShardRange)` / `.shard_total(u32)` | all / recommended | see §4 |
-| `.http_proxy(url)` / `.http_timeout(Duration)` | none / 10 s | see §5 |
-| `.publisher(bool)` | `false` | this process publishes at startup |
-| `.presence(Presence)` | none | initial presence |
-| `.shutdown_grace(Duration)` | 10 s | drain time on shutdown |
-| `.boot_flags(BootFlags)` | env/CLI | which flagged Modules exist this run |
+| `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
+| `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
+| `.report(BuildViolation)` | — | record a violation (plugins); `build()` returns it with the others |
+| `.renderer(Arc<dyn Renderer>)` | none | usually set by the image plugin |
+| `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
+| `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
 | `.build()` | — | `Result<App, BuildError>` |
 
-## 2. Environment variables [planned]
+Planned (signatures may change):
+
+| Method | Default | Notes |
+| --- | --- | --- |
+| `.http_proxy(url)` [planned, Story 5.2] | none | see §5 |
+| `.gateway_url(url)` [planned, Story 5.3] | Discord | gateway proxy, or the testkit's `FakeGateway` |
+| `.shards(ShardRange)` / `.shard_total(u32)` [planned, Story 5.4] | all / recommended | see §4 |
+| `.module(Module)` [planned, Story 5.6] | — | mount a Module tree (ids must be unique); handler intents are derived and added |
+| `.error_sink(Origin, impl ErrorSink)` [planned, Story 5.7] | log at `error` | see `modules-middleware-ratelimits.md` |
+| `.shutdown_grace(Duration)` [planned, Story 5.8] | 10 s | drain time on shutdown |
+| `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
+| `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
+| `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
+| `.ack_deadline(Duration)` [planned] | 2500 ms | auto-defer deadline, measured from gateway receipt |
+| `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
+| `.expired_handler(f)` [planned] | localized ephemeral notice | see `routes-payloads-refs.md` |
+| `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
+| `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
+| `.theme(noctis::image::theme!())` / `.image(ImageConfig)` [planned] | none | from `AppBuilderImageExt` (`image` feature); installs the `ImagePlugin` (see `images.md`) |
+| `.limits(Limits)` [planned] | `Limits::default()` | strict mode; see `limits-cheatsheet.md` |
+| `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |
+| `.presence(Presence)` [planned] | none | initial presence |
+| `.boot_flags(BootFlags)` [planned] | env/CLI | which flagged Modules exist this run |
+
+### Errors
+
+Every error is a `thiserror` enum (`#[non_exhaustive]`; match with a `_` arm) whose
+message names the cause and a fix. No message, `Debug` or log line ever contains the
+token.
+
+- `noctis::Error`: `Env(EnvError)`, `Build(BuildError)`, `Start(StartError)` (`From` for
+  each, so `?` works in `main`).
+- `BuildError`: `err.violations()` (`&[BuildViolation]`, never empty, in recorded order:
+  setters, plugin reports, then checks) or `err.into_violations()`. `Display` is
+  `"{n} App-build violation(s)"` then one `"\n  - {violation}"` line each.
+- `BuildViolation`: `NoTokioRuntime` (build outside a tokio runtime), `CryptoProvider`
+  (no rustls provider could be installed), `DuplicateState { type_name }`,
+  `DuplicatePlugin { type_name }`, `ResourceConflict(ResourceConflict)` (§10),
+  `InvalidHttpTimeout { actual }`, `Plugin { plugin, message }` (built with
+  `BuildViolation::plugin::<P>("message")`).
+- `StartError`: `NoRuntime`, `NotMultiThread`, `CryptoProvider`, `MissingToken` (see
+  `App::run()` above).
+- `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`; the
+  value is never shown.
+- `TokenError`: `Empty` (nothing after an optional `"Bot "` prefix), `InvalidChar {
+  index }` (a character outside printable ASCII `!`..`~`, e.g. whitespace).
+
+```rust
+match configure(&mut App::builder()).build() {
+    Ok(app) => { /* … */ }
+    Err(err) => {
+        for v in err.violations() {
+            if let BuildViolation::DuplicateState { type_name } = v { eprintln!("{type_name}"); }
+        }
+    }
+}
+```
+
+## 2. Environment variables
 
 | Variable | Meaning |
 | --- | --- |
-| `NOCTIS_TOKEN` | bot token (required for `build()` of a real App) |
-| `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` | base64 32-byte integrity keys |
-| `NOCTIS_APP_ID` | Adapter namespace |
-| `NOCTIS_DEV_GUILD` | default for `--publish-guild` without an id |
-| `NOCTIS_SHARDS` | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
-| `NOCTIS_SHARD_TOTAL` | fixed shard total |
-| `NOCTIS_HTTP_PROXY` | rate-limit proxy URL |
-| `NOCTIS_PUBLISHER` | `true` on the one publishing process |
-| `NOCTIS_FEATURES` | Boot Flags (`a,b` or `all`), same as `--features` |
+| `NOCTIS_TOKEN` | bot token, read by `App::from_env()`: trimmed of ASCII whitespace; empty (after trim) counts as unset; an optional `Bot ` prefix is stripped. Not Unicode → `EnvError::NotUnicode`; invalid → `EnvError::InvalidToken`. `run()` without a token → `StartError::MissingToken` |
+| `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` [planned, Story 7.2] | base64 32-byte integrity keys |
+| `NOCTIS_APP_ID` [planned, Story 7.4] | Adapter namespace |
+| `NOCTIS_DEV_GUILD` [planned, Story 6.9] | default for `--publish-guild` without an id |
+| `NOCTIS_SHARDS` [planned, Story 5.4] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
+| `NOCTIS_SHARD_TOTAL` [planned, Story 5.4] | fixed shard total |
+| `NOCTIS_HTTP_PROXY` [planned, Story 5.2] | rate-limit proxy URL |
+| `NOCTIS_PUBLISHER` [planned, Story 6.9] | `true` on the one publishing process |
+| `NOCTIS_FEATURES` [planned] | Boot Flags (`a,b` or `all`), same as `--features` |
 | `RUST_LOG` | tracing filter (Noctis uses `tracing`; you install the subscriber) |
 
 No config file is needed. Secrets come only from the environment.
@@ -169,7 +236,7 @@ limited / proxied.
 ## 6. Presence and gateway commands [planned]
 
 ```rust
-App::from_env()?.presence(Presence::watching("the servers"));
+builder.presence(Presence::watching("the servers"));
 ctx.gateway().set_presence(Presence::playing("v2"), ShardScope::All).await?;
 ctx.gateway().request_members(guild_id, MemberQuery::user_ids([id])).await?;
 ```
@@ -218,28 +285,55 @@ order: `State<T>` (registered with `.state(T)`, `Deref<Target = T>`), `Ext<T>` /
 `Ext<T>` no Middleware provides is a `BuildError`. Mutable state: put interior
 mutability inside `T` (`tokio::sync::RwLock`, atomics) or, better, use a port.
 
-## 10. Multiple Apps (white-label) [planned]
+## 10. The process `Runtime` and multiple Apps
+
+Every App attaches to a `Runtime`: `Runtime::global()` by default, or the one passed to
+`.runtime(&runtime)`. It holds **process-scoped resources** (render pool, fonts, emoji
+font, metrics recorder) shared by every App attached to it. `Runtime` is a cheap
+`Clone` handle; `==` is identity. `Runtime::for_test()` is a fresh, isolated Runtime
+(`runtime.is_test() == true`, never equal to `Runtime::global()`); `TestApp` uses one per
+test.
+
+A resource is a type implementing `Resource` (mostly plugins do this):
 
 ```rust
-let runtime = Runtime::global();                                  // process-scoped resources
-let main = configure(App::from_env_prefixed("MAIN")?)              // MAIN_NOCTIS_TOKEN …
-    .image(image_config.clone())                                   // first App freezes fonts/pool
+use noctis::{Resource, Runtime};
+
+struct RenderPool { /* … */ }
+
+impl Resource for RenderPool {
+    type Config = usize;                    // PartialEq + Debug; must not hold secrets
+    fn init(threads: &usize) -> Self { RenderPool { /* … */ } }
+}
+
+let pool = runtime.resource_or_init::<RenderPool>(4)?;   // Result<Arc<RenderPool>, ResourceConflict>
+```
+
+The first `resource_or_init::<T>(config)` runs `init` and **freezes** the config; a later
+call with an equal config returns the same `Arc`; a different one is a
+`ResourceConflict { resource, frozen, requested }` (`Debug` of both configs). Inside a
+plugin, turn it into a violation with `app.report(conflict.into())`, so the second App's
+`build()` fails with `BuildViolation::ResourceConflict`. Two Apps on two
+`Runtime::for_test()` never conflict.
+
+Several Apps in one process [planned]:
+
+```rust
+let runtime = Runtime::global();
+let main = configure(&mut App::from_env_prefixed("MAIN")?)   // MAIN_NOCTIS_TOKEN … [planned]
+    .image(image_config.clone())                              // first App freezes fonts/pool
     .build()?;
-let white = configure(App::from_env_prefixed("ACME")?)
-    .image(image_config)                                           // same config: fine
+let white = configure(&mut App::from_env_prefixed("ACME")?)
+    .image(image_config)                                      // same config: fine
     .guild_access(GuildAccess::allow([acme_guild]))
     .build()?;
-runtime.run([main, white]).await?;
+runtime.run([main, white]).await?;                            // [planned]
 ```
 
 - The same Module tree can be mounted on several Apps. Restrict a command to some Apps
-  with `#[command("…", apps = ["main"])]`.
+  with `#[command("…", apps = ["main"])]` [planned].
 - Apps share Adapters only where you opt in (`.cache_store(Shared::new(store))`);
-  otherwise keys are namespaced per App (FR-71).
-- Process-scoped resources (render pool, fonts, emoji font, metrics recorder) live in
-  the `Runtime` and are frozen by the first App's configuration; a conflicting later
-  one is a `BuildError`. Tests use `Runtime::for_test()` (what `TestApp` does), an
-  isolated Runtime per test.
+  otherwise keys are namespaced per App (FR-71) [planned].
 
 ## 11. Observability
 
@@ -250,16 +344,44 @@ ack latency, auto-defer count, handler duration/errors, render duration/queue/re
 Ref lookups (hit/miss/stale/forged), shard status, HTTP status classes. Install your own
 `metrics` recorder to export them.
 
-## 12. Plugins [planned]
+## 12. Plugins
 
-Optional features attach to an App through `Plugin` (`fn install(&self, app: &mut
-AppBuilder)`); `build()` runs every installed plugin once, in order, before the
-App-build checks.
+Optional features attach to an App through `Plugin`:
 
-- `ImagePlugin` (`image` feature): installed by `.image(..)` or `.theme(..)`; adds the
-  Renderer and the process-scoped render pool and fonts.
-- `PrefixPlugin` (`prefix` feature, P2): `.plugin(PrefixPlugin::new("!"))` mounts a
-  `MESSAGE_CREATE` handler that runs your slash Commands from `!command` messages
-  through `ctx.dispatcher()`; it requires the message-content intent.
+```rust
+use noctis::{AppBuilder, BuildViolation, Plugin};
+
+pub struct GreetingPlugin { pub greeting: &'static str }
+
+impl Plugin for GreetingPlugin {
+    fn install(&self, app: &mut AppBuilder) {
+        if self.greeting.is_empty() {
+            app.report(BuildViolation::plugin::<Self>("greeting is empty: pass some text"));
+            return;
+        }
+        app.state(Greeting(self.greeting));           // any public builder method
+    }
+}
+
+let mut builder = App::builder();
+builder.plugin(GreetingPlugin { greeting: "hi" });
+builder.plugin_mut::<GreetingPlugin>().unwrap().greeting = "hello";   // before build()
+let app = builder.build()?;
+```
+
+- `build()` calls each plugin's `install` **exactly once, in registration order, before
+  the App-build checks**. A plugin added inside an `install` is installed after the
+  current batch in the same build; `plugin_mut` cannot see plugins whose batch is running.
+- One plugin per type: a second `.plugin(P)` keeps the first and records
+  `BuildViolation::DuplicatePlugin`.
+- `install` uses only public builder methods (`renderer`, port setters, `intents`,
+  `runtime`, `current_runtime`, `report`, `state`); process resources come from
+  `app.current_runtime().resource_or_init::<T>(config)` (§10). A panicking `install`
+  panics `build()`.
+- `ImagePlugin` (`image` feature) [planned]: installed by `.image(..)` or `.theme(..)`;
+  adds the Renderer and the process-scoped render pool and fonts.
+- `PrefixPlugin` (`prefix` feature, P2) [planned]: `.plugin(PrefixPlugin::new("!"))`
+  mounts a `MESSAGE_CREATE` handler that runs your slash Commands from `!command`
+  messages through `ctx.dispatcher()`; it requires the message-content intent.
 
 You rarely write a plugin yourself; a Module is the unit for bot features.

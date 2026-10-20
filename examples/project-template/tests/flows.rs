@@ -18,7 +18,7 @@ const LOGS: Id<ChannelMarker> = Id::new(300);
 const MODS: Id<RoleMarker> = Id::new(400);
 
 fn app() -> anyhow::Result<TestApp> {
-    Ok(TestApp::build(configure(App::builder()))?
+    Ok(TestApp::build(configure(&mut App::builder()))?
         .guild(
             TestGuild::new(GUILD, "Test Guild")
                 .text_channel(LOGS, "logs")

@@ -5,6 +5,12 @@
 //!
 //! # Modules
 //!
+//! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
+//!   [`Runtime`], [`Plugin`], [`Resource`] and the errors ([`Error`],
+//!   [`BuildError`], [`BuildViolation`], [`StartError`], [`EnvError`],
+//!   [`TokenError`], [`ResourceConflict`]).
+//! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
+//!   and [`twilight::model`].
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
 //! - [`prelude`]: `use noctis::prelude::*;` brings the [`Route`](prelude::Route),
 //!   [`Payload`](prelude::Payload) and [`PayloadEnum`](prelude::PayloadEnum)
@@ -71,6 +77,44 @@
 //! `__noctis_route_width_<Name>` test that prints its width breakdown
 //! (`cargo test -- --nocapture noctis_route_width`).
 //!
+//! # App
+//!
+//! [`App::from_env`] (or [`App::builder`]) returns a mutable [`AppBuilder`]
+//! whose setters take and return `&mut AppBuilder`; [`AppBuilder::build`]
+//! installs the [`Plugin`]s, checks everything and returns an [`App`] or one
+//! [`BuildError`] listing every violation. Unset ports default to bounded
+//! in-memory Adapters. [`App::run`] returns a typed [`StartError`] outside a
+//! multi-thread tokio runtime or without a token, and installs rustls's
+//! `ring` crypto provider when none is set.
+//!
+//! ```no_run
+//! use std::time::Duration;
+//!
+//! use noctis::prelude::*;
+//! use noctis::twilight::model::gateway::Intents;
+//!
+//! struct BotMeta {
+//!     name: &'static str,
+//! }
+//!
+//! fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
+//!     builder
+//!         .state(BotMeta { name: "noctis" })
+//!         .intents(Intents::GUILD_MESSAGES)
+//!         .http_timeout(Duration::from_secs(5))
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), noctis::Error> {
+//!     // `NOCTIS_TOKEN` holds the bot token; temporaries live to the end of
+//!     // the statement.
+//!     let app = configure(&mut App::from_env()?).build()?;
+//!     let meta: State<BotMeta> = app.state().expect("registered in configure");
+//!     assert_eq!(meta.name, "noctis");
+//!     app.run().await
+//! }
+//! ```
+//!
 //! # Cargo features
 //!
 //! All features are additive, and the default features build without the image
@@ -85,6 +129,29 @@
 //! - `testkit`: Discord fakes and test helpers; enable it in
 //!   `[dev-dependencies]` only.
 #![deny(missing_docs)]
+
+pub use noctis_core::{
+    App, AppBuilder, BuildError, BuildViolation, EnvError, Error, Plugin, Resource,
+    ResourceConflict, Runtime, StartError, State, Token, TokenError,
+};
+
+pub mod twilight {
+    //! The twilight crates Noctis builds on, for the Discord endpoints and
+    //! models Noctis does not wrap.
+    //!
+    //! - [`http`]: `twilight-http`; [`App::http`](crate::App::http) is the
+    //!   App's one [`Client`](http::Client).
+    //! - [`model`]: `twilight-model`, e.g. [`Intents`](model::gateway::Intents).
+    //!
+    //! ```
+    //! use noctis::twilight::model::gateway::Intents;
+    //!
+    //! assert!(Intents::GUILDS.contains(Intents::GUILDS));
+    //! ```
+
+    pub use twilight_http as http;
+    pub use twilight_model as model;
+}
 
 /// A literal Components V2 tree, checked at `cargo check`; yields a
 /// [`ui::Components`]. See [`ui`](ui#literal-macros-and-components).
@@ -306,8 +373,11 @@ pub mod prelude {
     //!   implementing [`ModalForm`] (see [`ui`](crate::ui#modal-forms)).
     //! - [`Choices`]: the trait and `#[derive(Choices)]` on a unit enum, a
     //!   modal option set.
+    //! - [`App`], [`AppBuilder`] and [`State`]: building an App and reading
+    //!   its typed state.
 
     pub use noctis_codec::{Payload, Route};
+    pub use noctis_core::{App, AppBuilder, State};
     pub use noctis_macros::{Choices, Modal, Payload, PayloadEnum, Route};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};

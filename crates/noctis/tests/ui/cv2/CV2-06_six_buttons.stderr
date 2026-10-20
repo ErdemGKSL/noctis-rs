@@ -14,7 +14,7 @@ error[E0277]: [CV2-06] an Action Row holds 1 to 5 buttons
             Arity<3>
             Arity<4>
             Arity<5>
-note: required by a bound in `ActionRow::buttons`
+note: required by a bound in `noctis::ui::ActionRow::buttons`
  --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
   |
   |     pub fn buttons<B: RowItem, const N: usize>(buttons: [B; N]) -> Self

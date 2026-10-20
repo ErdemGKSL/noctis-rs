@@ -18,7 +18,7 @@ error[E0277]: [CV2-10] a Media Gallery holds 1 to 10 items
             Arity<6>
             Arity<7>
           and $N others
-note: required by a bound in `MediaGallery::new`
+note: required by a bound in `noctis::ui::MediaGallery::new`
  --> $WORKSPACE/crates/noctis-ui/src/component/media.rs
   |
   |     pub fn new<const N: usize>(items: [MediaItem; N]) -> Self

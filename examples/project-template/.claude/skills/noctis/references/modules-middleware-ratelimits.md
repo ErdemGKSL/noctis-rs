@@ -129,7 +129,7 @@ impl ErrorSink for SentrySink {
     }
 }
 
-App::from_env()?
+builder
     .error_sink(Origin::Command, SentrySink)
     .error_sink(Origin::Render, SentrySink);
 ```

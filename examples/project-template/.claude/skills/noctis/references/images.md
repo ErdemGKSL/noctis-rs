@@ -131,7 +131,7 @@ error (it would render static).
 ## 6. Fonts and emoji
 
 ```rust
-App::from_env()?.image(
+builder.image(
     ImageConfig::new()
         .font(FontSource::bytes(include_bytes!("../assets/fonts/Inter.ttf")))
         .font(FontSource::file("assets/fonts/NotoSansJP.ttf").unicode_range("U+3000-9FFF"))

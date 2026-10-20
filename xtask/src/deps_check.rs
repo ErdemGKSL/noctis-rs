@@ -10,10 +10,16 @@
 //! render feature off". Only the "render feature off" half is enforced here
 //! (`render-on`); "tw module only" is a source-level property that dependency
 //! metadata cannot see, so deps-check does not check it.
+//!
+//! The `http-client` rule (AD-24) keeps one Discord HTTP client per App: only
+//! `noctis-core`, `noctis-gateway` and the facade may depend on
+//! `twilight-http`, and only `noctis-core` may construct a client, so the
+//! sources of `noctis-gateway` and the facade (`src/**/*.rs`) must not contain
+//! `Client::new(`, `Client::builder(` or `ClientBuilder`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
@@ -26,6 +32,16 @@ const MACROS: &str = "noctis-macros";
 const RENDER: &str = "render";
 /// The facade feature that reaches `noctis-testkit`.
 const TESTKIT_FEATURE: &str = "testkit";
+
+/// The Discord HTTP client crate (AD-24).
+const TWILIGHT_HTTP: &str = "twilight-http";
+/// The crates that may depend on `twilight-http`.
+const HTTP_CLIENT_DEPENDENTS: [&str; 3] = ["noctis-core", "noctis-gateway", FACADE];
+/// The crates whose sources are scanned for client construction; only
+/// `noctis-core` builds the client.
+const HTTP_CLIENT_SCANNED: [&str; 2] = ["noctis-gateway", FACADE];
+/// Source text that constructs a twilight HTTP client.
+const CLIENT_CONSTRUCTORS: [&str; 3] = ["Client::new(", "Client::builder(", "ClientBuilder"];
 
 /// The internal crates the spine's Invariants graph draws.
 const CRATES: [&str; 12] = [
@@ -194,18 +210,44 @@ struct Closure {
     dep_features: BTreeSet<(String, String)>,
 }
 
-/// The workspace members and their internal dependency edges.
+/// A source line that constructs a twilight HTTP client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClientSite {
+    /// The crate whose source holds the line.
+    krate: String,
+    /// `path:line`, relative to the workspace root.
+    location: String,
+}
+
+/// The workspace members, their internal dependency edges and the client
+/// constructions found in scanned sources.
 #[derive(Debug, Clone)]
 pub(crate) struct Workspace {
     crates: Vec<Member>,
+    client_sites: Vec<ClientSite>,
 }
 
 impl Workspace {
-    /// Keeps workspace members and every dependency on a member or on an
-    /// internal (`noctis`/`noctis-*`) package, wherever that package lives.
+    /// Keeps workspace members and every dependency on a member, on an
+    /// internal (`noctis`/`noctis-*`) package, wherever that package lives, or
+    /// on `twilight-http`; scans the gateway's and the facade's sources for
+    /// client construction.
     pub(crate) fn from_metadata(metadata: &Metadata) -> Self {
         let packages = metadata.workspace_packages();
         let names: BTreeSet<&str> = packages.iter().map(|p| p.name.as_str()).collect();
+        let root = metadata.workspace_root.as_std_path();
+        let client_sites = packages
+            .iter()
+            .filter(|p| HTTP_CLIENT_SCANNED.contains(&p.name.as_str()))
+            .flat_map(|p| {
+                let src = p
+                    .manifest_path
+                    .parent()
+                    .map(|dir| dir.as_std_path().join("src"))
+                    .unwrap_or_default();
+                scan_client_sites(p.name.as_str(), &src, root)
+            })
+            .collect();
         let crates = packages
             .iter()
             .map(|p| Member {
@@ -214,7 +256,11 @@ impl Workspace {
                 deps: p
                     .dependencies
                     .iter()
-                    .filter(|d| names.contains(d.name.as_str()) || is_internal(&d.name))
+                    .filter(|d| {
+                        names.contains(d.name.as_str())
+                            || is_internal(&d.name)
+                            || d.name == TWILIGHT_HTTP
+                    })
                     .map(|d| Dep {
                         name: d.name.clone(),
                         key: d.rename.clone().unwrap_or_else(|| d.name.clone()),
@@ -226,7 +272,10 @@ impl Workspace {
                     .collect(),
             })
             .collect();
-        Self { crates }
+        Self {
+            crates,
+            client_sites,
+        }
     }
 
     fn member(&self, name: &str) -> Option<&Member> {
@@ -263,6 +312,7 @@ pub(crate) enum Rule {
     UnknownCrate,
     MissingCrate,
     BotDependency,
+    HttpClient,
 }
 
 impl Rule {
@@ -276,6 +326,7 @@ impl Rule {
             Self::UnknownCrate => "unknown-crate",
             Self::MissingCrate => "missing-crate",
             Self::BotDependency => "bot-dependency",
+            Self::HttpClient => "http-client",
         }
     }
 }
@@ -344,6 +395,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
             ),
         ));
     }
+    check_http_client(ws, &mut out);
     for member in &ws.crates {
         if !is_internal(&member.name) {
             check_non_internal(member, facade, &mut out);
@@ -359,7 +411,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
             ));
             continue;
         }
-        for dep in &member.deps {
+        for dep in member.deps.iter().filter(|d| d.name != TWILIGHT_HTTP) {
             if let Some(v) = check_edge(&member.name, dep) {
                 out.insert(v);
             }
@@ -368,6 +420,80 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
     }
     check_render(ws, &mut out);
     out.into_iter().collect()
+}
+
+/// Only core, the gateway and the facade depend on `twilight-http`, and no
+/// scanned source constructs a client (AD-24).
+fn check_http_client(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    for member in &ws.crates {
+        if HTTP_CLIENT_DEPENDENTS.contains(&member.name.as_str()) {
+            continue;
+        }
+        for dep in member.deps.iter().filter(|d| d.name == TWILIGHT_HTTP) {
+            out.insert(Violation::edge(
+                Rule::HttpClient,
+                &member.name,
+                TWILIGHT_HTTP,
+                dep.kind,
+                "only noctis-core, noctis-gateway and noctis may depend on twilight-http; \
+                 use the App's client (AD-24)"
+                    .to_owned(),
+            ));
+        }
+    }
+    for site in &ws.client_sites {
+        out.insert(Violation::krate(
+            Rule::HttpClient,
+            &site.krate,
+            format!(
+                "{} constructs a twilight HTTP client; only noctis-core builds the App's one \
+                 client (AD-24)",
+                site.location
+            ),
+        ));
+    }
+}
+
+/// Every line of `src/**/*.rs` under `src` that contains a client
+/// constructor. A missing directory has no sites.
+fn scan_client_sites(krate: &str, src: &Path, root: &Path) -> Vec<ClientSite> {
+    let mut files = Vec::new();
+    collect_rs_files(src, &mut files);
+    files.sort();
+    let mut sites = Vec::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let shown = file
+            .strip_prefix(root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        for (index, line) in text.lines().enumerate() {
+            if CLIENT_CONSTRUCTORS.iter().any(|c| line.contains(c)) {
+                sites.push(ClientSite {
+                    krate: krate.to_owned(),
+                    location: format!("{shown}:{}", index + 1),
+                });
+            }
+        }
+    }
+    sites
+}
+
+fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rs_files(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
 }
 
 /// Checks one dependency of the graph crate `from`.
@@ -705,6 +831,91 @@ mod tests {
         assert_eq!(
             v.to_string(),
             "deps-check: noctis-prefix: r [missing-crate]"
+        );
+    }
+
+    fn http_rule(ws: &Workspace) -> Vec<String> {
+        check(ws)
+            .into_iter()
+            .filter(|v| v.rule == Rule::HttpClient)
+            .map(|v| v.to_string())
+            .collect()
+    }
+
+    fn with_twilight_http(name: &str) -> Member {
+        Member {
+            name: name.to_owned(),
+            features: BTreeMap::new(),
+            deps: vec![Dep {
+                optional: false,
+                ..dep(TWILIGHT_HTTP)
+            }],
+        }
+    }
+
+    #[test]
+    fn twilight_http_outside_core_gateway_facade_fails() {
+        let ws = Workspace {
+            crates: ["noctis-core", "noctis-gateway", "noctis", "noctis-ui"]
+                .map(with_twilight_http)
+                .to_vec(),
+            client_sites: Vec::new(),
+        };
+        assert_eq!(
+            http_rule(&ws),
+            [
+                "deps-check: noctis-ui -> twilight-http (normal): only noctis-core, noctis-gateway \
+              and noctis may depend on twilight-http; use the App's client (AD-24) [http-client]"
+            ]
+        );
+        // twilight-http is never an undrawn internal edge.
+        assert!(
+            !check(&ws)
+                .iter()
+                .any(|v| v.rule == Rule::UndrawnEdge && v.to_string().contains("twilight"))
+        );
+    }
+
+    #[test]
+    fn client_construction_in_scanned_source_fails() {
+        let ws = Workspace {
+            crates: Vec::new(),
+            client_sites: vec![ClientSite {
+                krate: "noctis-gateway".to_owned(),
+                location: "crates/noctis-gateway/src/lib.rs:3".to_owned(),
+            }],
+        };
+        assert_eq!(
+            http_rule(&ws),
+            [
+                "deps-check: noctis-gateway: crates/noctis-gateway/src/lib.rs:3 constructs a twilight \
+              HTTP client; only noctis-core builds the App's one client (AD-24) [http-client]"
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_finds_every_constructor_line() {
+        let root = std::env::temp_dir().join(format!("deps-check-scan-{}", std::process::id()));
+        let src = root.join("src");
+        std::fs::create_dir_all(src.join("nested")).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            "fn a() {}\nlet c = Client::builder();\n",
+        )
+        .unwrap();
+        std::fs::write(
+            src.join("nested/mod.rs"),
+            "use twilight_http::client::ClientBuilder;\nClient::new(t);\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("notes.txt"), "Client::new(").unwrap();
+        let sites = scan_client_sites("noctis", &src, &root);
+        let _ = std::fs::remove_dir_all(&root);
+        let locations: Vec<&str> = sites.iter().map(|s| s.location.as_str()).collect();
+        assert_eq!(
+            locations,
+            ["src/lib.rs:2", "src/nested/mod.rs:1", "src/nested/mod.rs:2"]
         );
     }
 }

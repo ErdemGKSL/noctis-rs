@@ -13,10 +13,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     // `App::from_env` reads NOCTIS_* variables (token, payload key, shard range, proxy).
+    // `configure` takes the builder by `&mut`; the temporary lives to the end of the statement.
     // `run` also handles the CLI modes: --publish, --publish-guild <id>, --publish-clear,
     // --dry-run, --features a,b|all, --no-resume. It returns after a graceful shutdown
     // (Ctrl-C / SIGTERM) or when a CLI mode finishes.
-    let app = noctis_bot_template::configure(App::from_env()?).build()?;
+    let app = noctis_bot_template::configure(&mut App::from_env()?).build()?;
     app.run().await?;
     Ok(())
 }

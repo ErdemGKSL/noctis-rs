@@ -27,8 +27,8 @@ pub struct BotMeta {
 }
 
 /// Mount every Module and Adapter. Token, shards and keys come from the builder the
-/// caller passes in (`App::from_env()` in production, `TestApp::builder()` in tests).
-pub fn configure(builder: AppBuilder) -> AppBuilder {
+/// caller passes in (`App::from_env()` in production, `App::builder()` for `TestApp` in tests).
+pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
     builder
         .app_id("noctis-template")
         .locales(strings::catalog())

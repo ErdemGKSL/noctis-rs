@@ -15,7 +15,7 @@ Always run tests with `--release` (`cargo test --release`); never create a debug
 
 ## 1. Structure for testability
 
-- Put everything in `src/lib.rs` with a `configure(AppBuilder) -> AppBuilder`; `main.rs`
+- Put everything in `src/lib.rs` with a `configure(&mut AppBuilder) -> &mut AppBuilder`; `main.rs`
   only calls it. Integration tests in `tests/` import the lib.
 - Keep `View::render` pure so Views can be rendered from plain data in unit tests.
 
@@ -27,7 +27,7 @@ use noctis::prelude::*;
 use noctis::testkit::{ResponseKind, TestApp, TestGuild, TestUser};
 
 fn app() -> anyhow::Result<TestApp> {
-    Ok(TestApp::build(configure(App::builder()))?      // runs every App-build check, no network
+    Ok(TestApp::build(configure(&mut App::builder()))?      // runs every App-build check, no network
         .guild(TestGuild::new(GUILD, "Test Guild").text_channel(LOGS, "logs").role(MODS, "Mods"))
         .user(TestUser::new(ADMIN).permissions(Permissions::MANAGE_GUILD))
         .user(TestUser::new(MEMBER)))
@@ -93,7 +93,7 @@ assert!(rendered.cost().components <= 40);
 // Build the App with your own `configure`, so its ImagePlugin installs the Renderer as in
 // production; TestApp runs on `Runtime::for_test()` (default font, no network,
 // placeholder assets) [planned].
-let app = TestApp::build(configure(App::builder()))?;
+let app = TestApp::build(configure(&mut App::builder()))?;
 noctis::testkit::assert_render_snapshot!(app.renderer(), "profile_card", card, tolerance = 0.01);
 ```
 

@@ -14,7 +14,7 @@ use noctis::rules::{LimitMode, Limits};
 let mut limits = Limits::default();     // Discord's defaults, LimitMode::Strict
 limits.mode = LimitMode::Lenient;       // truncate text instead of failing
 limits.components = 30;                 // lower a limit (stricter than Discord)
-App::from_env()?.limits(limits);        // [planned] App builder hook
+builder.limits(limits);                 // [planned] App builder hook, in `configure`
 ```
 
 `Limits` is `#[non_exhaustive]`: always start from `Limits::default()` and assign

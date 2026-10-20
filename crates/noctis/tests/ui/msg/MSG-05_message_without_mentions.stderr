@@ -6,7 +6,7 @@ error[E0308]: mismatched types
   |                                               |
   |                                               arguments to this method are incorrect
   |
-  = note: expected struct `Mentions`
+  = note: expected struct `noctis::ui::Mentions`
                found enum `Option<_>`
 note: method defined here
  --> $WORKSPACE/crates/noctis-ui/src/message/mod.rs

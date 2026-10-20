@@ -1,4 +1,4 @@
-error[E0618]: expected function, found `Users`
+error[E0618]: expected function, found `noctis::ui::Users`
  --> tests/ui/msg/MSG-03_users_all_with_ids.rs:4:13
   |
 4 |     let _ = Users::All(Vec::new()); // [MSG-03]

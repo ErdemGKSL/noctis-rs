@@ -13,7 +13,7 @@ async fn profile_card_matches_snapshot() -> anyhow::Result<()> {
     // The same builder as production: `configure` installs the ImagePlugin (through
     // `.theme(..)`), and TestApp builds on `Runtime::for_test()` with the Discord fakes,
     // so rendering uses the default font and placeholder assets with no network.
-    let app = TestApp::build(configure(App::builder()))?;
+    let app = TestApp::build(configure(&mut App::builder()))?;
     let card = ProfileCard {
         name: "Deniz".into(),
         subtitle: "they/them".into(),

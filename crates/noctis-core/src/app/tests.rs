@@ -1,0 +1,504 @@
+use std::future::Future;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll, Waker};
+
+use bytes::Bytes;
+use noctis_ports::{
+    BoxFuture, PortError, RenderError, RenderJob, RenderOutput, TemplateDescriptor,
+};
+
+use super::*;
+use crate::Resource;
+use crate::ports::PortSlot;
+
+const SECRET: &str = "SECRET123";
+
+fn token() -> Token {
+    Token::new(SECRET).unwrap()
+}
+
+fn lookup(value: Option<OsString>) -> impl Fn(&str) -> Option<OsString> {
+    move |var| {
+        assert_eq!(var, "NOCTIS_TOKEN");
+        value.clone()
+    }
+}
+
+// ---- from_env (Matrix 8) ----
+
+#[test]
+fn from_env_token_rules() {
+    for raw in [None, Some(""), Some("  \n")] {
+        let b = AppBuilder::from_lookup(lookup(raw.map(OsString::from))).unwrap();
+        assert!(b.token.is_none(), "{raw:?}");
+    }
+    let b = AppBuilder::from_lookup(lookup(Some("  tok \n".into()))).unwrap();
+    assert_eq!(b.token.as_ref().unwrap().expose(), "tok");
+
+    let err = AppBuilder::from_lookup(lookup(Some("a b".into()))).unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::InvalidToken {
+            var: "NOCTIS_TOKEN",
+            source: crate::TokenError::InvalidChar { index: 1 },
+        }
+    );
+    assert!(!err.to_string().contains("a b"));
+    assert!(!format!("{err:?}").contains("a b"));
+}
+
+#[cfg(unix)]
+#[test]
+fn from_env_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err =
+        AppBuilder::from_lookup(lookup(Some(OsString::from_vec(vec![b'a', 0xff])))).unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_TOKEN"
+        }
+    );
+    let err: Error = err.into();
+    assert!(matches!(err, Error::Env(EnvError::NotUnicode { .. })));
+}
+
+// ---- build (Matrix 9-19) ----
+
+/// A `CacheStore` counting `get` calls and storing nothing.
+struct CountingCache(Arc<AtomicUsize>);
+
+impl CacheStore for CountingCache {
+    fn get<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(None) })
+    }
+    fn put<'a>(
+        &'a self,
+        _: &'a str,
+        _: Bytes,
+        _: Option<Duration>,
+    ) -> BoxFuture<'a, Result<(), PortError>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn put_if_absent<'a>(
+        &'a self,
+        _: &'a str,
+        _: Bytes,
+        _: Option<Duration>,
+    ) -> BoxFuture<'a, Result<bool, PortError>> {
+        Box::pin(async { Ok(false) })
+    }
+    fn delete<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<(), PortError>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn incr_with_ttl<'a>(
+        &'a self,
+        _: &'a str,
+        _: u64,
+        _: Option<Duration>,
+    ) -> BoxFuture<'a, Result<u64, PortError>> {
+        Box::pin(async { Ok(0) })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct Meta(&'static str);
+
+#[tokio::test]
+async fn build_happy() {
+    let gets = Arc::new(AtomicUsize::new(0));
+    let app = App::builder()
+        .token(token())
+        .state(Meta("noctis"))
+        .cache_store(CountingCache(Arc::clone(&gets)))
+        .build()
+        .unwrap();
+    assert!(Arc::ptr_eq(app.http(), app.http()));
+    assert_eq!(app.http_timeout(), Duration::from_secs(10));
+    assert_eq!(app.intents(), Intents::GUILDS);
+    assert_eq!(*app.state::<Meta>().unwrap(), Meta("noctis"));
+    assert!(app.state::<u64>().is_none());
+    assert!(!app.ports().is_default(PortSlot::CacheStore));
+    assert_eq!(app.ports().cache_store.get("k").await.unwrap(), None);
+    assert_eq!(gets.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn build_without_token_and_two_apps() {
+    let a = App::builder().build().unwrap();
+    let b = App::builder().build().unwrap();
+    assert!(a.token.is_none());
+    assert!(!Arc::ptr_eq(a.http(), b.http()));
+}
+
+#[tokio::test]
+async fn defaults() {
+    let app = App::builder().build().unwrap();
+    for slot in PortSlot::ALL {
+        assert!(app.ports().is_default(*slot), "{slot:?}");
+    }
+    assert_eq!(app.ports().default_slots().len(), 11);
+    assert!(!app.has_renderer());
+    let store = &app.ports().cache_store;
+    store
+        .put("k", Bytes::from_static(b"v"), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.get("k").await.unwrap(),
+        Some(Bytes::from_static(b"v"))
+    );
+}
+
+#[tokio::test]
+async fn custom_port_last_call_wins() {
+    let (a, b) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+    let app = App::builder()
+        .cache_store(CountingCache(Arc::clone(&a)))
+        .cache_store(CountingCache(Arc::clone(&b)))
+        .build()
+        .unwrap();
+    app.ports().cache_store.get("k").await.unwrap();
+    assert_eq!(b.load(Ordering::SeqCst), 1);
+    assert_eq!(a.load(Ordering::SeqCst), 0);
+    assert!(!app.ports().is_default(PortSlot::CacheStore));
+    assert!(app.ports().is_default(PortSlot::RefStore));
+}
+
+#[tokio::test]
+async fn timeout_bounds() {
+    for (timeout, ok) in [
+        (Duration::ZERO, false),
+        (Duration::from_micros(999), false),
+        (Duration::from_millis(1), true),
+        (Duration::from_mins(5), true),
+        (Duration::from_mins(5) + Duration::from_nanos(1), false),
+        (Duration::MAX, false),
+    ] {
+        let result = App::builder().http_timeout(timeout).build();
+        if ok {
+            assert_eq!(result.unwrap().http_timeout(), timeout);
+        } else {
+            assert_eq!(
+                result.unwrap_err().violations(),
+                [BuildViolation::InvalidHttpTimeout { actual: timeout }]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn intents_union_with_guilds_floor() {
+    let app = App::builder()
+        .intents(Intents::GUILD_MESSAGES)
+        .intents(Intents::MESSAGE_CONTENT)
+        .build()
+        .unwrap();
+    assert_eq!(
+        app.intents(),
+        Intents::GUILDS | Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT
+    );
+    let app = App::builder().intents(Intents::empty()).build().unwrap();
+    assert_eq!(app.intents(), Intents::GUILDS);
+}
+
+#[tokio::test]
+async fn duplicate_state() {
+    let mut builder = App::builder();
+    builder.state(1_u32).state(2_u32);
+    assert_eq!(*builder.states.get::<u32>().unwrap(), 1);
+    let err = builder.build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::DuplicateState { type_name: "u32" }]
+    );
+}
+
+#[test]
+fn build_outside_runtime() {
+    let err = App::builder().build().unwrap_err();
+    assert_eq!(err.violations(), [BuildViolation::NoTokioRuntime]);
+}
+
+struct Reporter;
+
+impl Plugin for Reporter {
+    fn install(&self, app: &mut AppBuilder) {
+        app.report(BuildViolation::plugin::<Self>("needs config"));
+    }
+}
+
+#[test]
+fn every_violation_at_once() {
+    let err = App::builder()
+        .state(1_u8)
+        .state(2_u8)
+        .http_timeout(Duration::ZERO)
+        .plugin(Reporter)
+        .plugin(Reporter)
+        .build()
+        .unwrap_err();
+    let reporter = std::any::type_name::<Reporter>();
+    assert_eq!(
+        err.violations(),
+        [
+            BuildViolation::DuplicateState { type_name: "u8" },
+            BuildViolation::DuplicatePlugin {
+                type_name: reporter
+            },
+            BuildViolation::Plugin {
+                plugin: reporter,
+                message: "needs config".into()
+            },
+            BuildViolation::InvalidHttpTimeout {
+                actual: Duration::ZERO
+            },
+            BuildViolation::NoTokioRuntime,
+        ]
+    );
+    let text = err.to_string();
+    assert!(text.starts_with("5 App-build violation(s)\n"));
+    assert_eq!(text.matches("\n  - ").count(), 5);
+    assert_eq!(err.clone().into_violations().len(), 5);
+}
+
+#[tokio::test]
+async fn build_resets_builder() {
+    let runtime = Runtime::for_test();
+    let mut builder = App::builder();
+    builder
+        .runtime(&runtime)
+        .token(token())
+        .state(1_u8)
+        .cache_store(CountingCache(Arc::default()));
+    let first = builder.build().unwrap();
+    assert!(first.token.is_some());
+    let second = builder.build().unwrap();
+    assert!(second.token.is_none());
+    assert!(second.state::<u8>().is_none());
+    assert!(second.ports().is_default(PortSlot::CacheStore));
+    assert_eq!(second.runtime(), &runtime);
+}
+
+#[tokio::test]
+async fn runtime_attach() {
+    let app = App::builder().build().unwrap();
+    assert_eq!(app.runtime(), Runtime::global());
+    let app = App::builder()
+        .runtime(&Runtime::for_test())
+        .build()
+        .unwrap();
+    assert!(app.runtime().is_test());
+    assert_ne!(app.runtime(), Runtime::global());
+}
+
+#[tokio::test]
+async fn redaction() {
+    let mut builder = App::builder();
+    builder.token(token()).state(1_u8);
+    let builder_debug = format!("{builder:?}");
+    assert!(builder_debug.contains("Token(<redacted>)"));
+    let app = builder.build().unwrap();
+    let mut failing = App::builder();
+    failing.token(token()).http_timeout(Duration::ZERO);
+    let build_err = failing.build().unwrap_err();
+    let env_err = AppBuilder::from_lookup(lookup(Some(format!("{SECRET} x").into()))).unwrap_err();
+    for text in [
+        builder_debug,
+        format!("{app:?}"),
+        format!("{app:#?}"),
+        format!("{build_err:?}"),
+        build_err.to_string(),
+        format!("{env_err:?}"),
+        env_err.to_string(),
+    ] {
+        assert!(!text.contains(SECRET), "{text}");
+    }
+}
+
+// ---- plugins (Matrix 25-28) ----
+
+struct Pool;
+
+impl Resource for Pool {
+    type Config = u8;
+
+    fn init(_: &u8) -> Self {
+        Self
+    }
+}
+
+struct PoolPlugin(u8);
+
+impl Plugin for PoolPlugin {
+    fn install(&self, app: &mut AppBuilder) {
+        if let Err(conflict) = app.current_runtime().resource_or_init::<Pool>(self.0) {
+            app.report(conflict.into());
+        }
+    }
+}
+
+#[tokio::test]
+async fn resource_conflict_via_plugin() {
+    let runtime = Runtime::for_test();
+    App::builder()
+        .runtime(&runtime)
+        .plugin(PoolPlugin(1))
+        .build()
+        .unwrap();
+    let err = App::builder()
+        .runtime(&runtime)
+        .plugin(PoolPlugin(2))
+        .build()
+        .unwrap_err();
+    assert!(matches!(
+        err.violations(),
+        [BuildViolation::ResourceConflict(c)] if c.frozen == "1" && c.requested == "2"
+    ));
+    // Separate test Runtimes do not interfere.
+    for config in [1, 2] {
+        App::builder()
+            .runtime(&Runtime::for_test())
+            .plugin(PoolPlugin(config))
+            .build()
+            .unwrap();
+    }
+}
+
+struct FakeRenderer;
+
+impl Renderer for FakeRenderer {
+    fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        Box::pin(async { Err(RenderError::failed("fake")) })
+    }
+
+    fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        Ok(())
+    }
+}
+
+struct RendererPlugin(Arc<AtomicUsize>);
+
+impl Plugin for RendererPlugin {
+    fn install(&self, app: &mut AppBuilder) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        app.renderer(Arc::new(FakeRenderer));
+    }
+}
+
+#[tokio::test]
+async fn plugin_installs_renderer_once() {
+    let installs = Arc::new(AtomicUsize::new(0));
+    let app = App::builder()
+        .plugin(RendererPlugin(Arc::clone(&installs)))
+        .build()
+        .unwrap();
+    assert!(app.has_renderer());
+    assert_eq!(installs.load(Ordering::SeqCst), 1);
+}
+
+type Log = Arc<Mutex<Vec<&'static str>>>;
+
+struct P1(Log);
+struct P2(Log);
+struct P3(Log);
+
+impl Plugin for P1 {
+    fn install(&self, app: &mut AppBuilder) {
+        self.0.lock().unwrap().push("P1");
+        app.plugin(P3(Arc::clone(&self.0)));
+    }
+}
+
+impl Plugin for P2 {
+    fn install(&self, _: &mut AppBuilder) {
+        self.0.lock().unwrap().push("P2");
+    }
+}
+
+impl Plugin for P3 {
+    fn install(&self, _: &mut AppBuilder) {
+        self.0.lock().unwrap().push("P3");
+    }
+}
+
+#[tokio::test]
+async fn plugin_order_and_nesting() {
+    let log = Log::default();
+    App::builder()
+        .plugin(P1(Arc::clone(&log)))
+        .plugin(P2(Arc::clone(&log)))
+        .build()
+        .unwrap();
+    assert_eq!(*log.lock().unwrap(), ["P1", "P2", "P3"]);
+}
+
+struct Value(u8, Arc<AtomicUsize>);
+
+impl Plugin for Value {
+    fn install(&self, _: &mut AppBuilder) {
+        self.1.store(usize::from(self.0), Ordering::SeqCst);
+    }
+}
+
+#[tokio::test]
+async fn duplicate_plugin_and_plugin_mut() {
+    let seen = Arc::new(AtomicUsize::new(0));
+    let mut builder = App::builder();
+    builder
+        .plugin(Value(1, Arc::clone(&seen)))
+        .plugin(Value(2, Arc::clone(&seen)));
+    assert!(builder.plugin_mut::<P2>().is_none());
+    let value = builder.plugin_mut::<Value>().unwrap();
+    assert_eq!(value.0, 1);
+    value.0 = 9;
+    let err = builder.build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::DuplicatePlugin {
+            type_name: std::any::type_name::<Value>()
+        }]
+    );
+    assert_eq!(seen.load(Ordering::SeqCst), 9);
+}
+
+// ---- run (Matrix 29-31) ----
+
+#[test]
+fn run_outside_runtime() {
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let app = {
+        let _guard = tokio_rt.enter();
+        App::builder().token(token()).build().unwrap()
+    };
+    let mut run = std::pin::pin!(app.run());
+    let poll = run.as_mut().poll(&mut Context::from_waker(Waker::noop()));
+    assert!(matches!(
+        poll,
+        Poll::Ready(Err(Error::Start(StartError::NoRuntime)))
+    ));
+}
+
+#[tokio::test]
+async fn run_current_thread() {
+    let app = App::builder().token(token()).build().unwrap();
+    assert!(matches!(
+        app.run().await,
+        Err(Error::Start(StartError::NotMultiThread))
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_multi_thread() {
+    let app = App::builder().token(token()).build().unwrap();
+    app.run().await.unwrap();
+    let app = App::builder().build().unwrap();
+    assert!(matches!(
+        app.run().await,
+        Err(Error::Start(StartError::MissingToken))
+    ));
+}

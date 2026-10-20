@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `eda1e76ae39406694c5274877a9225e3ec043f3aa1b9568f9d879cce086f14d7` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `d19a073b440fbb1d34ec0808be1aeb973d7439112dbfdcec6a43e5f285190f8c` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -36,7 +36,7 @@ Discord ──gateway──▶ Shard tasks ──▶ Interaction lane (never dro
 your handler ──returns──▶ View / StaticView / Responded ──▶ Responder ──▶ Discord HTTP
 ```
 
-- **App** is the root: token, Modules, Adapters, state. `App::from_env()` → builder →
+- **App** is the root: token, Modules, Adapters, state. `App::from_env()` → `&mut` builder →
   `.build()?` → `.run().await?`. Sharding is automatic. One binary also publishes
   commands (`--publish-guild <id>`).
 - **Module** groups features (tescord's Pack): `Module::new("profile").add(...)`.
@@ -243,7 +243,7 @@ async fn save_bio(ctx: ModalSubmitCtx, s: SaveBio, form: BioForm) -> HandlerResu
 ### 3.7 Wiring the App
 
 ```rust
-pub fn configure(b: AppBuilder) -> AppBuilder {
+pub fn configure(b: &mut AppBuilder) -> &mut AppBuilder {
     b.app_id("noctis-template")
         .locales(strings::catalog())
         .theme(noctis::image::theme!())
@@ -257,7 +257,7 @@ pub fn configure(b: AppBuilder) -> AppBuilder {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
-    configure(App::from_env()?).build()?.run().await?;
+    configure(&mut App::from_env()?).build()?.run().await?;
     Ok(())
 }
 ```

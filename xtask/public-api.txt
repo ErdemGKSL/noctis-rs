@@ -1,4 +1,214 @@
 pub mod noctis
+pub struct noctis::App
+impl noctis::App
+pub fn noctis::App::builder() -> noctis::AppBuilder
+pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
+pub fn noctis::App::has_renderer(&self) -> bool
+pub fn noctis::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::App::http_timeout(&self) -> core::time::Duration
+pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
+pub async fn noctis::App::run(self) -> core::result::Result<(), noctis::Error>
+pub fn noctis::App::runtime(&self) -> &noctis::Runtime
+pub fn noctis::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+impl core::fmt::Debug for noctis::App
+pub fn noctis::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::AppBuilder
+impl noctis::AppBuilder
+pub fn noctis::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore) -> &mut Self
+pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
+pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
+pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
+pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
+pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
+pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
+pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
+pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
+pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
+pub fn noctis::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
+pub fn noctis::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
+pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
+pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::RenderCache) -> &mut Self
+pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
+pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
+pub fn noctis::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
+pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::SessionStore) -> &mut Self
+pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
+pub fn noctis::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
+impl core::fmt::Debug for noctis::AppBuilder
+pub fn noctis::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::BuildError
+impl noctis::BuildError
+pub fn noctis::BuildError::into_violations(self) -> alloc::vec::Vec<noctis::BuildViolation>
+pub fn noctis::BuildError::violations(&self) -> &[noctis::BuildViolation]
+impl core::clone::Clone for noctis::BuildError
+pub fn noctis::BuildError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::BuildError
+impl core::cmp::PartialEq for noctis::BuildError
+pub fn noctis::BuildError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::BuildError
+impl core::fmt::Debug for noctis::BuildError
+pub fn noctis::BuildError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::BuildError
+pub fn noctis::BuildError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::BuildError
+#[non_exhaustive] pub enum noctis::BuildViolation
+pub noctis::BuildViolation::CryptoProvider
+pub noctis::BuildViolation::DuplicatePlugin
+pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
+pub noctis::BuildViolation::DuplicateState
+pub noctis::BuildViolation::DuplicateState::type_name: &'static str
+pub noctis::BuildViolation::InvalidHttpTimeout
+pub noctis::BuildViolation::InvalidHttpTimeout::actual: core::time::Duration
+pub noctis::BuildViolation::NoTokioRuntime
+pub noctis::BuildViolation::Plugin
+pub noctis::BuildViolation::Plugin::message: alloc::string::String
+pub noctis::BuildViolation::Plugin::plugin: &'static str
+pub noctis::BuildViolation::ResourceConflict(noctis::ResourceConflict)
+impl noctis::BuildViolation
+pub fn noctis::BuildViolation::plugin<P: noctis::Plugin>(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for noctis::BuildViolation
+pub fn noctis::BuildViolation::clone(&self) -> Self
+impl core::cmp::Eq for noctis::BuildViolation
+impl core::cmp::PartialEq for noctis::BuildViolation
+pub fn noctis::BuildViolation::eq(&self, &Self) -> bool
+impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
+pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
+impl core::error::Error for noctis::BuildViolation
+pub fn noctis::BuildViolation::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::BuildViolation
+pub fn noctis::BuildViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::BuildViolation
+pub fn noctis::BuildViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::BuildViolation
+impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
+pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
+#[non_exhaustive] pub enum noctis::EnvError
+pub noctis::EnvError::InvalidToken
+pub noctis::EnvError::InvalidToken::source: noctis::TokenError
+pub noctis::EnvError::InvalidToken::var: &'static str
+pub noctis::EnvError::NotUnicode
+pub noctis::EnvError::NotUnicode::var: &'static str
+impl core::clone::Clone for noctis::EnvError
+pub fn noctis::EnvError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::EnvError
+impl core::cmp::PartialEq for noctis::EnvError
+pub fn noctis::EnvError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::EnvError
+pub fn noctis::EnvError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::EnvError
+pub fn noctis::EnvError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::EnvError
+pub fn noctis::EnvError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::EnvError
+impl core::convert::From<noctis::EnvError> for noctis::Error
+pub fn noctis::Error::from(noctis::EnvError) -> Self
+#[non_exhaustive] pub enum noctis::Error
+pub noctis::Error::Build(noctis::BuildError)
+pub noctis::Error::Env(noctis::EnvError)
+pub noctis::Error::Start(noctis::StartError)
+impl core::convert::From<noctis::BuildError> for noctis::Error
+pub fn noctis::Error::from(noctis::BuildError) -> Self
+impl core::convert::From<noctis::EnvError> for noctis::Error
+pub fn noctis::Error::from(noctis::EnvError) -> Self
+impl core::convert::From<noctis::StartError> for noctis::Error
+pub fn noctis::Error::from(noctis::StartError) -> Self
+impl core::error::Error for noctis::Error
+pub fn noctis::Error::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::Error
+pub fn noctis::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::Error
+pub fn noctis::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::convert::From<noctis::StartError> for noctis::Error
+pub fn noctis::Error::from(noctis::StartError) -> Self
+impl core::convert::From<noctis::BuildError> for noctis::Error
+pub fn noctis::Error::from(noctis::BuildError) -> Self
+pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
+pub trait noctis::Resource: core::marker::Send + core::marker::Sync + 'static
+pub type noctis::Resource::Config: core::cmp::PartialEq + core::fmt::Debug + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::Resource::init(&Self::Config) -> Self
+#[non_exhaustive] pub struct noctis::ResourceConflict
+pub noctis::ResourceConflict::frozen: alloc::string::String
+pub noctis::ResourceConflict::requested: alloc::string::String
+pub noctis::ResourceConflict::resource: &'static str
+impl core::clone::Clone for noctis::ResourceConflict
+pub fn noctis::ResourceConflict::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ResourceConflict
+impl core::cmp::PartialEq for noctis::ResourceConflict
+pub fn noctis::ResourceConflict::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::ResourceConflict
+impl core::fmt::Debug for noctis::ResourceConflict
+pub fn noctis::ResourceConflict::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ResourceConflict
+pub fn noctis::ResourceConflict::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ResourceConflict
+pub struct noctis::Runtime(_)
+impl noctis::Runtime
+pub fn noctis::Runtime::for_test() -> Self
+pub fn noctis::Runtime::global() -> &'static noctis::Runtime
+pub fn noctis::Runtime::is_test(&self) -> bool
+pub fn noctis::Runtime::resource_or_init<T: noctis::Resource>(&self, <T as noctis::Resource>::Config) -> core::result::Result<alloc::rcs::arc::Arc<T>, noctis::ResourceConflict>
+impl core::clone::Clone for noctis::Runtime
+pub fn noctis::Runtime::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Runtime
+impl core::cmp::PartialEq for noctis::Runtime
+pub fn noctis::Runtime::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Runtime
+pub fn noctis::Runtime::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::StartError
+pub noctis::StartError::CryptoProvider
+pub noctis::StartError::MissingToken
+pub noctis::StartError::NoRuntime
+pub noctis::StartError::NotMultiThread
+impl core::clone::Clone for noctis::StartError
+pub fn noctis::StartError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::StartError
+impl core::cmp::PartialEq for noctis::StartError
+pub fn noctis::StartError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::StartError
+impl core::fmt::Debug for noctis::StartError
+pub fn noctis::StartError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::StartError
+pub fn noctis::StartError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::StartError
+impl core::marker::StructuralPartialEq for noctis::StartError
+pub struct noctis::State<T>(_)
+impl<T: core::fmt::Debug> core::fmt::Debug for noctis::State<T>
+pub fn noctis::State<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> core::clone::Clone for noctis::State<T>
+pub fn noctis::State<T>::clone(&self) -> Self
+impl<T> core::ops::deref::Deref for noctis::State<T>
+pub type noctis::State<T>::Target = T
+pub fn noctis::State<T>::deref(&self) -> &T
+pub struct noctis::Token(_)
+impl noctis::Token
+pub fn noctis::Token::new(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, noctis::TokenError>
+impl core::clone::Clone for noctis::Token
+pub fn noctis::Token::clone(&self) -> Self
+impl core::fmt::Debug for noctis::Token
+pub fn noctis::Token::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::Token
+pub fn noctis::Token::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::str::traits::FromStr for noctis::Token
+pub type noctis::Token::Err = noctis::TokenError
+pub fn noctis::Token::from_str(&str) -> core::result::Result<Self, Self::Err>
+#[non_exhaustive] pub enum noctis::TokenError
+pub noctis::TokenError::Empty
+pub noctis::TokenError::InvalidChar
+pub noctis::TokenError::InvalidChar::index: usize
+impl core::clone::Clone for noctis::TokenError
+pub fn noctis::TokenError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::TokenError
+impl core::cmp::PartialEq for noctis::TokenError
+pub fn noctis::TokenError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::TokenError
+impl core::fmt::Debug for noctis::TokenError
+pub fn noctis::TokenError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::TokenError
+pub fn noctis::TokenError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::TokenError
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::label!()
@@ -960,6 +1170,45 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
 pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
 pub mod noctis::prelude
+pub struct noctis::prelude::App
+impl noctis::prelude::App
+pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
+pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
+pub fn noctis::prelude::App::has_renderer(&self) -> bool
+pub fn noctis::prelude::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
+pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
+pub async fn noctis::prelude::App::run(self) -> core::result::Result<(), noctis::Error>
+pub fn noctis::prelude::App::runtime(&self) -> &noctis::Runtime
+pub fn noctis::prelude::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+impl core::fmt::Debug for noctis::prelude::App
+pub fn noctis::prelude::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::prelude::AppBuilder
+impl noctis::prelude::AppBuilder
+pub fn noctis::prelude::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
+pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
+pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
+pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
+pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
+pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
+pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
+pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
+pub fn noctis::prelude::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::RenderCache) -> &mut Self
+pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
+pub fn noctis::prelude::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
+pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports::SessionStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
+pub fn noctis::prelude::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
+impl core::fmt::Debug for noctis::prelude::AppBuilder
+pub fn noctis::prelude::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Choices)]
 pub trait noctis::prelude::Choices: core::marker::Sized + 'static
 pub type noctis::prelude::Choices::Count
@@ -1019,6 +1268,14 @@ pub fn R::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>
 pub fn R::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
+pub struct noctis::prelude::State<T>(_)
+impl<T: core::fmt::Debug> core::fmt::Debug for noctis::prelude::State<T>
+pub fn noctis::prelude::State<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> core::clone::Clone for noctis::prelude::State<T>
+pub fn noctis::prelude::State<T>::clone(&self) -> Self
+impl<T> core::ops::deref::Deref for noctis::prelude::State<T>
+pub type noctis::prelude::State<T>::Target = T
+pub fn noctis::prelude::State<T>::deref(&self) -> &T
 pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
 pub proc macro noctis::prelude::label!()
@@ -2191,6 +2448,9 @@ pub fn noctis::rules::modal::validate_modal_title(&str, &noctis::rules::Limits) 
 pub fn noctis::rules::modal::validate_text_input(&noctis::rules::modal::TextInput<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::modal::validate_text_input_value(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::truncate(&str, usize) -> alloc::borrow::Cow<'_, str>
+pub mod noctis::twilight
+pub use noctis::twilight::http
+pub use noctis::twilight::model
 pub mod noctis::ui
 pub struct noctis::ui::ActionRow(_)
 impl noctis::ui::ActionRow
