@@ -111,6 +111,25 @@ async fn dashboard_roles_tab_pages_within_limits() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn dashboard_module_autocomplete_suggests_stored_modules() -> anyhow::Result<()> {
+    let app = app()?;
+    // The focused text arrives raw and partial; the method filters, Noctis sends type 8.
+    let auto = app.autocomplete("dashboard", "module", "pro").by(ADMIN).in_guild(GUILD).run().await?;
+    assert_eq!(auto.kind(), ResponseKind::Autocomplete);
+    let suggestions = auto.suggestions();
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].0, "profile");
+    assert!(suggestions[0].1.starts_with("Profiles and XP"));
+
+    // A picked module opens the Modules tab; an unknown value falls back to Overview.
+    let modules = app.command("dashboard").option("module", "profile").by(ADMIN).in_guild(GUILD).run().await?;
+    assert!(modules.button("Modules").is_disabled());
+    let forged = app.command("dashboard").option("module", "nope").by(ADMIN).in_guild(GUILD).run().await?;
+    assert!(forged.button("Overview").is_disabled());
+    Ok(())
+}
+
+#[tokio::test]
 async fn handlers_hold_no_per_message_state() -> anyhow::Result<()> {
     // NFR-2 / UD-7: framework memory stays flat however many dashboards are opened.
     let app = app()?;

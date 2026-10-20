@@ -88,6 +88,12 @@ impl ModuleKey {
             Self::Profile => "profile",
         }
     }
+
+    /// The inverse of [`Self::module_id`]; `None` for anything else (option values are
+    /// client input).
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.module_id() == id)
+    }
 }
 
 /// Enable/disable toggle on the Modules tab. `enable` is the action the button performs,

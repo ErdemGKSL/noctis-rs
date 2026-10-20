@@ -254,8 +254,9 @@ there is one style only.
   the decoded options (command), the Payload plus submitted values (modal), or the
   unit struct (context menu, which also takes its resolved target; event, which
   also takes the event payload). Autocomplete handlers are methods on the command
-  struct: `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, partial:
-  Partial<Self>)`, which take no `self`, `response` or `auto_defer`.
+  struct: `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled:
+  Partial<Self>) -> HandlerResult<Suggestions<T>>`, which take no `self`, `response` or
+  `auto_defer` (§8).
 - **Modals.** Fields without an input attribute are the Payload (encoded in the
   `custom_id`, length-proven like a Route); fields with `#[text_input]`,
   `#[radio_group]`, … are the inputs. Building from a struct value pre-fills the inputs
@@ -291,3 +292,74 @@ there is one style only.
   `#[user_command]`, `#[message_command]` and `#[event]` handlers, `#[derive(Options)]`,
   `#[derive(Route)]`/`#[route]` and the `.button()`/`.string_select(..)`/… constructors,
   the `#[modal(route = ..)]` form, and `Module::add(descriptor)`.
+
+## 8. Autocomplete: a flagged option paired with a suggestion method
+
+The option carries a bare `autocomplete` flag; the suggestions come from a method on the
+same command struct, named by `#[autocomplete(field)]`. Noctis sends the response.
+
+The snippet is the approved shape of the option and the method. Its `defaults(description
+= ..)` on `#[command]` is not part of this decision: command metadata follows §7.
+
+```rust
+#[derive(SlashCommand)]
+#[command("warn", response = ephemeral, defaults(description = "warn.desc"))]
+struct Warn {
+    #[option(description = "warn.user")]
+    user: ResolvedUser,
+    #[option(description = "warn.rule", autocomplete)]
+    rule: i64,
+}
+impl Warn {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { /* … */ }
+
+    #[autocomplete(rule)]
+    async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> {
+        let rules = ctx.state::<Db>().search_rules(ctx.guild_id()?, typed, 25).await?;
+        Ok(rules.into_iter().map(|r| (r.id, r.name)).collect())
+    }
+}
+```
+
+- **Flag and method pair up, checked at compile time.** Each of these is a compile error:
+  - an `autocomplete` flag without an `#[autocomplete(field)]` method (OPT-11);
+  - an `#[autocomplete(field)]` method whose field has no `autocomplete` flag, or names
+    a field that does not exist (OPT-11);
+  - `autocomplete` on a `Choices`-typed field (OPT-10);
+  - `autocomplete` on a type other than STRING, INTEGER or NUMBER (OPT-11).
+  The shipped `autocomplete = path` argument is gone; `autocomplete` is a bare flag.
+- **Parameters.** The method has no `self` (the options are incomplete) and takes
+  exactly `(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>)`.
+  - `typed` is the raw focused input. Discord sends it as a string even for INTEGER and
+    NUMBER options, and it may be partial (`"1"`, `"-"`, `""`); parsing it is the
+    method's job.
+  - `filled` holds every other option as `Option<_>`. It is untrusted and partially
+    filled (OPT-12); the command handler re-validates the final values.
+- **Return type.** `HandlerResult<Suggestions<T>>`, where `T` is the field's type with
+  `Option` removed (`i64`, `f64` or `String`); another `T` is a compile error.
+  `Suggestions<T>` collects from `(T, label)` pairs whose label is `String`, `&str` or
+  `MessageKey` (resolved in the user's locale).
+- **Noctis sends the response** (callback type 8). `AutocompleteCtx` has no `respond`
+  and no Responder.
+  - More than 25 suggestions: the first 25 are sent and a warning is logged, in every
+    mode (INT-07).
+  - A label over 100 characters is truncated with `…` and a warning, in every mode.
+  - A suggestion Discord would reject in another way (a `String` value over 100
+    characters, an INTEGER outside ±2^53, a non-finite NUMBER) is dropped with a
+    warning, because changing a value would change its meaning.
+  - An error, a panic or a missed deadline sends an empty list and routes the error to
+    the Autocomplete Error Sink.
+- **No defer, 3 s budget.** Autocomplete cannot be deferred: `auto_defer` or `response`
+  on `#[autocomplete]` is a compile error (INT-06). The method must finish within 3 s;
+  the response goes through the Discord edge (Story 5.9, §3).
+- **Context helpers.** On `AutocompleteCtx`, `guild_id()` returns
+  `Result<Id<GuildMarker>, HandlerError>` (an error outside a guild, which answers an
+  empty list), and `state::<T>()` returns `State<T>` (a `T` never registered with
+  `AppBuilder::state` panics with the type's name; the panic is caught like any
+  handler panic).
+- **Registration.** `module.add::<Warn>()` registers the command and its autocomplete
+  methods together.
+- **Conversion.** Story 6.7 ships the runtime (Suggestions, truncation, empty list on
+  failure, the 3 s budget). Story 6.11 converts whatever 6.7 shipped on the old surface
+  (`autocomplete = path`, a free function, `ctx.respond(choices)`) to this form.

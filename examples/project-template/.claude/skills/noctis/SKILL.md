@@ -313,7 +313,7 @@ Which handlers may open a modal, and how each one answers, is declared on the st
 | command or button that answers with a message (most) | nothing (`auto_defer = true` by default) | none, or `CommandResponder` / `ComponentResponder` | no: `[INT-05] show_modal needs auto_defer = false on this handler` |
 | command or button that opens a modal | `auto_defer = false` | `CommandResponder<Manual>` / `ComponentResponder<Manual>` (required) | yes, as the first response within 3 s |
 | modal submit | `auto_defer`, `response` as needed on `#[modal(..)]` | none, `ModalResponder` or `ModalResponder<Manual>` | never |
-| autocomplete | neither (compile error) | `AutocompleteCtx` only | never |
+| autocomplete (`#[autocomplete(field)]` method) | neither (`[INT-06]` compile error) | none: `AutocompleteCtx`, return `Suggestions<T>` | never |
 
 Details and the `response = …` argument: `references/responder.md` §2b.
 
@@ -402,7 +402,8 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 5. Settings screens: Section + accessory button rows, pre-filled selects, enable/disable
    toggles, add/delete rows, an entity switcher select when there is more than one.
 6. Sections chosen by a `match` on a `PayloadEnum`; prev/next disabled at the bounds.
-7. Autocomplete backed by storage queries capped at 25 in the query.
+7. Autocomplete backed by storage queries capped at 25 in the query, returned as
+   `Suggestions<T>` (`commands.md` §4).
 8. Button → modal → re-render chains carry the same Payload through.
 9. Every user-visible string via locales; one-line notices with `ctx.reply_text`.
 
@@ -413,7 +414,7 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 | `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
 | `pack.slashCommand({ name: "a (b\|c)", handle })` | `#[derive(SlashCommand)] #[command("a (b\|c)")] struct A;` + `impl A { #[handler] async fn handle(self, ctx, path: APath) }` |
 | `options: { user: { type: "User" } }` | fields of the command struct: `struct Ban { #[option(..)] user: ResolvedUser }` |
-| `autoComplete` | `#[option(autocomplete)]` + an `#[autocomplete(field)]` method on the command struct calling `ctx.respond(..)` [planned, Story 6.7] |
+| `autoComplete` | `#[option(.., autocomplete)]` + an `#[autocomplete(field)] async fn x(ctx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` method on the command struct; Noctis sends the result [planned, Stories 6.7 and 6.11] |
 | `pack.button({ id, options, handle })` + `buildComponent({ id, data, overrides })` | `#[derive(Button)] #[button("id", defaults(..))] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` + `X { .. }.build().label(..)` |
 | `pack.stringSelect` / `userSelect` / … / `modal` | `#[derive(StringSelectMenu)]`, `UserSelectMenu`, `RoleSelectMenu`, `MentionableSelectMenu`, `ChannelSelectMenu`, `Modal` |
 | `pack.event({ name, handle })` | `#[derive(EventHandler)] #[event] struct X;` + `impl X { #[handler] async fn handle(self, ctx, event: MessageCreate) }` |
@@ -467,5 +468,6 @@ Story 6.11 converts the rest to one struct per interaction. Until then write:
 | `response = public \| ephemeral` on commands | the bare `ephemeral` flag (`CommandHandler::ephemerality()`) |
 | `auto_defer = false` + `CommandResponder<Manual>` + `show_modal(m)` | `opens_modal` + `CommandResponder<OpensModal>` (`NoModal` by default; `CommandHandler::opens_modal()`) + `modal(m)` |
 | `defer_reply()` / `edit_reply` / `follow_up` / `delete_reply` | `defer(Ephemerality)` / `edit_original` / `followup` / `delete_original` |
+| `#[option(.., autocomplete)]` + `#[autocomplete(field)]` method returning `Suggestions<T>` | `#[option(autocomplete = path)]` naming any existing fn, which only sets the flag; no autocomplete handler runs |
 
 Component, modal-submit and event handlers that need Epic 7 are [planned] either way.

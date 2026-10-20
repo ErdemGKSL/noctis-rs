@@ -165,7 +165,7 @@ impl OpenBioModal {
 | answers privately | `response = ephemeral` | — |
 | opens a new public message from a button | `response = public` | — |
 | is a modal submit | `auto_defer` and `response` as needed | `ModalResponder` or `ModalResponder<Manual>`; never `show_modal` |
-| is autocomplete | neither (compile error) | `AutocompleteCtx` only |
+| is autocomplete | neither (`[INT-06]` compile error) | nothing: return `Suggestions<T>` |
 
 Compile-time checks (`[INT-05]`): the `#[handler]` method must take the
 `…Responder<Manual>` alias exactly when its struct declares `auto_defer = false` (one without the other, or
@@ -279,8 +279,9 @@ one but never uses it, nothing is sent from it).
 | `ComponentResponder<Manual>` [planned, Epic 7] | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
 | `ModalResponder` / `ModalResponder<Manual>` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **never** `show_modal` | modal submit |
 
-Autocomplete has no Responder: `AutocompleteCtx` offers only
-`ctx.respond(choices).await? -> Responded` (`commands.md` §4) [planned, Story 6.7].
+Autocomplete has no Responder and no response method: the `#[autocomplete(field)]`
+method returns `HandlerResult<Suggestions<T>>` and Noctis sends it (`commands.md` §4)
+[planned, Stories 6.7 and 6.11].
 
 Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 

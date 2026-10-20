@@ -151,14 +151,21 @@ fn pager(data: &DashData, s: &Strings, page: u16, pages: u16) -> ActionRow {
 /// A settings row: the state as text, the action as the accessory. The style encodes the
 /// action (Success to enable, Danger to disable).
 fn module_row(data: &DashData, s: &Strings, module: ModuleKey, enabled: bool) -> ContainerComponent {
-    let name = match module {
-        ModuleKey::Setup => s.dashboard.module.setup(),
-        ModuleKey::Profile => s.dashboard.module.profile(),
-    };
+    let name = module_name(s, module);
     let state = if enabled { s.common.enabled() } else { s.common.disabled() };
     let toggle = ToggleModule { guild: data.guild, module, enable: !enabled }
         .build()
         .label(if enabled { s.common.disable() } else { s.common.enable() })
         .style(if enabled { ButtonStyle::Danger } else { ButtonStyle::Success });
     Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle).into()
+}
+
+/// A module's display name in the given locale (the Modules tab and `/dashboard`'s
+/// autocomplete use the same text).
+pub(super) fn module_name(s: &Strings, module: ModuleKey) -> String {
+    match module {
+        ModuleKey::Setup => s.dashboard.module.setup(),
+        ModuleKey::Profile => s.dashboard.module.profile(),
+    }
+    .to_string()
 }

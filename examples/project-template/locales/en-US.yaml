@@ -14,6 +14,10 @@ cmd:
       description: Configure the bot for this server, step by step
   dashboard:
     description: Open the server dashboard
+    opt:
+      module:
+        name: module
+        description: Jump to a module's settings
   profile:
     description: Show a member's profile card
     opt:

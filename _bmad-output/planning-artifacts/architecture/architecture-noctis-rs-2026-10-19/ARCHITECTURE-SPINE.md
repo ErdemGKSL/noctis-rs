@@ -157,7 +157,8 @@ list in CI.
   - Limit values sit in one `Limits` struct with Discord's defaults and a
     `mode: Strict | Lenient` (default Strict). Lenient truncates text with `…` and
     warns; it never applies to structural rules (CV2-03, CV2-05, CV2-06, CID-01,
-    CID-02). Autocomplete choices are always truncated to 25 with a warning.
+    CID-02). Autocomplete suggestions are always truncated to 25, and their labels
+    to 100 characters, with a warning.
   - Every function that measures, packs or validates takes `&Limits`.
     `Limits::default()` is called only by App builder defaults, macros and tests.
   - Macros check against the defaults. A runtime override that lowers a limit makes
@@ -426,7 +427,9 @@ list in CI.
 - **Rule:**
   - Handler kinds have their own context types (`CommandCtx`, `ComponentCtx`,
     `ModalSubmitCtx`, `AutocompleteCtx`), so the kind fixes the legal callbacks at
-    compile time (INT-04). `AutocompleteCtx` offers only `respond`.
+    compile time (INT-04). `AutocompleteCtx` has no response method and no Responder:
+    an `#[autocomplete(field)]` method returns `HandlerResult<Suggestions<T>>` and
+    Noctis sends callback type 8 itself (maintainer decisions §8).
   - The full type is `Responder<K, S = Pending, D = AutoDefer>`. `K` is the handler
     kind: `Command`, `Component` or `ModalSubmit`; `D` is the sealed defer mode,
     `AutoDefer` (default) or `Manual`. A handler that responds explicitly takes it as
@@ -1055,6 +1058,13 @@ list in CI.
   - Components are built from Route values (`BuyButton { .. }.build()`, the kind and
     mandatory defaults declared by the derive), the typed counterpart of tescord's
     `buildComponent`.
+  - Autocomplete (amended 2026-10-20, maintainer decisions §8): an option carries the
+    bare `autocomplete` flag, and the struct's `impl` holds the paired
+    `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled:
+    Partial<Self>) -> HandlerResult<Suggestions<T>>` method, `T` being the field's type.
+    The derive checks the pairing at compile time: a flag without a method, a method
+    without a flag or naming an unknown field (OPT-11), the flag on a `Choices` field
+    (OPT-10), and a `Suggestions<T>` whose `T` differs from the field type are errors.
   - Publish needs no registration code, but it is diff-based and runs only in the
     publisher process or the CLI mode (FR-13), never on Shard ready.
   - Names follow tescord where the concept exists (Module ≈ Pack, Route, Ref,

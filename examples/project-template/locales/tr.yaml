@@ -15,6 +15,10 @@ cmd:
       description: Botu bu sunucu için adım adım yapılandır
   dashboard:
     description: Sunucu panelini aç
+    opt:
+      module:
+        name: modül
+        description: Bir modülün ayarlarına git
   profile:
     description: Bir üyenin profil kartını göster
     opt:

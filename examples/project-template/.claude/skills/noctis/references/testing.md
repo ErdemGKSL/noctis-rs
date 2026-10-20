@@ -60,6 +60,7 @@ app.event(MessageCreate::test(GUILD, MEMBER, "hello")).await?;
 | Method | Returns |
 | --- | --- |
 | `kind()` | `ResponseKind::{Reply, Update, Deferred, Modal, Autocomplete, None}` |
+| `suggestions()` | autocomplete `(value, label)` pairs as sent, after truncation (values as strings) [planned, Story 6.7] |
 | `is_ephemeral()` | bool |
 | `text()` | all Text Display content joined (for `contains` checks) |
 | `button(label)`, `button_by_emoji(e)`, `component::<R>()` | handles to click; `is_disabled()`, `style()` |

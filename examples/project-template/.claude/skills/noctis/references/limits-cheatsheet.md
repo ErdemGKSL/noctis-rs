@@ -27,8 +27,8 @@ fields; a struct literal does not compile. Every field is a `usize` maximum.
   fail, and so do the structural rules CV2-03, CV2-05, CV2-06, CID-01 and CID-02.
   `limits.truncates(rule)` answers only whether the mode permits truncation for that
   rule: `true` only in Lenient mode and only for a non-structural rule.
-- Autocomplete is always truncated to 25 (INT-07), in both modes; `truncates` does
-  not govern it (it returns `false` for INT-07 in Strict mode).
+- Autocomplete is always truncated to 25 (INT-07), and labels to 100, in both modes;
+  `truncates` does not govern it (it returns `false` for INT-07 in Strict mode).
 - Macros check literals against the defaults. Lowering a field makes the runtime
   re-check every tree, static ones included; raising one never relaxes a
   compile-time check.

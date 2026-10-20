@@ -484,7 +484,7 @@ async fn redraw(ctx: &impl Ctx, db: &Db, selected: Option<u32>) -> HandlerResult
     ctx.update(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), selected)).await
 }
 
-// ---- autocomplete backed by storage, capped at 25 [planned, Story 6.7] ----------------
+// ---- autocomplete backed by storage, capped at 25 [planned, Stories 6.7/6.11] ---------
 #[derive(SlashCommand, Debug)]
 #[command("ticket send", description = "Send a ticket panel")]
 pub struct TicketSend {
@@ -496,14 +496,12 @@ impl TicketSend {
     #[handler]
     async fn handle(self, ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> { … }
 
+    /// `typed` is the raw text (a string even for this `i64` option); Noctis sends the result.
     #[autocomplete(system)]
-    async fn system_suggest(ctx: AutocompleteCtx, focused: Focused<String>, _p: Partial<Self>, db: State<Db>)
-        -> HandlerResult<Responded>
-    {
-        let Some(guild) = ctx.guild_id() else { return Ok(ctx.respond([]).await?) };
+    async fn system(ctx: AutocompleteCtx, typed: &str, _filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> {
         // Filter and cap in the query (LIMIT 25), not after loading every row.
-        let rows = db.search_ticket_systems(guild, focused.as_str(), 25).await?;
-        Ok(ctx.respond(rows.into_iter().map(|t| Choice::new(t.label, i64::from(t.id)))).await?)
+        let rows = ctx.state::<Db>().search_ticket_systems(ctx.guild_id()?, typed, 25).await?;
+        Ok(rows.into_iter().map(|t| (i64::from(t.id), t.label)).collect())
     }
 }
 ```

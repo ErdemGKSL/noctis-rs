@@ -401,7 +401,7 @@ field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``)
 | `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
 | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (`GuildText`, `Private`, `GuildVoice`, `Group`, `GuildCategory`, `GuildAnnouncement`, `AnnouncementThread`, `PublicThread`, `PrivateThread`, `GuildStageVoice`, `GuildDirectory`, `GuildForum`, `GuildMedia`; a path's last segment counts, `ChannelType::GuildText` works); at least one | CHANNEL | OPT-07 |
 | `file_types = ["image", ".pdf"]` | string literals: `image`, `video`, `audio` or `.` + ASCII letters/digits; ≤ 10 | ATTACHMENT | OPT-13 |
-| `autocomplete` | [planned: Story 6.7/6.11] a bare flag: the handler is the struct's `#[autocomplete(field)]` method (§4). This release: `autocomplete = path`, an existing fn (E0425 otherwise), which sets the autocomplete flag only | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
+| `autocomplete` | [planned: Story 6.11] a bare flag, paired with the struct's `#[autocomplete(field)]` method returning `Suggestions<T>` (§4); one without the other is an OPT-11 compile error. This release: `autocomplete = path`, an existing fn (E0425 otherwise), which sets the autocomplete flag only | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
 | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>` (`T` = the field type without `Option`; E0308 on another signature); sync, called only when the value is present, in field order, after the whole struct decoded | all | — |
 
 ### Field types (`CommandOption`, OPT-02)
@@ -564,37 +564,78 @@ fails OPT-08. Command choices are STRING only: integer/number choices are [plann
 
 ## 4. Autocomplete
 
-[planned, Story 6.7] An autocomplete handler is a method on the command struct, named by
-the option it completes; it takes no `self` (the options are incomplete), and no
-`response` or `auto_defer` (`[INT-06]` compile error: autocomplete has no defer):
+[planned, Stories 6.7 and 6.11] Mark the option with the bare `autocomplete` flag and add
+the paired `#[autocomplete(field)]` method to the command struct's `impl`. The method
+returns the suggestions; Noctis sends them. You never call `respond` in autocomplete.
 
 ```rust
+#[derive(SlashCommand)]
+#[command("warn", description = "Warn a member", response = ephemeral)]
+struct Warn {
+    #[option(description = "Who to warn")]
+    user: ResolvedUser,
+    #[option(description = "Which rule", autocomplete)]
+    rule: i64,
+}
+
 impl Warn {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { /* self.rule: re-check it exists */ }
+
     #[autocomplete(rule)]
-    async fn rule_suggest(ctx: AutocompleteCtx, focused: Focused<String>, partial: Partial<Self>)
-        -> HandlerResult<Responded>
-    {
-        let rules = load_rules(ctx.guild_id()).await?;
-        let choices = rules
-            .into_iter()
-            .filter(|r| r.name.contains(focused.as_str()))
-            .map(|r| Choice::new(r.name.clone(), r.id.to_string()));
-        Ok(ctx.respond(choices).await?)
+    async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> {
+        // Filter and cap in the query (LIMIT 25), not after loading every row.
+        let rules = ctx.state::<Db>().search_rules(ctx.guild_id()?, typed, 25).await?;
+        Ok(rules.into_iter().map(|r| (r.id, r.name)).collect())
     }
 }
 ```
 
-`AutocompleteCtx` has exactly one response method, `respond` (INT-04, INT-06).
+The flag and the method pair up, checked at `cargo check`:
 
-- `Partial<T>` has every field as `Option`, because Discord may omit required options
-  (OPT-12). Re-validate in the real handler: autocomplete values are not constrained.
-- More than 25 suggestions are truncated to 25 with a warning (INT-07, always).
-- No defer exists for autocomplete (INT-06). On error or timeout Noctis answers an
-  empty list and routes the error to the Autocomplete Error Sink.
+| You write | Result |
+| --- | --- |
+| `autocomplete` on a field, no `#[autocomplete(field)]` method | `[OPT-11]` compile error |
+| `#[autocomplete(f)]` where `f` has no `autocomplete` flag, or no field `f` exists | `[OPT-11]` compile error |
+| `autocomplete` on a `Choices` field | `[OPT-10]` compile error (choices or autocomplete) |
+| `autocomplete` on a type other than `String`, `i64`, `f64` (or their `Option`) | `[OPT-11]` compile error |
+| `Suggestions<T>` with `T` other than the field's type without `Option` | `[OPT-11]` compile error |
+| `auto_defer` or `response` on `#[autocomplete]`, or a `self` parameter | `[INT-06]` compile error (autocomplete has no defer) |
+
+The method's parameters, always these three, in this order:
+
+- `ctx: AutocompleteCtx`: `guild_id()` returns `Result<Id<GuildMarker>, HandlerError>` (an
+  error outside a guild, so `?` answers an empty list), `state::<T>()` returns `State<T>`
+  (registered with `.state(..)`), plus `user_locale()`, `cache()`, `modules()` and
+  `limits()`. No
+  `respond`, no `defer`, no Responder (INT-04, INT-06).
+- `typed: &str`: the raw focused input. Discord sends it as a string even for INTEGER and
+  NUMBER options, and it may be partial (`""`, `"-"`, `"1"`). Parse it yourself
+  (`typed.parse::<i64>().ok()`), never unwrap.
+- `filled: Partial<Self>`: every other option as `Option<_>`, untrusted and partially
+  filled; Discord may omit even required options (OPT-12). Use it to narrow the search
+  (`filled.user`), and re-validate the final values in `handle`: autocomplete values
+  are not constrained to your suggestions.
+
+The return value, `HandlerResult<Suggestions<T>>`:
+
+- `Suggestions<T>` collects from `(T, label)` pairs; the label is a `String`, a `&str` or
+  a `MessageKey` (resolved in the user's locale): `.map(|r| (r.id, r.name)).collect()`.
+- More than 25 suggestions: the first 25 are sent and a warning is logged (INT-07, in
+  every mode). Cap the query at 25 instead.
+- A label over 100 characters is cut to 100 with `…` and a warning. A value Discord would
+  reject (a `String` over 100 characters, an INTEGER outside ±2^53, a non-finite NUMBER)
+  is dropped with a warning.
+- An error, a panic or more than 3 s sends an empty list and routes the error to the
+  Autocomplete Error Sink. Keep the work to one bounded query; there is no defer.
 - Registering the command (`.add::<Warn>()`) registers its autocomplete methods too.
 
+This release: `#[option(autocomplete = path)]` naming an existing fn only sets the flag;
+no autocomplete handler runs yet (`SKILL.md` §8).
+
 Rule function: `noctis::rules::command::validate_autocomplete(&choices, OptionType::String,
-&limits) -> Vec<Violation>` checks a response the way `respond` does. More than
+&limits) -> Vec<Violation>` checks a choice list the way Noctis checks returned
+suggestions; use it for lists you send outside a `#[autocomplete]` method. More than
 `autocomplete_choices` (25) choices is one INT-07 violation at path `choices`
 (`help: Noctis sends the first 25 choices and logs this as a warning`): the caller
 truncates and warns, in every mode. Each kept choice (`choices[j]`) follows OPT-09 (name

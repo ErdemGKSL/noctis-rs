@@ -178,7 +178,7 @@ Priority tier from PRD §8 in brackets.
 - FR-7 [P0]: Command Paths — 1/2/3 words publish as command / subcommand / group + subcommand; > 3 words, empty word or invalid name is a typed error; exceeding the per-command total size is a registration error, not a Publish error.
 - FR-8 [P0]: Command Patterns — `(a|b)` and `?` groups expand left to right in declaration order; each expansion validated (FR-7 and Discord structure); a word that is both subcommand and group fails to compile (FR-77) or fails App build when dynamic; expansion cap (default 25) is a typed error; the handler receives a typed value naming the invoked combination.
 - FR-9 [P0]: Merge rules — Commands from different Modules sharing a base word merge; conflicting `default_member_permissions`, `contexts`, `integration_types` or `nsfw` is a typed error (no "first wins"); a base with both options and subcommands is a typed error.
-- FR-10 [P0]: Typed options and autocomplete — parsed options struct (missing/wrong type is a typed error); required-after-optional and choices+autocomplete are compile errors (derive) or registration errors (dynamic); autocomplete > 25 choices truncated with a warning; autocomplete error/timeout responds with empty choices and routes to the Autocomplete Error Sink; autocomplete receives the focused value and a typed partial struct; failed validators return a localized ephemeral message and the handler doesn't run.
+- FR-10 [P0]: Typed options and autocomplete — parsed options struct (missing/wrong type is a typed error); required-after-optional and choices+autocomplete are compile errors (derive) or registration errors (dynamic); autocomplete > 25 choices truncated with a warning; autocomplete error/timeout responds with empty choices and routes to the Autocomplete Error Sink; autocomplete receives the raw typed focused text and a typed partial struct, returns typed suggestions that Noctis sends (labels over 100 truncated with a warning), and its handler pairs with the option's autocomplete mark at compile time (maintainer decisions §8); failed validators return a localized ephemeral message and the handler doesn't run.
 - FR-11 [P0]: Command metadata — `default_member_permissions`, `contexts`, `integration_types`, `nsfw`, guild scope per Command appear in Publish JSON exactly as declared, unset fields omitted; guild-scoped Commands publish only to their guilds.
 - FR-12 [P0]: Context-menu Commands — user and message context menus; handler receives the resolved target user (with member) or message as typed values; names localized as whole names.
 - FR-13 [P0]: Publish with diff — no write when remote equals local; dry run prints full JSON and a human-readable diff; CLI modes `--publish`, `--publish-guild <id>`, `--publish-clear`; per App with several Apps; never on Shard ready, only in the designated process or CLI mode.
@@ -1817,24 +1817,28 @@ So that users never see "interaction failed" and late updates still land.
 ### Story 6.7: Autocomplete
 
 As a bot author,
-I want autocomplete handlers that receive the focused value and the other filled options as a typed partial struct,
+I want autocomplete handlers that receive the raw typed text and the other filled options as a typed partial struct, and return typed suggestions that Noctis sends,
 So that suggestions are easy to write and never break the interaction.
 
-**Implements:** FR-10 (autocomplete); AD-11; rules INT-06, INT-07, OPT-12.
+**Implements:** FR-10 (autocomplete); AD-11, AD-26; rules INT-06, INT-07, OPT-09, OPT-12; maintainer decisions §8.
+
+Story 6.7 ships the autocomplete runtime and the handler's signature and return type. The struct surface (bare `autocomplete` flag paired with an `#[autocomplete(field)]` method, OPT-10/OPT-11 pairing checks) is Story 6.11's; if this story lands first, it binds the handler on the shipped surface through `#[option(autocomplete = path)]` naming a free `async fn(ctx: AutocompleteCtx, typed: &str, filled: Partial<Options>) -> HandlerResult<Suggestions<T>>`, and Story 6.11 converts it.
 
 **Acceptance Criteria:**
 
-**Given** `#[option(autocomplete)]` on a supported field of a command struct, whose handler is an `#[autocomplete(field)]` method in the struct's `impl` (no `self`; maintainer decisions §7; if this story lands before Story 6.11 on the shipped free-function shape `#[option(autocomplete = handler)]`, Story 6.11 converts it)
-**When** an autocomplete interaction arrives for an option of a 3-word Command Path
-**Then** the handler receives an `AutocompleteCtx` (which offers only `respond(choices) -> Responded`, no defer: INT-06) with the focused value and a `Partial<Options>` whose fields are all `Option<T>` (OPT-12), and returns the `Responded` from `respond`
+**Given** an autocomplete-marked `i64`, `f64` or `String` option and its handler `async fn …(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` (`T` = the option's type without `Option`)
+**When** an autocomplete interaction arrives for that option of a 3-word Command Path
+**Then** the handler receives the focused input as the raw `typed: &str` (Discord sends a string even for INTEGER and NUMBER options; `"1"`, `"-"` and `""` all arrive unparsed) and a `Partial<Self>` whose fields are all `Option<T>` (OPT-12), and Noctis sends its `Suggestions<T>` as the callback type 8 response through the Discord edge (Story 5.9)
+**And** `AutocompleteCtx` has no `respond`, no `defer` and no Responder (INT-04, INT-06); it offers `guild_id() -> Result<Id<GuildMarker>, HandlerError>`, `state::<T>() -> State<T>`, `user_locale()`, `cache()`, `modules()` and `limits()` (maintainer decisions §8)
+**And** `Suggestions<T>` collects from `(T, label)` pairs whose label is `String`, `&str` or `MessageKey` (resolved in the user's locale), and a `Suggestions<T>` whose `T` differs from the option's type fails to compile (trybuild fixture `OPT-11_suggestions_type_mismatch`)
 
-**Given** a handler returning 30 choices
-**When** it responds
-**Then** exactly 25 are sent and a warning is logged, in both Strict and Lenient mode (INT-07)
+**Given** a handler returning 30 suggestions, one with a 120-character label and one `String` value of 101 characters
+**When** Noctis sends them
+**Then** exactly 25 are sent, the long label is cut to 100 with `…`, the over-long value is dropped, and one warning per case is logged, in both Strict and Lenient mode (INT-07, OPT-09; unit tests on the wire body)
 
-**Given** a handler that errors or misses the response deadline
+**Given** a handler that errors, panics or misses the 3 s deadline
 **When** the deadline passes
-**Then** Noctis responds with an empty choice list and routes the error to the Autocomplete Error Sink
+**Then** Noctis responds with an empty choice list and routes the error to the Autocomplete Error Sink (an error outside a guild from `ctx.guild_id()?` included)
 
 **Given** `#[autocomplete(field, auto_defer = ..)]` or `#[autocomplete(field, response = ..)]`
 **When** it compiles
@@ -1842,7 +1846,7 @@ So that suggestions are easy to write and never break the interaction.
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill documents autocomplete with an example, and `skill-check` passes
+**Then** the Usage Skill (`commands.md` §4, `SKILL.md`) documents autocomplete with the maintainer decisions §8 example, `xtask/public-api.txt` is re-blessed with the Usage Skill's `API hash` line, and `skill-check` passes
 
 ### Story 6.8: User-facing errors, built-in notices and panics as responses
 
@@ -1962,7 +1966,7 @@ As a bot author,
 I want every command, component, modal and event declared as one struct whose derive names its kind, with mandatory `defaults(..)`, `.build()` and its handler as a method on the struct,
 So that there is exactly one authoring style, and Epic 7 builds component dispatch on it instead of on the shipped free-function forms.
 
-**Implements:** correct course 2026-10-20 (one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`, maintainer decisions §7); FR-59 (mandatory defaults), FR-76; AD-6 (amended), AD-9, AD-17, AD-23, AD-26; rules CID-01, CID-02, CID-03, CID-04, CID-07, CV2-08, CV2-09, MOD-01, CMD-11, INT-05.
+**Implements:** correct course 2026-10-20 (one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`, maintainer decisions §7); FR-59 (mandatory defaults), FR-76; AD-6 (amended), AD-9, AD-17, AD-23, AD-26; rules CID-01, CID-02, CID-03, CID-04, CID-07, CV2-08, CV2-09, MOD-01, CMD-11, INT-05, INT-06, OPT-10, OPT-11, OPT-12; maintainer decisions §8 (autocomplete).
 
 Depends only on Story 6.10 and earlier stories: it converts the authoring surface that Epics 2 to 6 shipped, already using 6.10's `auto_defer`/`response` arguments and Responder names. Epics 7 onwards assume it.
 
@@ -1972,6 +1976,12 @@ Depends only on Story 6.10 and earlier stories: it converts the authoring surfac
 **When** the story is done
 **Then** commands are `#[derive(SlashCommand)]` / `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` structs (fields = typed options, unit struct when none; the Pattern enum is `<Struct>Path`, taken after `ctx`) with `#[command("path", ..)]` / `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]` carrying the metadata, `response` and `auto_defer` arguments; events are `#[derive(EventHandler)]` unit structs with `#[event(..)]`; autocomplete handlers are `#[autocomplete(field)]` methods on the command struct (no `self`); every handler is `impl X { #[handler] async fn handle(self, ctx: ..) }`, `#[handler]` takes no arguments, and registration is `Module::add::<X>()` (no aliases)
 **And** the `auto_defer = false` ⇔ `CommandResponder<Manual>` check of Story 6.10 moves from the function attribute to the derive's declared mode and the `#[handler]` method's responder parameter (INT-05 fixtures rewritten)
+
+**Given** the shipped autocomplete surface (the `#[option(autocomplete = path)]` argument of Story 6.2, which sets the flag only, and anything Story 6.7 shipped on it: a free handler function, `ctx.respond(choices)`)
+**When** the story is done
+**Then** autocomplete follows maintainer decisions §8: `#[option(.., autocomplete)]` is a bare flag, and the suggestions come from `impl X { #[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>> }`, registered by `Module::add::<X>()` with the command; `autocomplete = path` fails as a compile error whose help shows the flag and the method, and `AutocompleteCtx::respond` does not exist
+**And** the derive and `#[autocomplete]` check the pairing at compile time, each with a trybuild fixture and a re-blessed `.stderr`: `OPT-11_autocomplete_without_method` (flag, no method), `OPT-11_method_without_flag` (method on a field without the flag), `OPT-11_method_unknown_field` (method naming no field), `OPT-11_suggestions_type_mismatch` (`Suggestions<String>` for an `i64` field; rewritten if Story 6.7 added it), `OPT-10_choices_and_autocomplete` (rewritten: the flag on a `Choices` field), `OPT-11_autocomplete_on_bool` (rewritten), `INT-06_autocomplete_auto_defer` and `INT-06_autocomplete_response` (rewritten in the method form), with boundary passes for `i64`, `f64`, `String` and `Option<_>` fields
+**And** `docs/discord-rules.md` OPT-10, OPT-11, OPT-12, INT-06 and INT-07 describe the method form, `xtask rules-catalog` passes, and the template uses autocomplete in one command (`/dashboard [module]`, suggestions from the Module registry's stored state)
 
 **Given** the shipped component and modal surface (Stories 2.5, 4.4 to 4.6): `#[derive(Route)]` with `#[route("id", ..)]` (the bare `select` argument included), the `RouteComponents` constructors `.button()`, `.string_select(..)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()`, the `#[modal(route = R, title = "…")]` form with its separate submit Route and `.modal(..)` opener, and the `components!` grammar's Route items
 **When** the story is done

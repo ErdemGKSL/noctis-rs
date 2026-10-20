@@ -445,7 +445,15 @@ choices, ranges, channel types, autocomplete and optional validators.
 - If an autocomplete handler errors or misses the response deadline, Noctis responds
   with an empty choice list and routes the error to the Autocomplete Error Sink.
 - An autocomplete handler for an option of a 3-word Command Path receives the focused
-  value and the other filled options as a typed partial struct.
+  value as the raw typed text (a string even for integer and number options, possibly
+  partial) and the other filled options as a typed partial struct.
+- An option marked for autocomplete and its autocomplete handler are declared
+  together on the command struct; a mark without a handler, a handler without a mark
+  or for an unknown option, and a handler whose suggestion type differs from the
+  option's type are compile errors.
+- The handler returns typed suggestions (value plus label) and Noctis sends the
+  response; labels over 100 characters are truncated with a warning, and autocomplete
+  can never be deferred.
 - A failed option validator returns a localized ephemeral message and the handler
   doesn't run.
 
