@@ -74,8 +74,8 @@ pub struct CostReport {
     pub components: usize,
     /// Text Display characters (V2, CV2-04) or `content` characters (legacy).
     pub text_chars: usize,
-    /// Truncations made in Lenient mode, then images without alt text, in
-    /// pre-order.
+    /// Lenient-mode truncations (per-field ones in pre-order, then the CV2-04
+    /// one, ATT-06 and MSG-01), then images without alt text in pre-order.
     pub warnings: Vec<LimitWarning>,
 }
 
@@ -161,6 +161,9 @@ impl fmt::Display for LimitWarning {
 /// not compared. Every warning is returned in the [`CostReport`] and logged
 /// with `tracing::warn!` (target `noctis::ui`, fields `rule` and `path`),
 /// also when the message then fails.
+///
+/// In Lenient mode the truncations stay applied to `message` even when
+/// `validate` then returns `Err`.
 ///
 /// # Errors
 ///
@@ -388,24 +391,19 @@ fn check_attachment_alts(set: &AttachmentSet, limits: &Limits, out: &mut Vec<Vio
 
 /// MSG-04: the explicit user and role ids.
 fn check_mentions(mentions: &Mentions, limits: &Limits) -> Vec<Violation> {
-    let user_ids: Vec<u64> = match mentions.user_mentions() {
-        Users::Only(ids) => ids.iter().map(|id| id.get()).collect(),
-        Users::None | Users::All => Vec::new(),
+    // `None` in the second slot means `Only` the collected ids.
+    let (user_ids, users): (Vec<u64>, _) = match mentions.user_mentions() {
+        Users::Only(ids) => (ids.iter().map(|id| id.get()).collect(), None),
+        Users::None => (Vec::new(), Some(MentionIds::None)),
+        Users::All => (Vec::new(), Some(MentionIds::All)),
     };
-    let role_ids: Vec<u64> = match mentions.role_mentions() {
-        Roles::Only(ids) => ids.iter().map(|id| id.get()).collect(),
-        Roles::None | Roles::All => Vec::new(),
+    let (role_ids, roles): (Vec<u64>, _) = match mentions.role_mentions() {
+        Roles::Only(ids) => (ids.iter().map(|id| id.get()).collect(), None),
+        Roles::None => (Vec::new(), Some(MentionIds::None)),
+        Roles::All => (Vec::new(), Some(MentionIds::All)),
     };
-    let users = match mentions.user_mentions() {
-        Users::None => MentionIds::None,
-        Users::All => MentionIds::All,
-        Users::Only(_) => MentionIds::Only(&user_ids),
-    };
-    let roles = match mentions.role_mentions() {
-        Roles::None => MentionIds::None,
-        Roles::All => MentionIds::All,
-        Roles::Only(_) => MentionIds::Only(&role_ids),
-    };
+    let users = users.unwrap_or(MentionIds::Only(&user_ids));
+    let roles = roles.unwrap_or(MentionIds::Only(&role_ids));
     let allowed = AllowedMentions::new()
         .users(users)
         .roles(roles)

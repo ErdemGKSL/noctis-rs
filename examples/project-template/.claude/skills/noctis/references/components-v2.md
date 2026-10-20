@@ -642,7 +642,7 @@ match validate(&mut msg, &limits) {
             eprintln!("{v}"); // [CV2-08] container[0].section[2].accessory.label: limit at most 80, actual 81
         }
     }
-    Err(_) => unreachable!(),
+    Err(other) => eprintln!("{other}"),
 }
 let budget: CostReport = cost(&msg, &limits); // never changes or sends
 ```

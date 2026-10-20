@@ -2,7 +2,7 @@
 title: 'Story 4.3: Runtime Limit validator with path-precise errors'
 type: 'feature'
 created: '2026-10-19'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'bbe6c8bcb89c929362eb89c524b67533cda1b14a'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -257,6 +257,35 @@ Notation:
 
 ## Review Triage Log
 
+### 2026-10-19 — Review pass
+- verdicts: 25 findings — high 0, medium 0, low 8, false 17, maybe-false 0
+- findings:
+  - `[false]` `[reject]` Lenient CV2-04 keeps the first long text and reduces every later text to `…` — the algorithm is fixed by intent Matrix 50 and the Design Notes, and the code matches it; any other strategy edits the intent.
+  - `[false]` `[reject]` `validate` takes `&mut M` even in Strict mode — the signature is fixed in the intent Approach (`validate(&mut msg, &limits)`); Strict never writes (Matrix 46).
+  - `[low]` `[patch]` Skill §16 example teaches `Err(_) => unreachable!()` — `UiError` is `#[non_exhaustive]`, so a bot copying this panics if a later variant reaches it; fix: replace the arm in `components-v2.md` with a non-panicking one (no new error type).
+  - `[false]` `[reject]` ATT-01..03 are not checked by `validate` — the intent's Never list assigns them to core, and the skill already says "Upload Budget (ATT-01..03) is checked by the Responder [planned]" (components-v2.md L210).
+  - `[low]` `[patch]` `validate` rustdoc does not say a Lenient message stays truncated when it then returns `Err` — real doc gap (the skill says it, the rustdoc does not); fix: add one sentence to the `validate` rustdoc.
+  - `[false]` `[reject]` Lenient truncation to an empty label still reports success — happens only with a limit of 0, which intent Matrix 55 explicitly requires to truncate to `""`; with any limit ≥ 1, `truncate` keeps at least `…`.
+  - `[false]` `[reject]` CID-02 skips unresolved ids, so early validation misses by-ref duplicates — intent Matrix 32 sets this behaviour; both the rustdoc ("Unresolved `custom_id`s are not compared") and the skill CID-02 row document it, and epics Story 7.5 has the Responder resolve before validation.
+  - `[low]` `[patch]` `CostReport::warnings` rustdoc order is inaccurate — the actual order is per-field truncations in pre-order, the CV2-04 warning, ATT-06, MSG-01, then MissingAlt in pre-order; fix: reword the field doc to that order.
+  - `[false]` `[reject]` `tracing::warn!` logs `rule = ""` for MissingAlt — intent Matrix 59 requires the `rule` field to be empty for MissingAlt.
+  - `[false]` `[reject]` MSG-09 rule functions take positional `content`/`rows` and an unused `limits` — intent Matrix 65 fixes these signatures; the `limits` parameter follows AD-3 (every measuring function takes `&Limits`).
+  - `[false]` `[reject]` `public-api.txt` lists the `Validate` impls twice, and `sealed::Check` is reachable via `noctis::__private` — the baseline file already has the same duplicate lines for other trait impls (a cargo-public-api quirk), and every sealed supertrait of `noctis::ui` already lives under the hidden `__private` path.
+  - `[low]` `[reject]` Template `src/` does not call `validate`/`cost` — the spec deliberately left template code unchanged because the Responder will call the validator; the template's skill and AGENTS.md are updated, and bot authors' agents learn from the skill alone; adding new template code is more than a direct correction.
+  - `[low]` `[patch]` Tests missing for several documented behaviours — grouped with the CID-02 select finding below, and only its select/button CID-02 sub-item is acted on. The rest are rejected as low: a Section accessory in a legacy message cannot be built; `cost` does not run ATT-05; the combined Lenient order and the `L < n` case are covered by Matrix 48/50/51; the `debug_assert` in `lower.rs::take` is dead under the release-equivalent profile, but mixed-tree count and path tests would fail on a disagreement.
+  - `[low]` `[patch]` Lenient mode builds values it then throws away — `lenient.rs` formats the ``file `<name>` `` note for every attachment even when nothing is truncated, and `check_mentions` matches each mention list twice; fix: build the note only when `fit` returns `Some`, and do one match per list.
+  - `[false]` `[reject]` (edge) Lenient with a field limit of 0 truncates to `""`, which then passes — intent Matrix 55 requires exactly this.
+  - `[low]` `[patch]` (vgap) CID-02 on resolved select `custom_id`s is never tested — pre-verified gap; fix: add a test of two equal resolved selects asserting `CID-02 @ row[1].select[0].custom_id` with the note `first used at row[0].select[0].custom_id`.
+  - `[low]` `[patch]` (vgap) Lenient truncation of a Section accessory button label is untested — pre-verified gap; fix: add `cv2_08_lenient_accessory_label` asserting the warning path `container[0].section[2].accessory.label` and the truncated label.
+  - `[false]` `[reject]` (intent) No automatic pre-send gate — the intent Problem/Approach deliver the function, and epics L1685 / Story 7.5 wire the Responder to validate before sending.
+  - `[false]` `[reject]` (intent) Signature is `&mut msg` / `cost(&msg, &limits)`, not `(&tree)` — fixed by the intent Approach and explained in the Design Notes (Lenient mutation, AD-3).
+  - `[false]` `[reject]` (intent) No runtime numeric-id uniqueness check — ids are assigned in pre-order at serialization, so duplicates cannot be built; intent Matrix 33 sets this.
+  - `[false]` `[reject]` (intent) MissingAlt fires in both modes — intent Matrix 56 requires both modes, and Story 9.1 keeps 4.3's warning in both.
+  - `[false]` `[reject]` (intent) CV2-05 and CID-01 are not tested under Lenient — CV2-05 cannot be built from typed trees (Matrix 27), and CID-01 is enforced at compile time by `derive(Route)` (discord-rules.md CID-01 row), so no runtime value can break it.
+  - `[false]` `[reject]` (intent) Premium-button and accent-colour checks cannot fail — both are unrepresentable for typed trees, per intent Matrix 16 and 26.
+  - `[false]` `[reject]` (intent) No runtime CV2-14 check — same as numeric ids; set by intent Matrix 33.
+  - `[false]` `[reject]` (intent) Checks go beyond the story's rule list (MSG-01/04/09, legacy) — the intent Problem lists MSG-01, MSG-04 and the new MSG-09, and the Approach names `LegacyMessage`.
+
 ## Design Notes
 
 - **`&mut` instead of `&tree`:** Lenient mode must truncate in place, and core's Responder already holds the message mutably (it resolves `custom_ids_mut` before sending). So `validate` takes `&mut M`, and Strict mode never writes. The epic's `validate(&tree, &limits)` / `cost(&tree)` are notation. `cost` keeps `&Limits` because AD-3 says every measuring function takes it.
@@ -297,3 +326,22 @@ Notation:
 - `cargo deny check` -- exit 0 (new lock entries: `tracing`, `tracing-core`).
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- exit 0 each.
 - `bash .github/scripts/check-build-config.sh` -- exit 0; `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Added the runtime Limit validator to `noctis-ui`: `validate(&mut msg, &limits)` checks V2 and legacy messages against the `noctis-rules` catalog (CV2-*, CID-02, ATT-05/06, MSG-01/04 and the new MSG-09 empty-body rule) and returns every violation with a path-precise location (e.g. `container[0].section[2].accessory.label`). Strict mode never writes; Lenient mode truncates in place with a deterministic CV2-04 algorithm. `cost(&msg, &limits)` returns a `CostReport` with counts and warnings (truncations, MissingAlt in both modes, also logged via `tracing::warn!`). Re-exported through the `noctis` facade.
+- **Files changed:**
+  - `crates/noctis-ui/src/limits/{mod,lower,walk,lenient}.rs` - validator, bottom-up tree lowering, path walker, Lenient truncation.
+  - `crates/noctis-ui/src/{component/*,attachment,error,lib,message/mod,placement,components}.rs` - accessors and `UiError::Limits` used by the validator.
+  - `crates/noctis-rules/src/{message,rule,lib}.rs`, `docs/discord-rules.md` - MSG-09 rule and catalog updates.
+  - `crates/noctis-ui/tests/validate.rs`, `crates/noctis/tests/{validate,boundary,boundary/cv2}.rs` - validator and facade tests.
+  - `crates/noctis/src/lib.rs`, `xtask/public-api.txt`, `xtask/**/rules_catalog*` - facade re-exports, API snapshot, catalog check.
+  - `Cargo.toml`, `Cargo.lock`, `crates/noctis-ui/Cargo.toml` - `tracing` dependency.
+  - `examples/project-template/AGENTS.md` and noctis skill (`SKILL.md`, `components-v2.md`, `limits-cheatsheet.md`, `views-and-widgets.md`) - usage docs for `validate`/`cost`.
+- **Review findings:** 25 total (high 0, medium 0, low 8, false 17).
+  - Patched (6 low): non-panicking `Err(_)` arm in skill §16 example; `validate` rustdoc notes a Lenient message stays truncated on `Err`; `CostReport::warnings` order doc corrected; Lenient builds the attachment note only on truncation and matches each mention list once; CID-02 test on resolved selects; `cv2_08_lenient_accessory_label` test.
+  - Deferred: none.
+  - Rejected (19): 17 false findings, each fixed by the intent matrix/approach (Lenient CV2-04 algorithm, `&mut` signature, ATT-01..03 owned by core Responder, limit-0 truncation to `""`, unresolved CID-02 skip, empty `rule` for MissingAlt, MSG-09 signatures, public-api duplicates quirk, no automatic pre-send gate (Story 7.5), numeric ids/CV2-14 unique by construction, MissingAlt in both modes, CV2-05/CID-01 unbuildable, premium/accent unrepresentable, MSG-01/04/09 and legacy in scope); 2 low rejected: template `src/` not calling `validate` (Responder will), and the remaining untested-behaviour sub-items (unbuildable or covered by Matrix 48/50/51).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 6).
+- **Verification:** local gates via `gates.sh` all green - `cargo fmt --check`, `cargo clippy --release --all-targets --all-features -D warnings`, `cargo test --release --workspace`, `cargo hack --each-feature`, MSRV 1.91 check, `cargo deny`, xtask `deps-check`/`rules-catalog`/`api-snapshot`/`skill-check`, build-config check, no `target/debug`. CI paused by maintainer.
+- **Residual risks:** CID-02 duplicates among unresolved by-ref `custom_id`s are only caught once the Responder (Story 7.5) resolves before validating; ATT-01..03 upload budget is not checked until core's Responder lands; the template `src/` does not yet exercise `validate`.

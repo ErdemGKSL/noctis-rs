@@ -69,7 +69,6 @@ pub(super) fn fit_v2(msg: &mut V2Message, limits: &Limits, warnings: &mut Vec<Li
     fit_fields(sites.fields, limits, warnings);
     fit_texts(sites.texts, limits, warnings);
     for (k, attachment) in msg.attachments.iter_mut().enumerate() {
-        let note = format!("file `{}`", attachment.name());
         if let Some(alt) = &mut attachment.alt
             && let Some(v) = fit(
                 RuleId::ATT_06,
@@ -79,6 +78,7 @@ pub(super) fn fit_v2(msg: &mut V2Message, limits: &Limits, warnings: &mut Vec<Li
                 limits,
             )
         {
+            let note = format!("file `{}`", attachment.name());
             warnings.push(LimitWarning::Truncated(v.with_note(note)));
         }
     }

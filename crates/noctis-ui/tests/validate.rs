@@ -662,6 +662,28 @@ fn cid_02_triple() {
 }
 
 #[test]
+fn cid_02_duplicate_select() {
+    let m = resolve(msg([
+        select_row(pick().user_select()),
+        select_row(pick().user_select()),
+    ]));
+    let id = json(&m)["components"][0]["components"][0]["custom_id"]
+        .as_str()
+        .expect("resolved")
+        .to_owned();
+    assert_eq!(
+        errs_v2(m, &strict()),
+        [v(
+            RuleId::CID_02,
+            "row[1].select[0].custom_id",
+            Bound::Describe("a custom_id unique within the message"),
+            Actual::Text(id),
+        )
+        .with_note("first used at row[0].select[0].custom_id")]
+    );
+}
+
+#[test]
 fn cid_02_distinct_ids_pass() {
     passes(msg([ActionRow::buttons([b(1), b(2)]).into()]));
 }
@@ -959,6 +981,27 @@ fn cv2_08_lenient_label() {
         report.warnings,
         [truncated(RuleId::CV2_08, "row[0].button[0].label", 80, 81)]
     );
+}
+
+#[test]
+fn cv2_08_lenient_accessory_label() {
+    let mut m = msg([Container::new()
+        .push(t("a"))
+        .push(t("b"))
+        .push(Section::new([t("c")], b(1).label(rep("a", 81))))
+        .into()]);
+    let report = validate(&mut m, &lenient()).expect("truncated to fit");
+    assert_eq!(
+        report.warnings,
+        [truncated(
+            RuleId::CV2_08,
+            "container[0].section[2].accessory.label",
+            80,
+            81
+        )]
+    );
+    let label = json(&m)["components"][0]["components"][2]["accessory"]["label"].clone();
+    assert_eq!(label, Value::from(format!("{}…", rep("a", 79))));
 }
 
 #[test]
