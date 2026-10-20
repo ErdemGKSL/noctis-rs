@@ -45,6 +45,10 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         // cancelled (reported as `ReportKind::Cancelled`); keep it below the
         // orchestrator's kill timeout. `NOCTIS_SHUTDOWN_GRACE` sets it too.
         .shutdown_grace(Duration::from_secs(15))
+        // The Discord HTTP edge's defaults are tuned for Discord (warm HTTP/2 with PINGs,
+        // hedged interaction acks); this call is optional. Never poll an API endpoint to
+        // keep HTTP warm.
+        .http(noctis::HttpConfig::default())
         .state(BotMeta {
             started_at: SystemTime::now(),
             version: env!("CARGO_PKG_VERSION"),

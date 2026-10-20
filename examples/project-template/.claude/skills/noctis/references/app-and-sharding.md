@@ -37,8 +37,10 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   `NOCTIS_*` variables below. Setters called after it win.
 - `AppBuilder::build()` installs every Plugin (§12), runs every **App-build** check and
   returns the `App` or **all** violations at once in one `BuildError`. It must run inside
-  a tokio runtime (any flavor): the App's one HTTP client is created there. No
-  connection is made. `build()` moves the configuration out and leaves the builder
+  a tokio runtime (any flavor): the App's one HTTP client is created there, and the
+  Discord HTTP edge (§5) starts serving on that runtime (a loopback listener; a runtime
+  without an IO driver still builds, the edge logs `the Discord HTTP edge could not
+  start` and HTTP requests then fail). No connection to Discord is made. `build()` moves the configuration out and leaves the builder
   empty (still attached to its Runtime), so a second `build()` gives a fresh App.
 - `App::run()` checks, in order: a tokio runtime is current (`StartError::NoRuntime`),
   it is multi-thread (`StartError::NotMultiThread`), a rustls crypto provider is
@@ -46,7 +48,8 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   Ctrl-C/SIGTERM handlers can be installed (SIGINT and SIGTERM on unix, Ctrl-C
   elsewhere; a runtime without an IO driver is `StartError::SignalHandler`, so build it
   with `enable_all()` as `#[tokio::main]` does), and a token is set
-  (`StartError::MissingToken`). Typed errors, never panics. It then reads
+  (`StartError::MissingToken`). Typed errors, never panics. It then warms one upstream
+  HTTP connection (§5; at most `connect_timeout` + 6 s, a failure only warns), reads
   `GET /gateway/bot`, plans the shard total and identify buckets (§4) and starts one
   task per shard. It returns an error if startup fails (see Errors). Once every shard
   has received READY it logs `all {n} shards ready` and keeps running until Ctrl-C or
@@ -77,6 +80,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.shard_total()` (`Option<u32>`: the fixed shard total, `None` = Discord's recommendation),
 `app.intents()` (the requested intents plus the ones your event handlers derive),
 `app.shutdown_grace()` (`Duration`, default 10 s),
+`app.http_config()` (`HttpConfig`, §5),
 `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
@@ -93,6 +97,7 @@ Implemented:
 | `.event_lane(capacity, overflow)` | 4096, 16384 | bound the event lane: `capacity` queued events (1..=1048576) and `overflow` non-droppable events behind a full lane (0..=4194304); else `BuildViolation::InvalidEventLane`; the last call wins; see §4 |
 | `.handler_concurrency(usize)` | 256 | how many events run their handlers at once (1..=65536, else `BuildViolation::InvalidHandlerConcurrency`); interactions never wait for it; the last call wins; see §4 |
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
+| `.http(HttpConfig)` | `HttpConfig::default()` | tune the Discord HTTP edge (§5): PING interval/timeout, callback hedge, connect timeout, DNS TTL bounds, `upstream_h2c`; one `BuildViolation::InvalidHttpConfig` per out-of-range field; the last call wins. No env variable |
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
 | `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
 | `.shard_total(u32)` | env `NOCTIS_SHARD_TOTAL`, else Discord's recommendation | fix the shard total; the last call wins. `0` is `BuildViolation::InvalidShardTotal`; too small for Discord is `StartError::ShardTotalTooSmall` at `run()`; see §4 |
@@ -148,6 +153,9 @@ token.
   reason: GatewayUrlError }` (message `"invalid gateway URL: {reason}"`, never the
   value), `InvalidShardTotal` (`.shard_total(0)`), `InvalidShutdownGrace { actual }` (message
   `"shutdown grace {actual:?} is out of range: use a value in 0 s..=900 s"`),
+  `InvalidHttpConfig { reason: HttpConfigError }` (message `"invalid HTTP config:
+  {reason}"`, one per bad field, in field order), `HttpEdge { kind: std::io::ErrorKind }`
+  (`"the Discord HTTP edge could not bind 127.0.0.1:0 ({kind:?})"`),
   `InvalidEventLane { capacity, overflow }`
   (`.event_lane(..)` out of range), `InvalidHandlerConcurrency { actual }`,
   `MissingIntent { module, handler, event, intent }` (GW-05: an event handler needs a
@@ -194,6 +202,18 @@ token.
   `NotAnAuthority` (a path such as `/gateway`, `?`, `#`, `user@` or `\`), `TooLong { len }`,
   `InvalidHost`, `InvalidPort`. The normalized URL lowercases the scheme and drops the
   trailing `/` (host case is kept).
+- `HttpConfigError` (why `.http(..)` was rejected; one per field, in this order):
+  `PingInterval(Duration)` (50 ms..=300 s), `PingTimeout` (50 ms..=60 s), `HedgeAfter`
+  (300 ms..=2800 ms), `ConnectTimeout` (100 ms..=30 s), `DnsTtlFloor` and `DnsTtlCap`
+  (1 s..=86400 s each), then `DnsTtlOrder { floor, cap }` (floor above cap; checked only
+  when both are in range). Message: `"HttpConfig.<field> {actual:?} is out of range: use
+  <lo>..=<hi>"`, or `"HttpConfig.dns_ttl_floor {floor:?} is above dns_ttl_cap {cap:?}"`.
+- `AckDeadlineMissed { elapsed: Duration }` (`Copy`, `#[non_exhaustive]`): an
+  interaction was not acknowledged within 2.9 s of its gateway receipt (Discord allows
+  3 s; INT-01). Message: `"interaction not acknowledged in time: {elapsed:?} after
+  receipt, past the 2.9 s ack deadline (Discord allows 3 s; INT-01): defer slow work"`.
+  The Responder returns it inside its own error [planned, Story 6.5]; defer slow work
+  instead of answering late.
 - `TokenError`: `Empty` (nothing after an optional `"Bot "` prefix), `InvalidChar {
   index }` (a character outside printable ASCII `!`..`~`, e.g. whitespace).
 
@@ -368,10 +388,45 @@ The testkit's `FakeGateway` [planned, Story 8.6] already names itself there.
 
 Noctis owns one twilight HTTP client per App (`app.http()` and `EventCtx::http()`
 return that same `&Arc<noctis::twilight::http::Client>`, for endpoints Noctis doesn't
-wrap). With
-`.http_proxy(..)` (or `NOCTIS_HTTP_PROXY`) set, every request goes to
-`http://{proxy}/api/v10/..` over plain HTTP and the App's local rate limiter is off (the
-proxy limits). Accepted forms: `host`, `host:port`, `[ipv6]`, `[ipv6]:port`, each
+wrap).
+
+**The Discord HTTP edge.** Every request of that client passes a loopback forwarder
+inside the App (started by `build()`): it forwards only `/api/v10/` requests, byte for
+byte (only `Host` and hop-by-hop headers change), to `https://discord.com` over one
+tuned connection, and streams the response back unchanged, so twilight's rate limiter
+keeps learning buckets. It never adds `Authorization` and never logs a path, header
+value or token. The connection is HTTP/2 with PING keep-alive, TCP keepalive and
+`TCP_NODELAY`, a 1.5 s connect timeout per address and a cached async DNS. `run()` warms
+it before `GET /gateway/bot` and keeps it warm with PING frames only: **never poll an
+API endpoint (such as `GET /users/@me`) to keep HTTP warm.** A closed connection, an
+unanswered PING or a shard losing the network makes it redial with back-off. A request
+that never left (refused connection, refused stream) is retried once; one that may have
+reached Discord is not, and fails with a 502 instead of hanging (twilight's timeout
+still applies). Interaction callbacks bypass twilight's limiter on this connection,
+hedged once if no answer arrives in time [planned: the Responder, Story 6.5]. A twilight
+`Arc<Client>` kept after its App is dropped gets connection errors.
+
+`HttpConfig` (`#[non_exhaustive]`; start from `HttpConfig::default()` and set fields):
+
+| Field | Default | Range |
+| --- | --- | --- |
+| `ping_interval` | 20 s | 50 ms..=300 s |
+| `ping_timeout` | 5 s | 50 ms..=60 s |
+| `hedge_after` | 1000 ms | 300 ms..=2800 ms (shortened so a hedge still fits the 3 s ack deadline) |
+| `connect_timeout` | 1500 ms | 100 ms..=30 s |
+| `dns_ttl_floor` | 30 s | 1 s..=86 400 s |
+| `dns_ttl_cap` | 300 s | 1 s..=86 400 s (not below the floor) |
+| `upstream_h2c` | `false` | HTTP/2 without TLS to an `http_proxy` upstream; HTTP/1.1 otherwise |
+
+```rust
+let mut http = noctis::HttpConfig::default();
+http.ping_interval = std::time::Duration::from_secs(15);
+builder.http(http);
+```
+
+With `.http_proxy(..)` (or `NOCTIS_HTTP_PROXY`) set, the edge forwards to
+`http://{proxy}/api/v10/..` instead of Discord (HTTP/1.1, or h2c with `upstream_h2c`)
+and the App's local rate limiter is off (the proxy limits). Accepted forms: `host`, `host:port`, `[ipv6]`, `[ipv6]:port`, each
 optionally prefixed with `http://` (any case) and followed by one `/`; HTTPS proxies,
 paths and credentials are rejected (`HttpProxyError`). Request timeout defaults to 10 s. Raw requests (FR-31) [planned]:
 `ctx.http_raw().request(Method::Get, "/applications/@me", None).await?` — still rate
@@ -429,7 +484,9 @@ resolves, and both also when every shard has ended (then they return
    more; a handler that blocks its thread (no `.await`) cannot be cancelled and is
    logged as `handlers still running after cancellation`.
 5. Shutdown waits up to 6 s for the shards to close, then `info` log
-   `shutdown complete`; the ports drop with the App.
+   `shutdown complete`; the ports drop with the App. The HTTP edge and its warm
+   connection stay up through every step and close only after the shards have
+   closed, when the App drops.
 
 Shutdown takes at most `shutdown_grace` + 7 s, so keep the grace below your
 orchestrator's kill timeout (Kubernetes: 30 s by default). Dropping the `run`
@@ -519,6 +576,10 @@ Spans (live):
 - `noctis.interaction{app, shard, guild_id, module, path}` around each interaction;
   `module` and `path` are declared but empty until command and Route handlers land
   (Epic 6) [planned].
+- `noctis.http{app, kind, method, attempt, reused, status_class}` around each Discord
+  HTTP upstream attempt of the edge (§5); `kind` is `forward`, `callback` or `warmup`.
+  It never carries a path, a token, an id or a header value (twilight's own `req` span
+  does name the URL; filter `twilight_http` if that matters).
 - `noctis.render` [planned, Epic 10], `noctis.publish` [planned, Story 6.9].
 
 Metrics (live; every name starts with `noctis_`, every metric has an `app` label, and no
@@ -532,10 +593,17 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_handler_duration_seconds` | histogram | `app`, `kind` | handler run time in seconds, for `Ok`, errors and panics |
 | `noctis_handler_errors_total` | counter | `app`, `kind` | handler runs that returned `Err` or panicked |
 | `noctis_shard_status` | gauge | `app`, `shard` | `1` after READY/RESUMED, `0` at start and after a disconnect or end; alert on `== 0` |
+| `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx` \| `error`) | Discord HTTP upstream attempts by status class; `error` = no response |
+| `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns` \| `connect` \| `tls` \| `ttfb` \| `total`) | dial phases per new connection, `ttfb`/`total` per attempt |
+| `noctis_http_connections_total` | counter | `app`, `reason` (`warmup` \| `redial` \| `hedge` \| `demand`) | upstream connections opened |
+| `noctis_http_conn_reused_total` | counter | `app`, `reused` (`true` \| `false`) | attempts on a warm vs a new connection |
+| `noctis_http_h2_ping_rtt_seconds` | histogram | `app` | HTTP/2 PING round trips of the warm connection |
+| `noctis_http_ping_timeouts_total` | counter | `app` | connections dropped because a PING went unanswered |
+| `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won` \| `lost` \| `40060`) | hedged interaction callbacks, and callbacks Discord answered "already acknowledged" |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): only `event` is emitted today;
 `command`, `component`, `autocomplete` and `render` join with their handlers. Planned:
-`noctis_http_requests_total` [planned, Story 5.9], ack latency and auto-defer counts
+ack latency and auto-defer counts
 [planned, Story 6.6], Ref lookups [planned, Story 7.5], render metrics [planned, Epic 10].
 
 The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `name`,

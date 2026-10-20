@@ -7,7 +7,9 @@ use std::time::Duration;
 
 use twilight_model::gateway::Intents;
 
-use crate::{GatewayUrlError, HttpProxyError, Plugin, ResourceConflict, TokenError};
+use crate::{
+    GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict, TokenError,
+};
 
 /// Every error `App::from_env`, `build` and `run` return.
 ///
@@ -205,6 +207,19 @@ pub enum BuildViolation {
         /// The rejected value.
         actual: usize,
     },
+    /// An [`HttpConfig`](crate::HttpConfig) field is out of range (one
+    /// violation per field).
+    #[error("invalid HTTP config: {reason}")]
+    InvalidHttpConfig {
+        /// Which field, and why.
+        reason: HttpConfigError,
+    },
+    /// The Discord HTTP edge could not bind its loopback listener.
+    #[error("the Discord HTTP edge could not bind 127.0.0.1:0 ({kind:?})")]
+    HttpEdge {
+        /// The bind error's kind.
+        kind: std::io::ErrorKind,
+    },
     /// An event handler needs a privileged intent the App did not request
     /// (GW-05). Non-privileged intents are added automatically.
     #[error(
@@ -386,6 +401,28 @@ pub enum StartError {
          enable_all() (as #[tokio::main] does)"
     )]
     SignalHandler,
+}
+
+/// An interaction was not acknowledged within the ack deadline: 2.9 s
+/// after the gateway received it (Discord allows 3 s; INT-01). The
+/// interaction token can no longer be used for the initial response.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// fn explain(error: &noctis_core::AckDeadlineMissed) -> String {
+///     format!("{error} ({:?})", error.elapsed)
+/// }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+#[error(
+    "interaction not acknowledged in time: {elapsed:?} after receipt, past the 2.9 s ack \
+     deadline (Discord allows 3 s; INT-01): defer slow work"
+)]
+pub struct AckDeadlineMissed {
+    /// The time from receipt to the moment the deadline was detected.
+    pub elapsed: Duration,
 }
 
 /// The constant name of a privileged intent, such as `GUILD_MEMBERS`.

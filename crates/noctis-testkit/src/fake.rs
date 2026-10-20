@@ -1,9 +1,13 @@
 //! Local Discord fakes for end-to-end tests (FR-51, AD-14).
 //!
-//! [`FakeDiscordHttp`] is a Discord REST fake: an HTTP/1.1 server on
-//! `127.0.0.1` that answers per-test routes under `/api/v10`, a canned
-//! `GET /gateway/bot`, and logs every request. An App reaches it through
-//! `AppBuilder::http_proxy(fake.url())`.
+//! [`FakeDiscordHttp`] is a Discord REST fake: an HTTP/1.1 and h2c (HTTP/2
+//! prior knowledge) server on `127.0.0.1` that answers per-test routes under
+//! `/api/v10`, a canned `GET /gateway/bot`, and logs every request and every
+//! connection (with the HTTP/2 PING frames it received). Routes can stall,
+//! and open connections can be black-holed (bytes swallowed, socket kept
+//! open) or closed, to test the App's HTTP edge. An App reaches it through
+//! [`FakeDiscordHttp::attach`] (h2c) or `AppBuilder::http_proxy(fake.url())`
+//! (HTTP/1.1).
 //!
 //! [`FakeGateway`] is a Discord gateway fake: a WebSocket server on
 //! `127.0.0.1` speaking HELLO, IDENTIFY/READY, RESUME/RESUMED, heartbeat
@@ -272,6 +276,47 @@ pub struct RecordedRequest {
     pub headers: HeaderMap,
     /// The request body (empty when it was rejected as too large).
     pub body: Bytes,
+    /// The id of the connection it arrived on (see
+    /// [`FakeDiscordHttp::connections`]).
+    pub connection: usize,
+}
+
+/// The protocol a connection to a [`FakeDiscordHttp`] speaks.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpProtocol {
+    /// HTTP/1.1.
+    Http1,
+    /// HTTP/2 with prior knowledge (h2c).
+    Http2,
+}
+
+/// A connection a [`FakeDiscordHttp`] accepted.
+///
+/// ```no_run
+/// # #[tokio::main] async fn main() -> std::io::Result<()> {
+/// let fake = noctis_testkit::fake::FakeDiscordHttp::start().await?;
+/// for conn in fake.connections() {
+///     println!("{} {:?} {} requests, {} PINGs", conn.id, conn.protocol, conn.requests, conn.pings.len());
+/// }
+/// # Ok(()) }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedHttpConnection {
+    /// The connection id: its index in accept order.
+    pub id: usize,
+    /// HTTP/1.1, or HTTP/2 once the client preface arrived.
+    pub protocol: HttpProtocol,
+    /// When it was accepted.
+    pub opened_at: tokio::time::Instant,
+    /// When it closed, if it did.
+    pub closed_at: Option<tokio::time::Instant>,
+    /// How many requests arrived on it.
+    pub requests: usize,
+    /// When each HTTP/2 PING (not ACK) arrived.
+    pub pings: Vec<tokio::time::Instant>,
+    /// Whether [`FakeDiscordHttp::black_hole`] hit it.
+    pub black_holed: bool,
 }
 
 impl RecordedRequest {
@@ -287,6 +332,7 @@ impl RecordedRequest {
     ///     query: None,
     ///     headers: HeaderMap::new(),
     ///     body: Default::default(),
+    ///     connection: 0,
     /// };
     /// assert_eq!(request.route_path(), Some("/gateway/bot"));
     /// ```
@@ -307,6 +353,7 @@ impl RecordedRequest {
     ///     query: None,
     ///     headers: HeaderMap::new(),
     ///     body: r#"{"content":"hi"}"#.into(),
+    ///     connection: 0,
     /// };
     /// assert_eq!(request.json().unwrap()["content"], "hi");
     /// ```
@@ -339,6 +386,9 @@ struct State {
     gateway_bot: GatewayBot,
     routes: HashMap<(Method, String), Route>,
     requests: Vec<RecordedRequest>,
+    /// Requests left to stall per method and route path.
+    stalls: HashMap<(Method, String), usize>,
+    connections: Vec<http::Connection>,
 }
 
 /// A shared, poison-tolerant handle to [`State`].
@@ -351,9 +401,11 @@ impl Shared {
     }
 }
 
-/// A local Discord HTTP fake: an HTTP/1.1 server on `127.0.0.1:0`.
+/// A local Discord HTTP fake: an HTTP/1.1 and h2c server on
+/// `127.0.0.1:0`.
 ///
-/// Every request is logged (see [`requests`](Self::requests)). Under
+/// Every request is logged (see [`requests`](Self::requests)), and every
+/// connection (see [`connections`](Self::connections)). Under
 /// `/api/v10` it answers, in order: the per-test route registered for the
 /// exact method and raw path (query ignored; the last registration wins), the
 /// canned `GET /gateway/bot`, or a Discord-shaped `404`. Bodies over
@@ -412,6 +464,8 @@ impl FakeDiscordHttp {
             gateway_bot,
             routes: HashMap::new(),
             requests: Vec::new(),
+            stalls: HashMap::new(),
+            connections: Vec::new(),
         })));
         let accept = runtime.spawn(http::accept_loop(listener, shared.clone()));
         Ok(Self {
@@ -521,13 +575,119 @@ impl FakeDiscordHttp {
         self.shared.lock().requests.clear();
     }
 
-    fn insert_route(&self, method: Method, mut path: String, route: Route) -> &Self {
-        if !path.starts_with('/') {
-            path.insert(0, '/');
-        }
-        self.shared.lock().routes.insert((method, path), route);
+    /// Every connection accepted so far, in accept order.
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let fake = noctis_testkit::fake::FakeDiscordHttp::start().await?;
+    /// assert!(fake.connections().is_empty());
+    /// # Ok(()) }
+    /// ```
+    pub fn connections(&self) -> Vec<RecordedHttpConnection> {
+        self.shared
+            .lock()
+            .connections
+            .iter()
+            .map(|c| c.record.clone())
+            .collect()
+    }
+
+    /// The next `count` requests for `method` on `path` (relative to
+    /// `/api/v10`, like [`route`](Self::route)) are logged and then never
+    /// answered (until their connection closes).
+    ///
+    /// ```no_run
+    /// use noctis_testkit::fake::{FakeDiscordHttp, Method};
+    ///
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let fake = FakeDiscordHttp::start().await?;
+    /// fake.stall(Method::POST, "/interactions/1/t/callback", 1);
+    /// # Ok(()) }
+    /// ```
+    pub fn stall(&self, method: Method, path: impl Into<String>, count: usize) -> &Self {
+        let path = slash(path.into());
+        self.shared.lock().stalls.insert((method, path), count);
         self
     }
+
+    /// Black-holes every open connection: what it receives is read and
+    /// dropped, what it would send is swallowed, and the socket stays open
+    /// (an evicting NAT, as both ends see it). New connections are served
+    /// normally. Returns how many connections were hit.
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let fake = noctis_testkit::fake::FakeDiscordHttp::start().await?;
+    /// assert_eq!(fake.black_hole(), 0);
+    /// # Ok(()) }
+    /// ```
+    pub fn black_hole(&self) -> usize {
+        let mut state = self.shared.lock();
+        let mut hit = 0;
+        for conn in state
+            .connections
+            .iter_mut()
+            .filter(|c| c.record.closed_at.is_none())
+        {
+            conn.black_hole();
+            hit += 1;
+        }
+        hit
+    }
+
+    /// Closes every open connection; returns how many there were.
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let fake = noctis_testkit::fake::FakeDiscordHttp::start().await?;
+    /// assert_eq!(fake.close_connections(), 0);
+    /// # Ok(()) }
+    /// ```
+    pub fn close_connections(&self) -> usize {
+        let state = self.shared.lock();
+        state
+            .connections
+            .iter()
+            .filter(|c| c.record.closed_at.is_none())
+            .map(http::Connection::close)
+            .count()
+    }
+
+    /// Points `builder` at this fake over h2c: `http_proxy(self.url())`
+    /// plus an [`HttpConfig`](noctis_core::HttpConfig) with `upstream_h2c`
+    /// (call `.http(..)` afterwards to tune it further, keeping
+    /// `upstream_h2c = true`).
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let fake = noctis_testkit::fake::FakeDiscordHttp::start().await?;
+    /// let app = fake.attach(&mut noctis_core::App::builder()).build()?;
+    /// # Ok(()) }
+    /// ```
+    pub fn attach<'a>(
+        &self,
+        builder: &'a mut noctis_core::AppBuilder,
+    ) -> &'a mut noctis_core::AppBuilder {
+        let mut config = noctis_core::HttpConfig::default();
+        config.upstream_h2c = true;
+        builder.http_proxy(self.url()).http(config)
+    }
+
+    fn insert_route(&self, method: Method, path: String, route: Route) -> &Self {
+        self.shared
+            .lock()
+            .routes
+            .insert((method, slash(path)), route);
+        self
+    }
+}
+
+/// `path` with a leading `/`.
+fn slash(mut path: String) -> String {
+    if !path.starts_with('/') {
+        path.insert(0, '/');
+    }
+    path
 }
 
 impl fmt::Debug for FakeDiscordHttp {

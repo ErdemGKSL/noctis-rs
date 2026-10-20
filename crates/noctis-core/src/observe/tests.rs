@@ -28,7 +28,18 @@ const USER: u64 = 1_222_222_222_222_222_222;
 const FIXTURES: [u64; 3] = [GA, CHANNEL, USER];
 
 /// Every label name a catalog row may use.
-const ALLOWED_LABELS: [&str; 5] = ["app", "lane", "event_type", "kind", "shard"];
+const ALLOWED_LABELS: [&str; 10] = [
+    "app",
+    "lane",
+    "event_type",
+    "kind",
+    "shard",
+    "status_class",
+    "phase",
+    "reason",
+    "reused",
+    "outcome",
+];
 /// Substrings no label name may contain.
 const FORBIDDEN_IN_NAMES: [&str; 8] = [
     "id", "user", "guild", "channel", "message", "name", "content", "error",
@@ -45,9 +56,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 6);
+    assert_eq!(METRICS.len(), 13);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 6);
+    assert_eq!(names.len(), 13);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -75,6 +86,16 @@ fn catalog_static() {
             ("noctis_handler_duration_seconds", &["app", "kind"][..]),
             ("noctis_handler_errors_total", &["app", "kind"][..]),
             ("noctis_shard_status", &["app", "shard"][..]),
+            ("noctis_http_requests_total", &["app", "status_class"][..]),
+            ("noctis_http_phase_seconds", &["app", "phase"][..]),
+            ("noctis_http_connections_total", &["app", "reason"][..]),
+            ("noctis_http_conn_reused_total", &["app", "reused"][..]),
+            ("noctis_http_h2_ping_rtt_seconds", &["app"][..]),
+            ("noctis_http_ping_timeouts_total", &["app"][..]),
+            (
+                "noctis_interaction_ack_hedges_total",
+                &["app", "outcome"][..]
+            ),
         ]
     );
 }
@@ -91,6 +112,23 @@ fn check_value(metric: &str, label: &str, value: &str, total: u32) {
         "event_type" => assert!(
             (1..=64).contains(&value.len())
                 && value.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'),
+            "{metric}: {value}"
+        ),
+        "status_class" => assert!(
+            ["1xx", "2xx", "3xx", "4xx", "5xx", "error"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "phase" => assert!(
+            ["dns", "connect", "tls", "ttfb", "total"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "reason" => assert!(
+            ["warmup", "redial", "hedge", "demand"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "reused" => assert!(["true", "false"].contains(&value), "{metric}: {value}"),
+        "outcome" => assert!(
+            ["won", "lost", "40060"].contains(&value),
             "{metric}: {value}"
         ),
         "shard" => {
@@ -241,7 +279,15 @@ async fn recorded_set_core() {
 
     let snapshot = snapshotter.snapshot().into_vec();
     let seen = check_snapshot(&snapshot, 2);
-    let all: HashSet<_> = METRICS.iter().map(|m| m.name.to_owned()).collect();
+    // The HTTP edge rows are recorded end to end in the testkit's
+    // `observability.rs` (Story 5.9 Matrix 49).
+    let all: HashSet<_> = METRICS
+        .iter()
+        .map(|m| m.name.to_owned())
+        .filter(|name| {
+            !name.starts_with("noctis_http_") && !name.starts_with("noctis_interaction_")
+        })
+        .collect();
     assert_eq!(seen, all, "{snapshot:?}");
 }
 

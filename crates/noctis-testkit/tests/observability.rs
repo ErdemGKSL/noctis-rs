@@ -1,5 +1,5 @@
 //! The observability contract and Error Sinks of a running App (Story 5.7,
-//! Matrix 25, 29, 30 and 34). Its own test binary, because it installs a
+//! Matrix 25, 29, 30 and 34; Story 5.9 Matrix 49 for the HTTP edge). Its own test binary, because it installs a
 //! global `metrics` recorder and a global capturing tracing subscriber.
 //!
 //! The recorder keeps every metric operation in order instead of the
@@ -403,6 +403,23 @@ fn check_value(metric: &str, label: &str, value: &str) {
             "{metric}: {value}"
         ),
         "kind" => assert_eq!(value, "event", "{metric}"),
+        "status_class" => assert!(
+            ["1xx", "2xx", "3xx", "4xx", "5xx", "error"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "phase" => assert!(
+            ["dns", "connect", "tls", "ttfb", "total"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "reason" => assert!(
+            ["warmup", "redial", "hedge", "demand"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "reused" => assert!(["true", "false"].contains(&value), "{metric}: {value}"),
+        "outcome" => assert!(
+            ["won", "lost", "40060"].contains(&value),
+            "{metric}: {value}"
+        ),
         "event_type" => assert!(
             (1..=64).contains(&value.len())
                 && value.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'),
@@ -575,8 +592,19 @@ async fn recorded_set_matches_catalog() {
     let ops = history.ops();
     let mut seen = check_history(&ops);
     seen.sort_unstable();
-    let mut all: Vec<_> = METRICS.iter().map(|m| m.name).collect();
+    // The HTTP edge rows a quiet HTTP/1.1 App cannot record (PINGs,
+    // hedges) are covered by `http_edge_recorded_set`.
+    let mut all: Vec<_> = METRICS
+        .iter()
+        .map(|m| m.name)
+        .filter(|name| {
+            !name.starts_with("noctis_http_") && !name.starts_with("noctis_interaction_")
+        })
+        .collect();
     all.sort_unstable();
+    seen.retain(|name| {
+        !name.starts_with("noctis_http_") && !name.starts_with("noctis_interaction_")
+    });
     assert_eq!(seen, all);
     let errors: u64 = ops
         .iter()
@@ -589,4 +617,114 @@ async fn recorded_set_matches_catalog() {
     assert!(errors >= 2, "{errors}");
     running.run.abort();
     let _ = running.run.await;
+}
+
+/// Story 5.9 Matrix 49: the HTTP edge records only catalog metrics with
+/// fixed label values, every HTTP row is recorded, and no `noctis.http`
+/// span or label carries the token, the interaction id or a path.
+#[tokio::test(flavor = "multi_thread")]
+async fn http_edge_recorded_set() {
+    use noctis::HttpConfig;
+    use noctis_core::__testing::{interaction_callback, keep_warm};
+    use noctis_testkit::fake::{FakeResponse, Method, StatusCode};
+
+    const ID: u64 = 987_654_321_987;
+    const SECRET: &str = "secret-tok";
+    let _serial = serial().await;
+    let (capture, history) = globals();
+    let mark = capture.0.lock().unwrap().len();
+    let from = history.len();
+    let fake = FakeDiscordHttp::start().await.unwrap();
+    let path = format!("/interactions/{ID}/{SECRET}/callback");
+    // Row 31: the first attempt stalls, the hedge gets 40060; row 23's hedge
+    // win comes from the second callback.
+    fake.stall(Method::POST, path.clone(), 1).route(
+        Method::POST,
+        path.clone(),
+        FakeResponse::json(StatusCode::BAD_REQUEST, &json!({ "code": 40060 })),
+    );
+    let mut config = HttpConfig::default();
+    config.upstream_h2c = true;
+    config.ping_interval = Duration::from_millis(100);
+    config.ping_timeout = Duration::from_secs(1);
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .token(Token::new("fake-token").unwrap());
+    fake.attach(&mut builder).http(config);
+    let app = builder.build().unwrap();
+    // Row 17: the warm-up.
+    let warm = keep_warm(&app);
+    until("the warm connection", || fake.connections().len() == 1).await;
+    // Row 26: a forwarded request.
+    let _ = app.http().current_user().await;
+    let body = bytes::Bytes::from_static(br#"{"type":5}"#);
+    let now = tokio::time::Instant::now();
+    let ack = interaction_callback(&app, ID, SECRET, body.clone(), false, now).await;
+    assert!(ack.unwrap().already_acknowledged);
+    fake.stall(Method::POST, path.clone(), 1).route(
+        Method::POST,
+        path.clone(),
+        FakeResponse::new(StatusCode::NO_CONTENT, ""),
+    );
+    let now = tokio::time::Instant::now();
+    interaction_callback(&app, ID, SECRET, body, false, now)
+        .await
+        .unwrap();
+    // Row 21-22: PINGs, then a black hole and a PING timeout. The won
+    // hedge made the keeper redial: black-hole that new connection
+    // (0 warm-up, 1-2 hedges, 3 redial).
+    until("the redial", || fake.connections().len() == 4).await;
+    fake.black_hole();
+    until("a PING timeout", || {
+        history
+            .ops()
+            .iter()
+            .any(|op| op.name == "noctis_http_ping_timeouts_total")
+    })
+    .await;
+    drop(warm);
+    // Row 14: the upstream is gone.
+    drop(fake);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let _ = app.http().current_user().await;
+    let ops: Vec<_> = history.ops().into_iter().skip(from).collect();
+    let seen = check_history(&ops);
+    for info in METRICS
+        .iter()
+        .filter(|m| m.name.starts_with("noctis_http_") || m.name.starts_with("noctis_interaction_"))
+    {
+        assert!(seen.contains(&info.name), "{} was not recorded", info.name);
+    }
+    for op in &ops {
+        for (_, value) in &op.labels {
+            assert!(
+                !value.contains("tok") && !value.contains(&ID.to_string()) && !value.contains('/'),
+                "{op:?}"
+            );
+        }
+    }
+    let text = String::from_utf8(capture.0.lock().unwrap()[mark..].to_vec()).unwrap();
+    let spans: Vec<_> = text.lines().filter(|l| l.contains("noctis.http")).collect();
+    assert!(
+        spans.iter().any(|l| l.contains("kind=\"callback\"")),
+        "{text}"
+    );
+    assert!(
+        spans.iter().any(|l| l.contains("kind=\"forward\"")),
+        "{text}"
+    );
+    assert!(
+        spans.iter().any(|l| l.contains("kind=\"warmup\"")),
+        "{text}"
+    );
+    // twilight's own `req{method, url}` span names the paths of the
+    // requests it sends; the edge's lines never do.
+    for needle in [SECRET, &ID.to_string(), "/interactions", "users/@me"] {
+        let leaks: Vec<_> = text
+            .lines()
+            .filter(|l| l.contains(needle) && !l.contains("req{method="))
+            .collect();
+        assert!(leaks.is_empty(), "{needle} was logged: {leaks:#?}");
+    }
 }

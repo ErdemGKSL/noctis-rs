@@ -80,6 +80,12 @@ proptest = "1.12"
 hyper = "1.12"
 hyper-util = "0.1.21"
 http-body-util = "0.1.5"
+h2 = "0.4.20"
+socket2 = "0.6.5"
+tokio-rustls = { version = "0.26.6", default-features = false }
+rustls-platform-verifier = "0.7.1"
+hickory-resolver = "0.26.3"
+rcgen = { version = "0.14.10", default-features = false }
 tokio-websockets = "0.13"
 yaml-rust2 = "0.13"
 cssparser = "0.38"

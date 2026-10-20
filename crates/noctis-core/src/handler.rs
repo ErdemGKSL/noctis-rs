@@ -100,6 +100,9 @@ pub(crate) struct AppShared {
     pub(crate) sinks: ErrorSinks,
     pub(crate) http: Arc<twilight_http::Client>,
     pub(crate) states: StateMap,
+    /// The Discord HTTP edge the client sends through; dropping the last
+    /// `AppShared` stops it.
+    pub(crate) edge: crate::edge::Edge,
 }
 
 /// The context an event handler receives: the shard, the guild, the

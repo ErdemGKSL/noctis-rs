@@ -11,8 +11,9 @@ repository.workspace = true
 bytes.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 http-body-util.workspace = true
-hyper = { workspace = true, features = ["http1", "server"] }
-hyper-util = { workspace = true, features = ["tokio"] }
+hyper = { workspace = true, features = ["http1", "http2", "server"] }
+hyper-util = { workspace = true, features = ["server-auto", "tokio"] }
+noctis-core.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
@@ -23,7 +24,6 @@ bytes.workspace = true
 metrics.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
 noctis.workspace = true
-noctis-core.workspace = true
 noctis-gateway.workspace = true
 noctis-ports.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

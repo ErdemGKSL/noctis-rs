@@ -37,6 +37,18 @@
 //! runs under `catch_unwind`, so a panic is logged and the shard keeps
 //! running. The payload types are in [`events`].
 //!
+//! # Discord HTTP
+//!
+//! Every request of the App's one HTTP client passes a loopback edge that
+//! `build()` starts on the current tokio runtime: it forwards only
+//! `/api/v10/` requests, byte for byte, to Discord (or to
+//! [`AppBuilder::http_proxy`]) over one tuned upstream connection. `run`
+//! warms that connection before `GET /gateway/bot` and keeps it warm with
+//! HTTP/2 PING frames (never with API requests), redialing it with back-off
+//! when it closes, a PING goes unanswered or a shard loses the network.
+//! [`AppBuilder::http`] tunes it with an [`HttpConfig`]. A twilight
+//! `Arc<Client>` kept after the App is dropped gets connection errors.
+//!
 //! # Observability and Error Sinks
 //!
 //! Handler errors, handler panics, handlers cancelled at shutdown and events
@@ -65,6 +77,7 @@
 
 mod app;
 mod authority;
+mod edge;
 mod error;
 pub mod events;
 mod gateway_url;
@@ -87,7 +100,10 @@ mod token;
 mod worker;
 
 pub use app::{App, AppBuilder};
-pub use error::{BuildError, BuildViolation, EnvError, Error, RunError, StartError};
+pub use edge::config::{HttpConfig, HttpConfigError};
+pub use error::{
+    AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, RunError, StartError,
+};
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};
@@ -98,3 +114,12 @@ pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};
 pub use state::State;
 pub use token::{Token, TokenError};
+
+/// Test-only seams for the testkit's end-to-end tests; not part of the API.
+#[doc(hidden)]
+pub mod __testing {
+    pub use crate::edge::testing::{
+        CallbackAck, CallbackBody, CallbackError, CallbackRequest, KeepWarm, interaction_callback,
+        keep_warm,
+    };
+}

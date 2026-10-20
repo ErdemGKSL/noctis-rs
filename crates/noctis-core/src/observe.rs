@@ -12,7 +12,11 @@
 //! `noctis.event{app, shard, guild_id, module, handler, event_type}` around
 //! each event handler run, and
 //! `noctis.interaction{app, shard, guild_id, module, path}` around each
-//! interaction.
+//! interaction, and
+//! `noctis.http{app, kind, method, attempt, reused, status_class}` around
+//! each upstream attempt of the Discord HTTP edge (`kind` is `forward`,
+//! `callback` or `warmup`). No span field or label carries a path, a token,
+//! an id or a header value.
 //!
 //! ```
 //! use noctis_core::observe::{METRICS, MetricType};
@@ -72,6 +76,13 @@ const fn row(
 /// | `noctis_handler_duration_seconds` | histogram | `app`, `kind` |
 /// | `noctis_handler_errors_total` | counter | `app`, `kind` |
 /// | `noctis_shard_status` | gauge | `app`, `shard` (1 up, 0 down) |
+/// | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx`, `error`) |
+/// | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns`, `connect`, `tls`, `ttfb`, `total`) |
+/// | `noctis_http_connections_total` | counter | `app`, `reason` (`warmup`, `redial`, `hedge`, `demand`) |
+/// | `noctis_http_conn_reused_total` | counter | `app`, `reused` (`true`, `false`) |
+/// | `noctis_http_h2_ping_rtt_seconds` | histogram | `app` |
+/// | `noctis_http_ping_timeouts_total` | counter | `app` |
+/// | `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won`, `lost`, `40060`) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -112,6 +123,49 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Gauge,
         &["app", "shard"],
         "Shard connection status: 1 when the session is up (READY or RESUMED), 0 otherwise.",
+    ),
+    row(
+        "noctis_http_requests_total",
+        MetricType::Counter,
+        &["app", "status_class"],
+        "Discord HTTP upstream attempts by status class (error: no response).",
+    ),
+    row(
+        "noctis_http_phase_seconds",
+        MetricType::Histogram,
+        &["app", "phase"],
+        "Discord HTTP phase durations in seconds: dns, connect and tls per new connection, \
+         ttfb and total per attempt.",
+    ),
+    row(
+        "noctis_http_connections_total",
+        MetricType::Counter,
+        &["app", "reason"],
+        "Discord HTTP upstream connections opened, by reason (warmup, redial, hedge, demand).",
+    ),
+    row(
+        "noctis_http_conn_reused_total",
+        MetricType::Counter,
+        &["app", "reused"],
+        "Discord HTTP attempts on a reused (true) or new (false) connection.",
+    ),
+    row(
+        "noctis_http_h2_ping_rtt_seconds",
+        MetricType::Histogram,
+        &["app"],
+        "HTTP/2 PING round trips of the warm Discord connection, in seconds.",
+    ),
+    row(
+        "noctis_http_ping_timeouts_total",
+        MetricType::Counter,
+        &["app"],
+        "Discord HTTP/2 connections closed because a PING went unanswered.",
+    ),
+    row(
+        "noctis_interaction_ack_hedges_total",
+        MetricType::Counter,
+        &["app", "outcome"],
+        "Interaction callback hedges that won or lost, and callbacks Discord answered with 40060.",
     ),
 ];
 

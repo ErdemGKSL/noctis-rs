@@ -24,6 +24,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use twilight_model::gateway::Intents;
 
+use crate::edge::{EDGE_BODY_PREFIX, Edge, HttpConfig, KeeperHandle, Upstream};
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
 use crate::lifecycle::{Lifecycle, LifecycleEvent};
@@ -100,6 +101,7 @@ pub struct App {
     shared: Arc<AppShared>,
     http_timeout: Duration,
     http_proxy: Option<String>,
+    http_config: HttpConfig,
     gateway_url: Option<String>,
     shard_total: Option<NonZeroU32>,
     intents: Intents,
@@ -207,6 +209,23 @@ impl App {
     /// ```
     pub fn http_proxy(&self) -> Option<&str> {
         self.http_proxy.as_deref()
+    }
+
+    /// The Discord HTTP edge's tuning (default [`HttpConfig::default`]).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.http_config(), noctis_core::HttpConfig::default());
+    /// # }
+    /// ```
+    pub fn http_config(&self) -> HttpConfig {
+        self.http_config
+    }
+
+    /// The App's Discord HTTP edge.
+    pub(crate) fn edge(&self) -> &Edge {
+        &self.shared.edge
     }
 
     /// The normalized gateway URL (`ws://host[:port]` or `wss://host[:port]`),
@@ -452,6 +471,10 @@ impl App {
         // Cancels every handler on every return path, including a dropped
         // `run_until` future, so no handler outlives it.
         let _cancel_guard = controls.cancel.clone().drop_guard();
+        // The keeper warms the upstream connection now and keeps it warm
+        // until the shutdown sequence has returned.
+        let (_keeper, warmed) = self.edge().start_keeper();
+        let keeper = self.edge().keeper();
         let mut shutdown = pin!(shutdown);
         let info = tokio::select! {
             biased;
@@ -464,7 +487,10 @@ impl App {
                 tracing::info!(target: "noctis::app", "shutdown complete");
                 return Ok(());
             }
-            info = self.gateway_info() => info?,
+            info = async {
+                self.warm_up(warmed).await;
+                self.gateway_info().await
+            } => info?,
         };
         let plan = plan(info, self.shard_total)?;
         let total = plan.total.get();
@@ -517,7 +543,14 @@ impl App {
             Some(result) => {
                 result?;
                 tracing::info!(target: "noctis::app", "all {total} shards ready");
-                supervise(&mut events, &status, &self.lifecycle, &mut shutdown).await
+                supervise(
+                    &mut events,
+                    &status,
+                    &self.lifecycle,
+                    Some(&keeper),
+                    &mut shutdown,
+                )
+                .await
             }
             None => Stop::Requested,
         };
@@ -567,8 +600,30 @@ impl App {
         tracing::info!(target: "noctis::app", "shutdown complete");
     }
 
+    /// Waits for the keeper's first warm-up dial, at most
+    /// `connect_timeout + 6 s`; a failure only warns (the following
+    /// `GET /gateway/bot` reports the error).
+    async fn warm_up(
+        &self,
+        warmed: tokio::sync::oneshot::Receiver<Result<(), crate::edge::DialError>>,
+    ) {
+        let bound = self.http_config.connect_timeout + Duration::from_secs(6);
+        match tokio::time::timeout(bound, warmed).await {
+            Ok(Ok(Ok(()))) => {
+                tracing::debug!(target: "noctis::http", "upstream connection warm");
+            }
+            Ok(Ok(Err(error))) => {
+                tracing::warn!(target: "noctis::http", %error, "the upstream connection could not be warmed");
+            }
+            Ok(Err(_)) | Err(_) => {
+                tracing::warn!(target: "noctis::http", "the upstream connection was not warm in time");
+            }
+        }
+    }
+
     /// Reads `GET /gateway/bot`; every failure is logged with its `Display`
-    /// (twilight never prints the token).
+    /// (twilight never prints the token). The edge's own 502 (upstream
+    /// unreachable) counts as no status.
     async fn gateway_info(&self) -> Result<GatewayInfo, StartError> {
         use twilight_http::error::ErrorType;
 
@@ -578,6 +633,11 @@ impl App {
                 ErrorType::Unauthorized => StartError::InvalidToken,
                 ErrorType::Response { status, .. } if status.get() == 401 => {
                     StartError::InvalidToken
+                }
+                ErrorType::Response { status, body, .. }
+                    if status.get() == 502 && body.starts_with(EDGE_BODY_PREFIX.as_bytes()) =>
+                {
+                    StartError::GatewayInfo { status: None }
                 }
                 ErrorType::Response { status, .. } => StartError::GatewayInfo {
                     status: Some(status.get()),
@@ -704,6 +764,7 @@ pub(crate) async fn supervise(
     events: &mut mpsc::UnboundedReceiver<ShardEvent>,
     status: &ShardStatus,
     lifecycle: &Lifecycle,
+    keeper: Option<&KeeperHandle>,
     shutdown: impl Future<Output = ()>,
 ) -> Stop {
     let mut shutdown = pin!(shutdown);
@@ -719,6 +780,17 @@ pub(crate) async fn supervise(
             return Stop::AllEnded;
         };
         on_shard_event(&event, status, lifecycle);
+        if let (
+            ShardEvent::Disconnected {
+                close_code: None, ..
+            },
+            Some(keeper),
+        ) = (event, keeper)
+        {
+            // No close frame: the network was lost, so the upstream HTTP
+            // connection is suspect too.
+            keeper.request_redial();
+        }
         if let ShardEvent::Ended { shard, .. } = event
             && let Some(seen) = slot(&mut ended, shard)
             && !*seen
@@ -855,6 +927,7 @@ impl fmt::Debug for App {
             .field("token", &self.token)
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy)
+            .field("http_config", &self.http_config)
             .field("gateway_url", &self.gateway_url)
             .field("shard_total", &self.shard_total)
             .field("intents", &self.intents)
@@ -901,6 +974,8 @@ pub struct AppBuilder {
     http_timeout: Duration,
     /// The raw, unvalidated proxy; `build` normalizes it.
     http_proxy: Option<String>,
+    /// The raw edge tuning; `build` checks it.
+    http_config: HttpConfig,
     /// The raw, unvalidated gateway URL; `build` normalizes it.
     gateway_url: Option<String>,
     /// The raw fixed shard total; `build` rejects 0.
@@ -952,6 +1027,7 @@ impl AppBuilder {
             intents: Intents::GUILDS,
             http_timeout: DEFAULT_HTTP_TIMEOUT,
             http_proxy: None,
+            http_config: HttpConfig::default(),
             gateway_url: None,
             shard_total: None,
             states: StateMap::default(),
@@ -1056,6 +1132,24 @@ impl AppBuilder {
     /// ```
     pub fn http_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.http_timeout = timeout;
+        self
+    }
+
+    /// Tunes the Discord HTTP edge (see [`HttpConfig`]); the defaults are
+    /// tuned for Discord. `build()` records one
+    /// [`BuildViolation::InvalidHttpConfig`] per out-of-range field. The
+    /// last call wins.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// let mut http = noctis_core::HttpConfig::default();
+    /// http.hedge_after = Duration::from_millis(800);
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.http(http);
+    /// ```
+    pub fn http(&mut self, config: HttpConfig) -> &mut Self {
+        self.http_config = config;
         self
     }
 
@@ -1343,11 +1437,12 @@ impl AppBuilder {
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
     /// timeout, the HTTP proxy, the gateway URL, the shard total, the event
-    /// lane, handler concurrency and the shutdown grace, folds the mounted Modules into the
-    /// Registry (deriving the gateway filter and intents, GW-05), the rustls
+    /// lane, handler concurrency, the shutdown grace and the [`HttpConfig`],
+    /// binds the Discord HTTP edge's loopback listener, folds the mounted
+    /// Modules into the Registry (deriving the gateway filter and intents, GW-05), the rustls
     /// crypto provider (installing `ring`'s when none is set) and the tokio
-    /// runtime (any flavor). The builder is left empty,
-    /// attached to the same Runtime.
+    /// runtime (any flavor). The edge then starts serving on the current
+    /// runtime. The builder is left empty, attached to the same Runtime.
     ///
     /// # Errors
     ///
@@ -1413,6 +1508,7 @@ impl AppBuilder {
                 actual: self.shutdown_grace,
             });
         }
+        let edge_listener = self.check_http();
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
         self.violations.extend(missing);
         if ensure_crypto_provider().is_err() {
@@ -1423,28 +1519,30 @@ impl AppBuilder {
         }
         let fresh = Self::new(self.runtime.clone());
         let config = std::mem::replace(self, fresh);
-        let Some(event_capacity) = event_capacity.filter(|_| config.violations.is_empty()) else {
+        let (Some(event_capacity), Some((listener, edge_addr))) = (
+            event_capacity.filter(|_| config.violations.is_empty()),
+            edge_listener,
+        ) else {
             return Err(BuildError::new(config.violations));
         };
-        let mut http = twilight_http::Client::builder().timeout(config.http_timeout);
-        if let Some(token) = &config.token {
-            http = http.token(token.expose().to_owned());
-        }
-        if let Some(proxy) = &http_proxy {
-            http = http.proxy(proxy.clone(), true).ratelimiter(None);
-        }
+        let app: Arc<str> = Arc::from("default");
+        let upstream = Upstream::for_proxy(http_proxy.as_deref(), config.http_config.upstream_h2c);
+        let edge = Edge::start((listener, edge_addr), upstream, config.http_config, &app);
+        let http = http_client(&config, &edge, http_proxy.is_some());
         Ok(App {
             runtime: config.runtime,
             token: config.token,
             shared: Arc::new(AppShared {
                 // "default" until `AppId` exists (Story 7.4).
-                app: Arc::from("default"),
+                app,
                 sinks: config.error_sinks,
-                http: Arc::new(http.build()),
+                http: Arc::new(http),
                 states: config.states,
+                edge,
             }),
             http_timeout: config.http_timeout,
             http_proxy,
+            http_config: config.http_config,
             gateway_url,
             shard_total,
             intents: config.intents | registry.intents(),
@@ -1457,6 +1555,23 @@ impl AppBuilder {
             shutdown_grace: config.shutdown_grace,
             lifecycle: Lifecycle::new(),
         })
+    }
+
+    /// Records one violation per out-of-range [`HttpConfig`] field, then
+    /// binds the edge's loopback listener (a failure is a violation too).
+    fn check_http(&mut self) -> Option<(std::net::TcpListener, std::net::SocketAddr)> {
+        for reason in self.http_config.violations() {
+            self.violations
+                .push(BuildViolation::InvalidHttpConfig { reason });
+        }
+        match Edge::bind() {
+            Ok(bound) => Some(bound),
+            Err(error) => {
+                self.violations
+                    .push(BuildViolation::HttpEdge { kind: error.kind() });
+                None
+            }
+        }
     }
 
     /// Calls each pending plugin's `install` once, batch by batch, until an
@@ -1487,6 +1602,7 @@ impl fmt::Debug for AppBuilder {
             .field("intents", &self.intents)
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy.is_some())
+            .field("http_config", &self.http_config)
             .field("gateway_url", &self.gateway_url.is_some())
             .field("shard_total", &self.shard_total)
             .field("states", &self.states)
@@ -1501,6 +1617,21 @@ impl fmt::Debug for AppBuilder {
             .field("violations", &self.violations)
             .finish()
     }
+}
+
+/// The App's one twilight client: every request goes to the loopback
+/// `edge`; the local rate limiter is off only behind an `http_proxy`.
+fn http_client(config: &AppBuilder, edge: &Edge, proxied: bool) -> twilight_http::Client {
+    let mut http = twilight_http::Client::builder()
+        .timeout(config.http_timeout)
+        .proxy(edge.local_addr().to_string(), true);
+    if let Some(token) = &config.token {
+        http = http.token(token.expose().to_owned());
+    }
+    if proxied {
+        http = http.ratelimiter(None);
+    }
+    http.build()
 }
 
 /// A shard total from 1-10 ASCII digits that fit a `u32` (leading zeros and

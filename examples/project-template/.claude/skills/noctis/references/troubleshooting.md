@@ -84,6 +84,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | no font registered | enable `default-font` or `ImageConfig::font(..)` |
 | animation name `spin` redefined | rename your keyframes |
 | shard total must be at least 1 | remove `.shard_total(0)` / `NOCTIS_SHARD_TOTAL=0`, or set a positive total |
+| invalid HTTP config: HttpConfig.`<field>` … is out of range | set the field inside the range the message names (or keep `HttpConfig::default()`) |
+| the Discord HTTP edge could not bind 127.0.0.1:0 | the process may not open a loopback socket (sandbox, file-descriptor limit): allow loopback TCP |
 | > 100 global chat-input commands | merge into fewer bases (groups) |
 
 ## Runtime
@@ -91,6 +93,9 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | "This interaction failed" | handler panicked before the deadline on an `opens_modal` Route, or slow work before `r.modal(..)` | keep modal handlers fast (< 3 s); load data after opening if possible |
+| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the handler did slow work (DB, HTTP, rendering) before its first response, so the ack left later than 2.9 s after receipt | defer first (a deferred response), then do the slow work and edit; never answer late. Check `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
+| the first Discord request after a quiet period is slow, or `RequestTimedOut` after ~10 s | a NAT/firewall silently dropped an idle connection, or slow DNS | nothing to add: the HTTP edge keeps one connection warm with HTTP/2 PINGs and redials dead ones; do **not** poll `GET /users/@me`. If it persists, lower `HttpConfig::ping_interval` and check `noctis_http_ping_timeouts_total` and `noctis_http_phase_seconds{phase="dns"}` |
+| `ERROR noctis::http: the Discord HTTP edge could not start` | the tokio runtime has no IO driver | build it with `enable_all()` (as `#[tokio::main]` does) |
 | clicking an old message shows "expired" | Ref TTL passed, or Payload schema changed (stale) | longer `ttl`, `on_expired`/`on_stale` handler that re-opens the View |
 | clicks on another user's panel say "not allowed" | `owner = …` guard working as designed | make the View ephemeral or remove the guard |
 | select shows old choice after update | missing `select` on the Route or no `default_*` set | add `select` and set defaults to the current value |

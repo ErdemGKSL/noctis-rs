@@ -1,5 +1,6 @@
 //! Graceful shutdown of a running App against `FakeDiscordHttp` and
-//! `FakeGateway` (Story 5.8, Matrix 35-38 and 41). Its own test binary,
+//! `FakeGateway` (Story 5.8, Matrix 35-38 and 41; Story 5.9 Matrix 50: the
+//! HTTP edge lives through the shutdown). Its own test binary,
 //! because it installs a global capturing tracing subscriber and a global
 //! metrics recorder.
 
@@ -300,6 +301,14 @@ async fn graceful_shutdown() {
         })
         .await;
     assert!(close.is_some(), "no 4000 close frame");
+    // Story 5.9 Matrix 50: the edge's upstream connections outlive the
+    // shards' close frames.
+    let upstream = running.http.connections();
+    assert!(!upstream.is_empty());
+    assert!(
+        upstream.iter().all(|c| c.closed_at.is_none()),
+        "{upstream:?}"
+    );
     let me = |running: &Running| {
         running
             .http
@@ -316,6 +325,19 @@ async fn graceful_shutdown() {
     assert!(probe.has("end"));
     assert!(me(&running));
     assert_eq!(running.sink.count("cancelled"), 0);
+    let returned = Instant::now();
+    while running
+        .http
+        .connections()
+        .iter()
+        .any(|c| c.closed_at.is_none())
+    {
+        assert!(
+            returned.elapsed() <= Duration::from_secs(2),
+            "the edge kept upstream connections open after run_until returned"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     let text = capture.since(mark);
     let started = text.find("shutdown started").expect("shutdown started");
     let complete = text.find("shutdown complete").expect("shutdown complete");

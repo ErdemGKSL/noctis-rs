@@ -9,8 +9,8 @@ use noctis_ports::{
 };
 
 use super::*;
-use crate::Resource;
 use crate::ports::PortSlot;
+use crate::{HttpConfigError, Resource};
 
 const SECRET: &str = "SECRET123";
 
@@ -1285,6 +1285,7 @@ async fn supervised(events: &[ShardEvent], close: bool) -> Supervised {
             &mut rx,
             &status,
             &lifecycle,
+            None,
             tokio::time::sleep(Duration::from_millis(50)),
         ),
     )
@@ -1608,4 +1609,281 @@ async fn shutdown_sequence_order() {
     assert!(!text.contains("handlers still running"), "{text}");
     assert!(drain.0.is_finished());
     assert!(controls.tracker.is_closed() && controls.tracker.is_empty());
+}
+
+// ---- HttpConfig and the edge (Story 5.9 Matrix 1-5, 7, 24) ----
+
+fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+}
+
+/// Matrix 1: the default config.
+#[tokio::test]
+async fn http_config_default() {
+    let app = App::builder().build().unwrap();
+    let config = app.http_config();
+    assert_eq!(config, HttpConfig::default());
+    assert_eq!(config.ping_interval, Duration::from_secs(20));
+    assert_eq!(config.ping_timeout, Duration::from_secs(5));
+    assert_eq!(config.hedge_after, ms(1000));
+    assert_eq!(config.connect_timeout, ms(1500));
+    assert_eq!(config.dns_ttl_floor, Duration::from_secs(30));
+    assert_eq!(config.dns_ttl_cap, Duration::from_mins(5));
+    assert!(!config.upstream_h2c);
+    assert!(format!("{app:?}").contains("http_config"));
+    assert!(format!("{:?}", App::builder()).contains("http_config"));
+}
+
+/// Matrix 2: both ends of every range build.
+#[expect(
+    clippy::field_reassign_with_default,
+    reason = "bot code must mutate a default: HttpConfig is non_exhaustive"
+)]
+#[tokio::test]
+async fn http_config_bounds_ok() {
+    let low = {
+        let mut c = HttpConfig::default();
+        c.ping_interval = ms(50);
+        c.ping_timeout = ms(50);
+        c.hedge_after = ms(300);
+        c.connect_timeout = ms(100);
+        c.dns_ttl_floor = Duration::from_secs(1);
+        c.dns_ttl_cap = Duration::from_secs(1);
+        c
+    };
+    let high = {
+        let mut c = HttpConfig::default();
+        c.ping_interval = Duration::from_mins(5);
+        c.ping_timeout = Duration::from_mins(1);
+        c.hedge_after = ms(2800);
+        c.connect_timeout = Duration::from_secs(30);
+        c.dns_ttl_floor = Duration::from_hours(24);
+        c.dns_ttl_cap = Duration::from_hours(24);
+        c
+    };
+    for config in [low, high] {
+        let app = App::builder().http(config).build().unwrap();
+        assert_eq!(app.http_config(), config);
+    }
+}
+
+/// Matrix 3: one violation per bad field, in field order, among the
+/// others, with exact messages.
+#[expect(
+    clippy::field_reassign_with_default,
+    reason = "bot code must mutate a default: HttpConfig is non_exhaustive"
+)]
+#[tokio::test]
+async fn http_config_bounds_bad() {
+    let ns = Duration::from_nanos(1);
+    for bad in [
+        ms(49),
+        Duration::ZERO,
+        Duration::from_mins(5) + ns,
+        Duration::MAX,
+    ] {
+        let mut config = HttpConfig::default();
+        config.ping_interval = bad;
+        let err = App::builder().http(config).build().unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [BuildViolation::InvalidHttpConfig {
+                reason: HttpConfigError::PingInterval(bad)
+            }]
+        );
+    }
+    let mut config = HttpConfig::default();
+    config.ping_interval = ms(49);
+    config.ping_timeout = Duration::from_mins(1) + ns;
+    config.hedge_after = ms(299);
+    config.connect_timeout = ms(99);
+    config.dns_ttl_floor = ms(999);
+    config.dns_ttl_cap = Duration::from_hours(24) + ns;
+    let err = App::builder()
+        .http_timeout(Duration::ZERO)
+        .http(config)
+        .shutdown_grace(Duration::MAX)
+        .build()
+        .unwrap_err();
+    let messages: Vec<String> = err.violations().iter().map(ToString::to_string).collect();
+    assert_eq!(
+        messages,
+        [
+            "HTTP timeout 0ns is out of range: use a value in 1 ms..=300 s".to_owned(),
+            format!(
+                "shutdown grace {:?} is out of range: use a value in 0 s..=900 s",
+                Duration::MAX
+            ),
+            "invalid HTTP config: HttpConfig.ping_interval 49ms is out of range: use 50 ms..=300 s"
+                .to_owned(),
+            "invalid HTTP config: HttpConfig.ping_timeout 60.000000001s is out of range: use 50 ms..=60 s"
+                .to_owned(),
+            "invalid HTTP config: HttpConfig.hedge_after 299ms is out of range: use 300 ms..=2800 ms"
+                .to_owned(),
+            "invalid HTTP config: HttpConfig.connect_timeout 99ms is out of range: use 100 ms..=30 s"
+                .to_owned(),
+            "invalid HTTP config: HttpConfig.dns_ttl_floor 999ms is out of range: use 1 s..=86400 s"
+                .to_owned(),
+            "invalid HTTP config: HttpConfig.dns_ttl_cap 86400.000000001s is out of range: use 1 s..=86400 s"
+                .to_owned(),
+        ]
+    );
+    let mut config = HttpConfig::default();
+    config.hedge_after = ms(2800) + ns;
+    config.connect_timeout = Duration::from_secs(30) + ns;
+    config.ping_timeout = ms(49);
+    let err = App::builder().http(config).build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [
+            BuildViolation::InvalidHttpConfig {
+                reason: HttpConfigError::PingTimeout(ms(49))
+            },
+            BuildViolation::InvalidHttpConfig {
+                reason: HttpConfigError::HedgeAfter(ms(2800) + ns)
+            },
+            BuildViolation::InvalidHttpConfig {
+                reason: HttpConfigError::ConnectTimeout(Duration::from_secs(30) + ns)
+            },
+        ]
+    );
+}
+
+/// Matrix 4: the TTL order rule.
+#[expect(
+    clippy::field_reassign_with_default,
+    reason = "bot code must mutate a default: HttpConfig is non_exhaustive"
+)]
+#[tokio::test]
+async fn http_config_ttl_order() {
+    let mut config = HttpConfig::default();
+    config.dns_ttl_floor = Duration::from_mins(1);
+    config.dns_ttl_cap = Duration::from_secs(30);
+    let err = App::builder().http(config).build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidHttpConfig {
+            reason: HttpConfigError::DnsTtlOrder {
+                floor: Duration::from_mins(1),
+                cap: Duration::from_secs(30)
+            }
+        }]
+    );
+    assert_eq!(
+        err.violations()[0].to_string(),
+        "invalid HTTP config: HttpConfig.dns_ttl_floor 60s is above dns_ttl_cap 30s"
+    );
+    config.dns_ttl_floor = Duration::ZERO;
+    config.dns_ttl_cap = Duration::ZERO;
+    let err = App::builder().http(config).build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [
+            BuildViolation::InvalidHttpConfig {
+                reason: HttpConfigError::DnsTtlFloor(Duration::ZERO)
+            },
+            BuildViolation::InvalidHttpConfig {
+                reason: HttpConfigError::DnsTtlCap(Duration::ZERO)
+            },
+        ]
+    );
+}
+
+/// Matrix 5: the last call wins and `build()` resets it.
+#[expect(
+    clippy::field_reassign_with_default,
+    reason = "bot code must mutate a default: HttpConfig is non_exhaustive"
+)]
+#[tokio::test]
+async fn http_config_last_wins_and_reset() {
+    let mut a = HttpConfig::default();
+    a.hedge_after = ms(500);
+    let mut b = HttpConfig::default();
+    b.hedge_after = ms(700);
+    let mut builder = App::builder();
+    let app = builder.http(a).http(b).build().unwrap();
+    assert_eq!(app.http_config(), b);
+    let again = builder.build().unwrap();
+    assert_eq!(again.http_config(), HttpConfig::default());
+}
+
+/// The edge-bind violation's message.
+#[test]
+fn http_edge_violation_message() {
+    let v = BuildViolation::HttpEdge {
+        kind: std::io::ErrorKind::AddrInUse,
+    };
+    assert_eq!(
+        v.to_string(),
+        "the Discord HTTP edge could not bind 127.0.0.1:0 (AddrInUse)"
+    );
+}
+
+/// Matrix 7: a runtime without an IO driver still builds; the edge logs
+/// that it could not start and nothing panics out.
+#[test]
+fn build_without_io_driver() {
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    tokio_rt.block_on(async {
+        let app = App::builder().token(token()).build().unwrap();
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+        drop(app);
+    });
+    assert!(
+        capture.text().contains(
+            "the Discord HTTP edge could not start: build the tokio runtime with enable_all()"
+        ),
+        "{}",
+        capture.text()
+    );
+}
+
+/// Matrix 24: only a disconnect without a close frame asks the keeper for a
+/// redial.
+#[tokio::test]
+async fn shard_network_loss_requests_redial() {
+    let app = App::builder().build().unwrap();
+    let keeper = app.edge().keeper();
+    let lifecycle = Lifecycle::new();
+    let status = status(2);
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    tx.send(ShardEvent::Disconnected {
+        shard: 0,
+        close_code: None,
+    })
+    .unwrap();
+    tx.send(ShardEvent::Disconnected {
+        shard: 0,
+        close_code: Some(4000),
+    })
+    .unwrap();
+    let stop = supervise(
+        &mut rx,
+        &status,
+        &lifecycle,
+        Some(&keeper),
+        tokio::time::sleep(Duration::from_millis(50)),
+    )
+    .await;
+    assert_eq!(stop, Stop::Requested);
+    assert_eq!(keeper.redial_requests(), 1);
+}
+
+/// The 2.9 s deadline error's message.
+#[test]
+fn ack_deadline_missed_message() {
+    let error = crate::AckDeadlineMissed {
+        elapsed: Duration::from_millis(2950),
+    };
+    assert_eq!(
+        error.to_string(),
+        "interaction not acknowledged in time: 2.95s after receipt, past the 2.9 s ack deadline \
+         (Discord allows 3 s; INT-01): defer slow work"
+    );
 }

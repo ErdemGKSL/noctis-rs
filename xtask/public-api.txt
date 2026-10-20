@@ -1,4 +1,18 @@
 pub mod noctis
+#[non_exhaustive] pub struct noctis::AckDeadlineMissed
+pub noctis::AckDeadlineMissed::elapsed: core::time::Duration
+impl core::clone::Clone for noctis::AckDeadlineMissed
+pub fn noctis::AckDeadlineMissed::clone(&self) -> Self
+impl core::cmp::Eq for noctis::AckDeadlineMissed
+impl core::cmp::PartialEq for noctis::AckDeadlineMissed
+pub fn noctis::AckDeadlineMissed::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::AckDeadlineMissed
+impl core::fmt::Debug for noctis::AckDeadlineMissed
+pub fn noctis::AckDeadlineMissed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::AckDeadlineMissed
+pub fn noctis::AckDeadlineMissed::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::AckDeadlineMissed
+impl core::marker::StructuralPartialEq for noctis::AckDeadlineMissed
 pub struct noctis::App
 impl noctis::App
 pub fn noctis::App::builder() -> noctis::AppBuilder
@@ -6,6 +20,7 @@ pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, nocti
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::App::has_renderer(&self) -> bool
 pub fn noctis::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::App::http_config(&self) -> noctis::HttpConfig
 pub fn noctis::App::http_proxy(&self) -> core::option::Option<&str>
 pub fn noctis::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
@@ -29,6 +44,7 @@ pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
 pub fn noctis::AppBuilder::handler_concurrency(&mut self, usize) -> &mut Self
+pub fn noctis::AppBuilder::http(&mut self, noctis::HttpConfig) -> &mut Self
 pub fn noctis::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
@@ -72,6 +88,8 @@ pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
+pub noctis::BuildViolation::HttpEdge
+pub noctis::BuildViolation::HttpEdge::kind: core::io::error::ErrorKind
 pub noctis::BuildViolation::InvalidEventLane
 pub noctis::BuildViolation::InvalidEventLane::capacity: usize
 pub noctis::BuildViolation::InvalidEventLane::overflow: usize
@@ -79,6 +97,8 @@ pub noctis::BuildViolation::InvalidGatewayUrl
 pub noctis::BuildViolation::InvalidGatewayUrl::reason: noctis::GatewayUrlError
 pub noctis::BuildViolation::InvalidHandlerConcurrency
 pub noctis::BuildViolation::InvalidHandlerConcurrency::actual: usize
+pub noctis::BuildViolation::InvalidHttpConfig
+pub noctis::BuildViolation::InvalidHttpConfig::reason: noctis::HttpConfigError
 pub noctis::BuildViolation::InvalidHttpProxy
 pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
@@ -237,6 +257,47 @@ pub fn noctis::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::HandlerError
 pub fn noctis::HandlerError::from(E) -> Self
 pub type noctis::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
+#[non_exhaustive] pub struct noctis::HttpConfig
+pub noctis::HttpConfig::connect_timeout: core::time::Duration
+pub noctis::HttpConfig::dns_ttl_cap: core::time::Duration
+pub noctis::HttpConfig::dns_ttl_floor: core::time::Duration
+pub noctis::HttpConfig::hedge_after: core::time::Duration
+pub noctis::HttpConfig::ping_interval: core::time::Duration
+pub noctis::HttpConfig::ping_timeout: core::time::Duration
+pub noctis::HttpConfig::upstream_h2c: bool
+impl core::clone::Clone for noctis::HttpConfig
+pub fn noctis::HttpConfig::clone(&self) -> Self
+impl core::cmp::Eq for noctis::HttpConfig
+impl core::cmp::PartialEq for noctis::HttpConfig
+pub fn noctis::HttpConfig::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::HttpConfig
+pub fn noctis::HttpConfig::default() -> Self
+impl core::fmt::Debug for noctis::HttpConfig
+pub fn noctis::HttpConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::HttpConfig
+impl core::marker::StructuralPartialEq for noctis::HttpConfig
+#[non_exhaustive] pub enum noctis::HttpConfigError
+pub noctis::HttpConfigError::ConnectTimeout(core::time::Duration)
+pub noctis::HttpConfigError::DnsTtlCap(core::time::Duration)
+pub noctis::HttpConfigError::DnsTtlFloor(core::time::Duration)
+pub noctis::HttpConfigError::DnsTtlOrder
+pub noctis::HttpConfigError::DnsTtlOrder::cap: core::time::Duration
+pub noctis::HttpConfigError::DnsTtlOrder::floor: core::time::Duration
+pub noctis::HttpConfigError::HedgeAfter(core::time::Duration)
+pub noctis::HttpConfigError::PingInterval(core::time::Duration)
+pub noctis::HttpConfigError::PingTimeout(core::time::Duration)
+impl core::clone::Clone for noctis::HttpConfigError
+pub fn noctis::HttpConfigError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::HttpConfigError
+impl core::cmp::PartialEq for noctis::HttpConfigError
+pub fn noctis::HttpConfigError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::HttpConfigError
+impl core::fmt::Debug for noctis::HttpConfigError
+pub fn noctis::HttpConfigError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::HttpConfigError
+pub fn noctis::HttpConfigError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::HttpConfigError
+impl core::marker::StructuralPartialEq for noctis::HttpConfigError
 #[non_exhaustive] pub enum noctis::HttpProxyError
 pub noctis::HttpProxyError::Empty
 pub noctis::HttpProxyError::InvalidChar
@@ -1641,6 +1702,7 @@ pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuild
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::has_renderer(&self) -> bool
 pub fn noctis::prelude::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::App::http_config(&self) -> noctis::HttpConfig
 pub fn noctis::prelude::App::http_proxy(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
@@ -1664,6 +1726,7 @@ pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut 
 pub fn noctis::prelude::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
 pub fn noctis::prelude::AppBuilder::handler_concurrency(&mut self, usize) -> &mut Self
+pub fn noctis::prelude::AppBuilder::http(&mut self, noctis::HttpConfig) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self

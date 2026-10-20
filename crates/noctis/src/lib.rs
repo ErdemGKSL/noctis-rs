@@ -7,9 +7,11 @@
 //!
 //! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
 //!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`event`](macro@event),
-//!   [`HandlerError`], [`HandlerResult`] and the errors ([`Error`],
-//!   [`BuildError`], [`BuildViolation`], [`StartError`], [`RunError`],
-//!   [`EnvError`], [`TokenError`], [`ResourceConflict`]).
+//!   [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
+//!   edge's tuning) and the errors ([`Error`], [`BuildError`],
+//!   [`BuildViolation`], [`StartError`], [`RunError`], [`EnvError`],
+//!   [`TokenError`], [`ResourceConflict`], [`HttpConfigError`],
+//!   [`AckDeadlineMissed`]).
 //! - [`events`]: the gateway event payloads `#[event]` handlers take, and
 //!   [`events::EventCtx`].
 //! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
@@ -153,6 +155,32 @@
 //! }
 //! ```
 //!
+//! # Discord HTTP
+//!
+//! [`App::http`] is the App's one twilight client. Its requests pass a
+//! loopback edge inside the App that `build()` starts on the current tokio
+//! runtime: it forwards only `/api/v10/` requests, byte for byte, to Discord
+//! (or to [`AppBuilder::http_proxy`]) over one tuned connection. `run`
+//! warms that connection before `GET /gateway/bot` and keeps it warm with
+//! HTTP/2 PING frames, never with API requests; a closed connection, an
+//! unanswered PING or a shard's network loss makes it redial. The defaults
+//! are tuned for Discord; [`AppBuilder::http`] takes an [`HttpConfig`] to
+//! change them. A twilight client kept after its App is dropped gets
+//! connection errors.
+//!
+//! ```
+//! use std::time::Duration;
+//!
+//! use noctis::{AppBuilder, HttpConfig};
+//!
+//! fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
+//!     let mut http = HttpConfig::default();
+//!     http.ping_interval = Duration::from_secs(15);
+//!     builder.http(http)
+//! }
+//! # let _ = configure;
+//! ```
+//!
 //! # Modules and events
 //!
 //! A [`Module`] groups registrations under a path-like id and nests other
@@ -265,10 +293,10 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error, ErrorOrigin,
-    ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpProxyError, LogSink,
-    Module, Plugin, ReportKind, Resource, ResourceConflict, RunError, Runtime, StartError, State,
-    Token, TokenError,
+    AckDeadlineMissed, App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error,
+    ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
+    HttpConfigError, HttpProxyError, LogSink, Module, Plugin, ReportKind, Resource,
+    ResourceConflict, RunError, Runtime, StartError, State, Token, TokenError,
 };
 
 pub mod observe {
@@ -278,8 +306,12 @@ pub mod observe {
     //! Metrics go through the `metrics` facade; install a recorder (e.g.
     //! `metrics-exporter-prometheus`) to collect them. Spans:
     //! `noctis.shard{app, shard}`,
-    //! `noctis.event{app, shard, guild_id, module, handler, event_type}` and
-    //! `noctis.interaction{app, shard, guild_id, module, path}`.
+    //! `noctis.event{app, shard, guild_id, module, handler, event_type}`,
+    //! `noctis.interaction{app, shard, guild_id, module, path}` and
+    //! `noctis.http{app, kind, method, attempt, reused, status_class}` (one
+    //! per Discord HTTP upstream attempt; `kind` is `forward`, `callback` or
+    //! `warmup`). No span field or label carries a path, token, id or header
+    //! value.
     //!
     //! ```
     //! for metric in noctis::observe::METRICS {
