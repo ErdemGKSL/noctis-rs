@@ -4,8 +4,7 @@
 //! proxy must be a bare authority (`host[:port]`); an optional `http://`
 //! prefix and one trailing `/` are accepted and dropped.
 
-/// The longest accepted proxy authority, in bytes.
-const MAX_LEN: usize = 255;
+use crate::authority::{AuthorityError, check_authority};
 
 /// Why an `http_proxy` value was rejected. The message names the fix and
 /// never contains the value.
@@ -74,66 +73,14 @@ pub(crate) fn normalize_http_proxy(raw: &str) -> Result<String, HttpProxyError> 
     if rest.is_empty() {
         return Err(HttpProxyError::Empty);
     }
-    if let Some(index) = rest.chars().position(|c| !('!'..='~').contains(&c)) {
-        return Err(HttpProxyError::InvalidChar { index });
-    }
-    if rest.contains(['/', '?', '#', '@', '\\']) {
-        return Err(HttpProxyError::NotAnAuthority);
-    }
-    if rest.len() > MAX_LEN {
-        return Err(HttpProxyError::TooLong { len: rest.len() });
-    }
-    let port = split_host_port(rest)?;
-    if let Some(port) = port {
-        check_port(port)?;
-    }
+    check_authority(rest).map_err(|e| match e {
+        AuthorityError::InvalidChar { index } => HttpProxyError::InvalidChar { index },
+        AuthorityError::NotAnAuthority => HttpProxyError::NotAnAuthority,
+        AuthorityError::TooLong { len } => HttpProxyError::TooLong { len },
+        AuthorityError::InvalidHost => HttpProxyError::InvalidHost,
+        AuthorityError::InvalidPort => HttpProxyError::InvalidPort,
+    })?;
     Ok(rest.to_owned())
-}
-
-/// Checks the host part and returns the port part, if any.
-fn split_host_port(authority: &str) -> Result<Option<&str>, HttpProxyError> {
-    if let Some(bracketed) = authority.strip_prefix('[') {
-        let (body, after) = bracketed
-            .split_once(']')
-            .ok_or(HttpProxyError::InvalidHost)?;
-        if body.parse::<std::net::Ipv6Addr>().is_err() {
-            return Err(HttpProxyError::InvalidHost);
-        }
-        if after.is_empty() {
-            return Ok(None);
-        }
-        return after
-            .strip_prefix(':')
-            .map(Some)
-            .ok_or(HttpProxyError::InvalidHost);
-    }
-    let (host, port) = match authority.split_once(':') {
-        Some((host, port)) => (host, Some(port)),
-        None => (authority, None),
-    };
-    if host.is_empty()
-        || !host.bytes().all(is_reg_name_byte)
-        || port.is_some_and(|p| p.contains(':'))
-    {
-        return Err(HttpProxyError::InvalidHost);
-    }
-    Ok(port)
-}
-
-/// RFC 3986 `reg-name` bytes: unreserved, `%` and sub-delims.
-fn is_reg_name_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b"-._~%!$&'()*+,;=".contains(&b)
-}
-
-/// Checks a port: 1-5 ASCII digits with a value in 1..=65535.
-fn check_port(port: &str) -> Result<(), HttpProxyError> {
-    if port.is_empty() || port.len() > 5 || !port.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(HttpProxyError::InvalidPort);
-    }
-    match port.parse::<u32>() {
-        Ok(1..=65_535) => Ok(()),
-        _ => Err(HttpProxyError::InvalidPort),
-    }
 }
 
 #[cfg(test)]

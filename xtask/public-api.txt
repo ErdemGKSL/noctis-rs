@@ -3,6 +3,7 @@ pub struct noctis::App
 impl noctis::App
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
+pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::App::has_renderer(&self) -> bool
 pub fn noctis::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::App::http_proxy(&self) -> core::option::Option<&str>
@@ -20,6 +21,7 @@ pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App,
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
 pub fn noctis::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
@@ -61,6 +63,8 @@ pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
+pub noctis::BuildViolation::InvalidGatewayUrl
+pub noctis::BuildViolation::InvalidGatewayUrl::reason: noctis::GatewayUrlError
 pub noctis::BuildViolation::InvalidHttpProxy
 pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
@@ -128,6 +132,28 @@ impl core::convert::From<noctis::StartError> for noctis::Error
 pub fn noctis::Error::from(noctis::StartError) -> Self
 impl core::convert::From<noctis::BuildError> for noctis::Error
 pub fn noctis::Error::from(noctis::BuildError) -> Self
+#[non_exhaustive] pub enum noctis::GatewayUrlError
+pub noctis::GatewayUrlError::Empty
+pub noctis::GatewayUrlError::InvalidChar
+pub noctis::GatewayUrlError::InvalidChar::index: usize
+pub noctis::GatewayUrlError::InvalidHost
+pub noctis::GatewayUrlError::InvalidPort
+pub noctis::GatewayUrlError::NotAnAuthority
+pub noctis::GatewayUrlError::TooLong
+pub noctis::GatewayUrlError::TooLong::len: usize
+pub noctis::GatewayUrlError::UnsupportedScheme
+impl core::clone::Clone for noctis::GatewayUrlError
+pub fn noctis::GatewayUrlError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::GatewayUrlError
+impl core::cmp::PartialEq for noctis::GatewayUrlError
+pub fn noctis::GatewayUrlError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::GatewayUrlError
+impl core::fmt::Debug for noctis::GatewayUrlError
+pub fn noctis::GatewayUrlError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::GatewayUrlError
+pub fn noctis::GatewayUrlError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::GatewayUrlError
+impl core::marker::StructuralPartialEq for noctis::GatewayUrlError
 #[non_exhaustive] pub enum noctis::HttpProxyError
 pub noctis::HttpProxyError::Empty
 pub noctis::HttpProxyError::InvalidChar
@@ -1200,6 +1226,7 @@ pub struct noctis::prelude::App
 impl noctis::prelude::App
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
+pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::has_renderer(&self) -> bool
 pub fn noctis::prelude::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::App::http_proxy(&self) -> core::option::Option<&str>
@@ -1217,6 +1244,7 @@ pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noc
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
+pub fn noctis::prelude::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self

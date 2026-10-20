@@ -30,7 +30,9 @@
 //! ```
 
 mod app;
+mod authority;
 mod error;
+mod gateway_url;
 mod plugin;
 mod ports;
 mod proxy;
@@ -41,6 +43,7 @@ mod token;
 
 pub use app::{App, AppBuilder};
 pub use error::{BuildError, BuildViolation, EnvError, Error, StartError};
+pub use gateway_url::GatewayUrlError;
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use runtime::{Resource, ResourceConflict, Runtime};

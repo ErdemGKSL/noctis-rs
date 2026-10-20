@@ -5,7 +5,7 @@ use std::any::type_name;
 use std::fmt;
 use std::time::Duration;
 
-use crate::{HttpProxyError, Plugin, ResourceConflict, TokenError};
+use crate::{GatewayUrlError, HttpProxyError, Plugin, ResourceConflict, TokenError};
 
 /// Every error `App::from_env`, `build` and `run` return.
 ///
@@ -146,6 +146,13 @@ pub enum BuildViolation {
     InvalidHttpProxy {
         /// Why the proxy was rejected.
         reason: HttpProxyError,
+    },
+    /// `gateway_url` is not `ws://host[:port]` or `wss://host[:port]`; the
+    /// message never contains the value.
+    #[error("invalid gateway URL: {reason}")]
+    InvalidGatewayUrl {
+        /// Why the gateway URL was rejected.
+        reason: GatewayUrlError,
     },
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]

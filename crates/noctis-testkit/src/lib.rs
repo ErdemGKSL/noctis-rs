@@ -6,6 +6,10 @@
 //! - [`fake::FakeDiscordHttp`]: a local Discord HTTP fake (HTTP/1.1 on
 //!   `127.0.0.1`) with per-test routes, a canned `GET /gateway/bot` and a
 //!   request log. Point an App at it with `AppBuilder::http_proxy(fake.url())`.
+//! - [`fake::FakeGateway`]: a local Discord gateway fake (WebSocket on
+//!   `127.0.0.1`) speaking HELLO, IDENTIFY/READY, RESUME/RESUMED and heartbeats,
+//!   with scripted dispatches and close codes and a frame log. Point an App at
+//!   it with `AppBuilder::gateway_url(fake.url())`.
 //!
 //! The end-to-end tests for Epics 5-7 live in this crate's `tests/` directory
 //! (`crates/noctis-testkit/tests/`), driving real Apps against the fakes.

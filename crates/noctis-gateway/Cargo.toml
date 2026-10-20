@@ -7,5 +7,15 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+tokio-websockets = { workspace = true, features = ["client", "fastrand", "sha1_smol", "rustls-platform-verifier"] }
+twilight-gateway.workspace = true
+
+[dev-dependencies]
+rustls.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync"] }
+
 [lints]
 workspace = true

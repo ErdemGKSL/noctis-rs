@@ -27,7 +27,10 @@ fn lookup(value: Option<OsString>) -> impl Fn(&str) -> Option<OsString> {
 fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> Option<OsString> {
     move |var| {
         assert!(
-            var == "NOCTIS_TOKEN" || var == "NOCTIS_HTTP_PROXY",
+            matches!(
+                var,
+                "NOCTIS_TOKEN" | "NOCTIS_HTTP_PROXY" | "NOCTIS_GATEWAY_URL"
+            ),
             "unexpected variable {var}"
         );
         if var == name { value.clone() } else { None }
@@ -628,5 +631,113 @@ fn from_env_reads_token_first() {
         None
     })
     .unwrap();
-    assert_eq!(*seen.lock().unwrap(), ["NOCTIS_TOKEN", "NOCTIS_HTTP_PROXY"]);
+    assert_eq!(
+        *seen.lock().unwrap(),
+        ["NOCTIS_TOKEN", "NOCTIS_HTTP_PROXY", "NOCTIS_GATEWAY_URL"]
+    );
+}
+
+// ---- gateway_url (Story 5.3 Matrix 10-12) ----
+
+#[tokio::test]
+async fn gateway_url_wiring() {
+    let app = App::builder().gateway_url("WS://p:1/").build().unwrap();
+    assert_eq!(app.gateway_url(), Some("ws://p:1"));
+    assert!(format!("{app:?}").contains("gateway_url: Some(\"ws://p:1\")"));
+
+    let app = App::builder()
+        .gateway_url("ws://a:1")
+        .gateway_url("ws://b:2")
+        .build()
+        .unwrap();
+    assert_eq!(app.gateway_url(), Some("ws://b:2"));
+
+    let app = App::builder().build().unwrap();
+    assert_eq!(app.gateway_url(), None);
+
+    let err = App::builder()
+        .gateway_url("http://x")
+        .http_proxy("https://x")
+        .http_timeout(Duration::ZERO)
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [
+            BuildViolation::InvalidHttpTimeout {
+                actual: Duration::ZERO
+            },
+            BuildViolation::InvalidHttpProxy {
+                reason: crate::HttpProxyError::UnsupportedScheme
+            },
+            BuildViolation::InvalidGatewayUrl {
+                reason: crate::GatewayUrlError::UnsupportedScheme
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn gateway_url_redaction() {
+    let mut builder = App::builder();
+    builder.gateway_url("wss://u:SECRET@h");
+    let debug = format!("{builder:?}");
+    assert!(debug.contains("gateway_url: true"), "{debug}");
+    assert!(!debug.contains("SECRET"), "{debug}");
+    let err = builder.build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidGatewayUrl {
+            reason: crate::GatewayUrlError::NotAnAuthority
+        }]
+    );
+    assert!(err.to_string().contains("invalid gateway URL: "));
+    for text in [err.to_string(), format!("{err:?}")] {
+        assert!(!text.contains("SECRET"), "{text}");
+    }
+}
+
+#[tokio::test]
+async fn from_env_gateway_url() {
+    for raw in [None, Some(""), Some(" \t")] {
+        let b = AppBuilder::from_lookup(lookup_var("NOCTIS_GATEWAY_URL", raw.map(OsString::from)))
+            .unwrap();
+        assert!(b.gateway_url.is_none(), "{raw:?}");
+    }
+    let app = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_GATEWAY_URL",
+        Some(" ws://p:1 \n".into()),
+    ))
+    .unwrap()
+    .build()
+    .unwrap();
+    assert_eq!(app.gateway_url(), Some("ws://p:1"));
+
+    let err = AppBuilder::from_lookup(lookup_var("NOCTIS_GATEWAY_URL", Some("http://x".into())))
+        .unwrap()
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidGatewayUrl {
+            reason: crate::GatewayUrlError::UnsupportedScheme
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn from_env_gateway_url_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_GATEWAY_URL",
+        Some(OsString::from_vec(vec![b'a', 0xff])),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_GATEWAY_URL"
+        }
+    );
 }

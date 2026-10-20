@@ -131,8 +131,8 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    App, AppBuilder, BuildError, BuildViolation, EnvError, Error, HttpProxyError, Plugin, Resource,
-    ResourceConflict, Runtime, StartError, State, Token, TokenError,
+    App, AppBuilder, BuildError, BuildViolation, EnvError, Error, GatewayUrlError, HttpProxyError,
+    Plugin, Resource, ResourceConflict, Runtime, StartError, State, Token, TokenError,
 };
 
 pub mod twilight {

@@ -14,6 +14,7 @@ use noctis_ports::{
 };
 use twilight_model::gateway::Intents;
 
+use crate::gateway_url::normalize_gateway_url;
 use crate::plugin::PluginEntry;
 use crate::ports::{PortOverrides, Ports};
 use crate::proxy::normalize_http_proxy;
@@ -27,6 +28,8 @@ use crate::{
 const TOKEN_VAR: &str = "NOCTIS_TOKEN";
 /// The environment variable [`App::from_env`] reads the HTTP proxy from.
 const HTTP_PROXY_VAR: &str = "NOCTIS_HTTP_PROXY";
+/// The environment variable [`App::from_env`] reads the gateway URL from.
+const GATEWAY_URL_VAR: &str = "NOCTIS_GATEWAY_URL";
 /// The HTTP request timeout when `http_timeout` is not called.
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The allowed `http_timeout` range.
@@ -57,6 +60,7 @@ pub struct App {
     http: Arc<twilight_http::Client>,
     http_timeout: Duration,
     http_proxy: Option<String>,
+    gateway_url: Option<String>,
     intents: Intents,
     states: StateMap,
     ports: Ports,
@@ -77,9 +81,10 @@ impl App {
 
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
-    /// Reads `NOCTIS_TOKEN` and then `NOCTIS_HTTP_PROXY`, each trimmed of
-    /// ASCII whitespace; an empty value counts as unset. The proxy is passed
-    /// to [`AppBuilder::http_proxy`] and validated by `build()`. Setters called
+    /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY` and then `NOCTIS_GATEWAY_URL`,
+    /// each trimmed of ASCII whitespace; an empty value counts as unset. The
+    /// proxy and the gateway URL are passed to [`AppBuilder::http_proxy`] and
+    /// [`AppBuilder::gateway_url`] and validated by `build()`. Setters called
     /// afterwards win.
     ///
     /// # Errors
@@ -141,6 +146,19 @@ impl App {
     /// ```
     pub fn http_proxy(&self) -> Option<&str> {
         self.http_proxy.as_deref()
+    }
+
+    /// The normalized gateway URL (`ws://host[:port]` or `wss://host[:port]`),
+    /// if one was set; shards connect there instead of Discord's gateway.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().gateway_url("WS://127.0.0.1:3000/").build().unwrap();
+    /// assert_eq!(app.gateway_url(), Some("ws://127.0.0.1:3000"));
+    /// # }
+    /// ```
+    pub fn gateway_url(&self) -> Option<&str> {
+        self.gateway_url.as_deref()
     }
 
     /// The requested gateway intents (at least `GUILDS`).
@@ -228,6 +246,7 @@ impl fmt::Debug for App {
             .field("token", &self.token)
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy)
+            .field("gateway_url", &self.gateway_url)
             .field("intents", &self.intents)
             .field("states", &self.states)
             .field("default_ports", self.ports.default_slots())
@@ -266,6 +285,8 @@ pub struct AppBuilder {
     http_timeout: Duration,
     /// The raw, unvalidated proxy; `build` normalizes it.
     http_proxy: Option<String>,
+    /// The raw, unvalidated gateway URL; `build` normalizes it.
+    gateway_url: Option<String>,
     states: StateMap,
     ports: PortOverrides,
     renderer: Option<Arc<dyn Renderer>>,
@@ -303,6 +324,7 @@ impl AppBuilder {
             intents: Intents::GUILDS,
             http_timeout: DEFAULT_HTTP_TIMEOUT,
             http_proxy: None,
+            gateway_url: None,
             states: StateMap::default(),
             ports: PortOverrides::default(),
             renderer: None,
@@ -324,6 +346,9 @@ impl AppBuilder {
         }
         if let Some(proxy) = read_var(&lookup, HTTP_PROXY_VAR)? {
             builder.http_proxy(proxy);
+        }
+        if let Some(url) = read_var(&lookup, GATEWAY_URL_VAR)? {
+            builder.gateway_url(url);
         }
         Ok(builder)
     }
@@ -402,6 +427,25 @@ impl AppBuilder {
     /// ```
     pub fn http_proxy(&mut self, proxy: impl Into<String>) -> &mut Self {
         self.http_proxy = Some(proxy.into());
+        self
+    }
+
+    /// Connects every shard to `url` instead of `wss://gateway.discord.gg`
+    /// (e.g. a gateway proxy, or the testkit's gateway fake), through
+    /// twilight's gateway `proxy_url`. The last call wins.
+    ///
+    /// Takes `ws://host[:port]` or `wss://host[:port]` (IPv6 hosts in
+    /// brackets, one trailing `/` allowed); `build()` validates it and records
+    /// a [`BuildViolation::InvalidGatewayUrl`] when it is anything else.
+    /// Resumes go to the `resume_gateway_url` that READY names, so a gateway
+    /// proxy must rewrite it.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.gateway_url("ws://127.0.0.1:3000");
+    /// ```
+    pub fn gateway_url(&mut self, url: impl Into<String>) -> &mut Self {
+        self.gateway_url = Some(url.into());
         self
     }
 
@@ -546,7 +590,7 @@ impl AppBuilder {
     ///
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
-    /// timeout, the HTTP proxy, the rustls crypto provider (installing `ring`'s when none is
+    /// timeout, the HTTP proxy, the gateway URL, the rustls crypto provider (installing `ring`'s when none is
     /// set) and the tokio runtime (any flavor). The builder is left empty,
     /// attached to the same Runtime.
     ///
@@ -576,6 +620,15 @@ impl AppBuilder {
                 None
             }
         };
+        let gateway_url = match self.gateway_url.as_deref().map(normalize_gateway_url) {
+            None => None,
+            Some(Ok(url)) => Some(url),
+            Some(Err(reason)) => {
+                self.violations
+                    .push(BuildViolation::InvalidGatewayUrl { reason });
+                None
+            }
+        };
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }
@@ -600,6 +653,7 @@ impl AppBuilder {
             http: Arc::new(http.build()),
             http_timeout: config.http_timeout,
             http_proxy,
+            gateway_url,
             intents: config.intents,
             states: config.states,
             ports: Ports::resolve(config.ports),
@@ -635,6 +689,7 @@ impl fmt::Debug for AppBuilder {
             .field("intents", &self.intents)
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy.is_some())
+            .field("gateway_url", &self.gateway_url.is_some())
             .field("states", &self.states)
             .field("ports", &self.ports.set_slots())
             .field("has_renderer", &self.renderer.is_some())

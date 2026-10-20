@@ -5,6 +5,11 @@
 //! `GET /gateway/bot`, and logs every request. An App reaches it through
 //! `AppBuilder::http_proxy(fake.url())`.
 //!
+//! [`FakeGateway`] is a Discord gateway fake: a WebSocket server on
+//! `127.0.0.1` speaking HELLO, IDENTIFY/READY, RESUME/RESUMED, heartbeat
+//! ACKs, scripted dispatches and close codes, with a frame log. An App's
+//! shards reach it through `AppBuilder::gateway_url(fake.url())`.
+//!
 //! ```no_run
 //! use noctis_testkit::fake::{FakeDiscordHttp, FakeResponse, Method, StatusCode};
 //!
@@ -16,6 +21,7 @@
 //! # Ok(()) }
 //! ```
 
+mod gateway;
 mod http;
 
 use std::collections::HashMap;
@@ -26,6 +32,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
+pub use gateway::{
+    CloseError, FakeGateway, FakeGatewayConfig, FrameKind, HeartbeatSeen, IdentifyReply, ReadyData,
+    RecordedConnection, RecordedFrame, ResumeReply,
+};
 pub use hyper::header::{HeaderName, HeaderValue};
 pub use hyper::{HeaderMap, Method, StatusCode};
 use tokio::net::TcpListener;

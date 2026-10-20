@@ -1,7 +1,7 @@
 # App, sharding and lifecycle
 
 Covers: `App`, `AppBuilder`, environment variables, CLI modes, Publish, sharding,
-Shard Ranges and Clusters, the HTTP proxy, presence and gateway commands, Lifecycle
+Shard Ranges and Clusters, the HTTP proxy, the gateway URL, presence and gateway commands, Lifecycle
 Hooks, shutdown, `State<T>`, plugins, multiple Apps and the process `Runtime`.
 Rules: GW-01..07, RL-01..04, REG-01..06. Signatures marked [planned] may change.
 
@@ -50,6 +50,7 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
 The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `Arc<noctis::twilight::http::Client>`, the same `Arc` on every call), `app.http_timeout()`,
 `app.http_proxy()` (`Option<&str>`: the normalized proxy authority, e.g. `Some("proxy:3000")`),
+`app.gateway_url()` (`Option<&str>`: the normalized gateway URL, e.g. `Some("ws://127.0.0.1:3000")`),
 `app.intents()`, `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
@@ -64,6 +65,7 @@ Implemented:
 | `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it |
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
+| `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy, or the testkit's `FakeGateway`) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
@@ -77,7 +79,6 @@ Planned (signatures may change):
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.gateway_url(url)` [planned, Story 5.3] | Discord | gateway proxy, or the testkit's `FakeGateway` |
 | `.shards(ShardRange)` / `.shard_total(u32)` [planned, Story 5.4] | all / recommended | see §4 |
 | `.module(Module)` [planned, Story 5.6] | — | mount a Module tree (ids must be unique); handler intents are derived and added |
 | `.error_sink(Origin, impl ErrorSink)` [planned, Story 5.7] | log at `error` | see `modules-middleware-ratelimits.md` |
@@ -111,7 +112,9 @@ token.
   (no rustls provider could be installed), `DuplicateState { type_name }`,
   `DuplicatePlugin { type_name }`, `ResourceConflict(ResourceConflict)` (§10),
   `InvalidHttpTimeout { actual }`, `InvalidHttpProxy { reason: HttpProxyError }`
-  (message `"invalid HTTP proxy: {reason}"`, never the value), `Plugin { plugin, message }` (built with
+  (message `"invalid HTTP proxy: {reason}"`, never the value), `InvalidGatewayUrl {
+  reason: GatewayUrlError }` (message `"invalid gateway URL: {reason}"`, never the
+  value), `Plugin { plugin, message }` (built with
   `BuildViolation::plugin::<P>("message")`).
 - `StartError`: `NoRuntime`, `NotMultiThread`, `CryptoProvider`, `MissingToken` (see
   `App::run()` above).
@@ -123,6 +126,13 @@ token.
   (outside printable ASCII, e.g. whitespace), `NotAnAuthority` (a path, `?`, `#`, `user@`
   or `\`), `TooLong { len }` (over 255 bytes), `InvalidHost` (empty host, more than one
   `:` without brackets, malformed `[ipv6]`), `InvalidPort` (not 1-5 digits in 1..=65535).
+- `GatewayUrlError` (why `.gateway_url(..)` was rejected; checked in this order):
+  `Empty` (empty, or nothing after `ws://`/`wss://` and one trailing `/`),
+  `UnsupportedScheme` (no `ws://` or `wss://`, any case; e.g. `http://` or a bare
+  `host:port`), then the same authority checks as `HttpProxyError`: `InvalidChar { index }`,
+  `NotAnAuthority` (a path such as `/gateway`, `?`, `#`, `user@` or `\`), `TooLong { len }`,
+  `InvalidHost`, `InvalidPort`. The normalized URL lowercases the scheme and drops the
+  trailing `/` (host case is kept).
 - `TokenError`: `Empty` (nothing after an optional `"Bot "` prefix), `InvalidChar {
   index }` (a character outside printable ASCII `!`..`~`, e.g. whitespace).
 
@@ -148,6 +158,7 @@ match configure(&mut App::builder()).build() {
 | `NOCTIS_SHARDS` [planned, Story 5.4] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
 | `NOCTIS_SHARD_TOTAL` [planned, Story 5.4] | fixed shard total |
 | `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
+| `NOCTIS_GATEWAY_URL` | gateway URL, read by `App::from_env()` after `NOCTIS_HTTP_PROXY` with the same rules, then passed to `.gateway_url(..)`; its content is checked by `build()` (`BuildViolation::InvalidGatewayUrl`) |
 | `NOCTIS_PUBLISHER` [planned, Story 6.9] | `true` on the one publishing process |
 | `NOCTIS_FEATURES` [planned] | Boot Flags (`a,b` or `all`), same as `--features` |
 | `RUST_LOG` | tracing filter (Noctis uses `tracing`; you install the subscriber) |
@@ -231,6 +242,11 @@ Graceful shutdown closes each Shard resumably and writes `(session_id, seq,
 resume_url)` to the `SessionStore` after the final event; a restart within Discord's
 window resumes instead of re-identifying. A rejected session falls back to identify.
 Events dropped under back-pressure are not replayed (at-most-once).
+
+With `.gateway_url(..)` (or `NOCTIS_GATEWAY_URL`) set, shards connect to that URL
+instead of Discord's gateway, but **resumes go to the `resume_gateway_url` that READY
+names**: a gateway proxy must rewrite that field to its own URL, or resumes bypass it.
+The testkit's `FakeGateway` already names itself there.
 
 ## 5. HTTP
 
