@@ -11,7 +11,10 @@
 //! [`App::run`] checks the tokio runtime, the rustls crypto provider and the
 //! [`Token`], reads `GET /gateway/bot`, plans the shard total and identify
 //! buckets (GW-01..03) and starts one task per shard, returning a typed
-//! [`StartError`] instead of panicking when any step fails.
+//! [`StartError`] instead of panicking when any step fails. Inbound items
+//! flow from the shard tasks through the lanes (the never-dropped
+//! Interaction Lane and the bounded event lane) to one core drain task,
+//! which takes interactions first.
 //!
 //! ```no_run
 //! use noctis_core::{App, AppBuilder, Error, State};

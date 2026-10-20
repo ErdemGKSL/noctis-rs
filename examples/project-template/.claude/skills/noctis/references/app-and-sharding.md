@@ -247,9 +247,13 @@ when every shard has received READY.
   reset_after }` when `session_start_limit.remaining` can't cover the shards (GW-02).
   It is returned before any connection opens.
 - Each Shard is its own task: it reads, parses, filters and enqueues; it never awaits a
-  handler. Interactions go to the never-dropped **interaction lane**; other events go to
-  the bounded **event lane** (droppable types like presence/typing drop oldest; others
-  overflow to a capped buffer; every drop is counted in `noctis_events_dropped_total`).
+  handler. Interactions go to the never-dropped, unbounded **interaction lane**, and the
+  App always takes interactions before any event, so a full event lane never delays
+  one. Other events go to the bounded **event lane** (default 4096 events). When it is
+  full, a droppable event (default set: presence updates and typing starts) evicts the
+  oldest queued droppable event; any other event waits in a capped overflow (default
+  16384 events) and is dropped with an `error` log beyond it. Every drop is counted in
+  `noctis_events_dropped_total`.
 - Intents and event deserialization are **derived from your handlers** and cache needs.
   A handler needing an intent you didn't allow is a `BuildError` (GW-05). Privileged
   intents (`GUILD_MEMBERS`, `MESSAGE_CONTENT`, `GUILD_PRESENCES`) also need enabling in
@@ -408,6 +412,15 @@ Spans: `noctis.shard`, `noctis.interaction`, `noctis.event`, `noctis.render`,
 ack latency, auto-defer count, handler duration/errors, render duration/queue/rejections,
 Ref lookups (hit/miss/stale/forged), shard status, HTTP status classes. Install your own
 `metrics` recorder to export them.
+
+Live now:
+
+- `noctis_lane_depth{app, lane}` (gauge; `lane` = `interaction` | `event`).
+- `noctis_event_overflow_depth{app}` (gauge).
+- `noctis_events_dropped_total{app, event_type}` (counter; `event_type` is the Discord
+  name, such as `TYPING_START`).
+
+`app` is `"default"` until `.app_id(..)` [planned, Story 7.4] sets it.
 
 ## 12. Plugins
 

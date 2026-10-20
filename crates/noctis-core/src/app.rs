@@ -9,13 +9,16 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
 
-use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink, ShardEvent};
+use noctis_gateway::{
+    EventTypeFlags, Gateway, GatewayOptions, Inbound, LaneConfig, LaneReceiver, ShardEvent,
+};
 use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_ports::{
     AssetStore, CacheStore, DiscordCache, GuildAccessList, IdentifyQueue, LocaleSource,
     ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, SessionStore,
 };
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use twilight_model::gateway::Intents;
 
 use crate::gateway_url::normalize_gateway_url;
@@ -236,7 +239,10 @@ impl App {
     /// [`shard_total`](AppBuilder::shard_total) or Discord's recommendation)
     /// and the identify buckets (`max_concurrency`), and starts one task per
     /// shard. Each shard identifies through the `IdentifyQueue` port in
-    /// bucket `shard_id % max_concurrency` (GW-01). Startup finishes once
+    /// bucket `shard_id % max_concurrency` (GW-01). Shard tasks push every
+    /// parsed item into the lanes without waiting: interactions into the
+    /// never-dropped Interaction Lane, other events into the bounded event
+    /// lane (AD-10); one core task drains them, interactions first. Startup finishes once
     /// every shard has received READY; afterwards `run` returns `Ok(())`
     /// when every shard task has ended.
     ///
@@ -288,11 +294,13 @@ impl App {
             total: plan.total,
             max_concurrency: plan.max_concurrency,
         };
-        let (gateway, mut events) = Gateway::start(options, Arc::new(DiscardInbound))
-            .map_err(|error| {
-                tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
-                StartError::GatewayStopped
-            })?;
+        // `app` stays "default" until `AppId` exists (Story 7.4).
+        let (sender, receiver) = noctis_gateway::lanes(LaneConfig::default());
+        let _drain = AbortOnDrop(tokio::spawn(drain(receiver)));
+        let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).map_err(|error| {
+            tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
+            StartError::GatewayStopped
+        })?;
         await_startup(&mut events, total).await?;
         tracing::info!(target: "noctis::app", "all {total} shards ready");
         supervise(&mut events).await;
@@ -323,19 +331,6 @@ impl App {
             StartError::GatewayInfo { status: None }
         })?;
         Ok(GatewayInfo::from(&info))
-    }
-}
-
-/// Discards every [`Inbound`] until the lanes exist (Story 5.5).
-struct DiscardInbound;
-
-impl InboundSink for DiscardInbound {
-    fn push(&self, inbound: Inbound) {
-        tracing::trace!(
-            target: "noctis::app",
-            shard = inbound.shard.number(),
-            "inbound item discarded: no lanes yet"
-        );
     }
 }
 
@@ -398,6 +393,35 @@ async fn await_startup(
         }
     }
     Ok(())
+}
+
+/// Aborts the task it holds when dropped, on every return path of `run`.
+struct AbortOnDrop(JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Takes every [`Inbound`] from the lanes, interactions first, until every
+/// sender has dropped.
+async fn drain(mut receiver: LaneReceiver) {
+    while let Some(inbound) = receiver.recv().await {
+        dispatch(inbound);
+    }
+}
+
+/// Hands one [`Inbound`] to its handlers; never awaits. No handlers exist
+/// before Story 5.6, so it traces the item and drops it.
+fn dispatch(inbound: Inbound) {
+    tracing::trace!(
+        target: "noctis::app",
+        shard = inbound.shard.number(),
+        kind = ?inbound.kind,
+        "no handler registered"
+    );
+    drop(inbound);
 }
 
 /// Logs shard events after startup until every shard task has ended.

@@ -12,6 +12,28 @@
 //! [`InboundSink`] and reports [`ShardEvent`]s on a channel; it never waits
 //! for core or a handler.
 //!
+//! # Lanes
+//!
+//! [`lanes`] builds the two queues between the shard tasks and core
+//! (AD-10, FR-5). The [`LaneSender`] is the [`InboundSink`] the shard tasks
+//! push into; it never awaits. Interactions go to the Interaction Lane,
+//! which is never dropped and has no bound. Other events go to the event
+//! lane, bounded by [`LaneConfig::event_capacity`]: when it is full, a
+//! droppable event ([`DROPPABLE_EVENTS`] by default) evicts the oldest
+//! queued droppable event, and any other event waits in a capped overflow,
+//! beyond which it is dropped with an `error` log. Every drop is counted in
+//! `noctis_events_dropped_total{app, event_type}`, and the depths are the
+//! gauges `noctis_lane_depth{app, lane}` and `noctis_event_overflow_depth{app}`.
+//! The single [`LaneReceiver`] always takes interactions first.
+//!
+//! ```
+//! use noctis_gateway::{LaneConfig, lanes};
+//!
+//! let (sender, mut receiver) = lanes(LaneConfig::default());
+//! drop(sender);
+//! assert!(receiver.try_recv().is_none());
+//! ```
+//!
 //! # Shard configuration
 //!
 //! [`shard_config`] is the one place that turns App settings (token, intents,
@@ -36,12 +58,17 @@
 
 mod gateway;
 mod inbound;
+mod lanes;
 mod queue;
 mod shard;
 mod shard_config;
 
 pub use gateway::{Gateway, GatewayOptions};
 pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
+pub use lanes::{
+    DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, DROPPABLE_EVENTS, LaneConfig, LaneDepths,
+    LaneReceiver, LaneSender, lanes,
+};
 pub use shard_config::{ShardConfigError, shard_config};
 /// Which gateway event types shard tasks parse (twilight's flags,
 /// re-exported so core needs no `twilight-gateway` dependency).
