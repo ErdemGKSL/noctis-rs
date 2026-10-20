@@ -83,7 +83,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | handler needs intent `GUILD_MEMBERS` | add `.intents(Intents::GUILD_MEMBERS)` and enable it in the portal |
 | no font registered | enable `default-font` or `ImageConfig::font(..)` |
 | animation name `spin` redefined | rename your keyframes |
-| fixed shard total too small | remove `shard_total` or raise it |
+| shard total must be at least 1 | remove `.shard_total(0)` / `NOCTIS_SHARD_TOTAL=0`, or set a positive total |
 | > 100 global chat-input commands | merge into fewer bases (groups) |
 
 ## Runtime
@@ -117,6 +117,11 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | events missing under load | droppable events dropped by back-pressure | metrics `noctis_events_dropped_total`; make handlers tolerate gaps |
 | commands don't appear | not published | `cargo run --release -- --publish-guild <id>`; global publish can take time |
 | shard closes with 4014 | privileged intent not enabled in the portal | enable it, or drop the handler that needs it |
+| `run()` returns `StartError::DisallowedIntents { shard }` | close 4014 during startup: a privileged intent is not enabled in the portal | enable it, or stop requesting it |
+| `run()` returns `StartError::InvalidToken` | `GET /gateway/bot` answered 401, or close 4004 | copy the token again from the Developer Portal |
+| `run()` returns `StartError::ShardTotalTooSmall { total, minimum }` | a fixed shard total below ⌈recommended × 2 / 5⌉ (GW-03) | remove `shard_total` or raise it to at least `minimum` |
+| `run()` returns `StartError::SessionStartLimit { .. }` | the daily identify budget can't cover every shard (GW-02) | wait `reset_after`, or run fewer shards |
+| warning "shard total is not a multiple of max_concurrency" | a fixed total misaligned with Discord's identify buckets | use a multiple of `max_concurrency`, or ignore it (startup is only slower) |
 | startup warning "Cluster without HTTP proxy" | several processes, no `NOCTIS_HTTP_PROXY` | configure a shared proxy |
 | two processes disagree on module state | different `ModuleStateStore`s | share one Adapter; propagation ≤ poll interval |
 | Ref minted on one process "expired" on another | memory `RefStore` in a Cluster | shared `RefStore` Adapter |

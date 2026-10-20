@@ -9,7 +9,9 @@
 //! [`AppBuilder::build`] installs the [`Plugin`]s, runs the App-build checks
 //! and returns an [`App`] or one [`BuildError`] listing every violation.
 //! [`App::run`] checks the tokio runtime, the rustls crypto provider and the
-//! [`Token`], returning a typed [`StartError`] instead of panicking.
+//! [`Token`], reads `GET /gateway/bot`, plans the shard total and identify
+//! buckets (GW-01..03) and starts one task per shard, returning a typed
+//! [`StartError`] instead of panicking when any step fails.
 //!
 //! ```no_run
 //! use noctis_core::{App, AppBuilder, Error, State};
@@ -37,6 +39,7 @@ mod plugin;
 mod ports;
 mod proxy;
 mod runtime;
+mod sharding;
 mod startup;
 mod state;
 mod token;

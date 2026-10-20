@@ -3,6 +3,15 @@
 //! This crate is internal; use `noctis` instead. Its API is not stable and may
 //! change in any release.
 //!
+//! # Gateway
+//!
+//! [`Gateway::start`] spawns one tokio task per shard. Every shard identifies
+//! through the `IdentifyQueue` port in bucket `shard_id % max_concurrency`
+//! (GW-01). Each task reads raw gateway messages, parses them with
+//! `twilight_gateway::parse`, pushes [`Inbound`] items into a non-blocking
+//! [`InboundSink`] and reports [`ShardEvent`]s on a channel; it never waits
+//! for core or a handler.
+//!
 //! # Shard configuration
 //!
 //! [`shard_config`] is the one place that turns App settings (token, intents,
@@ -25,6 +34,20 @@
 //! # Ok(()) }
 //! ```
 
+mod gateway;
+mod inbound;
+mod queue;
+mod shard;
 mod shard_config;
 
+pub use gateway::{Gateway, GatewayOptions};
+pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 pub use shard_config::{ShardConfigError, shard_config};
+/// Which gateway event types shard tasks parse (twilight's flags,
+/// re-exported so core needs no `twilight-gateway` dependency).
+///
+/// ```
+/// let wanted = noctis_gateway::EventTypeFlags::INTERACTION_CREATE;
+/// assert!(wanted.contains(noctis_gateway::EventTypeFlags::INTERACTION_CREATE));
+/// ```
+pub use twilight_gateway::EventTypeFlags;

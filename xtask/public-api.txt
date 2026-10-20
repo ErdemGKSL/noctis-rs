@@ -11,6 +11,7 @@ pub fn noctis::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub async fn noctis::App::run(self) -> core::result::Result<(), noctis::Error>
 pub fn noctis::App::runtime(&self) -> &noctis::Runtime
+pub fn noctis::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 impl core::fmt::Debug for noctis::App
 pub fn noctis::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -38,6 +39,7 @@ pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::
 pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
 pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::SessionStore) -> &mut Self
+pub fn noctis::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
 pub fn noctis::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::AppBuilder
@@ -69,6 +71,7 @@ pub noctis::BuildViolation::InvalidHttpProxy
 pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
 pub noctis::BuildViolation::InvalidHttpTimeout::actual: core::time::Duration
+pub noctis::BuildViolation::InvalidShardTotal
 pub noctis::BuildViolation::NoTokioRuntime
 pub noctis::BuildViolation::Plugin
 pub noctis::BuildViolation::Plugin::message: alloc::string::String
@@ -93,6 +96,8 @@ impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
 #[non_exhaustive] pub enum noctis::EnvError
+pub noctis::EnvError::InvalidShardTotal
+pub noctis::EnvError::InvalidShardTotal::var: &'static str
 pub noctis::EnvError::InvalidToken
 pub noctis::EnvError::InvalidToken::source: noctis::TokenError
 pub noctis::EnvError::InvalidToken::var: &'static str
@@ -211,9 +216,30 @@ impl core::fmt::Debug for noctis::Runtime
 pub fn noctis::Runtime::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::StartError
 pub noctis::StartError::CryptoProvider
+pub noctis::StartError::DisallowedIntents
+pub noctis::StartError::DisallowedIntents::shard: u32
+pub noctis::StartError::FatalClose
+pub noctis::StartError::FatalClose::code: u16
+pub noctis::StartError::FatalClose::shard: u32
+pub noctis::StartError::GatewayInfo
+pub noctis::StartError::GatewayInfo::status: core::option::Option<u16>
+pub noctis::StartError::GatewayStopped
+pub noctis::StartError::InvalidGatewayInfo
+pub noctis::StartError::InvalidIntents
+pub noctis::StartError::InvalidIntents::shard: u32
+pub noctis::StartError::InvalidToken
 pub noctis::StartError::MissingToken
 pub noctis::StartError::NoRuntime
 pub noctis::StartError::NotMultiThread
+pub noctis::StartError::SessionStartLimit
+pub noctis::StartError::SessionStartLimit::remaining: u32
+pub noctis::StartError::SessionStartLimit::required: u32
+pub noctis::StartError::SessionStartLimit::reset_after: core::time::Duration
+pub noctis::StartError::ShardEnded
+pub noctis::StartError::ShardEnded::shard: u32
+pub noctis::StartError::ShardTotalTooSmall
+pub noctis::StartError::ShardTotalTooSmall::minimum: u32
+pub noctis::StartError::ShardTotalTooSmall::total: u32
 impl core::clone::Clone for noctis::StartError
 pub fn noctis::StartError::clone(&self) -> Self
 impl core::cmp::Eq for noctis::StartError
@@ -1234,6 +1260,7 @@ pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub async fn noctis::prelude::App::run(self) -> core::result::Result<(), noctis::Error>
 pub fn noctis::prelude::App::runtime(&self) -> &noctis::Runtime
+pub fn noctis::prelude::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::prelude::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 impl core::fmt::Debug for noctis::prelude::App
 pub fn noctis::prelude::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -1261,6 +1288,7 @@ pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn
 pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::prelude::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
 pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports::SessionStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
 pub fn noctis::prelude::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::prelude::AppBuilder

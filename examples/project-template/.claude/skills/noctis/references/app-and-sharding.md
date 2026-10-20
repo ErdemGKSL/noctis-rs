@@ -43,14 +43,20 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
 - `App::run()` checks, in order: a tokio runtime is current (`StartError::NoRuntime`),
   it is multi-thread (`StartError::NotMultiThread`), a rustls crypto provider is
   installed (installs `ring`'s if none is set; `StartError::CryptoProvider`), and a token
-  is set (`StartError::MissingToken`). Typed errors, never panics. **Until shard startup
-  lands (Story 5.4) it then logs a warning and returns `Ok(())`.** [planned: parses CLI
-  flags, runs a CLI mode or starts the shards and blocks until shutdown]
+  is set (`StartError::MissingToken`). Typed errors, never panics. It then reads
+  `GET /gateway/bot`, plans the shard total and identify buckets (§4) and starts one
+  task per shard. It returns an error if startup fails (see Errors). Once every shard
+  has received READY it logs `all {n} shards ready` and keeps running. It returns
+  `Ok(())` only when every shard has stopped, for example after a fatal close.
+  Incoming interactions and events are **discarded** until handlers land (Stories
+  5.5-5.6). [planned: parses CLI flags, runs a CLI mode, and stops on Ctrl-C/SIGTERM
+  (Story 5.8)]
 
 The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `Arc<noctis::twilight::http::Client>`, the same `Arc` on every call), `app.http_timeout()`,
 `app.http_proxy()` (`Option<&str>`: the normalized proxy authority, e.g. `Some("proxy:3000")`),
 `app.gateway_url()` (`Option<&str>`: the normalized gateway URL, e.g. `Some("ws://127.0.0.1:3000")`),
+`app.shard_total()` (`Option<u32>`: the fixed shard total, `None` = Discord's recommendation),
 `app.intents()`, `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
@@ -66,6 +72,7 @@ Implemented:
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
 | `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
+| `.shard_total(u32)` | env `NOCTIS_SHARD_TOTAL`, else Discord's recommendation | fix the shard total; the last call wins. `0` is `BuildViolation::InvalidShardTotal`; too small for Discord is `StartError::ShardTotalTooSmall` at `run()`; see §4 |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
@@ -79,7 +86,7 @@ Planned (signatures may change):
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.shards(ShardRange)` / `.shard_total(u32)` [planned, Story 5.4] | all / recommended | see §4 |
+| `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
 | `.module(Module)` [planned, Story 5.6] | — | mount a Module tree (ids must be unique); handler intents are derived and added |
 | `.error_sink(Origin, impl ErrorSink)` [planned, Story 5.7] | log at `error` | see `modules-middleware-ratelimits.md` |
 | `.shutdown_grace(Duration)` [planned, Story 5.8] | 10 s | drain time on shutdown |
@@ -114,12 +121,29 @@ token.
   `InvalidHttpTimeout { actual }`, `InvalidHttpProxy { reason: HttpProxyError }`
   (message `"invalid HTTP proxy: {reason}"`, never the value), `InvalidGatewayUrl {
   reason: GatewayUrlError }` (message `"invalid gateway URL: {reason}"`, never the
-  value), `Plugin { plugin, message }` (built with
+  value), `InvalidShardTotal` (`.shard_total(0)`), `Plugin { plugin, message }` (built with
   `BuildViolation::plugin::<P>("message")`).
-- `StartError`: `NoRuntime`, `NotMultiThread`, `CryptoProvider`, `MissingToken` (see
-  `App::run()` above).
-- `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`; the
-  value is never shown.
+- `StartError` (`Copy`; each message names the cause and the fix): `NoRuntime`,
+  `NotMultiThread`, `CryptoProvider`, `MissingToken` (see `App::run()` above), then:
+  - `InvalidToken`: Discord rejected the token (`GET /gateway/bot` answered 401, or a
+    shard was closed with 4004);
+  - `GatewayInfo { status: Option<u16> }`: `GET /gateway/bot` failed (a transport
+    error, a timeout, a status other than 401, or an unreadable body; `status` is set
+    when Discord answered);
+  - `InvalidGatewayInfo`: `GET /gateway/bot` reported 0 shards (without a fixed total)
+    or a `max_concurrency` of 0;
+  - `ShardTotalTooSmall { total, minimum }`: GW-03, see §4;
+  - `SessionStartLimit { required, remaining, reset_after: Duration }`: GW-02, see §4;
+  - `InvalidIntents { shard }` (close 4013), `DisallowedIntents { shard }` (close 4014:
+    enable the privileged intents in the Developer Portal or stop requesting them),
+    `FatalClose { shard, code }` (any other close code twilight does not reconnect
+    on), `ShardEnded { shard }` (the shard stopped without a close code),
+    `GatewayStopped` (every shard stopped before startup finished). Each one is
+    returned only while startup is still running. After startup, a shard that stops
+    is logged at `error` and does not stop the App.
+- `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`,
+  `InvalidShardTotal { var }` (not 1-10 ASCII digits fitting a `u32`); the value is
+  never shown.
 - `HttpProxyError` (why `.http_proxy(..)` was rejected; checked in this order):
   `Empty` (nothing after an optional `http://` and one trailing `/`),
   `UnsupportedScheme` (any scheme but `http://`, e.g. `https://`), `InvalidChar { index }`
@@ -155,8 +179,8 @@ match configure(&mut App::builder()).build() {
 | `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` [planned, Story 7.2] | base64 32-byte integrity keys |
 | `NOCTIS_APP_ID` [planned, Story 7.4] | Adapter namespace |
 | `NOCTIS_DEV_GUILD` [planned, Story 6.9] | default for `--publish-guild` without an id |
-| `NOCTIS_SHARDS` [planned, Story 5.4] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
-| `NOCTIS_SHARD_TOTAL` [planned, Story 5.4] | fixed shard total |
+| `NOCTIS_SHARDS` [planned, Story 12.1] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
+| `NOCTIS_SHARD_TOTAL` | fixed shard total, read by `App::from_env()` after `NOCTIS_GATEWAY_URL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-10 ASCII digits that fit a `u32`, and leading zeros are allowed (`"007"` = 7). Anything else (`-1`, `+5`, `1e3`, `1_000`, over `4294967295`) → `EnvError::InvalidShardTotal`. It is then passed to `.shard_total(..)`, so `0` fails at `build()` |
 | `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
 | `NOCTIS_GATEWAY_URL` | gateway URL, read by `App::from_env()` after `NOCTIS_HTTP_PROXY` with the same rules, then passed to `.gateway_url(..)`; its content is checked by `build()` (`BuildViolation::InvalidGatewayUrl`) |
 | `NOCTIS_PUBLISHER` [planned, Story 6.9] | `true` on the one publishing process |
@@ -200,14 +224,28 @@ without `--dry-run`, then `cargo run --release`. Always build and run with `--re
 
 ## 4. Sharding
 
-Automatic: startup calls `GET /gateway/bot`, uses the recommended shard count (unless
-`shard_total` is set), and identifies through the `IdentifyQueue` in buckets of
-`max_concurrency` (GW-01). Shards in different buckets identify in parallel; each
-bucket identifies once per 5 s.
+Sharding is automatic. `App::run()` calls `GET /gateway/bot` once, with the App's HTTP
+client, so `.http_proxy(..)` applies. It uses the recommended shard count unless
+`shard_total` is set. Each shard runs in its own task and identifies through the
+`IdentifyQueue` port in bucket `shard_id % max_concurrency` (GW-01). Shards in
+different buckets identify in parallel, and each bucket identifies once per 5 s. With
+20 shards and `max_concurrency` 16, shards 0-15 identify at once and shards 16-19 about
+5 s later. If you did not set `.identify_queue(..)`, the default is a
+`MemoryIdentifyQueue` sized to Discord's `max_concurrency`. If you did, your port gets
+every bucket. Shards connect to `.gateway_url(..)` if it is set, and to Discord's
+gateway otherwise. They never use the URL that `/gateway/bot` returns. Startup is done
+when every shard has received READY.
 
-- A fixed total smaller than Discord requires (2500 guilds/shard, GW-03) is a
-  `BuildError`. A total that isn't a multiple of `max_concurrency` warns.
-- Startup refuses when `session_start_limit.remaining` can't cover the shards (GW-02).
+- `.shard_total(0)` is `BuildViolation::InvalidShardTotal`. At `run()`, a fixed total
+  below ⌈recommended × 2 / 5⌉ is `StartError::ShardTotalTooSmall { total, minimum }`
+  (Discord recommends about 1 shard per 1000 guilds, and a shard may hold 2500 guilds:
+  GW-03). It is returned before any connection opens. The recommended count never
+  fails this check.
+- A fixed total that isn't a multiple of `max_concurrency` (when it is above 1) only
+  logs a warning (`total`, `max_concurrency` fields), and startup continues.
+- Startup refuses with `StartError::SessionStartLimit { required, remaining,
+  reset_after }` when `session_start_limit.remaining` can't cover the shards (GW-02).
+  It is returned before any connection opens.
 - Each Shard is its own task: it reads, parses, filters and enqueues; it never awaits a
   handler. Interactions go to the never-dropped **interaction lane**; other events go to
   the bounded **event lane** (droppable types like presence/typing drop oldest; others

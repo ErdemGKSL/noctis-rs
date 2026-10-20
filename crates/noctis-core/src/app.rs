@@ -4,20 +4,25 @@ use std::any::TypeId;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fmt;
+use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
 
+use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink, ShardEvent};
+use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_ports::{
     AssetStore, CacheStore, DiscordCache, GuildAccessList, IdentifyQueue, LocaleSource,
     ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, SessionStore,
 };
+use tokio::sync::mpsc;
 use twilight_model::gateway::Intents;
 
 use crate::gateway_url::normalize_gateway_url;
 use crate::plugin::PluginEntry;
-use crate::ports::{PortOverrides, Ports};
+use crate::ports::{PortOverrides, PortSlot, Ports};
 use crate::proxy::normalize_http_proxy;
+use crate::sharding::{GatewayInfo, plan};
 use crate::startup::{check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
 use crate::{
@@ -30,6 +35,8 @@ const TOKEN_VAR: &str = "NOCTIS_TOKEN";
 const HTTP_PROXY_VAR: &str = "NOCTIS_HTTP_PROXY";
 /// The environment variable [`App::from_env`] reads the gateway URL from.
 const GATEWAY_URL_VAR: &str = "NOCTIS_GATEWAY_URL";
+/// The environment variable [`App::from_env`] reads the fixed shard total from.
+const SHARD_TOTAL_VAR: &str = "NOCTIS_SHARD_TOTAL";
 /// The HTTP request timeout when `http_timeout` is not called.
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The allowed `http_timeout` range.
@@ -61,6 +68,7 @@ pub struct App {
     http_timeout: Duration,
     http_proxy: Option<String>,
     gateway_url: Option<String>,
+    shard_total: Option<NonZeroU32>,
     intents: Intents,
     states: StateMap,
     ports: Ports,
@@ -81,16 +89,17 @@ impl App {
 
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
-    /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY` and then `NOCTIS_GATEWAY_URL`,
-    /// each trimmed of ASCII whitespace; an empty value counts as unset. The
-    /// proxy and the gateway URL are passed to [`AppBuilder::http_proxy`] and
-    /// [`AppBuilder::gateway_url`] and validated by `build()`. Setters called
-    /// afterwards win.
+    /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL` and then
+    /// `NOCTIS_SHARD_TOTAL`, each trimmed of ASCII whitespace; an empty value
+    /// counts as unset. The proxy and the gateway URL are passed to
+    /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and validated
+    /// by `build()`; the shard total (1-10 ASCII digits) is passed to
+    /// [`AppBuilder::shard_total`]. Setters called afterwards win.
     ///
     /// # Errors
     ///
-    /// [`Error::Env`] when a variable is not Unicode or holds an invalid token;
-    /// the message never shows the value.
+    /// [`Error::Env`] when a variable is not Unicode, holds an invalid token or
+    /// an invalid shard total; the message never shows the value.
     ///
     /// ```no_run
     /// let app = noctis_core::App::from_env()?;
@@ -161,6 +170,20 @@ impl App {
         self.gateway_url.as_deref()
     }
 
+    /// The fixed shard total, if one was set; `None` uses Discord's
+    /// recommendation.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().shard_total(16).build().unwrap();
+    /// assert_eq!(app.shard_total(), Some(16));
+    /// assert_eq!(noctis_core::App::builder().build().unwrap().shard_total(), None);
+    /// # }
+    /// ```
+    pub fn shard_total(&self) -> Option<u32> {
+        self.shard_total.map(NonZeroU32::get)
+    }
+
     /// The requested gateway intents (at least `GUILDS`).
     ///
     /// ```
@@ -200,42 +223,201 @@ impl App {
     }
 
     /// The resolved ports.
-    #[allow(
-        dead_code,
-        reason = "read by the gateway and pipeline stories (5.4-5.6)"
-    )]
     pub(crate) fn ports(&self) -> &Ports {
         &self.ports
     }
 
-    /// Starts the App.
+    /// Starts the App and runs its shards until every shard task has ended.
     ///
     /// Checks, in order, that a multi-thread tokio runtime is current, that a
     /// rustls crypto provider is installed (installing `ring`'s when none is
-    /// set) and that a token is set. The gateway is not available yet: after
-    /// the checks it logs a warning and returns `Ok(())`.
+    /// set) and that a token is set. It then reads `GET /gateway/bot` with
+    /// the App's HTTP client, plans the shard total (the fixed
+    /// [`shard_total`](AppBuilder::shard_total) or Discord's recommendation)
+    /// and the identify buckets (`max_concurrency`), and starts one task per
+    /// shard. Each shard identifies through the `IdentifyQueue` port in
+    /// bucket `shard_id % max_concurrency` (GW-01). Startup finishes once
+    /// every shard has received READY; afterwards `run` returns `Ok(())`
+    /// when every shard task has ended.
     ///
     /// # Errors
     ///
-    /// [`Error::Start`] with the [`StartError`] of the first failed check.
+    /// [`Error::Start`] with the [`StartError`] of the first failed step:
+    /// the checks above, [`StartError::InvalidToken`] (HTTP 401 or close
+    /// 4004), [`StartError::GatewayInfo`], [`StartError::InvalidGatewayInfo`],
+    /// [`StartError::ShardTotalTooSmall`] (GW-03),
+    /// [`StartError::SessionStartLimit`] (GW-02), or a fatal close during
+    /// startup ([`StartError::InvalidIntents`],
+    /// [`StartError::DisallowedIntents`], [`StartError::FatalClose`],
+    /// [`StartError::ShardEnded`], [`StartError::GatewayStopped`]).
     ///
     /// ```no_run
     /// # #[tokio::main] async fn main() -> Result<(), noctis_core::Error> {
     /// noctis_core::App::from_env()?.build()?.run().await?;
     /// # Ok(()) }
     /// ```
-    #[allow(
-        clippy::unused_async,
-        reason = "Story 5.4 awaits the shards here; the signature is already final"
-    )]
     pub async fn run(self) -> Result<(), Error> {
         check_runtime(true)?;
         ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
-        if self.token.is_none() {
+        let Some(token) = &self.token else {
             return Err(StartError::MissingToken.into());
+        };
+        let info = self.gateway_info().await?;
+        let plan = plan(info, self.shard_total)?;
+        let total = plan.total.get();
+        if plan.misaligned {
+            tracing::warn!(
+                target: "noctis::app",
+                total,
+                max_concurrency = plan.max_concurrency.get(),
+                "shard total is not a multiple of max_concurrency; identify buckets are uneven"
+            );
         }
-        tracing::warn!(target: "noctis::app", "gateway not available yet; App::run returns");
+        let identify_queue: Arc<dyn IdentifyQueue> =
+            if self.ports().is_default(PortSlot::IdentifyQueue) {
+                Arc::new(MemoryIdentifyQueue::new(plan.max_concurrency))
+            } else {
+                Arc::clone(&self.ports().identify_queue)
+            };
+        let options = GatewayOptions {
+            token: token.expose().to_owned(),
+            intents: self.intents,
+            gateway_url: self.gateway_url.clone(),
+            event_types: EventTypeFlags::INTERACTION_CREATE,
+            identify_queue,
+            total: plan.total,
+            max_concurrency: plan.max_concurrency,
+        };
+        let (gateway, mut events) = Gateway::start(options, Arc::new(DiscardInbound))
+            .map_err(|error| {
+                tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
+                StartError::GatewayStopped
+            })?;
+        await_startup(&mut events, total).await?;
+        tracing::info!(target: "noctis::app", "all {total} shards ready");
+        supervise(&mut events).await;
+        drop(gateway);
         Ok(())
+    }
+
+    /// Reads `GET /gateway/bot`; every failure is logged with its `Display`
+    /// (twilight never prints the token).
+    async fn gateway_info(&self) -> Result<GatewayInfo, StartError> {
+        use twilight_http::error::ErrorType;
+
+        let response = self.http.gateway().authed().await.map_err(|error| {
+            tracing::error!(target: "noctis::app", %error, "GET /gateway/bot failed");
+            match error.kind() {
+                ErrorType::Unauthorized => StartError::InvalidToken,
+                ErrorType::Response { status, .. } if status.get() == 401 => {
+                    StartError::InvalidToken
+                }
+                ErrorType::Response { status, .. } => StartError::GatewayInfo {
+                    status: Some(status.get()),
+                },
+                _ => StartError::GatewayInfo { status: None },
+            }
+        })?;
+        let info = response.model().await.map_err(|error| {
+            tracing::error!(target: "noctis::app", %error, "GET /gateway/bot body could not be read");
+            StartError::GatewayInfo { status: None }
+        })?;
+        Ok(GatewayInfo::from(&info))
+    }
+}
+
+/// Discards every [`Inbound`] until the lanes exist (Story 5.5).
+struct DiscardInbound;
+
+impl InboundSink for DiscardInbound {
+    fn push(&self, inbound: Inbound) {
+        tracing::trace!(
+            target: "noctis::app",
+            shard = inbound.shard.number(),
+            "inbound item discarded: no lanes yet"
+        );
+    }
+}
+
+/// The [`StartError`] for shard `shard` ending during startup with
+/// `close_code`.
+fn start_error(shard: u32, close_code: Option<u16>) -> StartError {
+    match close_code {
+        Some(4004) => StartError::InvalidToken,
+        Some(4013) => StartError::InvalidIntents { shard },
+        Some(4014) => StartError::DisallowedIntents { shard },
+        Some(code) => StartError::FatalClose { shard, code },
+        None => StartError::ShardEnded { shard },
+    }
+}
+
+/// Waits until every shard in `0..total` has sent `Ready` at least once.
+async fn await_startup(
+    events: &mut mpsc::UnboundedReceiver<ShardEvent>,
+    total: u32,
+) -> Result<(), StartError> {
+    let mut ready = vec![false; usize::try_from(total).unwrap_or(usize::MAX)];
+    let mut missing = ready.len();
+    while missing > 0 {
+        let Some(event) = events.recv().await else {
+            return Err(StartError::GatewayStopped);
+        };
+        match event {
+            ShardEvent::Ready { shard } => {
+                tracing::debug!(target: "noctis::app", shard, "shard ready");
+                let slot = usize::try_from(shard)
+                    .ok()
+                    .and_then(|index| ready.get_mut(index));
+                if let Some(seen) = slot
+                    && !*seen
+                {
+                    *seen = true;
+                    missing -= 1;
+                }
+            }
+            ShardEvent::Ended { shard, close_code } => {
+                let error = start_error(shard, close_code);
+                tracing::error!(
+                    target: "noctis::app",
+                    shard,
+                    ?close_code,
+                    %error,
+                    "shard ended during startup"
+                );
+                return Err(error);
+            }
+            ShardEvent::Disconnected { shard, close_code } => {
+                tracing::warn!(
+                    target: "noctis::app",
+                    shard,
+                    ?close_code,
+                    "shard disconnected during startup"
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Logs shard events after startup until every shard task has ended.
+async fn supervise(events: &mut mpsc::UnboundedReceiver<ShardEvent>) {
+    while let Some(event) = events.recv().await {
+        match event {
+            ShardEvent::Ended { shard, close_code } => {
+                tracing::error!(target: "noctis::app", shard, ?close_code, "shard ended");
+            }
+            ShardEvent::Disconnected { shard, close_code } => {
+                tracing::warn!(target: "noctis::app", shard, ?close_code, "shard disconnected");
+            }
+            ShardEvent::Ready { shard } => {
+                tracing::debug!(target: "noctis::app", shard, "shard ready");
+            }
+            ShardEvent::Resumed { shard } => {
+                tracing::debug!(target: "noctis::app", shard, "shard resumed");
+            }
+            _ => {}
+        }
     }
 }
 
@@ -247,6 +429,7 @@ impl fmt::Debug for App {
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy)
             .field("gateway_url", &self.gateway_url)
+            .field("shard_total", &self.shard_total)
             .field("intents", &self.intents)
             .field("states", &self.states)
             .field("default_ports", self.ports.default_slots())
@@ -287,6 +470,8 @@ pub struct AppBuilder {
     http_proxy: Option<String>,
     /// The raw, unvalidated gateway URL; `build` normalizes it.
     gateway_url: Option<String>,
+    /// The raw fixed shard total; `build` rejects 0.
+    shard_total: Option<u32>,
     states: StateMap,
     ports: PortOverrides,
     renderer: Option<Arc<dyn Renderer>>,
@@ -325,6 +510,7 @@ impl AppBuilder {
             http_timeout: DEFAULT_HTTP_TIMEOUT,
             http_proxy: None,
             gateway_url: None,
+            shard_total: None,
             states: StateMap::default(),
             ports: PortOverrides::default(),
             renderer: None,
@@ -349,6 +535,12 @@ impl AppBuilder {
         }
         if let Some(url) = read_var(&lookup, GATEWAY_URL_VAR)? {
             builder.gateway_url(url);
+        }
+        if let Some(raw) = read_var(&lookup, SHARD_TOTAL_VAR)? {
+            let total = parse_shard_total(&raw).ok_or(EnvError::InvalidShardTotal {
+                var: SHARD_TOTAL_VAR,
+            })?;
+            builder.shard_total(total);
         }
         Ok(builder)
     }
@@ -446,6 +638,23 @@ impl AppBuilder {
     /// ```
     pub fn gateway_url(&mut self, url: impl Into<String>) -> &mut Self {
         self.gateway_url = Some(url.into());
+        self
+    }
+
+    /// Fixes the shard total instead of using Discord's recommendation; the
+    /// last call wins.
+    ///
+    /// `build()` records [`BuildViolation::InvalidShardTotal`] for 0. At
+    /// [`App::run`], a total below ⌈recommended × 2 / 5⌉ is
+    /// [`StartError::ShardTotalTooSmall`] (GW-03), and a total that is not a
+    /// multiple of Discord's `max_concurrency` (when above 1) logs a warning.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.shard_total(16);
+    /// ```
+    pub fn shard_total(&mut self, total: u32) -> &mut Self {
+        self.shard_total = Some(total);
         self
     }
 
@@ -590,8 +799,9 @@ impl AppBuilder {
     ///
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
-    /// timeout, the HTTP proxy, the gateway URL, the rustls crypto provider (installing `ring`'s when none is
-    /// set) and the tokio runtime (any flavor). The builder is left empty,
+    /// timeout, the HTTP proxy, the gateway URL, the shard total, the rustls
+    /// crypto provider (installing `ring`'s when none is set) and the tokio
+    /// runtime (any flavor). The builder is left empty,
     /// attached to the same Runtime.
     ///
     /// # Errors
@@ -629,6 +839,16 @@ impl AppBuilder {
                 None
             }
         };
+        let shard_total = match self.shard_total {
+            None => None,
+            Some(total) => {
+                let total = NonZeroU32::new(total);
+                if total.is_none() {
+                    self.violations.push(BuildViolation::InvalidShardTotal);
+                }
+                total
+            }
+        };
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }
@@ -654,6 +874,7 @@ impl AppBuilder {
             http_timeout: config.http_timeout,
             http_proxy,
             gateway_url,
+            shard_total,
             intents: config.intents,
             states: config.states,
             ports: Ports::resolve(config.ports),
@@ -690,6 +911,7 @@ impl fmt::Debug for AppBuilder {
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy.is_some())
             .field("gateway_url", &self.gateway_url.is_some())
+            .field("shard_total", &self.shard_total)
             .field("states", &self.states)
             .field("ports", &self.ports.set_slots())
             .field("has_renderer", &self.renderer.is_some())
@@ -697,6 +919,13 @@ impl fmt::Debug for AppBuilder {
             .field("violations", &self.violations)
             .finish()
     }
+}
+
+/// A shard total from 1-10 ASCII digits that fit a `u32` (leading zeros and
+/// 0 accepted; `build()` rejects 0).
+fn parse_shard_total(raw: &str) -> Option<u32> {
+    let digits = (1..=10).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
+    digits.then(|| raw.parse().ok()).flatten()
 }
 
 /// Reads `var` through `lookup`: trimmed of ASCII whitespace, empty means

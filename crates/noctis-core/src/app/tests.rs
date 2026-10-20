@@ -29,7 +29,7 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
         assert!(
             matches!(
                 var,
-                "NOCTIS_TOKEN" | "NOCTIS_HTTP_PROXY" | "NOCTIS_GATEWAY_URL"
+                "NOCTIS_TOKEN" | "NOCTIS_HTTP_PROXY" | "NOCTIS_GATEWAY_URL" | "NOCTIS_SHARD_TOTAL"
             ),
             "unexpected variable {var}"
         );
@@ -513,8 +513,17 @@ async fn run_current_thread() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn run_multi_thread() {
-    let app = App::builder().token(token()).build().unwrap();
-    app.run().await.unwrap();
+    // Past the token check, `run` reads GET /gateway/bot: nothing listens on
+    // port 1, so it fails there without touching the network.
+    let app = App::builder()
+        .token(token())
+        .http_proxy("127.0.0.1:1")
+        .build()
+        .unwrap();
+    assert!(matches!(
+        app.run().await,
+        Err(Error::Start(StartError::GatewayInfo { status: None }))
+    ));
     let app = App::builder().build().unwrap();
     assert!(matches!(
         app.run().await,
@@ -633,7 +642,12 @@ fn from_env_reads_token_first() {
     .unwrap();
     assert_eq!(
         *seen.lock().unwrap(),
-        ["NOCTIS_TOKEN", "NOCTIS_HTTP_PROXY", "NOCTIS_GATEWAY_URL"]
+        [
+            "NOCTIS_TOKEN",
+            "NOCTIS_HTTP_PROXY",
+            "NOCTIS_GATEWAY_URL",
+            "NOCTIS_SHARD_TOTAL"
+        ]
     );
 }
 
@@ -739,5 +753,240 @@ fn from_env_gateway_url_not_unicode() {
         EnvError::NotUnicode {
             var: "NOCTIS_GATEWAY_URL"
         }
+    );
+}
+
+// ---- shard_total (Story 5.4 Matrix 8, 9, 18) ----
+
+#[tokio::test]
+async fn shard_total_builder() {
+    assert_eq!(
+        App::builder().shard_total(5).build().unwrap().shard_total(),
+        Some(5)
+    );
+    assert_eq!(App::builder().build().unwrap().shard_total(), None);
+    let err = App::builder().shard_total(0).build().unwrap_err();
+    assert_eq!(err.violations(), [BuildViolation::InvalidShardTotal]);
+    assert_eq!(
+        err.violations()[0].to_string(),
+        "shard total must be at least 1: omit shard_total to use Discord's recommendation"
+    );
+    assert_eq!(
+        App::builder()
+            .shard_total(0)
+            .shard_total(5)
+            .build()
+            .unwrap()
+            .shard_total(),
+        Some(5)
+    );
+    assert_eq!(
+        App::builder()
+            .shard_total(u32::MAX)
+            .build()
+            .unwrap()
+            .shard_total(),
+        Some(u32::MAX)
+    );
+    let err = App::builder()
+        .shard_total(0)
+        .http_timeout(Duration::ZERO)
+        .gateway_url("http://x")
+        .build()
+        .unwrap_err();
+    assert!(matches!(
+        err.violations(),
+        [
+            BuildViolation::InvalidHttpTimeout { .. },
+            BuildViolation::InvalidGatewayUrl { .. },
+            BuildViolation::InvalidShardTotal,
+        ]
+    ));
+}
+
+#[tokio::test]
+async fn shard_total_debug() {
+    let mut builder = App::builder();
+    builder.shard_total(7);
+    assert!(format!("{builder:?}").contains("shard_total: Some(7)"));
+    let app = builder.build().unwrap();
+    assert!(format!("{app:?}").contains("shard_total: Some(7)"));
+}
+
+#[test]
+fn from_env_shard_total() {
+    let read = |raw: &str| {
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHARD_TOTAL", Some(raw.into())))
+            .map(|b| b.shard_total)
+    };
+    assert_eq!(
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHARD_TOTAL", None))
+            .unwrap()
+            .shard_total,
+        None
+    );
+    for (raw, expected) in [
+        ("", None),
+        (" \t", None),
+        (" 12 \n", Some(12)),
+        ("007", Some(7)),
+        ("4294967295", Some(u32::MAX)),
+        ("0", Some(0)),
+    ] {
+        assert_eq!(read(raw), Ok(expected), "{raw:?}");
+    }
+    for raw in [
+        "4294967296",
+        "-1",
+        "+5",
+        "1_000",
+        "1e3",
+        "abc",
+        "\u{ff11}\u{ff12}",
+        "12345678901",
+    ] {
+        let err = read(raw).unwrap_err();
+        assert_eq!(
+            err,
+            EnvError::InvalidShardTotal {
+                var: "NOCTIS_SHARD_TOTAL"
+            },
+            "{raw:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "environment variable `NOCTIS_SHARD_TOTAL` is not a shard total: set a whole number \
+             of shards such as 16"
+        );
+    }
+}
+
+#[tokio::test]
+async fn from_env_shard_total_zero_fails_at_build() {
+    let mut builder =
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHARD_TOTAL", Some("0".into()))).unwrap();
+    let err = builder.build().unwrap_err();
+    assert_eq!(err.violations(), [BuildViolation::InvalidShardTotal]);
+}
+
+#[cfg(unix)]
+#[test]
+fn from_env_shard_total_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_SHARD_TOTAL",
+        Some(OsString::from_vec(vec![b'1', 0xff])),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_SHARD_TOTAL"
+        }
+    );
+}
+
+#[test]
+fn startup_close_codes_map_to_start_errors() {
+    assert_eq!(start_error(3, Some(4004)), StartError::InvalidToken);
+    assert_eq!(
+        start_error(3, Some(4013)),
+        StartError::InvalidIntents { shard: 3 }
+    );
+    assert_eq!(
+        start_error(3, Some(4014)),
+        StartError::DisallowedIntents { shard: 3 }
+    );
+    for code in [4010, 4011, 4012] {
+        assert_eq!(
+            start_error(3, Some(code)),
+            StartError::FatalClose { shard: 3, code }
+        );
+    }
+    assert_eq!(start_error(3, None), StartError::ShardEnded { shard: 3 });
+}
+
+#[tokio::test]
+async fn startup_waits_for_every_ready_and_maps_closed_channel() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    for event in [
+        ShardEvent::Ready { shard: 1 },
+        ShardEvent::Ready { shard: 1 },
+        ShardEvent::Disconnected {
+            shard: 0,
+            close_code: Some(4000),
+        },
+        ShardEvent::Resumed { shard: 0 },
+        ShardEvent::Ready { shard: 9 },
+        ShardEvent::Ready { shard: 0 },
+    ] {
+        tx.send(event).unwrap();
+    }
+    assert_eq!(await_startup(&mut rx, 2).await, Ok(()));
+
+    tx.send(ShardEvent::Ready { shard: 0 }).unwrap();
+    drop(tx);
+    assert_eq!(
+        await_startup(&mut rx, 2).await,
+        Err(StartError::GatewayStopped)
+    );
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    tx.send(ShardEvent::Ended {
+        shard: 1,
+        close_code: Some(4014),
+    })
+    .unwrap();
+    assert_eq!(
+        await_startup(&mut rx, 2).await,
+        Err(StartError::DisallowedIntents { shard: 1 })
+    );
+}
+
+#[test]
+fn start_error_messages_name_cause_and_fix() {
+    let errors = [
+        StartError::InvalidToken,
+        StartError::GatewayInfo { status: Some(500) },
+        StartError::GatewayInfo { status: None },
+        StartError::InvalidGatewayInfo,
+        StartError::ShardTotalTooSmall {
+            total: 4,
+            minimum: 8,
+        },
+        StartError::SessionStartLimit {
+            required: 20,
+            remaining: 19,
+            reset_after: Duration::from_secs(5),
+        },
+        StartError::InvalidIntents { shard: 0 },
+        StartError::DisallowedIntents { shard: 0 },
+        StartError::FatalClose {
+            shard: 0,
+            code: 4011,
+        },
+        StartError::ShardEnded { shard: 0 },
+        StartError::GatewayStopped,
+    ];
+    for error in errors {
+        let text = error.to_string();
+        assert!(text.contains(':'), "{text}");
+    }
+    assert!(
+        StartError::InvalidToken
+            .to_string()
+            .starts_with("Discord rejected the bot token (HTTP 401 or close 4004)")
+    );
+    assert!(
+        StartError::GatewayInfo { status: Some(500) }
+            .to_string()
+            .contains("HTTP 500")
+    );
+    assert!(
+        StartError::DisallowedIntents { shard: 0 }
+            .to_string()
+            .contains(
+                "enable the privileged intents in the Developer Portal or stop requesting them"
+            )
     );
 }

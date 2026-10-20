@@ -154,6 +154,9 @@ pub enum BuildViolation {
         /// Why the gateway URL was rejected.
         reason: GatewayUrlError,
     },
+    /// `shard_total(0)`: a fixed shard total must be at least 1.
+    #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]
+    InvalidShardTotal,
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]
     Plugin {
@@ -216,6 +219,112 @@ pub enum StartError {
     /// The App has no bot token.
     #[error("no bot token: set NOCTIS_TOKEN and use `App::from_env()`, or call `.token(..)`")]
     MissingToken,
+    /// Discord rejected the token: `GET /gateway/bot` answered 401, or a
+    /// shard was closed with 4004.
+    #[error(
+        "Discord rejected the bot token (HTTP 401 or close 4004): copy the token again from the \
+         Discord Developer Portal"
+    )]
+    InvalidToken,
+    /// `GET /gateway/bot` failed: a transport error, a timeout, a status
+    /// other than 401 or a body that could not be decoded.
+    #[error(
+        "could not read GET /gateway/bot{}: check the network, the HTTP proxy and \
+         `http_timeout`, then retry",
+        StatusSuffix(*status)
+    )]
+    GatewayInfo {
+        /// The HTTP status, when Discord answered with one.
+        status: Option<u16>,
+    },
+    /// `GET /gateway/bot` answered a recommended shard count or a
+    /// `max_concurrency` of 0.
+    #[error(
+        "GET /gateway/bot returned 0 shards or a max_concurrency of 0: retry later, or check \
+         the HTTP proxy in front of Discord"
+    )]
+    InvalidGatewayInfo,
+    /// The fixed shard total is below the GW-03 minimum
+    /// (⌈recommended × 2 / 5⌉, from 2500 guilds per shard).
+    #[error(
+        "shard total {total} is too small: Discord's recommendation needs at least {minimum} \
+         shards (2500 guilds per shard); raise shard_total or omit it"
+    )]
+    ShardTotalTooSmall {
+        /// The fixed total.
+        total: u32,
+        /// The smallest total allowed.
+        minimum: u32,
+    },
+    /// The session start budget cannot cover every shard (GW-02).
+    #[error(
+        "{required} shards must identify but only {remaining} session starts remain: wait \
+         {reset_after:?} for Discord's limit to reset, or run fewer shards"
+    )]
+    SessionStartLimit {
+        /// The identifies startup needs.
+        required: u32,
+        /// The session starts left.
+        remaining: u32,
+        /// When the budget resets.
+        reset_after: Duration,
+    },
+    /// A shard was closed with 4013 (invalid intents).
+    #[error(
+        "shard {shard} was closed with 4013 (invalid intents): request only intents Discord \
+         defines"
+    )]
+    InvalidIntents {
+        /// The shard number.
+        shard: u32,
+    },
+    /// A shard was closed with 4014 (disallowed intents).
+    #[error(
+        "shard {shard} was closed with 4014 (disallowed intents): enable the privileged intents \
+         in the Developer Portal or stop requesting them"
+    )]
+    DisallowedIntents {
+        /// The shard number.
+        shard: u32,
+    },
+    /// A shard was closed with a code twilight does not reconnect on.
+    #[error(
+        "shard {shard} was closed with fatal code {code}: see Discord's gateway close codes and \
+         fix the cause before restarting"
+    )]
+    FatalClose {
+        /// The shard number.
+        shard: u32,
+        /// The close code.
+        code: u16,
+    },
+    /// A shard's stream ended without a close code during startup.
+    #[error(
+        "shard {shard} stopped during startup without a close code: check the gateway URL and \
+         the network, then restart"
+    )]
+    ShardEnded {
+        /// The shard number.
+        shard: u32,
+    },
+    /// Every shard task stopped before startup finished.
+    #[error(
+        "the gateway stopped before every shard was ready: check the logs for the shard errors, \
+         then restart"
+    )]
+    GatewayStopped,
+}
+
+/// `" (HTTP {status})"`, or nothing.
+struct StatusSuffix(Option<u16>);
+
+impl fmt::Display for StatusSuffix {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Some(status) => write!(f, " (HTTP {status})"),
+            None => Ok(()),
+        }
+    }
 }
 
 /// A `NOCTIS_*` environment variable `App::from_env` could not use. The
@@ -247,5 +356,13 @@ pub enum EnvError {
         /// Why the token was rejected.
         #[source]
         source: TokenError,
+    },
+    /// The variable is not a shard total (1-10 ASCII digits fitting a `u32`).
+    #[error(
+        "environment variable `{var}` is not a shard total: set a whole number of shards such as 16"
+    )]
+    InvalidShardTotal {
+        /// The variable's name.
+        var: &'static str,
     },
 }

@@ -354,21 +354,6 @@ evidence = "unit"
 story = "12.4"
 
 [[rule]]
-id = "GW-01"
-evidence = "unit"
-story = "5.4"
-
-[[rule]]
-id = "GW-02"
-evidence = "unit"
-story = "5.4"
-
-[[rule]]
-id = "GW-03"
-evidence = "unit"
-story = "5.4"
-
-[[rule]]
 id = "GW-04"
 evidence = "unit"
 story = "15.3"

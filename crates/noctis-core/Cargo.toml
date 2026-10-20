@@ -8,10 +8,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+noctis-gateway.workspace = true
 noctis-ports.workspace = true
 rustls.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
 tracing.workspace = true
 twilight-http.workspace = true
 twilight-model.workspace = true

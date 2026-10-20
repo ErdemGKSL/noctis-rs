@@ -90,7 +90,6 @@ impl Ports {
     }
 
     /// Whether `slot` took its memory default.
-    #[cfg(test)]
     pub(crate) fn is_default(&self, slot: PortSlot) -> bool {
         self.defaults.contains(&slot)
     }
