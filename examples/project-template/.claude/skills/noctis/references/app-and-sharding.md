@@ -312,8 +312,17 @@ stdout, or `Err(noctis::Error::Publish(..))`; it installs no signal handler, sen
 `ConflictingModes { first, second }`, `DryRunWithoutPublish`, `GuildWithoutClear`
 (`--guild` without `--publish-clear`), `MissingDevGuild`.
 
+Stale guild commands: `--publish` writes only the global target and the guilds the
+Registry names, so a `--publish-guild` dev copy stays in that guild after you go global
+(every command shows twice) and a guild dropped from `guilds = [..]` keeps its old
+commands. Clean such a guild with `cargo run --release -- --publish-clear --guild <id>`.
+
 **Your own flags.** Split first; the rest keeps its order untouched (program name, your
-flags, positional and non-UTF-8 arguments, `--` and everything after it):
+flags, positional and non-UTF-8 arguments, `--` and everything after it). Before `--`,
+`--publish`, `--publish-guild`, `--publish-clear`, `--guild` and `--dry-run` are reserved
+by Noctis and always claimed (a bot flag named `--guild` or `--dry-run` gets
+`GuildWithoutClear`/`DryRunWithoutPublish`; rename yours), and `--publish-guild` also
+consumes the next argument that does not start with `-`:
 
 ```rust
 use noctis::cli::NoctisArgs;

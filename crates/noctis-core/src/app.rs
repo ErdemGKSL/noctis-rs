@@ -27,7 +27,7 @@ use twilight_model::gateway::Intents;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
-use crate::cli::{CliError, CliMode, NoctisArgs};
+use crate::cli::{CliError, CliMode, NoctisArgs, parse_guild_id};
 use crate::edge::{EDGE_BODY_PREFIX, Edge, HttpConfig, KeeperHandle, Upstream};
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
@@ -551,8 +551,19 @@ impl App {
 
     /// Runs one CLI mode's Publish and prints its report.
     async fn run_mode(&self, mode: CliMode, dry_run: bool) -> Result<(), Error> {
-        use std::io::Write as _;
+        // `Stdout::write_fmt` holds the stdout lock for the whole report;
+        // a `StdoutLock` itself cannot be held across the await.
+        self.run_mode_to(mode, dry_run, &mut std::io::stdout())
+            .await
+    }
 
+    /// [`run_mode`](Self::run_mode) writing the report to `out`.
+    async fn run_mode_to(
+        &self,
+        mode: CliMode,
+        dry_run: bool,
+        out: &mut (impl std::io::Write + Send),
+    ) -> Result<(), Error> {
         let (scope, clear) = match mode {
             CliMode::Publish => (PublishScope::Global, false),
             CliMode::PublishGuild(id) => {
@@ -565,7 +576,7 @@ impl App {
         };
         let report = self.publish(scope).dry_run(dry_run).clear(clear).await?;
         // A closed stdout (a broken pipe) does not undo the Publish.
-        let _ = writeln!(std::io::stdout().lock(), "{report}");
+        let _ = writeln!(out, "{report}");
         Ok(())
     }
 
@@ -1288,7 +1299,7 @@ impl AppBuilder {
         }
         if let Some(raw) = read_var(&lookup, DEV_GUILD_VAR)? {
             let guild =
-                parse_guild(&raw).ok_or(EnvError::InvalidDevGuild { var: DEV_GUILD_VAR })?;
+                parse_guild_id(&raw).ok_or(EnvError::InvalidDevGuild { var: DEV_GUILD_VAR })?;
             builder.dev_guild(guild);
         }
         Ok(builder)
@@ -1963,15 +1974,6 @@ fn parse_bool(raw: &str) -> Option<bool> {
     } else {
         None
     }
-}
-
-/// A guild id from 1-20 ASCII digits of a non-zero `u64`.
-fn parse_guild(raw: &str) -> Option<Id<GuildMarker>> {
-    let digits = (1..=20).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
-    digits
-        .then(|| raw.parse::<u64>().ok())
-        .flatten()
-        .and_then(Id::new_checked)
 }
 
 /// Reads `var` through `lookup`: trimmed of ASCII whitespace, empty means

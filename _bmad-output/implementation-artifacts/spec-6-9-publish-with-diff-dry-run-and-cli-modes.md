@@ -2,16 +2,23 @@
 title: 'Story 6.9: Publish with diff, dry run and CLI modes'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '2fa651644f2ba08422500432c4a2c81feeaf2830'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-6-context.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/app-and-sharding.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/commands.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      An empty integration_types_config object makes the unset integration_types default an empty set, so every Publish may rewrite and every declared integration type fails META-04.
+    evidence: |-
+      parse_application turns `"integration_types_config": {}` into enabled = []. Settle by confirming whether Discord can return an empty object for an application (the Developer Portal may require at least one install type); if it can, treat {} like an absent config.
+    location: >-
+      crates/noctis-core/src/publish.rs:parse_application
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -223,6 +230,44 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 34 findings — high 0, medium 8, low 13, false 12, maybe-false 1
+- findings:
+  - `[low]` `[reject]` Blind: a failed later target loses the record of targets already written — real (`execute` returns only `Err`), but each write is logged at info before its PUT, the spec settles "the first HTTP error aborts the rest", and carrying a partial report adds public surface; rare in everyday use.
+  - `[low]` `[reject]` Blind: `PublishError::Rejected` drops Discord's `errors` detail and its hint is generic — real, but the JSON comes from an App-build-validated Registry so 50035 is rare, and keeping the detail adds a field to the spec-defined public variant.
+  - `[medium]` `[patch]` Blind: `split` claims `--guild`/`--dry-run`/`--publish*` even when the bot owns them — verified in `Parser::flag`/`finish` (`split(["bot","--dry-run"])` → `DryRunWithoutPublish`); neither the `split` rustdoc nor Usage Skill §3 names the reserved flags. Patch: document the reserved names (group P1).
+  - `[low]` `[reject]` Blind: dev-mirror REG-02 recount uses `Limits::default()` instead of `app.limits()` — real, but only diverges for an App that changes command-count limits, and the fix threads a new parameter through `targets`/`check_mirror`.
+  - `[low]` `[patch]` Blind: the guild-id rule is implemented twice (`cli::guild_id`, `app::parse_guild`, identical bodies) — real duplicated source of truth for `--publish-guild` and `NOCTIS_DEV_GUILD`; fix is a deletion. Patch: one shared crate-private helper (group P4).
+  - `[false]` `[reject]` Blind: startup Publish fails silently with no time bound — the spec settles log-and-continue (Publisher timing decision); every request is bounded by `http_timeout` (default 10 s) and the shutdown arm of the startup `select!` cancels it.
+  - `[low]` `[patch]` Blind: `--publish` / `--publish-guild` leave mirrored or orphaned guild commands with no documented cleanup — real: after the dev mirror, a global `--publish` never touches the dev guild, so its commands appear twice; clear-scope semantics themselves are spec-settled. Patch: document `--publish-clear --guild <id>` cleanup (group P5).
+  - `[false]` `[reject]` Blind: `App::run` reading argv is a breaking change — the spine and the spec's Test-harness decision require `run()` to parse argv; the skill and troubleshooting doc already state it, and noctis is unreleased.
+  - `[false]` `[reject]` Blind: f64 comparison collapses integers above 2^53 — Discord's INTEGER option values and bounds are limited to ±2^53, so two distinct valid values never collide; the spec mandates f64 comparison.
+  - `[false]` `[reject]` Blind: serialization failure reported as Transport — `serde_json::to_vec` of a `Value` (string keys only) cannot fail, so the branch is unreachable.
+  - `[false]` `[reject]` Blind: local commands failing canonicalization vanish from the diff — `json::local` always writes `type` 1..3 and a string `name`, so `canonical` never returns `None` for local commands; duplicate global keys are rejected by `validate_merge` at build.
+  - `[medium]` `[patch]` Blind: CLI report verbosity and untested CLI outcomes — the verbose printout is spec-defined (Display = dry-run printout), clear `--guild` is covered e2e (publish.rs L463) and REG-02 by `reg_02_dev_mirror_counts`; the real part is that no test observes what `run_mode` writes to stdout. Patch with group P2.
+  - `[maybe-false]` `[defer]` Blind: an empty `integration_types_config` `{}` makes the unset default `[]` and rewrites every Publish — settle by confirming whether Discord can return `{}` for an app (the Developer Portal may require one install type); deferred as medium (unverified).
+  - `[low]` `[reject]` Edge: `--publish-guild` swallows a following bot positional in `split` — the spec's take-next-non-dash rule (Matrix 25 `--publish-guild 12a` → InvalidGuildId) settles it, a publish mode never runs the bot, and a digits-only guard adds a branch that contradicts the matrix.
+  - `[medium]` `[patch]` Edge: `split` claims a bot's own `--guild`/`--dry-run` — same defect as the Blind split finding (group P1).
+  - `[low]` `[reject]` Edge: a non-UTF-8 argument after `--publish-guild` is consumed in `split` — same take-next rule, user error case, rare; guard adds a branch.
+  - `[low]` `[reject]` Edge: partial failure after the global PUT returns no report — same as the Blind partial-failure finding; rejected for the same reason.
+  - `[low]` `[patch]` Edge: stale guild commands stay when a guild leaves the Registry — same root as the Blind orphan finding (Publish only targets guilds present in the Registry); doc cleanup via group P5.
+  - `[false]` `[reject]` Edge: a guild scope id 0 is silently skipped — the macros reject `guilds = [0]` at compile time (`GUILD_ZERO`, noctis-macros meta.rs), so `Scope::Guild(0)` never reaches the Registry through the documented API.
+  - `[false]` `[reject]` Edge: local command with `canonical` = None still PUT — `json::local` always yields type 1..3 with a name; the case is unreachable.
+  - `[false]` `[reject]` Edge: clear keeps type-4 Entry Points — the spec mandates copying non-1..3 remote commands verbatim into every PUT so they are never deleted.
+  - `[low]` `[reject]` Edge: shutdown during the startup Publish cancels it with no log — real, but the bulk PUT is atomic on Discord, "shutdown started" is logged, and the case is rare; a cancel log adds a branch.
+  - `[medium]` `[patch]` Edge: claim "split returns the rest untouched" does not hold for reserved names — same defect as P1.
+  - `[medium]` `[patch]` VGap: CLI modes' stdout report is never observed by any test (pre-verified) — patch: route `run_mode`'s report through a private writer and assert the captured text in a dry-run test (group P2).
+  - `[medium]` `[patch]` VGap: explicit `--publish-guild <id>` vs configured `dev_guild` precedence is not pinned (pre-verified) — patch: add the explicit-id-plus-dev-guild case (group P3).
+  - `[medium]` `[patch]` VGap other: `split` claims `--guild`/`--dry-run` globally; reserved names undocumented — group P1.
+  - `[medium]` `[patch]` Intent: dry-run stdout surface untested — same as the VGap stdout gap (group P2).
+  - `[false]` `[reject]` Intent: dry run does not re-run App-build checks — `run_with_args` only exists on a built `App`, so every build check has already passed before any mode runs (reading R2a); a broken Registry never reaches a dry run.
+  - `[false]` `[reject]` Intent: dev mirror strips declared `contexts`/`integration_types` — deliberately settled by the spec (Dev mirror decision, META-03: Discord rejects them on guild commands).
+  - `[false]` `[reject]` Intent: `--publish-clear` keeps Entry Points and guild-scoped commands — spec settles both (Entry Points preserved; clear is one target, global or `--guild`).
+  - `[low]` `[reject]` Intent: `App::run()` reading process argv is untested — real, but it is a one-line delegation to the tested `run_with_args`, and testing it needs a spawned binary.
+  - `[low]` `[reject]` Intent: `split` consumes a positional after a bare `--publish-guild` — same as the Edge positional finding; spec-settled rule.
+  - `[low]` `[reject]` Intent: REG-05 total is summed across targets — real, but each target's `+ create` lines are printed and `TargetReport::creates()` exposes per-target counts; reformatting the pinned Display is not worth it.
+  - `[false]` `[reject]` Intent: "writes once" means one PUT per Publish — Discord's bulk overwrite is per scope; the spec settles one PUT per changed target (R5b).
+
 ## Design Notes
 
 **Canonical diff (decision).** Discord's GET fills in defaults (`nsfw:false`, `contexts`, `integration_types`, null localizations) and server fields. Comparing raw JSON would rewrite on every Publish. The canonical form applies Discord's documented defaults to unset local fields. An unset local `contexts` matches `[0,1,2]` (Discord's default for new commands). An unset `integration_types` matches the app's enabled install types. A spurious update never costs creates (REG-05 counts only new names), but a missed change would be a bug, so every other field is compared strictly.
@@ -254,3 +299,15 @@ println!("{report}");
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok
+
+## Auto Run Result
+
+- **Summary:** Command Publish with canonical diff against Discord (one bulk PUT per changed target), dry run with REG-05 create counting, dev-guild mirror (`--publish-guild [id]`, `NOCTIS_DEV_GUILD`), `--publish-clear [--guild id]`, CLI modes parsed by `App::run()` (`run_with_args` for tests), `cli::split` for bot argv, startup publisher that logs instead of failing.
+- **Files changed:** `crates/noctis-core/src/publish.rs` + `publish/{diff,json,tests}.rs` (publisher, canonical diff, local JSON); `crates/noctis-core/src/cli.rs` + `cli/tests.rs` (argv parser, `split`, run modes); `crates/noctis-core/src/app.rs` + tests (run/run_with_args, dev_guild, publish entry); `error.rs` (PublishError/CliError); `lib.rs`, `crates/noctis/src/lib.rs` (re-exports); `registry/commands.rs` (scope access); `crates/noctis-testkit/tests/publish.rs` (e2e) and other testkit tests switched to `run_with_args`; `docs/discord-rules.md`, `xtask/rules-pending.toml`, `xtask/public-api.txt`; project-template skill, references, README, AGENTS.md, main.rs.
+- **Review findings (34):** high 0, medium 8, low 13, false 12, maybe-false 1.
+  - Patched (8 medium, 3 low): P1 document reserved flags claimed by `split` (`--guild`, `--dry-run`, `--publish*`); P2 route `run_mode` report through a private writer and assert captured dry-run stdout; P3 test explicit `--publish-guild <id>` precedence over configured `dev_guild`; P4 single crate-private guild-id parser; P5 document `--publish-clear --guild <id>` cleanup of mirrored/orphaned guild commands.
+  - Deferred (1): empty `integration_types_config` `{}` may cause a rewrite on every Publish (unverified whether Discord returns `{}`).
+  - Rejected (22): partial-failure report loss (spec: first error aborts; writes logged); `Rejected` drops Discord `errors` detail (rare, adds public field); dev-mirror recount uses default Limits (only diverges with custom limits); silent startup failure (spec log-and-continue, bounded by http_timeout); `run()` reading argv breaking (spine-mandated, unreleased); f64 >2^53 (Discord bounds); serialization-as-Transport (unreachable); canonical None for local commands (unreachable, x2); `--publish-guild` swallowing a positional / non-UTF-8 arg (spec take-next rule, x3); guild id 0 (rejected at compile time); Entry Points kept on clear (spec); shutdown cancel without log (atomic PUT, rare); partial failure (dup); dry run not re-running build checks (only on built App); mirror strips contexts (META-03); clear keeps guild/Entry Points (spec); `App::run()` argv untested (one-line delegation); REG-05 total summed (per-target exposed); one PUT per Publish (per-scope by design).
+- **Follow-up review recommended: true.** First pass patched 0 high, 8 medium (>= 2 medium). Named risk: the P1/P2 patches changed `cli::split` documentation and rerouted `run_mode` stdout through a new private writer; the writer plumbing and reserved-flag contract have not been independently re-reviewed.
+- **Verification:** all local gates green via `gates.sh` (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91 check). CI paused by the maintainer.
+- **Residual risks:** deferred `integration_types_config` `{}` case; canonical-default assumptions mirror Discord docs and are tested only against a mocked HTTP layer, not live Discord; partial failure across multiple targets leaves no report beyond logs.

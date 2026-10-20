@@ -2010,3 +2010,47 @@ async fn ack_deadline_builder() {
     assert_eq!(app.ack_deadline(), Duration::from_millis(200));
     assert!(format!("{app:?}").contains("ack_deadline: 200ms"));
 }
+
+/// Matrix 15: a CLI dry run writes the report, then a newline, to its
+/// output.
+#[tokio::test(flavor = "multi_thread")]
+async fn cli_dry_run_writes_the_report() {
+    use crate::edge::test_support::TestServer;
+    use crate::test_support::command;
+
+    let server = TestServer::start_with(
+        false,
+        Arc::new(|seen| {
+            let body: &'static [u8] = if seen.path.ends_with("/applications/@me") {
+                br#"{"id": "7", "integration_types_config": {"0": {}}}"#
+            } else {
+                b"[]"
+            };
+            (hyper::StatusCode::OK, Bytes::from_static(body))
+        }),
+    )
+    .await;
+    let mut builder = App::builder();
+    builder
+        .runtime(&Runtime::for_test())
+        .token(token())
+        .http_proxy(server.authority())
+        .module(Module::new("m").add(command("m::ping", &["ping"], "Pong")));
+    let app = builder.build().unwrap();
+
+    let mut out = Vec::new();
+    app.run_mode_to(CliMode::Publish, true, &mut out)
+        .await
+        .unwrap();
+    let report = app
+        .publish(PublishScope::Global)
+        .dry_run(true)
+        .await
+        .unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert_eq!(text, format!("{report}\n"));
+    assert!(text.contains("\"name\": \"ping\""), "{text}");
+    assert!(text.contains("+ create chat_input `ping`"), "{text}");
+    assert!(text.contains("creates: 1 (REG-05"), "{text}");
+    assert!(server.seen().iter().all(|s| s.method != hyper::Method::PUT));
+}

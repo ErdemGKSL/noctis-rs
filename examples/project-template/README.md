@@ -102,6 +102,11 @@ Other CLI modes of the same binary:
 | `--features a,b` / `--features all` | [planned] Boot Flags: register only Modules carrying these flags. |
 | `--no-resume` | [planned] Shut down without keeping sessions resumable; clears stored sessions. |
 
+`--publish` writes only to the global target and the guilds your Registry names, so the
+`--publish-guild` copy stays in your test guild (every command shows twice) and a guild
+dropped from `guilds = [..]` keeps its old commands; clean such a guild with
+`cargo run --release -- --publish-clear --guild <id>`.
+
 ## Develop
 
 ```sh

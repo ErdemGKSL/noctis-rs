@@ -151,17 +151,22 @@ pub enum CliError {
     MissingDevGuild,
 }
 
-/// The guild id rule: 1-20 ASCII digits of a non-zero `u64`.
-fn guild_id(flag: &'static str, value: &str) -> Result<Id<GuildMarker>, CliError> {
-    let digits = (1..=20).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_digit());
+/// The guild id rule, shared by the command line and `NOCTIS_DEV_GUILD`:
+/// 1-20 ASCII digits of a non-zero `u64`.
+pub(crate) fn parse_guild_id(raw: &str) -> Option<Id<GuildMarker>> {
+    let digits = (1..=20).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
     digits
-        .then(|| value.parse::<u64>().ok())
+        .then(|| raw.parse::<u64>().ok())
         .flatten()
         .and_then(Id::new_checked)
-        .ok_or_else(|| CliError::InvalidGuildId {
-            flag,
-            value: value.to_owned(),
-        })
+}
+
+/// [`parse_guild_id`] for a flag's value.
+fn guild_id(flag: &'static str, value: &str) -> Result<Id<GuildMarker>, CliError> {
+    parse_guild_id(value).ok_or_else(|| CliError::InvalidGuildId {
+        flag,
+        value: value.to_owned(),
+    })
 }
 
 /// The parse state between arguments.
@@ -316,6 +321,12 @@ impl NoctisArgs {
     /// flags and everything else, which keeps its order untouched: the
     /// program name, your own flags, positional arguments, non-UTF-8
     /// arguments, and `--` with everything after it.
+    ///
+    /// Before `--`, the flag names `--publish`, `--publish-guild`,
+    /// `--publish-clear`, `--guild` and `--dry-run` are reserved by Noctis
+    /// and always claimed (rename a flag of your own that uses one), and
+    /// `--publish-guild` also consumes the next argument when it does not
+    /// start with `-`.
     ///
     /// # Errors
     ///

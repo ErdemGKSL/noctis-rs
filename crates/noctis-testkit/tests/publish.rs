@@ -642,6 +642,19 @@ async fn publish_guild_uses_the_dev_guild() {
         requests(&http),
         [format!("GET {APP}"), format!("GET {}", guild_path(9))]
     );
+
+    // An explicit id wins over the configured dev guild.
+    http.clear_requests();
+    let app = app_with(&http, Module::new("m").add(ping()), |b| {
+        b.dev_guild(Id::new(9));
+    });
+    app.run_with_args(["--publish-guild", "42", "--dry-run"])
+        .await
+        .unwrap();
+    assert_eq!(
+        requests(&http),
+        [format!("GET {APP}"), format!("GET {}", guild_path(42))]
+    );
 }
 
 /// Waits until the fake gateway holds a shard session.
