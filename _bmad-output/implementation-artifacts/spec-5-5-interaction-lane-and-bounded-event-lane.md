@@ -2,7 +2,8 @@
 title: 'Story 5.5: Interaction Lane and bounded event lane'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '5b827b4678bae5c3f9dd187a13c026d360097756'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
