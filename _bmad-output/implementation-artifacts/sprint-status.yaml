@@ -61,7 +61,7 @@ development_status:
   3-3-in-memory-identifyqueue-with-identify-buckets: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
+  epic-4: done
   4-1-typed-v2-message-components-with-placement-in-the-type-syste: done
   4-2-v2-messages-legacy-messages-flags-and-mentions: done
   4-3-runtime-limit-validator-with-path-precise-errors: done
