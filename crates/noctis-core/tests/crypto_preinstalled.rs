@@ -18,7 +18,7 @@ async fn existing_provider_is_kept() {
         .build()
         .unwrap();
     assert!(matches!(
-        app.run().await,
+        app.run_with_args(std::iter::empty::<&str>()).await,
         Err(noctis_core::Error::Start(
             noctis_core::StartError::GatewayInfo { status: None }
         ))

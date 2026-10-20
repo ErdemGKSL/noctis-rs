@@ -34,6 +34,8 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
                     | "NOCTIS_GATEWAY_URL"
                     | "NOCTIS_SHARD_TOTAL"
                     | "NOCTIS_SHUTDOWN_GRACE"
+                    | "NOCTIS_PUBLISHER"
+                    | "NOCTIS_DEV_GUILD"
             ),
             "unexpected variable {var}"
         );
@@ -498,7 +500,7 @@ fn run_outside_runtime() {
         let _guard = tokio_rt.enter();
         App::builder().token(token()).build().unwrap()
     };
-    let mut run = std::pin::pin!(app.run());
+    let mut run = std::pin::pin!(app.run_with_args(std::iter::empty::<&str>()));
     let poll = run.as_mut().poll(&mut Context::from_waker(Waker::noop()));
     assert!(matches!(
         poll,
@@ -510,7 +512,7 @@ fn run_outside_runtime() {
 async fn run_current_thread() {
     let app = App::builder().token(token()).build().unwrap();
     assert!(matches!(
-        app.run().await,
+        app.run_with_args(std::iter::empty::<&str>()).await,
         Err(Error::Start(StartError::NotMultiThread))
     ));
 }
@@ -525,12 +527,12 @@ async fn run_multi_thread() {
         .build()
         .unwrap();
     assert!(matches!(
-        app.run().await,
+        app.run_with_args(std::iter::empty::<&str>()).await,
         Err(Error::Start(StartError::GatewayInfo { status: None }))
     ));
     let app = App::builder().build().unwrap();
     assert!(matches!(
-        app.run().await,
+        app.run_with_args(std::iter::empty::<&str>()).await,
         Err(Error::Start(StartError::MissingToken))
     ));
 }
@@ -662,8 +664,80 @@ fn from_env_reads_token_first() {
             "NOCTIS_GATEWAY_URL",
             "NOCTIS_SHARD_TOTAL",
             "NOCTIS_SHUTDOWN_GRACE",
+            "NOCTIS_PUBLISHER",
+            "NOCTIS_DEV_GUILD",
         ]
     );
+}
+
+// ---- publisher and dev guild (Story 6.9 Matrix 31) ----
+
+#[test]
+fn from_env_publisher() {
+    let read = |raw: &str| {
+        AppBuilder::from_lookup(lookup_var("NOCTIS_PUBLISHER", Some(raw.into())))
+            .map(|b| b.publisher)
+    };
+    for (raw, expected) in [
+        ("true", true),
+        ("TRUE", true),
+        ("1", true),
+        ("false", false),
+        ("0", false),
+        (" true ", true),
+        ("", false),
+    ] {
+        assert_eq!(read(raw), Ok(expected), "{raw:?}");
+    }
+    for raw in ["yes", "2", "nope", "11"] {
+        let err = read(raw).unwrap_err();
+        assert_eq!(
+            err,
+            EnvError::InvalidPublisher {
+                var: "NOCTIS_PUBLISHER"
+            },
+            "{raw:?}"
+        );
+        assert!(!err.to_string().contains(raw), "{err}");
+    }
+}
+
+#[test]
+fn from_env_dev_guild() {
+    let read = |raw: &str| {
+        AppBuilder::from_lookup(lookup_var("NOCTIS_DEV_GUILD", Some(raw.into())))
+            .map(|b| b.dev_guild)
+    };
+    assert_eq!(read("42"), Ok(Some(Id::new(42))));
+    assert_eq!(read(" 007 "), Ok(Some(Id::new(7))));
+    assert_eq!(read(""), Ok(None));
+    for raw in ["0", "-1", "4x", "123456789012345678901"] {
+        let err = read(raw).unwrap_err();
+        assert_eq!(
+            err,
+            EnvError::InvalidDevGuild {
+                var: "NOCTIS_DEV_GUILD"
+            },
+            "{raw:?}"
+        );
+        assert!(!err.to_string().contains(raw), "{err}");
+    }
+}
+
+#[tokio::test]
+async fn publisher_and_dev_guild_setters() {
+    let mut builder = App::builder();
+    builder
+        .publisher(true)
+        .dev_guild(Id::new(1))
+        .dev_guild(Id::new(9));
+    assert!(format!("{builder:?}").contains("publisher: true"));
+    let app = builder.build().unwrap();
+    assert!(app.is_publisher());
+    assert_eq!(app.dev_guild(), Some(Id::new(9)));
+    let app = App::builder().build().unwrap();
+    assert!(!app.is_publisher());
+    assert_eq!(app.dev_guild(), None);
 }
 
 // ---- gateway_url (Story 5.3 Matrix 10-12) ----
@@ -1179,7 +1253,7 @@ fn run_future_is_send() {
         .unwrap();
     let _guard = tokio_rt.enter();
     let app = App::builder().build().unwrap();
-    let run = app.run();
+    let run = app.run_with_args(std::iter::empty::<&str>());
     assert_send(&run);
     drop(run);
     let app = App::builder().build().unwrap();
@@ -1198,7 +1272,7 @@ fn run_without_io_driver() {
         .unwrap();
     let outcome = tokio_rt.block_on(async {
         let app = App::builder().token(token()).build().unwrap();
-        app.run().await
+        app.run_with_args(std::iter::empty::<&str>()).await
     });
     assert!(
         matches!(outcome, Err(Error::Start(StartError::SignalHandler))),

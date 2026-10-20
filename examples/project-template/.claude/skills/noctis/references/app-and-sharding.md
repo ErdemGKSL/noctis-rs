@@ -59,7 +59,13 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   shutdown and returns `Err(noctis::Error::Run(RunError::AllShardsEnded))`, never a
   silent `Ok(())`. Gateway events reach your `#[event]` handlers through the **worker
   set** (§4); interactions are taken first and, until commands and Routes land (Epics
-  6-7), traced and discarded. [planned: parses CLI flags and runs a CLI mode]
+  6-7), traced and discarded. `run()` first parses the process arguments
+  (`std::env::args_os().skip(1)`): with a CLI mode it publishes and returns without
+  connecting a shard (§3); an unknown argument is `Err(noctis::Error::Cli(..))`.
+- `App::run_with_args(args)` is `run()` with an explicit command line (no program
+  name): `app.run_with_args(["--publish-guild", "123"])`. **Tests** start Apps with
+  `app.run_with_args(std::iter::empty::<&str>())`, because under `cargo test` the
+  harness passes its own flags to the process and `run()` would reject them.
 - `App::run_until(shutdown)` is `run()` with your own trigger instead of the signals:
   `shutdown` is any `impl Future<Output = ()> + Send`; when it resolves (also during
   startup) the shutdown of §8 runs and `run_until` returns `Ok(())`. It installs no
@@ -81,8 +87,9 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.intents()` (the requested intents plus the ones your event handlers derive),
 `app.shutdown_grace()` (`Duration`, default 10 s),
 `app.http_config()` (`HttpConfig`, §5),
-`app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`) and `app.has_renderer()`
-(whether a Plugin or `.renderer(..)` set a `Renderer`).
+`app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`), `app.has_renderer()`
+(whether a Plugin or `.renderer(..)` set a `Renderer`), `app.is_publisher()`,
+`app.dev_guild()` (`Option<Id<GuildMarker>>`) and `app.publish(scope)` (§3).
 
 ### AppBuilder methods
 
@@ -110,6 +117,8 @@ Implemented:
 | `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
 | `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
+| `.publisher(bool)` | env `NOCTIS_PUBLISHER`, else `false` | a normal run publishes globally once at startup, before any shard connects (never on READY); a failed Publish is one `error` log (target `noctis::publish`) and the App keeps starting; set it on exactly one process; the last call wins; see §3 |
+| `.dev_guild(Id<GuildMarker>)` | env `NOCTIS_DEV_GUILD`, else none | the guild `--publish-guild` without an id publishes to; the last call wins |
 | `.ack_deadline(Duration)` | 2000 ms | auto-defer deadline, measured from gateway receipt (queueing counts): 0 ms..=2500 ms, else `BuildViolation::InvalidAckDeadline` (`ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms`); 0 always defers; no environment variable; the last call wins. Read back with `app.ack_deadline()`; see `responder.md` §2 |
 | `.build()` | — | `Result<App, BuildError>` |
 
@@ -118,7 +127,6 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
-| `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
@@ -138,7 +146,9 @@ message names the cause and a fix. No message, `Debug` or log line ever contains
 token.
 
 - `noctis::Error`: `Env(EnvError)`, `Build(BuildError)`, `Start(StartError)`,
-  `Run(RunError)` (`From` for each, so `?` works in `main`).
+  `Run(RunError)`, `Cli(noctis::cli::CliError)` (a rejected command line, before
+  anything else runs) and `Publish(noctis::publish::PublishError)` (a CLI mode's
+  Publish failed) (`From` for each, so `?` works in `main`).
 - `RunError` (`Copy`): `AllShardsEnded`: every shard ended on its own after startup
   (fatal closes; see the `shard closed fatally` logs); the shutdown ran, then `run`
   returned this instead of `Ok(())`. Fix the cause, then restart.
@@ -187,7 +197,9 @@ token.
     runtime has no IO driver: build it with `enable_all()`, as `#[tokio::main]` does).
 - `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`,
   `InvalidShardTotal { var }` (not 1-10 ASCII digits fitting a `u32`),
-  `InvalidShutdownGrace { var }` (not 1-4 ASCII digits of whole seconds); the value is
+  `InvalidShutdownGrace { var }` (not 1-4 ASCII digits of whole seconds),
+  `InvalidPublisher { var }` (not `true`/`false`/`1`/`0`, any ASCII case),
+  `InvalidDevGuild { var }` (not 1-20 ASCII digits of a non-zero `u64`); the value is
   never shown.
 - `HttpProxyError` (why `.http_proxy(..)` was rejected; checked in this order):
   `Empty` (nothing after an optional `http://` and one trailing `/`),
@@ -260,13 +272,13 @@ Memory rules for embedded data:
 | `NOCTIS_TOKEN` | bot token, read by `App::from_env()`: trimmed of ASCII whitespace; empty (after trim) counts as unset; an optional `Bot ` prefix is stripped. Not Unicode → `EnvError::NotUnicode`; invalid → `EnvError::InvalidToken`. `run()` without a token → `StartError::MissingToken` |
 | `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` [planned, Story 7.2] | base64 32-byte integrity keys |
 | `NOCTIS_APP_ID` [planned, Story 7.4] | Adapter namespace |
-| `NOCTIS_DEV_GUILD` [planned, Story 6.9] | default for `--publish-guild` without an id |
+| `NOCTIS_DEV_GUILD` | default for `--publish-guild` without an id, read by `App::from_env()` last (after `NOCTIS_PUBLISHER`) with the same rules (trimmed; empty = unset); 1-20 ASCII digits of a non-zero `u64` (leading zeros allowed), else `EnvError::InvalidDevGuild`; passed to `.dev_guild(..)` |
 | `NOCTIS_SHARDS` [planned, Story 12.1] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
 | `NOCTIS_SHARD_TOTAL` | fixed shard total, read by `App::from_env()` after `NOCTIS_GATEWAY_URL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-10 ASCII digits that fit a `u32`, and leading zeros are allowed (`"007"` = 7). Anything else (`-1`, `+5`, `1e3`, `1_000`, over `4294967295`) → `EnvError::InvalidShardTotal`. It is then passed to `.shard_total(..)`, so `0` fails at `build()` |
 | `NOCTIS_SHUTDOWN_GRACE` | shutdown grace in whole seconds, read by `App::from_env()` after `NOCTIS_SHARD_TOTAL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-4 ASCII digits (`"30"`, `"0900"`); anything else (`1.5`, `-1`, `+1`, `10s`, `1e3`, `10000`) → `EnvError::InvalidShutdownGrace`. It is then passed to `.shutdown_grace(..)`, so 901-9999 fail at `build()` |
 | `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
 | `NOCTIS_GATEWAY_URL` | gateway URL, read by `App::from_env()` after `NOCTIS_HTTP_PROXY` with the same rules, then passed to `.gateway_url(..)`; its content is checked by `build()` (`BuildViolation::InvalidGatewayUrl`) |
-| `NOCTIS_PUBLISHER` [planned, Story 6.9] | `true` on the one publishing process |
+| `NOCTIS_PUBLISHER` | `true` on the one publishing process; read by `App::from_env()` after `NOCTIS_SHUTDOWN_GRACE` with the same rules; `true`/`false`/`1`/`0` in any ASCII case, else `EnvError::InvalidPublisher`; passed to `.publisher(..)` |
 | `NOCTIS_FEATURES` [planned] | Boot Flags (`a,b` or `all`), same as `--features` |
 | `RUST_LOG` | tracing filter (Noctis uses `tracing`; you install the subscriber) |
 
@@ -274,33 +286,115 @@ No config file is needed. Secrets come only from the environment.
 
 ## 3. CLI modes and Publish
 
-`App::run()` reads `std::env::args()`:
+`App::run()` parses `std::env::args_os().skip(1)` (`App::run_with_args(args)` takes them
+explicitly). Built-in parser, no clap:
 
 | Flag | Effect |
 | --- | --- |
 | *(none)* | run the bot |
-| `--publish` | publish globally, then exit |
-| `--publish-guild [<id>]` | publish to one guild (dev; instant) |
-| `--publish-clear [--guild <id>]` | delete this App's commands |
-| `--dry-run` | with a publish flag: print the full JSON and a human diff, write nothing; runs every App-build check |
-| `--features a,b` / `all` | Boot Flags |
-| `--no-resume` | non-resumable shutdown; clears stored sessions |
+| `--publish` | publish globally (and each `guilds = [..]` Command to its guilds), print the report, exit |
+| `--publish-guild [<id>]` | publish **every** Command into one guild (dev mirror; instant), print, exit. No id: `.dev_guild(..)` / `NOCTIS_DEV_GUILD`, else `CliError::MissingDevGuild` |
+| `--publish-clear [--guild <id>]` | publish an empty list globally (or to that guild): deletes this App's commands there |
+| `--dry-run` | with a publish flag: read, diff and check everything, print the JSON, the diff and the create count, write nothing |
+| `--features a,b` / `all` [planned, Story 13.2] | Boot Flags (an unknown flag today) |
+| `--no-resume` [planned, Story 12.3] | non-resumable shutdown (an unknown flag today) |
 
-For tests or several Apps, pass arguments explicitly with
-`app.run_with_args(["--publish-guild", "123"])`. To add your own flags, split first:
-`let (noctis_args, mine) = noctis::cli::NoctisArgs::split(std::env::args_os());`, parse
-`mine` with your parser, and call `app.run_with_args(noctis_args)`. An unknown flag
-reaching `App::run` is an error.
+Parsing rules: `--publish-guild=<id>` and `--guild=<id>` also work; `--publish-guild`
+takes the next argument as its id only when it does not start with `-`; an id is 1-20
+ASCII digits of a non-zero `u64`. A mode returns `Ok(())` after printing the report to
+stdout, or `Err(noctis::Error::Publish(..))`; it installs no signal handler, sends no
+`GET /gateway/bot` and starts no shard.
 
-Publish is **diff-based**: it reads the remote commands and writes nothing when equal
-(REG-05: 200 creates/day/guild). It **never** runs on shard ready. In production either
-run `--publish` from your deploy step, or set `publisher(true)` / `NOCTIS_PUBLISHER=true`
-on exactly one process. Programmatic form [planned]:
+`noctis::cli::CliError` (`#[non_exhaustive]`; each message names the flag and a fix):
+`UnknownFlag { flag }` (any other argument, `--` and non-UTF-8 ones included),
+`MissingValue { flag }` (`--guild` without a value), `UnexpectedValue { flag }`
+(`--publish=1`, `--dry-run=yes`), `InvalidGuildId { flag, value }`, `DuplicateFlag { flag }`,
+`ConflictingModes { first, second }`, `DryRunWithoutPublish`, `GuildWithoutClear`
+(`--guild` without `--publish-clear`), `MissingDevGuild`.
+
+**Your own flags.** Split first; the rest keeps its order untouched (program name, your
+flags, positional and non-UTF-8 arguments, `--` and everything after it):
 
 ```rust
-let report = app.publish(PublishScope::Guild(guild_id)).dry_run(true).await?;
-println!("{}", report.diff());
+use noctis::cli::NoctisArgs;
+
+let (noctis_args, mine) = NoctisArgs::split(std::env::args_os())?; // Result<_, CliError>
+let my_flags = MyCli::parse_from(mine);                             // your parser
+app.run_with_args(noctis_args).await?;                              // NoctisArgs: IntoIterator
 ```
+
+`NoctisArgs::parse(args)` parses a line of Noctis flags only; `args.mode()` is
+`Option<CliMode>` (`Publish`, `PublishGuild(Option<Id<GuildMarker>>)`,
+`PublishClear(Option<Id<GuildMarker>>)`) and `args.dry_run()` a `bool`. Iterating a
+`NoctisArgs` renders its canonical flags, so it round-trips through `parse`.
+
+**Publish** (`noctis::publish`) never burns the create quota (REG-05: 200 creates per
+day per guild). One Publish:
+
+1. opens the `noctis.publish{app, scope, dry_run, clear}` span;
+2. needs a token (`PublishError::MissingToken`, no request);
+3. reads `GET /applications/@me` (application id and enabled install types);
+4. builds every target's JSON from the Registry alone and runs every check before any
+   write: on the dev mirror REG-03 (`NameClash`) and REG-02 (`TooManyCommands`), on the
+   global target META-04 (`IntegrationTypeNotEnabled`: an `integration_types` value the
+   app has not enabled under Installation in the Developer Portal);
+5. per target: `GET …/commands?with_localizations=true`, canonical diff, then one
+   bulk-overwrite `PUT` only when the diff is not empty and this is not a dry run. The
+   first HTTP error stops the rest.
+
+Targets: `PublishScope::Global` writes the global commands, then each guild of a
+`guilds = [..]` Command gets only its own Commands. `PublishScope::Guild(id)` (the
+`--publish-guild` dev mirror) writes one guild: the global Commands **without**
+`contexts`/`integration_types` (META-03), followed by that guild's own Commands.
+
+The JSON carries only what you declared: `"options": []` on every option-less command,
+subcommand and group (FR-61); unset metadata is omitted (Discord applies its default);
+`default_member_permissions` is the bit string; localizations are not sent yet (Epic 11).
+The diff ignores Discord's server fields and defaults (unset `contexts` equals
+`[0,1,2]`, unset `integration_types` equals the app's enabled types, absent `nsfw`
+equals `false`, `1` equals `1.0`); option and choice order matter, command order does
+not. Remote commands of other types (an Activity's Entry Point) are kept in every `PUT`.
+
+Programmatic form: `app.publish(scope)` returns a `noctis::publish::Publish` (set
+`.dry_run(bool)` / `.clear(bool)`, then `.await` it), which yields a `PublishReport`
+holding one `TargetReport` per target:
+
+```rust
+use noctis::publish::{PublishError, PublishScope};
+
+let report = app.publish(PublishScope::Guild(guild_id)).dry_run(true).await?;
+for target in report.targets() {          // TargetReport
+    println!("{}: {} creates, changed: {}, wrote: {}",
+        target.scope(), target.creates(), target.changed(), target.wrote());
+    println!("{}\n{}", target.json(), target.diff());
+}
+println!("{report}");                      // what the CLI modes print
+assert_eq!(report.creates(), 1);           // over every target; report.wrote(), report.is_dry_run()
+```
+
+`Publish` also has `.clear(true)`. `diff()` holds one line per change, creates first,
+then updates, then deletes:
+
+```text
++ create chat_input `ping`
+~ update chat_input `cfg` (description, options)
+- delete user `Report`
+```
+
+`PublishError` (`#[non_exhaustive]`, no token or body in any message):
+`MissingToken`, `Rejected { route, status, code }` (Discord's error status and JSON
+code, e.g. `PUT /applications/7/commands`, 400, `Some(50035)`), `Transport { route }`,
+`InvalidResponse { route, reason }`, `IntegrationTypeNotEnabled { command,
+integration_type }` (`[META-04] …`), `NameClash { guild, kind, name }` (`[REG-03] …`),
+`TooManyCommands { guild, kind, count, max }` (`[REG-02] …`); `kind` is `chat_input`,
+`user` or `message`. Each write logs one `info` (target `noctis::publish`, fields
+`scope`, `creates`, `diff`); an unchanged target logs `commands unchanged; nothing
+written`.
+
+Publish **never** runs on shard READY. In production either run `--publish` from your
+deploy step, or set `.publisher(true)` / `NOCTIS_PUBLISHER=true` on exactly one process:
+a normal run then publishes globally once before any shard connects, and a failure is
+logged, not fatal.
 
 Dev workflow: `cargo run --release -- --publish-guild <test guild> --dry-run`, then
 without `--dry-run`, then `cargo run --release`. Always build and run with `--release`.
@@ -582,7 +676,9 @@ Spans (live):
   HTTP upstream attempt of the edge (§5); `kind` is `forward`, `callback` or `warmup`.
   It never carries a path, a token, an id or a header value (twilight's own `req` span
   does name the URL; filter `twilight_http` if that matters).
-- `noctis.render` [planned, Epic 10], `noctis.publish` [planned, Story 6.9].
+- `noctis.publish{app, scope, dry_run, clear}` around each Publish (`scope` is
+  `global` or `guild <id>`); its logs use target `noctis::publish`.
+- `noctis.render` [planned, Epic 10].
 
 Metrics (live; every name starts with `noctis_`, every metric has an `app` label, and no
 label carries a user, guild, channel or message id or free text):

@@ -106,6 +106,30 @@
 //! [`AppBuilder::http`] tunes it with an [`HttpConfig`]. A twilight
 //! `Arc<Client>` kept after the App is dropped gets connection errors.
 //!
+//! # Publishing commands
+//!
+//! [`App::publish`] writes the Registry's commands to Discord, only when
+//! they differ from the remote ones ([`publish`]): it reads the
+//! application, builds the JSON from the Registry alone, runs every check
+//! (META-04, and REG-03/REG-02 on the `--publish-guild` mirror) before any
+//! write, then sends one bulk-overwrite `PUT` per changed target. A dry run
+//! reports the JSON, the diff and the create count (REG-05) and writes
+//! nothing. [`App::run`] parses the built-in command line ([`cli`]):
+//! `--publish`, `--publish-guild [<id>]`, `--publish-clear [--guild <id>]`
+//! and `--dry-run` publish, print the report and return without connecting
+//! a shard; [`AppBuilder::publisher`] publishes once at startup instead.
+//!
+//! ```no_run
+//! use noctis_core::publish::PublishScope;
+//! use twilight_model::id::Id;
+//!
+//! # #[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let app = noctis_core::App::from_env()?.build()?;
+//! let report = app.publish(PublishScope::Guild(Id::new(42))).dry_run(true).await?;
+//! println!("{report}");
+//! # Ok(()) }
+//! ```
+//!
 //! # Observability and Error Sinks
 //!
 //! Handler errors, handler panics, handlers cancelled at shutdown and events
@@ -137,6 +161,7 @@
 mod app;
 mod authority;
 mod autocomplete;
+pub mod cli;
 mod command;
 mod edge;
 mod error;
@@ -154,6 +179,7 @@ mod pipeline;
 mod plugin;
 mod ports;
 mod proxy;
+pub mod publish;
 mod registry;
 mod responder;
 mod runtime;

@@ -347,7 +347,7 @@ impl Running {
         configure(&mut builder);
         let app = builder.build().unwrap();
         let gate = app.state::<Gate>().unwrap();
-        let run = tokio::spawn(app.run());
+        let run = tokio::spawn(app.run_with_args(std::iter::empty::<&str>()));
         let running = Self {
             gw,
             _http: http,

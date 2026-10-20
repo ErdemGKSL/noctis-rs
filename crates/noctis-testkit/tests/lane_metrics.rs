@@ -89,7 +89,7 @@ async fn app_reports_lane_depths() {
         .gateway_url(gw.url())
         .build()
         .unwrap();
-    let run = tokio::spawn(app.run());
+    let run = tokio::spawn(app.run_with_args(std::iter::empty::<&str>()));
 
     // READY follows IDENTIFY on the same connection.
     let deadline = Instant::now() + WAIT;

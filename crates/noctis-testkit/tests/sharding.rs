@@ -107,7 +107,7 @@ impl Fakes {
 
 /// Runs `app` in its own task.
 fn spawn(app: App) -> JoinHandle<Result<(), Error>> {
-    tokio::spawn(app.run())
+    tokio::spawn(app.run_with_args(std::iter::empty::<&str>()))
 }
 
 /// The result of `run`, within `within`.

@@ -25,6 +25,7 @@ pub struct noctis::App
 impl noctis::App
 pub fn noctis::App::ack_deadline(&self) -> core::time::Duration
 pub fn noctis::App::builder() -> noctis::AppBuilder
+pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::App::has_renderer(&self) -> bool
@@ -33,9 +34,12 @@ pub fn noctis::App::http_config(&self) -> noctis::HttpConfig
 pub fn noctis::App::http_proxy(&self) -> core::option::Option<&str>
 pub fn noctis::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
+pub fn noctis::App::is_publisher(&self) -> bool
 pub fn noctis::App::limits(&self) -> &noctis::rules::Limits
-pub async fn noctis::App::run(self) -> core::result::Result<(), noctis::Error>
+pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
+pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
+pub fn noctis::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
 pub fn noctis::App::runtime(&self) -> &noctis::Runtime
 pub fn noctis::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::App::shutdown_grace(&self) -> core::time::Duration
@@ -49,6 +53,7 @@ pub fn noctis::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore
 pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
+pub fn noctis::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -66,6 +71,7 @@ pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
 pub fn noctis::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
 pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
 pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::RenderCache) -> &mut Self
@@ -399,6 +405,10 @@ pub fn noctis::Dispatcher::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Dispatcher
 pub fn noctis::Dispatcher::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::EnvError
+pub noctis::EnvError::InvalidDevGuild
+pub noctis::EnvError::InvalidDevGuild::var: &'static str
+pub noctis::EnvError::InvalidPublisher
+pub noctis::EnvError::InvalidPublisher::var: &'static str
 pub noctis::EnvError::InvalidShardTotal
 pub noctis::EnvError::InvalidShardTotal::var: &'static str
 pub noctis::EnvError::InvalidShutdownGrace
@@ -436,11 +446,17 @@ impl core::hash::Hash for noctis::Ephemerality
 pub fn noctis::Ephemerality::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::Ephemerality
 impl core::marker::StructuralPartialEq for noctis::Ephemerality
+impl core::convert::From<noctis::cli::CliError> for noctis::Error
+pub fn noctis::Error::from(noctis::cli::CliError) -> Self
+impl core::convert::From<noctis::publish::PublishError> for noctis::Error
+pub fn noctis::Error::from(noctis::publish::PublishError) -> Self
 impl core::convert::From<noctis::EnvError> for noctis::Error
 pub fn noctis::Error::from(noctis::EnvError) -> Self
 #[non_exhaustive] pub enum noctis::Error
 pub noctis::Error::Build(noctis::BuildError)
+pub noctis::Error::Cli(noctis::cli::CliError)
 pub noctis::Error::Env(noctis::EnvError)
+pub noctis::Error::Publish(noctis::publish::PublishError)
 pub noctis::Error::Run(noctis::RunError)
 pub noctis::Error::Start(noctis::StartError)
 impl core::convert::From<noctis::BuildError> for noctis::Error
@@ -451,6 +467,10 @@ impl core::convert::From<noctis::RunError> for noctis::Error
 pub fn noctis::Error::from(noctis::RunError) -> Self
 impl core::convert::From<noctis::StartError> for noctis::Error
 pub fn noctis::Error::from(noctis::StartError) -> Self
+impl core::convert::From<noctis::cli::CliError> for noctis::Error
+pub fn noctis::Error::from(noctis::cli::CliError) -> Self
+impl core::convert::From<noctis::publish::PublishError> for noctis::Error
+pub fn noctis::Error::from(noctis::publish::PublishError) -> Self
 impl core::error::Error for noctis::Error
 pub fn noctis::Error::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for noctis::Error
@@ -1056,6 +1076,69 @@ pub proc macro noctis::rgb!()
 pub proc macro noctis::#[user_command]
 pub mod noctis::bytes
 pub use noctis::bytes::Bytes
+pub mod noctis::cli
+#[non_exhaustive] pub enum noctis::cli::CliError
+pub noctis::cli::CliError::ConflictingModes
+pub noctis::cli::CliError::ConflictingModes::first: &'static str
+pub noctis::cli::CliError::ConflictingModes::second: &'static str
+pub noctis::cli::CliError::DryRunWithoutPublish
+pub noctis::cli::CliError::DuplicateFlag
+pub noctis::cli::CliError::DuplicateFlag::flag: &'static str
+pub noctis::cli::CliError::GuildWithoutClear
+pub noctis::cli::CliError::InvalidGuildId
+pub noctis::cli::CliError::InvalidGuildId::flag: &'static str
+pub noctis::cli::CliError::InvalidGuildId::value: alloc::string::String
+pub noctis::cli::CliError::MissingDevGuild
+pub noctis::cli::CliError::MissingValue
+pub noctis::cli::CliError::MissingValue::flag: &'static str
+pub noctis::cli::CliError::UnexpectedValue
+pub noctis::cli::CliError::UnexpectedValue::flag: &'static str
+pub noctis::cli::CliError::UnknownFlag
+pub noctis::cli::CliError::UnknownFlag::flag: alloc::string::String
+impl core::clone::Clone for noctis::cli::CliError
+pub fn noctis::cli::CliError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::cli::CliError
+impl core::cmp::PartialEq for noctis::cli::CliError
+pub fn noctis::cli::CliError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::cli::CliError
+impl core::fmt::Debug for noctis::cli::CliError
+pub fn noctis::cli::CliError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::cli::CliError
+pub fn noctis::cli::CliError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::cli::CliError
+#[non_exhaustive] pub enum noctis::cli::CliMode
+pub noctis::cli::CliMode::Publish
+pub noctis::cli::CliMode::PublishClear(core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>)
+pub noctis::cli::CliMode::PublishGuild(core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>)
+impl core::clone::Clone for noctis::cli::CliMode
+pub fn noctis::cli::CliMode::clone(&self) -> Self
+impl core::cmp::Eq for noctis::cli::CliMode
+impl core::cmp::PartialEq for noctis::cli::CliMode
+pub fn noctis::cli::CliMode::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::cli::CliMode
+pub fn noctis::cli::CliMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::cli::CliMode
+impl core::marker::StructuralPartialEq for noctis::cli::CliMode
+pub struct noctis::cli::NoctisArgs
+impl noctis::cli::NoctisArgs
+pub fn noctis::cli::NoctisArgs::dry_run(&self) -> bool
+pub fn noctis::cli::NoctisArgs::mode(&self) -> core::option::Option<noctis::cli::CliMode>
+pub fn noctis::cli::NoctisArgs::parse<I, A>(I) -> core::result::Result<Self, noctis::cli::CliError> where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
+pub fn noctis::cli::NoctisArgs::split<I, A>(I) -> core::result::Result<(Self, alloc::vec::Vec<std::ffi::os_str::OsString>), noctis::cli::CliError> where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
+impl core::clone::Clone for noctis::cli::NoctisArgs
+pub fn noctis::cli::NoctisArgs::clone(&self) -> Self
+impl core::cmp::Eq for noctis::cli::NoctisArgs
+impl core::cmp::PartialEq for noctis::cli::NoctisArgs
+pub fn noctis::cli::NoctisArgs::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::cli::NoctisArgs
+pub fn noctis::cli::NoctisArgs::default() -> Self
+impl core::fmt::Debug for noctis::cli::NoctisArgs
+pub fn noctis::cli::NoctisArgs::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::iter::traits::collect::IntoIterator for noctis::cli::NoctisArgs
+pub type noctis::cli::NoctisArgs::IntoIter = alloc::vec::into_iter::IntoIter<std::ffi::os_str::OsString>
+pub type noctis::cli::NoctisArgs::Item = std::ffi::os_str::OsString
+pub fn noctis::cli::NoctisArgs::into_iter(self) -> Self::IntoIter
+impl core::marker::StructuralPartialEq for noctis::cli::NoctisArgs
 pub mod noctis::codec
 pub enum noctis::codec::BodyKind
 pub noctis::codec::BodyKind::ByRef
@@ -2276,6 +2359,7 @@ pub struct noctis::prelude::App
 impl noctis::prelude::App
 pub fn noctis::prelude::App::ack_deadline(&self) -> core::time::Duration
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
+pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::has_renderer(&self) -> bool
@@ -2284,9 +2368,12 @@ pub fn noctis::prelude::App::http_config(&self) -> noctis::HttpConfig
 pub fn noctis::prelude::App::http_proxy(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
+pub fn noctis::prelude::App::is_publisher(&self) -> bool
 pub fn noctis::prelude::App::limits(&self) -> &noctis::rules::Limits
-pub async fn noctis::prelude::App::run(self) -> core::result::Result<(), noctis::Error>
+pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
+pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::prelude::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
+pub fn noctis::prelude::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
 pub fn noctis::prelude::App::runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::prelude::App::shutdown_grace(&self) -> core::time::Duration
@@ -2300,6 +2387,7 @@ pub fn noctis::prelude::AppBuilder::asset_store(&mut self, impl noctis::ports::A
 pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
+pub fn noctis::prelude::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -2317,6 +2405,7 @@ pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Se
 pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::RenderCache) -> &mut Self
@@ -2616,6 +2705,99 @@ pub proc macro noctis::prelude::#[message_command]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
 pub proc macro noctis::prelude::#[user_command]
+pub mod noctis::publish
+pub struct noctis::publish::Publish<'a>
+impl<'a> noctis::publish::Publish<'a>
+pub fn noctis::publish::Publish<'a>::clear(self, bool) -> Self
+pub fn noctis::publish::Publish<'a>::dry_run(self, bool) -> Self
+impl<'a> core::fmt::Debug for noctis::publish::Publish<'a>
+pub fn noctis::publish::Publish<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::future::into_future::IntoFuture for noctis::publish::Publish<'a>
+pub type noctis::publish::Publish<'a>::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::publish::Publish<'a> as core::future::into_future::IntoFuture>::Output> + core::marker::Send + 'a)>>
+pub type noctis::publish::Publish<'a>::Output = core::result::Result<noctis::publish::PublishReport, noctis::publish::PublishError>
+pub fn noctis::publish::Publish<'a>::into_future(self) -> Self::IntoFuture
+#[non_exhaustive] pub enum noctis::publish::PublishError
+pub noctis::publish::PublishError::IntegrationTypeNotEnabled
+pub noctis::publish::PublishError::IntegrationTypeNotEnabled::command: alloc::string::String
+pub noctis::publish::PublishError::IntegrationTypeNotEnabled::integration_type: noctis::IntegrationType
+pub noctis::publish::PublishError::InvalidResponse
+pub noctis::publish::PublishError::InvalidResponse::reason: &'static str
+pub noctis::publish::PublishError::InvalidResponse::route: alloc::string::String
+pub noctis::publish::PublishError::MissingToken
+pub noctis::publish::PublishError::NameClash
+pub noctis::publish::PublishError::NameClash::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::publish::PublishError::NameClash::kind: &'static str
+pub noctis::publish::PublishError::NameClash::name: alloc::string::String
+pub noctis::publish::PublishError::Rejected
+pub noctis::publish::PublishError::Rejected::code: core::option::Option<u32>
+pub noctis::publish::PublishError::Rejected::route: alloc::string::String
+pub noctis::publish::PublishError::Rejected::status: u16
+pub noctis::publish::PublishError::TooManyCommands
+pub noctis::publish::PublishError::TooManyCommands::count: usize
+pub noctis::publish::PublishError::TooManyCommands::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::publish::PublishError::TooManyCommands::kind: &'static str
+pub noctis::publish::PublishError::TooManyCommands::max: usize
+pub noctis::publish::PublishError::Transport
+pub noctis::publish::PublishError::Transport::route: alloc::string::String
+impl core::clone::Clone for noctis::publish::PublishError
+pub fn noctis::publish::PublishError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::publish::PublishError
+impl core::cmp::PartialEq for noctis::publish::PublishError
+pub fn noctis::publish::PublishError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::publish::PublishError
+impl core::fmt::Debug for noctis::publish::PublishError
+pub fn noctis::publish::PublishError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::publish::PublishError
+pub fn noctis::publish::PublishError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::publish::PublishError
+pub struct noctis::publish::PublishReport
+impl noctis::publish::PublishReport
+pub fn noctis::publish::PublishReport::creates(&self) -> usize
+pub fn noctis::publish::PublishReport::is_dry_run(&self) -> bool
+pub fn noctis::publish::PublishReport::targets(&self) -> &[noctis::publish::TargetReport]
+pub fn noctis::publish::PublishReport::wrote(&self) -> bool
+impl core::clone::Clone for noctis::publish::PublishReport
+pub fn noctis::publish::PublishReport::clone(&self) -> Self
+impl core::cmp::Eq for noctis::publish::PublishReport
+impl core::cmp::PartialEq for noctis::publish::PublishReport
+pub fn noctis::publish::PublishReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::publish::PublishReport
+pub fn noctis::publish::PublishReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::publish::PublishReport
+pub fn noctis::publish::PublishReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::publish::PublishReport
+#[non_exhaustive] pub enum noctis::publish::PublishScope
+pub noctis::publish::PublishScope::Global
+pub noctis::publish::PublishScope::Guild(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>)
+impl core::clone::Clone for noctis::publish::PublishScope
+pub fn noctis::publish::PublishScope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::publish::PublishScope
+impl core::cmp::PartialEq for noctis::publish::PublishScope
+pub fn noctis::publish::PublishScope::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::publish::PublishScope
+pub fn noctis::publish::PublishScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::publish::PublishScope
+pub fn noctis::publish::PublishScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::publish::PublishScope
+pub fn noctis::publish::PublishScope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::publish::PublishScope
+impl core::marker::StructuralPartialEq for noctis::publish::PublishScope
+pub struct noctis::publish::TargetReport
+impl noctis::publish::TargetReport
+pub fn noctis::publish::TargetReport::changed(&self) -> bool
+pub fn noctis::publish::TargetReport::creates(&self) -> usize
+pub fn noctis::publish::TargetReport::diff(&self) -> &str
+pub fn noctis::publish::TargetReport::json(&self) -> &str
+pub fn noctis::publish::TargetReport::scope(&self) -> noctis::publish::PublishScope
+pub fn noctis::publish::TargetReport::wrote(&self) -> bool
+impl core::clone::Clone for noctis::publish::TargetReport
+pub fn noctis::publish::TargetReport::clone(&self) -> Self
+impl core::cmp::Eq for noctis::publish::TargetReport
+impl core::cmp::PartialEq for noctis::publish::TargetReport
+pub fn noctis::publish::TargetReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::publish::TargetReport
+pub fn noctis::publish::TargetReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::publish::TargetReport
 pub mod noctis::rules
 #[non_exhaustive] pub enum noctis::rules::Actual
 pub noctis::rules::Actual::Count(usize)

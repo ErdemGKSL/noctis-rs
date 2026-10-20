@@ -193,7 +193,7 @@ impl Running {
             .module(module);
         configure(&mut builder);
         let app = builder.build().unwrap();
-        let run = tokio::spawn(app.run());
+        let run = tokio::spawn(app.run_with_args(std::iter::empty::<&str>()));
         let running = Self {
             gw,
             _http: http,

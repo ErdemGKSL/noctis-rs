@@ -65,12 +65,12 @@ generated key, is zeroized when it's dropped (`src/bootstrap.rs`).
 | `NOCTIS_PAYLOAD_KEY` | for `signed` Routes and Clusters | 32-byte key (base64) for `custom_id` integrity tags. Same value on every process. `openssl rand -base64 32`. |
 | `NOCTIS_PAYLOAD_KEY_PREVIOUS` | no | Previous key, accepted for verification while you rotate. |
 | `NOCTIS_APP_ID` | no | Key namespace for Adapters (`[a-z0-9-]{1,32}`); `configure` sets `noctis-template`. |
-| `NOCTIS_DEV_GUILD` | no | Default guild for `--publish-guild` with no id. |
+| `NOCTIS_DEV_GUILD` | no | Default guild for `--publish-guild` with no id (your test guild's numeric id). |
 | `NOCTIS_SHARDS` | no | Shard Range for this process, e.g. `0..32`. Default: all shards. |
 | `NOCTIS_SHARD_TOTAL` | no | Fixed shard total, a whole number of at least 1 (e.g. `16`). Default: Discord's recommendation. |
 | `NOCTIS_HTTP_PROXY` | for Clusters | Shared HTTP rate-limit proxy (twilight-http-proxy, nirn-proxy) as `host:port` or `http://host:port` (plain HTTP; HTTPS is not supported). |
 | `NOCTIS_GATEWAY_URL` | no | Gateway URL shards connect to instead of Discord's, as `ws://host:port` or `wss://host:port` (a gateway proxy; it must rewrite READY's `resume_gateway_url`). |
-| `NOCTIS_PUBLISHER` | no | `true` on the one process that publishes commands at startup. |
+| `NOCTIS_PUBLISHER` | no | `true` (or `1`) on the one process that publishes commands globally at startup, before its shards connect. |
 | `RUST_LOG` | no | Log filter, e.g. `info,noctis=debug`. |
 
 ## Run it
@@ -80,10 +80,14 @@ write when something changed:
 
 ```sh
 export NOCTIS_TOKEN=...
-cargo run --release -- --publish-guild 123456789012345678 --dry-run   # print JSON and the diff
-cargo run --release -- --publish-guild 123456789012345678             # write
+cargo run --release -- --publish-guild 123456789012345678 --dry-run   # print JSON, diff, creates
+cargo run --release -- --publish-guild 123456789012345678             # write (only if changed)
 cargo run --release                                                   # start the bot
 ```
+
+With `NOCTIS_DEV_GUILD` set, `cargo run --release -- --publish-guild` needs no id. Each
+publish mode prints the JSON, a diff (`+ create`, `~ update`, `- delete`) and the number
+of creates (Discord allows 200 per day per guild), then exits without connecting.
 
 Then try `/setup start`, `/dashboard` and `/profile` in the test guild.
 
@@ -91,12 +95,12 @@ Other CLI modes of the same binary:
 
 | Flag | Effect |
 | --- | --- |
-| `--publish` | Publish globally (production). |
-| `--publish-guild <id>` | Publish to one guild (development). |
+| `--publish` | Publish globally (production); guild-scoped commands go only to their guilds. |
+| `--publish-guild [<id>]` | Publish every command to one guild (development). |
 | `--publish-clear [--guild <id>]` | Remove this App's commands globally or from a guild. |
 | `--dry-run` | With a publish flag: print the JSON and the diff, write nothing. |
-| `--features a,b` / `--features all` | Boot Flags: register only Modules carrying these flags. |
-| `--no-resume` | Shut down without keeping sessions resumable; clears stored sessions. |
+| `--features a,b` / `--features all` | [planned] Boot Flags: register only Modules carrying these flags. |
+| `--no-resume` | [planned] Shut down without keeping sessions resumable; clears stored sessions. |
 
 ## Develop
 

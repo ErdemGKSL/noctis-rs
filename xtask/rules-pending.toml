@@ -39,16 +39,6 @@ evidence = "unit"
 story = "11.4"
 
 [[rule]]
-id = "META-04"
-evidence = "unit"
-story = "6.9"
-
-[[rule]]
-id = "REG-05"
-evidence = "unit"
-story = "6.9"
-
-[[rule]]
 id = "INT-13"
 evidence = "unit"
 story = "12.4"

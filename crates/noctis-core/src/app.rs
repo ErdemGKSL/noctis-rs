@@ -24,7 +24,10 @@ use noctis_rules::Limits;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use twilight_model::gateway::Intents;
+use twilight_model::id::Id;
+use twilight_model::id::marker::GuildMarker;
 
+use crate::cli::{CliError, CliMode, NoctisArgs};
 use crate::edge::{EDGE_BODY_PREFIX, Edge, HttpConfig, KeeperHandle, Upstream};
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
@@ -34,6 +37,7 @@ use crate::observe::{describe_metrics, set_shard_status};
 use crate::plugin::PluginEntry;
 use crate::ports::{PortOverrides, PortSlot, Ports};
 use crate::proxy::normalize_http_proxy;
+use crate::publish::{Publish, PublishScope};
 use crate::registry::Registry;
 use crate::sharding::{GatewayInfo, plan};
 use crate::sink::{ErrorSinks, EventDropObserver};
@@ -55,6 +59,10 @@ const GATEWAY_URL_VAR: &str = "NOCTIS_GATEWAY_URL";
 const SHARD_TOTAL_VAR: &str = "NOCTIS_SHARD_TOTAL";
 /// The environment variable [`App::from_env`] reads the shutdown grace from.
 const SHUTDOWN_GRACE_VAR: &str = "NOCTIS_SHUTDOWN_GRACE";
+/// The environment variable [`App::from_env`] reads the publisher switch from.
+const PUBLISHER_VAR: &str = "NOCTIS_PUBLISHER";
+/// The environment variable [`App::from_env`] reads the dev guild from.
+const DEV_GUILD_VAR: &str = "NOCTIS_DEV_GUILD";
 /// The shutdown grace period when `shutdown_grace` is not called.
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// The allowed `shutdown_grace` range.
@@ -118,6 +126,10 @@ pub struct App {
     overflow_capacity: usize,
     handler_concurrency: usize,
     shutdown_grace: Duration,
+    /// Whether a normal run publishes globally at startup.
+    publisher: bool,
+    /// The default guild of `--publish-guild` without an id.
+    dev_guild: Option<Id<GuildMarker>>,
     /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
     lifecycle: Lifecycle,
 }
@@ -146,20 +158,24 @@ impl App {
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
     /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL`,
-    /// `NOCTIS_SHARD_TOTAL` and then `NOCTIS_SHUTDOWN_GRACE`, each trimmed of
-    /// ASCII whitespace; an empty value counts as unset. The proxy and the
-    /// gateway URL are passed to [`AppBuilder::http_proxy`] and
-    /// [`AppBuilder::gateway_url`] and validated by `build()`; the shard total
-    /// (1-10 ASCII digits) is passed to [`AppBuilder::shard_total`]; the
-    /// shutdown grace (1-4 ASCII digits of whole seconds) is passed to
-    /// [`AppBuilder::shutdown_grace`], so 901-9999 fail at `build()`. Setters
-    /// called afterwards win.
+    /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHUTDOWN_GRACE`, `NOCTIS_PUBLISHER` and
+    /// then `NOCTIS_DEV_GUILD`, each trimmed of ASCII whitespace; an empty
+    /// value counts as unset. The proxy and the gateway URL are passed to
+    /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and
+    /// validated by `build()`; the shard total (1-10 ASCII digits) is passed
+    /// to [`AppBuilder::shard_total`]; the shutdown grace (1-4 ASCII digits
+    /// of whole seconds) is passed to [`AppBuilder::shutdown_grace`], so
+    /// 901-9999 fail at `build()`; the publisher switch (`true`, `false`,
+    /// `1` or `0`, any ASCII case) is passed to [`AppBuilder::publisher`];
+    /// the dev guild (1-20 ASCII digits, not 0) to [`AppBuilder::dev_guild`].
+    /// Setters called afterwards win.
     ///
     /// # Errors
     ///
     /// [`Error::Env`] when a variable is not Unicode, holds an invalid token,
-    /// an invalid shard total or an invalid shutdown grace; the message never
-    /// shows the value.
+    /// an invalid shard total, an invalid shutdown grace, an invalid
+    /// publisher switch or an invalid dev guild; the message never shows the
+    /// value.
     ///
     /// ```no_run
     /// let app = noctis_core::App::from_env()?;
@@ -256,6 +272,67 @@ impl App {
     /// ```
     pub fn http_config(&self) -> HttpConfig {
         self.http_config
+    }
+
+    /// Whether a normal run publishes globally at startup
+    /// ([`AppBuilder::publisher`]; `false` when unset).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().publisher(true).build().unwrap();
+    /// assert!(app.is_publisher());
+    /// # }
+    /// ```
+    pub fn is_publisher(&self) -> bool {
+        self.publisher
+    }
+
+    /// The default guild of `--publish-guild` without an id
+    /// ([`AppBuilder::dev_guild`]), if one was set.
+    ///
+    /// ```
+    /// use twilight_model::id::Id;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().dev_guild(Id::new(42)).build().unwrap();
+    /// assert_eq!(app.dev_guild(), Some(Id::new(42)));
+    /// # }
+    /// ```
+    pub fn dev_guild(&self) -> Option<Id<GuildMarker>> {
+        self.dev_guild
+    }
+
+    /// A Publish of the Registry's commands to `scope`; `.await` it. See
+    /// [`crate::publish`].
+    ///
+    /// Publish reads `GET /applications/@me`, builds the command JSON from
+    /// the Registry alone, runs every check (META-04, and REG-03/REG-02 on
+    /// the `Guild` dev mirror) before any write, then per target reads the
+    /// remote commands and sends one bulk-overwrite `PUT` only when they
+    /// differ. It never runs on its own on shard READY.
+    ///
+    /// ```no_run
+    /// use noctis_core::publish::PublishScope;
+    /// use twilight_model::id::Id;
+    ///
+    /// # #[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let app = noctis_core::App::from_env()?.build()?;
+    /// let report = app.publish(PublishScope::Guild(Id::new(42))).dry_run(true).await?;
+    /// println!("{report}");
+    /// # Ok(()) }
+    /// ```
+    pub fn publish(&self, scope: PublishScope) -> Publish<'_> {
+        Publish::new(self, scope)
+    }
+
+    /// Whether a token is set.
+    pub(crate) fn has_token(&self) -> bool {
+        self.token.is_some()
+    }
+
+    /// The `app` span field.
+    pub(crate) fn app_label(&self) -> &str {
+        &self.shared.app
     }
 
     /// What every handler invocation shares with this App.
@@ -401,31 +478,95 @@ impl App {
         )
     }
 
-    /// Starts the App and runs it until Ctrl-C or SIGTERM (Ctrl-C only on
-    /// non-unix platforms), then shuts it down gracefully.
+    /// Runs the App as the process command line asks:
+    /// [`run_with_args`](Self::run_with_args) with
+    /// `std::env::args_os().skip(1)`.
     ///
-    /// Checks, in order, that a multi-thread tokio runtime is current, that a
-    /// rustls crypto provider is installed (installing `ring`'s when none is
-    /// set), installs the signal handlers and checks that a token is set.
-    /// The rest is [`run_until`](Self::run_until) with the first signal as
-    /// the shutdown trigger.
+    /// Without a Noctis flag it starts the bot and runs it until Ctrl-C or
+    /// SIGTERM (Ctrl-C only on non-unix platforms), then shuts it down
+    /// gracefully. Under `cargo test` the harness passes its own flags:
+    /// tests call `run_with_args(std::iter::empty::<&str>())` instead.
     ///
     /// # Errors
     ///
-    /// [`StartError::SignalHandler`] when the signal handlers cannot be
-    /// installed (a runtime without an IO driver), else the errors of
-    /// [`run_until`](Self::run_until).
+    /// The errors of [`run_with_args`](Self::run_with_args); an unknown
+    /// argument is [`Error::Cli`] ([`CliError::UnknownFlag`]).
     ///
     /// ```no_run
     /// # #[tokio::main] async fn main() -> Result<(), noctis_core::Error> {
     /// noctis_core::App::from_env()?.build()?.run().await?;
     /// # Ok(()) }
     /// ```
-    pub async fn run(self) -> Result<(), Error> {
-        check_runtime(true)?;
-        ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
-        let signals = Signals::install()?;
-        self.run_with(signals.recv(), "signal").await
+    pub fn run(self) -> impl Future<Output = Result<(), Error>> + Send {
+        self.run_with_args(std::env::args_os().skip(1))
+    }
+
+    /// Runs the App with an explicit command line (without the program
+    /// name; see [`NoctisArgs`]).
+    ///
+    /// In order: parses `args` ([`Error::Cli`] before anything else); checks
+    /// that a multi-thread tokio runtime is current and that a rustls crypto
+    /// provider is installed (installing `ring`'s when none is set). With a
+    /// mode (`--publish`, `--publish-guild [<id>]`, `--publish-clear [--guild
+    /// <id>]`, each with optional `--dry-run`) it runs that Publish
+    /// (`--publish-guild` without an id uses [`AppBuilder::dev_guild`], else
+    /// [`CliError::MissingDevGuild`]), writes the
+    /// [`PublishReport`](crate::publish::PublishReport) to stdout and
+    /// returns, without installing signal handlers or connecting a shard.
+    /// Without a mode it installs the signal handlers and runs
+    /// [`run_until`](Self::run_until) with the first signal as the shutdown
+    /// trigger.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Cli`] for a rejected command line, [`Error::Publish`] when
+    /// the Publish of a mode fails, [`StartError::SignalHandler`] when the
+    /// signal handlers cannot be installed (a runtime without an IO
+    /// driver), else the errors of [`run_until`](Self::run_until).
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> Result<(), noctis_core::Error> {
+    /// let app = noctis_core::App::from_env()?.build()?;
+    /// app.run_with_args(["--publish-guild", "123", "--dry-run"]).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn run_with_args<I, A>(self, args: I) -> impl Future<Output = Result<(), Error>> + Send
+    where
+        I: IntoIterator<Item = A>,
+        A: Into<OsString>,
+    {
+        // Parsed before the future exists: the iterator need not be `Send`.
+        let parsed = NoctisArgs::parse(args);
+        async move {
+            let args = parsed?;
+            check_runtime(true)?;
+            ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
+            if let Some(mode) = args.mode() {
+                return self.run_mode(mode, args.dry_run()).await;
+            }
+            let signals = Signals::install()?;
+            self.run_with(signals.recv(), "signal").await
+        }
+    }
+
+    /// Runs one CLI mode's Publish and prints its report.
+    async fn run_mode(&self, mode: CliMode, dry_run: bool) -> Result<(), Error> {
+        use std::io::Write as _;
+
+        let (scope, clear) = match mode {
+            CliMode::Publish => (PublishScope::Global, false),
+            CliMode::PublishGuild(id) => {
+                let guild = id.or(self.dev_guild).ok_or(CliError::MissingDevGuild)?;
+                (PublishScope::Guild(guild), false)
+            }
+            CliMode::PublishClear(id) => {
+                (id.map_or(PublishScope::Global, PublishScope::Guild), true)
+            }
+        };
+        let report = self.publish(scope).dry_run(dry_run).clear(clear).await?;
+        // A closed stdout (a broken pipe) does not undo the Publish.
+        let _ = writeln!(std::io::stdout().lock(), "{report}");
+        Ok(())
     }
 
     /// Starts the App and runs it until `shutdown` resolves, then shuts it
@@ -528,6 +669,7 @@ impl App {
                 return Ok(());
             }
             info = async {
+                self.publish_at_startup().await;
                 self.warm_up(warmed).await;
                 self.gateway_info().await
             } => info?,
@@ -638,6 +780,17 @@ impl App {
         drop(gateway);
         watch.flush();
         tracing::info!(target: "noctis::app", "shutdown complete");
+    }
+
+    /// The publisher's global Publish (only with `publisher`), before any
+    /// shard connects; a failure is logged and the App keeps starting.
+    async fn publish_at_startup(&self) {
+        if !self.publisher {
+            return;
+        }
+        if let Err(error) = self.publish(PublishScope::Global).await {
+            tracing::error!(target: "noctis::publish", %error, "startup Publish failed");
+        }
     }
 
     /// Waits for the keeper's first warm-up dial, at most
@@ -982,6 +1135,8 @@ impl fmt::Debug for App {
             .field("error_sinks", &self.shared.sinks)
             .field("limits", &self.shared.limits)
             .field("ack_deadline", &self.shared.ack_deadline)
+            .field("publisher", &self.publisher)
+            .field("dev_guild", &self.dev_guild)
             .finish_non_exhaustive()
     }
 }
@@ -1039,6 +1194,10 @@ pub struct AppBuilder {
     limits: Limits,
     /// The raw auto-defer deadline; `build` checks it.
     ack_deadline: Duration,
+    /// Whether a normal run publishes globally at startup.
+    publisher: bool,
+    /// The default guild of `--publish-guild` without an id.
+    dev_guild: Option<Id<GuildMarker>>,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1086,6 +1245,8 @@ impl AppBuilder {
             error_sinks: ErrorSinks::default(),
             limits: Limits::default(),
             ack_deadline: DEFAULT_ACK_DEADLINE,
+            publisher: false,
+            dev_guild: None,
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -1119,6 +1280,16 @@ impl AppBuilder {
                 var: SHUTDOWN_GRACE_VAR,
             })?;
             builder.shutdown_grace(Duration::from_secs(secs));
+        }
+        if let Some(raw) = read_var(&lookup, PUBLISHER_VAR)? {
+            let publisher =
+                parse_bool(&raw).ok_or(EnvError::InvalidPublisher { var: PUBLISHER_VAR })?;
+            builder.publisher(publisher);
+        }
+        if let Some(raw) = read_var(&lookup, DEV_GUILD_VAR)? {
+            let guild =
+                parse_guild(&raw).ok_or(EnvError::InvalidDevGuild { var: DEV_GUILD_VAR })?;
+            builder.dev_guild(guild);
         }
         Ok(builder)
     }
@@ -1346,6 +1517,35 @@ impl AppBuilder {
     /// ```
     pub fn shutdown_grace(&mut self, grace: Duration) -> &mut Self {
         self.shutdown_grace = grace;
+        self
+    }
+
+    /// Makes a normal run publish globally once at startup, before any shard
+    /// connects (never on READY), like `--publish`; set it on exactly one
+    /// process. A failed Publish is logged at `error` (target
+    /// `noctis::publish`) and the App keeps starting. Default `false`; env
+    /// `NOCTIS_PUBLISHER`; the last call wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.publisher(true);
+    /// ```
+    pub fn publisher(&mut self, publisher: bool) -> &mut Self {
+        self.publisher = publisher;
+        self
+    }
+
+    /// The guild `--publish-guild` without an id publishes to (your test
+    /// guild). Env `NOCTIS_DEV_GUILD`; the last call wins.
+    ///
+    /// ```
+    /// use twilight_model::id::Id;
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.dev_guild(Id::new(42));
+    /// ```
+    pub fn dev_guild(&mut self, guild: Id<GuildMarker>) -> &mut Self {
+        self.dev_guild = Some(guild);
         self
     }
 
@@ -1653,6 +1853,8 @@ impl AppBuilder {
             overflow_capacity: overflow,
             handler_concurrency: config.handler_concurrency,
             shutdown_grace: config.shutdown_grace,
+            publisher: config.publisher,
+            dev_guild: config.dev_guild,
             lifecycle: Lifecycle::new(),
         })
     }
@@ -1715,6 +1917,8 @@ impl fmt::Debug for AppBuilder {
             .field("error_sinks", &self.error_sinks)
             .field("limits", &self.limits)
             .field("ack_deadline", &self.ack_deadline)
+            .field("publisher", &self.publisher)
+            .field("dev_guild", &self.dev_guild)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()
@@ -1748,6 +1952,26 @@ fn parse_shard_total(raw: &str) -> Option<u32> {
 fn parse_grace_secs(raw: &str) -> Option<u64> {
     let digits = (1..=4).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
     digits.then(|| raw.parse().ok()).flatten()
+}
+
+/// `true`/`false`/`1`/`0`, ASCII case-insensitive.
+fn parse_bool(raw: &str) -> Option<bool> {
+    if raw == "1" || raw.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if raw == "0" || raw.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// A guild id from 1-20 ASCII digits of a non-zero `u64`.
+fn parse_guild(raw: &str) -> Option<Id<GuildMarker>> {
+    let digits = (1..=20).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
+    digits
+        .then(|| raw.parse::<u64>().ok())
+        .flatten()
+        .and_then(Id::new_checked)
 }
 
 /// Reads `var` through `lookup`: trimmed of ASCII whitespace, empty means

@@ -35,7 +35,7 @@ async fn stops_on(signal: &str) {
         .gateway_url(gw.url())
         .build()
         .unwrap();
-    let run = tokio::spawn(app.run());
+    let run = tokio::spawn(app.run_with_args(std::iter::empty::<&str>()));
     let deadline = Instant::now() + WAIT;
     // The handlers are installed before `GET /gateway/bot`, so they are
     // in place once the shard has a session.

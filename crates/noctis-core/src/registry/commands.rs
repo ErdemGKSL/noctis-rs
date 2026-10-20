@@ -92,6 +92,11 @@ impl ScopeCommands {
     pub(crate) fn menu(&self, kind: MenuKind, name: &str) -> Option<&Arc<MenuEntry>> {
         self.menus.get(&kind)?.get(name)
     }
+
+    /// The context menus, in input order (Publish JSON order).
+    pub(crate) fn menus(&self) -> impl Iterator<Item = &Arc<MenuEntry>> {
+        self.menu_order.iter()
+    }
 }
 
 /// The merged, immutable command Registry: one entry per scope, in first
@@ -184,6 +189,11 @@ impl Commands {
             );
         }
         (Self::build(&lowered), Vec::new())
+    }
+
+    /// Every scope, in first appearance (commands, then menus).
+    pub(crate) fn scopes(&self) -> &[ScopeCommands] {
+        &self.scopes
     }
 
     /// The commands of `scope`, if any are registered there.

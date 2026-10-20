@@ -743,11 +743,28 @@ Different scopes and different bases never conflict.
 
 ## 7. Publish
 
-See `app-and-sharding.md` §3. `--publish-guild <id>` in development (instant),
-`--publish` in production. `--dry-run` prints JSON plus diff and runs every check. Boot
-Flags and `apps = [...]` filter what is published. Disabled Modules: only their
-guild-scoped commands are left out of a guild publish; global commands stay published
-and answer "disabled here".
+See `app-and-sharding.md` §3. `cargo run --release -- --publish-guild <id>` in
+development (instant; every Command mirrored into that guild, without
+`contexts`/`integration_types`), `--publish` in production (global Commands globally,
+`guilds = [..]` Commands only to their guilds). `--dry-run` prints the JSON, the diff
+and the create count and writes nothing. Publish writes only when the canonical remote
+commands differ (REG-05), checks META-04 against the application's enabled install
+types before any write, and never runs on shard READY. Programmatic:
+`app.publish(PublishScope::Global).dry_run(true).await?` (`noctis::publish`).
+
+The JSON comes only from the Registry: one object per base and per context menu;
+`"options": []` on every option-less command, subcommand and group; set metadata exactly
+as declared (`default_member_permissions` as the bit string, `contexts` and
+`integration_types` as integers in declared order, `nsfw` only when set); unset fields
+are omitted; option fields only when set (`required: true`, `choices`, `min_value` /
+`max_value` as integers for integer bounds, `min_length` / `max_length`,
+`channel_types`, `autocomplete: true`, `file_types`). Menus carry `type` and `name` only
+(plus metadata). Localizations arrive with Epic 11.
+
+[planned] Boot Flags (Story 13.2), per-guild Module enablement (Story 13.3) and
+`apps = [...]` filter what is published. Disabled Modules: only their guild-scoped
+commands are left out of a guild publish; global commands stay published and answer
+"disabled here".
 
 ## 8. Handler context (`CommandCtx`)
 

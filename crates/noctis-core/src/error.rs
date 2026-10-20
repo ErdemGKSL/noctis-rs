@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use twilight_model::gateway::Intents;
 
+use crate::cli::CliError;
+use crate::publish::PublishError;
 use crate::{
     GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict, TokenError,
 };
@@ -36,6 +38,12 @@ pub enum Error {
     /// `App::run` stopped without a shutdown request.
     #[error(transparent)]
     Run(#[from] RunError),
+    /// The command line `App::run` / `App::run_with_args` got is invalid.
+    #[error(transparent)]
+    Cli(#[from] CliError),
+    /// The Publish of a CLI mode (`--publish`, …) failed.
+    #[error(transparent)]
+    Publish(#[from] PublishError),
 }
 
 /// Why a started `App::run` stopped without a shutdown request.
@@ -513,6 +521,22 @@ pub enum EnvError {
         "environment variable `{var}` is not a shutdown grace period: set whole seconds such as 10"
     )]
     InvalidShutdownGrace {
+        /// The variable's name.
+        var: &'static str,
+    },
+    /// The variable is not a publisher switch (`true`, `false`, `1` or `0`,
+    /// any ASCII case).
+    #[error("environment variable `{var}` is not a publisher switch: set true or false")]
+    InvalidPublisher {
+        /// The variable's name.
+        var: &'static str,
+    },
+    /// The variable is not a guild id (1-20 ASCII digits, not 0).
+    #[error(
+        "environment variable `{var}` is not a guild id: set your test guild's numeric id \
+         (Developer Mode, right-click the server, Copy Server ID)"
+    )]
+    InvalidDevGuild {
         /// The variable's name.
         var: &'static str,
     },

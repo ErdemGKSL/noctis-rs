@@ -128,6 +128,28 @@
 //! }
 //! ```
 //!
+//! # Publishing commands
+//!
+//! Commands reach Discord only through Publish, which writes nothing when
+//! the remote commands already equal the Registry's (REG-05). From the
+//! command line: `cargo run --release -- --publish-guild <id> --dry-run`
+//! prints the JSON, the diff and the create count; without `--dry-run` it
+//! writes; `--publish` publishes globally and `--publish-clear` deletes.
+//! Each mode returns without connecting a shard. In code, see
+//! [`publish`] and [`cli`]; [`AppBuilder::publisher`] publishes once at
+//! startup (never on READY).
+//!
+//! ```no_run
+//! use noctis::publish::PublishScope;
+//! use noctis::twilight::model::id::Id;
+//!
+//! # #[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let app = noctis::App::from_env()?.build()?;
+//! let report = app.publish(PublishScope::Guild(Id::new(42))).dry_run(true).await?;
+//! println!("{report}");
+//! # Ok(()) }
+//! ```
+//!
 //! # Shutdown
 //!
 //! [`App::run`] runs until Ctrl-C or SIGTERM; [`App::run_until`] runs until
@@ -643,6 +665,58 @@ pub use noctis_macros::Options;
 /// }
 /// ```
 pub use noctis_macros::autocomplete;
+
+pub mod cli {
+    //! The built-in command line: `--publish`, `--publish-guild [<id>]`,
+    //! `--publish-clear [--guild <id>]` and `--dry-run` (no clap).
+    //!
+    //! [`App::run`](crate::App::run) parses `std::env::args_os().skip(1)`;
+    //! an unknown argument is [`CliError::UnknownFlag`]. Tests and several
+    //! Apps pass arguments with
+    //! [`App::run_with_args`](crate::App::run_with_args). A bot with its own
+    //! flags splits first:
+    //!
+    //! ```no_run
+    //! use noctis::cli::NoctisArgs;
+    //!
+    //! # #[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    //! let (noctis_args, mine) = NoctisArgs::split(std::env::args_os())?;
+    //! // parse `mine` (program name first) with your own parser, then:
+    //! let app = noctis::App::from_env()?.build()?;
+    //! app.run_with_args(noctis_args).await?;
+    //! # let _ = mine;
+    //! # Ok(()) }
+    //! ```
+
+    pub use noctis_core::cli::{CliError, CliMode, NoctisArgs};
+}
+
+pub mod publish {
+    //! Publish: writes the Registry's commands to Discord only when they
+    //! differ from the remote ones (REG-05: 200 creates per day per guild).
+    //!
+    //! [`App::publish`](crate::App::publish) reads the application, builds
+    //! the JSON from the Registry alone, runs every check before any write
+    //! (META-04; REG-03 and REG-02 on the `Guild` dev mirror), then per
+    //! target diffs the canonical forms and sends one bulk-overwrite `PUT`
+    //! only when they differ. A dry run writes nothing. Publish never runs
+    //! on shard READY; it runs in the `noctis.publish` span.
+    //!
+    //! ```no_run
+    //! use noctis::publish::PublishScope;
+    //! use noctis::twilight::model::id::Id;
+    //!
+    //! # #[tokio::main] async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    //! let app = noctis::App::from_env()?.build()?;
+    //! let report = app.publish(PublishScope::Guild(Id::new(42))).dry_run(true).await?;
+    //! println!("{report}");
+    //! # Ok(()) }
+    //! ```
+
+    pub use noctis_core::publish::{
+        Publish, PublishError, PublishReport, PublishScope, TargetReport,
+    };
+}
 
 pub mod observe {
     //! The observability contract: the metric catalog ([`METRICS`]) and

@@ -29,8 +29,10 @@ async fn main() -> anyhow::Result<()> {
     // `run` stops on Ctrl-C/SIGTERM: shards close, queued events and running handlers get
     // the shutdown grace period (see `configure`), then whatever is left is cancelled and
     // `run` returns `Ok(())`. It returns `RunError::AllShardsEnded` if every shard closed
-    // fatally. [planned] It will also handle the CLI modes: --publish, --publish-guild <id>,
-    // --publish-clear, --dry-run, --features a,b|all, --no-resume.
+    // fatally. It also handles the CLI modes, which publish and exit without connecting:
+    // --publish, --publish-guild [<id>] (NOCTIS_DEV_GUILD without an id),
+    // --publish-clear [--guild <id>], each with optional --dry-run.
+    // [planned] --features a,b|all, --no-resume.
     let app = noctis_bot_template::configure(&mut App::from_env()?).build()?;
     app.run().await?;
     Ok(())

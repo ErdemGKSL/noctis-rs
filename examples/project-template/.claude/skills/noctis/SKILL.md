@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `05db6d1549a73664b4da06321e2ec2c5fbef0613e6991cea4b5092e1beca071f` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `f032a58e41b8e4fef30a58711b80a98afdd6093d4066addf134f1d309de28da3` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -298,7 +298,8 @@ to **act** on an item → a Section with an accessory button or a select option.
 | Hard-coded English in Views or Templates | Locale keys via `Strings::of(cx.locale())` |
 | `static mut`, global `HashMap`s, `lazy_static` registries | `State<T>` or a port |
 | More than 5 tabs, more than 5 buttons in a row, two selects in a row | Typed errors / compile errors; restructure (select nav, more rows, a Paginator) |
-| Publishing on every start or on shard ready | `--publish-guild` in dev, `--publish` (or one `NOCTIS_PUBLISHER` process) in prod; publish is diff-based |
+| Publishing on every start or on shard ready | `--publish-guild` in dev, `--publish` (or one `NOCTIS_PUBLISHER` process) in prod; publish is diff-based and never runs on READY |
+| `app.run()` in a test | `app.run_with_args(std::iter::empty::<&str>())`: `run()` parses the process arguments and rejects the test harness's flags |
 | Reading Noctis source to learn the API | This skill; say what is missing |
 
 ## 6. tescord → Noctis concept map
@@ -315,7 +316,7 @@ to **act** on an item → a Section with an accessory button or a select option.
 | `locale.user.x.y(a)` / `locale.guild…` | `Strings::of(ctx.user_locale()).x.y(a)` / `ctx.guild_locale()` |
 | `*.interactions.yaml` `names:` | `cmdword.<word>` and `cmd.<path>.*` keys in the same locale files |
 | `beforeInteraction` returning `false`/object | Middleware returning `Flow::Stop` / inserting an `Ext<T>` |
-| `--publish [--guildId]` | `--publish`, `--publish-guild <id>`, `--dry-run` |
+| `--publish [--guildId]` | `--publish`, `--publish-guild [<id>]`, `--publish-clear`, `--dry-run`; in code `app.publish(PublishScope::..)` |
 | `--features a,b` | Boot Flags: `Module::flags([..])` + `--features a,b` |
 | inline listeners | not supported (UD-7): Route + `one_shot` Ref |
 

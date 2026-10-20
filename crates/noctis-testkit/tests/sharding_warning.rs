@@ -66,7 +66,7 @@ async fn misaligned_fixed_total_warns_and_starts() {
         .shard_total(3)
         .build()
         .unwrap();
-    let run = tokio::spawn(app.run());
+    let run = tokio::spawn(app.run_with_args(std::iter::empty::<&str>()));
 
     let deadline = Instant::now() + Duration::from_secs(15);
     while gw.frames().iter().filter(|f| f.op() == Some(2)).count() < 3 {
