@@ -1,13 +1,22 @@
 //! The typestate [`Responder`]: how a handler answers its interaction
-//! (FR-21, FR-61, AD-11, AD-24; INT-03, INT-04, INT-08, INT-09, INT-10,
-//! INT-12, CV2-01, CV2-02).
+//! (FR-21, FR-61, AD-11, AD-24; INT-01, INT-02, INT-03, INT-04, INT-05,
+//! INT-08, INT-09, INT-10, INT-11, INT-12, CV2-01, CV2-02).
 //!
 //! A [`CommandResponder`] starts [`Pending`]: [`reply`](Responder::reply)
-//! or [`defer`](Responder::defer) consume it and give a
+//! or [`defer`](Responder::defer) (and [`modal`](Responder::modal) for an
+//! `opens_modal` Command) consume it and give a
 //! [`Responder<K, Acked>`](Responder), which only edits the original,
 //! sends follow-ups or deletes the original, and ends with
 //! [`done`](Responder::done). A second initial response, an `update`, a
-//! `modal` or a flag set on `defer` do not compile:
+//! `modal` without `opens_modal` or a flag set on `defer` do not compile.
+//!
+//! At runtime one gate serializes every initial response, so at most one
+//! interaction callback is ever sent (INT-03): when the auto-defer
+//! answered first, a later `reply` becomes an edit of the original. After
+//! 15 minutes the interaction token is expired (INT-02): edits and deletes
+//! of public messages fall back to the bot token, everything else is
+//! [`ResponderError::TokenExpired`]. A user-installed app may send at most
+//! 5 follow-ups ([`ResponderError::FollowupCap`], INT-11).
 //!
 //! ```compile_fail,E0599
 //! use noctis_core::{CommandResponder, HandlerResult, Responded};
@@ -26,6 +35,15 @@
 //! async fn update(r: CommandResponder) -> HandlerResult<Responded> {
 //!     let m = V2Message::new(Components::new().push(TextDisplay::new("hi")));
 //!     Ok(r.update(m).await?.done()) // [INT-04]
+//! }
+//! ```
+//!
+//! ```compile_fail,E0599
+//! use noctis_core::{CommandResponder, HandlerResult, Responded};
+//! use noctis_ui::Modal;
+//!
+//! async fn modal(r: CommandResponder, m: Modal) -> HandlerResult<Responded> {
+//!     Ok(r.modal(m).await?.done()) // [INT-05]: only `CommandResponder<OpensModal>`
 //! }
 //! ```
 //!
@@ -63,14 +81,15 @@ use std::sync::{Arc, Mutex, PoisonError};
 use noctis_rules::Limits;
 use noctis_ui::{
     CallbackFlags, Components, CreateFlags, EditFlags, LegacyMessage, MessageBody, MessageFormat,
-    UiError, V2Message,
+    Modal, UiError, V2Message,
 };
 use serde_json::{Value, json};
 use twilight_model::id::Id;
-use twilight_model::id::marker::MessageMarker;
+use twilight_model::id::marker::{ChannelMarker, MessageMarker};
 
 pub(crate) use self::transport::{InteractionTarget, MessageTarget, Transport};
 use crate::AckDeadlineMissed;
+use crate::handler::AppShared;
 
 pub(crate) mod sealed {
     /// Seals [`ResponderKind`](super::ResponderKind).
@@ -90,25 +109,77 @@ pub trait ResponderKind: sealed::Kind + Send + Sync + 'static {}
 /// The state of a [`Responder`]: [`Pending`] or [`Acked`] (INT-03). Sealed.
 pub trait ResponderState: sealed::State + Send + Sync + 'static {}
 
-/// The modal marker of a [`Command`] that does not open a modal (the only
-/// one until `opens_modal` lands, Story 6.6).
+/// The modal marker of a [`Command`] or responder: [`NoModal`] or
+/// [`OpensModal`]. Sealed.
+pub trait ModalMarker: sealed::Modal {
+    /// Whether the marker opens a modal.
+    #[doc(hidden)]
+    const OPENS_MODAL: bool;
+}
+
+/// The modal marker of a [`Command`] that does not open a modal.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NoModal;
 
 impl sealed::Modal for NoModal {}
+impl ModalMarker for NoModal {
+    const OPENS_MODAL: bool = false;
+}
+
+/// The modal marker of a Command declared `#[command(.., opens_modal)]`:
+/// its handler takes `CommandResponder<OpensModal>`, the only responder
+/// with [`modal`](Responder::modal), and no auto-defer is armed for it
+/// (INT-05).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct OpensModal;
+
+impl sealed::Modal for OpensModal {}
+impl ModalMarker for OpensModal {
+    const OPENS_MODAL: bool = true;
+}
 
 /// The [`ResponderKind`] of slash and context-menu Commands; `M` is the
-/// modal marker ([`NoModal`]).
-pub struct Command<M = NoModal>(PhantomData<M>);
+/// modal marker ([`NoModal`] or [`OpensModal`]).
+pub struct Command<M: ModalMarker = NoModal>(PhantomData<M>);
 
-impl<M> fmt::Debug for Command<M> {
+impl<M: ModalMarker> fmt::Debug for Command<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Command")
     }
 }
 
-impl<M: sealed::Modal> sealed::Kind for Command<M> {}
-impl<M: sealed::Modal> ResponderKind for Command<M> {}
+impl<M: ModalMarker> sealed::Kind for Command<M> {}
+impl<M: ModalMarker> ResponderKind for Command<M> {}
+
+/// Implemented only by `CommandResponder<OpensModal>`: what `#[command(..,
+/// opens_modal)]` asserts about its responder parameter (INT-05).
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>`",
+    label = "take `CommandResponder<OpensModal>` here"
+)]
+pub trait __DeclaresOpensModal {}
+
+impl __DeclaresOpensModal for Responder<Command<OpensModal>, Pending> {}
+
+/// Implemented only by `CommandResponder<NoModal>`: what `#[command]`
+/// without `opens_modal` asserts about its responder parameter (INT-05).
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal`",
+    label = "declare `opens_modal` or take `CommandResponder`"
+)]
+pub trait __DeclaresNoModal {}
+
+impl __DeclaresNoModal for Responder<Command<NoModal>, Pending> {}
+
+/// The `opens_modal` assertion `#[command]` emits (INT-05).
+#[doc(hidden)]
+pub fn __assert_opens_modal<T: __DeclaresOpensModal>() {}
+
+/// The assertion `#[command]` emits without `opens_modal` (INT-05).
+#[doc(hidden)]
+pub fn __assert_no_modal<T: __DeclaresNoModal>() {}
 
 /// The state of a [`Responder`] that has not answered yet: it offers the
 /// initial responses.
@@ -257,6 +328,22 @@ pub enum ResponderError {
     /// The request did not get a usable response.
     #[error("the response could not reach Discord")]
     Transport,
+    /// The interaction token expired 15 minutes after the interaction
+    /// arrived (INT-02): a follow-up, or an edit or delete of an ephemeral
+    /// message or of one whose id or channel is unknown; nothing was sent.
+    /// Public messages with a known id are edited and deleted with the bot
+    /// token instead.
+    #[error("the interaction token expired (15 minutes)")]
+    TokenExpired,
+    /// A user-installed app already sent 5 follow-ups for this interaction
+    /// (INT-11); nothing was sent.
+    #[error("a user-installed app may send at most 5 follow-ups here")]
+    FollowupCap,
+    /// A modal was not the first response to an interaction, or the
+    /// transport has none (a [`Dispatcher`](crate::Dispatcher) message
+    /// reply); nothing was sent.
+    #[error("a modal can only be the first response to an interaction")]
+    ModalUnavailable,
 }
 
 /// The proof that a handler answered through its [`Responder`]; return it
@@ -305,19 +392,19 @@ impl<K: ResponderKind> IntoResponse<K> for Responded {
     }
 }
 
-impl<M: sealed::Modal> IntoResponse<Command<M>> for V2Message {
+impl<M: ModalMarker> IntoResponse<Command<M>> for V2Message {
     fn __into_response(self) -> ResponseValue {
         ResponseValue(Response::Message(self.into()))
     }
 }
 
-impl<M: sealed::Modal> IntoResponse<Command<M>> for Components {
+impl<M: ModalMarker> IntoResponse<Command<M>> for Components {
     fn __into_response(self) -> ResponseValue {
         ResponseValue(Response::Message(self.into()))
     }
 }
 
-impl<M: sealed::Modal> IntoResponse<Command<M>> for LegacyMessage {
+impl<M: ModalMarker> IntoResponse<Command<M>> for LegacyMessage {
     fn __into_response(self) -> ResponseValue {
         ResponseValue(Response::Message(self.into()))
     }
@@ -379,10 +466,12 @@ impl<K: ResponderKind, S: ResponderState> Responder<K, S> {
     }
 }
 
-impl<M: sealed::Modal> Responder<Command<M>, Pending> {
+impl<M: ModalMarker> Responder<Command<M>, Pending> {
     /// Answers with `msg` (callback type 4), with the Command's declared
     /// ephemerality; a reply to the invoking message over a
-    /// [`Dispatcher`](crate::Dispatcher).
+    /// [`Dispatcher`](crate::Dispatcher). When the auto-defer already
+    /// acknowledged the interaction, `msg` edits the original instead
+    /// (INT-03).
     ///
     /// # Errors
     ///
@@ -399,6 +488,7 @@ impl<M: sealed::Modal> Responder<Command<M>, Pending> {
     /// Acknowledges now and answers later (callback type 5, whose only flag
     /// is `EPHEMERAL`, INT-08); a typing indicator over a
     /// [`Dispatcher`](crate::Dispatcher). Edit the original afterwards.
+    /// After the auto-defer it sends nothing.
     ///
     /// # Errors
     ///
@@ -412,15 +502,48 @@ impl<M: sealed::Modal> Responder<Command<M>, Pending> {
     }
 }
 
+impl Responder<Command<OpensModal>, Pending> {
+    /// Opens `modal` (callback type 9); only an `opens_modal` Command has
+    /// it, and no auto-defer is armed for one, so the modal stays the first
+    /// response (INT-05). A modal leaves no original message to edit:
+    /// return [`done`](Responder::done) afterwards.
+    ///
+    /// ```
+    /// use noctis_core::{CommandResponder, HandlerResult, OpensModal, Responded};
+    /// use noctis_ui::Modal;
+    ///
+    /// async fn feedback(r: CommandResponder<OpensModal>, form: Modal) -> HandlerResult<Responded> {
+    ///     Ok(r.modal(form).await?.done())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`ResponderError::Invalid`] (Limits) or [`ResponderError::Encode`]
+    /// (an unresolved Route `custom_id`) before any request;
+    /// [`ResponderError::ModalUnavailable`] over a
+    /// [`Dispatcher`](crate::Dispatcher) or when the interaction is already
+    /// answered; any other [`ResponderError`] from Discord.
+    pub async fn modal(
+        self,
+        modal: Modal,
+    ) -> Result<Responder<Command<OpensModal>, Acked>, ResponderError> {
+        self.shared.modal(modal).await?;
+        Ok(self.acked())
+    }
+}
+
 impl<K: ResponderKind> Responder<K, Acked> {
     /// Replaces the original response with `msg`; its visibility does not
     /// change (INT-10). Editing a legacy original into a V2 message clears
     /// its legacy fields (CV2-02); the reverse is
-    /// [`UiError::V2ToLegacy`].
+    /// [`UiError::V2ToLegacy`]. After 15 minutes a public original whose
+    /// id is known is edited with the bot token (INT-02).
     ///
     /// # Errors
     ///
-    /// A [`ResponderError`].
+    /// A [`ResponderError`]; [`ResponderError::TokenExpired`] after 15
+    /// minutes for an ephemeral original or one whose id is unknown.
     pub async fn edit_original(
         &self,
         msg: impl Into<OutgoingMessage>,
@@ -434,7 +557,10 @@ impl<K: ResponderKind> Responder<K, Acked> {
     /// # Errors
     ///
     /// A [`ResponderError`]; [`ResponderError::EphemeralUnsupported`] for
-    /// an ephemeral follow-up over a [`Dispatcher`](crate::Dispatcher).
+    /// an ephemeral follow-up over a [`Dispatcher`](crate::Dispatcher);
+    /// [`ResponderError::TokenExpired`] after 15 minutes;
+    /// [`ResponderError::FollowupCap`] for the sixth follow-up of a
+    /// user-installed app (INT-11).
     pub async fn followup(
         &self,
         msg: impl Into<OutgoingMessage>,
@@ -448,7 +574,8 @@ impl<K: ResponderKind> Responder<K, Acked> {
     ///
     /// # Errors
     ///
-    /// A [`ResponderError`].
+    /// A [`ResponderError`]; [`ResponderError::TokenExpired`] after 15
+    /// minutes, as for [`edit_original`](Self::edit_original).
     pub async fn delete_original(&self) -> Result<(), ResponderError> {
         self.shared.delete_original().await
     }
@@ -465,6 +592,8 @@ impl<K: ResponderKind> Responder<K, Acked> {
 pub struct FollowupHandle {
     shared: Arc<Shared>,
     message_id: Id<MessageMarker>,
+    channel_id: Option<Id<ChannelMarker>>,
+    visibility: Visibility,
     format: Mutex<MessageFormat>,
 }
 
@@ -474,30 +603,50 @@ impl FollowupHandle {
         self.message_id
     }
 
-    /// Replaces the follow-up with `msg`.
+    /// Replaces the follow-up with `msg`. After 15 minutes a public
+    /// follow-up is edited with the bot token (INT-02).
     ///
     /// # Errors
     ///
-    /// A [`ResponderError`].
+    /// A [`ResponderError`]; [`ResponderError::TokenExpired`] after 15
+    /// minutes for an ephemeral follow-up.
     pub async fn edit(&self, msg: impl Into<OutgoingMessage>) -> Result<(), ResponderError> {
         let mut msg = msg.into();
         let format = *self.format.lock().unwrap_or_else(PoisonError::into_inner);
         let body = self.shared.edit_body(&mut msg, format)?;
-        self.shared
-            .transport
-            .edit_message(self.message_id, body)
-            .await?;
+        match self
+            .shared
+            .expired_route(self.visibility, Some(self.message_id), self.channel_id)?
+        {
+            Some((app, channel_id, id)) => transport::channel_edit(app, channel_id, id, &body)
+                .await
+                .map(drop)?,
+            None => {
+                self.shared
+                    .transport
+                    .edit_message(self.message_id, body)
+                    .await?;
+            }
+        }
         *self.format.lock().unwrap_or_else(PoisonError::into_inner) = msg.format();
         Ok(())
     }
 
-    /// Deletes the follow-up.
+    /// Deletes the follow-up. After 15 minutes a public follow-up is
+    /// deleted with the bot token (INT-02).
     ///
     /// # Errors
     ///
-    /// A [`ResponderError`].
+    /// A [`ResponderError`]; [`ResponderError::TokenExpired`] after 15
+    /// minutes for an ephemeral follow-up.
     pub async fn delete(&self) -> Result<(), ResponderError> {
-        self.shared.transport.delete_message(self.message_id).await
+        match self
+            .shared
+            .expired_route(self.visibility, Some(self.message_id), self.channel_id)?
+        {
+            Some((app, channel_id, id)) => transport::channel_delete(app, channel_id, id).await,
+            None => self.shared.transport.delete_message(self.message_id).await,
+        }
     }
 }
 
@@ -505,6 +654,7 @@ impl fmt::Debug for FollowupHandle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FollowupHandle")
             .field("message_id", &self.message_id)
+            .field("visibility", &self.visibility)
             .finish_non_exhaustive()
     }
 }
@@ -513,6 +663,7 @@ impl fmt::Debug for FollowupHandle {
 pub(crate) const PENDING: u8 = 0;
 pub(crate) const DEFERRED: u8 = 1;
 pub(crate) const REPLIED: u8 = 2;
+pub(crate) const MODAL: u8 = 3;
 
 /// What the original response is.
 #[derive(Clone, Copy, Debug, Default)]
@@ -530,22 +681,38 @@ enum Shape {
 #[derive(Clone, Copy, Debug, Default)]
 struct Original {
     shape: Shape,
-    /// The original message, when the transport knows it (message replies).
+    /// The original message, when known: the message reply, the
+    /// `with_response` callback's message or the last edit's response.
     message_id: Option<Id<MessageMarker>>,
+    /// Who sees it.
+    ephemerality: Ephemerality,
+    /// Its channel, when an edit response named it.
+    channel_id: Option<Id<ChannelMarker>>,
 }
 
+/// The bot-token route of an expired interaction: the App, the channel and
+/// the message.
+type BotRoute<'a> = (&'a AppShared, Id<ChannelMarker>, Id<MessageMarker>);
+
 /// What one interaction's responders and its pipeline share: the
-/// transport, the state machine, the original's format, the declared
-/// ephemerality and the App's Limits.
+/// transport, the state machine and its gate, the original response, the
+/// declared ephemerality, the App's Limits and the follow-up cap.
 pub(crate) struct Shared {
     transport: Transport,
-    /// `PENDING`, `DEFERRED` or `REPLIED`; Story 6.6's auto-defer task
-    /// becomes a second writer.
+    /// `PENDING`, `DEFERRED`, `REPLIED` or `MODAL`; written only under
+    /// `gate`, read without it.
     state: AtomicU8,
+    /// Serializes every initial response: the handler's and the
+    /// auto-defer's (INT-03).
+    gate: tokio::sync::Mutex<()>,
     /// Never locked across an `.await`.
     original: Mutex<Original>,
     ephemerality: Ephemerality,
     limits: Limits,
+    /// Follow-up slots taken (INT-11).
+    followups: AtomicU8,
+    /// `Some(5)` for a user-install-only interaction.
+    followup_cap: Option<u8>,
 }
 
 impl fmt::Debug for Shared {
@@ -554,6 +721,7 @@ impl fmt::Debug for Shared {
             .field("transport", &self.transport)
             .field("state", &self.state.load(Ordering::Acquire))
             .field("ephemerality", &self.ephemerality)
+            .field("followup_cap", &self.followup_cap)
             .finish_non_exhaustive()
     }
 }
@@ -564,16 +732,32 @@ impl Shared {
         ephemerality: Ephemerality,
         limits: Limits,
     ) -> Arc<Self> {
+        Self::with_followup_cap(transport, ephemerality, limits, None)
+    }
+
+    /// As [`new`](Self::new), with at most `cap` follow-ups (INT-11).
+    pub(crate) fn with_followup_cap(
+        transport: Transport,
+        ephemerality: Ephemerality,
+        limits: Limits,
+        cap: Option<u8>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             transport,
             state: AtomicU8::new(PENDING),
-            original: Mutex::new(Original::default()),
+            gate: tokio::sync::Mutex::new(()),
+            original: Mutex::new(Original {
+                ephemerality,
+                ..Original::default()
+            }),
             ephemerality,
             limits,
+            followups: AtomicU8::new(0),
+            followup_cap: cap,
         })
     }
 
-    /// `PENDING`, `DEFERRED` or `REPLIED`.
+    /// `PENDING`, `DEFERRED`, `REPLIED` or `MODAL`.
     pub(crate) fn state(&self) -> u8 {
         self.state.load(Ordering::Acquire)
     }
@@ -587,13 +771,9 @@ impl Shared {
     }
 
     /// Sends a returned message: the initial reply while Pending, else an
-    /// edit of the original (INT-12).
+    /// edit of the original (INT-12); the gate decides.
     pub(crate) async fn finish(&self, msg: OutgoingMessage) -> Result<(), ResponderError> {
-        if self.state() == PENDING {
-            self.reply(msg).await
-        } else {
-            self.edit_original(msg).await
-        }
+        self.reply(msg).await
     }
 
     /// Validates `msg` against the Limits (Lenient mode truncates), then
@@ -615,33 +795,85 @@ impl Shared {
         Ok(())
     }
 
+    /// The bot-token route for a message of `visibility` once the
+    /// interaction token expired (INT-02): `Ok(None)` while the token is
+    /// valid (or off the interaction transport), the route for a public
+    /// message whose id and channel are known, else
+    /// [`ResponderError::TokenExpired`].
+    fn expired_route(
+        &self,
+        visibility: Visibility,
+        message_id: Option<Id<MessageMarker>>,
+        channel_id: Option<Id<ChannelMarker>>,
+    ) -> Result<Option<BotRoute<'_>>, ResponderError> {
+        let Transport::Interaction(target) = &self.transport else {
+            return Ok(None);
+        };
+        if !target.expired() {
+            return Ok(None);
+        }
+        match (visibility, message_id, channel_id.or(target.channel_id)) {
+            (Ephemerality::Public, Some(id), Some(channel_id)) => {
+                Ok(Some((&*target.app, channel_id, id)))
+            }
+            _ => Err(ResponderError::TokenExpired),
+        }
+    }
+
     async fn reply(&self, mut msg: OutgoingMessage) -> Result<(), ResponderError> {
         if self.transport.is_message() && self.ephemerality == Ephemerality::Ephemeral {
             return Err(ResponderError::EphemeralUnsupported);
         }
         self.prepare(&mut msg)?;
+        let gate = self.gate.lock().await;
+        if self.state() != PENDING {
+            // The auto-defer (or a defer) answered first (INT-03).
+            drop(gate);
+            return self.edit_original(msg).await;
+        }
         let message_id = if let Transport::Message(target) = &self.transport {
             Some(target.reply(create(&msg)?).await?)
         } else {
+            // Encoded even when detached, so the seams catch encode errors.
             let flags = self.ephemerality.callback_flags();
             let data = match &msg {
                 OutgoingMessage::V2(m) => encode(m.callback_body(flags))?,
                 OutgoingMessage::Legacy(m) => encode(m.callback_body(flags))?,
             };
-            if let Transport::Interaction(target) = &self.transport {
-                target.callback(&json!({ "type": 4, "data": data })).await?;
+            match &self.transport {
+                Transport::Interaction(target) => {
+                    target
+                        .callback(&json!({ "type": 4, "data": data }), true)
+                        .await?
+                }
+                Transport::Message(_) | Transport::Detached => None,
             }
-            None
         };
         self.state.store(REPLIED, Ordering::Release);
         self.set_original(Original {
             shape: Shape::Sent(msg.format()),
             message_id,
+            ephemerality: self.ephemerality,
+            channel_id: None,
         });
         Ok(())
     }
 
     async fn defer(&self, ephemerality: Ephemerality) -> Result<(), ResponderError> {
+        if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
+            return Err(ResponderError::EphemeralUnsupported);
+        }
+        let _gate = self.gate.lock().await;
+        if self.state() != PENDING {
+            tracing::debug!(target: "noctis::responder", "already acknowledged: defer sends nothing");
+            return Ok(());
+        }
+        self.send_defer(ephemerality).await
+    }
+
+    /// Sends the defer of `ephemerality`; the caller holds the gate and saw
+    /// `PENDING`.
+    async fn send_defer(&self, ephemerality: Ephemerality) -> Result<(), ResponderError> {
         match &self.transport {
             Transport::Interaction(target) => {
                 let body = match ephemerality {
@@ -650,21 +882,61 @@ impl Shared {
                         json!({ "type": 5, "data": { "flags": CallbackFlags::EPHEMERAL.bits() } })
                     }
                 };
-                target.callback(&body).await?;
+                target.callback(&body, false).await?;
             }
-            Transport::Message(target) => {
-                if ephemerality == Ephemerality::Ephemeral {
-                    return Err(ResponderError::EphemeralUnsupported);
-                }
-                target.typing().await?;
-            }
+            Transport::Message(target) => target.typing().await?,
             Transport::Detached => {}
         }
         self.state.store(DEFERRED, Ordering::Release);
         self.set_original(Original {
             shape: Shape::Deferred,
             message_id: None,
+            ephemerality,
+            channel_id: None,
         });
+        Ok(())
+    }
+
+    /// The auto-defer (INT-01): while Pending, a type-5 callback with the
+    /// declared ephemerality. `false` when that callback failed (the state
+    /// stays Pending; the caller logs it).
+    pub(crate) async fn auto_defer(&self) -> bool {
+        let Transport::Interaction(target) = &self.transport else {
+            return true;
+        };
+        let _gate = self.gate.lock().await;
+        if self.state() != PENDING {
+            return true;
+        }
+        if self.send_defer(self.ephemerality).await.is_err() {
+            return false;
+        }
+        metrics::counter!("noctis_autodefer_total", "app" => Arc::clone(&target.app.app))
+            .increment(1);
+        true
+    }
+
+    async fn modal(&self, mut modal: Modal) -> Result<(), ResponderError> {
+        if self.transport.is_message() {
+            return Err(ResponderError::ModalUnavailable);
+        }
+        let report = noctis_ui::validate(&mut modal, &self.limits)?;
+        for warning in &report.warnings {
+            tracing::debug!(target: "noctis::responder", ?warning, "modal adjusted to fit");
+        }
+        let data = serde_json::to_value(&modal).map_err(|e| ResponderError::Encode {
+            reason: e.to_string(),
+        })?;
+        let _gate = self.gate.lock().await;
+        if self.state() != PENDING {
+            return Err(ResponderError::ModalUnavailable);
+        }
+        if let Transport::Interaction(target) = &self.transport {
+            target
+                .callback(&json!({ "type": 9, "data": data }), false)
+                .await?;
+        }
+        self.state.store(MODAL, Ordering::Release);
         Ok(())
     }
 
@@ -689,6 +961,7 @@ impl Shared {
             Shape::Sent(format) => format,
             Shape::Unsent | Shape::Deferred => msg.format(),
         };
+        let mut channel_id = original.channel_id;
         let message_id = match (&self.transport, original.message_id) {
             (Transport::Message(target), None) => {
                 // A deferred message reply has no message yet: post it,
@@ -701,13 +974,25 @@ impl Shared {
             }
             (transport, message_id) => {
                 let body = self.edit_body(&mut msg, format)?;
-                transport.edit_original(message_id, body).await?;
-                message_id
+                let posted = match self.expired_route(
+                    original.ephemerality,
+                    message_id,
+                    original.channel_id,
+                )? {
+                    Some((app, channel, id)) => {
+                        transport::channel_edit(app, channel, id, &body).await?
+                    }
+                    None => transport.edit_original(message_id, body).await?,
+                };
+                channel_id = posted.channel_id.or(channel_id);
+                posted.message_id.or(message_id)
             }
         };
         self.set_original(Original {
             shape: Shape::Sent(msg.format()),
             message_id,
+            ephemerality: original.ephemerality,
+            channel_id,
         });
         Ok(())
     }
@@ -728,16 +1013,39 @@ impl Shared {
                 encode(m.callback_body(visibility.callback_flags()))?
             }
         };
-        let message_id = self.transport.followup(body).await?;
+        if let Transport::Interaction(target) = &self.transport
+            && target.expired()
+        {
+            return Err(ResponderError::TokenExpired);
+        }
+        if let Some(cap) = self.followup_cap {
+            // A slot is never refunded: a rejected request may still have
+            // counted at Discord (INT-11).
+            self.followups
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    (n < cap).then_some(n + 1)
+                })
+                .map_err(|_| ResponderError::FollowupCap)?;
+        }
+        let posted = self.transport.followup(body).await?;
         Ok(FollowupHandle {
             shared: Arc::clone(self),
-            message_id,
+            message_id: posted.id,
+            channel_id: posted.channel_id,
+            visibility,
             format: Mutex::new(msg.format()),
         })
     }
 
     async fn delete_original(&self) -> Result<(), ResponderError> {
         let original = self.original();
+        if let Some((app, channel, id)) = self.expired_route(
+            original.ephemerality,
+            original.message_id,
+            original.channel_id,
+        )? {
+            return transport::channel_delete(app, channel, id).await;
+        }
         match (&self.transport, original.message_id) {
             (Transport::Message(_), None) => Ok(()),
             (transport, message_id) => transport.delete_original(message_id).await,

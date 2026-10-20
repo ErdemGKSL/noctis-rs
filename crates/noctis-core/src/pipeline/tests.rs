@@ -20,10 +20,11 @@ use crate::events::{EventCtx, EventHandler};
 use crate::options::__options::required;
 use crate::options::{OptionError, OptionValue, Options};
 use crate::responder::tests::{Fixture, discord, v2};
+use crate::responder::{ResponderError, Visibility};
 use crate::test_support::{Capture, Recording, Seen};
 use crate::{
-    App, AppBuilder, CommandHandler, CommandMetadata, ContextMenuHandler, ErrorOrigin, Module,
-    Responded, Runtime,
+    App, AppBuilder, CommandHandler, CommandMetadata, CommandResponder, ContextMenuHandler,
+    ErrorOrigin, Module, Responded, Runtime,
 };
 
 /// A shared log of what handlers saw.
@@ -172,6 +173,8 @@ fn boom() -> V2Message {
 }
 
 const CB: &str = "/api/v10/interactions/100/tok/callback";
+/// A type-4 callback asks for the message (`with_response`).
+const CB_REPLY: &str = "/api/v10/interactions/100/tok/callback?with_response=true";
 
 /// Matrix 1 and the Resolution AC: one type-4 callback, V2 flags, and the
 /// span carries `module` and `path`.
@@ -195,7 +198,7 @@ async fn global_slash_replies() {
         .await;
     let requests = p.requests();
     assert_eq!(requests.len(), 1, "{requests:?}");
-    assert_eq!(requests[0].1, CB);
+    assert_eq!(requests[0].1, CB_REPLY);
     assert_eq!(requests[0].2["type"], 4);
     assert_eq!(requests[0].2["data"]["flags"], 32768);
     assert!(requests[0].2["data"]["allowed_mentions"].is_object());
@@ -888,5 +891,590 @@ async fn command_metrics() {
             .labels()
             .any(|l| l.key() == "kind" && l.value() == "command"),
         "{snap:?}"
+    );
+}
+
+// ---- Story 6.6: auto-defer, token lifetime and follow-up cap ----
+
+const ORIGINAL: &str = "/api/v10/webhooks/7/tok/messages/@original";
+
+/// `inbound(json)`, received `ago` before now (queueing time counts).
+fn inbound_ago(json: &Value, ago: Duration) -> Inbound {
+    let mut inbound = inbound(json);
+    inbound.received_at = Instant::now().checked_sub(ago).unwrap();
+    inbound
+}
+
+/// A Command at `paths` that sleeps `delay` (real time), then returns a
+/// message.
+fn sleeper(name: &'static str, paths: &'static [&'static str], delay: Duration) -> CommandHandler {
+    CommandHandler::__new_plain(
+        name,
+        paths,
+        "d",
+        move |_: CommandCtx, _: CommandResponder| async move {
+            tokio::time::sleep(delay).await;
+            Ok(v2("late"))
+        },
+    )
+}
+
+/// A local metrics recorder: the auto-defer task runs on the test's
+/// thread, so it records into it too. A snapshot drains the recorder, so
+/// the totals accumulate here.
+struct Metrics {
+    recorder: metrics_util::debugging::DebuggingRecorder,
+    totals: Mutex<(u64, Vec<f64>)>,
+}
+
+impl Metrics {
+    fn new() -> Self {
+        Self {
+            recorder: metrics_util::debugging::DebuggingRecorder::new(),
+            totals: Mutex::default(),
+        }
+    }
+
+    /// `noctis_autodefer_total` and every `noctis_ack_latency_seconds`
+    /// sample so far; both carry only the `app` label.
+    fn read(&self) -> (u64, Vec<f64>) {
+        use metrics_util::debugging::DebugValue;
+        let mut totals = self.totals.lock().unwrap();
+        let (count, samples) = &mut *totals;
+        for (key, _, _, value) in self.recorder.snapshotter().snapshot().into_vec() {
+            let name = key.key().name();
+            if name != "noctis_autodefer_total" && name != "noctis_ack_latency_seconds" {
+                continue;
+            }
+            let labels: Vec<_> = key.key().labels().map(|l| l.key().to_owned()).collect();
+            assert_eq!(labels, ["app"], "{name}");
+            match value {
+                DebugValue::Counter(n) => *count += n,
+                DebugValue::Histogram(v) => samples.extend(v.into_iter().map(f64::from)),
+                DebugValue::Gauge(_) => {}
+            }
+        }
+        totals.clone()
+    }
+}
+
+/// INT-01 (Story 6.6 Matrix 2, 3 and 10): a handler that has not answered
+/// by the deadline is deferred with exactly `{"type":5}` (plus `EPHEMERAL`
+/// when declared), then its message edits the original.
+#[tokio::test]
+async fn int_01_auto_defer_at_deadline() {
+    let metrics = Metrics::new();
+    let _metrics = metrics::set_default_local_recorder(&metrics.recorder);
+    let module = Module::new("m")
+        .add(sleeper("m::slow", &["slow"], Duration::from_millis(300)))
+        .add(
+            sleeper("m::hidden", &["hidden"], Duration::from_millis(300))
+                .__with_ephemerality(Ephemerality::Ephemeral),
+        );
+    let p = Pipeline::start_with(module, |b| {
+        b.ack_deadline(Duration::from_millis(50));
+    })
+    .await;
+    p.run(inbound(&interaction(slash("slow", json!([])), json!({}))))
+        .await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(
+        requests[0],
+        (Method::POST, CB.to_owned(), json!({ "type": 5 }))
+    );
+    assert_eq!(
+        (&requests[1].0, requests[1].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
+    assert_eq!(requests[1].2["flags"], 32768);
+    p.run(inbound(&interaction(slash("hidden", json!([])), json!({}))))
+        .await;
+    assert_eq!(
+        p.requests()[2].2,
+        json!({ "type": 5, "data": { "flags": 64 } })
+    );
+    assert!(p.reports().is_empty());
+    let (deferred, latencies) = metrics.read();
+    assert_eq!((deferred, latencies.len()), (2, 2));
+    assert!(
+        latencies.iter().all(|l| (0.05..1.0).contains(l)),
+        "{latencies:?}"
+    );
+
+    // Matrix 10: the deadline already passed while queued (default 2 s).
+    let p = Pipeline::start(Module::new("m").add(sleeper(
+        "m::slow",
+        &["slow"],
+        Duration::from_millis(300),
+    )))
+    .await;
+    let started = Instant::now();
+    let item = inbound_ago(
+        &interaction(slash("slow", json!([])), json!({})),
+        Duration::from_millis(2500),
+    );
+    p.run(item).await;
+    assert!(started.elapsed() < Duration::from_secs(1));
+    let requests = p.requests();
+    assert_eq!(requests[0].2, json!({ "type": 5 }));
+    assert_eq!(requests[1].0, Method::PATCH);
+    assert_eq!(metrics.read().0, 3);
+}
+
+/// Story 6.6 Matrix 1, 8, 9 and 40: a reply before the deadline, an
+/// explicit defer before it and an explicit defer after the auto-defer.
+#[tokio::test]
+async fn int_01_handler_answers_first() {
+    let metrics = Metrics::new();
+    let _metrics = metrics::set_default_local_recorder(&metrics.recorder);
+    let module = Module::new("m")
+        .add(CommandHandler::__new_plain(
+            "m::fast",
+            &["fast"],
+            "d",
+            |_: CommandCtx, r: CommandResponder| async move {
+                tokio::time::sleep(Duration::from_millis(120)).await;
+                Ok::<_, HandlerError>(r.reply(v2("fast")).await?.done())
+            },
+        ))
+        .add(CommandHandler::__new_plain(
+            "m::early",
+            &["early"],
+            "d",
+            |_: CommandCtx, r: CommandResponder| async move {
+                let _ = r.defer(Ephemerality::Public).await?.done();
+                tokio::time::sleep(Duration::from_millis(700)).await;
+                Ok(v2("done"))
+            },
+        ))
+        .add(CommandHandler::__new_plain(
+            "m::after",
+            &["after"],
+            "d",
+            |_: CommandCtx, r: CommandResponder| async move {
+                tokio::time::sleep(Duration::from_millis(700)).await;
+                Ok::<_, HandlerError>(r.defer(Ephemerality::Ephemeral).await?.done())
+            },
+        ));
+    let p = Pipeline::start_with(module, |b| {
+        b.ack_deadline(Duration::from_millis(400));
+    })
+    .await;
+    // Matrix 1 and 40.
+    p.run(inbound(&interaction(slash("fast", json!([])), json!({}))))
+        .await;
+    tokio::time::sleep(Duration::from_millis(450)).await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].2["type"], 4);
+    let (deferred, latencies) = metrics.read();
+    assert_eq!(deferred, 0);
+    assert_eq!(latencies.len(), 1);
+    assert!((0.12..0.4).contains(&latencies[0]), "{latencies:?}");
+    // Matrix 8.
+    p.run(inbound(&interaction(slash("early", json!([])), json!({}))))
+        .await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert_eq!(requests[1].2, json!({ "type": 5 }));
+    assert_eq!(requests[2].0, Method::PATCH);
+    assert_eq!(metrics.read().0, 0);
+    // Matrix 9: the late defer is a no-op.
+    p.run(inbound(&interaction(slash("after", json!([])), json!({}))))
+        .await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 4, "{requests:?}");
+    assert_eq!(requests[3].2, json!({ "type": 5 }));
+    let (deferred, latencies) = metrics.read();
+    assert_eq!((deferred, latencies.len()), (1, 3));
+    assert!(p.reports().is_empty());
+}
+
+/// INT-03 (Story 6.6 Matrix 4, 6 and 7): after the auto-defer a `reply` or
+/// a returned legacy message edits the original, and at most one callback
+/// is ever sent.
+#[tokio::test]
+async fn int_03_late_reply_becomes_edit_original() {
+    let module = Module::new("m")
+        .add(CommandHandler::__new_plain(
+            "m::late",
+            &["late"],
+            "d",
+            |_: CommandCtx, r: CommandResponder| async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Ok::<_, HandlerError>(r.reply(v2("late")).await?.done())
+            },
+        ))
+        .add(CommandHandler::__new_plain(
+            "m::legacy",
+            &["legacy"],
+            "d",
+            |_: CommandCtx, _: CommandResponder| async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Ok(noctis_ui::LegacyMessage::new("x"))
+            },
+        ));
+    let p = Pipeline::start_with(module, |b| {
+        b.ack_deadline(Duration::from_millis(50));
+    })
+    .await;
+    p.run(inbound(&interaction(slash("late", json!([])), json!({}))))
+        .await;
+    p.run(inbound(&interaction(slash("legacy", json!([])), json!({}))))
+        .await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 4, "{requests:?}");
+    assert_eq!(requests[0].2, json!({ "type": 5 }));
+    assert_eq!(
+        (&requests[1].0, requests[1].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
+    assert_eq!(requests[1].2["flags"], 32768);
+    assert_eq!(requests[1].2["components"][0]["content"], "late");
+    assert_eq!(requests[2].2, json!({ "type": 5 }));
+    assert_eq!(requests[3].0, Method::PATCH);
+    assert_eq!(requests[3].2["content"], "x");
+    assert!(requests[3].2.get("embeds").is_none(), "{:?}", requests[3].2);
+    assert!(p.reports().is_empty(), "{:?}", p.reports());
+
+    // Matrix 7: the reply and the timer are both ready at once.
+    let race = CommandHandler::__new_plain(
+        "m::race",
+        &["race"],
+        "d",
+        |_: CommandCtx, r: CommandResponder| async move {
+            Ok::<_, HandlerError>(r.reply(v2("now")).await?.done())
+        },
+    );
+    let p = Pipeline::start_with(Module::new("m").add(race), |b| {
+        b.ack_deadline(Duration::ZERO);
+    })
+    .await;
+    for _ in 0..5 {
+        p.fx.server.log.lock().unwrap().clear();
+        p.run(inbound(&interaction(slash("race", json!([])), json!({}))))
+            .await;
+        let requests = p.requests();
+        let callbacks = requests.iter().filter(|r| r.1.starts_with(CB)).count();
+        assert_eq!(callbacks, 1, "{requests:?}");
+        if requests[0].2["type"] == 5 {
+            assert_eq!(requests.len(), 2, "{requests:?}");
+            assert_eq!(requests[1].0, Method::PATCH);
+        } else {
+            assert_eq!(requests.len(), 1, "{requests:?}");
+        }
+    }
+    assert!(p.reports().is_empty(), "{:?}", p.reports());
+}
+
+/// Story 6.6 Matrix 5 and the Late delivery AC: a handler answering 5 s
+/// (virtual) after receipt edits the original; no second callback.
+#[tokio::test]
+async fn returned_message_five_seconds_late_edits_original() {
+    let go = Arc::new(Notify::new());
+    let handler = {
+        let go = Arc::clone(&go);
+        CommandHandler::__new_plain(
+            "m::slow",
+            &["slow"],
+            "d",
+            move |_: CommandCtx, _: CommandResponder| {
+                let go = Arc::clone(&go);
+                async move {
+                    go.notified().await;
+                    Ok(v2("late"))
+                }
+            },
+        )
+    };
+    let p = Arc::new(
+        Pipeline::start_with(Module::new("m").add(handler), |b| {
+            b.ack_deadline(Duration::from_millis(50));
+        })
+        .await,
+    );
+    let received_at = Instant::now();
+    let run = tokio::spawn({
+        let p = Arc::clone(&p);
+        async move {
+            p.run(inbound(&interaction(slash("slow", json!([])), json!({}))))
+                .await;
+        }
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while p.requests().is_empty() {
+        assert!(std::time::Instant::now() < deadline, "no auto-defer");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(5)).await;
+    tokio::time::resume();
+    assert!(received_at.elapsed() >= Duration::from_secs(5));
+    go.notify_one();
+    tokio::time::timeout(Duration::from_secs(10), run)
+        .await
+        .unwrap()
+        .unwrap();
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[0].2, json!({ "type": 5 }));
+    assert_eq!(
+        (&requests[1].0, requests[1].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
+    assert_eq!(requests[1].2["flags"], 32768);
+}
+
+/// Story 6.6 Matrix 11: a failed auto-defer is logged and changes
+/// nothing; the handler's own reply gets the typed error.
+#[tokio::test]
+async fn auto_defer_failure_is_logged() {
+    let capture = Capture::default();
+    let _guard = tracing::subscriber::set_default(capture.subscriber());
+    // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+    tracing::callsite::rebuild_interest_cache();
+    let metrics = Metrics::new();
+    let _metrics = metrics::set_default_local_recorder(&metrics.recorder);
+    let handler = CommandHandler::__new_plain(
+        "m::slow",
+        &["slow"],
+        "d",
+        |_: CommandCtx, r: CommandResponder| async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok::<_, HandlerError>(r.reply(v2("late")).await?.done())
+        },
+    );
+    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    p.run(inbound_ago(
+        &interaction(slash("slow", json!([])), json!({})),
+        Duration::from_millis(3500),
+    ))
+    .await;
+    assert!(p.requests().is_empty());
+    let lines = capture.lines_with(&["noctis::dispatch", "auto-defer failed", "m::slow"]);
+    assert_eq!(lines.len(), 1, "{}", capture.text());
+    assert!(!lines[0].contains("tok"), "{}", lines[0]);
+    let reports = p.reports();
+    assert_eq!(reports.len(), 1);
+    assert!(
+        reports[0].kind.contains("not acknowledged in time"),
+        "{}",
+        reports[0].kind
+    );
+    assert_eq!(metrics.read().0, 0);
+}
+
+/// Story 6.6 Matrix 12 and 13: the timer stops with the handler run (an
+/// error, a panic, a shutdown cancel).
+#[tokio::test]
+async fn timer_stops_with_the_handler() {
+    let started = Arc::new(Notify::new());
+    let entered = Arc::clone(&started);
+    let module = Module::new("m")
+        .add(CommandHandler::__new_plain(
+            "m::fail",
+            &["fail"],
+            "d",
+            |_: CommandCtx, _: CommandResponder| async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                Err::<V2Message, _>(HandlerError::new(std::io::Error::other("boom")))
+            },
+        ))
+        .add(CommandHandler::__new_plain(
+            "m::inner",
+            &["inner"],
+            "d",
+            |_: CommandCtx, _: CommandResponder| async {
+                tokio::task::yield_now().await;
+                Ok(boom())
+            },
+        ))
+        .add(CommandHandler::__new_plain(
+            "m::stuck",
+            &["stuck"],
+            "d",
+            move |_: CommandCtx, _: CommandResponder| {
+                let entered = Arc::clone(&entered);
+                async move {
+                    entered.notify_one();
+                    std::future::pending::<()>().await;
+                    Ok(v2("never"))
+                }
+            },
+        ));
+    let p = Arc::new(
+        Pipeline::start_with(module, |b| {
+            b.ack_deadline(Duration::from_millis(100));
+        })
+        .await,
+    );
+    for name in ["fail", "inner"] {
+        p.run(inbound(&interaction(slash(name, json!([])), json!({}))))
+            .await;
+    }
+    let cancel = CancellationToken::new();
+    let run = tokio::spawn({
+        let p = Arc::clone(&p);
+        let cancel = cancel.clone();
+        async move {
+            p.run_with(
+                inbound(&interaction(slash("stuck", json!([])), json!({}))),
+                cancel,
+            )
+            .await;
+        }
+    });
+    started.notified().await;
+    cancel.cancel();
+    run.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(p.requests().is_empty(), "{:?}", p.requests());
+    let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
+    assert_eq!(kinds, ["error:boom", "panic:boom", "cancelled"]);
+}
+
+/// Story 6.6 Matrix 16: the Dispatcher arms no auto-defer.
+#[tokio::test]
+async fn dispatcher_has_no_auto_defer() {
+    let p = Pipeline::start_with(
+        Module::new("m").add(sleeper("m::slow", &["slow"], Duration::from_millis(100))),
+        |b| {
+            b.ack_deadline(Duration::ZERO);
+        },
+    )
+    .await;
+    p.dispatcher()
+        .run_command(CommandInvocation::new(
+            CommandInput::new("slow"),
+            Id::new(5),
+            Id::new(6),
+            Id::new(3),
+        ))
+        .await
+        .unwrap();
+    let requests = p.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].1, "/api/v10/channels/5/messages");
+}
+
+/// INT-05 (Story 6.6 Matrix 18): an `opens_modal` Command gets no
+/// auto-defer; a missed ack deadline logs one error naming the handler.
+#[tokio::test]
+async fn int_05_opens_modal_never_auto_defers() {
+    let capture = Capture::default();
+    let _guard = tracing::subscriber::set_default(capture.subscriber());
+    // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+    tracing::callsite::rebuild_interest_cache();
+    let handler = CommandHandler::__new_plain(
+        "m::form",
+        &["form"],
+        "d",
+        |_: CommandCtx, _: CommandResponder<crate::OpensModal>| async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Err::<Responded, _>(HandlerError::new(std::io::Error::other("no modal")))
+        },
+    );
+    assert!(handler.opens_modal());
+    assert!(!sleeper("m::x", &["x"], Duration::ZERO).opens_modal());
+    let p = Pipeline::start_with(Module::new("forms").add(handler), |b| {
+        b.ack_deadline(Duration::ZERO);
+    })
+    .await;
+    p.run(inbound(&interaction(slash("form", json!([])), json!({}))))
+        .await;
+    assert!(p.requests().is_empty());
+    let missed = [
+        "noctis::dispatch",
+        "did not answer within the 3 s ack deadline",
+    ];
+    assert!(capture.lines_with(&missed).is_empty(), "{}", capture.text());
+    p.run(inbound_ago(
+        &interaction(slash("form", json!([])), json!({})),
+        Duration::from_millis(2950),
+    ))
+    .await;
+    assert!(p.requests().is_empty());
+    let lines = capture.lines_with(&missed);
+    assert_eq!(lines.len(), 1, "{}", capture.text());
+    assert!(
+        lines[0].contains("handler=\"m::form\"") && lines[0].contains("module=\"forms\""),
+        "{}",
+        lines[0]
+    );
+    assert!(lines[0].contains("ERROR"), "{}", lines[0]);
+}
+
+/// INT-11 (Story 6.6 Matrix 34-37 and 39): a user-install-only interaction
+/// sends at most 5 follow-ups; a guild install or no owner has no cap; an
+/// invalid follow-up uses no slot.
+#[tokio::test]
+async fn int_11_sixth_followup_capped() {
+    let log = Log::default();
+    let handler = {
+        let log = log.clone();
+        CommandHandler::__new_plain(
+            "m::many",
+            &["many"],
+            "d",
+            move |_: CommandCtx, r: CommandResponder| {
+                let log = log.clone();
+                async move {
+                    let acked = r.defer(Ephemerality::Public).await?;
+                    let big = Components::new()
+                        .push(ActionRow::buttons([
+                            LinkButton::new("https://x.y").label("a".repeat(81))
+                        ]));
+                    let mut results = Vec::new();
+                    let first = acked.followup(big, Visibility::Public).await;
+                    results.push(first.map(drop));
+                    for _ in 0..6 {
+                        let sent = acked.followup(v2("f"), Visibility::Ephemeral).await;
+                        results.push(sent.map(drop));
+                    }
+                    let line: Vec<&str> = results
+                        .iter()
+                        .map(|r| match r {
+                            Ok(()) => "ok",
+                            Err(ResponderError::Invalid(_)) => "invalid",
+                            Err(ResponderError::FollowupCap) => "cap",
+                            Err(_) => "other",
+                        })
+                        .collect();
+                    log.push(line.join(","));
+                    Ok::<_, HandlerError>(acked.done())
+                }
+            },
+        )
+    };
+    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    for owners in [
+        json!({ "1": "3" }),
+        json!({ "0": "4", "1": "3" }),
+        json!({ "0": "4" }),
+        json!({}),
+    ] {
+        p.fx.server.log.lock().unwrap().clear();
+        p.run(inbound(&interaction(
+            slash("many", json!([])),
+            json!({ "authorizing_integration_owners": owners }),
+        )))
+        .await;
+        let sent = p
+            .requests()
+            .iter()
+            .filter(|r| r.1.starts_with("/api/v10/webhooks/7/tok?"))
+            .count();
+        let expected = if owners == json!({ "1": "3" }) { 5 } else { 6 };
+        assert_eq!(sent, expected, "{owners}");
+    }
+    assert_eq!(
+        log.lines(),
+        [
+            "invalid,ok,ok,ok,ok,ok,cap",
+            "invalid,ok,ok,ok,ok,ok,ok",
+            "invalid,ok,ok,ok,ok,ok,ok",
+            "invalid,ok,ok,ok,ok,ok,ok",
+        ]
     );
 }

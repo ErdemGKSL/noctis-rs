@@ -59,6 +59,11 @@ const SHUTDOWN_GRACE_VAR: &str = "NOCTIS_SHUTDOWN_GRACE";
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// The allowed `shutdown_grace` range.
 const SHUTDOWN_GRACE_RANGE: RangeInclusive<Duration> = Duration::ZERO..=Duration::from_mins(15);
+/// The auto-defer deadline when `ack_deadline` is not called (INT-01).
+const DEFAULT_ACK_DEADLINE: Duration = Duration::from_secs(2);
+/// The allowed `ack_deadline` range: above 2500 ms a hedged type-5
+/// callback no longer fits Discord's 3 s.
+const ACK_DEADLINE_RANGE: RangeInclusive<Duration> = Duration::ZERO..=Duration::from_millis(2500);
 /// How long shutdown waits for cancelled handlers after the grace period.
 const CANCEL_WAIT: Duration = Duration::from_secs(1);
 /// How long a closing shard waits for the gateway's close frame.
@@ -213,6 +218,20 @@ impl App {
     /// ```
     pub fn limits(&self) -> &Limits {
         &self.shared.limits
+    }
+
+    /// How long after an interaction arrives the auto-defer acknowledges
+    /// it when its handler has not answered yet
+    /// ([`AppBuilder::ack_deadline`]; 2000 ms when unset, INT-01).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.ack_deadline(), std::time::Duration::from_millis(2000));
+    /// # }
+    /// ```
+    pub fn ack_deadline(&self) -> Duration {
+        self.shared.ack_deadline
     }
 
     /// The normalized HTTP proxy authority (`host[:port]`), if one was set.
@@ -962,6 +981,7 @@ impl fmt::Debug for App {
             .field("shutdown_grace", &self.shutdown_grace)
             .field("error_sinks", &self.shared.sinks)
             .field("limits", &self.shared.limits)
+            .field("ack_deadline", &self.shared.ack_deadline)
             .finish_non_exhaustive()
     }
 }
@@ -1017,6 +1037,8 @@ pub struct AppBuilder {
     error_sinks: ErrorSinks,
     /// The Limits every Responder validates against.
     limits: Limits,
+    /// The raw auto-defer deadline; `build` checks it.
+    ack_deadline: Duration,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1063,6 +1085,7 @@ impl AppBuilder {
             shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
             error_sinks: ErrorSinks::default(),
             limits: Limits::default(),
+            ack_deadline: DEFAULT_ACK_DEADLINE,
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -1163,6 +1186,21 @@ impl AppBuilder {
     /// ```
     pub fn limits(&mut self, limits: Limits) -> &mut Self {
         self.limits = limits;
+        self
+    }
+
+    /// Sets when the auto-defer acknowledges an interaction whose handler
+    /// has not answered yet, measured from the moment the gateway received
+    /// it: 0 ms..=2500 ms, default 2000 ms (INT-01). 0 always defers. Out
+    /// of range is a [`BuildViolation::InvalidAckDeadline`]. The last call
+    /// wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.ack_deadline(std::time::Duration::from_millis(1500));
+    /// ```
+    pub fn ack_deadline(&mut self, deadline: Duration) -> &mut Self {
+        self.ack_deadline = deadline;
         self
     }
 
@@ -1560,6 +1598,11 @@ impl AppBuilder {
                 actual: self.shutdown_grace,
             });
         }
+        if !ACK_DEADLINE_RANGE.contains(&self.ack_deadline) {
+            self.violations.push(BuildViolation::InvalidAckDeadline {
+                actual: self.ack_deadline,
+            });
+        }
         let edge_listener = self.check_http();
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
         let registry = Arc::new(registry);
@@ -1594,6 +1637,7 @@ impl AppBuilder {
                 edge,
                 limits: config.limits,
                 registry: Arc::clone(&registry),
+                ack_deadline: config.ack_deadline,
             }),
             http_timeout: config.http_timeout,
             http_proxy,
@@ -1669,6 +1713,7 @@ impl fmt::Debug for AppBuilder {
             .field("shutdown_grace", &self.shutdown_grace)
             .field("error_sinks", &self.error_sinks)
             .field("limits", &self.limits)
+            .field("ack_deadline", &self.ack_deadline)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

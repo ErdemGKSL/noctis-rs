@@ -593,18 +593,22 @@ async fn recorded_set_matches_catalog() {
     let mut seen = check_history(&ops);
     seen.sort_unstable();
     // The HTTP edge rows a quiet HTTP/1.1 App cannot record (PINGs,
-    // hedges) are covered by `http_edge_recorded_set`.
+    // hedges) are covered by `http_edge_recorded_set`; this App answers no
+    // interaction, so the auto-defer and ack-latency rows are covered by
+    // noctis-core's `int_01_auto_defer_at_deadline`.
+    let covered_elsewhere = |name: &str| {
+        name.starts_with("noctis_http_")
+            || name.starts_with("noctis_interaction_")
+            || name == "noctis_autodefer_total"
+            || name == "noctis_ack_latency_seconds"
+    };
     let mut all: Vec<_> = METRICS
         .iter()
         .map(|m| m.name)
-        .filter(|name| {
-            !name.starts_with("noctis_http_") && !name.starts_with("noctis_interaction_")
-        })
+        .filter(|name| !covered_elsewhere(name))
         .collect();
     all.sort_unstable();
-    seen.retain(|name| {
-        !name.starts_with("noctis_http_") && !name.starts_with("noctis_interaction_")
-    });
+    seen.retain(|name| !covered_elsewhere(name));
     assert_eq!(seen, all);
     let errors: u64 = ops
         .iter()

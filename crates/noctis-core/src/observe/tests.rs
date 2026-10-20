@@ -56,9 +56,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 13);
+    assert_eq!(METRICS.len(), 15);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 13);
+    assert_eq!(names.len(), 15);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -85,6 +85,8 @@ fn catalog_static() {
             ("noctis_events_dropped_total", &["app", "event_type"][..]),
             ("noctis_handler_duration_seconds", &["app", "kind"][..]),
             ("noctis_handler_errors_total", &["app", "kind"][..]),
+            ("noctis_autodefer_total", &["app"][..]),
+            ("noctis_ack_latency_seconds", &["app"][..]),
             ("noctis_shard_status", &["app", "shard"][..]),
             ("noctis_http_requests_total", &["app", "status_class"][..]),
             ("noctis_http_phase_seconds", &["app", "phase"][..]),
@@ -280,12 +282,16 @@ async fn recorded_set_core() {
     let snapshot = snapshotter.snapshot().into_vec();
     let seen = check_snapshot(&snapshot, 2);
     // The HTTP edge rows are recorded end to end in the testkit's
-    // `observability.rs` (Story 5.9 Matrix 49).
+    // `observability.rs` (Story 5.9 Matrix 49); the auto-defer and ack
+    // latency rows in the pipeline tests (`int_01_auto_defer_at_deadline`).
     let all: HashSet<_> = METRICS
         .iter()
         .map(|m| m.name.to_owned())
         .filter(|name| {
-            !name.starts_with("noctis_http_") && !name.starts_with("noctis_interaction_")
+            !name.starts_with("noctis_http_")
+                && !name.starts_with("noctis_interaction_")
+                && name != "noctis_autodefer_total"
+                && name != "noctis_ack_latency_seconds"
         })
         .collect();
     assert_eq!(seen, all, "{snapshot:?}");

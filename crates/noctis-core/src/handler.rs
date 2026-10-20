@@ -110,6 +110,9 @@ pub(crate) struct AppShared {
     pub(crate) limits: noctis_rules::Limits,
     /// The folded Registry (the Dispatcher resolves Commands in it).
     pub(crate) registry: Arc<Registry>,
+    /// When the auto-defer acknowledges a pending interaction, after
+    /// `received_at` (`AppBuilder::ack_deadline`, INT-01).
+    pub(crate) ack_deadline: std::time::Duration,
 }
 
 /// The context an event handler receives: the shard, the guild, the

@@ -23,6 +23,7 @@ impl noctis::ResponderState for noctis::Acked
 impl noctis::ResponderState for noctis::Acked
 pub struct noctis::App
 impl noctis::App
+pub fn noctis::App::ack_deadline(&self) -> core::time::Duration
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
@@ -43,6 +44,7 @@ impl core::fmt::Debug for noctis::App
 pub fn noctis::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::AppBuilder
 impl noctis::AppBuilder
+pub fn noctis::AppBuilder::ack_deadline(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore) -> &mut Self
 pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
@@ -125,6 +127,8 @@ pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
 pub noctis::BuildViolation::HttpEdge
 pub noctis::BuildViolation::HttpEdge::kind: core::io::error::ErrorKind
+pub noctis::BuildViolation::InvalidAckDeadline
+pub noctis::BuildViolation::InvalidAckDeadline::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidEventLane
 pub noctis::BuildViolation::InvalidEventLane::capacity: usize
 pub noctis::BuildViolation::InvalidEventLane::overflow: usize
@@ -169,11 +173,11 @@ pub fn noctis::BuildViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core
 impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
-pub struct noctis::Command<M>(_)
-impl<M: noctis::__private::core::responder::sealed::Modal> noctis::ResponderKind for noctis::Command<M>
-impl<M> core::fmt::Debug for noctis::Command<M>
+pub struct noctis::Command<M: noctis::ModalMarker>(_)
+impl<M: noctis::ModalMarker> core::fmt::Debug for noctis::Command<M>
 pub fn noctis::Command<M>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<M: noctis::__private::core::responder::sealed::Modal> noctis::ResponderKind for noctis::Command<M>
+impl<M: noctis::ModalMarker> noctis::ResponderKind for noctis::Command<M>
+impl<M: noctis::ModalMarker> noctis::ResponderKind for noctis::Command<M>
 pub struct noctis::CommandCtx(_)
 impl noctis::CommandCtx
 pub fn noctis::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
@@ -198,6 +202,7 @@ pub fn noctis::CommandHandler::description(&self) -> &'static str
 pub fn noctis::CommandHandler::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::CommandHandler::metadata(&self) -> &noctis::CommandMetadata
 pub fn noctis::CommandHandler::name(&self) -> &'static str
+pub fn noctis::CommandHandler::opens_modal(&self) -> bool
 pub fn noctis::CommandHandler::options(&self) -> &'static [noctis::rules::command::OptionDecl<'static>]
 pub fn noctis::CommandHandler::paths(&self) -> &'static [&'static str]
 pub fn noctis::CommandHandler::pattern(&self) -> &'static str
@@ -644,6 +649,7 @@ pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> cor
 impl core::fmt::Display for noctis::MenuTargetError
 pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::MenuTargetError
+pub trait noctis::ModalMarker: noctis::__private::core::responder::sealed::Modal
 pub struct noctis::Module
 impl noctis::Module
 pub fn noctis::Module::add(self, impl noctis::Descriptor) -> Self
@@ -670,6 +676,24 @@ impl core::hash::Hash for noctis::NoModal
 pub fn noctis::NoModal::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::NoModal
 impl core::marker::StructuralPartialEq for noctis::NoModal
+impl noctis::ModalMarker for noctis::NoModal
+impl noctis::ModalMarker for noctis::NoModal
+pub struct noctis::OpensModal
+impl core::clone::Clone for noctis::OpensModal
+pub fn noctis::OpensModal::clone(&self) -> Self
+impl core::cmp::Eq for noctis::OpensModal
+impl core::cmp::PartialEq for noctis::OpensModal
+pub fn noctis::OpensModal::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::OpensModal
+pub fn noctis::OpensModal::default() -> Self
+impl core::fmt::Debug for noctis::OpensModal
+pub fn noctis::OpensModal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::OpensModal
+pub fn noctis::OpensModal::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::OpensModal
+impl core::marker::StructuralPartialEq for noctis::OpensModal
+impl noctis::ModalMarker for noctis::OpensModal
+impl noctis::ModalMarker for noctis::OpensModal
 #[non_exhaustive] pub enum noctis::OptionError
 pub noctis::OptionError::Duplicate
 pub noctis::OptionError::Duplicate::option: alloc::string::String
@@ -785,12 +809,14 @@ pub fn noctis::Responded::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt
 impl<K: noctis::ResponderKind> noctis::IntoResponse<K> for noctis::Responded
 impl<K: noctis::ResponderKind> noctis::IntoResponse<K> for noctis::Responded
 pub struct noctis::Responder<K: noctis::ResponderKind, S: noctis::ResponderState>
+impl noctis::Responder<noctis::Command<noctis::OpensModal>, noctis::Pending>
+pub async fn noctis::Responder<noctis::Command<noctis::OpensModal>, noctis::Pending>::modal(self, noctis::ui::Modal) -> core::result::Result<noctis::Responder<noctis::Command<noctis::OpensModal>, noctis::Acked>, noctis::ResponderError>
 impl<K: noctis::ResponderKind> noctis::Responder<K, noctis::Acked>
 pub async fn noctis::Responder<K, noctis::Acked>::delete_original(&self) -> core::result::Result<(), noctis::ResponderError>
 pub fn noctis::Responder<K, noctis::Acked>::done(self) -> noctis::Responded
 pub async fn noctis::Responder<K, noctis::Acked>::edit_original(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> core::result::Result<(), noctis::ResponderError>
 pub async fn noctis::Responder<K, noctis::Acked>::followup(&self, impl core::convert::Into<noctis::OutgoingMessage>, noctis::Visibility) -> core::result::Result<noctis::FollowupHandle, noctis::ResponderError>
-impl<M: noctis::__private::core::responder::sealed::Modal> noctis::Responder<noctis::Command<M>, noctis::Pending>
+impl<M: noctis::ModalMarker> noctis::Responder<noctis::Command<M>, noctis::Pending>
 pub async fn noctis::Responder<noctis::Command<M>, noctis::Pending>::defer(self, noctis::Ephemerality) -> core::result::Result<noctis::Responder<noctis::Command<M>, noctis::Acked>, noctis::ResponderError>
 pub async fn noctis::Responder<noctis::Command<M>, noctis::Pending>::reply(self, impl core::convert::Into<noctis::OutgoingMessage>) -> core::result::Result<noctis::Responder<noctis::Command<M>, noctis::Acked>, noctis::ResponderError>
 impl<K: noctis::ResponderKind, S: noctis::ResponderState> core::fmt::Debug for noctis::Responder<K, S>
@@ -801,11 +827,14 @@ pub noctis::ResponderError::AttachmentsUnsupported
 pub noctis::ResponderError::Encode
 pub noctis::ResponderError::Encode::reason: alloc::string::String
 pub noctis::ResponderError::EphemeralUnsupported
+pub noctis::ResponderError::FollowupCap
 pub noctis::ResponderError::Invalid(noctis::ui::UiError)
 pub noctis::ResponderError::InvalidToken
+pub noctis::ResponderError::ModalUnavailable
 pub noctis::ResponderError::Rejected
 pub noctis::ResponderError::Rejected::code: core::option::Option<u32>
 pub noctis::ResponderError::Rejected::status: u16
+pub noctis::ResponderError::TokenExpired
 pub noctis::ResponderError::Transport
 impl core::convert::From<noctis::AckDeadlineMissed> for noctis::ResponderError
 pub fn noctis::ResponderError::from(noctis::AckDeadlineMissed) -> Self
@@ -2161,6 +2190,7 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 pub mod noctis::prelude
 pub struct noctis::prelude::App
 impl noctis::prelude::App
+pub fn noctis::prelude::App::ack_deadline(&self) -> core::time::Duration
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
@@ -2181,6 +2211,7 @@ impl core::fmt::Debug for noctis::prelude::App
 pub fn noctis::prelude::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::AppBuilder
 impl noctis::prelude::AppBuilder
+pub fn noctis::prelude::AppBuilder::ack_deadline(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
@@ -2377,6 +2408,22 @@ impl core::clone::Clone for noctis::prelude::Module
 pub fn noctis::prelude::Module::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::Module
 pub fn noctis::prelude::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::prelude::OpensModal
+impl core::clone::Clone for noctis::prelude::OpensModal
+pub fn noctis::prelude::OpensModal::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::OpensModal
+impl core::cmp::PartialEq for noctis::prelude::OpensModal
+pub fn noctis::prelude::OpensModal::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::prelude::OpensModal
+pub fn noctis::prelude::OpensModal::default() -> Self
+impl core::fmt::Debug for noctis::prelude::OpensModal
+pub fn noctis::prelude::OpensModal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::prelude::OpensModal
+pub fn noctis::prelude::OpensModal::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::prelude::OpensModal
+impl core::marker::StructuralPartialEq for noctis::prelude::OpensModal
+impl noctis::ModalMarker for noctis::prelude::OpensModal
+impl noctis::ModalMarker for noctis::prelude::OpensModal
 pub trait noctis::prelude::Options: core::marker::Sized + core::marker::Send + 'static
 pub const noctis::prelude::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl<'static>]
 pub fn noctis::prelude::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>

@@ -25,6 +25,7 @@ const XP_PER_LEVEL: u64 = 100;
 pub fn module() -> Module {
     Module::new("profile")
         .add(profile())
+        .add(bio())
         .add(show_profile())
         .add(open_profile())
         .add(edit_bio())
@@ -56,6 +57,15 @@ pub struct ProfileOptions {
 async fn profile(ctx: CommandCtx, opts: ProfileOptions) -> HandlerResult<ProfileView> {
     let target = opts.user.map_or_else(|| ctx.user_id(), |u| u.user.id);
     ProfileView::load(&ctx, target).await
+}
+
+/// `/bio` opens the bio modal directly. `opens_modal` turns off the auto-defer (a modal
+/// must be the first response, INT-05), so the handler takes the `OpensModal` responder,
+/// the only one with `modal()`, and opens it before any slow work.
+#[command("bio", description = "Edit your profile bio", opens_modal, contexts = [Guild])]
+async fn bio(ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+    // After a modal there is no original message to edit: end with `done()`.
+    Ok(r.modal(BioForm::modal(SaveBio { user: ctx.user_id() })).await?.done())
 }
 
 /// Right-click a user → Apps → "Show profile". The name is localized as a whole

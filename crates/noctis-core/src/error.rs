@@ -201,6 +201,12 @@ pub enum BuildViolation {
         /// The rejected grace period.
         actual: Duration,
     },
+    /// `ack_deadline` is outside 0 ms..=2500 ms (INT-01).
+    #[error("ack deadline {actual:?} is out of range: use a value in 0 ms..=2500 ms")]
+    InvalidAckDeadline {
+        /// The rejected deadline.
+        actual: Duration,
+    },
     /// `handler_concurrency` is outside 1..=65536.
     #[error("handler concurrency {actual} is out of range: use a value in 1..=65536")]
     InvalidHandlerConcurrency {

@@ -24,9 +24,12 @@ const CAP_LITERAL: &str =
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
 /// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 5] = ["opens_modal", "rate_limit", "flags", "apps", "locales"];
+const PLANNED: [&str; 4] = ["rate_limit", "flags", "apps", "locales"];
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `ephemeral`, `opens_modal`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+
+const OPENS_MODAL_RESPONDER: &str =
+    "[INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal";
 
 /// The parsed `#[command(..)]` arguments.
 struct Args {
@@ -34,6 +37,7 @@ struct Args {
     description: Option<LitStr>,
     max_expansions: Option<usize>,
     ephemeral: bool,
+    opens_modal: bool,
     meta: MetaArgs,
 }
 
@@ -82,12 +86,17 @@ fn value_of(segment: &[TokenTree]) -> Option<TokenStream> {
 
 /// Checks a bare `ephemeral` flag: it takes no value.
 pub(crate) fn parse_ephemeral(segment: &[TokenTree]) -> syn::Result<bool> {
+    parse_flag(segment, "ephemeral")
+}
+
+/// Checks the bare flag `name`: it takes no value.
+fn parse_flag(segment: &[TokenTree], name: &str) -> syn::Result<bool> {
     if segment.len() == 1 {
         Ok(true)
     } else {
         Err(syn::Error::new(
             span_of(segment),
-            "`ephemeral` takes no value",
+            format!("`{name}` takes no value"),
         ))
     }
 }
@@ -135,6 +144,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         description: None,
         max_expansions: None,
         ephemeral: false,
+        opens_modal: false,
         meta: MetaArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -148,7 +158,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             ));
         };
         match name.as_str() {
-            "description" | "max_expansions" | "ephemeral" => {}
+            "description" | "max_expansions" | "ephemeral" | "opens_modal" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -176,6 +186,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         }
         if name == "ephemeral" {
             parsed.ephemeral = parse_ephemeral(&segment)?;
+            continue;
+        }
+        if name == "opens_modal" {
+            parsed.opens_modal = parse_flag(&segment, "opens_modal")?;
             continue;
         }
         let value = value_of(&segment);
@@ -436,8 +450,8 @@ fn ident(name: &str, span: Span) -> syn::Result<Ident> {
 
 /// What `check_params` found after the fixed parameters.
 struct Params {
-    /// A `CommandResponder` parameter follows the fixed ones.
-    responder: bool,
+    /// The type of the `CommandResponder` parameter after the fixed ones.
+    responder: Option<Type>,
     /// The trailing options parameter's type.
     options: Option<Type>,
 }
@@ -504,19 +518,19 @@ fn check_params(item: &ItemFn, pattern: &str, path_enum: Option<&str>) -> syn::R
     }
     match &typed[fixed..] {
         [] => Ok(Params {
-            responder: false,
+            responder: None,
             options: None,
         }),
         [one] if is_responder(&one.ty) => Ok(Params {
-            responder: true,
+            responder: Some((*one.ty).clone()),
             options: None,
         }),
         [one] => Ok(Params {
-            responder: false,
+            responder: None,
             options: Some((*one.ty).clone()),
         }),
         [r, o] if is_responder(&r.ty) && !is_responder(&o.ty) => Ok(Params {
-            responder: true,
+            responder: Some((*r.ty).clone()),
             options: Some((*o.ty).clone()),
         }),
         [_, o] => Err(syn::Error::new_spanned(&o.ty, message)),
@@ -612,6 +626,59 @@ fn adapter(path: bool, responder: bool, options: bool, span: Span) -> TokenStrea
     }
 }
 
+/// INT-05: the assertion that `opens_modal` and the responder's modal
+/// marker match, and the marker the constructor's turbofish passes
+/// (inferred from the responder parameter, `NoModal` without one).
+fn modal_check(
+    item: &ItemFn,
+    responder: Option<&Type>,
+    opens_modal: bool,
+) -> syn::Result<(TokenStream, TokenStream)> {
+    let assertion = match (responder, opens_modal) {
+        (None, true) => {
+            return Err(syn::Error::new_spanned(&item.sig, OPENS_MODAL_RESPONDER));
+        }
+        (None, false) => TokenStream::new(),
+        (Some(ty), true) => quote_spanned! {ty.span()=>
+            ::noctis::__private::core::__assert_opens_modal::<#ty>();
+        },
+        (Some(ty), false) => quote_spanned! {ty.span()=>
+            ::noctis::__private::core::__assert_no_modal::<#ty>();
+        },
+    };
+    let marker = if responder.is_some() {
+        quote! { _ }
+    } else {
+        quote! { ::noctis::__private::core::NoModal }
+    };
+    Ok((assertion, marker))
+}
+
+/// The `CommandHandler` constructor path with its turbofish: `__new*` for
+/// a pattern with a group (`path_enum`), `__new_plain*` without, and the
+/// `*_with_options` form when the handler takes an options struct.
+fn constructor(
+    path_enum: Option<&Ident>,
+    options: Option<&Type>,
+    marker: &TokenStream,
+    span: Span,
+) -> TokenStream {
+    match (path_enum, options) {
+        (Some(e), None) => quote_spanned! {span=>
+            ::noctis::__private::core::CommandHandler::__new::<#e, #marker, _, _, _>
+        },
+        (Some(e), Some(ty)) => quote_spanned! {span=>
+            ::noctis::__private::core::CommandHandler::__new_with_options::<#e, #ty, #marker, _, _, _>
+        },
+        (None, None) => quote_spanned! {span=>
+            ::noctis::__private::core::CommandHandler::__new_plain::<#marker, _, _, _>
+        },
+        (None, Some(ty)) => quote_spanned! {span=>
+            ::noctis::__private::core::CommandHandler::__new_plain_with_options::<#ty, #marker, _, _, _>
+        },
+    }
+}
+
 /// Expands `#[command(args)] item`.
 pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let args = parse_args(args)?;
@@ -635,11 +702,16 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
     } else {
         None
     };
-    let Params { responder, options } = check_params(
+    let Params {
+        responder: responder_ty,
+        options,
+    } = check_params(
         &item,
         &pattern,
         enum_ident.as_ref().map(|(e, _)| e.to_string()).as_deref(),
     )?;
+    let (assertion, marker) = modal_check(&item, responder_ty.as_ref(), args.opens_modal)?;
+    let responder = responder_ty.is_some();
 
     let ItemFn {
         attrs,
@@ -668,27 +740,13 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
     );
     let (generated, call) = if let Some((enum_ident, variants)) = &enum_ident {
         let generated = path_enum(&item, enum_ident, &fn_name, &pattern, &paths, variants);
-        let new = match &options {
-            None => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new::<#enum_ident, _, _, _>
-            },
-            Some(ty) => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new_with_options::<#enum_ident, #ty, _, _, _>
-            },
-        };
+        let new = constructor(Some(enum_ident), options.as_ref(), &marker, output_span);
         (
             generated,
             quote_spanned! {output_span=> #new(::core::concat!(::core::module_path!(), "::", #fn_name), #pattern, #description, #adapter) },
         )
     } else {
-        let new = match &options {
-            None => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new_plain
-            },
-            Some(ty) => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new_plain_with_options::<#ty, _, _, _>
-            },
-        };
+        let new = constructor(None, options.as_ref(), &marker, output_span);
         (
             TokenStream::new(),
             quote_spanned! {output_span=> #new(::core::concat!(::core::module_path!(), "::", #fn_name), &[#(#paths),*], #description, #adapter) },
@@ -714,6 +772,7 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
             // A handler needs no `.await` to be `async` (the macro requires it).
             #[allow(clippy::unused_async)]
             #inner #block
+            #assertion
             #call
         }
     })
@@ -786,7 +845,12 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("GetWelcome"), "{out}");
-        assert!(out.contains("__new :: < ConfigPath , _ , _ , _ >"), "{out}");
+        assert!(
+            out.contains(
+                "__new :: < ConfigPath , :: noctis :: __private :: core :: NoModal , _ , _ , _ >"
+            ),
+            "{out}"
+        );
         assert!(
             out.contains("| __noctis_ctx , __noctis_path , _ | __noctis_command (__noctis_ctx , __noctis_path)"),
             "{out}"
@@ -901,7 +965,7 @@ mod tests {
     /// Matrix 37-40: argument errors.
     #[test]
     fn argument_errors() {
-        let cases: [(TokenStream, &str); 19] = [
+        let cases: [(TokenStream, &str); 21] = [
             (quote!(), MISSING_PATTERN),
             (quote!(PATTERN), NOT_A_LITERAL),
             (quote!(description = "d"), MISSING_PATTERN),
@@ -918,7 +982,7 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
                 quote!("ping", ephemeral = true),
@@ -930,8 +994,16 @@ mod tests {
                 "duplicate `#[command]` argument `ephemeral`",
             ),
             (
+                quote!("ping", opens_modal = true),
+                "`opens_modal` takes no value",
+            ),
+            (
+                quote!("ping", opens_modal, opens_modal),
+                "duplicate `#[command]` argument `opens_modal`",
+            ),
+            (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -1080,7 +1152,7 @@ mod tests {
         ] {
             assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
-        for planned in ["opens_modal", "flags", "apps", "locales"] {
+        for planned in ["rate_limit", "flags", "apps", "locales"] {
             let ident = quote::format_ident!("{planned}");
             assert_eq!(
                 error(quote!("ping", #ident), PING),
@@ -1155,7 +1227,9 @@ mod tests {
         .unwrap()
         .to_string();
         assert!(
-            out.contains("__new_plain_with_options :: < W , _ , _ , _ >"),
+            out.contains(
+                "__new_plain_with_options :: < W , :: noctis :: __private :: core :: NoModal , _ , _ , _ >"
+            ),
             "{out}"
         );
         assert!(
@@ -1169,7 +1243,9 @@ mod tests {
         .unwrap()
         .to_string();
         assert!(
-            out.contains("__new_with_options :: < ModPath , W , _ , _ , _ >"),
+            out.contains(
+                "__new_with_options :: < ModPath , W , :: noctis :: __private :: core :: NoModal , _ , _ , _ >"
+            ),
             "{out}"
         );
         let out = expand(quote!("ping", description = "d"), item(PING))
@@ -1200,7 +1276,7 @@ mod tests {
             (
                 quote!("ping", description = "d"),
                 "async fn ping(c: CommandCtx, r: noctis::Responder<Command>, o: W) -> HandlerResult<Responded> { todo!() }",
-                "__new_plain_with_options::<W,_,_,_>(::core::concat!(::core::module_path!(),\"::\",\"ping\"),&[\"ping\"],\"d\",__noctis_command)",
+                "__new_plain_with_options::<W,_,_,_,_>(::core::concat!(::core::module_path!(),\"::\",\"ping\"),&[\"ping\"],\"d\",__noctis_command)",
             ),
             (
                 quote!("config (set|get)", description = "d"),
@@ -1214,6 +1290,54 @@ mod tests {
                 .replace(' ', "");
             assert!(out.contains(adapter), "{out}");
         }
+    }
+
+    /// Story 6.6 Matrix 22: `opens_modal` and the responder's modal
+    /// marker are asserted to match (INT-05).
+    #[test]
+    fn opens_modal_assertions() {
+        let modal = || quote!("feedback", description = "d", opens_modal);
+        let out = expand(
+            modal(),
+            item("async fn feedback(c: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> { todo!() }"),
+        )
+        .unwrap()
+        .to_string()
+        .replace(' ', "");
+        assert!(
+            out.contains(
+                "::noctis::__private::core::__assert_opens_modal::<CommandResponder<OpensModal>>();"
+            ),
+            "{out}"
+        );
+        assert!(out.contains("__new_plain::<_,_,_,_>"), "{out}");
+        let out = expand(
+            quote!("ping", description = "d"),
+            item("async fn ping(c: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> { todo!() }"),
+        )
+        .unwrap()
+        .to_string()
+        .replace(' ', "");
+        assert!(
+            out.contains("::noctis::__private::core::__assert_no_modal::<CommandResponder>();"),
+            "{out}"
+        );
+        let out = expand(quote!("ping", description = "d"), item(PING))
+            .unwrap()
+            .to_string()
+            .replace(' ', "");
+        assert!(!out.contains("__assert"), "{out}");
+        assert!(
+            out.contains("__new_plain::<::noctis::__private::core::NoModal,_,_,_>"),
+            "{out}"
+        );
+        assert_eq!(
+            error(
+                modal(),
+                "async fn feedback(c: CommandCtx) -> HandlerResult<Responded> { todo!() }"
+            ),
+            OPENS_MODAL_RESPONDER
+        );
     }
 
     /// Matrix 45: variant naming.

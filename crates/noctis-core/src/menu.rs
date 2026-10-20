@@ -19,7 +19,9 @@ use crate::command::{CommandCtx, HandlerFuture, boxed, failed, run_detached, unk
 use crate::handler::{HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, empty_resolved};
-use crate::responder::{Command, CommandResponder, Ephemerality, IntoResponse};
+use crate::responder::{
+    Command, CommandResponder, Ephemerality, IntoResponse, NoModal, Responder, Shared,
+};
 
 /// Why a context-menu interaction did not reach its handler.
 ///
@@ -121,7 +123,7 @@ impl ContextMenuHandler {
     {
         let call = move |ctx: CommandCtx, target: Target, r: CommandResponder| -> HandlerFuture {
             match target {
-                Target::User(user) => boxed(f(ctx, user, r)),
+                Target::User(user) => boxed::<NoModal, _, _>(f(ctx, user, r)),
                 Target::Message(_) => wrong_kind(MenuKind::User, MenuKind::Message),
             }
         };
@@ -150,7 +152,7 @@ impl ContextMenuHandler {
     {
         let call = move |ctx: CommandCtx, target: Target, r: CommandResponder| -> HandlerFuture {
             match target {
-                Target::Message(message) => boxed(f(ctx, message, r)),
+                Target::Message(message) => boxed::<NoModal, _, _>(f(ctx, message, r)),
                 Target::User(_) => wrong_kind(MenuKind::Message, MenuKind::User),
             }
         };
@@ -205,9 +207,9 @@ impl ContextMenuHandler {
         &self,
         ctx: CommandCtx,
         target: Target,
-        responder: CommandResponder,
+        shared: Arc<Shared>,
     ) -> HandlerFuture {
-        (self.call)(ctx, target, responder)
+        (self.call)(ctx, target, Responder::new(shared))
     }
 }
 

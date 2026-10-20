@@ -306,6 +306,11 @@ mod responder {
     struct Pick;
     impl ::noctis::__private::ui::Handled for Pick {}
 
+    #[derive(Route)]
+    #[route("t.form")]
+    struct Form;
+    impl ::noctis::__private::ui::Handled for Form {}
+
     fn text(t: &str) -> Components {
         Components::new().push(TextDisplay::new(t.to_owned()))
     }
@@ -386,5 +391,56 @@ mod responder {
             matches!(responder, ResponderError::Encode { reason } if reason.contains("unresolved")),
             "{responder}"
         );
+    }
+
+    /// Story 6.6 boundary pass (INT-05): an `opens_modal` handler compiles
+    /// with `CommandResponder<OpensModal>`.
+    #[command("feedback", description = "d", opens_modal)]
+    async fn feedback(
+        _ctx: CommandCtx,
+        r: CommandResponder<OpensModal>,
+    ) -> HandlerResult<Responded> {
+        let modal = Form.modal("Feedback").push(TextDisplay::new("Thanks!"));
+        Ok(r.modal(modal).await?.done())
+    }
+
+    /// Story 6.6 Matrix 19: a 46-character title (Strict).
+    #[command("long", description = "d", opens_modal)]
+    async fn long(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+        let modal = Form.modal("a".repeat(46)).push(TextDisplay::new("x"));
+        Ok(r.modal(modal).await?.done())
+    }
+
+    /// Story 6.6 Matrix 20: an unresolved Route id.
+    #[command("unresolved_modal", description = "d", opens_modal)]
+    async fn unresolved_modal(
+        _ctx: CommandCtx,
+        r: CommandResponder<OpensModal>,
+    ) -> HandlerResult<Responded> {
+        let modal = Pick.modal("Pick").push(TextDisplay::new("x"));
+        Ok(r.modal(modal).await?.done())
+    }
+
+    /// Story 6.6 Matrix 17, 19 and 20 over the detached seam.
+    #[tokio::test]
+    async fn opens_modal_handlers() {
+        assert!(feedback().opens_modal());
+        assert!(!public().opens_modal());
+        assert!(!answer().opens_modal());
+        call_command(&feedback(), "feedback").await.unwrap();
+        let responder_error = |err: &HandlerError| {
+            format!(
+                "{:?}",
+                err.as_error()
+                    .downcast_ref::<ResponderError>()
+                    .unwrap_or_else(|| panic!("{err}"))
+            )
+        };
+        let err = call_command(&long(), "long").await.unwrap_err();
+        assert!(responder_error(&err).starts_with("Invalid(Limits"), "{err}");
+        let err = call_command(&unresolved_modal(), "unresolved_modal")
+            .await
+            .unwrap_err();
+        assert!(responder_error(&err).starts_with("Encode"), "{err}");
     }
 }

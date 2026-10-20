@@ -127,8 +127,18 @@ pub enum Topic {
 
 ## 2. Opening it
 
-The **opening** Route must be declared `opens_modal` (no auto-defer, INT-05) [planned,
-Story 7.8]:
+A Command opens a modal today (Story 6.6): declare `#[command(.., opens_modal)]`, take
+`r: CommandResponder<OpensModal>` and return `r.modal(m).await?.done()`:
+
+```rust
+#[command("bio", description = "Edit your profile bio", opens_modal, contexts = [Guild])]
+async fn bio(ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+    Ok(r.modal(BioForm::modal(SaveBio { user: ctx.user_id() })).await?.done())
+}
+```
+
+From a component, the **opening** Route must be declared `opens_modal` (no auto-defer,
+INT-05) [planned, Story 7.8]:
 
 ```rust
 #[derive(Route, Debug, Clone, Copy)]
@@ -145,9 +155,10 @@ async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModa
 }
 ```
 
-Commands can open modals too: `#[command("feedback", opens_modal)]` +
-`CommandResponder<OpensModal>`. The `OpensModal` alias is required exactly when
-`opens_modal` is declared (INT-05).
+The `OpensModal` responder is required exactly when `opens_modal` is declared (an
+`[INT-05]` compile error otherwise), and no auto-defer is armed for that handler; one
+that has not answered within 2.9 s logs an error naming it. `modal(m)` after another
+initial response, or over the `Dispatcher`, is `ResponderError::ModalUnavailable`.
 Do your I/O fast: a modal must be the first response within 3 s.
 
 Today a derived modal has no pre-fill; build the `Modal` at runtime (§4b, `TextInput::value`,
@@ -429,7 +440,9 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   then the Text Displays to fit the CV2-04 total (one warning at `components`).
   Never a Text Input `value`, option values, keys or counts: those still fail. Strict
   mode (the default) never changes the modal.
-- Sending it (`r.modal(modal)` on an `OpensModal` responder) is core's [planned, Story 7.8].
+- `r.modal(modal)` on a `CommandResponder<OpensModal>` runs this validator (and fails
+  with `ResponderError::Invalid`) before any request, then sends callback type 9 (Story
+  6.6); from components it is [planned, Story 7.8].
 
 ## 5. Modals in Wizards
 

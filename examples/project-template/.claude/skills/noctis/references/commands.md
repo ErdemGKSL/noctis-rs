@@ -68,21 +68,21 @@ Compile-time checks on the literal (each error names its rule):
 ### Attribute arguments
 
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
-`description`, `max_expansions`, `ephemeral` and the metadata arguments `permissions`,
-`contexts`, `integration_types`, `nsfw` and `guilds`. Every argument marked [planned] is a
-compile error today (`` `#[command]` argument `opens_modal` is planned and not supported
-yet ``); an unknown one lists the landed names (`` unknown `#[command]` argument `foo`:
-expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`,
-`integration_types`, `nsfw` or `guilds` ``), and each argument may appear once (``
-duplicate `#[command]` argument `nsfw` ``).
+`description`, `max_expansions`, `ephemeral`, `opens_modal` and the metadata arguments
+`permissions`, `contexts`, `integration_types`, `nsfw` and `guilds`. Every argument marked
+[planned] is a compile error today (`` `#[command]` argument `rate_limit` is planned and
+not supported yet ``); an unknown one lists the landed names (`` unknown `#[command]`
+argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`,
+`permissions`, `contexts`, `integration_types`, `nsfw` or `guilds` ``), and each argument
+may appear once (`` duplicate `#[command]` argument `nsfw` ``).
 
 | Argument | Meaning |
 | --- | --- |
 | `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
 | `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
 | `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
-| `ephemeral` | reply privately (default public): a bare flag (`` `ephemeral` takes no value `` otherwise). Fixed at registration (INT-10); `reply` and a returned message use it, and the auto-defer will (Story 6.6) |
-| `opens_modal` | [planned] the handler answers with a modal and takes `CommandResponder<OpensModal>`; disables auto-defer (INT-05) |
+| `ephemeral` | reply privately (default public): a bare flag (`` `ephemeral` takes no value `` otherwise). Fixed at registration (INT-10); `reply`, a returned message and the auto-defer use it |
+| `opens_modal` | the handler may open a modal (`r.modal(m)`) and must take `r: CommandResponder<OpensModal>`; disables the auto-defer (INT-05). A bare flag (`` `opens_modal` takes no value `` otherwise). A mismatch is a compile error citing `[INT-05]`: the flag with a plain `CommandResponder` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` ``), `CommandResponder<OpensModal>` without the flag (`` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``), or the flag without a responder parameter (`` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal ``). `CommandHandler::opens_modal()` reads it. See `responder.md` §4 |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
 | `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used (`noctis::InteractionContext` names; `InteractionContext::Guild` works): at least one, no duplicates, declared order kept (`` unknown context `Gild`; expected one of Guild, BotDm, PrivateChannel ``, `` duplicate context `Guild` ``) |
 | `integration_types = [GuildInstall, UserInstall]` | install types (`noctis::IntegrationType`), same shape; META-04: must be enabled on the app |
@@ -608,8 +608,8 @@ let module = Module::new("mod").add(show_profile()).add(report());
   name as its first argument: `#[user_command("Show profile")]` `` / `` … needs its menu
   name as a string literal ``), then the metadata arguments of §1 (`permissions`,
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
-  and the bare flag `ephemeral`. `key = "…"` (localization key), `opens_modal`,
-  `rate_limit(..)`, `flags` and `apps` are [planned]; `max_expansions` and other names are
+  and the bare flag `ephemeral`. `key = "…"` (localization key), `opens_modal` (landed
+  for `#[command]` only), `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together

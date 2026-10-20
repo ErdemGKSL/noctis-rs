@@ -65,7 +65,9 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `HashMap` field in a Template | non-deterministic cache key | `BTreeMap` or `Vec` |
 | a handler taking a Responder doesn't return `Responded` | macro contract | return `acked.done()` |
 | `modal` not found on `ComponentResponder` | Route not `opens_modal`, or the handler takes `ComponentResponder` instead of `ComponentResponder<OpensModal>` | declare `opens_modal` on the Route and take the `OpensModal` alias |
-| `[INT-05]` responder alias doesn't match `opens_modal` | one declared without the other | declare both or neither |
+| `[INT-05]` responder alias doesn't match `opens_modal` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` `` / `` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``) | one declared without the other | declare both or neither |
+| `` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal `` | `#[command(.., opens_modal)]` on a handler with no responder parameter | add `r: CommandResponder<OpensModal>` and return `r.modal(m).await?.done()` |
+| `modal` not found on `CommandResponder` (E0599) | the Command is not `opens_modal`, or takes `CommandResponder` | declare `opens_modal` and take `CommandResponder<OpensModal>` |
 | `update` not found on `CommandResponder` | commands can't update | `reply` |
 
 ## App build errors (`BuildError`, all violations listed at once)
@@ -93,7 +95,9 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | "This interaction failed" | handler panicked before the deadline on an `opens_modal` Route, or slow work before `r.modal(..)` | keep modal handlers fast (< 3 s); load data after opening if possible |
-| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the handler did slow work (DB, HTTP, rendering) before its first response, so the ack left later than 2.9 s after receipt | defer first (a deferred response), then do the slow work and edit; never answer late. Check `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
+| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the interaction waited in the queue past the deadline, so even the auto-defer failed (`WARN noctis::dispatch: auto-defer failed handler=..`), or an `opens_modal` handler was slow | Commands are auto-deferred at `ack_deadline` (2000 ms) and answer late by editing; keep `ack_deadline` ≤ 2000 ms, raise `.handler_concurrency(n)` if lanes back up. Check `noctis_ack_latency_seconds`, `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
+| `ERROR noctis::dispatch: an `opens_modal` handler did not answer within the 3 s ack deadline handler=.. module=..` | an `opens_modal` Command did slow work before `r.modal(..)` (no auto-defer for it) | open the modal first; load data after, or pre-load it cheaply |
+| `ModalUnavailable` (`a modal can only be the first response to an interaction`) | `r.modal(..)` over the `Dispatcher` (prefix commands), or after another initial response | answer prefix invocations with a message; open modals only from interactions |
 | the first Discord request after a quiet period is slow, or `RequestTimedOut` after ~10 s | a NAT/firewall silently dropped an idle connection, or slow DNS | nothing to add: the HTTP edge keeps one connection warm with HTTP/2 PINGs and redials dead ones; do **not** poll `GET /users/@me`. If it persists, lower `HttpConfig::ping_interval` and check `noctis_http_ping_timeouts_total` and `noctis_http_phase_seconds{phase="dns"}` |
 | `ERROR noctis::http: the Discord HTTP edge could not start` | the tokio runtime has no IO driver | build it with `enable_all()` (as `#[tokio::main]` does) |
 | clicking an old message shows "expired" | Ref TTL passed, or Payload schema changed (stale) | longer `ttl`, `on_expired`/`on_stale` handler that re-opens the View |
@@ -117,8 +121,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `RenderError::CapExceeded` | too many pixels/frames/fps | smaller size, fewer frames, lower fps |
 | card text is invisible / boxes for emoji | no font / no emoji font | `default-font`; `image-emoji` + `EmojiFont::Twemoji` |
 | old card image after a design change | Template `version` not bumped | bump `version` |
-| `TokenExpired` | > 15 min since the interaction | public Views fall back to bot-token edits automatically; ephemeral can't — re-open |
-| `FollowupCap` | user-installed app outside a guild, > 5 follow-ups | combine into one View |
+| `TokenExpired` (`the interaction token expired (15 minutes)`) | ≥ 15 min since the interaction arrived: a follow-up, an ephemeral message, or an original that was deferred and never edited (no known id) | public messages with a known id fall back to bot-token edits and deletes automatically; ephemeral can't — send a new interaction (re-open) |
+| `FollowupCap` (`a user-installed app may send at most 5 follow-ups here`) | user-installed app outside a guild (`authorizing_integration_owners` has only a user), > 5 follow-ups | combine into one View or edit the original instead |
 | events missing under load | droppable events dropped by back-pressure | metrics `noctis_events_dropped_total`; make handlers tolerate gaps |
 | `ERROR noctis::event: event overflow is full; event dropped` | a non-droppable event arrived while the event lane and its overflow were full | raise `.event_lane(capacity, overflow)` or `.handler_concurrency(n)`, speed up slow handlers; route drops with `.error_sink(ErrorOrigin::Event, ..)` |
 | `ERROR noctis::app: shard closed fatally shard=.. close_code=..` | a shard stopped after startup with a fatal close code (or none); `error` names the cause (e.g. `4014 (disallowed intents)`); the App keeps running on the other shards | fix the cause (portal intents, token), then restart; watch `noctis_shard_status` |

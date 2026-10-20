@@ -1899,3 +1899,40 @@ fn ack_deadline_missed_message() {
 }
 
 mod commands;
+
+// ---- ack_deadline (Story 6.6 Matrix 14 and 15) ----
+
+#[tokio::test]
+async fn ack_deadline_builder() {
+    assert_eq!(
+        App::builder().build().unwrap().ack_deadline(),
+        Duration::from_secs(2),
+        "Matrix 15"
+    );
+    let deadline = |value: Duration| App::builder().ack_deadline(value).build();
+    for ok in [Duration::ZERO, Duration::from_millis(2500)] {
+        assert_eq!(
+            deadline(ok).unwrap().ack_deadline(),
+            ok,
+            "Matrix 14: {ok:?}"
+        );
+    }
+    let bad = Duration::from_millis(2501);
+    assert_eq!(
+        deadline(bad).unwrap_err().violations(),
+        [BuildViolation::InvalidAckDeadline { actual: bad }],
+        "Matrix 14"
+    );
+    assert_eq!(
+        BuildViolation::InvalidAckDeadline { actual: bad }.to_string(),
+        "ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms"
+    );
+    let mut builder = App::builder();
+    builder
+        .ack_deadline(Duration::from_millis(100))
+        .ack_deadline(Duration::from_millis(200));
+    assert!(format!("{builder:?}").contains("ack_deadline: 200ms"));
+    let app = builder.build().unwrap();
+    assert_eq!(app.ack_deadline(), Duration::from_millis(200));
+    assert!(format!("{app:?}").contains("ack_deadline: 200ms"));
+}

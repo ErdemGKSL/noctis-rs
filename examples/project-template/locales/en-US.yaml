@@ -20,6 +20,8 @@ cmd:
       user:
         name: user
         description: Whose profile to show (default you)
+  bio:
+    description: Edit your profile bio
 
 ctxcmd:
   show_profile:

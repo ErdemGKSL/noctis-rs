@@ -1,4 +1,5 @@
-//! Commands end to end (Story 6.5, Matrix 1, 2, 18-21, 24, 45 and 49): a
+//! Commands end to end (Story 6.5, Matrix 1, 2, 18-21, 24, 45 and 49; Story
+//! 6.6, Matrix 2, 5, 17 and 21): a
 //! `FakeGateway` `INTERACTION_CREATE` (or `MESSAGE_CREATE` through the
 //! Dispatcher) reaches the Command pipeline, whose responses `FakeDiscordHttp`
 //! records.
@@ -15,7 +16,9 @@ use std::time::{Duration, Instant};
 use noctis::events::{EventCtx, MessageCreate};
 use noctis::prelude::*;
 use noctis::ui::{Components, TextDisplay};
-use noctis::{CommandInput, CommandInvocation, ErrorReport, ReportKind, Runtime, Token};
+use noctis::{
+    AppBuilder, CommandInput, CommandInvocation, ErrorReport, ReportKind, Runtime, Token,
+};
 use noctis_testkit::fake::{
     FakeDiscordHttp, FakeGateway, FakeResponse, GatewayBot, Method, RecordedRequest, StatusCode,
 };
@@ -64,6 +67,26 @@ async fn log(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> 
     Ok(acked.done())
 }
 
+#[command("lazy", description = "Answer after the auto-defer")]
+async fn lazy(_ctx: CommandCtx) -> HandlerResult<Components> {
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Ok(text("later"))
+}
+
+#[derive(Route)]
+#[route("t.feedback")]
+struct SendFeedback;
+
+impl noctis::__private::ui::Handled for SendFeedback {}
+
+#[command("feedback", description = "Open the feedback form", opens_modal)]
+async fn feedback(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+    let modal = SendFeedback
+        .modal("Feedback")
+        .push(TextDisplay::new("Thanks!"));
+    Ok(r.modal(modal).await?.done())
+}
+
 #[event]
 async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
     if let Some(path) = msg.content.strip_prefix('!') {
@@ -106,6 +129,11 @@ struct Running {
 
 impl Running {
     async fn start(module: Module) -> Self {
+        Self::start_with(module, |_| {}).await
+    }
+
+    /// As [`Running::start`], with `configure` applied to the builder.
+    async fn start_with(module: Module, configure: impl FnOnce(&mut AppBuilder)) -> Self {
         let http = FakeDiscordHttp::start_with(GatewayBot {
             shards: 1,
             ..GatewayBot::default()
@@ -142,6 +170,7 @@ impl Running {
             .gateway_url(gw.url())
             .error_sink(ErrorOrigin::Command, reports.clone())
             .module(module);
+        configure(&mut builder);
         let app = builder.build().unwrap();
         let run = tokio::spawn(app.run());
         let running = Self {
@@ -316,6 +345,69 @@ async fn dispatcher_replies_to_the_message() {
     let reports = running.wait_report().await;
     assert!(reports[0].contains("secret"), "{reports:?}");
     assert!(reports[0].contains("cannot be ephemeral"), "{reports:?}");
+    assert_eq!(running.sent().len(), 1);
+    running.run.abort();
+}
+
+/// Story 6.6 Matrix 2 and 5 and the Auto-defer AC: a slow handler is
+/// deferred with exactly `{"type":5}`, then its returned message edits the
+/// original; no type-4 callback.
+#[tokio::test(flavor = "multi_thread")]
+async fn auto_defer_then_returned_message_edits_the_original() {
+    let running = Running::start_with(Module::new("m").add(lazy()), |b| {
+        b.ack_deadline(Duration::from_millis(50));
+    })
+    .await;
+    running.invoke("lazy");
+    let sent = running.wait_sent(2).await;
+    assert_eq!(sent[0].method, Method::POST);
+    assert_eq!(sent[0].route_path(), Some(CALLBACK));
+    assert_eq!(body(&sent[0]), json!({ "type": 5 }));
+    assert_eq!(sent[1].method, Method::PATCH);
+    assert_eq!(sent[1].route_path(), Some(ORIGINAL));
+    assert_eq!(body(&sent[1])["flags"], 32768);
+    assert_eq!(body(&sent[1])["components"][0]["content"], "later");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let callbacks = running
+        .sent()
+        .iter()
+        .filter(|r| r.route_path() == Some(CALLBACK))
+        .count();
+    assert_eq!(callbacks, 1);
+    assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
+/// Story 6.6 Matrix 17 and 21 and the Modals AC: an `opens_modal`
+/// Command's modal is callback type 9 (no auto-defer, even with a 0 ms
+/// deadline); over the Dispatcher it is `ModalUnavailable`.
+#[tokio::test(flavor = "multi_thread")]
+async fn modal_opens_as_the_first_response() {
+    let module = Module::new("m").add(feedback()).add(prefix());
+    let running = Running::start_with(module, |b| {
+        b.ack_deadline(Duration::ZERO);
+    })
+    .await;
+    running.invoke("feedback");
+    let sent = running.wait_sent(1).await;
+    assert_eq!(sent[0].route_path(), Some(CALLBACK));
+    let callback = body(&sent[0]);
+    assert_eq!(callback["type"], 9);
+    assert_eq!(callback["data"]["title"], "Feedback");
+    assert_eq!(callback["data"]["custom_id"], "0t.feedback:");
+    assert_eq!(callback["data"]["components"][0]["content"], "Thanks!");
+    let message = json!({
+        "id": "6", "channel_id": "5", "author": user(), "content": "!feedback",
+        "timestamp": "2024-01-01T00:00:00.000000+00:00", "edited_timestamp": null,
+        "tts": false, "mention_everyone": false, "mentions": [], "mention_roles": [],
+        "attachments": [], "embeds": [], "pinned": false, "type": 0
+    });
+    assert_eq!(running.gw.dispatch("MESSAGE_CREATE", message), 1);
+    let reports = running.wait_report().await;
+    assert!(
+        reports[0].contains("a modal can only be the first response"),
+        "{reports:?}"
+    );
     assert_eq!(running.sent().len(), 1);
     running.run.abort();
 }

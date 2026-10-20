@@ -6,6 +6,7 @@
 
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use serde_json::Value;
@@ -32,6 +33,10 @@ pub(crate) enum Transport {
     Detached,
 }
 
+/// How long an interaction token stays valid after the interaction
+/// arrived (INT-02).
+pub(crate) const TOKEN_LIFETIME: Duration = Duration::from_mins(15);
+
 /// One interaction to answer.
 pub(crate) struct InteractionTarget {
     pub(crate) app: Arc<AppShared>,
@@ -40,6 +45,24 @@ pub(crate) struct InteractionTarget {
     /// Never printed.
     pub(crate) token: String,
     pub(crate) received_at: tokio::time::Instant,
+    /// The channel the interaction was invoked in (the bot-token fallback
+    /// after the token expired, INT-02).
+    pub(crate) channel_id: Option<Id<ChannelMarker>>,
+}
+
+/// What an edit response names: the message and its channel, when the
+/// body carries them.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Posted {
+    pub(crate) message_id: Option<Id<MessageMarker>>,
+    pub(crate) channel_id: Option<Id<ChannelMarker>>,
+}
+
+/// A sent follow-up: its id and, when the response names it, its channel.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Sent {
+    pub(crate) id: Id<MessageMarker>,
+    pub(crate) channel_id: Option<Id<ChannelMarker>>,
 }
 
 /// One message to reply to.
@@ -77,12 +100,12 @@ impl Transport {
     }
 
     /// Edits the original response (`message_id`: the reply over a message
-    /// transport).
+    /// transport); what the response names.
     pub(crate) async fn edit_original(
         &self,
         message_id: Option<Id<MessageMarker>>,
         body: Value,
-    ) -> Result<(), ResponderError> {
+    ) -> Result<Posted, ResponderError> {
         match self {
             Self::Interaction(t) => {
                 let token = t.token()?;
@@ -90,13 +113,13 @@ impl Transport {
                     application_id: t.application_id.get(),
                     interaction_token: token,
                 };
-                send(&t.app, &route, Some(&body), false).await.map(drop)
+                Ok(posted(&send(&t.app, &route, Some(&body), false).await?))
             }
             Self::Message(t) => match message_id {
-                Some(id) => t.edit(id, &body).await,
-                None => Ok(()),
+                Some(id) => t.edit(id, &body).await.map(|()| Posted::default()),
+                None => Ok(Posted::default()),
             },
-            Self::Detached => Ok(()),
+            Self::Detached => Ok(Posted::default()),
         }
     }
 
@@ -123,9 +146,9 @@ impl Transport {
     }
 
     /// Sends a follow-up (`body`: callback data, or a Create Message body
-    /// over a message transport); its message id.
-    pub(crate) async fn followup(&self, body: Value) -> Result<Id<MessageMarker>, ResponderError> {
-        match self {
+    /// over a message transport); its message id and channel.
+    pub(crate) async fn followup(&self, body: Value) -> Result<Sent, ResponderError> {
+        let id = match self {
             Self::Interaction(t) => {
                 let token = t.token()?;
                 let route = Route::ExecuteWebhook {
@@ -135,16 +158,24 @@ impl Transport {
                     with_components: Some(true),
                     webhook_id: t.application_id.get(),
                 };
-                message_id(&send(&t.app, &route, Some(&body), false).await?)
+                let response = send(&t.app, &route, Some(&body), false).await?;
+                return Ok(Sent {
+                    id: message_id(&response)?,
+                    channel_id: posted(&response).channel_id,
+                });
             }
             Self::Message(t) => {
                 let route = Route::CreateMessage {
                     channel_id: t.channel_id.get(),
                 };
-                message_id(&send(&t.app, &route, Some(&body), true).await?)
+                message_id(&send(&t.app, &route, Some(&body), true).await?)?
             }
-            Self::Detached => Ok(DETACHED_ID),
-        }
+            Self::Detached => DETACHED_ID,
+        };
+        Ok(Sent {
+            id,
+            channel_id: None,
+        })
     }
 
     /// Edits the follow-up `id`.
@@ -198,8 +229,19 @@ impl InteractionTarget {
         }
     }
 
-    /// Sends the initial callback `body` over the hedged edge path.
-    pub(crate) async fn callback(&self, body: &Value) -> Result<(), ResponderError> {
+    /// Whether the token expired: 15 minutes after `received_at` (INT-02).
+    pub(crate) fn expired(&self) -> bool {
+        tokio::time::Instant::now() >= self.received_at + TOKEN_LIFETIME
+    }
+
+    /// Sends the initial callback `body` over the hedged edge path and
+    /// records the ack latency; with `with_response`, the message id the
+    /// response names (`resource.message.id`), if any.
+    pub(crate) async fn callback(
+        &self,
+        body: &Value,
+        with_response: bool,
+    ) -> Result<Option<Id<MessageMarker>>, ResponderError> {
         let body = serde_json::to_vec(body).map_err(|e| ResponderError::Encode {
             reason: e.to_string(),
         })?;
@@ -207,11 +249,15 @@ impl InteractionTarget {
             interaction_id: self.interaction_id,
             token: self.token.clone(),
             body: CallbackBody::Json(Bytes::from(body)),
-            with_response: false,
+            with_response,
             received_at: self.received_at,
         };
         match self.app.edge.interaction_callback(request).await {
-            Ok(_) => Ok(()),
+            Ok(ack) => {
+                metrics::histogram!("noctis_ack_latency_seconds", "app" => Arc::clone(&self.app.app))
+                    .record(self.received_at.elapsed().as_secs_f64());
+                Ok(callback_message_id(&ack.body))
+            }
             Err(CallbackError::InvalidToken) => Err(ResponderError::InvalidToken),
             Err(CallbackError::DeadlineMissed(missed)) => Err(missed.into()),
             Err(CallbackError::Rejected { status, code }) => {
@@ -249,20 +295,42 @@ impl MessageTarget {
     }
 
     async fn edit(&self, id: Id<MessageMarker>, body: &Value) -> Result<(), ResponderError> {
-        let route = Route::UpdateMessage {
-            channel_id: self.channel_id.get(),
-            message_id: id.get(),
-        };
-        send(&self.app, &route, Some(body), true).await.map(drop)
+        channel_edit(&self.app, self.channel_id, id, body)
+            .await
+            .map(drop)
     }
 
     async fn delete(&self, id: Id<MessageMarker>) -> Result<(), ResponderError> {
-        let route = Route::DeleteMessage {
-            channel_id: self.channel_id.get(),
-            message_id: id.get(),
-        };
-        send(&self.app, &route, None, true).await.map(drop)
+        channel_delete(&self.app, self.channel_id, id).await
     }
+}
+
+/// Edits the message `id` in `channel_id` with the bot token; what the
+/// response names.
+pub(crate) async fn channel_edit(
+    app: &AppShared,
+    channel_id: Id<ChannelMarker>,
+    id: Id<MessageMarker>,
+    body: &Value,
+) -> Result<Posted, ResponderError> {
+    let route = Route::UpdateMessage {
+        channel_id: channel_id.get(),
+        message_id: id.get(),
+    };
+    Ok(posted(&send(app, &route, Some(body), true).await?))
+}
+
+/// Deletes the message `id` in `channel_id` with the bot token.
+pub(crate) async fn channel_delete(
+    app: &AppShared,
+    channel_id: Id<ChannelMarker>,
+    id: Id<MessageMarker>,
+) -> Result<(), ResponderError> {
+    let route = Route::DeleteMessage {
+        channel_id: channel_id.get(),
+        message_id: id.get(),
+    };
+    send(app, &route, None, true).await.map(drop)
 }
 
 /// Sends one request through the App's twilight client; the response
@@ -324,4 +392,29 @@ fn message_id(body: &[u8]) -> Result<Id<MessageMarker>, ResponderError> {
         .and_then(|id| id.parse::<u64>().ok())
         .and_then(Id::new_checked)
         .ok_or(ResponderError::Transport)
+}
+
+/// A snowflake string field of `value`.
+fn snowflake<T>(value: Option<&Value>) -> Option<Id<T>> {
+    value
+        .and_then(Value::as_str)
+        .and_then(|id| id.parse::<u64>().ok())
+        .and_then(Id::new_checked)
+}
+
+/// The `id` and `channel_id` of a message object, when present.
+fn posted(body: &[u8]) -> Posted {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return Posted::default();
+    };
+    Posted {
+        message_id: snowflake(value.get("id")),
+        channel_id: snowflake(value.get("channel_id")),
+    }
+}
+
+/// The `resource.message.id` of a `with_response` callback body.
+fn callback_message_id(body: &[u8]) -> Option<Id<MessageMarker>> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    snowflake(value.pointer("/resource/message/id"))
 }

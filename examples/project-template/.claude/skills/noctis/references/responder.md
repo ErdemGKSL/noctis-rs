@@ -37,23 +37,41 @@ today, before any request.
 A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
 the `Command` Error Sink (§5).
 
-## 2. Auto-defer (FR-21) [planned, Story 6.6]
+## 2. Auto-defer (FR-21, INT-01)
 
-If your handler hasn't answered `ack_deadline` (default 2000 ms) after the gateway
-received the interaction (queueing time counts), Noctis defers:
+If your Command handler hasn't answered `ack_deadline` after the gateway received the
+interaction (queueing time counts), Noctis defers it for you:
 
-- commands: type 5 with only `EPHEMERAL` if declared (INT-08); the V2 flag goes on the
-  later edit;
-- components and modal submits: type 6 (no loading state).
+- set it with `App::builder().ack_deadline(Duration::from_millis(1500))`: 0 ms..=2500 ms,
+  default 2000 ms (`App::ack_deadline()` reads it); out of range is
+  `BuildViolation::InvalidAckDeadline` at `build()`; 0 always defers. There is no
+  environment variable for it.
+- commands: exactly `{"type":5}`, or `{"type":5,"data":{"flags":64}}` when the Command is
+  declared `ephemeral` (INT-08); the V2 flag goes on the later edit;
+- [planned, Epic 7] components and modal submits: type 6 (no loading state).
 
-Your eventual return value then becomes an edit of the original. A handler that
-answers after 5 s still delivers, without "interaction failed". `opens_modal` handlers
-are never auto-deferred (a modal must be the first response, INT-05); if one misses the
-3 s deadline, Noctis logs an error naming it.
+One gate serializes every initial response, so at most one callback is ever sent
+(INT-03): whichever of your handler and the timer gets there first answers. After the
+auto-defer, your `reply(msg)` or returned message becomes an edit of the original
+(`PATCH …/messages/@original`, `reply` still returns `Ok(Acked)`), and a late
+`defer(..)` sends nothing. A handler that answers after 5 s still delivers, without
+"interaction failed". The timer stops when your handler returns, fails, panics or is
+cancelled.
 
-Until it lands, a handler that may take longer than ~2.9 s must call
-`r.defer(..)` first; a late initial response fails with
-`ResponderError::AckDeadlineMissed`.
+`opens_modal` Commands are never auto-deferred (a modal must be the first response,
+INT-05); if one has not answered within the 3 s deadline (2.9 s), Noctis logs one
+`error` on target `noctis::dispatch` naming `handler` and `module`.
+
+If the auto-defer itself fails (for example the interaction sat in the queue past
+2.9 s), it logs `warn` "auto-defer failed" (target `noctis::dispatch`, field `handler`)
+and changes nothing; your own reply then gets the typed error
+(`ResponderError::AckDeadlineMissed`).
+
+The `Dispatcher` (§4.1) has no auto-defer: a message reply has no deadline.
+
+Metrics (label `app` only): `noctis_autodefer_total` (interactions the auto-defer
+acknowledged) and `noctis_ack_latency_seconds` (gateway receipt → initial callback, for
+every initial callback: reply, defer, modal or auto-defer).
 
 Rendering images is awaited **inside** the handler (`ctx.render(..).await`), so slow
 renders are covered automatically.
@@ -83,7 +101,7 @@ ones, `"en-US"` when Discord sent neither. [planned] `ViewCx::locale()` (Epic 8)
 ## 4. The Responder (typestate, INT-03/04)
 
 The type is `Responder<K, S = Pending>`: `K` is the handler kind (`Command<M>`, sealed
-`ResponderKind`), `S` the state (`Pending` or `Acked`, sealed `ResponderState`). Take it
+`ResponderKind`; `M` is the sealed `ModalMarker`: `NoModal` by default or `OpensModal`), `S` the state (`Pending` or `Acked`, sealed `ResponderState`). Take it
 as a handler parameter through its alias, right after `ctx` (and the path), before the
 options: `(ctx[, path][, r: CommandResponder][, options])`, or `(ctx, target[, r:
 CommandResponder])` on a context menu. Any other order, or two responders, is a compile
@@ -93,7 +111,7 @@ one but never uses it, nothing is sent from it).
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
 | `CommandResponder` (= `CommandResponder<NoModal>`) | `reply(msg)`, `defer(ephemerality)` | chat input / context menu |
-| `CommandResponder<OpensModal>` [planned, Story 6.6] | the above plus `modal(m)`; required when the command is `#[command(.., opens_modal)]` | command that opens a modal |
+| `CommandResponder<OpensModal>` | the above plus `modal(m)`; required exactly when the command is `#[command(.., opens_modal)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
 | `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` | buttons, selects |
 | `ComponentResponder<OpensModal>` [planned, Epic 7] | the above plus `modal(m)` | component that opens a modal |
 | `ModalResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` — **no** `modal` | modal submit |
@@ -106,6 +124,7 @@ Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 ```rust
 r.reply(msg).await?                     -> Responder<Command, Acked>  // callback type 4, declared ephemerality
 r.defer(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // callback type 5, only EPHEMERAL (INT-08)
+r.modal(m).await?                       -> Responder<Command<OpensModal>, Acked> // CommandResponder<OpensModal> only: callback type 9
 acked.edit_original(msg).await?         -> ()
 acked.followup(msg, Visibility::Public).await? -> FollowupHandle
 acked.delete_original().await?          -> ()
@@ -118,7 +137,7 @@ handle.delete().await?                  -> ()
 `msg` is anything `Into<OutgoingMessage>`: `V2Message`, `Components` or `LegacyMessage`
 ([planned] a View, `StaticView`). Calling a method that doesn't exist for the kind or
 state is a compile error: a second `reply` (E0599), `update` or `modal` on a
-`CommandResponder` (E0599), `defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
+`CommandResponder` without `OpensModal` (E0599), `defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
 `Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
 
 Edits keep the format rules: editing a legacy original into a V2 message sends the
@@ -138,14 +157,24 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01) |
 | `Rejected { status, code }` | Discord answered an error (`code`: its JSON error code, e.g. `Some(10015)`); a callback answered 40060 (already acknowledged) counts as success |
 | `Transport` | no usable response |
+| `TokenExpired` | 15 min after the interaction arrived: a follow-up, or an edit/delete of an ephemeral message or of one whose id is unknown (INT-02) |
+| `FollowupCap` | the 6th follow-up of a user-install-only interaction (INT-11) |
+| `ModalUnavailable` | `modal(m)` after another initial response (an auto-defer cannot happen for `opens_modal`), or over the `Dispatcher` |
 
-Runtime guards the types can't express [planned, Story 6.6]:
-- if the auto-defer already fired, your `reply` becomes `edit_original` transparently;
-- follow-ups are counted: max 5 for user-installed apps not in the guild (INT-11) →
-  `ResponderError::FollowupCap`;
-- after 15 minutes every call returns `ResponderError::TokenExpired` without an HTTP
-  request (INT-02). Updates to a *public* View past 15 min fall back to a bot-token
-  message edit automatically; ephemeral ones can't.
+Runtime guards the types can't express:
+- if the auto-defer already fired, your `reply` becomes `edit_original` transparently
+  (§2);
+- follow-ups are counted when `authorizing_integration_owners` has a user install and no
+  guild install: at most 5, the 6th is `ResponderError::FollowupCap` with no request
+  (INT-11). A follow-up that fails validation uses no slot; one Discord rejects still
+  uses its slot. Guild installs have no cap;
+- 15 minutes after the gateway received the interaction the token is expired (INT-02):
+  `edit_original`, `delete_original`, `handle.edit` and `handle.delete` on a **public**
+  message whose id is known fall back to the bot-token channel routes
+  (`PATCH`/`DELETE /channels/{channel}/messages/{id}`; a user-installed app outside the
+  guild gets `Rejected`); everything else (follow-ups, ephemeral messages, an original
+  that was deferred and never edited) is `ResponderError::TokenExpired` without an HTTP
+  request. A returned message past 15 min follows the same rule.
 
 Example: reply privately, then post a public log line.
 
@@ -169,7 +198,20 @@ async fn report(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Component
 }
 ```
 
-[planned, Epic 7] Example: open a modal (Route declared `opens_modal`):
+Example: a Command that opens a modal (INT-05). After a modal there is no original
+message, so return `done()`:
+
+```rust
+#[command("bio", description = "Edit your profile bio", opens_modal, contexts = [Guild])]
+async fn bio(ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+    Ok(r.modal(BioForm::modal(SaveBio { user: ctx.user_id() })).await?.done())
+}
+```
+
+`modal(m)` validates the modal against the Limits (`Invalid`) and encodes it (`Encode`
+for an unresolved Route id) before any request.
+
+[planned, Epic 7] Example: a component that opens a modal (Route declared `opens_modal`):
 
 ```rust
 #[handler]
@@ -221,7 +263,8 @@ async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
   shows the typing indicator (the later message is then posted as the reply), edits and
   deletes target that reply, follow-ups are plain channel messages. Anything ephemeral
   (a declared `ephemeral` Command, `defer(Ephemeral)`, `followup(.., Ephemeral)`) is
-  `ResponderError::EphemeralUnsupported`, never a silent public post.
+  `ResponderError::EphemeralUnsupported`, never a silent public post; `modal(m)` is
+  `ResponderError::ModalUnavailable`. No auto-defer runs.
 - Span `noctis.dispatch{app, guild_id, module, path}`.
 
 ## 5. Errors shown to users (FR-22)

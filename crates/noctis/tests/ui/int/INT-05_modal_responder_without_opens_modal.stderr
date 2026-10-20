@@ -1,0 +1,17 @@
+error[E0277]: [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal`
+ --> tests/ui/int/INT-05_modal_responder_without_opens_modal.rs:9:40
+  |
+9 | async fn feedback(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+  |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ declare `opens_modal` or take `CommandResponder`
+  |
+  = help: the trait `noctis::__private::noctis_core::responder::__DeclaresNoModal` is not implemented for `Responder<noctis::Command<noctis::OpensModal>>`
+help: the trait `noctis::__private::noctis_core::responder::__DeclaresNoModal` is implemented for `Responder<noctis::Command>`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  | impl __DeclaresNoModal for Responder<Command<NoModal>, Pending> {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `noctis::__private::noctis_core::responder::__assert_no_modal`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  | pub fn __assert_no_modal<T: __DeclaresNoModal>() {}
+  |                             ^^^^^^^^^^^^^^^^^ required by this bound in `__assert_no_modal`

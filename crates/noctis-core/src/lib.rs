@@ -175,10 +175,14 @@ pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, Optio
 pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
+#[doc(hidden)]
 pub use responder::{
-    Acked, Command, CommandResponder, Ephemerality, FollowupHandle, IntoResponse, NoModal,
-    OutgoingMessage, Pending, Responded, Responder, ResponderError, ResponderKind, ResponderState,
-    Visibility,
+    __DeclaresNoModal, __DeclaresOpensModal, __assert_no_modal, __assert_opens_modal,
+};
+pub use responder::{
+    Acked, Command, CommandResponder, Ephemerality, FollowupHandle, IntoResponse, ModalMarker,
+    NoModal, OpensModal, OutgoingMessage, Pending, Responded, Responder, ResponderError,
+    ResponderKind, ResponderState, Visibility,
 };
 pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};

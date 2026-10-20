@@ -17,8 +17,8 @@ use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, Options};
 use crate::responder::{
-    Command, CommandResponder, Ephemerality, IntoResponse, Responder, Response, ResponseValue,
-    Shared, Transport,
+    Command, CommandResponder, Ephemerality, IntoResponse, ModalMarker, Responder, Response,
+    ResponseValue, Shared, Transport,
 };
 
 /// The typed Command Paths of one Command Pattern; implemented by
@@ -285,16 +285,21 @@ impl UnknownCommandPath {
 /// A started handler: what it returned, as the pipeline sends it.
 pub(crate) type HandlerFuture = BoxFuture<'static, HandlerResult<ResponseValue>>;
 
-/// The erased handler call.
-type ErasedCommand = dyn Fn(CommandCtx, CommandResponder) -> HandlerFuture + Send + Sync;
+/// The erased handler call: the handler builds its own responder (of its
+/// modal marker) over the shared state.
+type ErasedCommand = dyn Fn(CommandCtx, Arc<Shared>) -> HandlerFuture + Send + Sync;
 
 /// Boxes a handler future, converting its value into a response.
-pub(crate) fn boxed<R, Fut>(fut: Fut) -> HandlerFuture
+pub(crate) fn boxed<M, R, Fut>(fut: Fut) -> HandlerFuture
 where
-    R: IntoResponse<Command>,
+    M: ModalMarker,
+    R: IntoResponse<Command<M>>,
     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
 {
-    Box::pin(async move { fut.await.map(<R as IntoResponse<Command>>::__into_response) })
+    Box::pin(async move {
+        fut.await
+            .map(<R as IntoResponse<Command<M>>>::__into_response)
+    })
 }
 
 /// One slash Command handler, as `#[command]` builds it; add it to a
@@ -313,11 +318,12 @@ pub struct CommandHandler {
     options: &'static [OptionDecl<'static>],
     metadata: CommandMetadata,
     ephemerality: Ephemerality,
+    opens_modal: bool,
     call: Arc<ErasedCommand>,
 }
 
 impl CommandHandler {
-    fn from_call(
+    fn from_call<M: ModalMarker>(
         name: &'static str,
         pattern: &'static str,
         description: &'static str,
@@ -333,6 +339,7 @@ impl CommandHandler {
             options,
             metadata: CommandMetadata::new(),
             ephemerality: Ephemerality::Public,
+            opens_modal: M::OPENS_MODAL,
             call,
         }
     }
@@ -340,7 +347,7 @@ impl CommandHandler {
     /// A handler of the Command Pattern `pattern` whose paths are `P`'s;
     /// what `#[command]` expands to for a pattern with a group.
     #[doc(hidden)]
-    pub fn __new<P, F, Fut, R>(
+    pub fn __new<P, M, F, Fut, R>(
         name: &'static str,
         pattern: &'static str,
         description: &'static str,
@@ -348,24 +355,25 @@ impl CommandHandler {
     ) -> Self
     where
         P: CommandPath,
-        F: Fn(CommandCtx, P, CommandResponder) -> Fut + Send + Sync + 'static,
+        M: ModalMarker,
+        F: Fn(CommandCtx, P, CommandResponder<M>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-        R: IntoResponse<Command>,
+        R: IntoResponse<Command<M>>,
     {
-        let call = move |ctx: CommandCtx, r: CommandResponder| -> HandlerFuture {
+        let call = move |ctx: CommandCtx, shared: Arc<Shared>| -> HandlerFuture {
             match P::from_path(ctx.command_path()) {
-                Some(path) => boxed(f(ctx, path, r)),
+                Some(path) => boxed::<M, _, _>(f(ctx, path, Responder::new(shared))),
                 None => unknown(ctx.command_path(), name),
             }
         };
-        Self::from_call(name, pattern, description, P::PATHS, &[], Arc::new(call))
+        Self::from_call::<M>(name, pattern, description, P::PATHS, &[], Arc::new(call))
     }
 
     /// Like [`__new`](Self::__new) for a handler that also takes the options
     /// struct `O`: the path is checked, `O` is decoded and validated, then
     /// the handler runs.
     #[doc(hidden)]
-    pub fn __new_with_options<P, O, F, Fut, R>(
+    pub fn __new_with_options<P, O, M, F, Fut, R>(
         name: &'static str,
         pattern: &'static str,
         description: &'static str,
@@ -374,20 +382,21 @@ impl CommandHandler {
     where
         P: CommandPath,
         O: Options,
-        F: Fn(CommandCtx, P, CommandResponder, O) -> Fut + Send + Sync + 'static,
+        M: ModalMarker,
+        F: Fn(CommandCtx, P, CommandResponder<M>, O) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-        R: IntoResponse<Command>,
+        R: IntoResponse<Command<M>>,
     {
-        let call = move |ctx: CommandCtx, r: CommandResponder| -> HandlerFuture {
+        let call = move |ctx: CommandCtx, shared: Arc<Shared>| -> HandlerFuture {
             let Some(path) = P::from_path(ctx.command_path()) else {
                 return unknown(ctx.command_path(), name);
             };
             match decode::<O>(&ctx) {
-                Ok(options) => boxed(f(ctx, path, r, options)),
+                Ok(options) => boxed::<M, _, _>(f(ctx, path, Responder::new(shared), options)),
                 Err(error) => failed(error),
             }
         };
-        Self::from_call(
+        Self::from_call::<M>(
             name,
             pattern,
             description,
@@ -400,32 +409,33 @@ impl CommandHandler {
     /// A handler of the single Command Path `paths[0]`; what `#[command]`
     /// expands to for a pattern without a group.
     #[doc(hidden)]
-    pub fn __new_plain<F, Fut, R>(
+    pub fn __new_plain<M, F, Fut, R>(
         name: &'static str,
         paths: &'static [&'static str],
         description: &'static str,
         f: F,
     ) -> Self
     where
-        F: Fn(CommandCtx, CommandResponder) -> Fut + Send + Sync + 'static,
+        M: ModalMarker,
+        F: Fn(CommandCtx, CommandResponder<M>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-        R: IntoResponse<Command>,
+        R: IntoResponse<Command<M>>,
     {
-        let call = move |ctx: CommandCtx, r: CommandResponder| -> HandlerFuture {
+        let call = move |ctx: CommandCtx, shared: Arc<Shared>| -> HandlerFuture {
             if paths.contains(&ctx.command_path()) {
-                boxed(f(ctx, r))
+                boxed::<M, _, _>(f(ctx, Responder::new(shared)))
             } else {
                 unknown(ctx.command_path(), name)
             }
         };
         let pattern = paths.first().copied().unwrap_or_default();
-        Self::from_call(name, pattern, description, paths, &[], Arc::new(call))
+        Self::from_call::<M>(name, pattern, description, paths, &[], Arc::new(call))
     }
 
     /// Like [`__new_plain`](Self::__new_plain) for a handler that also takes
     /// the options struct `O`.
     #[doc(hidden)]
-    pub fn __new_plain_with_options<O, F, Fut, R>(
+    pub fn __new_plain_with_options<O, M, F, Fut, R>(
         name: &'static str,
         paths: &'static [&'static str],
         description: &'static str,
@@ -433,21 +443,22 @@ impl CommandHandler {
     ) -> Self
     where
         O: Options,
-        F: Fn(CommandCtx, CommandResponder, O) -> Fut + Send + Sync + 'static,
+        M: ModalMarker,
+        F: Fn(CommandCtx, CommandResponder<M>, O) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-        R: IntoResponse<Command>,
+        R: IntoResponse<Command<M>>,
     {
-        let call = move |ctx: CommandCtx, r: CommandResponder| -> HandlerFuture {
+        let call = move |ctx: CommandCtx, shared: Arc<Shared>| -> HandlerFuture {
             if !paths.contains(&ctx.command_path()) {
                 return unknown(ctx.command_path(), name);
             }
             match decode::<O>(&ctx) {
-                Ok(options) => boxed(f(ctx, r, options)),
+                Ok(options) => boxed::<M, _, _>(f(ctx, Responder::new(shared), options)),
                 Err(error) => failed(error),
             }
         };
         let pattern = paths.first().copied().unwrap_or_default();
-        Self::from_call(
+        Self::from_call::<M>(
             name,
             pattern,
             description,
@@ -498,6 +509,13 @@ impl CommandHandler {
         self.ephemerality
     }
 
+    /// Whether the Command is declared `#[command(.., opens_modal)]`: its
+    /// handler takes `CommandResponder<OpensModal>`, may open a modal as
+    /// its first response, and gets no auto-defer (INT-05).
+    pub fn opens_modal(&self) -> bool {
+        self.opens_modal
+    }
+
     /// Replaces the metadata; what `#[command]` appends when a metadata
     /// argument is given.
     #[doc(hidden)]
@@ -518,8 +536,8 @@ impl CommandHandler {
 
     /// Starts the handler for `ctx`; an [`UnknownCommandPath`] error when
     /// `ctx`'s path is not one of [`paths`](Self::paths).
-    pub(crate) fn call(&self, ctx: CommandCtx, responder: CommandResponder) -> HandlerFuture {
-        (self.call)(ctx, responder)
+    pub(crate) fn call(&self, ctx: CommandCtx, shared: Arc<Shared>) -> HandlerFuture {
+        (self.call)(ctx, shared)
     }
 }
 
@@ -560,6 +578,7 @@ impl fmt::Debug for CommandHandler {
                 &self.options.iter().map(|o| o.name).collect::<Vec<_>>(),
             )
             .field("ephemerality", &self.ephemerality)
+            .field("opens_modal", &self.opens_modal)
             .field("metadata", &self.metadata)
             .finish_non_exhaustive()
     }
@@ -569,11 +588,11 @@ impl fmt::Debug for CommandHandler {
 /// is validated and encoded, never sent; a responder error becomes the
 /// handler error.
 pub(crate) fn run_detached(
-    start: impl FnOnce(CommandResponder) -> HandlerFuture,
+    start: impl FnOnce(Arc<Shared>) -> HandlerFuture,
     ephemerality: Ephemerality,
 ) -> BoxFuture<'static, HandlerResult<()>> {
     let shared = Shared::new(Transport::Detached, ephemerality, Limits::default());
-    let fut = start(Responder::new(Arc::clone(&shared)));
+    let fut = start(Arc::clone(&shared));
     Box::pin(async move {
         match fut.await?.0 {
             Response::Done => Ok(()),
@@ -677,7 +696,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn known_path_runs_with_its_variant() {
-        let handler = CommandHandler::__new::<TestPath, _, _, _>("m::t", "t (a|b)", "d", typed);
+        let handler = CommandHandler::__new::<TestPath, _, _, _, _>("m::t", "t (a|b)", "d", typed);
         assert_eq!(handler.paths(), ["t a", "t b"]);
         assert_eq!(handler.pattern(), "t (a|b)");
         assert_eq!(handler.description(), "d");
@@ -694,7 +713,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn unknown_path_is_an_error() {
-        let handler = CommandHandler::__new::<TestPath, _, _, _>("m::t", "t (a|b)", "d", typed);
+        let handler = CommandHandler::__new::<TestPath, _, _, _, _>("m::t", "t (a|b)", "d", typed);
         assert_eq!(
             unknown_of(call_command(&handler, "t c").await),
             "`t c` is not a path of the Command `m::t`"
@@ -716,7 +735,7 @@ pub(crate) mod tests {
     #[test]
     fn module_add_collects_commands() {
         let module = crate::Module::new("cfg")
-            .add(CommandHandler::__new::<TestPath, _, _, _>(
+            .add(CommandHandler::__new::<TestPath, _, _, _, _>(
                 "m::t", "t (a|b)", "d", typed,
             ))
             .add(CommandHandler::__new_plain(
@@ -946,7 +965,7 @@ pub(crate) mod tests {
 
         #[tokio::test]
         async fn pattern_with_options() {
-            let h = CommandHandler::__new_with_options::<TestPath, W, _, _, _>(
+            let h = CommandHandler::__new_with_options::<TestPath, W, _, _, _, _>(
                 "m::t", "t (a|b)", "d", typed,
             );
             assert_eq!(h.options()[0].name, "days");

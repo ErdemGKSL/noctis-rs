@@ -78,6 +78,8 @@ const fn row(
 /// | `noctis_events_dropped_total` | counter | `app`, `event_type` |
 /// | `noctis_handler_duration_seconds` | histogram | `app`, `kind` |
 /// | `noctis_handler_errors_total` | counter | `app`, `kind` |
+/// | `noctis_autodefer_total` | counter | `app` |
+/// | `noctis_ack_latency_seconds` | histogram | `app` |
 /// | `noctis_shard_status` | gauge | `app`, `shard` (1 up, 0 down) |
 /// | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx`, `error`) |
 /// | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns`, `connect`, `tls`, `ttfb`, `total`) |
@@ -120,6 +122,18 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Counter,
         &["app", "kind"],
         "Handler runs that returned an error or panicked.",
+    ),
+    row(
+        "noctis_autodefer_total",
+        MetricType::Counter,
+        &["app"],
+        "Interactions the auto-defer acknowledged.",
+    ),
+    row(
+        "noctis_ack_latency_seconds",
+        MetricType::Histogram,
+        &["app"],
+        "Time from gateway receipt to the initial interaction callback.",
     ),
     row(
         "noctis_shard_status",

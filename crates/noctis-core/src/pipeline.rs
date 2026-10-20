@@ -9,7 +9,11 @@
 //! 3. *Module enablement checks: absent until Stories 13.2 and 13.3;*
 //! 4. resolve the locale default (User and Guild Locale, FR-43);
 //! 5. *rate limits: absent until Story 13.4;*
-//! 6. arm the auto-defer: a no-op arm point until Story 6.6;
+//! 6. arm the auto-defer (INT-01): a task that acknowledges the interaction
+//!    with a type-5 callback at `received_at + ack_deadline` unless the
+//!    handler answered first; an `opens_modal` Command gets none, only an
+//!    error log when it has not answered by the 2.9 s ack deadline
+//!    (INT-05). The task is aborted when the handler run ends;
 //! 7. *before-Middleware: absent until Story 7.6;*
 //! 8. *Guards: absent until Story 7.7;*
 //! 9. run the handler under `catch_unwind`, raced against the shutdown
@@ -18,7 +22,8 @@
 //!     with Story 7.6).
 //!
 //! The [`Dispatcher`] runs stages 3 onward for a Command invoked from
-//! outside an interaction.
+//! outside an interaction; it arms no auto-defer (a message has no ack
+//! deadline).
 
 use std::any::Any;
 use std::fmt;
@@ -41,14 +46,14 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 
 use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
+use crate::edge::callback::ACK_DEADLINE;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::menu::MenuInput;
 use crate::options::CommandInput;
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
 use crate::responder::{
-    CommandResponder, Ephemerality, InteractionTarget, MessageTarget, Responder, Response, Shared,
-    Transport,
+    Ephemerality, InteractionTarget, MessageTarget, PENDING, Response, Shared, Transport,
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 use crate::worker::panic_message;
@@ -93,6 +98,71 @@ impl Resolved {
             Self::Menu(entry) => entry.handler.ephemerality(),
         }
     }
+
+    /// Whether the Command is declared `opens_modal` (menus never are).
+    fn opens_modal(&self) -> bool {
+        match self {
+            Self::Command { entry, .. } => entry.handler.opens_modal(),
+            Self::Menu(_) => false,
+        }
+    }
+}
+
+/// Aborts a spawned task when dropped: the auto-defer never outlives the
+/// handler run.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// The most follow-ups a user-install-only interaction may send (INT-11).
+const USER_INSTALL_FOLLOWUPS: u8 = 5;
+
+/// Stage 6: spawns the auto-defer task of an interaction received at
+/// `received_at` (INT-01), or for an `opens_modal` Command the task that
+/// logs a missed ack deadline (INT-05).
+fn arm(
+    app: &AppShared,
+    shared: &Arc<Shared>,
+    resolved: &Resolved,
+    received_at: tokio::time::Instant,
+    span: &Span,
+) -> AbortOnDrop {
+    let shared = Arc::clone(shared);
+    let handler = resolved.handler();
+    let task = if resolved.opens_modal() {
+        let module = resolved.module();
+        let deadline = received_at + ACK_DEADLINE;
+        tokio::spawn(
+            async move {
+                tokio::time::sleep_until(deadline).await;
+                if shared.state() == PENDING {
+                    tracing::error!(
+                        target: "noctis::dispatch",
+                        handler,
+                        module,
+                        "an `opens_modal` handler did not answer within the 3 s ack deadline"
+                    );
+                }
+            }
+            .instrument(span.clone()),
+        )
+    } else {
+        let deadline = received_at + app.ack_deadline;
+        tokio::spawn(
+            async move {
+                tokio::time::sleep_until(deadline).await;
+                if !shared.auto_defer().await {
+                    tracing::warn!(target: "noctis::dispatch", handler, "auto-defer failed");
+                }
+            }
+            .instrument(span.clone()),
+        )
+    };
+    AbortOnDrop(task)
 }
 
 /// The Command Path of chat-input `data`: its name, then the subcommand
@@ -170,12 +240,13 @@ enum Outcome {
 /// (a returned message is the reply while Pending, else an edit of the
 /// original, INT-12), races the whole run against `cancel`, records the
 /// duration and reports an error, a panic or a cancellation to the Command
-/// Error Sink.
+/// Error Sink. `timer` (the auto-defer) is aborted as soon as the run ends.
 async fn execute(
     span: &Span,
     cancel: Option<&CancellationToken>,
     shared: Arc<Shared>,
-    start: impl FnOnce(CommandResponder) -> HandlerFuture,
+    start: impl FnOnce(Arc<Shared>) -> HandlerFuture,
+    timer: Option<AbortOnDrop>,
     report: Report<'_>,
 ) {
     let app = report.app;
@@ -184,9 +255,9 @@ async fn execute(
         Outcome::Cancelled
     } else {
         let started_at = Instant::now();
-        let responder = Responder::new(Arc::clone(&shared));
+        let handle = Arc::clone(&shared);
         let started =
-            span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| start(responder))));
+            span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| start(handle))));
         let outcome = match started {
             Ok(fut) => {
                 let run = AssertUnwindSafe(async move {
@@ -223,6 +294,7 @@ async fn execute(
         .record(started_at.elapsed().as_secs_f64());
         outcome
     };
+    drop(timer);
     let report_kind = match &outcome {
         Outcome::Returned(Ok(())) => return,
         Outcome::Returned(Err(error)) => ReportKind::Error(error),
@@ -255,8 +327,8 @@ fn start(
     resolved: &Resolved,
     raw: &[u8],
     parts: CtxInner,
-) -> impl FnOnce(CommandResponder) -> HandlerFuture {
-    let call: Box<dyn FnOnce(CommandResponder) -> HandlerFuture + Send> = match resolved {
+) -> impl FnOnce(Arc<Shared>) -> HandlerFuture {
+    let call: Box<dyn FnOnce(Arc<Shared>) -> HandlerFuture + Send> = match resolved {
         Resolved::Command { entry, path } => {
             let entry = Arc::clone(entry);
             let path: &'static str = path;
@@ -345,14 +417,16 @@ pub(crate) async fn run_interaction(
         guild_locale,
         guild_id,
         channel,
+        authorizing_integration_owners: owners,
         ..
     } = *interaction;
     let ephemerality = resolved.ephemerality();
+    let channel_id = channel.as_ref().map(|c| c.id);
     let parts = CtxInner {
         module: resolved.module(),
         shard,
         guild_id,
-        channel_id: channel.map(|c| c.id),
+        channel_id,
         user_id,
         user_locale: locale,
         guild_locale,
@@ -360,16 +434,20 @@ pub(crate) async fn run_interaction(
         ..CtxInner::detached_parts(ephemerality)
     };
     // Stage 5 (rate limits) lands with Story 13.4.
-    // Stage 6: the auto-defer arm point; Story 6.6 arms its timer here.
-    // Stages 7 (before-Middleware, Story 7.6) and 8 (Guards, Story 7.7).
     let transport = Transport::Interaction(InteractionTarget {
         app: Arc::clone(&app),
         application_id,
         interaction_id,
         token,
         received_at,
+        channel_id,
     });
-    let state = Shared::new(transport, ephemerality, app.limits.clone());
+    // A user-install-only interaction may send 5 follow-ups (INT-11).
+    let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
+    let state = Shared::with_followup_cap(transport, ephemerality, app.limits.clone(), cap);
+    // Stage 6: the auto-defer.
+    let timer = arm(&app, &state, &resolved, received_at, &span);
+    // Stages 7 (before-Middleware, Story 7.6) and 8 (Guards, Story 7.7).
     let report = Report {
         app: &app,
         shard: Some(shard),
@@ -379,7 +457,7 @@ pub(crate) async fn run_interaction(
         event_type: Some(INTERACTION_CREATE),
     };
     let start = start(&resolved, raw.as_bytes(), parts);
-    execute(&span, Some(&cancel), state, start, report).await;
+    execute(&span, Some(&cancel), state, start, Some(timer), report).await;
 }
 
 /// Runs registered Commands from outside an interaction, such as a prefix
@@ -603,8 +681,8 @@ impl Dispatcher {
             event_type: None,
         };
         let entry = Arc::clone(entry);
-        let start = move |r| entry.handler.call(CommandCtx::from_parts(parts), r);
-        execute(&span, None, shared, start, report).await;
+        let start = move |shared| entry.handler.call(CommandCtx::from_parts(parts), shared);
+        execute(&span, None, shared, start, None, report).await;
         Ok(())
     }
 }

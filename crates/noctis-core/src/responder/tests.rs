@@ -79,6 +79,7 @@ impl Fixture {
             interaction_id: Id::new(100),
             token: token.to_owned(),
             received_at,
+            channel_id: Some(Id::new(9)),
         });
         Shared::new(transport, ephemerality, self.app.limits().clone())
     }
@@ -112,6 +113,8 @@ impl Fixture {
 }
 
 const CB: &str = "/api/v10/interactions/100/tok/callback";
+/// A type-4 callback asks for the message (`with_response`).
+const CB_REPLY: &str = "/api/v10/interactions/100/tok/callback?with_response=true";
 const ORIGINAL: &str = "/api/v10/webhooks/7/tok/messages/@original";
 const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true&with_components=true";
 
@@ -131,7 +134,7 @@ async fn reply_then_done() {
         fx.requests(),
         [(
             Method::POST,
-            CB.to_owned(),
+            CB_REPLY.to_owned(),
             json!({ "type": 4, "data": { "flags": 32768, "components": v2_components("hi"), "allowed_mentions": { "parse": [] } } })
         )]
     );
@@ -196,7 +199,7 @@ async fn finish_replies_while_pending() {
     shared.finish(v2("a").into()).await.unwrap();
     let requests = fx.requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].1, CB);
+    assert_eq!(requests[0].1, CB_REPLY);
     assert_eq!(requests[0].2["type"], 4);
 }
 
@@ -411,6 +414,7 @@ async fn callback_rejected() {
         interaction_id: Id::new(200),
         token: "tok".to_owned(),
         received_at: Instant::now(),
+        channel_id: None,
     });
     let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
     let _ = responder(&shared).reply(v2("a")).await.unwrap().done();
@@ -482,6 +486,7 @@ async fn edit_and_followup_rejected() {
         interaction_id: Id::new(100),
         token: "tok".to_owned(),
         received_at: Instant::now(),
+        channel_id: None,
     });
     let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
     let err = responder(&shared).reply(v2("a")).await.unwrap_err();
@@ -615,4 +620,274 @@ fn values() {
     );
     drop(r);
     assert_eq!(format!("{:?}", Command::<NoModal>(PhantomData)), "Command");
+}
+
+/// Discord's answers, plus a `with_response` reply naming message 77 in
+/// channel 9 (`resource.message`).
+fn discord_with_message() -> Answer {
+    let base = discord();
+    Arc::new(move |seen: &Seen| {
+        if seen.path.ends_with("/callback") && seen.query.as_deref() == Some("with_response=true") {
+            let body = br#"{"interaction":{"id":"100","type":2},"resource":{"type":4,"message":{"id":"77","channel_id":"9"}}}"#;
+            (StatusCode::OK, Bytes::from_static(body))
+        } else {
+            base(seen)
+        }
+    })
+}
+
+/// Moves the clock `by` forward (the token lifetime is measured on it),
+/// then lets it run again so real I/O keeps working.
+async fn skip(by: Duration) {
+    tokio::time::pause();
+    tokio::time::advance(by).await;
+    tokio::time::resume();
+}
+
+/// The methods and paths of the requests after the first `from`.
+fn routes(fx: &Fixture, from: usize) -> Vec<(Method, String)> {
+    fx.requests()
+        .into_iter()
+        .skip(from)
+        .map(|(m, p, _)| (m, p))
+        .collect()
+}
+
+/// INT-02 (Story 6.6 Matrix 25-33): after 15 minutes public messages with
+/// a known id fall back to the bot token; everything else is
+/// `TokenExpired` with no request.
+#[tokio::test]
+async fn int_02_token_expired_without_http() {
+    const T: Duration = Duration::from_mins(15);
+    let fx = Fixture::start(discord_with_message()).await;
+
+    // Matrix 25: just before the lifetime ends, the webhook route.
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    skip(Duration::from_secs(899)).await;
+    acked.edit_original(v2("b")).await.unwrap();
+    assert_eq!(routes(&fx, 1), [(Method::PATCH, ORIGINAL.to_owned())]);
+    let _ = acked.done();
+
+    // Matrix 26, 31 and 32: a public original whose id is known.
+    fx.server.log.lock().unwrap().clear();
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    skip(T).await;
+    acked.edit_original(v2("b")).await.unwrap();
+    shared.finish(v2("c").into()).await.unwrap();
+    acked.delete_original().await.unwrap();
+    let _ = acked.done();
+    assert_eq!(
+        routes(&fx, 1),
+        [
+            (Method::PATCH, "/api/v10/channels/9/messages/77".to_owned()),
+            (Method::PATCH, "/api/v10/channels/9/messages/77".to_owned()),
+            (Method::DELETE, "/api/v10/channels/9/messages/77".to_owned()),
+        ]
+    );
+    assert_eq!(fx.requests()[1].2["components"], v2_components("b"));
+
+    // Matrix 27-29: an ephemeral original, a deferred one never edited,
+    // and follow-ups of either visibility.
+    fx.server.log.lock().unwrap().clear();
+    let ephemeral = fx.interaction("tok", Ephemerality::Ephemeral);
+    let ephemeral = responder(&ephemeral).reply(v2("a")).await.unwrap();
+    let deferred = fx.interaction("tok", Ephemerality::Public);
+    let deferred = responder(&deferred)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap();
+    skip(T).await;
+    for err in [
+        ephemeral.edit_original(v2("b")).await.unwrap_err(),
+        ephemeral.delete_original().await.unwrap_err(),
+        deferred.edit_original(v2("b")).await.unwrap_err(),
+        deferred.delete_original().await.unwrap_err(),
+        deferred
+            .followup(v2("f"), Visibility::Public)
+            .await
+            .unwrap_err(),
+        deferred
+            .followup(v2("f"), Visibility::Ephemeral)
+            .await
+            .unwrap_err(),
+    ] {
+        assert!(matches!(err, ResponderError::TokenExpired), "{err}");
+    }
+    assert_eq!(fx.requests().len(), 2);
+    let _ = (ephemeral.done(), deferred.done());
+
+    // Matrix 30: follow-up handles.
+    fx.server.log.lock().unwrap().clear();
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap();
+    let public = acked.followup(v2("p"), Visibility::Public).await.unwrap();
+    let private = acked
+        .followup(v2("e"), Visibility::Ephemeral)
+        .await
+        .unwrap();
+    skip(T).await;
+    public.edit(v2("p2")).await.unwrap();
+    public.delete().await.unwrap();
+    for err in [
+        private.edit(v2("e2")).await.unwrap_err(),
+        private.delete().await.unwrap_err(),
+    ] {
+        assert!(matches!(err, ResponderError::TokenExpired), "{err}");
+    }
+    let _ = acked.done();
+    assert_eq!(
+        routes(&fx, 3),
+        [
+            (Method::PATCH, "/api/v10/channels/9/messages/55".to_owned()),
+            (Method::DELETE, "/api/v10/channels/9/messages/55".to_owned()),
+        ]
+    );
+
+    // Matrix 33: no channel is known.
+    fx.server.log.lock().unwrap().clear();
+    let transport = Transport::Interaction(InteractionTarget {
+        app: Arc::clone(fx.app.shared()),
+        application_id: Id::new(7),
+        interaction_id: Id::new(100),
+        token: "tok".to_owned(),
+        received_at: Instant::now(),
+        channel_id: None,
+    });
+    let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    skip(T).await;
+    let err = acked.edit_original(v2("b")).await.unwrap_err();
+    assert!(matches!(err, ResponderError::TokenExpired), "{err}");
+    let _ = acked.done();
+    assert_eq!(fx.requests().len(), 1);
+    assert_eq!(
+        ResponderError::TokenExpired.to_string(),
+        "the interaction token expired (15 minutes)"
+    );
+}
+
+/// INT-02 (Matrix 28): a 40060 acknowledgement names no message, so the
+/// original's id stays unknown.
+#[tokio::test]
+async fn already_acknowledged_reply_has_no_known_id() {
+    let answer: Answer = Arc::new(|_: &Seen| {
+        (
+            StatusCode::BAD_REQUEST,
+            Bytes::from_static(br#"{"code":40060,"message":"x"}"#),
+        )
+    });
+    let fx = Fixture::start(answer).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    skip(Duration::from_mins(15)).await;
+    let err = acked.edit_original(v2("b")).await.unwrap_err();
+    assert!(matches!(err, ResponderError::TokenExpired), "{err}");
+    let _ = acked.done();
+    assert_eq!(fx.requests().len(), 1);
+}
+
+/// INT-11 (Matrix 37 and 38): validation precedes the slot; a rejected
+/// follow-up still uses one.
+#[tokio::test]
+async fn followup_cap_slots() {
+    let posts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let answer: Answer = {
+        let posts = Arc::clone(&posts);
+        let base = discord();
+        Arc::new(move |seen: &Seen| {
+            if seen.method == Method::POST && seen.path == "/api/v10/webhooks/7/tok" {
+                let n = posts.fetch_add(1, Ordering::SeqCst) + 1;
+                if n == 5 {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Bytes::from_static(br#"{"code":50035,"message":"x"}"#),
+                    );
+                }
+            }
+            base(seen)
+        })
+    };
+    let fx = Fixture::start(answer).await;
+    let transport = Transport::Interaction(InteractionTarget {
+        app: Arc::clone(fx.app.shared()),
+        application_id: Id::new(7),
+        interaction_id: Id::new(100),
+        token: "tok".to_owned(),
+        received_at: Instant::now(),
+        channel_id: None,
+    });
+    let shared =
+        Shared::with_followup_cap(transport, Ephemerality::Public, Limits::default(), Some(5));
+    let acked = responder(&shared)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap();
+    let err = acked
+        .followup(long_label(81), Visibility::Public)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ResponderError::Invalid(_)), "{err}");
+    for _ in 0..4 {
+        let _ = acked.followup(v2("f"), Visibility::Public).await.unwrap();
+    }
+    let err = acked
+        .followup(v2("f"), Visibility::Public)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, ResponderError::Rejected { status: 400, .. }),
+        "{err}"
+    );
+    let err = acked
+        .followup(v2("f"), Visibility::Ephemeral)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ResponderError::FollowupCap), "{err}");
+    let _ = acked.done();
+    assert_eq!(posts.load(Ordering::SeqCst), 5);
+    assert_eq!(
+        ResponderError::FollowupCap.to_string(),
+        "a user-installed app may send at most 5 follow-ups here"
+    );
+}
+
+/// INT-03 at the gate: a defer after an acknowledgement sends nothing; the
+/// auto-defer after a reply does nothing; a reply after the auto-defer
+/// edits the original.
+#[tokio::test]
+async fn gate_orders_initial_responses() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Ephemeral);
+    assert!(shared.auto_defer().await);
+    assert_eq!(shared.state(), DEFERRED);
+    let _ = responder(&shared)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap()
+        .done();
+    let _ = responder(&shared).reply(v2("a")).await.unwrap().done();
+    assert!(shared.auto_defer().await);
+    let requests = fx.requests();
+    assert_eq!(
+        requests[0],
+        (
+            Method::POST,
+            CB.to_owned(),
+            json!({ "type": 5, "data": { "flags": 64 } })
+        )
+    );
+    assert_eq!(requests[1].0, Method::PATCH);
+    assert_eq!(requests[1].1, ORIGINAL);
+    assert_eq!(requests.len(), 2);
+
+    // Off the interaction transport the auto-defer never sends.
+    let shared = fx.message(Ephemerality::Public);
+    assert!(shared.auto_defer().await);
+    assert_eq!(shared.state(), PENDING);
+    assert_eq!(fx.requests().len(), 2);
 }

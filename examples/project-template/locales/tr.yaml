@@ -6,6 +6,7 @@ cmdword:
   start: başlat
   dashboard: panel
   profile: profil
+  bio: biyografi
 
 cmd:
   setup:
@@ -20,6 +21,8 @@ cmd:
       user:
         name: kullanıcı
         description: Kimin profili gösterilsin (varsayılan sensin)
+  bio:
+    description: Profil biyografini düzenle
 
 ctxcmd:
   show_profile:

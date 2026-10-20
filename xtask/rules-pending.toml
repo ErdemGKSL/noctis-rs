@@ -59,31 +59,6 @@ evidence = "unit"
 story = "6.9"
 
 [[rule]]
-id = "INT-01"
-evidence = "unit"
-story = "6.6"
-
-[[rule]]
-id = "INT-02"
-evidence = "unit"
-story = "6.6"
-
-[[rule]]
-id = "INT-03"
-evidence = "unit"
-story = "6.6"
-
-[[rule]]
-id = "INT-05"
-evidence = "diagnosed"
-story = "6.6"
-
-[[rule]]
-id = "INT-05"
-evidence = "unit"
-story = "6.6"
-
-[[rule]]
 id = "INT-06"
 evidence = "by-construction"
 story = "6.7"
@@ -92,11 +67,6 @@ story = "6.7"
 id = "INT-06"
 evidence = "unit"
 story = "6.7"
-
-[[rule]]
-id = "INT-11"
-evidence = "unit"
-story = "6.6"
 
 [[rule]]
 id = "INT-13"

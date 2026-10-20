@@ -394,10 +394,10 @@ pub use noctis_core::{
     EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink, FollowupHandle,
     GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError,
     IntegrationType, InteractionContext, IntoResponse, InvalidOption, LogSink, MenuKind,
-    MenuTargetError, Module, NoModal, OptionError, OptionValue, Options, OutgoingMessage, Pending,
-    Permissions, Plugin, ReportKind, Resource, ResourceConflict, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State, Token,
-    TokenError, UnknownCommandPath, Visibility,
+    MenuTargetError, ModalMarker, Module, NoModal, OpensModal, OptionError, OptionValue, Options,
+    OutgoingMessage, Pending, Permissions, Plugin, ReportKind, Resource, ResourceConflict,
+    Responded, Responder, ResponderError, ResponderKind, ResponderState, RunError, Runtime,
+    StartError, State, Token, TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives [`Options`](trait@Options) for a struct with named fields: each
@@ -570,6 +570,13 @@ pub mod observe {
 ///   to the invoking user; [`CommandHandler::ephemerality`] reads it. It is
 ///   fixed (INT-10): `reply` and a returned message use it, `defer` and
 ///   `followup` take theirs explicitly and no edit changes it.
+/// - `opens_modal` (no value): the handler may open a modal as its first
+///   response. It must take `r: CommandResponder<`[`OpensModal`]`>`, the
+///   only responder with `modal(..)`, and no auto-defer is armed for it
+///   (a modal must be the first response); [`CommandHandler::opens_modal`]
+///   reads it. A mismatch is a compile error citing `[INT-05]`: the flag
+///   without that responder, that responder without the flag, or the flag
+///   without any responder parameter.
 ///
 /// Every check of [`rules::command::validate_pattern_spacing`],
 /// [`rules::command::expand`] and [`rules::command::validate_tree`] runs at
@@ -604,6 +611,30 @@ pub mod observe {
 /// ([`AppBuilder::limits`]) before any request. An `Err` or a panic goes to
 /// the `Command` [`ErrorSink`] and nothing is sent (the user-facing notice
 /// arrives with Story 6.8).
+///
+/// A handler that has not answered [`AppBuilder::ack_deadline`] after the
+/// interaction arrived (default 2000 ms, 0-2500 ms) is acknowledged by the
+/// auto-defer: one type-5 callback carrying only the declared `EPHEMERAL`
+/// flag (INT-01). Its later `reply` or returned message then edits the
+/// original, so at most one callback is ever sent (INT-03). After 15
+/// minutes the interaction token is expired: edits and deletes of public
+/// messages use the bot token, everything else is
+/// [`ResponderError::TokenExpired`] (INT-02). A user-install-only
+/// interaction sends at most 5 follow-ups ([`ResponderError::FollowupCap`],
+/// INT-11). The [`Dispatcher`] has no auto-defer.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::Modal;
+///
+/// # fn feedback_form() -> Modal { unimplemented!() }
+/// #[command("feedback", description = "Send feedback", opens_modal)]
+/// async fn feedback(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+///     Ok(r.modal(feedback_form()).await?.done())
+/// }
+///
+/// assert!(feedback().opens_modal());
+/// ```
 ///
 /// ```compile_fail,E0277
 /// use noctis::prelude::*;
@@ -1094,8 +1125,9 @@ pub mod prelude {
     //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands;
     //!   [`user_command`](macro@user_command) and
     //!   [`message_command`](macro@message_command): context-menu commands;
-    //!   [`CommandResponder`], [`Responded`], [`IntoResponse`],
-    //!   [`Ephemerality`] and [`Visibility`]: how they answer.
+    //!   [`CommandResponder`], [`OpensModal`], [`Responded`],
+    //!   [`IntoResponse`], [`Ephemerality`] and [`Visibility`]: how they
+    //!   answer.
     //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
     //!   a Command's typed options; [`CommandOption`] (the field types) and
     //!   [`MessageKey`] (what option validators return).
@@ -1105,8 +1137,8 @@ pub mod prelude {
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
         App, AppBuilder, CommandCtx, CommandOption, CommandResponder, Ephemerality, ErrorOrigin,
-        ErrorSink, HandlerError, HandlerResult, IntoResponse, Module, Options, Responded, State,
-        Visibility,
+        ErrorSink, HandlerError, HandlerResult, IntoResponse, Module, OpensModal, Options,
+        Responded, State, Visibility,
     };
     pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
     pub use noctis_macros::{command, event, message_command, user_command};

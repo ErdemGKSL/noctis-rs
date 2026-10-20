@@ -110,6 +110,7 @@ Implemented:
 | `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
 | `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
+| `.ack_deadline(Duration)` | 2000 ms | auto-defer deadline, measured from gateway receipt (queueing counts): 0 ms..=2500 ms, else `BuildViolation::InvalidAckDeadline` (`ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms`); 0 always defers; no environment variable; the last call wins. Read back with `app.ack_deadline()`; see `responder.md` §2 |
 | `.build()` | — | `Result<App, BuildError>` |
 
 Planned (signatures may change):
@@ -120,7 +121,6 @@ Planned (signatures may change):
 | `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
-| `.ack_deadline(Duration)` [planned] | 2000 ms | auto-defer deadline, measured from gateway receipt |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
 | `.expired_handler(f)` [planned] | localized ephemeral notice | see `routes-payloads-refs.md` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
@@ -594,6 +594,8 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_events_dropped_total` | counter | `app`, `event_type` | events dropped by back-pressure (`event_type` is the Discord name, e.g. `TYPING_START`; gateway-only kinds are `UNKNOWN`) |
 | `noctis_handler_duration_seconds` | histogram | `app`, `kind` | handler run time in seconds, for `Ok`, errors and panics |
 | `noctis_handler_errors_total` | counter | `app`, `kind` | handler runs that returned `Err` or panicked |
+| `noctis_autodefer_total` | counter | `app` | interactions the auto-defer acknowledged (`responder.md` §2) |
+| `noctis_ack_latency_seconds` | histogram | `app` | time from gateway receipt to the initial interaction callback (reply, defer, modal or auto-defer) |
 | `noctis_shard_status` | gauge | `app`, `shard` | `1` after READY/RESUMED, `0` at start and after a disconnect or end; alert on `== 0` |
 | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx` \| `error`) | Discord HTTP upstream attempts by status class; `error` = no response |
 | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns` \| `connect` \| `tls` \| `ttfb` \| `total`) | dial phases per new connection, `ttfb`/`total` per attempt |
@@ -605,8 +607,7 @@ label carries a user, guild, channel or message id or free text):
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): only `event` is emitted today;
 `command`, `component`, `autocomplete` and `render` join with their handlers. Planned:
-ack latency and auto-defer counts
-[planned, Story 6.6], Ref lookups [planned, Story 7.5], render metrics [planned, Epic 10].
+Ref lookups [planned, Story 7.5], render metrics [planned, Epic 10].
 
 The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `name`,
 `metric_type: MetricType` (`Counter` | `Gauge` | `Histogram`), `labels` and
