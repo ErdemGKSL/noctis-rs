@@ -2,7 +2,8 @@
 title: 'Story 5.2: Discord HTTP fake and the test Runtime'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '33820f357047103465129b63f547e29cb8602eb8'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
