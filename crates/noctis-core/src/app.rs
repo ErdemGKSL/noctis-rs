@@ -447,6 +447,14 @@ impl ShardStatus {
     }
 }
 
+/// Marks every shard down when `App::run` returns or its future is dropped,
+/// so a stopped App never reports a shard as up.
+impl Drop for ShardStatus {
+    fn drop(&mut self) {
+        self.init();
+    }
+}
+
 /// Waits until every shard in `0..total` has sent `Ready` at least once.
 async fn await_startup(
     events: &mut mpsc::UnboundedReceiver<ShardEvent>,

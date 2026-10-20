@@ -1051,6 +1051,35 @@ mod observability {
         assert!(failure.contains(&fields), "{failure}");
     }
 
+    /// Matrix 27: logs inside a handler body, before and after an
+    /// `.await`, carry the `noctis.event` span.
+    #[tokio::test]
+    async fn handler_logs_inside_event_span() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(span_subscriber(&capture));
+        let inside = handler("bot::h", false, |_, _: MessageDelete| async {
+            tracing::info!("inside before");
+            tokio::task::yield_now().await;
+            tracing::info!("inside after");
+            Ok(())
+        });
+        let h = Harness::start(App::builder().module(Module::new("audit").add(inside)));
+        on_shard_3(&h, message_delete(3, Some(GA)));
+        until("both lines", || {
+            capture.lines_with(&["inside after"]).len() == 1
+        })
+        .await;
+        h.close().await;
+        let fields = format!(
+            "noctis.event{{app=\"default\" shard=3 guild_id={GA} module=\"audit\" handler=\"bot::h\" event_type=\"MESSAGE_DELETE\"}}"
+        );
+        for needle in ["inside before", "inside after"] {
+            let lines = capture.lines_with(&[needle]);
+            assert_eq!(lines.len(), 1, "{}", capture.text());
+            assert!(lines[0].contains(&fields), "{}", lines[0]);
+        }
+    }
+
     /// Matrix 28: the `noctis.interaction` span, with and without a guild.
     #[tokio::test]
     async fn interaction_span_fields() {

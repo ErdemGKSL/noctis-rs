@@ -501,7 +501,9 @@ for m in noctis::observe::METRICS {
 }
 ```
 
-`app` is `"default"` until `.app_id(..)` [planned, Story 7.4] sets it.
+`app` is `"default"` until `.app_id(..)` [planned, Story 7.4] sets it. Until then,
+several Apps in one process (`Runtime::run`) share and overwrite the same `noctis_*`
+series.
 
 ## 12. Plugins
 

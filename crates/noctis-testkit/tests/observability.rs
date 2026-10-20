@@ -96,11 +96,22 @@ struct Op {
     value: Value,
 }
 
-/// Every operation, in order.
+/// Every operation, in order, and every `describe_*` call (name, unit).
 #[derive(Default)]
-struct History(Mutex<Vec<Op>>);
+struct History(Mutex<Vec<Op>>, Mutex<Vec<(String, Option<Unit>)>>);
 
 impl History {
+    fn describe(&self, name: &KeyName, unit: Option<Unit>) {
+        self.1
+            .lock()
+            .unwrap()
+            .push((name.as_str().to_owned(), unit));
+    }
+
+    fn described(&self) -> Vec<(String, Option<Unit>)> {
+        self.1.lock().unwrap().clone()
+    }
+
     fn ops(&self) -> Vec<Op> {
         self.0.lock().unwrap().clone()
     }
@@ -191,11 +202,17 @@ impl HistoryRecorder {
 }
 
 impl Recorder for HistoryRecorder {
-    fn describe_counter(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+    fn describe_counter(&self, name: KeyName, unit: Option<Unit>, _: SharedString) {
+        self.0.describe(&name, unit);
+    }
 
-    fn describe_gauge(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+    fn describe_gauge(&self, name: KeyName, unit: Option<Unit>, _: SharedString) {
+        self.0.describe(&name, unit);
+    }
 
-    fn describe_histogram(&self, _: KeyName, _: Option<Unit>, _: SharedString) {}
+    fn describe_histogram(&self, name: KeyName, unit: Option<Unit>, _: SharedString) {
+        self.0.describe(&name, unit);
+    }
 
     fn register_counter(&self, key: &Key, _: &Metadata<'_>) -> Counter {
         Counter::from_arc(self.handle(key))
@@ -470,6 +487,7 @@ async fn overflow_drop_reaches_sink() {
     running.gate.0.add_permits(1_000);
     assert!(!running.run.is_finished());
     running.run.abort();
+    let _ = running.run.await;
 }
 
 /// Matrix 29 and 30: `noctis.shard` spans per shard, and the status gauge
@@ -505,6 +523,7 @@ async fn shard_spans_and_status() {
     );
     assert!(history.shard_status(0, "2").is_empty());
     running.run.abort();
+    let _ = running.run.await;
 }
 
 /// Matrix 34: an erroring handler, a panicking one and an overflow flood
@@ -522,6 +541,21 @@ async fn recorded_set_matches_catalog() {
             .module(Module::new("audit").add(mixed()));
     })
     .await;
+    let described = history.described();
+    for info in METRICS {
+        let expected = if info.name.ends_with("_seconds") {
+            Some(Unit::Seconds)
+        } else if info.name.ends_with("_total") {
+            Some(Unit::Count)
+        } else {
+            None
+        };
+        assert!(
+            described.contains(&(info.name.to_owned(), expected)),
+            "{} not described with {expected:?}",
+            info.name
+        );
+    }
     running.delete(1);
     until("the error", || sink.count("error") == 1).await;
     running.delete(2);
@@ -554,4 +588,5 @@ async fn recorded_set_matches_catalog() {
         .sum();
     assert!(errors >= 2, "{errors}");
     running.run.abort();
+    let _ = running.run.await;
 }

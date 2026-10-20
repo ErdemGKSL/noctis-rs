@@ -2,17 +2,24 @@
 title: 'Story 5.7: Observability contract and Error Sinks'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '28bfb398f6e0b1750ea1a016bdd31f14e97b63d6'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-5-context.md'
   - '{project-root}/_bmad-output/implementation-artifacts/spec-5-6-modules-and-typed-event-handlers-with-derived-filters-and-in.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/app-and-sharding.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/modules-middleware-ratelimits.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Sustained overflow drops produce one ERROR line or one ErrorSink call per dropped event on the shard task, with no coalescing or rate limit.
+    evidence: |-
+      lanes.rs OverflowFull calls the observer once per drop; LogSink logs each at error. The one-line-per-drop log already existed in Story 5.5, and the spec makes sinks synchronous and documents that they must not block, so throttling is a cross-cutting design change, not a 5.7 defect.
+    location: >-
+      crates/noctis-gateway/src/lanes.rs (OverflowFull branch); crates/noctis-core/src/sink.rs (EventDropObserver)
+    severity: low
 ---
 
 <intent-contract>
@@ -191,6 +198,39 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 29 findings — high 0, medium 4, low 12, false 13, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) `noctis_shard_status` stays 1 when `run` stops abnormally — verified: `App::run` returns via `await_startup(..).await?` after other shards set 1, and nothing resets the gauges on error or when the future is dropped; patch: `Drop` for `ShardStatus` sets `0..total` to 0, with a unit test.
+  - `[low]` `[patch]` (blind) Two Apps in one process overwrite each other's `app="default"` series — real: multi-App is a live, documented feature (skill §10) and the label is constant until 7.4; patch: one sentence in `app-and-sharding.md` next to the `"default"` note saying several Apps share series until `.app_id(..)`.
+  - `[low]` `[reject]` (blind) The `LogSink` drop line lost `overflow_capacity` — true, but the capacity is the author's own `.event_lane(..)` value (default documented), and carrying it needs a new public `ErrorReport` field that the spec's field list excludes.
+  - `[low]` `[defer]` (blind) Every overflow drop runs sink code on the shard task with no rate limit — the per-drop error line predates 5.7 (5.5); throttling is a cross-cutting design change; added to `deferred`.
+  - `[low]` `[reject]` (blind) Handler metrics re-resolve handles on every run — a recorder key lookup per handler run is negligible next to the handler; caching handles adds per-App state for no named harm.
+  - `[low]` `[patch]` (blind) E2E tests release the serial lock while the aborted App may still record — verified: each test calls `running.run.abort()` and drops the guard without awaiting, so a late shard-status set can land after the next test's `from` and break the exact `[0.0, 1.0]` sequences; patch: await the aborted `JoinHandle` before the guard drops.
+  - `[false]` `[reject]` (blind) Unit tests wait with fixed 20 ms sleeps — both tests run on a current-thread runtime (required by the local recorder), where every ready handler task is polled before a 20 ms timer fires, so slow CI does not reorder them.
+  - `[low]` `[reject]` (blind) Bot authors cannot construct an `ErrorReport` to unit-test a sink — true, but a sink can be driven through the testkit fakes with a failing handler, and a constructor is new public surface the spec deliberately excludes ("only core constructs it").
+  - `[low]` `[reject]` (blind) Prelude lacks `ErrorReport`/`ReportKind` — costs one extra `use` line; the spec fixes the prelude contents, so the fix would edit this build's spec.
+  - `[false]` `[reject]` (blind) `interaction_unhandled` opens an interaction span for non-interaction inbound — `InboundKind` has only `Interaction` and `Event`; drain's `_` arm and `recv_interaction` only ever pass interactions, so no event is mislabeled (the `Event` arm is unreachable, not wrong).
+  - `[false]` `[reject]` (blind) `ReportKind::Dropped` not tied to `ErrorOrigin::Event` — the only producer (`EventDropObserver`) always uses `Event`; the claim is about a hypothetical future caller.
+  - `[low]` `[reject]` (blind) `error_sink` double-wraps `Arc` sinks — one extra pointer hop per report is negligible; changing the signature changes public API the spec settled.
+  - `[false]` `[reject]` (blind) `ErrorOrigin::index` duplicates declaration order — `index` is a private exhaustive `match` (a new variant fails to compile until added) and `origin_names` checks `ALL[o.index()] == o`; no silent divergence possible.
+  - `[false]` `[reject]` (blind) Public-API snapshot lists the `LogSink` `ErrorSink` impl twice — `LogSink` is re-exported once (`noctis-core/src/lib.rs:91`, facade root); duplicated impl lines are a known `cargo-public-api` output pattern seen for many other types in the same file.
+  - `[medium]` `[patch]` (edge) `await_startup` Err after some Ready leaves those gauges at 1 — same defect as the first blind row; same patch (`ShardStatus` `Drop`).
+  - `[medium]` `[patch]` (edge) `run` aborted while shards are up leaves gauges at 1 — same defect; the `Drop` impl runs when the aborted future is dropped.
+  - `[false]` `[reject]` (edge) A third-party `DropObserver` panic kills the shard task — the facade exposes no way to install a `DropObserver`; core's `EventDropObserver` reports through `ErrorSinks` under `catch_unwind` (Matrix 24).
+  - `[low]` `[patch]` (edge) Two Apps share `app="default"` series — same defect as the blind multi-App row; same doc patch.
+  - `[low]` `[reject]` (edge) Matrix 30's single-shard `1,0` transition is never exercised end to end — the per-shard logic is pinned by the core `shard_status_gauges` unit test (spec Task 4); an E2E variant needs a per-connection close in `FakeGateway`, new testkit surface for a cosmetic coverage gain.
+  - `[medium]` `[patch]` (vgap) Logs emitted inside a handler body are never checked for the `noctis.event` span — pre-verified regression gap; patch: a worker test whose handler logs before and after `yield_now().await` and asserts both lines carry the span fields.
+  - `[low]` `[patch]` (vgap) `App::run` calling `describe_metrics()` is never observed — pre-verified; patch: `HistoryRecorder` records `describe_*` calls and the E2E test asserts every `METRICS` row was described with its unit.
+  - `[false]` `[reject]` (intent 1) Span fields not uniform; interaction `module`/`path` declared empty — the spec deliberately settled this (no interaction handlers before Epic 6, which records them); epics place those handlers later.
+  - `[false]` `[reject]` (intent 2) Four of five origins have no producer — settled: their handlers do not exist yet; their stories call `ErrorSinks::report`; routing is unit-tested.
+  - `[false]` `[reject]` (intent 3) `noctis.event`/`noctis.interaction` spans verified only at core level — settled by spec Task 4 (Matrix 27-28 at core level), which runs the real drain and worker; the in-handler span gap is covered by the vgap row.
+  - `[false]` `[reject]` (intent 4) Label test checks a hand-maintained catalog — settled (R3); the E2E test also checks that every recorded metric is in the catalog.
+  - `[false]` `[reject]` (intent 5) `app` label is a constant — settled: `"default"` until Story 7.4's `AppId`; the multi-App collision is handled by the doc patch above.
+  - `[low]` `[reject]` (intent 6) Shard-status one-down state pinned only at unit level — same as the edge Matrix 30 row; rejected for the same reason.
+  - `[false]` `[reject]` (intent 7) Duration/error metrics exist for `kind="event"` only — settled: only event handlers exist in 5.7 (Design Notes).
+  - `[false]` `[reject]` (intent 8) `skill-check` passing not observable from the diff — gates are run in Verification, not encoded in the diff; no defect at any cited location.
+
 ## Design Notes
 
 - **Five origins, not seven:** the earlier skill sketch had extra `Hook` and `Overflow` origins. The story AC and FR-22 name five, so overflow drops use `Event` (they are gateway events) and 13.5 routes hook errors to `Event`. `ReportKind` tells them apart. `#[non_exhaustive]` leaves room for more.
@@ -221,3 +261,23 @@ Abbreviations:
 - `cargo +1.91 check --release --workspace --all-targets` and `cargo deny check` -- expected: exit 0.
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`, `-- deps-check`, `-- rules-catalog` and `-- skill-check` -- expected: each exits 0 (needs `nightly-2026-10-15` + `cargo-public-api` 0.52.0).
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Story 5.7 delivers the observability contract: a sync `ErrorSink` trait with `ErrorReport`/`ReportKind`, per-origin routing over five `ErrorOrigin`s (`LogSink` default logs the full `source()` chain, every sink call under `catch_unwind`), `noctis.event`/`noctis.interaction` tracing spans, a public metrics catalog (`METRICS`, `describe_metrics()` called by `App::run`) with whitelisted bounded labels, handler duration/error metrics (`kind="event"`), `noctis_shard_status` 1/0 gauges, and overflow drops reported as `ReportKind::Dropped` on origin `Event`.
+- **Files changed:**
+  - `crates/noctis-core/src/sink.rs` (+tests): `ErrorSink`, `ErrorReport`, `ErrorOrigin`, `ErrorSinks` routing, `LogSink`, `EventDropObserver`.
+  - `crates/noctis-core/src/observe.rs` (+tests): metrics catalog, label whitelist, `describe_metrics`, `ShardStatus` gauges (reset to 0 on `Drop`).
+  - `crates/noctis-core/src/worker.rs` (+tests), `handler.rs`, `app.rs` (+tests), `lib.rs`, `test_support.rs`, `Cargo.toml`: spans, handler metrics, sink wiring, shard-status wiring.
+  - `crates/noctis-gateway/src/{lanes.rs,lanes/tests.rs,gateway.rs,shard.rs,lib.rs}`: `DropObserver` hook on the event lane overflow path.
+  - `crates/noctis/src/lib.rs`, `crates/noctis/tests/error_sinks.rs`: facade re-exports and `.error_sink(..)` builder API.
+  - `crates/noctis-testkit/tests/observability.rs` (+ small edits to `lanes.rs`, `sharding.rs`, `shard_log_redaction.rs`): E2E metrics/spans/sinks tests with `HistoryRecorder`.
+  - `examples/project-template/` (`src/observability.rs`, `src/lib.rs`, `AGENTS.md`, skill `SKILL.md` + `app-and-sharding.md`, `modules-middleware-ratelimits.md`, `troubleshooting.md`): usage skill and template updated; API hash refreshed.
+  - `xtask/public-api.txt`: re-blessed snapshot; `Cargo.lock`; architecture `.memlog.md` decisions.
+- **Review findings:** 29 total (high 0, medium 4, low 12, false 13).
+  - Patches (8 entries, 4 distinct fixes; patched by verdict: high 0, medium 4, low 4): `ShardStatus` `Drop` resets gauges to 0 on abnormal `run` exit/abort/startup error (3 medium rows); in-handler span test across `yield_now().await` (medium); multi-App `app="default"` series-sharing doc note (2 low); E2E tests await aborted `JoinHandle` before releasing the serial lock (low); `HistoryRecorder` asserts every `METRICS` row is described with its unit (low).
+  - Deferred (1): per-drop overflow sink call has no rate limit (predates 5.7; cross-cutting throttling design).
+  - Rejected (20): `LogSink` drop line lacks `overflow_capacity` (needs new public field excluded by spec); handler metric handles re-resolved per run (negligible); fixed 20 ms sleeps (current-thread runtime ordering, false); no public `ErrorReport` constructor (testable via testkit fakes; spec excludes); prelude lacks `ErrorReport`/`ReportKind` (spec fixes prelude); interaction span for non-interaction inbound (unreachable, false); `Dropped` not tied to `Event` (hypothetical, false); `Arc` double-wrap (negligible, public API settled); `ErrorOrigin::index` duplication (exhaustive match + test, false); duplicated `LogSink` impl in snapshot (cargo-public-api output pattern, false); third-party `DropObserver` panic (not installable via facade, false); Matrix 30 single-shard transition not E2E (pinned by unit test; needs new testkit surface) and its intent-6 duplicate; intent 1-5, 7, 8 rows (settled by spec: no interaction handlers before Epic 6, origins without producers, core-level span tests, hand-maintained catalog by R3, constant `app` label until 7.4, event-only metrics, gates run in Verification).
+- **Follow-up review recommended: true** (first pass, 4 medium patched). Named risk: the new `ShardStatus` `Drop` reset and its interaction with the `run` abort/startup-error paths are unreviewed patch code; a follow-up pass should confirm the gauges cannot be left at 1 or reset while a sibling App/shard is still live.
+- **Verification:** all local gates green via the session gates script (`cargo fmt --all --check`, clippy `--release --all-features -D warnings`, `cargo test --release --workspace` incl. `observability` 3x without flakes, `cargo hack test --each-feature`, `cargo +1.91 check`, `cargo deny check`, xtask `api-snapshot`, `deps-check`, `rules-catalog`, `skill-check`; no `target/debug`). CI paused by the maintainer.
+- **Residual risks:** overflow sink calls unthrottled (deferred); several Apps in one process share `app="default"` series until Story 7.4 `AppId`; `noctis_http_requests_total` arrives with Story 5.9; four of five origins have no producer until their handler stories land.

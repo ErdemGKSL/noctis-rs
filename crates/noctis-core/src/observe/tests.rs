@@ -335,6 +335,27 @@ fn shard_status_gauges() {
     });
 }
 
+/// Dropping the `ShardStatus` (App stopped or aborted) marks every shard down.
+#[test]
+fn shard_status_drop_marks_down() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    metrics::with_local_recorder(&recorder, || {
+        let status = ShardStatus {
+            app: Arc::from("default"),
+            total: 2,
+        };
+        status.update(&noctis_gateway::ShardEvent::Ready { shard: 0 });
+        status.update(&noctis_gateway::ShardEvent::Ready { shard: 1 });
+        drop(status);
+        let snapshot = snapshotter.snapshot().into_vec();
+        assert_eq!(
+            (status_of(&snapshot, "0"), status_of(&snapshot, "1")),
+            (Some(0.0), Some(0.0))
+        );
+    });
+}
+
 /// Matrix 35: descriptions and units.
 #[test]
 fn describe_registers_every_row() {
