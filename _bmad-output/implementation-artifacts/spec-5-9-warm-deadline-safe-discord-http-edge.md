@@ -2,7 +2,8 @@
 title: 'Story 5.9: Warm, deadline-safe Discord HTTP edge'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '1984f25ae01463817040db869e5d6b822f29ff8b'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

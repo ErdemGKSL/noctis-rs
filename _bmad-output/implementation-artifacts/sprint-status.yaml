@@ -79,7 +79,7 @@ development_status:
   5-6-modules-and-typed-event-handlers-with-derived-filters-and-in: done
   5-7-observability-contract-and-error-sinks: done
   5-8-graceful-shutdown-and-fatal-close-reporting: done
-  5-9-warm-deadline-safe-discord-http-edge: backlog
+  5-9-warm-deadline-safe-discord-http-edge: in-progress
   epic-5-retrospective: optional
 
   epic-6: backlog
