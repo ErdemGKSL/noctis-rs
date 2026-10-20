@@ -2,7 +2,8 @@
 title: 'Story 6.8: User-facing errors, built-in notices and panics as responses'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '5a5afef358ddfce1e205550ab500654abf796ac8'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
