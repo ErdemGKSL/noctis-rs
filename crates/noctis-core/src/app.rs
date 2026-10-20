@@ -1638,6 +1638,7 @@ impl AppBuilder {
                 limits: config.limits,
                 registry: Arc::clone(&registry),
                 ack_deadline: config.ack_deadline,
+                strings: Arc::new(noctis_i18n::Builtin),
             }),
             http_timeout: config.http_timeout,
             http_proxy,

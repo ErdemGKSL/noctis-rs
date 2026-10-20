@@ -580,10 +580,15 @@ pub(crate) fn failed<T: Send + 'static>(
 }
 
 /// Decodes `O` from the context's input, then runs its validators; a
-/// decode error comes first, so validators never see a partial struct.
+/// decode error comes first, so validators never see a partial struct. A
+/// failed validator is a user condition carrying its key (FR-10): the user
+/// gets that notice and no Error Sink sees it.
 fn decode<O: Options>(ctx: &CommandCtx) -> Result<O, HandlerError> {
     let options = O::from_input(ctx.input()).map_err(HandlerError::new)?;
-    options.validate(ctx).map_err(HandlerError::new)?;
+    options.validate(ctx).map_err(|invalid| {
+        let key = invalid.key();
+        HandlerError::user_condition(invalid, key)
+    })?;
     Ok(options)
 }
 

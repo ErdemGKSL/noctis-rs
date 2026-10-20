@@ -301,7 +301,9 @@
 //! several messages takes a [`CommandResponder`], a typestate whose
 //! `reply` / `defer` consume it into an acknowledged responder offering
 //! only `edit_original`, `followup` and `delete_original` (INT-03, INT-04,
-//! INT-08, INT-10). Failures and panics go to the `Command` Error Sink.
+//! INT-08, INT-10). A failure or a panic shows the user a short localized
+//! ephemeral notice, then goes to the `Command` Error Sink (see "Errors
+//! shown to users").
 //! [`EventCtx::dispatcher`](crate::events::EventCtx::dispatcher) gives the
 //! [`Dispatcher`], which runs a registered Command from an event handler,
 //! such as a prefix command, replying to the invoking message.
@@ -333,6 +335,43 @@
 //! let _module = Module::new("ping").add(ping()).add(prefix());
 //! ```
 //!
+//! # Errors shown to users
+//!
+//! When a Command handler returns `Err`, panics, or its options fail to
+//! decode or validate, noctis sends the user one ephemeral notice (FR-22):
+//! the key of [`HandlerError::with_message`] or [`HandlerError::user`],
+//! `noctis.validation.failed` for options, else `noctis.error.generic`.
+//! While unanswered it is the reply; after a defer (also the auto-defer) the
+//! deferred original is deleted and the notice is an ephemeral follow-up
+//! (AD-23); after a reply it is a follow-up; after a modal nothing is sent.
+//! Over the [`Dispatcher`] it is a public message. Then the error is logged
+//! with its full chain and reported to the `Command` Error Sink.
+//! [`HandlerError::user`] and a failed option validator are user
+//! conditions: only the notice and a `debug` log, no Error Sink. Built-in
+//! texts are English for every locale until locale files arrive (Epic 11);
+//! a key no catalog has shows the generic text with a `noctis::i18n` warning.
+//!
+//! ```
+//! use noctis::prelude::*;
+//! use noctis::rules::MessageKey;
+//! use noctis::ui::{Components, TextDisplay};
+//!
+//! const GUILD_ONLY: MessageKey = MessageKey::new("common.guild_only");
+//! const SAVE_FAILED: MessageKey = MessageKey::new("shop.save_failed");
+//!
+//! #[command("buy", description = "Buy an item")]
+//! async fn buy(ctx: CommandCtx) -> HandlerResult<Components> {
+//!     // A known condition: the notice only, logged at debug.
+//!     let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(GUILD_ONLY))?;
+//!     // A real error with a friendly message: notice, log and Error Sink.
+//!     std::fs::metadata("/nonexistent")
+//!         .map_err(|e| HandlerError::new(e).with_message(SAVE_FAILED))?;
+//!     Ok(Components::new().push(TextDisplay::new(format!("Bought in {guild}"))))
+//! }
+//!
+//! let _module = Module::new("shop").add(buy());
+//! ```
+//!
 //! # Observability and Error Sinks
 //!
 //! Every handler error, handler panic and event dropped by a full event
@@ -341,7 +380,10 @@
 //! `Autocomplete`, `Event`, `Render`). Unset origins use [`LogSink`], which
 //! logs at `error` with target `noctis::<origin>`. A sink is synchronous
 //! and runs on the worker or shard task: spawn or forward to a channel for
-//! I/O. Pass an `Arc` clone to share one sink between origins.
+//! I/O. Pass an `Arc` clone to share one sink between origins. With a
+//! custom `Command` or `Autocomplete` sink, noctis still logs the full error
+//! once through [`LogSink`] (inside the `noctis.interaction` span) before
+//! calling it, so the error chain is always in the logs (FR-22).
 //!
 //! noctis installs no tracing subscriber and no metrics recorder. Its spans
 //! are `noctis.shard`, `noctis.event` and `noctis.interaction`, and its
@@ -709,9 +751,9 @@ pub mod observe {
 /// (INT-12); the [`Responded`] from `done()` means the handler answered
 /// itself. `HandlerResult<()>` does not compile: a Command must answer.
 /// Every V2 message gets `IS_COMPONENTS_V2` and passes the Limits validator
-/// ([`AppBuilder::limits`]) before any request. An `Err` or a panic goes to
-/// the `Command` [`ErrorSink`] and nothing is sent (the user-facing notice
-/// arrives with Story 6.8).
+/// ([`AppBuilder::limits`]) before any request. An `Err` or a panic sends
+/// the user a localized ephemeral notice, then goes to the `Command`
+/// [`ErrorSink`] (see the crate docs, "Errors shown to users").
 ///
 /// A handler that has not answered [`AppBuilder::ack_deadline`] after the
 /// interaction arrived (default 2000 ms, 0-2500 ms) is acknowledged by the

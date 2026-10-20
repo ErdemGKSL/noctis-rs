@@ -1,5 +1,5 @@
 //! Commands end to end (Story 6.5, Matrix 1, 2, 18-21, 24, 45 and 49; Story
-//! 6.6, Matrix 2, 5, 17 and 21; Story 6.7 autocomplete ACs): a
+//! 6.6, Matrix 2, 5, 17 and 21; Story 6.7 autocomplete ACs; Story 6.8 ACs): a
 //! `FakeGateway` `INTERACTION_CREATE` (or `MESSAGE_CREATE` through the
 //! Dispatcher) reaches the Command pipeline, whose responses `FakeDiscordHttp`
 //! records.
@@ -32,6 +32,8 @@ const CALLBACK: &str = "/interactions/100/tok/callback";
 const ORIGINAL: &str = "/webhooks/7/tok/messages/@original";
 const FOLLOWUP: &str = "/webhooks/7/tok";
 const CHANNEL: &str = "/channels/5/messages";
+/// `noctis.error.generic` in en-US.
+const GENERIC: &str = "Something went wrong. Please try again later.";
 
 fn text(t: &str) -> Components {
     Components::new().push(TextDisplay::new(t.to_owned()))
@@ -156,6 +158,11 @@ impl Running {
             FakeResponse::json(StatusCode::OK, &json!({ "id": "55" })),
         )
         .route(
+            Method::DELETE,
+            ORIGINAL,
+            FakeResponse::empty(StatusCode::NO_CONTENT),
+        )
+        .route(
             Method::POST,
             CHANNEL,
             FakeResponse::json(StatusCode::OK, &json!({ "id": "77" })),
@@ -206,6 +213,23 @@ impl Running {
             "user": user(),
             "locale": "tr",
             "data": { "id": "9", "name": name, "type": 1 },
+        });
+        assert_eq!(self.gw.dispatch("INTERACTION_CREATE", d), 1);
+    }
+
+    /// As [`Running::invoke`], with the top-level `options`.
+    fn invoke_with(&self, name: &str, options: &Value) {
+        let d = json!({
+            "id": "100",
+            "application_id": "7",
+            "type": 2,
+            "token": "tok",
+            "version": 1,
+            "authorizing_integration_owners": {},
+            "entitlements": [],
+            "user": user(),
+            "locale": "tr",
+            "data": { "id": "9", "name": name, "type": 1, "options": options },
         });
         assert_eq!(self.gw.dispatch("INTERACTION_CREATE", d), 1);
     }
@@ -345,7 +369,11 @@ async fn dispatcher_replies_to_the_message() {
     let reports = running.wait_report().await;
     assert!(reports[0].contains("secret"), "{reports:?}");
     assert!(reports[0].contains("cannot be ephemeral"), "{reports:?}");
-    assert_eq!(running.sent().len(), 1);
+    // Story 6.8: the failure is a public notice replying to the message.
+    let sent = running.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert_eq!(sent[1].route_path(), Some(CHANNEL));
+    assert_eq!(body(&sent[1])["components"][0]["content"], GENERIC);
     running.run.abort();
 }
 
@@ -408,7 +436,11 @@ async fn modal_opens_as_the_first_response() {
         reports[0].contains("a modal can only be the first response"),
         "{reports:?}"
     );
-    assert_eq!(running.sent().len(), 1);
+    // Story 6.8: the Dispatcher's failure is a public generic notice.
+    let sent = running.sent();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert_eq!(sent[1].route_path(), Some(CHANNEL));
+    assert_eq!(body(&sent[1])["components"][0]["content"], GENERIC);
     running.run.abort();
 }
 
@@ -568,5 +600,153 @@ async fn autocomplete_error_sends_empty_choices() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
+// ---- Story 6.8: user-facing errors, notices and panics ----
+
+const VALIDATION: &str = "That input isn't valid. Check it and try again.";
+
+#[command("broken", description = "Always fails")]
+async fn broken(_ctx: CommandCtx) -> HandlerResult<Components> {
+    Err(HandlerError::new(std::io::Error::other("database down")))
+}
+
+#[command("explode", description = "Always panics")]
+async fn explode(_ctx: CommandCtx) -> HandlerResult<Components> {
+    tokio::task::yield_now().await;
+    panic!("kaboom")
+}
+
+#[command("sluggish", description = "Fails after the auto-defer")]
+async fn sluggish(_ctx: CommandCtx) -> HandlerResult<Components> {
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Err(HandlerError::new(std::io::Error::other("too slow")))
+}
+
+static CHECKED_RAN: Mutex<Vec<i64>> = Mutex::new(Vec::new());
+
+#[expect(clippy::trivially_copy_pass_by_ref, reason = "validators take `&T`")]
+fn positive(days: &i64, _ctx: &CommandCtx) -> Result<(), MessageKey> {
+    if *days > 0 {
+        Ok(())
+    } else {
+        Err(MessageKey::new("noctis.validation.failed"))
+    }
+}
+
+#[derive(Options)]
+struct DaysOptions {
+    #[option(description = "How many days", validate = positive)]
+    days: i64,
+}
+
+#[command("purge", description = "Validated options")]
+async fn purge(_ctx: CommandCtx, options: DaysOptions) -> HandlerResult<Components> {
+    CHECKED_RAN.lock().unwrap().push(options.days);
+    Ok(text("purged"))
+}
+
+/// Asserts `request` is the ephemeral type-4 notice of `text`.
+fn assert_notice(request: &RecordedRequest, text: &str) {
+    assert_eq!(request.method, Method::POST);
+    assert_eq!(request.route_path(), Some(CALLBACK));
+    let callback = body(request);
+    assert_eq!(callback["type"], 4, "{callback}");
+    assert_eq!(callback["data"]["flags"], 32832, "{callback}");
+    assert_eq!(
+        callback["data"]["components"][0]["content"], text,
+        "{callback}"
+    );
+}
+
+/// The Errors AC: an `Err` is one ephemeral generic notice, then a report.
+#[tokio::test(flavor = "multi_thread")]
+async fn handler_error_is_an_ephemeral_notice() {
+    let running = Running::start(Module::new("m").add(broken())).await;
+    running.invoke("broken");
+    let sent = running.wait_sent(1).await;
+    assert_notice(&sent[0], GENERIC);
+    let reports = running.wait_report().await;
+    assert_eq!(reports, ["commands::broken:database down"]);
+    assert_eq!(running.sent().len(), 1);
+    running.run.abort();
+}
+
+/// The Panics AC (NFR-4): the user gets the generic notice, the sink a
+/// panic, and the next interaction on the shard is answered.
+#[tokio::test(flavor = "multi_thread")]
+async fn panic_is_a_notice_and_the_shard_keeps_running() {
+    let running = Running::start(Module::new("m").add(explode()).add(ping())).await;
+    running.invoke("explode");
+    let sent = running.wait_sent(1).await;
+    assert_notice(&sent[0], GENERIC);
+    let reports = running.wait_report().await;
+    assert!(
+        reports[0].starts_with("commands::explode:Panic"),
+        "{reports:?}"
+    );
+    assert!(reports[0].contains("kaboom"), "{reports:?}");
+    running.invoke("ping");
+    let sent = running.wait_sent(2).await;
+    assert_eq!(body(&sent[1])["data"]["components"][0]["content"], "pong");
+    running.run.abort();
+}
+
+/// The After auto-defer AC (AD-23): type 5, then the original is deleted,
+/// then an ephemeral follow-up.
+#[tokio::test(flavor = "multi_thread")]
+async fn error_after_auto_defer_deletes_then_follows_up() {
+    let running = Running::start_with(Module::new("m").add(sluggish()), |b| {
+        b.ack_deadline(Duration::from_millis(100));
+    })
+    .await;
+    running.invoke("sluggish");
+    let sent = running.wait_sent(3).await;
+    assert_eq!(body(&sent[0]), json!({ "type": 5 }));
+    assert_eq!(sent[1].method, Method::DELETE);
+    assert_eq!(sent[1].route_path(), Some(ORIGINAL));
+    assert_eq!(sent[2].method, Method::POST);
+    assert_eq!(sent[2].route_path(), Some(FOLLOWUP));
+    assert_eq!(body(&sent[2])["flags"], 32832);
+    assert_eq!(body(&sent[2])["components"][0]["content"], GENERIC);
+    assert_eq!(running.wait_report().await, ["commands::sluggish:too slow"]);
+    running.run.abort();
+}
+
+/// The Validator AC: the handler does not run, the user sees the key's
+/// notice, and no sink report is made.
+#[tokio::test(flavor = "multi_thread")]
+async fn validator_failure_is_a_notice_without_a_report() {
+    let running = Running::start(Module::new("m").add(purge())).await;
+    running.invoke_with("purge", &json!([{ "name": "days", "type": 4, "value": 0 }]));
+    let sent = running.wait_sent(1).await;
+    assert_notice(&sent[0], VALIDATION);
+    running.invoke_with("purge", &json!([{ "name": "days", "type": 4, "value": 3 }]));
+    let sent = running.wait_sent(2).await;
+    assert_eq!(body(&sent[1])["data"]["components"][0]["content"], "purged");
+    assert_eq!(*CHECKED_RAN.lock().unwrap(), [3]);
+    assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
+#[command("survey", description = "Opens a modal, then fails", opens_modal)]
+async fn survey(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+    let modal = SendFeedback.modal("Survey").push(TextDisplay::new("Hi"));
+    let _ = r.modal(modal).await?.done();
+    Err(HandlerError::new(std::io::Error::other("after modal")))
+}
+
+/// Story 6.8 Matrix 14: after a modal no notice is sent; the error is
+/// still reported.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_notice_after_a_modal() {
+    let running = Running::start(Module::new("m").add(survey())).await;
+    running.invoke("survey");
+    let reports = running.wait_report().await;
+    assert_eq!(reports, ["commands::survey:after modal"]);
+    let sent = running.sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(body(&sent[0])["type"], 9);
     running.run.abort();
 }

@@ -270,26 +270,77 @@ async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
 ## 5. Errors shown to users (FR-22)
 
 ```rust
-// A known, user-facing condition: localized ephemeral notice, logged at debug.
+// A known, user-facing condition: localized ephemeral notice, logged at debug,
+// never sent to an Error Sink.
 return Err(HandlerError::user(keys::COMMON_GUILD_ONLY));
 
 // Any error type: `?` converts (impl<E: Error + Send + Sync + 'static> From<E>).
 let row = db.load(id).await?;
 
-// An error with a friendly message.
+// An error with a friendly message: the notice uses its key, the error still
+// reaches the Error Sink.
 db.save(x).await.map_err(|e| HandlerError::new(e).with_message(keys::SAVE_FAILED))?;
 ```
 
-Now: a Command handler's `Err`, a panic, or a cancellation at shutdown goes to the
-`Command` Error Sink (`ReportKind::Error` / `Panic` / `Cancelled`, with `module`,
-`handler` and `event_type = "INTERACTION_CREATE"`; `noctis_handler_errors_total{kind="command"}`)
-and nothing is sent to the user. [planned, Story 6.8] Default: the user sees a short
-localized ephemeral error (`noctis.error.generic`), and the full error is logged with
-interaction context. A panic in a handler is caught and
-treated the same way; the shard keeps running. Route errors by origin with Error Sinks
-(`modules-middleware-ratelimits.md`). Notices from the "disabled here", rate-limit and
-guard stages are ephemeral; after an auto-defer they arrive as an ephemeral follow-up
-and the deferred original is deleted.
+`HandlerError` API: `new(e)`, `user(key)`, `with_message(key)` (`#[must_use]`; on a
+`user(..)` error it replaces the key and it stays a user condition), `user_message() ->
+Option<MessageKey>` (`Some(key)` for `user`/`with_message`, else `None`), `as_error()`
+(downcast the inner error; `user(key)` wraps a private error whose `Display` is
+``user notice `<key>` ``). `HandlerResult<T>` = `Result<T, HandlerError>`.
+
+When a Command handler (`#[command]`, `#[user_command]`, `#[message_command]`) returns
+`Err`, panics, or its options fail to decode or validate, the user gets **one short
+notice** (a V2 message with one `TextDisplay`), then the error is handled:
+
+| Key of the notice | When |
+| --- | --- |
+| the error's key | `HandlerError::user(key)` or `.with_message(key)` |
+| `noctis.validation.failed` | an option failed to decode (`OptionError`) and no key was given |
+| the validator's key | a `validate = path` failed (`InvalidOption`; the handler does not run) |
+| `noctis.error.generic` ("Something went wrong. Please try again later.") | any other error, and every panic |
+
+Where it goes depends on what the handler already sent:
+
+| State when the handler failed | Notice |
+| --- | --- |
+| nothing sent yet | the reply: callback type 4 with `EPHEMERAL` (flags 32832), **even for a public Command** |
+| deferred (by you or by the auto-defer) | the deferred original is deleted (`DELETE …/messages/@original`; a failure is a `warn` and the notice is still sent), then an ephemeral follow-up (AD-23) |
+| replied | an ephemeral follow-up only |
+| opened a modal | nothing (`debug` "no notice after a modal") |
+| cancelled at shutdown | nothing; reported as `ReportKind::Cancelled` |
+| `Dispatcher` (§4.1) | public (a message has no ephemeral form): a reply to the invoking message while unanswered, else a channel message |
+
+The notice is sent before the auto-defer timer stops (the gate orders the two). Follow-up
+cap (INT-11) and token expiry (INT-02) apply: when the notice cannot be sent (cap,
+expired token, Discord rejects it) Noctis logs one `warn` "could not send the error
+notice" (target `noctis::dispatch`, field `handler`) and never retries; it is not an
+Error Sink report.
+
+Then:
+- **Errors and panics**: `noctis_handler_errors_total{kind="command"}` +1 and a report to
+  the `Command` Error Sink (`ReportKind::Error` / `Panic`, with `module`, `handler` and
+  `event_type = "INTERACTION_CREATE"`). The full error chain is logged once inside the
+  `noctis.interaction` span: by the default `LogSink`, or, with a custom `Command` (or
+  `Autocomplete`) sink, by `LogSink` right before your sink is called — so a custom sink
+  never hides the error from the logs. The shard keeps running (NFR-4).
+- **User conditions** (`HandlerError::user(key)` and a failed option validator): one
+  `debug` on target `noctis::command` (fields `handler`, `key`); no Error Sink, not
+  counted in `noctis_handler_errors_total`. `with_message` does **not** make an error a
+  user condition.
+
+The locale of the notice is the User Locale, then the Guild Locale, then `en-US` (an
+unparseable code means `en-US`). Built-in `noctis.*` texts are English for every
+locale today. Until bot locale files arrive ([planned, Epic 11]), a key of your own
+(`keys::SAVE_FAILED`) is not in any catalog: the user sees the generic text and
+Noctis logs `warn` "missing message key" (target `noctis::i18n`, field `key`). Use
+the reserved keys (`i18n.md` §6) when the exact text matters today.
+
+Logs never contain the token, a user id, option values or the notice text.
+Autocomplete never shows a notice (it answers an empty list, `commands.md` §4); event
+handlers have no user to notify (`HandlerError::user` there is reported like any other
+error). Route errors by origin with Error Sinks (`modules-middleware-ratelimits.md`).
+[planned, Epic 7/13] Notices from the "disabled here", rate-limit and guard stages use
+the same routing.
 
 ## 6. `LegacyMessage`
 

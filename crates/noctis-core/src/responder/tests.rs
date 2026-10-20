@@ -928,3 +928,166 @@ async fn gate_orders_initial_responses() {
     assert_eq!(shared.state(), PENDING);
     assert_eq!(fx.requests().len(), 2);
 }
+
+// ---- Story 6.8: `Shared::notice` in every state ----
+
+const FOLLOWUP_PATH: &str = "/api/v10/webhooks/7/tok?wait=true&with_components=true";
+
+/// The ephemeral type-4 notice of `text`, without `with_response`.
+fn notice_callback(text: &str) -> (Method, String, Value) {
+    (
+        Method::POST,
+        CB.to_owned(),
+        json!({ "type": 4, "data": { "flags": 32832, "components": v2_components(text), "allowed_mentions": { "parse": [] } } }),
+    )
+}
+
+/// Pending: one ephemeral type-4 callback, even for a public Command.
+#[tokio::test]
+async fn notice_while_pending_is_an_ephemeral_callback() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    shared.notice("oops".to_owned()).await.unwrap();
+    assert_eq!(shared.state(), REPLIED);
+    assert_eq!(fx.requests(), [notice_callback("oops")]);
+}
+
+/// Deferred: the original is deleted, then an ephemeral follow-up.
+#[tokio::test]
+async fn notice_after_defer_deletes_then_follows_up() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let _ = responder(&shared)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap()
+        .done();
+    shared.notice("oops".to_owned()).await.unwrap();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert_eq!(
+        (&requests[1].0, requests[1].1.as_str()),
+        (&Method::DELETE, ORIGINAL)
+    );
+    assert_eq!(
+        (&requests[2].0, requests[2].1.as_str()),
+        (&Method::POST, FOLLOWUP_PATH)
+    );
+    assert_eq!(requests[2].2["flags"], 32832);
+    assert_eq!(requests[2].2["components"], v2_components("oops"));
+}
+
+/// Deferred: a failed delete still sends the follow-up.
+#[tokio::test]
+async fn notice_after_defer_survives_a_failed_delete() {
+    let base = discord();
+    let answer: Answer = Arc::new(move |seen: &Seen| {
+        if seen.method == Method::DELETE {
+            (
+                StatusCode::NOT_FOUND,
+                Bytes::from_static(br#"{"code":10008,"message":"Unknown Message"}"#),
+            )
+        } else {
+            base(seen)
+        }
+    });
+    let fx = Fixture::start(answer).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let _ = responder(&shared)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap()
+        .done();
+    shared.notice("oops".to_owned()).await.unwrap();
+    let routes: Vec<_> = fx.requests().into_iter().map(|(m, p, _)| (m, p)).collect();
+    assert_eq!(
+        routes,
+        [
+            (Method::POST, CB.to_owned()),
+            (Method::DELETE, ORIGINAL.to_owned()),
+            (Method::POST, FOLLOWUP_PATH.to_owned()),
+        ]
+    );
+}
+
+/// Replied: only an ephemeral follow-up.
+#[tokio::test]
+async fn notice_after_reply_is_a_followup() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let _ = responder(&shared).reply(v2("a")).await.unwrap().done();
+    shared.notice("oops".to_owned()).await.unwrap();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].1, FOLLOWUP_PATH);
+    assert_eq!(requests[1].2["flags"], 32832);
+}
+
+/// Modal: nothing is sent.
+#[tokio::test]
+async fn notice_after_modal_sends_nothing() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    shared.state.store(MODAL, Ordering::Release);
+    shared.notice("oops".to_owned()).await.unwrap();
+    assert!(fx.requests().is_empty());
+}
+
+/// Message transport: a public reply while Pending, a public follow-up
+/// after a reply or a defer.
+#[tokio::test]
+async fn notice_over_a_message_transport_is_public() {
+    let fx = Fixture::start(discord()).await;
+    let pending = fx.message(Ephemerality::Public);
+    pending.notice("oops".to_owned()).await.unwrap();
+    let replied = fx.message(Ephemerality::Public);
+    let _ = responder(&replied).reply(v2("a")).await.unwrap().done();
+    replied.notice("oops".to_owned()).await.unwrap();
+    let deferred = fx.message(Ephemerality::Public);
+    let _ = responder(&deferred)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap()
+        .done();
+    deferred.notice("oops".to_owned()).await.unwrap();
+    let requests = fx.requests();
+    let routes: Vec<_> = requests
+        .iter()
+        .map(|(m, p, _)| (m.clone(), p.as_str()))
+        .collect();
+    assert_eq!(
+        routes,
+        [
+            (Method::POST, "/api/v10/channels/5/messages"),
+            (Method::POST, "/api/v10/channels/5/messages"),
+            (Method::POST, "/api/v10/channels/5/messages"),
+            (Method::POST, "/api/v10/channels/5/typing"),
+            (Method::POST, "/api/v10/channels/5/messages"),
+        ]
+    );
+    // The Pending notice replies to the invoking message.
+    assert_eq!(
+        requests[0].2["message_reference"],
+        json!({ "message_id": "6", "fail_if_not_exists": false })
+    );
+    for (_, _, body) in requests.iter().filter(|r| r.1.ends_with("/messages")) {
+        assert_eq!(body["flags"], 32768);
+    }
+}
+
+/// Detached: nothing is sent.
+#[tokio::test]
+async fn notice_detached_sends_nothing() {
+    let shared = Shared::new(Transport::Detached, Ephemerality::Public, Limits::default());
+    shared.notice("oops".to_owned()).await.unwrap();
+}
+
+/// The notice text is validated: Strict rejects text over 4000 chars.
+#[tokio::test]
+async fn notice_is_validated() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let err = shared.notice("a".repeat(4001)).await.unwrap_err();
+    assert!(matches!(err, ResponderError::Invalid(_)), "{err:?}");
+    assert!(fx.requests().is_empty());
+}

@@ -471,9 +471,13 @@ async fn choices_and_pattern() {
 }
 
 fn invalid(err: &HandlerError) -> &InvalidOption {
-    err.as_error()
+    let invalid = err
+        .as_error()
         .downcast_ref::<InvalidOption>()
-        .unwrap_or_else(|| panic!("not an InvalidOption: {err}"))
+        .unwrap_or_else(|| panic!("not an InvalidOption: {err}"));
+    // Story 6.8: the validator's key is the notice the user sees.
+    assert_eq!(err.user_message(), Some(invalid.key()));
+    invalid
 }
 
 /// Matrix 67-69 and 71: validators.

@@ -543,10 +543,13 @@ impl core::fmt::Display for noctis::GatewayUrlError
 pub fn noctis::GatewayUrlError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::GatewayUrlError
 impl core::marker::StructuralPartialEq for noctis::GatewayUrlError
-pub struct noctis::HandlerError(_)
+pub struct noctis::HandlerError
 impl noctis::HandlerError
 pub fn noctis::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
 pub fn noctis::HandlerError::new(impl core::error::Error + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn noctis::HandlerError::user(noctis::prelude::MessageKey) -> Self
+pub fn noctis::HandlerError::user_message(&self) -> core::option::Option<noctis::prelude::MessageKey>
+pub fn noctis::HandlerError::with_message(self, noctis::prelude::MessageKey) -> Self
 impl core::fmt::Debug for noctis::HandlerError
 pub fn noctis::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::HandlerError
@@ -2465,10 +2468,13 @@ pub fn noctis::prelude::ErrorSink::report(&self, noctis::ErrorReport<'_>)
 impl<S: noctis::prelude::ErrorSink + ?core::marker::Sized> noctis::prelude::ErrorSink for alloc::rcs::arc::Arc<S>
 pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
 pub struct noctis::prelude::EventCtx(_)
-pub struct noctis::prelude::HandlerError(_)
+pub struct noctis::prelude::HandlerError
 impl noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
 pub fn noctis::prelude::HandlerError::new(impl core::error::Error + core::marker::Send + core::marker::Sync + 'static) -> Self
+pub fn noctis::prelude::HandlerError::user(noctis::prelude::MessageKey) -> Self
+pub fn noctis::prelude::HandlerError::user_message(&self) -> core::option::Option<noctis::prelude::MessageKey>
+pub fn noctis::prelude::HandlerError::with_message(self, noctis::prelude::MessageKey) -> Self
 impl core::fmt::Debug for noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::prelude::HandlerError

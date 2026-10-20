@@ -81,7 +81,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use noctis_rules::Limits;
 use noctis_ui::{
     CallbackFlags, Components, CreateFlags, EditFlags, LegacyMessage, MessageBody, MessageFormat,
-    Modal, UiError, V2Message,
+    Modal, TextDisplay, UiError, V2Message,
 };
 use serde_json::{Value, json};
 use twilight_model::id::Id;
@@ -1043,6 +1043,82 @@ impl Shared {
             visibility,
             format: Mutex::new(msg.format()),
         })
+    }
+
+    /// Sends the localized notice of a failed handler run (FR-22, AD-23):
+    /// one V2 message holding a single `TextDisplay(text)`, validated like
+    /// every other send.
+    ///
+    /// - Pending: the initial response, a type-4 callback flagged
+    ///   `EPHEMERAL` whatever the Command declared; over a message
+    ///   transport a public reply to the invoking message.
+    /// - Deferred: the deferred original is deleted first (a failure is a
+    ///   `warn` and the notice is still sent), then the notice is an
+    ///   ephemeral follow-up; over a message transport a public follow-up.
+    /// - Replied: an ephemeral follow-up (public over a message transport).
+    /// - Modal: nothing is sent (`debug` log).
+    ///
+    /// The follow-up cap and the token expiry apply (INT-11, INT-02).
+    pub(crate) async fn notice(self: &Arc<Self>, text: String) -> Result<(), ResponderError> {
+        let mut msg = OutgoingMessage::V2(V2Message::new(
+            Components::new().push(TextDisplay::new(text)),
+        ));
+        self.prepare(&mut msg)?;
+        let visibility = if self.transport.is_message() {
+            Ephemerality::Public
+        } else {
+            Ephemerality::Ephemeral
+        };
+        let gate = self.gate.lock().await;
+        match self.state() {
+            PENDING => {
+                let message_id = match &self.transport {
+                    Transport::Interaction(target) => {
+                        let flags = Ephemerality::Ephemeral.callback_flags();
+                        let data = match &msg {
+                            OutgoingMessage::V2(m) => encode(m.callback_body(flags))?,
+                            OutgoingMessage::Legacy(m) => encode(m.callback_body(flags))?,
+                        };
+                        target
+                            .callback(&json!({ "type": 4, "data": data }), false)
+                            .await?
+                    }
+                    Transport::Message(target) => Some(target.reply(create(&msg)?).await?),
+                    Transport::Detached => None,
+                };
+                self.state.store(REPLIED, Ordering::Release);
+                self.set_original(Original {
+                    shape: Shape::Sent(msg.format()),
+                    message_id,
+                    ephemerality: visibility,
+                    channel_id: None,
+                });
+                drop(gate);
+                Ok(())
+            }
+            DEFERRED => {
+                drop(gate);
+                if let Transport::Interaction(_) = &self.transport
+                    && let Err(error) = self.delete_original().await
+                {
+                    tracing::warn!(
+                        target: "noctis::dispatch",
+                        %error,
+                        "could not delete the deferred original before the notice"
+                    );
+                }
+                self.followup(msg, visibility).await.map(|_| ())
+            }
+            REPLIED => {
+                drop(gate);
+                self.followup(msg, visibility).await.map(|_| ())
+            }
+            _ => {
+                drop(gate);
+                tracing::debug!(target: "noctis::dispatch", "no notice after a modal");
+                Ok(())
+            }
+        }
     }
 
     async fn delete_original(&self) -> Result<(), ResponderError> {

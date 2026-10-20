@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
 use noctis_gateway::EventTypeFlags;
+use noctis_rules::{MessageKey, Translate};
 use twilight_model::gateway::Intents;
 use twilight_model::gateway::event::{Event, EventType};
 use twilight_model::id::Id;
@@ -37,6 +38,10 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// A type-erased handler error: any `Error + Send + Sync + 'static`
 /// converts into it with `?`.
 ///
+/// It may carry a [`MessageKey`] the user sees instead of the generic
+/// `noctis.error.generic` notice ([`with_message`](Self::with_message)), or be
+/// a known user condition ([`user`](Self::user)) that only produces the notice.
+///
 /// `Display` and `Debug` print the inner error. It does not implement
 /// [`std::error::Error`] itself (which keeps the blanket `From` coherent);
 /// [`as_error`](Self::as_error) returns the inner error, for example to
@@ -50,8 +55,25 @@ pub type HandlerResult<T> = Result<T, HandlerError>;
 /// let err = HandlerError::new(io::Error::other("disk full"));
 /// assert_eq!(err.to_string(), "disk full");
 /// assert!(err.as_error().downcast_ref::<io::Error>().is_some());
+/// assert_eq!(err.user_message(), None);
 /// ```
-pub struct HandlerError(Box<dyn Error + Send + Sync + 'static>);
+pub struct HandlerError {
+    error: Box<dyn Error + Send + Sync + 'static>,
+    key: Option<MessageKey>,
+    user: bool,
+}
+
+/// The inner error of [`HandlerError::user`].
+#[derive(Debug)]
+struct UserCondition(MessageKey);
+
+impl fmt::Display for UserCondition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "user notice `{}`", self.0)
+    }
+}
+
+impl Error for UserCondition {}
 
 impl HandlerError {
     /// Wraps `error`.
@@ -59,9 +81,71 @@ impl HandlerError {
     /// ```
     /// let err = noctis_core::HandlerError::new(std::fmt::Error);
     /// assert_eq!(err.to_string(), std::fmt::Error.to_string());
+    /// assert_eq!(err.user_message(), None);
     /// ```
     pub fn new(error: impl Error + Send + Sync + 'static) -> Self {
-        Self(Box::new(error))
+        Self {
+            error: Box::new(error),
+            key: None,
+            user: false,
+        }
+    }
+
+    /// A known, user-facing condition (such as "guild only"), not a bug: the
+    /// user sees `key`'s localized ephemeral notice, the pipeline logs it at
+    /// `debug`, and it never reaches an Error Sink.
+    ///
+    /// ```
+    /// use noctis_core::HandlerError;
+    /// use noctis_rules::MessageKey;
+    ///
+    /// const GUILD_ONLY: MessageKey = MessageKey::new("common.guild_only");
+    /// let err = HandlerError::user(GUILD_ONLY);
+    /// assert_eq!(err.user_message(), Some(GUILD_ONLY));
+    /// assert_eq!(err.to_string(), "user notice `common.guild_only`");
+    /// ```
+    pub fn user(key: MessageKey) -> Self {
+        Self {
+            error: Box::new(UserCondition(key)),
+            key: Some(key),
+            user: true,
+        }
+    }
+
+    /// Shows `key`'s localized text to the user instead of the generic
+    /// notice. The error itself still reaches the Error Sink (a user
+    /// condition stays one).
+    ///
+    /// ```
+    /// use std::io;
+    ///
+    /// use noctis_core::HandlerError;
+    /// use noctis_rules::MessageKey;
+    ///
+    /// const SAVE_FAILED: MessageKey = MessageKey::new("shop.save_failed");
+    /// let err = HandlerError::new(io::Error::other("db down")).with_message(SAVE_FAILED);
+    /// assert_eq!(err.user_message(), Some(SAVE_FAILED));
+    /// assert_eq!(err.to_string(), "db down");
+    /// ```
+    #[must_use]
+    pub fn with_message(mut self, key: MessageKey) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    /// The key of the notice the user sees, if one was given.
+    ///
+    /// ```
+    /// use noctis_core::HandlerError;
+    /// use noctis_rules::MessageKey;
+    ///
+    /// let a = MessageKey::new("shop.a");
+    /// let b = MessageKey::new("shop.b");
+    /// assert_eq!(HandlerError::user(a).with_message(b).user_message(), Some(b));
+    /// assert_eq!(HandlerError::new(std::fmt::Error).user_message(), None);
+    /// ```
+    pub fn user_message(&self) -> Option<MessageKey> {
+        self.key
     }
 
     /// The inner error.
@@ -71,25 +155,43 @@ impl HandlerError {
     /// assert!(err.as_error().is::<std::fmt::Error>());
     /// ```
     pub fn as_error(&self) -> &(dyn Error + Send + Sync + 'static) {
-        &*self.0
+        &*self.error
+    }
+
+    /// A user condition that keeps `error` as its inner error (a failed
+    /// option validator keeps its `InvalidOption`).
+    pub(crate) fn user_condition(
+        error: impl Error + Send + Sync + 'static,
+        key: MessageKey,
+    ) -> Self {
+        Self {
+            error: Box::new(error),
+            key: Some(key),
+            user: true,
+        }
+    }
+
+    /// Whether this is a user condition (no Error Sink, `debug` log only).
+    pub(crate) fn is_user(&self) -> bool {
+        self.user
     }
 }
 
 impl<E: Error + Send + Sync + 'static> From<E> for HandlerError {
     fn from(error: E) -> Self {
-        Self(Box::new(error))
+        Self::new(error)
     }
 }
 
 impl fmt::Display for HandlerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
+        fmt::Display::fmt(&self.error, f)
     }
 }
 
 impl fmt::Debug for HandlerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+        fmt::Debug::fmt(&self.error, f)
     }
 }
 
@@ -113,6 +215,9 @@ pub(crate) struct AppShared {
     /// When the auto-defer acknowledges a pending interaction, after
     /// `received_at` (`AppBuilder::ack_deadline`, INT-01).
     pub(crate) ack_deadline: std::time::Duration,
+    /// The strings every user-facing notice is rendered from (`noctis-i18n`
+    /// `Builtin` until Epic 11 merges bot catalogs).
+    pub(crate) strings: Arc<dyn Translate>,
 }
 
 /// The context an event handler receives: the shard, the guild, the

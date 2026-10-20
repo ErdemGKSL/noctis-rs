@@ -429,8 +429,11 @@ error (downcast with `err.as_error().downcast_ref::<OptionError>()`), and the ha
 | `UnknownChoice { option, value }` | ``option `severity`: `zzz` is not one of its choices`` |
 
 A failing validator gives `noctis::InvalidOption` (`option() -> &'static str`, `key() ->
-MessageKey`; ``option `days` failed validation: mod.warn.days.positive``). Sending its key as a
-localized ephemeral notice is Story 6.8 [planned]; today the error reaches the Error Sink.
+MessageKey`; ``option `days` failed validation: mod.warn.days.positive``). The handler does
+not run; the user gets its key as a localized ephemeral notice, and it is a user condition
+(a `debug` log, no Error Sink; `err.user_message() == Some(invalid.key())`). A decode
+failure (`OptionError`) shows `noctis.validation.failed` and does reach the Command Error
+Sink. See `responder.md` §5.
 Discord enforces declared bounds itself; Noctis does not re-check `min_value`, `max_length`,
 `channel_types` at runtime (use a validator for custom checks).
 

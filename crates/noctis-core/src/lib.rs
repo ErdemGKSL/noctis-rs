@@ -62,8 +62,13 @@
 //! is sent as the reply, or as an edit of the original once it deferred or
 //! replied. A handler taking a [`CommandResponder`] answers through the
 //! typestate [`Responder`] ([`Pending`] → [`Acked`] → [`Responded`]); every
-//! call returns a [`ResponderError`] on failure. A failure goes to the
-//! `Command` Error Sink. The [`Dispatcher`] (from `EventCtx::dispatcher`)
+//! call returns a [`ResponderError`] on failure. A failure or a panic first
+//! sends the user a localized ephemeral notice (the [`HandlerError`]'s key,
+//! `noctis.validation.failed` for options, else `noctis.error.generic`;
+//! after a defer the deferred original is deleted and the notice is an
+//! ephemeral follow-up), then goes to the `Command` Error Sink; a
+//! [`HandlerError::user`] condition or a failed validator only logs at
+//! `debug`. The [`Dispatcher`] (from `EventCtx::dispatcher`)
 //! runs a registered Command outside an interaction, replying to a message.
 //!
 //! # Command metadata and context menus
@@ -106,7 +111,9 @@
 //! Handler errors, handler panics, handlers cancelled at shutdown and events
 //! dropped by a full overflow go to the [`ErrorSink`] of their [`ErrorOrigin`]
 //! ([`AppBuilder::error_sink`]); unset origins use [`LogSink`], which logs
-//! at `error`. Spans (`noctis.shard`, `noctis.event`,
+//! at `error`. A custom `Command` or `Autocomplete` sink is called after
+//! [`LogSink`] has logged the report, so the full error is logged once
+//! either way. Spans (`noctis.shard`, `noctis.event`,
 //! `noctis.interaction`) and metrics follow the contract in [`observe`].
 //!
 //! ```no_run
@@ -140,6 +147,7 @@ mod lifecycle;
 mod menu;
 mod metadata;
 mod module;
+mod notice;
 pub mod observe;
 mod options;
 mod pipeline;

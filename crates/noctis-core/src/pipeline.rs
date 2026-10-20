@@ -18,8 +18,16 @@
 //! 8. *Guards: absent until Story 7.7;*
 //! 9. run the handler under `catch_unwind`, raced against the shutdown
 //!    cancel token, and send what it returned;
-//! 10. route a failure to the Command Error Sink (after-Middleware arrives
-//!     with Story 7.6).
+//! 10. send a localized ephemeral notice, then route the failure to the
+//!     Command Error Sink (after-Middleware arrives with Story 7.6): an
+//!     error or a panic first shows the user one notice (its
+//!     `HandlerError` key, `noctis.validation.failed` for options, else
+//!     `noctis.error.generic`) while the auto-defer gate still orders it;
+//!     after a defer the deferred original is deleted and the notice is an
+//!     ephemeral follow-up (AD-23). A user condition (`HandlerError::user`,
+//!     a failed validator) is then logged at `debug`; anything else is
+//!     counted and reported, through `LogSink` first when the sink is
+//!     custom. A cancellation at shutdown is reported without a notice.
 //!
 //! The [`Dispatcher`] runs stages 3 onward for a Command invoked from
 //! outside an interaction; it arms no auto-defer (a message has no ack
@@ -47,7 +55,9 @@ use std::time::Instant;
 
 use futures_util::FutureExt;
 use noctis_gateway::{Inbound, InboundKind};
+use noctis_i18n::keys;
 use noctis_rules::command::{MenuKind, Scope};
+use noctis_rules::{Locale, MessageKey};
 use tokio_util::sync::CancellationToken;
 use tracing::field::Empty;
 use tracing::{Instrument, Span};
@@ -67,6 +77,7 @@ use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
 use crate::edge::callback::ACK_DEADLINE;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::menu::MenuInput;
+use crate::notice;
 use crate::options::CommandInput;
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
@@ -74,7 +85,7 @@ use crate::responder::{
     Ephemerality, InteractionTarget, MessageTarget, PENDING, Responded, ResponderError, Response,
     Shared, Transport,
 };
-use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
+use crate::sink::{ErrorOrigin, ErrorReport, ErrorSink as _, LogSink, ReportKind};
 use crate::worker::panic_message;
 
 /// The `event_type` of a Command report.
@@ -245,6 +256,8 @@ struct Report<'a> {
     module: &'static str,
     handler: &'static str,
     event_type: Option<&'static str>,
+    /// The locale of the user-facing notice (User, then Guild Locale).
+    locale: Locale,
 }
 
 /// How one handler run ended.
@@ -257,9 +270,12 @@ enum Outcome {
 /// Stages 9 and 10: starts the handler with a Pending responder over
 /// `shared` (catching a panic at the call), sends what it returned
 /// (a returned message is the reply while Pending, else an edit of the
-/// original, INT-12), races the whole run against `cancel`, records the
-/// duration and reports an error, a panic or a cancellation to the Command
-/// Error Sink. `timer` (the auto-defer) is aborted as soon as the run ends.
+/// original, INT-12), races the whole run against `cancel` and records the
+/// duration. An error or a panic first sends the user a localized
+/// ephemeral notice (FR-22, AD-23), then `timer` (the auto-defer) is
+/// aborted; a user condition is logged at `debug`, anything else is
+/// counted and reported to the Command Error Sink (a cancellation without
+/// a notice).
 async fn execute(
     span: &Span,
     cancel: Option<&CancellationToken>,
@@ -279,11 +295,12 @@ async fn execute(
             span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| start(handle))));
         let outcome = match started {
             Ok(fut) => {
+                let finisher = Arc::clone(&shared);
                 let run = AssertUnwindSafe(async move {
                     match fut.await?.0 {
                         Response::Done => Ok(()),
                         Response::Message(msg) => {
-                            shared.finish(msg).await.map_err(HandlerError::new)
+                            finisher.finish(msg).await.map_err(HandlerError::new)
                         }
                     }
                 })
@@ -313,9 +330,24 @@ async fn execute(
         .record(started_at.elapsed().as_secs_f64());
         outcome
     };
+    // Sent before the auto-defer is dropped: the gate orders the two.
+    if let Some(key) = notice_key(&outcome) {
+        send_notice(span, &shared, &report, key).await;
+    }
     drop(timer);
     let report_kind = match &outcome {
         Outcome::Returned(Ok(())) => return,
+        Outcome::Returned(Err(error)) if error.is_user() => {
+            span.in_scope(|| {
+                tracing::debug!(
+                    target: "noctis::command",
+                    handler = report.handler,
+                    key = error.user_message().map(MessageKey::as_str),
+                    "user condition: notice sent"
+                );
+            });
+            return;
+        }
         Outcome::Returned(Err(error)) => ReportKind::Error(error),
         Outcome::Panicked(panic) => ReportKind::Panic(panic_message(&**panic)),
         Outcome::Cancelled => ReportKind::Cancelled,
@@ -327,17 +359,57 @@ async fn execute(
     )
     .increment(1);
     span.in_scope(|| {
-        app.sinks.report(ErrorReport {
-            origin: ErrorOrigin::Command,
-            kind: report_kind,
-            app: &app.app,
-            shard: report.shard,
-            guild_id: report.guild_id,
-            module: Some(report.module),
-            handler: Some(report.handler),
-            event_type: report.event_type,
-        });
+        report_logged(
+            app,
+            ErrorReport {
+                origin: ErrorOrigin::Command,
+                kind: report_kind,
+                app: &app.app,
+                shard: report.shard,
+                guild_id: report.guild_id,
+                module: Some(report.module),
+                handler: Some(report.handler),
+                event_type: report.event_type,
+            },
+        );
     });
+}
+
+/// The notice key of a failed run: an error's key (see
+/// `notice::key_for`), the generic key for a panic, none for a success or
+/// a cancellation.
+fn notice_key(outcome: &Outcome) -> Option<MessageKey> {
+    match outcome {
+        Outcome::Returned(Err(error)) => Some(notice::key_for(error)),
+        Outcome::Panicked(_) => Some(keys::ERROR_GENERIC),
+        Outcome::Returned(Ok(())) | Outcome::Cancelled => None,
+    }
+}
+
+/// Shows the user the notice of `key`. A failure to send it is one `warn`,
+/// never a report.
+async fn send_notice(span: &Span, shared: &Arc<Shared>, report: &Report<'_>, key: MessageKey) {
+    let text = span.in_scope(|| notice::text(&*report.app.strings, report.locale, key));
+    if let Err(error) = shared.notice(text).instrument(span.clone()).await {
+        span.in_scope(|| {
+            tracing::warn!(
+                target: "noctis::dispatch",
+                handler = report.handler,
+                %error,
+                "could not send the error notice"
+            );
+        });
+    }
+}
+
+/// Hands `report` to its origin's sink. A custom sink replaces [`LogSink`],
+/// so the full error chain is logged first, inside the current span, and
+/// appears in the logs exactly once either way (FR-22).
+fn report_logged(app: &AppShared, report: ErrorReport<'_>) {
+    if app.sinks.is_custom(report.origin) {
+        LogSink.report(report);
+    }
+    app.sinks.report(report);
 }
 
 /// Starts the resolved handler: decodes the options or the menu target
@@ -441,6 +513,7 @@ pub(crate) async fn run_interaction(
     } = *interaction;
     let ephemerality = resolved.ephemerality();
     let channel_id = channel.as_ref().map(|c| c.id);
+    let notice_locale = notice::locale(locale.as_deref(), guild_locale.as_deref());
     let parts = CtxInner {
         module: resolved.module(),
         shard,
@@ -474,6 +547,7 @@ pub(crate) async fn run_interaction(
         module: resolved.module(),
         handler: resolved.handler(),
         event_type: Some(INTERACTION_CREATE),
+        locale: notice_locale,
     };
     let start = start(&resolved, raw.as_bytes(), parts);
     execute(&span, Some(&cancel), state, start, Some(timer), report).await;
@@ -583,6 +657,8 @@ pub(crate) async fn run_autocomplete(
         module,
         handler,
         event_type: Some(INTERACTION_CREATE),
+        // Autocomplete sends no notice.
+        locale: Locale::EnUs,
     };
     let found = match find_autocomplete(&span, shard, resolved, raw.as_bytes(), author) {
         Ok(found) => found,
@@ -828,16 +904,19 @@ fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
     )
     .increment(1);
     span.in_scope(|| {
-        app.sinks.report(ErrorReport {
-            origin: ErrorOrigin::Autocomplete,
-            kind,
-            app: &app.app,
-            shard: report.shard,
-            guild_id: report.guild_id,
-            module: Some(report.module),
-            handler: Some(report.handler),
-            event_type: report.event_type,
-        });
+        report_logged(
+            app,
+            ErrorReport {
+                origin: ErrorOrigin::Autocomplete,
+                kind,
+                app: &app.app,
+                shard: report.shard,
+                guild_id: report.guild_id,
+                module: Some(report.module),
+                handler: Some(report.handler),
+                event_type: report.event_type,
+            },
+        );
     });
 }
 
@@ -848,7 +927,8 @@ fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
 /// pipeline from stage 3 on (FR-21). The handler answers with a reply to
 /// the invoking message: `defer` shows the typing indicator, and an
 /// ephemeral response is [`ResponderError::EphemeralUnsupported`](crate::ResponderError::EphemeralUnsupported).
-/// Handler errors and panics go to the Command Error Sink, not into the
+/// Handler errors and panics send a public notice (a message has no
+/// ephemeral form), then go to the Command Error Sink, not into the
 /// result.
 ///
 /// It enforces none of the Command's `default_member_permissions`,
@@ -1034,6 +1114,7 @@ impl Dispatcher {
             return Ok(());
         };
         let ephemerality = entry.handler.ephemerality();
+        let notice_locale = notice::locale(locale.as_deref(), None);
         let parts = CtxInner {
             path,
             input,
@@ -1060,6 +1141,7 @@ impl Dispatcher {
             module: entry.module,
             handler: entry.handler.name(),
             event_type: None,
+            locale: notice_locale,
         };
         let entry = Arc::clone(entry);
         let start = move |shared| entry.handler.call(CommandCtx::from_parts(parts), shared);

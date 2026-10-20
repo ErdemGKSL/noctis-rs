@@ -81,6 +81,22 @@ impl Pipeline {
         }
     }
 
+    /// As [`Pipeline::start`], without a custom Command sink (the default
+    /// `LogSink` reports).
+    async fn start_default_sink(module: Module) -> Self {
+        let server = crate::edge::test_support::TestServer::start_with(false, discord()).await;
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .http_proxy(server.authority())
+            .module(module);
+        let app = builder.build().unwrap();
+        Self {
+            fx: Fixture { server, app },
+            sink: Arc::new(Recording::default()),
+        }
+    }
+
     async fn run(&self, inbound: Inbound) {
         self.run_with(inbound, CancellationToken::new()).await;
     }
@@ -185,6 +201,34 @@ fn boom() -> V2Message {
 const CB: &str = "/api/v10/interactions/100/tok/callback";
 /// A type-4 callback asks for the message (`with_response`).
 const CB_REPLY: &str = "/api/v10/interactions/100/tok/callback?with_response=true";
+/// `noctis.error.generic` in en-US.
+const GENERIC: &str = "Something went wrong. Please try again later.";
+/// `noctis.validation.failed` in en-US.
+const VALIDATION: &str = "That input isn't valid. Check it and try again.";
+
+/// Asserts `request` is the ephemeral type-4 notice callback of `text`.
+fn assert_notice(request: &(Method, String, Value), text: &str) {
+    assert_eq!(request.0, Method::POST, "{request:?}");
+    assert_eq!(request.1, CB, "{request:?}");
+    assert_eq!(request.2["type"], 4, "{request:?}");
+    assert_eq!(request.2["data"]["flags"], 32832, "{request:?}");
+    assert_eq!(
+        request.2["data"]["components"],
+        json!([{ "type": 10, "id": 1, "content": text }]),
+        "{request:?}"
+    );
+}
+
+/// Asserts `request` is an ephemeral follow-up notice of `text`.
+fn assert_followup_notice(request: &(Method, String, Value), text: &str) {
+    assert_eq!(request.0, Method::POST, "{request:?}");
+    assert_eq!(
+        request.1, "/api/v10/webhooks/7/tok?wait=true&with_components=true",
+        "{request:?}"
+    );
+    assert_eq!(request.2["flags"], 32832, "{request:?}");
+    assert_eq!(request.2["components"][0]["content"], text, "{request:?}");
+}
 
 /// Matrix 1 and the Resolution AC: one type-4 callback, V2 flags, and the
 /// span carries `module` and `path`.
@@ -420,7 +464,9 @@ async fn unicode_names_and_menus() {
         "error:target 12 is not in the resolved data"
     );
     assert_eq!(reports[0].handler.as_deref(), Some("m::show"));
-    assert_eq!(p.requests().len(), 3);
+    let requests = p.requests();
+    assert_eq!(requests.len(), 4, "{requests:?}");
+    assert_notice(&requests[3], GENERIC);
 }
 
 /// Matrix 13 and 14: malformed command data and a missing author.
@@ -446,12 +492,19 @@ async fn malformed_and_authorless() {
     assert_eq!(reports.len(), 2);
     assert!(reports.iter().all(|r| r.origin == ErrorOrigin::Command));
     assert!(log.lines().is_empty());
+    // Story 6.8 Matrix 6: a decode failure shows the validation notice.
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    for request in &requests {
+        assert_notice(request, VALIDATION);
+    }
 
     let mut authorless = interaction(slash("warn", json!([])), json!({}));
     authorless.as_object_mut().unwrap().remove("user");
     p.run(inbound(&authorless)).await;
     assert!(log.lines().is_empty());
-    assert!(p.requests().is_empty());
+    // No notice without an author.
+    assert_eq!(p.requests().len(), 2);
     assert_eq!(capture.lines_with(&["without an author"]).len(), 1);
 }
 
@@ -528,7 +581,14 @@ async fn errors_and_panics_reach_the_sink() {
     );
     assert_eq!(reports.len(), 4);
     assert_eq!(log.lines(), ["m::ok:ok"]);
-    assert_eq!(p.requests().len(), 1);
+    // Story 6.8 Matrix 1, 5 and 13: one generic notice per failure (the
+    // invalid message was never sent), then the next one is served.
+    let requests = p.requests();
+    assert_eq!(requests.len(), 5, "{requests:?}");
+    for request in &requests[..4] {
+        assert_notice(request, GENERIC);
+    }
+    assert_eq!(requests[4].1, CB_REPLY);
 }
 
 /// Matrix 17: a shutdown cancel drops the handler and reports it.
@@ -1406,7 +1466,13 @@ async fn timer_stops_with_the_handler() {
     cancel.cancel();
     run.await.unwrap();
     tokio::time::sleep(Duration::from_millis(250)).await;
-    assert!(p.requests().is_empty(), "{:?}", p.requests());
+    // The error and the panic got their notices; no auto-defer fired and
+    // the cancellation sent nothing.
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    for request in &requests {
+        assert_notice(request, GENERIC);
+    }
     let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
     assert_eq!(kinds, ["error:boom", "panic:boom", "cancelled"]);
 }
@@ -1460,7 +1526,10 @@ async fn int_05_opens_modal_never_auto_defers() {
     .await;
     p.run(inbound(&interaction(slash("form", json!([])), json!({}))))
         .await;
-    assert!(p.requests().is_empty());
+    // No auto-defer: the only request is the error notice (Story 6.8).
+    let requests = p.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_notice(&requests[0], GENERIC);
     let missed = [
         "noctis::dispatch",
         "did not answer within the 3 s ack deadline",
@@ -1471,7 +1540,11 @@ async fn int_05_opens_modal_never_auto_defers() {
         Duration::from_millis(2950),
     ))
     .await;
-    assert!(p.requests().is_empty());
+    let requests = p.requests();
+    assert!(
+        requests.iter().all(|r| r.2["type"] == 4),
+        "no auto-defer: {requests:?}"
+    );
     let lines = capture.lines_with(&missed);
     assert_eq!(lines.len(), 1, "{}", capture.text());
     assert!(
@@ -1987,5 +2060,528 @@ mod autocomplete {
         let (_, latencies) = metrics.read();
         assert_eq!(latencies.len(), 1);
         assert!((0.12..0.6).contains(&latencies[0]), "{latencies:?}");
+    }
+}
+
+// ---- Story 6.8: user-facing notices ----
+
+mod notices {
+    use super::*;
+    use crate::InvalidOption;
+    use noctis_i18n::keys;
+
+    /// The follow-up route (`wait=true`).
+    const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true&with_components=true";
+    const OWNER: &str = "Only the person who started this can use it.";
+    const DISABLED: &str = "This feature is disabled here.";
+
+    /// A Command at `path` failing with `error()`.
+    fn failing(
+        name: &'static str,
+        paths: &'static [&'static str],
+        error: fn() -> HandlerError,
+    ) -> CommandHandler {
+        CommandHandler::__new_plain(
+            name,
+            paths,
+            "d",
+            move |_: CommandCtx, _: CommandResponder| async move { Err::<V2Message, _>(error()) },
+        )
+    }
+
+    fn io(message: &str) -> HandlerError {
+        HandlerError::new(std::io::Error::other(message.to_owned()))
+    }
+
+    fn run_slash(name: &str) -> Inbound {
+        inbound(&interaction(slash(name, json!([])), json!({})))
+    }
+
+    /// The `noctis_handler_errors_total` count in `snapshotter`.
+    fn errors_total(snapshotter: &metrics_util::debugging::Snapshotter) -> u64 {
+        use metrics_util::debugging::DebugValue;
+        snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .filter(|(k, ..)| k.key().name() == "noctis_handler_errors_total")
+            .map(|(.., v)| match v {
+                DebugValue::Counter(n) => n,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// Matrix 1-4: no key, `with_message`, a user condition and an unknown
+    /// bot key.
+    #[tokio::test]
+    async fn notice_keys_and_user_conditions() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let recorder = metrics_util::debugging::DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        let module = Module::new("m")
+            .add(failing("m::plain", &["plain"], || io("boom")))
+            .add(failing("m::keyed", &["keyed"], || {
+                io("db down").with_message(keys::GUARD_OWNER)
+            }))
+            .add(failing("m::user", &["user"], || {
+                HandlerError::user(keys::DISABLED_HERE)
+            }))
+            .add(failing("m::bot", &["bot"], || {
+                HandlerError::user(MessageKey::new("shop.missing"))
+            }));
+        let p = Pipeline::start(module).await;
+        p.run(run_slash("plain")).await;
+        assert_eq!(errors_total(&snapshotter), 1);
+        p.run(run_slash("keyed")).await;
+        assert_eq!(errors_total(&snapshotter), 1);
+        p.run(run_slash("user")).await;
+        p.run(run_slash("bot")).await;
+        assert_eq!(
+            errors_total(&snapshotter),
+            0,
+            "user conditions are not counted"
+        );
+        let requests = p.requests();
+        assert_eq!(requests.len(), 4, "{requests:?}");
+        assert_notice(&requests[0], GENERIC);
+        assert_notice(&requests[1], OWNER);
+        assert_notice(&requests[2], DISABLED);
+        assert_notice(&requests[3], GENERIC);
+        let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
+        assert_eq!(kinds, ["error:boom", "error:db down"]);
+        let debug = capture.lines_with(&["DEBUG", "noctis::command", "user condition"]);
+        assert_eq!(debug.len(), 2, "{}", capture.text());
+        assert!(
+            debug[0].contains("handler=\"m::user\"")
+                && debug[0].contains("key=\"noctis.disabled_here\""),
+            "{}",
+            debug[0]
+        );
+        let missing = capture.lines_with(&["WARN", "noctis::i18n", "key=\"shop.missing\""]);
+        assert_eq!(missing.len(), 1, "{}", capture.text());
+        // No notice text or token in the logs (AD-29).
+        assert!(!capture.text().contains(DISABLED), "{}", capture.text());
+        assert!(!capture.text().contains("tok/"), "{}", capture.text());
+    }
+
+    /// Options whose validator fails with a reserved key (`days` 1) or a
+    /// bot key (`days` 2).
+    struct Checked;
+
+    impl Options for Checked {
+        const OPTIONS: &'static [OptionDecl<'static>] =
+            &[OptionDecl::new("days", OptionType::Integer, "d").required(true)];
+        type Partial = crate::autocomplete::NoPartial<Self>;
+
+        fn from_input(input: &CommandInput) -> Result<Self, OptionError> {
+            let days: i64 = required(input, "days")?;
+            CHECKED_DAYS.with(|d| d.set(days));
+            Ok(Self)
+        }
+
+        fn validate(&self, _: &CommandCtx) -> Result<(), InvalidOption> {
+            match CHECKED_DAYS.with(std::cell::Cell::get) {
+                1 => Err(InvalidOption::__new("days", keys::VALIDATION_FAILED)),
+                2 => Err(InvalidOption::__new(
+                    "days",
+                    MessageKey::new("shop.bad_days"),
+                )),
+                _ => Ok(()),
+            }
+        }
+    }
+
+    thread_local! {
+        static CHECKED_DAYS: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+    }
+
+    /// Matrix 7: a failed validator shows its key's notice, the handler
+    /// does not run, no sink sees it.
+    #[tokio::test]
+    async fn validator_failure_is_a_user_condition() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let log = Log::default();
+        let ran = log.clone();
+        let module = Module::new("m").add(CommandHandler::__new_plain_with_options(
+            "m::check",
+            &["check"],
+            "d",
+            move |_: CommandCtx, _: CommandResponder, _: Checked| {
+                ran.push("ran");
+                async { Ok(v2("ok")) }
+            },
+        ));
+        let p = Pipeline::start(module).await;
+        for days in [1, 2] {
+            p.run(inbound(&interaction(
+                slash(
+                    "check",
+                    json!([{ "name": "days", "type": 4, "value": days }]),
+                ),
+                json!({}),
+            )))
+            .await;
+        }
+        assert!(log.lines().is_empty());
+        assert!(p.reports().is_empty());
+        let requests = p.requests();
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert_notice(&requests[0], VALIDATION);
+        assert_notice(&requests[1], GENERIC);
+        assert_eq!(
+            capture
+                .lines_with(&["noctis::i18n", "key=\"shop.bad_days\""])
+                .len(),
+            1
+        );
+        assert_eq!(
+            capture
+                .lines_with(&[
+                    "DEBUG",
+                    "noctis::command",
+                    "key=\"noctis.validation.failed\""
+                ])
+                .len(),
+            1,
+            "{}",
+            capture.text()
+        );
+    }
+
+    /// Matrix 9 (AD-23): after the auto-defer, the deferred original is
+    /// deleted, then the notice is an ephemeral follow-up.
+    #[tokio::test]
+    async fn notice_after_auto_defer_deletes_original_then_follows_up() {
+        let go = Arc::new(Notify::new());
+        let handler = {
+            let go = Arc::clone(&go);
+            CommandHandler::__new_plain(
+                "m::slow",
+                &["slow"],
+                "d",
+                move |_: CommandCtx, _: CommandResponder| {
+                    let go = Arc::clone(&go);
+                    async move {
+                        go.notified().await;
+                        Err::<V2Message, _>(io("late boom"))
+                    }
+                },
+            )
+        };
+        let p = Arc::new(
+            Pipeline::start_with(Module::new("m").add(handler), |b| {
+                b.ack_deadline(Duration::from_millis(20));
+            })
+            .await,
+        );
+        let run = tokio::spawn({
+            let p = Arc::clone(&p);
+            async move { p.run(run_slash("slow")).await }
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while p.requests().is_empty() {
+            assert!(std::time::Instant::now() < deadline, "no auto-defer");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        go.notify_one();
+        tokio::time::timeout(Duration::from_secs(10), run)
+            .await
+            .unwrap()
+            .unwrap();
+        let requests = p.requests();
+        assert_eq!(requests.len(), 3, "{requests:?}");
+        assert_eq!(
+            requests[0],
+            (Method::POST, CB.to_owned(), json!({ "type": 5 }))
+        );
+        assert_eq!(
+            (&requests[1].0, requests[1].1.as_str()),
+            (&Method::DELETE, ORIGINAL)
+        );
+        assert_eq!(requests[2].1, FOLLOWUP);
+        assert_followup_notice(&requests[2], GENERIC);
+        assert_eq!(p.reports()[0].kind, "error:late boom");
+    }
+
+    /// Matrix 10, 12 and 14-16: explicit defer, after a reply, after a
+    /// modal-free reply cap, and an expired token.
+    #[tokio::test]
+    async fn notice_after_explicit_acks() {
+        let module = Module::new("m")
+            .add(CommandHandler::__new_plain(
+                "m::deferred",
+                &["deferred"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let _ = r.defer(Ephemerality::Public).await?.done();
+                    Err::<V2Message, _>(io("x"))
+                },
+            ))
+            .add(CommandHandler::__new_plain(
+                "m::replied",
+                &["replied"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let _ = r.reply(v2("a")).await?.done();
+                    Err::<V2Message, _>(io("x"))
+                },
+            ));
+        let p = Pipeline::start(module).await;
+        p.run(run_slash("deferred")).await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 3, "{requests:?}");
+        assert_eq!(requests[0].2, json!({ "type": 5 }));
+        assert_eq!(
+            (&requests[1].0, requests[1].1.as_str()),
+            (&Method::DELETE, ORIGINAL)
+        );
+        assert_followup_notice(&requests[2], GENERIC);
+
+        p.fx.server.log.lock().unwrap().clear();
+        p.run(run_slash("replied")).await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert_eq!(requests[0].1, CB_REPLY);
+        assert_followup_notice(&requests[1], GENERIC);
+        assert_eq!(p.reports().len(), 2);
+    }
+
+    /// Matrix 11 and 17: a failed delete still sends the follow-up; a
+    /// rejected notice is a warn, never retried, never a sink report.
+    #[tokio::test]
+    async fn notice_failures_are_warnings() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let base = discord();
+        let answer: Answer = Arc::new(move |seen: &crate::edge::test_support::Seen| {
+            if seen.method == Method::DELETE {
+                (
+                    hyper::StatusCode::NOT_FOUND,
+                    bytes::Bytes::from_static(br#"{"code":10008,"message":"Unknown"}"#),
+                )
+            } else if seen.path.ends_with("/callback")
+                && seen.query.is_none()
+                && seen.body.ends_with(br#""type":4}"#)
+            {
+                // Matrix 17: the notice callback is rejected.
+                let body = br#"{"code":50035,"message":"Invalid Form Body"}"#;
+                (
+                    hyper::StatusCode::BAD_REQUEST,
+                    bytes::Bytes::from_static(body),
+                )
+            } else {
+                base(seen)
+            }
+        });
+        let module = Module::new("m")
+            .add(failing("m::fail", &["fail"], || io("boom")))
+            .add(CommandHandler::__new_plain(
+                "m::deferred",
+                &["deferred"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let _ = r.defer(Ephemerality::Ephemeral).await?.done();
+                    Err::<V2Message, _>(io("x"))
+                },
+            ));
+        let p = Pipeline::start_answering(module, answer, |_| {}).await;
+        p.run(run_slash("fail")).await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 1, "no retry: {requests:?}");
+        let warns = capture.lines_with(&[
+            "WARN",
+            "noctis::dispatch",
+            "could not send the error notice",
+        ]);
+        assert_eq!(warns.len(), 1, "{}", capture.text());
+        assert!(warns[0].contains("handler=\"m::fail\""), "{}", warns[0]);
+
+        p.fx.server.log.lock().unwrap().clear();
+        p.run(run_slash("deferred")).await;
+        let routes: Vec<_> = p.requests().into_iter().map(|(m, p, _)| (m, p)).collect();
+        assert_eq!(
+            routes,
+            [
+                (Method::POST, CB.to_owned()),
+                (Method::DELETE, ORIGINAL.to_owned()),
+                (Method::POST, FOLLOWUP.to_owned()),
+            ]
+        );
+        assert_eq!(
+            capture
+                .lines_with(&["WARN", "could not delete the deferred original"])
+                .len(),
+            1
+        );
+        let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
+        assert_eq!(kinds, ["error:boom", "error:x"]);
+    }
+
+    /// Matrix 15: the follow-up cap holds; Matrix 16: an expired token
+    /// sends nothing. Both are a notice warn plus the handler's report.
+    #[tokio::test]
+    async fn notice_respects_cap_and_expiry() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let module = Module::new("m")
+            .add(CommandHandler::__new_plain(
+                "m::many",
+                &["many"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let acked = r.reply(v2("a")).await?;
+                    for _ in 0..5 {
+                        let _ = acked.followup(v2("f"), Visibility::Public).await?;
+                    }
+                    let _ = acked.done();
+                    Err::<V2Message, _>(io("after five"))
+                },
+            ))
+            .add(CommandHandler::__new_plain(
+                "m::old",
+                &["old"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let _ = r.defer(Ephemerality::Public).await?.done();
+                    skip(Duration::from_mins(16)).await;
+                    Err::<V2Message, _>(io("expired"))
+                },
+            ));
+        let p = Pipeline::start(module).await;
+        p.run(inbound(&interaction(
+            slash("many", json!([])),
+            json!({ "authorizing_integration_owners": { "1": "3" } }),
+        )))
+        .await;
+        assert_eq!(p.requests().len(), 6, "{:?}", p.requests());
+
+        p.fx.server.log.lock().unwrap().clear();
+        p.run(run_slash("old")).await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(requests[0].2, json!({ "type": 5 }));
+
+        let warns = capture.lines_with(&["WARN", "could not send the error notice"]);
+        assert_eq!(warns.len(), 2, "{}", capture.text());
+        assert!(
+            warns[0].contains("FollowupCap") || warns[0].contains("follow-up"),
+            "{}",
+            warns[0]
+        );
+        let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
+        assert_eq!(kinds, ["error:after five", "error:expired"]);
+    }
+
+    /// Matrix 18: no notice for a cancellation.
+    #[tokio::test]
+    async fn no_notice_for_a_cancellation() {
+        let p = Pipeline::start(Module::new("m").add(failing("m::f", &["f"], || io("x")))).await;
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        p.run_with(run_slash("f"), cancel).await;
+        assert!(p.requests().is_empty());
+        assert_eq!(p.reports()[0].kind, "cancelled");
+    }
+
+    /// Matrix 19 and 20: the Dispatcher's notice is a public reply, or a
+    /// public channel message after a reply.
+    #[tokio::test]
+    async fn dispatcher_notices_are_public() {
+        let module = Module::new("m")
+            .add(failing("m::fail", &["fail"], || io("boom")))
+            .add(CommandHandler::__new_plain(
+                "m::replied",
+                &["replied"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let _ = r.reply(v2("a")).await?.done();
+                    Err::<V2Message, _>(io("x"))
+                },
+            ));
+        let p = Pipeline::start(module).await;
+        let invocation = |path| {
+            CommandInvocation::new(CommandInput::new(path), Id::new(5), Id::new(6), Id::new(3))
+                .locale("tr")
+        };
+        p.dispatcher()
+            .run_command(invocation("fail"))
+            .await
+            .unwrap();
+        p.dispatcher()
+            .run_command(invocation("replied"))
+            .await
+            .unwrap();
+        let requests = p.requests();
+        assert_eq!(requests.len(), 3, "{requests:?}");
+        for request in &requests {
+            assert_eq!(
+                (&request.0, request.1.as_str()),
+                (&Method::POST, "/api/v10/channels/5/messages")
+            );
+            assert_eq!(request.2["flags"], 32768);
+        }
+        assert_eq!(
+            requests[0].2["message_reference"],
+            json!({ "message_id": "6", "fail_if_not_exists": false })
+        );
+        assert_eq!(requests[0].2["components"][0]["content"], GENERIC);
+        assert_eq!(requests[2].2["components"][0]["content"], GENERIC);
+        assert_eq!(p.reports().len(), 2);
+    }
+
+    /// Matrix 21 (LOC-04): every locale renders the en-US text today.
+    #[tokio::test]
+    async fn locales_fall_back_to_en_us() {
+        let p = Pipeline::start(Module::new("m").add(failing("m::f", &["f"], || io("x")))).await;
+        for extra in [
+            json!({ "locale": "tr", "guild_locale": "de", "guild_id": "4" }),
+            json!({ "locale": "xx-YY" }),
+            json!({}),
+        ] {
+            p.run(inbound(&interaction(slash("f", json!([])), extra)))
+                .await;
+        }
+        let requests = p.requests();
+        assert_eq!(requests.len(), 3, "{requests:?}");
+        for request in &requests {
+            assert_notice(request, GENERIC);
+        }
+    }
+
+    /// Matrix 22 and 23: the full error is logged exactly once, with a
+    /// custom sink and with the default one.
+    #[tokio::test]
+    async fn the_error_is_logged_once() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let custom =
+            Pipeline::start(Module::new("m").add(failing("m::f", &["f"], || io("boom")))).await;
+        custom.run(run_slash("f")).await;
+        assert_eq!(custom.reports().len(), 1);
+        let lines = capture.lines_with(&["ERROR", "noctis::command", "command handler failed"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(
+            lines[0].contains("noctis.interaction{") && lines[0].contains("boom"),
+            "{}",
+            lines[0]
+        );
+
+        let default =
+            Pipeline::start_default_sink(
+                Module::new("m").add(failing("m::g", &["g"], || io("bang"))),
+            )
+            .await;
+        default.run(run_slash("g")).await;
+        let lines = capture.lines_with(&["ERROR", "noctis::command", "bang"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
     }
 }

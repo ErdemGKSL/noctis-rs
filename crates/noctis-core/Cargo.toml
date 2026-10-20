@@ -18,6 +18,7 @@ hyper = { workspace = true, features = ["client", "server", "http1", "http2"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 metrics.workspace = true
 noctis-gateway.workspace = true
+noctis-i18n.workspace = true
 noctis-ports.workspace = true
 noctis-rules.workspace = true
 noctis-ui.workspace = true

@@ -168,7 +168,10 @@ Module::new("profile").add(award_xp()).add(audit_join()).add(on_reaction());
 - **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
   'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the
   inner `&(dyn Error + Send + Sync)` to downcast. `Display`/`Debug` print the inner
-  error. Localized user-facing errors (`HandlerError::user(key)`) [planned].
+  error. Localized user-facing errors: `HandlerError::user(key)` (a user condition:
+  ephemeral notice + `debug` log, never an Error Sink), `.with_message(key)` (the notice
+  uses `key`, the error still reaches the sink) and `user_message() ->
+  Option<MessageKey>`; routing in `responder.md` §5.
 
 ### Payload types and their derived intents
 
