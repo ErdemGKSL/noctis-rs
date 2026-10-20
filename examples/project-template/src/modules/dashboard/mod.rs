@@ -7,7 +7,7 @@
 //! Routes, `view.rs` the render function (the single source of truth for the message),
 //! `handlers.rs` the Command and component handlers. All UI state (tab, page) is a
 //! typed Payload field of this module's own components; nothing is stored per message.
-//! [planned: Story 6.10] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
+//! [planned: Story 6.11] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
 
 mod handlers;
 pub mod view;

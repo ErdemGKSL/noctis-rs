@@ -10,7 +10,7 @@ Rules: CID-01..07, FR-15..19, FR-58..60. Never build a `custom_id` yourself.
 
 ## 1. Declaring a component (a Route)
 
-One struct = its id + its typed data + its handler [planned: Story 6.10]. The derive
+One struct = its id + its typed data + its handler [planned: Story 6.11]. The derive
 names the component kind; a Route is any such struct.
 
 ```rust
@@ -89,7 +89,7 @@ separated by commas, and a trailing comma is fine.
 
 Codec arguments (they change the `custom_id` and count toward the length proof):
 `by_ref`, `overflow = spill`, `signed`, `schema = n`, and (this release only) `select`:
-from Story 6.10 every select kind carries the nonce and the bare `select` is withdrawn.
+from Story 6.11 every select kind carries the nonce and the bare `select` is withdrawn.
 These work today.
 (`view` is **withdrawn**: never write it. It still parses in this release and is
 removed by Story 6.10, after which it is a CID-03 error. Tabs, pages and steps are
@@ -104,7 +104,7 @@ accepted from the release that implements it. Anything else is a compile error.
 | Argument | Meaning |
 | --- | --- |
 | `"id"` | Route id (required, first) |
-| `select` (this release) | used on select menus: adds a 2-char per-render nonce so clients show the server's defaults after a re-render (FR-25); implied by every select kind from Story 6.10 |
+| `select` (this release) | used on select menus: adds a 2-char per-render nonce so clients show the server's defaults after a re-render (FR-25); implied by every select kind from Story 6.11 |
 | `response = update \| ephemeral \| public` [planned, Story 7.2] | how the click is answered: edit in place (default; auto-defer type 6), or a new ephemeral/public message (sub-panels; auto-defer type 5) |
 | `auto_defer = true \| false` [planned, Story 7.2] | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
@@ -493,7 +493,7 @@ impl SetupState {
 }
 ```
 
-## 9. Building components: `.build()` [planned: Story 6.10, defaults Story 9.3]
+## 9. Building components: `.build()` [planned: Story 6.11, defaults Story 9.3]
 
 ```rust
 ToggleModule { guild, module, enable }.build()      // the declared kind, from `defaults(..)`

@@ -6,7 +6,7 @@
 //! module's Routes, so there is no listener, collector or per-message state (UD-7).
 //! `view.rs` renders a step from that state; `handlers.rs` decodes a click, checks it,
 //! and redraws with `ctx.update(render_setup(..))`.
-//! [planned: Story 6.10] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
+//! [planned: Story 6.11] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
 
 mod handlers;
 pub mod view;

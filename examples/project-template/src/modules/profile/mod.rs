@@ -7,7 +7,7 @@
 //! Layout: `mod.rs` (Module, component structs, the modal form, storage keys),
 //! `view.rs` (the card Template and `render_profile`), `handlers.rs` (Command structs
 //! and every `#[handler]` impl), `events.rs` (gateway events; tescord's "trigger" file).
-//! [planned: Story 6.10] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
+//! [planned: Story 6.11] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
 
 mod events;
 mod handlers;

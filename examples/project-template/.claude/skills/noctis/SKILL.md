@@ -45,7 +45,7 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
   derive names the kind, the struct holds the id and the typed data, and the handler is
   always a method on it, `impl X { #[handler] async fn handle(self, ctx: …) }`
   (`#[handler]` takes no arguments; there are no free-function handlers). **[planned:
-  Story 6.10]**: this release still uses free functions; see §8 for today's names.
+  Story 6.11]**: this release still uses free functions; see §8 for today's names.
 - **Module** groups features (tescord's Pack) and registers each struct by type:
   `Module::new("profile").add::<Profile>().add::<EditBio>()`.
 - **Command** = a `#[derive(SlashCommand)]` struct whose fields are its options (a unit
@@ -448,10 +448,12 @@ Read only what the task touches.
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |
 
-## 8. Shipped names until Story 6.10
+## 8. Shipped names until Stories 6.10 and 6.11
 
 This skill teaches the converged API. The current release still ships the older
-authoring surface, which Story 6.10 renames without aliases. Until then write:
+authoring surface without aliases: Story 6.10 renames the Responder methods and
+replaces `opens_modal` and the bare `ephemeral` flag (the last three rows), and
+Story 6.11 converts the rest to one struct per interaction. Until then write:
 
 | Converged (taught above) | This release |
 | --- | --- |

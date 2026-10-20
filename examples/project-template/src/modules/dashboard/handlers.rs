@@ -1,7 +1,7 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
 
 //! Every handler has the same shape, `impl X { #[handler] async fn handle(self, ctx, ..) }`
-//! ([planned: Story 6.10]): `self` is the decoded Payload,
+//! ([planned: Story 6.11]): `self` is the decoded Payload,
 //! validate and authorize (Route Guards run before the handler), write to storage, then
 //! `ctx.update(render_dashboard(..))` with freshly loaded data.
 

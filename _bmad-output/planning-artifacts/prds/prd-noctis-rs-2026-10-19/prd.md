@@ -692,6 +692,10 @@ Responder, which picks the right response type, flags and deferral.
   defer) and `ctx.update(msg)` edits the message the component lives on, applying
   the FR-21 deferred variant when the deadline has passed. The Components V2 flag
   and the declared ephemerality are applied without author code.
+- On the submit of a modal opened from a slash command (no source message),
+  `ctx.update(msg)` returns `UpdateUnavailable` and sends no request, like the
+  typestate `update`; it never falls back to sending a new message. The author
+  answers such a submit with `ctx.respond(msg)`.
 - `ctx.reply_text(..)` sends a one-line notice (ephemeral by default) for
   confirmations and errors, without building a Container.
 - A Command declared with no options whose handler calls `ctx.respond(render(..))`

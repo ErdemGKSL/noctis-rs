@@ -31,7 +31,7 @@ builder.module(profile::module()).module(ops::module());
 
 Implemented: `Module::new(id)`, `.add(descriptor)`, `.module(child)`, `.base(name,
 BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
-`AppBuilder::module(Module)`. [planned: Story 6.10] `.add::<X>()` registers a struct by
+`AppBuilder::module(Module)`. [planned: Story 6.11] `.add::<X>()` registers a struct by
 type and replaces `.add(x())`, which takes the descriptor function a free-function macro
 generates in this release.
 
@@ -83,7 +83,7 @@ answer a localized ephemeral "disabled here" (`noctis.disabled_here`). Hook:
 
 ## 4. Gateway Event Handlers (FR-6)
 
-An event handler is a unit struct, like every handler [planned: Story 6.10; this release:
+An event handler is a unit struct, like every handler [planned: Story 6.11; this release:
 a free `#[event] async fn award_xp(ctx: EventCtx, msg: MessageCreate)` added with
 `.add(award_xp())`, and the signature rules and errors below are that release's]:
 

@@ -2,7 +2,7 @@
 
 //! The command struct and every `#[handler]` impl: `self` is the decoded Payload (done
 //! by the derive), then validate, write, `ctx.update(render_setup(..))`.
-//! [planned: Story 6.10] struct handlers; the shipped release uses free functions.
+//! [planned: Story 6.11] struct handlers; the shipped release uses free functions.
 
 use noctis::prelude::*;
 

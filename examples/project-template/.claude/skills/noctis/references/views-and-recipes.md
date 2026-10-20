@@ -52,7 +52,7 @@ decode the Payload  →  validate / authorize  →  write to storage  →  ctx.u
 | Call [planned, Story 8.1] | Sends | Use for |
 | --- | --- | --- |
 | `ctx.respond(msg).await` | a **new** message: the initial response (declared ephemerality), the edit of the deferred original after an auto-defer, or a follow-up once answered | slash Commands, context menus, a component that opens a separate panel |
-| `ctx.update(msg).await` | an **edit** of the message the component lives on (type 7, or `edit_original` after the type-6 auto-defer) | every button, select and modal submit that changes the screen (`ComponentCtx`, `ModalSubmitCtx` only) |
+| `ctx.update(msg).await` | an **edit** of the message the component lives on (type 7, or `edit_reply` after the type-6 auto-defer; on a slash-opened modal's submit it returns `UpdateUnavailable` and sends nothing, so use `ctx.respond` there) | every button, select and modal submit that changes the screen (`ComponentCtx`, `ModalSubmitCtx` only) |
 | `ctx.reply_text(text).await` | a one-line V2 notice, **ephemeral** by default (`.public()` opts out); a follow-up once answered | "Pick a channel first.", "Saved.", "Not found." (`String`, `&'static str` or a `MessageKey`) |
 
 Each returns `HandlerResult<Responded>`; return it from the handler. Noctis picks the
@@ -510,7 +510,7 @@ impl TicketSend {
 
 `redraw` is called with a `&impl Ctx`; `update` is available on component and modal
 contexts. Register every struct on the Module (`.add::<TicketSetup>().add::<PickSystem>()`
-…) and every string in `locales/en-US.yaml`. [planned: Story 6.10] for the struct form;
+…) and every string in `locales/en-US.yaml`. [planned: Story 6.11] for the struct form;
 this release writes the same recipe with free functions, `#[derive(Route)]` and
 `.button()`/`.string_select(..)` (SKILL.md §8).
 

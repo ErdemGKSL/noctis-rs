@@ -31,8 +31,10 @@ Fix the other document in the same change.
 - **Recipes, not features.** Tabs, pagination, step flows and settings screens are
   recipes in the Usage Skill (`views-and-recipes.md`, "Best practices (schwi-style)").
   They follow the maintainer's schwi-v2 bot.
-- **Story 6.10** is the last story of Epic 6. It removes the widget code that Epics 1–6
-  already shipped. Epic 7 onwards assumes the simplified codec.
+- **Stories 6.10 and 6.11** close Epic 6. Story 6.10 removes the widget code that
+  Epics 1–6 already shipped and converges the Command Responder (§2); Story 6.11
+  converts the shipped authoring surface to one struct per interaction (§7). Epic 7
+  onwards assumes both.
 
 ## 2. Interaction responses follow discord.js exactly
 
@@ -41,8 +43,8 @@ Each method is a distinct flow:
 
 | Method | Callback / route | Effect |
 | --- | --- | --- |
-| `reply(msg)` | type 4 | new message; ephemerality is fixed here |
-| `defer_reply(eph)` | type 5 | new "thinking…" message |
+| `reply(msg)` / `reply_as(msg, eph)` | type 4 | new message; ephemerality is fixed here |
+| `defer_reply()` / `defer_reply_as(eph)` | type 5 | new "thinking…" message |
 | `update(msg)` | type 7 | edits the clicked component's message in one request |
 | `defer_update()` | type 6 | no visible change |
 | `show_modal(m)` | type 9 | opens a modal |
@@ -98,9 +100,10 @@ Each method is a distinct flow:
   - slash-opened modal submits can only be `public` or `ephemeral`. Which interaction
     opened a modal is not known at compile time, so `response = update` on a modal
     submit is legal; when the submit has no source message, the auto-defer falls back
-    to type 5 public and an explicit `update`/`defer_update` returns
-    `UpdateUnavailable` without a request (the ergonomic `ctx.update(msg)` sends a new
-    public message there instead).
+    to type 5 public and `update`/`defer_update` return `UpdateUnavailable` without a
+    request. The ergonomic `ctx.update(msg)` behaves the same: it returns
+    `UpdateUnavailable`, sends nothing and never falls back to a new message; the
+    author answers such a submit with `ctx.respond(msg)`.
   - `response` is independent of `auto_defer`: with `auto_defer = false` it still sets
     the default ephemerality of `reply(msg)` and `defer_reply()`; `reply_as(msg, e)`
     and `defer_reply_as(e)` override it per call. Modal submits declare it on their
@@ -109,9 +112,9 @@ Each method is a distinct flow:
     response = ephemeral, auto_defer = true, defaults(..))] struct Ban { .. }`,
     `#[button("profile.bio", auto_defer = false, defaults(..))] struct OpenBioModal {
     .. }` (the `#[handler]` method itself takes no arguments, §7).
-  - Story 6.10 converges the shipped `#[command(.., ephemeral)]` flag and
-    `defer(Ephemerality)` onto `response = ephemeral` and `defer_reply()`/
-    `defer_reply_as(e)`.
+  - Story 6.10 converges the shipped bare `ephemeral` flag of `#[command]` and the
+    shipped `defer(Ephemerality)` method onto `response = ephemeral` and
+    `defer_reply()`/`defer_reply_as(e)`.
 - **Updates never change ephemerality.**
   - A legacy message converts to V2 by setting the flag and sending `content: null`
     and `embeds: []`.
@@ -259,7 +262,7 @@ there is one style only.
   with its values (`None` = empty); the derive also generates `X::blank(<payload
   fields>)`, which builds with empty inputs for forms whose required inputs have no
   empty value. The shipped `#[modal(route = R, title = "…")]`
-  form and its separate submit Route converge on this (Story 6.10).
+  form and its separate submit Route converge on this (Story 6.11).
 - **`defaults(..)` is mandatory.** A missing block, or a missing required field for
   the kind (Button: `style` and `label` or `emoji`; selects: `placeholder`, plus
   optional `channel_types` on channel selects and `options = ChoicesEnum` on string
@@ -284,7 +287,7 @@ there is one style only.
   `module.add::<Ban>()`), replacing the shipped `Module::add(descriptor)`.
 - **CID-04 stays**: no `#[handler]` impl, no `.build()`; one id, one handler; the
   `custom_id` length proof (CID-01) is unchanged.
-- **Conversion.** Story 6.10 converts the shipped code: free-function `#[command]`,
+- **Conversion.** Story 6.11 converts the shipped code: free-function `#[command]`,
   `#[user_command]`, `#[message_command]` and `#[event]` handlers, `#[derive(Options)]`,
   `#[derive(Route)]`/`#[route]` and the `.button()`/`.string_select(..)`/… constructors,
   the `#[modal(route = ..)]` form, and `Module::add(descriptor)`.

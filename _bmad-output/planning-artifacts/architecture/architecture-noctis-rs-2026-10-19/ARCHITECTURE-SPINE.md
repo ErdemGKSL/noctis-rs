@@ -294,13 +294,13 @@ list in CI.
     `ChannelSelectMenu`/`channel_select`, and `#[derive(Modal)]` with
     `#[modal("id", …)]` (the Payload is the fields without an input attribute). Each
     implements `Route` and `Payload` with the length proof below. (Shipped as
-    `#[derive(Route)]` + `#[route("id", …)]`; Story 6.10 converts it, and the bare
+    `#[derive(Route)]` + `#[route("id", …)]`; Story 6.11 converts it, and the bare
     derive leaves the public authoring surface.) The attribute takes the id, then
     three kinds of arguments, and rejects anything else:
     - **Codec arguments** change the `custom_id` shape and length (Story 2.5):
       `by_ref` or `overflow = spill`, `schema = n` (1..=61) and `signed`. Every
       select kind carries the `N` nonce (the bare `select` argument is withdrawn by
-      Story 6.10).
+      Story 6.11).
     - **Runtime arguments** don't change the encoding. The derive records them in an
       associated `RouteRuntime` const (and a defer-mode associated type, AD-11) that
       core reads: `response = update | ephemeral | public` and `auto_defer = true |
@@ -487,7 +487,8 @@ list in CI.
     context offers an ergonomic layer over the typestate (FR-61):
     `ctx.respond(msg)` (new message, or follow-up after a defer), `ctx.update(msg)`
     (edit the component's message; `Component`/`ModalSubmit` only; on a submit of a
-    slash-opened modal, which has no message, it sends a new public message) and
+    slash-opened modal, which has no message, it returns `UpdateUnavailable` without a
+    request and never falls back to a new message: use `ctx.respond`) and
     `ctx.reply_text(text)` (a one-line notice, ephemeral by default). Each picks the
     callback type, defer variant and flags from the declared ephemerality and the
     runtime state machine, so the author never selects a response type. The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
@@ -775,7 +776,7 @@ list in CI.
     `X::blank(<payload fields>)` builds one with empty inputs. Link and Premium
     buttons have no Route and stay plain builders (`LinkButton::new(url)`). (Amended
     2026-10-20: the per-kind `.button()`/`.string_select(..)`/… constructors are
-    folded into `.build()`; Story 6.10 converts the shipped ones.)
+    folded into `.build()`; Story 6.11 converts the shipped ones.)
   - `.build()` requires `R: Handled`, which only the `#[handler]` method macro
     implements (compile-time half of FR-58, CID-04). `noctis-core` binds handlers by `R::ID`
     in their own descriptor; `App::build` fails when a Route referenced by a mounted

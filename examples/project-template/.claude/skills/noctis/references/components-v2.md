@@ -123,7 +123,7 @@ let container = items.into_iter().fold(Container::new(), Container::push);
 ### Components from Routes: `.build()` (and today's `RouteComponents`)
 
 Buttons and selects that send an interaction are built only from a Route value (AD-19);
-there is no string `custom_id` constructor. **Converged form [planned: Story 6.10]:** the
+there is no string `custom_id` constructor. **Converged form [planned: Story 6.11]:** the
 struct's derive names its kind (`#[derive(Button)]`, `#[derive(StringSelectMenu)]`,
 `#[derive(UserSelectMenu)]`, `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]`,
 `#[derive(ChannelSelectMenu)]`) with mandatory `defaults(..)`, and `X { .. }.build()`
@@ -139,7 +139,7 @@ every `#[derive(Route)]` struct.
   (`note: the #[handler] macro implements Handled; add a handler for X to a mounted
   Module`). Never implement that marker by hand.
 - Selects need a Route declared `select` (this release: `#[route("id", select)]`; from
-  Story 6.10 every select kind carries it; it implements
+  Story 6.11 every select kind carries it; it implements
   `noctis::codec::SelectRoute`): otherwise ``route `X` is not declared `select` ``.
 - A plain Route (no `select` or `signed`) is encoded when you build the
   component. Ids that need a select nonce, a signature or a Ref are

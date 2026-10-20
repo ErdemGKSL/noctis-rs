@@ -55,10 +55,12 @@ recorded here.
   state, no view envelope in `custom_id`, no automatic re-render and no automatic
   pagination (PRD FR-26 to FR-28 withdrawn, FR-25/FR-61/FR-62 revised; AD-20
   withdrawn, AD-5/AD-6/AD-11/AD-27 amended). Views are plain author-written render
-  functions, as in the maintainer's TypeScript bot. Story 6.10 (appended as the last
-  story of Epic 6) removes the already-shipped envelope code; Epic 8 was rewritten as
-  "Views as plain functions, Responder ergonomics and the testing kit" (5 stories
-  instead of 7), so the plan now has 95 stories. Later stories assume the simplified
+  functions, as in the maintainer's TypeScript bot. Story 6.10 (appended to the
+  end of Epic 6) removes the already-shipped envelope code and converges the Command
+  Responder; Story 6.11 (split from it on 2026-10-20) converts the shipped authoring
+  surface to one struct per interaction. Epic 8 was rewritten as "Views as plain
+  functions, Responder ergonomics and the testing kit" (5 stories instead of 7). With
+  later additions and the 6.10/6.11 split the plan now has 101 stories. Later stories assume the simplified
   codec.
 
 ### Validation summary (step 4)
@@ -79,7 +81,9 @@ recorded here.
   cross-epic mentions of later stories (1.7 → 2.2, 1.8 → 4.1, 2.5 → 7.5/7.7/7.8,
   2.6 → 7.1, 4.3 → 9.1, 5.2 → 12.4, 5.6 → 12.5/13.1, 5.8 → 13.5, 5.9 → 6.5/6.6/12.4, 6.1 → 11.4, 6.5 → 15.4,
   6.9 → 12.3/13.2, 12.6 → 14.3)
-  are "later extended by" notes, not prerequisites. Each epic uses only
+  are "later extended by" notes, not prerequisites. Story 6.11 depends only on
+  Story 6.10 and earlier stories; Stories 7.1, 7.2, 7.8, 8.1 and 8.2 build on 6.11's
+  kind derives and handler methods. Each epic uses only
   earlier epics' outputs. The readiness fixes (`implementation-readiness.md`,
   Resolution) removed three hidden ones: basic Module nesting moved from Story 13.1
   into Story 5.6 (Story 7.6 needs it), Epic 4 tests implement `Handled` through the
@@ -201,7 +205,7 @@ Priority tier from PRD §8 in brackets.
 - FR-23 [P0]: Typed V2 builders — Container, Section, Text Display, Thumbnail, Media Gallery, File, Separator, Action Row, Button, all selects; illegal placement doesn't compile (FR-78); `IS_COMPONENTS_V2` on every V2 send/edit, `content`/`embeds`/`poll`/stickers/`shared_client_theme` impossible; editing legacy → View clears legacy fields in one request, V2 → legacy is a typed error; minimal legacy plain-text send path.
 - FR-24 [P0]: Limit validation — 40 components counted at every depth; 4000-char Text Display budget; per-field limits (labels, placeholders, option counts, media items, `attachment://` refs, Section shape, gallery counts, link `url` length, premium button rules, accent color, select `default_values`); unique `custom_id` and numeric `id`; error names path, limit and actual value; lenient mode truncates with "…"; all numeric Limits in one configurable value; strict-mode missing alt text is a warning in the cost report.
 - FR-25 [P0]: Views (revised 2026-10-20) — a View is a plain author-written render function (`render_x(state) -> V2Message`) used for the first response and every update; no View trait, registry, widget state or automatic re-render; page/tab/step/selection ids are ordinary typed Payload fields of the module's Routes; identical render for identical state (except per-render select ids); selects show the declared defaults after update; no parsed mentions by default (opt-in per message) plus escape helpers; message Limit cost available without sending; no public API mentions a view envelope, widget action or view state version.
-- FR-61 [P0]: View responses and Responder ergonomics (revised 2026-10-20) — `ctx.respond(msg)` sends a new message (initial response, deferred-original edit or follow-up), `ctx.update(msg)` edits the component's message in place (FR-21 deferred variants when late), `ctx.reply_text(..)` sends a one-line notice (ephemeral by default); V2 flag and declared ephemerality applied without author code; an option-less Command calling `ctx.respond(render(..))` compiles, publishes with empty options and sends the message; the Project Template has no manual response-type selection.
+- FR-61 [P0]: View responses and Responder ergonomics (revised 2026-10-20) — `ctx.respond(msg)` sends a new message (initial response, deferred-original edit or follow-up), `ctx.update(msg)` edits the component's message in place (FR-21 deferred variants when late; on a submit of a slash-opened modal, which has no source message, it returns `UpdateUnavailable` without a request and never sends a new message), `ctx.reply_text(..)` sends a one-line notice (ephemeral by default); V2 flag and declared ephemerality applied without author code; an option-less Command calling `ctx.respond(render(..))` compiles, publishes with empty options and sends the message; the Project Template has no manual response-type selection.
 - FR-62 [P0]: Limit budget helpers (revised 2026-10-20; automatic pagination withdrawn) — every component and message reports its cost (components at every depth, Text Display characters) without sending; a budget helper reports how many more items of a given shape fit beside a partly built message, so render functions size page slices themselves; an over-Limit message is the FR-24 error and is never paginated automatically.
 - FR-26: Navbar — **Withdrawn (2026-10-20).** Tabs are an author-written recipe (a tab `PayloadEnum` field, a `match` in the render function, a Route button row with the active tab disabled) taught by the Usage Skill (Story 8.5).
 - FR-27: Wizard — **Withdrawn (2026-10-20).** Step flows are an author-written recipe (a `step` Payload field, "Step n of m: Title" progress, back/next/cancel Route buttons, per-step validation in the handler) taught by the Usage Skill (Story 8.5).
@@ -355,7 +359,7 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
   (`F route ":" [S] [N] body [T]`; the `E` view envelope was withdrawn on
   2026-10-20 and Story 6.10 removes it), `pub const` layout constants checked against
   the catalog, total decoding, `Field::MAX_LEN` widths, the component kind derives
-  (`Button`, the select derives, `Modal`; `#[derive(Route)]` until Story 6.10) with
+  (`Button`, the select derives, `Modal`; `#[derive(Route)]` until Story 6.11) with
   `assert_fits`, `EncodedId = Inline | RefSlot(PendingRef)`, two-phase Ref minting by
   the Responder, `R: Handled` `.build()` from mandatory `defaults(..)` (AD-20, widget state on the View
   Route, is withdrawn), integrity tag keyed by `NOCTIS_PAYLOAD_KEY` (32 bytes, rotation with one
@@ -499,7 +503,7 @@ is mapped.
 | FR-18 | P0 | E7 | Expired Handler, defaults and overrides |
 | FR-19 | P0 | E2 + E7 | Total decoding and integrity tag (E2); pipeline handling and Route Guards (E7) |
 | FR-20 | P0 | E7 | Middleware and typed Extensions |
-| FR-21 | P0 | E6 + E7 (+E5) | Responder typestate and auto-defer for Commands (E6; per-handler `auto_defer` and declared `response` converged in Story 6.10); components and modals (E7, `auto_defer`/`response` on the kind attribute); warm, hedged, deadline-bounded callback transport (E5, Story 5.9) |
+| FR-21 | P0 | E6 + E7 (+E5) | Responder typestate and auto-defer for Commands (E6; per-handler `auto_defer` and declared `response` converged in Story 6.10, moved onto the command structs in Story 6.11); components and modals (E7, `auto_defer`/`response` on the kind attribute); warm, hedged, deadline-bounded callback transport (E5, Story 5.9) |
 | FR-22 | P0 | E5 + E6 | Error Sinks by origin (E5); user-facing localized errors and panics as responses (E6) |
 | FR-23 | P0 | E4 | Typed V2 builders, flags, legacy path |
 | FR-24 | P0 | E4 | Runtime Limit validator, strict/lenient, configurable `Limits` |
@@ -537,7 +541,7 @@ is mapped.
 | FR-56 | P0 | E6 | Unique Command Paths and context-menu names |
 | FR-57 | P0 | E6 | Explicit base/group metadata, deterministic fallback |
 | FR-58 | P0 | E4 + E7 | `R: Handled` component constructors (E4); handler macro and App-build check (E7) |
-| FR-59 | P1 | E9 (+E6 Story 6.10) | Route component defaults and per-render overrides (mandatory `defaults(..)` on the kind derives and `.build()`, Story 6.10; overrides, Story 9.3) |
+| FR-59 | P1 | E9 (+E6 Story 6.11) | Route component defaults and per-render overrides (mandatory `defaults(..)` on the kind derives and `.build()`, Story 6.11; overrides, Story 9.3) |
 | FR-60 | P0 | E2 + E7 | Schema version and Stale decoding (E2); stale routing (E7) |
 | FR-61 | P0 | E6 + E8 | Returned message as the Command response (E6, Story 6.5); `ctx.respond`/`ctx.update`/`ctx.reply_text` (E8, Story 8.1) |
 | FR-62 | P0 | E4 + E8 | `cost` (E4, Story 4.3); budget helpers "how many items fit" (E8, Story 8.3) |
@@ -554,7 +558,7 @@ is mapped.
 | FR-73 | P1 | E13 | Boot Flags |
 | FR-74 | P1 | E14 | Launch documentation |
 | FR-75 | P0 | E1 + all | trybuild harness and catalog check (E1); each rule story adds its fixtures |
-| FR-76 | P0 | E2 (+E6 Story 6.10) | `derive(Route)` compile-time length proof (carried by the component kind derives from Story 6.10) |
+| FR-76 | P0 | E2 (+E6 Story 6.11) | `derive(Route)` compile-time length proof (carried by the component kind derives from Story 6.11) |
 | FR-77 | P0 | E6 | `#[command]` compile-time validation |
 | FR-78 | P0 | E4 | Static component tree (`components!`) and literal checks |
 | FR-79 | P0 | E1 | Rules catalog as code and CI cross-check (+E14 pending list empty) |
@@ -615,7 +619,8 @@ interactions.
 A bot author declares tescord-style Commands, Patterns, typed options, autocomplete and
 context menus, gets compile-time and App-build rule checks, responds safely through the
 Responder, and publishes only when something changed. The epic ends by removing the
-withdrawn widget envelope from the shipped crates (Story 6.10).
+withdrawn widget envelope and converging the Responder (Story 6.10), then converting
+the shipped authoring surface to one struct per interaction (Story 6.11).
 **FRs covered:** FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13, FR-21 (Commands), FR-22 (user errors), FR-25 (envelope removal), FR-56, FR-57, FR-77.
 
 ### Epic 7: Routed components, Refs and modals (P0, roadmap M1)
@@ -1819,7 +1824,7 @@ So that suggestions are easy to write and never break the interaction.
 
 **Acceptance Criteria:**
 
-**Given** `#[option(autocomplete)]` on a supported field of a command struct, whose handler is an `#[autocomplete(field)]` method in the struct's `impl` (no `self`; maintainer decisions §7; if this story lands before Story 6.10 on the shipped free-function shape `#[option(autocomplete = handler)]`, Story 6.10 converts it)
+**Given** `#[option(autocomplete)]` on a supported field of a command struct, whose handler is an `#[autocomplete(field)]` method in the struct's `impl` (no `self`; maintainer decisions §7; if this story lands before Story 6.11 on the shipped free-function shape `#[option(autocomplete = handler)]`, Story 6.11 converts it)
 **When** an autocomplete interaction arrives for an option of a 3-word Command Path
 **Then** the handler receives an `AutocompleteCtx` (which offers only `respond(choices) -> Responded`, no defer: INT-06) with the focused value and a `Partial<Options>` whose fields are all `Option<T>` (OPT-12), and returns the `Responded` from `respond`
 
@@ -1907,41 +1912,35 @@ So that iteration is fast and I never burn Discord's command-create quota.
 ### Story 6.10: Simplification: remove the widget envelope and view-state support from shipped crates
 
 As a bot author,
-I want the shipped crates to carry no trace of the withdrawn widget layer (the `view` Route shape, the `E` view envelope, widget actions and view state versions),
+I want the shipped crates to carry no trace of the withdrawn widget layer (the `view` Route shape, the `E` view envelope, widget actions and view state versions), and the shipped Command Responder to speak the discord.js flows with a per-handler `auto_defer` and a declared `response`,
 So that the public API, the `custom_id` layout and the docs match the plain-render-function model and nothing is built on a removed concept.
 
-**Implements:** correct course 2026-10-20 (FR-26 to FR-28 withdrawn, FR-25 revised; per-handler `auto_defer` and declared `response`, maintainer decisions §2; one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`, §7); AD-5, AD-6 (amended), AD-9, AD-11 (amended), AD-17, AD-19, AD-26, AD-20 (withdrawn), AD-23, AD-27; rules CID-01, CID-02, CID-03, CID-04, CID-07, CV2-08, CV2-09, MOD-01, INT-01, INT-03, INT-04, INT-05, INT-06, INT-08, INT-10.
+**Implements:** correct course 2026-10-20 (FR-26 to FR-28 withdrawn, FR-25 revised; per-handler `auto_defer` and declared `response`, maintainer decisions §2); FR-21 (Commands); AD-5, AD-6 (amended), AD-11 (amended), AD-19, AD-20 (withdrawn), AD-27; rules CID-01, CID-03, INT-01, INT-03, INT-04, INT-05, INT-06, INT-08, INT-10.
 
-This story only removes or converts code that Epics 1 to 6 already shipped; it depends on no later story, and Epics 7 onwards assume the simplified codec and the converged authoring surface (maintainer decisions §2 and §7: per-handler `auto_defer` and `response`, one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`). It is large; the implementer may split it into 6.10a (widget removal) and 6.10b (authoring convergence) in the sprint status.
+This story only removes, renames or converts code that Epics 1 to 6 already shipped and depends on no later story. It keeps the shipped free-function authoring surface (`#[command]` functions, `#[derive(Options)]`, `#[derive(Route)]`), which Story 6.11 converts next; Epics 7 onwards assume both stories.
 
 **Acceptance Criteria:**
 
-**Given** `noctis-codec`
+**Given** `noctis-codec`, `route_width` and `assert_fits`
 **When** the story is done
 **Then** `ViewEnvelope`, `EnvelopeError`, `VIEW_ENV_LEN`, `Flags::E`, `RouteShape::view()` and `has_view()`, `Parts::with_envelope`, the envelope accessors of `PendingRef` and the decoded id, `Section::Envelope` and `EncodeError::{MissingEnvelope, UnexpectedEnvelope}` no longer exist, and the layout is `F route ":" [S] [N] body [T]`
 **And** flag value 2 is reserved: an id with it set decodes as a `CodecError` (malformed), never as `Stale` and never a panic (unit test plus the existing decode property tests, whose generators no longer produce envelopes), and the zero-allocation decode guard (Story 2.6) still passes
+**And** `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + N + max(inline, by_ref)`, the by-ref worst case is 41 characters, and the width breakdown printed by the derive's test has no `E` term (the template's `noctis_route_width` doc lines are updated to match)
 
-**Given** `route_width` and `assert_fits`
-**When** a Route's width is computed
-**Then** `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + N + max(inline, by_ref)`, the by-ref worst case is 41 characters, and the width breakdown printed by the derive's test has no `E` term (the template's `noctis_route_width` doc lines are updated to match)
-
-**Given** `#[derive(Route)]`
-**When** `#[route("a", view)]` is written
-**Then** it fails with `[CID-03]` as an unknown argument whose help lists `by_ref`, `overflow = spill`, `schema = n`, `select` and `signed` (trybuild fixture `tests/ui/cid/CID-03_view_withdrawn.rs`; the existing CID-03 `.stderr` files are re-blessed), and the macro's own unit tests drop `view`
-
-**Given** `noctis-ui`, `noctis-rules` and the facade
-**When** a Route component is built
-**Then** `CustomId::new` resolves at once for every Route without a select nonce or integrity tag (no `has_view` branch), and no rustdoc, comment or test in `crates/` mentions a View envelope, widgets or view state versions (the `noctis` facade docs, `noctis-ui` `lib.rs`/`route.rs`, `noctis-codec` `parts.rs`/`layout.rs`/`error.rs` and the `noctis-rules` `Translate` comment included)
+**Given** `#[derive(Route)]` and the Route-building code of `noctis-ui`, `noctis-rules` and the facade
+**When** `#[route("a", view)]` is written, or a Route component is built
+**Then** the former fails with `[CID-03]` as an unknown argument whose help lists `by_ref`, `overflow = spill`, `schema = n`, `select` and `signed` (trybuild fixture `tests/ui/cid/CID-03_view_withdrawn.rs`; the existing CID-03 `.stderr` files are re-blessed; the macro's own unit tests drop `view`), and `CustomId::new` resolves at once for every Route without a select nonce or integrity tag (no `has_view` branch)
+**And** no rustdoc, comment or test in `crates/` mentions a View envelope, widgets or view state versions (the `noctis` facade docs, `noctis-ui` `lib.rs`/`route.rs`, `noctis-codec` `parts.rs`/`layout.rs`/`error.rs` and the `noctis-rules` `Translate` comment included)
 
 **Given** the shipped `CommandResponder` (Story 6.5)
 **When** the story is done
-**Then** its methods are renamed to the discord.js interaction-response flows, with no other behaviour change: `defer(ephemerality)` → `defer_reply(ephemerality)` (type 5), `modal(m)` → `show_modal(m)` (type 9), `edit_original(msg)` → `edit_reply(msg)`, `delete_original()` → `delete_reply()`, `followup(msg, visibility)` → `follow_up(msg, visibility)`; `reply(msg)` (type 4) keeps its name, and `fetch_reply()` (`GET /webhooks/{application_id}/{token}/messages/@original`) is added
-**And** the old names don't exist (no deprecated aliases before 0.1), every test, doc, Usage Skill file (`responder.md` method matrix) and template call site uses the new names, and the public-API snapshot is re-blessed
+**Then** its methods are renamed to the discord.js interaction-response flows, with no other behaviour change: `defer(ephemerality)` → `defer_reply_as(ephemerality)` (plus `defer_reply()` using the declared `response`; type 5), `modal(m)` → `show_modal(m)` (type 9), `edit_original(msg)` → `edit_reply(msg)`, `delete_original()` → `delete_reply()`, `followup(msg, visibility)` → `follow_up(msg, visibility)`; `reply(msg)` (type 4) keeps its name, `reply_as(msg, e)` is added, and `fetch_reply()` (`GET /webhooks/{application_id}/{token}/messages/@original`) is added
+**And** the old names don't exist (no deprecated aliases before 0.1), and every test, doc and template call site uses the new names
 
 **Given** the shipped `opens_modal` declaration and the `OpensModal`/`NoModal` markers (Stories 6.5 and 6.6, `#[command]`, the context-menu attributes, `CommandHandler::opens_modal()`, and anything Stories 6.7 to 6.9 add)
 **When** the story is done
 **Then** they are replaced by the per-handler `auto_defer = true | false` argument (default `true`) on `#[command]`, `#[user_command]` and `#[message_command]`, and by the sealed defer-mode parameter of `Responder<K, S = Pending, D = AutoDefer>` with `D = AutoDefer | Manual` (`K` loses its `M` parameter: `Command`, later `Component` and `ModalSubmit`), through the aliases `CommandResponder` (= `CommandResponder<AutoDefer>`) and `CommandResponder<Manual>`; the descriptor exposes `auto_defer()` instead of `opens_modal()`, and the deadline stays App-wide (`AppBuilder::ack_deadline`)
-**And** `opens_modal`, `OpensModal` and `NoModal` no longer exist: `#[command(.., opens_modal)]` fails as an unknown argument whose help names `auto_defer = false`, and `opens_modal` on any component or modal kind attribute is an unknown argument (CID-03), no longer a "planned runtime argument"
+**And** `opens_modal`, `OpensModal` and `NoModal` no longer exist: `#[command(.., opens_modal)]` fails as an unknown argument whose help names `auto_defer = false`, and `opens_modal` on a `#[route]` attribute is an unknown argument (CID-03), no longer a "planned runtime argument"
 **And** `show_modal` exists only on `Responder<Command, Pending, Manual>` (and, from Epic 7, `Responder<Component, Pending, Manual>`), bounded by a sealed trait whose `#[diagnostic::on_unimplemented]` message is `[INT-05] show_modal needs auto_defer = false on this handler`, so `show_modal` on an `AutoDefer` responder is a compile error carrying that text (fixture `INT-05_show_modal_needs_manual`)
 **And** the handler macros require `CommandResponder<Manual>` exactly when `auto_defer = false` is declared and reject it otherwise: `auto_defer = false` without a responder parameter, with `CommandResponder<AutoDefer>`, or `CommandResponder<Manual>` without `auto_defer = false` each fail citing `[INT-05]` (the `INT-05_*` fixtures are renamed and their `.stderr` re-blessed); `auto_defer = false` arms no auto-defer, a handler that misses the 3 s deadline logs one error naming it, and it can still call `defer_reply` itself (unit test `int_05_manual_never_auto_defers`, renamed from `int_05_opens_modal_never_auto_defers`)
 **And** `#[autocomplete]` rejects `auto_defer` and `response` with an `[INT-06]` error (fixture), if Story 6.7 has not already added it
@@ -1951,23 +1950,41 @@ This story only removes or converts code that Epics 1 to 6 already shipped; it d
 **Then** it is converged on the one `response = …` argument of maintainer decisions §2 and AD-11: commands and context menus take `response = public` (default) or `response = ephemeral`, `response = update` on them is an `[INT-04]` compile error, and the bare `ephemeral` flag fails as an unknown argument whose help names `response = ephemeral`
 **And** the auto-defer sends type 5 with `EPHEMERAL` exactly when `response = ephemeral`, `reply(msg)` and `defer_reply()` use the declared response by default, `reply_as(msg, Ephemerality)` and `defer_reply_as(Ephemerality)` override it per call (INT-08: still only an `Ephemerality` value), and the declared response applies with `auto_defer = false` too (unit tests on the wire for both values with and without the auto-defer)
 
-**Given** the shipped authoring surface (Stories 2.5, 4.4 to 4.6, 5.6, 6.1 to 6.3, and anything Stories 6.7 to 6.9 add): free-function `#[command]`, `#[user_command]`, `#[message_command]` and `#[event]` handlers, `#[derive(Options)]`, `#[derive(Route)]` with `#[route("id", ..)]` (the bare `select` argument included), the `RouteComponents` constructors `.button()`, `.string_select(..)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()`, the `#[modal(route = R, title = "…")]` form with its separate submit Route, the `components!` grammar's Route items, and `Module::add(descriptor)`
+**Given** the conversions above, `docs/discord-rules.md` and the public API
 **When** the story is done
-**Then** they converge on maintainer decisions §7 with no aliases: commands are `#[derive(SlashCommand)]` / `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` structs (fields = typed options, unit struct when none; the Pattern enum is `<Struct>Path`) with `#[command("path", ..)]` / `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]`; components are `#[derive(Button)]`, `#[derive(StringSelectMenu)]`, `#[derive(UserSelectMenu)]`, `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]` and `#[derive(ChannelSelectMenu)]` structs with `#[button("id", .., defaults(..))]` etc. (every select carrying the `N` nonce); modals are `#[derive(Modal)] #[modal("id", .., defaults(title = ..))]` whose fields without an input attribute are the Payload; events are `#[derive(EventHandler)]` unit structs with `#[event(..)]`; every handler is `impl X { #[handler] async fn handle(self, ctx: ..) }` and `#[handler]` takes no arguments; registration is `Module::add::<X>()`
+**Then** the `INT-03`, `INT-04`, `INT-05`, `INT-08` and `INT-10` trybuild fixtures and `.stderr` files are re-blessed; the skill-check UD-3 lint accepts `…Responder<Manual>` (and no longer `OpensModal`) as the only allowed Responder parameter and rejects `.reply(`, `.update(`, `.defer_reply(`, `.defer_update(` and `.edit_reply(` on any receiver but `ctx` (instead of `.defer(`/`.edit_original(`)
+**And** in `docs/discord-rules.md` the withdrawn `E` line of the quoted layout, the `VIEW_ENV_LEN` constants row, the withdrawal note and every `E` term are gone, the by-ref worst case reads 41, the CID-01 and CID-03 notes no longer mention `view`, the Responder rows use the new method names, and `xtask rules-catalog` passes
+**And** `xtask/public-api.txt` is re-blessed with the Usage Skill's `API hash` line; the Usage Skill (`responder.md` method matrix, `routes-payloads-refs.md`, `limits-cheatsheet.md`, `components-v2.md`, `modals.md`, `troubleshooting.md`, `SKILL.md` §8) and the template drop the withdrawn items, the old Responder names and their "[planned: Story 6.10]" notes; a search of `crates/`, `docs/`, `README.md`, `examples/` and `xtask/` (except this history) for `ViewEnvelope`, `VIEW_ENV_LEN`, `has_view`, `view envelope`, `#[route(.., view`, `opens_modal`, `OpensModal`, `NoModal`, `edit_original`, `delete_original` and `followup(` finds nothing; and every local gate (AGENTS.md) passes
+
+### Story 6.11: Simplification: one struct per interaction
+
+As a bot author,
+I want every command, component, modal and event declared as one struct whose derive names its kind, with mandatory `defaults(..)`, `.build()` and its handler as a method on the struct,
+So that there is exactly one authoring style, and Epic 7 builds component dispatch on it instead of on the shipped free-function forms.
+
+**Implements:** correct course 2026-10-20 (one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`, maintainer decisions §7); FR-59 (mandatory defaults), FR-76; AD-6 (amended), AD-9, AD-17, AD-23, AD-26; rules CID-01, CID-02, CID-03, CID-04, CID-07, CV2-08, CV2-09, MOD-01, CMD-11, INT-05.
+
+Depends only on Story 6.10 and earlier stories: it converts the authoring surface that Epics 2 to 6 shipped, already using 6.10's `auto_defer`/`response` arguments and Responder names. Epics 7 onwards assume it.
+
+**Acceptance Criteria:**
+
+**Given** the shipped command and event surface (Stories 5.6, 6.1 to 6.3, and anything Stories 6.7 to 6.9 add): free-function `#[command]`, `#[user_command]`, `#[message_command]` and `#[event]` handlers, `#[derive(Options)]` and `Module::add(descriptor)`
+**When** the story is done
+**Then** commands are `#[derive(SlashCommand)]` / `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` structs (fields = typed options, unit struct when none; the Pattern enum is `<Struct>Path`, taken after `ctx`) with `#[command("path", ..)]` / `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]` carrying the metadata, `response` and `auto_defer` arguments; events are `#[derive(EventHandler)]` unit structs with `#[event(..)]`; autocomplete handlers are `#[autocomplete(field)]` methods on the command struct (no `self`); every handler is `impl X { #[handler] async fn handle(self, ctx: ..) }`, `#[handler]` takes no arguments, and registration is `Module::add::<X>()` (no aliases)
+**And** the `auto_defer = false` ⇔ `CommandResponder<Manual>` check of Story 6.10 moves from the function attribute to the derive's declared mode and the `#[handler]` method's responder parameter (INT-05 fixtures rewritten)
+
+**Given** the shipped component and modal surface (Stories 2.5, 4.4 to 4.6): `#[derive(Route)]` with `#[route("id", ..)]` (the bare `select` argument included), the `RouteComponents` constructors `.button()`, `.string_select(..)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()`, the `#[modal(route = R, title = "…")]` form with its separate submit Route and `.modal(..)` opener, and the `components!` grammar's Route items
+**When** the story is done
+**Then** components are `#[derive(Button)]`, `#[derive(StringSelectMenu)]`, `#[derive(UserSelectMenu)]`, `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]` and `#[derive(ChannelSelectMenu)]` structs with `#[button("id", .., defaults(..))]` etc. (every select carrying the `N` nonce), and modals are `#[derive(Modal)] #[modal("id", .., defaults(title = ..))]` whose fields without an input attribute are the Payload (with `X::blank(<payload fields>)`)
 **And** `defaults(..)` is mandatory on every component and modal kind (missing block, missing required key, unknown key and out-of-limit literal are compile errors naming the kind's required keys: Button `style` and `label` or `emoji`, selects `placeholder`, modal `title`), and `R { .. }.build()` replaces every per-kind constructor, with the chainable overrides of Story 9.3 that already exist for the shipped builders (`label`, `emoji`, `style`, `disabled`, `placeholder`, `min_values`, `max_values`, `options`, `default_values`); a string select without `options` in its defaults returns a builder whose typestate requires `.options(..)`; `.build()` still requires `R: Handled` (CID-04) and the CID-01 length proof is unchanged; Link and Premium buttons stay plain builders (`LinkButton::new(url)`)
-**And** a free `async fn` with `#[handler]`, `#[command]`, `#[user_command]`, `#[message_command]` or `#[event]`, `#[derive(Route)]`/`#[route]` and `#[derive(Options)]` fail with a compile error whose help shows the new form (trybuild fixtures), every CID, CMD, OPT, CTX, META, MOD and INT fixture is rewritten in the new form and its `.stderr` re-blessed, and the macro unit tests follow
 
-**Given** the conversions above
-**When** the story is done
-**Then** the `INT-03`, `INT-04`, `INT-05`, `INT-08` and `INT-10` trybuild fixtures and `.stderr` files are re-blessed, `xtask/public-api.txt` is re-blessed with the Usage Skill's `API hash` line, the skill-check UD-3 lint accepts `…Responder<Manual>` (and no longer `OpensModal`) as the only allowed Responder parameter, and the template (every module) and the Usage Skill (every file) drop their "[planned: Story 6.10]" notes; a search of `crates/`, `docs/`, `examples/` and `xtask/` (except this history) for `opens_modal`, `OpensModal`, `NoModal`, `derive(Options)`, `derive(Route)` and `.button()` finds nothing
-
-**Given** `docs/discord-rules.md`
-**When** `xtask rules-catalog` runs
-**Then** the withdrawn `E` line of the quoted layout, the `VIEW_ENV_LEN` constants row, the withdrawal note and every `E` term are gone, the by-ref worst case reads 41, the CID-01 and CID-03 notes no longer mention `view`, and the check passes
+**Given** the old forms
+**When** they are written
+**Then** a free `async fn` with `#[handler]`, `#[command]`, `#[user_command]`, `#[message_command]` or `#[event]`, `#[derive(Route)]`/`#[route]` and `#[derive(Options)]` fail with a compile error whose help shows the new form (trybuild fixtures); every CID, CMD, OPT, CTX, META, MOD and INT fixture is rewritten in the new form and its `.stderr` re-blessed, and the macro unit tests follow
 
 **Given** the public API
 **When** the story is done
-**Then** `xtask/public-api.txt` is re-blessed; the Usage Skill (`routes-payloads-refs.md`, `limits-cheatsheet.md`, `components-v2.md`, `modals.md`, `troubleshooting.md`) drops the withdrawn items and their "withdrawn" notes and its `API hash` line is updated; a search of `crates/`, `docs/`, `README.md` and `examples/` for `ViewEnvelope`, `VIEW_ENV_LEN`, `has_view`, `view envelope` and `#[route(.., view` finds nothing; and every local gate (AGENTS.md) passes
+**Then** `xtask/public-api.txt` is re-blessed with the Usage Skill's `API hash` line; the template (every module, its `AGENTS.md`) and the Usage Skill (every file, `SKILL.md` §8 "Shipped names" table removed) use only the struct form and drop their "[planned: Story 6.11]" notes; a search of `crates/`, `docs/`, `README.md`, `examples/` and `xtask/` (except this history) for `derive(Options)`, `derive(Route)`, `#[route(`, `.button()` and `Module::add(` with a descriptor finds nothing; `skill-check` passes, and every local gate (AGENTS.md) passes
 
 ## Epic 7: Routed components, Refs and modals
 
@@ -1983,6 +2000,8 @@ I want to register exactly one handler per Route and have components dispatched 
 So that one function handles a button on every message, shard and restart.
 
 **Implements:** FR-15, FR-58, NFR-2, NFR-9, UX-DR7; AD-7, AD-9, AD-19, AD-25; rules CID-04.
+
+Builds on Story 6.11, which ships the component kind derives, `defaults(..)`, `.build()`, the `#[handler]` method and `Module::add::<X>()`; this story adds their registration checks and dispatch.
 
 **Acceptance Criteria:**
 
@@ -2014,6 +2033,8 @@ I want component interactions decoded defensively and answered by updating the m
 So that forged or malformed ids never crash the bot and clicks feel instant.
 
 **Implements:** FR-19, FR-21 (components), NFR-4, NFR-6; AD-5, AD-11, AD-23, AD-29; rules CID-06, INT-01, INT-04.
+
+Builds on Story 6.10 (discord.js Responder names, `auto_defer`, `response`, `Manual`) and Story 6.11 (the component kind attributes that carry this story's runtime arguments).
 
 **Acceptance Criteria:**
 
@@ -2054,7 +2075,7 @@ So that forged or malformed ids never crash the bot and clicks feel instant.
 **When** a handler uses them
 **Then** the typestate enforces the table at compile time: exactly one Pending method; `update`/`defer_update` exist only on `ComponentResponder`/`ModalResponder`; `show_modal` only on `CommandResponder<Manual>`/`ComponentResponder<Manual>` (handlers declared `auto_defer = false`) and never on `ModalResponder`, with the `[INT-05] show_modal needs auto_defer = false on this handler` message otherwise; Acked methods only after an ack; `reply` and `defer_reply` fix ephemerality, `update`/`defer_update` can't change it (no `EPHEMERAL` parameter; the message keeps its own)
 **And** the documented equivalences hold and are tested: `defer_update()` then `edit_reply(msg)` produces the same final message as `update(msg)` (two requests instead of one, so `update` is preferred when the render is fast); `defer_reply(e)` then `edit_reply(msg)` produces the same final message as `reply(msg)` with ephemerality `e`
-**And** for a modal submit from a modal opened by a slash command (no source message), `update`/`defer_update` return `ResponderError::UpdateUnavailable` without a request (the ergonomic `ctx.update(msg)` of Story 8.1 sends a new public message there instead, like the auto-defer fallback); the auto-defer (App-wide deadline, 2000 ms) follows the declared `response`: type 6 for `update` on components and component-opened modal submits, type 5 (with `EPHEMERAL` only for `ephemeral`) for commands, for `ephemeral`/`public` and for a slash-opened modal submit, where a declared `update` falls back to type 5 public
+**And** for a modal submit from a modal opened by a slash command (no source message), `update`/`defer_update` return `ResponderError::UpdateUnavailable` without a request (the ergonomic `ctx.update(msg)` of Story 8.1 does the same and never falls back to a new message; the author uses `ctx.respond(msg)` there); the auto-defer (App-wide deadline, 2000 ms) follows the declared `response`: type 6 for `update` on components and component-opened modal submits, type 5 (with `EPHEMERAL` only for `ephemeral`) for commands, for `ephemeral`/`public` and for a slash-opened modal submit, where a declared `update` falls back to type 5 public
 
 **Given** `update(msg)` or `edit_reply(msg)` with a V2 body
 **When** core sends it
@@ -2210,9 +2231,11 @@ So that data entry works across restarts with no per-message state.
 
 **Implements:** FR-21 (modals), FR-29, FR-64; AD-11, AD-12; rules INT-04, INT-05, MOD-08, MOD-09.
 
+Builds on Story 6.11's `#[derive(Modal)] #[modal("id", .., defaults(..))]` struct form; this story adds submit dispatch and the modal responder.
+
 **Acceptance Criteria:**
 
-**Given** a component declared `auto_defer = false` on its kind attribute (Story 7.2; Commands declare `auto_defer = false` on `#[command]` since Story 6.10) whose `#[handler]` opens a modal
+**Given** a component declared `auto_defer = false` on its kind attribute (Story 7.2; Commands declare `auto_defer = false` on `#[command]` since Story 6.10, on the command struct since Story 6.11) whose `#[handler]` opens a modal
 **When** its handler runs
 **Then** it takes `ComponentResponder<Manual>`, whose `Responder<Pending>` alone offers `show_modal(..)`, auto-defer is disabled for it, and a handler taking `ComponentResponder` (`AutoDefer`) calling `show_modal` fails to compile with `[INT-05] show_modal needs auto_defer = false on this handler`, as does a mismatch between the declaration and the alias (INT-05 trybuild fixtures)
 
@@ -2250,6 +2273,8 @@ So that every handler ends with `ctx.respond(render_x(..))` or `ctx.update(rende
 
 **Implements:** FR-61, FR-21 (deferred variants), UX-DR3; AD-11, AD-23, AD-27; rules INT-01, INT-03, INT-04, INT-08, INT-10, INT-12, CV2-01, MSG-05.
 
+Builds on Story 6.10's Responder names and Story 6.11's struct handlers.
+
 **Acceptance Criteria:**
 
 **Given** a Command, Component or Modal Submit handler
@@ -2258,8 +2283,9 @@ So that every handler ends with `ctx.respond(render_x(..))` or `ctx.update(rende
 
 **Given** a Component or Modal Submit handler
 **When** it calls `ctx.update(msg).await?`
-**Then** the message the component lives on is edited in place (type 7 while unanswered, `edit_original` after the type-6 auto-defer) with `IS_COMPONENTS_V2` and the runtime validator applied
+**Then** the message the component lives on is edited in place (type 7 while unanswered, `edit_reply` after the type-6 auto-defer) with `IS_COMPONENTS_V2` and the runtime validator applied
 **And** `CommandCtx` has no `update` (E0599; a `compile_fail` doctest carrying `// [INT-04]`)
+**And** on the submit of a modal opened from a slash command (no source message), `ctx.update(msg)` returns `ResponderError::UpdateUnavailable` and sends no request, exactly like the typestate `update`; it never falls back to a new message (the author answers such a submit with `ctx.respond(msg)`; unit test on the wire asserting no request, with and without a prior auto-defer)
 
 **Given** any interactive handler
 **When** it calls `ctx.reply_text(text)` with a `String`, a `&'static str` or a localized `MessageKey`
@@ -2269,13 +2295,13 @@ So that every handler ends with `ctx.respond(render_x(..))` or `ctx.update(rende
 **When** a second initial response is attempted through either
 **Then** it returns `ResponderError::AlreadyResponded` without a request (INT-03 runtime half, unit test); the typestate Responder stays the tool for modals and multi-message flows
 
-**Given** an option-less `#[command]` whose handler is `ctx.respond(render_x(..)).await`
+**Given** an option-less `#[derive(SlashCommand)]` unit struct (Story 6.11) whose handler is `ctx.respond(render_x(..)).await`
 **When** it is published and invoked through the fakes
 **Then** it publishes with an empty option list and sends the message as its initial response (FR-61, UD-3)
 
 **Given** `xtask skill-check`
 **When** it lints the template
-**Then** the doctrine lint accepts `ctx.respond(`, `ctx.update(` and `ctx.reply_text(` (the lint learned this in the 2026-10-20 correct course) and still rejects `.reply(`, `.update(`, `.defer(` and `.edit_original(` on any other receiver in an interactive handler
+**Then** the doctrine lint accepts `ctx.respond(`, `ctx.update(` and `ctx.reply_text(` (the lint learned this in the 2026-10-20 correct course) and still rejects `.reply(`, `.update(`, `.defer_reply(`, `.defer_update(` and `.edit_reply(` (Story 6.10 names) on any other receiver in an interactive handler
 
 **Given** the new public API
 **When** the story is done
@@ -2295,7 +2321,7 @@ So that re-rendering after every click is safe and predictable.
 **When** both messages are serialized
 **Then** the JSON is identical except for per-render select nonces (snapshot test)
 
-**Given** a component built from a `select` Route
+**Given** a component built from a select kind (`#[derive(StringSelectMenu)]` etc., which always carries the nonce since Story 6.11)
 **When** the message is sent or updated through the Responder
 **Then** a fresh `N` nonce is drawn for every send, so after `ctx.update(render_x(..))` the client shows the defaults the render function declared, not the user's previous local selection
 

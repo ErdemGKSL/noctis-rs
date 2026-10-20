@@ -9,7 +9,7 @@ FR-63, FR-64.
 
 ## 1. Anatomy: `#[derive(Modal)]`
 
-A modal is one struct, like every interaction [planned: Story 6.10]: `#[derive(Modal)]`
+A modal is one struct, like every interaction [planned: Story 6.11]: `#[derive(Modal)]`
 with `#[modal("id", <routing args>, defaults(title = …))]`. Fields **without** an input
 attribute are its Payload (encoded in the modal's `custom_id`, length-proven like any
 component, MOD-08); fields **with** one are the inputs. Its handler is a method on it
@@ -154,7 +154,9 @@ impl Bio {
 ```
 
 This release (Story 6.6) spells it `#[command(.., opens_modal)]`, `r: CommandResponder<OpensModal>`
-and `r.modal(BioForm::modal(SaveBio { .. }))`; Story 6.10 renames it.
+and `r.modal(BioForm::modal(SaveBio { .. }))`; Story 6.10 renames the first three
+(`auto_defer = false`, `CommandResponder<Manual>`, `show_modal`) and Story 6.11 replaces
+the `BioForm::modal(..)` opener with `.build()`.
 
 **A button that opens a modal must be `auto_defer = false`** [planned, Story 7.8]:
 
@@ -209,7 +211,9 @@ impl BioForm {
 
 `response = update` (the default) redraws the message the opening button was on; a
 modal opened from a slash command has no such message, so declare `response = public`
-or `ephemeral` for it (`ctx.update` then sends a new message).
+or `ephemeral` for it and answer with `ctx.respond(..)`: there `ctx.update` returns
+`ResponderError::UpdateUnavailable` and sends nothing (it never falls back to a new
+message).
 
 Decoding works today, from the raw interaction JSON (`&[u8]` of the whole interaction
 object, `"type": 5`):
@@ -259,8 +263,10 @@ submission.unknown();                                        // &[serde_json::Va
   Id<GenericMarker>)` (user first, then role); each returns `None` when the id is missing.
 - Submitted values are untrusted (MOD-09): re-validate ranges and authorization.
 - If the modal was opened from a message component, returning a View **updates that
-  message** (type 7); from a command, it sends a new message. `ModalResponder` has no
-  `modal()`: modals can't chain (INT-05). [planned, Story 7.8]
+  message** (type 7); from a command, there is no message to update: `update` and
+  `ctx.update` return `UpdateUnavailable` without a request, so send a new message with
+  `ctx.respond`. `ModalResponder` has no `show_modal()`: modals can't chain (INT-05).
+  [planned, Story 7.8]
 - Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`.
 
 ### 3.1 Downloading uploads
@@ -437,7 +443,7 @@ use noctis::ui::{
     TextInputStyle, validate,
 };
 
-let mut modal = Report { id: 7 }.modal("Report a user")      // RouteComponents::modal
+let mut modal = Report { id: 7 }.modal("Report a user")      // RouteComponents::modal (this release; Story 6.11 folds it into .build())
     .push(TextDisplay::new("Tell us what happened."))
     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))

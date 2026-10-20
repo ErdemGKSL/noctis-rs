@@ -5,7 +5,7 @@ autocomplete, context menus, command metadata, merging across Modules, Publish.
 Rules: CMD-01..15, OPT-01..14, CTX-01..03, META-01..05, REG-01..06, LOC-01..06.
 Doctrine: commands are **entry points** that open Views (UD-3).
 
-> **Converged form [planned: Story 6.10].** A command is a struct: `#[derive(SlashCommand)]`
+> **Converged form [planned: Stories 6.10 and 6.11].** A command is a struct: `#[derive(SlashCommand)]`
 > (fields = options, unit struct when none) with `#[command("path", ..)]`, and its handler
 > is `impl X { #[handler] async fn handle(self, ctx: CommandCtx[, path: XPath][, r]) }`;
 > context menus are `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit structs;
@@ -14,8 +14,9 @@ Doctrine: commands are **entry points** that open Views (UD-3).
 > **This release** still takes free functions: `#[command("path", ..)] async fn x(ctx:
 > CommandCtx[, path][, r][, opts: XOptions])` with `#[derive(Options)] struct XOptions`,
 > the bare `ephemeral` flag, `opens_modal`, and `Module::add(x())`. The parameter-order
-> and argument errors quoted below are this release's; Story 6.10 rewrites them for the
-> struct form (SKILL.md §8 maps every name).
+> and argument errors quoted below are this release's; Story 6.10 replaces `ephemeral`
+> and `opens_modal`, and Story 6.11 rewrites the rest for the struct form (SKILL.md §8
+> maps every name).
 
 ## 1. Command Paths
 
@@ -136,7 +137,7 @@ impl Ban {
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<LegacyMessage> { Ok(LegacyMessage::new("Banned.")) }
 }
 
-let handler = Ban::descriptor(); // [planned: Story 6.10]; this release: `ban()` from a free fn
+let handler = Ban::descriptor(); // [planned: Story 6.11]; this release: `ban()` from a free fn
 assert_eq!(handler.metadata().default_member_permissions, Some(noctis::Permissions::BAN_MEMBERS));
 assert_eq!(handler.metadata().nsfw, None); // unset, omitted on Publish
 ```
@@ -400,7 +401,7 @@ field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``)
 | `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
 | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (`GuildText`, `Private`, `GuildVoice`, `Group`, `GuildCategory`, `GuildAnnouncement`, `AnnouncementThread`, `PublicThread`, `PrivateThread`, `GuildStageVoice`, `GuildDirectory`, `GuildForum`, `GuildMedia`; a path's last segment counts, `ChannelType::GuildText` works); at least one | CHANNEL | OPT-07 |
 | `file_types = ["image", ".pdf"]` | string literals: `image`, `video`, `audio` or `.` + ASCII letters/digits; ≤ 10 | ATTACHMENT | OPT-13 |
-| `autocomplete` | [planned: Story 6.7/6.10] a bare flag: the handler is the struct's `#[autocomplete(field)]` method (§4). This release: `autocomplete = path`, an existing fn (E0425 otherwise), which sets the autocomplete flag only | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
+| `autocomplete` | [planned: Story 6.7/6.11] a bare flag: the handler is the struct's `#[autocomplete(field)]` method (§4). This release: `autocomplete = path`, an existing fn (E0425 otherwise), which sets the autocomplete flag only | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
 | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>` (`T` = the field type without `Option`; E0308 on another signature); sync, called only when the value is present, in field order, after the whole struct decoded | all | — |
 
 ### Field types (`CommandOption`, OPT-02)
@@ -646,8 +647,8 @@ pub struct ReportMessage;
 impl ReportMessage {
     #[handler]
     async fn handle(self, ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
-        let acked = r.defer(Ephemerality::Ephemeral).await?;
-        acked.edit_original(Components::new().push(TextDisplay::new("Reported."))).await?;
+        let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;          // this release: r.defer(..)
+        acked.edit_reply(Components::new().push(TextDisplay::new("Reported."))).await?;  // this release: edit_original
         let _ = target.message.content;
         Ok(acked.done())
     }

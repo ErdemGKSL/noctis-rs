@@ -73,14 +73,16 @@ impl OpenTab {
 | Method | On | Sends |
 | --- | --- | --- |
 | `ctx.respond(msg)` | every interactive context | a new message: the initial response (type 4, declared ephemerality) while unanswered; the edit of the deferred original after a Command's auto-defer; a follow-up (declared visibility) once answered |
-| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx` (not `CommandCtx`: E0599, INT-04) | an edit of the message the component lives on: type 7 while unanswered, `edit_original` after the type-6 auto-defer; on a submit of a modal opened from a slash command (no message to edit) it sends a new public message, like the auto-defer's fallback |
+| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx` (not `CommandCtx`: E0599, INT-04) | an edit of the message the component lives on: type 7 while unanswered, `edit_reply` after the type-6 auto-defer. On a submit of a modal opened from a slash command (no message to edit) it returns `ResponderError::UpdateUnavailable` and sends nothing, exactly like the typestate `update`; it never falls back to a new message, so answer such a submit with `ctx.respond(msg)` |
 | `ctx.reply_text(text)` | every interactive context | one Text Display, **ephemeral** unless `.public()`; the initial response, or an ephemeral follow-up once answered or deferred. `text` is a `String`, a `&'static str` or a `MessageKey` (localized) |
 
 All three add `IS_COMPONENTS_V2`, validate against the Limits and ping nobody (MSG-05).
 A second initial response through the ctx methods or a typestate Responder in the same
 handler is `ResponderError::AlreadyResponded`, with no request. The doctrine lint
 (`xtask skill-check`) accepts these three calls in handlers and rejects
-`.reply(`/`.update(`/`.defer(`/`.edit_original(` on any other receiver.
+`.reply(`/`.update(`/`.defer_reply(`/`.defer_update(`/`.edit_reply(` on any other receiver
+(this release's lint checks the shipped names `.defer(`/`.edit_original(`; Story 6.10
+switches it).
 
 ## 2. Auto-defer (FR-21, INT-01)
 
@@ -104,7 +106,7 @@ One gate serializes every initial response, so at most one callback is ever sent
 (INT-03): whichever of your handler and the timer gets there first answers. After the
 auto-defer, your `reply(msg)` or returned message becomes an edit of the original
 (`PATCH …/messages/@original`, `reply` still returns `Ok(Acked)`), and a late
-`defer(..)` sends nothing. A handler that answers after 5 s still delivers, without
+`defer_reply(..)` sends nothing. A handler that answers after 5 s still delivers, without
 "interaction failed". The timer stops when your handler returns, fails, panics or is
 cancelled.
 
@@ -127,8 +129,8 @@ compile time:
   modal submits: `update` (default, edits the message in place), `ephemeral` or
   `public` (a new message). A modal opened from a slash command has no message to
   update, so its submit handler should declare `public` or `ephemeral` (a declared
-  `update` there auto-defers as type 5 public, and `update(..)` returns
-  `UpdateUnavailable`).
+  `update` there auto-defers as type 5 public, and both `update(..)` and `ctx.update(..)`
+  return `UpdateUnavailable` without sending anything: answer with `ctx.respond`).
 
 `response` is independent of `auto_defer`: with `auto_defer = false` it still sets what
 `reply(msg)` and `defer_reply()` use; `reply_as(msg, e)` and `defer_reply_as(e)`
@@ -182,7 +184,7 @@ Anti-patterns:
 - Never pick ephemerality per call to work around a missing declaration: declare
   `response = ephemeral`; use `reply_as`/`defer_reply_as` only for the rare mixed case.
 
-Shipped names until Story 6.10: this release spells `auto_defer = false` on a Command as
+Shipped names until Story 6.10 (which converts them): this release spells `auto_defer = false` on a Command as
 the bare flag `opens_modal` (`CommandHandler::opens_modal()`) and has no component
 handlers yet, the `Manual` alias as
 `CommandResponder<OpensModal>` (the sealed `ModalMarker`: `NoModal` by default or
@@ -218,10 +220,12 @@ Declared at registration, never toggled later:
   visibility); `response = ephemeral` on the kind attribute — the component opens a **new**
   private sub-panel.
 
-`reply` and a returned message use the declared value; `defer(Ephemerality)` takes it
-explicitly; `followup(msg, Visibility)` takes one per follow-up (`Visibility` is an alias
-of `Ephemerality`); **no edit takes one** (`edit_original(msg, Ephemerality::…)` is
-E0061).
+`reply` and `defer_reply()` and a returned message use the declared value;
+`reply_as(msg, Ephemerality)` and `defer_reply_as(Ephemerality)` take it explicitly;
+`follow_up(msg, Visibility)` takes one per follow-up (`Visibility` is an alias of
+`Ephemerality`); **no edit takes one** (`edit_reply(msg, Ephemerality::…)` is E0061).
+[planned: Story 6.10; this release spells `defer_reply_as(e)` as `defer(e)`,
+`follow_up` as `followup` and `edit_reply` as `edit_original`.]
 
 Locale follows visibility: `ctx.response_locale()` gives the User Locale (then the Guild
 Locale) for ephemeral Commands and the Guild Locale (then the User Locale) for public
@@ -263,13 +267,13 @@ sealed defer mode `D` = `AutoDefer` (default) or `Manual` (§2b). Take it
 as a handler parameter through its alias, right after `ctx` (and the path), before the
 options: `(ctx[, path][, r: CommandResponder][, options])`, or `(ctx, target[, r:
 CommandResponder])` on a context menu. Any other order, or two responders, is a compile
-error listing these forms. [planned: Story 6.10] the options become `self`, so the
+error listing these forms. [planned: Story 6.11] the options become `self`, so the
 method is `handle(self, ctx[, path][, r])` / `handle(self, ctx, target[, r])`. A handler that returns a message takes none (and if it takes
 one but never uses it, nothing is sent from it).
 
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
-| `CommandResponder` (auto-defer) | `reply(msg)`, `defer(ephemerality)` — **no** `show_modal` | chat input / context menu |
+| `CommandResponder` (auto-defer) | `reply(msg)`, `reply_as(msg, e)`, `defer_reply()`, `defer_reply_as(e)` (today `defer(e)`) — **no** `show_modal` | chat input / context menu |
 | `CommandResponder<Manual>` [planned: Story 6.10; today `CommandResponder<OpensModal>`] | the above plus `show_modal(m)`; required exactly when the command is `#[command(.., auto_defer = false)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
 | `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **no** `show_modal` | buttons, selects |
 | `ComponentResponder<Manual>` [planned, Epic 7] | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
@@ -282,12 +286,16 @@ Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 
 ```rust
 r.reply(msg).await?                     -> Responder<Command, Acked>  // callback type 4, declared ephemerality
-r.defer(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // callback type 5, only EPHEMERAL (INT-08)
-r.modal(m).await?                       -> Responder<Command<OpensModal>, Acked> // today's name of show_modal (Manual responder only): callback type 9
-acked.edit_original(msg).await?         -> ()
-acked.followup(msg, Visibility::Public).await? -> FollowupHandle
-acked.delete_original().await?          -> ()
+r.defer_reply().await?                  -> Responder<Command, Acked>  // callback type 5, declared ephemerality; only EPHEMERAL (INT-08)
+r.defer_reply_as(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // per-call override
+r.show_modal(m).await?                  -> Responder<Command, Acked, Manual> // Manual responder only: callback type 9
+acked.edit_reply(msg).await?            -> ()
+acked.follow_up(msg, Visibility::Public).await? -> FollowupHandle
+acked.delete_reply().await?             -> ()
 acked.done()                            -> Responded   // return this from the handler
+// [planned: Story 6.10] this release spells these defer(e), modal(m) (on
+// CommandResponder<OpensModal>), edit_original, followup and delete_original,
+// and has no defer_reply(), reply_as or fetch_reply.
 handle.message_id()                     -> Id<MessageMarker>
 handle.edit(msg).await?                 -> ()
 handle.delete().await?                  -> ()
@@ -298,7 +306,7 @@ handle.delete().await?                  -> ()
 state is a compile error: a second `reply` (E0599), `update` on a `CommandResponder`
 (E0599), `show_modal` on an auto-defer responder (`[INT-05] show_modal needs auto_defer
 = false on this handler`; today `modal` without `OpensModal` is E0599),
-`defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
+`defer_reply_as(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
 `Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
 
 Edits keep the format rules: editing a legacy original into a V2 message sends the
@@ -323,14 +331,14 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), or over the `Dispatcher` |
 
 Runtime guards the types can't express:
-- if the auto-defer already fired, your `reply` becomes `edit_original` transparently
+- if the auto-defer already fired, your `reply` becomes `edit_reply` transparently
   (§2);
 - follow-ups are counted when `authorizing_integration_owners` has a user install and no
   guild install: at most 5, the 6th is `ResponderError::FollowupCap` with no request
   (INT-11). A follow-up that fails validation uses no slot; one Discord rejects still
   uses its slot. Guild installs have no cap;
 - 15 minutes after the gateway received the interaction the token is expired (INT-02):
-  `edit_original`, `delete_original`, `handle.edit` and `handle.delete` on a **public**
+  `edit_reply`, `delete_reply`, `handle.edit` and `handle.delete` on a **public**
   message whose id is known fall back to the bot-token channel routes
   (`PATCH`/`DELETE /channels/{channel}/messages/{id}`; a user-installed app outside the
   guild gets `Rejected`); everything else (follow-ups, ephemeral messages, an original
@@ -349,7 +357,7 @@ impl Warn {
     async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
         let case = record_warning(&ctx, &self).await?;
         let acked = r.reply(warn_result(&case)).await?;           // V2Message or Components
-        acked.followup(case_log(&case), Visibility::Public).await?;
+        acked.follow_up(case_log(&case), Visibility::Public).await?;
         Ok(acked.done())
     }
 }
@@ -365,7 +373,7 @@ pub struct Report;
 impl Report {
     #[handler]
     async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
-        let _ = r.defer(Ephemerality::Public).await?.done();     // [planned: Story 6.10] defer_reply()
+        let _ = r.defer_reply().await?.done();                    // this release: r.defer(Ephemerality::Public)
         Ok(build_report(&ctx).await?)
     }
 }
@@ -455,11 +463,11 @@ impl Prefix {
   or `nsfw` metadata (Discord enforces those only for real interactions): check them
   yourself before calling `run_command`.
 - The response is a message transport: `reply` and a returned message post a reply to
-  the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer(Public)`
+  the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer_reply_as(Public)`
   shows the typing indicator (the later message is then posted as the reply), edits and
   deletes target that reply, follow-ups are plain channel messages. Anything ephemeral
-  (a declared `ephemeral` Command, `defer(Ephemeral)`, `followup(.., Ephemeral)`) is
-  `ResponderError::EphemeralUnsupported`, never a silent public post; `modal(m)` is
+  (a declared `ephemeral` Command, `defer_reply_as(Ephemeral)`, `follow_up(.., Ephemeral)`) is
+  `ResponderError::EphemeralUnsupported`, never a silent public post; `show_modal(m)` is
   `ResponderError::ModalUnavailable`. No auto-defer runs.
 - Span `noctis.dispatch{app, guild_id, module, path}`.
 

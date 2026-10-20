@@ -516,7 +516,7 @@ Event handlers take exactly `(self, ctx: EventCtx, event: <payload>)` (this rele
 `ctx.state::<T>()` (`Option<State<T>>`). Extractor parameters on `#[event]` handlers
 [planned].
 
-Parameter order: `self` (the decoded Payload / options / form; [planned: Story 6.10]),
+Parameter order: `self` (the decoded Payload / options / form; [planned: Story 6.11]),
 context, then path / target, then extractors in any
 order: `State<T>` (registered with `.state(T)`, `Deref<Target = T>`), `Ext<T>` /
 `Option<Ext<T>>` (from Middleware), a Responder alias. Missing `State<T>` or an
