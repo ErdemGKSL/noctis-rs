@@ -14,7 +14,8 @@
 </p>
 
 <p align="center">
-  <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha%20(design%20phase)-7C5CFF">
+  <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
+  <img alt="Stories done: 27 of 96" src="https://img.shields.io/badge/stories-27%20%2F%2096-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -24,10 +25,11 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is in its design phase.** The product requirements, architecture and
-> Discord rules catalog are written; the crates are not. The code below is an API
-> preview taken from the architecture and will change. Watch the repository or
-> check the [roadmap](#roadmap) to follow progress.
+> **Noctis is under active development and not yet published.** Epics 1–4 are done
+> (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
+> Components V2 and modal model with compile-time checks), and Epic 5 (a running sharded
+> bot) is in progress. Nothing is on crates.io yet, and the public API can still change.
+> The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
 ## Why Noctis?
 
@@ -168,48 +170,69 @@ Read the full design:
 
 ## Roadmap
 
-Noctis is planned with the [BMad Method](https://docs.bmad-method.org/). Each
-milestone maps to requirement ids in the PRD.
+Noctis is planned and built with the [BMad Method](https://docs.bmad-method.org/). The
+work is split into 15 epics and 96 stories
+([`epics.md`](_bmad-output/planning-artifacts/epics.md)). Each story is planned, implemented,
+checked by the local gates and reviewed in four independent layers before it is marked
+done. Live per-story status is in
+[`sprint-status.yaml`](_bmad-output/implementation-artifacts/sprint-status.yaml).
 
-### ✅ Phase 0: Design (done)
+### ✅ Design (done)
 - [x] Research: twilight 0.17, Discord Components V2, takumi, tescord/dbi feature parity
 - [x] Product brief, PRD (FR-1…FR-79, NFR-1…NFR-10), UI Doctrine
-- [x] Architecture spine (29 decisions) and Discord rules catalog
-- [x] Project template and AI-agent usage skill scaffold
+- [x] Architecture spine and Discord rules catalog
+- [x] Epics and stories, readiness gate, project template and AI-agent usage skill
 
-### 🔨 Milestone 1: Foundations (P0)
-- [ ] Workspace, CI (fmt, clippy, tests, `trybuild`, MSRV, cargo-deny, public-API snapshot)
-- [ ] `noctis-rules`: the rule catalog as code, shared by macros and runtime
-- [ ] `noctis-codec`: the `custom_id` format, `Payload` / `Route` derives, compile-time length proof
-- [ ] `noctis-ports`: port traits and bounded in-memory adapters
-- [ ] `noctis-gateway`: sharding, lanes, identify concurrency, startup safety
-- [ ] `noctis-core`: App, Modules, Registry, dispatch, Responder, auto-defer, middleware
-- [ ] Commands: paths, patterns, typed options, autocomplete, context menus, Publish with diff
+### Implementation
 
-### 🎛️ Milestone 2: Components V2 UI kit (P0)
-- [ ] Typed V2 and modal model with placement rules in the type system
-- [ ] Limit validator with path-precise errors and strict/lenient modes
-- [ ] Views, Navbar, Wizard, auto-packing Paginator, Ref minting
-- [ ] Testing kit: simulated interactions and View snapshots
+| | Epic | Priority | Status |
+| --- | --- | --- | --- |
+| 1 | Project foundation and Discord rules as code | P0 | ✅ Done |
+| 2 | Typed, length-proven `custom_id`s | P0 | ✅ Done |
+| 3 | Pluggable storage ports | P0 | ✅ Done |
+| 4 | Components V2 and modal model with limit validation | P0 | ✅ Done |
+| 5 | A running sharded bot | P0 | 🔨 In progress (4 / 8) |
+| 6 | Slash commands and Publish | P0 | ⏳ Next |
+| 7 | Routed components, Refs and modals | P0 | ⏳ |
+| 8 | Views, navigation widgets and the testing kit | P0 | ⏳ |
+| 9 | Attachments, webhooks and advanced component surfaces | P1 | ⏳ |
+| 10 | Generated images and GIFs | P1 | ⏳ |
+| 11 | Localization | P1 | ⏳ |
+| 12 | Clusters and scale | P1 | ⏳ |
+| 13 | Module operations | P1 | ⏳ |
+| 14 | v1 launch readiness → **v0.1.0 on crates.io** | P1 | ⏳ |
+| 15 | Opt-in extras (prefix commands, Renderer seam, multiple Apps, presence) | P2 | ⏳ |
 
-### 🖼️ Milestone 3: Images and GIFs (P1)
-- [ ] `noctis-image`: takumi renderer, render pool, fonts and assets
-- [ ] `view!` / `tw!` with Noctis's own strict Tailwind grammar (CI-checked against takumi)
-- [ ] Animated WebP/GIF/APNG, upload-size budget, render cache with de-duplication
+**What already works**
 
-### 🌍 Milestone 4: Scale and polish (P1)
-- [ ] Shard Ranges and Clusters, SessionStore resume, shared identify queue, HTTP proxy mode
-- [ ] Compiled localization (`i18n!`), Locale resolution, command localizations
-- [ ] Runtime Module enable/disable, rate limits, lifecycle hooks
-- [ ] Adapter conformance suites, benchmarks (memory per guild, dispatch latency, render time)
-- [ ] Docs: tescord/dbi → Noctis concept map, Cluster deployment guide
-- [ ] **v0.1.0 on crates.io**
-
-### 🧪 Opt-in extras (P2)
-- [ ] Prefix commands reusing slash handlers (`prefix` feature)
-- [ ] Pluggable Renderer seam for remote rendering
-- [ ] Multiple Apps per process (white-label bots)
-- [ ] Presence and gateway commands
+- **Workspace and quality gates.** There are 12 crates in strict layers, enforced by
+  `xtask deps-check`. Builds use release-equivalent profiles only. Local gates cover
+  fmt, clippy `-D warnings`, tests, `cargo-hack` per-feature tests, `cargo-deny`, an
+  MSRV 1.91 check, a public-API snapshot and a Usage Skill coverage check.
+- **`noctis-rules`.** Every rule in [`docs/discord-rules.md`](docs/discord-rules.md) is
+  code with a stable id, shared by the macros and the runtime, and `xtask rules-catalog`
+  cross-checks the two.
+- **`noctis-codec`.**
+  - An ASCII `custom_id` format with escaped fields, Refs and integrity tags.
+  - `derive(Route, Payload, PayloadEnum)`, which proves the ≤ 100-character limit at
+    compile time.
+  - Zero-allocation inline decoding.
+- **`noctis-ports`.**
+  - Port traits with atomic ops.
+  - Bounded in-memory defaults with TTL.
+  - An in-memory `IdentifyQueue` with identify buckets.
+- **`noctis-ui`.**
+  - Typed Components V2 and modal models, with placement rules in the type system.
+  - A runtime Limit validator with path-precise errors.
+  - Compile-time literal and arity checks, and the `components!` tree macro.
+  - `derive(Modal)` with typed submissions.
+- **`noctis-core` / `noctis-gateway`.**
+  - The App builder, Runtime and Plugin seam, with startup safety (typed errors
+    instead of panics).
+  - HTTP proxy mode.
+  - Sharding on `twilight-gateway` with bucketed identify.
+- **`noctis-testkit`.** Local fakes of the Discord HTTP API and the gateway, so every
+  test runs without Discord.
 
 ### 🔭 Beyond v1
 - Official Redis and SQL adapter crates
@@ -229,8 +252,8 @@ card. It ships with:
   bots without reading Noctis source;
 - the `rust-best-practices` skill.
 
-The template is updated in the same commit as every public API change, and CI
-enforces this.
+The template is updated in the same commit as every public API change, and the
+`skill-check` and `api-snapshot` gates enforce this.
 
 ## Lineage
 
@@ -240,12 +263,26 @@ space-separated command names, auto-publish, typed locales, and data in
 `custom_id`s. It fixes their known gaps: O(n) dispatch, unchecked `custom_id`
 length, refs lost on restart, and silently dropped options.
 
+## Building from source
+
+Noctis needs Rust 1.97 for development (pinned in `rust-toolchain.toml`); its MSRV is 1.91.
+The repository builds with release-equivalent profiles only, so always pass `--release`:
+
+```sh
+cargo build --release --workspace
+cargo test --release --workspace
+cargo clippy --release --workspace --all-targets --all-features -- -D warnings
+```
+
+The full list of local gates (deps-check, rules-catalog, api-snapshot, skill-check,
+cargo-deny, MSRV) is in [`AGENTS.md`](AGENTS.md). CI is paused during development; the
+workflows will be re-enabled before the v0.1.0 release.
+
 ## Contributing
 
-The project is in its design phase, which is the best time to influence it. Open an
-issue to discuss the PRD or architecture, or to propose a change. Code contributions
-will open with Milestone 1. Repository conventions for humans and AI agents are in
-[`AGENTS.md`](AGENTS.md).
+Noctis is being built story by story right now. Issues about the PRD, the architecture
+or the API preview are welcome; outside code contributions will open after v0.1.0.
+Repository conventions for humans and AI agents are in [`AGENTS.md`](AGENTS.md).
 
 ## License
 
