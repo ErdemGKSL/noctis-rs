@@ -1,6 +1,9 @@
 use noctis::prelude::*;
 
-fn suggest() {}
+#[autocomplete]
+async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+    Ok(ctx.respond(Vec::new()))
+}
 
 #[derive(Options)]
 struct O {

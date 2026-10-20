@@ -84,6 +84,7 @@ struct Args {
 
 /// A parsed field.
 struct OptField<'a> {
+    field: &'a Field,
     ident: &'a Ident,
     /// The option type (`T` of `Option<T>` for an optional field).
     ty: &'a Type,
@@ -382,6 +383,7 @@ fn parse_field(field: &Field) -> syn::Result<OptField<'_>> {
         .as_ref()
         .map_or_else(|| ident.unraw().to_string(), LitStr::value);
     Ok(OptField {
+        field,
         ident,
         ty,
         required,
@@ -550,7 +552,7 @@ fn const_checks(fields: &[OptField<'_>], consts: &[(usize, ConstCheck)]) -> Toke
                 ::core::panic!(#over)
             };
         });
-        if let Some(path) = &field.args.autocomplete {
+        if field.args.autocomplete.is_some() {
             let both = Violation::new(
                 RuleId::OPT_10,
                 p.as_str(),
@@ -561,11 +563,6 @@ fn const_checks(fields: &[OptField<'_>], consts: &[(usize, ConstCheck)]) -> Toke
             out.extend(quote_spanned! {span=>
                 const _: () = if !<#ty as #opt>::CHOICES.is_empty() {
                     ::core::panic!(#both)
-                };
-            });
-            out.extend(quote_spanned! {path.span()=>
-                const _: () = {
-                    let _ = #path;
                 };
             });
         }
@@ -698,14 +695,21 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         quote!(#ident: #core::__options::#helper::<#ty>(input, #name)?)
     });
     let validators = parsed.iter().filter_map(validator_tokens);
+    let partial = partial_tokens(input, &parsed);
+    let partial_name = partial_ident(name);
+    let autocomplete = autocomplete_tokens(&parsed);
     Ok(quote! {
         #checks
+
+        #partial
 
         #[automatically_derived]
         impl #core::Options for #name {
             const OPTIONS: &'static [::noctis::__private::rules::command::OptionDecl<'static>] = &[
                 #(#decls),*
             ];
+
+            type Partial = #partial_name;
 
             fn from_input(
                 input: &#core::CommandInput,
@@ -722,8 +726,92 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 #(#validators)*
                 ::core::result::Result::Ok(())
             }
+
+            #autocomplete
         }
     })
+}
+
+/// `<Name>Partial`.
+fn partial_ident(name: &Ident) -> Ident {
+    Ident::new(&format!("{}Partial", name.unraw()), name.span())
+}
+
+/// The `<Name>Partial` struct (every field an `Option`, OPT-12) and its
+/// `PartialOptions` impl.
+fn partial_tokens(input: &DeriveInput, fields: &[OptField<'_>]) -> TokenStream {
+    let core = quote!(::noctis::__private::core);
+    let name = &input.ident;
+    let vis = &input.vis;
+    let partial = partial_ident(name);
+    let doc = format!(
+        " Every option of [`{}`] as an `Option` (OPT-12); what autocomplete handlers get.",
+        name.unraw()
+    );
+    let decls = fields.iter().map(|f| {
+        let docs = f.field.attrs.iter().filter(|a| a.path().is_ident("doc"));
+        let fvis = &f.field.vis;
+        let ident = f.ident;
+        let ty = f.ty;
+        quote! {
+            #(#docs)*
+            #fvis #ident: ::core::option::Option<#ty>
+        }
+    });
+    let inits = fields.iter().map(|f| {
+        let ident = f.ident;
+        let ty = f.ty;
+        let option = &f.name;
+        quote!(#ident: #core::__options::partial::<#ty>(input, #option))
+    });
+    quote! {
+        #[doc = #doc]
+        #[derive(::core::default::Default)]
+        #[allow(dead_code)]
+        #vis struct #partial {
+            #(#decls),*
+        }
+
+        #[automatically_derived]
+        impl #core::PartialOptions for #partial {
+            type Options = #name;
+
+            fn __from_input(input: &#core::CommandInput) -> Self {
+                let _ = input;
+                Self { #(#inits),* }
+            }
+        }
+    }
+}
+
+/// `Options::autocomplete`, linking each `autocomplete = path` field to its
+/// handler; nothing when no field has one.
+fn autocomplete_tokens(fields: &[OptField<'_>]) -> TokenStream {
+    let core = quote!(::noctis::__private::core);
+    let arms: Vec<TokenStream> = fields
+        .iter()
+        .filter_map(|f| {
+            let path = f.args.autocomplete.as_ref()?;
+            let option = &f.name;
+            let handler = quote_spanned! {path.span()=>
+                #core::__autocomplete_for::<Self, _>(#path)
+            };
+            Some(quote!(#option => ::core::option::Option::Some(#handler),))
+        })
+        .collect();
+    if arms.is_empty() {
+        return TokenStream::new();
+    }
+    quote! {
+        fn autocomplete(
+            option: &str,
+        ) -> ::core::option::Option<#core::AutocompleteHandler<Self>> {
+            match option {
+                #(#arms)*
+                _ => ::core::option::Option::None,
+            }
+        }
+    }
 }
 
 fn not_named(name: &Ident) -> syn::Error {
@@ -1256,8 +1344,32 @@ mod tests {
             out.contains("[OPT-10] a: limit choices or autocomplete, not both, actual `a`"),
             "{out}"
         );
-        assert!(out.contains("let _ = suggest ;"), "{out}");
+        assert!(
+            out.contains("\"a\" => :: core :: option :: Option :: Some (:: noctis :: __private :: core :: __autocomplete_for :: < Self , _ > (suggest)) ,"),
+            "{out}"
+        );
+        assert!(out.contains("type Partial = SPartial ;"), "{out}");
         assert!(out.contains(". autocomplete (true)"), "{out}");
+    }
+
+    /// OPT-12: `<Name>Partial` mirrors every field as an `Option`, keeps
+    /// visibility and docs, and decodes leniently.
+    #[test]
+    fn opt_12_partial_struct_is_generated() {
+        let out = run(quote! {
+            pub(crate) struct Prefix {
+                /// The prefix.
+                #[option(description = "d")]
+                pub value: String,
+                #[option(description = "d", rename = "max")]
+                limit: Option<i64>,
+            }
+        });
+        assert!(out.contains("# [derive (:: core :: default :: Default)] # [allow (dead_code)] pub (crate) struct PrefixPartial { # [doc = r\" The prefix.\"] pub value : :: core :: option :: Option < String > , limit : :: core :: option :: Option < i64 > }"), "{out}");
+        assert!(out.contains("impl :: noctis :: __private :: core :: PartialOptions for PrefixPartial { type Options = Prefix ;"), "{out}");
+        assert!(out.contains("limit : :: noctis :: __private :: core :: __options :: partial :: < i64 > (input , \"max\")"), "{out}");
+        assert!(out.contains("type Partial = PrefixPartial ;"), "{out}");
+        assert!(!out.contains("fn autocomplete"), "{out}");
     }
 
     #[test]

@@ -605,8 +605,8 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_http_ping_timeouts_total` | counter | `app` | connections dropped because a PING went unanswered |
 | `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won` \| `lost` \| `40060`) | hedged interaction callbacks, and callbacks Discord answered "already acknowledged" |
 
-`kind` is the handler kind (`ErrorOrigin::as_str()`): only `event` is emitted today;
-`command`, `component`, `autocomplete` and `render` join with their handlers. Planned:
+`kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
+`autocomplete` are emitted today; `component` and `render` join with their handlers. Planned:
 Ref lookups [planned, Story 7.5], render metrics [planned, Epic 10].
 
 The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `name`,

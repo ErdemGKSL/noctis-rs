@@ -1,5 +1,5 @@
 //! Commands end to end (Story 6.5, Matrix 1, 2, 18-21, 24, 45 and 49; Story
-//! 6.6, Matrix 2, 5, 17 and 21): a
+//! 6.6, Matrix 2, 5, 17 and 21; Story 6.7 autocomplete ACs): a
 //! `FakeGateway` `INTERACTION_CREATE` (or `MESSAGE_CREATE` through the
 //! Dispatcher) reaches the Command pipeline, whose responses `FakeDiscordHttp`
 //! records.
@@ -409,5 +409,164 @@ async fn modal_opens_as_the_first_response() {
         "{reports:?}"
     );
     assert_eq!(running.sent().len(), 1);
+    running.run.abort();
+}
+
+// ---- Story 6.7: autocomplete ----
+
+#[derive(Options)]
+#[expect(dead_code, reason = "only autocomplete reads it")]
+struct PrefixOptions {
+    #[option(description = "The prefix", autocomplete = prefix_suggest)]
+    value: String,
+    #[option(description = "How many")]
+    limit: i64,
+    #[option(description = "Many suggestions", autocomplete = many)]
+    many: Option<String>,
+    #[option(description = "A failing suggestion", autocomplete = failing)]
+    failing: Option<String>,
+}
+
+/// What `prefix_suggest` saw: the focused option and `partial.limit`.
+static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+#[autocomplete]
+async fn prefix_suggest(
+    ctx: AutocompleteCtx,
+    partial: Partial<PrefixOptions>,
+) -> HandlerResult<Responded> {
+    let focused = ctx.focused();
+    SEEN.lock().unwrap().push(format!(
+        "{}:{}:{}:{:?}",
+        ctx.command_path(),
+        focused.name(),
+        focused.value(),
+        partial.limit
+    ));
+    let typed = focused.value().to_owned();
+    Ok(ctx.respond(
+        ["!", "?", "."]
+            .into_iter()
+            .map(|p| AutocompleteChoice::new(format!("{typed}{p}"), p)),
+    ))
+}
+
+#[autocomplete]
+async fn many(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+    Ok(ctx.respond((0..30).map(|i| AutocompleteChoice::new(format!("c{i}"), format!("v{i}")))))
+}
+
+#[autocomplete]
+async fn failing(_ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+    Err(HandlerError::new(std::io::Error::other("lookup failed")))
+}
+
+#[command("config (set|get) prefix", description = "Prefix settings")]
+async fn config(
+    _ctx: CommandCtx,
+    _path: ConfigPath,
+    _options: PrefixOptions,
+) -> HandlerResult<Components> {
+    Ok(text("ok"))
+}
+
+/// Dispatches an autocomplete interaction of `config set prefix` focusing
+/// `focused` with the text `typed`.
+fn autocomplete_interaction(running: &Running, focused: &str, typed: &str) {
+    let d = json!({
+        "id": "100",
+        "application_id": "7",
+        "type": 4,
+        "token": "tok",
+        "version": 1,
+        "authorizing_integration_owners": {},
+        "entitlements": [],
+        "user": user(),
+        "data": {
+            "id": "9", "name": "config", "type": 1,
+            "options": [{ "type": 2, "name": "set", "options": [
+                { "type": 1, "name": "prefix", "options": [
+                    { "type": 3, "name": focused, "value": typed, "focused": true }
+                ]}
+            ]}]
+        },
+    });
+    assert_eq!(running.gw.dispatch("INTERACTION_CREATE", d), 1);
+}
+
+/// Starts an App with `config` whose Autocomplete Error Sink is the
+/// returned recorder.
+async fn start_autocomplete() -> (Running, Reports) {
+    let reports = Reports::default();
+    let sink = reports.clone();
+    let running = Running::start_with(Module::new("m").add(config()), move |b| {
+        b.error_sink(ErrorOrigin::Autocomplete, sink);
+    })
+    .await;
+    (running, reports)
+}
+
+/// The 3-word path AC: the handler gets the focused option and an all-`None`
+/// partial; one type-8 callback carries its choices.
+#[tokio::test(flavor = "multi_thread")]
+async fn autocomplete_three_word_path() {
+    let (running, reports) = start_autocomplete().await;
+    autocomplete_interaction(&running, "value", "pr");
+    let sent = running.wait_sent(1).await;
+    assert_eq!(sent[0].method, Method::POST);
+    assert_eq!(sent[0].route_path(), Some(CALLBACK));
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 8, "data": { "choices": [
+            { "name": "pr!", "value": "!" },
+            { "name": "pr?", "value": "?" },
+            { "name": "pr.", "value": "." },
+        ]}})
+    );
+    assert!(
+        SEEN.lock()
+            .unwrap()
+            .contains(&"config set prefix:value:pr:None".to_owned())
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(running.sent().len(), 1);
+    assert!(reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
+/// The INT-07 AC: 30 choices, 25 sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn autocomplete_truncates_to_twenty_five() {
+    let (running, _reports) = start_autocomplete().await;
+    autocomplete_interaction(&running, "many", "");
+    let sent = running.wait_sent(1).await;
+    let choices = body(&sent[0])["data"]["choices"].as_array().unwrap().len();
+    assert_eq!(choices, 25);
+    running.run.abort();
+}
+
+/// The failure AC: an erroring handler answers an empty list and reports
+/// to the Autocomplete Error Sink.
+#[tokio::test(flavor = "multi_thread")]
+async fn autocomplete_error_sends_empty_choices() {
+    let (running, reports) = start_autocomplete().await;
+    autocomplete_interaction(&running, "failing", "x");
+    let sent = running.wait_sent(1).await;
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 8, "data": { "choices": [] } })
+    );
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let seen = reports.0.lock().unwrap().clone();
+        if !seen.is_empty() {
+            assert_eq!(seen.len(), 1);
+            assert!(seen[0].ends_with("::failing:lookup failed"), "{seen:?}");
+            break;
+        }
+        assert!(Instant::now() < deadline, "no report");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(running.reports.0.lock().unwrap().is_empty());
     running.run.abort();
 }

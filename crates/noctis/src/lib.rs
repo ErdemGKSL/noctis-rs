@@ -388,16 +388,18 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, Acked, App, AppBuilder, BaseMeta, BuildError, BuildViolation, Command,
-    CommandCtx, CommandHandler, CommandInput, CommandInvocation, CommandMetadata, CommandOption,
-    CommandPath, CommandResponder, ContextMenuHandler, Descriptor, DispatchError, Dispatcher,
-    EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink, FollowupHandle,
-    GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError,
-    IntegrationType, InteractionContext, IntoResponse, InvalidOption, LogSink, MenuKind,
-    MenuTargetError, ModalMarker, Module, NoModal, OpensModal, OptionError, OptionValue, Options,
-    OutgoingMessage, Pending, Permissions, Plugin, ReportKind, Resource, ResourceConflict,
-    Responded, Responder, ResponderError, ResponderKind, ResponderState, RunError, Runtime,
-    StartError, State, Token, TokenError, UnknownCommandPath, Visibility,
+    AckDeadlineMissed, Acked, App, AppBuilder, AutocompleteChoice, AutocompleteCtx,
+    AutocompleteError, AutocompleteHandler, AutocompleteValue, BaseMeta, BuildError,
+    BuildViolation, Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation,
+    CommandMetadata, CommandOption, CommandPath, CommandResponder, ContextMenuHandler, Descriptor,
+    DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
+    Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
+    HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoResponse,
+    InvalidOption, LogSink, MenuKind, MenuTargetError, ModalMarker, Module, NoModal, OpensModal,
+    OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending,
+    Permissions, Plugin, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State, Token,
+    TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives [`Options`](trait@Options) for a struct with named fields: each
@@ -462,7 +464,7 @@ pub use noctis_core::{
 /// | `min_length = n`, `max_length = n` | unsuffixed integer, 0..=6000 and 1..=6000 (OPT-06) | STRING |
 /// | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (OPT-07) | CHANNEL |
 /// | `file_types = ["image", ".pdf"]` | `image`, `video`, `audio` or `.ext`, at most 10 (OPT-13) | ATTACHMENT |
-/// | `autocomplete = path` | an existing function; sets the autocomplete flag (OPT-10, OPT-11) | STRING, INTEGER, NUMBER |
+/// | `autocomplete = path` | an [`autocomplete`](macro@autocomplete) handler for this struct (E0277 otherwise); sets the autocomplete flag and links the handler (OPT-10, OPT-11) | STRING, INTEGER, NUMBER |
 /// | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>`, called only for present values | all |
 ///
 /// Field types ([`CommandOption`]; any other is an `[OPT-02]` compile
@@ -487,6 +489,10 @@ pub use noctis_core::{
 /// [`CommandOption::KIND`]: they fail as `error[E0080]: evaluation
 /// panicked: [RULE-ID] …` (OPT-03..08, OPT-10, OPT-11, OPT-13 misuse).
 ///
+/// The derive also generates `<Name>Partial` ([`Partial<Name>`](Partial)):
+/// the same fields, each an `Option`, which autocomplete handlers get
+/// (OPT-12).
+///
 /// A missing description does not compile:
 ///
 /// ```compile_fail
@@ -498,6 +504,101 @@ pub use noctis_core::{
 /// }
 /// ```
 pub use noctis_macros::Options;
+
+/// Turns `async fn name(ctx: AutocompleteCtx[, partial: Partial<O>]) ->
+/// HandlerResult<Responded>` into `fn name() -> AutocompleteHandler<O>`,
+/// which `#[option(autocomplete = name)]` links to an option of the options
+/// struct `O` (FR-10). It is not added to a [`Module`]; the option's
+/// Command is.
+///
+/// The handler answers with [`AutocompleteCtx::respond`], its only
+/// response (INT-06): synchronous, no `.await`, no defer, no Responder.
+/// [`AutocompleteCtx::focused`] is the option being typed in (its raw
+/// text, unvalidated), and [`Partial<O>`](Partial) holds the other options
+/// as `Option`s (OPT-12; Discord may omit any of them, and validators do not
+/// run). Without the `partial` parameter the handler fits any options
+/// struct.
+///
+/// More than 25 choices are truncated to the first 25 with a warning
+/// (INT-07); a choice Discord would reject is dropped with a warning. When
+/// the handler errors, panics or has not returned 2.5 s after the
+/// interaction arrived ([`AutocompleteError::DeadlineMissed`]), Discord gets
+/// an empty list and the error goes to the Autocomplete Error Sink
+/// ([`ErrorOrigin::Autocomplete`]).
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::LegacyMessage;
+///
+/// #[derive(Options)]
+/// struct PrefixOptions {
+///     #[option(description = "The new prefix", autocomplete = prefix_suggest)]
+///     value: String,
+///     #[option(description = "How many suggestions")]
+///     limit: Option<i64>,
+/// }
+///
+/// #[autocomplete]
+/// async fn prefix_suggest(ctx: AutocompleteCtx, partial: Partial<PrefixOptions>) -> HandlerResult<Responded> {
+///     let typed = ctx.focused().value().to_owned();
+///     let limit = usize::try_from(partial.limit.unwrap_or(5)).unwrap_or(0);
+///     Ok(ctx.respond(
+///         ["!", "?", "."]
+///             .into_iter()
+///             .filter(|p| p.starts_with(&typed))
+///             .take(limit)
+///             .map(|p| AutocompleteChoice::new(p, p)),
+///     ))
+/// }
+///
+/// /// Fits any options struct.
+/// #[autocomplete]
+/// async fn nothing(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+///     Ok(ctx.respond(Vec::new()))
+/// }
+///
+/// #[command("config set prefix", description = "Set the prefix")]
+/// async fn set_prefix(_ctx: CommandCtx, options: PrefixOptions) -> HandlerResult<LegacyMessage> {
+///     Ok(LegacyMessage::new(format!("Prefix set to {}", options.value)))
+/// }
+///
+/// assert!(prefix_suggest().name().ends_with("::prefix_suggest"));
+/// let _ = nothing::<PrefixOptions>();
+/// let _module = Module::new("config").add(set_prefix()); // no `.add(prefix_suggest())`
+/// ```
+///
+/// A `Partial` field is always an `Option`:
+///
+/// ```compile_fail,E0308
+/// use noctis::prelude::*;
+///
+/// #[derive(Options)]
+/// struct O {
+///     #[option(description = "d")]
+///     limit: i64,
+/// }
+///
+/// fn read(partial: Partial<O>) {
+///     let limit: i64 = partial.limit; // [OPT-12]
+///     let _ = limit;
+/// }
+/// ```
+///
+/// `autocomplete = path` must name an `#[autocomplete]` handler for the
+/// struct:
+///
+/// ```compile_fail,E0277
+/// use noctis::prelude::*;
+///
+/// fn plain() {}
+///
+/// #[derive(Options)]
+/// struct O {
+///     #[option(description = "d", autocomplete = plain)]
+///     query: String,
+/// }
+/// ```
+pub use noctis_macros::autocomplete;
 
 pub mod observe {
     //! The observability contract: the metric catalog ([`METRICS`]) and
@@ -1131,17 +1232,19 @@ pub mod prelude {
     //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
     //!   a Command's typed options; [`CommandOption`] (the field types) and
     //!   [`MessageKey`] (what option validators return).
+    //! - [`autocomplete`](macro@autocomplete), [`AutocompleteCtx`],
+    //!   [`AutocompleteChoice`] and [`Partial`]: autocomplete handlers.
     //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
-        App, AppBuilder, CommandCtx, CommandOption, CommandResponder, Ephemerality, ErrorOrigin,
-        ErrorSink, HandlerError, HandlerResult, IntoResponse, Module, OpensModal, Options,
-        Responded, State, Visibility,
+        App, AppBuilder, AutocompleteChoice, AutocompleteCtx, CommandCtx, CommandOption,
+        CommandResponder, Ephemerality, ErrorOrigin, ErrorSink, HandlerError, HandlerResult,
+        IntoResponse, Module, OpensModal, Options, Partial, Responded, State, Visibility,
     };
     pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
-    pub use noctis_macros::{command, event, message_command, user_command};
+    pub use noctis_macros::{autocomplete, command, event, message_command, user_command};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_rules::MessageKey;
     pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};

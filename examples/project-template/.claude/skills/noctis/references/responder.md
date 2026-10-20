@@ -116,8 +116,8 @@ one but never uses it, nothing is sent from it).
 | `ComponentResponder<OpensModal>` [planned, Epic 7] | the above plus `modal(m)` | component that opens a modal |
 | `ModalResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` — **no** `modal` | modal submit |
 
-Autocomplete has no Responder: `AutocompleteCtx` offers only
-`ctx.respond(choices).await? -> Responded` (`commands.md` §4) [planned, Story 6.7].
+Autocomplete has no Responder: `AutocompleteCtx` offers only the synchronous
+`ctx.respond(choices) -> Responded` (no `.await`; `commands.md` §4).
 
 Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 

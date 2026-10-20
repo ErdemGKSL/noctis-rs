@@ -361,7 +361,7 @@ field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``)
 | `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
 | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (`GuildText`, `Private`, `GuildVoice`, `Group`, `GuildCategory`, `GuildAnnouncement`, `AnnouncementThread`, `PublicThread`, `PrivateThread`, `GuildStageVoice`, `GuildDirectory`, `GuildForum`, `GuildMedia`; a path's last segment counts, `ChannelType::GuildText` works); at least one | CHANNEL | OPT-07 |
 | `file_types = ["image", ".pdf"]` | string literals: `image`, `video`, `audio` or `.` + ASCII letters/digits; ≤ 10 | ATTACHMENT | OPT-13 |
-| `autocomplete = path` | an existing fn (E0425 otherwise); sets the autocomplete flag only. The autocomplete handler itself is wired in Story 6.7 [planned] | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
+| `autocomplete = path` | an `#[autocomplete]` fn for this options struct (§4); sets the autocomplete flag and links the handler (no Module registration). Anything else is E0277 `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
 | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>` (`T` = the field type without `Option`; E0308 on another signature); sync, called only when the value is present, in field order, after the whole struct decoded | all | — |
 
 ### Field types (`CommandOption`, OPT-02)
@@ -525,27 +525,73 @@ fails OPT-08. Command choices are STRING only: integer/number choices are [plann
 ## 4. Autocomplete
 
 ```rust
-#[autocomplete]
-async fn rule_suggest(ctx: AutocompleteCtx, focused: Focused<String>, partial: Partial<WarnOptions>)
-    -> HandlerResult<Responded>
-{
-    let rules = load_rules(ctx.guild_id()).await?;
-    let choices = rules
-        .into_iter()
-        .filter(|r| r.name.contains(focused.as_str()))
-        .map(|r| Choice::new(r.name.clone(), r.id.to_string()));
-    Ok(ctx.respond(choices).await?)
+use noctis::prelude::*; // autocomplete, AutocompleteCtx, AutocompleteChoice, Partial
+
+#[derive(Options)]
+pub struct PrefixOptions {
+    #[option(description = "The new prefix", autocomplete = prefix_suggest)]
+    pub value: String,
+    #[option(description = "How many suggestions")]
+    pub limit: Option<i64>,
 }
+
+#[autocomplete]
+async fn prefix_suggest(ctx: AutocompleteCtx, partial: Partial<PrefixOptions>) -> HandlerResult<Responded> {
+    let typed = ctx.focused().value().to_owned();          // raw text typed so far
+    let limit = usize::try_from(partial.limit.unwrap_or(5)).unwrap_or(0); // every field is Option
+    Ok(ctx.respond(                                         // sync: no `.await`
+        ["!", "?", "."]
+            .into_iter()
+            .filter(|p| p.starts_with(&typed))
+            .take(limit)
+            .map(|p| AutocompleteChoice::new(p, p)),        // (name, value)
+    ))
+}
+
+#[command("config (set|get) prefix", description = "Prefix settings")]
+async fn config(ctx: CommandCtx, path: ConfigPath, opts: PrefixOptions) -> HandlerResult<Components> { … }
+
+let module = Module::new("config").add(config()); // no `.add(prefix_suggest())`
 ```
 
-`AutocompleteCtx` has exactly one response method, `respond` (INT-04, INT-06).
-
-- `Partial<T>` has every field as `Option`, because Discord may omit required options
-  (OPT-12). Re-validate in the real handler: autocomplete values are not constrained.
-- More than 25 suggestions are truncated to 25 with a warning (INT-07, always).
-- No defer exists for autocomplete (INT-06). On error or timeout Noctis answers an
-  empty list and routes the error to the Autocomplete Error Sink.
-- Register the autocomplete fn in the Module too: `.add(rule_suggest())`.
+- `#[autocomplete]` turns `async fn name(ctx: AutocompleteCtx[, partial: Partial<O>]) ->
+  HandlerResult<Responded>` into `fn name() -> AutocompleteHandler<O>`; link it with
+  `#[option(autocomplete = name)]` on a field of `O`. It is **not** added to a Module:
+  the Command carries it. Without `partial` the handler fits any options struct
+  (`name::<O>()`). Other signatures fail: `` `#[autocomplete]` needs an `async fn` ``,
+  `` … cannot be generic ``, `` `#[autocomplete]` handlers take `(ctx: AutocompleteCtx[,
+  partial: Partial<Options>])` ``, `` `#[autocomplete]` takes no arguments ``; any return
+  type other than `HandlerResult<Responded>` is E0271 at the return type.
+- `AutocompleteCtx` has exactly one response, `respond(self, choices) -> Responded`:
+  synchronous, infallible, consuming the ctx (INT-04, INT-06). There is no `defer`, no
+  `reply` and no Responder (`ctx.defer()` is E0599). Accessors: `command_path()`,
+  `module()`, `shard()`, `guild_id()`, `channel_id()`, `user_id()`, `user_locale()`,
+  `guild_locale()`, `focused()`, `state::<T>()`, `http()`.
+- `ctx.focused()` is the `Focused` option being typed in: `name()`, `kind()` (`OptionType`),
+  `value()` (the raw text, exactly as sent; unvalidated, so an INTEGER option may hold
+  `"-"`), `as_integer() -> Option<i64>`, `as_number() -> Option<f64>` (finite only).
+- `Partial<O>` is the `<Name>Partial` struct `#[derive(Options)]` generates (here
+  `PrefixOptionsPartial`, which implements `PartialOptions` and is `Options::Partial`):
+  every field is `Option<T>`, because Discord may omit any
+  option, required ones included (OPT-12; `let n: i64 = partial.limit` is E0308).
+  Decoding never fails: a missing, mistyped, unresolved or unknown-choice value is
+  `None`, and `validate = path` validators do not run. Re-validate in the Command handler:
+  the final value need not be one of your suggestions.
+- `AutocompleteChoice::new(name, value)`: `name` 1–100 characters, `value` an
+  `AutocompleteValue` from `&str`/`String` (STRING), `i64` (INTEGER or NUMBER) or `f64`
+  (NUMBER), matching the option's type.
+- Noctis sends the first 25 choices; more is truncated with one warning on target
+  `noctis::autocomplete` (`handler`, `returned`, `sent`), in every limit mode (INT-07).
+  Each kept choice Discord would reject (OPT-09 name or value length, wrong value type,
+  OPT-03 / OPT-04 number range) is dropped, with one `noctis::autocomplete` warning
+  naming the count and the rule ids; the rest are still sent.
+- The handler has **2.5 s** from when the interaction arrived (fixed). On an error, a
+  panic, the deadline (`AutocompleteError::DeadlineMissed`) or shutdown, Noctis answers
+  an empty list and routes the failure to the Autocomplete Error Sink
+  (`ErrorOrigin::Autocomplete`); the user sees no error. An unknown Command or an option
+  without a linked handler also gets an empty list, with a `noctis::dispatch` warning.
+- Exactly one type-8 callback goes out per autocomplete interaction; Noctis sends it,
+  never your code.
 
 Rule function: `noctis::rules::command::validate_autocomplete(&choices, OptionType::String,
 &limits) -> Vec<Violation>` checks a response the way `respond` does. More than
@@ -555,7 +601,8 @@ truncates and warns, in every mode. Each kept choice (`choices[j]`) follows OPT-
 1–100 and localized names, value type, string value ≤ 100) and OPT-03 / OPT-04 for
 numbers; dropped choices are not checked. On an option type other than STRING, INTEGER or
 NUMBER the only violation is OPT-11 (`autocomplete only on STRING, INTEGER or NUMBER
-options`).
+options`). You need it only for choices built outside `respond` (for example to test a
+suggestion list).
 
 ```rust
 use noctis::rules::RuleId;
@@ -571,9 +618,6 @@ for v in validate_autocomplete(&choices, OptionType::String, &limits) {
 }
 choices.truncate(limits.autocomplete_choices);
 ```
-
-Only INT-07 is a truncate-and-warn case; any other violation (OPT-09, OPT-03, OPT-04,
-OPT-11) means Discord rejects the response, so fix or drop the offending choices first.
 
 ## 5. Context-menu commands
 

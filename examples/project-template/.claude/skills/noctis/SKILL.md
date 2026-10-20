@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `27715d41ca4f505380ab2ef03a9041b6e0233a8320011cfa5fc79552dec5bda6` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `8dbe851b7216b5514cce5845908473937223e19b106e7340de7b2e649d56568e` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -308,7 +308,7 @@ to **act** on an item → a Section with an accessory button or a select option.
 | `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
 | `pack.slashCommand({ name: "a (b\|c)" })` | `#[command("a (b\|c)")]`; the handler gets a generated `APath` enum |
 | `options: { user: { type: "User" } }` | `#[derive(Options)] struct … { user: ResolvedUser }` |
-| `autoComplete` | `#[option(autocomplete = fn)]` + `#[autocomplete]` fn calling `ctx.respond(..)` |
+| `autoComplete` | `#[option(autocomplete = fn)]` + an `#[autocomplete]` fn returning `Ok(ctx.respond(choices))` (sync, no Module registration; `commands.md` §4) |
 | `pack.button({ id, options })` + `buildComponent({ id, data, overrides })` | `#[derive(Route)]` + `Route { .. }.button().label(..)` + `#[handler]` |
 | `data[i] as number` | typed Payload fields |
 | dbi references / store | `by_ref` Routes + `RefStore` |

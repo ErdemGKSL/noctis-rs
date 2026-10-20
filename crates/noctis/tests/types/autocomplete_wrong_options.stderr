@@ -1,0 +1,20 @@
+error[E0277]: `autocomplete = …` is not an `#[autocomplete]` handler for `O`
+  --> tests/types/autocomplete_wrong_options.rs:16:48
+   |
+16 |     #[option(description = "d", autocomplete = suggest)]
+   |                                                ^^^^^^^ its descriptor returns `AutocompleteHandler<Other>`, not `AutocompleteHandler<O>`
+   |
+   = note: annotate an `async fn(ctx: AutocompleteCtx[, partial: Partial<O>]) -> HandlerResult<Responded>` with `#[autocomplete]`
+help: the trait `__AutocompleteOutput<O>` is not implemented for `AutocompleteHandler<Other>`
+      but trait `__AutocompleteOutput<Other>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/autocomplete.rs
+   |
+   | impl<O> __AutocompleteOutput<O> for AutocompleteHandler<O> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Other`, found `O`
+   = note: required for `fn() -> AutocompleteHandler<<<Other as noctis::Options>::Partial as PartialOptions>::Options> {suggest}` to implement `noctis::__private::noctis_core::autocomplete::__AutocompleteFor<O>`
+note: required by a bound in `noctis::__private::noctis_core::autocomplete::__autocomplete_for`
+  --> $WORKSPACE/crates/noctis-core/src/autocomplete.rs
+   |
+   | pub fn __autocomplete_for<O: Options, F: __AutocompleteFor<O>>(f: F) -> AutocompleteHandler<O> {
+   |                                          ^^^^^^^^^^^^^^^^^^^^ required by this bound in `__autocomplete_for`

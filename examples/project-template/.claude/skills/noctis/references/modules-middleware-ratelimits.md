@@ -37,8 +37,9 @@ BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
   too (in `install`); those trees fold after the ones mounted before `build()`.
 - `.add(x())` takes any `Descriptor` (a sealed trait). Today that is the
   `EventHandler` an `#[event]` function returns and the `#[command]`, `#[user_command]`
-  and `#[message_command]` descriptors; `#[handler]`, `#[autocomplete]` and `#[hook]`
-  descriptors join in later stories [planned].
+  and `#[message_command]` descriptors; `#[handler]` and `#[hook]` descriptors join in
+  later stories [planned]. `#[autocomplete]` handlers are **not** added to a Module: an
+  `#[option(autocomplete = …)]` field links them to their Command (`commands.md` §4).
 - Registration is data: nothing runs when you add or nest, and the call order of `.add`
   and `.module` does not matter. `build()` folds every mounted tree **once**, pre-order:
   a Module's own registrations in `.add` order, then each child in `.module` order
@@ -275,9 +276,9 @@ builder
 - **`ErrorOrigin`** (`#[non_exhaustive]`, `Copy`): `Command`, `Component` (component
   interactions and modal submits), `Autocomplete`, `Event` (event handlers, and events
   dropped by a full overflow), `Render`. `ErrorOrigin::ALL` lists them; `as_str()` /
-  `Display` give `command`, `component`, `autocomplete`, `event`, `render`. Only `Event`
-  reports are produced today; the other origins report once their handlers land
-  (Epics 6, 7 and 10).
+  `Display` give `command`, `component`, `autocomplete`, `event`, `render`. `Event`,
+  `Command` and `Autocomplete` reports are produced today; `Component` and `Render`
+  report once their handlers land (Epics 7 and 10).
 - **`ErrorReport<'_>`** (`#[non_exhaustive]`, `Copy`, built only by noctis): `origin`,
   `kind: ReportKind`, `app: &str` (`"default"` for now), `shard: Option<u32>`,
   `guild_id: Option<Id<GuildMarker>>`, `module: Option<&str>`, `handler: Option<&str>`

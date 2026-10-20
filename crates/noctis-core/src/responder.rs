@@ -354,6 +354,14 @@ pub struct Responded {
     _private: (),
 }
 
+impl Responded {
+    /// The proof itself; what `done()` and `AutocompleteCtx::respond`
+    /// return.
+    pub(crate) fn new() -> Self {
+        Self { _private: () }
+    }
+}
+
 /// A value a handler of kind `K` may return: a [`V2Message`],
 /// [`Components`], a [`LegacyMessage`] or the [`Responded`] from
 /// [`done`](Responder::done). Sealed.

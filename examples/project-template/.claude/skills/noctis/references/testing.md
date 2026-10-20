@@ -50,7 +50,7 @@ let page2 = app.click(reply.button_by_emoji("▶")).by(ADMIN).run().await?;
 let picked = app.select(reply.component::<PickLogChannel>()).channels([LOGS]).by(ADMIN).run().await?;
 let modal = app.click(reply.component::<EditBio>()).by(ADMIN).run().await?;   // ResponseKind::Modal
 let saved = app.submit(modal.modal::<BioForm>().text("bio", "hi").radio("pronouns", "they")).by(ADMIN).run().await?;
-let auto  = app.autocomplete("mod warn", "rule", "spa").by(ADMIN).run().await?;
+let auto  = app.autocomplete("mod warn", "rule", "spa").by(ADMIN).run().await?; // [planned, Epic 8]
 app.event(MessageCreate::test(GUILD, MEMBER, "hello")).await?;
 ```
 

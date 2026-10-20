@@ -6,8 +6,8 @@
 //! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
 //! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
 //! `components!`, the `Modal`, `Choices` and `Options` derives, and the
-//! `#[event]`, `#[command]`, `#[user_command]` and `#[message_command]`
-//! attributes.
+//! `#[event]`, `#[command]`, `#[user_command]`, `#[message_command]` and
+//! `#[autocomplete]` attributes.
 //!
 //! Generated code names runtime items only through
 //! `::noctis::__private::{codec, ui, core, rules, model}` and std items through `::core`/`::std`
@@ -17,6 +17,7 @@
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
+mod autocomplete;
 mod choices;
 mod command;
 mod common;
@@ -208,6 +209,14 @@ pub fn user_command(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn message_command(args: TokenStream, item: TokenStream) -> TokenStream {
     menu::expand(menu::Menu::Message, args.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// `#[autocomplete]`: an autocomplete handler descriptor; see `noctis`.
+#[proc_macro_attribute]
+pub fn autocomplete(args: TokenStream, item: TokenStream) -> TokenStream {
+    autocomplete::expand(args.into(), item.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

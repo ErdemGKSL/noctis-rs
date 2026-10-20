@@ -24,6 +24,20 @@
 //! The [`Dispatcher`] runs stages 3 onward for a Command invoked from
 //! outside an interaction; it arms no auto-defer (a message has no ack
 //! deadline).
+//!
+//! # Autocomplete
+//!
+//! An `APPLICATION_COMMAND_AUTOCOMPLETE` interaction (INT-06, INT-07,
+//! OPT-12) resolves its Command like stage 1, decodes the partial options
+//! leniently and finds the focused option's handler through the Command's
+//! options struct. The handler runs under `catch_unwind`, a deadline of
+//! `received_at + 2.5 s` and the shutdown token; it never runs once the
+//! deadline has passed. Its choices are truncated to 25 and invalid kept
+//! choices dropped, each with a warning on target `noctis::autocomplete`,
+//! and exactly one type-8 callback is sent. Any failure sends an empty list
+//! and goes to the Autocomplete Error Sink; an unknown Command or an option
+//! without a handler sends an empty list with a warning only. The
+//! [`Dispatcher`] has no autocomplete.
 
 use std::any::Any;
 use std::fmt;
@@ -45,6 +59,10 @@ use twilight_model::application::interaction::{Interaction, InteractionData};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 
+use crate::autocomplete::{
+    AUTOCOMPLETE_DEADLINE, AutocompleteCtx, AutocompleteError, AutocompleteInput,
+    AutocompleteParts, ErasedAutocomplete, Slot, Warnings, callback_body, filter_choices,
+};
 use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
 use crate::edge::callback::ACK_DEADLINE;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
@@ -53,7 +71,8 @@ use crate::options::CommandInput;
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
 use crate::responder::{
-    Ephemerality, InteractionTarget, MessageTarget, PENDING, Response, Shared, Transport,
+    Ephemerality, InteractionTarget, MessageTarget, PENDING, Responded, ResponderError, Response,
+    Shared, Transport,
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 use crate::worker::panic_message;
@@ -458,6 +477,367 @@ pub(crate) async fn run_interaction(
     };
     let start = start(&resolved, raw.as_bytes(), parts);
     execute(&span, Some(&cancel), state, start, Some(timer), report).await;
+}
+
+/// How an autocomplete handler run ended.
+enum AutocompleteOutcome {
+    /// It ran and returned; `None` when it never called `respond`.
+    Answered(HandlerResult<Responded>),
+    Panicked(Box<dyn Any + Send>),
+    Cancelled,
+    DeadlineMissed,
+}
+
+/// Sends the one type-8 callback of `choices`; a failure is returned for
+/// the caller to report or log.
+async fn send_choices(
+    target: &InteractionTarget,
+    choices: &[crate::AutocompleteChoice],
+) -> Result<(), ResponderError> {
+    target
+        .callback(&callback_body(choices), false)
+        .await
+        .map(|_| ())
+}
+
+/// Logs the filter's warnings for `handler`.
+fn log_warnings(warnings: &Warnings, handler: &'static str) {
+    if let Some((returned, sent)) = warnings.truncated {
+        tracing::warn!(
+            target: "noctis::autocomplete",
+            handler,
+            returned,
+            sent,
+            "[INT-07] too many autocomplete choices: sent the first ones"
+        );
+    }
+    if warnings.dropped > 0 {
+        tracing::warn!(
+            target: "noctis::autocomplete",
+            handler,
+            dropped = warnings.dropped,
+            rules = %warnings.rule_list(),
+            "invalid autocomplete choices dropped"
+        );
+    }
+    if warnings.not_choosable {
+        tracing::warn!(
+            target: "noctis::autocomplete",
+            handler,
+            "[OPT-11] the focused option's type takes no autocomplete: sent no choices"
+        );
+    }
+}
+
+/// Runs one `APPLICATION_COMMAND_AUTOCOMPLETE` interaction (see the module
+/// docs, "Autocomplete") in span `noctis.interaction`.
+pub(crate) async fn run_autocomplete(
+    registry: Arc<Registry>,
+    app: Arc<AppShared>,
+    inbound: Inbound,
+    cancel: CancellationToken,
+) {
+    let shard = inbound.shard.number();
+    let received_at = inbound.received_at;
+    let deadline = received_at + AUTOCOMPLETE_DEADLINE;
+    let InboundKind::Interaction(interaction, raw) = inbound.kind else {
+        return;
+    };
+    let span = tracing::info_span!(
+        "noctis.interaction",
+        app = &*app.app,
+        shard,
+        guild_id = interaction.guild_id.map(Id::get),
+        module = Empty,
+        path = Empty,
+    );
+    let resolved = match &interaction.data {
+        Some(InteractionData::ApplicationCommand(data)) => resolve(&registry, data),
+        _ => Err(String::new()),
+    };
+    let author = interaction.author_id();
+    let Interaction {
+        application_id,
+        id: interaction_id,
+        token,
+        locale,
+        guild_locale,
+        guild_id,
+        channel,
+        ..
+    } = *interaction;
+    let channel_id = channel.as_ref().map(|c| c.id);
+    let target = InteractionTarget {
+        app: Arc::clone(&app),
+        application_id,
+        interaction_id,
+        token,
+        received_at,
+        channel_id,
+    };
+    let report_for = |module, handler| Report {
+        app: &app,
+        shard: Some(shard),
+        guild_id,
+        module,
+        handler,
+        event_type: Some(INTERACTION_CREATE),
+    };
+    let found = match find_autocomplete(&span, shard, resolved, raw.as_bytes(), author) {
+        Ok(found) => found,
+        Err(skip) => {
+            let sent = send_choices(&target, &[]).instrument(span.clone()).await;
+            if let Err(error) = sent {
+                span.in_scope(|| {
+                    tracing::warn!(target: "noctis::autocomplete", %error, "autocomplete callback failed");
+                });
+            }
+            if let Some((module, handler, error)) = &skip {
+                let report = report_for(module, handler);
+                report_autocomplete(&span, &report, ReportKind::Error(error));
+            }
+            return;
+        }
+    };
+    let report = report_for(found.entry.module, found.handler.name());
+    let kind = found.focused.kind();
+    let slot = Slot::default();
+    let ctx = AutocompleteCtx::new(
+        AutocompleteParts {
+            path: found.path,
+            module: found.entry.module,
+            shard,
+            guild_id,
+            channel_id,
+            user_id: found.user_id,
+            user_locale: locale,
+            guild_locale,
+            focused: found.focused,
+            app: Some(Arc::clone(&app)),
+            max_choices: app.limits.autocomplete_choices,
+        },
+        Arc::clone(&slot),
+    );
+    let outcome =
+        run_autocomplete_handler(&span, &cancel, deadline, &found.handler, ctx, &found.input).await;
+    let choices = kept_choices(&span, &outcome, &slot, kind, &app.limits, report.handler);
+    let sent = send_choices(&target, &choices)
+        .instrument(span.clone())
+        .await;
+    finish_autocomplete(&span, &report, &outcome, sent);
+}
+
+/// What an autocomplete interaction resolved to.
+struct Found {
+    entry: Arc<CommandEntry>,
+    path: &'static str,
+    input: CommandInput,
+    focused: crate::Focused,
+    handler: ErasedAutocomplete,
+    user_id: Id<UserMarker>,
+}
+
+/// Why no autocomplete handler runs: `None` after a warning (nothing to
+/// blame), else the Module, the Command's handler and the error to report.
+type Skip = Option<(&'static str, &'static str, HandlerError)>;
+
+/// Resolves the Command (stage 1), decodes the partial input and finds the
+/// focused option's handler, recording `module` and `path` on `span`.
+fn find_autocomplete(
+    span: &Span,
+    shard: u32,
+    resolved: Result<Resolved, String>,
+    raw: &[u8],
+    author: Option<Id<UserMarker>>,
+) -> Result<Found, Skip> {
+    let warn = |message: &'static str| {
+        span.in_scope(|| tracing::warn!(target: "noctis::dispatch", shard, "{message}"));
+    };
+    let (entry, path) = match resolved {
+        Ok(Resolved::Command { entry, path }) => (entry, path),
+        Ok(Resolved::Menu(entry)) => {
+            span.record("module", entry.module);
+            span.record("path", entry.handler.menu_name());
+            warn("no autocomplete handler");
+            return Err(None);
+        }
+        Err(path) => {
+            span.in_scope(|| {
+                tracing::warn!(target: "noctis::dispatch", shard, path, "unknown command");
+            });
+            return Err(None);
+        }
+    };
+    span.record("module", entry.module);
+    span.record("path", path);
+    let (input, focused) = AutocompleteInput::from_json(raw)
+        .map_err(|e| Some((entry.module, entry.handler.name(), HandlerError::new(e))))?;
+    let Some(handler) = entry.handler.autocomplete_for(focused.name()) else {
+        warn("no autocomplete handler");
+        return Err(None);
+    };
+    let Some(user_id) = author else {
+        warn("autocomplete interaction without an author");
+        return Err(None);
+    };
+    Ok(Found {
+        entry,
+        path,
+        input,
+        focused,
+        handler,
+        user_id,
+    })
+}
+
+/// The choices to send after `outcome`: what `respond` stored, filtered
+/// (warnings logged for `handler`), or none after a failure or without a
+/// `respond`.
+fn kept_choices(
+    span: &Span,
+    outcome: &AutocompleteOutcome,
+    slot: &Slot,
+    kind: noctis_rules::command::OptionType,
+    limits: &noctis_rules::Limits,
+    handler: &'static str,
+) -> Vec<crate::AutocompleteChoice> {
+    if !matches!(outcome, AutocompleteOutcome::Answered(Ok(_))) {
+        return Vec::new();
+    }
+    let collected = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    let Some(collected) = collected else {
+        return Vec::new();
+    };
+    let (choices, warnings) = filter_choices(collected, kind, limits);
+    span.in_scope(|| log_warnings(&warnings, handler));
+    choices
+}
+
+/// Runs an autocomplete handler under `catch_unwind`, the deadline and
+/// `cancel` (biased to the cancel), and records its duration; it does not
+/// start once the deadline has passed or `cancel` fired.
+async fn run_autocomplete_handler(
+    span: &Span,
+    cancel: &CancellationToken,
+    deadline: tokio::time::Instant,
+    handler: &ErasedAutocomplete,
+    ctx: AutocompleteCtx,
+    input: &CommandInput,
+) -> AutocompleteOutcome {
+    if tokio::time::Instant::now() >= deadline {
+        return AutocompleteOutcome::DeadlineMissed;
+    }
+    if cancel.is_cancelled() {
+        return AutocompleteOutcome::Cancelled;
+    }
+    let app = ctx.app_name();
+    let started_at = Instant::now();
+    let started =
+        span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, input))));
+    let outcome = match started {
+        Ok(fut) => {
+            let run = tokio::time::timeout_at(
+                deadline,
+                AssertUnwindSafe(fut)
+                    .catch_unwind()
+                    .instrument(span.clone()),
+            );
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => AutocompleteOutcome::Cancelled,
+                result = run => match result {
+                    Err(_) => AutocompleteOutcome::DeadlineMissed,
+                    Ok(Ok(result)) => AutocompleteOutcome::Answered(result),
+                    Ok(Err(panic)) => AutocompleteOutcome::Panicked(panic),
+                },
+            }
+        }
+        Err(panic) => AutocompleteOutcome::Panicked(panic),
+    };
+    if let Some(app) = app {
+        metrics::histogram!(
+            "noctis_handler_duration_seconds",
+            "app" => app,
+            "kind" => ErrorOrigin::Autocomplete.as_str()
+        )
+        .record(started_at.elapsed().as_secs_f64());
+    }
+    outcome
+}
+
+/// Reports how an autocomplete run ended once its callback was sent: a
+/// handler failure goes to the Autocomplete Error Sink (a callback failure
+/// after it is only a warning); after a success, a callback failure is
+/// reported, except an edge deadline refusal, which is a warning.
+fn finish_autocomplete(
+    span: &Span,
+    report: &Report<'_>,
+    outcome: &AutocompleteOutcome,
+    sent: Result<(), ResponderError>,
+) {
+    let warn = |error: &dyn fmt::Display| {
+        span.in_scope(|| {
+            tracing::warn!(target: "noctis::autocomplete", handler = report.handler, %error, "autocomplete callback failed");
+        });
+    };
+    let error;
+    let kind = match outcome {
+        AutocompleteOutcome::Answered(Ok(_)) => match sent {
+            Ok(()) => return,
+            Err(ResponderError::AckDeadlineMissed(missed)) => {
+                warn(&missed);
+                return;
+            }
+            Err(e) => {
+                error = HandlerError::new(e);
+                ReportKind::Error(&error)
+            }
+        },
+        failed => {
+            if let Err(e) = sent {
+                warn(&e);
+            }
+            match failed {
+                AutocompleteOutcome::Answered(Err(e)) => ReportKind::Error(e),
+                AutocompleteOutcome::Panicked(panic) => ReportKind::Panic(panic_message(&**panic)),
+                AutocompleteOutcome::Cancelled => ReportKind::Cancelled,
+                AutocompleteOutcome::DeadlineMissed | AutocompleteOutcome::Answered(Ok(_)) => {
+                    error = HandlerError::new(AutocompleteError::DeadlineMissed {
+                        deadline: AUTOCOMPLETE_DEADLINE,
+                    });
+                    ReportKind::Error(&error)
+                }
+            }
+        }
+    };
+    report_autocomplete(span, report, kind);
+}
+
+/// Counts and reports an autocomplete failure to the Autocomplete Error
+/// Sink.
+fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
+    let app = report.app;
+    metrics::counter!(
+        "noctis_handler_errors_total",
+        "app" => Arc::clone(&app.app),
+        "kind" => ErrorOrigin::Autocomplete.as_str()
+    )
+    .increment(1);
+    span.in_scope(|| {
+        app.sinks.report(ErrorReport {
+            origin: ErrorOrigin::Autocomplete,
+            kind,
+            app: &app.app,
+            shard: report.shard,
+            guild_id: report.guild_id,
+            module: Some(report.module),
+            handler: Some(report.handler),
+            event_type: report.event_type,
+        });
+    });
 }
 
 /// Runs registered Commands from outside an interaction, such as a prefix

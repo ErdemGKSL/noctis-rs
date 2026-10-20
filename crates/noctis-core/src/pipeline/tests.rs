@@ -638,6 +638,7 @@ struct Days(i64);
 impl Options for Days {
     const OPTIONS: &'static [OptionDecl<'static>] =
         &[OptionDecl::new("days", OptionType::Integer, "d").required(true)];
+    type Partial = crate::autocomplete::NoPartial<Self>;
 
     fn from_input(input: &CommandInput) -> Result<Self, OptionError> {
         Ok(Self(required(input, "days")?))
@@ -1553,4 +1554,431 @@ async fn int_11_sixth_followup_capped() {
             "invalid,ok,ok,ok,ok,ok,ok",
         ]
     );
+}
+
+// ---- Story 6.7: autocomplete ----
+
+mod autocomplete {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use bytes::Bytes;
+    use hyper::StatusCode;
+
+    use super::*;
+    use crate::autocomplete::PartialOptions;
+    use crate::options::__options::partial;
+    use crate::{AutocompleteChoice, AutocompleteCtx, AutocompleteHandler};
+
+    /// What the `value` handler saw: focused text and `partial.limit`.
+    static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    /// Set when the `slow` handler started.
+    static SLOW_STARTED: AtomicBool = AtomicBool::new(false);
+
+    #[derive(Default)]
+    struct AcPartial {
+        limit: Option<i64>,
+    }
+
+    impl PartialOptions for AcPartial {
+        type Options = AcOptions;
+
+        fn __from_input(input: &CommandInput) -> Self {
+            Self {
+                limit: partial(input, "limit"),
+            }
+        }
+    }
+
+    /// The options of `config set prefix`; each focused option name picks
+    /// a handler behaviour.
+    struct AcOptions;
+
+    fn plain<F, Fut>(name: &'static str, f: F) -> AutocompleteHandler<AcOptions>
+    where
+        F: Fn(AutocompleteCtx) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
+    {
+        AutocompleteHandler::__new_plain(name, f)
+    }
+
+    fn panics_at_call(_: AutocompleteCtx) -> std::future::Ready<HandlerResult<Responded>> {
+        panic!("at call")
+    }
+
+    async fn panics_inside(_: AutocompleteCtx) -> HandlerResult<Responded> {
+        panic!("inside")
+    }
+
+    impl Options for AcOptions {
+        const OPTIONS: &'static [OptionDecl<'static>] = &[
+            OptionDecl::new("value", OptionType::String, "d")
+                .required(true)
+                .autocomplete(true),
+            OptionDecl::new("limit", OptionType::Integer, "d").required(true),
+        ];
+        type Partial = AcPartial;
+
+        fn from_input(_: &CommandInput) -> Result<Self, OptionError> {
+            Ok(Self)
+        }
+
+        fn autocomplete(option: &str) -> Option<AutocompleteHandler<Self>> {
+            Some(match option {
+                "value" => AutocompleteHandler::__new(
+                    "m::value",
+                    |ctx: AutocompleteCtx, p: AcPartial| async move {
+                        SEEN.lock().unwrap().push(format!(
+                            "{}:{:?}",
+                            ctx.focused().value(),
+                            p.limit
+                        ));
+                        Ok(ctx.respond(["a", "b", "c"].map(|v| AutocompleteChoice::new(v, v))))
+                    },
+                ),
+                "many" => plain("m::many", |ctx| async move {
+                    Ok(ctx.respond(
+                        (0..30).map(|i| AutocompleteChoice::new(format!("c{i}"), i.to_string())),
+                    ))
+                }),
+                "err" => plain("m::err", |_| async {
+                    Err(HandlerError::new(std::io::Error::other("boom")))
+                }),
+                "panic_call" => plain("m::panic_call", panics_at_call),
+                "panic_inside" => plain("m::panic_inside", panics_inside),
+                "slow" => plain("m::slow", |ctx| async move {
+                    SLOW_STARTED.store(true, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_mins(1)).await;
+                    Ok(ctx.respond(Vec::new()))
+                }),
+                "smuggle" => plain("m::smuggle", |_| async { Ok(Responded::new()) }),
+                _ => return None,
+            })
+        }
+    }
+
+    fn config() -> CommandHandler {
+        CommandHandler::__new_plain_with_options(
+            "m::config",
+            &["config set prefix"],
+            "d",
+            |_: CommandCtx, _: CommandResponder, _: AcOptions| async { Ok(v2("ok")) },
+        )
+    }
+
+    /// The App with `config` and a recording Autocomplete sink.
+    async fn start(answer: Answer) -> (Pipeline, Arc<Recording>) {
+        let sink = Arc::new(Recording::default());
+        let module =
+            Module::new("m")
+                .add(config())
+                .add(logging(&Log::default(), "m::ping", &["ping"]));
+        let ac_sink = Arc::clone(&sink);
+        let p = Pipeline::start_answering(module, answer, move |b| {
+            b.error_sink(ErrorOrigin::Autocomplete, ac_sink);
+        })
+        .await;
+        (p, sink)
+    }
+
+    async fn run(p: &Pipeline, inbound: Inbound) {
+        run_with(p, inbound, CancellationToken::new()).await;
+    }
+
+    async fn run_with(p: &Pipeline, inbound: Inbound, cancel: CancellationToken) {
+        run_autocomplete(
+            Arc::clone(p.fx.app.registry()),
+            Arc::clone(p.fx.app.shared()),
+            inbound,
+            cancel,
+        )
+        .await;
+    }
+
+    /// A type-4 interaction of `config set prefix` focusing `focused`
+    /// (typed `text`), with `limit` = 3 unless `focused` is `limit`.
+    fn ac_json(focused: &str, text: &str) -> Value {
+        let leaves = json!([
+            { "type": 3, "name": focused, "value": text, "focused": true },
+        ]);
+        let data = json!({
+            "id": "9", "name": "config", "type": 1,
+            "options": [{ "type": 2, "name": "set", "options": [
+                { "type": 1, "name": "prefix", "options": leaves }
+            ]}]
+        });
+        interaction(data, json!({ "type": 4 }))
+    }
+
+    fn ac(focused: &str, text: &str) -> Inbound {
+        inbound(&ac_json(focused, text))
+    }
+
+    fn choices(p: &Pipeline) -> Vec<Value> {
+        let requests = p.requests();
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(
+            (&requests[0].0, requests[0].1.as_str()),
+            (&Method::POST, CB)
+        );
+        assert_eq!(requests[0].2["type"], 8);
+        requests[0].2["data"]["choices"].as_array().unwrap().clone()
+    }
+
+    fn rejected() -> Answer {
+        Arc::new(|_: &crate::edge::test_support::Seen| {
+            (
+                StatusCode::BAD_REQUEST,
+                Bytes::from_static(br#"{"code":50035}"#),
+            )
+        })
+    }
+
+    /// Matrix 1 and 2: a 3-word path, the partial input and one type-8
+    /// callback with the handler's choices, in order.
+    #[tokio::test]
+    async fn three_word_path_answers_choices() {
+        let (p, sink) = start(discord()).await;
+        run(&p, ac("value", "pr-1")).await;
+        assert_eq!(
+            choices(&p),
+            [
+                json!({ "name": "a", "value": "a" }),
+                json!({ "name": "b", "value": "b" }),
+                json!({ "name": "c", "value": "c" })
+            ]
+        );
+        assert!(SEEN.lock().unwrap().contains(&"pr-1:None".to_owned()));
+        assert!(sink.seen().is_empty());
+        assert!(p.reports().is_empty());
+    }
+
+    /// INT-07 end to end: 30 choices, 25 sent, one warning.
+    #[tokio::test]
+    async fn int_07_thirty_choices_send_twenty_five() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
+        let (p, _sink) = start(discord()).await;
+        run(&p, ac("many", "")).await;
+        assert_eq!(choices(&p).len(), 25);
+        let lines = capture.lines_with(&["noctis::autocomplete", "INT-07"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("returned=30"), "{}", lines[0]);
+        assert!(lines[0].contains("sent=25"), "{}", lines[0]);
+        assert!(lines[0].contains("handler=\"m::many\""), "{}", lines[0]);
+    }
+
+    /// Matrix 15 and 16: an error or a panic answers an empty list and
+    /// reports to the Autocomplete sink.
+    #[tokio::test]
+    async fn failures_answer_empty_lists() {
+        use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        for (option, kind) in [
+            ("err", "boom"),
+            ("panic_call", "at call"),
+            ("panic_inside", "inside"),
+        ] {
+            let (p, sink) = start(discord()).await;
+            run(&p, ac(option, "x")).await;
+            assert!(choices(&p).is_empty(), "{option}");
+            let seen = sink.seen();
+            assert_eq!(seen.len(), 1, "{option}");
+            assert_eq!(seen[0].origin, ErrorOrigin::Autocomplete);
+            assert!(seen[0].kind.contains(kind), "{}", seen[0].kind);
+            assert_eq!(seen[0].module.as_deref(), Some("m"));
+            assert_eq!(seen[0].handler.as_deref(), Some(&*format!("m::{option}")));
+            assert!(p.reports().is_empty());
+        }
+        let snap = snapshotter.snapshot().into_vec();
+        let errors = snap
+            .iter()
+            .find(|(k, ..)| {
+                k.key().name() == "noctis_handler_errors_total"
+                    && k.key()
+                        .labels()
+                        .any(|l| l.key() == "kind" && l.value() == "autocomplete")
+            })
+            .map(|(.., v)| v);
+        assert!(matches!(errors, Some(DebugValue::Counter(3))), "{snap:?}");
+    }
+
+    /// INT-06 (Matrix 17): a handler still running at the 2.5 s deadline is
+    /// dropped and an empty list is sent right after it.
+    #[tokio::test]
+    async fn int_06_deadline_missed_sends_empty_choices() {
+        let (p, sink) = start(discord()).await;
+        let p = Arc::new(p);
+        let item = ac("slow", "x");
+        let received_at = item.received_at;
+        let run = tokio::spawn({
+            let p = Arc::clone(&p);
+            async move { run(&p, item).await }
+        });
+        let started = std::time::Instant::now();
+        while !SLOW_STARTED.load(Ordering::SeqCst) {
+            assert!(started.elapsed() < Duration::from_secs(10), "never started");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        skip(Duration::from_millis(2550)).await;
+        tokio::time::timeout(Duration::from_secs(10), run)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(received_at.elapsed() < Duration::from_millis(2900));
+        assert!(choices(&p).is_empty());
+        let seen = sink.seen();
+        assert_eq!(seen.len(), 1);
+        assert!(
+            seen[0].kind.contains("did not respond within 2.5s"),
+            "{}",
+            seen[0].kind
+        );
+    }
+
+    /// INT-06 (Matrix 18): the deadline passed before the stage started:
+    /// the handler never runs; an edge refusal is only a warning.
+    #[tokio::test]
+    async fn int_06_already_late_never_runs() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
+        let (p, sink) = start(discord()).await;
+        let mut item = ac("value", "late-18");
+        item.received_at = Instant::now()
+            .checked_sub(Duration::from_millis(2600))
+            .unwrap();
+        run(&p, item).await;
+        assert!(choices(&p).is_empty());
+        assert!(
+            !SEEN
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|s| s.starts_with("late-18"))
+        );
+        assert_eq!(sink.seen().len(), 1);
+        assert!(sink.seen()[0].kind.contains("did not respond"));
+
+        let (p, sink) = start(discord()).await;
+        let mut item = ac("value", "later-18");
+        item.received_at = Instant::now()
+            .checked_sub(Duration::from_millis(3500))
+            .unwrap();
+        run(&p, item).await;
+        assert!(p.requests().is_empty());
+        assert_eq!(sink.seen().len(), 1);
+        let lines = capture.lines_with(&["noctis::autocomplete", "autocomplete callback failed"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(!lines[0].contains("tok"), "{}", lines[0]);
+    }
+
+    /// Matrix 19: a shutdown cancel answers an empty list.
+    #[tokio::test]
+    async fn shutdown_cancels() {
+        let (p, sink) = start(discord()).await;
+        let cancel = CancellationToken::new();
+        let trigger = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            trigger.cancel();
+        });
+        run_with(&p, ac("slow", "x"), cancel).await;
+        assert!(choices(&p).is_empty());
+        let seen = sink.seen();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].kind.contains("cancel"), "{}", seen[0].kind);
+    }
+
+    /// Matrix 20: a `Responded` without `respond` sends an empty list.
+    #[tokio::test]
+    async fn smuggled_responded_sends_nothing() {
+        let (p, sink) = start(discord()).await;
+        run(&p, ac("smuggle", "x")).await;
+        assert!(choices(&p).is_empty());
+        assert!(sink.seen().is_empty());
+    }
+
+    /// Matrix 21 and 22: a rejected callback is reported once, never
+    /// retried; after a handler failure it is only a warning.
+    #[tokio::test]
+    async fn rejected_callbacks() {
+        let (p, sink) = start(rejected()).await;
+        run(&p, ac("value", "x")).await;
+        assert_eq!(choices(&p).len(), 3);
+        let seen = sink.seen();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].kind.contains("400"), "{}", seen[0].kind);
+
+        let (p, sink) = start(rejected()).await;
+        run(&p, ac("err", "x")).await;
+        assert_eq!(p.requests().len(), 1);
+        let seen = sink.seen();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].kind.contains("boom"), "{}", seen[0].kind);
+    }
+
+    /// Matrix 23-26: unknown Commands and options warn without a report;
+    /// malformed focus is reported.
+    #[tokio::test]
+    async fn unknown_and_malformed_answer_empty_lists() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
+        let (p, sink) = start(discord()).await;
+        let unknown = interaction(slash("nope", json!([])), json!({ "type": 4 }));
+        run(&p, inbound(&unknown)).await;
+        assert!(choices(&p).is_empty());
+        assert_eq!(
+            capture
+                .lines_with(&["noctis::dispatch", "unknown command"])
+                .len(),
+            1
+        );
+        p.fx.server.log.lock().unwrap().clear();
+        run(&p, ac("nohandler", "x")).await;
+        assert!(choices(&p).is_empty());
+        assert_eq!(
+            capture
+                .lines_with(&["noctis::dispatch", "no autocomplete handler"])
+                .len(),
+            1
+        );
+        assert!(sink.seen().is_empty());
+
+        // Matrix 25: two focused options.
+        p.fx.server.log.lock().unwrap().clear();
+        let mut two = ac_json("value", "a");
+        let leaves = &mut two["data"]["options"][0]["options"][0]["options"];
+        leaves
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "type": 3, "name": "other", "value": "b", "focused": true }));
+        run(&p, inbound(&two)).await;
+        assert!(choices(&p).is_empty());
+        let seen = sink.seen();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].kind.contains("focused"), "{}", seen[0].kind);
+    }
+
+    /// Matrix 35: the callback records the ack latency.
+    #[tokio::test]
+    async fn ack_latency_is_recorded() {
+        let metrics = Metrics::new();
+        let _metrics = metrics::set_default_local_recorder(&metrics.recorder);
+        let (p, _sink) = start(discord()).await;
+        let mut item = ac("value", "x");
+        item.received_at = Instant::now()
+            .checked_sub(Duration::from_millis(120))
+            .unwrap();
+        run(&p, item).await;
+        let (_, latencies) = metrics.read();
+        assert_eq!(latencies.len(), 1);
+        assert!((0.12..0.6).contains(&latencies[0]), "{latencies:?}");
+    }
 }

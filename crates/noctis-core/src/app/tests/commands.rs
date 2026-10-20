@@ -599,6 +599,7 @@ mod sized_options {
                     "o00" "o01" "o02" "o03" "o04" "o05" "o06" "o07" "o08" "o09" "o10" "o11"
                     "o12" "o13" "o14" "o15" "o16" "o17" "o18" "o19" "o20" "o21" "o22" "o23"
                     "o24");
+                type Partial = crate::autocomplete::NoPartial<Self>;
                 fn from_input(_: &CommandInput) -> Result<Self, OptionError> {
                     Ok(Self)
                 }

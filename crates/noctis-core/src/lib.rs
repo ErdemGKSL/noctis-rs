@@ -129,6 +129,7 @@
 
 mod app;
 mod authority;
+mod autocomplete;
 mod command;
 mod edge;
 mod error;
@@ -158,6 +159,12 @@ mod token;
 mod worker;
 
 pub use app::{App, AppBuilder};
+#[doc(hidden)]
+pub use autocomplete::{__AutocompleteFor, __AutocompleteOutput, __autocomplete_for};
+pub use autocomplete::{
+    AutocompleteChoice, AutocompleteCtx, AutocompleteError, AutocompleteHandler, AutocompleteValue,
+    Focused, Partial, PartialOptions,
+};
 pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
@@ -229,6 +236,19 @@ pub mod __testing {
         json: &[u8],
     ) -> BoxFuture<'static, HandlerResult<()>> {
         crate::command::call_command_json(handler, json)
+    }
+
+    /// Decodes `json` (an autocomplete interaction) and runs the
+    /// autocomplete handler `handler` links to its focused option over a
+    /// detached context: an `OptionError` for bad JSON, an
+    /// `UnknownCommandPath` for a path the handler does not declare,
+    /// `Ok(None)` when no handler is linked, else the choices it kept
+    /// (unfiltered; empty when it never responded).
+    pub fn call_autocomplete(
+        handler: &CommandHandler,
+        json: &[u8],
+    ) -> BoxFuture<'static, HandlerResult<Option<Vec<crate::AutocompleteChoice>>>> {
+        crate::autocomplete::call_autocomplete(handler, json)
     }
 
     /// Decodes `json` (a USER or MESSAGE command interaction) and runs

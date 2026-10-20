@@ -13,6 +13,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::State;
+use crate::autocomplete::{ErasedAutocomplete, erased_for};
 use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, Options};
@@ -228,7 +229,7 @@ impl CommandCtx {
 }
 
 /// The client of detached contexts: no token, never used by noctis.
-fn detached_http() -> &'static Arc<twilight_http::Client> {
+pub(crate) fn detached_http() -> &'static Arc<twilight_http::Client> {
     static HTTP: OnceLock<Arc<twilight_http::Client>> = OnceLock::new();
     HTTP.get_or_init(|| {
         // Building the client needs a rustls crypto provider, and its
@@ -320,6 +321,8 @@ pub struct CommandHandler {
     ephemerality: Ephemerality,
     opens_modal: bool,
     call: Arc<ErasedCommand>,
+    /// The autocomplete handler linked to an option, by option name.
+    autocomplete: fn(&str) -> Option<ErasedAutocomplete>,
 }
 
 impl CommandHandler {
@@ -341,6 +344,15 @@ impl CommandHandler {
             ephemerality: Ephemerality::Public,
             opens_modal: M::OPENS_MODAL,
             call,
+            autocomplete: |_| None,
+        }
+    }
+
+    /// Links the autocomplete handlers of the options struct `O`.
+    fn with_autocomplete<O: Options>(self) -> Self {
+        Self {
+            autocomplete: erased_for::<O>,
+            ..self
         }
     }
 
@@ -404,6 +416,7 @@ impl CommandHandler {
             O::OPTIONS,
             Arc::new(call),
         )
+        .with_autocomplete::<O>()
     }
 
     /// A handler of the single Command Path `paths[0]`; what `#[command]`
@@ -466,6 +479,7 @@ impl CommandHandler {
             O::OPTIONS,
             Arc::new(call),
         )
+        .with_autocomplete::<O>()
     }
 
     /// The handler's path (`module_path!()::name`).
@@ -532,6 +546,12 @@ impl CommandHandler {
             ephemerality,
             ..self
         }
+    }
+
+    /// The autocomplete handler linked to the option `option` of the
+    /// handler's options struct, if any.
+    pub(crate) fn autocomplete_for(&self, option: &str) -> Option<ErasedAutocomplete> {
+        (self.autocomplete)(option)
     }
 
     /// Starts the handler for `ctx`; an [`UnknownCommandPath`] error when
@@ -836,6 +856,7 @@ pub(crate) mod tests {
                 OptionDecl::new("days", OptionType::Integer, "d").required(true),
                 OptionDecl::new("reason", OptionType::Integer, "d"),
             ];
+            type Partial = crate::autocomplete::NoPartial<Self>;
             fn from_input(input: &CommandInput) -> Result<Self, OptionError> {
                 Ok(Self {
                     days: required(input, "days")?,

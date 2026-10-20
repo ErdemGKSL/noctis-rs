@@ -18,6 +18,7 @@ use twilight_model::id::marker::{
     AttachmentMarker, ChannelMarker, GenericMarker, RoleMarker, UserMarker,
 };
 
+use crate::autocomplete::{AutocompleteHandler, PartialOptions};
 use crate::command::CommandCtx;
 
 /// A field type of a `#[derive(Options)]` struct: its Discord option type
@@ -77,6 +78,11 @@ pub trait Options: Sized + Send + 'static {
     /// The option declarations, in field order.
     const OPTIONS: &'static [OptionDecl<'static>];
 
+    /// The same fields, each an `Option`: what autocomplete handlers get as
+    /// [`Partial<Self>`](crate::Partial) (OPT-12). `#[derive(Options)]`
+    /// generates it as `<Name>Partial`.
+    type Partial: PartialOptions<Options = Self>;
+
     /// Decodes the struct from an interaction's leaf options.
     ///
     /// # Errors
@@ -93,6 +99,13 @@ pub trait Options: Sized + Send + 'static {
     fn validate(&self, ctx: &CommandCtx) -> Result<(), InvalidOption> {
         let _ = ctx;
         Ok(())
+    }
+
+    /// The autocomplete handler linked to the option `option` with
+    /// `#[option(autocomplete = path)]`, if any.
+    fn autocomplete(option: &str) -> Option<AutocompleteHandler<Self>> {
+        let _ = option;
+        None
     }
 }
 
@@ -221,7 +234,7 @@ pub enum OptionError {
 }
 
 impl OptionError {
-    fn malformed(reason: impl Into<String>) -> Self {
+    pub(crate) fn malformed(reason: impl Into<String>) -> Self {
         Self::Malformed {
             reason: reason.into(),
         }
@@ -296,51 +309,25 @@ impl CommandInput {
     /// [`OptionError::OutOfRange`] for an INTEGER outside `i64` and
     /// [`OptionError::Malformed`] for anything else that is not well formed.
     pub fn from_json(raw: &[u8]) -> Result<Self, OptionError> {
-        let value: Value = serde_json::from_slice(raw)
-            .map_err(|e| OptionError::malformed(format!("invalid JSON: {e}")))?;
-        let Value::Object(mut root) = value else {
-            return Err(OptionError::malformed("the interaction is not an object"));
-        };
-        let interaction_type = root
-            .get("type")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| OptionError::malformed("missing interaction `type`"))?;
-        let data = match root.remove("data") {
-            Some(Value::Object(data)) => Some(data),
-            Some(_) => return Err(OptionError::malformed("`data` is not an object")),
-            None => None,
-        };
-        let command_type = match data.as_ref().and_then(|d| d.get("type")) {
-            None | Some(Value::Null) => 1,
-            Some(t) => t
-                .as_u64()
-                .ok_or_else(|| OptionError::malformed("`data.type` is not an integer"))?,
-        };
-        if interaction_type != 2 || command_type != 1 {
-            return Err(OptionError::NotSlashCommand {
-                interaction_type,
-                command_type,
-            });
-        }
-        let mut data = data.ok_or_else(|| OptionError::malformed("missing `data`"))?;
-        let name = data
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| OptionError::malformed("missing `data.name`"))?;
-        let mut path = name.to_owned();
-        let options = options_array(data.get("options"), "data.options")?;
-        let leaf = walk_path(options, &mut path)?;
-        let options = leaf_options(leaf)?;
-        let resolved = match data.remove("resolved") {
-            None | Some(Value::Null) => empty_resolved(),
-            Some(r) => serde_json::from_value(r)
-                .map_err(|e| OptionError::malformed(format!("bad `resolved` data: {e}")))?,
-        };
+        let (path, options, resolved) = decode_interaction(raw, 2, leaf_options)?;
         Ok(Self {
             path,
             options,
             resolved,
         })
+    }
+
+    /// An input of already decoded parts (the autocomplete decoder).
+    pub(crate) fn from_parts(
+        path: String,
+        options: Vec<(String, OptionValue)>,
+        resolved: InteractionDataResolved,
+    ) -> Self {
+        Self {
+            path,
+            options,
+            resolved,
+        }
     }
 
     /// An input without options or resolved data, for a direct call of
@@ -406,6 +393,63 @@ impl CommandInput {
     }
 }
 
+/// Decodes a chat-input interaction object of interaction type
+/// `interaction_kind` (2 for a command, 4 for autocomplete): its Command
+/// Path, its leaf options through `leaf` and its resolved data.
+///
+/// # Errors
+///
+/// [`OptionError::NotSlashCommand`] for another interaction or command
+/// type, `leaf`'s error, and [`OptionError::Malformed`] for anything else
+/// that is not well formed.
+pub(crate) fn decode_interaction<T>(
+    raw: &[u8],
+    interaction_kind: u64,
+    leaf: impl FnOnce(Vec<&Map<String, Value>>) -> Result<T, OptionError>,
+) -> Result<(String, T, InteractionDataResolved), OptionError> {
+    let value: Value = serde_json::from_slice(raw)
+        .map_err(|e| OptionError::malformed(format!("invalid JSON: {e}")))?;
+    let Value::Object(mut root) = value else {
+        return Err(OptionError::malformed("the interaction is not an object"));
+    };
+    let interaction_type = root
+        .get("type")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| OptionError::malformed("missing interaction `type`"))?;
+    let data = match root.remove("data") {
+        Some(Value::Object(data)) => Some(data),
+        Some(_) => return Err(OptionError::malformed("`data` is not an object")),
+        None => None,
+    };
+    let command_type = match data.as_ref().and_then(|d| d.get("type")) {
+        None | Some(Value::Null) => 1,
+        Some(t) => t
+            .as_u64()
+            .ok_or_else(|| OptionError::malformed("`data.type` is not an integer"))?,
+    };
+    if interaction_type != interaction_kind || command_type != 1 {
+        return Err(OptionError::NotSlashCommand {
+            interaction_type,
+            command_type,
+        });
+    }
+    let mut data = data.ok_or_else(|| OptionError::malformed("missing `data`"))?;
+    let name = data
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| OptionError::malformed("missing `data.name`"))?;
+    let mut path = name.to_owned();
+    let options = options_array(data.get("options"), "data.options")?;
+    let options = walk_path(options, &mut path)?;
+    let options = leaf(options)?;
+    let resolved = match data.remove("resolved") {
+        None | Some(Value::Null) => empty_resolved(),
+        Some(r) => serde_json::from_value(r)
+            .map_err(|e| OptionError::malformed(format!("bad `resolved` data: {e}")))?,
+    };
+    Ok((path, options, resolved))
+}
+
 pub(crate) fn empty_resolved() -> InteractionDataResolved {
     InteractionDataResolved {
         attachments: HashMap::new(),
@@ -436,14 +480,14 @@ fn options_array<'a>(
     }
 }
 
-fn option_name(option: &Map<String, Value>) -> Result<&str, OptionError> {
+pub(crate) fn option_name(option: &Map<String, Value>) -> Result<&str, OptionError> {
     option
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| OptionError::malformed("an option has no string `name`"))
 }
 
-fn option_type(option: &Map<String, Value>) -> Result<u64, OptionError> {
+pub(crate) fn option_type(option: &Map<String, Value>) -> Result<u64, OptionError> {
     option
         .get("type")
         .and_then(Value::as_u64)
@@ -511,7 +555,11 @@ fn leaf_options(
     Ok(out)
 }
 
-fn decode_value(name: &str, kind: u64, value: &Value) -> Result<OptionValue, OptionError> {
+pub(crate) fn decode_value(
+    name: &str,
+    kind: u64,
+    value: &Value,
+) -> Result<OptionValue, OptionError> {
     let wrong = |what: &str| OptionError::malformed(format!("option `{name}`: {what}"));
     Ok(match kind {
         1 | 2 => return Err(wrong("a subcommand or group next to value options")),
@@ -680,6 +728,12 @@ pub mod __options {
             return Err(wrong_type::<T>(value, name));
         }
         T::decode(value, input, name).map(Some)
+    }
+
+    /// The option `name` of an autocomplete partial input: `None` when it
+    /// is absent, mistyped, unresolved or not one of its choices (OPT-12).
+    pub fn partial<T: CommandOption>(input: &CommandInput, name: &'static str) -> Option<T> {
+        optional(input, name).ok().flatten()
     }
 
     /// Decodes a Choices enum from a STRING value.

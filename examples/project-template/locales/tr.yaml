@@ -23,6 +23,12 @@ cmd:
         description: Kimin profili gösterilsin (varsayılan sensin)
   bio:
     description: Profil biyografini düzenle
+  badge:
+    description: Bir rozet göster
+    opt:
+      name:
+        name: ad
+        description: Rozet adı
 
 ctxcmd:
   show_profile:
@@ -69,6 +75,8 @@ profile:
   title: "{name} profili"
   card_alt: "{name} kullanıcısının seviye ve XP ilerlemesini gösteren profil kartı"
   no_bio: Henüz biyografi yok.
+  badge: "Rozet: {name}"
+  badge_unknown: Bu adda bir rozet yok.
   edit_bio: Biyografiyi düzenle
   card:
     level: "Seviye {level}"

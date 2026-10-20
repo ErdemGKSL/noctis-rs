@@ -183,9 +183,9 @@ locale returns `None`.
 | OPT-09 | choice name 1–100, string value ≤ 100 | C / B |
 | OPT-10 | choices xor autocomplete | C |
 | OPT-11 | autocomplete on string/integer/number only | C |
-| OPT-12 | autocomplete input is unvalidated (`Partial<T>`) | C / R |
+| OPT-12 | autocomplete input is unvalidated (`Partial<O>`: every field `Option`, lenient decode) | C / R |
 | OPT-13 | `file_types` ≤ 10, attachment only; each `image`/`video`/`audio` or `.ext` | C |
-| INT-07 | ≤ 25 autocomplete choices (always truncated) | R |
+| INT-07 | ≤ 25 autocomplete choices (always truncated with a warning; invalid kept choices dropped) | R |
 
 ## Localization
 
@@ -207,7 +207,7 @@ locale returns `None`.
 | INT-03 | exactly one initial callback (typestate) | C / R |
 | INT-04 | callback types per interaction kind (context types) | C |
 | INT-05 | modal must be first response; no modal after modal submit | C / R |
-| INT-06 | no defer for autocomplete | C / R |
+| INT-06 | no defer for autocomplete (`respond` only; 2.5 s deadline → empty list) | C / R |
 | INT-08 | deferred command reply: only `EPHEMERAL`; V2 flag on edit | C |
 | INT-09 | callback flags: SUPPRESS_EMBEDS, EPHEMERAL, IS_COMPONENTS_V2, IS_VOICE_MESSAGE, SUPPRESS_NOTIFICATIONS | C |
 | INT-10 | ephemerality fixed at creation | C |

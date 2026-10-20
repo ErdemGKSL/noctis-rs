@@ -115,6 +115,11 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[ATT-02] request: limit at most 26214400, actual 27000000` | all files plus JSON over 25 MiB | send fewer files per message |
 | `` [ATT-05] limit attachment://<name> of a file in this message, actual `attachment://card.png` `` | the URL names a file that is not attached (names are case-sensitive) | attach the file in the same message, or fix the name |
 | `[INT-07] choices: limit at most 25, actual 40` (`= help: Noctis sends the first 25 choices and logs this as a warning`) | the autocomplete returned too many suggestions | filter or `take(25)` before `respond` |
+| warn `noctis::autocomplete` `[INT-07] too many autocomplete choices: sent the first ones` (`returned=40 sent=25`) | an `#[autocomplete]` handler passed more than 25 choices to `respond` | filter or `.take(25)` before `respond` |
+| warn `noctis::autocomplete` `invalid autocomplete choices dropped` (`dropped=n rules=OPT-09`) | a choice name outside 1–100 characters, a STRING value over 100, a value of another type than the option, or a number out of range | fix the choices; match the value type to the option (`&str` for STRING, `i64` for INTEGER) |
+| `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` (E0277) | `autocomplete = path` names a plain fn, or a handler taking `Partial<Other>` | annotate the fn with `#[autocomplete]`; take `Partial<O>` of the struct that links it, or no `partial` |
+| Autocomplete Error Sink: `the autocomplete handler did not respond within 2.5s` (`AutocompleteError::DeadlineMissed`) | the handler took longer than 2.5 s; Discord got an empty list | cache the data (a port), bound slow lookups with `tokio::time::timeout`, answer from what you have |
+| warn `noctis::dispatch` `no autocomplete handler` | Discord sent autocomplete for an option without `autocomplete = …` (stale published commands) | publish again, or link a handler |
 | `UiError::ItemTooLarge` | a single list item can't fit beside the Chrome | render it as an image or a detail View |
 | `UiError::TooManyTabs` | > 5 Navbar tabs | select-based nav or split Views |
 | `RenderError::Overloaded` | render queue full | show the busy notice; raise pool/queue in `ImageConfig`; cache more |

@@ -23,7 +23,7 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::events::EventCtx;
 use crate::handler::{AppShared, HandlerResult};
-use crate::pipeline::run_interaction;
+use crate::pipeline::{run_autocomplete, run_interaction};
 use crate::registry::{Entry, Handlers, Registry};
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 
@@ -124,24 +124,32 @@ impl Workers {
         self.ordered.len()
     }
 
-    /// Hands one interaction to the Command pipeline as one task on the
-    /// tracker (never taking a permit); any other interaction is traced and
-    /// dropped until its pipeline lands (Epic 7, Story 6.7).
+    /// Hands one command interaction to the Command pipeline and one
+    /// autocomplete interaction to the autocomplete stage, each as one task
+    /// on the tracker (never taking a permit); any other interaction is
+    /// traced and dropped until its pipeline lands (Epic 7).
     fn interaction(&self, inbound: Inbound) {
-        let command = matches!(
-            &inbound.kind,
-            InboundKind::Interaction(interaction, _)
-                if interaction.kind == InteractionType::ApplicationCommand
+        let kind = match &inbound.kind {
+            InboundKind::Interaction(interaction, _) => Some(interaction.kind),
+            _ => None,
+        };
+        let (registry, app, cancel) = (
+            Arc::clone(&self.registry),
+            Arc::clone(&self.app),
+            self.shutdown.cancel.clone(),
         );
-        if command {
-            self.shutdown.tracker.spawn(run_interaction(
-                Arc::clone(&self.registry),
-                Arc::clone(&self.app),
-                inbound,
-                self.shutdown.cancel.clone(),
-            ));
-        } else {
-            interaction_unhandled(inbound, &self.app.app);
+        match kind {
+            Some(InteractionType::ApplicationCommand) => {
+                self.shutdown
+                    .tracker
+                    .spawn(run_interaction(registry, app, inbound, cancel));
+            }
+            Some(InteractionType::ApplicationCommandAutocomplete) => {
+                self.shutdown
+                    .tracker
+                    .spawn(run_autocomplete(registry, app, inbound, cancel));
+            }
+            _ => interaction_unhandled(inbound, &self.app.app),
         }
     }
 
@@ -245,7 +253,7 @@ fn discard(receiver: &LaneReceiver, waiting: usize) {
 }
 
 /// Handles one interaction without a pipeline yet (components, modals,
-/// autocomplete, pings) in span `noctis.interaction`: traced and dropped.
+/// pings) in span `noctis.interaction`: traced and dropped.
 fn interaction_unhandled(inbound: Inbound, app: &str) {
     let shard = inbound.shard.number();
     let guild_id = match &inbound.kind {

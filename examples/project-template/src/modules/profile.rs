@@ -1,7 +1,8 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
 
 //! Profiles: a rendered card in a Media Gallery (UD-2), a modal to edit the bio
-//! (FR-29, FR-63), a user context-menu command (FR-12) and an XP event handler (FR-6).
+//! (FR-29, FR-63), a user context-menu command (FR-12), a badge lookup with autocomplete
+//! (FR-10) and an XP event handler (FR-6).
 //!
 //! The card is read-only: every action lives in buttons next to it, never in the image.
 
@@ -12,8 +13,8 @@ use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
 use noctis::prelude::*;
 use noctis::ui::{
-    ActionRow, Button, ButtonStyle, MediaGallery, MediaItem, ResolvedUser, Separator, TextDisplay,
-    escape_markdown,
+    ActionRow, Button, ButtonStyle, Components, MediaGallery, MediaItem, ResolvedUser, Separator,
+    TextDisplay, escape_markdown,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,8 @@ pub fn module() -> Module {
         .add(profile())
         .add(bio())
         .add(show_profile())
+        // `badge_suggest` is linked by `#[option(autocomplete = …)]`, never added here.
+        .add(badge())
         .add(open_profile())
         .add(edit_bio())
         .add(save_bio())
@@ -66,6 +69,41 @@ async fn profile(ctx: CommandCtx, opts: ProfileOptions) -> HandlerResult<Profile
 async fn bio(ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
     // After a modal there is no original message to edit: end with `done()`.
     Ok(r.modal(BioForm::modal(SaveBio { user: ctx.user_id() })).await?.done())
+}
+
+/// The badges `/badge` knows.
+const BADGES: &[&str] = &["Early supporter", "Helper", "Night owl", "Artist", "Bug hunter"];
+
+#[derive(Options, Debug)]
+pub struct BadgeOptions {
+    /// Suggested while typing by `badge_suggest`; the command re-checks the value,
+    /// because Discord sends whatever the user typed (OPT-12).
+    #[option(description = "Badge name", autocomplete = badge_suggest)]
+    pub name: String,
+}
+
+#[command("badge", description = "Show a badge", contexts = [Guild])]
+async fn badge(ctx: CommandCtx, opts: BadgeOptions) -> HandlerResult<Components> {
+    let Some(name) = BADGES.iter().find(|b| b.eq_ignore_ascii_case(&opts.name)) else {
+        return Err(HandlerError::user(keys::PROFILE_BADGE_UNKNOWN));
+    };
+    let s = Strings::of(ctx.response_locale());
+    Ok(Components::new().push(TextDisplay::new(s.profile.badge(escape_markdown(name)))))
+}
+
+/// Suggests badges matching what the user typed. `respond` is synchronous and the only
+/// answer (no defer, INT-06); Noctis sends at most 25 choices (INT-07) and answers an
+/// empty list if this fails or takes longer than 2.5 s. `ctx.focused().value()` is the
+/// raw typed text; take `partial: Partial<BadgeOptions>` to read the other options.
+#[autocomplete]
+async fn badge_suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+    let typed = ctx.focused().value().to_lowercase();
+    Ok(ctx.respond(
+        BADGES
+            .iter()
+            .filter(|b| b.to_lowercase().contains(&typed))
+            .map(|b| AutocompleteChoice::new(*b, *b)),
+    ))
 }
 
 /// Right-click a user → Apps → "Show profile". The name is localized as a whole

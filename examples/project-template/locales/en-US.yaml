@@ -22,6 +22,12 @@ cmd:
         description: Whose profile to show (default you)
   bio:
     description: Edit your profile bio
+  badge:
+    description: Show a badge
+    opt:
+      name:
+        name: name
+        description: Badge name
 
 ctxcmd:
   show_profile:
@@ -69,6 +75,8 @@ profile:
   title: "{name}'s profile"
   card_alt: "Profile card of {name} with level and XP progress"
   no_bio: No bio yet.
+  badge: "Badge: {name}"
+  badge_unknown: There is no badge with that name.
   edit_bio: Edit bio
   card:
     level: "Level {level}"

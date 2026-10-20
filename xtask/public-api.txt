@@ -79,6 +79,70 @@ pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 's
 pub fn noctis::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::AppBuilder
 pub fn noctis::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::AutocompleteChoice
+impl noctis::AutocompleteChoice
+pub fn noctis::AutocompleteChoice::name(&self) -> &str
+pub fn noctis::AutocompleteChoice::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<noctis::AutocompleteValue>) -> Self
+pub fn noctis::AutocompleteChoice::value(&self) -> &noctis::AutocompleteValue
+impl core::clone::Clone for noctis::AutocompleteChoice
+pub fn noctis::AutocompleteChoice::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::AutocompleteChoice
+pub fn noctis::AutocompleteChoice::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::AutocompleteChoice
+pub fn noctis::AutocompleteChoice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::AutocompleteChoice
+pub struct noctis::AutocompleteCtx
+impl noctis::AutocompleteCtx
+pub fn noctis::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::AutocompleteCtx::command_path(&self) -> &'static str
+pub fn noctis::AutocompleteCtx::focused(&self) -> &noctis::Focused
+pub fn noctis::AutocompleteCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::AutocompleteCtx::module(&self) -> &'static str
+pub fn noctis::AutocompleteCtx::respond(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::AutocompleteChoice>) -> noctis::Responded
+pub fn noctis::AutocompleteCtx::shard(&self) -> u32
+pub fn noctis::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::AutocompleteCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
+impl core::fmt::Debug for noctis::AutocompleteCtx
+pub fn noctis::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::AutocompleteError
+pub noctis::AutocompleteError::DeadlineMissed
+pub noctis::AutocompleteError::DeadlineMissed::deadline: core::time::Duration
+impl core::clone::Clone for noctis::AutocompleteError
+pub fn noctis::AutocompleteError::clone(&self) -> Self
+impl core::error::Error for noctis::AutocompleteError
+impl core::fmt::Debug for noctis::AutocompleteError
+pub fn noctis::AutocompleteError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::AutocompleteError
+pub fn noctis::AutocompleteError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::AutocompleteHandler<O>
+impl<O> noctis::AutocompleteHandler<O>
+pub fn noctis::AutocompleteHandler<O>::name(&self) -> &'static str
+impl<O> core::clone::Clone for noctis::AutocompleteHandler<O>
+pub fn noctis::AutocompleteHandler<O>::clone(&self) -> Self
+impl<O> core::fmt::Debug for noctis::AutocompleteHandler<O>
+pub fn noctis::AutocompleteHandler<O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::AutocompleteValue
+pub noctis::AutocompleteValue::Integer(i64)
+pub noctis::AutocompleteValue::Number(f64)
+pub noctis::AutocompleteValue::String(alloc::string::String)
+impl core::clone::Clone for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::eq(&self, &Self) -> bool
+impl core::convert::From<&str> for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::from(alloc::string::String) -> Self
+impl core::convert::From<f64> for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::from(f64) -> Self
+impl core::convert::From<i64> for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::from(i64) -> Self
+impl core::fmt::Debug for noctis::AutocompleteValue
+pub fn noctis::AutocompleteValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::AutocompleteValue
 #[non_exhaustive] pub struct noctis::BaseMeta
 pub noctis::BaseMeta::contexts: core::option::Option<&'static [noctis::InteractionContext]>
 pub noctis::BaseMeta::default_member_permissions: core::option::Option<twilight_model::guild::permissions::Permissions>
@@ -439,6 +503,17 @@ pub trait noctis::ErrorSink: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ErrorSink::report(&self, noctis::ErrorReport<'_>)
 impl<S: noctis::ErrorSink + ?core::marker::Sized> noctis::ErrorSink for alloc::rcs::arc::Arc<S>
 pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
+pub struct noctis::Focused
+impl noctis::Focused
+pub fn noctis::Focused::as_integer(&self) -> core::option::Option<i64>
+pub fn noctis::Focused::as_number(&self) -> core::option::Option<f64>
+pub fn noctis::Focused::kind(&self) -> noctis::rules::command::OptionType
+pub fn noctis::Focused::name(&self) -> &str
+pub fn noctis::Focused::value(&self) -> &str
+impl core::clone::Clone for noctis::Focused
+pub fn noctis::Focused::clone(&self) -> Self
+impl core::fmt::Debug for noctis::Focused
+pub fn noctis::Focused::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::FollowupHandle
 impl noctis::FollowupHandle
 pub async fn noctis::FollowupHandle::delete(&self) -> core::result::Result<(), noctis::ResponderError>
@@ -747,7 +822,9 @@ impl core::fmt::Debug for noctis::OptionValue
 pub fn noctis::OptionValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::OptionValue
 pub trait noctis::Options: core::marker::Sized + core::marker::Send + 'static
+pub type noctis::Options::Partial: noctis::PartialOptions<Options = Self>
 pub const noctis::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl<'static>]
+pub fn noctis::Options::autocomplete(&str) -> core::option::Option<noctis::AutocompleteHandler<Self>>
 pub fn noctis::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::Options::validate(&self, &noctis::CommandCtx) -> core::result::Result<(), noctis::InvalidOption>
 pub proc macro noctis::#[derive(Options)]
@@ -764,6 +841,9 @@ impl core::convert::From<noctis::ui::V2Message> for noctis::OutgoingMessage
 pub fn noctis::OutgoingMessage::from(noctis::ui::V2Message) -> Self
 impl core::fmt::Debug for noctis::OutgoingMessage
 pub fn noctis::OutgoingMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub type noctis::Partial<O> = <O as noctis::Options>::Partial
+pub trait noctis::PartialOptions: core::default::Default + core::marker::Send + 'static
+pub type noctis::PartialOptions::Options: noctis::Options
 pub struct noctis::Pending
 impl core::clone::Clone for noctis::Pending
 pub fn noctis::Pending::clone(&self) -> Self
@@ -961,6 +1041,7 @@ pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> 
 impl core::fmt::Display for noctis::UnknownCommandPath
 pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub type noctis::Visibility = noctis::Ephemerality
+pub proc macro noctis::#[autocomplete]
 pub proc macro noctis::#[command]
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
@@ -2246,6 +2327,34 @@ pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::
 pub fn noctis::prelude::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::prelude::AppBuilder
 pub fn noctis::prelude::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::prelude::AutocompleteChoice
+impl noctis::prelude::AutocompleteChoice
+pub fn noctis::prelude::AutocompleteChoice::name(&self) -> &str
+pub fn noctis::prelude::AutocompleteChoice::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<noctis::AutocompleteValue>) -> Self
+pub fn noctis::prelude::AutocompleteChoice::value(&self) -> &noctis::AutocompleteValue
+impl core::clone::Clone for noctis::prelude::AutocompleteChoice
+pub fn noctis::prelude::AutocompleteChoice::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::prelude::AutocompleteChoice
+pub fn noctis::prelude::AutocompleteChoice::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::AutocompleteChoice
+pub fn noctis::prelude::AutocompleteChoice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::prelude::AutocompleteChoice
+pub struct noctis::prelude::AutocompleteCtx
+impl noctis::prelude::AutocompleteCtx
+pub fn noctis::prelude::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::AutocompleteCtx::command_path(&self) -> &'static str
+pub fn noctis::prelude::AutocompleteCtx::focused(&self) -> &noctis::Focused
+pub fn noctis::prelude::AutocompleteCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::AutocompleteCtx::module(&self) -> &'static str
+pub fn noctis::prelude::AutocompleteCtx::respond(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::AutocompleteChoice>) -> noctis::Responded
+pub fn noctis::prelude::AutocompleteCtx::shard(&self) -> u32
+pub fn noctis::prelude::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::AutocompleteCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::prelude::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
+impl core::fmt::Debug for noctis::prelude::AutocompleteCtx
+pub fn noctis::prelude::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Choices)]
 pub trait noctis::prelude::Choices: core::marker::Sized + 'static
 pub type noctis::prelude::Choices::Count
@@ -2425,10 +2534,13 @@ impl core::marker::StructuralPartialEq for noctis::prelude::OpensModal
 impl noctis::ModalMarker for noctis::prelude::OpensModal
 impl noctis::ModalMarker for noctis::prelude::OpensModal
 pub trait noctis::prelude::Options: core::marker::Sized + core::marker::Send + 'static
+pub type noctis::prelude::Options::Partial: noctis::PartialOptions<Options = Self>
 pub const noctis::prelude::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl<'static>]
+pub fn noctis::prelude::Options::autocomplete(&str) -> core::option::Option<noctis::AutocompleteHandler<Self>>
 pub fn noctis::prelude::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::prelude::Options::validate(&self, &noctis::CommandCtx) -> core::result::Result<(), noctis::InvalidOption>
 pub proc macro noctis::prelude::#[derive(Options)]
+pub type noctis::prelude::Partial<O> = <O as noctis::Options>::Partial
 pub trait noctis::prelude::Payload
 pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
@@ -2488,6 +2600,7 @@ impl<T> core::ops::deref::Deref for noctis::prelude::State<T>
 pub type noctis::prelude::State<T>::Target = T
 pub fn noctis::prelude::State<T>::deref(&self) -> &T
 pub type noctis::prelude::Visibility = noctis::Ephemerality
+pub proc macro noctis::prelude::#[autocomplete]
 pub proc macro noctis::prelude::#[command]
 pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()

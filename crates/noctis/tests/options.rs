@@ -95,7 +95,10 @@ async fn ping(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
     Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
-fn suggest() {}
+#[autocomplete]
+async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+    Ok(ctx.respond(Vec::new()))
+}
 
 #[derive(Options)]
 #[expect(dead_code, reason = "only the declarations are read")]
