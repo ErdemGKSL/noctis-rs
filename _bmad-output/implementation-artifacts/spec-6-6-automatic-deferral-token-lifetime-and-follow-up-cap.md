@@ -2,7 +2,8 @@
 title: 'Story 6.6: Automatic deferral, token lifetime and follow-up cap'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '9a9d84242aeb50a61f50d256759fe8d5aead808b'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
