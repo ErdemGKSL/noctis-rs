@@ -49,7 +49,9 @@ pub enum SubmitError {
         /// The repeated key.
         key: String,
     },
-    /// A required input is absent or empty.
+    /// A required input is absent, or empty on a single-valued input (an
+    /// empty required `Vec` is [`Invalid`](Self::Invalid): its count is
+    /// below the minimum).
     #[error("[MOD-09] `{key}` is required but has no value")]
     Missing {
         /// The input key.

@@ -139,6 +139,14 @@ struct RequiredForm {
     topics: Vec<Topic>,
 }
 
+/// A File Upload `Vec` without `max_values`: Discord's default of 10.
+#[derive(Modal, Debug)]
+#[modal(route = Submit, title = "Files")]
+struct FilesForm {
+    #[file_upload("Files")]
+    files: Vec<ResolvedAttachment>,
+}
+
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!(
         "{}/tests/fixtures/modal/{name}.json",
@@ -588,4 +596,40 @@ fn cid_01_raw_ident_key_and_field_order() {
         .collect();
     assert_eq!(keys, ["evidence", "avatar", "agree", "title", "colours"]);
     assert_eq!(json["custom_id"], "0t.modal:");
+}
+
+#[test]
+fn mod_09_file_upload_default_max_values_is_ten() {
+    let built = modal_json(FilesForm::modal(Submit));
+    assert_eq!(built["components"][0]["component"]["max_values"], 10);
+
+    let files = |n: u64| {
+        let ids: Vec<String> = (1..=n)
+            .map(|i| format!("{}", 1_000_000_000_000_000_100 + i))
+            .collect();
+        let attachments: serde_json::Map<String, Value> = ids
+            .iter()
+            .map(|id| {
+                let url = format!("https://cdn.discordapp.com/ephemeral-attachments/1/{id}/f.png");
+                (
+                    id.clone(),
+                    json!({"id": id, "filename": "f.png", "size": 1, "url": url, "proxy_url": url}),
+                )
+            })
+            .collect();
+        json!({"type": 5, "data": {
+            "custom_id": "0t.modal:",
+            "components": [label(json!({"type": 19, "custom_id": "files", "values": ids}))],
+            "resolved": {"attachments": attachments}
+        }})
+        .to_string()
+        .into_bytes()
+    };
+    let form = FilesForm::from_json(&files(10)).unwrap();
+    assert_eq!(form.files.len(), 10);
+    let err = FilesForm::from_json(&files(11)).unwrap_err();
+    assert!(
+        matches!(&err, SubmitError::Invalid { key, .. } if key == "files"),
+        "{err:?}"
+    );
 }

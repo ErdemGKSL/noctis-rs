@@ -598,14 +598,21 @@ impl Spans {
 
     /// The span of `path`, or of its longest recorded prefix.
     fn of(&self, path: &str) -> Span {
+        self.key_of(path)
+            .and_then(|k| self.0.get(k).copied())
+            .unwrap_or_else(Span::call_site)
+    }
+
+    /// The longest recorded prefix of `path` (itself included), if any.
+    fn key_of<'p>(&self, path: &'p str) -> Option<&'p str> {
         let mut path = path;
         loop {
-            if let Some(sp) = self.0.get(path) {
-                return *sp;
+            if self.0.contains_key(path) {
+                return Some(path);
             }
             match path.rfind(['.', '[']) {
                 Some(i) if i > 0 => path = &path[..i],
-                _ => return Span::call_site(),
+                _ => return None,
             }
         }
     }
@@ -1022,7 +1029,15 @@ mod tests {
         spans.insert("label[0]", a);
         spans.insert("label[0].text_input.max_length", a);
         assert!(spans.0.contains_key("label[0]"));
-        let _ = spans.of("label[0].text_input.min_length");
+        assert_eq!(
+            spans.key_of("label[0].text_input.min_length"),
+            Some("label[0]")
+        );
+        assert_eq!(
+            spans.key_of("label[0].text_input.max_length"),
+            Some("label[0].text_input.max_length")
+        );
+        assert_eq!(spans.key_of("nothing"), None);
         let _ = spans.of("nothing");
         let (attr, defs) = defs(quote! {
             #[modal(route = Save, title = "T")]

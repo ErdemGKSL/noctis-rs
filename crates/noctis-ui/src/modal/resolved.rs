@@ -157,8 +157,11 @@ impl ResolvedAttachment {
     /// after the submission. Only `https://cdn.discordapp.com/` and
     /// `https://media.discordapp.net/` URLs are fetched, a file larger than
     /// `limits.attachment_bytes` is refused before fetching, and the
-    /// fetcher is asked for at most [`size`](Self::size) bytes. Re-check the
-    /// content type of what you get (MOD-09).
+    /// fetcher is asked for at most [`size`](Self::size) bytes. The
+    /// [`FileFetcher`] contract makes the fetcher fail (never truncate) on a
+    /// body over that cap, never read beyond it and never follow a redirect
+    /// off the two CDN hosts. Re-check the content type of what you get
+    /// (MOD-09).
     ///
     /// # Errors
     ///
@@ -221,8 +224,15 @@ impl ResolvedAttachment {
 /// Fetches a URL's bytes; the seam [`ResolvedAttachment::download`] goes
 /// through. Core supplies the HTTP implementation; tests use a fake.
 ///
-/// `max_bytes` is the most the caller accepts: an implementation should stop
-/// reading beyond it.
+/// # Contract
+///
+/// `max_bytes` is the most the caller accepts. An implementation **must**:
+///
+/// - return an error, never a truncated body, when the body would exceed
+///   `max_bytes`;
+/// - never read (or buffer) more than `max_bytes` of the body;
+/// - never follow a redirect to a host outside `https://cdn.discordapp.com/`
+///   and `https://media.discordapp.net/`.
 ///
 /// ```
 /// use std::error::Error;
@@ -240,6 +250,12 @@ impl ResolvedAttachment {
 /// ```
 pub trait FileFetcher {
     /// Fetches `url`, reading at most `max_bytes`.
+    ///
+    /// # Errors
+    ///
+    /// Must fail (never truncate) when the body would exceed `max_bytes`,
+    /// must not read beyond it, and must not follow a redirect to a host
+    /// outside `https://cdn.discordapp.com/` and `https://media.discordapp.net/`.
     fn fetch(
         &self,
         url: &str,
@@ -288,12 +304,14 @@ pub enum DownloadError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
 
     struct Fake {
         calls: AtomicUsize,
+        seen: Mutex<Vec<(String, u64)>>,
         reply: Result<&'static [u8], &'static str>,
     }
 
@@ -301,6 +319,7 @@ mod tests {
         fn new(reply: Result<&'static [u8], &'static str>) -> Self {
             Self {
                 calls: AtomicUsize::new(0),
+                seen: Mutex::new(Vec::new()),
                 reply,
             }
         }
@@ -308,15 +327,26 @@ mod tests {
         fn calls(&self) -> usize {
             self.calls.load(Ordering::SeqCst)
         }
+
+        fn seen(&self) -> Vec<(String, u64)> {
+            self.seen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        }
     }
 
     impl FileFetcher for Fake {
         fn fetch(
             &self,
-            _url: &str,
-            _max_bytes: u64,
+            url: &str,
+            max_bytes: u64,
         ) -> impl Future<Output = Result<Bytes, Box<dyn Error + Send + Sync>>> + Send {
             self.calls.fetch_add(1, Ordering::SeqCst);
+            self.seen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push((url.to_owned(), max_bytes));
             let reply = self.reply;
             async move {
                 match reply {
@@ -348,6 +378,7 @@ mod tests {
         let bytes = f.download(&fake, &Limits::default()).await;
         assert_eq!(bytes.ok(), Some(Bytes::from_static(b"abc")));
         assert_eq!(fake.calls(), 1);
+        assert_eq!(fake.seen(), vec![(CDN.to_owned(), 3)]);
         let media = file("https://media.discordapp.net/attachments/1/2/a.png", 3);
         assert!(media.download(&fake, &Limits::default()).await.is_ok());
     }

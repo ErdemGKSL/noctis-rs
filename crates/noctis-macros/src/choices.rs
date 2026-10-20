@@ -281,6 +281,20 @@ mod tests {
             out.contains("[MOD-07] label: limit between 1 and 100, actual 0"),
             "{out}"
         );
+        let long = Ident::new(
+            &format!("A{}", "a".repeat(100)),
+            proc_macro2::Span::call_site(),
+        );
+        let out = run(quote!(
+            enum E {
+                #[choice("L")]
+                #long,
+            }
+        ));
+        assert!(
+            out.contains("[MOD-07] value: limit between 1 and 100, actual 101"),
+            "{out}"
+        );
         let out = run(quote!(
             enum E {
                 #[choice("L", value = "")]

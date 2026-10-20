@@ -184,8 +184,10 @@ submission.unknown();                                        // &[serde_json::Va
   `MentionableSelect(Vec<Id<GenericMarker>>)`, `ChannelSelect(Vec<Id<ChannelMarker>>)`,
   `FileUpload(Vec<Id<AttachmentMarker>>)`, `RadioGroup(Option<String>)`,
   `CheckboxGroup(Vec<String>)`, `Checkbox(bool)`.
-- Per field: an absent or empty input is `None` for `Option`, `vec![]` for a non-required
-  `Vec`, else `SubmitError::Missing`. Text `""` counts as empty; a text outside the declared
+- Per field: an absent input, or an empty one on a single-valued field, is `None` for
+  `Option`, else `SubmitError::Missing`; an absent or empty input is `vec![]` for a
+  non-required `Vec`, while an empty required `Vec` is `Invalid` (count below its minimum)
+  and an absent one `Missing`. Text `""` counts as empty; a text outside the declared
   `min_length..=max_length` (by `discord_len`) is `Invalid`. A single-valued field with 2+
   values, a `Vec` outside its effective `min..=max` (min = `min_values`, else 1 when
   required) and an unknown choice value are `Invalid`. Selects join `resolved`: users (with
@@ -221,7 +223,9 @@ let bytes = form.files[0].download(&fetcher, &limits).await?;   // -> Result<Byt
 
 - `fetcher: &impl FileFetcher` (`fn fetch(&self, url: &str, max_bytes: u64) -> impl
   Future<Output = Result<Bytes, Box<dyn Error + Send + Sync>>> + Send`); core supplies the
-  HTTP implementation [planned, Epic 7], tests pass a fake.
+  HTTP implementation [planned, Epic 7], tests pass a fake. A fetcher must fail (never
+  truncate) on a body over `max_bytes`, never read beyond it and never follow a redirect off
+  the two CDN hosts.
 - Only `https://cdn.discordapp.com/` and `https://media.discordapp.net/` URLs are fetched
   (else `DownloadError::Host`), a file over `limits.attachment_bytes` is refused
   (`TooLarge`), neither calls the fetcher; a fetched length other than `size()` is

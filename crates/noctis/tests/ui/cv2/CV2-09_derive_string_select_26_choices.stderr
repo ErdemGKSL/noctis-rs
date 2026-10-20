@@ -1,0 +1,26 @@
+error[E0277]: [CV2-09] a String Select takes 1 to 25 options
+  --> tests/ui/cv2/CV2-09_derive_string_select_26_choices.rs:68:11
+   |
+68 |     pick: TwentySix,
+   |           ^^^^^^^^^ not 1 to 25 options
+   |
+   = help: the trait `StringSelectOptions` is not implemented for `Arity<26>`
+   = note: `Arity<26>` is the number of Choices variants; for options known only at runtime use ModalStringSelect::new(key, options) and validate(&mut modal, &limits)
+   = help: the following other types implement trait `StringSelectOptions`:
+             Arity<10>
+             Arity<11>
+             Arity<12>
+             Arity<13>
+             Arity<14>
+             Arity<15>
+             Arity<16>
+             Arity<17>
+           and $N others
+note: required by a bound in `noctis::__private::noctis_ui::modal::form::string_select`
+  --> $WORKSPACE/crates/noctis-ui/src/modal/form.rs
+   |
+   | pub fn string_select<T>(key: &'static str, spec: Spec) -> ModalStringSelect
+   |        ------------- required by a bound in this function
+...
+   |     T::Count: StringSelectOptions,
+   |               ^^^^^^^^^^^^^^^^^^^ required by this bound in `string_select`

@@ -2,7 +2,7 @@
 title: 'Story 4.6: `derive(Modal)` and typed modal submissions from raw JSON'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'ae7a27d5f788510fc31be4ac797ec9ddbaa7b4a3'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -153,6 +153,44 @@ Default Limits. "CE R" = compile error containing `[R]` (trybuild fixture when m
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 34 findings — high 0, medium 0, low 21, false 13, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `download` passes a truncated file when the fetcher stops at `max_bytes`; redirects off-CDN not forbidden — `FileFetcher` says only "should stop reading"; fix: make "error, never truncate, no off-CDN redirects" a hard documented contract (grouped with edge #10).
+  - `[false]` `[reject]` (blind) declared `min_values`/`max_values` never checked against the real `Choices` count — the intent-contract assigns this explicitly to runtime ("Option counts versus `min_values`/`max_values` stay runtime (`noctis::ui::validate`)") and modals.md L118 says so; no doc overclaims it.
+  - `[low]` `[patch]` (blind) an empty required `Vec` gives `Invalid`, but `SubmitError::Missing` docs and modals.md L187 say empty ⇒ `Missing` — code follows the spec's count rule; fix: reword both docs.
+  - `[low]` `[reject]` (blind) duplicate submitted values accepted in `Vec` fields — Discord never sends duplicates; only a forged payload hits it, and the fix adds a guard the spec does not ask for.
+  - `[low]` `[reject]` (blind) `is_vec` is syntactic, so a `Vec` alias rejects `min_values` — failure is a loud compile error; runtime build uses `MULTI` so the built modal is right; rare, fix adds machinery.
+  - `[low]` `[reject]` (blind) repeated attribute arguments last-win in `derive(Modal)` — real but rare typo case; fix adds seen-name guards.
+  - `[false]` `[reject]` (blind) template calls nonexistent `.bio()/.pronouns()` pre-fill setters — the spec mandates `BioForm::modal(..)` with pre-fill marked `[planned, Story 9.4]`; the template is outside the workspace and the marker is the project's planned-API convention.
+  - `[low]` `[patch]` (blind) compile-fail coverage missing for new diagnostics — MOD-03 two attributes, CID-01, CV2-04, placeholders and duplicate choice values are covered by noctis-macros unit tests (modal.rs mod_02/mod_04/mod_05_to_07, choices.rs duplicate_values_and_raw_idents); only the `StringSelectOptions` 26-Choices derive path is unproven (grouped with vgap #1).
+  - `[low]` `[patch]` (blind) `spans_fall_back_to_the_longest_prefix` discards its fallback lookups — confirmed at modal.rs L1025-1026; fix: assert the resolved key.
+  - `[false]` `[reject]` (blind) `walk` accepts nested wrappers and relies on serde's recursion limit — nesting only yields keyed values a flat forged payload could equally carry; serde_json's limit returns an error mapped to `Malformed` (200-deep test), no panic.
+  - `[low]` `[reject]` (blind) `channel_types` accepts any path prefix / unknown variants fail late — unknown variant is a loud resolution error; wrong prefixes are harmless; rare, fix adds validation branches.
+  - `[low]` `[reject]` (blind) `#[cfg]`-gated `Choices` variants break the expansion — loud compile error, rare usage; fix adds a branch.
+  - `[false]` `[reject]` (edge) string_select `min_values` > variant count passes `cargo check` — same intent-contract runtime assignment as the blind min/max finding.
+  - `[false]` `[reject]` (edge) checkbox_group `min`/`max` > variant count passes expansion — same as above.
+  - `[low]` `[reject]` (edge) same named argument twice silently last-wins/concatenates — same as blind repeated-args finding; rare, guard fix.
+  - `[low]` `[reject]` (edge) `route`/`title` given twice silently overrides — rare, guard fix.
+  - `[low]` `[reject]` (edge) `channel_types` prefixed paths rewritten to `ChannelType::<last>` — harmless rewrite, rare.
+  - `[low]` `[reject]` (edge) `Vec` alias vs syntactic `is_vec` — same as blind; loud compile error.
+  - `[low]` `[reject]` (edge) repeated values decode into `Vec<C>` with duplicates — same as blind; forged-only.
+  - `[low]` `[reject]` (edge) resolved channel kind / attachment type not checked against declared `channel_types`/`file_types` — Discord enforces these client-side for signed interactions; the spec does not ask for it and the fix adds parameters to decode.
+  - `[low]` `[reject]` (edge) unknown-type component sharing a known key not reported as `Duplicate` (submit.rs L332-339) — forged-only, known value wins deterministically; fix adds a guard.
+  - `[low]` `[patch]` (edge) a fetcher ignoring `max_bytes` buffers an oversized body before `SizeMismatch` — grouped with the blind truncation finding; documented hard contract.
+  - `[low]` `[patch]` (vgap) no compile_fail fixture for a 26-Choices `#[string_select]` (`StringSelectOptions`) — pre-verified; add `CV2-09_derive_string_select_26_choices` trybuild fixture.
+  - `[low]` `[patch]` (vgap) File Upload default `max_values` 10 for `Vec` without `max_values` never observed — pre-verified; add a derived field, JSON and 10/11 decode asserts in modal_derive.rs.
+  - `[low]` `[patch]` (vgap) download tests never check the URL / `max_bytes` passed to the fetcher — pre-verified; fake records args, assert in `mod_09_download_ok`.
+  - `[low]` `[patch]` (vgap) implicit choice value from a > 100-char variant ident untested — pre-verified; add case to `mod_07_choice_texts`.
+  - `[false]` `[reject]` (vgap other) min/max versus real `Choices` count unchecked at expansion — intent-contract keeps it runtime; modals.md L118 documents it.
+  - `[false]` `[reject]` (intent D1) handler-level receipt not exercised — intent-contract excludes `ModalSubmitCtx`/`#[handler]` (Story 7.8); epics L2030 hands bytes to the 4.6 decoder.
+  - `[false]` `[reject]` (intent D2) FR-64 fixtures hand-authored — the spec asks for realistic payloads per Discord docs, and `mod_09_twilight_drops_what_noctis_decodes` proves twilight's loss on the same bytes.
+  - `[false]` `[reject]` (intent D3) "every field populated" split over three forms — MOD-02's 5-component cap makes one struct with ten kinds impossible; Matrix 15 settles three forms.
+  - `[false]` `[reject]` (intent D4) no concrete HTTP fetcher — intent-contract: noctis-ui does no I/O, core supplies the fetcher later (AD-2/AD-15); AC is at the docs surface.
+  - `[false]` `[reject]` (intent D5) unknown data only on `ModalSubmission` — intent-contract specifies `unknown()` there and `WrongType` for an unknown carrying a declared key; "unknown component data" is components, not extra properties.
+  - `[false]` `[reject]` (intent D6) template reconciliation textual, literal texts vs locale rule — intent-contract mandates literal texts (`key =` is Epic 11) and the `[planned, Story 9.4]` pre-fill marker; the locale entries stay for Epic 11.
+  - `[false]` `[reject]` (intent D7) extra decode bounds, default-limit text cap, MOD-03 stderr path change — the intent-contract requires the decode bounds and the 4000 cap; the stderr only prints the full type path and still carries `[MOD-03]`.
+
 ## Design Notes
 
 - **Attributes per input, Label text positional:** a `#[label]` helper would collide with the prelude's `label!` macro in the macro namespace; one attribute per field also makes "one field = one component" structural.
@@ -188,3 +226,12 @@ Default Limits. "CE R" = compile error containing `[R]` (trybuild fixture when m
 - `cargo deny check` -- exit 0.
 - `cargo run --release -p xtask -- deps-check`, then `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- each exit 0.
 - `grep -c 'story = "4.6"' xtask/rules-pending.toml` -- prints 0. `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** `#[derive(Modal)]` (noctis-macros) builds a Components V2 modal from a struct (one attribute per field: text_display, text_input, string_select, radio_group, checkbox, checkbox_group, file_upload, entity selects) with compile-time MOD-01..07/CID-01/CV2 checks; noctis-ui decodes raw modal-submit JSON (own walk, types 21-23 that twilight drops) into typed fields, with `SubmitError`, resolved attachments and an I/O-free `FileFetcher` download seam.
+- **Files changed:** `crates/noctis-macros/src/{modal,choices}.rs` (derive + Choices counts); `crates/noctis-ui/src/modal/{submit,resolved}.rs` (+tests) (decoder, resolved data, download); `crates/noctis/src/lib.rs` (re-exports); `crates/noctis/tests/{modal_derive,derive_hygiene}.rs`, `tests/boundary/modal.rs`, `tests/fixtures/modal/*.json`, snapshot (decode/snapshot/boundary tests); `crates/noctis/tests/ui/mod/*`, `ui/cv2/CV2-09_derive_string_select_26_choices.*` (compile_fail); `docs/discord-rules.md`, `xtask/rules-pending.toml`, `xtask/public-api.txt` (rules + API snapshot); `examples/project-template/` (AGENTS.md, Usage Skill modals.md/limits/SKILL.md, profile.rs).
+- **Review findings:** 34 total (high 0, medium 0, low 21, false 13). Patched 8 low: hard `FileFetcher` contract (error, never truncate, no off-CDN redirects; covers oversized-buffer finding), empty required `Vec` docs reworded to `Invalid`, CV2-09 26-Choices trybuild fixture, File Upload default max_values 10 test, fetcher URL/max_bytes asserted, >100-char implicit choice value test, span-fallback test asserts resolved key. Deferred 0. Rejected 26: 13 false (min/max vs Choices count is runtime per intent-contract; template pre-fill `[planned, Story 9.4]`; nested-wrapper walk safe; handler receipt is Story 7.8; FR-64 fixtures valid; three forms forced by MOD-02; no HTTP fetcher by AD-2/AD-15; unknown data only on `ModalSubmission`; literal texts until Epic 11; decode bounds required) and 13 low rejected as rare/loud-compile-error/forged-payload-only (duplicate values, `Vec` alias, repeated attribute args, channel_types prefixes, cfg-gated variants, unchecked channel/file types, unknown-type key collision).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 8).
+- **Verification:** all local gates green via gates.sh (fmt, clippy -D warnings, test --release, cargo hack each-feature, MSRV 1.91, cargo deny, xtask deps-check/rules-catalog/api-snapshot/skill-check); no debug build. CI paused by maintainer.
+- **Residual risks:** min/max vs real option count only caught by runtime `validate`; forged payloads with duplicate values or mismatched channel/file types are accepted; download safety depends on the core HTTP fetcher (Epic 7) honouring the documented contract; pre-fill pending Story 9.4.
