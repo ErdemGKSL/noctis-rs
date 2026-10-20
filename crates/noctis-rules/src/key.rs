@@ -90,7 +90,7 @@ impl fmt::Display for MessageKey {
 /// Looks up and formats a localized message.
 ///
 /// The trait is object-safe and requires `Send + Sync`, so a `&dyn Translate`
-/// can be held across `.await` on a multi-threaded runtime; widgets take
+/// can be held across `.await` on a multi-threaded runtime; render functions take
 /// `&dyn Translate`. `noctis-i18n` is the
 /// implementation (AD-16). Implementors:
 ///

@@ -1,13 +1,13 @@
 error[E0308]: mismatched types
- --> tests/ui/int/INT-08_defer_flags.rs:6:16
+ --> tests/ui/int/INT-08_defer_flags.rs:6:25
   |
-6 |     Ok(r.defer(CallbackFlags::EPHEMERAL).await?.done()) // [INT-08]
-  |          ----- ^^^^^^^^^^^^^^^^^^^^^^^^ expected `Ephemerality`, found `CallbackFlags`
+6 |     Ok(r.defer_reply_as(CallbackFlags::EPHEMERAL).await?.done()) // [INT-08]
+  |          -------------- ^^^^^^^^^^^^^^^^^^^^^^^^ expected `Ephemerality`, found `CallbackFlags`
   |          |
   |          arguments to this method are incorrect
   |
 note: method defined here
  --> $WORKSPACE/crates/noctis-core/src/responder.rs
   |
-  |     pub async fn defer(
-  |                  ^^^^^
+  |     pub async fn defer_reply_as(
+  |                  ^^^^^^^^^^^^^^

@@ -217,13 +217,11 @@ pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 #[doc(hidden)]
+pub use responder::{__DeclaresAutoDefer, __DeclaresManual, __assert_auto_defer, __assert_manual};
 pub use responder::{
-    __DeclaresNoModal, __DeclaresOpensModal, __assert_no_modal, __assert_opens_modal,
-};
-pub use responder::{
-    Acked, Command, CommandResponder, Ephemerality, FollowupHandle, IntoResponse, ModalMarker,
-    NoModal, OpensModal, OutgoingMessage, Pending, Responded, Responder, ResponderError,
-    ResponderKind, ResponderState, Visibility,
+    Acked, AutoDefer, CanShowModal, Command, CommandResponder, DeferMode, Ephemerality,
+    FollowupHandle, IntoResponse, Manual, OutgoingMessage, Pending, Responded, Responder,
+    ResponderError, ResponderKind, ResponderState, Visibility,
 };
 pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};

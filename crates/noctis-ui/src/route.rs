@@ -216,7 +216,7 @@ where
 /// The `custom_id` of a Route component: the Route value and, once known,
 /// its encoding.
 ///
-/// A Route without a View envelope, select nonce or integrity tag is encoded
+/// A Route without a select nonce or integrity tag is encoded
 /// when the component is built; any other `custom_id` stays unresolved until
 /// core calls [`resolve`](Self::resolve) with the render's parts (and
 /// [`finish`](Self::finish) for a Ref slot) before sending (AD-18).
@@ -238,7 +238,7 @@ impl CustomId {
             route: Arc::new(Erased(route)),
             id: None,
         };
-        if !shape.has_view() && !shape.has_select() && !shape.is_signed() {
+        if !shape.has_select() && !shape.is_signed() {
             // A slot or an error leaves the id unresolved.
             if let Ok(EncodedId::Inline(id)) = this.route.encode(&Parts::new()) {
                 this.id = Some(id);

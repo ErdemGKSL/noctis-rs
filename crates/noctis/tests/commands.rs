@@ -315,17 +315,17 @@ mod responder {
         Components::new().push(TextDisplay::new(t.to_owned()))
     }
 
-    #[command("answer", description = "d", ephemeral)]
+    #[command("answer", description = "d", response = ephemeral)]
     async fn answer(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
         assert_eq!(ctx.ephemerality(), Ephemerality::Ephemeral);
-        let acked = r.defer(Ephemerality::Ephemeral).await?;
-        acked.edit_original(text("done")).await?;
-        let handle = acked.followup(text("log"), Visibility::Public).await?;
+        let acked = r.defer_reply().await?;
+        acked.edit_reply(text("done")).await?;
+        let handle = acked.follow_up(text("log"), Visibility::Public).await?;
         handle.edit(text("log 2")).await?;
         Ok(acked.done())
     }
 
-    #[command("public", description = "d")]
+    #[command("public", description = "d", response = public)]
     async fn public(_ctx: CommandCtx) -> HandlerResult<Components> {
         Ok(text("hi"))
     }
@@ -337,7 +337,7 @@ mod responder {
         )))
     }
 
-    #[user_command("Wave", ephemeral)]
+    #[user_command("Wave", response = ephemeral)]
     async fn wave(
         _ctx: CommandCtx,
         target: ResolvedUser,
@@ -393,40 +393,58 @@ mod responder {
         );
     }
 
-    /// Story 6.6 boundary pass (INT-05): an `opens_modal` handler compiles
-    /// with `CommandResponder<OpensModal>`.
-    #[command("feedback", description = "d", opens_modal)]
-    async fn feedback(
-        _ctx: CommandCtx,
-        r: CommandResponder<OpensModal>,
-    ) -> HandlerResult<Responded> {
+    /// Story 6.10 boundary pass (INT-05): an `auto_defer = false` handler
+    /// compiles with `CommandResponder<Manual>`.
+    #[command("feedback", description = "d", auto_defer = false)]
+    async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
         let modal = Form.modal("Feedback").push(TextDisplay::new("Thanks!"));
-        Ok(r.modal(modal).await?.done())
+        Ok(r.show_modal(modal).await?.done())
+    }
+
+    /// Story 6.10 boundary pass: `auto_defer = true` with a plain
+    /// `CommandResponder`.
+    #[command("explicit", description = "d", auto_defer = true)]
+    async fn explicit(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        Ok(r.reply(text("hi")).await?.done())
+    }
+
+    /// Story 6.10 boundary pass: a context menu declared `auto_defer = false`
+    /// and `response = ephemeral`.
+    #[user_command("Report", response = ephemeral, auto_defer = false)]
+    async fn report(
+        _ctx: CommandCtx,
+        _target: ResolvedUser,
+        r: CommandResponder<Manual>,
+    ) -> HandlerResult<Responded> {
+        Ok(r.defer_reply().await?.done())
     }
 
     /// Story 6.6 Matrix 19: a 46-character title (Strict).
-    #[command("long", description = "d", opens_modal)]
-    async fn long(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+    #[command("long", description = "d", auto_defer = false)]
+    async fn long(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
         let modal = Form.modal("a".repeat(46)).push(TextDisplay::new("x"));
-        Ok(r.modal(modal).await?.done())
+        Ok(r.show_modal(modal).await?.done())
     }
 
     /// Story 6.6 Matrix 20: an unresolved Route id.
-    #[command("unresolved_modal", description = "d", opens_modal)]
+    #[command("unresolved_modal", description = "d", auto_defer = false)]
     async fn unresolved_modal(
         _ctx: CommandCtx,
-        r: CommandResponder<OpensModal>,
+        r: CommandResponder<Manual>,
     ) -> HandlerResult<Responded> {
         let modal = Pick.modal("Pick").push(TextDisplay::new("x"));
-        Ok(r.modal(modal).await?.done())
+        Ok(r.show_modal(modal).await?.done())
     }
 
     /// Story 6.6 Matrix 17, 19 and 20 over the detached seam.
     #[tokio::test]
-    async fn opens_modal_handlers() {
-        assert!(feedback().opens_modal());
-        assert!(!public().opens_modal());
-        assert!(!answer().opens_modal());
+    async fn manual_handlers() {
+        assert!(!feedback().auto_defer());
+        assert!(public().auto_defer());
+        assert!(answer().auto_defer());
+        assert!(explicit().auto_defer());
+        assert!(!report().auto_defer());
+        assert_eq!(report().ephemerality(), Ephemerality::Ephemeral);
         call_command(&feedback(), "feedback").await.unwrap();
         let responder_error = |err: &HandlerError| {
             format!(

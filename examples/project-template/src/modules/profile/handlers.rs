@@ -1,8 +1,7 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-// [planned: Stories 6.10 and 6.11] one struct per interaction (kind derives, `impl X { #[handler] }`,
-// `auto_defer`, `response`, `Manual`, `show_modal`, `.build()`); the shipped release
-// spells these as free-function `#[command]`/`#[handler]` items, `derive(Options)`,
-// `derive(Route)`, `opens_modal`/`OpensModal` and `modal()`.
+// [planned: Story 6.11] one struct per interaction (kind derives, `impl X { #[handler] }`,
+// `.build()`); the shipped release spells these as free-function `#[command]`/`#[handler]`
+// items, `derive(Options)` and `derive(Route)`.
 
 //! Commands and handlers. Each struct is the interaction (id + typed data); its
 //! `#[handler]` method loads the data, renders the card, and answers with

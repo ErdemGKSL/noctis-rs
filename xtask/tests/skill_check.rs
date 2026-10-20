@@ -30,8 +30,8 @@ const SKILL_DIR: &str = "examples/project-template/.claude/skills/noctis";
 
 const HANDLERS: &str = r"
 #[handler]
-async fn edit(ctx: ComponentCtx, responder: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
-    Ok(responder.modal(m).await?.done())
+async fn edit(ctx: ComponentCtx, responder: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+    Ok(responder.show_modal(m).await?.done())
 }
 
 #[event]
@@ -409,7 +409,7 @@ const BAD: &str = r#"use twilight::Embed;
 
 #[command("x")]
 async fn cmd(ctx: CommandCtx, r: CommandResponder) -> LegacyMessage {
-    r.defer().await;
+    r.defer_reply().await;
     tokio::spawn(async {});
     Reply { content: "hi" }
 }

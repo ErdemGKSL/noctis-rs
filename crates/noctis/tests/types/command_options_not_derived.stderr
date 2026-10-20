@@ -9,7 +9,7 @@ error[E0277]: `std::string::String` is not an options struct
 note: required by a bound in `CommandHandler::__new_plain_with_options`
  --> $WORKSPACE/crates/noctis-core/src/command.rs
   |
-  |     pub fn __new_plain_with_options<O, M, F, Fut, R>(
+  |     pub fn __new_plain_with_options<O, D, F, Fut, R>(
   |            ------------------------ required by a bound in this associated function
 ...
   |         O: Options,

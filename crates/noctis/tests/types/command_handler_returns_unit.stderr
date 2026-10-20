@@ -8,22 +8,19 @@ error[E0277]: `()` is not a Command response
 help: the following other types implement trait `IntoResponse<K>`
  --> $WORKSPACE/crates/noctis-core/src/responder.rs
   |
-  | impl<K: ResponderKind> IntoResponse<K> for Responded {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Responded` implements `IntoResponse<K>`
+  | impl IntoResponse<Command> for V2Message {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `V2Message`
 ...
-  | impl<M: ModalMarker> IntoResponse<Command<M>> for V2Message {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `V2Message` implements `IntoResponse<noctis::Command<M>>`
+  | impl IntoResponse<Command> for Components {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::ui::Components`
 ...
-  | impl<M: ModalMarker> IntoResponse<Command<M>> for Components {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::ui::Components` implements `IntoResponse<noctis::Command<M>>`
-...
-  | impl<M: ModalMarker> IntoResponse<Command<M>> for LegacyMessage {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `LegacyMessage` implements `IntoResponse<noctis::Command<M>>`
+  | impl IntoResponse<Command> for LegacyMessage {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `LegacyMessage`
 note: required by a bound in `CommandHandler::__new_plain`
  --> $WORKSPACE/crates/noctis-core/src/command.rs
   |
-  |     pub fn __new_plain<M, F, Fut, R>(
+  |     pub fn __new_plain<D, F, Fut, R>(
   |            ----------- required by a bound in this associated function
 ...
-  |         R: IntoResponse<Command<M>>,
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `CommandHandler::__new_plain`
+  |         R: IntoResponse<Command>,
+  |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `CommandHandler::__new_plain`

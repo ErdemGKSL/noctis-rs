@@ -44,7 +44,7 @@ async fn ping(_ctx: CommandCtx) -> HandlerResult<Components> {
     Ok(text("pong"))
 }
 
-#[command("secret", description = "A private answer", ephemeral)]
+#[command("secret", description = "A private answer", response = ephemeral)]
 async fn secret(_ctx: CommandCtx) -> HandlerResult<Components> {
     Ok(text("psst"))
 }
@@ -57,14 +57,14 @@ async fn twice(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Component
 
 #[command("slow", description = "Defer, then return a message")]
 async fn slow(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
-    let _ = r.defer(Ephemerality::Ephemeral).await?.done();
+    let _ = r.defer_reply_as(Ephemerality::Ephemeral).await?.done();
     Ok(text("later"))
 }
 
 #[command("log", description = "Defer, then a public follow-up")]
 async fn log(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-    let acked = r.defer(Ephemerality::Ephemeral).await?;
-    let handle = acked.followup(text("logged"), Visibility::Public).await?;
+    let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;
+    let handle = acked.follow_up(text("logged"), Visibility::Public).await?;
     assert_eq!(handle.message_id().get(), 55);
     Ok(acked.done())
 }
@@ -81,12 +81,12 @@ struct SendFeedback;
 
 impl noctis::__private::ui::Handled for SendFeedback {}
 
-#[command("feedback", description = "Open the feedback form", opens_modal)]
-async fn feedback(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+#[command("feedback", description = "Open the feedback form", auto_defer = false)]
+async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
     let modal = SendFeedback
         .modal("Feedback")
         .push(TextDisplay::new("Thanks!"));
-    Ok(r.modal(modal).await?.done())
+    Ok(r.show_modal(modal).await?.done())
 }
 
 #[event]
@@ -323,7 +323,7 @@ async fn acknowledged_then_returned_edits_the_original() {
 /// Matrix 24 and the Responder AC: an ephemeral defer, then a public
 /// follow-up.
 #[tokio::test(flavor = "multi_thread")]
-async fn defer_then_followup() {
+async fn defer_then_follow_up() {
     let running = Running::start(Module::new("m").add(log())).await;
     running.invoke("log");
     let sent = running.wait_sent(2).await;
@@ -406,9 +406,10 @@ async fn auto_defer_then_returned_message_edits_the_original() {
     running.run.abort();
 }
 
-/// Story 6.6 Matrix 17 and 21 and the Modals AC: an `opens_modal`
-/// Command's modal is callback type 9 (no auto-defer, even with a 0 ms
-/// deadline); over the Dispatcher it is `ModalUnavailable`.
+/// Story 6.6 Matrix 17 and 21, Story 6.10 AC 2 and the Modals AC: an
+/// `auto_defer = false` Command's modal is callback type 9 (no auto-defer,
+/// even with a 0 ms deadline); over the Dispatcher it is
+/// `ModalUnavailable`.
 #[tokio::test(flavor = "multi_thread")]
 async fn modal_opens_as_the_first_response() {
     let module = Module::new("m").add(feedback()).add(prefix());
@@ -416,8 +417,10 @@ async fn modal_opens_as_the_first_response() {
         b.ack_deadline(Duration::ZERO);
     })
     .await;
+    assert!(!feedback().auto_defer());
     running.invoke("feedback");
     let sent = running.wait_sent(1).await;
+    assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!(sent[0].route_path(), Some(CALLBACK));
     let callback = body(&sent[0]);
     assert_eq!(callback["type"], 9);
@@ -730,10 +733,14 @@ async fn validator_failure_is_a_notice_without_a_report() {
     running.run.abort();
 }
 
-#[command("survey", description = "Opens a modal, then fails", opens_modal)]
-async fn survey(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
+#[command(
+    "survey",
+    description = "Opens a modal, then fails",
+    auto_defer = false
+)]
+async fn survey(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
     let modal = SendFeedback.modal("Survey").push(TextDisplay::new("Hi"));
-    let _ = r.modal(modal).await?.done();
+    let _ = r.show_modal(modal).await?.done();
     Err(HandlerError::new(std::io::Error::other("after modal")))
 }
 

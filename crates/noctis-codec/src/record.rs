@@ -111,8 +111,8 @@ impl<'a> RefRecord<'a> {
     /// # Errors
     ///
     /// The first failed check, in this order: empty; a non-ASCII byte; a
-    /// bad format digit or a generation other than 0; an `E`, `N` or `T`
-    /// flag ([`CodecError::UnexpectedSection`], naming the first); a bad,
+    /// bad format digit, a generation other than 0 or the reserved flag bit
+    /// 2 ([`CodecError::ReservedFlag`]); an `N` or `T` flag ([`CodecError::UnexpectedSection`], naming the first); a bad,
     /// unterminated, empty or over-long route; a missing, zero or bad schema
     /// digit; a body byte outside printable ASCII or equal to `:` or `~`.
     /// Indices are byte indices into `raw`.
@@ -128,11 +128,7 @@ impl<'a> RefRecord<'a> {
             index: e.valid_up_to(),
         })?;
         let flags = parse_format(raw)?;
-        for (flag, section) in [
-            (Flags::E, Section::Envelope),
-            (Flags::N, Section::Nonce),
-            (Flags::T, Section::Tag),
-        ] {
+        for (flag, section) in [(Flags::N, Section::Nonce), (Flags::T, Section::Tag)] {
             if flags.contains(flag) {
                 return Err(CodecError::UnexpectedSection { section });
             }
@@ -262,11 +258,11 @@ mod tests {
         assert_eq!(err(b"\xff"), E::NotAscii { index: 0 });
         assert_eq!(err(b"!r:"), bad(0));
         assert_eq!(err(b"Gr:"), E::Generation { generation: 1 });
+        assert_eq!(err(b"2r:x"), E::ReservedFlag);
+        assert_eq!(err(b"Fr:z"), E::ReservedFlag);
         for (raw, section) in [
-            (&b"2r:_0000"[..], Section::Envelope),
-            (b"4r:00", Section::Nonce),
+            (&b"4r:00"[..], Section::Nonce),
             (b"8r:000000", Section::Tag),
-            (b"Fr:z", Section::Envelope),
         ] {
             assert_eq!(err(raw), E::UnexpectedSection { section });
         }

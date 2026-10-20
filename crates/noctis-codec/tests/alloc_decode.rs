@@ -18,8 +18,8 @@ use arrayvec::ArrayString;
 use noctis_codec::{
     BoundedStr, BoundedStrError, CodecError, DecodeError, FMT_LEN, Field, FieldDecode, FieldError,
     ForgedReason, MAX_ID_LEN, Parts, Payload, PayloadKey, PayloadKeys, PayloadSource, RouteShape,
-    SEP_LEN, SelectNonce, StaleReason, TAG_LEN, ViewEnvelope, decode, decode_route,
-    decode_route_verified, decode_variant, encode, encode_variant,
+    SEP_LEN, SelectNonce, StaleReason, TAG_LEN, decode, decode_route, decode_route_verified,
+    decode_variant, encode, encode_variant,
 };
 use twilight_model::id::{Id, marker::UserMarker};
 
@@ -76,12 +76,12 @@ payload!(FixedP {
 
 route!(F, "f", RouteShape::INLINE, 0, FixedP);
 route!(FS, "f.s", RouteShape::INLINE, 61, FixedP);
-route!(FV, "f.v", RouteShape::INLINE.view().select(), 0, FixedP);
+route!(FN, "f.n", RouteShape::INLINE.select(), 0, FixedP);
 route!(FT, "f.t", RouteShape::INLINE.signed(), 0, FixedP);
 
 const _: () = noctis_codec::assert_fits::<F>();
 const _: () = noctis_codec::assert_fits::<FS>();
-const _: () = noctis_codec::assert_fits::<FV>();
+const _: () = noctis_codec::assert_fits::<FN>();
 const _: () = noctis_codec::assert_fits::<FT>();
 const _: () = assert!(<FixedP as Payload>::MAX_ENCODED_LEN.is_some());
 
@@ -196,10 +196,9 @@ struct Case {
     want: FixedP,
 }
 
-/// A valid `FV` id with its expected Payload, envelope and nonce.
-struct ViewCase {
+/// A valid `FN` id with its expected Payload and nonce.
+struct NonceCase {
     case: Case,
-    envelope: ViewEnvelope,
     nonce: SelectNonce,
 }
 
@@ -244,12 +243,11 @@ fn inline_decode_allocates_nothing() {
     let keys = PayloadKeys::new(k1).with_previous(k0);
     let wrong_keys = PayloadKeys::new(k2);
 
-    let max_envelope = ViewEnvelope::new('a', 61, 3843, 61).unwrap();
     let max_nonce = SelectNonce::new(3843).unwrap();
 
     let mut plain_cases = Vec::with_capacity(PER_ROUTE);
     let mut schema_cases = Vec::with_capacity(PER_ROUTE);
-    let mut view_cases = Vec::with_capacity(PER_ROUTE);
+    let mut nonce_cases = Vec::with_capacity(PER_ROUTE);
     let mut signed_cases = Vec::with_capacity(PER_ROUTE);
     for index in 0..PER_ROUTE {
         // F: every 10th id leaves out its trailing `None`.
@@ -271,22 +269,16 @@ fn inline_decode_allocates_nothing() {
         schema_cases.push(Case { id, want });
 
         let want = payload_at(3, index).unwrap();
-        let (envelope, nonce) = if index % 2 == 0 {
-            (max_envelope, max_nonce)
+        let nonce = if index % 2 == 0 {
+            max_nonce
         } else {
-            let mut rng = Rng::new(4, index);
-            let action = char::from(b"_aZ09"[usize::try_from(rng.next() % 5).unwrap()]);
-            let [tab, page0, page1, version, nonce0, nonce1, ..] = rng.next().to_le_bytes();
-            let page = u16::from_le_bytes([page0, page1]) % 3844;
-            let envelope = ViewEnvelope::new(action, tab % 62, page, version % 62).unwrap();
-            let nonce = SelectNonce::new(u16::from_le_bytes([nonce0, nonce1]) % 3844).unwrap();
-            (envelope, nonce)
+            let [nonce0, nonce1, ..] = Rng::new(4, index).next().to_le_bytes();
+            SelectNonce::new(u16::from_le_bytes([nonce0, nonce1]) % 3844).unwrap()
         };
-        let parts = Parts::new().with_envelope(envelope).with_nonce(nonce);
-        let id = encode::<FV>(&want, &parts).unwrap();
-        view_cases.push(ViewCase {
+        let parts = Parts::new().with_nonce(nonce);
+        let id = encode::<FN>(&want, &parts).unwrap();
+        nonce_cases.push(NonceCase {
             case: Case { id, want },
-            envelope,
             nonce,
         });
 
@@ -326,6 +318,11 @@ fn inline_decode_allocates_nothing() {
     }
     let mut generation = String::from(full_f.as_str());
     generation.replace_range(0..1, "G");
+    let mut reserved = String::from(full_f.as_str());
+    reserved.replace_range(0..1, "2");
+    let mut reserved_nonce = String::from(nonce_cases[3].case.id.as_str());
+    assert!(reserved_nonce.starts_with('4'), "{reserved_nonce}");
+    reserved_nonce.replace_range(0..1, "6");
 
     let rejects = vec![
         rejected(&full_f, |id, _, _| {
@@ -433,6 +430,24 @@ fn inline_decode_allocates_nothing() {
                 }))
             )
         }),
+        rejected(&reserved, |id, _, _| {
+            matches!(
+                black_box(decode_route::<F>(id)),
+                Err(DecodeError::Malformed(CodecError::ReservedFlag))
+            )
+        }),
+        rejected(&reserved_nonce, |id, _, _| {
+            matches!(
+                black_box(decode_route::<FN>(id)),
+                Err(DecodeError::Malformed(CodecError::ReservedFlag))
+            )
+        }),
+        rejected("Ff:z00x000001", |id, keys, _| {
+            matches!(
+                black_box(decode_route_verified::<FT>(id, keys)),
+                Err(DecodeError::Malformed(CodecError::ReservedFlag))
+            )
+        }),
         rejected("0f", |id, _, _| {
             matches!(
                 black_box(decode_route::<F>(id)),
@@ -471,16 +486,16 @@ fn inline_decode_allocates_nothing() {
             first_bad = Some(("f.s", index));
         }
     }
-    for (index, view) in view_cases.iter().enumerate() {
-        let id = black_box(view.case.id.as_str());
-        let result = decode_route::<FV>(id);
-        let sections = black_box(decode(id).map(|d| (d.envelope(), d.nonce())));
-        if matches!(black_box(&result), Ok(PayloadSource::Inline(p)) if *p == view.case.want)
-            && sections == Ok((Some(view.envelope), Some(view.nonce)))
+    for (index, case) in nonce_cases.iter().enumerate() {
+        let id = black_box(case.case.id.as_str());
+        let result = decode_route::<FN>(id);
+        let nonce = black_box(decode(id).map(|d| d.nonce()));
+        if matches!(black_box(&result), Ok(PayloadSource::Inline(p)) if *p == case.case.want)
+            && nonce == Ok(Some(case.nonce))
         {
             ok += 1;
         } else if first_bad.is_none() {
-            first_bad = Some(("f.v", index));
+            first_bad = Some(("f.n", index));
         }
     }
     for (index, Case { id, want }) in signed_cases.iter().enumerate() {

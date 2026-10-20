@@ -6,8 +6,8 @@ fn form() -> Modal {
 }
 
 #[command("feedback", description = "d")]
-async fn feedback(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
-    Ok(r.modal(form()).await?.done())
+async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
+    Ok(r.show_modal(form()).await?.done())
 }
 
 fn main() {}

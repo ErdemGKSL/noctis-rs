@@ -2,8 +2,8 @@
 //! the limit compile and encode at the limit.
 
 use noctis::__private::codec::{
-    BoundedStr, EncodedId, Field, FieldDecode, Parts, PayloadKey, PayloadSource, SelectNonce,
-    ViewEnvelope, decode_route, decode_route_verified, encode, encode_id, finish, route_width,
+    BoundedStr, EncodedId, Field, FieldDecode, MAX_REF_ID_LEN, Parts, PayloadKey, PayloadSource,
+    SelectNonce, decode_route, decode_route_verified, encode, encode_id, finish, route_width,
 };
 use noctis::prelude::{PayloadEnum, Route};
 use noctis::rules::Limits;
@@ -17,14 +17,14 @@ struct Exact {
 }
 
 #[derive(Route, Debug, PartialEq)]
-#[route("r", schema = 61, view, select, signed)]
+#[route("r", schema = 61, select, signed)]
 struct ExactAll {
-    t: BoundedStr<40>,
-    n: u8,
+    t: BoundedStr<42>,
+    n: u16,
 }
 
 #[derive(Route, Debug, PartialEq)]
-#[route("abcdefghijklmnopqrstuvwx", by_ref, view, select, schema = 61)]
+#[route("abcdefghijklmnopqrstuvwx", by_ref, select, schema = 61)]
 struct LongRef {
     s: String,
 }
@@ -46,12 +46,11 @@ fn cid_01_exactly_100_all_sections() {
     assert_eq!(route_width::<ExactAll>().total(), Some(100));
     let key = PayloadKey::from_bytes([7; 32]);
     let parts = Parts::new()
-        .with_envelope(ViewEnvelope::new('a', 61, 3843, 61).unwrap())
         .with_nonce(SelectNonce::new(3843).unwrap())
         .with_signer(&key);
     let worst = ExactAll {
-        t: BoundedStr::new(&"!".repeat(40)).unwrap(),
-        n: u8::MAX,
+        t: BoundedStr::new(&"!".repeat(42)).unwrap(),
+        n: u16::MAX,
     };
     let id = encode::<ExactAll>(&worst, &parts).unwrap();
     assert_eq!(id.len(), 100);
@@ -62,17 +61,17 @@ fn cid_01_exactly_100_all_sections() {
 }
 
 #[test]
-fn cid_01_by_ref_24_char_id_46() {
-    assert_eq!(route_width::<LongRef>().total(), Some(46));
-    let parts = Parts::new()
-        .with_envelope(ViewEnvelope::new('a', 0, 0, 0).unwrap())
-        .with_nonce(SelectNonce::new(0).unwrap());
+fn cid_01_by_ref_24_char_id_41() {
+    assert_eq!(route_width::<LongRef>().total(), Some(41));
+    assert_eq!(MAX_REF_ID_LEN, 41);
+    let parts = Parts::new().with_nonce(SelectNonce::new(0).unwrap());
     let value = LongRef { s: "x".repeat(500) };
     let EncodedId::RefSlot(slot) = encode_id::<LongRef>(&value, &parts).unwrap() else {
         panic!("a by_ref Route always yields a Ref slot");
     };
     let id = finish(&slot, noctis::__private::codec::Ref::mint().unwrap());
-    assert_eq!(id.len(), 46);
+    assert_eq!(id.len(), 41);
+    assert!(id.starts_with('5'), "flags S and N: {id}");
 }
 
 macro_rules! sixty_two {

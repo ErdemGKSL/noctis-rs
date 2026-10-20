@@ -12,7 +12,7 @@ use syn::spanned::Spanned;
 use syn::{FnArg, Ident, ItemFn, LitStr, ReturnType, Type};
 
 use crate::command::{
-    arg_name, check_shape, ephemerality_call, is_responder, parse_ephemeral, segments, span_of,
+    HandlerArgs, arg_name, check_shape, defer_check, is_responder, segments, span_of, withdrawn,
 };
 use crate::common::combine;
 use crate::meta::{self, MetaArgs};
@@ -63,17 +63,16 @@ impl Menu {
 }
 
 /// Arguments later stories add.
-const PLANNED: [&str; 5] = ["key", "opens_modal", "rate_limit", "flags", "apps"];
+const PLANNED: [&str; 4] = ["key", "rate_limit", "flags", "apps"];
 
-const EXPECTED: &str =
-    "expected `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
 
 const NO_DESCRIPTION: &str = "[CTX-02] context-menu commands have no description";
 
 /// The parsed arguments.
 struct Args {
     name: LitStr,
-    ephemeral: bool,
+    handler: HandlerArgs,
     meta: MetaArgs,
 }
 
@@ -98,7 +97,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         syn::parse2::<LitStr>(tokens).map_err(|_| syn::Error::new(span_of(&first), not_literal))?;
     let mut parsed = Args {
         name,
-        ephemeral: false,
+        handler: HandlerArgs::default(),
         meta: MetaArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -111,9 +110,12 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
                 format!("unknown `{attr}` argument `{tokens}`: {EXPECTED}"),
             ));
         };
+        if let Some(error) = withdrawn(attr, &name, span) {
+            return Err(error);
+        }
         match name.as_str() {
             "description" => return Err(syn::Error::new(span, NO_DESCRIPTION)),
-            "ephemeral" => {}
+            "response" | "auto_defer" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -135,8 +137,8 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
             ));
         }
         seen.push(name.clone());
-        if name == "ephemeral" {
-            parsed.ephemeral = parse_ephemeral(&segment)?;
+        if let Some(result) = parsed.handler.parse(&name, &segment) {
+            result?;
             continue;
         }
         if let Some(result) = parsed.meta.parse(&name, &segment) {
@@ -158,8 +160,8 @@ fn check_name(args: &Args) -> syn::Result<()> {
 }
 
 /// `(ctx, target: <Target>[, r: CommandResponder])`; any other parameter
-/// is a CTX-02 option. Whether the responder is taken.
-fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<bool> {
+/// is a CTX-02 option. The responder's type, when it is taken.
+fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<Option<Type>> {
     let sig = &item.sig;
     let message = menu.signature();
     if let Some(receiver) = sig.receiver() {
@@ -196,8 +198,8 @@ fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<bool> {
         return Err(syn::Error::new_spanned(&target.ty, message));
     }
     match typed.as_slice() {
-        [_, _] => Ok(false),
-        [_, _, r] if is_responder(&r.ty) => Ok(true),
+        [_, _] => Ok(None),
+        [_, _, r] if is_responder(&r.ty) => Ok(Some((*r.ty).clone())),
         _ => Err(syn::Error::new(
             sig.inputs.span(),
             format!("[CTX-02] context-menu commands take no options: {message}"),
@@ -211,7 +213,9 @@ pub(crate) fn expand(menu: Menu, args: TokenStream, item: TokenStream) -> syn::R
     let item: ItemFn = syn::parse2(item)?;
     check_shape(&item, menu.attr())?;
     check_name(&args)?;
-    let responder = check_params(menu, &item)?;
+    let responder_ty = check_params(menu, &item)?;
+    let (assertion, mode) = defer_check(&item, responder_ty.as_ref(), args.handler.manual)?;
+    let responder = responder_ty.is_some();
 
     let ItemFn {
         attrs,
@@ -232,7 +236,7 @@ pub(crate) fn expand(menu: Menu, args: TokenStream, item: TokenStream) -> syn::R
     };
     let constructor = Ident::new(menu.constructor(), output_span);
     let new = quote_spanned! {output_span=>
-        ::noctis::__private::core::ContextMenuHandler::#constructor
+        ::noctis::__private::core::ContextMenuHandler::#constructor::<#mode, _, _, _>
     };
     let menu_name = args.name.value();
     let metadata = if args.meta.is_empty() {
@@ -256,17 +260,14 @@ pub(crate) fn expand(menu: Menu, args: TokenStream, item: TokenStream) -> syn::R
     let call = quote_spanned! {output_span=>
         #new(::core::concat!(::core::module_path!(), "::", #fn_name), #menu_name, #metadata, #adapter)
     };
-    let ephemeral = if args.ephemeral {
-        ephemerality_call()
-    } else {
-        TokenStream::new()
-    };
+    let ephemeral = args.handler.ephemerality_call();
     Ok(quote! {
         #(#attrs)*
         #vis fn #name() -> ::noctis::__private::core::ContextMenuHandler {
             // A handler needs no `.await` to be `async` (the macro requires it).
             #[allow(clippy::unused_async)]
             #inner #block
+            #assertion
             #call #ephemeral
         }
     })
@@ -434,14 +435,23 @@ mod tests {
         );
     }
 
-    /// Story 6.5 Matrix 41, 42 and 44: `ephemeral` and the responder.
+    /// Story 6.5 Matrix 41, 42 and 44, Story 6.10 Matrix 14-18: `response`,
+    /// `auto_defer` and the responder.
     #[test]
-    fn ephemeral_and_responder() {
+    fn response_and_responder() {
         let src = "async fn show(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder) -> HandlerResult<Responded> { todo!() }";
-        let out = expand(Menu::User, quote!("Show", ephemeral), item(src))
+        let out = expand(Menu::User, quote!("Show", response = ephemeral), item(src))
             .unwrap()
             .to_string()
             .replace(' ', "");
+        assert!(
+            out.contains("ContextMenuHandler::__new_user::<_,_,_,_>"),
+            "{out}"
+        );
+        assert!(
+            out.contains("__assert_auto_defer::<CommandResponder>();"),
+            "{out}"
+        );
         assert!(
             out.contains("CommandMetadata::new(),__noctis_menu)"),
             "{out}"
@@ -452,13 +462,64 @@ mod tests {
             ),
             "{out}"
         );
-        assert_eq!(
-            error(Menu::User, quote!("X", ephemeral = true), SHOW),
-            "`ephemeral` takes no value"
+        let manual = "async fn report(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder<Manual>) -> HandlerResult<Responded> { todo!() }";
+        let out = expand(
+            Menu::User,
+            quote!("Report", response = ephemeral, auto_defer = false),
+            item(manual),
+        )
+        .unwrap()
+        .to_string()
+        .replace(' ', "");
+        assert!(
+            out.contains("__assert_manual::<CommandResponder<Manual>>();"),
+            "{out}"
+        );
+        let out = expand(Menu::User, quote!("Show"), item(SHOW))
+            .unwrap()
+            .to_string()
+            .replace(' ', "");
+        assert!(
+            out.contains("__new_user::<::noctis::__private::core::AutoDefer,_,_,_>"),
+            "{out}"
         );
         assert_eq!(
-            error(Menu::Message, quote!("X", ephemeral, ephemeral), QUOTE),
-            "duplicate `#[message_command]` argument `ephemeral`"
+            error(Menu::User, quote!("X", auto_defer = false), SHOW),
+            "[INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`"
+        );
+        assert_eq!(
+            error(Menu::User, quote!("X", ephemeral), SHOW),
+            "unknown `#[user_command]` argument `ephemeral`: write `response = ephemeral`"
+        );
+        for menu in [Menu::User, Menu::Message] {
+            let src = if matches!(menu, Menu::User) {
+                SHOW
+            } else {
+                QUOTE
+            };
+            assert_eq!(
+                error(menu, quote!("X", opens_modal), src),
+                format!(
+                    "unknown `{}` argument `opens_modal`: write `auto_defer = false` and take `CommandResponder<Manual>`",
+                    menu.attr()
+                )
+            );
+        }
+        assert_eq!(
+            error(Menu::User, quote!("X", response = update), SHOW),
+            "[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral`"
+        );
+        assert_eq!(
+            error(Menu::User, quote!("X", auto_defer = 1), SHOW),
+            "`auto_defer` takes `true` or `false`"
+        );
+        assert_eq!(
+            error(
+                Menu::Message,
+                quote!("X", response = public, response = public),
+                QUOTE
+            ),
+            "duplicate `#[message_command]` argument `response`"
         );
     }
 

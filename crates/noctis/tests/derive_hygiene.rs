@@ -36,7 +36,7 @@ mod shadowed {
     }
 
     #[derive(noctis::prelude::Route, Debug, PartialEq)]
-    #[route("hygiene", schema = 2, view)]
+    #[route("hygiene", schema = 2, select)]
     pub(crate) struct Named {
         pub(crate) kind: Kind,
         pub(crate) n: ::core::primitive::u8,

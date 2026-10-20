@@ -85,15 +85,15 @@ pub enum BodyKind {
     Spill,
 }
 
-/// The codec shape of a Route: its body kind and which of the View envelope,
-/// select nonce and integrity tag it carries.
+/// The codec shape of a Route: its body kind and which of the select nonce
+/// and integrity tag it carries.
 ///
 /// ```
 /// use noctis_codec::{BodyKind, RouteShape};
 ///
 /// const SHAPE: RouteShape = RouteShape::SPILL.signed();
 /// assert_eq!(SHAPE.body(), BodyKind::Spill);
-/// assert!(SHAPE.is_signed() && !SHAPE.has_view());
+/// assert!(SHAPE.is_signed() && !SHAPE.has_select());
 /// ```
 ///
 /// A `by_ref` Route cannot be signed (the Ref is already unguessable):
@@ -106,7 +106,6 @@ pub enum BodyKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RouteShape {
     body: BodyKind,
-    view: bool,
     select: bool,
     signed: bool,
 }
@@ -122,16 +121,9 @@ impl RouteShape {
     const fn with_body(body: BodyKind) -> Self {
         Self {
             body,
-            view: false,
             select: false,
             signed: false,
         }
-    }
-
-    /// The shape with a View envelope.
-    #[must_use]
-    pub const fn view(self) -> Self {
-        Self { view: true, ..self }
     }
 
     /// The shape with a select nonce.
@@ -164,11 +156,6 @@ impl RouteShape {
     /// The body kind.
     pub const fn body(self) -> BodyKind {
         self.body
-    }
-
-    /// Whether the Route carries a View envelope.
-    pub const fn has_view(self) -> bool {
-        self.view
     }
 
     /// Whether the Route carries a select nonce.
@@ -456,10 +443,10 @@ mod tests {
     fn shapes() {
         let spill = RouteShape::SPILL.signed();
         assert_eq!(spill.body(), BodyKind::Spill);
-        assert!(spill.is_signed() && !spill.has_view() && !spill.has_select());
-        let vs = RouteShape::INLINE.view().select();
+        assert!(spill.is_signed() && !spill.has_select());
+        let vs = RouteShape::INLINE.select();
         assert_eq!(vs.body(), BodyKind::Inline);
-        assert!(vs.has_view() && vs.has_select() && !vs.is_signed());
+        assert!(vs.has_select() && !vs.is_signed());
         assert_eq!(RouteShape::BY_REF.body(), BodyKind::ByRef);
     }
 

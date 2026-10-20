@@ -27,10 +27,6 @@ struct Ping;
 struct T2(u8, bool);
 
 #[derive(Route)]
-#[route("a", view)]
-struct ViewR;
-
-#[derive(Route)]
 #[route("a", select)]
 struct SelectR;
 
@@ -43,7 +39,7 @@ struct SignedR;
 struct SchemaR;
 
 #[derive(Route)]
-#[route("a", signed, schema = 61, select, view, overflow = spill)]
+#[route("a", signed, schema = 61, select, overflow = spill)]
 struct AllArgs;
 
 #[derive(Route)]
@@ -107,7 +103,7 @@ fn cid_01_buy_button() {
     assert_eq!(width.total(), Some(24));
     assert_eq!(
         width.to_string(),
-        "shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)"
+        "shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)"
     );
     let buy = BuyButton {
         item: Id::new(255),
@@ -139,8 +135,6 @@ fn cid_01_buy_button() {
 fn cid_01_codec_argument_matrix() {
     // `0a:` and an empty body.
     let base = 3;
-    assert_eq!(ViewR::SHAPE, RouteShape::INLINE.view());
-    assert_eq!(route_width::<ViewR>().total(), Some(base + 5));
     assert_eq!(SelectR::SHAPE, RouteShape::INLINE.select());
     assert_eq!(route_width::<SelectR>().total(), Some(base + 2));
     assert_eq!(SignedR::SHAPE, RouteShape::INLINE.signed());
@@ -149,7 +143,7 @@ fn cid_01_codec_argument_matrix() {
     assert_eq!(SchemaR::SCHEMA, 3);
     assert_eq!(route_width::<SchemaR>().total(), Some(base + 1));
 
-    assert_eq!(AllArgs::SHAPE, RouteShape::SPILL.view().select().signed());
+    assert_eq!(AllArgs::SHAPE, RouteShape::SPILL.select().signed());
     assert_eq!(AllArgs::SCHEMA, 61);
 
     assert_eq!(Wizard::SHAPE, RouteShape::BY_REF);
@@ -159,7 +153,7 @@ fn cid_01_codec_argument_matrix() {
     assert_eq!(width.total(), Some(25));
     assert_eq!(
         width.to_string(),
-        "wizard.step: F 1 + route 11 + sep 1 + S 0 + E 0 + N 0 + ref 12 = 25 (limit 100)"
+        "wizard.step: F 1 + route 11 + sep 1 + S 0 + N 0 + ref 12 = 25 (limit 100)"
     );
     let _ = Wizard { s: String::new() };
 
@@ -173,7 +167,7 @@ fn cid_01_spill_inline_or_ref() {
     assert_eq!(width.total(), Some(100));
     assert_eq!(
         width.to_string(),
-        "s: F 1 + route 1 + sep 1 + S 0 + E 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)"
+        "s: F 1 + route 1 + sep 1 + S 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)"
     );
     let short = SpillS { s: "x".to_owned() };
     match encode_id::<SpillS>(&short, &Parts::new()).unwrap() {

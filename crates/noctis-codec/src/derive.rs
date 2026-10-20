@@ -11,7 +11,6 @@ use crate::FieldError;
 use crate::base62::{ALPHABET, digit_value};
 use crate::layout::{
     FMT_LEN, MAX_ID_LEN, NONCE_LEN, REF_LEN, REF_MARKER_LEN, SCHEMA_LEN, SEP_LEN, TAG_LEN,
-    VIEW_ENV_LEN,
 };
 use crate::route::{BodyKind, Payload, Route, RouteId};
 
@@ -46,14 +45,13 @@ pub const fn sum_fields(widths: &[Option<usize>]) -> Option<usize> {
 ///
 /// `Display` prints the breakdown the generated `noctis_route_width` test
 /// shows, for example
-/// `shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)`.
+/// `shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)`.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouteWidth {
     route: RouteId,
     body_kind: BodyKind,
     schema: usize,
-    envelope: usize,
     nonce: usize,
     body: Option<usize>,
     tag: usize,
@@ -67,7 +65,6 @@ pub const fn route_width<R: Route>() -> RouteWidth {
         route: R::ID,
         body_kind: shape.body(),
         schema: if R::SCHEMA == 0 { 0 } else { SCHEMA_LEN },
-        envelope: if shape.has_view() { VIEW_ENV_LEN } else { 0 },
         nonce: if shape.has_select() { NONCE_LEN } else { 0 },
         body: R::Payload::MAX_ENCODED_LEN,
         tag: if shape.is_signed() && !matches!(shape.body(), BodyKind::ByRef) {
@@ -89,19 +86,14 @@ impl RouteWidth {
         self.body_kind
     }
 
-    /// Everything before the body: `F`, the route, `:`, `S`, `E` and `N`.
+    /// Everything before the body: `F`, the route, `:`, `S` and `N`.
     pub const fn prefix(&self) -> usize {
-        FMT_LEN + self.route.as_str().len() + SEP_LEN + self.schema + self.envelope + self.nonce
+        FMT_LEN + self.route.as_str().len() + SEP_LEN + self.schema + self.nonce
     }
 
     /// Width of `S`: 1, or 0 for schema 0.
     pub const fn schema(&self) -> usize {
         self.schema
-    }
-
-    /// Width of the View envelope `E`: 5 or 0.
-    pub const fn envelope(&self) -> usize {
-        self.envelope
     }
 
     /// Width of the select nonce `N`: 2 or 0.
@@ -164,11 +156,10 @@ impl fmt::Display for RouteWidth {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}: F {FMT_LEN} + route {} + sep {SEP_LEN} + S {} + E {} + N {} + ",
+            "{}: F {FMT_LEN} + route {} + sep {SEP_LEN} + S {} + N {} + ",
             self.route,
             self.route.as_str().len(),
             self.schema,
-            self.envelope,
             self.nonce,
         )?;
         let body = Body(self.body);
@@ -406,7 +397,6 @@ mod tests {
 
     route!(Buy, "shop.buy", RouteShape::INLINE, 0, Width<14>);
     route!(Ping, "ping", RouteShape::INLINE, 0, Width<0>);
-    route!(View, "a", RouteShape::INLINE.view(), 0, Width<0>);
     route!(Select, "a", RouteShape::INLINE.select(), 0, Width<0>);
     route!(Signed, "a", RouteShape::INLINE.signed(), 0, Width<0>);
     route!(Schema, "a", RouteShape::INLINE, 3, Width<0>);
@@ -414,7 +404,7 @@ mod tests {
     route!(
         Long,
         "abcdefghijklmnopqrstuvwx",
-        RouteShape::BY_REF.view().select(),
+        RouteShape::BY_REF.select(),
         61,
         Unbounded
     );
@@ -424,9 +414,9 @@ mod tests {
     route!(
         ExactAll,
         "r",
-        RouteShape::INLINE.view().select().signed(),
+        RouteShape::INLINE.select().signed(),
         61,
-        Width<83>
+        Width<88>
     );
     route!(Over, "a", RouteShape::INLINE, 0, Width<98>);
     route!(Report, "report.reason", RouteShape::INLINE, 0, Unbounded);
@@ -453,19 +443,17 @@ mod tests {
         assert_eq!(w.route().as_str(), "shop.buy");
         assert_eq!(w.body_kind(), BodyKind::Inline);
         assert_eq!(w.prefix(), 10);
-        assert_eq!((w.schema(), w.envelope(), w.nonce(), w.tag()), (0, 0, 0, 0));
+        assert_eq!((w.schema(), w.nonce(), w.tag()), (0, 0, 0));
         assert_eq!(w.body(), Some(14));
         assert_eq!(w.total(), Some(24));
         assert!(w.fits());
         assert_eq!(
             w.to_string(),
-            "shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)"
+            "shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)"
         );
 
         assert_eq!(route_width::<Ping>().total(), Some(6));
         let base = 3;
-        assert_eq!(route_width::<View>().total(), Some(base + 5));
-        assert_eq!(route_width::<View>().envelope(), 5);
         assert_eq!(route_width::<Select>().total(), Some(base + 2));
         assert_eq!(route_width::<Select>().nonce(), 2);
         assert_eq!(route_width::<Signed>().total(), Some(base + 6));
@@ -480,10 +468,11 @@ mod tests {
         assert!(w.fits());
         assert_eq!(
             w.to_string(),
-            "wizard.step: F 1 + route 11 + sep 1 + S 0 + E 0 + N 0 + ref 12 = 25 (limit 100)"
+            "wizard.step: F 1 + route 11 + sep 1 + S 0 + N 0 + ref 12 = 25 (limit 100)"
         );
 
-        assert_eq!(route_width::<Long>().total(), Some(46));
+        assert_eq!(route_width::<Long>().total(), Some(41));
+        assert_eq!(route_width::<Long>().total(), Some(crate::MAX_REF_ID_LEN));
         assert!(route_width::<Long>().fits());
 
         let w = route_width::<SpillS>();
@@ -491,7 +480,7 @@ mod tests {
         assert!(w.fits());
         assert_eq!(
             w.to_string(),
-            "s: F 1 + route 1 + sep 1 + S 0 + E 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)"
+            "s: F 1 + route 1 + sep 1 + S 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)"
         );
         assert_eq!(route_width::<SpillSigned>().total(), Some(16));
 
@@ -507,7 +496,7 @@ mod tests {
         assert!(!w.fits());
         assert_eq!(
             w.to_string(),
-            "report.reason: F 1 + route 13 + sep 1 + S 0 + E 0 + N 0 + body unbounded + T 0 = unbounded (limit 100)"
+            "report.reason: F 1 + route 13 + sep 1 + S 0 + N 0 + body unbounded + T 0 = unbounded (limit 100)"
         );
     }
 

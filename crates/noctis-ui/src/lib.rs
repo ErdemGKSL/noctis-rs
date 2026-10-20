@@ -34,8 +34,8 @@
 //! Interactive components are built only from a Route value through
 //! [`RouteComponents`], which requires the Route to have a handler
 //! ([`Handled`], `[CID-04]`) and, for selects, to be declared `select`.
-//! There is no string `custom_id` constructor (AD-19). A Route without a View
-//! envelope, select nonce or integrity tag is encoded at once; the others are
+//! There is no string `custom_id` constructor (AD-19). A Route without a
+//! select nonce or integrity tag is encoded at once; the others are
 //! resolved by core's Responder before sending (AD-18), and serializing one
 //! still unresolved is an error.
 //!

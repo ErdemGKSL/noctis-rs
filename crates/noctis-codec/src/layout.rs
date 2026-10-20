@@ -1,7 +1,8 @@
 //! The `custom_id` layout (AD-5): its constants, the encoder and the total,
 //! two-phase decoder.
 //!
-//! `custom_id = F route ":" [S] [E] [N] body [T]`, ASCII only.
+//! `custom_id = F route ":" [S] [N] body [T]`, ASCII only. Flag bit 2 of
+//! `F` is reserved and decodes as [`CodecError::ReservedFlag`].
 #![deny(clippy::indexing_slicing, clippy::string_slice)]
 
 use core::fmt::{self, Write};
@@ -12,7 +13,7 @@ use arrayvec::ArrayString;
 use crate::base62::{digit, digit_value};
 use noctis_rules::cid::SCHEMA_MAX as MAX_SCHEMA;
 
-use crate::parts::{Flags, SelectNonce, Sign, Tag, Verify, ViewEnvelope};
+use crate::parts::{Flags, SelectNonce, Sign, Tag, Verify};
 use crate::refs::Ref;
 use crate::route::{
     BodyKind, FieldReader, FieldWriter, MAX_ROUTE_LEN, Payload, PayloadDecode, Route, is_route_byte,
@@ -25,8 +26,6 @@ pub const FMT_LEN: usize = 1;
 pub const SEP_LEN: usize = 1;
 /// Width of the schema version `S`.
 pub const SCHEMA_LEN: usize = 1;
-/// Width of the View envelope `E`.
-pub const VIEW_ENV_LEN: usize = 5;
 /// Width of the select nonce `N`.
 pub const NONCE_LEN: usize = 2;
 /// Width of the Ref marker `~`.
@@ -109,7 +108,6 @@ impl RefPolicy {
 /// or an unexpected one.
 #[derive(Clone, Copy, Default)]
 pub struct Parts<'s> {
-    envelope: Option<ViewEnvelope>,
     nonce: Option<SelectNonce>,
     signer: Option<&'s dyn Sign>,
     ref_policy: RefPolicy,
@@ -119,15 +117,6 @@ impl<'s> Parts<'s> {
     /// No section.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Adds the View envelope of a `view` Route.
-    #[must_use]
-    pub fn with_envelope(self, envelope: ViewEnvelope) -> Self {
-        Self {
-            envelope: Some(envelope),
-            ..self
-        }
     }
 
     /// Adds the select nonce of a `select` Route.
@@ -158,7 +147,6 @@ impl<'s> Parts<'s> {
 impl fmt::Debug for Parts<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Parts")
-            .field("envelope", &self.envelope)
             .field("nonce", &self.nonce)
             .field("signer", &self.signer.is_some())
             .field("ref_policy", &self.ref_policy)
@@ -183,7 +171,6 @@ fn section<T>(
 
 /// The sections of [`Parts`] checked against a Route.
 pub(crate) struct Checked<'s> {
-    pub(crate) envelope: Option<ViewEnvelope>,
     pub(crate) nonce: Option<SelectNonce>,
     pub(crate) signer: Option<&'s dyn Sign>,
     pub(crate) ref_policy: RefPolicy,
@@ -192,20 +179,14 @@ pub(crate) struct Checked<'s> {
 /// Checks Route `R`'s schema and `parts` against its shape; shared by
 /// [`encode`] and [`encode_id`](crate::encode_id).
 ///
-/// Order: [`EncodeError::InvalidSchema`]; a missing or unexpected envelope,
-/// nonce or signer; [`EncodeError::UnexpectedRefPolicy`];
+/// Order: [`EncodeError::InvalidSchema`]; a missing or unexpected nonce or
+/// signer; [`EncodeError::UnexpectedRefPolicy`];
 /// [`EncodeError::ZeroTtl`].
 pub(crate) fn check_parts<'s, R: Route>(parts: &Parts<'s>) -> Result<Checked<'s>, EncodeError> {
     let shape = R::SHAPE;
     if R::SCHEMA > MAX_SCHEMA {
         return Err(EncodeError::InvalidSchema { schema: R::SCHEMA });
     }
-    let envelope = section(
-        shape.has_view(),
-        parts.envelope,
-        EncodeError::MissingEnvelope,
-        EncodeError::UnexpectedEnvelope,
-    )?;
     let nonce = section(
         shape.has_select(),
         parts.nonce,
@@ -226,7 +207,6 @@ pub(crate) fn check_parts<'s, R: Route>(parts: &Parts<'s>) -> Result<Checked<'s>
         return Err(EncodeError::ZeroTtl);
     }
     Ok(Checked {
-        envelope,
         nonce,
         signer,
         ref_policy,
@@ -259,7 +239,7 @@ impl Write for Limited<'_> {
 /// # Errors
 ///
 /// Checked in this order: [`EncodeError::InvalidSchema`]; a missing or
-/// unexpected envelope, nonce or signer in `parts`;
+/// unexpected nonce or signer in `parts`;
 /// [`EncodeError::UnexpectedRefPolicy`] for a non-default [`RefPolicy`] on
 /// an inline Route; [`EncodeError::ZeroTtl`]; [`EncodeError::NeedsRef`]
 /// for a `by_ref` Route; then, when the id would be over 100 characters
@@ -271,12 +251,7 @@ pub fn encode<R: Route>(
     parts: &Parts<'_>,
 ) -> Result<ArrayString<MAX_ID_LEN>, EncodeError> {
     let shape = R::SHAPE;
-    let Checked {
-        envelope,
-        nonce,
-        signer,
-        ..
-    } = check_parts::<R>(parts)?;
+    let Checked { nonce, signer, .. } = check_parts::<R>(parts)?;
     if shape.body() == BodyKind::ByRef {
         return Err(EncodeError::NeedsRef);
     }
@@ -284,7 +259,6 @@ pub fn encode<R: Route>(
     let mut flags = Flags::EMPTY;
     for (present, flag) in [
         (R::SCHEMA > 0, Flags::S),
-        (envelope.is_some(), Flags::E),
         (nonce.is_some(), Flags::N),
         (signer.is_some(), Flags::T),
     ] {
@@ -294,7 +268,7 @@ pub fn encode<R: Route>(
     }
 
     let mut out = ArrayString::<MAX_ID_LEN>::new();
-    // The prefix is at most 1 + 24 + 1 + 1 + 5 + 2 = 34 characters, so these
+    // The prefix is at most 1 + 24 + 1 + 1 + 2 = 29 characters, so these
     // writes cannot overflow; an error is reported as `TooLong` regardless.
     let prefix = (|| -> fmt::Result {
         out.write_char(char::from(digit(flags.bits())))?;
@@ -302,9 +276,6 @@ pub fn encode<R: Route>(
         out.write_char(':')?;
         if R::SCHEMA > 0 {
             out.write_char(char::from(digit(R::SCHEMA)))?;
-        }
-        if let Some(e) = envelope {
-            write!(out, "{e}")?;
         }
         if let Some(n) = nonce {
             write!(out, "{n}")?;
@@ -366,7 +337,6 @@ pub struct Decoded<'a> {
     flags: Flags,
     route_end: usize,
     schema: u8,
-    envelope: Option<ViewEnvelope>,
     nonce: Option<SelectNonce>,
     body_start: usize,
     body_end: usize,
@@ -388,11 +358,6 @@ impl<'a> Decoded<'a> {
     /// The schema version (`0` when `S` is absent).
     pub const fn schema(&self) -> u8 {
         self.schema
-    }
-
-    /// The View envelope, when `E` is present.
-    pub const fn envelope(&self) -> Option<ViewEnvelope> {
-        self.envelope
     }
 
     /// The select nonce, when `N` is present.
@@ -472,7 +437,7 @@ impl<'a> Decoded<'a> {
     /// 3. a body kind the Route does not use is [`DecodeError::Stale`];
     /// 4. an inline id of a signed Route without `T` is
     ///    [`DecodeError::Forged`] ([`ForgedReason::MissingTag`]);
-    /// 5. `E`/`N`/`T` flags that differ from the Route's (`T` is expected
+    /// 5. `N`/`T` flags that differ from the Route's (`T` is expected
     ///    exactly for an inline body of a signed Route) are
     ///    [`DecodeError::Stale`];
     /// 6. a tag that `keys` does not verify is [`DecodeError::Forged`]
@@ -510,16 +475,12 @@ impl<'a> Decoded<'a> {
             return Err(DecodeError::Forged(ForgedReason::MissingTag));
         }
         let mut expected = Flags::EMPTY;
-        for (present, flag) in [
-            (shape.has_view(), Flags::E),
-            (shape.has_select(), Flags::N),
-            (tagged, Flags::T),
-        ] {
+        for (present, flag) in [(shape.has_select(), Flags::N), (tagged, Flags::T)] {
             if present {
                 expected = expected | flag;
             }
         }
-        let found = self.flags.intersection(Flags::E | Flags::N | Flags::T);
+        let found = self.flags.intersection(Flags::N | Flags::T);
         if found != expected {
             return Err(DecodeError::Stale(StaleReason::Flags { expected, found }));
         }
@@ -566,12 +527,19 @@ fn fixed<const N: usize>(
 }
 
 /// Parses the format digit `F` at byte 0 into its flags (generation 0).
+///
+/// Checked in this order: a bad digit, a generation other than 0
+/// ([`CodecError::Generation`]), then the reserved flag bit 2
+/// ([`CodecError::ReservedFlag`]).
 pub(crate) fn parse_format(bytes: &[u8]) -> Result<Flags, CodecError> {
     let format = digit_at(bytes, 0)?;
     if format >= 16 {
         return Err(CodecError::Generation {
             generation: format / 16,
         });
+    }
+    if format & Flags::RESERVED != 0 {
+        return Err(CodecError::ReservedFlag);
     }
     Ok(Flags::from_bits(format))
 }
@@ -676,9 +644,9 @@ fn check_body(body: &[u8], pos: usize, tagged: bool) -> Result<bool, CodecError>
 /// # Errors
 ///
 /// The first failed check, in this order: empty; over 100 bytes; a
-/// non-ASCII byte; a bad format digit or a generation other than 0; a bad,
-/// unterminated, empty or over-long route; a missing, zero or bad schema
-/// digit; a truncated or bad envelope, nonce or tag; a tag on a Ref body; a
+/// non-ASCII byte; a bad format digit, a generation other than 0 or the
+/// reserved flag bit 2; a bad, unterminated, empty or over-long route; a
+/// missing, zero or bad schema digit; a truncated or bad nonce or tag; a tag on a Ref body; a
 /// Ref that is not 11 base62 characters; an inline body byte outside
 /// printable ASCII or equal to `:` or `~`.
 pub fn decode(raw: &str) -> Result<Decoded<'_>, CodecError> {
@@ -697,15 +665,6 @@ pub fn decode(raw: &str) -> Result<Decoded<'_>, CodecError> {
     let flags = parse_format(bytes)?;
     let route_end = parse_route(bytes)?;
     let (schema, mut pos) = parse_schema(bytes, route_end + SEP_LEN, flags)?;
-
-    let mut envelope = None;
-    if flags.contains(Flags::E) {
-        let env = fixed::<VIEW_ENV_LEN>(bytes, pos, Section::Envelope)?;
-        envelope = Some(
-            ViewEnvelope::parse(env).map_err(|at| CodecError::InvalidChar { index: pos + at })?,
-        );
-        pos += VIEW_ENV_LEN;
-    }
 
     let mut nonce = None;
     if flags.contains(Flags::N) {
@@ -741,7 +700,6 @@ pub fn decode(raw: &str) -> Result<Decoded<'_>, CodecError> {
         flags,
         route_end,
         schema,
-        envelope,
         nonce,
         body_start: pos,
         body_end,
@@ -796,9 +754,9 @@ impl Verify for NeverVerifies {
 mod tests {
     use super::{
         Decoded, FMT_LEN, MAX_ID_LEN, NONCE_LEN, REF_LEN, REF_MARKER_LEN, RawBody, SCHEMA_LEN,
-        SEP_LEN, TAG_LEN, VIEW_ENV_LEN, decode,
+        SEP_LEN, TAG_LEN, decode,
     };
-    use crate::{CodecError, Flags, Section, SelectNonce, ViewEnvelope};
+    use crate::{CodecError, Flags, Section, SelectNonce, Tag};
 
     fn err(raw: &str) -> CodecError {
         match decode(raw) {
@@ -826,13 +784,12 @@ mod tests {
                 FMT_LEN,
                 SEP_LEN,
                 SCHEMA_LEN,
-                VIEW_ENV_LEN,
                 NONCE_LEN,
                 REF_MARKER_LEN,
                 REF_LEN,
                 TAG_LEN
             ],
-            [1, 1, 1, 5, 2, 1, 11, 6]
+            [1, 1, 1, 2, 1, 11, 6]
         );
     }
 
@@ -881,14 +838,7 @@ mod tests {
         assert_eq!(err("1a:0"), E::ZeroSchema);
         assert_eq!(err("1a:!"), bad(3));
 
-        assert_eq!(err("2a:_000"), trunc(Section::Envelope));
-        assert_eq!(err("2a:!0000"), bad(3));
-        assert_eq!(err("2a:__000"), bad(4));
-        assert_eq!(err("2a:_0!00"), bad(5));
-        assert_eq!(err("2a:_00!0"), bad(6));
-        assert_eq!(err("2a:_000!"), bad(7));
-
-        assert_eq!(err("6a:_0000z"), trunc(Section::Nonce));
+        assert_eq!(err("4a:0"), trunc(Section::Nonce));
         assert_eq!(err("4a:!0"), bad(3));
         assert_eq!(err("4a:0!"), bad(4));
 
@@ -918,20 +868,75 @@ mod tests {
         assert_eq!(err("0a:\t"), bad(3));
         assert_eq!(err("0a:\u{7f}"), bad(3));
 
-        let all = ok("Fall:z_zzzz000000001");
-        assert_eq!(all.flags().bits(), 15);
-        assert_eq!(all.flags(), Flags::S | Flags::E | Flags::N | Flags::T);
+        let all = ok("Dall:z00x000001");
+        assert_eq!(all.flags().bits(), 13);
+        assert_eq!(all.flags(), Flags::S | Flags::N | Flags::T);
         assert_eq!(all.route(), "all");
         assert_eq!(all.schema(), 61);
-        assert_eq!(all.envelope(), ViewEnvelope::new('_', 61, 3843, 61).ok());
         assert_eq!(all.nonce(), SelectNonce::new(0));
-        assert_eq!(all.body(), RawBody::Inline("0"));
+        assert_eq!(all.body(), RawBody::Inline("x"));
         assert_eq!(all.tag().map(|t| t.to_string()).as_deref(), Some("000001"));
-        assert_eq!(all.signed_part(), Some("Fall:z_zzzz000"));
-        assert_eq!(all.as_str(), "Fall:z_zzzz000000001");
+        assert_eq!(all.signed_part(), Some("Dall:z00x"));
+        assert_eq!(all.as_str(), "Dall:z00x000001");
 
         let full = format!("0a:{}", "x".repeat(97));
         assert_eq!(ok(&full).as_str().len(), 100);
         assert_eq!(err(&format!("{full}x")), E::TooLong { len: 101 });
+    }
+
+    #[test]
+    fn reserved_flag_is_rejected() {
+        use CodecError as E;
+
+        for raw in [
+            "2a:1",
+            "3a:11",
+            "6a:001",
+            "Fall:z00x000001",
+            "2",
+            "2:1",
+            "2a",
+        ] {
+            assert_eq!(err(raw), E::ReservedFlag, "{raw:?}");
+        }
+        assert_eq!(err(""), E::Empty);
+        assert_eq!(err(&"2".repeat(101)), E::TooLong { len: 101 });
+        assert_eq!(err("2é:1"), E::NotAscii { index: 1 });
+        assert_eq!(err("2é"), E::NotAscii { index: 1 });
+        assert_eq!(err("!a:1"), bad(0));
+        assert_eq!(err("Ga:1"), E::Generation { generation: 1 });
+        assert_eq!(err("Ia:1"), E::Generation { generation: 1 });
+    }
+
+    #[test]
+    fn other_flags_still_decode() {
+        let plain = ok("0a:1");
+        assert_eq!(format!("{:?}", plain.flags()), "Flags(-)");
+        assert_eq!(plain.body(), RawBody::Inline("1"));
+
+        let schema = ok("1a:11");
+        assert_eq!(format!("{:?}", schema.flags()), "Flags(S)");
+        assert_eq!((schema.schema(), schema.body()), (1, RawBody::Inline("1")));
+
+        let nonce = ok("4a:001");
+        assert_eq!(format!("{:?}", nonce.flags()), "Flags(N)");
+        assert_eq!(nonce.nonce(), SelectNonce::new(0));
+        assert_eq!(nonce.body(), RawBody::Inline("1"));
+
+        let tagged = ok("8a:000000");
+        assert_eq!(format!("{:?}", tagged.flags()), "Flags(T)");
+        assert_eq!(tagged.tag(), Some(Tag::from_u64(0)));
+
+        let all = ok("Dall:z00x000001");
+        assert_eq!(format!("{:?}", all.flags()), "Flags(SNT)");
+        assert_eq!(all.route(), "all");
+        assert_eq!(all.tag(), Some(Tag::from_u64(1)));
+    }
+
+    #[test]
+    fn truncated_sections() {
+        assert_eq!(err("1a:"), trunc(Section::Schema));
+        assert_eq!(err("4a:0"), trunc(Section::Nonce));
+        assert_eq!(err("8a:12345"), trunc(Section::Tag));
     }
 }

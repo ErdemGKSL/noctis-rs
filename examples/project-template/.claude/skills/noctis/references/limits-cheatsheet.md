@@ -230,8 +230,7 @@ locale returns `None`.
 Layout widths: `F` 1, route ≤ 24, `:` 1, schema 1, select nonce 2, Ref marker + Ref
 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3, `u32` 6, `u64`/`Id` 11,
 `PayloadEnum` 1, `Option<T>` +1, `BoundedStr<N>` 2N, `String`/`Vec` unbounded. Worst
-by-ref id: 41 (46 in this release, which still reserves the withdrawn 5-character view
-envelope; Story 6.10 removes it).
+by-ref id: 41 (`MAX_REF_ID_LEN`: 24-character route, schema and select nonce).
 
 Page sizing: `Budget::of(&fixed_parts, &limits).fits(&row)` [planned, Story 8.3]
 answers "how many rows of this shape still fit" against CV2-03 (40 components) and

@@ -11,8 +11,7 @@ use common::*;
 use noctis_codec::{
     BodyKind, CodecError, DecodeError, EncodeError, Field, FieldError, FieldReader, FieldWriter,
     Flags, ForgedReason, Parts, Payload, PayloadDecode, PayloadSource, RawBody, Route, RouteShape,
-    SelectNonce, StaleReason, Verify, ViewEnvelope, decode, decode_route, decode_route_verified,
-    encode,
+    SelectNonce, StaleReason, Verify, decode, decode_route, decode_route_verified, encode,
 };
 use proptest::prelude::*;
 
@@ -29,10 +28,6 @@ fn encode_matrix() {
     assert_eq!(plain::<Buy>(&buy(255, 3)).unwrap(), "0shop.buy:47,3");
     assert_eq!(plain::<BuyS2>(&buy(255, 3)).unwrap(), "1shop.buy:247,3");
 
-    let env = ViewEnvelope::new('t', 1, 63, 2).unwrap();
-    let parts = Parts::new().with_envelope(env);
-    assert_eq!(enc::<View>(&NumP { n: 1 }, &parts).unwrap(), "2v:t11121");
-
     let parts = Parts::new().with_nonce(SelectNonce::new(3843).unwrap());
     assert_eq!(enc::<Sel>(&NumP { n: 1 }, &parts).unwrap(), "4s:zz1");
 
@@ -43,14 +38,13 @@ fn encode_matrix() {
 
     let signer = FakeSigner::new(1);
     let parts = Parts::new()
-        .with_envelope(ViewEnvelope::new('_', 61, 3843, 61).unwrap())
         .with_nonce(SelectNonce::new(0).unwrap())
         .with_signer(&signer);
     assert_eq!(
         enc::<All>(&NumP { n: 0 }, &parts).unwrap(),
-        "Fall:z_zzzz000000001"
+        "Dall:z000000001"
     );
-    assert_eq!(signer.saw(), "Fall:z_zzzz000");
+    assert_eq!(signer.saw(), "Dall:z000");
 
     assert_eq!(plain::<Ping>(&PingP {}).unwrap(), "0ping:");
     assert_eq!(plain::<Text>(&text("")).unwrap(), "0t:");
@@ -152,14 +146,11 @@ fn encode_field_error() {
 #[test]
 fn encode_parts_mismatch() {
     let one = NumP { n: 1 };
-    let env = Parts::new().with_envelope(ViewEnvelope::new('a', 0, 0, 0).unwrap());
     let nonce = Parts::new().with_nonce(SelectNonce::new(1).unwrap());
     let signer = FakeSigner::new(0);
     let with_signer = Parts::new().with_signer(&signer);
     let b = buy(1, 1);
 
-    assert_eq!(plain::<View>(&one), Err(EncodeError::MissingEnvelope));
-    assert_eq!(enc::<Buy>(&b, &env), Err(EncodeError::UnexpectedEnvelope));
     assert_eq!(plain::<Sel>(&one), Err(EncodeError::MissingNonce));
     assert_eq!(enc::<Buy>(&b, &nonce), Err(EncodeError::UnexpectedNonce));
     assert_eq!(plain::<Sig>(&one), Err(EncodeError::MissingSigner));
@@ -267,15 +258,15 @@ fn cid_06_payload_outcomes() {
         found: 2,
     }));
     assert_eq!(decode_route::<Buy>("1shop.buy:247,3"), schema_2);
-    assert_eq!(decode_route::<Buy>("3shop.buy:2_000047,3"), schema_2);
+    assert_eq!(decode_route::<Buy>("5shop.buy:20047,3"), schema_2);
 
     assert_eq!(
-        decode_route::<Buy>("2shop.buy:_000047,3"),
-        Err(flags(Flags::EMPTY, Flags::E))
+        decode_route::<Buy>("2shop.buy:47,3"),
+        Err(malformed(CodecError::ReservedFlag))
     );
     assert_eq!(
-        decode_route::<View>("0v:1"),
-        Err(flags(Flags::E, Flags::EMPTY))
+        decode_route::<Sel>("6s:0047,3"),
+        Err(malformed(CodecError::ReservedFlag))
     );
     assert_eq!(
         decode_route::<Sig>("0sig:1"),
@@ -354,9 +345,6 @@ fn rebuild(d: &noctis_codec::Decoded<'_>) -> String {
         let alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         out.push(char::from(alphabet[usize::from(d.schema())]));
     }
-    if let Some(e) = d.envelope() {
-        out.push_str(&e.to_string());
-    }
     if let Some(n) = d.nonce() {
         out.push_str(&n.to_string());
     }
@@ -415,15 +403,12 @@ fn decode_total(raw: &str) {
 }
 
 /// Encodes `p` for `R` with every section its shape needs, then decodes it.
-fn round_trip<R>(p: &MixP, env: ViewEnvelope, nonce: SelectNonce)
+fn round_trip<R>(p: &MixP, nonce: SelectNonce)
 where
     R: Route<Payload = MixP>,
 {
     let signer = FakeSigner::new(7);
     let mut parts = Parts::new();
-    if R::SHAPE.has_view() {
-        parts = parts.with_envelope(env);
-    }
     if R::SHAPE.has_select() {
         parts = parts.with_nonce(nonce);
     }
@@ -433,7 +418,6 @@ where
     let shape = R::SHAPE;
     let expected_len = "0mix.route:".len()
         + usize::from(R::SCHEMA > 0)
-        + if shape.has_view() { 5 } else { 0 }
         + if shape.has_select() { 2 } else { 0 }
         + body_len(p)
         + if shape.is_signed() { 6 } else { 0 };
@@ -441,11 +425,11 @@ where
         Ok(id) => {
             assert_eq!(id.len(), expected_len);
             assert!(id.len() <= 100);
+            assert_eq!(flag_bits(&id) & 2, 0, "{id} sets the reserved flag");
             assert_eq!(decode_route_verified::<R>(&id, &signer), inline(p.clone()));
             let Ok(d) = decode(&id) else {
                 panic!("{id} did not decode")
             };
-            assert_eq!(d.envelope(), shape.has_view().then_some(env));
             assert_eq!(d.nonce(), shape.has_select().then_some(nonce));
             if shape.is_signed() {
                 assert_eq!(d.signed_part(), Some(signer.saw().as_str()));
@@ -456,6 +440,18 @@ where
             assert!(expected_len > 100, "{p:?} fits in {expected_len}");
         }
     }
+}
+
+/// The value of an id's format digit `F`.
+fn flag_bits(id: &str) -> u8 {
+    let alphabet = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let first = id.as_bytes()[0];
+    // A non-digit maps to 255, which fails every flag check.
+    let index = alphabet
+        .iter()
+        .position(|&b| b == first)
+        .unwrap_or(usize::MAX);
+    u8::try_from(index).unwrap_or(u8::MAX)
 }
 
 /// The inline body length of a `MixP`: its fields plus 3 separators.
@@ -473,46 +469,21 @@ macro_rules! mix_routes {
     ($($name:ident: $shape:expr, $schema:literal;)*) => {
         $(route!($name, "mix.route", $shape, $schema, MixP);)*
 
-        fn round_trip_all(p: &MixP, env: ViewEnvelope, nonce: SelectNonce) {
-            $(round_trip::<$name>(p, env, nonce);)*
+        fn round_trip_all(p: &MixP, nonce: SelectNonce) {
+            $(round_trip::<$name>(p, nonce);)*
         }
     };
 }
 
 mix_routes! {
     M0: RouteShape::INLINE, 0;
-    M1: RouteShape::INLINE.view(), 0;
-    M2: RouteShape::INLINE.select(), 0;
-    M3: RouteShape::INLINE.view().select(), 0;
-    M4: RouteShape::INLINE.signed(), 0;
-    M5: RouteShape::INLINE.view().signed(), 0;
-    M6: RouteShape::INLINE.select().signed(), 0;
-    M7: RouteShape::INLINE.view().select().signed(), 0;
-    M8: RouteShape::INLINE, 61;
-    M9: RouteShape::INLINE.view(), 61;
-    M10: RouteShape::INLINE.select(), 61;
-    M11: RouteShape::INLINE.view().select(), 61;
-    M12: RouteShape::INLINE.signed(), 61;
-    M13: RouteShape::INLINE.view().signed(), 61;
-    M14: RouteShape::INLINE.select().signed(), 61;
-    M15: RouteShape::INLINE.view().select().signed(), 61;
-}
-
-fn envelope() -> impl Strategy<Value = ViewEnvelope> {
-    (
-        prop_oneof![
-            Just('_'),
-            proptest::char::range('0', '9'),
-            proptest::char::range('A', 'Z'),
-            proptest::char::range('a', 'z')
-        ],
-        0..=61u8,
-        0..=3843u16,
-        0..=61u8,
-    )
-        .prop_filter_map("valid envelope", |(a, t, p, v)| {
-            ViewEnvelope::new(a, t, p, v).ok()
-        })
+    M1: RouteShape::INLINE.select(), 0;
+    M2: RouteShape::INLINE.signed(), 0;
+    M3: RouteShape::INLINE.select().signed(), 0;
+    M4: RouteShape::INLINE, 61;
+    M5: RouteShape::INLINE.select(), 61;
+    M6: RouteShape::INLINE.signed(), 61;
+    M7: RouteShape::INLINE.select().signed(), 61;
 }
 
 fn mix() -> impl Strategy<Value = MixP> {
@@ -544,10 +515,9 @@ proptest! {
     #[test]
     fn encode_decode_round_trip(
         p in mix(),
-        env in envelope(),
         nonce in (0..=3843u16).prop_filter_map("nonce", SelectNonce::new),
     ) {
-        round_trip_all(&p, env, nonce);
+        round_trip_all(&p, nonce);
     }
 
     #[test]
@@ -566,13 +536,10 @@ proptest! {
         prop_assert_eq!(rt::<SpillSigned>(&t, &parts, &signer), Some(t));
         let n = NumP { n: qty };
         prop_assert_eq!(rt::<Sig>(&n, &parts, &signer), Some(n.clone()));
-        let env = ViewEnvelope::new('_', 61, u16::from(qty), 0).unwrap();
-        let view = Parts::new().with_envelope(env);
-        prop_assert_eq!(rt::<View>(&n, &view, &signer), Some(n.clone()));
         let nonce = SelectNonce::new(u16::from(qty)).unwrap();
         let sel = Parts::new().with_nonce(nonce);
         prop_assert_eq!(rt::<Sel>(&n, &sel, &signer), Some(n.clone()));
-        let all = Parts::new().with_envelope(env).with_nonce(nonce).with_signer(&signer);
+        let all = Parts::new().with_nonce(nonce).with_signer(&signer);
         prop_assert_eq!(rt::<All>(&n, &all, &signer), Some(n));
         let v2 = BuyV2Payload { item, qty, note, gift: note.map(|v| v % 2 == 0) };
         prop_assert_eq!(rt::<BuyV2>(&v2, &Parts::new(), &signer), Some(v2));

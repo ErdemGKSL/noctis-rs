@@ -12,27 +12,21 @@ use bytes::Bytes;
 use crate::base62::digit;
 use crate::layout::{
     Checked, FMT_LEN, MAX_ID_LEN, NONCE_LEN, REF_LEN, REF_MARKER_LEN, SCHEMA_LEN, SEP_LEN,
-    VIEW_ENV_LEN, check_parts, encode,
+    check_parts, encode,
 };
-use crate::parts::{Flags, SelectNonce, ViewEnvelope};
+use crate::parts::{Flags, SelectNonce};
 use crate::record::RefRecord;
 use crate::refs::Ref;
 use crate::route::{BodyKind, FieldWriter, MAX_ROUTE_LEN, Payload, Route, RouteId};
 use crate::{EncodeError, Parts};
 
-/// Longest by-Ref `custom_id`: a 24-character route with `S`, `E` and `N`,
-/// then `~` and the Ref (46 characters).
-pub const MAX_REF_ID_LEN: usize = FMT_LEN
-    + MAX_ROUTE_LEN
-    + SEP_LEN
-    + SCHEMA_LEN
-    + VIEW_ENV_LEN
-    + NONCE_LEN
-    + REF_MARKER_LEN
-    + REF_LEN;
+/// Longest by-Ref `custom_id`: a 24-character route with `S` and `N`, then
+/// `~` and the Ref (41 characters).
+pub const MAX_REF_ID_LEN: usize =
+    FMT_LEN + MAX_ROUTE_LEN + SEP_LEN + SCHEMA_LEN + NONCE_LEN + REF_MARKER_LEN + REF_LEN;
 
 // Every by-Ref id fits `ArrayString<MAX_ID_LEN>`, so `finish` cannot fail.
-const _: () = assert!(MAX_REF_ID_LEN == 46 && MAX_REF_ID_LEN <= MAX_ID_LEN);
+const _: () = assert!(MAX_REF_ID_LEN == 41 && MAX_REF_ID_LEN <= MAX_ID_LEN);
 
 /// The result of [`encode_id`]: a final inline id, or a slot waiting for a
 /// Ref.
@@ -57,7 +51,6 @@ pub struct PendingRef {
     payload: Bytes,
     ttl: Option<Duration>,
     one_shot: bool,
-    envelope: Option<ViewEnvelope>,
     nonce: Option<SelectNonce>,
 }
 
@@ -85,11 +78,6 @@ impl PendingRef {
     /// Whether the Ref is consumed by its first use.
     pub const fn is_one_shot(&self) -> bool {
         self.one_shot
-    }
-
-    /// The View envelope the final id carries.
-    pub const fn envelope(&self) -> Option<ViewEnvelope> {
-        self.envelope
     }
 
     /// The select nonce the final id carries.
@@ -150,7 +138,7 @@ impl PendingRef {
 /// # Errors
 ///
 /// The parts checks of [`encode`] in the same order
-/// ([`EncodeError::InvalidSchema`], the envelope, nonce and signer,
+/// ([`EncodeError::InvalidSchema`], the nonce and signer,
 /// [`EncodeError::UnexpectedRefPolicy`], [`EncodeError::ZeroTtl`]); then
 /// [`encode`]'s errors for an inline Route or a fitting `spill` Route;
 /// [`EncodeError::Field`] when a field's own `encode` fails;
@@ -184,15 +172,14 @@ fn slot<R: Route>(payload: &R::Payload, checked: &Checked<'_>) -> Result<Encoded
         payload: Bytes::from(body),
         ttl: checked.ref_policy.ttl(),
         one_shot: checked.ref_policy.is_one_shot(),
-        envelope: checked.envelope,
         nonce: checked.nonce,
     }))
 }
 
-/// Builds the final `custom_id` of a slot: `F route ":" [S] [E] [N] "~" ref`.
+/// Builds the final `custom_id` of a slot: `F route ":" [S] [N] "~" ref`.
 ///
-/// `F` carries the `S`, `E` and `N` flags present, never `T`: a Ref body is
-/// never tagged. The id is at most [`MAX_REF_ID_LEN`] (46) characters.
+/// `F` carries the `S` and `N` flags present, never `T`: a Ref body is never
+/// tagged. The id is at most [`MAX_REF_ID_LEN`] (41) characters.
 ///
 /// # Panics
 ///
@@ -203,7 +190,6 @@ pub fn finish(slot: &PendingRef, r: Ref) -> ArrayString<MAX_ID_LEN> {
     let mut flags = Flags::EMPTY;
     for (present, flag) in [
         (slot.schema > 0, Flags::S),
-        (slot.envelope.is_some(), Flags::E),
         (slot.nonce.is_some(), Flags::N),
     ] {
         if present {
@@ -220,9 +206,6 @@ pub fn finish(slot: &PendingRef, r: Ref) -> ArrayString<MAX_ID_LEN> {
         if slot.schema > 0 {
             out.write_char(char::from(digit(slot.schema)))?;
         }
-        if let Some(e) = slot.envelope {
-            write!(out, "{e}")?;
-        }
         if let Some(n) = slot.nonce {
             write!(out, "{n}")?;
         }
@@ -238,28 +221,13 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{MAX_REF_ID_LEN, PendingRef, finish};
-    use crate::{RawBody, Ref, RouteId, SelectNonce, ViewEnvelope, decode};
-
-    fn envelope() -> impl Strategy<Value = Option<ViewEnvelope>> {
-        proptest::option::of(
-            (
-                proptest::char::range('0', 'z'),
-                0..=61u8,
-                0..=3843u16,
-                0..=61u8,
-            )
-                .prop_filter_map("valid envelope", |(a, t, p, v)| {
-                    ViewEnvelope::new(a, t, p, v).ok()
-                }),
-        )
-    }
+    use crate::{RawBody, Ref, RouteId, SelectNonce, decode};
 
     proptest! {
         #[test]
         fn finish_decodes_as_ref(
             route in "[a-z0-9._-]{1,24}",
             schema in 0..=61u8,
-            envelope in envelope(),
             nonce in proptest::option::of((0..=3843u16).prop_filter_map("nonce", SelectNonce::new)),
         ) {
             let slot = PendingRef {
@@ -268,21 +236,19 @@ mod tests {
                 payload: bytes::Bytes::new(),
                 ttl: None,
                 one_shot: false,
-                envelope,
                 nonce,
             };
             let r = Ref::mint().unwrap();
             let id = finish(&slot, r);
             let predicted = 1 + route.len() + 1 + usize::from(schema > 0)
-                + if envelope.is_some() { 5 } else { 0 }
                 + if nonce.is_some() { 2 } else { 0 }
                 + 1 + 11;
             prop_assert_eq!(id.len(), predicted);
             prop_assert!(id.len() <= MAX_REF_ID_LEN);
+            prop_assert_eq!(id.as_bytes().first().copied().and_then(crate::base62::digit_value).map(|f| f & 2), Some(0));
             let decoded = decode(&id).unwrap();
             prop_assert_eq!(decoded.route(), route.as_str());
             prop_assert_eq!(decoded.schema(), schema);
-            prop_assert_eq!(decoded.envelope(), envelope);
             prop_assert_eq!(decoded.nonce(), nonce);
             prop_assert_eq!(decoded.tag(), None);
             prop_assert_eq!(decoded.body(), RawBody::Ref(r));

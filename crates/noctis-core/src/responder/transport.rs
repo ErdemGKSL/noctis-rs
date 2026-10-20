@@ -14,6 +14,7 @@ use twilight_http::error::ErrorType;
 use twilight_http::request::Request;
 use twilight_http::response::marker::EmptyBody;
 use twilight_http::routing::Route;
+use twilight_model::channel::Message;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{
     ApplicationMarker, ChannelMarker, InteractionMarker, MessageMarker,
@@ -99,9 +100,9 @@ impl Transport {
         matches!(self, Self::Message(_))
     }
 
-    /// Edits the original response (`message_id`: the reply over a message
-    /// transport); what the response names.
-    pub(crate) async fn edit_original(
+    /// Edits the reply (`message_id`: the reply over a message transport);
+    /// what the response names.
+    pub(crate) async fn edit_reply(
         &self,
         message_id: Option<Id<MessageMarker>>,
         body: Value,
@@ -123,8 +124,31 @@ impl Transport {
         }
     }
 
-    /// Deletes the original response.
-    pub(crate) async fn delete_original(
+    /// Fetches the reply (`message_id`: the reply over a message
+    /// transport); [`ResponderError::NoReply`] when there is none to fetch.
+    pub(crate) async fn fetch_reply(
+        &self,
+        message_id: Option<Id<MessageMarker>>,
+    ) -> Result<Message, ResponderError> {
+        match self {
+            Self::Interaction(t) => {
+                let token = t.token()?;
+                let route = Route::GetInteractionOriginal {
+                    application_id: t.application_id.get(),
+                    interaction_token: token,
+                };
+                message(&send(&t.app, &route, None, false).await?)
+            }
+            Self::Message(t) => match message_id {
+                Some(id) => channel_fetch(&t.app, t.channel_id, id).await,
+                None => Err(ResponderError::NoReply),
+            },
+            Self::Detached => Err(ResponderError::NoReply),
+        }
+    }
+
+    /// Deletes the reply.
+    pub(crate) async fn delete_reply(
         &self,
         message_id: Option<Id<MessageMarker>>,
     ) -> Result<(), ResponderError> {
@@ -147,7 +171,7 @@ impl Transport {
 
     /// Sends a follow-up (`body`: callback data, or a Create Message body
     /// over a message transport); its message id and channel.
-    pub(crate) async fn followup(&self, body: Value) -> Result<Sent, ResponderError> {
+    pub(crate) async fn follow_up(&self, body: Value) -> Result<Sent, ResponderError> {
         let id = match self {
             Self::Interaction(t) => {
                 let token = t.token()?;
@@ -221,7 +245,7 @@ impl Transport {
 
 impl InteractionTarget {
     /// The token, or [`ResponderError::InvalidToken`] before any request.
-    fn token(&self) -> Result<&str, ResponderError> {
+    pub(crate) fn token(&self) -> Result<&str, ResponderError> {
         if valid_token(&self.token) {
             Ok(&self.token)
         } else {
@@ -320,6 +344,19 @@ pub(crate) async fn channel_edit(
     Ok(posted(&send(app, &route, Some(body), true).await?))
 }
 
+/// Fetches the message `id` in `channel_id` with the bot token.
+pub(crate) async fn channel_fetch(
+    app: &AppShared,
+    channel_id: Id<ChannelMarker>,
+    id: Id<MessageMarker>,
+) -> Result<Message, ResponderError> {
+    let route = Route::GetMessage {
+        channel_id: channel_id.get(),
+        message_id: id.get(),
+    };
+    message(&send(app, &route, None, true).await?)
+}
+
 /// Deletes the message `id` in `channel_id` with the bot token.
 pub(crate) async fn channel_delete(
     app: &AppShared,
@@ -381,6 +418,14 @@ fn http_error(error: &twilight_http::Error) -> ResponderError {
 fn error_code(body: &[u8]) -> Option<u32> {
     let value: Value = serde_json::from_slice(body).ok()?;
     u32::try_from(value.get("code")?.as_u64()?).ok()
+}
+
+/// A whole message object, or [`ResponderError::Transport`].
+fn message(body: &[u8]) -> Result<Message, ResponderError> {
+    serde_json::from_slice(body).map_err(|error| {
+        tracing::debug!(target: "noctis::responder", %error, "response body is not a message");
+        ResponderError::Transport
+    })
 }
 
 /// The `id` of a message object.

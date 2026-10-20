@@ -424,7 +424,7 @@ async fn unicode_names_and_menus() {
                     target.message.id,
                     ctx.command_path()
                 ));
-                async move { Ok(r.defer(Ephemerality::Public).await?.done()) }
+                async move { Ok(r.defer_reply_as(Ephemerality::Public).await?.done()) }
             },
         ));
     let p = Pipeline::start(module).await;
@@ -641,7 +641,7 @@ async fn int_12_returned_message_after_defer_edits_original() {
         &["slow"],
         "d",
         |_: CommandCtx, r: CommandResponder| async move {
-            let _ = r.defer(Ephemerality::Public).await?.done();
+            let _ = r.defer_reply_as(Ephemerality::Public).await?.done();
             Ok(v2("done"))
         },
     );
@@ -1140,7 +1140,7 @@ async fn int_02_fallback_uses_the_interaction_channel() {
         |_: CommandCtx, r: CommandResponder| async move {
             let acked = r.reply(v2("a")).await?;
             skip(Duration::from_mins(15)).await;
-            acked.edit_original(v2("b")).await?;
+            acked.edit_reply(v2("b")).await?;
             Ok::<_, HandlerError>(acked.done())
         },
     ));
@@ -1180,7 +1180,7 @@ async fn int_01_handler_answers_first() {
             &["early"],
             "d",
             |_: CommandCtx, r: CommandResponder| async move {
-                let _ = r.defer(Ephemerality::Public).await?.done();
+                let _ = r.defer_reply_as(Ephemerality::Public).await?.done();
                 tokio::time::sleep(Duration::from_millis(700)).await;
                 Ok(v2("done"))
             },
@@ -1191,7 +1191,7 @@ async fn int_01_handler_answers_first() {
             "d",
             |_: CommandCtx, r: CommandResponder| async move {
                 tokio::time::sleep(Duration::from_millis(700)).await;
-                Ok::<_, HandlerError>(r.defer(Ephemerality::Ephemeral).await?.done())
+                Ok::<_, HandlerError>(r.defer_reply_as(Ephemerality::Ephemeral).await?.done())
             },
         ));
     let p = Pipeline::start_with(module, |b| {
@@ -1232,7 +1232,7 @@ async fn int_01_handler_answers_first() {
 /// a returned legacy message edits the original, and at most one callback
 /// is ever sent.
 #[tokio::test]
-async fn int_03_late_reply_becomes_edit_original() {
+async fn int_03_late_reply_becomes_edit_reply() {
     let module = Module::new("m")
         .add(CommandHandler::__new_plain(
             "m::late",
@@ -1501,10 +1501,11 @@ async fn dispatcher_has_no_auto_defer() {
     assert_eq!(requests[0].1, "/api/v10/channels/5/messages");
 }
 
-/// INT-05 (Story 6.6 Matrix 18): an `opens_modal` Command gets no
-/// auto-defer; a missed ack deadline logs one error naming the handler.
+/// INT-05 (Story 6.6 Matrix 18, Story 6.10 Matrix 23): an
+/// `auto_defer = false` Command gets no auto-defer; a missed ack deadline
+/// logs one error naming the handler and its module.
 #[tokio::test]
-async fn int_05_opens_modal_never_auto_defers() {
+async fn int_05_manual_never_auto_defers() {
     let capture = Capture::default();
     let _guard = tracing::subscriber::set_default(capture.subscriber());
     // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
@@ -1513,13 +1514,13 @@ async fn int_05_opens_modal_never_auto_defers() {
         "m::form",
         &["form"],
         "d",
-        |_: CommandCtx, _: CommandResponder<crate::OpensModal>| async {
+        |_: CommandCtx, _: CommandResponder<crate::Manual>| async {
             tokio::time::sleep(Duration::from_millis(100)).await;
             Err::<Responded, _>(HandlerError::new(std::io::Error::other("no modal")))
         },
     );
-    assert!(handler.opens_modal());
-    assert!(!sleeper("m::x", &["x"], Duration::ZERO).opens_modal());
+    assert!(!handler.auto_defer());
+    assert!(sleeper("m::x", &["x"], Duration::ZERO).auto_defer());
     let p = Pipeline::start_with(Module::new("forms").add(handler), |b| {
         b.ack_deadline(Duration::ZERO);
     })
@@ -1570,16 +1571,16 @@ async fn int_11_sixth_followup_capped() {
             move |_: CommandCtx, r: CommandResponder| {
                 let log = log.clone();
                 async move {
-                    let acked = r.defer(Ephemerality::Public).await?;
+                    let acked = r.defer_reply_as(Ephemerality::Public).await?;
                     let big = Components::new()
                         .push(ActionRow::buttons([
                             LinkButton::new("https://x.y").label("a".repeat(81))
                         ]));
                     let mut results = Vec::new();
-                    let first = acked.followup(big, Visibility::Public).await;
+                    let first = acked.follow_up(big, Visibility::Public).await;
                     results.push(first.map(drop));
                     for _ in 0..6 {
-                        let sent = acked.followup(v2("f"), Visibility::Ephemeral).await;
+                        let sent = acked.follow_up(v2("f"), Visibility::Ephemeral).await;
                         results.push(sent.map(drop));
                     }
                     let line: Vec<&str> = results
@@ -2343,7 +2344,7 @@ mod notices {
                 &["deferred"],
                 "d",
                 |_: CommandCtx, r: CommandResponder| async move {
-                    let _ = r.defer(Ephemerality::Public).await?.done();
+                    let _ = r.defer_reply_as(Ephemerality::Public).await?.done();
                     Err::<V2Message, _>(io("x"))
                 },
             ))
@@ -2361,8 +2362,8 @@ mod notices {
                 &["filled"],
                 "d",
                 |_: CommandCtx, r: CommandResponder| async move {
-                    let acked = r.defer(Ephemerality::Public).await?;
-                    acked.edit_original(v2("a")).await?;
+                    let acked = r.defer_reply_as(Ephemerality::Public).await?;
+                    acked.edit_reply(v2("a")).await?;
                     let _ = acked.done();
                     Err::<V2Message, _>(io("x"))
                 },
@@ -2385,7 +2386,7 @@ mod notices {
         assert_eq!(requests[0].1, CB_REPLY);
         assert_followup_notice(&requests[1], GENERIC);
 
-        // A deferred original filled by `edit_original` is kept.
+        // A deferred original filled by `edit_reply` is kept.
         p.fx.server.log.lock().unwrap().clear();
         p.run(run_slash("filled")).await;
         let requests = p.requests();
@@ -2435,7 +2436,7 @@ mod notices {
                 &["deferred"],
                 "d",
                 |_: CommandCtx, r: CommandResponder| async move {
-                    let _ = r.defer(Ephemerality::Ephemeral).await?.done();
+                    let _ = r.defer_reply_as(Ephemerality::Ephemeral).await?.done();
                     Err::<V2Message, _>(io("x"))
                 },
             ));
@@ -2487,7 +2488,7 @@ mod notices {
                 |_: CommandCtx, r: CommandResponder| async move {
                     let acked = r.reply(v2("a")).await?;
                     for _ in 0..5 {
-                        let _ = acked.followup(v2("f"), Visibility::Public).await?;
+                        let _ = acked.follow_up(v2("f"), Visibility::Public).await?;
                     }
                     let _ = acked.done();
                     Err::<V2Message, _>(io("after five"))
@@ -2498,7 +2499,7 @@ mod notices {
                 &["old"],
                 "d",
                 |_: CommandCtx, r: CommandResponder| async move {
-                    let _ = r.defer(Ephemerality::Public).await?.done();
+                    let _ = r.defer_reply_as(Ephemerality::Public).await?.done();
                     skip(Duration::from_mins(16)).await;
                     Err::<V2Message, _>(io("expired"))
                 },
@@ -2664,4 +2665,116 @@ mod notices {
     fn panic_with(message: &str) -> V2Message {
         panic!("{message}")
     }
+}
+
+/// Story 6.10 Matrix 23: `auto_defer = false` handlers send no auto
+/// callback, and `reply`/`defer_reply` use the declared response.
+#[tokio::test]
+async fn int_05_manual_uses_the_declared_response() {
+    let reply = |name: &'static str, path: &'static [&'static str]| {
+        CommandHandler::__new_plain(
+            name,
+            path,
+            "d",
+            |_: CommandCtx, r: CommandResponder<crate::Manual>| async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                Ok(r.reply(v2("a")).await?.done())
+            },
+        )
+    };
+    let deferred = |name: &'static str, path: &'static [&'static str]| {
+        CommandHandler::__new_plain(
+            name,
+            path,
+            "d",
+            |_: CommandCtx, r: CommandResponder<crate::Manual>| async move {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                let acked = r.defer_reply().await?;
+                acked.edit_reply(v2("b")).await?;
+                Ok(acked.done())
+            },
+        )
+    };
+    let module = Module::new("m")
+        .add(reply("m::pub_reply", &["pub_reply"]))
+        .add(reply("m::eph_reply", &["eph_reply"]).__with_ephemerality(Ephemerality::Ephemeral))
+        .add(deferred("m::pub_defer", &["pub_defer"]))
+        .add(deferred("m::eph_defer", &["eph_defer"]).__with_ephemerality(Ephemerality::Ephemeral));
+    let p = Pipeline::start_with(module, |b| {
+        b.ack_deadline(Duration::ZERO);
+    })
+    .await;
+    for name in ["pub_reply", "eph_reply", "pub_defer", "eph_defer"] {
+        p.run(inbound(&interaction(slash(name, json!([])), json!({}))))
+            .await;
+    }
+    let requests = p.requests();
+    assert_eq!(requests.len(), 6, "{requests:?}");
+    assert_eq!(
+        (requests[0].1.as_str(), &requests[0].2["type"]),
+        (CB_REPLY, &json!(4))
+    );
+    assert_eq!(requests[0].2["data"]["flags"], 32768);
+    assert_eq!(
+        (requests[1].1.as_str(), &requests[1].2["type"]),
+        (CB_REPLY, &json!(4))
+    );
+    assert_eq!(requests[1].2["data"]["flags"], 32832);
+    assert_eq!(
+        requests[2],
+        (Method::POST, CB.to_owned(), json!({ "type": 5 }))
+    );
+    assert_eq!(
+        (&requests[3].0, requests[3].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
+    assert_eq!(
+        requests[4],
+        (
+            Method::POST,
+            CB.to_owned(),
+            json!({ "type": 5, "data": { "flags": 64 } })
+        )
+    );
+    assert_eq!(
+        (&requests[5].0, requests[5].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
+}
+
+/// Story 6.10 AC 3: a context-menu handler declared `auto_defer = false`
+/// and `response = ephemeral` gets no auto-defer, and its `defer_reply`
+/// is ephemeral.
+#[tokio::test]
+async fn int_05_manual_menu() {
+    let menu = ContextMenuHandler::__new_user(
+        "m::report",
+        "Report",
+        CommandMetadata::new(),
+        |_: CommandCtx, _: ResolvedUser, r: CommandResponder<crate::Manual>| async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            Ok(r.defer_reply().await?.done())
+        },
+    )
+    .__with_ephemerality(Ephemerality::Ephemeral);
+    assert!(!menu.auto_defer());
+    assert_eq!(menu.ephemerality(), Ephemerality::Ephemeral);
+    let p = Pipeline::start_with(Module::new("m").add(menu), |b| {
+        b.ack_deadline(Duration::ZERO);
+    })
+    .await;
+    let user_data = json!({
+        "id": "9", "name": "Report", "type": 2, "target_id": "11",
+        "resolved": { "users": { "11": user("11") } }
+    });
+    p.run(inbound(&interaction(user_data, json!({})))).await;
+    let requests = p.requests();
+    assert_eq!(
+        requests,
+        [(
+            Method::POST,
+            CB.to_owned(),
+            json!({ "type": 5, "data": { "flags": 64 } })
+        )]
+    );
 }

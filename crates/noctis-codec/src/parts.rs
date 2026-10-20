@@ -1,11 +1,10 @@
-//! The typed fixed-width sections of the `custom_id` layout: flags, View
-//! envelope, select nonce and integrity tag (AD-5, AD-20).
+//! The typed fixed-width sections of the `custom_id` layout: flags, select
+//! nonce and integrity tag (AD-5).
 
 use core::fmt;
 use core::ops::BitOr;
 
-use crate::EnvelopeError;
-use crate::base62::{self, digit, digit_value};
+use crate::base62;
 
 /// Largest value of one base62 digit.
 pub(crate) const DIGIT_MAX: u8 = 61;
@@ -24,19 +23,22 @@ impl Flags {
     pub const EMPTY: Self = Self(0);
     /// The schema version `S` is present.
     pub const S: Self = Self(1);
-    /// The View envelope `E` is present.
-    pub const E: Self = Self(2);
     /// The select nonce `N` is present.
     pub const N: Self = Self(4);
     /// The integrity tag `T` is present.
     pub const T: Self = Self(8);
 
-    /// Flags from their bits; bits above `0b1111` are dropped.
+    /// The reserved bit 2 of the format digit; the decoder rejects a
+    /// `custom_id` that sets it.
+    pub(crate) const RESERVED: u8 = 2;
+
+    /// Flags from their bits; the reserved bit 2 and bits above `0b1111` are
+    /// dropped.
     pub(crate) const fn from_bits(bits: u8) -> Self {
-        Self(bits & 0b1111)
+        Self(bits & 0b1101)
     }
 
-    /// The flag bits (`0..=15`).
+    /// The flag bits (a subset of `0b1101`).
     pub const fn bits(self) -> u8 {
         self.0
     }
@@ -67,135 +69,19 @@ impl BitOr for Flags {
     }
 }
 
-/// Lists the set letters, for example `Flags(EN)` or `Flags(-)`.
+/// Lists the set letters, for example `Flags(SN)` or `Flags(-)`.
 impl fmt::Debug for Flags {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Flags(")?;
         if self.0 == 0 {
             f.write_str("-")?;
         }
-        for (flag, letter) in [
-            (Self::S, 'S'),
-            (Self::E, 'E'),
-            (Self::N, 'N'),
-            (Self::T, 'T'),
-        ] {
+        for (flag, letter) in [(Self::S, 'S'), (Self::N, 'N'), (Self::T, 'T')] {
             if self.contains(flag) {
                 fmt::Write::write_char(f, letter)?;
             }
         }
         f.write_str(")")
-    }
-}
-
-/// The 5-character View envelope `E`: action, tab, page and state version.
-///
-/// ```
-/// use noctis_codec::ViewEnvelope;
-///
-/// let env = ViewEnvelope::new('t', 1, 63, 2)?;
-/// assert_eq!(env.to_string(), "t1112");
-/// assert_eq!(env.page(), 63);
-/// # Ok::<(), noctis_codec::EnvelopeError>(())
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ViewEnvelope {
-    action: u8,
-    tab: u8,
-    page: u16,
-    state_version: u8,
-}
-
-impl ViewEnvelope {
-    /// The largest page, the largest value of two base62 digits.
-    pub const MAX_PAGE: u16 = TWO_DIGIT_MAX;
-
-    /// Builds an envelope.
-    ///
-    /// # Errors
-    ///
-    /// Checked in this order: `action` is neither `_` nor an ASCII letter or
-    /// digit; `tab` is over 61; `page` is over 3843; `state_version` is over 61.
-    pub fn new(action: char, tab: u8, page: u16, state_version: u8) -> Result<Self, EnvelopeError> {
-        let action_byte = u8::try_from(action)
-            .ok()
-            .filter(|&b| is_action(b))
-            .ok_or(EnvelopeError::InvalidAction(action))?;
-        if tab > DIGIT_MAX {
-            return Err(EnvelopeError::TabOutOfRange(tab));
-        }
-        if page > Self::MAX_PAGE {
-            return Err(EnvelopeError::PageOutOfRange(page));
-        }
-        if state_version > DIGIT_MAX {
-            return Err(EnvelopeError::VersionOutOfRange(state_version));
-        }
-        Ok(Self {
-            action: action_byte,
-            tab,
-            page,
-            state_version,
-        })
-    }
-
-    /// Parses the 5 envelope bytes, reporting the first bad byte's offset.
-    pub(crate) fn parse(raw: [u8; 5]) -> Result<Self, usize> {
-        let [action, tab, hi, lo, version] = raw;
-        if !is_action(action) {
-            return Err(0);
-        }
-        let tab = digit_value(tab).ok_or(1_usize)?;
-        let hi = digit_value(hi).ok_or(2_usize)?;
-        let lo = digit_value(lo).ok_or(3_usize)?;
-        let state_version = digit_value(version).ok_or(4_usize)?;
-        Ok(Self {
-            action,
-            tab,
-            page: u16::from(hi) * 62 + u16::from(lo),
-            state_version,
-        })
-    }
-
-    /// The action character (`_` or an ASCII letter or digit).
-    pub fn action(&self) -> char {
-        char::from(self.action)
-    }
-
-    /// The tab (`0..=61`).
-    pub const fn tab(&self) -> u8 {
-        self.tab
-    }
-
-    /// The page (`0..=3843`).
-    pub const fn page(&self) -> u16 {
-        self.page
-    }
-
-    /// The state version (`0..=61`).
-    pub const fn state_version(&self) -> u8 {
-        self.state_version
-    }
-}
-
-const fn is_action(b: u8) -> bool {
-    b == b'_' || digit_value(b).is_some()
-}
-
-impl fmt::Display for ViewEnvelope {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut page = [0; 2];
-        base62::write_fixed(u64::from(self.page), &mut page);
-        let [hi, lo] = page;
-        for b in [
-            self.action,
-            digit(self.tab),
-            hi,
-            lo,
-            digit(self.state_version),
-        ] {
-            fmt::Write::write_char(f, char::from(b))?;
-        }
-        Ok(())
     }
 }
 
@@ -319,8 +205,7 @@ pub trait Verify {
 
 #[cfg(test)]
 mod tests {
-    use super::{Flags, SelectNonce, Tag, ViewEnvelope};
-    use crate::EnvelopeError;
+    use super::{Flags, SelectNonce, Tag};
 
     #[test]
     fn tag_ct_eq() {
@@ -328,47 +213,6 @@ mod tests {
         assert!(a.ct_eq(&Tag::from_digits(*b"abcdef")));
         assert!(!a.ct_eq(&Tag::from_digits(*b"Xbcdef")));
         assert!(!a.ct_eq(&Tag::from_digits(*b"abcdeX")));
-    }
-
-    #[test]
-    fn envelope_display_and_getters() {
-        let env = ViewEnvelope::new('t', 1, 63, 2).unwrap();
-        assert_eq!(env.to_string(), "t1112");
-        assert_eq!(
-            (env.action(), env.tab(), env.page(), env.state_version()),
-            ('t', 1, 63, 2)
-        );
-        let max = ViewEnvelope::new('_', 61, 3843, 61).unwrap();
-        assert_eq!(max.to_string(), "_zzzz");
-        assert_eq!(ViewEnvelope::parse(*b"_zzzz"), Ok(max));
-        assert_eq!(ViewEnvelope::parse(*b"__zzz"), Err(1));
-        assert_eq!(ViewEnvelope::parse(*b"!zzzz"), Err(0));
-        assert_eq!(ViewEnvelope::parse(*b"_zz!z"), Err(3));
-        assert_eq!(ViewEnvelope::parse(*b"_zzz!"), Err(4));
-    }
-
-    #[test]
-    fn envelope_errors_in_order() {
-        assert_eq!(
-            ViewEnvelope::new('-', 62, 3844, 62),
-            Err(EnvelopeError::InvalidAction('-'))
-        );
-        assert_eq!(
-            ViewEnvelope::new('é', 0, 0, 0),
-            Err(EnvelopeError::InvalidAction('é'))
-        );
-        assert_eq!(
-            ViewEnvelope::new('a', 62, 3844, 62),
-            Err(EnvelopeError::TabOutOfRange(62))
-        );
-        assert_eq!(
-            ViewEnvelope::new('a', 0, 3844, 62),
-            Err(EnvelopeError::PageOutOfRange(3844))
-        );
-        assert_eq!(
-            ViewEnvelope::new('a', 0, 0, 62),
-            Err(EnvelopeError::VersionOutOfRange(62))
-        );
     }
 
     #[test]
@@ -391,13 +235,14 @@ mod tests {
 
     #[test]
     fn flags() {
-        let all = Flags::S | Flags::E | Flags::N | Flags::T;
-        assert_eq!(all.bits(), 15);
-        assert!(all.contains(Flags::E | Flags::T));
-        assert!(!Flags::E.contains(Flags::T));
-        assert_eq!(format!("{all:?}"), "Flags(SENT)");
+        let all = Flags::S | Flags::N | Flags::T;
+        assert_eq!(all.bits(), 13);
+        assert!(all.contains(Flags::N | Flags::T));
+        assert!(!Flags::N.contains(Flags::T));
+        assert_eq!(format!("{all:?}"), "Flags(SNT)");
         assert_eq!(format!("{:?}", Flags::EMPTY), "Flags(-)");
-        assert_eq!(Flags::from_bits(0xF2), Flags::E);
+        assert_eq!(Flags::from_bits(0xF2), Flags::EMPTY);
+        assert_eq!(Flags::from_bits(0xFF), all);
         assert_eq!(all.intersection(Flags::N), Flags::N);
     }
 }

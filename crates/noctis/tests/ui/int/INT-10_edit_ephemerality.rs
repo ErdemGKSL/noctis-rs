@@ -8,7 +8,7 @@ fn msg() -> Components {
 #[command("ping", description = "d")]
 async fn ping(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
     let acked = r.reply(msg()).await?;
-    acked.edit_original(msg(), Ephemerality::Ephemeral).await?; // [INT-10]
+    acked.edit_reply(msg(), Ephemerality::Ephemeral).await?; // [INT-10]
     Ok(acked.done())
 }
 

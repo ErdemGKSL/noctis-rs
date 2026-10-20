@@ -11,7 +11,7 @@
 //! 5. *rate limits: absent until Story 13.4;*
 //! 6. arm the auto-defer (INT-01): a task that acknowledges the interaction
 //!    with a type-5 callback at `received_at + ack_deadline` unless the
-//!    handler answered first; an `opens_modal` Command gets none, only an
+//!    handler answered first; an `auto_defer = false` handler gets none, only an
 //!    error log when it has not answered by the 2.9 s ack deadline
 //!    (INT-05). The task is aborted when the handler run ends;
 //! 7. *before-Middleware: absent until Story 7.6;*
@@ -129,11 +129,12 @@ impl Resolved {
         }
     }
 
-    /// Whether the Command is declared `opens_modal` (menus never are).
-    fn opens_modal(&self) -> bool {
+    /// Whether the handler is auto-deferred: `false` when it is declared
+    /// `auto_defer = false` (INT-05).
+    fn auto_defer(&self) -> bool {
         match self {
-            Self::Command { entry, .. } => entry.handler.opens_modal(),
-            Self::Menu(_) => false,
+            Self::Command { entry, .. } => entry.handler.auto_defer(),
+            Self::Menu(entry) => entry.handler.auto_defer(),
         }
     }
 }
@@ -152,8 +153,8 @@ impl Drop for AbortOnDrop {
 const USER_INSTALL_FOLLOWUPS: u8 = 5;
 
 /// Stage 6: spawns the auto-defer task of an interaction received at
-/// `received_at` (INT-01), or for an `opens_modal` Command the task that
-/// logs a missed ack deadline (INT-05).
+/// `received_at` (INT-01), or for an `auto_defer = false` handler the task
+/// that logs a missed ack deadline (INT-05).
 fn arm(
     app: &AppShared,
     shared: &Arc<Shared>,
@@ -163,7 +164,18 @@ fn arm(
 ) -> AbortOnDrop {
     let shared = Arc::clone(shared);
     let handler = resolved.handler();
-    let task = if resolved.opens_modal() {
+    let task = if resolved.auto_defer() {
+        let deadline = received_at + app.ack_deadline;
+        tokio::spawn(
+            async move {
+                tokio::time::sleep_until(deadline).await;
+                if !shared.auto_defer().await {
+                    tracing::warn!(target: "noctis::dispatch", handler, "auto-defer failed");
+                }
+            }
+            .instrument(span.clone()),
+        )
+    } else {
         let module = resolved.module();
         let deadline = received_at + ACK_DEADLINE;
         tokio::spawn(
@@ -174,19 +186,8 @@ fn arm(
                         target: "noctis::dispatch",
                         handler,
                         module,
-                        "an `opens_modal` handler did not answer within the 3 s ack deadline"
+                        "an `auto_defer = false` handler did not answer within the 3 s ack deadline"
                     );
-                }
-            }
-            .instrument(span.clone()),
-        )
-    } else {
-        let deadline = received_at + app.ack_deadline;
-        tokio::spawn(
-            async move {
-                tokio::time::sleep_until(deadline).await;
-                if !shared.auto_defer().await {
-                    tracing::warn!(target: "noctis::dispatch", handler, "auto-defer failed");
                 }
             }
             .instrument(span.clone()),

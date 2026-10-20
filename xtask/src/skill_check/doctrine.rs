@@ -13,12 +13,12 @@
 //!   interactive handler: `LegacyMessage`; in its body, a `.content(` call or a
 //!   `content:` struct-literal field.
 //! - UD-3, anywhere: the response-type idents (`InteractionResponseType`, …).
-//!   In an interactive handler: `.defer(`, `.reply(`, `.update(`,
-//!   `.edit_original(` on any receiver but `ctx` (the handler context's
-//!   `ctx.update(msg)` picks the response type itself, FR-61); a `Responder`/`CommandResponder`/`ComponentResponder`
-//!   parameter without `Manual` (the `auto_defer = false` marker; the shipped
-//!   `OpensModal` is accepted until Story 6.10 renames it) in its generic args,
-//!   and any `ModalResponder` parameter.
+//!   In an interactive handler: `.reply(`, `.update(`, `.defer_reply(`,
+//!   `.defer_update(`, `.edit_reply(` on any receiver but `ctx` (the handler
+//!   context's `ctx.update(msg)` picks the response type itself, FR-61); a
+//!   `Responder`/`CommandResponder`/`ComponentResponder` parameter without
+//!   `Manual` (the `auto_defer = false` marker) in its generic args, and any
+//!   `ModalResponder` parameter.
 //! - UD-7, anywhere: an ident with the word `collector(s)` or `listener(s)`;
 //!   the await-loop idents (`wait_for`, …); a `.on_<x>(` call or a method
 //!   whose words contain `listen`/`listener`, with a top-level `|` or `move`
@@ -61,7 +61,13 @@ const AWAIT_LOOPS: &[&str] = &[
     "component_stream",
     "interaction_stream",
 ];
-const RESPONDER_CALLS: &[&str] = &["defer", "reply", "update", "edit_original"];
+const RESPONDER_CALLS: &[&str] = &[
+    "reply",
+    "update",
+    "defer_reply",
+    "defer_update",
+    "edit_reply",
+];
 /// The receiver whose methods pick the response type themselves
 /// (`ctx.respond`, `ctx.update`, `ctx.reply_text`).
 const CTX_RECEIVER: &str = "ctx";
@@ -405,7 +411,7 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
                 match tt {
                     TokenTree::Punct(p) if p.as_char() == '<' => depth += 1,
                     TokenTree::Punct(p) if p.as_char() == '>' && !prev_minus => depth -= 1,
-                    TokenTree::Ident(arg) if arg == "Manual" || arg == "OpensModal" => {
+                    TokenTree::Ident(arg) if arg == "Manual" => {
                         manual = true;
                     }
                     _ => {}
@@ -512,7 +518,13 @@ mod tests {
 
     #[test]
     fn d9_responder_calls() {
-        for call in ["defer", "reply", "update", "edit_original"] {
+        for call in [
+            "reply",
+            "update",
+            "defer_reply",
+            "defer_update",
+            "edit_reply",
+        ] {
             flags(
                 &format!("#[handler]\nasync fn h() {{ r.{call}(x).await }}"),
                 UD3_CALL,
@@ -546,7 +558,12 @@ mod tests {
             "impl EditBio {\n#[handler]\nasync fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }\n}",
         );
         clean(
-            "#[handler]\nasync fn edit_bio(ctx: ComponentCtx, responder: ComponentResponder<OpensModal>) -> HandlerResult<Responded> { Ok(responder.modal(m).await?.done()) }",
+            "#[command(\"feedback\", auto_defer = false)]\nasync fn feedback(ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }",
+        );
+        // The withdrawn marker is not `Manual`.
+        flags(
+            "#[command(\"feedback\")]\nasync fn feedback(ctx: CommandCtx, r: CommandResponder<OpensModal>) {}",
+            "[UD-3] take a Responder only to open a modal (CommandResponder<Manual>)",
         );
     }
 
@@ -593,16 +610,16 @@ mod tests {
     fn d18_lex_error_and_nesting() {
         assert!(lint("fn f() { (").is_err());
         flags(
-            "mod m {\n    #[handler]\n    async fn h() { r.defer() }\n}",
+            "mod m {\n    #[handler]\n    async fn h() { r.defer_reply() }\n}",
             UD3_CALL,
         );
         flags(
-            "impl X {\n    #[doc = \"x\"]\n    #[noctis::handler]\n    pub async fn h(&self) { r.defer() }\n}",
+            "impl X {\n    #[doc = \"x\"]\n    #[noctis::handler]\n    pub async fn h(&self) { r.defer_reply() }\n}",
             UD3_CALL,
         );
         // Line numbers come from spans.
         assert_eq!(
-            findings("\n\n#[handler]\nasync fn h() {\n    r.defer();\n}"),
+            findings("\n\n#[handler]\nasync fn h() {\n    r.defer_reply();\n}"),
             [format!("5: {UD3_CALL}")]
         );
     }

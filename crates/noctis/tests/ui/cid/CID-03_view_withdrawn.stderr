@@ -1,0 +1,6 @@
+error: [CID-03] unknown #[route] argument `view`
+         = help: the codec arguments are `by_ref`, `overflow = spill`, `schema = n`, `select` and `signed`
+ --> tests/ui/cid/CID-03_view_withdrawn.rs:4:14
+  |
+4 | #[route("a", view)]
+  |              ^^^^

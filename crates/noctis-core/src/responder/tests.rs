@@ -164,7 +164,11 @@ async fn defer_bodies() {
     ] {
         fx.server.log.lock().unwrap().clear();
         let shared = fx.interaction("tok", Ephemerality::Public);
-        let _ = responder(&shared).defer(ephemerality).await.unwrap().done();
+        let _ = responder(&shared)
+            .defer_reply_as(ephemerality)
+            .await
+            .unwrap()
+            .done();
         assert_eq!(shared.state(), DEFERRED);
         assert_eq!(fx.requests(), [(Method::POST, CB.to_owned(), body)]);
     }
@@ -210,13 +214,10 @@ async fn edit_formats() {
     // V2 original, V2 edit: no clears.
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
-    acked.edit_original(v2("b")).await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
     assert!(fx.requests()[1].2.get("content").is_none());
     // V2 original, legacy edit: no HTTP.
-    let err = acked
-        .edit_original(LegacyMessage::new("x"))
-        .await
-        .unwrap_err();
+    let err = acked.edit_reply(LegacyMessage::new("x")).await.unwrap_err();
     assert!(
         matches!(err, ResponderError::Invalid(UiError::V2ToLegacy)),
         "{err}"
@@ -230,7 +231,7 @@ async fn edit_formats() {
         .reply(LegacyMessage::new("x"))
         .await
         .unwrap();
-    acked.edit_original(v2("b")).await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
     let edit = &fx.requests()[3].2;
     assert_eq!(
         *edit,
@@ -240,16 +241,16 @@ async fn edit_formats() {
         })
     );
     // Now V2: a legacy edit fails.
-    assert!(acked.edit_original(LegacyMessage::new("y")).await.is_err());
+    assert!(acked.edit_reply(LegacyMessage::new("y")).await.is_err());
     let _ = acked.done();
 
     // Deferred, legacy edit: the legacy body.
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap();
-    acked.edit_original(LegacyMessage::new("z")).await.unwrap();
+    acked.edit_reply(LegacyMessage::new("z")).await.unwrap();
     assert_eq!(fx.requests().last().unwrap().2["content"], "z");
     let _ = acked.done();
 }
@@ -261,18 +262,18 @@ async fn followups_and_deletes() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared)
-        .defer(Ephemerality::Ephemeral)
+        .defer_reply_as(Ephemerality::Ephemeral)
         .await
         .unwrap();
-    let public = acked.followup(v2("p"), Visibility::Public).await.unwrap();
+    let public = acked.follow_up(v2("p"), Visibility::Public).await.unwrap();
     let private = acked
-        .followup(v2("e"), Visibility::Ephemeral)
+        .follow_up(v2("e"), Visibility::Ephemeral)
         .await
         .unwrap();
     assert_eq!(public.message_id(), Id::new(55));
     private.edit(v2("e2")).await.unwrap();
     private.delete().await.unwrap();
-    acked.delete_original().await.unwrap();
+    acked.delete_reply().await.unwrap();
     let _ = acked.done();
     let requests = fx.requests();
     assert_eq!(requests[1].0, Method::POST);
@@ -368,12 +369,12 @@ async fn attachments_and_bad_token() {
     assert!(matches!(err, ResponderError::InvalidToken), "{err}");
     let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
     for err in [
-        acked.edit_original(v2("a")).await.unwrap_err(),
+        acked.edit_reply(v2("a")).await.unwrap_err(),
         acked
-            .followup(v2("a"), Visibility::Public)
+            .follow_up(v2("a"), Visibility::Public)
             .await
             .unwrap_err(),
-        acked.delete_original().await.unwrap_err(),
+        acked.delete_reply().await.unwrap_err(),
     ] {
         assert!(matches!(err, ResponderError::InvalidToken), "{err}");
     }
@@ -448,9 +449,9 @@ async fn edit_and_followup_rejected() {
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
     for err in [
-        acked.edit_original(v2("b")).await.unwrap_err(),
+        acked.edit_reply(v2("b")).await.unwrap_err(),
         acked
-            .followup(v2("b"), Visibility::Public)
+            .follow_up(v2("b"), Visibility::Public)
             .await
             .unwrap_err(),
     ] {
@@ -500,7 +501,7 @@ async fn message_transport() {
     // defer(Public), then a returned message: typing, then the reply.
     let shared = fx.message(Ephemerality::Public);
     let _ = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap()
         .done();
@@ -520,8 +521,8 @@ async fn message_transport() {
     );
     // The reply is the original now: edits and deletes target it.
     let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
-    acked.edit_original(v2("b")).await.unwrap();
-    acked.delete_original().await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
+    acked.delete_reply().await.unwrap();
     let requests = fx.requests();
     assert_eq!(
         (requests[2].0.clone(), requests[2].1.as_str()),
@@ -531,7 +532,7 @@ async fn message_transport() {
         (requests[3].0.clone(), requests[3].1.as_str()),
         (Method::DELETE, "/api/v10/channels/5/messages/55")
     );
-    let handle = acked.followup(v2("c"), Visibility::Public).await.unwrap();
+    let handle = acked.follow_up(v2("c"), Visibility::Public).await.unwrap();
     handle.edit(v2("d")).await.unwrap();
     handle.delete().await.unwrap();
     assert_eq!(fx.requests().len(), 7);
@@ -541,7 +542,7 @@ async fn message_transport() {
     fx.server.log.lock().unwrap().clear();
     let shared = fx.message(Ephemerality::Public);
     let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
-    acked.delete_original().await.unwrap();
+    acked.delete_reply().await.unwrap();
     let _ = acked.done();
     assert!(fx.requests().is_empty());
 
@@ -551,13 +552,13 @@ async fn message_transport() {
     assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
     let shared = fx.message(Ephemerality::Public);
     let err = responder(&shared)
-        .defer(Ephemerality::Ephemeral)
+        .defer_reply_as(Ephemerality::Ephemeral)
         .await
         .unwrap_err();
     assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
     let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
     let err = acked
-        .followup(v2("a"), Visibility::Ephemeral)
+        .follow_up(v2("a"), Visibility::Ephemeral)
         .await
         .unwrap_err();
     assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
@@ -568,7 +569,7 @@ async fn message_transport() {
     // first message through an edit or a returned message.
     let shared = fx.message(Ephemerality::Ephemeral);
     let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
-    let err = acked.edit_original(v2("a")).await.unwrap_err();
+    let err = acked.edit_reply(v2("a")).await.unwrap_err();
     assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
     let _ = acked.done();
     let err = shared.finish(v2("a").into()).await.unwrap_err();
@@ -585,12 +586,12 @@ async fn detached_transport() {
         Limits::default(),
     );
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
-    acked.edit_original(v2("b")).await.unwrap();
-    let handle = acked.followup(v2("c"), Visibility::Public).await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
+    let handle = acked.follow_up(v2("c"), Visibility::Public).await.unwrap();
     handle.edit(v2("d")).await.unwrap();
     handle.delete().await.unwrap();
-    acked.delete_original().await.unwrap();
-    assert!(acked.edit_original(LegacyMessage::new("x")).await.is_err());
+    acked.delete_reply().await.unwrap();
+    assert!(acked.edit_reply(LegacyMessage::new("x")).await.is_err());
     let _ = acked.done();
     let err = responder(&shared).reply(long_label(81)).await.unwrap_err();
     assert!(matches!(err, ResponderError::Invalid(_)), "{err}");
@@ -619,7 +620,7 @@ fn values() {
         "{debug}"
     );
     drop(r);
-    assert_eq!(format!("{:?}", Command::<NoModal>(PhantomData)), "Command");
+    assert!(debug.contains("AutoDefer"), "{debug}");
 }
 
 /// Discord's answers, plus a `with_response` reply naming message 77 in
@@ -665,7 +666,7 @@ async fn int_02_token_expired_without_http() {
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
     skip(Duration::from_secs(899)).await;
-    acked.edit_original(v2("b")).await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
     assert_eq!(routes(&fx, 1), [(Method::PATCH, ORIGINAL.to_owned())]);
     let _ = acked.done();
 
@@ -674,9 +675,9 @@ async fn int_02_token_expired_without_http() {
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
     skip(T).await;
-    acked.edit_original(v2("b")).await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
     shared.finish(v2("c").into()).await.unwrap();
-    acked.delete_original().await.unwrap();
+    acked.delete_reply().await.unwrap();
     let _ = acked.done();
     assert_eq!(
         routes(&fx, 1),
@@ -695,21 +696,21 @@ async fn int_02_token_expired_without_http() {
     let ephemeral = responder(&ephemeral).reply(v2("a")).await.unwrap();
     let deferred = fx.interaction("tok", Ephemerality::Public);
     let deferred = responder(&deferred)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap();
     skip(T).await;
     for err in [
-        ephemeral.edit_original(v2("b")).await.unwrap_err(),
-        ephemeral.delete_original().await.unwrap_err(),
-        deferred.edit_original(v2("b")).await.unwrap_err(),
-        deferred.delete_original().await.unwrap_err(),
+        ephemeral.edit_reply(v2("b")).await.unwrap_err(),
+        ephemeral.delete_reply().await.unwrap_err(),
+        deferred.edit_reply(v2("b")).await.unwrap_err(),
+        deferred.delete_reply().await.unwrap_err(),
         deferred
-            .followup(v2("f"), Visibility::Public)
+            .follow_up(v2("f"), Visibility::Public)
             .await
             .unwrap_err(),
         deferred
-            .followup(v2("f"), Visibility::Ephemeral)
+            .follow_up(v2("f"), Visibility::Ephemeral)
             .await
             .unwrap_err(),
     ] {
@@ -722,12 +723,12 @@ async fn int_02_token_expired_without_http() {
     fx.server.log.lock().unwrap().clear();
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap();
-    let public = acked.followup(v2("p"), Visibility::Public).await.unwrap();
+    let public = acked.follow_up(v2("p"), Visibility::Public).await.unwrap();
     let private = acked
-        .followup(v2("e"), Visibility::Ephemeral)
+        .follow_up(v2("e"), Visibility::Ephemeral)
         .await
         .unwrap();
     skip(T).await;
@@ -761,7 +762,7 @@ async fn int_02_token_expired_without_http() {
     let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
     skip(T).await;
-    let err = acked.edit_original(v2("b")).await.unwrap_err();
+    let err = acked.edit_reply(v2("b")).await.unwrap_err();
     assert!(matches!(err, ResponderError::TokenExpired), "{err}");
     let _ = acked.done();
     assert_eq!(fx.requests().len(), 1);
@@ -785,7 +786,7 @@ async fn already_acknowledged_reply_has_no_known_id() {
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
     skip(Duration::from_mins(15)).await;
-    let err = acked.edit_original(v2("b")).await.unwrap_err();
+    let err = acked.edit_reply(v2("b")).await.unwrap_err();
     assert!(matches!(err, ResponderError::TokenExpired), "{err}");
     let _ = acked.done();
     assert_eq!(fx.requests().len(), 1);
@@ -810,13 +811,13 @@ async fn deferred_original_learns_its_id_from_the_edit() {
     let fx = Fixture::start(answer).await;
     let shared = fx.interaction("tok", Ephemerality::Public);
     let acked = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap();
-    acked.edit_original(v2("a")).await.unwrap();
+    acked.edit_reply(v2("a")).await.unwrap();
     skip(Duration::from_mins(15)).await;
-    acked.edit_original(v2("b")).await.unwrap();
-    acked.delete_original().await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
+    acked.delete_reply().await.unwrap();
     let _ = acked.done();
     assert_eq!(
         routes(&fx, 1),
@@ -861,19 +862,19 @@ async fn followup_cap_slots() {
     let shared =
         Shared::with_followup_cap(transport, Ephemerality::Public, Limits::default(), Some(5));
     let acked = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap();
     let err = acked
-        .followup(long_label(81), Visibility::Public)
+        .follow_up(long_label(81), Visibility::Public)
         .await
         .unwrap_err();
     assert!(matches!(err, ResponderError::Invalid(_)), "{err}");
     for _ in 0..4 {
-        let _ = acked.followup(v2("f"), Visibility::Public).await.unwrap();
+        let _ = acked.follow_up(v2("f"), Visibility::Public).await.unwrap();
     }
     let err = acked
-        .followup(v2("f"), Visibility::Public)
+        .follow_up(v2("f"), Visibility::Public)
         .await
         .unwrap_err();
     assert!(
@@ -881,7 +882,7 @@ async fn followup_cap_slots() {
         "{err}"
     );
     let err = acked
-        .followup(v2("f"), Visibility::Ephemeral)
+        .follow_up(v2("f"), Visibility::Ephemeral)
         .await
         .unwrap_err();
     assert!(matches!(err, ResponderError::FollowupCap), "{err}");
@@ -903,7 +904,7 @@ async fn gate_orders_initial_responses() {
     assert!(shared.auto_defer().await);
     assert_eq!(shared.state(), DEFERRED);
     let _ = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap()
         .done();
@@ -958,7 +959,7 @@ async fn notice_after_defer_deletes_then_follows_up() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.interaction("tok", Ephemerality::Public);
     let _ = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap()
         .done();
@@ -994,7 +995,7 @@ async fn notice_after_defer_survives_a_failed_delete() {
     let fx = Fixture::start(answer).await;
     let shared = fx.interaction("tok", Ephemerality::Public);
     let _ = responder(&shared)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap()
         .done();
@@ -1012,7 +1013,7 @@ async fn notice_after_defer_survives_a_failed_delete() {
 
 /// Replied: only an ephemeral follow-up.
 #[tokio::test]
-async fn notice_after_reply_is_a_followup() {
+async fn notice_after_reply_is_a_follow_up() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.interaction("tok", Ephemerality::Public);
     let _ = responder(&shared).reply(v2("a")).await.unwrap().done();
@@ -1045,7 +1046,7 @@ async fn notice_over_a_message_transport_is_public() {
     replied.notice("oops".to_owned()).await.unwrap();
     let deferred = fx.message(Ephemerality::Public);
     let _ = responder(&deferred)
-        .defer(Ephemerality::Public)
+        .defer_reply_as(Ephemerality::Public)
         .await
         .unwrap()
         .done();
@@ -1090,4 +1091,304 @@ async fn notice_is_validated() {
     let err = shared.notice("a".repeat(4001)).await.unwrap_err();
     assert!(matches!(err, ResponderError::Invalid(_)), "{err:?}");
     assert!(fx.requests().is_empty());
+}
+
+/// Story 6.10 Matrix 22: `reply`/`defer_reply` use the declared response,
+/// `reply_as`/`defer_reply_as` override it.
+#[tokio::test]
+async fn declared_response_and_overrides() {
+    let fx = Fixture::start(discord()).await;
+    let public = Ephemerality::Public;
+    let ephemeral = Ephemerality::Ephemeral;
+    let reply = |declared, explicit: Option<Ephemerality>| {
+        let shared = fx.interaction("tok", declared);
+        async move {
+            let r = responder(&shared);
+            let acked = match explicit {
+                Some(e) => r.reply_as(v2("a"), e).await.unwrap(),
+                None => r.reply(v2("a")).await.unwrap(),
+            };
+            let _ = acked.done();
+        }
+    };
+    reply(public, None).await;
+    reply(ephemeral, None).await;
+    reply(public, Some(ephemeral)).await;
+    reply(ephemeral, Some(public)).await;
+    let flags: Vec<Value> = fx
+        .requests()
+        .iter()
+        .map(|(_, path, body)| {
+            assert_eq!(path, CB_REPLY);
+            body["data"]["flags"].clone()
+        })
+        .collect();
+    assert_eq!(
+        flags,
+        [json!(32768), json!(32832), json!(32832), json!(32768)]
+    );
+
+    fx.server.log.lock().unwrap().clear();
+    for declared in [public, ephemeral] {
+        let shared = fx.interaction("tok", declared);
+        let _ = responder(&shared).defer_reply().await.unwrap().done();
+    }
+    let shared = fx.interaction("tok", public);
+    let _ = responder(&shared)
+        .defer_reply_as(ephemeral)
+        .await
+        .unwrap()
+        .done();
+    let ephemeral_defer = json!({ "type": 5, "data": { "flags": 64 } });
+    assert_eq!(
+        fx.requests(),
+        [
+            (Method::POST, CB.to_owned(), json!({ "type": 5 })),
+            (Method::POST, CB.to_owned(), ephemeral_defer.clone()),
+            (Method::POST, CB.to_owned(), ephemeral_defer),
+        ]
+    );
+}
+
+/// Story 6.10 Matrix 24 (INT-03, INT-10): after the auto-defer,
+/// `reply_as` edits the reply and keeps the auto-defer's ephemerality, and
+/// `defer_reply` sends nothing.
+#[tokio::test]
+async fn reply_as_after_auto_defer_edits() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    assert!(shared.auto_defer().await);
+    let acked = responder(&shared)
+        .reply_as(v2("a"), Ephemerality::Ephemeral)
+        .await
+        .unwrap();
+    assert_eq!(acked.shared.original().ephemerality, Ephemerality::Public);
+    let _ = acked.done();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[0].2, json!({ "type": 5 }));
+    assert_eq!(
+        (&requests[1].0, requests[1].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
+    assert_eq!(requests[1].2["flags"], 32768);
+
+    fx.server.log.lock().unwrap().clear();
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    assert!(shared.auto_defer().await);
+    fx.server.log.lock().unwrap().clear();
+    let _ = responder(&shared).defer_reply().await.unwrap().done();
+    assert!(fx.requests().is_empty());
+}
+
+/// A complete Discord message object `id` in channel `channel`.
+fn message_json(id: &str, channel: &str) -> Bytes {
+    Bytes::from(
+        json!({
+            "id": id,
+            "channel_id": channel,
+            "author": { "id": "7", "username": "bot", "discriminator": "0", "avatar": null },
+            "content": "",
+            "timestamp": "2026-10-20T12:00:00.000000+00:00",
+            "edited_timestamp": null,
+            "tts": false,
+            "mention_everyone": false,
+            "mentions": [],
+            "mention_roles": [],
+            "attachments": [],
+            "embeds": [],
+            "pinned": false,
+            "type": 0,
+        })
+        .to_string(),
+    )
+}
+
+/// Discord's answers with a `with_response` reply naming message 77 in
+/// channel 9, and message objects for `GET @original` and `GET` channel
+/// messages.
+fn discord_fetch() -> Answer {
+    let base = discord_with_message();
+    Arc::new(move |seen: &Seen| {
+        if seen.method == Method::GET {
+            let id = seen.path.rsplit('/').next().unwrap_or_default();
+            let id = if id == "@original" { "77" } else { id };
+            (StatusCode::OK, message_json(id, "9"))
+        } else {
+            base(seen)
+        }
+    })
+}
+
+/// Story 6.10 Matrix 26: `fetch_reply` over a valid token, after a reply
+/// and after a defer.
+#[tokio::test]
+async fn fetch_reply_over_the_token() {
+    let fx = Fixture::start(discord_fetch()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    let message = acked.fetch_reply().await.unwrap();
+    assert_eq!((message.id.get(), message.channel_id.get()), (77, 9));
+    let _ = acked.done();
+
+    let shared = fx.interaction("tok", Ephemerality::Ephemeral);
+    let acked = responder(&shared).defer_reply().await.unwrap();
+    assert_eq!(acked.fetch_reply().await.unwrap().id.get(), 77);
+    let _ = acked.done();
+
+    let seen = fx.server.seen();
+    let gets: Vec<_> = seen.iter().filter(|s| s.method == Method::GET).collect();
+    assert_eq!(gets.len(), 2);
+    for get in gets {
+        assert_eq!(get.path, ORIGINAL);
+        assert!(get.headers.get("authorization").is_none());
+    }
+}
+
+/// Story 6.10 Matrix 26: an error status is `Rejected`, a body that is
+/// not a message is `Transport`, a bad token is `InvalidToken`.
+#[tokio::test]
+async fn fetch_reply_errors() {
+    let answer: Answer = Arc::new(|seen: &Seen| {
+        if seen.method == Method::GET && seen.path.contains("/404/") {
+            (
+                StatusCode::NOT_FOUND,
+                Bytes::from_static(br#"{"code":10008,"message":"Unknown Message"}"#),
+            )
+        } else {
+            discord()(seen)
+        }
+    });
+    let fx = Fixture::start(answer).await;
+    let shared = fx.interaction("404", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    let err = acked.fetch_reply().await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            ResponderError::Rejected {
+                status: 404,
+                code: Some(10008)
+            }
+        ),
+        "{err}"
+    );
+    let _ = acked.done();
+
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    let err = acked.fetch_reply().await.unwrap_err();
+    assert!(matches!(err, ResponderError::Transport), "{err}");
+    let _ = acked.done();
+
+    fx.server.log.lock().unwrap().clear();
+    let shared = fx.interaction("bad token", Ephemerality::Public);
+    let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
+    let err = acked.fetch_reply().await.unwrap_err();
+    assert!(matches!(err, ResponderError::InvalidToken), "{err}");
+    let _ = acked.done();
+    assert!(fx.requests().is_empty());
+}
+
+/// Story 6.10 Matrix 26 (INT-02): after 15 minutes a public reply whose id
+/// and channel are known is fetched with the bot token; an ephemeral reply
+/// or one whose id is unknown is `TokenExpired` with no request.
+#[tokio::test]
+async fn fetch_reply_after_the_token_expired() {
+    const T: Duration = Duration::from_mins(15);
+    let fx = Fixture::start(discord_fetch()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    skip(T).await;
+    let message = acked.fetch_reply().await.unwrap();
+    assert_eq!(message.id.get(), 77);
+    let _ = acked.done();
+    let seen = fx.server.seen();
+    let get = seen.last().unwrap();
+    assert_eq!(
+        (&get.method, get.path.as_str()),
+        (&Method::GET, "/api/v10/channels/9/messages/77")
+    );
+
+    fx.server.log.lock().unwrap().clear();
+    let ephemeral = fx.interaction("tok", Ephemerality::Ephemeral);
+    let ephemeral = responder(&ephemeral).reply(v2("a")).await.unwrap();
+    let unknown = fx.interaction("tok", Ephemerality::Public);
+    let unknown = responder(&unknown).defer_reply().await.unwrap();
+    skip(T).await;
+    for err in [
+        ephemeral.fetch_reply().await.unwrap_err(),
+        unknown.fetch_reply().await.unwrap_err(),
+    ] {
+        assert!(matches!(err, ResponderError::TokenExpired), "{err}");
+    }
+    assert_eq!(fx.requests().len(), 2);
+    let _ = (ephemeral.done(), unknown.done());
+}
+
+/// Story 6.10 Matrix 26: a fetched public reply's id and channel are kept,
+/// so it is reachable with the bot token after the token expired.
+#[tokio::test]
+async fn fetch_reply_learns_the_id() {
+    let fx = Fixture::start(discord_fetch()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).defer_reply().await.unwrap();
+    assert_eq!(shared.original().message_id, None);
+    let _ = acked.fetch_reply().await.unwrap();
+    assert_eq!(shared.original().message_id, Some(Id::new(77)));
+    assert_eq!(shared.original().channel_id, Some(Id::new(9)));
+    let _ = acked.done();
+}
+
+/// Story 6.10 Matrix 26: over a `Dispatcher` message transport the reply
+/// is fetched with the bot token; before a reply, or detached, there is
+/// none.
+#[tokio::test]
+async fn fetch_reply_off_the_interaction() {
+    let fx = Fixture::start(discord_fetch()).await;
+    let shared = fx.message(Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    assert_eq!(acked.fetch_reply().await.unwrap().id.get(), 55);
+    let _ = acked.done();
+    let get = fx.server.seen().pop().unwrap();
+    assert_eq!(
+        (&get.method, get.path.as_str()),
+        (&Method::GET, "/api/v10/channels/5/messages/55")
+    );
+
+    fx.server.log.lock().unwrap().clear();
+    let shared = fx.message(Ephemerality::Public);
+    let acked = responder(&shared).defer_reply().await.unwrap();
+    let err = acked.fetch_reply().await.unwrap_err();
+    assert!(matches!(err, ResponderError::NoReply), "{err}");
+    let _ = acked.done();
+    assert_eq!(fx.requests().len(), 1, "only the typing indicator");
+
+    let detached = Shared::new(Transport::Detached, Ephemerality::Public, Limits::default());
+    let acked = responder(&detached).reply(v2("a")).await.unwrap();
+    let err = acked.fetch_reply().await.unwrap_err();
+    assert!(matches!(err, ResponderError::NoReply), "{err}");
+    assert_eq!(err.to_string(), "there is no reply message to fetch");
+    let _ = acked.done();
+}
+
+/// Story 6.10 Matrix 27: the renamed calls send exactly what the old ones
+/// did.
+#[tokio::test]
+async fn renamed_calls_wire() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared).reply(v2("a")).await.unwrap();
+    acked.edit_reply(v2("b")).await.unwrap();
+    let _ = acked.follow_up(v2("c"), Visibility::Public).await.unwrap();
+    acked.delete_reply().await.unwrap();
+    let _ = acked.done();
+    assert_eq!(
+        routes(&fx, 1),
+        [
+            (Method::PATCH, ORIGINAL.to_owned()),
+            (Method::POST, FOLLOWUP.to_owned()),
+            (Method::DELETE, ORIGINAL.to_owned()),
+        ]
+    );
 }

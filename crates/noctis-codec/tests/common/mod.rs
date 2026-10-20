@@ -69,16 +69,9 @@ route!(TextSpill, "t", RouteShape::SPILL, 0, TextP);
 route!(TextSigned, "t", RouteShape::INLINE.signed(), 0, TextP);
 route!(Ping, "ping", RouteShape::INLINE, 0, PingP);
 route!(Opt, "o", RouteShape::INLINE, 0, OptP);
-route!(View, "v", RouteShape::INLINE.view(), 0, NumP);
 route!(Sel, "s", RouteShape::INLINE.select(), 0, NumP);
 route!(Sig, "sig", RouteShape::INLINE.signed(), 0, NumP);
-route!(
-    All,
-    "all",
-    RouteShape::INLINE.view().select().signed(),
-    61,
-    NumP
-);
+route!(All, "all", RouteShape::INLINE.select().signed(), 61, NumP);
 route!(Stored, "r", RouteShape::BY_REF, 0, BuyV1);
 route!(SpillSigned, "ss", RouteShape::SPILL.signed(), 0, TextP);
 route!(BadSchema, "x", RouteShape::INLINE, 62, NumP);
@@ -88,7 +81,7 @@ route!(StoredText, "rt", RouteShape::BY_REF, 0, TextP);
 route!(
     StoredAll,
     "aaaaaaaaaaaaaaaaaaaaaaaa",
-    RouteShape::BY_REF.view().select(),
+    RouteShape::BY_REF.select(),
     61,
     NumP
 );

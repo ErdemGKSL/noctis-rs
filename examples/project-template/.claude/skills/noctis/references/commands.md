@@ -12,11 +12,10 @@ Doctrine: commands are **entry points** that open Views (UD-3).
 > the Module registers them with `.add::<X>()`. `response = public | ephemeral` and
 > `auto_defer = true | false` are command arguments. The examples below use that form.
 > **This release** still takes free functions: `#[command("path", ..)] async fn x(ctx:
-> CommandCtx[, path][, r][, opts: XOptions])` with `#[derive(Options)] struct XOptions`,
-> the bare `ephemeral` flag, `opens_modal`, and `Module::add(x())`. The parameter-order
-> and argument errors quoted below are this release's; Story 6.10 replaces `ephemeral`
-> and `opens_modal`, and Story 6.11 rewrites the rest for the struct form (SKILL.md §8
-> maps every name).
+> CommandCtx[, path][, r][, opts: XOptions])` with `#[derive(Options)] struct XOptions`
+> and `Module::add(x())`; `response` and `auto_defer` already ship as taught. The
+> parameter-order and argument errors quoted below are this release's; Story 6.11
+> rewrites them for the struct form (SKILL.md §8 maps every name).
 
 ## 1. Command Paths
 
@@ -92,22 +91,24 @@ Compile-time checks on the literal (each error names its rule):
 ### Attribute arguments
 
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
-`description`, `max_expansions`, `ephemeral`, `opens_modal` and the metadata arguments
+`description`, `max_expansions`, `response`, `auto_defer` and the metadata arguments
 `permissions`, `contexts`, `integration_types`, `nsfw` and `guilds`. Every argument marked
 [planned] is a compile error today (`` `#[command]` argument `rate_limit` is planned and
 not supported yet ``); an unknown one lists the landed names (`` unknown `#[command]`
-argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`,
+argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`,
 `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds` ``), and each argument
-may appear once (`` duplicate `#[command]` argument `nsfw` ``). Story 6.10 replaces `ephemeral` with `response = …` and `opens_modal` with
-`auto_defer = …` in these lists, with no aliases.
+may appear once (`` duplicate `#[command]` argument `nsfw` ``). The withdrawn bare flags
+are unknown arguments naming their replacement: `` unknown `#[command]` argument
+`ephemeral`: write `response = ephemeral` `` (the old modal flag likewise points to
+`auto_defer = false` and `CommandResponder<Manual>`).
 
 | Argument | Meaning |
 | --- | --- |
 | `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
 | `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
 | `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
-| `response = public \| ephemeral` | [planned: Story 6.10; today the bare flag `ephemeral`, `` `ephemeral` takes no value `` otherwise] how the command answers (default public). Fixed at registration (INT-10); `reply`, `defer_reply()`, a returned message and the auto-defer use it; `response = update` is a compile error (INT-04) |
-| `auto_defer = true \| false` | [planned: Story 6.10; today the bare flag `opens_modal`] default `true`. `false` disables the auto-defer and is required to open a modal: the handler must take `r: CommandResponder<Manual>` (today `CommandResponder<OpensModal>`) and may call `r.show_modal(m)` (today `r.modal(m)`); a mismatch is a compile error citing `[INT-05]` (`responder.md` §2b): the flag with a plain `CommandResponder` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` ``), `CommandResponder<OpensModal>` without the flag (`` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``), or the flag without a responder parameter (`` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal ``). `CommandHandler::opens_modal()` reads it. See `responder.md` §4 |
+| `response = public \| ephemeral` | how the command answers (default public), an ident. Fixed at registration (INT-10); `reply`, `defer_reply()`, a returned message and the auto-defer use it (`reply_as`/`defer_reply_as` override one call); `CommandHandler::ephemerality()` reads it. `response = update` is ``[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral` ``; any other value (`"ephemeral"`, a bare `response`, `loud`) is `` `response` takes `public` or `ephemeral` `` |
+| `auto_defer = true \| false` | a bool literal, default `true` (anything else is `` `auto_defer` takes `true` or `false` ``). `false` disables the auto-defer and is required to open a modal: the handler must take `r: CommandResponder<Manual>` and may call `r.show_modal(m)`; a mismatch is a compile error citing `[INT-05]` (`responder.md` §2b): `false` with a plain `CommandResponder` (`` [INT-05] `auto_defer = false` is declared, so the handler must take `CommandResponder<Manual>` ``), `CommandResponder<Manual>` without it (`` [INT-05] this handler takes `CommandResponder<Manual>`, so its attribute must declare `auto_defer = false` ``), or `false` without a responder parameter (`` [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>` ``). `CommandHandler::auto_defer()` reads it. See `responder.md` §4 |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
 | `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used (`noctis::InteractionContext` names; `InteractionContext::Guild` works): at least one, no duplicates, declared order kept (`` unknown context `Gild`; expected one of Guild, BotDm, PrivateChannel ``, `` duplicate context `Guild` ``) |
 | `integration_types = [GuildInstall, UserInstall]` | install types (`noctis::IntegrationType`), same shape; META-04: must be enabled on the app |
@@ -762,8 +763,8 @@ pub struct ReportMessage;
 impl ReportMessage {
     #[handler]
     async fn handle(self, ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
-        let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;          // this release: r.defer(..)
-        acked.edit_reply(Components::new().push(TextDisplay::new("Reported."))).await?;  // this release: edit_original
+        let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;
+        acked.edit_reply(Components::new().push(TextDisplay::new("Reported."))).await?;
         let _ = target.message.content;
         Ok(acked.done())
     }
@@ -776,15 +777,15 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   (this release: the macro turns a free fn into `fn show_profile() ->
   noctis::ContextMenuHandler` for `Module::add`). `ContextMenuHandler` has `name()` (`module_path::fn`), `menu_name()`,
   `kind() -> noctis::MenuKind` (`User` / `Message`, from the macro: CTX-03; `.value()` 2 / 3,
-  `.name()` `"USER"` / `"MESSAGE"`), `metadata() -> &CommandMetadata` and
-  `ephemerality() -> Ephemerality`.
+  `.name()` `"USER"` / `"MESSAGE"`), `metadata() -> &CommandMetadata`,
+  `ephemerality() -> Ephemerality` and `auto_defer() -> bool`.
 - Arguments: the name literal first (raw strings work; `` `#[user_command]` needs the menu
   name as its first argument: `#[user_command("Show profile")]` `` / `` … needs its menu
   name as a string literal ``), then the metadata arguments of §1 (`permissions`,
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
-  and `response = public | ephemeral` (this release: the bare flag `ephemeral`).
-  `auto_defer` (this release: `opens_modal`, landed for `#[command]` only), `key = "…"`
-  (localization key), `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
+  and `response = public | ephemeral` and `auto_defer = true | false` (with `false` the
+  handler takes `r: CommandResponder<Manual>`; same `[INT-04]`/`[INT-05]` errors as
+  §1). `key = "…"` (localization key), `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together

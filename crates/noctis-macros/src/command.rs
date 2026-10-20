@@ -26,19 +26,71 @@ const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 /// `#[command]` arguments that later stories add.
 const PLANNED: [&str; 4] = ["rate_limit", "flags", "apps", "locales"];
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `ephemeral`, `opens_modal`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
 
-const OPENS_MODAL_RESPONDER: &str =
-    "[INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal";
+const MANUAL_RESPONDER: &str =
+    "[INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`";
+
+const RESPONSE_UPDATE: &str = "[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral`";
+
+const RESPONSE_VALUE: &str = "`response` takes `public` or `ephemeral`";
+
+const AUTO_DEFER_VALUE: &str = "`auto_defer` takes `true` or `false`";
 
 /// The parsed `#[command(..)]` arguments.
 struct Args {
     pattern: LitStr,
     description: Option<LitStr>,
     max_expansions: Option<usize>,
-    ephemeral: bool,
-    opens_modal: bool,
+    handler: HandlerArgs,
     meta: MetaArgs,
+}
+
+/// The handler arguments every Command macro shares: `response` and
+/// `auto_defer` (AD-11).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HandlerArgs {
+    /// `response = ephemeral`.
+    pub(crate) ephemeral: bool,
+    /// `auto_defer = false`.
+    pub(crate) manual: bool,
+}
+
+impl HandlerArgs {
+    /// Parses `segment` when it is a handler argument (`response` or
+    /// `auto_defer`); `None` for any other argument.
+    pub(crate) fn parse(&mut self, name: &str, segment: &[TokenTree]) -> Option<syn::Result<()>> {
+        match name {
+            "response" => Some(parse_response(segment).map(|e| self.ephemeral = e)),
+            "auto_defer" => Some(parse_auto_defer(segment).map(|a| self.manual = !a)),
+            _ => None,
+        }
+    }
+
+    /// The `.__with_ephemerality(..)` call `response = ephemeral` appends.
+    pub(crate) fn ephemerality_call(self) -> TokenStream {
+        if self.ephemeral {
+            quote! {
+                .__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)
+            }
+        } else {
+            TokenStream::new()
+        }
+    }
+}
+
+/// The error of a withdrawn argument (the bare `ephemeral` and modal flags) of
+/// `attr`, naming its replacement; `None` for any other argument.
+pub(crate) fn withdrawn(attr: &str, name: &str, span: Span) -> Option<syn::Error> {
+    let replacement = match name {
+        "ephemeral" => "write `response = ephemeral`",
+        "opens_modal" => "write `auto_defer = false` and take `CommandResponder<Manual>`",
+        _ => return None,
+    };
+    Some(syn::Error::new(
+        span,
+        format!("unknown `{attr}` argument `{name}`: {replacement}"),
+    ))
 }
 
 /// Splits `args` on top-level commas, dropping one trailing empty segment.
@@ -84,27 +136,32 @@ fn value_of(segment: &[TokenTree]) -> Option<TokenStream> {
     }
 }
 
-/// Checks a bare `ephemeral` flag: it takes no value.
-pub(crate) fn parse_ephemeral(segment: &[TokenTree]) -> syn::Result<bool> {
-    parse_flag(segment, "ephemeral")
-}
-
-/// Checks the bare flag `name`: it takes no value.
-fn parse_flag(segment: &[TokenTree], name: &str) -> syn::Result<bool> {
-    if segment.len() == 1 {
-        Ok(true)
-    } else {
-        Err(syn::Error::new(
-            span_of(segment),
-            format!("`{name}` takes no value"),
-        ))
+/// Parses `response = public | ephemeral`; whether it is `ephemeral`.
+fn parse_response(segment: &[TokenTree]) -> syn::Result<bool> {
+    match segment {
+        [_, TokenTree::Punct(eq), TokenTree::Ident(value)] if eq.as_char() == '=' => {
+            match value.to_string().as_str() {
+                "public" => Ok(false),
+                "ephemeral" => Ok(true),
+                "update" => Err(syn::Error::new(value.span(), RESPONSE_UPDATE)),
+                _ => Err(syn::Error::new(value.span(), RESPONSE_VALUE)),
+            }
+        }
+        _ => Err(syn::Error::new(span_of(segment), RESPONSE_VALUE)),
     }
 }
 
-/// The `.__with_ephemerality(..)` call `ephemeral` appends.
-pub(crate) fn ephemerality_call() -> TokenStream {
-    quote! {
-        .__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)
+/// Parses `auto_defer = true | false`, a bool literal.
+fn parse_auto_defer(segment: &[TokenTree]) -> syn::Result<bool> {
+    match segment {
+        [_, TokenTree::Punct(eq), TokenTree::Ident(value)] if eq.as_char() == '=' => {
+            match value.to_string().as_str() {
+                "true" => Ok(true),
+                "false" => Ok(false),
+                _ => Err(syn::Error::new(value.span(), AUTO_DEFER_VALUE)),
+            }
+        }
+        _ => Err(syn::Error::new(span_of(segment), AUTO_DEFER_VALUE)),
     }
 }
 
@@ -143,8 +200,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         pattern,
         description: None,
         max_expansions: None,
-        ephemeral: false,
-        opens_modal: false,
+        handler: HandlerArgs::default(),
         meta: MetaArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -157,8 +213,11 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
                 format!("unknown `#[command]` argument `{tokens}`: {EXPECTED}"),
             ));
         };
+        if let Some(error) = withdrawn("#[command]", &name, span) {
+            return Err(error);
+        }
         match name.as_str() {
-            "description" | "max_expansions" | "ephemeral" | "opens_modal" => {}
+            "description" | "max_expansions" | "response" | "auto_defer" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -184,12 +243,8 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             result?;
             continue;
         }
-        if name == "ephemeral" {
-            parsed.ephemeral = parse_ephemeral(&segment)?;
-            continue;
-        }
-        if name == "opens_modal" {
-            parsed.opens_modal = parse_flag(&segment, "opens_modal")?;
+        if let Some(result) = parsed.handler.parse(&name, &segment) {
+            result?;
             continue;
         }
         let value = value_of(&segment);
@@ -626,32 +681,33 @@ fn adapter(path: bool, responder: bool, options: bool, span: Span) -> TokenStrea
     }
 }
 
-/// INT-05: the assertion that `opens_modal` and the responder's modal
-/// marker match, and the marker the constructor's turbofish passes
-/// (inferred from the responder parameter, `NoModal` without one).
-fn modal_check(
+/// INT-05: the assertion that `auto_defer = false` and the responder's
+/// defer mode match, and the defer mode the constructor's turbofish passes
+/// (inferred from the responder parameter, `AutoDefer` without one).
+/// Shared by the Command macros.
+pub(crate) fn defer_check(
     item: &ItemFn,
     responder: Option<&Type>,
-    opens_modal: bool,
+    manual: bool,
 ) -> syn::Result<(TokenStream, TokenStream)> {
-    let assertion = match (responder, opens_modal) {
+    let assertion = match (responder, manual) {
         (None, true) => {
-            return Err(syn::Error::new_spanned(&item.sig, OPENS_MODAL_RESPONDER));
+            return Err(syn::Error::new_spanned(&item.sig, MANUAL_RESPONDER));
         }
         (None, false) => TokenStream::new(),
         (Some(ty), true) => quote_spanned! {ty.span()=>
-            ::noctis::__private::core::__assert_opens_modal::<#ty>();
+            ::noctis::__private::core::__assert_manual::<#ty>();
         },
         (Some(ty), false) => quote_spanned! {ty.span()=>
-            ::noctis::__private::core::__assert_no_modal::<#ty>();
+            ::noctis::__private::core::__assert_auto_defer::<#ty>();
         },
     };
-    let marker = if responder.is_some() {
+    let mode = if responder.is_some() {
         quote! { _ }
     } else {
-        quote! { ::noctis::__private::core::NoModal }
+        quote! { ::noctis::__private::core::AutoDefer }
     };
-    Ok((assertion, marker))
+    Ok((assertion, mode))
 }
 
 /// The `CommandHandler` constructor path with its turbofish: `__new*` for
@@ -710,7 +766,7 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         &pattern,
         enum_ident.as_ref().map(|(e, _)| e.to_string()).as_deref(),
     )?;
-    let (assertion, marker) = modal_check(&item, responder_ty.as_ref(), args.opens_modal)?;
+    let (assertion, marker) = defer_check(&item, responder_ty.as_ref(), args.handler.manual)?;
     let responder = responder_ty.is_some();
 
     let ItemFn {
@@ -758,12 +814,8 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let metadata = args.meta.tokens();
         quote! { #call.__with_metadata(#metadata) }
     };
-    let call = if args.ephemeral {
-        let ephemeral = ephemerality_call();
-        quote! { #call #ephemeral }
-    } else {
-        call
-    };
+    let ephemeral = args.handler.ephemerality_call();
+    let call = quote! { #call #ephemeral };
     Ok(quote! {
         #generated
 
@@ -847,7 +899,7 @@ mod tests {
         assert!(out.contains("GetWelcome"), "{out}");
         assert!(
             out.contains(
-                "__new :: < ConfigPath , :: noctis :: __private :: core :: NoModal , _ , _ , _ >"
+                "__new :: < ConfigPath , :: noctis :: __private :: core :: AutoDefer , _ , _ , _ >"
             ),
             "{out}"
         );
@@ -982,28 +1034,31 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+            ),
+            (
+                quote!("ping", ephemeral),
+                "unknown `#[command]` argument `ephemeral`: write `response = ephemeral`",
             ),
             (
                 quote!("ping", ephemeral = true),
-                "`ephemeral` takes no value",
-            ),
-            (quote!("ping", ephemeral(x)), "`ephemeral` takes no value"),
-            (
-                quote!("ping", ephemeral, ephemeral),
-                "duplicate `#[command]` argument `ephemeral`",
+                "unknown `#[command]` argument `ephemeral`: write `response = ephemeral`",
             ),
             (
-                quote!("ping", opens_modal = true),
-                "`opens_modal` takes no value",
+                quote!("ping", opens_modal),
+                "unknown `#[command]` argument `opens_modal`: write `auto_defer = false` and take `CommandResponder<Manual>`",
             ),
             (
-                quote!("ping", opens_modal, opens_modal),
-                "duplicate `#[command]` argument `opens_modal`",
+                quote!("ping", response = public, response = ephemeral),
+                "duplicate `#[command]` argument `response`",
+            ),
+            (
+                quote!("ping", auto_defer = true, auto_defer = true),
+                "duplicate `#[command]` argument `auto_defer`",
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -1228,7 +1283,7 @@ mod tests {
         .to_string();
         assert!(
             out.contains(
-                "__new_plain_with_options :: < W , :: noctis :: __private :: core :: NoModal , _ , _ , _ >"
+                "__new_plain_with_options :: < W , :: noctis :: __private :: core :: AutoDefer , _ , _ , _ >"
             ),
             "{out}"
         );
@@ -1244,7 +1299,7 @@ mod tests {
         .to_string();
         assert!(
             out.contains(
-                "__new_with_options :: < ModPath , W , :: noctis :: __private :: core :: NoModal , _ , _ , _ >"
+                "__new_with_options :: < ModPath , W , :: noctis :: __private :: core :: AutoDefer , _ , _ , _ >"
             ),
             "{out}"
         );
@@ -1257,10 +1312,13 @@ mod tests {
     /// Story 6.5 Matrix 41 and 44: `ephemeral` and the responder parameter.
     #[test]
     fn ephemeral_and_responder() {
-        let out = expand(quote!("ping", description = "d", ephemeral), item(PING))
-            .unwrap()
-            .to_string()
-            .replace(' ', "");
+        let out = expand(
+            quote!("ping", description = "d", response = ephemeral),
+            item(PING),
+        )
+        .unwrap()
+        .to_string()
+        .replace(' ', "");
         assert!(
             out.contains(
                 ".__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)"
@@ -1292,51 +1350,99 @@ mod tests {
         }
     }
 
-    /// Story 6.6 Matrix 22: `opens_modal` and the responder's modal
-    /// marker are asserted to match (INT-05).
+    /// Story 6.10 Matrix 18: `auto_defer = false` and the responder's
+    /// defer mode are asserted to match (INT-05).
     #[test]
-    fn opens_modal_assertions() {
-        let modal = || quote!("feedback", description = "d", opens_modal);
+    fn auto_defer_assertions() {
+        let manual = || quote!("feedback", description = "d", auto_defer = false);
         let out = expand(
-            modal(),
-            item("async fn feedback(c: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> { todo!() }"),
+            manual(),
+            item("async fn feedback(c: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> { todo!() }"),
         )
         .unwrap()
         .to_string()
         .replace(' ', "");
         assert!(
             out.contains(
-                "::noctis::__private::core::__assert_opens_modal::<CommandResponder<OpensModal>>();"
+                "::noctis::__private::core::__assert_manual::<CommandResponder<Manual>>();"
             ),
             "{out}"
         );
         assert!(out.contains("__new_plain::<_,_,_,_>"), "{out}");
-        let out = expand(
+        for args in [
             quote!("ping", description = "d"),
-            item("async fn ping(c: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> { todo!() }"),
-        )
-        .unwrap()
-        .to_string()
-        .replace(' ', "");
-        assert!(
-            out.contains("::noctis::__private::core::__assert_no_modal::<CommandResponder>();"),
-            "{out}"
-        );
+            quote!("ping", description = "d", auto_defer = true),
+        ] {
+            let out = expand(
+                args,
+                item("async fn ping(c: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> { todo!() }"),
+            )
+            .unwrap()
+            .to_string()
+            .replace(' ', "");
+            assert!(
+                out.contains(
+                    "::noctis::__private::core::__assert_auto_defer::<CommandResponder>();"
+                ),
+                "{out}"
+            );
+        }
         let out = expand(quote!("ping", description = "d"), item(PING))
             .unwrap()
             .to_string()
             .replace(' ', "");
         assert!(!out.contains("__assert"), "{out}");
         assert!(
-            out.contains("__new_plain::<::noctis::__private::core::NoModal,_,_,_>"),
+            out.contains("__new_plain::<::noctis::__private::core::AutoDefer,_,_,_>"),
             "{out}"
         );
         assert_eq!(
             error(
-                modal(),
+                manual(),
                 "async fn feedback(c: CommandCtx) -> HandlerResult<Responded> { todo!() }"
             ),
-            OPENS_MODAL_RESPONDER
+            MANUAL_RESPONDER
+        );
+    }
+
+    /// Story 6.10 Matrix 14-17: `response` and `auto_defer` values.
+    #[test]
+    fn response_and_auto_defer_values() {
+        for (args, ephemeral) in [
+            (quote!("ping", description = "d", response = public), false),
+            (
+                quote!("ping", description = "d", response = ephemeral),
+                true,
+            ),
+            (quote!("ping", description = "d"), false),
+        ] {
+            let out = expand(args, item(PING)).unwrap().to_string();
+            assert_eq!(out.contains("__with_ephemerality"), ephemeral, "{out}");
+        }
+        assert_eq!(
+            error(quote!("ping", response = update), PING),
+            RESPONSE_UPDATE
+        );
+        for args in [
+            quote!("ping", response = "ephemeral"),
+            quote!("ping", response),
+            quote!("ping", response = loud),
+        ] {
+            assert_eq!(error(args, PING), RESPONSE_VALUE);
+        }
+        for args in [
+            quote!("ping", auto_defer = 1),
+            quote!("ping", auto_defer = "false"),
+            quote!("ping", auto_defer),
+        ] {
+            assert_eq!(error(args, PING), AUTO_DEFER_VALUE);
+        }
+        assert!(
+            expand(
+                quote!("ping", description = "d", auto_defer = true),
+                item(PING)
+            )
+            .is_ok()
         );
     }
 

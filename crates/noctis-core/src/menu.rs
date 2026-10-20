@@ -20,7 +20,7 @@ use crate::handler::{HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, empty_resolved};
 use crate::responder::{
-    Command, CommandResponder, Ephemerality, IntoResponse, NoModal, Responder, Shared,
+    Command, CommandResponder, DeferMode, Ephemerality, IntoResponse, Responder, Shared,
 };
 
 /// Why a context-menu interaction did not reach its handler.
@@ -86,8 +86,9 @@ pub(crate) enum Target {
     Message(ResolvedMessage),
 }
 
-/// The erased handler call.
-type ErasedMenu = dyn Fn(CommandCtx, Target, CommandResponder) -> HandlerFuture + Send + Sync;
+/// The erased handler call: the handler builds its own responder (of its
+/// defer mode) over the shared state.
+type ErasedMenu = dyn Fn(CommandCtx, Target, Arc<Shared>) -> HandlerFuture + Send + Sync;
 
 /// One context-menu command handler, as `#[user_command]` or
 /// `#[message_command]` builds it; add it to a [`Module`](crate::Module).
@@ -104,26 +105,28 @@ pub struct ContextMenuHandler {
     kind: MenuKind,
     metadata: CommandMetadata,
     ephemerality: Ephemerality,
+    auto_defer: bool,
     call: Arc<ErasedMenu>,
 }
 
 impl ContextMenuHandler {
     /// A `USER` command handler; what `#[user_command]` expands to.
     #[doc(hidden)]
-    pub fn __new_user<F, Fut, R>(
+    pub fn __new_user<D, F, Fut, R>(
         name: &'static str,
         menu_name: &'static str,
         metadata: CommandMetadata,
         f: F,
     ) -> Self
     where
-        F: Fn(CommandCtx, ResolvedUser, CommandResponder) -> Fut + Send + Sync + 'static,
+        D: DeferMode,
+        F: Fn(CommandCtx, ResolvedUser, CommandResponder<D>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
         R: IntoResponse<Command>,
     {
-        let call = move |ctx: CommandCtx, target: Target, r: CommandResponder| -> HandlerFuture {
+        let call = move |ctx: CommandCtx, target: Target, shared: Arc<Shared>| -> HandlerFuture {
             match target {
-                Target::User(user) => boxed::<NoModal, _, _>(f(ctx, user, r)),
+                Target::User(user) => boxed::<_, _>(f(ctx, user, Responder::new(shared))),
                 Target::Message(_) => wrong_kind(MenuKind::User, MenuKind::Message),
             }
         };
@@ -133,26 +136,28 @@ impl ContextMenuHandler {
             kind: MenuKind::User,
             metadata,
             ephemerality: Ephemerality::Public,
+            auto_defer: D::AUTO_DEFER,
             call: Arc::new(call),
         }
     }
 
     /// A `MESSAGE` command handler; what `#[message_command]` expands to.
     #[doc(hidden)]
-    pub fn __new_message<F, Fut, R>(
+    pub fn __new_message<D, F, Fut, R>(
         name: &'static str,
         menu_name: &'static str,
         metadata: CommandMetadata,
         f: F,
     ) -> Self
     where
-        F: Fn(CommandCtx, ResolvedMessage, CommandResponder) -> Fut + Send + Sync + 'static,
+        D: DeferMode,
+        F: Fn(CommandCtx, ResolvedMessage, CommandResponder<D>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
         R: IntoResponse<Command>,
     {
-        let call = move |ctx: CommandCtx, target: Target, r: CommandResponder| -> HandlerFuture {
+        let call = move |ctx: CommandCtx, target: Target, shared: Arc<Shared>| -> HandlerFuture {
             match target {
-                Target::Message(message) => boxed::<NoModal, _, _>(f(ctx, message, r)),
+                Target::Message(message) => boxed::<_, _>(f(ctx, message, Responder::new(shared))),
                 Target::User(_) => wrong_kind(MenuKind::Message, MenuKind::User),
             }
         };
@@ -162,6 +167,7 @@ impl ContextMenuHandler {
             kind: MenuKind::Message,
             metadata,
             ephemerality: Ephemerality::Public,
+            auto_defer: D::AUTO_DEFER,
             call: Arc::new(call),
         }
     }
@@ -187,12 +193,21 @@ impl ContextMenuHandler {
     }
 
     /// The declared ephemerality: [`Ephemerality::Ephemeral`] with
-    /// `ephemeral` in the attribute, else [`Ephemerality::Public`] (INT-10).
+    /// `response = ephemeral` in the attribute, else
+    /// [`Ephemerality::Public`] (INT-10).
     pub fn ephemerality(&self) -> Ephemerality {
         self.ephemerality
     }
 
-    /// Replaces the ephemerality; what the macros append for `ephemeral`.
+    /// Whether the pipeline auto-defers the command (INT-01): `false` when
+    /// the attribute declares `auto_defer = false`, whose handler takes
+    /// `CommandResponder<Manual>` (INT-05).
+    pub fn auto_defer(&self) -> bool {
+        self.auto_defer
+    }
+
+    /// Replaces the ephemerality; what the macros append for
+    /// `response = ephemeral`.
     #[doc(hidden)]
     #[must_use]
     pub fn __with_ephemerality(self, ephemerality: Ephemerality) -> Self {
@@ -209,7 +224,7 @@ impl ContextMenuHandler {
         target: Target,
         shared: Arc<Shared>,
     ) -> HandlerFuture {
-        (self.call)(ctx, target, Responder::new(shared))
+        (self.call)(ctx, target, shared)
     }
 }
 
@@ -220,6 +235,7 @@ impl fmt::Debug for ContextMenuHandler {
             .field("menu_name", &self.menu_name)
             .field("kind", &self.kind)
             .field("ephemerality", &self.ephemerality)
+            .field("auto_defer", &self.auto_defer)
             .field("metadata", &self.metadata)
             .finish_non_exhaustive()
     }
@@ -705,8 +721,9 @@ mod tests {
         assert_eq!(h.kind(), MenuKind::Message);
         assert_eq!(h.metadata(), &CommandMetadata::new());
         let debug = format!("{h:?}");
-        assert!(debug.starts_with("ContextMenuHandler { name: \"m::quote\", menu_name: \"Quote\", kind: Message, ephemerality: Public, metadata: CommandMetadata {"), "{debug}");
+        assert!(debug.starts_with("ContextMenuHandler { name: \"m::quote\", menu_name: \"Quote\", kind: Message, ephemerality: Public, auto_defer: true, metadata: CommandMetadata {"), "{debug}");
         assert_eq!(h.ephemerality(), Ephemerality::Public);
+        assert!(h.auto_defer());
         let h = h.__with_ephemerality(Ephemerality::Ephemeral);
         assert_eq!(h.ephemerality(), Ephemerality::Ephemeral);
         let module = crate::Module::new("m")

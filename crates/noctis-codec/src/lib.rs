@@ -29,15 +29,14 @@
 //!
 //! # Layout
 //!
-//! A `custom_id` is `F route ":" [S] [E] [N] body [T]`, ASCII only (AD-5):
+//! A `custom_id` is `F route ":" [S] [N] body [T]`, ASCII only (AD-5):
 //!
 //! | Section | Width | Content |
 //! |---|---|---|
-//! | `F` | [`FMT_LEN`] | base62 digit of `16 * generation + flags`; flags [`Flags::S`] = 1, [`Flags::E`] = 2, [`Flags::N`] = 4, [`Flags::T`] = 8; generation 0 |
+//! | `F` | [`FMT_LEN`] | base62 digit of `16 * generation + flags`; flags [`Flags::S`] = 1, [`Flags::N`] = 4, [`Flags::T`] = 8 (bit 2 is reserved and decodes as [`CodecError::ReservedFlag`]); generation 0 |
 //! | route | 1..=24 | [`RouteId`]: `[a-z0-9._-]`, `_`-prefixed ids reserved |
 //! | `:` | [`SEP_LEN`] | separator |
 //! | `S` | [`SCHEMA_LEN`] | schema version 1..=61, absent for schema 0 |
-//! | `E` | [`VIEW_ENV_LEN`] | [`ViewEnvelope`]: action, tab, page (2 digits), state version |
 //! | `N` | [`NONCE_LEN`] | [`SelectNonce`] |
 //! | body | | inline fields joined by `,`, or `~` ([`REF_MARKER_LEN`]) + a [`REF_LEN`]-character Ref |
 //! | `T` | [`TAG_LEN`] | [`Tag`] over every preceding character; inline bodies of signed Routes only |
@@ -55,7 +54,7 @@
 //!
 //! - [`DecodeError::Forged`]: a different route, or a signed Route's
 //!   inline id whose tag is missing or does not verify.
-//! - [`DecodeError::Stale`]: a different schema, body kind or `E`/`N`/`T`
+//! - [`DecodeError::Stale`]: a different schema, body kind or `N`/`T`
 //!   flags, because the Route changed since the id was sent (FR-60).
 //! - [`DecodeError::Malformed`]: a phase-1 error, or an inline body that is
 //!   not the Payload's encoding.
@@ -78,7 +77,7 @@
 //! ```
 //!
 //! where `signed` is every character before `T` (no prefix, no domain
-//! string), so the tag binds `F`, the route, `S`, `E`, `N` and the body. Ref
+//! string), so the tag binds `F`, the route, `S`, `N` and the body. Ref
 //! bodies are never tagged.
 //!
 //! - [`PayloadKey`] is the 32-byte key, parsed from 64 hex digits
@@ -114,11 +113,11 @@
 //!    route, schema, payload, TTL and one-shot flag (set through
 //!    [`Parts::with_ref_policy`] and [`RefPolicy`]).
 //! 2. Core mints a [`Ref`], stores [`PendingRef::record`] under it, and
-//!    calls [`finish`], which writes `F route ":" [S] [E] [N] "~" ref`, at
-//!    most [`MAX_REF_ID_LEN`] (46) characters and never tagged.
+//!    calls [`finish`], which writes `F route ":" [S] [N] "~" ref`, at
+//!    most [`MAX_REF_ID_LEN`] (41) characters and never tagged.
 //!
 //! The stored [`RefRecord`] is `F route ":" [S] body` in the id's grammar,
-//! with no length cap and no `E`, `N` or `T`. Decoding a by-Ref id gives
+//! with no length cap and no `N` or `T`. Decoding a by-Ref id gives
 //! [`PayloadSource::Ref`]; after resolving the Ref, [`decode_record`]
 //! checks the record against the Route:
 //!
@@ -174,17 +173,17 @@ pub use derive::{
 };
 pub use encoded::{EncodedId, MAX_REF_ID_LEN, PendingRef, encode_id, finish};
 pub use error::{
-    CodecError, DecodeError, EncodeError, EnvelopeError, FieldError, ForgedReason, KeyError,
-    RefError, Section, StaleReason,
+    CodecError, DecodeError, EncodeError, FieldError, ForgedReason, KeyError, RefError, Section,
+    StaleReason,
 };
 pub use field::{Field, FieldDecode};
 pub use key::{PayloadKey, PayloadKeys};
 pub use layout::{
     Decoded, FMT_LEN, MAX_ID_LEN, NONCE_LEN, Parts, PayloadSource, REF_LEN, REF_MARKER_LEN,
-    RawBody, RefPolicy, SCHEMA_LEN, SEP_LEN, TAG_LEN, VIEW_ENV_LEN, decode, decode_route,
-    decode_route_verified, encode,
+    RawBody, RefPolicy, SCHEMA_LEN, SEP_LEN, TAG_LEN, decode, decode_route, decode_route_verified,
+    encode,
 };
-pub use parts::{Flags, SelectNonce, Sign, Tag, Verify, ViewEnvelope};
+pub use parts::{Flags, SelectNonce, Sign, Tag, Verify};
 pub use record::{RefRecord, decode_record};
 pub use refs::Ref;
 pub use route::{

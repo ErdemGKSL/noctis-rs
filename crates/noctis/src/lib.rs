@@ -56,7 +56,7 @@
 //!
 //! pub struct ItemMarker;
 //!
-//! /// `shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)`
+//! /// `shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)`
 //! #[derive(Route, Debug, PartialEq)]
 //! #[route("shop.buy")]
 //! struct BuyButton {
@@ -76,7 +76,7 @@
 //! }
 //!
 //! #[derive(Route)]
-//! #[route("shop.size", schema = 1, view)]
+//! #[route("shop.size", schema = 1, select)]
 //! struct SizePicker {
 //!     size: Size,
 //! }
@@ -85,8 +85,8 @@
 //!
 //! `#[route("id", args…)]` takes the route id (1 to 24 characters of
 //! `[a-z0-9._-]`, not starting with `_`) and, in any order, the codec
-//! arguments `by_ref`, `overflow = spill`, `schema = n` (1..=61), `view`,
-//! `select` and `signed`. Each derived Route also gets a
+//! arguments `by_ref`, `overflow = spill`, `schema = n` (1..=61), `select`
+//! and `signed`. Each derived Route also gets a
 //! `__noctis_route_width_<Name>` test that prints its width breakdown
 //! (`cargo test -- --nocapture noctis_route_width`).
 //!
@@ -321,9 +321,9 @@
 //! what it returned: a message is the reply, or an edit of the original
 //! once the handler has deferred or replied (INT-12). A handler that needs
 //! several messages takes a [`CommandResponder`], a typestate whose
-//! `reply` / `defer` consume it into an acknowledged responder offering
-//! only `edit_original`, `followup` and `delete_original` (INT-03, INT-04,
-//! INT-08, INT-10). A failure or a panic shows the user a short localized
+//! `reply` / `reply_as` / `defer_reply` / `defer_reply_as` consume it into
+//! an acknowledged responder offering only `edit_reply`, `fetch_reply`,
+//! `follow_up` and `delete_reply` (INT-03, INT-04, INT-08, INT-10). A failure or a panic shows the user a short localized
 //! ephemeral notice, then goes to the `Command` Error Sink (see "Errors
 //! shown to users").
 //! [`EventCtx::dispatcher`](crate::events::EventCtx::dispatcher) gives the
@@ -338,9 +338,9 @@
 //!
 //! #[command("ping", description = "Check that the bot answers")]
 //! async fn ping(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-//!     let acked = r.defer(Ephemerality::Public).await?;
+//!     let acked = r.defer_reply().await?;
 //!     let text = format!("Pong ({})", ctx.response_locale());
-//!     acked.edit_original(Components::new().push(TextDisplay::new(text))).await?;
+//!     acked.edit_reply(Components::new().push(TextDisplay::new(text))).await?;
 //!     Ok(acked.done())
 //! }
 //!
@@ -454,15 +454,15 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, Acked, App, AppBuilder, AutocompleteChoice, AutocompleteCtx,
+    AckDeadlineMissed, Acked, App, AppBuilder, AutoDefer, AutocompleteChoice, AutocompleteCtx,
     AutocompleteError, AutocompleteHandler, AutocompleteValue, BaseMeta, BuildError,
-    BuildViolation, Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation,
-    CommandMetadata, CommandOption, CommandPath, CommandResponder, ContextMenuHandler, Descriptor,
-    DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
-    Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
-    HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoResponse,
-    InvalidOption, LogSink, MenuKind, MenuTargetError, ModalMarker, Module, NoModal, OpensModal,
-    OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending,
+    BuildViolation, CanShowModal, Command, CommandCtx, CommandHandler, CommandInput,
+    CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder,
+    ContextMenuHandler, DeferMode, Descriptor, DispatchError, Dispatcher, EnvError, Ephemerality,
+    Error, ErrorOrigin, ErrorReport, ErrorSink, Focused, FollowupHandle, GatewayUrlError,
+    HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
+    InteractionContext, IntoResponse, InvalidOption, LogSink, Manual, MenuKind, MenuTargetError,
+    Module, OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending,
     Permissions, Plugin, ReportKind, Resource, ResourceConflict, Responded, Responder,
     ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State, Token,
     TokenError, UnknownCommandPath, Visibility,
@@ -762,10 +762,10 @@ pub mod observe {
 ///     Ok(Components::new().push(TextDisplay::new(text)))
 /// }
 ///
-/// #[command("ping", description = "Check that the bot answers", ephemeral)]
+/// #[command("ping", description = "Check that the bot answers", response = ephemeral)]
 /// async fn ping(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
 ///     let acked = r.reply(Components::new().push(TextDisplay::new("Pong!"))).await?;
-///     acked.followup(Components::new().push(TextDisplay::new("Still here.")), Visibility::Public).await?;
+///     acked.follow_up(Components::new().push(TextDisplay::new("Still here.")), Visibility::Public).await?;
 ///     Ok(acked.done())
 /// }
 ///
@@ -785,16 +785,20 @@ pub mod observe {
 /// - `description = "…"`: the description, 1 to 100 characters, required.
 ///   Doc comments stay rustdoc and never become it.
 /// - `max_expansions = n`: the pattern's expansion cap (default 25).
-/// - `ephemeral` (no value): every response of the Command is visible only
-///   to the invoking user; [`CommandHandler::ephemerality`] reads it. It is
-///   fixed (INT-10): `reply` and a returned message use it, `defer` and
-///   `followup` take theirs explicitly and no edit changes it.
-/// - `opens_modal` (no value): the handler may open a modal as its first
-///   response. It must take `r: CommandResponder<`[`OpensModal`]`>`, the
-///   only responder with `modal(..)`, and no auto-defer is armed for it
-///   (a modal must be the first response); [`CommandHandler::opens_modal`]
-///   reads it. A mismatch is a compile error citing `[INT-05]`: the flag
-///   without that responder, that responder without the flag, or the flag
+/// - `response = public | ephemeral` (default `public`): who sees the
+///   Command's reply; [`CommandHandler::ephemerality`] reads it. The
+///   auto-defer, `reply`, `defer_reply` and a returned message use it;
+///   `reply_as` and `defer_reply_as` take one explicitly, `follow_up` takes
+///   its own [`Visibility`], and no edit changes it once the reply is sent
+///   (INT-10). `response = update` is an `[INT-04]` compile error: only
+///   components update their message.
+/// - `auto_defer = true | false` (default `true`): with `false` no
+///   auto-defer is armed, so the handler answers within 3 s itself (a
+///   missed deadline is logged), and `show_modal` becomes available. The
+///   handler must then take `r: CommandResponder<`[`Manual`]`>`;
+///   [`CommandHandler::auto_defer`] reads it. A mismatch is a compile error
+///   citing `[INT-05]`: `auto_defer = false` without that responder, that
+///   responder without `auto_defer = false`, or `auto_defer = false`
 ///   without any responder parameter.
 ///
 /// Every check of [`rules::command::validate_pattern_spacing`],
@@ -823,7 +827,7 @@ pub mod observe {
 /// returns `HandlerResult<R>` with `R:` [`IntoResponse`]: a
 /// [`V2Message`](crate::ui::V2Message), [`Components`](crate::ui::Components)
 /// or [`LegacyMessage`](crate::ui::LegacyMessage) is sent as the reply
-/// (callback type 4) or, after `defer`/`reply`, as an edit of the original
+/// (callback type 4) or, after `defer_reply`/`reply`, as an edit of the reply
 /// (INT-12); the [`Responded`] from `done()` means the handler answered
 /// itself. `HandlerResult<()>` does not compile: a Command must answer.
 /// Every V2 message gets `IS_COMPONENTS_V2` and passes the Limits validator
@@ -834,8 +838,9 @@ pub mod observe {
 /// A handler that has not answered [`AppBuilder::ack_deadline`] after the
 /// interaction arrived (default 2000 ms, 0-2500 ms) is acknowledged by the
 /// auto-defer: one type-5 callback carrying only the declared `EPHEMERAL`
-/// flag (INT-01). Its later `reply` or returned message then edits the
-/// original, so at most one callback is ever sent (INT-03). After 15
+/// flag (INT-01), unless it is declared `auto_defer = false`. Its later
+/// `reply` or returned message then edits the reply, so at most one
+/// callback is ever sent (INT-03). After 15
 /// minutes the interaction token is expired: edits and deletes of public
 /// messages use the bot token, everything else is
 /// [`ResponderError::TokenExpired`] (INT-02). A user-install-only
@@ -847,12 +852,12 @@ pub mod observe {
 /// use noctis::ui::Modal;
 ///
 /// # fn feedback_form() -> Modal { unimplemented!() }
-/// #[command("feedback", description = "Send feedback", opens_modal)]
-/// async fn feedback(_ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
-///     Ok(r.modal(feedback_form()).await?.done())
+/// #[command("feedback", description = "Send feedback", auto_defer = false)]
+/// async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
+///     Ok(r.show_modal(feedback_form()).await?.done())
 /// }
 ///
-/// assert!(feedback().opens_modal());
+/// assert!(!feedback().auto_defer());
 /// ```
 ///
 /// ```compile_fail,E0277
@@ -914,8 +919,10 @@ pub use noctis_macros::command;
 /// The first argument is the menu name, a string literal of 1 to 32
 /// characters (UTF-16 counted; mixed case, spaces, apostrophes and emoji are
 /// fine, CTX-01). Then the metadata arguments of [`command`](macro@command)
-/// (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`) and
-/// `ephemeral`. A context-menu command has no description and no options
+/// (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`),
+/// `response` and `auto_defer` (with `auto_defer = false` the handler takes
+/// `CommandResponder<Manual>`, and [`ContextMenuHandler::auto_defer`] reads
+/// it). A context-menu command has no description and no options
 /// (`[CTX-02]` otherwise); its type comes from the macro (CTX-03). It
 /// answers like a [`command`](macro@command): `R` is an [`IntoResponse`]
 /// value, and an optional [`CommandResponder`] comes after the target.
@@ -933,7 +940,7 @@ pub use noctis_macros::command;
 /// use noctis::ui::{Components, LegacyMessage, ResolvedMessage, ResolvedUser, TextDisplay};
 /// use noctis::{CommandMetadata, MenuKind};
 ///
-/// #[user_command("Show profile", contexts = [Guild], ephemeral)]
+/// #[user_command("Show profile", contexts = [Guild], response = ephemeral)]
 /// async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
 ///     assert_eq!(ctx.command_path(), "Show profile");
 ///     Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
@@ -1148,8 +1155,8 @@ pub mod codec {
     //! - [`check`]: [`check::assert_round_trip`] and
     //!   [`check::assert_worst_case`] for the tests of custom fields.
     //! - [`Route`], [`RouteId`], [`RouteShape`] and [`BodyKind`]: a Route's
-    //!   id, codec shape (inline, by Ref or spill, with optional View envelope,
-    //!   select nonce and integrity tag), schema and Payload; usually derived
+    //!   id, codec shape (inline, by Ref or spill, with an optional select
+    //!   nonce and integrity tag), schema and Payload; usually derived
     //!   with `#[derive(Route)]` from the [`prelude`](crate::prelude).
     //! - [`SelectRoute`]: a Route declared `select` (`#[route("…", select)]`
     //!   implements it), the only kind a message select is built from.
@@ -1344,7 +1351,7 @@ pub mod prelude {
     //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands;
     //!   [`user_command`](macro@user_command) and
     //!   [`message_command`](macro@message_command): context-menu commands;
-    //!   [`CommandResponder`], [`OpensModal`], [`Responded`],
+    //!   [`CommandResponder`], [`Manual`], [`Responded`],
     //!   [`IntoResponse`], [`Ephemerality`] and [`Visibility`]: how they
     //!   answer.
     //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
@@ -1359,7 +1366,7 @@ pub mod prelude {
     pub use noctis_core::{
         App, AppBuilder, AutocompleteChoice, AutocompleteCtx, CommandCtx, CommandOption,
         CommandResponder, Ephemerality, ErrorOrigin, ErrorSink, HandlerError, HandlerResult,
-        IntoResponse, Module, OpensModal, Options, Partial, Responded, State, Visibility,
+        IntoResponse, Manual, Module, Options, Partial, Responded, State, Visibility,
     };
     pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
     pub use noctis_macros::{autocomplete, command, event, message_command, user_command};
@@ -1831,8 +1838,8 @@ pub mod ui {
     //! The Route needs a handler (`#[handler]`), or the call fails with
     //! `[CID-04]`; a select also needs a Route declared `select`
     //! ([`SelectRoute`](crate::codec::SelectRoute)). `custom_id`s that need a
-    //! View envelope, select nonce, signature or Ref are finalized by the
-    //! Responder before sending.
+    //! select nonce, signature or Ref are finalized by the Responder before
+    //! sending.
     //!
     //! ```
     //! use noctis::prelude::*;

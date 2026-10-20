@@ -1,29 +1,76 @@
-error[E0599]: the method `modal` exists for struct `Responder<noctis::Command>`, but its trait bounds were not satisfied
+error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
  --> tests/ui/int/INT-04_command_modal.rs:5:10
   |
-5 |     Ok(r.modal(()).await?.done()) // [INT-04]
-  |          ^^^^^ this is an associated function, not a method
+5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
+  |          ^^^^^^^^^^ this handler auto-defers
   |
- ::: $WORKSPACE/crates/noctis-core/src/responder.rs
+  = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+help: the trait `CanShowModal` is implemented for `Manual`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
   |
-  | pub struct Responder<K: ResponderKind, S: ResponderState = Pending> {
-  | ------------------------------------------------------------------- doesn't satisfy `Responder<noctis::Command>: noctis::codec::Route` or `_: RouteComponents`
+  | impl CanShowModal for Manual {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
   |
-  = note: found the following associated functions; to be used as methods, functions must have a `self` parameter
-note: the candidate is defined in the trait `noctis::prelude::ModalForm`
- --> $WORKSPACE/crates/noctis-ui/src/modal/form.rs
+  |     pub async fn show_modal(
+  |                  ---------- required by a bound in this associated function
+...
+  |         D: CanShowModal,
+  |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+
+error[E0308]: mismatched types
+ --> tests/ui/int/INT-04_command_modal.rs:5:21
   |
-  |     fn modal(route: Self::Route) -> Modal;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: the following trait bounds were not satisfied:
-          `Responder<noctis::Command>: noctis::codec::Route`
-          which is required by `Responder<noctis::Command>: noctis::prelude::RouteComponents`
-          `&Responder<noctis::Command>: noctis::codec::Route`
-          which is required by `&Responder<noctis::Command>: noctis::prelude::RouteComponents`
-          `&mut Responder<noctis::Command>: noctis::codec::Route`
-          which is required by `&mut Responder<noctis::Command>: noctis::prelude::RouteComponents`
-help: use associated function syntax instead
+5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
+  |          ---------- ^^ expected `Modal`, found `()`
+  |          |
+  |          arguments to this method are incorrect
   |
-5 -     Ok(r.modal(()).await?.done()) // [INT-04]
-5 +     Ok(Responder<noctis::Command>::modal(()).await?.done()) // [INT-04]
+note: method defined here
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
   |
+  |     pub async fn show_modal(
+  |                  ^^^^^^^^^^
+
+error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
+ --> tests/ui/int/INT-04_command_modal.rs:5:8
+  |
+5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
+  |        ^^^^^^^^^^^^^^^^ this handler auto-defers
+  |
+  = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+help: the trait `CanShowModal` is implemented for `Manual`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  | impl CanShowModal for Manual {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  |     pub async fn show_modal(
+  |                  ---------- required by a bound in this associated function
+...
+  |         D: CanShowModal,
+  |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+
+error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
+ --> tests/ui/int/INT-04_command_modal.rs:5:25
+  |
+5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
+  |                         ^^^^^ this handler auto-defers
+  |
+  = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+help: the trait `CanShowModal` is implemented for `Manual`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  | impl CanShowModal for Manual {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
+ --> $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  |     pub async fn show_modal(
+  |                  ---------- required by a bound in this associated function
+...
+  |         D: CanShowModal,
+  |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`

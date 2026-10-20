@@ -29,8 +29,6 @@ pub(crate) struct RouteArgs {
     pub(crate) body: Body,
     /// The schema version, `0` when absent.
     pub(crate) schema: u8,
-    /// `view`.
-    pub(crate) view: bool,
     /// `select`.
     pub(crate) select: bool,
     /// `signed`.
@@ -38,16 +36,10 @@ pub(crate) struct RouteArgs {
 }
 
 /// The runtime arguments of AD-6 that later releases add.
-const RUNTIME_ARGS: [&str; 6] = [
-    "ttl",
-    "one_shot",
-    "owner",
-    "permissions",
-    "guard",
-    "opens_modal",
-];
+const RUNTIME_ARGS: [&str; 5] = ["ttl", "one_shot", "owner", "permissions", "guard"];
 
-const ARGS_HELP: &str = "the codec arguments are `by_ref`, `overflow = spill`, `schema = n`, `view`, `select` and `signed`";
+const ARGS_HELP: &str =
+    "the codec arguments are `by_ref`, `overflow = spill`, `schema = n`, `select` and `signed`";
 
 const USAGE_HELP: &str = "write #[route(\"shop.buy\")], optionally followed by codec arguments such as #[route(\"shop.buy\", schema = 1)]";
 
@@ -128,7 +120,6 @@ struct Seen {
     by_ref: Option<Ident>,
     spill: Option<TokenStream>,
     schema: Option<u8>,
-    view: bool,
     select: bool,
     signed: Option<Ident>,
     names: Vec<String>,
@@ -172,7 +163,6 @@ fn parse_list(attr: &Attribute, tokens: TokenStream) -> syn::Result<RouteArgs> {
         id: id.unwrap_or_default(),
         body,
         schema: seen.schema.unwrap_or(0),
-        view: seen.view,
         select: seen.select,
         signed: seen.signed.is_some(),
     })
@@ -257,7 +247,7 @@ fn parse_arg(
         ));
         return;
     }
-    if !["by_ref", "overflow", "schema", "view", "select", "signed"].contains(&key.as_str()) {
+    if !["by_ref", "overflow", "schema", "select", "signed"].contains(&key.as_str()) {
         errors.push(cid_03(
             name,
             format!("unknown #[route] argument `{key}`"),
@@ -275,13 +265,12 @@ fn parse_arg(
     }
     seen.names.push(key.clone());
     match (key.as_str(), value) {
-        ("by_ref" | "view" | "select" | "signed", Some(_)) => errors.push(cid_03(
+        ("by_ref" | "select" | "signed", Some(_)) => errors.push(cid_03(
             stream(segment),
             format!("`{key}` is a flag and takes no value"),
             format!("write `{key}` alone"),
         )),
         ("by_ref", None) => seen.by_ref = Some(name.clone()),
-        ("view", None) => seen.view = true,
         ("select", None) => seen.select = true,
         ("signed", None) => seen.signed = Some(name.clone()),
         ("overflow", value) => parse_overflow(name, value, segment, seen, errors),
@@ -380,7 +369,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         Body::ByRef => quote!(BY_REF),
         Body::Spill => quote!(SPILL),
     };
-    let view = args.view.then(|| quote!(.view()));
     let select = args.select.then(|| quote!(.select()));
     let signed = args.signed.then(|| quote!(.signed()));
     let select_impl = args.select.then(|| {
@@ -399,7 +387,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         #[automatically_derived]
         impl #codec::Route for #ident {
             const ID: #codec::RouteId = #codec::RouteId::new(#id);
-            const SHAPE: #codec::RouteShape = #codec::RouteShape::#base #view #select #signed;
+            const SHAPE: #codec::RouteShape = #codec::RouteShape::#base #select #signed;
             const SCHEMA: ::core::primitive::u8 = #schema;
             type Payload = Self;
         }
@@ -446,7 +434,6 @@ mod tests {
             id: id.to_owned(),
             body: Body::Inline,
             schema: 0,
-            view: false,
             select: false,
             signed: false,
         }
@@ -526,15 +513,27 @@ mod tests {
         ),
         (
             "#[route(\"a\", opens_modal)] struct R;",
-            "[CID-03] `opens_modal` is a runtime argument",
+            "[CID-03] unknown #[route] argument `opens_modal`",
         ),
         (
-            "#[route(\"a\", view, view)] struct R;",
-            "[CID-03] #[route] argument `view` is given twice",
+            "#[route(\"a\", view)] struct R;",
+            "[CID-03] unknown #[route] argument `view`",
         ),
         (
             "#[route(\"a\", view = true)] struct R;",
-            "[CID-03] `view` is a flag and takes no value",
+            "[CID-03] unknown #[route] argument `view`",
+        ),
+        (
+            "#[route(\"a\", vïew)] struct R;",
+            "[CID-03] unknown #[route] argument `vïew`",
+        ),
+        (
+            "#[route(\"a\", select, select)] struct R;",
+            "[CID-03] #[route] argument `select` is given twice",
+        ),
+        (
+            "#[route(\"a\", select = true)] struct R;",
+            "[CID-03] `select` is a flag and takes no value",
         ),
         (
             "#[route(\"a\", by_ref())] struct R;",
@@ -628,14 +627,13 @@ mod tests {
         );
         assert_eq!(
             parse(&parse_quote!(
-                #[route("a", signed, schema = 61, select, view, overflow = spill)]
+                #[route("a", signed, schema = 61, select, overflow = spill)]
                 struct R;
             )),
             Ok(RouteArgs {
                 id: "a".to_owned(),
                 body: Body::Spill,
                 schema: 61,
-                view: true,
                 select: true,
                 signed: true,
             })
@@ -656,6 +654,12 @@ mod tests {
             assert!(message.starts_with(start), "{start}\n=> {message}");
             assert!(message.contains("\n  = help: "), "{message}");
         }
+
+        let input: DeriveInput = syn::parse_str("#[route(\"a\", view)] struct R;").unwrap();
+        assert_eq!(
+            parse(&input).expect_err("view is withdrawn"),
+            "[CID-03] unknown #[route] argument `view`\n  = help: the codec arguments are `by_ref`, `overflow = spill`, `schema = n`, `select` and `signed`"
+        );
 
         let m = parse(&parse_quote!(
             #[route("a", overflow = error)]

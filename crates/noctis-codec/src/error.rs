@@ -86,8 +86,6 @@ impl FieldError {
 pub enum Section {
     /// The 1-character schema version `S`.
     Schema,
-    /// The 5-character View envelope `E`.
-    Envelope,
     /// The 2-character select nonce `N`.
     Nonce,
     /// The 6-character integrity tag `T`.
@@ -98,7 +96,6 @@ impl core::fmt::Display for Section {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
             Self::Schema => "schema",
-            Self::Envelope => "view envelope",
             Self::Nonce => "select nonce",
             Self::Tag => "tag",
         })
@@ -141,6 +138,9 @@ pub enum CodecError {
         /// The generation (`F / 16`).
         generation: u8,
     },
+    /// The format digit sets the reserved flag bit 2.
+    #[error("format digit sets the reserved flag 2")]
+    ReservedFlag,
     /// The route is not followed by `:`.
     #[error("missing ':' after the route")]
     MissingSeparator,
@@ -193,7 +193,7 @@ pub enum CodecError {
         error: FieldError,
     },
     /// A [`RefRecord`](crate::RefRecord) announces a section only ids carry
-    /// (`E`, `N` or `T`); the first such section is named.
+    /// (`N` or `T`); the first such section is named.
     #[error("ref record carries a {section} section")]
     UnexpectedSection {
         /// The first announced section a record never carries.
@@ -220,12 +220,12 @@ pub enum StaleReason {
         /// The Route's body kind.
         expected: BodyKind,
     },
-    /// The view, select or tag flags differ.
+    /// The select or tag flags differ.
     #[error("flags {found:?}, route expects {expected:?}")]
     Flags {
-        /// The Route's `E`/`N`/`T` flags for this body.
+        /// The Route's `N`/`T` flags for this body.
         expected: Flags,
-        /// The id's `E`/`N`/`T` flags.
+        /// The id's `N`/`T` flags.
         found: Flags,
     },
 }
@@ -274,12 +274,6 @@ pub enum EncodeError {
         /// The Route's schema.
         schema: u8,
     },
-    /// A `view` Route was encoded without a View envelope.
-    #[error("view route needs a view envelope")]
-    MissingEnvelope,
-    /// A View envelope was given for a Route that is not `view`.
-    #[error("route is not a view route")]
-    UnexpectedEnvelope,
     /// A `select` Route was encoded without a select nonce.
     #[error("select route needs a select nonce")]
     MissingNonce,
@@ -354,24 +348,6 @@ pub enum KeyError {
     },
 }
 
-/// Why a View envelope could not be built.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
-pub enum EnvelopeError {
-    /// The action is neither `_` nor an ASCII letter or digit.
-    #[error("invalid view action {0:?}")]
-    InvalidAction(char),
-    /// The tab is over 61.
-    #[error("tab {0} is over 61")]
-    TabOutOfRange(u8),
-    /// The page is over 3843.
-    #[error("page {0} is over 3843")]
-    PageOutOfRange(u16),
-    /// The state version is over 61.
-    #[error("state version {0} is over 61")]
-    VersionOutOfRange(u8),
-}
-
 #[cfg(test)]
 mod tests {
     use super::{CodecError, DecodeError, FieldError};
@@ -408,6 +384,10 @@ mod tests {
         assert_eq!(
             CodecError::TooLong { len: 101 }.to_string(),
             "custom_id is 101 bytes, at most 100 allowed"
+        );
+        assert_eq!(
+            CodecError::ReservedFlag.to_string(),
+            "format digit sets the reserved flag 2"
         );
         assert_eq!(
             DecodeError::from(CodecError::Empty),

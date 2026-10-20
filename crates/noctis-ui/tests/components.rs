@@ -13,7 +13,7 @@ use std::borrow::Cow;
 use bytes::Bytes;
 use noctis_codec::{
     EncodeError, Field, FieldWriter, Parts, Payload, PayloadKey, Ref, Route, RouteId, RouteShape,
-    SelectNonce, SelectRoute, ViewEnvelope,
+    SelectNonce, SelectRoute,
 };
 use noctis_ui::{
     ActionRow, Attachment, AttachmentOrigin, AttachmentSet, Button, ButtonStyle, Components,
@@ -61,7 +61,7 @@ route!(
     SelectRoute
 );
 route!(Signed { n: u8 } = "signed", RouteShape::INLINE.signed());
-route!(Viewed { n: u8 } = "viewed", RouteShape::INLINE.view());
+route!(Tagged { n: u8 } = "tagged", RouteShape::INLINE.signed());
 route!(Stored { n: u8 } = "stored", RouteShape::BY_REF);
 route!(Spilled { text: String } = "spilled", RouteShape::SPILL);
 
@@ -474,8 +474,8 @@ fn unresolved_routes_fail_to_serialize() {
             Components::new().push(ActionRow::buttons([Signed { n: 1 }.button()])),
         ),
         (
-            "viewed",
-            Components::new().push(ActionRow::buttons([Viewed { n: 1 }.button()])),
+            "tagged",
+            Components::new().push(ActionRow::buttons([Tagged { n: 1 }.button()])),
         ),
         (
             "stored",
@@ -496,12 +496,11 @@ fn unresolved_routes_fail_to_serialize() {
 }
 
 #[test]
-fn signed_and_view_routes_resolve() {
+fn signed_routes_resolve() {
     let key = PayloadKey::from_bytes([7; 32]);
     let mut body = Components::new()
         .push(ActionRow::buttons([Signed { n: 1 }.button()]))
-        .push(ActionRow::buttons([Viewed { n: 1 }.button()]));
-    let envelope = ViewEnvelope::new('a', 0, 0, 0).expect("valid envelope");
+        .push(ActionRow::buttons([Tagged { n: 1 }.button()]));
     let mut ids = body.custom_ids_mut();
     let signed = ids.next().expect("signed id");
     assert_eq!(
@@ -509,11 +508,8 @@ fn signed_and_view_routes_resolve() {
         Err(EncodeError::MissingSigner)
     );
     assert_eq!(signed.resolve(&Parts::new().with_signer(&key)), Ok(None));
-    let viewed = ids.next().expect("view id");
-    assert_eq!(
-        viewed.resolve(&Parts::new().with_envelope(envelope)),
-        Ok(None)
-    );
+    let tagged = ids.next().expect("tagged id");
+    assert_eq!(tagged.resolve(&Parts::new().with_signer(&key)), Ok(None));
     drop(ids);
     assert!(serde_json::to_string(&body).is_ok());
 }
@@ -528,20 +524,16 @@ fn section_accessory_ids_resolve() {
         )))
         .push(Section::new(
             [TextDisplay::new("b")],
-            Viewed { n: 1 }.button(),
+            Tagged { n: 1 }.button(),
         ));
-    let envelope = ViewEnvelope::new('a', 0, 0, 0).expect("valid envelope");
     let ids: Vec<_> = body.custom_ids_mut().collect();
     assert_eq!(
         ids.iter().map(|id| id.route()).collect::<Vec<_>>(),
-        [RouteId::new("signed"), RouteId::new("viewed")]
+        [RouteId::new("signed"), RouteId::new("tagged")]
     );
-    let [signed, viewed] = <[_; 2]>::try_from(ids).expect("exactly two ids");
+    let [signed, tagged] = <[_; 2]>::try_from(ids).expect("exactly two ids");
     assert_eq!(signed.resolve(&Parts::new().with_signer(&key)), Ok(None));
-    assert_eq!(
-        viewed.resolve(&Parts::new().with_envelope(envelope)),
-        Ok(None)
-    );
+    assert_eq!(tagged.resolve(&Parts::new().with_signer(&key)), Ok(None));
     assert!(serde_json::to_string(&body).is_ok());
 }
 

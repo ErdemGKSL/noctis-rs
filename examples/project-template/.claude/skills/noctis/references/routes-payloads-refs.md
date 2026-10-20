@@ -91,11 +91,10 @@ Codec arguments (they change the `custom_id` and count toward the length proof):
 `by_ref`, `overflow = spill`, `signed`, `schema = n`, and (this release only) `select`:
 from Story 6.11 every select kind carries the nonce and the bare `select` is withdrawn.
 These work today.
-(`view` is **withdrawn**: never write it. It still parses in this release and is
-removed by Story 6.10, after which it is a CID-03 error. Tabs, pages and steps are
-ordinary Payload fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length): `response`, `auto_defer`, `ttl`, `one_shot`,
-`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: this release **rejects** them (and the
-withdrawn `opens_modal`, which Story 6.10 makes an unknown argument) with
+(There is no `view` argument: it is ``[CID-03] unknown #[route] argument `view` ``,
+whose help lists the five codec arguments. Tabs, pages and steps are ordinary Payload
+fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length): `response`, `auto_defer`, `ttl`, `one_shot`,
+`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: this release **rejects** them with
 ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not
 support yet`` (a silently ignored guard would be a security hole), and each one is
 accepted from the release that implements it. Anything else is a compile error.
@@ -310,9 +309,7 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   does not compile), `as_str()`, `is_reserved()` (starts with `_`), `Display`.
 - `RouteShape`: `INLINE`, `BY_REF`, `SPILL`, the `const` builders `select()` and
   `signed()` (`BY_REF.signed()` is a compile error in a `const`), and the getters
-  `body() -> BodyKind`, `has_select()`, `is_signed()`. The builder `view()` and the
-  getter `has_view()` belong to the withdrawn view envelope; don't use them (removed
-  by Story 6.10).
+  `body() -> BodyKind`, `has_select()`, `is_signed()`.
 - `BodyKind`: `Inline`, `ByRef`, `Spill`.
 - `trait Payload { const MAX_ENCODED_LEN: Option<usize>; fn encode_fields(&self, out: &mut FieldWriter<'_>) -> core::fmt::Result; }`
   — `MAX_ENCODED_LEN` is the worst-case body width: the fields' `MAX_LEN`s plus one
@@ -322,13 +319,13 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   automatic); `FieldReader::field::<F>()` reads the next one.
 - `CodecError` (`#[non_exhaustive]`): why an id or inline body does not decode:
   `Empty`, `TooLong { len }`, `NotAscii { index }`, `InvalidChar { index }`,
-  `Generation { generation }`, `MissingSeparator`, `EmptyRoute`,
+  `Generation { generation }`, `ReservedFlag` (the format digit sets the reserved
+  flag bit 2), `MissingSeparator`, `EmptyRoute`,
   `RouteTooLong { len }`, `Truncated { section }`, `ZeroSchema`, `TagOnRef`,
   `RefLength { len }`, `MissingField { field }`, `ExtraField { field }`,
   `Field { field, error }` (a `FieldError`), `UnexpectedSection { section }`.
 - `Section` (`#[non_exhaustive]`): the fixed-width layout sections `Schema`,
-  `Nonce`, `Tag` (and `Envelope`, of the withdrawn view envelope; removed by Story
-  6.10).
+  `Nonce`, `Tag`.
 
 `#[derive(Payload)]` implements `Payload` and `PayloadDecode` for a struct, exactly as
 `#[derive(Route)]` does, for the Payload of a hand-written `Route`. It is not a field
@@ -367,9 +364,9 @@ body   inline    field ("," field)*      or      by ref: "~" + 11 base62 Ref
 T      6 chars   integrity tag (only with `signed`, inline only)
 ```
 
-All ASCII (CID-07), so "characters" are unambiguous. (The withdrawn 5-character view
-envelope `E` still exists in this release's codec and is removed by Story 6.10; no
-Route of yours should declare it.)
+All ASCII (CID-07), so "characters" are unambiguous. The format digit's flag bit 2 is
+reserved: an id that sets it decodes as `CodecError::ReservedFlag` (a malformed id,
+never stale).
 
 ## 5. The length proof (CID-01: ≤ 100)
 
@@ -399,8 +396,6 @@ s: F 1 + route 1 + sep 1 + S 0 + N 0 + body unbounded + T 0 inline, else ref 12 
 ```
 
 (inline, `by_ref` and `overflow = spill` Routes; `body` is `Payload::MAX_ENCODED_LEN`).
-This release still prints an `E 0` term between `S` and `N`; it disappears with the
-withdrawn envelope (Story 6.10).
 Copy the line into the Route's doc comment so reviewers see the budget.
 
 Worked examples from the template:

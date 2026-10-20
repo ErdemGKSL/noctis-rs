@@ -1,16 +1,16 @@
 error[E0061]: this method takes 1 argument but 2 arguments were supplied
   --> tests/ui/int/INT-10_edit_ephemerality.rs:11:11
    |
-11 |     acked.edit_original(msg(), Ephemerality::Ephemeral).await?; // [INT-10]
-   |           ^^^^^^^^^^^^^        ----------------------- unexpected argument #2 of type `noctis::Ephemerality`
+11 |     acked.edit_reply(msg(), Ephemerality::Ephemeral).await?; // [INT-10]
+   |           ^^^^^^^^^^        ----------------------- unexpected argument #2 of type `noctis::Ephemerality`
    |
 note: method defined here
   --> $WORKSPACE/crates/noctis-core/src/responder.rs
    |
-   |     pub async fn edit_original(
-   |                  ^^^^^^^^^^^^^
+   |     pub async fn edit_reply(&self, msg: impl Into<OutgoingMessage>) -> Result<(), ResponderError> {
+   |                  ^^^^^^^^^^
 help: remove the extra argument
    |
-11 -     acked.edit_original(msg(), Ephemerality::Ephemeral).await?; // [INT-10]
-11 +     acked.edit_original(msg()).await?; // [INT-10]
+11 -     acked.edit_reply(msg(), Ephemerality::Ephemeral).await?; // [INT-10]
+11 +     acked.edit_reply(msg()).await?; // [INT-10]
    |

@@ -126,7 +126,9 @@ impl Pool {
     }
 
     /// The primary, else the most recent idle HTTP/1.1 connection that is
-    /// still open (closed ones are discarded).
+    /// ready (closed ones are discarded). An open one that is not ready yet,
+    /// such as the keeper's warm-up before its driver first ran, stays
+    /// pooled: dropping its only sender would close it unused.
     fn ready(&self) -> Option<Sender> {
         let mut state = self.lock();
         if let Some((_, sender)) = &state.primary {
@@ -135,12 +137,20 @@ impl Pool {
             }
             state.primary = None;
         }
+        let mut pending = Vec::new();
+        let mut found = None;
         while let Some(sender) = state.idle.pop() {
-            if !sender.is_closed() && sender.is_ready() {
-                return Some(Sender::H1(sender));
+            if sender.is_closed() {
+                continue;
             }
+            if sender.is_ready() {
+                found = Some(Sender::H1(sender));
+                break;
+            }
+            pending.push(sender);
         }
-        None
+        state.idle.extend(pending.into_iter().rev());
+        found
     }
 
     /// Dials one connection, counts it under `reason`, starts its task and

@@ -153,10 +153,9 @@ impl Bio {
 }
 ```
 
-This release (Story 6.6) spells it `#[command(.., opens_modal)]`, `r: CommandResponder<OpensModal>`
-and `r.modal(BioForm::modal(SaveBio { .. }))`; Story 6.10 renames the first three
-(`auto_defer = false`, `CommandResponder<Manual>`, `show_modal`) and Story 6.11 replaces
-the `BioForm::modal(..)` opener with `.build()`.
+This release spells the opener `r.show_modal(BioForm::modal(SaveBio { .. }))` on a free
+`#[command(.., auto_defer = false)]` function taking `r: CommandResponder<Manual>`; Story
+6.11 replaces the `BioForm::modal(..)` opener with `.build()`.
 
 **A button that opens a modal must be `auto_defer = false`** [planned, Story 7.8]:
 
@@ -479,10 +478,9 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   then the Text Displays to fit the CV2-04 total (one warning at `components`).
   Never a Text Input `value`, option values, keys or counts: those still fail. Strict
   mode (the default) never changes the modal.
-- `r.show_modal(modal)` on a `CommandResponder<Manual>` (this release: `r.modal(modal)` on
-  `CommandResponder<OpensModal>`) runs this validator (and fails
-  with `ResponderError::Invalid`) before any request, then sends callback type 9 (Story
-  6.6); from components it is [planned, Story 7.8].
+- `r.show_modal(modal)` on a `CommandResponder<Manual>` runs this validator (and fails
+  with `ResponderError::Invalid`) before any request, then sends callback type 9; from
+  components it is [planned, Story 7.8].
 
 ## 5. Button → modal → re-render (settings screens and step flows)
 

@@ -59,10 +59,16 @@ fn check_params(item: &ItemFn) -> syn::Result<Option<&Type>> {
 /// Expands `#[autocomplete] item`.
 pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     if !args.is_empty() {
-        return Err(syn::Error::new_spanned(
-            args,
-            "`#[autocomplete]` takes no arguments",
-        ));
+        let deferral = crate::command::segments(args.clone())
+            .iter()
+            .filter_map(|segment| crate::command::arg_name(segment))
+            .any(|name| name == "auto_defer" || name == "response");
+        let message = if deferral {
+            "[INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`"
+        } else {
+            "`#[autocomplete]` takes no arguments"
+        };
+        return Err(syn::Error::new_spanned(args, message));
     }
     let item: ItemFn = syn::parse2(item)?;
     check_shape(&item, ATTR)?;
@@ -170,6 +176,16 @@ mod tests {
             error(quote!(ephemeral), PLAIN),
             "`#[autocomplete]` takes no arguments"
         );
+        assert_eq!(
+            error(quote!(foo), PLAIN),
+            "`#[autocomplete]` takes no arguments"
+        );
+        for args in [quote!(auto_defer = false), quote!(response = ephemeral)] {
+            assert_eq!(
+                error(args, PLAIN),
+                "[INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`"
+            );
+        }
         assert_eq!(
             error(
                 TokenStream::new(),

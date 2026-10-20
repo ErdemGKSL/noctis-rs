@@ -587,6 +587,6 @@ mod tests {
             catalog.row("INT-05").and_then(|r| r.class.clone()),
             req(&[D, U])
         );
-        assert_eq!(catalog.constants.as_ref().map(Vec::len), Some(8));
+        assert_eq!(catalog.constants.as_ref().map(Vec::len), Some(7));
     }
 }

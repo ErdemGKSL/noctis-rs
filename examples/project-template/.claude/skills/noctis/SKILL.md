@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `f032a58e41b8e4fef30a58711b80a98afdd6093d4066addf134f1d309de28da3` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `76a29b7cd8e86f7cecadc18b9b29ed48f41a896ce48f65d0bbb15cd83379e0b7` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -450,12 +450,14 @@ Read only what the task touches.
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |
 
-## 8. Shipped names until Stories 6.10 and 6.11
+## 8. Shipped names until Story 6.11
 
 This skill teaches the converged API. The current release still ships the older
-authoring surface without aliases: Story 6.10 renames the Responder methods and
-replaces `opens_modal` and the bare `ephemeral` flag (the last three rows), and
-Story 6.11 converts the rest to one struct per interaction. Until then write:
+free-function authoring surface without aliases; Story 6.11 converts it to one
+struct per interaction. The Responder names (`reply`, `reply_as`, `defer_reply`,
+`defer_reply_as`, `show_modal`, `edit_reply`, `fetch_reply`, `follow_up`,
+`delete_reply`), `response = public | ephemeral` and `auto_defer = false` +
+`CommandResponder<Manual>` already ship as taught. Until Story 6.11 write:
 
 | Converged (taught above) | This release |
 | --- | --- |
@@ -466,9 +468,6 @@ Story 6.11 converts the rest to one struct per interaction. Until then write:
 | `X { .. }.build()` | `X { .. }.button()`, `.string_select(options)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()` (`RouteComponents`) |
 | `#[derive(Modal)] #[modal("id", defaults(title = ..))]` with Payload fields | `#[modal(route = R, title = "…")]` with a separate `#[derive(Route)]` submit Route, opened with `BioForm::modal(R { .. })` |
 | `Module::add::<X>()` | `Module::add(x())` (the descriptor function the macro generates) |
-| `response = public \| ephemeral` on commands | the bare `ephemeral` flag (`CommandHandler::ephemerality()`) |
-| `auto_defer = false` + `CommandResponder<Manual>` + `show_modal(m)` | `opens_modal` + `CommandResponder<OpensModal>` (`NoModal` by default; `CommandHandler::opens_modal()`) + `modal(m)` |
-| `defer_reply()` / `edit_reply` / `follow_up` / `delete_reply` | `defer(Ephemerality)` / `edit_original` / `followup` / `delete_original` |
 | `#[option(.., autocomplete)]` + `#[autocomplete(field)]` method returning `Suggestions<T>` | `#[option(autocomplete = path)]` naming a free `#[autocomplete] async fn(ctx: AutocompleteCtx[, partial: Partial<XOptions>]) -> HandlerResult<Responded>` (an `AutocompleteHandler<O>` descriptor, never `Module::add`ed) that answers `Ok(ctx.respond(choices))` with `AutocompleteChoice`s (`commands.md` §4b) |
 
 Component, modal-submit and event handlers that need Epic 7 are [planned] either way.

@@ -13,8 +13,7 @@ use noctis_codec::{
     CodecError, DecodeError, EncodeError, EncodedId, Field, FieldError, FieldReader, FieldWriter,
     ForgedReason, MAX_REF_ID_LEN, Parts, Payload, PayloadDecode, PayloadSource, PendingRef,
     RawBody, Ref, RefPolicy, RefRecord, Route, RouteShape, Section, SelectNonce, StaleReason,
-    ViewEnvelope, decode, decode_record, decode_route, decode_route_verified, encode, encode_id,
-    finish,
+    decode, decode_record, decode_route, decode_route_verified, encode, encode_id, finish,
 };
 use proptest::prelude::*;
 
@@ -173,7 +172,6 @@ fn encode_id_matrix() {
     assert_eq!(&s.payload()[..], b"47,3");
     assert_eq!(s.ttl(), None);
     assert!(!s.is_one_shot());
-    assert_eq!(s.envelope(), None);
     assert_eq!(s.nonce(), None);
     assert_eq!(&s.record()[..], b"0r:47,3");
 
@@ -260,10 +258,10 @@ fn encode_id_matrix() {
         encode_id::<Stored>(&buy(1, 1), &signing),
         Err(EncodeError::UnexpectedSigner)
     );
-    let env = Parts::new().with_envelope(ViewEnvelope::new('a', 0, 0, 0).unwrap());
+    let with_nonce = Parts::new().with_nonce(SelectNonce::new(1).unwrap());
     assert_eq!(
-        encode_id::<Stored>(&buy(1, 1), &env),
-        Err(EncodeError::UnexpectedEnvelope)
+        encode_id::<Stored>(&buy(1, 1), &with_nonce),
+        Err(EncodeError::UnexpectedNonce)
     );
     assert_eq!(
         encode_id::<BadSchemaRef>(&NumP { n: 1 }, &zero),
@@ -293,17 +291,12 @@ fn finish_matrix() {
     assert_eq!(id.as_str(), "1r:2~0123456789A");
     assert_eq!(decode_route::<StoredS2>(&id), Ok(PayloadSource::Ref(r0())));
 
-    let parts = Parts::new()
-        .with_envelope(ViewEnvelope::new('_', 61, 3843, 61).unwrap())
-        .with_nonce(SelectNonce::new(3843).unwrap());
+    let parts = Parts::new().with_nonce(SelectNonce::new(3843).unwrap());
     let all = slot::<StoredAll>(&NumP { n: 1 }, &parts);
     let zs = ref_of("zzzzzzzzzzz");
     let id = finish(&all, zs);
-    assert_eq!(
-        id.as_str(),
-        format!("7{}:z_zzzzzz~zzzzzzzzzzz", "a".repeat(24))
-    );
-    assert_eq!(id.len(), 46);
+    assert_eq!(id.as_str(), format!("5{}:zzz~zzzzzzzzzzz", "a".repeat(24)));
+    assert_eq!(id.len(), 41);
     assert_eq!(id.len(), MAX_REF_ID_LEN);
     assert_eq!(decode_route::<StoredAll>(&id), Ok(PayloadSource::Ref(zs)));
 
@@ -351,9 +344,13 @@ fn decode_record_outcomes() {
     );
     assert_eq!(decode_record::<Stored>(b""), malformed(CodecError::Empty));
     assert_eq!(
-        decode_record::<Stored>(b"2r:_0000"),
+        decode_record::<Stored>(b"2r:x"),
+        malformed(CodecError::ReservedFlag)
+    );
+    assert_eq!(
+        decode_record::<Stored>(b"4r:00"),
         malformed(CodecError::UnexpectedSection {
-            section: Section::Envelope
+            section: Section::Nonce
         })
     );
     assert_eq!(
@@ -368,33 +365,24 @@ fn decode_record_outcomes() {
 }
 
 route!(MixRef, "mix.ref", RouteShape::BY_REF, 0, MixP);
-route!(
-    MixRefAll,
-    "mix.ref",
-    RouteShape::BY_REF.view().select(),
-    7,
-    MixP
-);
+route!(MixRefAll, "mix.ref", RouteShape::BY_REF.select(), 7, MixP);
 route!(MixSpill, "mix.spill", RouteShape::SPILL, 0, MixP);
 route!(
     MixSpillAll,
     "mix.spill",
-    RouteShape::SPILL.view().select().signed(),
+    RouteShape::SPILL.select().signed(),
     3,
     MixP
 );
 
 /// `encode_id`, then the inline decode or `finish` + Ref decode + record
 /// decode, gives `p` back.
-fn id_round_trip<R>(p: &MixP, env: ViewEnvelope, nonce: SelectNonce)
+fn id_round_trip<R>(p: &MixP, nonce: SelectNonce)
 where
     R: Route<Payload = MixP>,
 {
     let signer = FakeSigner::new(5);
     let mut parts = Parts::new();
-    if R::SHAPE.has_view() {
-        parts = parts.with_envelope(env);
-    }
     if R::SHAPE.has_select() {
         parts = parts.with_nonce(nonce);
     }
@@ -420,23 +408,6 @@ where
             assert_eq!(decode_record::<R>(&slot.record()), Ok(p.clone()));
         }
     }
-}
-
-fn envelope() -> impl Strategy<Value = ViewEnvelope> {
-    (
-        prop_oneof![
-            Just('_'),
-            proptest::char::range('0', '9'),
-            proptest::char::range('A', 'Z'),
-            proptest::char::range('a', 'z')
-        ],
-        0..=61u8,
-        0..=3843u16,
-        0..=61u8,
-    )
-        .prop_filter_map("valid envelope", |(a, t, p, v)| {
-            ViewEnvelope::new(a, t, p, v).ok()
-        })
 }
 
 proptest! {
@@ -467,13 +438,12 @@ proptest! {
         b in any::<i64>(),
         c in any::<Option<u64>>(),
         d in prop_oneof![".{0,30}", ".{0,200}"],
-        env in envelope(),
         nonce in (0..=3843u16).prop_filter_map("nonce", SelectNonce::new),
     ) {
         let p = MixP { a, b, c, d };
-        id_round_trip::<MixRef>(&p, env, nonce);
-        id_round_trip::<MixRefAll>(&p, env, nonce);
-        id_round_trip::<MixSpill>(&p, env, nonce);
-        id_round_trip::<MixSpillAll>(&p, env, nonce);
+        id_round_trip::<MixRef>(&p, nonce);
+        id_round_trip::<MixRefAll>(&p, nonce);
+        id_round_trip::<MixSpill>(&p, nonce);
+        id_round_trip::<MixSpillAll>(&p, nonce);
     }
 }

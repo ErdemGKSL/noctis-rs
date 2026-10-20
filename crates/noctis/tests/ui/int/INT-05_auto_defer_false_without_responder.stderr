@@ -1,5 +1,5 @@
-error: [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal
- --> tests/ui/int/INT-05_opens_modal_without_responder.rs:4:1
+error: [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`
+ --> tests/ui/int/INT-05_auto_defer_false_without_responder.rs:4:1
   |
 4 | async fn feedback(_ctx: CommandCtx) -> HandlerResult<noctis::ui::Components> {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

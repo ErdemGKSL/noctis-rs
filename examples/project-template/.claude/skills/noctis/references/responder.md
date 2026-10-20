@@ -80,9 +80,7 @@ All three add `IS_COMPONENTS_V2`, validate against the Limits and ping nobody (M
 A second initial response through the ctx methods or a typestate Responder in the same
 handler is `ResponderError::AlreadyResponded`, with no request. The doctrine lint
 (`xtask skill-check`) accepts these three calls in handlers and rejects
-`.reply(`/`.update(`/`.defer_reply(`/`.defer_update(`/`.edit_reply(` on any other receiver
-(this release's lint checks the shipped names `.defer(`/`.edit_original(`; Story 6.10
-switches it).
+`.reply(`/`.update(`/`.defer_reply(`/`.defer_update(`/`.edit_reply(` on any other receiver.
 
 ## 2. Auto-defer (FR-21, INT-01)
 
@@ -94,7 +92,7 @@ interaction (queueing time counts), Noctis defers it for you:
   `BuildViolation::InvalidAckDeadline` at `build()`; 0 always defers. There is no
   environment variable for it.
 - commands: exactly `{"type":5}`, or `{"type":5,"data":{"flags":64}}` when the Command is
-  declared `ephemeral` (INT-08); the V2 flag goes on the later edit;
+  declared `response = ephemeral` (INT-08); the V2 flag goes on the later edit;
 - [planned, Epic 7] components and component-opened modal submits: type 6 (no loading
   state) with the default `response = update`, type 5 with `response = ephemeral |
   public`.
@@ -114,7 +112,7 @@ Handlers declared `auto_defer = false` are never auto-deferred (a modal must be 
 first response, INT-05); if one has not answered within the 3 s deadline (2.9 s), Noctis
 logs one `error` on target `noctis::dispatch` naming `handler` and `module`.
 
-## 2b. `auto_defer` and `response`: pick per handler [planned: Story 6.10]
+## 2b. `auto_defer` and `response`: pick per handler
 
 Every interaction handler declares two things on its own attribute, both checked at
 compile time:
@@ -184,13 +182,16 @@ Anti-patterns:
 - Never pick ephemerality per call to work around a missing declaration: declare
   `response = ephemeral`; use `reply_as`/`defer_reply_as` only for the rare mixed case.
 
-Shipped names until Story 6.10 (which converts them): this release spells `auto_defer = false` on a Command as
-the bare flag `opens_modal` (`CommandHandler::opens_modal()`) and has no component
-handlers yet, the `Manual` alias as
-`CommandResponder<OpensModal>` (the sealed `ModalMarker`: `NoModal` by default or
-`OpensModal`), `show_modal` as `modal`, and `response = ephemeral` as the bare flag
-`ephemeral`; `response = …`, `auto_defer` and `Manual` do not compile yet. Story 6.10
-renames them with no aliases.
+This release ships `auto_defer` and `response` on `#[command]`, `#[user_command]` and
+`#[message_command]` (component and modal handlers arrive with Epic 7).
+`CommandHandler::auto_defer()` and `ContextMenuHandler::auto_defer()` read the flag,
+`ephemerality()` the declared `response`. Argument errors: `response = update` on a
+command is ``[INT-04] a Command cannot `update` its message: write `response = public`
+or `response = ephemeral` ``; any other value is `` `response` takes `public` or
+`ephemeral` ``; `auto_defer` takes only a bool literal (`` `auto_defer` takes `true` or
+`false` ``); the withdrawn bare `ephemeral` flag and the old modal flag are unknown
+arguments whose message names the replacement (`response = ephemeral`,
+`auto_defer = false` with `CommandResponder<Manual>`).
 
 If the auto-defer itself fails (for example the interaction sat in the queue past
 2.9 s), it logs `warn` "auto-defer failed" (target `noctis::dispatch`, field `handler`)
@@ -211,8 +212,7 @@ renders are covered automatically.
 Declared at registration, never toggled later:
 
 - `#[command("…", response = ephemeral)]` (also on `#[user_command]` /
-  `#[message_command]`; [planned: Story 6.10], today the bare flag `ephemeral`, and
-  `ephemeral = true` is a compile error) — private reply (single-user
+  `#[message_command]`) — private reply (single-user
   UI: settings, setup flows). `CommandHandler::ephemerality()` / `ctx.ephemerality()` read
   it (`Ephemerality::Ephemeral` / `Ephemerality::Public`).
 - Commands default to public (shared content).
@@ -224,8 +224,8 @@ Declared at registration, never toggled later:
 `reply_as(msg, Ephemerality)` and `defer_reply_as(Ephemerality)` take it explicitly;
 `follow_up(msg, Visibility)` takes one per follow-up (`Visibility` is an alias of
 `Ephemerality`); **no edit takes one** (`edit_reply(msg, Ephemerality::…)` is E0061).
-[planned: Story 6.10; this release spells `defer_reply_as(e)` as `defer(e)`,
-`follow_up` as `followup` and `edit_reply` as `edit_original`.]
+After the auto-defer, `reply`/`reply_as` edit the deferred reply, which keeps the
+auto-defer's (declared) ephemerality.
 
 Locale follows visibility: `ctx.response_locale()` gives the User Locale (then the Guild
 Locale) for ephemeral Commands and the Guild Locale (then the User Locale) for public
@@ -234,10 +234,8 @@ your render function.
 
 ## 3b. Interaction-response flows at a glance (discord.js names)
 
-Each method is its own flow, not an alias. Names follow discord.js. [planned: Story 6.10
-renames the shipped command methods (`defer` → `defer_reply`, `modal` → `show_modal`,
-`edit_original` → `edit_reply`, `delete_original` → `delete_reply`, `followup` →
-`follow_up`); Story 7.2 adds the component and modal-submit responders.]
+Each method is its own flow, not an alias. Names follow discord.js. [planned: Story 7.2
+adds the component and modal-submit responders (`update`, `defer_update`).]
 
 | Method | discord.js | Callback / route | Effect | Use when |
 | --- | --- | --- | --- | --- |
@@ -247,7 +245,8 @@ renames the shipped command methods (`defer` → `defer_reply`, `modal` → `sho
 | `defer_update()` | `deferUpdate` | type 6 | nothing visible; stops the click spinner | the re-render needs > 2 s; then `edit_reply` |
 | `show_modal(m)` | `showModal` | type 9 | opens a modal | `auto_defer = false` handlers only (`Manual` responder); first response only: impossible after any ack, including a defer; never from a modal submit |
 | `edit_reply(msg)` | `editReply` | `PATCH …/messages/@original` | edits `@original`: the reply after `reply`/`defer_reply`, the component's message after `update`/`defer_update` | after any ack |
-| `fetch_reply()` / `delete_reply()` | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | | after any ack |
+| `fetch_reply()` | `fetchReply` | `GET …/messages/@original` | returns the reply as a `noctis::model::channel::Message` | after any ack |
+| `delete_reply()` | `deleteReply` | `DELETE …/messages/@original` | deletes the reply | after any ack |
 | `follow_up(msg, vis)` | `followUp` | `POST /webhooks/{app}/{token}` | another new message | after any ack |
 
 A modal can't follow a defer, so only handlers declared `auto_defer = false` (taking the `Manual` responder, §2b) have `show_modal`; they get no auto-defer and must call it within 3 s: open the modal first and do slow work after the submit, never before it.
@@ -259,11 +258,11 @@ auto-defer fires at 2000 ms (type 6 for components, type 5 for commands).
 
 ## 4. The Responder (typestate, INT-03/04)
 
-The type is `Responder<K, S = Pending>` today: `K` is the handler kind (`Command<M>`,
-sealed `ResponderKind`; `M` is the sealed `ModalMarker`), `S` the state (`Pending` or
-`Acked`, sealed `ResponderState`). [planned: Story 6.10] it becomes `Responder<K, S =
-Pending, D = AutoDefer>` with `K` = `Command` (later `Component`, `ModalSubmit`) and the
-sealed defer mode `D` = `AutoDefer` (default) or `Manual` (§2b). Take it
+The type is `Responder<K, S = Pending, D = AutoDefer>`: `K` is the handler kind
+(`Command`, later `Component` and `ModalSubmit`; sealed `ResponderKind`), `S` the state
+(`Pending` or `Acked`, sealed `ResponderState`) and `D` the sealed `DeferMode`:
+`AutoDefer` (default) or `Manual` (§2b). Only `Manual` implements the sealed
+`CanShowModal`. Take it
 as a handler parameter through its alias, right after `ctx` (and the path), before the
 options: `(ctx[, path][, r: CommandResponder][, options])`, or `(ctx, target[, r:
 CommandResponder])` on a context menu. Any other order, or two responders, is a compile
@@ -273,8 +272,8 @@ one but never uses it, nothing is sent from it).
 
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
-| `CommandResponder` (auto-defer) | `reply(msg)`, `reply_as(msg, e)`, `defer_reply()`, `defer_reply_as(e)` (today `defer(e)`) — **no** `show_modal` | chat input / context menu |
-| `CommandResponder<Manual>` [planned: Story 6.10; today `CommandResponder<OpensModal>`] | the above plus `show_modal(m)`; required exactly when the command is `#[command(.., auto_defer = false)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
+| `CommandResponder` (auto-defer) | `reply(msg)`, `reply_as(msg, e)`, `defer_reply()`, `defer_reply_as(e)` — **no** `show_modal` | chat input / context menu |
+| `CommandResponder<Manual>` | the above plus `show_modal(m)`; required exactly when the command is `#[command(.., auto_defer = false)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
 | `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **no** `show_modal` | buttons, selects |
 | `ComponentResponder<Manual>` [planned, Epic 7] | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
 | `ModalResponder` / `ModalResponder<Manual>` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **never** `show_modal` | modal submit |
@@ -284,20 +283,19 @@ method returns `HandlerResult<Suggestions<T>>` and Noctis sends it (`commands.md
 [planned, Story 6.11]. This release (Story 6.7): `AutocompleteCtx` offers only the
 synchronous `ctx.respond(choices) -> Responded` (no `.await`).
 
-Every Pending method consumes the responder and returns `Responder<K, Acked>`:
+Every Pending method consumes the responder and returns `Responder<K, Acked, D>`:
 
 ```rust
 r.reply(msg).await?                     -> Responder<Command, Acked>  // callback type 4, declared ephemerality
+r.reply_as(msg, Ephemerality::Public).await? -> Responder<Command, Acked>  // per-call override
 r.defer_reply().await?                  -> Responder<Command, Acked>  // callback type 5, declared ephemerality; only EPHEMERAL (INT-08)
 r.defer_reply_as(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // per-call override
 r.show_modal(m).await?                  -> Responder<Command, Acked, Manual> // Manual responder only: callback type 9
 acked.edit_reply(msg).await?            -> ()
+acked.fetch_reply().await?              -> noctis::model::channel::Message
 acked.follow_up(msg, Visibility::Public).await? -> FollowupHandle
 acked.delete_reply().await?             -> ()
 acked.done()                            -> Responded   // return this from the handler
-// [planned: Story 6.10] this release spells these defer(e), modal(m) (on
-// CommandResponder<OpensModal>), edit_original, followup and delete_original,
-// and has no defer_reply(), reply_as or fetch_reply.
 handle.message_id()                     -> Id<MessageMarker>
 handle.edit(msg).await?                 -> ()
 handle.delete().await?                  -> ()
@@ -307,7 +305,7 @@ handle.delete().await?                  -> ()
 ([planned] `StaticMessage`). Calling a method that doesn't exist for the kind or
 state is a compile error: a second `reply` (E0599), `update` on a `CommandResponder`
 (E0599), `show_modal` on an auto-defer responder (`[INT-05] show_modal needs auto_defer
-= false on this handler`; today `modal` without `OpensModal` is E0599),
+= false on this handler`, E0277),
 `defer_reply_as(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
 `Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
 
@@ -327,7 +325,8 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |
 | `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01) |
 | `Rejected { status, code }` | Discord answered an error (`code`: its JSON error code, e.g. `Some(10015)`); a callback answered 40060 (already acknowledged) counts as success |
-| `Transport` | no usable response |
+| `Transport` | no usable response (also a `fetch_reply` body that is not a message) |
+| `NoReply` | `fetch_reply()` with no reply message to fetch: a `Dispatcher` handler that has not replied yet (§4.1) |
 | `TokenExpired` | 15 min after the interaction arrived: a follow-up, or an edit/delete of an ephemeral message or of one whose id is unknown (INT-02) |
 | `FollowupCap` | the 6th follow-up of a user-install-only interaction (INT-11) |
 | `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), or over the `Dispatcher` |
@@ -340,9 +339,9 @@ Runtime guards the types can't express:
   (INT-11). A follow-up that fails validation uses no slot; one Discord rejects still
   uses its slot. Guild installs have no cap;
 - 15 minutes after the gateway received the interaction the token is expired (INT-02):
-  `edit_reply`, `delete_reply`, `handle.edit` and `handle.delete` on a **public**
-  message whose id is known fall back to the bot-token channel routes
-  (`PATCH`/`DELETE /channels/{channel}/messages/{id}`; a user-installed app outside the
+  `edit_reply`, `fetch_reply`, `delete_reply`, `handle.edit` and `handle.delete` on a
+  **public** message whose id is known fall back to the bot-token channel routes
+  (`PATCH`/`GET`/`DELETE /channels/{channel}/messages/{id}`; a user-installed app outside the
   guild gets `Rejected`); everything else (follow-ups, ephemeral messages, an original
   that was deferred and never edited) is `ResponderError::TokenExpired` without an HTTP
   request. A returned message past 15 min follows the same rule.
@@ -375,7 +374,7 @@ pub struct Report;
 impl Report {
     #[handler]
     async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
-        let _ = r.defer_reply().await?.done();                    // this release: r.defer(Ephemerality::Public)
+        let _ = r.defer_reply().await?.done();
         Ok(build_report(&ctx).await?)
     }
 }
@@ -397,9 +396,6 @@ impl Bio {
     }
 }
 ```
-
-[planned: Story 6.10] Until then write `opens_modal`, `CommandResponder<OpensModal>` and
-`r.modal(..)` (§2b).
 
 `show_modal(m)` validates the modal against the Limits (`Invalid`) and encodes it (`Encode`
 for an unresolved Route id) before any request.
@@ -465,10 +461,11 @@ impl Prefix {
   or `nsfw` metadata (Discord enforces those only for real interactions): check them
   yourself before calling `run_command`.
 - The response is a message transport: `reply` and a returned message post a reply to
-  the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer_reply_as(Public)`
-  shows the typing indicator (the later message is then posted as the reply), edits and
-  deletes target that reply, follow-ups are plain channel messages. Anything ephemeral
-  (a declared `ephemeral` Command, `defer_reply_as(Ephemeral)`, `follow_up(.., Ephemeral)`) is
+  the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer_reply()` (public)
+  shows the typing indicator (the later message is then posted as the reply), edits,
+  `fetch_reply` (bot token) and deletes target that reply (`fetch_reply` before it is
+  `ResponderError::NoReply`), follow-ups are plain channel messages. Anything ephemeral
+  (a `response = ephemeral` Command, `reply_as(.., Ephemeral)`, `defer_reply_as(Ephemeral)`, `follow_up(.., Ephemeral)`) is
   `ResponderError::EphemeralUnsupported`, never a silent public post; `show_modal(m)` is
   `ResponderError::ModalUnavailable`. No auto-defer runs.
 - Span `noctis.dispatch{app, guild_id, module, path}`.

@@ -9,8 +9,7 @@ use common::*;
 use noctis_codec::{
     DecodeError, EncodeError, EncodedId, Flags, ForgedReason, Parts, PayloadDecode, PayloadKey,
     PayloadKeys, PayloadSource, RawBody, Ref, Route, RouteShape, SelectNonce, Sign, StaleReason,
-    Tag, Verify, ViewEnvelope, decode, decode_route, decode_route_verified, encode, encode_id,
-    finish,
+    Tag, Verify, decode, decode_route, decode_route_verified, encode, encode_id, finish,
 };
 use proptest::prelude::*;
 
@@ -98,11 +97,10 @@ fn cid_06_signing_matrix() {
 
     let key = k1();
     let parts = Parts::new()
-        .with_envelope(ViewEnvelope::new('_', 61, 3843, 61).unwrap())
         .with_nonce(SelectNonce::new(0).unwrap())
         .with_signer(&key);
     let id = encode::<All>(&NumP { n: 0 }, &parts).unwrap();
-    assert_eq!(id.as_str(), "Fall:z_zzzz000ymc2iM");
+    assert_eq!(id.as_str(), "Dall:z000DH3N5A");
     assert_reference([1; 32], &id);
 
     let ring = PayloadKeys::new(k1()).with_previous(k2());
@@ -161,7 +159,7 @@ fn cid_06_tampered_ids_are_forged() {
     }
     assert_eq!(decode_route_verified::<Sig>("0sig:1", &k1()), Err(missing));
     assert_eq!(
-        decode_route_verified::<Sig>("2sig:_00001", &k1()),
+        decode_route_verified::<Sig>("4sig:001", &k1()),
         Err(missing)
     );
     assert_eq!(
@@ -177,11 +175,11 @@ fn cid_06_tampered_ids_are_forged() {
         Ok(PayloadSource::Ref(r0()))
     );
     assert_eq!(
-        decode_route_verified::<All>("Fall:z_zzzz000ymc2iM", &k1()),
+        decode_route_verified::<All>("Dall:z000DH3N5A", &k1()),
         inline(NumP { n: 0 })
     );
     assert_eq!(
-        decode_route_verified::<All>("Fall:zazzzz000ymc2iM", &k1()),
+        decode_route_verified::<All>("Dall:z010DH3N5A", &k1()),
         Err(bad)
     );
     assert_eq!(
@@ -269,7 +267,7 @@ route!(
 route!(
     MixAllSigned,
     "mix.all",
-    RouteShape::INLINE.view().select().signed(),
+    RouteShape::INLINE.select().signed(),
     3,
     MixP
 );
@@ -279,7 +277,6 @@ route!(
 fn signed_round_trip<R>(
     p: &MixP,
     key: &PayloadKey,
-    env: ViewEnvelope,
     nonce: SelectNonce,
     replacement: u8,
 ) -> Result<(), TestCaseError>
@@ -288,9 +285,6 @@ where
     MixP: for<'de> PayloadDecode<'de>,
 {
     let mut parts = Parts::new().with_signer(key);
-    if R::SHAPE.has_view() {
-        parts = parts.with_envelope(env);
-    }
     if R::SHAPE.has_select() {
         parts = parts.with_nonce(nonce);
     }
@@ -361,16 +355,14 @@ proptest! {
         b in any::<i64>(),
         c in any::<Option<u64>>(),
         d in ".{0,40}",
-        action in prop_oneof![Just('_'), proptest::char::range('a', 'z')],
         nonce in 0..=3843u16,
         replacement in 0x20u8..=0x7e,
     ) {
         let key = PayloadKey::from_bytes(bytes);
         let p = MixP { a, b, c, d };
-        let env = ViewEnvelope::new(action, 1, 2, 3).unwrap();
         let nonce = SelectNonce::new(nonce).unwrap();
-        signed_round_trip::<MixSigned>(&p, &key, env, nonce, replacement)?;
-        signed_round_trip::<MixSpillSigned>(&p, &key, env, nonce, replacement)?;
-        signed_round_trip::<MixAllSigned>(&p, &key, env, nonce, replacement)?;
+        signed_round_trip::<MixSigned>(&p, &key, nonce, replacement)?;
+        signed_round_trip::<MixSpillSigned>(&p, &key, nonce, replacement)?;
+        signed_round_trip::<MixAllSigned>(&p, &key, nonce, replacement)?;
     }
 }
