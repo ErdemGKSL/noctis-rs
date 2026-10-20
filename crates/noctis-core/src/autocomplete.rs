@@ -652,7 +652,7 @@ fn focus(option: &Map<String, Value>) -> Result<Focused, OptionError> {
         None | Some(Value::Null) => String::new(),
         Some(_) => {
             return Err(OptionError::malformed(format!(
-                "option `{name}`: the focused value is not a string or number"
+                "option `{name}`: the focused value is not a string, number or boolean"
             )));
         }
     };

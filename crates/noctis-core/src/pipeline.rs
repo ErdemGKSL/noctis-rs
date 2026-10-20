@@ -481,7 +481,8 @@ pub(crate) async fn run_interaction(
 
 /// How an autocomplete handler run ended.
 enum AutocompleteOutcome {
-    /// It ran and returned; `None` when it never called `respond`.
+    /// It ran and returned; a missing `respond` shows up later as the
+    /// empty slot in `kept_choices`.
     Answered(HandlerResult<Responded>),
     Panicked(Box<dyn Any + Send>),
     Cancelled,

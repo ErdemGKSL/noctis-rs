@@ -1571,8 +1571,9 @@ mod autocomplete {
 
     /// What the `value` handler saw: focused text and `partial.limit`.
     static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    /// Set when the `slow` handler started.
-    static SLOW_STARTED: AtomicBool = AtomicBool::new(false);
+    /// Set when the `slow_deadline` handler started; only the INT-06
+    /// deadline test focuses it.
+    static SLOW_DEADLINE_STARTED: AtomicBool = AtomicBool::new(false);
 
     #[derive(Default)]
     struct AcPartial {
@@ -1646,7 +1647,11 @@ mod autocomplete {
                 "panic_call" => plain("m::panic_call", panics_at_call),
                 "panic_inside" => plain("m::panic_inside", panics_inside),
                 "slow" => plain("m::slow", |ctx| async move {
-                    SLOW_STARTED.store(true, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_mins(1)).await;
+                    Ok(ctx.respond(Vec::new()))
+                }),
+                "slow_deadline" => plain("m::slow_deadline", |ctx| async move {
+                    SLOW_DEADLINE_STARTED.store(true, Ordering::SeqCst);
                     tokio::time::sleep(Duration::from_mins(1)).await;
                     Ok(ctx.respond(Vec::new()))
                 }),
@@ -1697,9 +1702,11 @@ mod autocomplete {
     /// A type-4 interaction of `config set prefix` focusing `focused`
     /// (typed `text`), with `limit` = 3 unless `focused` is `limit`.
     fn ac_json(focused: &str, text: &str) -> Value {
-        let leaves = json!([
-            { "type": 3, "name": focused, "value": text, "focused": true },
-        ]);
+        let mut leaves =
+            vec![json!({ "type": 3, "name": focused, "value": text, "focused": true })];
+        if focused != "limit" {
+            leaves.push(json!({ "type": 4, "name": "limit", "value": 3 }));
+        }
         let data = json!({
             "id": "9", "name": "config", "type": 1,
             "options": [{ "type": 2, "name": "set", "options": [
@@ -1747,7 +1754,7 @@ mod autocomplete {
                 json!({ "name": "c", "value": "c" })
             ]
         );
-        assert!(SEEN.lock().unwrap().contains(&"pr-1:None".to_owned()));
+        assert!(SEEN.lock().unwrap().contains(&"pr-1:Some(3)".to_owned()));
         assert!(sink.seen().is_empty());
         assert!(p.reports().is_empty());
     }
@@ -1812,14 +1819,14 @@ mod autocomplete {
     async fn int_06_deadline_missed_sends_empty_choices() {
         let (p, sink) = start(discord()).await;
         let p = Arc::new(p);
-        let item = ac("slow", "x");
+        let item = ac("slow_deadline", "x");
         let received_at = item.received_at;
         let run = tokio::spawn({
             let p = Arc::clone(&p);
             async move { run(&p, item).await }
         });
         let started = std::time::Instant::now();
-        while !SLOW_STARTED.load(Ordering::SeqCst) {
+        while !SLOW_DEADLINE_STARTED.load(Ordering::SeqCst) {
             assert!(started.elapsed() < Duration::from_secs(10), "never started");
             tokio::time::sleep(Duration::from_millis(5)).await;
         }

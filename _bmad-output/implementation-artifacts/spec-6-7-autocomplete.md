@@ -2,7 +2,7 @@
 title: 'Story 6.7: Autocomplete'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '7d38de2a1ccb830a33ec1196e18a22aa2884815e'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,28 @@ context:
   - '{project-root}/docs/discord-rules.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/commands.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      A non-focused INTEGER/NUMBER option sent as a JSON string (for example "12") decodes to None in the Partial, while the focused value accepts numeric strings.
+    evidence: |-
+      autocomplete.rs `leaves` runs non-focused leaves through the strict `decode_value`, and `focus` parses numeric text. Unverified whether Discord ever sends non-focused numeric values as strings in type-4 payloads; settle it with a captured real autocomplete payload (or Discord docs) that has a non-focused INTEGER option.
+    location: >-
+      crates/noctis-core/src/autocomplete.rs (leaves / focus)
+    severity: medium (unverified)
+  - summary: >-
+      The warn-only branch of finish_autocomplete for a successful handler whose callback the edge refuses with AckDeadlineMissed has no test.
+    evidence: |-
+      Verification-gap layer: no test in pipeline/tests.rs produces Answered(Ok) together with ResponderError::AckDeadlineMissed; collapsing that arm into the reported Err arm fails nothing. A direct unit test of finish_autocomplete would close it.
+    location: >-
+      crates/noctis-core/src/pipeline.rs finish_autocomplete
+    severity: low
+  - summary: >-
+      The warn-only exits of find_autocomplete for an authorless interaction and for a name resolving to a context-menu Command are untested.
+    evidence: |-
+      Verification-gap layer: unknown_and_malformed_answer_empty_lists covers unknown command, unlinked option and two focused options only; no autocomplete test builds a payload without user/member or naming a menu Command.
+    location: >-
+      crates/noctis-core/src/pipeline.rs find_autocomplete
+    severity: low
 ---
 
 <intent-contract>
@@ -254,6 +275,43 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 33 findings — high 0, medium 1, low 19, false 12, maybe-false 1
+- findings:
+  - `[low]` `[reject]` respond drains an unbounded iterator to count `returned` — real, but bot code never passes an infinite iterator in practice, and the spec's warn needs the exact `returned`; a cap would change spec semantics.
+  - `[low]` `[patch]` `AutocompleteOutcome::Answered` doc says "`None` when it never called `respond`" but the payload has no `None` — fix the doc comment (pipeline.rs L484).
+  - `[false]` `[reject]` Smuggled `Responded` sends an empty list silently — Matrix 20 deliberately settles "CB([]), error handling none"; `Responded::new` is crate-private, so only a Responded smuggled from another interaction reaches it.
+  - `[false]` `[reject]` `Answered(Ok(_))` in the `failed =>` arm mislabels as DeadlineMissed — the outer arm takes `Answered(Ok)` first, so the pattern is unreachable today; the claimed bad outcome needs a hypothetical refactor.
+  - `[maybe-false]` `[defer]` Non-focused numeric value sent as a JSON string decodes to `None` — settle with a real Discord type-4 payload; spec Matrix 3 treats mistyped as `None`; if Discord sends strings it would be medium.
+  - `[low]` `[reject]` Required `type Partial` breaks hand-written `Options` impls — the trait docs say it is implemented by `#[derive(Options)]`, the spec mandates the associated type, and `PartialOptions` stays implementable; bot authors use the derive.
+  - `[low]` `[reject]` Public `Options::autocomplete` can disagree with `OptionDecl.autocomplete` on hand-written impls — only hand-written impls (unsupported surface) hit it; a build-time cross-check adds new validation logic.
+  - `[low]` `[reject]` Per-keystroke `Arc` allocation and JSON re-parse — negligible at Discord's per-user autocomplete rate; caching adds state to `CommandHandler`.
+  - `[low]` `[reject]` No localized choice names / `response_locale()` — the intent's Never list excludes localized choice names (Epic 11).
+  - `[low]` `[reject]` User attributes land on the descriptor fn, not the inner async fn — same convention as `menu.rs`/`command.rs` that the spec told the macro to follow; `#[tracing::instrument]` on an autocomplete fn is rare, and splitting attributes adds macro branches.
+  - `[low]` `[reject]` `<Name>Partial` always generated (collision risk) and derives only `Default` — spec Design Notes deliberately derive only `Default`; a pre-existing `FooPartial` beside a `Foo` options struct is rare and gives a plain E0428.
+  - `[false]` `[reject]` Wrong-return error is a raw E0271 into internals — the stderr points at the user's return type with "expected `Result<Responded, HandlerError>`", exactly Matrix 32's "E0271/E0277 at the return type".
+  - `[low]` `[reject]` Non-ApplicationCommand data logs "unknown command" with an empty path — twilight always parses type-4 data as ApplicationCommand; only a malformed payload reaches it and the outcome (empty list, warn) is correct.
+  - `[low]` `[patch]` Focused-value error text says "not a string or number" while booleans are accepted — correct the message to name booleans too (autocomplete.rs L655); running the handler before the OPT-11 drop is harmless and Discord never focuses a BOOLEAN.
+  - `[low]` `[reject]` Testkit lacks deadline / unlinked-option E2E tests — worker routing to `run_autocomplete` is covered by the three testkit tests, and both outcomes are covered in `pipeline/tests.rs` on the same function.
+  - `[low]` `[reject]` Generated `<Name>Partial` can collide with an existing type (E0428) — grouped with the `<Name>Partial` finding above; rare, plain compiler error.
+  - `[low]` `[patch]` Shared static `SLOW_STARTED` is also set by `shutdown_cancels`, so `int_06_deadline_missed_sends_empty_choices` may advance time before its own handler starts and test the already-late path instead of Matrix 17 — give the deadline test its own start signal (separate focused name/flag, or reset before spawn).
+  - `[low]` `[reject]` Removed `let _ = #path;` hides a misspelled path when other derive errors drop the impl — the spec explicitly replaces it; the error still surfaces once the other errors are fixed.
+  - `[low]` `[reject]` Warnings logged before the callback is sent (spec step 7 order) — no user or developer harm named; reordering needs extra plumbing to carry warnings past the send.
+  - `[medium]` `[patch]` Live pipeline hand-off of the decoded partial is never observed with a present value (`ac_json` sends no `limit`; every pipeline/testkit test asserts `None`) — make `ac_json` add a `{type:4,name:"limit",value:3}` leaf unless focused is `limit`, and assert `SEEN` holds `"pr-1:Some(3)"`.
+  - `[low]` `[defer]` Edge `AckDeadlineMissed` after a successful handler (warn-only branch) has no test — narrow branch; recorded in `deferred`.
+  - `[low]` `[defer]` `find_autocomplete` authorless and context-menu exits are untested — defensive paths Discord never triggers; recorded in `deferred`.
+  - `[low]` `[patch]` `ac_json` doc says "with `limit` = 3 unless `focused` is `limit`" but adds no such leaf — grouped with the partial hand-off entry; fixed by adding the leaf.
+  - `[false]` `[reject]` INT-07 both-modes shown only at unit layer — spec Task 7 places `int_07_truncates_in_both_modes` on `filter_choices`, which has no mode branch; the pipeline test checks the warn.
+  - `[false]` `[reject]` Deadline AC exercised only inside noctis-core — spec Tasks 7/8 deliberately assign the deadline to `pipeline/tests.rs` with paused time.
+  - `[false]` `[reject]` `Partial<O>` made optional — spec Approach and Matrix 28 deliberately allow the ctx-only form.
+  - `[false]` `[reject]` Partial also holds the focused option — spec Matrix 2/4 require `partial.<field> == Some(text)`.
+  - `[false]` `[reject]` INT-07 enforcement moved from `try_push` and rules row rewritten — spec Task 9 explicitly replaces the `try_push` text under the same rule id.
+  - `[false]` `[reject]` AD-11 "Responder owns every reply" vs direct pipeline send — AD-11's `Responder<K>` kinds exclude autocomplete and state "`AutocompleteCtx` offers only `respond`"; the pipeline is the single sender, preventing double acks.
+  - `[low]` `[patch]` Facade tests reach the handler through the `__testing::call_autocomplete` seam, so present partial values never cross the real pipeline — grouped with the partial hand-off entry; the `ac_json` limit leaf plus `Some(3)` assertion covers it.
+  - `[false]` `[reject]` Wider failure surface than the AC — every extra branch is settled in the I/O Matrix (15-27).
+  - `[false]` `[reject]` `skill-check` AC not evidenced — ran `cargo run --release -p xtask -- skill-check`: ok (2083 public items, 15 template files linted).
+  - `[false]` `[reject]` OPT-12 compile_fail only on hand-written types — the facade doctest (`crates/noctis/src/lib.rs` L572-582) uses `#[derive(Options)]` and `Partial<O>`, `compile_fail,E0308`.
+
 ## Design Notes
 
 **Sync `respond` (decision).** The pipeline is the only sender, so there is no race between a handler's callback and the deadline fallback. Exactly one type-8 callback is sent. Truncation, validation and the empty fallback live in one place. `respond(self)` consumes the ctx, so a second `respond` is impossible. The template's planned `.await?` is dropped.
@@ -293,3 +351,15 @@ async fn prefix_suggest(ctx: AutocompleteCtx, partial: Partial<PrefixOptions>) -
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok
+
+## Auto Run Result
+
+- **Summary:** Story 6.7 adds slash-command autocomplete: `#[autocomplete]` handlers linked to options, `AutocompleteCtx` exposing only `respond`, a derived `<Name>Partial` (via `Options::Partial` / `PartialOptions`) handed to the handler as `Partial<O>` (ctx-only form also allowed), focused-value decoding, INT-07 truncation to 25 choices with a warn, a deadline that sends an empty choice list when missed, and a pipeline path (`run_autocomplete` / `finish_autocomplete`) that is the single sender of the type-8 callback.
+- **Files changed:** `crates/noctis-core/src/autocomplete.rs` (new: ctx, partial decode, choice filtering); `crates/noctis-core/src/pipeline.rs` + `pipeline/tests.rs` (autocomplete routing, deadline, outcomes, tests); noctis macros (`#[autocomplete]`, `<Name>Partial` derive); `crates/noctis` facade, testkit and trybuild cases (`tests/types/autocomplete_*`, OPT-02/10/11 UI updates); `docs/discord-rules.md` and `xtask/rules-pending.toml` (INT-07/OPT rows moved to enforcement); `xtask/public-api.txt` re-blessed; `examples/project-template` (profile module autocomplete, locales, AGENTS.md, Usage Skill references and API hash).
+- **Review findings (33: high 0, medium 1, low 19, false 12, maybe-false 1):**
+  - Patched (medium 1, low 6): live pipeline partial hand-off now observed with `ac_json` `limit` leaf and `Some(3)` assertion (also closes the `ac_json` doc and facade-seam findings); `AutocompleteOutcome::Answered` doc fixed; focused-value error text names booleans; deadline test gets its own start signal instead of the shared `SLOW_STARTED`.
+  - Deferred (3): non-focused numeric value sent as JSON string decodes to `None` (needs a real Discord payload); untested warn-only `AckDeadlineMissed`-after-success branch; untested authorless/context-menu exits of `find_autocomplete`.
+  - Rejected (23): unbounded iterator count (spec needs exact `returned`); required `type Partial` on hand-written impls (derive is the supported surface); `Options::autocomplete` vs `OptionDecl` mismatch (hand-written only); per-keystroke allocation (negligible); localized choice names (Epic 11); attributes on descriptor fn (macro convention); `<Name>Partial` collision x2 (rare, plain E0428); non-ApplicationCommand data (malformed only); testkit deadline E2E (covered in pipeline tests); removed `let _ = #path;` (spec-mandated); warn-before-send order (no harm); plus 12 false findings (smuggled `Responded`, unreachable arm, E0271 location, INT-07 layer, deadline layer, optional `Partial`, focused in partial, INT-07 rule move, AD-11 sender, matrix surface, skill-check evidence, OPT-12 derive doctest) refuted against spec/code.
+- **Follow-up review recommended:** false (patched: high 0, medium 1, low 6; first pass, below threshold).
+- **Verification:** all local gates green via gates.sh (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91 check). CI is paused by the maintainer.
+- **Residual risks:** if Discord sends non-focused INTEGER/NUMBER values as strings in type-4 payloads, those Partial fields read `None` (deferred, would become medium); two defensive warn branches lack direct tests.
