@@ -55,6 +55,7 @@ async fn heartbeats_unaffected_by_a_stalled_consumer() {
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,
+        close_timeout: Duration::from_secs(5),
     };
     let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).unwrap();
     let ready = tokio::time::timeout(WAIT, events.recv()).await.unwrap();

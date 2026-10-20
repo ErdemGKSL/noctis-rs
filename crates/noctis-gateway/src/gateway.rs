@@ -3,21 +3,51 @@
 use std::fmt;
 use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::Arc;
+use std::time::Duration;
 
 use noctis_ports::IdentifyQueue;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
-use twilight_gateway::{EventTypeFlags, Intents, Shard, ShardId};
+use twilight_gateway::{CloseFrame, EventTypeFlags, Intents, Shard, ShardId};
 
 use crate::inbound::{InboundSink, ShardEvent};
 use crate::queue::PortQueue;
 use crate::{ShardConfigError, shard, shard_config};
+
+/// How [`Gateway::close_all`] closes the shards.
+///
+/// ```
+/// use noctis_gateway::CloseMode;
+///
+/// assert_eq!(CloseMode::default(), CloseMode::Resumable);
+/// ```
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CloseMode {
+    /// Close code 4000: Discord keeps the session, so a restarted process
+    /// can resume it.
+    #[default]
+    Resumable,
+    /// Close code 1000: Discord ends the session and shows the bot offline.
+    Fresh,
+}
+
+impl CloseMode {
+    /// The close frame this mode sends.
+    pub(crate) const fn frame(self) -> CloseFrame<'static> {
+        match self {
+            Self::Resumable => CloseFrame::RESUME,
+            Self::Fresh => CloseFrame::NORMAL,
+        }
+    }
+}
 
 /// Everything [`Gateway::start`] needs. `Debug` redacts the token.
 ///
 /// ```
 /// use std::num::{NonZeroU16, NonZeroU32};
 /// use std::sync::Arc;
+/// use std::time::Duration;
 ///
 /// use noctis_gateway::{EventTypeFlags, GatewayOptions};
 /// use noctis_ports::memory::MemoryIdentifyQueue;
@@ -32,6 +62,7 @@ use crate::{ShardConfigError, shard, shard_config};
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
+///     close_timeout: Duration::from_secs(5),
 /// };
 /// assert!(!format!("{options:?}").contains("SECRET"));
 /// ```
@@ -53,6 +84,9 @@ pub struct GatewayOptions {
     pub total: NonZeroU32,
     /// Discord's `session_start_limit.max_concurrency` (identify buckets).
     pub max_concurrency: NonZeroU16,
+    /// How long a shard closed by [`Gateway::close_all`] waits for the
+    /// gateway's close frame before it stops anyway.
+    pub close_timeout: Duration,
 }
 
 impl fmt::Debug for GatewayOptions {
@@ -65,15 +99,20 @@ impl fmt::Debug for GatewayOptions {
             .field("event_types", &self.event_types)
             .field("total", &self.total)
             .field("max_concurrency", &self.max_concurrency)
+            .field("close_timeout", &self.close_timeout)
             .finish_non_exhaustive()
     }
 }
 
 /// The running shards: one tokio task each. Dropping it aborts every task.
 ///
+/// [`close_all`](Self::close_all) asks every shard to stop and
+/// [`closed`](Self::closed) waits until every shard task has ended.
+///
 /// ```no_run
 /// use std::num::{NonZeroU16, NonZeroU32};
 /// use std::sync::Arc;
+/// use std::time::Duration;
 ///
 /// use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink};
 /// use noctis_ports::memory::MemoryIdentifyQueue;
@@ -94,6 +133,7 @@ impl fmt::Debug for GatewayOptions {
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
+///     close_timeout: Duration::from_secs(5),
 /// };
 /// let (gateway, mut events) = Gateway::start(options, Arc::new(Discard))?;
 /// while let Some(event) = events.recv().await {
@@ -104,6 +144,8 @@ impl fmt::Debug for GatewayOptions {
 pub struct Gateway {
     tasks: JoinSet<()>,
     total: u32,
+    /// The requested close; `None` until [`Gateway::close_all`].
+    close: watch::Sender<Option<CloseMode>>,
 }
 
 impl Gateway {
@@ -135,6 +177,7 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
+    /// #     close_timeout: std::time::Duration::from_secs(5),
     /// # };
     /// let (gateway, events) = Gateway::start(options, Arc::new(Discard))?;
     /// assert_eq!(gateway.shard_total(), 1);
@@ -157,6 +200,7 @@ impl Gateway {
         )?;
         let total = options.total.get();
         let (tx, rx) = mpsc::unbounded_channel();
+        let (close, close_rx) = watch::channel(None);
         let mut tasks = JoinSet::new();
         for id in (0..total).filter_map(|number| ShardId::new_checked(number, total)) {
             let shard = Shard::with_config(id, config.clone());
@@ -166,9 +210,18 @@ impl Gateway {
                 options.event_types,
                 Arc::clone(&sink),
                 tx.clone(),
+                close_rx.clone(),
+                options.close_timeout,
             ));
         }
-        Ok((Self { tasks, total }, rx))
+        Ok((
+            Self {
+                tasks,
+                total,
+                close,
+            },
+            rx,
+        ))
     }
 
     /// The number of shards started.
@@ -188,6 +241,7 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
+    /// #     close_timeout: std::time::Duration::from_secs(5),
     /// # };
     /// let (gateway, _events) = Gateway::start(options, Arc::new(Discard))?;
     /// assert_eq!(gateway.shard_total(), 4);
@@ -196,6 +250,86 @@ impl Gateway {
     pub fn shard_total(&self) -> u32 {
         self.total
     }
+
+    /// Asks every shard to stop; never blocks or awaits. The first call
+    /// wins: later calls (with any mode) change nothing.
+    ///
+    /// From the request on, no shard pushes another [`Inbound`](crate::Inbound)
+    /// into the sink. An identified shard sends `mode`'s close frame (4000
+    /// for [`CloseMode::Resumable`], 1000 for [`CloseMode::Fresh`]) and
+    /// reads on until the gateway's close frame arrives or
+    /// [`GatewayOptions::close_timeout`] passes; a shard that is not
+    /// identified stops at once without a frame and never identifies or
+    /// resumes again. Each stopped shard reports [`ShardEvent::Closed`].
+    ///
+    /// ```no_run
+    /// # use std::{num::{NonZeroU16, NonZeroU32}, sync::Arc};
+    /// # use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink};
+    /// use noctis_gateway::CloseMode;
+    /// # struct Discard;
+    /// # impl InboundSink for Discard { fn push(&self, _: Inbound) {} }
+    /// # #[tokio::main] async fn main() -> Result<(), noctis_gateway::ShardConfigError> {
+    /// # let options = GatewayOptions {
+    /// #     app: Arc::from("default"),
+    /// #     token: "token".to_owned(),
+    /// #     intents: twilight_gateway::Intents::GUILDS,
+    /// #     gateway_url: None,
+    /// #     event_types: EventTypeFlags::all(),
+    /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     total: NonZeroU32::MIN,
+    /// #     max_concurrency: NonZeroU16::MIN,
+    /// #     close_timeout: std::time::Duration::from_secs(5),
+    /// # };
+    /// let (mut gateway, _events) = Gateway::start(options, Arc::new(Discard))?;
+    /// gateway.close_all(CloseMode::Resumable);
+    /// gateway.close_all(CloseMode::Fresh); // ignored: the first call wins
+    /// gateway.closed().await;
+    /// # Ok(()) }
+    /// ```
+    pub fn close_all(&self, mode: CloseMode) {
+        self.close.send_if_modified(|requested| {
+            if requested.is_some() {
+                return false;
+            }
+            *requested = Some(mode);
+            true
+        });
+    }
+
+    /// Waits until every shard task has ended, whether closed by
+    /// [`close_all`](Self::close_all) or stopped on its own.
+    ///
+    /// Cancel-safe: dropping the future loses nothing, and a later call
+    /// waits for the remaining tasks. Once every task has ended it returns
+    /// at once.
+    ///
+    /// ```no_run
+    /// # use std::{num::{NonZeroU16, NonZeroU32}, sync::Arc};
+    /// # use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink};
+    /// use noctis_gateway::CloseMode;
+    /// # struct Discard;
+    /// # impl InboundSink for Discard { fn push(&self, _: Inbound) {} }
+    /// # #[tokio::main] async fn main() -> Result<(), noctis_gateway::ShardConfigError> {
+    /// # let options = GatewayOptions {
+    /// #     app: Arc::from("default"),
+    /// #     token: "token".to_owned(),
+    /// #     intents: twilight_gateway::Intents::GUILDS,
+    /// #     gateway_url: None,
+    /// #     event_types: EventTypeFlags::all(),
+    /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     total: NonZeroU32::MIN,
+    /// #     max_concurrency: NonZeroU16::MIN,
+    /// #     close_timeout: std::time::Duration::from_secs(5),
+    /// # };
+    /// let (mut gateway, _events) = Gateway::start(options, Arc::new(Discard))?;
+    /// gateway.close_all(CloseMode::Resumable);
+    /// let in_time = tokio::time::timeout(std::time::Duration::from_secs(6), gateway.closed()).await;
+    /// assert!(in_time.is_ok());
+    /// # Ok(()) }
+    /// ```
+    pub async fn closed(&mut self) {
+        while self.tasks.join_next().await.is_some() {}
+    }
 }
 
 impl fmt::Debug for Gateway {
@@ -203,6 +337,7 @@ impl fmt::Debug for Gateway {
         f.debug_struct("Gateway")
             .field("total", &self.total)
             .field("running", &self.tasks.len())
+            .field("closing", &*self.close.borrow())
             .finish()
     }
 }

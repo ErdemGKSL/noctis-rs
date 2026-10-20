@@ -61,7 +61,7 @@ impl Harness {
         builder.runtime(&Runtime::for_test());
         let app = builder.build().unwrap();
         let (sender, receiver) = noctis_gateway::lanes(app.lane_config());
-        let drain = tokio::spawn(drain(receiver, app.workers()));
+        let drain = tokio::spawn(drain(receiver, app.workers(Shutdown::default())));
         Self {
             app,
             sender: Some(sender),
@@ -591,7 +591,7 @@ async fn drain_ends_when_senders_drop() {
 async fn abort_on_drop_aborts_pending_drain() {
     let app = App::builder().build().unwrap();
     let (sender, receiver) = noctis_gateway::lanes(LaneConfig::default());
-    let handle = tokio::spawn(drain(receiver, app.workers()));
+    let handle = tokio::spawn(drain(receiver, app.workers(Shutdown::default())));
     let abort = handle.abort_handle();
     tokio::task::yield_now().await;
     assert!(!abort.is_finished());
@@ -1180,5 +1180,453 @@ mod observability {
             *fields.0.lock().unwrap(),
             [["app", "shard", "guild_id", "module", "path"]]
         );
+    }
+}
+
+// ---- Story 5.8: shutdown, cancellation (Matrix 16-26) ----
+
+mod shutdown {
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::app::{ShardStatus, Watch, wind_down};
+    use crate::lifecycle::Lifecycle;
+    use crate::test_support::{Recording, Seen};
+    use crate::{ErrorOrigin, ErrorReport, ErrorSink};
+
+    /// A drain whose shutdown controls the test holds.
+    struct Running {
+        app: App,
+        sender: LaneSender,
+        controls: Shutdown,
+        drain: AbortOnDrop,
+        recording: Arc<Recording>,
+    }
+
+    impl Running {
+        /// Builds the App (with a recording `Event` sink) and spawns the
+        /// drain; on a current-thread runtime the drain only runs at the
+        /// next yield.
+        fn start(builder: &mut AppBuilder) -> Self {
+            let recording = Arc::new(Recording::default());
+            builder
+                .runtime(&Runtime::for_test())
+                .error_sink(ErrorOrigin::Event, Arc::clone(&recording));
+            Self::start_with(builder, recording)
+        }
+
+        fn start_with(builder: &mut AppBuilder, recording: Arc<Recording>) -> Self {
+            let app = builder.build().unwrap();
+            let controls = Shutdown::default();
+            let (sender, receiver) = noctis_gateway::lanes(app.lane_config());
+            let drain = AbortOnDrop(tokio::spawn(drain(receiver, app.workers(controls.clone()))));
+            Self {
+                app,
+                sender,
+                controls,
+                drain,
+                recording,
+            }
+        }
+
+        fn push(&self, event: Event) {
+            self.sender.push(Inbound {
+                shard: ShardId::ONE,
+                received_at: Instant::now(),
+                kind: InboundKind::Event(Box::new(event)),
+            });
+        }
+
+        fn push_interaction(&self) {
+            let d = json!({
+                "id": "9",
+                "application_id": "1",
+                "type": 1,
+                "token": "t",
+                "version": 1,
+                "authorizing_integration_owners": {},
+                "entitlements": [],
+            });
+            let raw = RawJson::new(bytes::Bytes::from(d.to_string()));
+            self.sender.push(Inbound {
+                shard: ShardId::ONE,
+                received_at: Instant::now(),
+                kind: InboundKind::Interaction(Box::new(serde_json::from_value(d).unwrap()), raw),
+            });
+        }
+
+        /// Runs core's wind-down with `grace`, bounded by [`WAIT`].
+        async fn wind_down(&mut self, grace: Duration) {
+            let (_tx, mut events) = mpsc::unbounded_channel();
+            let status = ShardStatus {
+                app: Arc::from("default"),
+                total: 1,
+            };
+            let lifecycle = Lifecycle::new();
+            let mut watch = Watch {
+                events: &mut events,
+                status: &status,
+                lifecycle: &lifecycle,
+            };
+            tokio::time::timeout(
+                WAIT,
+                wind_down(grace, &self.controls, &mut self.drain, &mut watch),
+            )
+            .await
+            .unwrap();
+        }
+
+        fn kinds(&self) -> Vec<String> {
+            self.recording.seen().into_iter().map(|s| s.kind).collect()
+        }
+    }
+
+    /// A `MessageDelete` handler that logs `start:{id}`, waits for `gate`,
+    /// then logs `end:{id}`.
+    fn gated(name: &'static str, ordered: bool, log: &Log, gate: &Arc<Semaphore>) -> EventHandler {
+        let log = log.clone();
+        let gate = Arc::clone(gate);
+        handler(name, ordered, move |_, e: MessageDelete| {
+            let log = log.clone();
+            let gate = Arc::clone(&gate);
+            async move {
+                log.push(format!("start:{}", e.id));
+                let _permit = gate.acquire().await;
+                log.push(format!("end:{}", e.id));
+                Ok(())
+            }
+        })
+    }
+
+    /// Matrix 16: an empty drain returns at once and tracks nothing.
+    #[tokio::test]
+    async fn empty_drain() {
+        let mut run =
+            Running::start(App::builder().module(Module::new("m").add(noop::<MessageDelete>("h"))));
+        let started = Instant::now();
+        run.wind_down(Duration::from_secs(5)).await;
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(run.drain.0.is_finished());
+        assert!(run.controls.tracker.is_empty());
+        assert!(!run.controls.cancel.is_cancelled());
+        drop(run.app);
+    }
+
+    /// Matrix 17: queued events finish within the grace period.
+    #[tokio::test]
+    async fn finish_in_grace() {
+        let log = Log::default();
+        let slow = {
+            let log = log.clone();
+            handler("h", false, move |_, e: MessageDelete| {
+                let log = log.clone();
+                async move {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    log.push(format!("ok:{}", e.id));
+                    Ok(())
+                }
+            })
+        };
+        let mut run = Running::start(App::builder().module(Module::new("m").add(slow)));
+        for id in 1..=3 {
+            run.push(message_delete(id, Some(GA)));
+        }
+        run.wind_down(Duration::from_secs(1)).await;
+        assert_eq!(log.lines().len(), 3, "{:?}", log.lines());
+        assert!(run.kinds().is_empty(), "{:?}", run.kinds());
+        assert!(!run.controls.cancel.is_cancelled());
+    }
+
+    /// Matrix 18: a handler blocked past the deadline is cancelled once,
+    /// with every context field, one error count and one duration sample.
+    #[tokio::test]
+    async fn deadline_cancels_running_handler() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut run = Running::start(
+            App::builder().module(Module::new("ops").add(gated("bot::b", false, &log, &gate))),
+        );
+        run.sender.push(Inbound {
+            shard: ShardId::new(0, 1),
+            received_at: Instant::now(),
+            kind: InboundKind::Event(Box::new(message_delete(5, Some(3)))),
+        });
+        until("B started", || log.count("start:5") == 1).await;
+        run.wind_down(Duration::from_millis(100)).await;
+        assert_eq!(
+            run.recording.seen(),
+            [Seen {
+                origin: ErrorOrigin::Event,
+                kind: "cancelled".to_owned(),
+                app: "default".to_owned(),
+                shard: Some(0),
+                guild_id: Some(3),
+                module: Some("ops".to_owned()),
+                handler: Some("bot::b".to_owned()),
+                event_type: Some("MESSAGE_DELETE".to_owned()),
+            }]
+        );
+        assert_eq!(log.count("end:5"), 0);
+        assert_eq!(gate.available_permits(), 0);
+        assert!(run.controls.tracker.is_empty());
+        let snap = snapshotter.snapshot().into_vec();
+        let find = |name: &str| {
+            snap.iter()
+                .find(|(k, ..)| k.key().name() == name)
+                .map(|(.., v)| v)
+        };
+        assert!(
+            matches!(
+                find("noctis_handler_errors_total"),
+                Some(DebugValue::Counter(1))
+            ),
+            "{snap:?}"
+        );
+        assert!(
+            matches!(find("noctis_handler_duration_seconds"), Some(DebugValue::Histogram(v)) if v.len() == 1),
+            "{snap:?}"
+        );
+    }
+
+    /// Matrix 19: an ordered job queued behind the blocked one is cancelled
+    /// too, and its handler body never runs.
+    #[tokio::test]
+    async fn ordered_queued_is_cancelled() {
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut run = Running::start(
+            App::builder().module(Module::new("ops").add(gated("bot::b", true, &log, &gate))),
+        );
+        run.push(message_delete(1, Some(GA)));
+        run.push(message_delete(2, Some(GA)));
+        until("first started", || log.count("start:1") == 1).await;
+        run.wind_down(Duration::from_millis(100)).await;
+        assert_eq!(run.kinds(), ["cancelled", "cancelled"]);
+        assert_eq!(log.count("start:2"), 0, "{:?}", log.lines());
+    }
+
+    /// Matrix 20: only the blocked one of two concurrent handlers is
+    /// cancelled.
+    #[tokio::test]
+    async fn concurrent_mix() {
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut run = Running::start(
+            App::builder().module(
+                Module::new("ops")
+                    .add(gated("bot::blocked", false, &log, &gate))
+                    .add(logging("fast", false, &log)),
+            ),
+        );
+        run.push(message_delete(1, Some(GA)));
+        until("both started", || {
+            log.count("start:1") == 1 && log.count("fast:1") == 1
+        })
+        .await;
+        run.wind_down(Duration::from_millis(100)).await;
+        let seen = run.recording.seen();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert_eq!(seen[0].kind, "cancelled");
+        assert_eq!(seen[0].handler.as_deref(), Some("bot::blocked"));
+    }
+
+    /// Matrix 21: runs ending around the deadline report at most once and
+    /// never both Ok and Cancelled.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn one_outcome_per_run() {
+        let log = Log::default();
+        let racing = {
+            let log = log.clone();
+            handler("h", false, move |_, e: MessageDelete| {
+                let log = log.clone();
+                async move {
+                    // 99..=101 ms: around the 100 ms deadline.
+                    let jitter = e.id.get() % 3;
+                    tokio::time::sleep(Duration::from_millis(99 + jitter)).await;
+                    log.push(format!("ok:{}", e.id));
+                    Ok(())
+                }
+            })
+        };
+        let mut run = Running::start(App::builder().module(Module::new("m").add(racing)));
+        for id in 1..=200 {
+            run.push(message_delete(id, Some(GA)));
+        }
+        run.wind_down(Duration::from_millis(100)).await;
+        let lines = log.lines();
+        let unique: std::collections::HashSet<_> = lines.iter().collect();
+        assert_eq!(unique.len(), lines.len(), "an Ok logged twice");
+        let cancelled = run.kinds().iter().filter(|k| *k == "cancelled").count();
+        assert_eq!(run.kinds().len(), cancelled, "{:?}", run.kinds());
+        assert_eq!(lines.len() + cancelled, 200);
+    }
+
+    /// Matrix 22: zero grace runs no handler and discards the lanes with
+    /// one summary warning, without sink reports.
+    #[tokio::test]
+    async fn zero_grace_discards_lanes() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let mut run =
+            Running::start(App::builder().module(Module::new("m").add(logging("h", false, &log))));
+        run.push(message_delete(1, Some(GA)));
+        run.push(message_delete(2, Some(GA)));
+        run.push_interaction();
+        run.wind_down(Duration::ZERO).await;
+        assert!(log.lines().is_empty());
+        assert!(run.kinds().is_empty());
+        let lines = capture.lines_with(&["WARN", "lanes discarded at shutdown"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("interactions=1"), "{}", lines[0]);
+        assert!(lines[0].contains("events=2"), "{}", lines[0]);
+    }
+
+    /// Matrix 23: an event waiting for a permit is counted, not reported.
+    #[tokio::test]
+    async fn permit_wait_is_discarded() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut run = Running::start(
+            App::builder()
+                .handler_concurrency(1)
+                .module(Module::new("ops").add(gated("bot::b", false, &log, &gate))),
+        );
+        run.push(message_delete(1, Some(GA)));
+        until("B started", || log.count("start:1") == 1).await;
+        run.push(message_delete(2, Some(GA)));
+        // Let the drain (same thread) pop the second event into the
+        // permit wait.
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        run.wind_down(Duration::from_millis(100)).await;
+        assert_eq!(run.kinds(), ["cancelled"]);
+        assert_eq!(log.count("start:2"), 0);
+        let lines = capture.lines_with(&["lanes discarded at shutdown"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("interactions=0"), "{}", lines[0]);
+        assert!(lines[0].contains("events=1"), "{}", lines[0]);
+    }
+
+    /// Matrix 24: an `Err` or a panic during the grace period is reported
+    /// as such, not as `Cancelled`.
+    #[tokio::test]
+    async fn err_and_panic_in_grace() {
+        let gate = Arc::new(Semaphore::new(0));
+        let failing = {
+            let gate = Arc::clone(&gate);
+            handler("bot::f", false, move |_, e: MessageDelete| {
+                let gate = Arc::clone(&gate);
+                async move {
+                    let _permit = gate.acquire().await;
+                    if e.id.get() == 1 {
+                        Err(HandlerError::new(std::io::Error::other("x")))
+                    } else {
+                        panic!("x")
+                    }
+                }
+            })
+        };
+        let mut run = Running::start(App::builder().module(Module::new("m").add(failing)));
+        run.push(message_delete(1, Some(GA)));
+        run.push(message_delete(2, Some(GA)));
+        tokio::task::yield_now().await;
+        let opener = {
+            let gate = Arc::clone(&gate);
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                gate.add_permits(2);
+            })
+        };
+        run.wind_down(Duration::from_secs(5)).await;
+        opener.await.unwrap();
+        let mut kinds = run.kinds();
+        kinds.sort();
+        assert_eq!(kinds, ["error:x", "panic:x"]);
+    }
+
+    /// Panics on every report.
+    struct Panicking;
+
+    impl ErrorSink for Panicking {
+        fn report(&self, _: ErrorReport<'_>) {
+            panic!("sink broke");
+        }
+    }
+
+    /// Matrix 25: a sink panicking on `Cancelled` is logged; the sequence
+    /// completes.
+    #[tokio::test]
+    async fn panicking_sink_on_cancelled() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .error_sink(ErrorOrigin::Event, Panicking)
+            .module(Module::new("ops").add(gated("bot::b", false, &log, &gate)));
+        let mut run = Running::start_with(&mut builder, Arc::new(Recording::default()));
+        run.push(message_delete(1, Some(GA)));
+        until("B started", || log.count("start:1") == 1).await;
+        run.wind_down(Duration::from_millis(100)).await;
+        assert_eq!(capture.lines_with(&["error sink panicked"]).len(), 1);
+        assert!(run.controls.tracker.is_empty());
+    }
+
+    /// Matrix 26: a handler blocking its thread cannot be cancelled; the
+    /// wind-down warns after the cancel wait and still returns.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stuck_handler_warns() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        let log = Log::default();
+        let stuck = {
+            let log = log.clone();
+            handler("bot::stuck", false, move |_, _: MessageDelete| {
+                let log = log.clone();
+                async move {
+                    log.push("start");
+                    std::thread::sleep(Duration::from_secs(2));
+                    Ok(())
+                }
+            })
+        };
+        let mut run = Running::start(App::builder().module(Module::new("m").add(stuck)));
+        run.push(message_delete(1, Some(GA)));
+        until("stuck started", || log.count("start") == 1).await;
+        let started = Instant::now();
+        run.wind_down(Duration::from_millis(100)).await;
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_secs(1), "{elapsed:?}");
+        assert!(elapsed < Duration::from_millis(1900), "{elapsed:?}");
+        let lines = capture.lines_with(&["handlers still running after cancellation"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("running=1"), "{}", lines[0]);
+    }
+
+    /// Matrix 41 (unit level): firing `cancel` without a shutdown drops a
+    /// running handler's future, releasing what it holds.
+    #[tokio::test]
+    async fn cancel_drops_handler_future() {
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let run = Running::start(
+            App::builder().module(Module::new("ops").add(gated("bot::b", false, &log, &gate))),
+        );
+        run.push(message_delete(1, Some(GA)));
+        until("B started", || log.count("start:1") == 1).await;
+        assert_eq!(Arc::strong_count(&gate), 3);
+        run.controls.cancel.cancel();
+        until("future dropped", || Arc::strong_count(&gate) == 2).await;
+        assert_eq!(run.kinds(), ["cancelled"]);
     }
 }

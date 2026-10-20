@@ -432,3 +432,28 @@ fn error_sinks_debug_lists_custom_origins() {
     sinks.set(ErrorOrigin::Command, Arc::new(LogSink));
     assert_eq!(format!("{sinks:?}"), "{Command, Render}");
 }
+
+/// Story 5.8 Matrix 27: `LogSink` logs `Cancelled` at `error` for every
+/// origin, without an `error` or `panic` field.
+#[test]
+fn log_sink_cancelled() {
+    for origin in ErrorOrigin::ALL {
+        let capture = logged(|| LogSink.report(report(origin, ReportKind::Cancelled)));
+        let target = format!("noctis::{origin}:");
+        let message = format!("{origin} handler cancelled at shutdown");
+        let lines = capture.lines_with(&["ERROR", &target, &message]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        let line = &lines[0];
+        for needle in [
+            "app=\"default\"",
+            "shard=3",
+            "guild_id=41",
+            "module=\"audit\"",
+        ] {
+            assert!(line.contains(needle), "{needle} missing from {line}");
+        }
+        for absent in ["error=", "panic="] {
+            assert!(!line.contains(absent), "{absent} in {line}");
+        }
+    }
+}

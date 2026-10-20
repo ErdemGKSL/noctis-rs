@@ -31,6 +31,28 @@ pub enum Error {
     /// `App::run` could not start.
     #[error(transparent)]
     Start(#[from] StartError),
+    /// `App::run` stopped without a shutdown request.
+    #[error(transparent)]
+    Run(#[from] RunError),
+}
+
+/// Why a started `App::run` stopped without a shutdown request.
+///
+/// ```
+/// use noctis_core::RunError;
+///
+/// assert!(RunError::AllShardsEnded.to_string().contains("shard closed fatally"));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum RunError {
+    /// Every shard stopped on its own (fatal closes) after startup; the
+    /// shutdown sequence ran, then `run` returned this instead of `Ok(())`.
+    #[error(
+        "every shard ended without a shutdown request (see the \"shard closed fatally\" logs): \
+         fix the cause, then restart"
+    )]
+    AllShardsEnded,
 }
 
 /// Every violation one `AppBuilder::build` found, in the order recorded:
@@ -170,6 +192,12 @@ pub enum BuildViolation {
         capacity: usize,
         /// The rejected overflow cap.
         overflow: usize,
+    },
+    /// `shutdown_grace` is outside 0 s..=900 s.
+    #[error("shutdown grace {actual:?} is out of range: use a value in 0 s..=900 s")]
+    InvalidShutdownGrace {
+        /// The rejected grace period.
+        actual: Duration,
     },
     /// `handler_concurrency` is outside 1..=65536.
     #[error("handler concurrency {actual} is out of range: use a value in 1..=65536")]
@@ -351,6 +379,13 @@ pub enum StartError {
          then restart"
     )]
     GatewayStopped,
+    /// The Ctrl-C/SIGTERM handler could not be installed (the tokio runtime
+    /// has no IO driver).
+    #[error(
+        "the Ctrl-C/SIGTERM handler could not be installed: build the tokio runtime with \
+         enable_all() (as #[tokio::main] does)"
+    )]
+    SignalHandler,
 }
 
 /// The constant name of a privileged intent, such as `GUILD_MEMBERS`.
@@ -418,6 +453,15 @@ pub enum EnvError {
         "environment variable `{var}` is not a shard total: set a whole number of shards such as 16"
     )]
     InvalidShardTotal {
+        /// The variable's name.
+        var: &'static str,
+    },
+    /// The variable is not a shutdown grace period (1-4 ASCII digits of
+    /// whole seconds).
+    #[error(
+        "environment variable `{var}` is not a shutdown grace period: set whole seconds such as 10"
+    )]
+    InvalidShutdownGrace {
         /// The variable's name.
         var: &'static str,
     },

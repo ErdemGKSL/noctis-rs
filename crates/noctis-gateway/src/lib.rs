@@ -12,6 +12,15 @@
 //! [`InboundSink`] and reports [`ShardEvent`]s on a channel; it never waits
 //! for core or a handler.
 //!
+//! [`Gateway::close_all`] asks every shard to stop (the first call wins): an
+//! identified shard sends the [`CloseMode`]'s close frame (4000 resumable,
+//! 1000 fresh) and reads until the gateway's close frame or
+//! [`GatewayOptions::close_timeout`], a shard that is not identified stops at
+//! once, and no shard pushes another [`Inbound`] after the request. Each
+//! such shard reports [`ShardEvent::Closed`]; a shard that stops on its own
+//! (a fatal close code) reports [`ShardEvent::Ended`].
+//! [`Gateway::closed`] waits until every shard task has ended.
+//!
 //! # Lanes
 //!
 //! [`lanes`] builds the two queues between the shard tasks and core
@@ -64,7 +73,7 @@ mod queue;
 mod shard;
 mod shard_config;
 
-pub use gateway::{Gateway, GatewayOptions};
+pub use gateway::{CloseMode, Gateway, GatewayOptions};
 pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 pub use lanes::{
     DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, DROPPABLE_EVENTS, DropObserver, LaneConfig,

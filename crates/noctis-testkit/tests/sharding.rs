@@ -14,7 +14,7 @@ use std::num::{NonZeroU16, NonZeroU32};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use noctis_core::{App, AppBuilder, Error, Runtime, StartError, Token};
+use noctis_core::{App, AppBuilder, Error, RunError, Runtime, StartError, Token};
 use noctis_gateway::{
     EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundKind, InboundSink, ShardEvent,
 };
@@ -421,7 +421,11 @@ async fn fatal_close_after_startup_ends_run() {
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(!run.is_finished());
     assert_eq!(fakes.gw.close(4014, ""), Ok(2));
-    assert!(finished(run, Duration::from_secs(5)).await.is_ok());
+    // Story 5.8: every shard ending is loud, not a silent `Ok(())`.
+    assert!(matches!(
+        finished(run, Duration::from_secs(5)).await,
+        Err(Error::Run(RunError::AllShardsEnded))
+    ));
 }
 
 // ---- Matrix 29: missing token ----
@@ -475,6 +479,7 @@ async fn gateway_start_parses_into_the_sink() {
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,
+        close_timeout: Duration::from_secs(5),
     };
     let (gateway, mut events) = Gateway::start(options, Arc::new(ChannelSink(tx))).unwrap();
     assert_eq!(gateway.shard_total(), 1);

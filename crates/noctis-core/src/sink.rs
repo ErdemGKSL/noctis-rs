@@ -92,6 +92,7 @@ impl fmt::Display for ErrorOrigin {
 ///         ReportKind::Error(error) => format!("failed: {error}"),
 ///         ReportKind::Panic(message) => format!("panicked: {message}"),
 ///         ReportKind::Dropped => "dropped".to_owned(),
+///         ReportKind::Cancelled => "cancelled at shutdown".to_owned(),
 ///         _ => "other".to_owned(),
 ///     }
 /// }
@@ -108,6 +109,9 @@ pub enum ReportKind<'a> {
     /// A non-droppable gateway event was dropped because the event
     /// overflow was full.
     Dropped,
+    /// The handler was still running, or still queued, when the shutdown
+    /// grace period ended.
+    Cancelled,
 }
 
 /// One failure handed to an [`ErrorSink`]. Only noctis constructs it.
@@ -198,8 +202,8 @@ impl<S: ErrorSink + ?Sized> ErrorSink for Arc<S> {
 /// and `shard`, `guild_id`, `module`, `handler` and `event_type` when
 /// known, plus `error` (the error and its `source()` chain joined with
 /// `": "`, at most 16 links) or `panic`. Messages: `"<origin> handler
-/// failed"`, `"<origin> handler panicked"` and `"event overflow is full;
-/// event dropped"`.
+/// failed"`, `"<origin> handler panicked"`, `"<origin> handler cancelled
+/// at shutdown"` and `"event overflow is full; event dropped"`.
 ///
 /// ```
 /// use noctis_core::{App, ErrorOrigin, LogSink};
@@ -262,6 +266,16 @@ macro_rules! log_report {
                 event_type,
                 panic,
                 concat!($origin, " handler panicked")
+            ),
+            ReportKind::Cancelled => tracing::error!(
+                target: $target,
+                app,
+                shard,
+                guild_id,
+                module,
+                handler,
+                event_type,
+                concat!($origin, " handler cancelled at shutdown")
             ),
             ReportKind::Dropped => tracing::error!(
                 target: $target,

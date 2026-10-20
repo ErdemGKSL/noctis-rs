@@ -42,16 +42,33 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   empty (still attached to its Runtime), so a second `build()` gives a fresh App.
 - `App::run()` checks, in order: a tokio runtime is current (`StartError::NoRuntime`),
   it is multi-thread (`StartError::NotMultiThread`), a rustls crypto provider is
-  installed (installs `ring`'s if none is set; `StartError::CryptoProvider`), and a token
-  is set (`StartError::MissingToken`). Typed errors, never panics. It then reads
+  installed (installs `ring`'s if none is set; `StartError::CryptoProvider`), the
+  Ctrl-C/SIGTERM handlers can be installed (SIGINT and SIGTERM on unix, Ctrl-C
+  elsewhere; a runtime without an IO driver is `StartError::SignalHandler`, so build it
+  with `enable_all()` as `#[tokio::main]` does), and a token is set
+  (`StartError::MissingToken`). Typed errors, never panics. It then reads
   `GET /gateway/bot`, plans the shard total and identify buckets (§4) and starts one
   task per shard. It returns an error if startup fails (see Errors). Once every shard
-  has received READY it logs `all {n} shards ready` and keeps running. It returns
-  `Ok(())` only when every shard has stopped, for example after a fatal close.
-  Gateway events reach your `#[event]` handlers through the **worker set** (§4);
-  interactions are taken first and, until commands and Routes land (Epics 6-7), traced
-  and discarded. [planned: parses CLI flags, runs a CLI mode, and stops on
-  Ctrl-C/SIGTERM (Story 5.8)]
+  has received READY it logs `all {n} shards ready` and keeps running until Ctrl-C or
+  SIGTERM, then shuts down gracefully (§8) and returns `Ok(())`. A shard that closes
+  fatally after startup is logged as `shard closed fatally` with its cause and the App
+  keeps running on the other shards; when **every** shard has ended, `run` runs the
+  shutdown and returns `Err(noctis::Error::Run(RunError::AllShardsEnded))`, never a
+  silent `Ok(())`. Gateway events reach your `#[event]` handlers through the **worker
+  set** (§4); interactions are taken first and, until commands and Routes land (Epics
+  6-7), traced and discarded. [planned: parses CLI flags and runs a CLI mode]
+- `App::run_until(shutdown)` is `run()` with your own trigger instead of the signals:
+  `shutdown` is any `impl Future<Output = ()> + Send`; when it resolves (also during
+  startup) the shutdown of §8 runs and `run_until` returns `Ok(())`. It installs no
+  signal handler. Use it in tests and when you embed the App:
+
+  ```rust
+  let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+  let running = tokio::spawn(app.run_until(async { let _ = stopped.await; }));
+  // ... later
+  let _ = stop.send(());
+  running.await??;          // JoinError, then noctis::Error
+  ```
 
 The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `Arc<noctis::twilight::http::Client>`, the same `Arc` on every call), `app.http_timeout()`,
@@ -59,6 +76,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.gateway_url()` (`Option<&str>`: the normalized gateway URL, e.g. `Some("ws://127.0.0.1:3000")`),
 `app.shard_total()` (`Option<u32>`: the fixed shard total, `None` = Discord's recommendation),
 `app.intents()` (the requested intents plus the ones your event handlers derive),
+`app.shutdown_grace()` (`Duration`, default 10 s),
 `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
@@ -78,6 +96,7 @@ Implemented:
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
 | `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
 | `.shard_total(u32)` | env `NOCTIS_SHARD_TOTAL`, else Discord's recommendation | fix the shard total; the last call wins. `0` is `BuildViolation::InvalidShardTotal`; too small for Discord is `StartError::ShardTotalTooSmall` at `run()`; see §4 |
+| `.shutdown_grace(Duration)` | env `NOCTIS_SHUTDOWN_GRACE`, else 10 s | how long the shutdown waits for queued events and running handlers before it cancels them; `Duration::ZERO..=Duration::from_mins(15)` (else `BuildViolation::InvalidShutdownGrace`); the last call wins; see §8 |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
@@ -93,7 +112,6 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
-| `.shutdown_grace(Duration)` [planned, Story 5.8] | 10 s | drain time on shutdown |
 | `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
@@ -114,8 +132,11 @@ Every error is a `thiserror` enum (`#[non_exhaustive]`; match with a `_` arm) wh
 message names the cause and a fix. No message, `Debug` or log line ever contains the
 token.
 
-- `noctis::Error`: `Env(EnvError)`, `Build(BuildError)`, `Start(StartError)` (`From` for
-  each, so `?` works in `main`).
+- `noctis::Error`: `Env(EnvError)`, `Build(BuildError)`, `Start(StartError)`,
+  `Run(RunError)` (`From` for each, so `?` works in `main`).
+- `RunError` (`Copy`): `AllShardsEnded`: every shard ended on its own after startup
+  (fatal closes; see the `shard closed fatally` logs); the shutdown ran, then `run`
+  returned this instead of `Ok(())`. Fix the cause, then restart.
 - `BuildError`: `err.violations()` (`&[BuildViolation]`, never empty, in recorded order:
   setters, plugin reports, then checks) or `err.into_violations()`. `Display` is
   `"{n} App-build violation(s)"` then one `"\n  - {violation}"` line each.
@@ -125,7 +146,9 @@ token.
   `InvalidHttpTimeout { actual }`, `InvalidHttpProxy { reason: HttpProxyError }`
   (message `"invalid HTTP proxy: {reason}"`, never the value), `InvalidGatewayUrl {
   reason: GatewayUrlError }` (message `"invalid gateway URL: {reason}"`, never the
-  value), `InvalidShardTotal` (`.shard_total(0)`), `InvalidEventLane { capacity, overflow }`
+  value), `InvalidShardTotal` (`.shard_total(0)`), `InvalidShutdownGrace { actual }` (message
+  `"shutdown grace {actual:?} is out of range: use a value in 0 s..=900 s"`),
+  `InvalidEventLane { capacity, overflow }`
   (`.event_lane(..)` out of range), `InvalidHandlerConcurrency { actual }`,
   `MissingIntent { module, handler, event, intent }` (GW-05: an event handler needs a
   privileged intent the App did not request; message `[GW-05] event handler `{handler}`
@@ -149,9 +172,14 @@ token.
     on), `ShardEnded { shard }` (the shard stopped without a close code),
     `GatewayStopped` (every shard stopped before startup finished). Each one is
     returned only while startup is still running. After startup, a shard that stops
-    is logged at `error` and does not stop the App.
+    is logged at `error` (`shard closed fatally`, with `shard`, `close_code` and this
+    error's text as `error`), its `noctis_shard_status` gauge goes to 0, and the App
+    keeps running; when every shard has stopped, `run` returns `RunError::AllShardsEnded`.
+  - `SignalHandler`: the Ctrl-C/SIGTERM handlers could not be installed (the tokio
+    runtime has no IO driver: build it with `enable_all()`, as `#[tokio::main]` does).
 - `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`,
-  `InvalidShardTotal { var }` (not 1-10 ASCII digits fitting a `u32`); the value is
+  `InvalidShardTotal { var }` (not 1-10 ASCII digits fitting a `u32`),
+  `InvalidShutdownGrace { var }` (not 1-4 ASCII digits of whole seconds); the value is
   never shown.
 - `HttpProxyError` (why `.http_proxy(..)` was rejected; checked in this order):
   `Empty` (nothing after an optional `http://` and one trailing `/`),
@@ -214,6 +242,7 @@ Memory rules for embedded data:
 | `NOCTIS_DEV_GUILD` [planned, Story 6.9] | default for `--publish-guild` without an id |
 | `NOCTIS_SHARDS` [planned, Story 12.1] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
 | `NOCTIS_SHARD_TOTAL` | fixed shard total, read by `App::from_env()` after `NOCTIS_GATEWAY_URL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-10 ASCII digits that fit a `u32`, and leading zeros are allowed (`"007"` = 7). Anything else (`-1`, `+5`, `1e3`, `1_000`, over `4294967295`) → `EnvError::InvalidShardTotal`. It is then passed to `.shard_total(..)`, so `0` fails at `build()` |
+| `NOCTIS_SHUTDOWN_GRACE` | shutdown grace in whole seconds, read by `App::from_env()` after `NOCTIS_SHARD_TOTAL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-4 ASCII digits (`"30"`, `"0900"`); anything else (`1.5`, `-1`, `+1`, `10s`, `1e3`, `10000`) → `EnvError::InvalidShutdownGrace`. It is then passed to `.shutdown_grace(..)`, so 901-9999 fail at `build()` |
 | `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
 | `NOCTIS_GATEWAY_URL` | gateway URL, read by `App::from_env()` after `NOCTIS_HTTP_PROXY` with the same rules, then passed to `.gateway_url(..)`; its content is checked by `build()` (`BuildViolation::InvalidGatewayUrl`) |
 | `NOCTIS_PUBLISHER` [planned, Story 6.9] | `true` on the one publishing process |
@@ -381,10 +410,31 @@ stops the App.
 
 ## 8. Shutdown
 
-On SIGINT/SIGTERM: `ShutdownStarted` fires → shards close (resumable unless
-`--no-resume`) → both lanes drain while the Responder and HTTP stay live, up to
-`shutdown_grace` → handlers still running are cancelled and reported → ports dropped.
-Do not spawn work that must outlive a handler; put it behind a port.
+`run()` shuts down on SIGINT/SIGTERM (Ctrl-C on non-unix), `run_until(fut)` when `fut`
+resolves, and both also when every shard has ended (then they return
+`RunError::AllShardsEnded`). A second signal does nothing extra. The order:
+
+1. `info` log `shutdown started` (`reason = "signal"` or `"all shards ended"`,
+   `grace`). [planned, Story 13.5: the `ShutdownStarted` Lifecycle Hook fires here]
+2. Every shard closes with code 4000 (resumable; Discord keeps the session).
+   [planned, Story 12.3: `--no-resume` closes with 1000 and session writes to the
+   `SessionStore`] From here no new gateway event enters the lanes.
+3. Both lanes drain (interactions first) and running handlers finish, for at most
+   `shutdown_grace` (default 10 s). `ctx.http()` keeps working the whole time.
+4. At the deadline every handler still running, or queued behind one (ordered
+   handlers), is cancelled: its future is dropped at its next `.await` and it is
+   reported once to the `Event` Error Sink as `ReportKind::Cancelled` (`LogSink`:
+   `"event handler cancelled at shutdown"`). Events still in the lanes are discarded
+   with one `warn` (`lanes discarded at shutdown`, counts only). Shutdown waits 1 s
+   more; a handler that blocks its thread (no `.await`) cannot be cancelled and is
+   logged as `handlers still running after cancellation`.
+5. Shutdown waits up to 6 s for the shards to close, then `info` log
+   `shutdown complete`; the ports drop with the App.
+
+Shutdown takes at most `shutdown_grace` + 7 s, so keep the grace below your
+orchestrator's kill timeout (Kubernetes: 30 s by default). Dropping the `run`
+future (e.g. aborting its task) cancels every handler too. Do not spawn work that
+must outlive a handler; put it behind a port.
 
 ## 9. `State<T>` and handler parameters
 

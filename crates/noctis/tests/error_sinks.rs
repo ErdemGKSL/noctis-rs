@@ -35,6 +35,17 @@ impl Plugin for AlertPlugin {
     }
 }
 
+/// Story 5.8: `ReportKind::Cancelled` is reachable through the facade.
+#[test]
+fn cancelled_kind_through_facade() {
+    let kind = ReportKind::Cancelled;
+    assert!(matches!(kind, ReportKind::Cancelled));
+    assert!(matches!(
+        noctis::Error::from(noctis::RunError::AllShardsEnded),
+        noctis::Error::Run(noctis::RunError::AllShardsEnded)
+    ));
+}
+
 #[test]
 fn origins_and_names() {
     let names: Vec<_> = ErrorOrigin::ALL.iter().map(ToString::to_string).collect();

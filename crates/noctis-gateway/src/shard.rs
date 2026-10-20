@@ -2,18 +2,21 @@
 //! pushes parsed [`Inbound`] items (FR-2, AD-10, AD-21).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::watch;
 use tokio::time::Instant;
 use tracing::Instrument;
-use twilight_gateway::error::ReceiveMessageErrorType;
+use twilight_gateway::error::{ReceiveMessageError, ReceiveMessageErrorType};
 use twilight_gateway::{Event, EventTypeFlags, Message, Shard, ShardId};
 use twilight_model::gateway::event::{GatewayEvent, GatewayEventDeserializer};
 
+use crate::gateway::CloseMode;
 use crate::inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 use crate::queue::PortQueue;
 
@@ -110,62 +113,147 @@ pub(crate) fn classify(
     }
 }
 
-/// Runs one shard until its stream ends, in span `noctis.shard`.
+/// Runs one shard until its stream ends or a close is requested, in span
+/// `noctis.shard`.
 pub(crate) async fn run(
     shard: Shard<PortQueue>,
     app: Arc<str>,
     wanted: EventTypeFlags,
     sink: Arc<dyn InboundSink>,
     events: UnboundedSender<ShardEvent>,
+    close: watch::Receiver<Option<CloseMode>>,
+    close_timeout: Duration,
 ) {
     let span = tracing::info_span!("noctis.shard", app = &*app, shard = shard.id().number());
-    drive(shard, wanted, sink, events).instrument(span).await;
+    let lane = Lane {
+        wanted,
+        sink,
+        events,
+    };
+    drive(shard, lane, close, close_timeout)
+        .instrument(span)
+        .await;
+}
+
+/// Where a shard task sends what it reads.
+struct Lane {
+    wanted: EventTypeFlags,
+    sink: Arc<dyn InboundSink>,
+    events: UnboundedSender<ShardEvent>,
+}
+
+/// Waits for a close request; a dropped sender counts as
+/// [`CloseMode::Resumable`]. Cancel-safe.
+async fn close_requested(close: &mut watch::Receiver<Option<CloseMode>>) -> CloseMode {
+    match close.wait_for(Option::is_some).await {
+        Ok(requested) => requested.unwrap_or_default(),
+        Err(_) => CloseMode::Resumable,
+    }
 }
 
 async fn drive(
     mut shard: Shard<PortQueue>,
-    wanted: EventTypeFlags,
-    sink: Arc<dyn InboundSink>,
-    events: UnboundedSender<ShardEvent>,
+    lane: Lane,
+    mut close: watch::Receiver<Option<CloseMode>>,
+    close_timeout: Duration,
 ) {
     let id = shard.id();
     let mut last_close = None;
-    while let Some(item) = shard.next().await {
+    let requested = loop {
+        let item = tokio::select! {
+            biased;
+            mode = close_requested(&mut close) => break Some(mode),
+            item = shard.next() => item,
+        };
+        let Some(item) = item else { break None };
         match item {
-            Err(error) => {
-                // `Deserializing`'s `Display` carries the payload: never log it.
-                if let ReceiveMessageErrorType::Deserializing { .. } = error.kind() {
-                    tracing::warn!(
-                        target: "noctis::gateway",
-                        "gateway message could not be deserialized; ignored"
-                    );
-                } else {
-                    tracing::warn!(target: "noctis::gateway", %error, "gateway receive failed");
-                }
-            }
+            Err(error) => log_receive_error(&error),
             Ok(Message::Close(frame)) => {
                 last_close = frame.map(|f| f.code);
-                let _ = events.send(ShardEvent::Disconnected {
+                let _ = lane.events.send(ShardEvent::Disconnected {
                     shard: id.number(),
                     close_code: last_close,
                 });
             }
             Ok(Message::Text(text)) => {
                 let received_at = Instant::now();
-                let classified = classify(text, wanted, id, received_at);
+                let classified = classify(text, lane.wanted, id, received_at);
                 if let Some(status) = classified.status {
-                    let _ = events.send(status);
+                    let _ = lane.events.send(status);
                 }
                 if let Some(inbound) = classified.inbound {
-                    sink.push(inbound);
+                    lane.sink.push(inbound);
                 }
             }
         }
+    };
+    let event = match requested {
+        Some(mode) => {
+            close_shard(&mut shard, mode, close_timeout).await;
+            ShardEvent::Closed { shard: id.number() }
+        }
+        None => ShardEvent::Ended {
+            shard: id.number(),
+            close_code: last_close,
+        },
+    };
+    let _ = lane.events.send(event);
+}
+
+/// Closes a shard on request: an identified shard sends `mode`'s frame and
+/// reads until the gateway's close frame, the end of the stream or
+/// `close_timeout`; any other shard stops at once. Nothing read here reaches
+/// the sink.
+async fn close_shard(shard: &mut Shard<PortQueue>, mode: CloseMode, close_timeout: Duration) {
+    if !shard.state().is_identified() {
+        tracing::debug!(
+            target: "noctis::gateway",
+            state = ?shard.state(),
+            "shard not identified; stopped without a close frame"
+        );
+        return;
     }
-    let _ = events.send(ShardEvent::Ended {
-        shard: id.number(),
-        close_code: last_close,
-    });
+    shard.close(mode.frame());
+    let mut discarded = 0_usize;
+    let acked = tokio::time::timeout(close_timeout, async {
+        while let Some(item) = shard.next().await {
+            match item {
+                // Never read past the close: twilight would reconnect.
+                Ok(Message::Close(_)) => return true,
+                Ok(Message::Text(text)) => {
+                    if GatewayEventDeserializer::from_json(&text)
+                        .is_some_and(|header| header.op() == DISPATCH)
+                    {
+                        discarded += 1;
+                    }
+                }
+                Err(error) => log_receive_error(&error),
+            }
+        }
+        false
+    })
+    .await
+    .unwrap_or(false);
+    tracing::debug!(
+        target: "noctis::gateway",
+        code = mode.frame().code,
+        acked,
+        discarded,
+        "shard closed on request; dispatches after the request discarded"
+    );
+}
+
+/// Logs a receive error; `Deserializing`'s `Display` carries the payload,
+/// so it is never logged.
+fn log_receive_error(error: &ReceiveMessageError) {
+    if let ReceiveMessageErrorType::Deserializing { .. } = error.kind() {
+        tracing::warn!(
+            target: "noctis::gateway",
+            "gateway message could not be deserialized; ignored"
+        );
+    } else {
+        tracing::warn!(target: "noctis::gateway", %error, "gateway receive failed");
+    }
 }
 
 #[cfg(test)]

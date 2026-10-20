@@ -20,6 +20,7 @@ impl ErrorSink for AlertSink {
             ReportKind::Error(_) => "error",
             ReportKind::Panic(_) => "panic",
             ReportKind::Dropped => "dropped",
+            ReportKind::Cancelled => "cancelled",
             _ => "other",
         };
         // Ids and names only: never log payloads or tokens.

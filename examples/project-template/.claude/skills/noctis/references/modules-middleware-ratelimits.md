@@ -273,7 +273,9 @@ builder
   it borrows.
 - **`ReportKind<'_>`** (`#[non_exhaustive]`): `Error(&HandlerError)`, `Panic(&str)`,
   `Dropped` (a non-droppable event dropped because the overflow was full; `module` and
-  `handler` are `None`).
+  `handler` are `None`), `Cancelled` (the handler was still running, or still queued,
+  when the shutdown grace period ended; `app-and-sharding.md` §8). Every handler run
+  ends in exactly one outcome: Ok, `Error`, `Panic` or `Cancelled`.
 - **`ErrorSink`**: `trait ErrorSink: Send + Sync + 'static { fn report(&self, report:
   ErrorReport<'_>); }`. Synchronous: it runs on the worker task (handlers) or the shard
   task (drops), so it must not block or await; spawn a task or forward to a channel for
@@ -284,9 +286,10 @@ builder
 - **`LogSink`** (the default, `Copy`): target `noctis::<origin>`, fields `app` plus
   `shard`, `guild_id`, `module`, `handler`, `event_type` when known, and `error` (source
   chain, at most 16 links) or `panic`. Messages `"<origin> handler failed"`,
-  `"<origin> handler panicked"`, `"event overflow is full; event dropped"`.
-- Hook errors (Story 13.5) will report as `Event`; shutdown cancellations [planned,
-  Story 5.8]. The user-facing localized ephemeral error for interactions arrives with
+  `"<origin> handler panicked"`, `"<origin> handler cancelled at shutdown"` (no `error`
+  or `panic` field), `"event overflow is full; event dropped"`.
+- A cancelled handler also counts in `noctis_handler_errors_total{kind="event"}`.
+- Hook errors (Story 13.5) will report as `Event`. The user-facing localized ephemeral error for interactions arrives with
   Epic 6 [planned].
 
 ## 7. Rate limits (FR-46)

@@ -8,8 +8,8 @@
 //! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
 //!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`event`](macro@event),
 //!   [`HandlerError`], [`HandlerResult`] and the errors ([`Error`],
-//!   [`BuildError`], [`BuildViolation`], [`StartError`], [`EnvError`],
-//!   [`TokenError`], [`ResourceConflict`]).
+//!   [`BuildError`], [`BuildViolation`], [`StartError`], [`RunError`],
+//!   [`EnvError`], [`TokenError`], [`ResourceConflict`]).
 //! - [`events`]: the gateway event payloads `#[event]` handlers take, and
 //!   [`events::EventCtx`].
 //! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
@@ -115,6 +115,41 @@
 //!     let meta: State<BotMeta> = app.state().expect("registered in configure");
 //!     assert_eq!(meta.name, "noctis");
 //!     app.run().await
+//! }
+//! ```
+//!
+//! # Shutdown
+//!
+//! [`App::run`] runs until Ctrl-C or SIGTERM; [`App::run_until`] runs until
+//! a future you pass resolves. Either way the shutdown logs `shutdown
+//! started`, closes every shard with code 4000 (resumable), finishes the
+//! queued events and the running handlers within
+//! [`shutdown_grace`](AppBuilder::shutdown_grace) (default 10 s,
+//! `NOCTIS_SHUTDOWN_GRACE`) while HTTP keeps working, cancels what is left
+//! (each cancelled handler is reported to the `Event` [`ErrorSink`] as
+//! [`ReportKind::Cancelled`]), waits for the shards to close and logs
+//! `shutdown complete`. A shard that closes fatally after startup is logged
+//! as `shard closed fatally` with its cause and its status gauge goes to 0;
+//! when every shard has ended, `run` returns [`RunError::AllShardsEnded`]
+//! instead of `Ok(())`.
+//!
+//! ```no_run
+//! use std::time::Duration;
+//!
+//! use noctis::prelude::*;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), noctis::Error> {
+//!     let app = App::from_env()?
+//!         .shutdown_grace(Duration::from_secs(15))
+//!         .build()?;
+//!     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+//!     let running = tokio::spawn(app.run_until(async {
+//!         let _ = stopped.await;
+//!     }));
+//!     // ... later, from anywhere:
+//!     let _ = stop.send(());
+//!     running.await.expect("not cancelled")
 //! }
 //! ```
 //!
@@ -232,8 +267,8 @@
 pub use noctis_core::{
     App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error, ErrorOrigin,
     ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpProxyError, LogSink,
-    Module, Plugin, ReportKind, Resource, ResourceConflict, Runtime, StartError, State, Token,
-    TokenError,
+    Module, Plugin, ReportKind, Resource, ResourceConflict, RunError, Runtime, StartError, State,
+    Token, TokenError,
 };
 
 pub mod observe {

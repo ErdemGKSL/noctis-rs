@@ -14,7 +14,8 @@ noctis-gateway.workspace = true
 noctis-ports.workspace = true
 rustls.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "signal", "sync", "time"] }
+tokio-util = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 twilight-http.workspace = true
 twilight-model.workspace = true

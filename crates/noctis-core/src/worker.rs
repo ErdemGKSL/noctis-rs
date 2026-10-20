@@ -12,6 +12,8 @@ use futures_util::future::join_all;
 use noctis_gateway::{Inbound, InboundKind, LaneReceiver};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 use tracing::field::Empty;
 use twilight_model::gateway::event::Event;
@@ -19,7 +21,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
 use crate::events::EventCtx;
-use crate::handler::AppShared;
+use crate::handler::{AppShared, HandlerResult};
 use crate::registry::{Entry, Handlers, Registry};
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 
@@ -45,6 +47,23 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// The shutdown controls of a worker set.
+#[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "`shutdown` names the AD-21 phase the token starts"
+)]
+pub(crate) struct Shutdown {
+    /// Tracks every task the worker set spawns.
+    pub(crate) tracker: TaskTracker,
+    /// Fired when the shutdown starts: the drain empties the lanes and
+    /// returns.
+    pub(crate) shutdown: CancellationToken,
+    /// Fired when the grace period ends: queued lane items are discarded and
+    /// every handler still running or queued is cancelled.
+    pub(crate) cancel: CancellationToken,
+}
+
 /// One event on its way to its handlers; holds its worker permit until the
 /// concurrent part ends.
 struct Job {
@@ -63,6 +82,7 @@ pub(crate) struct Workers {
     semaphore: Arc<Semaphore>,
     /// One sender per ordered sub-queue; empty without ordered handlers.
     ordered: Vec<mpsc::UnboundedSender<Job>>,
+    shutdown: Shutdown,
 }
 
 impl Workers {
@@ -72,12 +92,15 @@ impl Workers {
         registry: Arc<Registry>,
         app: Arc<AppShared>,
         handler_concurrency: usize,
+        shutdown: Shutdown,
     ) -> Self {
         let ordered = if registry.has_ordered() {
             (0..SUBQUEUES)
                 .map(|_| {
                     let (tx, rx) = mpsc::unbounded_channel();
-                    tokio::spawn(run_subqueue(rx, Arc::clone(&app)));
+                    shutdown
+                        .tracker
+                        .spawn(run_subqueue(rx, Arc::clone(&app), shutdown.clone()));
                     tx
                 })
                 .collect()
@@ -89,6 +112,7 @@ impl Workers {
             app,
             semaphore: Arc::new(Semaphore::new(handler_concurrency)),
             ordered,
+            shutdown,
         }
     }
 
@@ -115,7 +139,11 @@ impl Workers {
             permit,
         };
         if job.handlers.ordered.is_empty() {
-            tokio::spawn(run_concurrent(job, Arc::clone(&self.app)));
+            self.shutdown.tracker.spawn(run_concurrent(
+                job,
+                Arc::clone(&self.app),
+                self.shutdown.cancel.clone(),
+            ));
         } else if let Some(tx) = self.ordered.get(subqueue(guild_id)) {
             // A closed sub-queue only happens during runtime shutdown.
             let _ = tx.send(job);
@@ -123,18 +151,47 @@ impl Workers {
     }
 }
 
-/// Takes every [`Inbound`] from the lanes until every sender has dropped.
+/// What the drain does next.
+enum Next {
+    Item(Inbound),
+    Done,
+    Cancelled,
+}
+
+/// Takes every [`Inbound`] from the lanes until every sender has dropped,
+/// or until the shutdown token fires and the lanes are empty.
 ///
 /// An interaction never takes a permit. An event waits for one permit,
-/// serving interactions that arrive meanwhile first.
+/// serving interactions that arrive meanwhile first. When the cancel token
+/// fires, every queued item is discarded with one summary warning.
 pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
-    while let Some(inbound) = receiver.recv().await {
+    let shutdown = workers.shutdown.shutdown.clone();
+    let cancel = workers.shutdown.cancel.clone();
+    loop {
+        let next = if cancel.is_cancelled() {
+            Next::Cancelled
+        } else if shutdown.is_cancelled() {
+            receiver.try_recv().map_or(Next::Done, Next::Item)
+        } else {
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => Next::Cancelled,
+                () = shutdown.cancelled() => continue,
+                item = receiver.recv() => item.map_or(Next::Done, Next::Item),
+            }
+        };
+        let inbound = match next {
+            Next::Item(inbound) => inbound,
+            Next::Done => return,
+            Next::Cancelled => return discard(&receiver, 0),
+        };
         let shard = inbound.shard.number();
         match inbound.kind {
             InboundKind::Event(event) => {
                 let permit = loop {
                     tokio::select! {
                         biased;
+                        () = cancel.cancelled() => return discard(&receiver, 1),
                         Some(interaction) = receiver.recv_interaction() => interaction_unhandled(interaction, &workers.app.app),
                         permit = Arc::clone(&workers.semaphore).acquire_owned() => break permit,
                     }
@@ -145,6 +202,22 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
             }
             _ => interaction_unhandled(inbound, &workers.app.app),
         }
+    }
+}
+
+/// Logs the lane items the cancel token discards; `waiting` counts an event
+/// that was waiting for a permit. The receiver's drop clears the lanes.
+fn discard(receiver: &LaneReceiver, waiting: usize) {
+    let depths = receiver.depths();
+    let interactions = depths.interaction;
+    let events = depths.event + depths.overflow + waiting;
+    if interactions + events > 0 {
+        tracing::warn!(
+            target: "noctis::app",
+            interactions,
+            events,
+            "lanes discarded at shutdown"
+        );
     }
 }
 
@@ -179,7 +252,11 @@ fn interaction_unhandled(inbound: Inbound, app: &str) {
 
 /// Runs each job's ordered handlers in arrival order, then spawns its
 /// concurrent part.
-async fn run_subqueue(mut jobs: mpsc::UnboundedReceiver<Job>, app: Arc<AppShared>) {
+async fn run_subqueue(
+    mut jobs: mpsc::UnboundedReceiver<Job>,
+    app: Arc<AppShared>,
+    shutdown: Shutdown,
+) {
     while let Some(Job {
         shard,
         guild_id,
@@ -194,7 +271,7 @@ async fn run_subqueue(mut jobs: mpsc::UnboundedReceiver<Job>, app: Arc<AppShared
             let Some(next) = take_event(&mut event, index + 1 == total) else {
                 break;
             };
-            run_handler(entry, shard, guild_id, next, &app).await;
+            run_handler(entry, shard, guild_id, next, &app, &shutdown.cancel).await;
         }
         match event {
             Some(event) if !handlers.concurrent.is_empty() => {
@@ -205,7 +282,11 @@ async fn run_subqueue(mut jobs: mpsc::UnboundedReceiver<Job>, app: Arc<AppShared
                     handlers,
                     permit,
                 };
-                tokio::spawn(run_concurrent(job, Arc::clone(&app)));
+                shutdown.tracker.spawn(run_concurrent(
+                    job,
+                    Arc::clone(&app),
+                    shutdown.cancel.clone(),
+                ));
             }
             _ => drop(permit),
         }
@@ -214,7 +295,7 @@ async fn run_subqueue(mut jobs: mpsc::UnboundedReceiver<Job>, app: Arc<AppShared
 
 /// Runs every concurrent handler of `job` at once; the permit is released
 /// when all have ended.
-async fn run_concurrent(job: Job, app: Arc<AppShared>) {
+async fn run_concurrent(job: Job, app: Arc<AppShared>, cancel: CancellationToken) {
     let Job {
         shard,
         guild_id,
@@ -230,7 +311,7 @@ async fn run_concurrent(job: Job, app: Arc<AppShared>) {
         .enumerate()
         .filter_map(|(index, entry)| {
             let next = take_event(&mut event, index + 1 == total)?;
-            Some(run_handler(entry, shard, guild_id, next, &app))
+            Some(run_handler(entry, shard, guild_id, next, &app, &cancel))
         });
     join_all(runs.collect::<Vec<_>>()).await;
     drop(permit);
@@ -241,17 +322,29 @@ fn take_event(event: &mut Option<Event>, last: bool) -> Option<Event> {
     if last { event.take() } else { event.clone() }
 }
 
-/// Runs one handler in span `noctis.event`, catching its panic; records
-/// its duration and reports an error or a panic to the `Event` sink.
+/// How one handler run ended.
+enum Outcome {
+    /// The handler returned.
+    Returned(HandlerResult<()>),
+    /// The handler panicked.
+    Panicked(Box<dyn Any + Send>),
+    /// The cancel token fired first (or before the handler started).
+    Cancelled,
+}
+
+/// Runs one handler in span `noctis.event`, catching its panic and racing
+/// the cancel token (cancel first); records its duration when it started,
+/// and reports an error, a panic or a cancellation to the `Event` sink.
+/// Every run ends in exactly one outcome.
 async fn run_handler(
     entry: &Entry,
     shard: u32,
     guild_id: Option<Id<GuildMarker>>,
     event: Event,
     app: &Arc<AppShared>,
+    cancel: &CancellationToken,
 ) {
     let handler = &entry.handler;
-    let ctx = EventCtx::new(shard, guild_id, entry.module, Arc::clone(app));
     let event_type = handler.kind().name().unwrap_or("UNKNOWN");
     let span = tracing::info_span!(
         "noctis.event",
@@ -262,30 +355,44 @@ async fn run_handler(
         handler = handler.name(),
         event_type,
     );
-    let started_at = Instant::now();
-    let started =
-        span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event))));
-    let outcome = match started {
-        Ok(Some(fut)) => {
-            AssertUnwindSafe(fut)
-                .catch_unwind()
-                .instrument(span.clone())
-                .await
-        }
-        Ok(None) => return,
-        Err(panic) => Err(panic),
-    };
     let kind = ErrorOrigin::Event.as_str();
-    metrics::histogram!(
-        "noctis_handler_duration_seconds",
-        "app" => Arc::clone(&app.app),
-        "kind" => kind
-    )
-    .record(started_at.elapsed().as_secs_f64());
+    let outcome = if cancel.is_cancelled() {
+        Outcome::Cancelled
+    } else {
+        let ctx = EventCtx::new(shard, guild_id, entry.module, Arc::clone(app));
+        let started_at = Instant::now();
+        let started = span
+            .in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event))));
+        let outcome = match started {
+            Ok(Some(fut)) => {
+                let run = AssertUnwindSafe(fut)
+                    .catch_unwind()
+                    .instrument(span.clone());
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => Outcome::Cancelled,
+                    result = run => match result {
+                        Ok(result) => Outcome::Returned(result),
+                        Err(panic) => Outcome::Panicked(panic),
+                    },
+                }
+            }
+            Ok(None) => return,
+            Err(panic) => Outcome::Panicked(panic),
+        };
+        metrics::histogram!(
+            "noctis_handler_duration_seconds",
+            "app" => Arc::clone(&app.app),
+            "kind" => kind
+        )
+        .record(started_at.elapsed().as_secs_f64());
+        outcome
+    };
     let report_kind = match &outcome {
-        Ok(Ok(())) => return,
-        Ok(Err(error)) => ReportKind::Error(error),
-        Err(panic) => ReportKind::Panic(panic_message(&**panic)),
+        Outcome::Returned(Ok(())) => return,
+        Outcome::Returned(Err(error)) => ReportKind::Error(error),
+        Outcome::Panicked(panic) => ReportKind::Panic(panic_message(&**panic)),
+        Outcome::Cancelled => ReportKind::Cancelled,
     };
     metrics::counter!(
         "noctis_handler_errors_total",

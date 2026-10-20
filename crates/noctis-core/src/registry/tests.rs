@@ -37,7 +37,10 @@ async fn no_modules() {
     assert_eq!(registry.event_types(), EventTypeFlags::INTERACTION_CREATE);
     assert_eq!(registry.droppable(), DROPPABLE_EVENTS);
     assert!(!registry.has_ordered());
-    assert_eq!(app.workers().subqueues(), 0);
+    assert_eq!(
+        app.workers(crate::worker::Shutdown::default()).subqueues(),
+        0
+    );
 }
 
 /// Matrix 2: an empty module changes nothing.
@@ -50,7 +53,10 @@ async fn empty_module() {
         EventTypeFlags::INTERACTION_CREATE
     );
     assert_eq!(app.registry().droppable(), DROPPABLE_EVENTS);
-    assert_eq!(app.workers().subqueues(), 0);
+    assert_eq!(
+        app.workers(crate::worker::Shutdown::default()).subqueues(),
+        0
+    );
 }
 
 /// Matrix 3: one handler derives its intent and filter.

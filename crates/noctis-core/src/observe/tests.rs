@@ -210,7 +210,10 @@ async fn recorded_set_core() {
     sender.push(inbound(delete(3)));
     sender.push(inbound(delete(4)));
     sender.push(inbound(typing()));
-    let drained = tokio::spawn(drain(receiver, app.workers()));
+    let drained = tokio::spawn(drain(
+        receiver,
+        app.workers(crate::worker::Shutdown::default()),
+    ));
     until("Err run", || recording.seen().len() == 2).await;
     // One at a time, so the one-slot lane never overflows again.
     for (id, reports) in [(5, 2), (7, 3)] {

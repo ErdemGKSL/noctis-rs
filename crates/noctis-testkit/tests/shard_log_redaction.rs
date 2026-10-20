@@ -88,6 +88,7 @@ async fn shard_warnings_omit_the_payload() {
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,
+        close_timeout: Duration::from_secs(5),
     };
     let (gateway, mut events) = Gateway::start(options, Arc::new(Discard)).unwrap();
     assert_eq!(

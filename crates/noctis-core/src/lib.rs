@@ -14,7 +14,13 @@
 //! [`StartError`] instead of panicking when any step fails. Inbound items
 //! flow from the shard tasks through the lanes (the never-dropped
 //! Interaction Lane and the bounded event lane) to one core drain task,
-//! which takes interactions first.
+//! which takes interactions first. `run` stops on Ctrl-C/SIGTERM and
+//! [`App::run_until`] when a future resolves: the shards close (resumable),
+//! queued events and running handlers get [`AppBuilder::shutdown_grace`],
+//! and handlers still running then are cancelled and reported as
+//! [`ReportKind::Cancelled`]. A shard closing fatally after startup is
+//! logged with its cause; when every shard has ended, `run` returns
+//! [`RunError::AllShardsEnded`].
 //!
 //! # Modules and events
 //!
@@ -33,8 +39,8 @@
 //!
 //! # Observability and Error Sinks
 //!
-//! Handler errors, handler panics and events dropped by a full overflow go
-//! to the [`ErrorSink`] of their [`ErrorOrigin`]
+//! Handler errors, handler panics, handlers cancelled at shutdown and events
+//! dropped by a full overflow go to the [`ErrorSink`] of their [`ErrorOrigin`]
 //! ([`AppBuilder::error_sink`]); unset origins use [`LogSink`], which logs
 //! at `error`. Spans (`noctis.shard`, `noctis.event`,
 //! `noctis.interaction`) and metrics follow the contract in [`observe`].
@@ -63,6 +69,7 @@ mod error;
 pub mod events;
 mod gateway_url;
 mod handler;
+mod lifecycle;
 mod module;
 pub mod observe;
 mod plugin;
@@ -80,7 +87,7 @@ mod token;
 mod worker;
 
 pub use app::{App, AppBuilder};
-pub use error::{BuildError, BuildViolation, EnvError, Error, StartError};
+pub use error::{BuildError, BuildViolation, EnvError, Error, RunError, StartError};
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};

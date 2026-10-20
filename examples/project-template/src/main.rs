@@ -26,9 +26,11 @@ async fn main() -> anyhow::Result<()> {
 
     // `App::from_env` reads NOCTIS_* variables (token, payload key, shard range, proxy).
     // `configure` takes the builder by `&mut`; the temporary lives to the end of the statement.
-    // `run` also handles the CLI modes: --publish, --publish-guild <id>, --publish-clear,
-    // --dry-run, --features a,b|all, --no-resume. It returns after a graceful shutdown
-    // (Ctrl-C / SIGTERM) or when a CLI mode finishes.
+    // `run` stops on Ctrl-C/SIGTERM: shards close, queued events and running handlers get
+    // the shutdown grace period (see `configure`), then whatever is left is cancelled and
+    // `run` returns `Ok(())`. It returns `RunError::AllShardsEnded` if every shard closed
+    // fatally. [planned] It will also handle the CLI modes: --publish, --publish-guild <id>,
+    // --publish-clear, --dry-run, --features a,b|all, --no-resume.
     let app = noctis_bot_template::configure(&mut App::from_env()?).build()?;
     app.run().await?;
     Ok(())

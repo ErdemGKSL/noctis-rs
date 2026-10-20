@@ -147,7 +147,7 @@ pub trait InboundSink: Send + Sync + 'static {
 }
 
 /// A shard's status change, reported on the channel [`Gateway::start`](crate::Gateway::start)
-/// returns.
+/// returns. Each shard task ends with exactly one `Ended` or `Closed`.
 ///
 /// ```
 /// use noctis_gateway::ShardEvent;
@@ -175,11 +175,20 @@ pub enum ShardEvent {
         /// The close code, if the close frame carried one.
         close_code: Option<u16>,
     },
-    /// The shard stopped for good; its task ended.
+    /// The shard stopped on its own (a fatal close code, or a stream that
+    /// ended); its task ended. Never sent after
+    /// [`Gateway::close_all`](crate::Gateway::close_all) stopped the shard.
     Ended {
         /// The shard number.
         shard: u32,
         /// The last close code the shard saw, if any.
         close_code: Option<u16>,
+    },
+    /// The shard stopped because [`Gateway::close_all`](crate::Gateway::close_all)
+    /// asked it to; its task ended. Sent instead of `Disconnected` and
+    /// `Ended` for the requested close.
+    Closed {
+        /// The shard number.
+        shard: u32,
     },
 }

@@ -29,7 +29,11 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
         assert!(
             matches!(
                 var,
-                "NOCTIS_TOKEN" | "NOCTIS_HTTP_PROXY" | "NOCTIS_GATEWAY_URL" | "NOCTIS_SHARD_TOTAL"
+                "NOCTIS_TOKEN"
+                    | "NOCTIS_HTTP_PROXY"
+                    | "NOCTIS_GATEWAY_URL"
+                    | "NOCTIS_SHARD_TOTAL"
+                    | "NOCTIS_SHUTDOWN_GRACE"
             ),
             "unexpected variable {var}"
         );
@@ -646,7 +650,8 @@ fn from_env_reads_token_first() {
             "NOCTIS_TOKEN",
             "NOCTIS_HTTP_PROXY",
             "NOCTIS_GATEWAY_URL",
-            "NOCTIS_SHARD_TOTAL"
+            "NOCTIS_SHARD_TOTAL",
+            "NOCTIS_SHUTDOWN_GRACE",
         ]
     );
 }
@@ -922,12 +927,15 @@ async fn startup_waits_for_every_ready_and_maps_closed_channel() {
     ] {
         tx.send(event).unwrap();
     }
-    assert_eq!(await_startup(&mut rx, &status(2)).await, Ok(()));
+    assert_eq!(
+        await_startup(&mut rx, &status(2), &Lifecycle::new()).await,
+        Ok(())
+    );
 
     tx.send(ShardEvent::Ready { shard: 0 }).unwrap();
     drop(tx);
     assert_eq!(
-        await_startup(&mut rx, &status(2)).await,
+        await_startup(&mut rx, &status(2), &Lifecycle::new()).await,
         Err(StartError::GatewayStopped)
     );
 
@@ -938,7 +946,7 @@ async fn startup_waits_for_every_ready_and_maps_closed_channel() {
     })
     .unwrap();
     assert_eq!(
-        await_startup(&mut rx, &status(2)).await,
+        await_startup(&mut rx, &status(2), &Lifecycle::new()).await,
         Err(StartError::DisallowedIntents { shard: 1 })
     );
 }
@@ -997,4 +1005,586 @@ fn status(total: u32) -> ShardStatus {
         app: Arc::from("default"),
         total,
     }
+}
+
+// ---- shutdown_grace (Story 5.8 Matrix 1-8) ----
+
+#[tokio::test]
+async fn shutdown_grace_builder() {
+    let grace = |value: Duration| App::builder().shutdown_grace(value).build();
+    assert_eq!(
+        App::builder().build().unwrap().shutdown_grace(),
+        Duration::from_secs(10),
+        "Matrix 1"
+    );
+    for ok in [
+        Duration::ZERO,
+        Duration::from_mins(15),
+        Duration::from_nanos(1),
+    ] {
+        assert_eq!(grace(ok).unwrap().shutdown_grace(), ok, "Matrix 2: {ok:?}");
+    }
+    for bad in [
+        Duration::from_mins(15) + Duration::from_nanos(1),
+        Duration::MAX,
+    ] {
+        let err = grace(bad).unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [BuildViolation::InvalidShutdownGrace { actual: bad }],
+            "Matrix 3"
+        );
+    }
+    assert_eq!(
+        BuildViolation::InvalidShutdownGrace {
+            actual: Duration::from_secs(901)
+        }
+        .to_string(),
+        "shutdown grace 901s is out of range: use a value in 0 s..=900 s"
+    );
+    let err = App::builder()
+        .http_timeout(Duration::ZERO)
+        .handler_concurrency(0)
+        .shutdown_grace(Duration::MAX)
+        .build()
+        .unwrap_err();
+    assert!(
+        matches!(
+            err.violations(),
+            [
+                BuildViolation::InvalidHttpTimeout { .. },
+                BuildViolation::InvalidHandlerConcurrency { .. },
+                BuildViolation::InvalidShutdownGrace { .. },
+            ]
+        ),
+        "Matrix 3 order: {err:?}"
+    );
+
+    let mut builder = App::builder();
+    builder
+        .shutdown_grace(Duration::from_secs(1))
+        .shutdown_grace(Duration::from_secs(2));
+    assert!(format!("{builder:?}").contains("shutdown_grace: 2s"));
+    let app = builder.build().unwrap();
+    assert_eq!(app.shutdown_grace(), Duration::from_secs(2), "Matrix 4");
+    assert!(format!("{app:?}").contains("shutdown_grace: 2s"));
+    assert_eq!(
+        builder.build().unwrap().shutdown_grace(),
+        Duration::from_secs(10),
+        "Matrix 4 reset"
+    );
+}
+
+#[tokio::test]
+async fn from_env_shutdown_grace() {
+    let read = |raw: &str| {
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHUTDOWN_GRACE", Some(raw.into())))
+            .map(|b| b.shutdown_grace)
+    };
+    for (raw, secs) in [("30", 30), (" 0 ", 0), ("0900", 900), ("9999", 9999)] {
+        assert_eq!(
+            read(raw),
+            Ok(Duration::from_secs(secs)),
+            "Matrix 5: {raw:?}"
+        );
+    }
+    let err = AppBuilder::from_lookup(lookup_var("NOCTIS_SHUTDOWN_GRACE", Some("9999".into())))
+        .unwrap()
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidShutdownGrace {
+            actual: Duration::from_secs(9999)
+        }]
+    );
+    assert_eq!(
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHUTDOWN_GRACE", None))
+            .unwrap()
+            .shutdown_grace,
+        Duration::from_secs(10),
+        "Matrix 6: missing"
+    );
+    for raw in ["", "   "] {
+        assert_eq!(read(raw), Ok(Duration::from_secs(10)), "Matrix 6: {raw:?}");
+    }
+    for raw in [
+        "10000",
+        "1.5",
+        "-1",
+        "+1",
+        "10s",
+        "1e3",
+        "1_0",
+        "\u{ff13}\u{ff10}",
+        "\u{663}",
+    ] {
+        let err = read(raw).unwrap_err();
+        assert_eq!(
+            err,
+            EnvError::InvalidShutdownGrace {
+                var: "NOCTIS_SHUTDOWN_GRACE"
+            },
+            "Matrix 7: {raw:?}"
+        );
+        let text = err.to_string();
+        assert!(text.contains("NOCTIS_SHUTDOWN_GRACE"), "{text}");
+        assert!(!text.contains(raw), "{text}");
+    }
+    let mut builder =
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHUTDOWN_GRACE", Some("30".into()))).unwrap();
+    builder.shutdown_grace(Duration::from_secs(5));
+    assert_eq!(
+        builder.build().unwrap().shutdown_grace(),
+        Duration::from_secs(5),
+        "Matrix 8 override"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn from_env_shutdown_grace_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_SHUTDOWN_GRACE",
+        Some(OsString::from_vec(vec![b'1', 0xff])),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_SHUTDOWN_GRACE"
+        },
+        "Matrix 8"
+    );
+}
+
+// ---- run, signals and errors (Story 5.8 Matrix 40) ----
+
+#[test]
+fn run_future_is_send() {
+    fn assert_send<T: Send>(_: &T) {}
+    let tokio_rt = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let _guard = tokio_rt.enter();
+    let app = App::builder().build().unwrap();
+    let run = app.run();
+    assert_send(&run);
+    drop(run);
+    let app = App::builder().build().unwrap();
+    let run = app.run_until(std::future::pending());
+    assert_send(&run);
+}
+
+/// Matrix 40: a runtime without an IO driver cannot install the signal
+/// handlers; `run` returns a typed error instead of panicking.
+#[test]
+fn run_without_io_driver() {
+    let tokio_rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_time()
+        .build()
+        .unwrap();
+    let outcome = tokio_rt.block_on(async {
+        let app = App::builder().token(token()).build().unwrap();
+        app.run().await
+    });
+    assert!(
+        matches!(outcome, Err(Error::Start(StartError::SignalHandler))),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        StartError::SignalHandler.to_string(),
+        "the Ctrl-C/SIGTERM handler could not be installed: build the tokio runtime with \
+         enable_all() (as #[tokio::main] does)"
+    );
+}
+
+#[test]
+fn run_error_message() {
+    let error = Error::from(RunError::AllShardsEnded);
+    assert!(matches!(error, Error::Run(RunError::AllShardsEnded)));
+    assert_eq!(
+        error.to_string(),
+        "every shard ended without a shutdown request (see the \"shard closed fatally\" logs): \
+         fix the cause, then restart"
+    );
+}
+
+/// A shutdown that arrives before the shards start ends `run_until` with
+/// `Ok(())` and no request beyond `GET /gateway/bot`.
+#[tokio::test(flavor = "multi_thread")]
+async fn run_until_already_requested() {
+    let app = App::builder()
+        .token(token())
+        .http_proxy("127.0.0.1:1")
+        .build()
+        .unwrap();
+    let outcome = tokio::time::timeout(Duration::from_secs(15), app.run_until(async {})).await;
+    assert!(matches!(outcome, Ok(Ok(()))), "{outcome:?}");
+}
+
+// ---- supervise and lifecycle (Story 5.8 Matrix 28-34) ----
+
+/// Drives `supervise` over `events` (sender dropped by the caller or not)
+/// with a shutdown that never resolves, recording metrics and logs.
+struct Supervised {
+    capture: crate::test_support::Capture,
+    snapshot: Vec<(
+        metrics_util::CompositeKey,
+        Option<metrics::Unit>,
+        Option<metrics::SharedString>,
+        metrics_util::debugging::DebugValue,
+    )>,
+    lifecycle: Vec<LifecycleEvent>,
+    stop: Option<Stop>,
+}
+
+/// Feeds `events` to `supervise` (total 2) and stops after they are handled.
+async fn supervised(events: &[ShardEvent], close: bool) -> Supervised {
+    use metrics_util::debugging::DebuggingRecorder;
+
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _metrics = metrics::set_default_local_recorder(&recorder);
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    let lifecycle = Lifecycle::new();
+    let mut rx_lifecycle = lifecycle.subscribe();
+    let status = status(2);
+    status.init();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    for event in events {
+        tx.send(*event).unwrap();
+    }
+    if close {
+        drop(tx);
+    } else {
+        std::mem::forget(tx);
+    }
+    // `supervise` handles every queued event before a yield lets the
+    // shutdown future (a 50 ms sleep) win.
+    let stop = tokio::time::timeout(
+        Duration::from_secs(15),
+        supervise(
+            &mut rx,
+            &status,
+            &lifecycle,
+            tokio::time::sleep(Duration::from_millis(50)),
+        ),
+    )
+    .await
+    .ok();
+    let snapshot = snapshotter.snapshot().into_vec();
+    std::mem::forget(status);
+    let mut seen = Vec::new();
+    while let Ok(event) = rx_lifecycle.try_recv() {
+        seen.push(event);
+    }
+    Supervised {
+        capture,
+        snapshot,
+        lifecycle: seen,
+        stop,
+    }
+}
+
+impl Supervised {
+    fn gauge(&self, shard: &str) -> Option<f64> {
+        self.snapshot.iter().find_map(|(key, .., value)| {
+            let matches = key.key().name() == "noctis_shard_status"
+                && key
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "shard" && l.value() == shard);
+            match value {
+                metrics_util::debugging::DebugValue::Gauge(v) if matches => Some(v.0),
+                _ => None,
+            }
+        })
+    }
+}
+
+/// Matrix 28: a fatal close after startup is loud and the App keeps
+/// running.
+#[tokio::test]
+async fn fatal_close_after_startup() {
+    let run = supervised(
+        &[
+            ShardEvent::Ready { shard: 0 },
+            ShardEvent::Ready { shard: 1 },
+            ShardEvent::Ended {
+                shard: 1,
+                close_code: Some(4014),
+            },
+        ],
+        false,
+    )
+    .await;
+    assert_eq!(run.stop, Some(Stop::Requested), "supervise keeps running");
+    let lines = run
+        .capture
+        .lines_with(&["shard closed fatally", "shard=1", "close_code=4014"]);
+    assert_eq!(lines.len(), 1, "{}", run.capture.text());
+    assert!(lines[0].contains("ERROR"), "{}", lines[0]);
+    assert!(
+        lines[0].contains("4014 (disallowed intents)"),
+        "{}",
+        lines[0]
+    );
+    assert!(!run.capture.text().contains("shard ended\n"));
+    assert_eq!(run.gauge("1"), Some(0.0));
+    assert_eq!(run.gauge("0"), Some(1.0));
+    assert_eq!(
+        run.lifecycle
+            .iter()
+            .filter(|e| matches!(e, LifecycleEvent::ShardFatal { .. }))
+            .collect::<Vec<_>>(),
+        [&LifecycleEvent::ShardFatal {
+            shard: 1,
+            close_code: Some(4014)
+        }]
+    );
+}
+
+/// Matrix 29: each fatal cause is logged with its typed error text.
+#[tokio::test]
+async fn fatal_close_causes() {
+    for code in [None, Some(4004), Some(4010), Some(4012)] {
+        let run = supervised(
+            &[ShardEvent::Ended {
+                shard: 0,
+                close_code: code,
+            }],
+            false,
+        )
+        .await;
+        let expected = start_error(0, code).to_string();
+        let lines = run.capture.lines_with(&["shard closed fatally", &expected]);
+        assert_eq!(lines.len(), 1, "{code:?}: {}", run.capture.text());
+        assert_eq!(
+            run.lifecycle,
+            [LifecycleEvent::ShardFatal {
+                shard: 0,
+                close_code: code
+            }]
+        );
+    }
+    assert_eq!(start_error(0, None), StartError::ShardEnded { shard: 0 });
+    assert_eq!(start_error(0, Some(4004)), StartError::InvalidToken);
+}
+
+/// Matrix 30: every shard ended (or the channel closed) stops supervise.
+#[tokio::test]
+async fn all_shards_ended() {
+    let ended = |shard| ShardEvent::Ended {
+        shard,
+        close_code: Some(4004),
+    };
+    let run = supervised(&[ended(0), ended(1)], false).await;
+    assert_eq!(run.stop, Some(Stop::AllEnded));
+    let run = supervised(&[ended(0), ended(0)], false).await;
+    assert_eq!(
+        run.stop,
+        Some(Stop::Requested),
+        "one shard twice is not all"
+    );
+    let run = supervised(&[ended(0)], true).await;
+    assert_eq!(run.stop, Some(Stop::AllEnded), "closed channel");
+}
+
+/// Matrix 31: an out-of-range shard is logged and broadcast; no gauge.
+#[tokio::test]
+async fn out_of_range_fatal() {
+    let run = supervised(
+        &[ShardEvent::Ended {
+            shard: 9,
+            close_code: Some(4014),
+        }],
+        false,
+    )
+    .await;
+    assert_eq!(
+        run.capture
+            .lines_with(&["shard closed fatally", "shard=9"])
+            .len(),
+        1
+    );
+    assert_eq!(
+        run.lifecycle,
+        [LifecycleEvent::ShardFatal {
+            shard: 9,
+            close_code: Some(4014)
+        }]
+    );
+    assert_eq!(run.gauge("9"), None);
+    assert_eq!(run.stop, Some(Stop::Requested));
+}
+
+/// Matrix 32: the lifecycle mapping; `Closed` broadcasts nothing.
+#[tokio::test]
+async fn lifecycle_mapping() {
+    let run = supervised(
+        &[
+            ShardEvent::Ready { shard: 0 },
+            ShardEvent::Resumed { shard: 0 },
+            ShardEvent::Disconnected {
+                shard: 0,
+                close_code: Some(4000),
+            },
+            ShardEvent::Ready { shard: 1 },
+            ShardEvent::Closed { shard: 1 },
+        ],
+        false,
+    )
+    .await;
+    assert_eq!(
+        run.lifecycle,
+        [
+            LifecycleEvent::ShardReady { shard: 0 },
+            LifecycleEvent::ShardResumed { shard: 0 },
+            LifecycleEvent::ShardDisconnected {
+                shard: 0,
+                close_code: Some(4000)
+            },
+            LifecycleEvent::ShardReady { shard: 1 },
+        ]
+    );
+    assert_eq!(run.gauge("1"), Some(0.0));
+    assert!(!run.capture.text().contains("fatally"));
+    assert_eq!(
+        run.capture
+            .lines_with(&["DEBUG", "shard closed", "shard=1"])
+            .len(),
+        1
+    );
+}
+
+/// Matrix 33: no receivers or a lagging one never block or fail.
+#[tokio::test]
+async fn lifecycle_without_receivers_and_lag() {
+    let lifecycle = Lifecycle::new();
+    lifecycle.send(LifecycleEvent::ShutdownStarted);
+    let mut rx = lifecycle.subscribe();
+    for shard in 0..300 {
+        lifecycle.shard(&ShardEvent::Ready { shard });
+    }
+    assert!(matches!(
+        rx.try_recv(),
+        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(44))
+    ));
+    assert_eq!(rx.try_recv(), Ok(LifecycleEvent::ShardReady { shard: 44 }));
+}
+
+/// `await_startup` broadcasts shard events, and a fatal close during
+/// startup is a `ShardFatal` too.
+#[tokio::test]
+async fn startup_broadcasts_lifecycle() {
+    let lifecycle = Lifecycle::new();
+    let mut seen = lifecycle.subscribe();
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    tx.send(ShardEvent::Ready { shard: 0 }).unwrap();
+    tx.send(ShardEvent::Ended {
+        shard: 1,
+        close_code: Some(4014),
+    })
+    .unwrap();
+    assert_eq!(
+        await_startup(&mut rx, &status(2), &lifecycle).await,
+        Err(StartError::DisallowedIntents { shard: 1 })
+    );
+    assert_eq!(seen.try_recv(), Ok(LifecycleEvent::ShardReady { shard: 0 }));
+    assert_eq!(
+        seen.try_recv(),
+        Ok(LifecycleEvent::ShardFatal {
+            shard: 1,
+            close_code: Some(4014)
+        })
+    );
+}
+
+/// Matrix 34: the App's lifecycle receiver sees exactly one
+/// `ShutdownStarted` per shutdown (the sequence itself is covered end to end
+/// in `noctis-testkit/tests/shutdown.rs`).
+#[tokio::test]
+async fn app_lifecycle_channel() {
+    let app = App::builder().build().unwrap();
+    let mut rx = app.subscribe_lifecycle();
+    app.lifecycle.send(LifecycleEvent::ShutdownStarted);
+    assert_eq!(rx.try_recv(), Ok(LifecycleEvent::ShutdownStarted));
+    assert!(rx.try_recv().is_err());
+}
+
+/// Matrix 34: one `ShutdownStarted`, broadcast before any shard reports
+/// `Closed`; the sequence logs in order and ends with every gauge at 0.
+#[tokio::test(flavor = "multi_thread")]
+async fn shutdown_sequence_order() {
+    use std::num::NonZeroU16;
+
+    use noctis_gateway::EventTypeFlags;
+
+    use crate::worker::Shutdown;
+
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    let app = App::builder()
+        .runtime(&Runtime::for_test())
+        .shutdown_grace(Duration::from_millis(100))
+        .build()
+        .unwrap();
+    let mut lifecycle = app.subscribe_lifecycle();
+    let controls = Shutdown::default();
+    let (sender, receiver) = noctis_gateway::lanes(app.lane_config());
+    let mut drain = AbortOnDrop(tokio::spawn(drain(receiver, app.workers(controls.clone()))));
+    // Nothing listens on port 1: the shards never identify, so they stop
+    // at once without a close frame.
+    let options = GatewayOptions {
+        app: Arc::from("default"),
+        token: SECRET.to_owned(),
+        intents: Intents::GUILDS,
+        gateway_url: Some("ws://127.0.0.1:1".to_owned()),
+        event_types: EventTypeFlags::INTERACTION_CREATE,
+        identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
+        total: NonZeroU32::new(2).unwrap(),
+        max_concurrency: NonZeroU16::MIN,
+        close_timeout: SHARD_CLOSE_TIMEOUT,
+    };
+    let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).unwrap();
+    let status = status(2);
+    let watch = Watch {
+        events: &mut events,
+        status: &status,
+        lifecycle: &app.lifecycle,
+    };
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        app.shut_down(Stop::Requested, gateway, watch, &controls, &mut drain),
+    )
+    .await
+    .unwrap();
+    let mut seen = Vec::new();
+    while let Ok(event) = lifecycle.try_recv() {
+        seen.push(event);
+    }
+    let started: Vec<_> = seen
+        .iter()
+        .filter(|e| **e == LifecycleEvent::ShutdownStarted)
+        .collect();
+    assert_eq!(started.len(), 1, "{seen:?}");
+    let text = capture.text();
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle} missing: {text}"))
+    };
+    assert!(
+        text.contains("reason=\"signal\"") || text.contains("reason=signal"),
+        "{text}"
+    );
+    assert!(at("shutdown started") < at("shard closed"), "{text}");
+    assert!(at("shard closed") < at("shutdown complete"), "{text}");
+    assert_eq!(text.matches("shard closed").count(), 2, "{text}");
+    assert!(!text.contains("handlers still running"), "{text}");
+    assert!(drain.0.is_finished());
+    assert!(controls.tracker.is_closed() && controls.tracker.is_empty());
 }

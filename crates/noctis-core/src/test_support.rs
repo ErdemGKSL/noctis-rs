@@ -100,7 +100,7 @@ impl<'a> MakeWriter<'a> for Capture {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Seen {
     pub(crate) origin: ErrorOrigin,
-    /// `error:<display>`, `panic:<message>` or `dropped`.
+    /// `error:<display>`, `panic:<message>`, `dropped` or `cancelled`.
     pub(crate) kind: String,
     pub(crate) app: String,
     pub(crate) shard: Option<u32>,
@@ -126,6 +126,7 @@ impl ErrorSink for Recording {
             ReportKind::Error(error) => format!("error:{error}"),
             ReportKind::Panic(message) => format!("panic:{message}"),
             ReportKind::Dropped => "dropped".to_owned(),
+            ReportKind::Cancelled => "cancelled".to_owned(),
         };
         self.0.lock().unwrap().push(Seen {
             origin: report.origin,

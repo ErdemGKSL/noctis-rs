@@ -16,7 +16,7 @@ pub mod modules;
 pub mod observability;
 pub mod strings;
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use noctis::prelude::*;
 
@@ -41,6 +41,10 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         .theme(noctis::image::theme!())
         // Our own CacheStore Adapter replaces the in-memory default (FR-38).
         .cache_store(adapters::BoundedCacheStore::new(50_000))
+        // On Ctrl-C/SIGTERM, running handlers get 15 s to finish before they are
+        // cancelled (reported as `ReportKind::Cancelled`); keep it below the
+        // orchestrator's kill timeout. `NOCTIS_SHUTDOWN_GRACE` sets it too.
+        .shutdown_grace(Duration::from_secs(15))
         .state(BotMeta {
             started_at: SystemTime::now(),
             version: env!("CARGO_PKG_VERSION"),

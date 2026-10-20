@@ -4,14 +4,16 @@ use std::any::TypeId;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fmt;
+use std::future::Future;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::RangeInclusive;
+use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use noctis_gateway::{
-    DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayOptions, LaneConfig,
-    ShardEvent,
+    CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayOptions,
+    LaneConfig, ShardEvent,
 };
 use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_ports::{
@@ -19,10 +21,12 @@ use noctis_ports::{
     ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, SessionStore,
 };
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use twilight_model::gateway::Intents;
 
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
+use crate::lifecycle::{Lifecycle, LifecycleEvent};
 use crate::module::Module;
 use crate::observe::{describe_metrics, set_shard_status};
 use crate::plugin::PluginEntry;
@@ -31,11 +35,11 @@ use crate::proxy::normalize_http_proxy;
 use crate::registry::Registry;
 use crate::sharding::{GatewayInfo, plan};
 use crate::sink::{ErrorSinks, EventDropObserver};
-use crate::startup::{check_runtime, ensure_crypto_provider};
+use crate::startup::{Signals, check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
-use crate::worker::{AbortOnDrop, Workers, drain};
+use crate::worker::{AbortOnDrop, Shutdown, Workers, drain};
 use crate::{
-    BuildError, BuildViolation, EnvError, Error, ErrorOrigin, ErrorSink, Plugin, Runtime,
+    BuildError, BuildViolation, EnvError, Error, ErrorOrigin, ErrorSink, Plugin, RunError, Runtime,
     StartError, State, Token,
 };
 
@@ -47,6 +51,16 @@ const HTTP_PROXY_VAR: &str = "NOCTIS_HTTP_PROXY";
 const GATEWAY_URL_VAR: &str = "NOCTIS_GATEWAY_URL";
 /// The environment variable [`App::from_env`] reads the fixed shard total from.
 const SHARD_TOTAL_VAR: &str = "NOCTIS_SHARD_TOTAL";
+/// The environment variable [`App::from_env`] reads the shutdown grace from.
+const SHUTDOWN_GRACE_VAR: &str = "NOCTIS_SHUTDOWN_GRACE";
+/// The shutdown grace period when `shutdown_grace` is not called.
+const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+/// The allowed `shutdown_grace` range.
+const SHUTDOWN_GRACE_RANGE: RangeInclusive<Duration> = Duration::ZERO..=Duration::from_mins(15);
+/// How long shutdown waits for cancelled handlers after the grace period.
+const CANCEL_WAIT: Duration = Duration::from_secs(1);
+/// How long a closing shard waits for the gateway's close frame.
+const SHARD_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 /// The HTTP request timeout when `http_timeout` is not called.
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The allowed `http_timeout` range.
@@ -95,6 +109,18 @@ pub struct App {
     event_capacity: NonZeroUsize,
     overflow_capacity: usize,
     handler_concurrency: usize,
+    shutdown_grace: Duration,
+    /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
+    lifecycle: Lifecycle,
+}
+
+/// Why the supervised App stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stop {
+    /// The shutdown future resolved (a signal, for [`App::run`]).
+    Requested,
+    /// Every shard ended on its own.
+    AllEnded,
 }
 
 impl App {
@@ -111,17 +137,21 @@ impl App {
 
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
-    /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL` and then
-    /// `NOCTIS_SHARD_TOTAL`, each trimmed of ASCII whitespace; an empty value
-    /// counts as unset. The proxy and the gateway URL are passed to
-    /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and validated
-    /// by `build()`; the shard total (1-10 ASCII digits) is passed to
-    /// [`AppBuilder::shard_total`]. Setters called afterwards win.
+    /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL`,
+    /// `NOCTIS_SHARD_TOTAL` and then `NOCTIS_SHUTDOWN_GRACE`, each trimmed of
+    /// ASCII whitespace; an empty value counts as unset. The proxy and the
+    /// gateway URL are passed to [`AppBuilder::http_proxy`] and
+    /// [`AppBuilder::gateway_url`] and validated by `build()`; the shard total
+    /// (1-10 ASCII digits) is passed to [`AppBuilder::shard_total`]; the
+    /// shutdown grace (1-4 ASCII digits of whole seconds) is passed to
+    /// [`AppBuilder::shutdown_grace`], so 901-9999 fail at `build()`. Setters
+    /// called afterwards win.
     ///
     /// # Errors
     ///
-    /// [`Error::Env`] when a variable is not Unicode, holds an invalid token or
-    /// an invalid shard total; the message never shows the value.
+    /// [`Error::Env`] when a variable is not Unicode, holds an invalid token,
+    /// an invalid shard total or an invalid shutdown grace; the message never
+    /// shows the value.
     ///
     /// ```no_run
     /// let app = noctis_core::App::from_env()?;
@@ -222,6 +252,19 @@ impl App {
         self.intents
     }
 
+    /// The shutdown grace period (default 10 s): how long the shutdown waits
+    /// for queued and running handlers before it cancels them.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.shutdown_grace(), std::time::Duration::from_secs(10));
+    /// # }
+    /// ```
+    pub fn shutdown_grace(&self) -> Duration {
+        self.shutdown_grace
+    }
+
     /// The state registered for `T`, if any.
     ///
     /// ```
@@ -263,6 +306,12 @@ impl App {
         &self.shared.sinks
     }
 
+    /// A receiver of the App's lifecycle broadcast.
+    #[cfg(test)]
+    pub(crate) fn subscribe_lifecycle(&self) -> tokio::sync::broadcast::Receiver<LifecycleEvent> {
+        self.lifecycle.subscribe()
+    }
+
     /// The handler concurrency.
     #[cfg(test)]
     pub(crate) fn handler_concurrency(&self) -> usize {
@@ -283,16 +332,46 @@ impl App {
         }
     }
 
-    /// The worker set `run` drains into.
-    pub(crate) fn workers(&self) -> Workers {
+    /// The worker set `run` drains into, controlled by `shutdown`.
+    pub(crate) fn workers(&self, shutdown: Shutdown) -> Workers {
         Workers::new(
             Arc::clone(&self.registry),
             Arc::clone(&self.shared),
             self.handler_concurrency,
+            shutdown,
         )
     }
 
-    /// Starts the App and runs its shards until every shard task has ended.
+    /// Starts the App and runs it until Ctrl-C or SIGTERM (Ctrl-C only on
+    /// non-unix platforms), then shuts it down gracefully.
+    ///
+    /// Checks, in order, that a multi-thread tokio runtime is current, that a
+    /// rustls crypto provider is installed (installing `ring`'s when none is
+    /// set), installs the signal handlers and checks that a token is set.
+    /// The rest is [`run_until`](Self::run_until) with the first signal as
+    /// the shutdown trigger.
+    ///
+    /// # Errors
+    ///
+    /// [`StartError::SignalHandler`] when the signal handlers cannot be
+    /// installed (a runtime without an IO driver), else the errors of
+    /// [`run_until`](Self::run_until).
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> Result<(), noctis_core::Error> {
+    /// noctis_core::App::from_env()?.build()?.run().await?;
+    /// # Ok(()) }
+    /// ```
+    pub async fn run(self) -> Result<(), Error> {
+        check_runtime(true)?;
+        ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
+        let signals = Signals::install()?;
+        self.run_until(signals.recv()).await
+    }
+
+    /// Starts the App and runs it until `shutdown` resolves, then shuts it
+    /// down gracefully. [`run`](Self::run) is `run_until` on Ctrl-C/SIGTERM;
+    /// use this one to stop the App from code (tests, embedders).
     ///
     /// Checks, in order, that a multi-thread tokio runtime is current, that a
     /// rustls crypto provider is installed (installing `ring`'s when none is
@@ -310,8 +389,23 @@ impl App {
     /// [`handler_concurrency`](AppBuilder::handler_concurrency) worker
     /// permits (interactions never do) and runs its ordered handlers in
     /// per-guild order, then its concurrent handlers together. Startup
-    /// finishes once every shard has received READY; afterwards `run`
-    /// returns `Ok(())` when every shard task has ended.
+    /// finishes once every shard has received READY.
+    ///
+    /// A shard that closes fatally after startup is logged at `error`
+    /// (`"shard closed fatally"`, with the typed cause) and its
+    /// `noctis_shard_status` gauge goes to 0; the others keep running.
+    ///
+    /// When `shutdown` resolves (also during startup), or every shard has
+    /// ended, the shutdown runs in this order (AD-21): log `shutdown
+    /// started`; close every shard with code 4000 (resumable); drain both
+    /// lanes and wait for the running handlers for at most
+    /// [`shutdown_grace`](AppBuilder::shutdown_grace), with the HTTP client
+    /// still working; cancel what is left (each cancelled handler is
+    /// reported to the `Event` Error Sink as
+    /// [`ReportKind::Cancelled`](crate::ReportKind::Cancelled), queued lane
+    /// items are discarded with one warning) and wait up to 1 s more; wait
+    /// up to 6 s for the shards to close; log `shutdown complete`. Dropping
+    /// the returned future cancels every handler too.
     ///
     /// # Errors
     ///
@@ -323,19 +417,39 @@ impl App {
     /// startup ([`StartError::InvalidIntents`],
     /// [`StartError::DisallowedIntents`], [`StartError::FatalClose`],
     /// [`StartError::ShardEnded`], [`StartError::GatewayStopped`]).
+    /// [`Error::Run`] with [`RunError::AllShardsEnded`] when every shard
+    /// ended on its own after startup (after the shutdown sequence ran).
     ///
     /// ```no_run
     /// # #[tokio::main] async fn main() -> Result<(), noctis_core::Error> {
-    /// noctis_core::App::from_env()?.build()?.run().await?;
+    /// let app = noctis_core::App::from_env()?.build()?;
+    /// let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    /// let running = tokio::spawn(app.run_until(async {
+    ///     let _ = stopped.await;
+    /// }));
+    /// // ... later:
+    /// let _ = stop.send(());
+    /// running.await.expect("not cancelled")?;
     /// # Ok(()) }
     /// ```
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run_until(self, shutdown: impl Future<Output = ()> + Send) -> Result<(), Error> {
         check_runtime(true)?;
         ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
         let Some(token) = &self.token else {
             return Err(StartError::MissingToken.into());
         };
-        let info = self.gateway_info().await?;
+        let controls = Shutdown::default();
+        // Cancels every handler on every return path, including a dropped
+        // `run_until` future, so no handler outlives it.
+        let _cancel_guard = controls.cancel.clone().drop_guard();
+        let mut shutdown = pin!(shutdown);
+        let info = tokio::select! {
+            info = self.gateway_info() => info?,
+            () = &mut shutdown => {
+                tracing::info!(target: "noctis::app", "shutdown requested before the shards started");
+                return Ok(());
+            }
+        };
         let plan = plan(info, self.shard_total)?;
         let total = plan.total.get();
         if plan.misaligned {
@@ -361,10 +475,14 @@ impl App {
             identify_queue,
             total: plan.total,
             max_concurrency: plan.max_concurrency,
+            close_timeout: SHARD_CLOSE_TIMEOUT,
         };
         describe_metrics();
         let (sender, receiver) = noctis_gateway::lanes(self.lane_config());
-        let _drain = AbortOnDrop(tokio::spawn(drain(receiver, self.workers())));
+        let mut drain = AbortOnDrop(tokio::spawn(drain(
+            receiver,
+            self.workers(controls.clone()),
+        )));
         let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).map_err(|error| {
             tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
             StartError::GatewayStopped
@@ -374,11 +492,61 @@ impl App {
             total,
         };
         status.init();
-        await_startup(&mut events, &status).await?;
-        tracing::info!(target: "noctis::app", "all {total} shards ready");
-        supervise(&mut events, &status).await;
+        let started = tokio::select! {
+            result = await_startup(&mut events, &status, &self.lifecycle) => Some(result),
+            () = &mut shutdown => None,
+        };
+        let stop = match started {
+            Some(result) => {
+                result?;
+                tracing::info!(target: "noctis::app", "all {total} shards ready");
+                supervise(&mut events, &status, &self.lifecycle, &mut shutdown).await
+            }
+            None => Stop::Requested,
+        };
+        let watch = Watch {
+            events: &mut events,
+            status: &status,
+            lifecycle: &self.lifecycle,
+        };
+        self.shut_down(stop, gateway, watch, &controls, &mut drain)
+            .await;
+        match stop {
+            Stop::Requested => Ok(()),
+            Stop::AllEnded => Err(RunError::AllShardsEnded.into()),
+        }
+    }
+
+    /// The AD-21 shutdown sequence; see [`run_until`](Self::run_until).
+    async fn shut_down(
+        &self,
+        stop: Stop,
+        mut gateway: Gateway,
+        mut watch: Watch<'_>,
+        controls: &Shutdown,
+        drain: &mut AbortOnDrop,
+    ) {
+        let reason = match stop {
+            Stop::Requested => "signal",
+            Stop::AllEnded => "all shards ended",
+        };
+        let grace = self.shutdown_grace;
+        tracing::info!(target: "noctis::app", reason, grace = ?grace, "shutdown started");
+        self.lifecycle.send(LifecycleEvent::ShutdownStarted);
+        gateway.close_all(CloseMode::Resumable);
+        wind_down(grace, controls, drain, &mut watch).await;
+        let closed = watch
+            .during(tokio::time::timeout(
+                SHARD_CLOSE_TIMEOUT + Duration::from_secs(1),
+                gateway.closed(),
+            ))
+            .await;
+        if closed.is_err() {
+            tracing::warn!(target: "noctis::app", "shards did not close in time; aborting");
+        }
         drop(gateway);
-        Ok(())
+        watch.flush();
+        tracing::info!(target: "noctis::app", "shutdown complete");
     }
 
     /// Reads `GET /gateway/bot`; every failure is logged with its `Display`
@@ -434,13 +602,13 @@ impl ShardStatus {
     }
 
     /// Updates the gauge of the event's shard: 1 on `Ready`/`Resumed`, 0
-    /// on `Disconnected`/`Ended`.
+    /// on `Disconnected`/`Ended`/`Closed`.
     pub(crate) fn update(&self, event: &ShardEvent) {
         let (shard, up) = match *event {
             ShardEvent::Ready { shard } | ShardEvent::Resumed { shard } => (shard, true),
-            ShardEvent::Disconnected { shard, .. } | ShardEvent::Ended { shard, .. } => {
-                (shard, false)
-            }
+            ShardEvent::Disconnected { shard, .. }
+            | ShardEvent::Ended { shard, .. }
+            | ShardEvent::Closed { shard } => (shard, false),
             _ => return,
         };
         set_shard_status(&self.app, shard, self.total, up);
@@ -455,10 +623,12 @@ impl Drop for ShardStatus {
     }
 }
 
-/// Waits until every shard in `0..total` has sent `Ready` at least once.
-async fn await_startup(
+/// Waits until every shard in `0..total` has sent `Ready` at least once,
+/// broadcasting each shard event.
+pub(crate) async fn await_startup(
     events: &mut mpsc::UnboundedReceiver<ShardEvent>,
     status: &ShardStatus,
+    lifecycle: &Lifecycle,
 ) -> Result<(), StartError> {
     let mut ready = vec![false; usize::try_from(status.total).unwrap_or(usize::MAX)];
     let mut missing = ready.len();
@@ -467,13 +637,11 @@ async fn await_startup(
             return Err(StartError::GatewayStopped);
         };
         status.update(&event);
+        lifecycle.shard(&event);
         match event {
             ShardEvent::Ready { shard } => {
                 tracing::debug!(target: "noctis::app", shard, "shard ready");
-                let slot = usize::try_from(shard)
-                    .ok()
-                    .and_then(|index| ready.get_mut(index));
-                if let Some(seen) = slot
+                if let Some(seen) = slot(&mut ready, shard)
                     && !*seen
                 {
                     *seen = true;
@@ -505,26 +673,161 @@ async fn await_startup(
     Ok(())
 }
 
-/// Logs shard events after startup until every shard task has ended.
-async fn supervise(events: &mut mpsc::UnboundedReceiver<ShardEvent>, status: &ShardStatus) {
-    while let Some(event) = events.recv().await {
-        status.update(&event);
-        match event {
-            ShardEvent::Ended { shard, close_code } => {
-                tracing::error!(target: "noctis::app", shard, ?close_code, "shard ended");
+/// The flag of `shard`, if it is in range.
+fn slot(flags: &mut [bool], shard: u32) -> Option<&mut bool> {
+    usize::try_from(shard)
+        .ok()
+        .and_then(|index| flags.get_mut(index))
+}
+
+/// Watches the shard events after startup until `shutdown` resolves
+/// ([`Stop::Requested`]) or every shard has ended ([`Stop::AllEnded`]).
+pub(crate) async fn supervise(
+    events: &mut mpsc::UnboundedReceiver<ShardEvent>,
+    status: &ShardStatus,
+    lifecycle: &Lifecycle,
+    shutdown: impl Future<Output = ()>,
+) -> Stop {
+    let mut shutdown = pin!(shutdown);
+    let mut ended = vec![false; usize::try_from(status.total).unwrap_or(usize::MAX)];
+    let mut running = ended.len();
+    loop {
+        let event = tokio::select! {
+            biased;
+            () = &mut shutdown => return Stop::Requested,
+            event = events.recv() => event,
+        };
+        let Some(event) = event else {
+            return Stop::AllEnded;
+        };
+        on_shard_event(&event, status, lifecycle);
+        if let ShardEvent::Ended { shard, .. } = event
+            && let Some(seen) = slot(&mut ended, shard)
+            && !*seen
+        {
+            *seen = true;
+            running -= 1;
+            if running == 0 {
+                return Stop::AllEnded;
             }
-            ShardEvent::Disconnected { shard, close_code } => {
-                tracing::warn!(target: "noctis::app", shard, ?close_code, "shard disconnected");
-            }
-            ShardEvent::Ready { shard } => {
-                tracing::debug!(target: "noctis::app", shard, "shard ready");
-            }
-            ShardEvent::Resumed { shard } => {
-                tracing::debug!(target: "noctis::app", shard, "shard resumed");
-            }
-            _ => {}
         }
     }
+}
+
+/// Handles one shard event after startup: the gauge, the lifecycle
+/// broadcast and the log line.
+fn on_shard_event(event: &ShardEvent, status: &ShardStatus, lifecycle: &Lifecycle) {
+    status.update(event);
+    lifecycle.shard(event);
+    match *event {
+        ShardEvent::Ended { shard, close_code } => {
+            tracing::error!(
+                target: "noctis::app",
+                shard,
+                close_code,
+                error = %start_error(shard, close_code),
+                "shard closed fatally"
+            );
+        }
+        ShardEvent::Disconnected { shard, close_code } => {
+            tracing::warn!(target: "noctis::app", shard, ?close_code, "shard disconnected");
+        }
+        ShardEvent::Ready { shard } => {
+            tracing::debug!(target: "noctis::app", shard, "shard ready");
+        }
+        ShardEvent::Resumed { shard } => {
+            tracing::debug!(target: "noctis::app", shard, "shard resumed");
+        }
+        ShardEvent::Closed { shard } => {
+            tracing::debug!(target: "noctis::app", shard, "shard closed");
+        }
+        _ => {}
+    }
+}
+
+/// Keeps consuming the shard events while the shutdown waits for something.
+pub(crate) struct Watch<'a> {
+    pub(crate) events: &'a mut mpsc::UnboundedReceiver<ShardEvent>,
+    pub(crate) status: &'a ShardStatus,
+    pub(crate) lifecycle: &'a Lifecycle,
+}
+
+impl Watch<'_> {
+    /// Awaits `fut`, handling every shard event that arrives meanwhile.
+    pub(crate) async fn during<F: Future>(&mut self, fut: F) -> F::Output {
+        let mut fut = pin!(fut);
+        let mut open = true;
+        loop {
+            tokio::select! {
+                biased;
+                output = &mut fut => return output,
+                event = self.events.recv(), if open => match event {
+                    Some(event) => on_shard_event(&event, self.status, self.lifecycle),
+                    None => open = false,
+                },
+            }
+        }
+    }
+
+    /// Handles the shard events already queued.
+    pub(crate) fn flush(&mut self) {
+        while let Ok(event) = self.events.try_recv() {
+            on_shard_event(&event, self.status, self.lifecycle);
+        }
+    }
+}
+
+/// Steps 3 and 4 of the shutdown: fires the drain's `shutdown` token and
+/// waits for the drain and every tracked handler task until `grace` ends;
+/// then fires `cancel` and waits up to [`CANCEL_WAIT`] more, warning about
+/// tasks that still run. Shard events are handled meanwhile.
+pub(crate) async fn wind_down(
+    grace: Duration,
+    controls: &Shutdown,
+    drain: &mut AbortOnDrop,
+    watch: &mut Watch<'_>,
+) {
+    let deadline = Instant::now() + grace;
+    if grace.is_zero() {
+        // Nothing may run: cancel before the drain sees the shutdown.
+        controls.cancel.cancel();
+    }
+    controls.shutdown.cancel();
+    let mut drained = false;
+    let settled = watch
+        .during(tokio::time::timeout_at(
+            deadline,
+            settle(drain, &mut drained, controls),
+        ))
+        .await;
+    if settled.is_ok() {
+        return;
+    }
+    controls.cancel.cancel();
+    let _ = watch
+        .during(tokio::time::timeout(
+            CANCEL_WAIT,
+            settle(drain, &mut drained, controls),
+        ))
+        .await;
+    if !controls.tracker.is_empty() {
+        tracing::warn!(
+            target: "noctis::app",
+            running = controls.tracker.len(),
+            "handlers still running after cancellation"
+        );
+    }
+}
+
+/// Waits for the drain task (once), then for every tracked worker task.
+async fn settle(drain: &mut AbortOnDrop, drained: &mut bool, controls: &Shutdown) {
+    if !*drained {
+        // A drain panic is logged by tokio's task machinery; nothing to add.
+        let _ = (&mut drain.0).await;
+        *drained = true;
+    }
+    controls.tracker.close();
+    controls.tracker.wait().await;
 }
 
 impl fmt::Debug for App {
@@ -544,6 +847,7 @@ impl fmt::Debug for App {
             .field("event_capacity", &self.event_capacity)
             .field("overflow_capacity", &self.overflow_capacity)
             .field("handler_concurrency", &self.handler_concurrency)
+            .field("shutdown_grace", &self.shutdown_grace)
             .field("error_sinks", &self.shared.sinks)
             .finish_non_exhaustive()
     }
@@ -592,6 +896,8 @@ pub struct AppBuilder {
     event_lane: (usize, usize),
     /// The raw handler concurrency; `build` checks it.
     handler_concurrency: usize,
+    /// The raw shutdown grace; `build` checks it.
+    shutdown_grace: Duration,
     /// The custom Error Sinks, by origin.
     error_sinks: ErrorSinks,
     /// Plugins waiting for `install`.
@@ -636,6 +942,7 @@ impl AppBuilder {
             modules: Vec::new(),
             event_lane: (DEFAULT_EVENT_CAPACITY.get(), DEFAULT_OVERFLOW_CAPACITY),
             handler_concurrency: DEFAULT_HANDLER_CONCURRENCY,
+            shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
             error_sinks: ErrorSinks::default(),
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
@@ -664,6 +971,12 @@ impl AppBuilder {
                 var: SHARD_TOTAL_VAR,
             })?;
             builder.shard_total(total);
+        }
+        if let Some(raw) = read_var(&lookup, SHUTDOWN_GRACE_VAR)? {
+            let secs = parse_grace_secs(&raw).ok_or(EnvError::InvalidShutdownGrace {
+                var: SHUTDOWN_GRACE_VAR,
+            })?;
+            builder.shutdown_grace(Duration::from_secs(secs));
         }
         Ok(builder)
     }
@@ -826,11 +1139,29 @@ impl AppBuilder {
         self
     }
 
+    /// How long the shutdown waits for queued and running handlers before it
+    /// cancels them: 0 s..=900 s, default 10 s. Out of range is a
+    /// [`BuildViolation::InvalidShutdownGrace`]. The last call wins.
+    ///
+    /// The whole shutdown takes at most the grace period plus 7 s (1 s for
+    /// cancelled handlers, 6 s for the shards to close); keep it below your
+    /// orchestrator's kill timeout (Kubernetes: 30 s by default).
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.shutdown_grace(std::time::Duration::from_secs(15));
+    /// ```
+    pub fn shutdown_grace(&mut self, grace: Duration) -> &mut Self {
+        self.shutdown_grace = grace;
+        self
+    }
+
     /// Routes the failures of `origin` (handler errors and panics, and for
-    /// [`ErrorOrigin::Event`] also events dropped by a full overflow) to
-    /// `sink` instead of [`LogSink`](crate::LogSink). The last call per
-    /// origin wins; plugins may call it in `install`. Pass an `Arc` clone
-    /// to share one sink between origins.
+    /// [`ErrorOrigin::Event`] also handlers cancelled at shutdown and events
+    /// dropped by a full overflow) to `sink` instead of
+    /// [`LogSink`](crate::LogSink). The last call per origin wins; plugins
+    /// may call it in `install`. Pass an `Arc` clone to share one sink
+    /// between origins.
     ///
     /// ```
     /// use noctis_core::{App, ErrorOrigin, ErrorReport, ErrorSink, ReportKind};
@@ -994,7 +1325,7 @@ impl AppBuilder {
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
     /// timeout, the HTTP proxy, the gateway URL, the shard total, the event
-    /// lane and handler concurrency, folds the mounted Modules into the
+    /// lane, handler concurrency and the shutdown grace, folds the mounted Modules into the
     /// Registry (deriving the gateway filter and intents, GW-05), the rustls
     /// crypto provider (installing `ring`'s when none is set) and the tokio
     /// runtime (any flavor). The builder is left empty,
@@ -1059,6 +1390,11 @@ impl AppBuilder {
                     actual: self.handler_concurrency,
                 });
         }
+        if !SHUTDOWN_GRACE_RANGE.contains(&self.shutdown_grace) {
+            self.violations.push(BuildViolation::InvalidShutdownGrace {
+                actual: self.shutdown_grace,
+            });
+        }
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
         self.violations.extend(missing);
         if ensure_crypto_provider().is_err() {
@@ -1100,6 +1436,8 @@ impl AppBuilder {
             event_capacity,
             overflow_capacity: overflow,
             handler_concurrency: config.handler_concurrency,
+            shutdown_grace: config.shutdown_grace,
+            lifecycle: Lifecycle::new(),
         })
     }
 
@@ -1139,6 +1477,7 @@ impl fmt::Debug for AppBuilder {
             .field("modules", &self.modules.len())
             .field("event_lane", &self.event_lane)
             .field("handler_concurrency", &self.handler_concurrency)
+            .field("shutdown_grace", &self.shutdown_grace)
             .field("error_sinks", &self.error_sinks)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
@@ -1150,6 +1489,13 @@ impl fmt::Debug for AppBuilder {
 /// 0 accepted; `build()` rejects 0).
 fn parse_shard_total(raw: &str) -> Option<u32> {
     let digits = (1..=10).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
+    digits.then(|| raw.parse().ok()).flatten()
+}
+
+/// A shutdown grace in whole seconds from 1-4 ASCII digits (leading zeros
+/// accepted; `build()` rejects more than 900).
+fn parse_grace_secs(raw: &str) -> Option<u64> {
+    let digits = (1..=4).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
     digits.then(|| raw.parse().ok()).flatten()
 }
 

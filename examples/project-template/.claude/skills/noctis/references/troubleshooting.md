@@ -116,6 +116,11 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `FollowupCap` | user-installed app outside a guild, > 5 follow-ups | combine into one View |
 | events missing under load | droppable events dropped by back-pressure | metrics `noctis_events_dropped_total`; make handlers tolerate gaps |
 | `ERROR noctis::event: event overflow is full; event dropped` | a non-droppable event arrived while the event lane and its overflow were full | raise `.event_lane(capacity, overflow)` or `.handler_concurrency(n)`, speed up slow handlers; route drops with `.error_sink(ErrorOrigin::Event, ..)` |
+| `ERROR noctis::app: shard closed fatally shard=.. close_code=..` | a shard stopped after startup with a fatal close code (or none); `error` names the cause (e.g. `4014 (disallowed intents)`); the App keeps running on the other shards | fix the cause (portal intents, token), then restart; watch `noctis_shard_status` |
+| `run()` returns `RunError::AllShardsEnded` | every shard closed fatally after startup; the shutdown ran | read the `shard closed fatally` lines, fix the cause, restart |
+| `ERROR noctis::event: event handler cancelled at shutdown` | a handler was still running (or queued behind an ordered one) when `shutdown_grace` ended | make it finish sooner, or raise `.shutdown_grace(..)` / `NOCTIS_SHUTDOWN_GRACE` |
+| `WARN noctis::app: lanes discarded at shutdown` / `handlers still running after cancellation` | events were still queued at the deadline / a handler blocks its thread (no `.await`) | raise the grace; move blocking work to `spawn_blocking` |
+| `run()` returns `StartError::SignalHandler` | the tokio runtime has no IO driver | build it with `enable_all()` (as `#[tokio::main]` does) |
 | `ERROR noctis::error_sink: error sink panicked` | your `ErrorSink::report` panicked (caught; workers keep running) | fix the sink; never `unwrap` inside it |
 | commands don't appear | not published | `cargo run --release -- --publish-guild <id>`; global publish can take time |
 | shard closes with 4014 | privileged intent not enabled in the portal | enable it, or drop the handler that needs it |
