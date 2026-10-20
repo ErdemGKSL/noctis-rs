@@ -2,7 +2,8 @@
 title: 'Story 6.3: Command metadata and context-menu Commands'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '80622f9587d1e931bf3ae6af820bee782ad41b22'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
