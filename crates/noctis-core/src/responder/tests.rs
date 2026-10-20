@@ -558,6 +558,17 @@ async fn message_transport() {
     assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
     let _ = acked.done();
     assert!(fx.requests().is_empty());
+
+    // A declared-ephemeral Command deferred publicly cannot post its
+    // first message through an edit or a returned message.
+    let shared = fx.message(Ephemerality::Ephemeral);
+    let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
+    let err = acked.edit_original(v2("a")).await.unwrap_err();
+    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
+    let _ = acked.done();
+    let err = shared.finish(v2("a").into()).await.unwrap_err();
+    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
+    assert!(fx.requests().is_empty());
 }
 
 /// Matrix 52: the detached transport sends nothing and still validates.

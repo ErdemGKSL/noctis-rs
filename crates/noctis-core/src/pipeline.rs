@@ -392,17 +392,30 @@ pub(crate) async fn run_interaction(
 /// Handler errors and panics go to the Command Error Sink, not into the
 /// result.
 ///
+/// It enforces none of the Command's `default_member_permissions`,
+/// `contexts` or `nsfw` metadata (Discord enforces those only for real
+/// interactions): the caller must check them before `run_command`.
+///
 /// ```
 /// use noctis_core::events::{EventCtx, MessageCreate};
-/// use noctis_core::{CommandInput, CommandInvocation, HandlerResult};
+/// use noctis_core::{CommandInput, CommandInvocation, HandlerResult, OptionValue};
 ///
 /// async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-///     if let Some(path) = msg.content.strip_prefix('!') {
-///         let invocation = CommandInvocation::new(CommandInput::new(path), msg.channel_id, msg.id, msg.author.id)
-///             .guild_id(msg.guild_id)
-///             .shard(ctx.shard());
-///         ctx.dispatcher().run_command(invocation).await?;
+///     if msg.author.bot {
+///         return Ok(());
 ///     }
+///     let Some(text) = msg.content.strip_prefix('!') else { return Ok(()) };
+///     // `!warn 3`: the first word is the Command Path, the rest its arguments.
+///     let mut words = text.split_whitespace();
+///     let Some(path) = words.next() else { return Ok(()) };
+///     let mut input = CommandInput::new(path);
+///     if let Some(days) = words.next().and_then(|w| w.parse().ok()) {
+///         input = input.with_option("days", OptionValue::Integer(days));
+///     }
+///     let invocation = CommandInvocation::new(input, msg.channel_id, msg.id, msg.author.id)
+///         .guild_id(msg.guild_id)
+///         .shard(ctx.shard());
+///     ctx.dispatcher().run_command(invocation).await?;
 ///     Ok(())
 /// }
 /// ```

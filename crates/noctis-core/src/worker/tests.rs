@@ -441,6 +441,77 @@ async fn interaction_bypasses_permits() {
     h.close().await;
 }
 
+/// A type-2 (`APPLICATION_COMMAND`) interaction for the global `name`
+/// (id 100, token `tok`, application 7, user 3).
+fn command_interaction(name: &str) -> InboundKind {
+    let d = json!({
+        "id": "100",
+        "application_id": "7",
+        "type": 2,
+        "token": "tok",
+        "version": 1,
+        "authorizing_integration_owners": {},
+        "entitlements": [],
+        "user": { "id": "3", "username": "u", "discriminator": "0000", "avatar": null, "global_name": null },
+        "data": { "id": "9", "name": name, "type": 1, "options": [] },
+    });
+    let raw = RawJson::new(bytes::Bytes::from(d.to_string()));
+    InboundKind::Interaction(Box::new(serde_json::from_value(d).unwrap()), raw)
+}
+
+/// A type-2 interaction runs its Command and replies while every worker
+/// permit is held by a blocked event handler.
+#[tokio::test]
+async fn command_interaction_bypasses_permits() {
+    let server = crate::edge::test_support::TestServer::start_with(
+        false,
+        crate::responder::tests::discord(),
+    )
+    .await;
+    let log = Log::default();
+    let gate = Arc::new(Notify::new());
+    let blocker = {
+        let (log, gate) = (log.clone(), Arc::clone(&gate));
+        handler("h", false, move |_, e: MessageDelete| {
+            let (log, gate) = (log.clone(), Arc::clone(&gate));
+            async move {
+                log.push(format!("start:{}", e.id));
+                gate.notified().await;
+                log.push(format!("end:{}", e.id));
+                Ok(())
+            }
+        })
+    };
+    let command = {
+        let log = log.clone();
+        crate::CommandHandler::__new_plain(
+            "m::ping",
+            &["ping"],
+            "d",
+            move |_: crate::CommandCtx, _: crate::CommandResponder| {
+                log.push("ping");
+                async { Ok(crate::responder::tests::v2("pong")) }
+            },
+        )
+    };
+    let h = Harness::start(
+        App::builder()
+            .handler_concurrency(1)
+            .http_proxy(server.authority())
+            .module(Module::new("m").add(blocker).add(command)),
+    );
+    h.push(message_delete(1, Some(GA)));
+    until("M1 started", || log.count("start:1") == 1).await;
+    h.push_on(ShardId::ONE, command_interaction("ping"));
+    until("callback", || !server.seen().is_empty()).await;
+    assert_eq!(log.lines(), ["start:1", "ping"]);
+    let seen = server.seen();
+    assert_eq!(seen[0].path, "/api/v10/interactions/100/tok/callback");
+    gate.notify_one();
+    until("M1", || log.count("end:1") == 1).await;
+    h.close().await;
+}
+
 /// Matrix 33: an `Err` is logged with its fields; siblings still run.
 #[tokio::test]
 async fn handler_error_is_logged() {
@@ -1390,6 +1461,51 @@ mod shutdown {
             matches!(find("noctis_handler_duration_seconds"), Some(DebugValue::Histogram(v)) if v.len() == 1),
             "{snap:?}"
         );
+    }
+
+    /// Matrix 17: the App shutdown cancels an in-flight Command, which
+    /// reports `Cancelled` to the Command Error Sink.
+    #[tokio::test]
+    async fn shutdown_cancels_command() {
+        let recording = Arc::new(Recording::default());
+        let started = Arc::new(Notify::new());
+        let command = {
+            let started = Arc::clone(&started);
+            crate::CommandHandler::__new_plain(
+                "m::slow",
+                &["slow"],
+                "d",
+                move |_: crate::CommandCtx, _: crate::CommandResponder| {
+                    let started = Arc::clone(&started);
+                    async move {
+                        started.notify_one();
+                        std::future::pending::<()>().await;
+                        Ok(crate::responder::tests::v2("never"))
+                    }
+                },
+            )
+        };
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .error_sink(ErrorOrigin::Command, Arc::clone(&recording))
+            .module(Module::new("m").add(command));
+        let mut run = Running::start_with(&mut builder, recording);
+        run.sender.push(Inbound {
+            shard: ShardId::ONE,
+            received_at: Instant::now(),
+            kind: command_interaction("slow"),
+        });
+        tokio::time::timeout(WAIT, started.notified())
+            .await
+            .unwrap();
+        run.wind_down(Duration::from_millis(100)).await;
+        let seen = run.recording.seen();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert_eq!(seen[0].origin, ErrorOrigin::Command);
+        assert_eq!(seen[0].kind, "cancelled");
+        assert_eq!(seen[0].handler.as_deref(), Some("m::slow"));
+        assert!(run.controls.tracker.is_empty());
     }
 
     /// Matrix 19: an ordered job queued behind the blocked one is cancelled

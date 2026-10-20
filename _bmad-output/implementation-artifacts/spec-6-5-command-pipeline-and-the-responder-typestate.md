@@ -2,10 +2,10 @@
 title: 'Story 6.5: Command pipeline and the Responder typestate'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '70586997f3c568fd0d19e1fef7aa8f182d6f897c'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-6-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -318,6 +318,44 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 34 findings — high 0, medium 6, low 19, false 8, maybe-false 1
+- findings:
+  - `[low]` `[patch]` (blind) `App::shared()` was inserted under `edge()`'s doc line, so `shared()` carries "The App's Discord HTTP edge." and `edge()` has no doc (app.rs:242-249) — move the line back above `edge()`.
+  - `[medium]` `[patch]` (blind) `Dispatcher::run_command` enforces none of the Command's `default_member_permissions`/`contexts`/`nsfw`, which Discord only enforces for real interactions; nothing warns bot authors, so a prefix path runs a `permissions = MODERATE_MEMBERS` handler for anyone — document in the `Dispatcher` rustdoc and responder.md §4.1 that the caller must enforce them (prefix parsing and checks belong to `noctis-prefix`, spine AD-24).
+  - `[medium]` `[patch]` (blind) The `Dispatcher` example (pipeline.rs rustdoc and responder.md §4.1) passes the whole text after `!` as the Command Path, so `!warn @u 3` is always `UnknownCommand`, and it does not skip bot authors — show splitting the path from its arguments (fed via `with_option`) and skipping `msg.author.bot`.
+  - `[false]` `[reject]` (blind) Command interactions take no permit, so concurrency is unbounded — the intent-contract constraint deliberately says "An interaction never takes a worker permit" (3 s ack deadline); not a defect of this diff.
+  - `[low]` `[reject]` (blind) `Shared` uses load/store instead of compare-and-swap, so two initial callbacks can go out — today the only second writer is a handler that moves its Pending responder into a spawned task and also returns a message (same root as the edge spawn finding); a deliberate misuse, and the CAS with an in-flight state is new state-machine code that Story 6.6 (the real second writer) owns.
+  - `[low]` `[reject]` (blind) `delete_original` leaves the stored original as `Sent`, so a later returned message PATCHes a deleted message — the failure is loud (`Rejected` 404 to the Sink), delete-then-return-a-message is rare, and the correct behaviour on the interaction transport (follow-up vs error) is new design, not a direct correction.
+  - `[low]` `[reject]` (blind) A 2xx body without a readable `id` maps to `Transport` — Discord always returns the message object on these routes; a new error variant or branch is not worth it.
+  - `[low]` `[reject]` (blind) `ResponderError::Transport` has no source — the cause is logged at debug; adding a boxed source changes the public enum the spec set, for a diagnostics-only gain.
+  - `[low]` `[reject]` (blind) `defer(Public)` on a declared-ephemeral Command makes the original public while `ctx.ephemerality()`/`response_locale()` still say ephemeral — `defer` taking an explicit `Ephemerality` is the spec's INT-08/INT-10 design; `response_locale()` has no in-framework consumer before Epic 11; the message-transport leak is filed separately (edge finding, patched).
+  - `[false]` `[reject]` (blind) Pipeline failures leave the user without a response — the intent-contract settles it: Matrix 6/7/14/15 require no HTTP and "No user-facing error notices (6.8)".
+  - `[low]` `[reject]` (blind) `done()` right after `defer()` gives no warning — an author's explicit choice; a new end-of-pipeline shape check and warning is added complexity for a rare mistake.
+  - `[low]` `[reject]` (blind) Detached seams always validate with `Limits::default()` — Matrix 52 keeps the seam signatures; only a Lenient bot testing over-limit messages through the seams meets it.
+  - `[maybe-false]` `[reject]` (blind) `detached_http()` caches a client built on a dropped runtime — would need a seam test that actually sends a request through `ctx.http()`; the client is documented as unconfigured and token-less, so even if true it is low.
+  - `[low]` `[reject]` (blind) The macro detects a responder by its last path segment only — a user type named `Responder`/`CommandResponder` or an alias is rare, and checking generic arguments is new macro logic.
+  - `[low]` `[reject]` (blind) `run_command` sets `guild_locale: None` and `CommandInvocation` has no `guild_locale` setter; shard defaults to 0 — the shard default is documented ("no guild, shard 0"); `MESSAGE_CREATE` carries no guild locale and `response_locale()` has no consumer until Epic 11's `LocaleResolver`, while a setter adds public surface.
+  - `[low]` `[reject]` (edge) A Pending responder moved into a spawned task while the handler returns a message lets two type-4 callbacks race (responder.rs:591) — same root and rationale as the blind CAS finding.
+  - `[low]` `[reject]` (edge) Concurrent `edit_original` calls via `join!` read a stale original format — rare; a V2-to-legacy edit that slips through is rejected by Discord loudly; serializing edits needs an async mutex.
+  - `[low]` `[reject]` (edge) Concurrent `FollowupHandle::edit` calls read a stale format — same as the previous row.
+  - `[medium]` `[patch]` (edge) Over the Dispatcher, a declared-ephemeral Command can `defer(Public)` and then return a message or call `edit_original`; `Shared::edit_original`'s `(Transport::Message, None)` branch posts the reply publicly, bypassing the `EphemeralUnsupported` check `reply` has (responder.rs edit_original), against the spec's "never a silent public post" — add the same declared-ephemeral check before posting in that branch, plus a test.
+  - `[low]` `[reject]` (edge) `delete_original` then a returned message PATCHes a deleted original — same root and rationale as the blind `delete_original` row.
+  - `[low]` `[reject]` (edge) A `Dispatcher`/`FollowupHandle` stored long-lived keeps `Arc<AppShared>` (and the edge) alive, a cycle if stored in App state — state is registered before `AppShared` exists, so a cycle needs a hand-built `OnceLock` in state; `EventCtx` already holds the same `Arc`; a `Weak` redesign is not a direct correction.
+  - `[low]` `[reject]` (edge) Dispatcher handlers run with `execute(.., None, ..)`, not raced against the cancel token — a Dispatcher call runs inside an Event Handler that `run_handler` already races against the cancel token (reported as that event's `Cancelled`); only a detached task calling the Dispatcher escapes it.
+  - `[medium]` `[patch]` (vgap) The `CommandCtx` built by `run_interaction` (struct-update over `detached_parts`) is never checked for `user_id`/`channel_id`/`guild_id`/`module`/`state`/`http` — add a `pipeline/tests.rs` test asserting every accessor from a pipeline-run handler.
+  - `[medium]` `[patch]` (vgap) No test checks that an `ephemeral` context-menu Command sends callback flags 32832 — add an ephemeral USER menu run through the pipeline asserting flags 32832 and a user-locale-first `response_locale()`.
+  - `[low]` `[patch]` (vgap) `noctis_handler_duration_seconds`/`noctis_handler_errors_total{kind="command"}` from `execute` are never asserted although the Matrix's Sink includes the counter — add a recorder test following `worker/tests.rs:914-957`.
+  - `[medium]` `[patch]` (vgap) The worker's routing of type-2 interactions (no permit, shutdown cancel token) is untested; `interaction_bypasses_permits` sends a PING — add a type-2 variant with a registered Command while `handler_concurrency(1)` is held, plus a shutdown-cancel case reporting `Cancelled`.
+  - `[low]` `[patch]` (vgap) The documented `noctis.dispatch{app, guild_id, module, path}` span is untested (filed `defer`, but it is caused by this story) — add a `Capture` assertion to `dispatcher_runs_commands`.
+  - `[false]` `[reject]` (intent) INT-12 is a pipeline conversion rather than a handler obligation — the intent-contract (Tasks 5, Matrix 20) and discord-rules INT-12 select exactly this reading (R3).
+  - `[false]` `[reject]` (intent) The return contract is wider than `V2Message` and `()` stops compiling — the intent-contract Approach ("Handlers return `HandlerResult<R: IntoResponse<Command>>`") and Matrix 40 settle it.
+  - `[false]` `[reject]` (intent) The auto-defer arm point is only a comment — the intent-contract says "Stage 6 is a documented no-op arm point" (filled by 6.6).
+  - `[low]` `[reject]` (intent) Dispatcher does its own guild-then-global resolution, sets `guild_locale: None` and `event_type: None` — the resolution rule is the spec's Scope decision and Matrix 47; the locale part shares the blind `guild_locale` row's rationale; `event_type: None` is correct for a non-gateway invocation.
+  - `[false]` `[reject]` (intent) The unit test dispatches from a hand-built `EventCtx` — the testkit test `dispatcher_replies_to_the_message` covers the lane end to end, so the requirement is met.
+  - `[false]` `[reject]` (intent) Acked methods are `async &self` returning `Result`, `Visibility` is an alias — the spec's Task 2 signatures set exactly this.
+  - `[false]` `[reject]` (intent) Unresolved or authorless Command interactions get no response — Matrix 6, 7 and 14 settle "no HTTP".
+
 ## Design Notes
 
 **Return contract (decision).** A Command handler returns `HandlerResult<R>` with `R: IntoResponse<Command<M>>`: `V2Message`, `Components`, `LegacyMessage` or `Responded`. `()` does not compile, matching responder.md §1 ("a command must answer"). Views (Epic 8) and component `()` (Epic 7) add impls later; the trait is sealed until then. `IntoResponse` is generic over the kind so component-only impls never leak to Commands.
@@ -356,3 +394,15 @@ Abbreviations:
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok (MSRV)
+
+## Auto Run Result
+
+- **Summary:** Story 6.5 adds the Command pipeline in `noctis-core` (resolve scope guild-then-path, build `CommandCtx`, run handler, convert the returned `IntoResponse<Command>` value into an initial callback or an `edit_original` per INT-12) and the Responder typestate (`Pending` -> acked; `reply`/`defer`/`modal`, `edit_original`, `delete_original`, follow-ups) with shared `AtomicU8` state, V2/Legacy/Deferred original-format tracking, `EphemeralUnsupported` on the message transport, a `Dispatcher` for prefix-style message invocations, `AppBuilder::limits`, and the `int/` trybuild fixtures (INT-03/04/08/10).
+- **Files changed:** `crates/noctis-core/src/pipeline.rs` (+tests) - command pipeline and Dispatcher; `crates/noctis-core/src/responder.rs` (+tests) - Responder typestate, Shared state, edit-format rules; `crates/noctis-core/src/app.rs` - limits, shared accessors; `crates/noctis-core/src/worker/tests.rs` - type-2 routing tests; `crates/noctis-macros` - handler signature adaptation; `crates/noctis/tests/ui/**` - new `int/` fixtures, updated cmd/ctx/meta fixtures; `docs/discord-rules.md`, `xtask/rules-pending.toml` - INT rules moved to enforced; `examples/project-template/**` (AGENTS.md, SKILL.md API hash, commands.md, responder.md, app-and-sharding.md) - usage skill; `xtask/public-api.txt`, `xtask/src/api_snapshot.rs` - re-blessed snapshot.
+- **Review findings (34: high 0, medium 6, low 19, false 8, maybe-false 1):**
+  - Patched (10; medium 5, low 5): `shared()`/`edge()` doc placement; Dispatcher rustdoc + responder.md §4.1 state that callers must enforce `default_member_permissions`/`contexts`/`nsfw`; Dispatcher example splits path from arguments and skips bot authors; declared-ephemeral check in `Shared::edit_original`'s message-transport branch (no silent public post) + test; full `CommandCtx` accessor test; ephemeral USER context-menu flags 32832 + locale test; handler duration/error metrics recorder test; worker type-2 routing (no permit, shutdown `Cancelled`) tests; `noctis.dispatch` span capture test.
+  - Deferred: none.
+  - Rejected (24): unbounded interaction concurrency (contract: interactions never take a permit); load/store vs CAS on `Shared` and Pending-responder-in-spawned-task race (Story 6.6 owns the second writer); `delete_original` then returned message (loud 404, new design); 2xx without `id` -> `Transport` (Discord always returns it); `Transport` without source (public enum change, diagnostics only); `defer(Public)` on ephemeral command (spec INT-08/INT-10 design); no response on pipeline failure x2 (Matrix 6/7/14/15, Story 6.8); `done()` after `defer()` warning (author choice); detached seams use default Limits (Matrix 52); `detached_http()` on dropped runtime (maybe-false, token-less client); macro detects responder by last path segment (rare, new macro logic); `guild_locale: None`/shard 0 in `run_command` x2 (documented, no consumer before Epic 11); concurrent `edit_original`/`FollowupHandle::edit` stale format x2 (rare, loud Discord rejection); long-lived Dispatcher `Arc` cycle (needs hand-built OnceLock); Dispatcher not raced against cancel (enclosing handler is); INT-12 as pipeline conversion, wider return contract, auto-defer arm-point comment, hand-built `EventCtx` test, async `&self` acked methods (all settled by intent contract).
+- **Follow-up review recommended: true** (patched by verdict: high 0, medium 5, low 5). Named risk: the newly added declared-ephemeral guard in `Shared::edit_original` (message transport, `Deferred` original) changes the ack/edit state path and has only one test; its interaction with the returned-message INT-12 conversion and with Story 6.6's future second writer is unverified.
+- **Verification:** all local gates green via `gates.sh` (cargo fmt, clippy `-D warnings`, `cargo test --release --workspace`, `cargo hack --each-feature`, xtask deps-check, rules-catalog, api-snapshot, skill-check, `cargo deny check`, MSRV `cargo +1.91 check`); CI paused by maintainer (workflows in `.github/workflows-disabled/`).
+- **Residual risks:** `Shared` uses load/store, so a deliberately misused Pending responder can race two initial callbacks until Story 6.6 adds CAS; `delete_original` leaves the original marked `Sent`; Dispatcher callers must enforce command permissions/contexts/nsfw themselves (documented, `noctis-prefix` will own it); `response_locale()` lacks guild locale on the Dispatcher path until Epic 11.

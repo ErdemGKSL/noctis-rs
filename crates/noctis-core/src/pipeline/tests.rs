@@ -22,8 +22,8 @@ use crate::options::{OptionError, OptionValue, Options};
 use crate::responder::tests::{Fixture, discord, v2};
 use crate::test_support::{Capture, Recording, Seen};
 use crate::{
-    App, CommandHandler, CommandMetadata, ContextMenuHandler, ErrorOrigin, Module, Responded,
-    Runtime,
+    App, AppBuilder, CommandHandler, CommandMetadata, ContextMenuHandler, ErrorOrigin, Module,
+    Responded, Runtime,
 };
 
 /// A shared log of what handlers saw.
@@ -49,15 +49,21 @@ struct Pipeline {
 
 impl Pipeline {
     async fn start(module: Module) -> Self {
+        Self::start_with(module, |_| {}).await
+    }
+
+    /// As [`Pipeline::start`], with `configure` applied to the builder.
+    async fn start_with(module: Module, configure: impl FnOnce(&mut AppBuilder)) -> Self {
         let server = crate::edge::test_support::TestServer::start_with(false, discord()).await;
         let sink = Arc::new(Recording::default());
-        let app = App::builder()
+        let mut builder = App::builder();
+        builder
             .runtime(&Runtime::for_test())
             .http_proxy(server.authority())
             .error_sink(ErrorOrigin::Command, Arc::clone(&sink))
-            .module(module)
-            .build()
-            .unwrap();
+            .module(module);
+        configure(&mut builder);
+        let app = builder.build().unwrap();
         Self {
             fx: Fixture { server, app },
             sink,
@@ -153,6 +159,7 @@ fn logging(log: &Log, name: &'static str, paths: &'static [&'static str]) -> Com
         paths,
         "d",
         move |ctx: CommandCtx, _: CommandResponder| {
+            tracing::info!("logged");
             log.push(format!("{name}:{}", ctx.command_path()));
             async { Ok(v2("ok")) }
         },
@@ -182,6 +189,8 @@ async fn global_slash_replies() {
         },
     );
     let p = Pipeline::start(Module::new("m").add(handler)).await;
+    // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+    tracing::callsite::rebuild_interest_cache();
     p.run(inbound(&interaction(slash("ping", json!([])), json!({}))))
         .await;
     let requests = p.requests();
@@ -230,6 +239,8 @@ async fn scopes_and_unknown_paths() {
     static GUILDS: [Id<GuildMarker>; 1] = [Id::new(9)];
     let capture = Capture::default();
     let _guard = tracing::subscriber::set_default(capture.subscriber());
+    // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+    tracing::callsite::rebuild_interest_cache();
     let log = Log::default();
     let module = Module::new("m")
         .add(logging(&log, "m::ping", &["ping"]))
@@ -404,6 +415,8 @@ async fn unicode_names_and_menus() {
 async fn malformed_and_authorless() {
     let capture = Capture::default();
     let _guard = tracing::subscriber::set_default(capture.subscriber());
+    // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+    tracing::callsite::rebuild_interest_cache();
     let log = Log::default();
     let p = Pipeline::start(Module::new("m").add(logging(&log, "m::warn", &["warn"]))).await;
     let parsed = interaction(slash("warn", json!([])), json!({}));
@@ -647,10 +660,25 @@ async fn dispatcher_runs_commands() {
     let p = Pipeline::start(module).await;
     let dispatcher = p.dispatcher();
     let invocation = |input| CommandInvocation::new(input, Id::new(5), Id::new(6), Id::new(3));
-    dispatcher
-        .run_command(invocation(CommandInput::new("ping")))
-        .await
-        .unwrap();
+    let capture = Capture::default();
+    {
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
+        dispatcher
+            .run_command(invocation(CommandInput::new("ping")))
+            .await
+            .unwrap();
+    }
+    let lines = capture.lines_with(&["logged"]);
+    assert_eq!(lines.len(), 1, "{}", capture.text());
+    assert!(
+        lines[0].contains("noctis.dispatch{")
+            && lines[0].contains("module=\"m\"")
+            && lines[0].contains("path=\"ping\""),
+        "{}",
+        lines[0]
+    );
     let requests = p.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].0, Method::POST);
@@ -741,4 +769,124 @@ async fn event_handler_dispatches() {
         .unwrap();
     assert_eq!(log.lines(), ["m::ping:ping"]);
     assert_eq!(p.requests()[0].1, "/api/v10/channels/5/messages");
+}
+
+/// The context `run_interaction` builds: author, channel, guild, module,
+/// App state and the App's HTTP client.
+#[tokio::test]
+async fn pipeline_ctx_contents() {
+    let seen: Arc<Mutex<Option<CommandCtx>>> = Arc::default();
+    let handler = {
+        let seen = Arc::clone(&seen);
+        CommandHandler::__new_plain(
+            "m::probe",
+            &["probe"],
+            "d",
+            move |ctx: CommandCtx, _: CommandResponder| {
+                *seen.lock().unwrap() = Some(ctx);
+                async { Ok(v2("ok")) }
+            },
+        )
+    };
+    let p = Pipeline::start_with(Module::new("profile/xp").add(handler), |b| {
+        b.state(7_u32);
+    })
+    .await;
+    p.run(inbound(&interaction(
+        slash("probe", json!([])),
+        json!({ "guild_id": "4", "channel": { "id": "5", "type": 0 } }),
+    )))
+    .await;
+    let ctx = seen.lock().unwrap().take().unwrap();
+    assert_eq!(ctx.user_id(), Id::new(3));
+    assert_eq!(ctx.channel_id(), Some(Id::new(5)));
+    assert_eq!(ctx.guild_id(), Some(Id::new(4)));
+    assert_eq!(ctx.module(), "profile/xp");
+    assert_eq!(*ctx.state::<u32>().unwrap(), 7);
+    assert!(ctx.state::<u64>().is_none());
+    assert!(Arc::ptr_eq(ctx.http(), p.fx.app.http()));
+}
+
+/// An `ephemeral` USER menu: callback flags 32832 and the User Locale
+/// first.
+#[tokio::test]
+async fn ephemeral_user_menu() {
+    let log = Log::default();
+    let menu = {
+        let log = log.clone();
+        ContextMenuHandler::__new_user(
+            "m::show",
+            "Show",
+            CommandMetadata::new(),
+            move |ctx: CommandCtx, _: ResolvedUser, _: CommandResponder| {
+                log.push(ctx.response_locale());
+                async { Ok(v2("u")) }
+            },
+        )
+        .__with_ephemerality(Ephemerality::Ephemeral)
+    };
+    let p = Pipeline::start(Module::new("m").add(menu)).await;
+    let data = json!({
+        "id": "9", "name": "Show", "type": 2, "target_id": "11",
+        "resolved": { "users": { "11": user("11") } }
+    });
+    p.run(inbound(&interaction(
+        data,
+        json!({ "locale": "tr", "guild_locale": "de" }),
+    )))
+    .await;
+    assert_eq!(log.lines(), ["tr"]);
+    let requests = p.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].2["type"], 4);
+    assert_eq!(requests[0].2["data"]["flags"], 32832);
+}
+
+/// `execute` records one duration sample and one `kind="command"` error
+/// for a failing Command.
+#[tokio::test]
+async fn command_metrics() {
+    use metrics_util::MetricKind;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _metrics = metrics::set_default_local_recorder(&recorder);
+    let handler = CommandHandler::__new_plain(
+        "m::fail",
+        &["fail"],
+        "d",
+        |_: CommandCtx, _: CommandResponder| async {
+            Err::<V2Message, _>(HandlerError::new(std::io::Error::other("boom")))
+        },
+    );
+    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    p.run(inbound(&interaction(slash("fail", json!([])), json!({}))))
+        .await;
+    assert_eq!(p.reports().len(), 1);
+    let snap = snapshotter.snapshot().into_vec();
+    let durations = snap
+        .iter()
+        .find(|(k, ..)| k.key().name() == "noctis_handler_duration_seconds")
+        .map(|(.., v)| v);
+    assert!(
+        matches!(durations, Some(DebugValue::Histogram(v)) if v.len() == 1),
+        "{snap:?}"
+    );
+    let errors: Vec<_> = snap
+        .iter()
+        .filter(|(k, ..)| {
+            k.kind() == MetricKind::Counter && k.key().name() == "noctis_handler_errors_total"
+        })
+        .collect();
+    assert_eq!(errors.len(), 1, "{snap:?}");
+    assert!(matches!(errors[0].3, DebugValue::Counter(1)), "{snap:?}");
+    assert!(
+        errors[0]
+            .0
+            .key()
+            .labels()
+            .any(|l| l.key() == "kind" && l.value() == "command"),
+        "{snap:?}"
+    );
 }

@@ -691,7 +691,11 @@ impl Shared {
         };
         let message_id = match (&self.transport, original.message_id) {
             (Transport::Message(target), None) => {
-                // A deferred message reply has no message yet: post it.
+                // A deferred message reply has no message yet: post it,
+                // unless the Command is declared ephemeral.
+                if self.ephemerality == Ephemerality::Ephemeral {
+                    return Err(ResponderError::EphemeralUnsupported);
+                }
                 self.prepare(&mut msg)?;
                 Some(target.reply(create(&msg)?).await?)
             }

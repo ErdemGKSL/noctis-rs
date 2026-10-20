@@ -186,13 +186,22 @@ registered Command outside an interaction, for example a prefix command:
 ```rust
 #[event]
 async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    if let Some(path) = msg.content.strip_prefix('!') {
-        let invocation = CommandInvocation::new(CommandInput::new(path), msg.channel_id, msg.id, msg.author.id)
-            .guild_id(msg.guild_id) // the guild's scope first, then global
-            .shard(ctx.shard())     // optional, default 0
-            .locale("tr");          // optional User Locale
-        ctx.dispatcher().run_command(invocation).await?; // Result<(), DispatchError>
+    if msg.author.bot {
+        return Ok(()); // never answer bots (or yourself)
     }
+    let Some(text) = msg.content.strip_prefix('!') else { return Ok(()) };
+    // `!warn 3`: the first word is the Command Path, the rest its arguments.
+    let mut words = text.split_whitespace();
+    let Some(path) = words.next() else { return Ok(()) };
+    let mut input = CommandInput::new(path);
+    if let Some(days) = words.next().and_then(|w| w.parse().ok()) {
+        input = input.with_option("days", OptionValue::Integer(days));
+    }
+    let invocation = CommandInvocation::new(input, msg.channel_id, msg.id, msg.author.id)
+        .guild_id(msg.guild_id) // the guild's scope first, then global
+        .shard(ctx.shard())     // optional, default 0
+        .locale("tr");          // optional User Locale
+    ctx.dispatcher().run_command(invocation).await?; // Result<(), DispatchError>
     Ok(())
 }
 ```
@@ -204,6 +213,9 @@ async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
 - `run_command` resolves the path in the guild's scope, then globally, and runs the
   handler. An unregistered path is `Err(DispatchError::UnknownCommand { path })` with no
   request; a failing handler goes to the `Command` Error Sink, not into the result.
+- The Dispatcher enforces none of the Command's `default_member_permissions`, `contexts`
+  or `nsfw` metadata (Discord enforces those only for real interactions): check them
+  yourself before calling `run_command`.
 - The response is a message transport: `reply` and a returned message post a reply to
   the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer(Public)`
   shows the typing indicator (the later message is then posted as the reply), edits and

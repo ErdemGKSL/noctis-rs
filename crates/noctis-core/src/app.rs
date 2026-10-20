@@ -239,13 +239,13 @@ impl App {
         self.http_config
     }
 
-    /// The App's Discord HTTP edge.
     /// What every handler invocation shares with this App.
     #[cfg(test)]
     pub(crate) fn shared(&self) -> &Arc<AppShared> {
         &self.shared
     }
 
+    /// The App's Discord HTTP edge.
     pub(crate) fn edge(&self) -> &Edge {
         &self.shared.edge
     }
