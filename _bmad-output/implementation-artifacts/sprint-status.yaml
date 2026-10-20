@@ -72,7 +72,7 @@ development_status:
 
   epic-5: in-progress
   5-1-app-builder-runtime-plugin-seam-and-startup-safety: done
-  5-2-discord-http-fake-and-the-test-runtime: in-progress
+  5-2-discord-http-fake-and-the-test-runtime: done
   5-3-discord-gateway-fake: backlog
   5-4-automatic-sharding-with-bucketed-identify: backlog
   5-5-interaction-lane-and-bounded-event-lane: backlog

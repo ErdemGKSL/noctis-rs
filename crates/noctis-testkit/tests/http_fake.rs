@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use noctis_core::{App, Runtime, Token};
 use noctis_testkit::fake::{
-    FakeDiscordHttp, FakeResponse, GatewayBot, MAX_BODY_BYTES, Method, SessionStartLimit,
-    StatusCode,
+    FakeDiscordHttp, FakeResponse, GatewayBot, HeaderName, HeaderValue, MAX_BODY_BYTES, Method,
+    SessionStartLimit, StatusCode,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -522,4 +522,45 @@ async fn dropped_fake_refuses() {
     drop(fake);
     tokio::task::yield_now().await;
     assert!(app.http().gateway().authed().await.is_err());
+}
+
+#[tokio::test]
+async fn dropped_fake_closes_live_connections() {
+    let fake = FakeDiscordHttp::start().await.unwrap();
+    let app = app(&fake, Some("t"), Some(Duration::from_secs(2)));
+    app.http().gateway().authed().await.unwrap();
+    drop(fake);
+    tokio::task::yield_now().await;
+    assert!(app.http().gateway().authed().await.is_err());
+}
+
+// ---- Proxied App: local rate limiter off ----
+
+#[tokio::test]
+async fn proxied_app_has_no_local_ratelimiter() {
+    let fake = FakeDiscordHttp::start().await.unwrap();
+    let header = |name: &'static str, value: &'static str| {
+        (
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
+        )
+    };
+    let mut response = FakeResponse::json(StatusCode::OK, &serde_json::json!([]));
+    for (name, value) in [
+        header("x-ratelimit-bucket", "b"),
+        header("x-ratelimit-limit", "1"),
+        header("x-ratelimit-remaining", "0"),
+        header("x-ratelimit-reset-after", "60"),
+    ] {
+        response = response.header(name, value);
+    }
+    fake.route(Method::GET, "/channels/1/messages", response);
+    let app = app(&fake, Some("t"), None);
+
+    app.http().channel_messages(id(1)).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), app.http().channel_messages(id(1)))
+        .await
+        .expect("a local rate limiter delayed the second request")
+        .unwrap();
+    assert_eq!(fake.requests().len(), 2);
 }

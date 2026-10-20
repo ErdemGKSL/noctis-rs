@@ -2,10 +2,10 @@
 title: 'Story 5.2: Discord HTTP fake and the test Runtime'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '33820f357047103465129b63f547e29cb8602eb8'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-5-context.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/app-and-sharding.md'
@@ -108,6 +108,39 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 29 findings — high 0, medium 5, low 14, false 10, maybe-false 0
+- findings:
+  - `[low]` `[reject]` Builder value with leading whitespace (`" http://p:1"`) reports `UnsupportedScheme` instead of `InvalidChar` — real, but the order is spec-mandated (steps 2 before 5), `from_env` trims, and an untrimmed literal in code is rare; fix reorders validation.
+  - `[low]` `[reject]` `InvalidChar { index }` is a char index after the scheme strip, not a byte offset into the input — real but spec-settled ("char index in the step-4 string") and documented; cosmetic for a value the user can see.
+  - `[low]` `[patch]` Bracketed IPv6 check accepts `[:::::]`, `[.]`, `[1.2.3.4]`, `[ffff]` although the skill promises malformed `[ipv6]` is `InvalidHost` (proxy.rs `split_host_port` L99-102) — grouped with host-validation entry; patch: parse the bracket body as `std::net::Ipv6Addr`.
+  - `[medium]` `[patch]` Unbracketed host accepts URI-illegal chars (`pro<xy`, `a"b`, `` ` ``, `{`) — confirmed: `split_host_port` only rejects `[`/`]`, and http 1.5 `Authority` parsing rejects non-URI chars (`InvalidUriChar`), so build() succeeds and every request fails at runtime, breaking the AC "invalid proxy ⇒ InvalidHttpProxy at build()"; patch: RFC 3986 reg-name byte allowlist ⇒ `InvalidHost`.
+  - `[false]` `[reject]` Redaction inconsistent between `AppBuilder` and `App` Debug — the spec's Debug rule settles it deliberately: the raw builder value is unvalidated (may hold `user:pw@`), the normalized authority cannot contain `@`.
+  - `[low]` `[reject]` Panicking `route_with` handler surfaces as a connection error — the panic message is still printed by the panic hook; handler panics in tests are uncommon and the fix adds catch_unwind plus new reporting surface.
+  - `[false]` `[reject]` `Drop` abort is asynchronous, so `dropped_fake_refuses` is timing-dependent — if the abort has not run, the request times out at 2 s and still errors; Matrix 24 accepts refused/reset/timeout, so the test cannot flake.
+  - `[false]` `[reject]` No canned unauthenticated `GET /gateway` — the intent names only `GET /gateway/bot`; nothing in this story sends `/gateway`, the 404 is documented, and `route()` covers it; Story 5.3 owns gateway URL work.
+  - `[low]` `[reject]` `body_limit` test moves ~128 MiB — Matrix 18 prescribes it, memory stays well under container limits, and the fix (configurable limit) adds public API.
+  - `[low]` `[patch]` Template not fully updated for the public API change — `.env.example` lacks `NOCTIS_HTTP_PROXY` while README and skill document it; template `AGENTS.md` has no env/API listing that needs changing and AD-24 already states `proxy(url, true)` + `ratelimiter(None)`; patch: add a commented `NOCTIS_HTTP_PROXY=` line to `.env.example`.
+  - `[medium]` `[patch]` No test shows the local rate limiter is off under `http_proxy` — grouped with vgap 1 / intent D3; patch: add an E2E test with `x-ratelimit-*` headers and a bounded second request.
+  - `[medium]` `[patch]` (edge) Unbracketed host accepts URI-illegal printable chars — same root cause and patch as the reg-name allowlist entry above.
+  - `[low]` `[patch]` (edge) Bracketed body `[:]`, `[1.2.3.4]`, `[::::::]` passes — same root cause and patch as the `Ipv6Addr` entry above.
+  - `[low]` `[reject]` (edge) `proxy:3000/x://y` reports `UnsupportedScheme` rather than `NotAnAuthority` — spec-ordered behavior, a value nobody plausibly configures; the fix adds a scheme-syntax branch.
+  - `[low]` `[reject]` (edge) `route()` path with `?` or `/api/v10` prefix never matches — the Discord 404 and the request log (`route_path()`) show the mismatch; the fix adds a panic path to a public method.
+  - `[low]` `[reject]` (edge) Panicking `route_with` handler drops the connection — same as the blind finding; rejected on the same grounds.
+  - `[false]` `[reject]` (edge) `dropped_fake_refuses` also passes on timeout — Matrix 24 explicitly accepts a timeout; the property under test is "Err, no panic".
+  - `[low]` `[reject]` (edge) Derived `Debug` of `RecordedRequest` prints the `authorization` header — tests run against a local fake with fake tokens and no network; the fix adds a manual Debug impl for a case unlikely in practice.
+  - `[medium]` `[patch]` (vgap, pre-verified) `ratelimiter(None)` under `http_proxy` unverified — patch: `proxied_app_has_no_local_ratelimiter` in `tests/http_fake.rs`.
+  - `[low]` `[patch]` (vgap, pre-verified) Drop closing live pooled connections unverified — patch: `dropped_fake_closes_live_connections` test (one OK request, drop, next request errors).
+  - `[low]` `[reject]` (vgap, pre-verified) Broken-body 400 path has no test — real gap, but hyper may close before the 400 is written so a deterministic test needs investigation; the spec already treats the sibling chunked path as review-only; not a direct fix.
+  - `[false]` `[reject]` (intent D1) "test Runtime" in the title vs no Runtime change — epic AC builds on 5.1's `Runtime::for_test()`; the reading is recorded as a memlog decision and the spec Design Notes; the AC asks for no new runtime.
+  - `[false]` `[reject]` (intent D2) "only through `proxy(url, true)`" not tested — twilight targets `discord.com` unless the proxy override is set, so a request logged by the 127.0.0.1 fake can only arrive through it; core has no test branch (`cfg(test)` only on unit-test modules).
+  - `[medium]` `[patch]` (intent D3) `ratelimiter(None)` not observed by any test — grouped with the rate-limiter test patch.
+  - `[false]` `[reject]` (intent D4) authority-only validated parameter — spec Design Notes settle it: twilight formats `{protocol}://{proxy}/api/v10`, so the value must be an authority; AD-24 fixes plain HTTP.
+  - `[false]` `[reject]` (intent D5) `NOCTIS_HTTP_PROXY` not in the AC — the Usage Skill had it planned for Story 5.2 and the spec selects it; `from_env` behavior is additive (unset ⇒ unchanged).
+  - `[low]` `[patch]` (intent D6) template untouched for the public API change — grouped with the `.env.example` patch; facade re-export is pinned by `api-snapshot`.
+  - `[false]` `[reject]` (intent D7) E2E placement documented, not enforced — the AC states a location, which the crate docs and this story's tests satisfy; no gate is asked for.
+  - `[false]` `[reject]` (intent D8) fake beyond the AC surface — every extra is spec-selected, and closing 5.1's deferred timeout finding is in the intent's Problem statement.
+
 ## Design Notes
 
 - The proxy is an authority because twilight formats `"{protocol}://{proxy}/api/v10/.."` itself; accepting `http://` keeps the skill's `NOCTIS_HTTP_PROXY=http://proxy:3000` working. `https` is rejected because AD-24 fixes `proxy(url, true)` (plain HTTP).
@@ -134,3 +167,18 @@ deferred: []
 - `cargo deny check` -- exit 0.
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- each exit 0 (api-snapshot needs `nightly-2026-10-15` + `cargo-public-api` 0.52.0, see AGENTS.md pitfalls).
 - `cargo tree -p noctis-testkit -e normal -i twilight-http` -- fails with "did not match" or shows no path from noctis-testkit's own deps; `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Adds `AppBuilder::http_proxy` (and `NOCTIS_HTTP_PROXY` in `from_env`): a validated plain-HTTP authority applied as twilight `proxy(url, true)` + `ratelimiter(None)`, reported as `InvalidHttpProxy` at `build()`. Adds the internal `FakeDiscordHttp` in noctis-testkit (canned `GET /gateway/bot`, `route`/`route_with`, request log, stall mode for timeouts, 413 body limit, abort on drop) with E2E tests; closes 5.1's deferred "HTTP timeout never observed" finding. "Test Runtime" is 5.1's `Runtime::for_test()` (no new runtime).
+- **Files changed:**
+  - `crates/noctis-core/src/proxy.rs` — proxy authority parsing/validation (reg-name allowlist, `Ipv6Addr` bracket check).
+  - `crates/noctis-core/src/app.rs`, `app/tests.rs`, `error.rs`, `lib.rs` — `http_proxy` builder, env var, error variant, tests.
+  - `crates/noctis-testkit/src/fake.rs`, `fake/http.rs`, `lib.rs`, `Cargo.toml` — the HTTP fake.
+  - `crates/noctis-testkit/tests/http_fake.rs` — E2E tests (smoke, timeout, 413, drop, no local ratelimiter, live-connection drop).
+  - `crates/noctis/src/lib.rs`, `xtask/public-api.txt` — facade re-export, re-blessed API snapshot.
+  - `examples/project-template/` (skill, `app-and-sharding.md`, README, `.env.example`) — documents `http_proxy` / `NOCTIS_HTTP_PROXY`.
+- **Review findings:** 29 (high 0, medium 5, low 14, false 10). Patched entries: medium 5, low 6 (high 0), grouped into 4 fixes: reg-name byte allowlist ⇒ `InvalidHost`; bracket body parsed as `Ipv6Addr`; `proxied_app_has_no_local_ratelimiter` and `dropped_fake_closes_live_connections` tests; `NOCTIS_HTTP_PROXY=` in template `.env.example`. Deferred: none. Rejected (reasons in Review Triage Log): leading-whitespace ordering and char-index `InvalidChar` (spec-settled); panicking `route_with` handler; `dropped_fake_refuses` timing (Matrix 24 accepts timeout); no `/gateway` canned route (5.3 owns it); 128 MiB body test (Matrix-prescribed); `proxy:3000/x://y` error kind; `route()` with `?`/prefix; `RecordedRequest` Debug prints auth header (fake tokens); broken-body 400 untested (non-deterministic); builder/App Debug redaction (deliberate); intent D1, D2, D4, D5, D7, D8 (spec-settled).
+- **Follow-up review recommended:** true (first pass, 5 medium patched). Named risk: the new reg-name allowlist and `Ipv6Addr` check in `proxy.rs` were written after review and are unreviewed — they could still admit a value http's `Authority` parser rejects (or reject a valid one), which would break the "invalid proxy ⇒ `InvalidHttpProxy` at build()" AC.
+- **Verification:** local gates via scratchpad `gates.sh` all green (fmt, clippy `-D warnings`, `cargo test --release --workspace`, `cargo hack --each-feature`, MSRV 1.91 check, `cargo deny`, xtask deps-check / rules-catalog / api-snapshot / skill-check); no debug build. CI paused by the maintainer.
+- **Residual risks:** fake stays crate-internal until `TestApp` (8.6) wires the facade `testkit` feature; chunked over-limit and broken-body paths are covered by review only; fake has no unauthenticated `/gateway` route.

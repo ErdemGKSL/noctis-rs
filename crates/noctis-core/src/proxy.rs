@@ -96,11 +96,7 @@ fn split_host_port(authority: &str) -> Result<Option<&str>, HttpProxyError> {
         let (body, after) = bracketed
             .split_once(']')
             .ok_or(HttpProxyError::InvalidHost)?;
-        let body_ok = !body.is_empty()
-            && body
-                .chars()
-                .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.');
-        if !body_ok {
+        if body.parse::<std::net::Ipv6Addr>().is_err() {
             return Err(HttpProxyError::InvalidHost);
         }
         if after.is_empty() {
@@ -115,10 +111,18 @@ fn split_host_port(authority: &str) -> Result<Option<&str>, HttpProxyError> {
         Some((host, port)) => (host, Some(port)),
         None => (authority, None),
     };
-    if host.is_empty() || host.contains(['[', ']']) || port.is_some_and(|p| p.contains(':')) {
+    if host.is_empty()
+        || !host.bytes().all(is_reg_name_byte)
+        || port.is_some_and(|p| p.contains(':'))
+    {
         return Err(HttpProxyError::InvalidHost);
     }
     Ok(port)
+}
+
+/// RFC 3986 `reg-name` bytes: unreserved, `%` and sub-delims.
+fn is_reg_name_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"-._~%!$&'()*+,;=".contains(&b)
 }
 
 /// Checks a port: 1-5 ASCII digits with a value in 1..=65535.
@@ -225,7 +229,26 @@ mod tests {
 
     #[test]
     fn host() {
-        for raw in [":3000", "::1", "[::1", "[]", "[::1]x", "[zz]", "a]b", "a[b"] {
+        for raw in [
+            ":3000",
+            "::1",
+            "[::1",
+            "[]",
+            "[::1]x",
+            "[zz]",
+            "a]b",
+            "a[b",
+            "pro<xy",
+            "a\"b",
+            "{",
+            "|",
+            "^",
+            "`",
+            "[:::::]",
+            "[.]",
+            "[1.2.3.4]",
+            "[ffff]",
+        ] {
             assert_eq!(err(raw), HttpProxyError::InvalidHost, "{raw}");
         }
     }
