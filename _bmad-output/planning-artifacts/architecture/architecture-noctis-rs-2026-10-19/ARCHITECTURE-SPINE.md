@@ -409,11 +409,15 @@ list in CI.
     `ComponentResponder<M = NoModal>` and `ModalResponder`; a handler that only
     sends a rendered message through its context (below) takes none. `Responder<Pending>` and `Responder<Acked>` in the rules below
     mean `Responder<K, Pending>` and `Responder<K, Acked>` for any `K`.
-  - `Responder<Pending>` methods (`reply`, `defer`, `update`, `modal`) consume
-    `self` and return `Responder<Acked>`, which offers only `edit_original`,
-    `followup(msg, Visibility) -> FollowupHandle` and `delete_original` (INT-03);
-    `done()` turns it into the `Responded` value the handler returns. `update`
-    exists only for `Component` and `ModalSubmit`. `modal` exists only for
+  - Method names and semantics follow discord.js interaction responses.
+    `Responder<Pending>` methods (`reply` type 4, `defer_reply` type 5, `update`
+    type 7, `defer_update` type 6, `show_modal` type 9) consume `self` and return
+    `Responder<Acked>`, which offers only `edit_reply`, `fetch_reply`,
+    `delete_reply` (all on `@original`) and `follow_up(msg, Visibility) ->
+    FollowupHandle` (INT-03); `done()` turns it into the `Responded` value the
+    handler returns. `update`/`defer_update` exist only for `Component` and
+    `ModalSubmit` (a modal not opened from a component message gets
+    `UpdateUnavailable` at run time). `show_modal` exists only for
     `Command<OpensModal>` and `Component<OpensModal>` (INT-05).
   - `opens_modal` is declared on the `#[command]` or on the `#[route]` the handler
     serves. The handler macro requires the `OpensModal` responder alias exactly when
@@ -421,7 +425,7 @@ list in CI.
     disables auto-defer for that handler.
   - A runtime state machine (an atomic shared by the handler and the auto-defer
     task) covers what types can't: when the auto-defer wins, a `Pending` call becomes
-    `edit_original`; follow-ups are counted (5 for user-installed apps, INT-11); after
+    `edit_reply`; follow-ups are counted (5 for user-installed apps, INT-11); after
     15 minutes calls return `TokenExpired` without an HTTP request (INT-02).
   - Ephemerality is declared at registration (default: public for Commands,
     update-in-place for components); the auto-defer uses it. Commands defer with

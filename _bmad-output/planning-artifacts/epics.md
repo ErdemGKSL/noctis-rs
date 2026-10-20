@@ -1925,6 +1925,11 @@ This story only removes code that Epics 1 to 6 already shipped; it depends on no
 **When** a Route component is built
 **Then** `CustomId::new` resolves at once for every Route without a select nonce or integrity tag (no `has_view` branch), and no rustdoc, comment or test in `crates/` mentions a View envelope, widgets or view state versions (the `noctis` facade docs, `noctis-ui` `lib.rs`/`route.rs`, `noctis-codec` `parts.rs`/`layout.rs`/`error.rs` and the `noctis-rules` `Translate` comment included)
 
+**Given** the shipped `CommandResponder` (Story 6.5)
+**When** the story is done
+**Then** its methods are renamed to the discord.js interaction-response flows, with no other behaviour change: `defer(ephemerality)` → `defer_reply(ephemerality)` (type 5), `modal(m)` → `show_modal(m)` (type 9), `edit_original(msg)` → `edit_reply(msg)`, `delete_original()` → `delete_reply()`, `followup(msg, visibility)` → `follow_up(msg, visibility)`; `reply(msg)` (type 4) keeps its name, and `fetch_reply()` (`GET /webhooks/{application_id}/{token}/messages/@original`) is added
+**And** the old names don't exist (no deprecated aliases before 0.1), every test, doc, Usage Skill file (`responder.md` method matrix) and template call site uses the new names, and the public-API snapshot is re-blessed
+
 **Given** `docs/discord-rules.md`
 **When** `xtask rules-catalog` runs
 **Then** the withdrawn `E` line of the quoted layout, the `VIEW_ENV_LEN` constants row, the withdrawal note and every `E` term are gone, the by-ref worst case reads 41, the CID-01 and CID-03 notes no longer mention `view`, and the check passes
@@ -1998,20 +2003,33 @@ So that forged or malformed ids never crash the bot and clicks feel instant.
 **Then** it is sent as a new ephemeral or public message (type 4, auto-defer type 5 with only the declared `EPHEMERAL` flag) instead of updating in place; `response = update` is the default, and the skill's sub-panel pattern uses this
 **And** spans `noctis.interaction` cover every stage, and `noctis_handler_duration_seconds{kind}` and `noctis_handler_errors_total{kind}` are recorded
 
-**Given** a component (or a modal opened from a component message) answered with `ctx.update(msg)` before any acknowledgement — parity with discord.js `ButtonInteraction#update`
-**When** core responds
-**Then** it sends exactly one request, `POST /interactions/{id}/{token}/callback` with `{"type": 7, "data": …}`, through the Discord edge (Story 5.9) with no bot `Authorization` header (interaction endpoints, INT-13), and `data` carries: `components`; `flags` with `IS_COMPONENTS_V2` for V2 messages (never `EPHEMERAL`: an update keeps the message's ephemerality, so the typestate offers no way to change it); `allowed_mentions` (none unless opted in, MSG-05); and the `attachments` keep-list plus new files as multipart `payload_json` + `files[n]` (Story 9.1)
-**And** updating a legacy (non-V2) message into a V2 one sets the flag and sends `content: null`, `embeds: []` (CV2-01, CV2-02); the reverse is a compile error
-**And** `ctx.update_with_response(msg)` adds `?with_response=true` and returns the edited message parsed from the callback response's `resource.message`
+**Given** the interaction-response flows, named after discord.js (`InteractionResponses`, verified against discord.js 14.27.0) — each a distinct flow, not aliases:
 
-**Given** `ctx.defer_update()` (type 6, discord.js `deferUpdate`) or the type-6 auto-defer
-**When** the handler later calls `ctx.update(msg)` within the token's 15 minutes
-**Then** core sends `PATCH /webhooks/{application_id}/{token}/messages/@original?with_components=true` (discord.js `editReply` after `deferUpdate`) with the same body rules, through the edge and without the bot token
-**And** after the token expires (INT-02), `ctx.update` returns `ResponderError::TokenExpired` instead of sending; for a non-ephemeral message the author can fall back to `ctx.edit_message_as_bot(msg)` (`PATCH /channels/{channel_id}/messages/{message_id}` with the bot token, normal rate limits), which the skill documents
+| Method (state) | discord.js | Request | What the user sees | Allowed on |
+| --- | --- | --- | --- | --- |
+| `reply(msg)` (Pending) | `reply` | `POST /interactions/{id}/{token}/callback` type 4 | a **new** message (ephemeral or public, fixed now) | command, component, modal submit |
+| `defer_reply(eph)` (Pending) | `deferReply` | callback type 5 (only `EPHEMERAL` flag) | a new "is thinking…" message | command, component, modal submit |
+| `update(msg)` (Pending) | `update` | callback type 7 with the full body | the **component's own message** changes at once (one request) | component; modal submit only when the modal was opened from a component message |
+| `defer_update()` (Pending) | `deferUpdate` | callback type 6, no body | nothing changes; the click stops spinning | same as `update` |
+| `show_modal(m)` (Pending, `OpensModal`) | `showModal` | callback type 9 | a modal | command, component (never modal submit, never after any ack) |
+| `edit_reply(msg)` (Acked) | `editReply` | `PATCH /webhooks/{application_id}/{token}/messages/@original` | edits `@original`: the new reply after `reply`/`defer_reply`, **the component's message** after `update`/`defer_update` | after any ack |
+| `fetch_reply()` / `delete_reply()` (Acked) | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | — | after any ack |
+| `follow_up(msg, vis)` (Acked) | `followUp` | `POST /webhooks/{application_id}/{token}` | another new message, its own ephemerality | after any ack |
+
+**When** a handler uses them
+**Then** the typestate enforces the table at compile time: exactly one Pending method; `update`/`defer_update` exist only on `ComponentResponder`/`ModalResponder`; `show_modal` only with `OpensModal` and never on `ModalResponder`; Acked methods only after an ack; `reply` and `defer_reply` fix ephemerality, `update`/`defer_update` can't change it (no `EPHEMERAL` parameter; the message keeps its own)
+**And** the documented equivalences hold and are tested: `defer_update()` then `edit_reply(msg)` produces the same final message as `update(msg)` (two requests instead of one, so `update` is preferred when the render is fast); `defer_reply(e)` then `edit_reply(msg)` produces the same final message as `reply(msg)` with ephemerality `e`
+**And** for a modal submit from a modal opened by a slash command (no source message), `update`/`defer_update` return `ResponderError::UpdateUnavailable` without a request; the auto-defer (2000 ms) uses type 6 for components and component-opened modal submits, type 5 otherwise
+
+**Given** `update(msg)` or `edit_reply(msg)` with a V2 body
+**When** core sends it
+**Then** the body carries `components`, `flags` with `IS_COMPONENTS_V2` (never `EPHEMERAL` on an update or edit), `allowed_mentions` (none unless opted in, MSG-05) and the `attachments` keep-list with new files as multipart `payload_json` + `files[n]` (Story 9.1); updating a legacy message into V2 sets the flag and sends `content: null`, `embeds: []` (CV2-01, CV2-02), V2 → legacy is a compile error; interaction callback and interaction-webhook requests go through the Discord edge (Story 5.9) without the bot `Authorization` header (INT-13); `with_components` is not sent (interaction webhooks always honour components)
+**And** every method has a `…_with_response` / `withResponse` variant where discord.js has one (`reply`, `defer_reply`, `update`, `defer_update`), adding `?with_response=true` and returning the parsed callback `resource`
+**And** after the token expires (INT-02) `edit_reply`/`delete_reply` on a public message whose id is known fall back to the bot-token channel routes (Story 6.6 behaviour), and everything else returns `ResponderError::TokenExpired`
 
 **Given** the fake Discord HTTP server (Story 5.2)
-**When** the tests above run
-**Then** each case asserts the exact method, path, query, headers (no `Authorization` on interaction endpoints) and JSON/multipart body that was sent
+**When** the tests run
+**Then** each row of the table is asserted on the wire (method, path, query, headers, JSON or multipart body), including the two equivalences and the `UpdateUnavailable` case
 
 ### Story 7.3: Expired Handler and stale Payload routing
 

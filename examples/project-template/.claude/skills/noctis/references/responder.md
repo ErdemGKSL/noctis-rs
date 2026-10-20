@@ -136,6 +136,29 @@ Locale) for ephemeral Commands and the Guild Locale (then the User Locale) for p
 ones, `"en-US"` when Discord sent neither. Pass `Strings::of(ctx.response_locale())` to
 your render function.
 
+## 3b. Interaction-response flows at a glance (discord.js names)
+
+Each method is its own flow, not an alias. Names follow discord.js. [planned: Story 6.10
+renames the shipped command methods (`defer` → `defer_reply`, `modal` → `show_modal`,
+`edit_original` → `edit_reply`, `delete_original` → `delete_reply`, `followup` →
+`follow_up`); Story 7.2 adds the component and modal-submit responders.]
+
+| Method | discord.js | Callback / route | Effect | Use when |
+| --- | --- | --- | --- | --- |
+| `reply(msg)` | `reply` | type 4 | sends a **new** message (ephemeral or public, chosen now) | answering a command, or a sub-panel off a component |
+| `defer_reply(eph)` | `deferReply` | type 5 | new "is thinking…" message, filled later by `edit_reply` | the new message needs > 2 s of work |
+| `update(msg)` | `update` | type 7 | edits **the clicked component's message** in one request | every button/select that re-renders its own screen (the default) |
+| `defer_update()` | `deferUpdate` | type 6 | nothing visible; stops the click spinner | the re-render needs > 2 s; then `edit_reply` |
+| `show_modal(m)` | `showModal` | type 9 | opens a modal | first response only, never from a modal submit |
+| `edit_reply(msg)` | `editReply` | `PATCH …/messages/@original` | edits `@original`: the reply after `reply`/`defer_reply`, the component's message after `update`/`defer_update` | after any ack |
+| `fetch_reply()` / `delete_reply()` | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | | after any ack |
+| `follow_up(msg, vis)` | `followUp` | `POST /webhooks/{app}/{token}` | another new message | after any ack |
+
+Equivalences: `defer_update()` + `edit_reply(msg)` ends like `update(msg)`, but takes two
+requests, so prefer `update` when the render is fast. `defer_reply(e)` + `edit_reply(msg)`
+ends like `reply(msg)` with ephemerality `e`. You rarely call `defer_*` yourself: the
+auto-defer fires at 2000 ms (type 6 for components, type 5 for commands).
+
 ## 4. The Responder (typestate, INT-03/04)
 
 The type is `Responder<K, S = Pending>`: `K` is the handler kind (`Command<M>`, sealed
