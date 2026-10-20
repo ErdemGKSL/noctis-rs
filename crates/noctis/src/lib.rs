@@ -6,9 +6,12 @@
 //! # Modules
 //!
 //! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
-//!   [`Runtime`], [`Plugin`], [`Resource`] and the errors ([`Error`],
+//!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`event`](macro@event),
+//!   [`HandlerError`], [`HandlerResult`] and the errors ([`Error`],
 //!   [`BuildError`], [`BuildViolation`], [`StartError`], [`EnvError`],
 //!   [`TokenError`], [`ResourceConflict`]).
+//! - [`events`]: the gateway event payloads `#[event]` handlers take, and
+//!   [`events::EventCtx`].
 //! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
 //!   and [`twilight::model`].
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
@@ -115,6 +118,62 @@
 //! }
 //! ```
 //!
+//! # Modules and events
+//!
+//! A [`Module`] groups registrations under a path-like id and nests other
+//! Modules; [`AppBuilder::module`] mounts a tree. `#[event]` turns an
+//! `async fn(ctx: EventCtx, event: <payload>) -> HandlerResult<()>` into a
+//! descriptor for [`Module::add`]; the payload types are in [`events`].
+//! `build()` folds every tree once, parent before child, and derives the
+//! gateway filter (only interactions and handled event types are
+//! deserialized) and the intents (a missing privileged intent is
+//! [`BuildViolation::MissingIntent`], GW-05). Every handler of an event
+//! runs: `ordered` ones first, one event at a time per guild, then the
+//! others concurrently. At most
+//! [`handler_concurrency`](AppBuilder::handler_concurrency) events run at
+//! once (default 256); interactions never wait for that bound. A handler
+//! error or panic is logged at `error` and the shard keeps running.
+//!
+//! ```no_run
+//! use noctis::events::{EventCtx, MemberAdd, MessageCreate};
+//! use noctis::prelude::*;
+//! use noctis::twilight::model::gateway::Intents;
+//!
+//! struct Xp(std::sync::atomic::AtomicU64);
+//!
+//! #[event]
+//! async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+//!     if let Some(xp) = ctx.state::<Xp>() {
+//!         xp.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+//!     }
+//!     let _ = msg.author.id;
+//!     Ok(())
+//! }
+//!
+//! /// Runs before the concurrent handlers, in per-guild order.
+//! #[event(ordered)]
+//! async fn audit_join(ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> {
+//!     let _ = (ctx.module(), ev.user.id);
+//!     Ok(())
+//! }
+//!
+//! fn module() -> Module {
+//!     Module::new("profile")
+//!         .add(award_xp())
+//!         .module(Module::new("profile/audit").add(audit_join()))
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), noctis::Error> {
+//!     let app = App::from_env()?
+//!         .state(Xp(0.into()))
+//!         .intents(Intents::GUILD_MEMBERS) // privileged: enable it in the Portal too
+//!         .module(module())
+//!         .build()?;
+//!     app.run().await
+//! }
+//! ```
+//!
 //! # Cargo features
 //!
 //! All features are additive, and the default features build without the image
@@ -131,9 +190,151 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    App, AppBuilder, BuildError, BuildViolation, EnvError, Error, GatewayUrlError, HttpProxyError,
-    Plugin, Resource, ResourceConflict, Runtime, StartError, State, Token, TokenError,
+    App, AppBuilder, BuildError, BuildViolation, Descriptor, EnvError, Error, GatewayUrlError,
+    HandlerError, HandlerResult, HttpProxyError, Module, Plugin, Resource, ResourceConflict,
+    Runtime, StartError, State, Token, TokenError,
 };
+
+/// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
+/// into `fn name() -> EventHandler`, which [`Module::add`] takes. See
+/// [`events`] and [Modules and events](crate#modules-and-events).
+///
+/// Arguments, in any order, each at most once:
+///
+/// - `ordered`: the handler runs before the concurrent handlers of the
+///   event, one event at a time per guild. Ordered handlers share 64
+///   sub-queues keyed by a hash of the guild id (guildless events use
+///   sub-queue 0). A hung ordered handler blocks its whole sub-queue, and
+///   the events queued behind it keep their worker permits, so it can
+///   eventually hold every `handler_concurrency` permit and stop all event
+///   handling. noctis adds no timeout: bound slow work in ordered handlers
+///   yourself, for example with `tokio::time::timeout`.
+/// - `droppable`: the event may be dropped when the event lane is full, if
+///   every handler of its type is droppable. `TYPING_START` and
+///   `PRESENCE_UPDATE` are always droppable, whatever the flag says.
+pub use noctis_macros::event;
+
+pub mod events {
+    //! Gateway event payloads for `#[event]` handlers, the [`EventCtx`]
+    //! they receive and the [`EventHandler`] descriptor `#[event]` builds.
+    //!
+    //! Each payload type derives the gateway intent it needs; the table
+    //! lists them. Non-privileged intents are added to the App
+    //! automatically. A privileged one (`GUILD_MEMBERS`, `GUILD_PRESENCES`)
+    //! must be requested with [`AppBuilder::intents`](crate::AppBuilder::intents)
+    //! and enabled in the Discord Developer Portal; otherwise `build()`
+    //! fails with [`BuildViolation::MissingIntent`](crate::BuildViolation::MissingIntent)
+    //! (GW-05). Only handled event types are deserialized.
+    //!
+    //! | Intent | Payloads |
+    //! | --- | --- |
+    //! | `AUTO_MODERATION_CONFIGURATION` | `AutoModerationRuleCreate`, `AutoModerationRuleDelete`, `AutoModerationRuleUpdate` |
+    //! | `AUTO_MODERATION_EXECUTION` | `AutoModerationActionExecution` |
+    //! | `GUILD_MODERATION` | `BanAdd`, `BanRemove`, `GuildAuditLogEntryCreate` |
+    //! | `GUILDS` | `ChannelCreate`, `ChannelDelete`, `ChannelPinsUpdate`, `ChannelUpdate`, `GuildCreate`, `GuildDelete`, `GuildUpdate`, `UnavailableGuild`, `RoleCreate`, `RoleDelete`, `RoleUpdate`, `StageInstanceCreate`, `StageInstanceDelete`, `StageInstanceUpdate`, `ThreadCreate`, `ThreadDelete`, `ThreadListSync`, `ThreadMemberUpdate`, `ThreadMembersUpdate`, `ThreadUpdate` |
+    //! | `GUILD_EMOJIS_AND_STICKERS` | `GuildEmojisUpdate`, `GuildStickersUpdate` |
+    //! | `GUILD_INTEGRATIONS` | `GuildIntegrationsUpdate`, `IntegrationCreate`, `IntegrationDelete`, `IntegrationUpdate` |
+    //! | `GUILD_INVITES` | `InviteCreate`, `InviteDelete` |
+    //! | `GUILD_WEBHOOKS` | `WebhooksUpdate` |
+    //! | `GUILD_VOICE_STATES` | `VoiceStateUpdate` |
+    //! | `GUILD_SCHEDULED_EVENTS` | `GuildScheduledEventCreate`, `GuildScheduledEventDelete`, `GuildScheduledEventUpdate`, `GuildScheduledEventUserAdd`, `GuildScheduledEventUserRemove` |
+    //! | `GUILD_MEMBERS` (privileged) | `MemberAdd`, `MemberRemove`, `MemberUpdate` |
+    //! | `GUILD_PRESENCES` (privileged) | `PresenceUpdate` |
+    //! | `GUILD_MESSAGES` | `MessageCreate`, `MessageDelete`, `MessageDeleteBulk`, `MessageUpdate` |
+    //! | `GUILD_MESSAGE_POLLS` | `MessagePollVoteAdd`, `MessagePollVoteRemove` |
+    //! | `GUILD_MESSAGE_REACTIONS` | `ReactionAdd`, `ReactionRemove`, `ReactionRemoveAll`, `ReactionRemoveEmoji` |
+    //! | `GUILD_MESSAGE_TYPING` | `TypingStart` |
+    //! | none | `CommandPermissionsUpdate`, `EntitlementCreate`, `EntitlementDelete`, `EntitlementUpdate`, `MemberChunk`, `UserUpdate`, `VoiceServerUpdate` |
+    //!
+    //! `MessageCreate` derives `GUILD_MESSAGES` only: direct messages need
+    //! `.intents(Intents::DIRECT_MESSAGES)` and message text needs the
+    //! privileged `MESSAGE_CONTENT`, both requested explicitly. Only guild
+    //! intents are derived: `DIRECT_MESSAGES`, `DIRECT_MESSAGE_REACTIONS`
+    //! and `DIRECT_MESSAGE_TYPING` are never added automatically and must be
+    //! requested with `.intents(..)`.
+    //!
+    //! `UnavailableGuild` handlers run on a `GUILD_DELETE` dispatch with
+    //! `unavailable: true` (an outage); a guild the bot left or was removed
+    //! from reaches only `GuildDelete` handlers.
+    //!
+    //! ```
+    //! use noctis::events::{EventCtx, MessageCreate};
+    //! use noctis::prelude::*;
+    //!
+    //! #[event]
+    //! async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+    //!     let _ = (ctx.guild_id(), msg.author.id);
+    //!     Ok(())
+    //! }
+    //!
+    //! let module = Module::new("profile").add(award_xp());
+    //! ```
+    //!
+    //! A type that is not a payload does not compile:
+    //!
+    //! ```compile_fail
+    //! use noctis::events::EventCtx;
+    //! use noctis::prelude::*;
+    //!
+    //! #[event]
+    //! async fn h(ctx: EventCtx, text: String) -> HandlerResult<()> {
+    //!     Ok(())
+    //! }
+    //! ```
+    //!
+    //! Interactions are handled by commands and Routes, never by `#[event]`:
+    //!
+    //! ```compile_fail
+    //! use noctis::events::EventCtx;
+    //! use noctis::prelude::*;
+    //! use noctis::twilight::model::gateway::payload::incoming::InteractionCreate;
+    //!
+    //! #[event]
+    //! async fn h(ctx: EventCtx, i: InteractionCreate) -> HandlerResult<()> {
+    //!     Ok(())
+    //! }
+    //! ```
+    //!
+    //! The first parameter is the context:
+    //!
+    //! ```compile_fail
+    //! use noctis::events::MessageCreate;
+    //! use noctis::prelude::*;
+    //!
+    //! #[event]
+    //! async fn h(ctx: u8, msg: MessageCreate) -> HandlerResult<()> {
+    //!     Ok(())
+    //! }
+    //! ```
+    //!
+    //! And a handler returns `HandlerResult<()>`:
+    //!
+    //! ```compile_fail
+    //! use noctis::events::{EventCtx, MessageCreate};
+    //! use noctis::prelude::*;
+    //!
+    //! #[event]
+    //! async fn h(ctx: EventCtx, msg: MessageCreate) {}
+    //! ```
+
+    pub use noctis_core::events::{
+        AutoModerationActionExecution, AutoModerationRuleCreate, AutoModerationRuleDelete,
+        AutoModerationRuleUpdate, BanAdd, BanRemove, ChannelCreate, ChannelDelete,
+        ChannelPinsUpdate, ChannelUpdate, CommandPermissionsUpdate, EntitlementCreate,
+        EntitlementDelete, EntitlementUpdate, GuildAuditLogEntryCreate, GuildCreate, GuildDelete,
+        GuildEmojisUpdate, GuildIntegrationsUpdate, GuildScheduledEventCreate,
+        GuildScheduledEventDelete, GuildScheduledEventUpdate, GuildScheduledEventUserAdd,
+        GuildScheduledEventUserRemove, GuildStickersUpdate, GuildUpdate, IntegrationCreate,
+        IntegrationDelete, IntegrationUpdate, InviteCreate, InviteDelete, MemberAdd, MemberChunk,
+        MemberRemove, MemberUpdate, MessageCreate, MessageDelete, MessageDeleteBulk,
+        MessagePollVoteAdd, MessagePollVoteRemove, MessageUpdate, PresenceUpdate, ReactionAdd,
+        ReactionRemove, ReactionRemoveAll, ReactionRemoveEmoji, RoleCreate, RoleDelete, RoleUpdate,
+        StageInstanceCreate, StageInstanceDelete, StageInstanceUpdate, ThreadCreate, ThreadDelete,
+        ThreadListSync, ThreadMemberUpdate, ThreadMembersUpdate, ThreadUpdate, TypingStart,
+        UnavailableGuild, UserUpdate, VoiceServerUpdate, VoiceStateUpdate, WebhooksUpdate,
+    };
+    pub use noctis_core::{EventCtx, EventHandler, EventPayload};
+}
 
 pub mod twilight {
     //! The twilight crates Noctis builds on, for the Discord endpoints and
@@ -375,9 +576,14 @@ pub mod prelude {
     //!   modal option set.
     //! - [`App`], [`AppBuilder`] and [`State`]: building an App and reading
     //!   its typed state.
+    //! - [`event`](macro@event), [`Module`], [`EventCtx`], [`HandlerError`]
+    //!   and [`HandlerResult`]: typed gateway Event Handlers grouped in
+    //!   Modules.
 
     pub use noctis_codec::{Payload, Route};
-    pub use noctis_core::{App, AppBuilder, State};
+    pub use noctis_core::events::EventCtx;
+    pub use noctis_core::{App, AppBuilder, HandlerError, HandlerResult, Module, State};
+    pub use noctis_macros::event;
     pub use noctis_macros::{Choices, Modal, Payload, PayloadEnum, Route};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};
@@ -387,6 +593,7 @@ pub mod prelude {
 #[doc(hidden)]
 pub mod __private {
     pub use noctis_codec as codec;
+    pub use noctis_core as core;
     pub use noctis_ui as ui;
 }
 

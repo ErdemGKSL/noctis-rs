@@ -4,13 +4,14 @@ use std::any::TypeId;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fmt;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::time::Duration;
 
 use noctis_gateway::{
-    EventTypeFlags, Gateway, GatewayOptions, Inbound, LaneConfig, LaneReceiver, ShardEvent,
+    DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayOptions, LaneConfig,
+    ShardEvent,
 };
 use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_ports::{
@@ -18,16 +19,19 @@ use noctis_ports::{
     ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, SessionStore,
 };
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use twilight_model::gateway::Intents;
 
 use crate::gateway_url::normalize_gateway_url;
+use crate::handler::AppShared;
+use crate::module::Module;
 use crate::plugin::PluginEntry;
 use crate::ports::{PortOverrides, PortSlot, Ports};
 use crate::proxy::normalize_http_proxy;
+use crate::registry::Registry;
 use crate::sharding::{GatewayInfo, plan};
 use crate::startup::{check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
+use crate::worker::{AbortOnDrop, Workers, drain};
 use crate::{
     BuildError, BuildViolation, EnvError, Error, Plugin, Runtime, StartError, State, Token,
 };
@@ -45,6 +49,14 @@ const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The allowed `http_timeout` range.
 const HTTP_TIMEOUT_RANGE: RangeInclusive<Duration> =
     Duration::from_millis(1)..=Duration::from_mins(5);
+/// The allowed `event_lane` capacity range.
+const EVENT_CAPACITY_RANGE: RangeInclusive<usize> = 1..=1_048_576;
+/// The allowed `event_lane` overflow range.
+const EVENT_OVERFLOW_RANGE: RangeInclusive<usize> = 0..=4_194_304;
+/// The handler concurrency when `handler_concurrency` is not called.
+const DEFAULT_HANDLER_CONCURRENCY: usize = 256;
+/// The allowed `handler_concurrency` range.
+const HANDLER_CONCURRENCY_RANGE: RangeInclusive<usize> = 1..=65_536;
 
 /// A configured bot, built by [`AppBuilder::build`].
 ///
@@ -67,15 +79,19 @@ const HTTP_TIMEOUT_RANGE: RangeInclusive<Duration> =
 pub struct App {
     runtime: Runtime,
     token: Option<Token>,
-    http: Arc<twilight_http::Client>,
+    /// The HTTP client and the state, shared with every `EventCtx`.
+    shared: Arc<AppShared>,
     http_timeout: Duration,
     http_proxy: Option<String>,
     gateway_url: Option<String>,
     shard_total: Option<NonZeroU32>,
     intents: Intents,
-    states: StateMap,
     ports: Ports,
     renderer: Option<Arc<dyn Renderer>>,
+    registry: Arc<Registry>,
+    event_capacity: NonZeroUsize,
+    overflow_capacity: usize,
+    handler_concurrency: usize,
 }
 
 impl App {
@@ -133,7 +149,7 @@ impl App {
     /// # }
     /// ```
     pub fn http(&self) -> &Arc<twilight_http::Client> {
-        &self.http
+        &self.shared.http
     }
 
     /// The HTTP request timeout (default 10 s).
@@ -187,7 +203,9 @@ impl App {
         self.shard_total.map(NonZeroU32::get)
     }
 
-    /// The requested gateway intents (at least `GUILDS`).
+    /// The gateway intents the App identifies with: the requested ones (at
+    /// least `GUILDS`) plus the non-privileged intents its event handlers
+    /// derive.
     ///
     /// ```
     /// use twilight_model::gateway::Intents;
@@ -211,7 +229,7 @@ impl App {
     /// # }
     /// ```
     pub fn state<T: Send + Sync + 'static>(&self) -> Option<State<T>> {
-        self.states.get::<T>()
+        self.shared.states.get::<T>()
     }
 
     /// Whether a [`Renderer`] was set (by a plugin or `.renderer(..)`).
@@ -230,6 +248,37 @@ impl App {
         &self.ports
     }
 
+    /// The folded Registry.
+    #[cfg(test)]
+    pub(crate) fn registry(&self) -> &Arc<Registry> {
+        &self.registry
+    }
+
+    /// The handler concurrency.
+    #[cfg(test)]
+    pub(crate) fn handler_concurrency(&self) -> usize {
+        self.handler_concurrency
+    }
+
+    /// The lane configuration `run` passes to the lanes.
+    pub(crate) fn lane_config(&self) -> LaneConfig {
+        LaneConfig {
+            event_capacity: self.event_capacity,
+            overflow_capacity: self.overflow_capacity,
+            droppable: self.registry.droppable(),
+            ..LaneConfig::default()
+        }
+    }
+
+    /// The worker set `run` drains into.
+    pub(crate) fn workers(&self) -> Workers {
+        Workers::new(
+            Arc::clone(&self.registry),
+            Arc::clone(&self.shared),
+            self.handler_concurrency,
+        )
+    }
+
     /// Starts the App and runs its shards until every shard task has ended.
     ///
     /// Checks, in order, that a multi-thread tokio runtime is current, that a
@@ -242,7 +291,12 @@ impl App {
     /// bucket `shard_id % max_concurrency` (GW-01). Shard tasks push every
     /// parsed item into the lanes without waiting: interactions into the
     /// never-dropped Interaction Lane, other events into the bounded event
-    /// lane (AD-10); one core task drains them, interactions first. Startup
+    /// lane (AD-10). The gateway parses only interactions and the event
+    /// types the Module handlers take. One core task drains the lanes,
+    /// interactions first; each event waits for one of
+    /// [`handler_concurrency`](AppBuilder::handler_concurrency) worker
+    /// permits (interactions never do) and runs its ordered handlers in
+    /// per-guild order, then its concurrent handlers together. Startup
     /// finishes once every shard has received READY; afterwards `run`
     /// returns `Ok(())` when every shard task has ended.
     ///
@@ -289,14 +343,14 @@ impl App {
             token: token.expose().to_owned(),
             intents: self.intents,
             gateway_url: self.gateway_url.clone(),
-            event_types: EventTypeFlags::INTERACTION_CREATE,
+            event_types: self.registry.event_types(),
             identify_queue,
             total: plan.total,
             max_concurrency: plan.max_concurrency,
         };
         // `app` stays "default" until `AppId` exists (Story 7.4).
-        let (sender, receiver) = noctis_gateway::lanes(LaneConfig::default());
-        let _drain = AbortOnDrop(tokio::spawn(drain(receiver)));
+        let (sender, receiver) = noctis_gateway::lanes(self.lane_config());
+        let _drain = AbortOnDrop(tokio::spawn(drain(receiver, self.workers())));
         let (gateway, mut events) = Gateway::start(options, Arc::new(sender)).map_err(|error| {
             tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
             StartError::GatewayStopped
@@ -313,7 +367,7 @@ impl App {
     async fn gateway_info(&self) -> Result<GatewayInfo, StartError> {
         use twilight_http::error::ErrorType;
 
-        let response = self.http.gateway().authed().await.map_err(|error| {
+        let response = self.shared.http.gateway().authed().await.map_err(|error| {
             tracing::error!(target: "noctis::app", %error, "GET /gateway/bot failed");
             match error.kind() {
                 ErrorType::Unauthorized => StartError::InvalidToken,
@@ -395,35 +449,6 @@ async fn await_startup(
     Ok(())
 }
 
-/// Aborts the task it holds when dropped, on every return path of `run`.
-struct AbortOnDrop(JoinHandle<()>);
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
-/// Takes every [`Inbound`] from the lanes, interactions first, until every
-/// sender has dropped.
-async fn drain(mut receiver: LaneReceiver) {
-    while let Some(inbound) = receiver.recv().await {
-        dispatch(inbound);
-    }
-}
-
-/// Hands one [`Inbound`] to its handlers; never awaits. No handlers exist
-/// before Story 5.6, so it traces the item and drops it.
-fn dispatch(inbound: Inbound) {
-    tracing::trace!(
-        target: "noctis::app",
-        shard = inbound.shard.number(),
-        kind = ?inbound.kind,
-        "no handler registered"
-    );
-    drop(inbound);
-}
-
 /// Logs shard events after startup until every shard task has ended.
 async fn supervise(events: &mut mpsc::UnboundedReceiver<ShardEvent>) {
     while let Some(event) = events.recv().await {
@@ -455,9 +480,13 @@ impl fmt::Debug for App {
             .field("gateway_url", &self.gateway_url)
             .field("shard_total", &self.shard_total)
             .field("intents", &self.intents)
-            .field("states", &self.states)
+            .field("states", &self.shared.states)
             .field("default_ports", self.ports.default_slots())
             .field("has_renderer", &self.has_renderer())
+            .field("handlers", &self.registry.len())
+            .field("event_capacity", &self.event_capacity)
+            .field("overflow_capacity", &self.overflow_capacity)
+            .field("handler_concurrency", &self.handler_concurrency)
             .finish_non_exhaustive()
     }
 }
@@ -499,6 +528,12 @@ pub struct AppBuilder {
     states: StateMap,
     ports: PortOverrides,
     renderer: Option<Arc<dyn Renderer>>,
+    /// The mounted Module trees, in mount order.
+    modules: Vec<Module>,
+    /// The raw `(capacity, overflow)` of the event lane; `build` checks it.
+    event_lane: (usize, usize),
+    /// The raw handler concurrency; `build` checks it.
+    handler_concurrency: usize,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -538,6 +573,9 @@ impl AppBuilder {
             states: StateMap::default(),
             ports: PortOverrides::default(),
             renderer: None,
+            modules: Vec::new(),
+            event_lane: (DEFAULT_EVENT_CAPACITY.get(), DEFAULT_OVERFLOW_CAPACITY),
+            handler_concurrency: DEFAULT_HANDLER_CONCURRENCY,
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -682,6 +720,51 @@ impl AppBuilder {
         self
     }
 
+    /// Mounts a [`Module`] tree. Trees fold in mount order (plugins
+    /// included), each parent before its children; the handlers' event
+    /// types become the gateway filter, and their non-privileged intents
+    /// are added to the requested set. A handler needing a privileged
+    /// intent that was not requested is a [`BuildViolation::MissingIntent`]
+    /// (GW-05).
+    ///
+    /// ```
+    /// use noctis_core::{App, Module};
+    ///
+    /// let mut builder = App::builder();
+    /// builder.module(Module::new("profile")).module(Module::new("ops"));
+    /// ```
+    pub fn module(&mut self, module: Module) -> &mut Self {
+        self.modules.push(module);
+        self
+    }
+
+    /// Bounds the event lane: `capacity` queued events (1..=1048576,
+    /// default 4096) and `overflow` non-droppable events behind a full
+    /// lane (0..=4194304, default 16384). Out of range is a
+    /// [`BuildViolation::InvalidEventLane`]. The last call wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.event_lane(8192, 32768);
+    /// ```
+    pub fn event_lane(&mut self, capacity: usize, overflow: usize) -> &mut Self {
+        self.event_lane = (capacity, overflow);
+        self
+    }
+
+    /// How many events run their handlers at once (1..=65536, default
+    /// 256); interactions never wait for this bound. Out of range is a
+    /// [`BuildViolation::InvalidHandlerConcurrency`]. The last call wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.handler_concurrency(64);
+    /// ```
+    pub fn handler_concurrency(&mut self, limit: usize) -> &mut Self {
+        self.handler_concurrency = limit;
+        self
+    }
+
     /// Attaches the App to `runtime` instead of [`Runtime::global`].
     ///
     /// ```
@@ -823,7 +906,9 @@ impl AppBuilder {
     ///
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
-    /// timeout, the HTTP proxy, the gateway URL, the shard total, the rustls
+    /// timeout, the HTTP proxy, the gateway URL, the shard total, the event
+    /// lane and handler concurrency, folds the mounted Modules into the
+    /// Registry (deriving the gateway filter and intents, GW-05), the rustls
     /// crypto provider (installing `ring`'s when none is set) and the tokio
     /// runtime (any flavor). The builder is left empty,
     /// attached to the same Runtime.
@@ -873,6 +958,22 @@ impl AppBuilder {
                 total
             }
         };
+        let (capacity, overflow) = self.event_lane;
+        let event_capacity = NonZeroUsize::new(capacity)
+            .filter(|_| EVENT_CAPACITY_RANGE.contains(&capacity))
+            .filter(|_| EVENT_OVERFLOW_RANGE.contains(&overflow));
+        if event_capacity.is_none() {
+            self.violations
+                .push(BuildViolation::InvalidEventLane { capacity, overflow });
+        }
+        if !HANDLER_CONCURRENCY_RANGE.contains(&self.handler_concurrency) {
+            self.violations
+                .push(BuildViolation::InvalidHandlerConcurrency {
+                    actual: self.handler_concurrency,
+                });
+        }
+        let (registry, missing) = Registry::fold(&self.modules, self.intents);
+        self.violations.extend(missing);
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }
@@ -881,9 +982,9 @@ impl AppBuilder {
         }
         let fresh = Self::new(self.runtime.clone());
         let config = std::mem::replace(self, fresh);
-        if !config.violations.is_empty() {
+        let Some(event_capacity) = event_capacity.filter(|_| config.violations.is_empty()) else {
             return Err(BuildError::new(config.violations));
-        }
+        };
         let mut http = twilight_http::Client::builder().timeout(config.http_timeout);
         if let Some(token) = &config.token {
             http = http.token(token.expose().to_owned());
@@ -894,15 +995,21 @@ impl AppBuilder {
         Ok(App {
             runtime: config.runtime,
             token: config.token,
-            http: Arc::new(http.build()),
+            shared: Arc::new(AppShared {
+                http: Arc::new(http.build()),
+                states: config.states,
+            }),
             http_timeout: config.http_timeout,
             http_proxy,
             gateway_url,
             shard_total,
-            intents: config.intents,
-            states: config.states,
+            intents: config.intents | registry.intents(),
             ports: Ports::resolve(config.ports),
             renderer: config.renderer,
+            registry: Arc::new(registry),
+            event_capacity,
+            overflow_capacity: overflow,
+            handler_concurrency: config.handler_concurrency,
         })
     }
 
@@ -923,7 +1030,7 @@ impl AppBuilder {
 
 #[expect(
     clippy::missing_fields_in_debug,
-    reason = "plugin_types duplicates `plugins`; port overrides are listed by slot"
+    reason = "plugin_types duplicates `plugins`; port overrides are listed by slot; modules print as a count"
 )]
 impl fmt::Debug for AppBuilder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -939,6 +1046,9 @@ impl fmt::Debug for AppBuilder {
             .field("states", &self.states)
             .field("ports", &self.ports.set_slots())
             .field("has_renderer", &self.renderer.is_some())
+            .field("modules", &self.modules.len())
+            .field("event_lane", &self.event_lane)
+            .field("handler_concurrency", &self.handler_concurrency)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

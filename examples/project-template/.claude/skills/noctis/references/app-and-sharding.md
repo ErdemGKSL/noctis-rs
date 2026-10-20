@@ -48,16 +48,18 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   task per shard. It returns an error if startup fails (see Errors). Once every shard
   has received READY it logs `all {n} shards ready` and keeps running. It returns
   `Ok(())` only when every shard has stopped, for example after a fatal close.
-  Incoming interactions and events are **discarded** until handlers land (Stories
-  5.5-5.6). [planned: parses CLI flags, runs a CLI mode, and stops on Ctrl-C/SIGTERM
-  (Story 5.8)]
+  Gateway events reach your `#[event]` handlers through the **worker set** (§4);
+  interactions are taken first and, until commands and Routes land (Epics 6-7), traced
+  and discarded. [planned: parses CLI flags, runs a CLI mode, and stops on
+  Ctrl-C/SIGTERM (Story 5.8)]
 
 The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `Arc<noctis::twilight::http::Client>`, the same `Arc` on every call), `app.http_timeout()`,
 `app.http_proxy()` (`Option<&str>`: the normalized proxy authority, e.g. `Some("proxy:3000")`),
 `app.gateway_url()` (`Option<&str>`: the normalized gateway URL, e.g. `Some("ws://127.0.0.1:3000")`),
 `app.shard_total()` (`Option<u32>`: the fixed shard total, `None` = Discord's recommendation),
-`app.intents()`, `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
+`app.intents()` (the requested intents plus the ones your event handlers derive),
+`app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
 ### AppBuilder methods
@@ -68,7 +70,10 @@ Implemented:
 | --- | --- | --- |
 | `.token(Token)` | env `NOCTIS_TOKEN` | `Token::new(s)` / `s.parse::<Token>()`; redacted `Debug`/`Display`; never logged |
 | `.state(T)` | — | typed shared state, read as `State<T>` (one per type; a second is `BuildViolation::DuplicateState`) |
-| `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it |
+| `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it. Event handlers add their non-privileged intents themselves; request privileged ones (`GUILD_MEMBERS`, `GUILD_PRESENCES`, `MESSAGE_CONTENT`) here |
+| `.module(Module)` | — | mount a Module tree (`modules-middleware-ratelimits.md` §1); trees fold in mount order (plugins included), parent before child; handler intents are derived and added (GW-05). Unique ids are checked from Story 13.1 [planned] |
+| `.event_lane(capacity, overflow)` | 4096, 16384 | bound the event lane: `capacity` queued events (1..=1048576) and `overflow` non-droppable events behind a full lane (0..=4194304); else `BuildViolation::InvalidEventLane`; the last call wins; see §4 |
+| `.handler_concurrency(usize)` | 256 | how many events run their handlers at once (1..=65536, else `BuildViolation::InvalidHandlerConcurrency`); interactions never wait for it; the last call wins; see §4 |
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
 | `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
@@ -87,7 +92,6 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
-| `.module(Module)` [planned, Story 5.6] | — | mount a Module tree (ids must be unique); handler intents are derived and added |
 | `.error_sink(Origin, impl ErrorSink)` [planned, Story 5.7] | log at `error` | see `modules-middleware-ratelimits.md` |
 | `.shutdown_grace(Duration)` [planned, Story 5.8] | 10 s | drain time on shutdown |
 | `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
@@ -121,8 +125,13 @@ token.
   `InvalidHttpTimeout { actual }`, `InvalidHttpProxy { reason: HttpProxyError }`
   (message `"invalid HTTP proxy: {reason}"`, never the value), `InvalidGatewayUrl {
   reason: GatewayUrlError }` (message `"invalid gateway URL: {reason}"`, never the
-  value), `InvalidShardTotal` (`.shard_total(0)`), `Plugin { plugin, message }` (built with
-  `BuildViolation::plugin::<P>("message")`).
+  value), `InvalidShardTotal` (`.shard_total(0)`), `InvalidEventLane { capacity, overflow }`
+  (`.event_lane(..)` out of range), `InvalidHandlerConcurrency { actual }`,
+  `MissingIntent { module, handler, event, intent }` (GW-05: an event handler needs a
+  privileged intent the App did not request; message `[GW-05] event handler `{handler}`
+  (Module `{module}`) handles {event}, which needs the privileged intent {NAME}: add
+  `.intents(Intents::{NAME})` and enable it in the Discord Developer Portal`), `Plugin {
+  plugin, message }` (built with `BuildViolation::plugin::<P>("message")`).
 - `StartError` (`Copy`; each message names the cause and the fix): `NoRuntime`,
   `NotMultiThread`, `CryptoProvider`, `MissingToken` (see `App::run()` above), then:
   - `InvalidToken`: Discord rejected the token (`GET /gateway/bot` answered 401, or a
@@ -278,10 +287,22 @@ when every shard has received READY.
   oldest queued droppable event; any other event waits in a capped overflow (default
   16384 events) and is dropped with an `error` log beyond it. Every drop is counted in
   `noctis_events_dropped_total`.
-- Intents and event deserialization are **derived from your handlers** and cache needs.
-  A handler needing an intent you didn't allow is a `BuildError` (GW-05). Privileged
-  intents (`GUILD_MEMBERS`, `MESSAGE_CONTENT`, `GUILD_PRESENCES`) also need enabling in
-  the Developer Portal; close code 4014 at connect is a fatal Shard close.
+- Every event type whose handlers are **all** `#[event(droppable)]` joins the droppable
+  set; `.event_lane(capacity, overflow)` changes both bounds.
+- **Worker set:** one task drains the lanes, interactions first. Each event takes one of
+  `.handler_concurrency(n)` permits (default 256) before its handlers run, and gives it
+  back when they have all ended; while it waits for a permit, interactions that arrive
+  are still taken at once (they never take a permit). An event's `ordered` handlers run
+  first, in per-guild order (64 guild-keyed sub-queues), then its other handlers run
+  concurrently. Every handler runs under `catch_unwind`: an error or panic is logged at
+  `error` and the shard keeps running.
+- Intents and event deserialization are **derived from your handlers**: the gateway
+  parses only interactions and the event types your `#[event]` handlers take, and each
+  handler's non-privileged intent is added to the App's intents. A handler needing a
+  privileged intent you didn't request is `BuildViolation::MissingIntent` (GW-05).
+  Privileged intents (`GUILD_MEMBERS`, `MESSAGE_CONTENT`, `GUILD_PRESENCES`) also need
+  enabling in the Developer Portal; close code 4014 at connect is a fatal Shard close.
+  Cache-driven filters [planned, Story 12.5].
 
 ### Clusters (several processes)
 
@@ -316,8 +337,9 @@ The testkit's `FakeGateway` [planned, Story 8.6] already names itself there.
 
 ## 5. HTTP
 
-Noctis owns one twilight HTTP client per App (`ctx.http()` returns
-`&noctis::twilight::http::Client` for endpoints Noctis doesn't wrap). With
+Noctis owns one twilight HTTP client per App (`app.http()` and `EventCtx::http()`
+return that same `&Arc<noctis::twilight::http::Client>`, for endpoints Noctis doesn't
+wrap). With
 `.http_proxy(..)` (or `NOCTIS_HTTP_PROXY`) set, every request goes to
 `http://{proxy}/api/v10/..` over plain HTTP and the App's local rate limiter is off (the
 proxy limits). Accepted forms: `host`, `host:port`, `[ipv6]`, `[ipv6]:port`, each
@@ -371,6 +393,10 @@ Do not spawn work that must outlive a handler; put it behind a port.
 async fn h(ctx: ComponentCtx, p: MyRoute, meta: State<BotMeta>, premium: Ext<Premium>)
     -> HandlerResult<MyView>
 ```
+
+`#[event]` handlers take exactly `(ctx: EventCtx, event: <payload>)`; read state with
+`ctx.state::<T>()` (`Option<State<T>>`). Extractor parameters on `#[event]` handlers
+[planned].
 
 Parameter order: context, then Payload / options / form / target, then extractors in any
 order: `State<T>` (registered with `.state(T)`, `Deref<Target = T>`), `Ext<T>` /

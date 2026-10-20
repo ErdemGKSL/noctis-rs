@@ -7,27 +7,42 @@ limits. FR-5, FR-6, FR-20, FR-22, FR-44..47, FR-73; AD-7, AD-23.
 ## 1. Modules
 
 ```rust
+use noctis::prelude::*;                    // Module, #[event], EventCtx, HandlerResult, …
+
 pub fn module() -> Module {
-    Module::new("profile")                 // path-like id, unique per App: "a/b/c"
-        .add(profile())                    // #[command]
-        .add(show_profile())               // #[user_command]
-        .add(open_profile())               // #[handler]
+    Module::new("profile")                 // path-like id: "a/b/c"
         .add(award_xp())                   // #[event]
-        .template::<ProfileCard>()         // image Templates
-        .locales(profile_strings::catalog())   // optional Module-scoped strings
-        .before(Middleware::before(load_settings).provides::<GuildSettings>())
+        .add(profile())                    // #[command] [planned, Epic 6]
+        .add(open_profile())               // #[handler] [planned, Epic 7]
+        .template::<ProfileCard>()         // image Templates [planned]
+        .locales(profile_strings::catalog())   // Module-scoped strings [planned]
+        .before(Middleware::before(load_settings).provides::<GuildSettings>())   // [planned, Story 7.6]
         .module(sub_module())              // nesting
-        .flags(["profiles"])               // Boot Flags (optional)
+        .flags(["profiles"])               // Boot Flags [planned]
 }
+
+// main / configure:
+builder.module(profile::module()).module(ops::module());
 ```
 
-- The App is the root Module: `AppBuilder::module(..)` mounts trees. Duplicate ids fail
-  App build. Every registration carries its Module id in logs, metrics and errors.
-- `.add(x())` accepts any descriptor from `#[command]`, `#[user_command]`,
-  `#[message_command]`, `#[handler]`, `#[autocomplete]`, `#[event]`, `#[hook]`.
-- Registration is data: order doesn't matter, nothing runs at registration time. App
-  build folds everything into one immutable registry (O(1) dispatch).
-- The same Module tree can be mounted on several Apps.
+Implemented: `Module::new(id)`, `.add(descriptor)`, `.module(child)`, `.id()`, `Clone`,
+`Debug`, and `AppBuilder::module(Module)`.
+
+- `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
+  too (in `install`); those trees fold after the ones mounted before `build()`.
+- `.add(x())` takes any `Descriptor` (a sealed trait). Today that is the
+  `EventHandler` an `#[event]` function returns; `#[command]`, `#[user_command]`,
+  `#[message_command]`, `#[handler]`, `#[autocomplete]` and `#[hook]` descriptors join
+  in later stories [planned].
+- Registration is data: nothing runs when you add or nest, and the call order of `.add`
+  and `.module` does not matter. `build()` folds every mounted tree **once**, pre-order:
+  a Module's own registrations in `.add` order, then each child in `.module` order
+  (parent before child). Each registration records its Module id and the ancestor path.
+  Adding the same descriptor twice registers (and runs) it twice.
+- The same Module tree can be mounted on several Apps (`Module` is `Clone`); each App
+  folds its own copy.
+- Ids are not validated yet: unique, path-shaped ids are checked from Story 13.1
+  [planned]; use `a/b/c` ids now so nothing breaks then.
 
 ## 2. Boot Flags (FR-73)
 
@@ -56,26 +71,113 @@ answer a localized ephemeral "disabled here" (`noctis.disabled_here`). Hook:
 ## 4. Gateway Event Handlers (FR-6)
 
 ```rust
-use noctis::events::{MemberAdd, MessageCreate};
+use noctis::events::{EventCtx, MemberAdd, MessageCreate, ReactionAdd};
+use noctis::prelude::*;
 
+/// +1 XP per message. Derives GUILD_MESSAGES (not privileged, no message content).
 #[event]
-async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> { … }
+async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+    let Some(guild) = ctx.guild_id() else { return Ok(()) };
+    let meta = ctx.state::<BotMeta>();         // Option<State<BotMeta>>
+    ctx.http().create_message(msg.channel_id).content("hi").await?;   // the App's one client
+    Ok(())
+}
 
-#[event(ordered)]                     // runs before concurrent handlers, in per-guild order
+/// Runs before the concurrent handlers of the event, one event at a time per guild.
+/// Needs the privileged GUILD_MEMBERS: `.intents(Intents::GUILD_MEMBERS)` + the Portal.
+#[event(ordered)]
 async fn audit_join(ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> { … }
+
+#[event(droppable)]                   // this handler tolerates its event being dropped
+async fn on_reaction(ctx: EventCtx, ev: ReactionAdd) -> HandlerResult<()> { … }
+
+Module::new("profile").add(award_xp()).add(audit_join()).add(on_reaction());
 ```
 
-- `noctis::events` re-exports twilight's event payload types (`MessageCreate`,
-  `MemberAdd`, `GuildCreate`, …). Never handle `InteractionCreate` yourself: commands
-  and Routes cover every interaction.
-- Registering a handler is what makes the App request that event's intent and
-  deserialize it; unhandled event types are never parsed. A privileged intent
-  (`MemberAdd` → `GUILD_MEMBERS`) must also be enabled in the Developer Portal.
-- Several handlers per event are fine; all run. Concurrent by default.
-- `EventCtx` has `guild_id()`, `guild_locale()`, `kv()`, `cache()`, `http()`,
-  `modules()`; no Responder.
-- Under overload, droppable events (presence, typing…) may be dropped; design event
-  handlers to be idempotent and to tolerate gaps.
+- **Signature:** exactly `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`,
+  a plain `async fn` (no `const`/`unsafe`/`extern`, no `self`, no generics or `where`),
+  any visibility, doc comments and `_` patterns allowed. `#[event]` turns it into
+  `fn name() -> EventHandler` for `.add(..)`. Arguments: `ordered`, `droppable`, in any
+  order, each at most once (`#[event(ordered, droppable)]`). The handler's name in logs
+  and errors is `module_path!()::name` (e.g. `my_bot::modules::profile::award_xp`).
+- **Errors** (at `cargo check`): ``#[event]` needs an `async fn``, ``#[event]` handlers
+  take `(ctx: EventCtx, event: <payload>)``, ``#[event]` handlers cannot be generic``,
+  ``#[event]` handlers must be a plain `async fn``, ``unknown `#[event]` argument `x`:
+  expected `ordered` or `droppable``, ``duplicate `#[event]` argument `x``. A payload
+  type outside `noctis::events` (or `InteractionCreate`) is
+  "`T` is not a gateway event payload" (trait `EventPayload`, sealed).
+- **Payloads:** `noctis::events` re-exports twilight's payload types (table below).
+  Never handle interactions here: commands and Routes cover every interaction.
+- **Only handled events are parsed:** the gateway deserializes interactions plus the
+  event types your handlers take; everything else is skipped before parsing.
+- **Intents are derived:** each handler's non-privileged intent is added to the App
+  (`app.intents()` = what you requested ∪ derived; with no handlers it is `GUILDS`). A
+  handler needing a privileged intent (`GUILD_MEMBERS`, `GUILD_PRESENCES`) you did not
+  request with `.intents(..)` fails `build()` with `BuildViolation::MissingIntent {
+  module, handler, event, intent }`: `[GW-05] event handler `…` (Module `…`) handles
+  GUILD_MEMBER_ADD, which needs the privileged intent GUILD_MEMBERS: add
+  `.intents(Intents::GUILD_MEMBERS)` and enable it in the Discord Developer Portal`.
+  `MessageCreate` never adds `MESSAGE_CONTENT` or `DIRECT_MESSAGES`: request those
+  yourself (DMs and message text). Only guild intents are derived: `DIRECT_MESSAGES`,
+  `DIRECT_MESSAGE_REACTIONS` and `DIRECT_MESSAGE_TYPING` are never added
+  automatically; request them with `.intents(..)` to receive DM messages, DM
+  reactions or DM typing.
+- **Several handlers per event all run.** `ordered` handlers run first, sequentially in
+  fold order, and in **per-guild order**: events of one guild (guild id hashed onto 64
+  sub-queues; guildless events share one) run their ordered handlers one event at a
+  time, in arrival order. Then every non-ordered handler of the event runs
+  concurrently. Each handler gets its own copy of the payload.
+- **Ordered hang hazard:** a hung `ordered` handler blocks its whole sub-queue (every
+  guild that hashes to it, and all guildless events in sub-queue 0), and the events
+  queued behind it keep their worker permits, so it can eventually hold all
+  `handler_concurrency` permits and stop event handling. noctis adds no timeout: bound
+  slow work in ordered handlers yourself, e.g. with `tokio::time::timeout`.
+- **Bounded:** at most `.handler_concurrency(n)` events (default 256) run their handlers
+  at once; further events wait in the event lane. Interactions never wait for this
+  bound.
+- **Errors and panics:** an `Err` is logged at `error` (target `noctis::event`, fields
+  `module`, `handler`, `event_type`, `error`, message `event handler failed`); a panic is
+  caught and logged as `event handler panicked` with its `&str`/`String` message. Other
+  handlers and the shard keep running. Error Sinks [planned, Story 5.7].
+- **Droppable:** under overload the event lane drops presence updates, typing starts
+  (always, whatever the flag says), and every event type whose handlers are **all**
+  `droppable`; any other event waits in the overflow. Design handlers to be idempotent and to tolerate gaps.
+- **`EventCtx`** (cheap `Clone`): `shard() -> u32`, `guild_id() ->
+  Option<Id<GuildMarker>>`, `module() -> &'static str` (the Module the handler was
+  added to), `state::<T>() -> Option<State<T>>`, `http() -> &Arc<Client>` (the App's
+  one client). No Responder. Planned: `guild_locale()`, `kv()`, `cache()`,
+  `modules()` [planned].
+- **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
+  'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the
+  inner `&(dyn Error + Send + Sync)` to downcast. `Display`/`Debug` print the inner
+  error. Localized user-facing errors (`HandlerError::user(key)`) [planned].
+
+### Payload types and their derived intents
+
+| Intent (derived) | `noctis::events` payloads |
+| --- | --- |
+| `AUTO_MODERATION_CONFIGURATION` | `AutoModerationRuleCreate`, `AutoModerationRuleDelete`, `AutoModerationRuleUpdate` |
+| `AUTO_MODERATION_EXECUTION` | `AutoModerationActionExecution` |
+| `GUILD_MODERATION` | `BanAdd`, `BanRemove`, `GuildAuditLogEntryCreate` |
+| `GUILDS` | `ChannelCreate`, `ChannelDelete`, `ChannelPinsUpdate`, `ChannelUpdate`, `GuildCreate`, `GuildDelete`, `GuildUpdate`, `UnavailableGuild`, `RoleCreate`, `RoleDelete`, `RoleUpdate`, `StageInstanceCreate`, `StageInstanceDelete`, `StageInstanceUpdate`, `ThreadCreate`, `ThreadDelete`, `ThreadListSync`, `ThreadMemberUpdate`, `ThreadMembersUpdate`, `ThreadUpdate` |
+| `GUILD_EMOJIS_AND_STICKERS` | `GuildEmojisUpdate`, `GuildStickersUpdate` |
+| `GUILD_INTEGRATIONS` | `GuildIntegrationsUpdate`, `IntegrationCreate`, `IntegrationDelete`, `IntegrationUpdate` |
+| `GUILD_INVITES` | `InviteCreate`, `InviteDelete` |
+| `GUILD_WEBHOOKS` | `WebhooksUpdate` |
+| `GUILD_VOICE_STATES` | `VoiceStateUpdate` |
+| `GUILD_SCHEDULED_EVENTS` | `GuildScheduledEventCreate`, `GuildScheduledEventDelete`, `GuildScheduledEventUpdate`, `GuildScheduledEventUserAdd`, `GuildScheduledEventUserRemove` |
+| `GUILD_MEMBERS` **privileged** | `MemberAdd`, `MemberRemove`, `MemberUpdate` |
+| `GUILD_PRESENCES` **privileged** | `PresenceUpdate` |
+| `GUILD_MESSAGES` | `MessageCreate`, `MessageDelete`, `MessageDeleteBulk`, `MessageUpdate` |
+| `GUILD_MESSAGE_POLLS` | `MessagePollVoteAdd`, `MessagePollVoteRemove` |
+| `GUILD_MESSAGE_REACTIONS` | `ReactionAdd`, `ReactionRemove`, `ReactionRemoveAll`, `ReactionRemoveEmoji` |
+| `GUILD_MESSAGE_TYPING` | `TypingStart` |
+| none | `CommandPermissionsUpdate`, `EntitlementCreate`, `EntitlementDelete`, `EntitlementUpdate`, `MemberChunk`, `UserUpdate`, `VoiceServerUpdate` |
+
+`UnavailableGuild` handlers run on a `GUILD_DELETE` dispatch with `unavailable: true`
+(an outage); a guild the bot left or was removed from reaches only `GuildDelete`
+handlers. Handling `UnavailableGuild` therefore makes the gateway parse `GUILD_DELETE`. Privileged intents also need enabling in the
+Developer Portal; close code 4014 at connect is `StartError::DisallowedIntents`.
 
 ## 5. Middleware and Extensions (FR-20)
 
@@ -117,7 +219,7 @@ async fn h(ctx: ComponentCtx, p: MyRoute, settings: Ext<GuildSettings>) -> Handl
 - `Ext<T>` that no before-Middleware on every path `provides::<T>()` is a `BuildError`;
   use `Option<Ext<T>>` to opt out.
 - Extensions never reach a port; they live for one interaction.
-- Events run Middleware too (no Guards, no Responder).
+- Events run Middleware too (no Guards, no Responder) [planned, Story 7.6].
 
 ## 6. Error Sinks (FR-22)
 

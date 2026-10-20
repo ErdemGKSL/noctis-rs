@@ -8,6 +8,10 @@
 //! get their own feature-gated suite here, added by the first story that needs
 //! one. `cargo run --release -p xtask -- rules-catalog` checks the layout.
 //!
+//! `tests/types/<slug>.rs` holds `compile_fail` cases of the typed API that
+//! no Discord rule governs (for example a non-payload `#[event]` parameter);
+//! `rules-catalog` does not read it, and it runs with the featureless suite.
+//!
 //! The featureless suite runs only when no optional facade feature is on,
 //! because a feature can change rustc's output. There are no `pass` suites:
 //! boundary passes live in `tests/boundary/`.
@@ -40,6 +44,7 @@ fn ui() {
     {
         let cases = trybuild::TestCases::new();
         cases.compile_fail("tests/ui/**/*.rs");
+        cases.compile_fail("tests/types/**/*.rs");
         // The cases run when `cases` drops here.
     }
     harness::assert_trybuild_dev_profile();

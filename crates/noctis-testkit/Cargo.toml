@@ -22,6 +22,7 @@ tokio-websockets = { workspace = true, features = ["server", "sha1_smol"] }
 bytes.workspace = true
 metrics.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
+noctis.workspace = true
 noctis-core.workspace = true
 noctis-gateway.workspace = true
 noctis-ports.workspace = true
