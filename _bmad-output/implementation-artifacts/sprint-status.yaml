@@ -83,7 +83,7 @@ development_status:
   epic-5-retrospective: optional
 
   epic-6: backlog
-  6-1-command-with-compile-time-command-path-and-pattern-validatio: backlog
+  6-1-command-with-compile-time-command-path-and-pattern-validatio: in-progress
   6-2-typed-options-with-derive-options-and-derive-choices: backlog
   6-3-command-metadata-and-context-menu-commands: backlog
   6-4-app-build-merge-and-conflict-checks-for-commands: backlog

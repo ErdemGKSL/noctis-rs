@@ -2,7 +2,8 @@
 title: 'Story 6.1: `#[command]` with compile-time Command Path and Pattern validation'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '0dfc51968c5fb2ca3cd21949d68895b37e68cb70'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
