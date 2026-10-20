@@ -1,0 +1,5 @@
+error: [CV2-11] section[0].accessory.description: limit at most 1024, actual 1025
+ --> tests/ui/cv2/CV2-11_components_thumbnail_alt_1025.rs:5:79
+  |
+5 | ... = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") ],
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

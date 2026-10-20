@@ -210,16 +210,20 @@ fn action_row() {
             Button::from(LinkButton::new("https://x.y")),
         ])
     );
-    // Arity is not bounded yet: 0 and 6 buttons build and serialize.
+    // Arity is bounded (`RowButtons`): 0 and 6 buttons do not compile, and
+    // the runtime path rejects them.
+    let links = |n: usize| (0..n).map(|i| LinkButton::new(format!("https://{i}")));
+    let limits = noctis_rules::Limits::default();
+    for n in [0, 6] {
+        assert!(matches!(
+            ActionRow::try_buttons(links(n), &limits),
+            Err(UiError::Limits { violations }) if violations[0].rule == noctis_rules::RuleId::CV2_06
+        ));
+    }
+    let five = ActionRow::try_buttons(links(5), &limits).expect("5 buttons");
     assert_eq!(
-        to_json(&ActionRow::buttons::<Button, 0>([])),
-        json!({"type": 1, "components": []})
-    );
-    let six =
-        ActionRow::buttons([0, 1, 2, 3, 4, 5].map(|i| LinkButton::new(format!("https://{i}"))));
-    assert_eq!(
-        to_json(&six)["components"].as_array().map(Vec::len),
-        Some(6)
+        to_json(&five)["components"].as_array().map(Vec::len),
+        Some(5)
     );
 }
 

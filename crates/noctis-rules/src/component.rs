@@ -32,8 +32,9 @@
 //!   as an accessory; a select only in an Action Row; only buttons and selects
 //!   in an Action Row.
 //! - CV2-06: an Action Row holds 1 to `row_buttons` items, or exactly one
-//!   select alone.
-//! - CV2-07: a Section holds 1 to `section_texts` texts and one accessory.
+//!   select alone ([`validate_row_buttons`] checks a bare count).
+//! - CV2-07: a Section holds 1 to `section_texts` texts and one accessory
+//!   ([`validate_section_texts`] checks a bare count).
 //! - CV2-08: button label length, link URL length (1 to `link_url_len`), no
 //!   label or emoji on a premium button.
 //! - CV2-09: select placeholder, `min_values` / `max_values` ranges and order,
@@ -42,7 +43,8 @@
 //!   defaults are min 1 and max 1; the order is checked only when both
 //!   effective values are in range, and defaults only when the order passed.
 //!   `disabled` is allowed in messages.
-//! - CV2-10: 1 to `gallery_items` gallery items; item description length.
+//! - CV2-10: 1 to `gallery_items` gallery items ([`validate_gallery_items`]
+//!   checks a bare count); item description length.
 //! - CV2-11: Thumbnail description length.
 //! - CV2-12: a File component's URL is `attachment://<filename>`.
 //! - CV2-13: `accent_color` in `0x000000..=0xFFFFFF`; Separator spacing 1 or 2
@@ -734,14 +736,7 @@ fn check_node(
             check_children(c.children, path, Place::Container, limits, out);
         }
         Component::Section(s) => {
-            between(
-                RuleId::CV2_07,
-                path,
-                1,
-                limits.section_texts,
-                s.texts.len(),
-                out,
-            );
+            section_texts(path, s.texts.len(), limits, out);
             let accessory = join(path, "accessory");
             match &s.accessory {
                 Accessory::Button(b) => check_button(b, &accessory, limits, out),
@@ -749,14 +744,7 @@ fn check_node(
             }
         }
         Component::Gallery(items) => {
-            between(
-                RuleId::CV2_10,
-                path,
-                1,
-                limits.gallery_items,
-                items.len(),
-                out,
-            );
+            gallery_items(path, items.len(), limits, out);
             for (k, item) in items.iter().enumerate() {
                 let item_path = format!("{path}.item[{k}]");
                 check_media_url(item.url, &join(&item_path, "url"), limits, out);
@@ -807,15 +795,23 @@ fn check_row_shape(items: &[Component<'_>], path: &str, limits: &Limits, out: &m
             Actual::Count(items.len()),
         ));
     } else {
-        between(
-            RuleId::CV2_06,
-            path,
-            1,
-            limits.row_buttons,
-            items.len(),
-            out,
-        );
+        row_buttons(path, items.len(), limits, out);
     }
+}
+
+/// CV2-06 count: 1 to `row_buttons` items in an Action Row.
+fn row_buttons(path: &str, count: usize, limits: &Limits, out: &mut Vec<Violation>) {
+    between(RuleId::CV2_06, path, 1, limits.row_buttons, count, out);
+}
+
+/// CV2-07 count: 1 to `section_texts` Text Displays in a Section.
+fn section_texts(path: &str, count: usize, limits: &Limits, out: &mut Vec<Violation>) {
+    between(RuleId::CV2_07, path, 1, limits.section_texts, count, out);
+}
+
+/// CV2-10 count: 1 to `gallery_items` items in a Media Gallery.
+fn gallery_items(path: &str, count: usize, limits: &Limits, out: &mut Vec<Violation>) {
+    between(RuleId::CV2_10, path, 1, limits.gallery_items, count, out);
 }
 
 /// CV2-08: label (length, or premium label), URL (link), emoji (premium).
@@ -1103,6 +1099,56 @@ pub fn validate_thumbnail_description(description: &str, limits: &Limits) -> Vec
 pub fn validate_media_url(url: &str, limits: &Limits) -> Vec<Violation> {
     let mut out = Vec::new();
     check_media_url(url, "", limits, &mut out);
+    out
+}
+
+/// CV2-06: an Action Row of `count` buttons, 1 to `row_buttons` (what
+/// `ActionRow::try_buttons` and `components!` call). The path is empty.
+///
+/// ```
+/// use noctis_rules::{Actual, Bound, Limits};
+/// use noctis_rules::component::validate_row_buttons;
+///
+/// assert!(validate_row_buttons(5, &Limits::default()).is_empty());
+/// let errs = validate_row_buttons(6, &Limits::default());
+/// assert_eq!(errs[0].limit, Bound::Between { min: 1, max: 5 });
+/// assert_eq!(errs[0].actual, Actual::Count(6));
+/// ```
+pub fn validate_row_buttons(count: usize, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    row_buttons("", count, limits, &mut out);
+    out
+}
+
+/// CV2-07: a Section of `count` Text Displays, 1 to `section_texts` (what
+/// `Section::try_new` and `components!` call). The path is empty.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::component::validate_section_texts;
+///
+/// assert!(validate_section_texts(3, &Limits::default()).is_empty());
+/// assert_eq!(validate_section_texts(0, &Limits::default())[0].rule, RuleId::CV2_07);
+/// ```
+pub fn validate_section_texts(count: usize, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    section_texts("", count, limits, &mut out);
+    out
+}
+
+/// CV2-10: a Media Gallery of `count` items, 1 to `gallery_items` (what
+/// `MediaGallery::try_new` and `components!` call). The path is empty.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::component::validate_gallery_items;
+///
+/// assert!(validate_gallery_items(10, &Limits::default()).is_empty());
+/// assert_eq!(validate_gallery_items(11, &Limits::default())[0].rule, RuleId::CV2_10);
+/// ```
+pub fn validate_gallery_items(count: usize, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    gallery_items("", count, limits, &mut out);
     out
 }
 

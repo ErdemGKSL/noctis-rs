@@ -18,5 +18,5 @@ error[E0277]: [CV2-07] `()` is not a Section accessory: a Section needs exactly 
 note: required by a bound in `noctis::ui::Section::new`
  --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
   |
-  |     pub fn new<A: SectionAccessory, const N: usize>(texts: [TextDisplay; N], accessory: A) -> Self {
+  |     pub fn new<A: SectionAccessory, const N: usize>(texts: [TextDisplay; N], accessory: A) -> Self
   |                   ^^^^^^^^^^^^^^^^ required by this bound in `Section::new`

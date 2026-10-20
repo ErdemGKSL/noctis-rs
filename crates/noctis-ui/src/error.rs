@@ -44,3 +44,12 @@ fn display_violations(violations: &[Violation]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// `Ok(value)` when `violations` is empty, else [`UiError::Limits`].
+pub(crate) fn checked<T>(value: T, violations: Vec<Violation>) -> Result<T, UiError> {
+    if violations.is_empty() {
+        Ok(value)
+    } else {
+        Err(UiError::Limits { violations })
+    }
+}

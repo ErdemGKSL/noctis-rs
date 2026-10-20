@@ -1,0 +1,24 @@
+error[E0277]: [CV2-06] an Action Row holds 1 to 5 buttons
+ --> tests/ui/cv2/CV2-06_six_buttons.rs:5:32
+  |
+5 |     let _ = ActionRow::buttons([b(), b(), b(), b(), b(), b()]);
+  |             ------------------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not 1 to 5 buttons
+  |             |
+  |             required by a bound introduced by this call
+  |
+  = help: the trait `RowButtons` is not implemented for `Arity<6>`
+  = note: `Arity<6>` is the number of buttons; for a length known only at runtime use ActionRow::try_buttons(buttons, &limits)
+  = help: the following other types implement trait `RowButtons`:
+            Arity<1>
+            Arity<2>
+            Arity<3>
+            Arity<4>
+            Arity<5>
+note: required by a bound in `ActionRow::buttons`
+ --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
+  |
+  |     pub fn buttons<B: RowItem, const N: usize>(buttons: [B; N]) -> Self
+  |            ------- required by a bound in this associated function
+  |     where
+  |         Arity<N>: RowButtons,
+  |                   ^^^^^^^^^^ required by this bound in `ActionRow::buttons`

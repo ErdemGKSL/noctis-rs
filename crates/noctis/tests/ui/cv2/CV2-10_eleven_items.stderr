@@ -1,0 +1,28 @@
+error[E0277]: [CV2-10] a Media Gallery holds 1 to 10 items
+ --> tests/ui/cv2/CV2-10_eleven_items.rs:5:31
+  |
+5 |     let _ = MediaGallery::new([i(), i(), i(), i(), i(), i(), i(), i(), i(), i(), i()]);
+  |             ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not 1 to 10 items
+  |             |
+  |             required by a bound introduced by this call
+  |
+  = help: the trait `GalleryItems` is not implemented for `Arity<11>`
+  = note: `Arity<11>` is the number of items; for a length known only at runtime use MediaGallery::try_new(items, &limits)
+  = help: the following other types implement trait `GalleryItems`:
+            Arity<10>
+            Arity<1>
+            Arity<2>
+            Arity<3>
+            Arity<4>
+            Arity<5>
+            Arity<6>
+            Arity<7>
+          and $N others
+note: required by a bound in `MediaGallery::new`
+ --> $WORKSPACE/crates/noctis-ui/src/component/media.rs
+  |
+  |     pub fn new<const N: usize>(items: [MediaItem; N]) -> Self
+  |            --- required by a bound in this associated function
+  |     where
+  |         Arity<N>: GalleryItems,
+  |                   ^^^^^^^^^^^^ required by this bound in `MediaGallery::new`

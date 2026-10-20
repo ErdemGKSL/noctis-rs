@@ -5,7 +5,14 @@
 use serde::Serializer;
 use serde::ser::SerializeMap;
 
+use noctis_rules::Limits;
+use noctis_rules::component::{
+    validate_accent_color, validate_row_buttons, validate_section_texts,
+};
+
 use super::{Button, File, MediaGallery, SelectNode, Separator, TextDisplay, Thumbnail};
+use crate::arity::{Arity, RowButtons, SectionTexts};
+use crate::error::{UiError, checked};
 use crate::placement::sealed::IntoRowButton;
 use crate::placement::{ContainerChild, RowItem, RowSelect, SectionAccessory};
 use crate::route::CustomId;
@@ -20,6 +27,22 @@ use crate::wire::{Ids, Wire, WiredSeq, flag, head, serialize_via_wire};
 /// assert_eq!(BLURPLE.value(), 0x5865F2);
 /// assert_eq!(Rgb::new(255, 255, 255).value(), 16_777_215);
 /// ```
+///
+/// A `0xRRGGBB` value known only at runtime goes through `TryFrom<u32>`,
+/// which rejects anything above `0xFFFFFF` (CV2-13); a literal goes through
+/// `rgb!`, which checks it at `cargo check`:
+///
+/// ```
+/// use noctis_rules::RuleId;
+/// use noctis_ui::{Rgb, UiError};
+///
+/// assert_eq!(Rgb::try_from(0xFF_FFFF)?, Rgb::new(255, 255, 255));
+/// let Err(UiError::Limits { violations }) = Rgb::try_from(0x100_0000) else {
+///     panic!("out of range");
+/// };
+/// assert_eq!(violations[0].rule, RuleId::CV2_13);
+/// # Ok::<(), UiError>(())
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Rgb(u32);
 
@@ -33,6 +56,26 @@ impl Rgb {
     /// The colour as `0xRRGGBB`.
     pub const fn value(self) -> u32 {
         self.0
+    }
+
+    /// The colour `value`, already checked by `rgb!`; not public API.
+    #[doc(hidden)]
+    pub const fn __from_checked(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl TryFrom<u32> for Rgb {
+    type Error = UiError;
+
+    /// Checks `value` against CV2-13 (`0x000000..=0xFFFFFF`) with
+    /// `noctis_rules::component::validate_accent_color`, the function `rgb!`
+    /// calls.
+    fn try_from(value: u32) -> Result<Self, UiError> {
+        checked(
+            Self(value),
+            validate_accent_color(value, &Limits::default()),
+        )
     }
 }
 
@@ -62,7 +105,16 @@ impl Wire for AccessoryNode {
 /// button or a [`Thumbnail`] (CV2-07).
 ///
 /// Placement: top level or a Container. There is no constructor without an
-/// accessory.
+/// accessory. [`Section::new`] takes an array of 1 to 3 texts
+/// (`Arity<N>: `[`SectionTexts`](crate::SectionTexts)); any other length
+/// fails `cargo check` with `[CV2-07]`:
+///
+/// ```compile_fail,E0277
+/// use noctis_ui::{LinkButton, Section, TextDisplay};
+///
+/// let t = || TextDisplay::new("a");
+/// let _ = Section::new([t(), t(), t(), t()], LinkButton::new("https://x.y")); // [CV2-07]
+/// ```
 ///
 /// ```
 /// use noctis_ui::{Media, Section, TextDisplay, Thumbnail};
@@ -87,13 +139,51 @@ pub struct Section {
 }
 
 impl Section {
-    /// A Section of `texts` with `accessory` (the text count is checked by the
-    /// runtime validator).
-    pub fn new<A: SectionAccessory, const N: usize>(texts: [TextDisplay; N], accessory: A) -> Self {
+    /// A Section of 1 to 3 `texts` with `accessory`; the count is checked at
+    /// compile time (CV2-07).
+    pub fn new<A: SectionAccessory, const N: usize>(texts: [TextDisplay; N], accessory: A) -> Self
+    where
+        Arity<N>: SectionTexts,
+    {
         Self {
             texts: texts.into(),
             accessory: accessory.into_accessory(),
         }
+    }
+
+    /// A Section of `texts` with `accessory`, for a text count known only at
+    /// runtime.
+    ///
+    /// # Errors
+    ///
+    /// [`UiError::Limits`] with CV2-07 (empty path) when the count is not 1
+    /// to `limits.section_texts`.
+    ///
+    /// ```
+    /// use noctis_rules::{Limits, RuleId};
+    /// use noctis_ui::{LinkButton, Section, TextDisplay, UiError};
+    ///
+    /// let lines = ["a", "b"].map(TextDisplay::new);
+    /// let section = Section::try_new(lines, LinkButton::new("https://x.y"), &Limits::default())?;
+    /// # let _ = section;
+    /// let none = Section::try_new([], LinkButton::new("https://x.y"), &Limits::default());
+    /// assert!(matches!(none, Err(UiError::Limits { violations }) if violations[0].rule == RuleId::CV2_07));
+    /// # Ok::<(), UiError>(())
+    /// ```
+    pub fn try_new<A: SectionAccessory>(
+        texts: impl IntoIterator<Item = TextDisplay>,
+        accessory: A,
+        limits: &Limits,
+    ) -> Result<Self, UiError> {
+        let texts: Vec<TextDisplay> = texts.into_iter().collect();
+        let violations = validate_section_texts(texts.len(), limits);
+        checked(
+            Self {
+                texts,
+                accessory: accessory.into_accessory(),
+            },
+            violations,
+        )
     }
 }
 
@@ -118,7 +208,15 @@ pub(crate) enum RowNode {
 
 /// An Action Row (type 1): 1 to 5 buttons, or exactly one select (CV2-06).
 ///
-/// Placement: top level or a Container.
+/// Placement: top level or a Container. [`ActionRow::buttons`] takes an array
+/// of 1 to 5 buttons (`Arity<N>: `[`RowButtons`](crate::RowButtons)); any
+/// other length fails `cargo check` with `[CV2-06]`:
+///
+/// ```compile_fail,E0277
+/// use noctis_ui::{ActionRow, LinkButton};
+///
+/// let _ = ActionRow::buttons::<LinkButton, 0>([]); // [CV2-06]
+/// ```
 ///
 /// ```
 /// use noctis_ui::{ActionRow, LinkButton};
@@ -130,15 +228,51 @@ pub(crate) enum RowNode {
 pub struct ActionRow(pub(crate) RowNode);
 
 impl ActionRow {
-    /// A row of `buttons`, in order. Mix kinds by converting each to
-    /// [`Button`]. The count is checked by the runtime validator.
-    pub fn buttons<B: RowItem, const N: usize>(buttons: [B; N]) -> Self {
+    /// A row of 1 to 5 `buttons`, in order; the count is checked at compile
+    /// time (CV2-06). Mix kinds by converting each to [`Button`].
+    pub fn buttons<B: RowItem, const N: usize>(buttons: [B; N]) -> Self
+    where
+        Arity<N>: RowButtons,
+    {
         Self(RowNode::Buttons(
             buttons
                 .into_iter()
                 .map(IntoRowButton::into_row_button)
                 .collect(),
         ))
+    }
+
+    /// A row of `buttons`, for a count known only at runtime.
+    ///
+    /// # Errors
+    ///
+    /// [`UiError::Limits`] with CV2-06 (empty path) when the count is not 1
+    /// to `limits.row_buttons`.
+    ///
+    /// ```
+    /// use noctis_rules::{Limits, RuleId};
+    /// use noctis_ui::{ActionRow, LinkButton, UiError};
+    ///
+    /// let links = ["https://a.b", "https://c.d"].map(LinkButton::new);
+    /// let row = ActionRow::try_buttons(links, &Limits::default())?;
+    /// # let _ = row;
+    /// let six = (0..6).map(|_| LinkButton::new("https://a.b"));
+    /// assert!(matches!(
+    ///     ActionRow::try_buttons(six, &Limits::default()),
+    ///     Err(UiError::Limits { violations }) if violations[0].rule == RuleId::CV2_06
+    /// ));
+    /// # Ok::<(), UiError>(())
+    /// ```
+    pub fn try_buttons<B: RowItem>(
+        buttons: impl IntoIterator<Item = B>,
+        limits: &Limits,
+    ) -> Result<Self, UiError> {
+        let buttons: Vec<Button> = buttons
+            .into_iter()
+            .map(IntoRowButton::into_row_button)
+            .collect();
+        let violations = validate_row_buttons(buttons.len(), limits);
+        checked(Self(RowNode::Buttons(buttons)), violations)
     }
 
     /// A row holding the single `select`.

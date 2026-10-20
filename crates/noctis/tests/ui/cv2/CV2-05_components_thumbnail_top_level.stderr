@@ -1,0 +1,5 @@
+error: [CV2-05] thumbnail[0]: limit a Thumbnail only as a Section accessory, actual `thumbnail`
+ --> tests/ui/cv2/CV2-05_components_thumbnail_top_level.rs:4:27
+  |
+4 |     let _ = components! { thumbnail("https://x.y/a.png") };
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

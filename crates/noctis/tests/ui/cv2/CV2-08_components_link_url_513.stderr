@@ -1,0 +1,5 @@
+error: [CV2-08] row[0].button[0].url: limit between 1 and 512, actual 513
+ --> tests/ui/cv2/CV2-08_components_link_url_513.rs:4:44
+  |
+4 | ... = "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh...hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh", l...
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

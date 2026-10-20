@@ -102,6 +102,29 @@ fn row_of(button: impl Into<Button>) -> TopLevelComponent {
     ActionRow::buttons([button.into()]).into()
 }
 
+/// Limits that let the `try_*` constructors build the over-limit shapes the
+/// arity bounds reject: 6 buttons, 4 Section texts, 11 gallery items.
+fn relaxed() -> Limits {
+    let mut l = Limits::default();
+    l.row_buttons = 6;
+    l.section_texts = 4;
+    l.gallery_items = 11;
+    l
+}
+
+/// A row of 6 Route buttons (payloads 1..=6), built under [`relaxed`].
+fn six_buttons() -> ActionRow {
+    ActionRow::try_buttons((1..=6).map(b), &relaxed()).expect("relaxed limits allow 6 buttons")
+}
+
+/// The violations of a failed `try_*` constructor.
+fn try_errs<T: fmt::Debug>(r: Result<T, UiError>) -> Vec<Violation> {
+    match r {
+        Err(UiError::Limits { violations }) => violations,
+        other => panic!("expected UiError::Limits, got {other:?}"),
+    }
+}
+
 fn rep(s: &str, n: usize) -> String {
     s.repeat(n)
 }
@@ -294,12 +317,26 @@ fn cv2_04_nested_and_section_texts() {
 
 #[test]
 fn cv2_06_row_buttons() {
-    fails_with(
-        msg([ActionRow::buttons::<Button, 0>([]).into()]),
-        &[between(RuleId::CV2_06, "row[0]", 1, 5, 0)],
+    // 0 and 6 buttons no longer compile (`RowButtons`); the runtime path
+    // rejects them, and the validator still counts a row built under a
+    // relaxed `Limits`.
+    assert_eq!(
+        try_errs(ActionRow::try_buttons(Vec::<Button>::new(), &strict())),
+        [between(RuleId::CV2_06, "", 1, 5, 0)]
     );
+    assert_eq!(
+        try_errs(ActionRow::try_buttons((1..=6).map(b), &strict())),
+        [between(RuleId::CV2_06, "", 1, 5, 6)]
+    );
+    let mut two = strict();
+    two.row_buttons = 2;
+    assert_eq!(
+        try_errs(ActionRow::try_buttons((1..=3).map(b), &two)),
+        [between(RuleId::CV2_06, "", 1, 2, 3)]
+    );
+    assert!(ActionRow::try_buttons((1..=5).map(b), &strict()).is_ok());
     fails_with(
-        msg([ActionRow::buttons([b(1), b(2), b(3), b(4), b(5), b(6)]).into()]),
+        msg([six_buttons().into()]),
         &[between(RuleId::CV2_06, "row[0]", 1, 5, 6)],
     );
     passes(msg([
@@ -309,12 +346,25 @@ fn cv2_06_row_buttons() {
 
 #[test]
 fn cv2_07_section_texts() {
-    fails_with(
-        msg([Section::new([], b(1)).into()]),
-        &[between(RuleId::CV2_07, "section[0]", 1, 3, 0)],
+    assert_eq!(
+        try_errs(Section::try_new([], b(1), &strict())),
+        [between(RuleId::CV2_07, "", 1, 3, 0)]
     );
+    assert_eq!(
+        try_errs(Section::try_new(
+            [t("a"), t("b"), t("c"), t("d")],
+            b(1),
+            &strict()
+        )),
+        [between(RuleId::CV2_07, "", 1, 3, 4)]
+    );
+    for n in 1..=3 {
+        assert!(Section::try_new((0..n).map(|_| t("a")), b(1), &strict()).is_ok());
+    }
+    let four = Section::try_new([t("a"), t("b"), t("c"), t("d")], b(1), &relaxed())
+        .expect("relaxed limits allow 4 texts");
     fails_with(
-        msg([Section::new([t("a"), t("b"), t("c"), t("d")], b(1)).into()]),
+        msg([four.into()]),
         &[between(RuleId::CV2_07, "section[0]", 1, 3, 4)],
     );
     passes(msg([Section::new([t("a")], b(1)).into()]));
@@ -511,12 +561,21 @@ fn cv2_09_default_values() {
 #[test]
 fn cv2_10_gallery_count() {
     let item = || MediaItem::new(image()).alt("x");
-    fails_with(
-        msg([MediaGallery::new([]).into()]),
-        &[between(RuleId::CV2_10, "gallery[0]", 1, 10, 0)],
+    assert_eq!(
+        try_errs(MediaGallery::try_new([], &strict())),
+        [between(RuleId::CV2_10, "", 1, 10, 0)]
     );
+    assert_eq!(
+        try_errs(MediaGallery::try_new((0..11).map(|_| item()), &strict())),
+        [between(RuleId::CV2_10, "", 1, 10, 11)]
+    );
+    for n in [1, 10] {
+        assert!(MediaGallery::try_new((0..n).map(|_| item()), &strict()).is_ok());
+    }
+    let eleven = MediaGallery::try_new((0..11).map(|_| item()), &relaxed())
+        .expect("relaxed limits allow 11 items");
     fails_with(
-        msg([MediaGallery::new([(); 11].map(|()| item())).into()]),
+        msg([eleven.into()]),
         &[between(RuleId::CV2_10, "gallery[0]", 1, 10, 11)],
     );
     passes(msg([MediaGallery::new([item()]).into()]));
@@ -883,11 +942,8 @@ fn cv2_15_legacy_rows() {
     )
     .expect("5 rows");
     assert_eq!(
-        legacy_errs(
-            LegacyMessage::new("x").rows([ActionRow::buttons::<Button, 0>([])]),
-            &strict()
-        ),
-        [between(RuleId::CV2_06, "row[0]", 1, 5, 0)]
+        legacy_errs(LegacyMessage::new("x").rows([six_buttons()]), &strict()),
+        [between(RuleId::CV2_06, "row[0]", 1, 5, 6)]
     );
     let mut l = strict();
     l.legacy_action_rows = 2;
@@ -928,7 +984,7 @@ fn cv2_03_many_violations_in_order() {
         ]
     );
     let legacy = LegacyMessage::new(rep("a", 2001))
-        .rows([ActionRow::buttons::<Button, 0>([])])
+        .rows([six_buttons()])
         .mentions(Mentions::none().roles(Roles::only((1..=101).map(Id::new))));
     let rules: Vec<RuleId> = legacy_errs(legacy, &strict())
         .iter()
@@ -1154,7 +1210,7 @@ fn cv2_03_lenient_structural_still_fails() {
                 })
                 .into()])
         },
-        || msg([ActionRow::buttons::<Button, 0>([]).into()]),
+        || msg([six_buttons().into()]),
         || msg([ActionRow::buttons([b(1), b(1)]).into()]),
         || texts(1, "a").mentions(Mentions::none().users(Users::only((1..=101).map(Id::new)))),
         || V2Message::new(Components::new()),
@@ -1422,4 +1478,83 @@ fn types_are_send_sync() {
     assert_send_sync::<CostReport>();
     assert_send_sync::<LimitWarning>();
     assert_send_sync::<UiError>();
+}
+
+// Story 4.4: checked literals and the validator backstop.
+
+#[test]
+fn cv2_08_label_runtime_path() {
+    use noctis_ui::Label;
+    assert_eq!(
+        Label::try_from(rep("a", 80)).map(|l| l.as_str().len()),
+        Ok(80)
+    );
+    assert_eq!(
+        try_errs(Label::try_from(rep("a", 81))),
+        [at_most(RuleId::CV2_08, "", 80, 81)]
+    );
+    assert_eq!(
+        try_errs(Label::try_from(rep("😀", 41))),
+        [at_most(RuleId::CV2_08, "", 80, 82)]
+    );
+    let mut l = lenient();
+    l.button_label_len = 3;
+    // Never truncates, even in Lenient mode.
+    assert_eq!(
+        try_errs(Label::try_new("abcd", &l)),
+        [at_most(RuleId::CV2_08, "", 3, 4)]
+    );
+    let label = Label::try_from("Save").expect("4 characters");
+    passes(msg([row_of(b(1).label(label))]));
+}
+
+#[test]
+fn cv2_09_placeholder_runtime_path() {
+    use noctis_ui::Placeholder;
+    assert!(Placeholder::try_from(rep("a", 150)).is_ok());
+    assert_eq!(
+        try_errs(Placeholder::try_from(rep("a", 151))),
+        [at_most(RuleId::CV2_09, "", 150, 151)]
+    );
+    let mut l = strict();
+    l.select_placeholder_len = 3;
+    assert_eq!(
+        try_errs(Placeholder::try_new("abcd", &l)),
+        [at_most(RuleId::CV2_09, "", 3, 4)]
+    );
+}
+
+#[test]
+fn msg_01_content_runtime_path() {
+    use noctis_ui::Content;
+    assert!(Content::try_from(rep("a", 2000)).is_ok());
+    assert!(Content::try_from("").is_ok());
+    assert_eq!(
+        try_errs(Content::try_from(rep("a", 2001))),
+        [at_most(RuleId::MSG_01, "content", 2000, 2001)]
+    );
+    assert_eq!(
+        try_errs(Content::try_from(rep("😀", 1001))),
+        [at_most(RuleId::MSG_01, "content", 2000, 2002)]
+    );
+    let mut m = LegacyMessage::new(Content::try_from("hi").expect("2 characters"));
+    validate(&mut m, &strict()).expect("valid content");
+}
+
+#[test]
+fn cv2_13_rgb_runtime_path() {
+    assert_eq!(Rgb::try_from(0x00FF_FFFF), Ok(Rgb::new(255, 255, 255)));
+    for bad in [0x0100_0000, u32::MAX] {
+        let errs = try_errs(Rgb::try_from(bad));
+        assert_eq!(errs.len(), 1);
+        assert_eq!((errs[0].rule, errs[0].path.as_str()), (RuleId::CV2_13, ""));
+        assert_eq!(
+            errs[0].limit,
+            Bound::Describe("a colour from 0x000000 to 0xFFFFFF")
+        );
+    }
+    assert_eq!(
+        try_errs(Rgb::try_from(0x0100_0000))[0].actual,
+        Actual::Text("0x1000000".to_owned())
+    );
 }

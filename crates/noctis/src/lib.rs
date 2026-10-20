@@ -8,8 +8,10 @@
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
 //! - [`prelude`]: `use noctis::prelude::*;` brings the [`Route`](prelude::Route),
 //!   [`Payload`](prelude::Payload) and [`PayloadEnum`](prelude::PayloadEnum)
-//!   derives, the `Route` and `Payload` traits and
-//!   [`RouteComponents`](prelude::RouteComponents) into scope.
+//!   derives, the `Route` and `Payload` traits,
+//!   [`RouteComponents`](prelude::RouteComponents), [`Rgb`](ui::Rgb) and the
+//!   macros [`components!`], [`label!`], [`placeholder!`], [`content!`] and
+//!   [`rgb!`] into scope.
 //! - [`ui`]: the Components V2 message model: one type per component,
 //!   placement checked by the compiler, components built from Routes, and
 //!   attachments.
@@ -83,6 +85,22 @@
 //! - `testkit`: Discord fakes and test helpers; enable it in
 //!   `[dev-dependencies]` only.
 #![deny(missing_docs)]
+
+/// A literal Components V2 tree, checked at `cargo check`; yields a
+/// [`ui::Components`]. See [`ui`](ui#literal-macros-and-components).
+pub use noctis_macros::components;
+/// Legacy message content literal, checked at `cargo check` against MSG-01;
+/// yields a [`ui::Content`].
+pub use noctis_macros::content;
+/// A button label literal, checked at `cargo check` against CV2-08; yields a
+/// [`ui::Label`].
+pub use noctis_macros::label;
+/// A select placeholder literal, checked at `cargo check` against CV2-09;
+/// yields a [`ui::Placeholder`].
+pub use noctis_macros::placeholder;
+/// A `0xRRGGBB` colour literal, checked at `cargo check` against CV2-13;
+/// yields a [`ui::Rgb`].
+pub use noctis_macros::rgb;
 
 pub mod codec {
     //! Payload field encodings for `custom_id`s.
@@ -281,10 +299,13 @@ pub mod prelude {
     //! - [`RouteComponents`]: `.button()`, `.string_select(..)`,
     //!   `.user_select()`, `.role_select()`, `.mentionable_select()` and
     //!   `.channel_select()` on a Route value (see [`ui`](crate::ui)).
+    //! - [`Rgb`] and the macros [`components!`], [`label!`],
+    //!   [`placeholder!`], [`content!`] and [`rgb!`].
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_macros::{Payload, PayloadEnum, Route};
-    pub use noctis_ui::RouteComponents;
+    pub use noctis_macros::{components, content, label, placeholder, rgb};
+    pub use noctis_ui::{Rgb, RouteComponents};
 }
 
 /// Paths the derive macros expand to; not public API.
@@ -327,8 +348,131 @@ pub mod ui {
     //!   by ATT-05.
     //! - [`UiError`]: a bad attachment extension, a mismatched Ref slot, an
     //!   edit of a V2 message back into a legacy one
-    //!   ([`UiError::V2ToLegacy`]), or a message over its Limits
+    //!   ([`UiError::V2ToLegacy`]), or a message or value over its Limits
     //!   ([`UiError::Limits`]).
+    //!
+    //! # Arity
+    //!
+    //! Array constructors take only legal lengths, as sealed traits on
+    //! [`Arity`]`<N>`: [`ActionRow::buttons`] 1 to 5 ([`RowButtons`],
+    //! CV2-06), [`Section::new`] 1 to 3 texts ([`SectionTexts`], CV2-07) and
+    //! [`MediaGallery::new`] 1 to 10 items ([`GalleryItems`], CV2-10). Any
+    //! other length fails `cargo check` with the rule id. A length known only
+    //! at runtime goes through [`ActionRow::try_buttons`],
+    //! [`Section::try_new`] or [`MediaGallery::try_new`], which return
+    //! [`UiError::Limits`] instead.
+    //!
+    //! ```compile_fail,E0277
+    //! use noctis::ui::{ActionRow, LinkButton};
+    //!
+    //! let link = || LinkButton::new("https://x.y");
+    //! let _ = ActionRow::buttons([link(), link(), link(), link(), link(), link()]); // [CV2-06]
+    //! ```
+    //!
+    //! ```
+    //! use noctis::rules::{Limits, RuleId};
+    //! use noctis::ui::{ActionRow, LinkButton, UiError};
+    //!
+    //! let urls = vec!["https://a.b"; 6];
+    //! let six = ActionRow::try_buttons(urls.into_iter().map(LinkButton::new), &Limits::default());
+    //! assert!(matches!(six, Err(UiError::Limits { violations }) if violations[0].rule == RuleId::CV2_06));
+    //! ```
+    //!
+    //! # Literal macros and `components!`
+    //!
+    //! The literal macros measure their literal at `cargo check` with the
+    //! `noctis-rules` function the runtime path calls:
+    //! [`label!`](crate::label) ([`Label`], CV2-08, at most 80 characters),
+    //! [`placeholder!`](crate::placeholder) ([`Placeholder`], CV2-09, 150),
+    //! [`content!`](crate::content) ([`Content`], MSG-01, 2000) and
+    //! [`rgb!`](crate::rgb) ([`Rgb`], CV2-13, `0x000000..=0xFFFFFF`). Each
+    //! works in a `const`. Text known only at runtime (localized text
+    //! included) goes through `Label::try_new(text, &limits)` (or
+    //! `Placeholder`, `Content`) and `Rgb::try_from(u32)`; none of them ever
+    //! truncates.
+    //!
+    //! ```
+    //! use noctis::prelude::*;
+    //! use noctis::ui::{Label, LegacyMessage, LinkButton};
+    //!
+    //! const SAVE: Label = label!("Save");
+    //! const ACCENT: Rgb = rgb!(0x5865_F2);
+    //! let link = LinkButton::new("https://x.y").label(SAVE);
+    //! let notice = LegacyMessage::new(content!("Saved."));
+    //! assert_eq!(ACCENT, Rgb::new(0x58, 0x65, 0xF2));
+    //! # let _ = (link, notice, placeholder!("Pick one"));
+    //! ```
+    //!
+    //! ```compile_fail
+    //! let name = "Save";
+    //! let _ = noctis::label!(name); // label! takes one string literal
+    //! ```
+    //!
+    //! ```compile_fail
+    //! let _ = noctis::rgb!(-1); // rgb! takes one non-negative integer literal
+    //! ```
+    //!
+    //! [`components!`](crate::components) writes a fixed-shape tree:
+    //!
+    //! ```text
+    //! components! { node,* }
+    //! node      := container | section | text | gallery | file | separator | row | {hole} | ..spread
+    //! container := container [ ( accent = expr ) ] [ node,* ]
+    //! section   := section [ text,* ; accessory = (thumbnail | button | {hole}) ]
+    //! text      := text( string-literal | expr )
+    //! thumbnail := thumbnail( media [, alt = text] )      // a string literal media is a URL
+    //! gallery   := gallery [ item( media [, alt = text] ),* ]
+    //! file      := file( attachment_ref )
+    //! separator := separator [ ( spacing = small | large , divider = expr ) ]  // keys in any order
+    //! row       := row [ (button | {hole}),* ] | row [ select ]
+    //! button    := route.button( [label] ) .setter(..)* | link(url = "..", label = "..") | premium(sku)
+    //! select    := route.string_select(options) .setter(..)* | route.user_select() .setter(..)* | ..
+    //! ```
+    //!
+    //! It expands into the builders above (so the placement traits still
+    //! apply to `{hole}`s and `..spread`s) and fails `cargo check` with the
+    //! rule id, spanned on the offending node or literal, when the literal
+    //! tree breaks CV2-03 (40 components; a hole counts 1, a spread 0),
+    //! CV2-04 (4000 literal text characters; non-literal text counts 0),
+    //! CV2-05, CV2-06, CV2-07, CV2-08 (literal labels and link URLs), CV2-09
+    //! (literal placeholders, `min_values`, `max_values` and array-literal
+    //! options), CV2-10, CV2-11, CV2-13 (literal accents, Separator spacing),
+    //! CV2-17 (literal media URLs) or CID-02 (two components of the same
+    //! literal Route value). The runtime [`validate`] still checks the built
+    //! message before sending.
+    //!
+    //! ```
+    //! use noctis::prelude::*;
+    //! use noctis::rules::Limits;
+    //! use noctis::ui::{ButtonStyle, TextDisplay, V2Message, validate};
+    //!
+    //! #[derive(Route)]
+    //! #[route("t.press")]
+    //! struct Press {
+    //!     n: u8,
+    //! }
+    //! # impl noctis::__private::ui::Handled for Press {}
+    //!
+    //! let name = String::from("noctis");
+    //! let footer = TextDisplay::new("-# footer");
+    //! let body = components! {
+    //!     container(accent = rgb!(0x5865_F2)) [
+    //!         text("### Settings"),
+    //!         separator(spacing = large),
+    //!         section [ text("Logs"), text(name); accessory = Press { n: 1 }.button("Change") ],
+    //!         row [ Press { n: 2 }.button("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
+    //!     ],
+    //!     {footer},
+    //! };
+    //! let mut msg = V2Message::new(body);
+    //! assert_eq!(validate(&mut msg, &Limits::default()).unwrap().components, 11);
+    //! ```
+    //!
+    //! ```compile_fail
+    //! use noctis::components;
+    //!
+    //! let _ = components! { box [] }; // unknown node
+    //! ```
     //!
     //! # Messages
     //!
@@ -460,12 +604,13 @@ pub mod ui {
     pub use noctis_ui::{
         ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button,
         ButtonStyle, CallbackFlags, ChannelSelect, Components, Container, ContainerChild,
-        ContainerComponent, CostReport, CreateFlags, EditFlags, Emoji, File, LegacyMessage,
-        LegacyRows, LimitWarning, LinkButton, Media, MediaGallery, MediaItem, MentionableSelect,
-        Mentions, MessageBody, MessageFormat, PremiumButton, Rgb, RoleSelect, Roles, RouteButton,
-        RouteComponents, RowItem, RowSelect, Section, SectionAccessory, SelectOption, Separator,
-        Spacing, StringSelect, TextDisplay, Thumbnail, TopLevel, TopLevelComponent, UiError,
-        UserSelect, Users, V2Message, Validate, cost, validate,
+        ContainerComponent, Content, CostReport, CreateFlags, EditFlags, Emoji, File, GalleryItems,
+        Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton, Media, MediaGallery, MediaItem,
+        MentionableSelect, Mentions, MessageBody, MessageFormat, Placeholder, PremiumButton, Rgb,
+        RoleSelect, Roles, RouteButton, RouteComponents, RowButtons, RowItem, RowSelect, Section,
+        SectionAccessory, SectionTexts, SelectOption, Separator, Spacing, StringSelect,
+        TextDisplay, Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message,
+        Validate, cost, validate,
     };
 }
 

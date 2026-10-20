@@ -238,17 +238,17 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 | --- | --- | --- |
 | CV2-01 | `IS_COMPONENTS_V2` = 32768 on every send/edit; can't be removed | C |
 | CV2-02 | no `content`, embeds, poll, stickers with V2 | C |
-| CV2-03 | ≤ 40 components total, all depths (options and gallery items don't count) | C / R |
-| CV2-04 | ≤ 4000 chars across all Text Displays [U] | C / R |
+| CV2-03 | ≤ 40 components total, all depths (options and gallery items don't count); `components!` counts literal trees | C / R |
+| CV2-04 | ≤ 4000 chars across all Text Displays [U]; `components!` sums literal `text("…")` | C / R |
 | CV2-05 | placement (no Container in Container; Thumbnail only as accessory; Button only in row/accessory) | C |
-| CV2-06 | Action Row: 1–5 buttons or exactly 1 select | C / R |
-| CV2-07 | Section: 1–3 Text Displays + 1 accessory | C / R |
-| CV2-08 | button label ≤ 80; link url ≤ 512; premium = sku only | C / R |
-| CV2-09 | select placeholder ≤ 150; min 0–25; max 1–25; ≤ 25 options; option label/value/description ≤ 100; defaults within [min,max]; `disabled` messages only | C / R |
-| CV2-10 | Media Gallery 1–10 items; description ≤ 1024 | C / R |
+| CV2-06 | Action Row: 1–5 buttons or exactly 1 select (`ActionRow::buttons` arity `RowButtons`; `ActionRow::try_buttons` at runtime) | C / R |
+| CV2-07 | Section: 1–3 Text Displays + 1 accessory (`Section::new` arity `SectionTexts`; `Section::try_new` at runtime) | C / R |
+| CV2-08 | button label ≤ 80 (`label!`, `Label::try_new`); link url ≤ 512; premium = sku only | C / R |
+| CV2-09 | select placeholder ≤ 150 (`placeholder!`, `Placeholder::try_new`); min 0–25; max 1–25; ≤ 25 options; option label/value/description ≤ 100; defaults within [min,max]; `disabled` messages only | C / R |
+| CV2-10 | Media Gallery 1–10 items (`MediaGallery::new` arity `GalleryItems`; `MediaGallery::try_new` at runtime); description ≤ 1024 | C / R |
 | CV2-11 | Thumbnail description ≤ 1024; images only | C / R |
 | CV2-12 | File: `attachment://` only | C / R |
-| CV2-13 | Separator spacing 1 or 2; accent 0x000000–0xFFFFFF | C |
+| CV2-13 | Separator spacing 1 or 2; accent 0x000000–0xFFFFFF (`rgb!`, `Rgb::try_from(u32)`) | C / R |
 | CV2-14 | numeric `id` 32-bit, unique (assigned by Noctis) | C |
 | CV2-15 | legacy: ≤ 5 Action Rows, types 1–8 | C |
 | CV2-16 | unknown component types round-trip as raw JSON | R |
@@ -272,7 +272,7 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 
 | Id | Limit | Where |
 | --- | --- | --- |
-| MSG-01 | legacy `content` ≤ 2000 [U] | C / R |
+| MSG-01 | legacy `content` ≤ 2000 [U] (`content!`, `Content::try_new`) | C / R |
 | MSG-02 | embeds (legacy only): ≤ 10; title 256, description 4096, 25 fields, 6000 total | C / R |
 | MSG-03 | allowed mentions: `parse` xor explicit ids per type | C |
 | MSG-04 | ≤ 100 user ids, ≤ 100 role ids | R |

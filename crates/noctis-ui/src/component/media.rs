@@ -5,7 +5,12 @@ use std::borrow::Cow;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
+use noctis_rules::Limits;
+use noctis_rules::component::validate_gallery_items;
+
+use crate::arity::{Arity, GalleryItems};
 use crate::attachment::AttachmentRef;
+use crate::error::{UiError, checked};
 use crate::wire::{Ids, Wire, flag, head, opt, serialize_via_wire};
 
 /// An image or video source: an `https` URL or an attachment of the same
@@ -189,7 +194,15 @@ impl Serialize for MediaItem {
 
 /// A Media Gallery (type 12): a grid of images and videos.
 ///
-/// Placement: top level or a Container.
+/// Placement: top level or a Container. [`MediaGallery::new`] takes an array
+/// of 1 to 10 items (`Arity<N>: `[`GalleryItems`](crate::GalleryItems)); any
+/// other length fails `cargo check` with `[CV2-10]`:
+///
+/// ```compile_fail,E0277
+/// use noctis_ui::{MediaGallery, MediaItem};
+///
+/// let _ = MediaGallery::new::<0>([]); // [CV2-10]
+/// ```
 ///
 /// ```
 /// use noctis_ui::{Media, MediaGallery, MediaItem};
@@ -206,12 +219,45 @@ pub struct MediaGallery {
 }
 
 impl MediaGallery {
-    /// A gallery of `items`, in order (1 to 10; the count is checked by the
-    /// runtime validator).
-    pub fn new<const N: usize>(items: [MediaItem; N]) -> Self {
+    /// A gallery of 1 to 10 `items`, in order; the count is checked at
+    /// compile time (CV2-10).
+    pub fn new<const N: usize>(items: [MediaItem; N]) -> Self
+    where
+        Arity<N>: GalleryItems,
+    {
         Self {
             items: items.into(),
         }
+    }
+
+    /// A gallery of `items`, for a count known only at runtime.
+    ///
+    /// # Errors
+    ///
+    /// [`UiError::Limits`] with CV2-10 (empty path) when the count is not 1
+    /// to `limits.gallery_items`.
+    ///
+    /// ```
+    /// use noctis_rules::{Limits, RuleId};
+    /// use noctis_ui::{Media, MediaGallery, MediaItem, UiError};
+    ///
+    /// let urls = vec!["https://i/a.png", "https://i/b.png"];
+    /// let items = urls.into_iter().map(|u| MediaItem::new(Media::url(u)));
+    /// let gallery = MediaGallery::try_new(items, &Limits::default())?;
+    /// # let _ = gallery;
+    /// assert!(matches!(
+    ///     MediaGallery::try_new([], &Limits::default()),
+    ///     Err(UiError::Limits { violations }) if violations[0].rule == RuleId::CV2_10
+    /// ));
+    /// # Ok::<(), UiError>(())
+    /// ```
+    pub fn try_new(
+        items: impl IntoIterator<Item = MediaItem>,
+        limits: &Limits,
+    ) -> Result<Self, UiError> {
+        let items: Vec<MediaItem> = items.into_iter().collect();
+        let violations = validate_gallery_items(items.len(), limits);
+        checked(Self { items }, violations)
     }
 }
 

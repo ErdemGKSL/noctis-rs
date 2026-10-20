@@ -1,0 +1,5 @@
+error: [CV2-07] section[0]: limit between 1 and 3, actual 0
+  --> tests/ui/cv2/CV2-07_components_no_text.rs:11:27
+   |
+11 |     let _ = components! { section [ ; accessory = Press { n: 1 }.button() ] };
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

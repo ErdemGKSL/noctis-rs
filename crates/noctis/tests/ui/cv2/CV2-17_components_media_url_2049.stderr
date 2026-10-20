@@ -1,0 +1,5 @@
+error: [CV2-17] gallery[0].item[0].url: limit between 1 and 2048, actual 2049
+ --> tests/ui/cv2/CV2-17_components_media_url_2049.rs:4:42
+  |
+4 | ...em("hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh...hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh") ] };
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

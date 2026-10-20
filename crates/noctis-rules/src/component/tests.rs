@@ -874,6 +874,46 @@ fn cv2_15_legacy_components() {
 }
 
 #[test]
+fn cv2_06_row_buttons_count() {
+    let l = Limits::default();
+    for (n, errs) in [(0, 1), (1, 0), (5, 0), (6, 1)] {
+        assert_eq!(validate_row_buttons(n, &l).len(), errs, "{n} buttons");
+    }
+    assert_eq!(
+        validate_row_buttons(6, &l),
+        [v(RuleId::CV2_06, "", btw(1, 5), cnt(6))]
+    );
+    assert_eq!(
+        validate_row_buttons(3, &lowered(|l| l.row_buttons = 2)),
+        [v(RuleId::CV2_06, "", btw(1, 2), cnt(3))]
+    );
+}
+
+#[test]
+fn cv2_07_section_texts_count() {
+    let l = Limits::default();
+    for (n, errs) in [(0, 1), (1, 0), (3, 0), (4, 1)] {
+        assert_eq!(validate_section_texts(n, &l).len(), errs, "{n} texts");
+    }
+    assert_eq!(
+        validate_section_texts(0, &l),
+        [v(RuleId::CV2_07, "", btw(1, 3), cnt(0))]
+    );
+}
+
+#[test]
+fn cv2_10_gallery_items_count() {
+    let l = Limits::default();
+    for (n, errs) in [(0, 1), (1, 0), (10, 0), (11, 1)] {
+        assert_eq!(validate_gallery_items(n, &l).len(), errs, "{n} items");
+    }
+    assert_eq!(
+        validate_gallery_items(11, &l),
+        [v(RuleId::CV2_10, "", btw(1, 10), cnt(11))]
+    );
+}
+
+#[test]
 fn cv2_08_granular_button_label_and_link_url() {
     let l = Limits::default();
     for ok in [String::new(), "a".repeat(80), "😀".repeat(40)] {

@@ -6,6 +6,8 @@ use noctis::__private::codec::{
     ViewEnvelope, decode_route, decode_route_verified, encode, encode_id, finish, route_width,
 };
 use noctis::prelude::{PayloadEnum, Route};
+use noctis::rules::Limits;
+use noctis::ui::{V2Message, validate};
 
 #[derive(Route, Debug, PartialEq)]
 #[route("a")]
@@ -94,4 +96,22 @@ fn payload_enum_62_variants() {
     assert_eq!(out, "z");
     assert_eq!(Wide::decode("z"), Ok(Wide::V61));
     assert_eq!(Wide::decode("0"), Ok(Wide::V0));
+}
+
+#[derive(Route)]
+#[route("b.cid")]
+struct Press {
+    n: u8,
+}
+
+impl ::noctis::__private::ui::Handled for Press {}
+
+#[test]
+fn cid_02_components_distinct_literal_payloads() {
+    let body = noctis::components! {
+        row [ Press { n: 1 }.button(), Press { n: 2 }.button() ],
+        section [ text("a"); accessory = Press { n: 3 }.button() ],
+    };
+    let mut msg = V2Message::new(body);
+    validate(&mut msg, &Limits::default()).expect("distinct custom_ids");
 }

@@ -101,6 +101,31 @@
 //! assert!(matches!(notice.edit_body(MessageFormat::V2, EditFlags::empty()), Err(UiError::V2ToLegacy)));
 //! ```
 //!
+//! # Arity and literals
+//!
+//! Array constructors take only legal lengths: [`ActionRow::buttons`] 1 to 5
+//! ([`RowButtons`], CV2-06), [`Section::new`] 1 to 3 texts
+//! ([`SectionTexts`], CV2-07) and [`MediaGallery::new`] 1 to 10 items
+//! ([`GalleryItems`], CV2-10); any other length fails `cargo check`.
+//! [`ActionRow::try_buttons`], [`Section::try_new`] and
+//! [`MediaGallery::try_new`] take lengths known only at runtime. [`Label`]
+//! (CV2-08), [`Placeholder`] (CV2-09), [`Content`] (MSG-01) and
+//! `Rgb::try_from` (CV2-13) check runtime values with the same `noctis-rules`
+//! function the literal macros `label!`, `placeholder!`, `content!` and
+//! `rgb!` call at compile time.
+//!
+//! ```
+//! use noctis_rules::Limits;
+//! use noctis_ui::{ActionRow, Label, LinkButton, UiError};
+//!
+//! let open = Label::try_from("Open")?;
+//! let urls = vec!["https://a.b", "https://c.d"];
+//! let links = urls.into_iter().map(|u| LinkButton::new(u).label(open.clone()));
+//! let row = ActionRow::try_buttons(links, &Limits::default())?;
+//! # let _ = row;
+//! # Ok::<(), UiError>(())
+//! ```
+//!
 //! # Limits
 //!
 //! [`validate`] checks a built [`V2Message`] or [`LegacyMessage`] against
@@ -132,12 +157,13 @@ mod component;
 mod components;
 mod error;
 mod limits;
+mod literal;
 mod message;
 mod placement;
 mod route;
 mod wire;
 
-pub use arity::{Arity, LegacyRows};
+pub use arity::{Arity, GalleryItems, LegacyRows, RowButtons, SectionTexts};
 pub use attachment::{Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet};
 pub use component::{
     ActionRow, Button, ButtonStyle, ChannelSelect, Container, ContainerComponent, Emoji, File,
@@ -148,6 +174,7 @@ pub use component::{
 pub use components::Components;
 pub use error::UiError;
 pub use limits::{CostReport, LimitWarning, Validate, cost, validate};
+pub use literal::{Content, Label, Placeholder};
 pub use message::{
     CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,
     Roles, Users, V2Message,
@@ -156,3 +183,15 @@ pub use placement::{ContainerChild, RowItem, RowSelect, SectionAccessory, TopLev
 #[doc(hidden)]
 pub use route::CustomId;
 pub use route::{Handled, RouteComponents};
+
+/// Helpers the `components!` expansion calls; not public API.
+#[doc(hidden)]
+pub mod __macro {
+    use crate::{Button, RowItem};
+
+    /// Converts any Action Row button into a [`Button`], so a `row [..]` of
+    /// mixed kinds is one array.
+    pub fn row_button<B: RowItem>(button: B) -> Button {
+        button.into_row_button()
+    }
+}

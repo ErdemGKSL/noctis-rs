@@ -9,7 +9,7 @@
 
 use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 use noctis::prelude::*;
-use noctis::ui::{ActionRow, ButtonStyle, Components, Container, ContainerComponent, TextDisplay};
+use noctis::ui::{ActionRow, ButtonStyle, ContainerComponent, TextDisplay};
 use serde::{Deserialize, Serialize};
 
 use crate::strings::{Strings, keys};
@@ -259,8 +259,8 @@ impl StaticView for SetupDone {
             format!("<#{}>", self.config.log_channel),
             format!("<@&{}>", self.config.mod_role),
         );
-        Ok(V2Message::new(
-            Components::new().push(Container::new().accent(rgb!(0x57_F287)).push(TextDisplay::new(text))),
-        ))
+        Ok(V2Message::new(components! {
+            container(accent = rgb!(0x57_F287)) [ text(text) ],
+        }))
     }
 }

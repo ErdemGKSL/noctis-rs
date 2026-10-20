@@ -1,0 +1,5 @@
+error: [CV2-06] row[0]: limit exactly one select, alone in its row, actual 2
+  --> tests/ui/cv2/CV2-06_components_select_with_button.rs:16:27
+   |
+16 |     let _ = components! { row [ Pick.user_select(), Press { n: 1 }.button() ] };
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

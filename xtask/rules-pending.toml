@@ -279,59 +279,9 @@ evidence = "unit"
 story = "12.4"
 
 [[rule]]
-id = "CID-02"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
 id = "CID-04"
 evidence = "unit"
 story = "7.1"
-
-[[rule]]
-id = "CV2-03"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-04"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-06"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-08"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-09"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-10"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-11"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-13"
-evidence = "diagnosed"
-story = "4.4"
-
-[[rule]]
-id = "CV2-17"
-evidence = "diagnosed"
-story = "4.4"
 
 [[rule]]
 id = "MOD-01"
@@ -372,11 +322,6 @@ story = "4.6"
 id = "MOD-09"
 evidence = "unit"
 story = "4.6"
-
-[[rule]]
-id = "MSG-01"
-evidence = "diagnosed"
-story = "4.4"
 
 [[rule]]
 id = "MSG-08"

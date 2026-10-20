@@ -1,0 +1,5 @@
+error: [CV2-04] components: limit at most 4000, actual 4001
+ --> tests/ui/cv2/CV2-04_components_4001_chars.rs:6:2046
+  |
+6 | ...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), text("c"); accessory = thumbnail("https://x.y/a.png") ] ],
+  |                                                                   ^^^

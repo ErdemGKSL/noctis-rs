@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `1fd468dc5bdcca53f915a854905fcc37e8019dda26cce3123703d95646ec6e6b` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `a93f47da0f6f0895ed4e61806c7e82b7852f5e9f4af5912c80f364467c2cd283` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,

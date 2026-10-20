@@ -42,7 +42,7 @@ assert_eq!(body.len(), 2);                   // also is_empty(), Default
 
 Counts, lengths and the other per-field Limits are checked at runtime by
 `noctis::ui::validate(&mut msg, &limits)` (§16; the Responder will run it before every
-send [planned]) and by `components!` for literal trees [planned, Story 4.4];
+send [planned]) and at `cargo check` by `components!` for literal trees (§14);
 `noctis::ui::cost(&msg, &limits)` measures a message, and the rule functions of §15
 check bare descriptor trees.
 
@@ -102,8 +102,11 @@ every `#[derive(Route)]` struct.
 - **Builder:** `Container::new()`, `.push(child)` (any `ContainerChild`: Section, Text
   Display, Media Gallery, File, Separator, Action Row), `.accent(Rgb::new(r, g, b))`,
   `.spoiler(bool)`. JSON type 17.
-- `Rgb::new(0x58, 0x65, 0xF2)` is `const`; `.value()` gives `0x5865F2`. `rgb!(0x5865F2)`
-  and `Rgb::try_from(u32)` [planned, Story 4.4].
+- `Rgb::new(0x58, 0x65, 0xF2)` is `const`; `.value()` gives `0x5865F2`. `rgb!(0x5865_F2)`
+  (in the prelude) checks a literal at `cargo check` and works in a `const`
+  (`const ACCENT: Rgb = rgb!(0x5865_F2);`); a value above `0xFFFFFF` fails with
+  ``[CV2-13] limit a colour from 0x000000 to 0xFFFFFF, actual `0x1000000` ``.
+  `Rgb::try_from(u32)` is the runtime path (`Err(UiError::Limits { .. })`, same rule).
 
 ```rust
 Container::new()
@@ -121,7 +124,7 @@ Use one Container per View, an accent colour per state (neutral / success / dang
   (CV2-04) and the 40 components. Empty text builds (the validator checks it). Cost 1.
 - **Builder:** `TextDisplay::new(content)`; `.content()` reads it back. JSON type 10.
   Content is Markdown: `#`/`##`/`###`, `-#` subtext, lists, code, mentions,
-  `<t:unix:R>` timestamps. Literal check `lit!("…")` [planned].
+  `<t:unix:R>` timestamps. Literal texts are measured by `components!` (§14).
 - Mentions inside Text Display **would ping**; Views send `parse: []` by default.
   Escape user text with `noctis::ui::escape_markdown` / `escape_mentions` [planned].
 - Merge adjacent static text into one Text Display: saves components, not chars.
@@ -134,9 +137,11 @@ Use one Container per View, an accent colour per state (neutral / success / dang
 - **Builder:** `Section::new([TextDisplay; N], accessory)`. There is no constructor
   without an accessory: passing anything else (even `()`) fails with
   ``[CV2-07] `()` is not a Section accessory: a Section needs exactly one accessory, a
-  Button or a Thumbnail``. The `N` in 1..=3 check is the runtime validator's today
-  (compile-time arity trait [planned, Story 4.4]; `Section::try_new` [planned]).
-  JSON type 9.
+  Button or a Thumbnail``. `N` is bounded by `Arity<N>: SectionTexts` (1..=3): 0 or 4
+  texts fail `cargo check` with `[CV2-07] a Section holds 1 to 3 Text Displays`. For a
+  count known only at runtime use `Section::try_new(texts, accessory, &limits)` (any
+  `IntoIterator<Item = TextDisplay>`; `Err(UiError::Limits { .. })` with CV2-07 and an
+  empty path). JSON type 9.
 - Pattern: settings row = value text + "Edit"/"Set" button (Primary when unset,
   Secondary when set); toggle row = state text + Enable (Success) / Disable (Danger).
 
@@ -166,8 +171,11 @@ Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle_button
   item `description` (alt) ≤ 1024 (CV2-10). Cost 1 regardless of items — the cheapest
   way to show visual data. 1 item = full width; 2–4 = grid. Images and video.
 - **Builder:** `MediaGallery::new([MediaItem; N])`; `MediaItem::new(media).alt(..)
-  .spoiler(..)` (items carry no type or id). The `N` check is the validator's today
-  (arity trait and `MediaGallery::try_from_vec` [planned, Story 4.4]). JSON type 12.
+  .spoiler(..)` (items carry no type or id). `N` is bounded by
+  `Arity<N>: GalleryItems` (1..=10): 0 or 11 items fail `cargo check` with
+  `[CV2-10] a Media Gallery holds 1 to 10 items`. For a count known only at runtime use
+  `MediaGallery::try_new(items, &limits)` (`Err(UiError::Limits { .. })`, CV2-10). JSON
+  type 12.
 
 ```rust
 MediaGallery::new([MediaItem::new(card_ref).alt(s.profile.card_alt(&name))])
@@ -222,9 +230,12 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
 ## 8. Action Row: `ActionRow`
 
 - **Where:** top level or Container (in modals: deprecated; Noctis never emits it).
-- **Limits:** 1–5 buttons **or** exactly 1 select, never mixed (CV2-06). The button
-  count is the validator's today (arity trait and `ActionRow::try_buttons` [planned,
-  Story 4.4]). Cost 1 + children. Rows wrap on mobile beyond ~3 labelled buttons; keep
+- **Limits:** 1–5 buttons **or** exactly 1 select, never mixed (CV2-06).
+  `ActionRow::buttons` is bounded by `Arity<N>: RowButtons` (1..=5): an empty array or
+  6 buttons fail `cargo check` with `[CV2-06] an Action Row holds 1 to 5 buttons`. For a
+  count known only at runtime use `ActionRow::try_buttons(buttons, &limits)` (any
+  `IntoIterator` of one `RowItem` type; `Err(UiError::Limits { .. })`, CV2-06). Cost 1 +
+  children. Rows wrap on mobile beyond ~3 labelled buttons; keep
   labels short.
 - **Builder:** `ActionRow::buttons([b1, b2, …])` (an array of one button type; mix kinds
   by converting each with `Button::from(..)`), `ActionRow::select(select)`. JSON type 1.
@@ -237,7 +248,8 @@ ActionRow::buttons([
 ```
 
 An optional button: build the row in each branch (`match extra { Some(b) =>
-ActionRow::buttons([a, b]), None => ActionRow::buttons([a]) }`).
+ActionRow::buttons([a, b]), None => ActionRow::buttons([a]) }`), or collect a `Vec<Button>`
+and call `ActionRow::try_buttons(buttons, &limits)?`.
 
 ## 9. Buttons (type 2)
 
@@ -267,7 +279,9 @@ generated [planned].
   Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)`,
   `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`. A click reaches the Route's handler
   with the decoded Payload. Default styles per Route (`ComponentRoute`) and
-  `button_with` [planned, Story 9.3]; `label!` literal check [planned, Story 4.4].
+  `button_with` [planned, Story 9.3]. A literal label can be checked at `cargo check`
+  with `label!("Save")` (a `Label`, also usable in a `const`); runtime text (localized
+  labels included) is passed as is or checked with `Label::try_new(text, &limits)`.
 
 ```rust
 ToggleModule { guild, module, enable: !enabled }
@@ -320,7 +334,7 @@ Shared fields of all five:
   within [min, max] (CV2-09). Zero options build (the validator checks them).
 - **Builder:** `route.string_select([SelectOption; N])` (any `IntoIterator<Item =
   SelectOption>`, so a `Vec` works); `SelectOption::new(label, value).description(..)
-  .emoji(..).default(true)`. JSON type 3. `try_string_select` [planned, Story 4.4].
+  .emoji(..).default(true)`. JSON type 3. `try_string_select` [planned].
 
 ```rust
 Size { item }.string_select([
@@ -395,7 +409,7 @@ stickers). Never use it for interactive UI or dashboards (UD-1); use it for plai
 notices.
 
 - `LegacyMessage::new(content)` (`content` length, MSG-01, is checked by
-  `noctis::ui::validate`, §16); `.rows([ActionRow; N])` replaces the rows, N from 0 to 5;
+  `noctis::ui::validate`, §16; `content!("…")` checks a literal at `cargo check`); `.rows([ActionRow; N])` replaces the rows, N from 0 to 5;
   `.mentions(Mentions)`; no `Default`.
 - Getters: `.content_text()`, `.allowed_mentions()`, `.row_count()`.
 - CV2-15: `.rows` is bounded by `Arity<N>: LegacyRows` (implemented for `Arity<0>` to
@@ -478,35 +492,144 @@ is checked by `noctis::ui::validate` (§16).
 | Selects 3,5–8 | no | no | — | alone | inside Label |
 | Label 18, Text Input 4, File Upload 19, Radio 21, Checkbox Group 22, Checkbox 23 | — | — | — | — | see `modals.md` |
 
-## 14. `components!`: literal trees checked at compile time [planned]
+## 14. `components!`: literal trees checked at compile time
 
-For a fixed-shape message, write the tree with `components!` (FR-78). It expands to the
-builders above and fails `cargo check` with the rule id when the literal tree breaks a
-rule: placement (CV2-05), more than 40 components (CV2-03), more than 4000 literal text
-characters (CV2-04), row/section/gallery arity (CV2-06, CV2-07, CV2-10), over-long
-literal labels, placeholders or alt text (CV2-08, CV2-09, CV2-11), and two identical
-literal Route components (CID-02, same Route and same literal Payload).
+For a fixed-shape message, write the tree with `noctis::components!` (in the prelude;
+FR-78). It expands to the builders above and yields a `Components`; when the literal
+tree breaks a rule, `cargo check` fails with the rule id, spanned on the offending node
+or literal.
 
 ```rust
+use noctis::prelude::*;
+use noctis::ui::{ButtonStyle, V2Message};
+
 let body = components! {
     container(accent = rgb!(0x5865_F2)) [
         text("### Server settings"),
         separator(spacing = small),
-        section [ text("Logs go to the channel you pick."); accessory = SetLogs { guild }.button(label!("Change")) ],
-        row [ Save { guild }.button(label!("Save")), Cancel { guild }.button(label!("Cancel")) ],
-        ..extra_rows,                 // spread: an iterator of nodes, checked at runtime
+        section [ text("Logs go to the channel you pick."), text(current); accessory = SetLogs { guild }.button(label!("Change")) ],
+        gallery [ item(card_ref, alt = "Profile card") ],
+        row [ Save { guild }.button("Save").style(ButtonStyle::Primary), link(url = "https://example.com/help", label = "Help") ],
+        row [ Pick { guild }.channel_select().placeholder("Log channel") ],
+        ..extra_rows,                 // spread: any IntoIterator of Container children
     ],
-    {footer},                         // hole: one node you built elsewhere
+    {footer},                         // hole: one component you built elsewhere
 };
 V2Message::new(body)
 ```
 
-Node keywords: `container`, `section` (texts `;` `accessory = …`), `text`, `thumbnail`,
-`gallery [ item(..), … ]`, `file`, `separator`, `row`; buttons and selects are Route
-values with their constructor (`.button(..)`, `.string_select(..)`, …), plus
-`link(url = "…", label = "…")` and `premium(sku)`. A hole counts as 1 component, a
-spread as 0; their real size and all non-literal text are checked by the runtime
-validator before sending. `view!` is the unrelated image Template macro.
+### Grammar
+
+```text
+components! { node,* }
+node      := container | section | text | gallery | file | separator | row | {hole} | ..spread
+container := container [ "(" accent = expr ")" ] "[" node,* "]"
+section   := section "[" text,* ";" accessory = (thumbnail | button | {hole}) "]"
+text      := text "(" string-literal | expr ")"
+thumbnail := thumbnail "(" media [, alt = string-literal | expr] ")"
+gallery   := gallery "[" item,* "]"             (items or {hole}s)
+item      := item "(" media [, alt = string-literal | expr] ")"
+file      := file "(" attachment_ref ")"
+separator := separator [ "(" spacing = small | large [, divider = expr] ")" ]   (keys in any order, each once)
+row       := row "[" (button | {hole}),* "]" | row "[" select "]"
+button    := route.button() | route.button(label) [.setter(..)]* | link(url = "…", label = "…") | premium(sku)
+select    := route.string_select(options) | route.user_select() | route.role_select()
+             | route.mentionable_select() | route.channel_select()   [.setter(..)]*
+hole      := "{" expr "}"                       one already-built component (block statements allowed)
+spread    := ".." expr                          IntoIterator of components; top level or container only
+```
+
+- `media` is a string literal (an `https` URL, becomes `Media::url(..)`) or any
+  expression convertible into `Media` (an `AttachmentRef`, a `Media`).
+- A Route component is any expression whose method chain contains `.button(..)` or
+  `.<kind>_select(..)`: the receiver is the Route value and the calls after it
+  (`.style(..)`, `.label(..)`, `.placeholder(..)`, `.max_values(..)`, `.disabled(..)`,
+  `.emoji(..)`, …) are re-applied in order. `.button(label)` is `.button().label(label)`.
+- `link` needs literal `url` and `label`, in that order. `button_with` arrives with
+  Story 9.3 [planned]. Spreads in a `row`, `section` or `gallery` are a syntax error:
+  build a dynamic row with `ActionRow::try_buttons` and pass it as a `{hole}`.
+- Syntax errors (unknown keyword such as `box [ ]`, a non-component expression at a
+  node position, an unknown or repeated argument) carry no rule id.
+
+### Expansion
+
+Typed builder calls under `::noctis::__private::ui` (no import needed): `container` is
+`Container::new().accent(..).push(..)…`, `section` `Section::new([..], accessory)`,
+`row` `ActionRow::buttons([..])` or `ActionRow::select(..)`, a spread a `for` loop of
+`push`. Holes and spreads therefore still go through the placement traits: a misplaced
+hole is the usual E0277 `[CV2-05]` / `[CV2-07]`. Every expression is evaluated exactly
+once, in source order; the macro's own locals never clash with yours.
+
+### What it checks
+
+Against `Limits::default()`, with the same `noctis-rules` functions and paths as the
+runtime validator:
+
+| Rule | Check |
+| --- | --- |
+| CV2-03 | ≤ 40 components at every depth, accessories included; a hole counts 1, a spread 0; the error is spanned on the node that crosses 40 and has one `= note: kind[i]: n` per top-level node |
+| CV2-04 | ≤ 4000 `discord_len` across literal `text("…")` (top level, Container, Section); non-literal text counts 0; spanned on the literal that crosses 4000 |
+| CV2-05 | `container` in `container`, `thumbnail` outside an accessory, a button or select outside a `row`, `text` in a `row`, `item` outside a `gallery` |
+| CV2-06 | a `row` with 0 or more than 5 items, or a select next to anything |
+| CV2-07 | a `section` with 0 or more than 3 texts, a non-`text` before the `;`, an accessory that is not a button, Thumbnail or hole |
+| CV2-08 | literal button labels (`.button("…")`, `.label("…")`, `link(label = "…")`) ≤ 80; literal link URLs 1–512 |
+| CV2-09 | literal `.placeholder("…")` ≤ 150; literal `min_values` 0–25, `max_values` 1–25, `min ≤ max`; an array-literal `string_select([..])` has 1–25 elements |
+| CV2-10 / CV2-11 | `gallery` with 0 or more than 10 items; literal `alt = "…"` ≤ 1024 |
+| CV2-13 | an integer literal `accent = 0x…` above `0xFFFFFF`; `spacing` other than `small` / `large` |
+| CV2-17 | literal media URLs 1–2048 |
+| CID-02 | two components whose Route value is token-identical and literal (see below) |
+
+Every violation of one invocation is reported in one expansion (in validator order,
+then CID-02), and the expansion is then an empty `Components`. A rule error reads like
+the runtime one: `[CV2-08] row[0].button[0].label: limit at most 80, actual 81`.
+
+**CID-02 scope.** Only receivers fixed by their tokens are compared: a struct literal
+without `..rest` whose every field is a literal (`Press { n: 1 }`), a call of an
+uppercase path with literal arguments (`Page(1)`), or a unit path (`Refresh`). Two such
+receivers with identical tokens (button or select) fail with
+``[CID-02] duplicate custom_id: `Press { n : 1 }` is already used at row[0].button[0]``
+on the second and ``[CID-02] first use of the duplicate custom_id …`` on the first.
+`Press { n }`, `Press { n: x }`, variables and `1` vs `1u8` are not compared.
+
+**Runtime backstop.** Holes, spreads, non-literal text, labels and options are a static
+lower bound only: `noctis::ui::validate` (§16) checks the actual tree before sending.
+`view!` is the unrelated image Template macro.
+
+### Literal macros
+
+| Macro | Yields | Rule | Runtime path (same function) |
+| --- | --- | --- | --- |
+| `label!("…")` | `Label` | CV2-08, ≤ 80 | `Label::try_new(text, &limits)`, `Label::try_from(&'static str / String)` (`validate_button_label`) |
+| `placeholder!("…")` | `Placeholder` | CV2-09, ≤ 150 | `Placeholder::try_new`, `Placeholder::try_from` (`validate_select_placeholder`) |
+| `content!("…")` | `Content` | MSG-01, ≤ 2000 | `Content::try_new`, `Content::try_from` (`message::validate_content`, path `content`) |
+| `rgb!(0x…)` | `Rgb` | CV2-13, `0x000000..=0xFFFFFF` | `Rgb::try_from(u32)` (`validate_accent_color`) |
+
+- All are in the prelude (and at `noctis::label!` etc.), measure with `discord_len`
+  against `Limits::default()`, and work in a `const`
+  (`const SAVE: Label = label!("Save");`).
+- Each takes exactly one literal: `label!(name)`, `label!(1)`, `label!(b"x")`,
+  `label!()` fail with `[CV2-08] label! takes one string literal` (help: use
+  `Label::try_new(text, &limits)`); `rgb!(-1)` / `rgb!(1.0)` with
+  `[CV2-13] rgb! takes one non-negative integer literal`.
+- `Label`, `Placeholder` and `Content` are newtypes over `Cow<'static, str>`
+  (`Debug + Clone + Eq + Hash`) with `as_str()`, `AsRef<str>` and
+  `From<_> for Cow<'static, str>`, so they go wherever a builder takes text
+  (`.label(SAVE)`, `.placeholder(PICK)`, `LegacyMessage::new(content!("…"))`).
+- `try_new` / `TryFrom` return `Err(UiError::Limits { violations })` (empty path, or
+  `content` for MSG-01) and never truncate, even in Lenient mode; truncation is
+  `validate`'s.
+- Localized text is runtime text: pass it as is (`validate` checks it) or through
+  `Label::try_new(s.common.save(), &limits)?`.
+
+#### Checked button label: `Label`
+
+- **Where:** any button label setter (`RouteButton::label`, `LinkButton::label`, and
+  `.button(label)` in `components!`); it converts into `Cow<'static, str>`.
+- **Limits:** CV2-08, at most 80 characters by `discord_len`; never truncated.
+- **Builder:** `label!("Save")` (compile time, `const`-friendly), `Label::try_new(text,
+  &limits)` or `Label::try_from(text)` (runtime, against `Limits::default()`);
+  `.as_str()`. `Placeholder` (CV2-09, `placeholder!`) and `Content` (MSG-01,
+  `content!`) work the same way.
 
 ## 15. Rule functions (`noctis::rules::component`, `message`, `attachment`)
 
@@ -570,6 +693,9 @@ after the fields.
 | `cost(&[Component], &Limits) -> Cost` | CV2-03 count (every node at every depth, Section texts and accessory included, `Opaque(n)` = `max(n, 1)`, options and gallery items not counted) and CV2-04 `discord_len` sum of every Text Display; saturating |
 | `validate_button_label(&str, &Limits) -> Vec<Violation>` | CV2-08 label ≤ 80 (empty is fine); path `""` (what `label!` calls) |
 | `validate_link_url(&str, &Limits)` | CV2-08 link URL 1–512 |
+| `validate_row_buttons(usize, &Limits)` | CV2-06 a count of 1–5 Action Row buttons (what `ActionRow::try_buttons` and `components!` call) |
+| `validate_section_texts(usize, &Limits)` | CV2-07 a count of 1–3 Section texts (what `Section::try_new` calls) |
+| `validate_gallery_items(usize, &Limits)` | CV2-10 a count of 1–10 gallery items (what `MediaGallery::try_new` calls) |
 | `validate_select_placeholder(&str, &Limits)` | CV2-09 placeholder ≤ 150 |
 | `validate_gallery_description(&str, &Limits)` / `validate_thumbnail_description(&str, &Limits)` | CV2-10 / CV2-11 alt text ≤ 1024 |
 | `validate_media_url(&str, &Limits)` | CV2-17 media URL 1–2048 |

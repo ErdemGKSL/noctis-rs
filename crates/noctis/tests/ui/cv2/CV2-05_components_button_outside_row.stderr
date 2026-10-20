@@ -1,0 +1,5 @@
+error: [CV2-05] container[0].button[0]: limit a Button only in an Action Row or as a Section accessory, actual `button`
+ --> tests/ui/cv2/CV2-05_components_button_outside_row.rs:4:39
+  |
+4 |     let _ = components! { container [ link(url = "https://x.y", label = "Docs") ] };
+  |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

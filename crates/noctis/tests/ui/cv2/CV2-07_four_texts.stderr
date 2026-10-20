@@ -1,0 +1,31 @@
+error[E0277]: [CV2-07] a Section holds 1 to 3 Text Displays
+ --> tests/ui/cv2/CV2-07_four_texts.rs:5:26
+  |
+5 |     let _ = Section::new([t(), t(), t(), t()], LinkButton::new("https://x.y"));
+  |             ------------ ^^^^^^^^^^^^^^^^^^^^ not 1 to 3 Text Displays
+  |             |
+  |             required by a bound introduced by this call
+  |
+  = help: the trait `SectionTexts` is not implemented for `Arity<4>`
+  = note: `Arity<4>` is the number of texts; for a length known only at runtime use Section::try_new(texts, accessory, &limits)
+help: the following other types implement trait `SectionTexts`
+ --> $WORKSPACE/crates/noctis-ui/src/arity.rs
+  |
+  |         impl $trait for Arity<$n> {}
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         |
+  |         `Arity<1>`
+  |         `Arity<2>`
+  |         `Arity<3>`
+...
+  | arity!(SectionTexts: 1, 2, 3);
+  | ----------------------------- in this macro invocation
+note: required by a bound in `noctis::ui::Section::new`
+ --> $WORKSPACE/crates/noctis-ui/src/component/layout.rs
+  |
+  |     pub fn new<A: SectionAccessory, const N: usize>(texts: [TextDisplay; N], accessory: A) -> Self
+  |            --- required by a bound in this associated function
+  |     where
+  |         Arity<N>: SectionTexts,
+  |                   ^^^^^^^^^^^^ required by this bound in `Section::new`
+  = note: this error originates in the macro `arity` (in Nightly builds, run with -Z macro-backtrace for more info)

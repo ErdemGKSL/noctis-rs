@@ -1,0 +1,8 @@
+error: [CV2-06] row[0]: limit between 1 and 5, actual 6
+  --> tests/ui/cv2/CV2-06_components_six_buttons.rs:12:9
+   |
+12 | /         row [
+13 | |             Press { n: 1 }.button(), Press { n: 2 }.button(), Press { n: 3 }.button(),
+14 | |             Press { n: 4 }.button(), Press { n: 5 }.button(), Press { n: 6 }.button(),
+15 | |         ],
+   | |_________^

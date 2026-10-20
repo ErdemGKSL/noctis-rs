@@ -1,0 +1,5 @@
+error: [CV2-10] gallery[0]: limit between 1 and 10, actual 0
+ --> tests/ui/cv2/CV2-10_components_empty_gallery.rs:4:27
+  |
+4 |     let _ = components! { gallery [] };
+  |                           ^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: [CV2-10] gallery[0].item[0].description: limit at most 1024, actual 1025
+ --> tests/ui/cv2/CV2-10_components_item_alt_1025.rs:4:69
+  |
+4 | ... = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") ] };
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
