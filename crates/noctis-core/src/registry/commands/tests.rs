@@ -19,6 +19,9 @@ fn fold(modules: &[Module]) -> (String, Vec<String>, Vec<BuildViolation>) {
     let capture = Capture::default();
     let (registry, violations) = {
         let _guard = tracing::subscriber::set_default(capture.subscriber());
+        // Parallel tests may register the `warn!` callsite with no subscriber,
+        // caching `Interest::never`; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
         Registry::fold(modules, Intents::empty())
     };
     let warnings = capture.lines_with(&["noctis::registry", "WARN"]);
@@ -364,5 +367,54 @@ fn cmd_12_failure_logs_no_warning_and_registers_nothing() {
     assert_eq!(warnings, Vec::<String>::new());
     assert!(
         matches!(&violations[..], [BuildViolation::Command(v)] if v.rule == noctis_rules::RuleId::CMD_12)
+    );
+}
+
+/// The word-prefix match stops at a word boundary: `cfgx b` is not below `cfg`.
+#[test]
+fn cmd_04_fallback_respects_word_boundaries() {
+    let a = Module::new("a").add(command("a::b", &["cfgx b"], "X").__with_metadata(
+        CommandMetadata::new().default_member_permissions(Permissions::ADMINISTRATOR),
+    ));
+    let b = Module::new("b").add(command("b::a", &["cfg a"], "Y"));
+    let (tree, warnings) = ok(&[a, b]);
+    let cfg = tree
+        .lines()
+        .find(|line| line.starts_with("  /cfg "))
+        .unwrap_or_default();
+    assert_eq!(cfg, "  /cfg \"Y\"", "{tree}");
+    assert!(
+        warnings
+            .iter()
+            .any(|line| line.contains(&warning("cfg", "scope: global", "cfg a", "b"))),
+        "{warnings:#?}"
+    );
+}
+
+/// A `Module::base` declaration applies in every scope its base exists in.
+#[test]
+fn meta_01_base_meta_in_two_scopes() {
+    let a = Module::new("a")
+        .add(command("a::set", &["config set"], "d"))
+        .add(command_with(
+            "a::get",
+            &["config get"],
+            CommandMetadata::new().guilds(GUILD_42),
+        ))
+        .base(
+            "config",
+            BaseMeta::new()
+                .description("Configure")
+                .default_member_permissions(Permissions::MANAGE_GUILD),
+        );
+    let (tree, warnings) = ok(&[a]);
+    assert_eq!(
+        tree,
+        "global\n  /config \"Configure\" permissions=32\n    set \"d\" -> a::set (a)\n\
+         guild 42\n  /config \"Configure\" permissions=32\n    get \"d\" -> a::get (a)"
+    );
+    assert!(
+        !warnings.iter().any(|line| line.contains("`config`")),
+        "{warnings:#?}"
     );
 }

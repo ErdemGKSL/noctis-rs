@@ -8,8 +8,9 @@ use twilight_model::guild::Permissions;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
+use crate::events::MemberAdd;
 use crate::metadata::BaseMeta;
-use crate::test_support::{command, command_with, leak, leak_paths, message_menu, user_menu};
+use crate::test_support::{command, command_with, leak, leak_paths, message_menu, noop, user_menu};
 use crate::{App, BuildError, BuildViolation, CommandMetadata, Module, Runtime};
 
 fn build(modules: impl IntoIterator<Item = Module>) -> Result<App, BuildError> {
@@ -356,13 +357,25 @@ async fn reg_04_every_violation_at_once() {
         .module(Module::new("e").add(command("e::dup", &["dup x"], "d")))
         .module(Module::new("f").add(command("f::dup", &["dup x"], "d")))
         .module(Module::new("g").add(user_menu("g::show", "Show", CommandMetadata::new())))
-        .module(Module::new("h").add(user_menu("h::show", "Show", CommandMetadata::new())));
+        .module(Module::new("h").add(user_menu("h::show", "Show", CommandMetadata::new())))
+        .module(Module::new("i").add(noop::<MemberAdd>("i::greet")));
     let violations = builder.build().unwrap_err().into_violations();
     assert!(
         matches!(violations[0], BuildViolation::InvalidHttpTimeout { .. }),
         "{violations:?}"
     );
-    let commands: Vec<(RuleId, &str)> = violations[1..]
+    // `MissingIntent` (fold order) precedes every command violation.
+    assert!(
+        matches!(
+            violations[1],
+            BuildViolation::MissingIntent {
+                handler: "i::greet",
+                ..
+            }
+        ),
+        "{violations:?}"
+    );
+    let commands: Vec<(RuleId, &str)> = violations[2..]
         .iter()
         .map(|v| match v {
             BuildViolation::Command(v) => (v.rule, v.path.as_str()),
@@ -565,4 +578,81 @@ async fn reg_02_guild_counts() {
     let [a, b] = split_modules(100, 100, |i| format!("c{i}"), CommandMetadata::new());
     let [c, d] = split_modules(100, 100, |i| format!("c{i}"), guild);
     build([a, b, c, d]).unwrap();
+}
+
+/// Hand-built option structs: 25 options of 103 characters each (name `oNN`
+/// plus a 100-character description), or of 4 characters each.
+mod sized_options {
+    use noctis_rules::command::{OptionDecl, OptionType};
+
+    use crate::options::{CommandInput, OptionError, Options};
+
+    const D100: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddd\
+                        dddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+    macro_rules! options {
+        ($name:ident, $description:expr) => {
+            pub(super) struct $name;
+
+            impl Options for $name {
+                const OPTIONS: &'static [OptionDecl<'static>] = &options!(@decls $description;
+                    "o00" "o01" "o02" "o03" "o04" "o05" "o06" "o07" "o08" "o09" "o10" "o11"
+                    "o12" "o13" "o14" "o15" "o16" "o17" "o18" "o19" "o20" "o21" "o22" "o23"
+                    "o24");
+                fn from_input(_: &CommandInput) -> Result<Self, OptionError> {
+                    Ok(Self)
+                }
+            }
+        };
+        (@decls $description:expr; $($option:literal)*) => {
+            [$(OptionDecl::new($option, OptionType::String, $description)),*]
+        };
+    }
+
+    options!(Big, D100);
+    options!(Small, "d");
+}
+
+/// `x s0`, `x s1` in Module `a` and `x s2`, `x s3` in Module `b`, each
+/// leaf with 25 options of `O`, under an explicitly described base.
+fn optioned_tree<O: crate::options::Options>() -> [Module; 2] {
+    fn leaf<O: crate::options::Options>(path: &'static [&'static str]) -> crate::CommandHandler {
+        crate::CommandHandler::__new_plain_with_options(
+            "m::h",
+            path,
+            "d",
+            |_: crate::CommandCtx, _: O| async { Ok(()) },
+        )
+    }
+    [
+        Module::new("a")
+            .base("x", BaseMeta::new().description("d"))
+            .add(leaf::<O>(&["x s0"]))
+            .add(leaf::<O>(&["x s1"])),
+        Module::new("b")
+            .add(leaf::<O>(&["x s2"]))
+            .add(leaf::<O>(&["x s3"])),
+    ]
+}
+
+/// CMD-05 counts handler options after merging: each Module's half
+/// (`2 * (2 + 1 + 25 * 103)` = 5156) fits, the merged tree (10314) does not.
+#[tokio::test]
+async fn cmd_05_merged_options_size() {
+    build(optioned_tree::<sized_options::Small>()).unwrap();
+    for half in optioned_tree::<sized_options::Big>() {
+        build([half]).unwrap();
+    }
+    let errs = failing(optioned_tree::<sized_options::Big>());
+    assert_eq!(rules(&errs), [RuleId::CMD_05]);
+    assert_eq!(errs[0].path, "x");
+    assert_eq!(errs[0].actual, Actual::Count(10314));
+    assert_eq!(
+        errs[0].notes,
+        [
+            "longest variant per field",
+            "contributed by `a`, `b`",
+            "scope: global"
+        ]
+    );
 }

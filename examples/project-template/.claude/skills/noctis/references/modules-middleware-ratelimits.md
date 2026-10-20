@@ -8,12 +8,14 @@ limits. FR-5, FR-6, FR-20, FR-22, FR-44..47, FR-73; AD-7, AD-23.
 
 ```rust
 use noctis::prelude::*;                    // Module, #[event], EventCtx, HandlerResult, …
+use noctis::BaseMeta;                      // Module::base metadata (not in the prelude)
 
 pub fn module() -> Module {
     Module::new("profile")                 // path-like id: "a/b/c"
         .add(award_xp())                   // #[event]
-        .add(profile())                    // #[command]
-        .base("profile", BaseMeta::new().description("Show a profile card"))  // base command
+        .add(profile_show())               // #[command("profile show")]
+        .add(badges_list())                // #[command("profile badges list")]
+        .base("profile", BaseMeta::new().description("Profile commands"))  // base command
         .group("profile badges", "Manage badges")   // subcommand group description
         .add(open_profile())               // #[handler] [planned, Epic 7]
         .template::<ProfileCard>()         // image Templates [planned]

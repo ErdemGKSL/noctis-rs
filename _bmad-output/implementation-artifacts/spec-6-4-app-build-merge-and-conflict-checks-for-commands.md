@@ -2,10 +2,10 @@
 title: 'Story 6.4: App-build merge and conflict checks for Commands'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'c7901aa0b63da004c5d62e3bd68fc21bbc87bbc8'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-6-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -257,6 +257,44 @@ Lines are joined by `\n` with no trailing newline.
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 34 findings — high 0, medium 5, low 20, false 9, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` Usage Skill `modules-middleware-ratelimits.md` §1 snippet would fail `App::build` and does not compile — confirmed: the template's `profile` handler describes itself "Show a member's profile card", so `.base("profile", ..description("Show a profile card"))` is REG-04 (`check_descriptions`), `.group("profile badges", ..)` has no handler below it (REG-04 orphan, or CMD-12 next to the invokable `profile`), and `BaseMeta` is not in `noctis::prelude`; patch: make the base/group lines consistent and import `BaseMeta`.
+  - `[low]` `[reject]` A base present in several scopes cannot declare `contexts`/`integration_types` via `BaseMeta` (META-03 in the guild copy) — real but fails loudly and has a workaround (set them on the global handlers); a scoped declaration needs new public surface the spec excludes ("No `BaseMeta.guilds`").
+  - `[low]` `[reject]` Orphan `base`/`group` declaration always reported as `scope: global` — the declaration has no scope of its own; the spec (Approach, Matrix 25) prescribes the single `Global` decl; cosmetic.
+  - `[low]` `[reject]` `Module::base`/`group` paths are not spacing-checked; `group("config  set", ..)` reports REG-04 orphan instead of CMD-02 — confirmed (orphan meta decls skip `validate_name`), but the build still fails loudly naming the exact path; a new check is more than a direct correction for a rare typo.
+  - `[low]` `[reject]` `Module::base` with a multi-word name and description only silently acts like `group` — the description lands on the named node, which is a valid result; rejecting it needs a new check; no harm shown.
+  - `[medium]` `[patch]` Fallback-warning assertions in `registry/commands/tests.rs` can flake (no `rebuild_interest_cache`) — confirmed: `fold` uses `set_default` without `tracing::callsite::rebuild_interest_cache()`, while App tests in the same binary hit the same `warn!` callsite with no subscriber; the same diff fixes this race in `noctis-ui/tests/validate.rs`; patch: rebuild the interest cache after `set_default`.
+  - `[low]` `[reject]` `Commands::scope` is a linear search over scopes — scopes are one per guild id plus global, a handful in practice; the spec asks O(1) path/menu maps per scope, which exist; restructuring is not a direct correction.
+  - `[low]` `[reject]` Quadratic passes in `lower`/`add_fallbacks`/`build_scope` — startup-only, on tens to hundreds of declarations; no measurable harm shown; an index rewrite adds complexity.
+  - `[low]` `[reject]` Uncapped `registered by` note on REG-01/02 — the note format is the spec's; long only for very large Apps; truncation adds branches.
+  - `[low]` `[reject]` Fallback-borrowed CMD-04 on a base gives no "fallback from" provenance; `else continue` effectively unreachable — `#[command]` validates CMD-04 at compile time, so only doc-hidden hand-built handlers reach it; the unreachable branch is harmless.
+  - `[low]` `[patch]` `docs/discord-rules.md` repeats the merge sentence in nine rows and the CMD-06 row now says REG-04 twice — the per-row sentence is what the spec asked (rejected part); the CMD-06 row's leftover "Two Modules contributing ... (see REG-04)." duplicates the new sentence; patch: delete the redundant sentence.
+  - `[low]` `[reject]` Missing end-to-end tests (fallback warning via `App::build`, nested child Module declarations, global+guild declarations, `group` on 1/3-word paths) — the multi-scope part is the verification-gap finding patched below; nested folding reuses the existing pre-order walk; the rest is not required by the spec and the Registry tests cover the warning.
+  - `[low]` `[reject]` `App::registry()` and render code now compiled in release builds for the `__testing` seam — `__testing` is a pre-existing unconditional `#[doc(hidden)]` module and the spec puts `command_tree` there; negligible binary cost.
+  - `[low]` `[reject]` `BuildViolation::Command` exposes `noctis_rules::Violation` directly — the spec mandates `Command(noctis_rules::Violation)`; `noctis_rules` is re-exported by the facade (`noctis::rules`), so no new coupling is introduced by wrapping or not.
+  - `[low]` `[reject]` An invalid leaf description feeds the fallback, giving an extra CMD-04 "declared by" on an undeclared base — only doc-hidden hand-built handlers can carry an invalid description; the build fails either way.
+  - `[low]` `[reject]` Multi-word `Module::base` with description only acts as a group declaration — same as the blind-layer finding above; benign result, a new check is not a direct correction.
+  - `[low]` `[reject]` Duplicate guild ids in hand-built `CommandMetadata.guilds` give a REG-04 duplicate — the macro rejects `duplicate guild id` (`noctis-macros/src/meta.rs`); hand-built only, and the failure is loud.
+  - `[medium]` `[patch]` Parallel tests cache `Interest::never` for the fallback `warn!` callsite — same root cause as the flaky-assertion entry above; fixed by the same patch.
+  - `[low]` `[reject]` Fallback warnings are logged even when the App build then fails on non-command violations — matches the spec ("only when the command checks pass"); moving the logging needs a new return path; noise only.
+  - `[low]` `[reject]` CMD-01..03 name violations from `validate_name` carry no Module note — confirmed in `check_node`, but only hand-built handlers reach it (the macro checks names at compile time; an invalid `base`/`group` word becomes a REG-04 orphan with `declared by`); adding a note path is not a direct correction.
+  - `[medium]` `[patch]` (gap) Handler options lowered into App-build CMD-05/CMD-13 are never exercised by an App-build test — pre-verified; patch: add an App-build test splitting option-heavy hand-built handlers (`__new_plain_with_options`) under one base over two Modules that fails CMD-05 with `contributed by`, and an at-limit pass.
+  - `[low]` `[patch]` (gap) `is_word_prefix` word boundary untested; a `starts_with` regression passes every test — pre-verified; patch: add a Registry test with `cfg a` / `cfgx b` (different descriptions and metadata) asserting `/cfg` takes description and metadata only from `cfg a`.
+  - `[low]` `[patch]` (gap) Base/group declarations applying in every scope tested only for a single-scope node — pre-verified (lowering itself verified correct); patch: add a Registry test with a base in global and guild scope plus one `Module::base(description, permissions)` asserting both trees carry it and no warning.
+  - `[medium]` `[patch]` (gap) Fallback-warning assertions race with parallel App tests — same root cause and patch as the flaky-assertion entry.
+  - `[low]` `[patch]` (gap) Documented order `MissingIntent` before `Command` not pinned — filed `defer`, but the order contract is new in this story, so it is this story's; patch: one assertion with a privileged-intent handler in `reg_04_every_violation_at_once` (or a sibling test).
+  - `[false]` `[reject]` (intent) Fallback limited to descriptions, not every undeclared metadata field — deliberately and correctly settled by the spec's Design Notes (FR-9 forbids first wins; FR-57 is about descriptions).
+  - `[false]` `[reject]` (intent) Localized base/group descriptions missing — the spec's Never list defers localized descriptions to Epic 11.
+  - `[false]` `[reject]` (intent) Fallback and warning happen at App build rather than Publish — AC3 names no stage; Publish does not exist until 6.9; resolving at build is earlier and deterministic.
+  - `[false]` `[reject]` (intent) Single-source rules name one Module, not "both" — the spec's Module-notes decision settles this (aggregate rules list every contributing Module).
+  - `[false]` `[reject]` (intent) One `BuildViolation::Command` variant instead of one per class — spec Approach settles it; tests assert variant plus rule id.
+  - `[false]` `[reject]` (intent) Registry observed only through `__testing::command_tree` — spec settles it; dispatch consumers arrive in 6.5.
+  - `[false]` `[reject]` (intent) No App-build CMD-06 check across Modules — spec Design Note "CMD-06" settles it (REG-04 duplicate path).
+  - `[false]` `[reject]` (intent) Tie-break uses `Module::id()` rather than an ancestor-built path — `Module::new` takes the full path-like id (`"a/b/c"`), so `id()` is that id; no ancestor composition exists to diverge from.
+  - `[false]` `[reject]` (intent) `rules-pending.toml` clause vacuous — the spec's Code Map records that no 6.4 entries existed; AC4 is satisfied with the file unchanged.
+
 ## Design Notes
 
 **Which "undeclared metadata" (decision).** AD-7's "undeclared metadata takes the value from the lexicographically first Module id" implements FR-57, which is about base and group **descriptions**. For permissions, contexts, integration types and nsfw, FR-9 forbids "first wins". The Epic 1 rule stands (without an explicit base declaration, unset is a value and must agree), so the fallback applies only to descriptions. Discord requires a description on bases and groups, so the fallback is a leaf description from the smallest Module id.
@@ -284,3 +322,22 @@ Lines are joined by `\n` with no trailing newline.
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok (MSRV)
+
+## Auto Run Result
+
+- **Summary:** `App::build` lowers every Module's `#[command]` handlers plus `Module::base`/`Module::group` declarations into a per-scope command Registry, runs the merge/conflict rules (REG-01..04, CMD-04/05/06/10/12/13) across Modules with "contributed by"/"declared by" Module notes, and fails with `BuildViolation::Command(noctis_rules::Violation)` (ordered after `MissingIntent`). Undeclared base/group descriptions fall back to the leaf description of the lexicographically smallest Module id, with a warning; other metadata must agree (FR-9).
+- **Files changed:**
+  - `crates/noctis-core/src/registry/commands.rs` (+tests): per-scope command tree, lowering, description fallback, merge checks.
+  - `crates/noctis-core/src/{app.rs,error.rs,module.rs,metadata.rs,registry.rs,lib.rs,test_support.rs}`: build wiring, `BuildViolation::Command`, `Module::base`/`group`, `BaseMeta`, `__testing::command_tree`.
+  - `crates/noctis-core/src/app/tests/commands.rs`: App-build tests.
+  - `crates/noctis-rules/src/command/{merge,mod,tree}.rs`: Module source notes on aggregate rules.
+  - `crates/noctis/src/lib.rs`, `crates/noctis/tests/{merge.rs,boundary/reg.rs}`: facade re-exports and integration tests.
+  - `crates/noctis-ui/tests/validate.rs`: tracing interest-cache fix.
+  - `docs/discord-rules.md`, `examples/project-template/**`, `xtask/public-api.txt`: rules doc, template, Usage Skill and API hash.
+- **Review findings:** 34 (high 0, medium 5, low 20, false 9).
+  - Patched (8 entries; medium 5, low 3 at entry verdict): Usage Skill base/group snippet fixed and `BaseMeta` imported; fallback-warning test flake fixed with `rebuild_interest_cache` (3 entries, one root cause); CMD-05 App-build test across two Modules plus at-limit pass; `is_word_prefix` boundary test; multi-scope base declaration test; `MissingIntent`-before-`Command` order assertion; redundant CMD-06 sentence removed from `docs/discord-rules.md`.
+  - Deferred: none.
+  - Rejected (17 low, 9 false), with reasons per the triage log: scoped `BaseMeta` contexts (needs excluded surface; loud failure), orphan decl reported as global (spec-prescribed), unchecked spacing in `Module::base`/`group` paths (loud REG-04), multi-word `base` acting as group (twice; benign), linear scope search and quadratic startup passes (small n), uncapped notes (spec format), CMD-04 provenance on hand-built handlers, missing extra e2e tests (covered elsewhere), `__testing` in release (pre-existing), direct `Violation` exposure (spec-mandated), invalid leaf description fallback, duplicate hand-built guild ids, warnings before failed builds (spec), name violations without Module note (hand-built only); 9 intent findings settled by spec Design Notes (description-only fallback, Epic 11 localization, build-time fallback, Module notes, single variant, `__testing` observation, CMD-06, `Module::id` tie-break, unchanged `rules-pending.toml`).
+- **Follow-up review recommended: true** (first pass, 5 medium patched). Named risk: the tracing interest-cache fix for the fallback-warning tests is a concurrency fix verified only by passing runs, and the new App-build CMD-05/multi-scope tests plus the rewritten Usage Skill snippet have not had an independent review.
+- **Verification:** all local gates green via `gates.sh` (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by the maintainer.
+- **Residual risks:** a base present in several scopes cannot declare contexts/integration types through `BaseMeta`; spacing typos in `Module::base`/`group` paths surface as REG-04 orphans rather than CMD-02; quadratic lowering on very large Apps.
