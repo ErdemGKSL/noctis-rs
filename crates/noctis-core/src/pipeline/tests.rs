@@ -16,10 +16,11 @@ use twilight_model::gateway::event::Event;
 use twilight_model::gateway::payload::incoming::MessageCreate;
 
 use super::*;
+use crate::edge::test_support::Answer;
 use crate::events::{EventCtx, EventHandler};
 use crate::options::__options::required;
 use crate::options::{OptionError, OptionValue, Options};
-use crate::responder::tests::{Fixture, discord, v2};
+use crate::responder::tests::{Fixture, discord, skip, v2};
 use crate::responder::{ResponderError, Visibility};
 use crate::test_support::{Capture, Recording, Seen};
 use crate::{
@@ -55,7 +56,16 @@ impl Pipeline {
 
     /// As [`Pipeline::start`], with `configure` applied to the builder.
     async fn start_with(module: Module, configure: impl FnOnce(&mut AppBuilder)) -> Self {
-        let server = crate::edge::test_support::TestServer::start_with(false, discord()).await;
+        Self::start_answering(module, discord(), configure).await
+    }
+
+    /// As [`Pipeline::start_with`], with the upstream answering `answer`.
+    async fn start_answering(
+        module: Module,
+        answer: Answer,
+        configure: impl FnOnce(&mut AppBuilder),
+    ) -> Self {
+        let server = crate::edge::test_support::TestServer::start_with(false, answer).await;
         let sink = Arc::new(Recording::default());
         let mut builder = App::builder();
         builder
@@ -970,7 +980,16 @@ async fn int_01_auto_defer_at_deadline() {
         .add(
             sleeper("m::hidden", &["hidden"], Duration::from_millis(300))
                 .__with_ephemerality(Ephemerality::Ephemeral),
-        );
+        )
+        .add(ContextMenuHandler::__new_user(
+            "m::show",
+            "Show",
+            CommandMetadata::new(),
+            |_: CommandCtx, _: ResolvedUser, _: CommandResponder| async {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                Ok(v2("late"))
+            },
+        ));
     let p = Pipeline::start_with(module, |b| {
         b.ack_deadline(Duration::from_millis(50));
     })
@@ -994,9 +1013,25 @@ async fn int_01_auto_defer_at_deadline() {
         p.requests()[2].2,
         json!({ "type": 5, "data": { "flags": 64 } })
     );
+    // A context menu is auto-deferred too.
+    let user_data = json!({
+        "id": "9", "name": "Show", "type": 2, "target_id": "11",
+        "resolved": { "users": { "11": user("11") } }
+    });
+    p.run(inbound(&interaction(user_data, json!({})))).await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 6, "{requests:?}");
+    assert_eq!(
+        requests[4],
+        (Method::POST, CB.to_owned(), json!({ "type": 5 }))
+    );
+    assert_eq!(
+        (&requests[5].0, requests[5].1.as_str()),
+        (&Method::PATCH, ORIGINAL)
+    );
     assert!(p.reports().is_empty());
     let (deferred, latencies) = metrics.read();
-    assert_eq!((deferred, latencies.len()), (2, 2));
+    assert_eq!((deferred, latencies.len()), (3, 3));
     assert!(
         latencies.iter().all(|l| (0.05..1.0).contains(l)),
         "{latencies:?}"
@@ -1019,7 +1054,48 @@ async fn int_01_auto_defer_at_deadline() {
     let requests = p.requests();
     assert_eq!(requests[0].2, json!({ "type": 5 }));
     assert_eq!(requests[1].0, Method::PATCH);
-    assert_eq!(metrics.read().0, 3);
+    assert_eq!(metrics.read().0, 4);
+}
+
+/// INT-02: `run_interaction` hands the interaction's channel to the
+/// transport, so after 15 minutes the original (id 77 from the
+/// `with_response` callback, which names no channel) is edited in it with
+/// the bot token.
+#[tokio::test]
+async fn int_02_fallback_uses_the_interaction_channel() {
+    let base = discord();
+    let answer: Answer = Arc::new(move |seen: &crate::edge::test_support::Seen| {
+        if seen.path.ends_with("/callback") && seen.query.as_deref() == Some("with_response=true") {
+            let body = br#"{"interaction":{"id":"100","type":2},"resource":{"type":4,"message":{"id":"77"}}}"#;
+            (hyper::StatusCode::OK, bytes::Bytes::from_static(body))
+        } else {
+            base(seen)
+        }
+    });
+    let module = Module::new("m").add(CommandHandler::__new_plain(
+        "m::later",
+        &["later"],
+        "d",
+        |_: CommandCtx, r: CommandResponder| async move {
+            let acked = r.reply(v2("a")).await?;
+            skip(Duration::from_mins(15)).await;
+            acked.edit_original(v2("b")).await?;
+            Ok::<_, HandlerError>(acked.done())
+        },
+    ));
+    let p = Pipeline::start_answering(module, answer, |_| {}).await;
+    p.run(inbound(&interaction(
+        slash("later", json!([])),
+        json!({ "channel": { "id": "12", "type": 0 } }),
+    )))
+    .await;
+    assert!(p.reports().is_empty(), "{:?}", p.reports());
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(
+        (&requests[1].0, requests[1].1.as_str()),
+        (&Method::PATCH, "/api/v10/channels/12/messages/77")
+    );
 }
 
 /// Story 6.6 Matrix 1, 8, 9 and 40: a reply before the deadline, an

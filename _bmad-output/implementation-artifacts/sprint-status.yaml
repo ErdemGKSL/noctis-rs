@@ -88,7 +88,7 @@ development_status:
   6-3-command-metadata-and-context-menu-commands: done
   6-4-app-build-merge-and-conflict-checks-for-commands: done
   6-5-command-pipeline-and-the-responder-typestate: done
-  6-6-automatic-deferral-token-lifetime-and-follow-up-cap: in-progress
+  6-6-automatic-deferral-token-lifetime-and-follow-up-cap: done
   6-7-autocomplete: backlog
   6-8-user-facing-errors-built-in-notices-and-panics-as-responses: backlog
   6-9-publish-with-diff-dry-run-and-cli-modes: backlog

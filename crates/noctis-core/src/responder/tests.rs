@@ -638,7 +638,7 @@ fn discord_with_message() -> Answer {
 
 /// Moves the clock `by` forward (the token lifetime is measured on it),
 /// then lets it run again so real I/O keeps working.
-async fn skip(by: Duration) {
+pub(crate) async fn skip(by: Duration) {
     tokio::time::pause();
     tokio::time::advance(by).await;
     tokio::time::resume();
@@ -789,6 +789,43 @@ async fn already_acknowledged_reply_has_no_known_id() {
     assert!(matches!(err, ResponderError::TokenExpired), "{err}");
     let _ = acked.done();
     assert_eq!(fx.requests().len(), 1);
+}
+
+/// INT-02: a deferred original learns its id and channel from the
+/// `PATCH @original` response, so after 15 minutes it falls back to the
+/// bot token.
+#[tokio::test]
+async fn deferred_original_learns_its_id_from_the_edit() {
+    let base = discord();
+    let answer: Answer = Arc::new(move |seen: &Seen| {
+        if seen.method == Method::PATCH && seen.path.ends_with("/@original") {
+            (
+                StatusCode::OK,
+                Bytes::from_static(br#"{"id":"88","channel_id":"9"}"#),
+            )
+        } else {
+            base(seen)
+        }
+    });
+    let fx = Fixture::start(answer).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let acked = responder(&shared)
+        .defer(Ephemerality::Public)
+        .await
+        .unwrap();
+    acked.edit_original(v2("a")).await.unwrap();
+    skip(Duration::from_mins(15)).await;
+    acked.edit_original(v2("b")).await.unwrap();
+    acked.delete_original().await.unwrap();
+    let _ = acked.done();
+    assert_eq!(
+        routes(&fx, 1),
+        [
+            (Method::PATCH, ORIGINAL.to_owned()),
+            (Method::PATCH, "/api/v10/channels/9/messages/88".to_owned()),
+            (Method::DELETE, "/api/v10/channels/9/messages/88".to_owned()),
+        ]
+    );
 }
 
 /// INT-11 (Matrix 37 and 38): validation precedes the slot; a rejected

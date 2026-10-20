@@ -2,10 +2,10 @@
 title: 'Story 6.6: Automatic deferral, token lifetime and follow-up cap'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '9a9d84242aeb50a61f50d256759fe8d5aead808b'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-6-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -296,6 +296,40 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 30 findings — high 0, medium 4, low 12, false 14, maybe-false 0
+- findings:
+  - `[false]` `[reject]` blind: Dispatcher + declared-ephemeral Command can no longer finish after a Public defer — the baseline `edit_original` already returned `EphemeralUnsupported` for `(Transport::Message, None)` with a declared-ephemeral Command, so the old `finish` path failed identically.
+  - `[false]` `[reject]` blind: bot-token fallback tried for user-install-only interactions where the bot cannot reach the channel — Design Notes "Token expiry" deliberately settle this ("Bot-token edits fail where the bot is not in the guild (user installs): the result is a `Rejected`"), as does Matrix 26.
+  - `[false]` `[reject]` blind: token expiry measured from gateway receipt, not interaction creation — the intent contract fixes every deadline and expiry to `InteractionTarget::received_at`; spec Design Notes say "Exactly 15 min from `received_at`".
+  - `[false]` `[reject]` blind: explicit `defer(Ephemeral)` after a public auto-defer silently keeps public visibility — Matrix 9 prescribes exactly "no HTTP, `Ok(Acked)` (no-op, debug log)"; Discord cannot change the visibility of an acknowledged interaction either way.
+  - `[low]` `[reject]` blind: auto-defer failure log drops the cause — real (`auto_defer` returns `bool`), but the spec dictates the bool and the handler's own reply surfaces the typed error; failures are rare and the fix changes the spec'd signature.
+  - `[low]` `[reject]` blind: auto-defer armed before `execute`'s cancellation check can ack an interaction whose handler never runs — only during shutdown with a deadline already passed, inside a microsecond window before `drop(timer)`; the user sees an unresolved interaction either way.
+  - `[false]` `[reject]` blind: `opens_modal` log text says 3 s and races an in-flight `modal()` — the text is the spec's wording, and the task fires at `received_at + ACK_DEADLINE`, the same instant the edge cuts any in-flight callback with `DeadlineMissed`, so the log is accurate.
+  - `[low]` `[reject]` blind: `with_response` callback's `channel_id` is discarded — fallback then relies on `interaction.channel`, which application-command interactions carry; Matrix 33 covers its absence; unlikely in practice.
+  - `[low]` `[reject]` blind: real-time windows in `int_01_*`/`timer_stops_with_the_handler` are fragile — margins are 250 ms or more and comply with the 1 s sleep rule; CI is paused; not worth reworking now.
+  - `[medium]` `[patch]` blind: tests missing for added paths (menu auto-defer, PATCH-learned id, cap race/order, 40060 latency) — parts (a) and (b) are real and grouped with the vgap entries below (PATCH-learned id; menu auto-defer); parts (c) and (d) are design-order and metric-nuance points not worth a test.
+  - `[low]` `[reject]` blind: late reply runs `prepare` twice — idempotent, the duplicate lines are `debug` level only; fix adds an internal function.
+  - `[low]` `[reject]` blind: `execute` aborts an in-flight auto-defer callback — only on handler `Err`/panic/cancel/`Done`, which the intent contract requires to abort through the drop guard; effect is a missing metric sample on an error path.
+  - `[low]` `[reject]` blind: no doc says the timer covers future middleware/guards — the pipeline stage order already places stage 6 before 7 and 8; doc-only, for future stories.
+  - `[low]` `[reject]` blind: `InvalidAckDeadline` prints `actual` with `Debug` next to "0 ms..=2500 ms" — cosmetic; the message is the spec's wording and matches the `InvalidShutdownGrace` pattern.
+  - `[low]` `[reject]` edge: `drop(timer)` cancels an in-flight auto-defer — same as the blind abort finding above; mandated by the intent contract, error paths only.
+  - `[low]` `[reject]` edge: ambiguous auto-defer failure (transport error after Discord accepted) leaves Pending, so a later type-4 hits 40060 and is lost — needs both hedged attempts to fail after Discord accepted plus a handler reply in the sub-second window before the 2.9 s edge deadline; the fix adds a new state against Matrix 11.
+  - `[false]` `[reject]` edge: expiry near the boundary fails at Discord — same as the blind expiry finding; the intent contract measures from `received_at`.
+  - `[false]` `[reject]` edge: bot-token route for user-install-only/private channels — same as the blind fallback finding; Design Notes settle `Rejected`.
+  - `[low]` `[reject]` edge: cap slot consumed when `transport.followup` fails locally (`InvalidToken`) before HTTP — tokens arrive from Discord and pass the check in practice; spec says slots are never refunded.
+  - `[low]` `[reject]` edge: `edit_original`/`followup`/`delete_original` after `modal()` hit Discord for a non-existent original — the `modal` doc tells authors to return `done()`, Discord's answer surfaces as `Rejected`; the fix adds guards.
+  - `[false]` `[reject]` edge: spurious `opens_modal` error while a modal callback is in flight — the log fires at the edge's own 2.9 s deadline, which cuts that callback.
+  - `[medium]` `[patch]` vgap: the original's id learned from a `PATCH @original` response is never exercised, so the post-auto-defer bot-token fallback is unverified — add a responder test where PATCH answers `{"id":"88","channel_id":"9"}`, then after 15 min `edit_original`/`delete_original` hit `/channels/9/messages/88`.
+  - `[medium]` `[patch]` vgap: `run_interaction`'s wiring of `channel.id` into `InteractionTarget.channel_id` is untested; every fallback test hard-codes channel 9 — add a pipeline test that replies, advances 15 min, edits, and asserts `/channels/X/messages/77`.
+  - `[medium]` `[patch]` vgap: context menus are auto-deferred but no test runs a menu past its deadline — add a menu case (sleeping user menu, `ack_deadline(50 ms)`) asserting `{"type":5}` then `PATCH @original`.
+  - `[false]` `[reject]` intent: AC3 fallback narrower (deferred original never edited → `TokenExpired`) — Matrix 28 and Design Notes settle it correctly: a type-5 callback has no message to name, and the late PATCH within 15 min records the id.
+  - `[false]` `[reject]` intent: `opens_modal` error uses 2.9 s, not `ack_deadline` — Matrix 18 prescribes `received_at + 2900 ms`.
+  - `[false]` `[reject]` intent: 5 s late delivery tested on a mixed clock with a returned message — Matrix 5 specifies a returned `V2Message` at +5 s virtual, which the test advances with `pause`/`advance`; `reply` after the auto-defer is covered by `int_03_*`.
+  - `[false]` `[reject]` intent: AL recorded for every initial callback; metrics excluded from recorded-set checks — Matrix 1, 17 and 40 require AL on every initial callback; the exclusions are documented and covered by `int_01_auto_defer_at_deadline`.
+  - `[false]` `[reject]` intent: `with_response=true` wire change and additions (`ModalUnavailable`, type-9 `modal`, defer no-op, `/bio`) — each is prescribed by the spec (Tasks 2 and 11, Matrix 9, 17, 21).
+  - `[false]` `[reject]` intent: hedged-path claim structural, not tested — the spec requires routing through `Edge::interaction_callback`, whose hedging Story 5.9 tests.
+
 ## Design Notes
 
 **Gate over CAS (decision).** One `tokio::sync::Mutex<()>` around every initial response is simpler than a CAS state machine with in-flight states. It also makes a loser *wait* until the winner's callback has completed: a `PATCH @original` sent before the defer lands would 404. The atomic stays for cheap reads (`finish`, the INT-05 log). This also closes the 6.5 two-callback race.
@@ -337,3 +371,12 @@ impl Drop for AbortOnDrop { fn drop(&mut self) { self.0.abort(); } }
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok
+
+## Auto Run Result
+
+- **Summary:** Commands and context menus are auto-deferred (type 5, `with_response=true`) at `received_at + ack_deadline` (default 2.5 s, validated 0..=2500 ms) by a spawned, abort-on-drop task; one `tokio::sync::Mutex` gate serializes every initial response (closes the 6.5 two-callback race). Interaction tokens expire 15 min after `received_at`; afterwards `edit_original`/`delete_original` fall back to bot-token `/channels/{c}/messages/{id}` when the original's id is known (callback or PATCH response), else `TokenExpired`. Follow-ups are capped (slots never refunded). `opens_modal` commands are never auto-deferred; INT-05 compile checks pair `opens_modal` with a modal responder; explicit `defer` after an auto-defer is a no-op.
+- **Files changed:** `crates/noctis-core/src/responder/*` (gate, auto-defer, expiry fallback, cap, tests); `crates/noctis-core/src/pipeline/*` (timer wiring, `channel_id` into `InteractionTarget`, tests); `crates/noctis-core/src/responder/transport.rs` (with_response callback, bot-token routes); `crates/noctis-macros/src/command.rs` (INT-05 checks); `crates/noctis/src/lib.rs`, `crates/noctis/tests/commands.rs`, trybuild `ui/int/INT-05_*` and refreshed `.stderr`; testkit tests; `docs/discord-rules.md`, `xtask/rules-pending.toml`, `xtask/public-api.txt`; `examples/project-template/` (AGENTS.md, Usage Skill references + API hash, `/bio` modal example, locales).
+- **Review findings:** 30 findings (high 0, medium 4, low 12, false 14). Patched: 4 medium (grouped into 3 fixes) - PATCH-learned original id drives the post-15-min bot-token fallback (new responder test), `run_interaction` wiring of `channel.id` (new pipeline test), context-menu auto-defer past deadline (new menu test), plus the blind test-gap finding grouped with them. Deferred: none. Rejected: 12 low (auto-defer log drops cause; pre-cancel arming window; `with_response` channel_id discarded; real-time test windows; double `prepare`; abort of in-flight auto-defer on error paths x2; no timer/middleware doc; `InvalidAckDeadline` Debug formatting; ambiguous auto-defer failure leaving Pending; cap slot consumed on local `InvalidToken`; post-`modal()` original calls) and 14 false (spec-prescribed behavior per Matrix/Design Notes) - reasons recorded in the Review Triage Log.
+- **Follow-up review recommended:** true (patched counts: high 0, medium 4). Named risk: the new fallback/wiring tests exercise the bot-token fallback path for the first time; the interaction between the init gate, the PATCH-learned id and the 15-min expiry is not yet independently re-reviewed.
+- **Verification:** all local gates via `gates.sh` green (fmt, clippy -D warnings, release tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by the maintainer.
+- **Residual risks:** ambiguous auto-defer failure (Discord accepted, transport errored) can leave state Pending so a later type-4 hits 40060; bot-token fallback returns `Rejected` for user-install-only contexts by design; real-time test windows (>=250 ms margins) could flake on very slow runners.
