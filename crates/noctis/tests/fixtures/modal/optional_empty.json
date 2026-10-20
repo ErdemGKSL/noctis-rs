@@ -1,0 +1,21 @@
+{
+  "id": "1300000000000000005",
+  "application_id": "1200000000000000001",
+  "type": 5,
+  "token": "aW50ZXJhY3Rpb246MTMwMDAwMDAwMDAwMDAwMDAwNQ",
+  "version": 1,
+  "guild_id": "1100000000000000001",
+  "channel_id": "1100000000000000002",
+  "locale": "en-US",
+  "context": 0,
+  "data": {
+    "custom_id": "0t.modal:",
+    "components": [
+      {"type": 18, "id": 1, "component": {"type": 4, "id": 2, "custom_id": "note", "value": ""}},
+      {"type": 18, "id": 3, "component": {"type": 21, "id": 4, "custom_id": "pick", "value": null}},
+      {"type": 18, "id": 5, "component": {"type": 3, "id": 6, "custom_id": "colour", "values": []}},
+      {"type": 18, "id": 7, "component": {"type": 19, "id": 8, "custom_id": "file", "values": []}},
+      {"type": 18, "id": 9, "component": {"type": 22, "id": 10, "custom_id": "topics", "values": []}}
+    ]
+  }
+}

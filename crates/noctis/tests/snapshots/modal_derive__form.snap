@@ -1,0 +1,302 @@
+---
+source: crates/noctis/tests/modal_derive.rs
+expression: forms
+---
+{
+  "entity": {
+    "components": [
+      {
+        "component": {
+          "custom_id": "users",
+          "max_values": 3,
+          "type": 5
+        },
+        "label": "Users",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "role",
+          "type": 6
+        },
+        "label": "Role",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "pings",
+          "max_values": 25,
+          "type": 7
+        },
+        "label": "Pings",
+        "type": 18
+      },
+      {
+        "component": {
+          "channel_types": [
+            0,
+            5
+          ],
+          "custom_id": "channel",
+          "required": false,
+          "type": 8
+        },
+        "label": "Channel",
+        "type": 18
+      }
+    ],
+    "custom_id": "0t.modal:",
+    "title": "Pick people"
+  },
+  "optional": {
+    "components": [
+      {
+        "component": {
+          "custom_id": "note",
+          "required": false,
+          "style": 1,
+          "type": 4
+        },
+        "label": "Note",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "pick",
+          "options": [
+            {
+              "label": "Low",
+              "value": "l"
+            },
+            {
+              "label": "High",
+              "value": "h"
+            }
+          ],
+          "required": false,
+          "type": 21
+        },
+        "label": "Pick",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "colour",
+          "options": [
+            {
+              "label": "Red",
+              "value": "r"
+            },
+            {
+              "description": "Like grass",
+              "label": "Green",
+              "value": "g"
+            },
+            {
+              "label": "Blue",
+              "value": "b"
+            }
+          ],
+          "required": false,
+          "type": 3
+        },
+        "label": "Colour",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "file",
+          "required": false,
+          "type": 19
+        },
+        "label": "File",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "topics",
+          "min_values": 0,
+          "options": [
+            {
+              "label": "Rust",
+              "value": "Rust"
+            },
+            {
+              "label": "Art",
+              "value": "art"
+            },
+            {
+              "label": "Music",
+              "value": "Music"
+            }
+          ],
+          "required": false,
+          "type": 22
+        },
+        "label": "Topics",
+        "type": 18
+      }
+    ],
+    "custom_id": "0t.modal:",
+    "title": "Optional"
+  },
+  "text": {
+    "components": [
+      {
+        "content": "Fill this in.",
+        "type": 10
+      },
+      {
+        "component": {
+          "custom_id": "bio",
+          "max_length": 300,
+          "placeholder": "About you",
+          "required": false,
+          "style": 2,
+          "type": 4
+        },
+        "label": "Bio",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "colour",
+          "options": [
+            {
+              "label": "Red",
+              "value": "r"
+            },
+            {
+              "description": "Like grass",
+              "label": "Green",
+              "value": "g"
+            },
+            {
+              "label": "Blue",
+              "value": "b"
+            }
+          ],
+          "placeholder": "Pick one",
+          "type": 3
+        },
+        "label": "Colour",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "severity",
+          "options": [
+            {
+              "label": "Low",
+              "value": "l"
+            },
+            {
+              "label": "High",
+              "value": "h"
+            }
+          ],
+          "type": 21
+        },
+        "description": "How bad?",
+        "label": "Severity",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "topics",
+          "max_values": 2,
+          "options": [
+            {
+              "label": "Rust",
+              "value": "Rust"
+            },
+            {
+              "label": "Art",
+              "value": "art"
+            },
+            {
+              "label": "Music",
+              "value": "Music"
+            }
+          ],
+          "type": 22
+        },
+        "label": "Topics",
+        "type": 18
+      }
+    ],
+    "custom_id": "0t.modal:",
+    "title": "Tell us"
+  },
+  "upload": {
+    "components": [
+      {
+        "component": {
+          "custom_id": "evidence",
+          "file_types": [
+            "image",
+            ".pdf"
+          ],
+          "max_values": 3,
+          "type": 19
+        },
+        "label": "Evidence",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "avatar",
+          "required": false,
+          "type": 19
+        },
+        "label": "Avatar",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "agree",
+          "type": 23
+        },
+        "label": "I agree",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "title",
+          "max_length": 5,
+          "min_length": 2,
+          "style": 1,
+          "type": 4
+        },
+        "label": "Title",
+        "type": 18
+      },
+      {
+        "component": {
+          "custom_id": "colours",
+          "max_values": 3,
+          "options": [
+            {
+              "label": "Red",
+              "value": "r"
+            },
+            {
+              "description": "Like grass",
+              "label": "Green",
+              "value": "g"
+            },
+            {
+              "label": "Blue",
+              "value": "b"
+            }
+          ],
+          "type": 3
+        },
+        "label": "Colours",
+        "type": 18
+      }
+    ],
+    "custom_id": "0t.modal:",
+    "title": "Upload"
+  }
+}

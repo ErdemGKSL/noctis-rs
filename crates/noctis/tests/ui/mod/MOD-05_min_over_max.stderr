@@ -1,0 +1,5 @@
+error: [MOD-05] label[0].text_input: limit min_length ≤ max_length, actual `10 > 5`
+  --> tests/ui/mod/MOD-05_min_over_max.rs:11:7
+   |
+11 |     #[text_input("Reason", min_length = 10, max_length = 5)]
+   |       ^^^^^^^^^^

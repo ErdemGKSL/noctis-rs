@@ -960,6 +960,20 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
 pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
 pub mod noctis::prelude
+pub proc macro noctis::prelude::#[derive(Choices)]
+pub trait noctis::prelude::Choices: core::marker::Sized + 'static
+pub type noctis::prelude::Choices::Count
+pub const noctis::prelude::Choices::ALL: &'static [Self]
+pub fn noctis::prelude::Choices::description(&self) -> core::option::Option<&'static str>
+pub fn noctis::prelude::Choices::from_value(&str) -> core::option::Option<Self>
+pub fn noctis::prelude::Choices::label(&self) -> &'static str
+pub fn noctis::prelude::Choices::value(&self) -> &'static str
+pub proc macro noctis::prelude::#[derive(Modal)]
+pub trait noctis::prelude::ModalForm: core::marker::Sized
+pub type noctis::prelude::ModalForm::Route: noctis::codec::Route<Payload = Self::Route> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::prelude::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
+pub fn noctis::prelude::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> core::result::Result<Self, noctis::ui::SubmitError>
+pub fn noctis::prelude::ModalForm::modal(Self::Route) -> noctis::ui::Modal
 pub trait noctis::prelude::Payload
 pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
@@ -2194,6 +2208,16 @@ pub fn noctis::ui::ActionRow::serialize<S: serde_core::ser::Serializer>(&self, S
 impl noctis::ui::ContainerChild for noctis::ui::ActionRow
 impl noctis::ui::TopLevel for noctis::ui::ActionRow
 pub struct noctis::ui::Arity<const N: usize>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<10>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<1>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<2>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<3>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<4>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<5>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<6>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<7>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<8>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<9>
 impl noctis::ui::GalleryItems for noctis::ui::Arity<10>
 impl noctis::ui::GalleryItems for noctis::ui::Arity<1>
 impl noctis::ui::GalleryItems for noctis::ui::Arity<2>
@@ -2210,6 +2234,15 @@ impl noctis::ui::LegacyRows for noctis::ui::Arity<2>
 impl noctis::ui::LegacyRows for noctis::ui::Arity<3>
 impl noctis::ui::LegacyRows for noctis::ui::Arity<4>
 impl noctis::ui::LegacyRows for noctis::ui::Arity<5>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<10>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<2>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<3>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<4>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<5>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<6>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<7>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<8>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<9>
 impl noctis::ui::RowButtons for noctis::ui::Arity<1>
 impl noctis::ui::RowButtons for noctis::ui::Arity<2>
 impl noctis::ui::RowButtons for noctis::ui::Arity<3>
@@ -2218,6 +2251,31 @@ impl noctis::ui::RowButtons for noctis::ui::Arity<5>
 impl noctis::ui::SectionTexts for noctis::ui::Arity<1>
 impl noctis::ui::SectionTexts for noctis::ui::Arity<2>
 impl noctis::ui::SectionTexts for noctis::ui::Arity<3>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<10>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<11>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<12>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<13>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<14>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<15>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<16>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<17>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<18>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<19>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<1>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<20>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<21>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<22>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<23>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<24>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<25>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<2>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<3>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<4>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<5>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<6>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<7>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<8>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<9>
 impl<const N: usize> core::clone::Clone for noctis::ui::Arity<N>
 pub fn noctis::ui::Arity<N>::clone(&self) -> Self
 impl<const N: usize> core::cmp::Eq for noctis::ui::Arity<N>
@@ -2231,6 +2289,16 @@ impl<const N: usize> core::hash::Hash for noctis::ui::Arity<N>
 pub fn noctis::ui::Arity<N>::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl<const N: usize> core::marker::Copy for noctis::ui::Arity<N>
 impl<const N: usize> core::marker::StructuralPartialEq for noctis::ui::Arity<N>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<10>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<1>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<2>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<3>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<4>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<5>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<6>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<7>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<8>
+impl noctis::ui::CheckboxOptions for noctis::ui::Arity<9>
 impl noctis::ui::GalleryItems for noctis::ui::Arity<10>
 impl noctis::ui::GalleryItems for noctis::ui::Arity<1>
 impl noctis::ui::GalleryItems for noctis::ui::Arity<2>
@@ -2247,6 +2315,15 @@ impl noctis::ui::LegacyRows for noctis::ui::Arity<2>
 impl noctis::ui::LegacyRows for noctis::ui::Arity<3>
 impl noctis::ui::LegacyRows for noctis::ui::Arity<4>
 impl noctis::ui::LegacyRows for noctis::ui::Arity<5>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<10>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<2>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<3>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<4>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<5>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<6>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<7>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<8>
+impl noctis::ui::RadioOptions for noctis::ui::Arity<9>
 impl noctis::ui::RowButtons for noctis::ui::Arity<1>
 impl noctis::ui::RowButtons for noctis::ui::Arity<2>
 impl noctis::ui::RowButtons for noctis::ui::Arity<3>
@@ -2255,6 +2332,31 @@ impl noctis::ui::RowButtons for noctis::ui::Arity<5>
 impl noctis::ui::SectionTexts for noctis::ui::Arity<1>
 impl noctis::ui::SectionTexts for noctis::ui::Arity<2>
 impl noctis::ui::SectionTexts for noctis::ui::Arity<3>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<10>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<11>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<12>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<13>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<14>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<15>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<16>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<17>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<18>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<19>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<1>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<20>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<21>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<22>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<23>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<24>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<25>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<2>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<3>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<4>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<5>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<6>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<7>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<8>
+impl noctis::ui::StringSelectOptions for noctis::ui::Arity<9>
 pub struct noctis::ui::Attachment
 impl noctis::ui::Attachment
 pub fn noctis::ui::Attachment::alt(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
@@ -2443,6 +2545,14 @@ impl noctis::ui::ModalInput for noctis::ui::CheckboxGroup
 impl serde_core::ser::Serialize for noctis::ui::CheckboxGroup
 pub fn noctis::ui::CheckboxGroup::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ModalInput for noctis::ui::CheckboxGroup
+pub trait noctis::ui::CheckboxOptions: noctis::__private::ui::sealed::Sealed
+pub trait noctis::ui::Choices: core::marker::Sized + 'static
+pub type noctis::ui::Choices::Count
+pub const noctis::ui::Choices::ALL: &'static [Self]
+pub fn noctis::ui::Choices::description(&self) -> core::option::Option<&'static str>
+pub fn noctis::ui::Choices::from_value(&str) -> core::option::Option<Self>
+pub fn noctis::ui::Choices::label(&self) -> &'static str
+pub fn noctis::ui::Choices::value(&self) -> &'static str
 pub struct noctis::ui::Components
 impl noctis::ui::Components
 pub fn noctis::ui::Components::is_empty(&self) -> bool
@@ -2571,6 +2681,22 @@ pub type noctis::ui::CreateFlags::Output = noctis::ui::CreateFlags
 pub fn noctis::ui::CreateFlags::bitor(self, Self) -> Self
 impl core::ops::bit::BitOrAssign for noctis::ui::CreateFlags
 pub fn noctis::ui::CreateFlags::bitor_assign(&mut self, Self)
+#[non_exhaustive] pub enum noctis::ui::DownloadError
+pub noctis::ui::DownloadError::Fetch(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::ui::DownloadError::Host
+pub noctis::ui::DownloadError::Host::url: alloc::string::String
+pub noctis::ui::DownloadError::SizeMismatch
+pub noctis::ui::DownloadError::SizeMismatch::actual: u64
+pub noctis::ui::DownloadError::SizeMismatch::expected: u64
+pub noctis::ui::DownloadError::TooLarge
+pub noctis::ui::DownloadError::TooLarge::limit: u64
+pub noctis::ui::DownloadError::TooLarge::size: u64
+impl core::error::Error for noctis::ui::DownloadError
+pub fn noctis::ui::DownloadError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::ui::DownloadError
+pub fn noctis::ui::DownloadError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ui::DownloadError
+pub fn noctis::ui::DownloadError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::ui::EditFlags(_)
 impl noctis::ui::EditFlags
 pub const noctis::ui::EditFlags::SUPPRESS_EMBEDS: Self
@@ -2631,6 +2757,8 @@ impl serde_core::ser::Serialize for noctis::ui::File
 pub fn noctis::ui::File::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::File
 impl noctis::ui::TopLevel for noctis::ui::File
+pub trait noctis::ui::FileFetcher
+pub fn noctis::ui::FileFetcher::fetch(&self, &str, u64) -> impl core::future::future::Future<Output = core::result::Result<bytes::bytes::Bytes, alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>>> + core::marker::Send
 pub struct noctis::ui::FileUpload
 impl noctis::ui::FileUpload
 pub fn noctis::ui::FileUpload::file_types(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::borrow::Cow<'static, str>>>) -> Self
@@ -2778,6 +2906,16 @@ pub fn noctis::ui::MediaItem::fmt(&self, &mut core::fmt::Formatter<'_>) -> core:
 impl core::marker::StructuralPartialEq for noctis::ui::MediaItem
 impl serde_core::ser::Serialize for noctis::ui::MediaItem
 pub fn noctis::ui::MediaItem::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+#[non_exhaustive] pub enum noctis::ui::Mentionable
+pub noctis::ui::Mentionable::Role(noctis::ui::ResolvedRole)
+pub noctis::ui::Mentionable::User(noctis::ui::ResolvedUser)
+impl core::clone::Clone for noctis::ui::Mentionable
+pub fn noctis::ui::Mentionable::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::Mentionable
+pub fn noctis::ui::Mentionable::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::Mentionable
+pub fn noctis::ui::Mentionable::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::Mentionable
 pub struct noctis::ui::MentionableSelect
 impl noctis::ui::MentionableSelect
 pub fn noctis::ui::MentionableSelect::default_roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
@@ -2890,6 +3028,11 @@ pub fn noctis::ui::ModalComponent::from(noctis::ui::ModalLabel) -> Self
 impl core::convert::From<noctis::ui::TextDisplay> for noctis::ui::ModalComponent
 pub fn noctis::ui::ModalComponent::from(noctis::ui::TextDisplay) -> Self
 impl noctis::ui::ModalTopLevel for noctis::ui::ModalComponent
+pub trait noctis::ui::ModalForm: core::marker::Sized
+pub type noctis::ui::ModalForm::Route: noctis::codec::Route<Payload = Self::Route> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ui::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
+pub fn noctis::ui::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> core::result::Result<Self, noctis::ui::SubmitError>
+pub fn noctis::ui::ModalForm::modal(Self::Route) -> noctis::ui::Modal
 pub trait noctis::ui::ModalInput: noctis::__private::ui::sealed::IntoModalInput
 pub struct noctis::ui::ModalLabel
 impl noctis::ui::ModalLabel
@@ -2969,6 +3112,20 @@ impl noctis::ui::ModalInput for noctis::ui::ModalStringSelect
 impl serde_core::ser::Serialize for noctis::ui::ModalStringSelect
 pub fn noctis::ui::ModalStringSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ModalInput for noctis::ui::ModalStringSelect
+pub struct noctis::ui::ModalSubmission
+impl noctis::ui::ModalSubmission
+pub fn noctis::ui::ModalSubmission::custom_id(&self) -> &str
+pub fn noctis::ui::ModalSubmission::from_slice(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
+pub fn noctis::ui::ModalSubmission::get(&self, &str) -> core::option::Option<&noctis::ui::SubmittedValue>
+pub fn noctis::ui::ModalSubmission::resolved(&self) -> &twilight_model::application::interaction::resolved::InteractionDataResolved
+pub fn noctis::ui::ModalSubmission::unknown(&self) -> &[serde_json::value::Value]
+impl core::clone::Clone for noctis::ui::ModalSubmission
+pub fn noctis::ui::ModalSubmission::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::ModalSubmission
+pub fn noctis::ui::ModalSubmission::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ModalSubmission
+pub fn noctis::ui::ModalSubmission::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ModalSubmission
 pub trait noctis::ui::ModalTopLevel: noctis::__private::ui::sealed::IntoModalTop
 pub struct noctis::ui::ModalUserSelect
 impl noctis::ui::ModalUserSelect
@@ -3042,6 +3199,51 @@ impl noctis::ui::ModalInput for noctis::ui::RadioGroup
 impl serde_core::ser::Serialize for noctis::ui::RadioGroup
 pub fn noctis::ui::RadioGroup::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ModalInput for noctis::ui::RadioGroup
+pub trait noctis::ui::RadioOptions: noctis::__private::ui::sealed::Sealed
+#[non_exhaustive] pub struct noctis::ui::ResolvedAttachment
+pub noctis::ui::ResolvedAttachment::attachment: twilight_model::channel::attachment::Attachment
+impl noctis::ui::ResolvedAttachment
+pub fn noctis::ui::ResolvedAttachment::content_type(&self) -> core::option::Option<&str>
+pub async fn noctis::ui::ResolvedAttachment::download<F>(&self, &F, &noctis::rules::Limits) -> core::result::Result<bytes::bytes::Bytes, noctis::ui::DownloadError> where F: noctis::ui::FileFetcher + ?core::marker::Sized + core::marker::Sync
+pub fn noctis::ui::ResolvedAttachment::filename(&self) -> &str
+pub fn noctis::ui::ResolvedAttachment::id(&self) -> twilight_model::id::Id<twilight_model::id::marker::AttachmentMarker>
+pub fn noctis::ui::ResolvedAttachment::size(&self) -> u64
+pub fn noctis::ui::ResolvedAttachment::url(&self) -> &str
+impl core::clone::Clone for noctis::ui::ResolvedAttachment
+pub fn noctis::ui::ResolvedAttachment::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::ResolvedAttachment
+pub fn noctis::ui::ResolvedAttachment::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ResolvedAttachment
+pub fn noctis::ui::ResolvedAttachment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ResolvedAttachment
+#[non_exhaustive] pub struct noctis::ui::ResolvedChannel
+pub noctis::ui::ResolvedChannel::channel: twilight_model::application::interaction::resolved::InteractionChannel
+impl core::clone::Clone for noctis::ui::ResolvedChannel
+pub fn noctis::ui::ResolvedChannel::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::ResolvedChannel
+pub fn noctis::ui::ResolvedChannel::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ResolvedChannel
+pub fn noctis::ui::ResolvedChannel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ResolvedChannel
+#[non_exhaustive] pub struct noctis::ui::ResolvedRole
+pub noctis::ui::ResolvedRole::role: twilight_model::guild::role::Role
+impl core::clone::Clone for noctis::ui::ResolvedRole
+pub fn noctis::ui::ResolvedRole::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::ResolvedRole
+pub fn noctis::ui::ResolvedRole::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ResolvedRole
+pub fn noctis::ui::ResolvedRole::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ResolvedRole
+#[non_exhaustive] pub struct noctis::ui::ResolvedUser
+pub noctis::ui::ResolvedUser::member: core::option::Option<twilight_model::application::interaction::resolved::InteractionMember>
+pub noctis::ui::ResolvedUser::user: twilight_model::user::User
+impl core::clone::Clone for noctis::ui::ResolvedUser
+pub fn noctis::ui::ResolvedUser::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::ResolvedUser
+pub fn noctis::ui::ResolvedUser::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ResolvedUser
+pub fn noctis::ui::ResolvedUser::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ResolvedUser
 pub struct noctis::ui::Rgb(_)
 impl noctis::ui::Rgb
 pub const fn noctis::ui::Rgb::new(u8, u8, u8) -> Self
@@ -3215,6 +3417,55 @@ impl noctis::ui::RowSelect for noctis::ui::StringSelect
 impl serde_core::ser::Serialize for noctis::ui::StringSelect
 pub fn noctis::ui::StringSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::StringSelect
+pub trait noctis::ui::StringSelectOptions: noctis::__private::ui::sealed::Sealed
+#[non_exhaustive] pub enum noctis::ui::SubmitError
+pub noctis::ui::SubmitError::Duplicate
+pub noctis::ui::SubmitError::Duplicate::key: alloc::string::String
+pub noctis::ui::SubmitError::Invalid
+pub noctis::ui::SubmitError::Invalid::key: alloc::string::String
+pub noctis::ui::SubmitError::Invalid::reason: alloc::string::String
+pub noctis::ui::SubmitError::Malformed
+pub noctis::ui::SubmitError::Malformed::reason: alloc::string::String
+pub noctis::ui::SubmitError::Missing
+pub noctis::ui::SubmitError::Missing::key: alloc::string::String
+pub noctis::ui::SubmitError::NotModalSubmit
+pub noctis::ui::SubmitError::NotModalSubmit::kind: u64
+pub noctis::ui::SubmitError::Unresolved
+pub noctis::ui::SubmitError::Unresolved::id: u64
+pub noctis::ui::SubmitError::Unresolved::key: alloc::string::String
+pub noctis::ui::SubmitError::WrongType
+pub noctis::ui::SubmitError::WrongType::expected: u64
+pub noctis::ui::SubmitError::WrongType::found: u64
+pub noctis::ui::SubmitError::WrongType::key: alloc::string::String
+impl core::clone::Clone for noctis::ui::SubmitError
+pub fn noctis::ui::SubmitError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::SubmitError
+impl core::cmp::PartialEq for noctis::ui::SubmitError
+pub fn noctis::ui::SubmitError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::ui::SubmitError
+impl core::fmt::Debug for noctis::ui::SubmitError
+pub fn noctis::ui::SubmitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ui::SubmitError
+pub fn noctis::ui::SubmitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::SubmitError
+#[non_exhaustive] pub enum noctis::ui::SubmittedValue
+pub noctis::ui::SubmittedValue::ChannelSelect(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>)
+pub noctis::ui::SubmittedValue::Checkbox(bool)
+pub noctis::ui::SubmittedValue::CheckboxGroup(alloc::vec::Vec<alloc::string::String>)
+pub noctis::ui::SubmittedValue::FileUpload(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::AttachmentMarker>>)
+pub noctis::ui::SubmittedValue::MentionableSelect(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::GenericMarker>>)
+pub noctis::ui::SubmittedValue::RadioGroup(core::option::Option<alloc::string::String>)
+pub noctis::ui::SubmittedValue::RoleSelect(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>)
+pub noctis::ui::SubmittedValue::StringSelect(alloc::vec::Vec<alloc::string::String>)
+pub noctis::ui::SubmittedValue::TextInput(alloc::string::String)
+pub noctis::ui::SubmittedValue::UserSelect(alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>)
+impl core::clone::Clone for noctis::ui::SubmittedValue
+pub fn noctis::ui::SubmittedValue::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::SubmittedValue
+pub fn noctis::ui::SubmittedValue::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::SubmittedValue
+pub fn noctis::ui::SubmittedValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::SubmittedValue
 pub struct noctis::ui::TextDisplay
 impl noctis::ui::TextDisplay
 pub fn noctis::ui::TextDisplay::content(&self) -> &str

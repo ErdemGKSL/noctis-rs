@@ -1,0 +1,26 @@
+error[E0277]: [MOD-07] a Radio Group takes 2 to 10 options
+  --> tests/ui/mod/MOD-07_radio_one_choice.rs:18:11
+   |
+18 |     pick: One,
+   |           ^^^ not 2 to 10 options
+   |
+   = help: the trait `RadioOptions` is not implemented for `Arity<1>`
+   = note: `Arity<1>` is the number of Choices variants; for options known only at runtime use RadioGroup::new(key, options) and validate(&mut modal, &limits)
+   = help: the following other types implement trait `RadioOptions`:
+             Arity<10>
+             Arity<2>
+             Arity<3>
+             Arity<4>
+             Arity<5>
+             Arity<6>
+             Arity<7>
+             Arity<8>
+             Arity<9>
+note: required by a bound in `noctis::__private::noctis_ui::modal::form::radio_group`
+  --> $WORKSPACE/crates/noctis-ui/src/modal/form.rs
+   |
+   | pub fn radio_group<T>(key: &'static str) -> RadioGroup
+   |        ----------- required by a bound in this function
+...
+   |     T::Count: RadioOptions,
+   |               ^^^^^^^^^^^^ required by this bound in `radio_group`

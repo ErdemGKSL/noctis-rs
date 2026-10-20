@@ -4,8 +4,8 @@
 //! change in any release.
 //!
 //! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
-//! literal macros `label!`, `placeholder!`, `content!` and `rgb!`, and
-//! `components!`.
+//! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
+//! `components!`, and the `Modal` and `Choices` derives.
 //!
 //! Generated code names runtime items only through
 //! `::noctis::__private::{codec, ui}` and std items through `::core`/`::std`
@@ -15,9 +15,11 @@
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
+mod choices;
 mod common;
 mod components;
 mod literal;
+mod modal;
 mod payload;
 mod payload_enum;
 mod route;
@@ -50,6 +52,47 @@ pub fn derive_payload(input: TokenStream) -> TokenStream {
 pub fn derive_payload_enum(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     payload_enum::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives `ModalForm` for a struct with named fields: one field per
+/// top-level modal component, every literal text and count checked at
+/// expansion (MOD-01, MOD-02, MOD-04..07, CV2-04, CV2-09, CID-01).
+///
+/// Takes `#[modal(route = Route, title = "…")]` and one component attribute
+/// per field; see `noctis::prelude::Modal`.
+#[proc_macro_derive(
+    Modal,
+    attributes(
+        modal,
+        text_input,
+        string_select,
+        user_select,
+        role_select,
+        mentionable_select,
+        channel_select,
+        file_upload,
+        radio_group,
+        checkbox_group,
+        checkbox,
+        text_display
+    )
+)]
+pub fn derive_modal(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    modal::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives `Choices` for an enum of unit variants, each with
+/// `#[choice("Label", value = "v", description = "d")]`, checked at
+/// expansion (MOD-07).
+#[proc_macro_derive(Choices, attributes(choice))]
+pub fn derive_choices(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    choices::expand(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -1,0 +1,5 @@
+error: [MOD-02] components: limit between 1 and 5, actual 0
+  --> tests/ui/mod/MOD-02_no_fields.rs:10:8
+   |
+10 | struct F {}
+   |        ^

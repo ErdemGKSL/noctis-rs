@@ -1,0 +1,5 @@
+error: [MOD-04] label[0].label: limit between 1 and 45, actual 46
+  --> tests/ui/mod/MOD-04_label_too_long.rs:11:16
+   |
+11 |     #[checkbox("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

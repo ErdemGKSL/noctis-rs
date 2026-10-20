@@ -1,0 +1,29 @@
+{
+  "id": "1300000000000000003",
+  "application_id": "1200000000000000001",
+  "type": 5,
+  "token": "aW50ZXJhY3Rpb246MTMwMDAwMDAwMDAwMDAwMDAwMw",
+  "version": 1,
+  "guild_id": "1100000000000000001",
+  "channel_id": "1100000000000000002",
+  "locale": "en-US",
+  "context": 0,
+  "attachment_size_limit": 26214400,
+  "data": {
+    "custom_id": "0t.modal:",
+    "components": [
+      {"type": 18, "id": 1, "component": {"type": 19, "id": 2, "custom_id": "evidence", "values": ["1000000000000000031", "1000000000000000032"]}},
+      {"type": 18, "id": 3, "component": {"type": 19, "id": 4, "custom_id": "avatar", "values": ["1000000000000000033"]}},
+      {"type": 18, "id": 5, "component": {"type": 23, "id": 6, "custom_id": "agree", "value": true}},
+      {"type": 18, "id": 7, "component": {"type": 4, "id": 8, "custom_id": "title", "value": "Bug"}},
+      {"type": 18, "id": 9, "component": {"type": 3, "id": 10, "custom_id": "colours", "values": ["r", "b"]}}
+    ],
+    "resolved": {
+      "attachments": {
+        "1000000000000000031": {"id": "1000000000000000031", "filename": "one.png", "size": 4, "url": "https://cdn.discordapp.com/ephemeral-attachments/1/1000000000000000031/one.png?ex=1&is=2&hm=3", "proxy_url": "https://media.discordapp.net/ephemeral-attachments/1/1000000000000000031/one.png", "content_type": "image/png", "width": 1, "height": 1, "ephemeral": true},
+        "1000000000000000032": {"id": "1000000000000000032", "filename": "two.pdf", "size": 9, "url": "https://cdn.discordapp.com/ephemeral-attachments/1/1000000000000000032/two.pdf?ex=1&is=2&hm=3", "proxy_url": "https://media.discordapp.net/ephemeral-attachments/1/1000000000000000032/two.pdf", "content_type": "application/pdf", "ephemeral": true},
+        "1000000000000000033": {"id": "1000000000000000033", "filename": "me.jpg", "size": 7, "url": "https://cdn.discordapp.com/ephemeral-attachments/1/1000000000000000033/me.jpg?ex=1&is=2&hm=3", "proxy_url": "https://media.discordapp.net/ephemeral-attachments/1/1000000000000000033/me.jpg", "content_type": "image/jpeg", "ephemeral": true}
+      }
+    }
+  }
+}

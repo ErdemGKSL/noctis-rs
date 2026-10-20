@@ -1,48 +1,127 @@
 # Modals
 
-Covers: `#[derive(Modal)]` [planned, Story 4.6], the runtime `Modal` builder, Labels, every
-modal component (Text Input, selects, File Upload, Radio Group, Checkbox Group, Checkbox,
-Text Display), pre-fill, opening a modal,
-typed submissions, modal-based Wizard Steps. Rules: MOD-01..09, INT-05, CV2-09, FR-29,
+Covers: `#[derive(Modal)]` and `#[derive(Choices)]`, typed submissions
+(`ModalForm::from_json`, `ModalSubmission`, resolved entities, the File Upload download
+helper), the runtime `Modal` builder, Labels, every modal component (Text Input, selects,
+File Upload, Radio Group, Checkbox Group, Checkbox, Text Display), pre-fill, opening a
+modal, modal-based Wizard Steps. Rules: MOD-01..09, INT-05, CV2-04, CV2-09, CID-01, FR-29,
 FR-63, FR-64.
 
-## 1. Anatomy
+## 1. Anatomy: `#[derive(Modal)]`
 
-`#[derive(Modal)]` is [planned, Story 4.6]; today build a `Modal` at runtime (§4b). With
-the derive, a modal is a form struct plus the Route its submission goes to:
+A modal form is a struct plus the Route its submission goes to. `derive(Modal)` (in
+`noctis::prelude`) implements `noctis::ui::ModalForm` for it:
 
 ```rust
+use noctis::prelude::*;                    // Route, Modal, Choices, ModalForm, …
+use noctis::ui::{ResolvedAttachment, SubmitError};
+
 #[derive(Route, Debug, Clone, Copy)]
-#[route("profile.save", owner = user)]           // submit Route (MOD-08: same custom_id rules)
-pub struct SaveBio { pub user: Id<UserMarker> }
+#[route("mod.report")]                     // the submit Route (MOD-08: same custom_id rules)
+pub struct Report { pub id: u64 }
+
+#[derive(Choices, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    #[choice("Low", value = "l")]
+    Low,
+    #[choice("High", value = "h", description = "Someone is in danger")]
+    High,
+}
 
 #[derive(Modal, Debug)]
-#[modal(route = SaveBio, title(key = "profile.bio_modal.title"))]   // title ≤ 45 (MOD-01)
-pub struct BioForm {
-    #[label(key = "profile.bio_modal.bio")]
-    #[text_input(style = paragraph, max_length = 300, placeholder(key = "profile.bio_modal.bio_hint"))]
-    pub bio: Option<String>,
+#[modal(route = Report, title = "Report a user")]          // title 1–45 (MOD-01)
+pub struct ReportForm {
+    #[text_display("Tell us what happened.")]
+    _intro: (),                                              // Text Display, submits nothing
+    #[text_input("Reason", style = paragraph, max_length = 500)]
+    pub reason: String,                                      // required
+    #[radio_group("Severity")]
+    pub severity: Severity,                                  // derive(Choices)
+    #[file_upload("Evidence", min_values = 0, max_values = 3, file_types = ["image", ".pdf"])]
+    pub files: Vec<ResolvedAttachment>,
+    #[checkbox("I agree")]
+    pub agree: bool,
+}
 
-    #[label(key = "profile.bio_modal.pronouns")]
-    #[radio_group]
-    pub pronouns: Option<Pronouns>,              // derive(Choices)
+let modal: noctis::ui::Modal = ReportForm::modal(Report { id: 7 });  // ModalForm::modal
+let form: ReportForm = ReportForm::from_json(raw_interaction_bytes)?; // ModalForm::from_json
+```
+
+- `#[modal(route = R, title = "…")]` is required: `R` is the submit Route (it needs a
+  `#[handler]`, else `[CID-04]`), the title a literal.
+- **One field = one top-level component**, in declaration order; 1–5 fields (MOD-02),
+  counted at `cargo check`. Each field carries **exactly one** component attribute: none
+  is `[MOD-02] field … is not a modal component`, two are `[MOD-03] … has two component
+  attributes`. A tuple/unit struct, an enum or generics are `[MOD-02]` errors.
+- The **field name is the input key** (its `custom_id`, `r#` stripped: `r#type` → `"type"`;
+  1–100 characters, CID-01). The modal's own `custom_id` is the Route's.
+- The first literal of each attribute is the **Label text** (1–45, MOD-04); every Label
+  attribute also takes `description = "…"` (≤ 100). `#[text_display("…")]` is a top-level
+  Text Display instead (its literals together ≤ 4000, CV2-04).
+- Every text is a **literal**, checked at `cargo check` with the same
+  `noctis::rules::modal::validate_modal` the runtime validator uses; errors are spanned on
+  the offending literal and cite the rule id (`[MOD-01] title: limit between 1 and 45,
+  actual 46`). Localized text (`title(key = …)`, `key = …`, a constant) is rejected with
+  `localized modal text is [planned, Epic 11]; use a literal`; for dynamic text build a
+  `Modal` at runtime (§4b).
+- `Option<_>` field ⇒ optional (`"required": false`); a plain type ⇒ required; a `Vec<_>`
+  ⇒ required unless `min_values = 0` (then `"min_values": 0, "required": false`).
+  `min_values` / `max_values` are allowed on `Vec` fields only.
+- Top level is a **Label** (wrapping one input) or a **Text Display**; Noctis never emits
+  the deprecated Action Row + Text Input `label` form. No `disabled`, Buttons, Sections,
+  Containers or galleries exist in a modal (MOD-03).
+
+### 1.1 Field attributes and types
+
+| Attribute | Extra arguments | Field types | JSON / defaults |
+| --- | --- | --- | --- |
+| `#[text_input("L", …)]` | `style = short \| paragraph` (default `short`), `min_length`, `max_length`, `placeholder` | `String`, `Option<String>` | type 4 (MOD-05) |
+| `#[string_select("L", …)]` | `placeholder`, `min_values`, `max_values` | `C`, `Option<C>`, `Vec<C>` with `C: Choices` | type 3; options from `C`; a `Vec` without `max_values` gets `C`'s option count (CV2-09) |
+| `#[user_select("L", …)]` | `placeholder`, `min_values`, `max_values` | `ResolvedUser`, `Option<_>`, `Vec<_>` | type 5; a `Vec` without `max_values` gets 25 |
+| `#[role_select("L", …)]` | same | `ResolvedRole`, `Option<_>`, `Vec<_>` | type 6 |
+| `#[mentionable_select("L", …)]` | same | `Mentionable`, `Option<_>`, `Vec<_>` | type 7 |
+| `#[channel_select("L", …)]` | same, plus `channel_types = [GuildText, GuildAnnouncement, …]` (`ChannelType` variant names) | `ResolvedChannel`, `Option<_>`, `Vec<_>` | type 8 |
+| `#[file_upload("L", …)]` | `min_values`, `max_values`, `file_types = ["image", ".pdf"]` | `ResolvedAttachment`, `Option<_>`, `Vec<_>` | type 19; a `Vec` without `max_values` gets 10 (MOD-06) |
+| `#[radio_group("L")]` | — | `C`, `Option<C>` | type 21; 2–10 options (MOD-07) |
+| `#[checkbox_group("L", …)]` | `min_values`, `max_values` | `Vec<C>` | type 22; 1–10 options; no `max_values` = option count (MOD-07) |
+| `#[checkbox("L")]` | — | `bool` | type 23; never required |
+| `#[text_display("content")]` | — (no Label) | `()` | type 10 |
+
+A field type the attribute does not take fails with E0277 ``` `String` cannot be a
+`#[checkbox]` field ``` and a note listing the allowed types.
+
+### 1.2 Option sets: `#[derive(Choices)]`
+
+```rust
+#[derive(Choices, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Topic {
+    #[choice("Rust")]                                         // value = "Rust" (the variant name)
+    Rust,
+    #[choice("Art", value = "art", description = "Drawing, painting")]
+    Art,
 }
 ```
 
-- One field = one top-level component; 1–5 per modal (MOD-02), counted by the derive.
-- Top level is a **Label** (wrapping one input) or a **Text Display**
-  (`#[text] intro: Static` with `#[text(key = "…")]`) [planned]. Noctis never emits the
-  deprecated Action Row + Text Input `label` form.
-- No `disabled` anywhere, no Buttons, Sections, Containers or galleries (MOD-03): the
-  modal field types simply don't have them.
-- Text: every attribute that takes text accepts a literal (`"Bio"`, length-checked at
-  compile time) or `key = "…"` (resolved in the clicking user's locale, checked at App
-  build / runtime).
-- `Option<T>` field ⇒ `required = false`; non-`Option` ⇒ required.
+- A non-generic enum of **unit variants**; each takes `#[choice("Label")]` or
+  `#[choice("Label", value = "v", description = "d")]`. Label and value 1–100,
+  description ≤ 100 (MOD-07), checked at `cargo check`. `value` defaults to the variant
+  name (`r#` stripped); two variants with one value are an error (`duplicate choice value`).
+  Zero variants, a variant with fields or generics are `[MOD-07]` errors.
+- It implements `noctis::ui::Choices` (also in the prelude): `Choices::ALL` (every
+  variant, in order), `.label()`, `.value()`, `.description()`, `Choices::from_value(&str)
+  -> Option<Self>`, and `type Count = Arity<N>` (`N` = the variant count).
+- The option count is checked through `Count` at `cargo check`: a `#[radio_group]` needs
+  2–10 variants (`[MOD-07] a Radio Group takes 2 to 10 options`, bound `RadioOptions`),
+  a `#[checkbox_group]` 1–10 (`CheckboxOptions`), a `#[string_select]` 1–25
+  (`[CV2-09] a String Select takes 1 to 25 options`, `StringSelectOptions`). Option lists
+  built at runtime use the builders (`RadioGroup::new(key, options)`, §4) and `validate`.
+- Option counts versus `min_values` / `max_values` are checked at runtime by
+  `noctis::ui::validate` on the built modal.
 
 ## 2. Opening it
 
-The **opening** Route must be declared `opens_modal` (no auto-defer, INT-05):
+The **opening** Route must be declared `opens_modal` (no auto-defer, INT-05) [planned,
+Story 7.8]:
 
 ```rust
 #[derive(Route, Debug, Clone, Copy)]
@@ -52,8 +131,8 @@ pub struct EditBio { pub user: Id<UserMarker> }
 #[handler]
 async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
     let stored: StoredProfile = ctx.kv().get(&key).await?.unwrap_or_default();
-    let modal = BioForm::modal(SaveBio { user: e.user })   // generated BioFormModal builder
-        .bio(stored.bio)                                     // pre-fill (FR-63), one setter per field
+    let modal = BioForm::modal(SaveBio { user: e.user })   // ModalForm::modal → noctis::ui::Modal
+        .bio(stored.bio)                                     // pre-fill setters [planned, Story 9.4]
         .pronouns(stored.pronouns);
     Ok(r.modal(modal).await?.done())
 }
@@ -64,36 +143,94 @@ Commands can open modals too: `#[command("feedback", opens_modal)]` +
 `opens_modal` is declared (INT-05).
 Do your I/O fast: a modal must be the first response within 3 s.
 
-Pre-filled values go through the same validator before sending; a value that breaks a
-field limit is a typed error (FR-63). Optional builder overrides: `.title(..)` [planned].
+Today a derived modal has no pre-fill; build the `Modal` at runtime (§4b, `TextInput::value`,
+`.default_users(..)`, `ModalOption::default(true)`) when you need one. Pre-filled values go
+through the same validator before sending; a value that breaks a field limit is a typed
+error (FR-63).
 
-## 3. Receiving it
+## 3. Receiving it: typed submissions
 
-Typed submissions are [planned, Story 4.6].
+The `#[handler]` side (`ModalSubmitCtx`, the submit Route and the form as parameters) is
+[planned, Story 7.8]:
 
 ```rust
 #[handler]
 async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerResult<ProfileView> {
-    // `form` is fully typed: selects joined to resolved entities, uploads to attachments.
     …
     ProfileView::load(&ctx, save.user).await
 }
 ```
 
-- If the modal was opened from a message component, returning a View **updates that
-  message** (type 7); from a command, it sends a new message.
-- `ModalResponder` has no `modal()`: modals can't chain (INT-05).
-- Values decode from the raw interaction JSON, so Radio Group, Checkbox Group and
-  Checkbox work even where twilight drops them (FR-64). Unknown parts are kept as raw JSON.
+Decoding works today, from the raw interaction JSON (`&[u8]` of the whole interaction
+object, `"type": 5`):
+
+```rust
+use noctis::ui::{ModalForm, ModalSubmission, SubmitError, SubmittedValue};
+
+let form = ReportForm::from_json(bytes)?;                   // = from_submission(&ModalSubmission::from_slice(bytes)?)
+let submission = ModalSubmission::from_slice(bytes)?;
+submission.custom_id();                                      // the modal's custom_id (the Route's encoding)
+submission.get("reason");                                    // Option<&SubmittedValue>
+submission.resolved();                                       // &twilight InteractionDataResolved
+submission.unknown();                                        // &[serde_json::Value]: components Noctis does not know
+```
+
+- Values decode from the raw interaction JSON, Label-wrapped (type 18) or legacy
+  Action-Row-wrapped (type 1); Radio Group, Checkbox Group and Checkbox work although
+  twilight-model drops them (FR-64). Unknown components are kept verbatim in `unknown()`,
+  never dropped. Decoding never compares `custom_id` with the Route (dispatch is core's).
+- `SubmittedValue` (`#[non_exhaustive]`): `TextInput(String)`, `StringSelect(Vec<String>)`,
+  `UserSelect(Vec<Id<UserMarker>>)`, `RoleSelect(Vec<Id<RoleMarker>>)`,
+  `MentionableSelect(Vec<Id<GenericMarker>>)`, `ChannelSelect(Vec<Id<ChannelMarker>>)`,
+  `FileUpload(Vec<Id<AttachmentMarker>>)`, `RadioGroup(Option<String>)`,
+  `CheckboxGroup(Vec<String>)`, `Checkbox(bool)`.
+- Per field: an absent or empty input is `None` for `Option`, `vec![]` for a non-required
+  `Vec`, else `SubmitError::Missing`. Text `""` counts as empty; a text outside the declared
+  `min_length..=max_length` (by `discord_len`) is `Invalid`. A single-valued field with 2+
+  values, a `Vec` outside its effective `min..=max` (min = `min_values`, else 1 when
+  required) and an unknown choice value are `Invalid`. Selects join `resolved`: users (with
+  `member` when the submission has one), roles, channels; Mentionable tries the user, then
+  the role; uploads join `resolved.attachments`. A missing entry is `Unresolved`.
+- `SubmitError` (`#[non_exhaustive]`, Display starts `[MOD-09]`): `Malformed { reason }`
+  (bad JSON, missing/ill-typed `type`/`data`/`custom_id`/`components`, an input without a
+  string `custom_id`, bad `resolved`), `NotModalSubmit { kind }`, `Duplicate { key }`,
+  `Missing { key }`, `WrongType { key, expected, found }` (Discord component type numbers),
+  `Invalid { key, reason }`, `Unresolved { key, id }`. Decoding never panics.
+- Resolved types (`#[non_exhaustive]`, pub fields): `ResolvedUser { user, member:
+  Option<InteractionMember> }`, `ResolvedRole { role }`, `ResolvedChannel { channel:
+  InteractionChannel }`, `Mentionable::{User(ResolvedUser), Role(ResolvedRole)}`,
+  `ResolvedAttachment { attachment }` with `.id()`, `.filename()`, `.size()`,
+  `.content_type()`, `.url()`.
 - Submitted values are untrusted (MOD-09): re-validate ranges and authorization.
-- Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`;
-  a failure replies with a localized ephemeral message and the handler doesn't run.
+- If the modal was opened from a message component, returning a View **updates that
+  message** (type 7); from a command, it sends a new message. `ModalResponder` has no
+  `modal()`: modals can't chain (INT-05). [planned, Story 7.8]
+- Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`.
+
+### 3.1 Downloading uploads
+
+A `ResolvedAttachment`'s URL is an **ephemeral**, signed CDN URL that expires: download
+promptly and re-check the content type (MOD-09).
+
+```rust
+use noctis::rules::Limits;
+use noctis::ui::{DownloadError, FileFetcher};
+
+let bytes = form.files[0].download(&fetcher, &limits).await?;   // -> Result<Bytes, DownloadError>
+```
+
+- `fetcher: &impl FileFetcher` (`fn fetch(&self, url: &str, max_bytes: u64) -> impl
+  Future<Output = Result<Bytes, Box<dyn Error + Send + Sync>>> + Send`); core supplies the
+  HTTP implementation [planned, Epic 7], tests pass a fake.
+- Only `https://cdn.discordapp.com/` and `https://media.discordapp.net/` URLs are fetched
+  (else `DownloadError::Host`), a file over `limits.attachment_bytes` is refused
+  (`TooLarge`), neither calls the fetcher; a fetched length other than `size()` is
+  `SizeMismatch`, a fetcher failure `Fetch(source)`.
 
 ## 4. Components
 
-Every modal component has its own builder in `noctis::ui`. The `#[label]`, `#[text_input]`,
-… field attributes of `derive(Modal)` are [planned, Story 4.6]; they build these same
-types. Each input takes a string **key** first: it is the input's `custom_id` and names the
+Every modal component has its own builder in `noctis::ui`; the `derive(Modal)` field
+attributes (§1.1) build these same types. Each input takes a string **key** first: it is the input's `custom_id` and names the
 submitted field (1–100 characters, unique within the modal; CID-01, CID-02). The key is
 never a Route; the modal's own `custom_id` is.
 
@@ -181,7 +318,7 @@ never the `value`.
 **Limits:** `min_values` 0–10 (0 only with `.required(false)`), `max_values` 1–10,
 `min ≤ max`, `file_types` ≤ 10 entries, each `image`, `video`, `audio` or `.ext` (MOD-06).
 Size is capped by the user's upload limit. URLs are **ephemeral**: download promptly
-[planned, Story 4.6: download helper] and re-check the content type (MOD-09).
+with `ResolvedAttachment::download` (§3.1) and re-check the content type (MOD-09).
 
 **Builder:** `FileUpload::new(key)`, `.min_values(u8)`, `.max_values(u8)`,
 `.required(bool)`, `.file_types(["image", ".pdf"])` (appends). JSON:
@@ -192,8 +329,8 @@ Size is capped by the user's upload limit. URLs are **ephemeral**: download prom
 **Where:** inside a `ModalLabel` only. Type 21. Submits one option or none.
 
 **Limits:** 2–10 options; each `ModalOption` label and value 1–100, description ≤ 100
-(MOD-07). The constructor accepts any count; `validate` rejects a wrong one (the
-compile-time count from `derive(Choices)` is [planned, Story 4.6]).
+(MOD-07). The constructor accepts any count; `validate` rejects a wrong one. A
+`#[radio_group]` field's option count is checked at `cargo check` instead (§1.2).
 
 **Builder:** `RadioGroup::new(key, [ModalOption::new(label, value), …])`, `.required(bool)`.
 `ModalOption::new(label, value)`, `.description(..)`, `.default(bool)`; JSON
@@ -223,7 +360,8 @@ one-option `CheckboxGroup` with `min_values(1)`.
 ### 4.12 Text Display at the top level
 
 A `TextDisplay` (type 10, see `components-v2.md` §2) may sit at the top level of a modal
-and counts toward the 5. `#[text(key = "…")]` on a unit field is [planned, Story 4.6].
+and counts toward the 5. In a derived modal it is a `#[text_display("…")]` field of type
+`()`.
 
 ## 4b. Building a modal at runtime: `Modal`
 
@@ -293,8 +431,8 @@ Wizard state). The modal's submit Route also carries the state; its handler retu
 
 ## 7. Rule functions (`noctis::rules::modal`)
 
-`derive(Modal)` and the runtime validator check modals with these functions; use them for
-modals built from dynamic data (localized titles, pre-filled values, generated option
+`derive(Modal)` (at `cargo check`, on its literals) and the runtime validator check modals
+with these functions; use them for modals built from dynamic data (localized titles, pre-filled values, generated option
 lists). Every function takes `&Limits` and only reports.
 
 ```rust

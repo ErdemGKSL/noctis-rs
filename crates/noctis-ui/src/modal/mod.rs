@@ -1,21 +1,31 @@
 //! The modal model: [`Modal`], its top-level [`ModalComponent`]s and the
 //! [`ModalLabel`] that wraps one input (FR-29, FR-63; AD-12; MOD-01..08).
 
+pub(crate) mod form;
 mod input;
+mod resolved;
 mod select;
+mod submit;
 
 use std::borrow::Cow;
 
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
+pub use form::{Choices, ModalForm};
 pub use input::{
     Checkbox, CheckboxGroup, FileUpload, ModalOption, RadioGroup, TextInput, TextInputStyle,
+};
+pub use resolved::{
+    DownloadError, FileFetcher, Mentionable, ResolvedAttachment, ResolvedChannel, ResolvedRole,
+    ResolvedUser,
 };
 pub(crate) use select::ModalSelectNode;
 pub use select::{
     ModalChannelSelect, ModalMentionableSelect, ModalRoleSelect, ModalStringSelect, ModalUserSelect,
 };
+
+pub use submit::{ModalSubmission, SubmitError, SubmittedValue};
 
 use crate::TextDisplay;
 use crate::placement::{ModalInput, ModalTopLevel};

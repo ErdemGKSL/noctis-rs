@@ -258,15 +258,15 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 
 | Id | Limit | Where |
 | --- | --- | --- |
-| MOD-01 | title ≤ 45 (`noctis::ui::validate` on a `Modal`; Lenient truncates) | C / R |
-| MOD-02 | 1–5 top-level (`ModalLabel` or `TextDisplay`) | C / R |
+| MOD-01 | title ≤ 45 (`derive(Modal)` literal at `cargo check`; `noctis::ui::validate` on a `Modal`, Lenient truncates) | C / R |
+| MOD-02 | 1–5 top-level (`ModalLabel` or `TextDisplay`; `derive(Modal)` counts fields, one component attribute each) | C / R |
 | MOD-03 | no buttons/sections/containers/galleries/Action Rows/message selects (`ModalTopLevel` / `ModalInput`, `[MOD-03]`); modal selects have no `disabled` | C |
 | MOD-04 | `ModalLabel` text 1–45, description ≤ 100 | C / B / R |
 | MOD-05 | Text Input min 0–4000, max 1–4000, value ≤ 4000, placeholder ≤ 100 | C / R |
 | MOD-06 | File Upload min 0–10 (0 only when not required), max 1–10, `file_types` ≤ 10 | C / R |
-| MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required (`Checkbox` has no `required`); option label/value 1–100, description ≤ 100 | C / R |
+| MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required (`Checkbox` has no `required`); option label/value 1–100, description ≤ 100 (`derive(Choices)` texts at `cargo check`; counts via `RadioOptions` / `CheckboxOptions` on `Choices::Count`) | C / R |
 | MOD-08 | modal `custom_id` 1–100 (a Route's, via `RouteComponents::modal`); input keys 1–100 (CID-01, runtime) | C / R |
-| MOD-09 | submitted values untrusted; upload URLs ephemeral | R |
+| MOD-09 | submitted values untrusted (`ModalForm::from_json` → typed `SubmitError`, never a panic); upload URLs ephemeral (`ResolvedAttachment::download`: CDN host, `attachment_bytes`, length → `DownloadError`) | R |
 
 ## Messages, attachments, webhooks
 

@@ -14,13 +14,14 @@ bytes.workspace = true
 noctis-codec.workspace = true
 noctis-rules.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
 insta = { workspace = true, features = ["json"] }
-serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

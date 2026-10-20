@@ -1,0 +1,26 @@
+{
+  "id": "1300000000000000001",
+  "application_id": "1200000000000000001",
+  "type": 5,
+  "token": "aW50ZXJhY3Rpb246MTMwMDAwMDAwMDAwMDAwMDAwMQ",
+  "version": 1,
+  "guild_id": "1100000000000000001",
+  "channel_id": "1100000000000000002",
+  "locale": "en-US",
+  "guild_locale": "en-US",
+  "app_permissions": "2248473465835073",
+  "entitlements": [],
+  "authorizing_integration_owners": {"0": "1100000000000000001"},
+  "context": 0,
+  "attachment_size_limit": 26214400,
+  "data": {
+    "custom_id": "0t.modal:",
+    "components": [
+      {"type": 10, "id": 1},
+      {"type": 18, "id": 2, "component": {"type": 4, "id": 3, "custom_id": "bio", "value": "Hello 😀"}},
+      {"type": 18, "id": 4, "component": {"type": 3, "id": 5, "custom_id": "colour", "values": ["g"]}},
+      {"type": 18, "id": 6, "component": {"type": 21, "id": 7, "custom_id": "severity", "value": "h"}},
+      {"type": 18, "id": 8, "component": {"type": 22, "id": 9, "custom_id": "topics", "values": ["Rust", "art"]}}
+    ]
+  }
+}

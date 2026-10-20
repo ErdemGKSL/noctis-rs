@@ -91,30 +91,31 @@ pub struct SaveBio {
     pub user: Id<UserMarker>,
 }
 
+/// The pronoun choices: a Radio Group option set (MOD-07: 2-10 options, each text
+/// 1-100). The variant name is the submitted value unless `value = "…"` is given.
+// localized texts: [planned, Epic 11]
 #[derive(Choices, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[choices(key = "profile.pronouns")]
 pub enum Pronouns {
-    #[choice("he")]
+    #[choice("he/him", value = "he")]
     He,
-    #[choice("she")]
+    #[choice("she/her", value = "she")]
     She,
-    #[choice("they")]
+    #[choice("they/them", value = "they")]
     They,
-    #[choice("any")]
+    #[choice("any pronouns", value = "any")]
     Any,
 }
 
-/// The bio modal. One field = one top-level Label (MOD-02: at most 5). Texts come from
-/// locale keys, so the modal opens in the clicking user's language.
+/// The bio modal. One field = one top-level component (MOD-02: at most 5); the field
+/// name is the input key. Every literal is checked at `cargo check`.
+// localized texts: [planned, Epic 11]
 #[derive(Modal, Debug)]
-#[modal(route = SaveBio, title(key = "profile.bio_modal.title"))]
+#[modal(route = SaveBio, title = "Edit your profile")]
 pub struct BioForm {
-    #[label(key = "profile.bio_modal.bio")]
-    #[text_input(style = paragraph, max_length = 300, placeholder(key = "profile.bio_modal.bio_hint"))]
+    #[text_input("Bio", style = paragraph, max_length = 300, placeholder = "A few words about you")]
     pub bio: Option<String>,
 
-    #[label(key = "profile.bio_modal.pronouns")]
-    #[radio_group]
+    #[radio_group("Pronouns")]
     pub pronouns: Option<Pronouns>,
 }
 
@@ -123,7 +124,8 @@ async fn open_profile(ctx: ComponentCtx, route: ProfileRoute) -> HandlerResult<P
     ProfileView::load(&ctx, route.user).await.map(|v| v.editable(route.editable))
 }
 
-/// Opens the modal pre-filled with the stored values (FR-63). A modal is a response
+/// Opens the modal pre-filled with the stored values (FR-63; the pre-fill setters are
+/// [planned, Story 9.4]). A modal is a response
 /// type of its own, so this handler takes the Responder instead of returning a View.
 /// `EditBio` is declared `opens_modal`, so the handler must take the `OpensModal`
 /// responder, the only one with `modal()` (INT-05).
@@ -141,8 +143,8 @@ async fn edit_bio(
         .unwrap_or_default();
 
     let modal = BioForm::modal(SaveBio { user: edit.user })
-        .bio(stored.bio)
-        .pronouns(stored.pronouns);
+        .bio(stored.bio) // pre-fill setters: [planned, Story 9.4]
+        .pronouns(stored.pronouns); // [planned, Story 9.4]
     Ok(responder.modal(modal).await?.done())
 }
 

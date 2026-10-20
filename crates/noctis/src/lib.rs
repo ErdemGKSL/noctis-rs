@@ -302,11 +302,15 @@ pub mod prelude {
     //!   [`ui`](crate::ui)).
     //! - [`Rgb`] and the macros [`components!`], [`label!`],
     //!   [`placeholder!`], [`content!`] and [`rgb!`].
+    //! - [`Modal`](macro@Modal): `#[derive(Modal)]` on a form struct,
+    //!   implementing [`ModalForm`] (see [`ui`](crate::ui#modal-forms)).
+    //! - [`Choices`]: the trait and `#[derive(Choices)]` on a unit enum, a
+    //!   modal option set.
 
     pub use noctis_codec::{Payload, Route};
-    pub use noctis_macros::{Payload, PayloadEnum, Route};
+    pub use noctis_macros::{Choices, Modal, Payload, PayloadEnum, Route};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
-    pub use noctis_ui::{Rgb, RouteComponents};
+    pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};
 }
 
 /// Paths the derive macros expand to; not public API.
@@ -603,6 +607,141 @@ pub mod ui {
     //! let _ = Form.modal("T").push(LinkButton::new("https://x.y")); // [MOD-03]
     //! ```
     //!
+    //! # Modal forms
+    //!
+    //! `#[derive(Modal)]` (in the [`prelude`](crate::prelude)) declares a
+    //! modal as a struct and implements [`ModalForm`]: `T::modal(route)`
+    //! builds the [`Modal`] and `T::from_json(bytes)` decodes the raw
+    //! modal-submit interaction JSON. `#[modal(route = R, title = "…")]`
+    //! names the submit Route and the literal title. One field is one
+    //! top-level component, in declaration order; its name is the input key
+    //! (`custom_id`, `r#` stripped) and it carries exactly one attribute whose
+    //! first literal is the Label text (every Label attribute also takes
+    //! `description = "…"`):
+    //!
+    //! | Attribute | Arguments | Field types |
+    //! | --- | --- | --- |
+    //! | `text_input("L", …)` | `style = short\|paragraph`, `min_length`, `max_length`, `placeholder` | `String`, `Option<String>` |
+    //! | `string_select("L", …)` | `placeholder`, `min_values`, `max_values` | `C`, `Option<C>`, `Vec<C>` (`C: Choices`) |
+    //! | `user_select` / `role_select` / `mentionable_select` / `channel_select("L", …)` | `placeholder`, `min_values`, `max_values`; `channel_types = [GuildText, …]` | [`ResolvedUser`] / [`ResolvedRole`] / [`Mentionable`] / [`ResolvedChannel`], `Option<_>`, `Vec<_>` |
+    //! | `file_upload("L", …)` | `min_values`, `max_values`, `file_types = ["image", ".pdf"]` | [`ResolvedAttachment`], `Option<_>`, `Vec<_>` |
+    //! | `radio_group("L")` | | `C`, `Option<C>` |
+    //! | `checkbox_group("L", …)` | `min_values`, `max_values` | `Vec<C>` |
+    //! | `checkbox("L")` | | `bool` |
+    //! | `text_display("content")` | | `()` |
+    //!
+    //! - `Option<_>` is optional (`"required": false`), a plain type required;
+    //!   a `Vec<_>` is required unless `min_values = 0`. `min_values` /
+    //!   `max_values` are for `Vec` fields only.
+    //! - Every literal is checked at `cargo check` against the
+    //!   [`rules::modal`](crate::rules::modal) rules (MOD-01, MOD-02, MOD-04..07,
+    //!   CV2-09, CID-01 for keys, CV2-04 for the Text Displays). Localized
+    //!   texts are [planned, Epic 11]. Option counts come from
+    //!   [`Choices::Count`]: a Radio Group takes 2-10 options
+    //!   ([`RadioOptions`]), a Checkbox Group 1-10 ([`CheckboxOptions`]), a
+    //!   String Select 1-25 ([`StringSelectOptions`]).
+    //! - `#[derive(Choices)]` on a unit enum: `#[choice("Label")]` or
+    //!   `#[choice("Label", value = "v", description = "d")]` per variant (the
+    //!   value defaults to the variant name); texts 1-100 (MOD-07).
+    //! - Decoding ([`ModalSubmission::from_slice`], then
+    //!   [`ModalForm::from_submission`]) reads Label-wrapped and legacy
+    //!   Action-Row-wrapped inputs, including Radio Groups, Checkbox Groups
+    //!   and Checkboxes, joins selects to the resolved users, members, roles
+    //!   and channels and uploads to their attachments, and keeps unknown
+    //!   components as `serde_json::Value`s ([`ModalSubmission::unknown`]).
+    //!   Every missing, ill-typed or out-of-bounds value is a [`SubmitError`]
+    //!   (`[MOD-09]`), never a panic. The `custom_id` is not checked against
+    //!   the Route.
+    //! - A [`ResolvedAttachment`]'s URL is ephemeral: download it promptly with
+    //!   [`ResolvedAttachment::download`] through a [`FileFetcher`], which
+    //!   checks the CDN host, `Limits::attachment_bytes` and the length
+    //!   ([`DownloadError`]), and re-check its content type.
+    //!
+    //! ```
+    //! use noctis::prelude::*;
+    //! use noctis::ui::{ResolvedAttachment, SubmitError};
+    //!
+    //! #[derive(Route)]
+    //! #[route("mod.report")]
+    //! struct Report {
+    //!     id: u64,
+    //! }
+    //! # impl noctis::__private::ui::Handled for Report {}
+    //!
+    //! #[derive(Choices, Clone, Copy, PartialEq, Eq, Debug)]
+    //! enum Severity {
+    //!     #[choice("Low", value = "l")]
+    //!     Low,
+    //!     #[choice("High", value = "h")]
+    //!     High,
+    //! }
+    //!
+    //! #[derive(Modal, Debug)]
+    //! #[modal(route = Report, title = "Report a user")]
+    //! struct ReportForm {
+    //!     #[text_display("Tell us what happened.")]
+    //!     _intro: (),
+    //!     #[text_input("Reason", style = paragraph, max_length = 500)]
+    //!     reason: String,
+    //!     #[radio_group("Severity")]
+    //!     severity: Severity,
+    //!     #[file_upload("Evidence", min_values = 0, max_values = 3)]
+    //!     files: Vec<ResolvedAttachment>,
+    //!     #[checkbox("I agree")]
+    //!     agree: bool,
+    //! }
+    //!
+    //! let modal = ReportForm::modal(Report { id: 7 });
+    //! assert_eq!(modal.len(), 5);
+    //!
+    //! let bytes = br#"{"type": 5, "data": {"custom_id": "0mod.report:7", "components": [
+    //!     {"type": 10, "content": "Tell us what happened."},
+    //!     {"type": 18, "component": {"type": 4, "custom_id": "reason", "value": "spam"}},
+    //!     {"type": 18, "component": {"type": 21, "custom_id": "severity", "value": "h"}},
+    //!     {"type": 18, "component": {"type": 19, "custom_id": "files", "values": []}},
+    //!     {"type": 18, "component": {"type": 23, "custom_id": "agree", "value": true}}
+    //! ]}}"#;
+    //! let form = ReportForm::from_json(bytes)?;
+    //! assert_eq!((form.reason.as_str(), form.severity, form.agree), ("spam", Severity::High, true));
+    //! assert!(form.files.is_empty());
+    //! # Ok::<(), SubmitError>(())
+    //! ```
+    //!
+    //! A field type the attribute does not take fails `cargo check`:
+    //!
+    //! ```compile_fail,E0277
+    //! use noctis::prelude::*;
+    //!
+    //! #[derive(Route)]
+    //! #[route("mod.form")]
+    //! struct Form;
+    //! # impl noctis::__private::ui::Handled for Form {}
+    //!
+    //! #[derive(Modal)]
+    //! #[modal(route = Form, title = "T")]
+    //! struct F {
+    //!     #[checkbox("Agree")]
+    //!     agree: String, // a Checkbox is `bool`
+    //! }
+    //! ```
+    //!
+    //! So does a Route without a handler (`[CID-04]`):
+    //!
+    //! ```compile_fail,E0277
+    //! use noctis::prelude::*;
+    //!
+    //! #[derive(Route)]
+    //! #[route("mod.form")]
+    //! struct Form;
+    //!
+    //! #[derive(Modal)]
+    //! #[modal(route = Form, title = "T")]
+    //! struct F {
+    //!     #[checkbox("Agree")]
+    //!     agree: bool,
+    //! }
+    //! ```
+    //!
     //! # Placement
     //!
     //! The placing methods are bounded by sealed traits, so a misplaced
@@ -667,17 +806,19 @@ pub mod ui {
 
     pub use noctis_ui::{
         ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button,
-        ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup, Components, Container,
-        ContainerChild, ContainerComponent, Content, CostReport, CreateFlags, EditFlags, Emoji,
-        File, FileUpload, GalleryItems, Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton,
-        Media, MediaGallery, MediaItem, MentionableSelect, Mentions, MessageBody, MessageFormat,
-        Modal, ModalChannelSelect, ModalComponent, ModalInput, ModalLabel, ModalMentionableSelect,
-        ModalOption, ModalRoleSelect, ModalStringSelect, ModalTopLevel, ModalUserSelect,
-        Placeholder, PremiumButton, RadioGroup, Rgb, RoleSelect, Roles, RouteButton,
-        RouteComponents, RowButtons, RowItem, RowSelect, Section, SectionAccessory, SectionTexts,
-        SelectOption, Separator, Spacing, StringSelect, TextDisplay, TextInput, TextInputStyle,
-        Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate,
-        cost, validate,
+        ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup, CheckboxOptions,
+        Choices, Components, Container, ContainerChild, ContainerComponent, Content, CostReport,
+        CreateFlags, DownloadError, EditFlags, Emoji, File, FileFetcher, FileUpload, GalleryItems,
+        Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton, Media, MediaGallery, MediaItem,
+        Mentionable, MentionableSelect, Mentions, MessageBody, MessageFormat, Modal,
+        ModalChannelSelect, ModalComponent, ModalForm, ModalInput, ModalLabel,
+        ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalSubmission,
+        ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup, RadioOptions,
+        ResolvedAttachment, ResolvedChannel, ResolvedRole, ResolvedUser, Rgb, RoleSelect, Roles,
+        RouteButton, RouteComponents, RowButtons, RowItem, RowSelect, Section, SectionAccessory,
+        SectionTexts, SelectOption, Separator, Spacing, StringSelect, StringSelectOptions,
+        SubmitError, SubmittedValue, TextDisplay, TextInput, TextInputStyle, Thumbnail, TopLevel,
+        TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate, cost, validate,
     };
 }
 

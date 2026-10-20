@@ -175,6 +175,35 @@
 //! # Ok::<(), noctis_ui::UiError>(())
 //! ```
 //!
+//! [`ModalForm`] is a modal declared as a struct (implemented by
+//! `#[derive(Modal)]` in `noctis`): `T::modal(route)` builds the [`Modal`]
+//! and `T::from_json(bytes)` decodes the raw modal-submit interaction JSON
+//! through [`ModalSubmission`], which reads Label- and Action-Row-wrapped
+//! inputs itself (twilight-model drops Radio Groups, Checkbox Groups and
+//! Checkboxes), joins selects and uploads to the resolved
+//! [`ResolvedUser`]s, [`ResolvedRole`]s, [`ResolvedChannel`]s,
+//! [`Mentionable`]s and [`ResolvedAttachment`]s, keeps unknown components as
+//! `serde_json::Value`s and reports every bad value as a [`SubmitError`]
+//! (MOD-09). [`Choices`] is a closed option set whose type-level count is
+//! bounded by [`RadioOptions`], [`CheckboxOptions`] and
+//! [`StringSelectOptions`]. [`ResolvedAttachment::download`] fetches an
+//! upload through a [`FileFetcher`] (this crate does no I/O), checking the
+//! CDN host, the size limit and the length ([`DownloadError`]).
+//!
+//! ```
+//! use noctis_ui::{ModalSubmission, SubmittedValue};
+//!
+//! let json = br#"{"type": 5, "data": {"custom_id": "0mod.report:", "components": [
+//!     {"type": 18, "component": {"type": 22, "custom_id": "topics", "values": ["a", "b"]}}
+//! ]}}"#;
+//! let submission = ModalSubmission::from_slice(json)?;
+//! assert_eq!(
+//!     submission.get("topics"),
+//!     Some(&SubmittedValue::CheckboxGroup(vec!["a".into(), "b".into()]))
+//! );
+//! # Ok::<(), noctis_ui::SubmitError>(())
+//! ```
+//!
 //! # Limits
 //!
 //! [`validate`] checks a built [`V2Message`], [`LegacyMessage`] or
@@ -216,7 +245,10 @@ mod placement;
 mod route;
 mod wire;
 
-pub use arity::{Arity, GalleryItems, LegacyRows, RowButtons, SectionTexts};
+pub use arity::{
+    Arity, CheckboxOptions, GalleryItems, LegacyRows, RadioOptions, RowButtons, SectionTexts,
+    StringSelectOptions,
+};
 pub use attachment::{Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet};
 pub use component::{
     ActionRow, Button, ButtonStyle, ChannelSelect, Container, ContainerComponent, Emoji, File,
@@ -233,9 +265,11 @@ pub use message::{
     Roles, Users, V2Message,
 };
 pub use modal::{
-    Checkbox, CheckboxGroup, FileUpload, Modal, ModalChannelSelect, ModalComponent, ModalLabel,
-    ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalUserSelect,
-    RadioGroup, TextInput, TextInputStyle,
+    Checkbox, CheckboxGroup, Choices, DownloadError, FileFetcher, FileUpload, Mentionable, Modal,
+    ModalChannelSelect, ModalComponent, ModalForm, ModalLabel, ModalMentionableSelect, ModalOption,
+    ModalRoleSelect, ModalStringSelect, ModalSubmission, ModalUserSelect, RadioGroup,
+    ResolvedAttachment, ResolvedChannel, ResolvedRole, ResolvedUser, SubmitError, SubmittedValue,
+    TextInput, TextInputStyle,
 };
 pub use placement::{
     ContainerChild, ModalInput, ModalTopLevel, RowItem, RowSelect, SectionAccessory, TopLevel,
@@ -244,9 +278,19 @@ pub use placement::{
 pub use route::CustomId;
 pub use route::{Handled, RouteComponents};
 
-/// Helpers the `components!` expansion calls; not public API.
+/// Helpers the `components!`, `derive(Modal)` and `derive(Choices)`
+/// expansions call; not public API.
 #[doc(hidden)]
 pub mod __macro {
+    pub use twilight_model::channel::ChannelType;
+
+    pub use crate::modal::form::{
+        ChannelSelectField, CheckboxField, CheckboxGroupField, FileUploadField,
+        MentionableSelectField, RadioGroupField, RoleSelectField, Spec, StringSelectField,
+        TextDisplayField, TextInputField, UserSelectField, channel_select, checkbox,
+        checkbox_group, file_upload, mentionable_select, radio_group, role_select, string_select,
+        text_display, text_input, user_select,
+    };
     use crate::{Button, RowItem};
 
     /// Converts any Action Row button into a [`Button`], so a `row [..]` of

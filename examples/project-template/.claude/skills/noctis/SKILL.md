@@ -18,7 +18,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `b67ad0f9c0e462b140ab9eea1dfe9f357bfc2092a33e0620ac9d505185e4f156` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `eda1e76ae39406694c5274877a9225e3ec043f3aa1b9568f9d879cce086f14d7` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -223,17 +223,16 @@ pub struct EditBio { pub user: Id<UserMarker> }
 #[derive(Route, Clone, Copy)] #[route("profile.save", owner = user)]
 pub struct SaveBio { pub user: Id<UserMarker> }
 
-#[derive(Modal)]
-#[modal(route = SaveBio, title(key = "profile.bio_modal.title"))]
+#[derive(Modal, Debug)]
+#[modal(route = SaveBio, title = "Edit your profile")]   // literal texts, checked at cargo check
 pub struct BioForm {
-    #[label(key = "profile.bio_modal.bio")]
-    #[text_input(style = paragraph, max_length = 300)]
-    pub bio: Option<String>,
+    #[text_input("Bio", style = paragraph, max_length = 300)]
+    pub bio: Option<String>,                              // Option ⇒ not required
 }
 
 #[handler]
 async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
-    let modal = BioForm::modal(SaveBio { user: e.user }).bio(current_bio);
+    let modal = BioForm::modal(SaveBio { user: e.user }).bio(current_bio); // pre-fill [planned, Story 9.4]
     Ok(r.modal(modal).await?.done())
 }
 

@@ -1,0 +1,16 @@
+{
+  "id": "1300000000000000004",
+  "application_id": "1200000000000000001",
+  "type": 5,
+  "token": "aW50ZXJhY3Rpb246MTMwMDAwMDAwMDAwMDAwMDAwNA",
+  "version": 1,
+  "channel_id": "1100000000000000002",
+  "locale": "en-US",
+  "context": 1,
+  "data": {
+    "custom_id": "0t.modal:",
+    "components": [
+      {"type": 1, "id": 1, "components": [{"type": 4, "id": 2, "custom_id": "reason", "value": "legacy row"}]}
+    ]
+  }
+}

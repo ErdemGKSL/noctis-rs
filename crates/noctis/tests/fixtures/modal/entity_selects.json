@@ -1,0 +1,35 @@
+{
+  "id": "1300000000000000002",
+  "application_id": "1200000000000000001",
+  "type": 5,
+  "token": "aW50ZXJhY3Rpb246MTMwMDAwMDAwMDAwMDAwMDAwMg",
+  "version": 1,
+  "guild_id": "1100000000000000001",
+  "channel_id": "1100000000000000002",
+  "locale": "en-US",
+  "context": 0,
+  "data": {
+    "custom_id": "0t.modal:",
+    "components": [
+      {"type": 18, "id": 1, "component": {"type": 5, "id": 2, "custom_id": "users", "values": ["1000000000000000001", "1000000000000000002"]}},
+      {"type": 18, "id": 3, "component": {"type": 6, "id": 4, "custom_id": "role", "values": ["1000000000000000010"]}},
+      {"type": 18, "id": 5, "component": {"type": 7, "id": 6, "custom_id": "pings", "values": ["1000000000000000002", "1000000000000000010"]}},
+      {"type": 18, "id": 7, "component": {"type": 8, "id": 8, "custom_id": "channel", "values": ["1000000000000000020"]}}
+    ],
+    "resolved": {
+      "users": {
+        "1000000000000000001": {"id": "1000000000000000001", "username": "ada", "global_name": "Ada", "discriminator": "0", "avatar": null, "public_flags": 0},
+        "1000000000000000002": {"id": "1000000000000000002", "username": "bob", "global_name": null, "discriminator": "0", "avatar": null, "public_flags": 0}
+      },
+      "members": {
+        "1000000000000000001": {"avatar": null, "communication_disabled_until": null, "flags": 0, "joined_at": "2024-01-01T00:00:00.000000+00:00", "nick": "ada-nick", "pending": false, "permissions": "2248473465835073", "premium_since": null, "roles": ["1000000000000000010"]}
+      },
+      "roles": {
+        "1000000000000000010": {"id": "1000000000000000010", "name": "Mods", "color": 3447003, "colors": {"primary_color": 3447003, "secondary_color": null, "tertiary_color": null}, "hoist": true, "icon": null, "unicode_emoji": null, "position": 3, "permissions": "8", "managed": false, "mentionable": true, "flags": 0}
+      },
+      "channels": {
+        "1000000000000000020": {"id": "1000000000000000020", "name": "general", "type": 0, "permissions": "2248473465835073", "parent_id": null}
+      }
+    }
+  }
+}

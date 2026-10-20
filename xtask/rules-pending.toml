@@ -284,41 +284,6 @@ evidence = "unit"
 story = "7.1"
 
 [[rule]]
-id = "MOD-01"
-evidence = "diagnosed"
-story = "4.6"
-
-[[rule]]
-id = "MOD-02"
-evidence = "diagnosed"
-story = "4.6"
-
-[[rule]]
-id = "MOD-04"
-evidence = "diagnosed"
-story = "4.6"
-
-[[rule]]
-id = "MOD-05"
-evidence = "diagnosed"
-story = "4.6"
-
-[[rule]]
-id = "MOD-06"
-evidence = "diagnosed"
-story = "4.6"
-
-[[rule]]
-id = "MOD-07"
-evidence = "diagnosed"
-story = "4.6"
-
-[[rule]]
-id = "MOD-09"
-evidence = "unit"
-story = "4.6"
-
-[[rule]]
 id = "MSG-08"
 evidence = "unit"
 story = "9.1"

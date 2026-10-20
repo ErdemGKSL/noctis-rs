@@ -1,5 +1,5 @@
 //! Array lengths at the type level: [`Arity`] and the bounds built on it
-//! (CV2-06, CV2-07, CV2-10, CV2-15).
+//! (CV2-06, CV2-07, CV2-09, CV2-10, CV2-15, MOD-07).
 //!
 //! Each bound is a sealed trait implemented only for the legal lengths, so an
 //! array of the wrong length fails `cargo check` with the rule id. The bounds
@@ -132,6 +132,91 @@ pub trait SectionTexts: sealed::Sealed {}
 )]
 pub trait GalleryItems: sealed::Sealed {}
 
+/// The number of options a [`RadioGroup`](crate::RadioGroup) built from a
+/// [`Choices`](crate::Choices) enum may have: 2 to 10 (MOD-07). Its
+/// [`Choices::Count`](crate::Choices::Count) must satisfy it.
+/// `RadioGroup::new` plus [`validate`](crate::validate) is the runtime path.
+///
+/// ```
+/// use noctis_ui::{Arity, RadioOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: RadioOptions {}
+/// legal::<2>();
+/// legal::<10>();
+/// ```
+///
+/// ```compile_fail
+/// use noctis_ui::{Arity, RadioOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: RadioOptions {}
+/// legal::<1>(); // one option: does not compile
+/// ```
+///
+/// ```compile_fail
+/// use noctis_ui::{Arity, RadioOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: RadioOptions {}
+/// legal::<11>(); // eleven options: does not compile
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "[MOD-07] a Radio Group takes 2 to 10 options",
+    label = "not 2 to 10 options",
+    note = "`{Self}` is the number of Choices variants; for options known only at runtime use RadioGroup::new(key, options) and validate(&mut modal, &limits)"
+)]
+pub trait RadioOptions: sealed::Sealed {}
+
+/// The number of options a [`CheckboxGroup`](crate::CheckboxGroup) built
+/// from a [`Choices`](crate::Choices) enum may have: 1 to 10 (MOD-07).
+/// `CheckboxGroup::new` plus [`validate`](crate::validate) is the runtime
+/// path.
+///
+/// ```
+/// use noctis_ui::{Arity, CheckboxOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: CheckboxOptions {}
+/// legal::<1>();
+/// legal::<10>();
+/// ```
+///
+/// ```compile_fail
+/// use noctis_ui::{Arity, CheckboxOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: CheckboxOptions {}
+/// legal::<11>(); // eleven options: does not compile
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "[MOD-07] a Checkbox Group takes 1 to 10 options",
+    label = "not 1 to 10 options",
+    note = "`{Self}` is the number of Choices variants; for options known only at runtime use CheckboxGroup::new(key, options) and validate(&mut modal, &limits)"
+)]
+pub trait CheckboxOptions: sealed::Sealed {}
+
+/// The number of options a String Select built from a
+/// [`Choices`](crate::Choices) enum may have: 1 to 25 (CV2-09).
+/// `ModalStringSelect::new` plus [`validate`](crate::validate) is the
+/// runtime path.
+///
+/// ```
+/// use noctis_ui::{Arity, StringSelectOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: StringSelectOptions {}
+/// legal::<1>();
+/// legal::<25>();
+/// ```
+///
+/// ```compile_fail
+/// use noctis_ui::{Arity, StringSelectOptions};
+///
+/// fn legal<const N: usize>() where Arity<N>: StringSelectOptions {}
+/// legal::<26>(); // 26 options: does not compile
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "[CV2-09] a String Select takes 1 to 25 options",
+    label = "not 1 to 25 options",
+    note = "`{Self}` is the number of Choices variants; for options known only at runtime use ModalStringSelect::new(key, options) and validate(&mut modal, &limits)"
+)]
+pub trait StringSelectOptions: sealed::Sealed {}
+
 macro_rules! arity {
     (sealed: $($n:literal),* $(,)?) => {$(
         impl sealed::Sealed for Arity<$n> {}
@@ -141,8 +226,17 @@ macro_rules! arity {
     )*};
 }
 
-arity!(sealed: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+arity!(
+    sealed: 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+    24, 25
+);
 arity!(LegacyRows: 0, 1, 2, 3, 4, 5);
 arity!(RowButtons: 1, 2, 3, 4, 5);
 arity!(SectionTexts: 1, 2, 3);
 arity!(GalleryItems: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+arity!(RadioOptions: 2, 3, 4, 5, 6, 7, 8, 9, 10);
+arity!(CheckboxOptions: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+arity!(
+    StringSelectOptions: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    21, 22, 23, 24, 25
+);

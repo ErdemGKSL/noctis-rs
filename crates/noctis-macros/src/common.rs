@@ -1,7 +1,8 @@
 //! Error helpers and checks shared by the derives.
 
 use noctis_rules::RuleId;
-use quote::ToTokens;
+use proc_macro2::TokenStream;
+use quote::{ToTokens, quote};
 use syn::Generics;
 
 /// A compile error `[<rule>] <what>\n  = help: <help>` spanned on `tokens`.
@@ -37,4 +38,12 @@ pub(crate) fn reject_generics(generics: &Generics, what: &str) -> syn::Result<()
         format!("{what} cannot be generic"),
         "remove the type, lifetime and const parameters and the `where` clause; its width must be known at compile time",
     ))
+}
+
+/// `::core::option::Option::Some(value)` or `::core::option::Option::None`.
+pub(crate) fn option(value: Option<impl ToTokens>) -> TokenStream {
+    value.map_or_else(
+        || quote!(::core::option::Option::None),
+        |v| quote!(::core::option::Option::Some(#v)),
+    )
 }

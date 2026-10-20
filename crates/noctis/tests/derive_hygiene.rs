@@ -16,6 +16,11 @@ mod shadowed {
     struct usize;
     struct u8;
     struct str;
+    struct Vec;
+    struct String;
+    struct bool;
+    struct Modal;
+    struct Choices;
     mod noctis_codec {}
     mod std {}
     mod core {}
@@ -43,10 +48,35 @@ mod shadowed {
 
     #[derive(noctis::prelude::Payload, Debug, PartialEq)]
     pub(crate) struct Tuple(pub(crate) Kind, pub(crate) ::core::primitive::bool);
+
+    impl ::noctis::__private::ui::Handled for Unit {}
+
+    #[derive(noctis::prelude::Choices, Debug, Clone, Copy, PartialEq)]
+    pub(crate) enum Pick {
+        #[choice("A", description = "first")]
+        A,
+        #[choice("B", value = "b")]
+        B,
+    }
+
+    #[derive(noctis::prelude::Modal, Debug)]
+    #[modal(route = Unit, title = "Hygiene")]
+    pub(crate) struct Form {
+        #[text_display("Hi")]
+        pub(crate) intro: (),
+        #[text_input("Text")]
+        pub(crate) text: ::std::option::Option<::std::string::String>,
+        #[checkbox_group("Picks", min_values = 0)]
+        pub(crate) picks: ::std::vec::Vec<Pick>,
+        #[radio_group("Pick")]
+        pub(crate) pick: Pick,
+        #[checkbox("Ok")]
+        pub(crate) ok: ::core::primitive::bool,
+    }
 }
 
 use noctis::__private::codec::{Parts, PayloadSource, decode_route, encode};
-use noctis::prelude::{Payload, Route};
+use noctis::prelude::{Choices, ModalForm, Payload, Route};
 
 #[test]
 fn derives_ignore_local_names() {
@@ -59,4 +89,25 @@ fn derives_ignore_local_names() {
         decode_route::<shadowed::Unit>(&id),
         Ok(PayloadSource::Inline(shadowed::Unit))
     );
+}
+
+#[test]
+fn modal_derives_ignore_local_names() {
+    assert_eq!(shadowed::Pick::ALL, &[shadowed::Pick::A, shadowed::Pick::B]);
+    assert_eq!(shadowed::Pick::A.value(), "A");
+    assert_eq!(shadowed::Pick::A.description(), Some("first"));
+    assert_eq!(shadowed::Pick::from_value("b"), Some(shadowed::Pick::B));
+    assert_eq!(shadowed::Form::modal(shadowed::Unit).len(), 5);
+    let json = br#"{"type": 5, "data": {"custom_id": "0hygiene.unit:", "components": [
+        {"type": 18, "component": {"type": 4, "custom_id": "text", "value": "t"}},
+        {"type": 18, "component": {"type": 22, "custom_id": "picks", "values": ["b"]}},
+        {"type": 18, "component": {"type": 21, "custom_id": "pick", "value": "A"}},
+        {"type": 18, "component": {"type": 23, "custom_id": "ok", "value": true}}
+    ]}}"#;
+    let form = shadowed::Form::from_json(json).unwrap();
+    assert_eq!(form.text.as_deref(), Some("t"));
+    assert_eq!(form.picks, vec![shadowed::Pick::B]);
+    assert_eq!(form.pick, shadowed::Pick::A);
+    assert!(form.ok);
+    let () = form.intro;
 }
