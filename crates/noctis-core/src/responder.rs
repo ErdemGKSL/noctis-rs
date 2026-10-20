@@ -462,7 +462,7 @@ pub struct Responder<K: ResponderKind, S: ResponderState = Pending, D: DeferMode
     shared: Arc<Shared>,
     #[expect(
         clippy::type_complexity,
-        reason = "the plain marker of three type parameters; an alias hides it from Debug lints"
+        reason = "the three-parameter `PhantomData<fn() -> (K, S, D)>` marker trips type_complexity"
     )]
     marker: PhantomData<fn() -> (K, S, D)>,
 }
@@ -910,15 +910,16 @@ impl Shared {
         mut msg: OutgoingMessage,
         ephemerality: Ephemerality,
     ) -> Result<(), ResponderError> {
-        if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
-            return Err(ResponderError::EphemeralUnsupported);
-        }
         self.prepare(&mut msg)?;
         let gate = self.gate.lock().await;
         if self.state() != PENDING {
-            // The auto-defer (or a defer) answered first (INT-03).
+            // The auto-defer (or a defer) answered first (INT-03); the edit
+            // decides by the acknowledgement's ephemerality.
             drop(gate);
             return self.edit_reply(msg).await;
+        }
+        if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
+            return Err(ResponderError::EphemeralUnsupported);
         }
         let message_id = if let Transport::Message(target) = &self.transport {
             Some(target.reply(create(&msg)?).await?)

@@ -138,7 +138,7 @@ pub enum CodecError {
         /// The generation (`F / 16`).
         generation: u8,
     },
-    /// The format digit sets the reserved flag bit 2.
+    /// The format digit sets the reserved flag value 2 (`0b0010`).
     #[error("format digit sets the reserved flag 2")]
     ReservedFlag,
     /// The route is not followed by `:`.

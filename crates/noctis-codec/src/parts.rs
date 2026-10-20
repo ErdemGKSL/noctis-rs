@@ -28,12 +28,12 @@ impl Flags {
     /// The integrity tag `T` is present.
     pub const T: Self = Self(8);
 
-    /// The reserved bit 2 of the format digit; the decoder rejects a
-    /// `custom_id` that sets it.
+    /// The reserved flag value 2 (`0b0010`) of the format digit; the
+    /// decoder rejects a `custom_id` that sets it.
     pub(crate) const RESERVED: u8 = 2;
 
-    /// Flags from their bits; the reserved bit 2 and bits above `0b1111` are
-    /// dropped.
+    /// Flags from their bits; the reserved flag value 2 (`0b0010`) and bits
+    /// above `0b1111` are dropped.
     pub(crate) const fn from_bits(bits: u8) -> Self {
         Self(bits & 0b1101)
     }

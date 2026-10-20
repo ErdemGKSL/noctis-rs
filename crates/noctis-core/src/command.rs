@@ -208,7 +208,9 @@ impl CommandCtx {
             .unwrap_or(DEFAULT_LOCALE)
     }
 
-    /// The ephemerality the Command declared (`#[command(.., response = ephemeral)]`; `response = public` is the default).
+    /// The ephemerality the Command declared
+    /// (`#[command(.., response = ephemeral)]`; `response = public` is the
+    /// default).
     pub fn ephemerality(&self) -> Ephemerality {
         self.0.ephemerality
     }
@@ -514,7 +516,8 @@ impl CommandHandler {
     }
 
     /// The declared ephemerality: [`Ephemerality::Ephemeral`] with
-    /// `#[command(.., response = ephemeral)]`, else [`Ephemerality::Public`] (INT-10).
+    /// `#[command(.., response = ephemeral)]`, else
+    /// [`Ephemerality::Public`] (INT-10).
     pub fn ephemerality(&self) -> Ephemerality {
         self.ephemerality
     }

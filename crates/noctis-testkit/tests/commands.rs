@@ -757,3 +757,50 @@ async fn no_notice_after_a_modal() {
     assert_eq!(body(&sent[0])["type"], 9);
     running.run.abort();
 }
+
+#[user_command("Report", response = ephemeral, auto_defer = false)]
+async fn report_user(
+    _ctx: CommandCtx,
+    _target: noctis::ui::ResolvedUser,
+    r: CommandResponder<Manual>,
+) -> HandlerResult<Responded> {
+    Ok(r.defer_reply().await?.done())
+}
+
+/// Story 6.10 AC 3: a `response = ephemeral, auto_defer = false` user
+/// command's `defer_reply()` is the only callback, an ephemeral type 5,
+/// and no auto-defer runs (even with a 0 ms deadline).
+#[tokio::test(flavor = "multi_thread")]
+async fn manual_user_command_defers_ephemerally() {
+    let running = Running::start_with(Module::new("m").add(report_user()), |b| {
+        b.ack_deadline(Duration::ZERO);
+    })
+    .await;
+    let d = json!({
+        "id": "100",
+        "application_id": "7",
+        "type": 2,
+        "token": "tok",
+        "version": 1,
+        "authorizing_integration_owners": {},
+        "entitlements": [],
+        "user": user(),
+        "locale": "tr",
+        "data": {
+            "id": "9", "name": "Report", "type": 2, "target_id": "3",
+            "resolved": { "users": { "3": user() } }
+        },
+    });
+    assert_eq!(running.gw.dispatch("INTERACTION_CREATE", d), 1);
+    let sent = running.wait_sent(1).await;
+    assert_eq!(sent[0].route_path(), Some(CALLBACK));
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 5, "data": { "flags": 64 } })
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let sent = running.sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}

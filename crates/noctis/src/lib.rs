@@ -323,9 +323,9 @@
 //! several messages takes a [`CommandResponder`], a typestate whose
 //! `reply` / `reply_as` / `defer_reply` / `defer_reply_as` consume it into
 //! an acknowledged responder offering only `edit_reply`, `fetch_reply`,
-//! `follow_up` and `delete_reply` (INT-03, INT-04, INT-08, INT-10). A failure or a panic shows the user a short localized
-//! ephemeral notice, then goes to the `Command` Error Sink (see "Errors
-//! shown to users").
+//! `follow_up` and `delete_reply` (INT-03, INT-04, INT-08, INT-10). A
+//! failure or a panic shows the user a short localized ephemeral notice,
+//! then goes to the `Command` Error Sink (see "Errors shown to users").
 //! [`EventCtx::dispatcher`](crate::events::EventCtx::dispatcher) gives the
 //! [`Dispatcher`], which runs a registered Command from an event handler,
 //! such as a prefix command, replying to the invoking message.

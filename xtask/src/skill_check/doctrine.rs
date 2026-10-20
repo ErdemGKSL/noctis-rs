@@ -63,8 +63,10 @@ const AWAIT_LOOPS: &[&str] = &[
 ];
 const RESPONDER_CALLS: &[&str] = &[
     "reply",
+    "reply_as",
     "update",
     "defer_reply",
+    "defer_reply_as",
     "defer_update",
     "edit_reply",
 ];
@@ -520,8 +522,10 @@ mod tests {
     fn d9_responder_calls() {
         for call in [
             "reply",
+            "reply_as",
             "update",
             "defer_reply",
+            "defer_reply_as",
             "defer_update",
             "edit_reply",
         ] {

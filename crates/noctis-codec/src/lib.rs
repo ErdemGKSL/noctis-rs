@@ -33,7 +33,7 @@
 //!
 //! | Section | Width | Content |
 //! |---|---|---|
-//! | `F` | [`FMT_LEN`] | base62 digit of `16 * generation + flags`; flags [`Flags::S`] = 1, [`Flags::N`] = 4, [`Flags::T`] = 8 (bit 2 is reserved and decodes as [`CodecError::ReservedFlag`]); generation 0 |
+//! | `F` | [`FMT_LEN`] | base62 digit of `16 * generation + flags`; flags [`Flags::S`] = 1, [`Flags::N`] = 4, [`Flags::T`] = 8 (flag value 2, `0b0010`, is reserved and decodes as [`CodecError::ReservedFlag`]); generation 0 |
 //! | route | 1..=24 | [`RouteId`]: `[a-z0-9._-]`, `_`-prefixed ids reserved |
 //! | `:` | [`SEP_LEN`] | separator |
 //! | `S` | [`SCHEMA_LEN`] | schema version 1..=61, absent for schema 0 |

@@ -1,8 +1,9 @@
 //! The `custom_id` layout (AD-5): its constants, the encoder and the total,
 //! two-phase decoder.
 //!
-//! `custom_id = F route ":" [S] [N] body [T]`, ASCII only. Flag bit 2 of
-//! `F` is reserved and decodes as [`CodecError::ReservedFlag`].
+//! `custom_id = F route ":" [S] [N] body [T]`, ASCII only. The flag value
+//! 2 (`0b0010`) of `F` is reserved and decodes as
+//! [`CodecError::ReservedFlag`].
 #![deny(clippy::indexing_slicing, clippy::string_slice)]
 
 use core::fmt::{self, Write};
@@ -529,8 +530,8 @@ fn fixed<const N: usize>(
 /// Parses the format digit `F` at byte 0 into its flags (generation 0).
 ///
 /// Checked in this order: a bad digit, a generation other than 0
-/// ([`CodecError::Generation`]), then the reserved flag bit 2
-/// ([`CodecError::ReservedFlag`]).
+/// ([`CodecError::Generation`]), then the reserved flag value 2
+/// (`0b0010`, [`CodecError::ReservedFlag`]).
 pub(crate) fn parse_format(bytes: &[u8]) -> Result<Flags, CodecError> {
     let format = digit_at(bytes, 0)?;
     if format >= 16 {
@@ -645,10 +646,11 @@ fn check_body(body: &[u8], pos: usize, tagged: bool) -> Result<bool, CodecError>
 ///
 /// The first failed check, in this order: empty; over 100 bytes; a
 /// non-ASCII byte; a bad format digit, a generation other than 0 or the
-/// reserved flag bit 2; a bad, unterminated, empty or over-long route; a
-/// missing, zero or bad schema digit; a truncated or bad nonce or tag; a tag on a Ref body; a
-/// Ref that is not 11 base62 characters; an inline body byte outside
-/// printable ASCII or equal to `:` or `~`.
+/// reserved flag value 2 (`0b0010`); a bad, unterminated, empty or
+/// over-long route; a missing, zero or bad schema digit; a truncated or bad
+/// nonce or tag; a tag on a Ref body; a Ref that is not 11 base62
+/// characters; an inline body byte outside printable ASCII or equal to `:`
+/// or `~`.
 pub fn decode(raw: &str) -> Result<Decoded<'_>, CodecError> {
     let bytes = raw.as_bytes();
     let len = bytes.len();

@@ -565,16 +565,56 @@ async fn message_transport() {
     let _ = acked.done();
     assert!(fx.requests().is_empty());
 
-    // A declared-ephemeral Command deferred publicly cannot post its
-    // first message through an edit or a returned message.
-    let shared = fx.message(Ephemerality::Ephemeral);
-    let acked: Responder<Command, Acked> = Responder::new(Arc::clone(&shared)).acked();
-    let err = acked.edit_reply(v2("a")).await.unwrap_err();
-    assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
-    let _ = acked.done();
-    let err = shared.finish(v2("a").into()).await.unwrap_err();
+    // `reply_as` decides per call: Ephemeral fails before any request,
+    // Public posts even on a declared-ephemeral Command.
+    let shared = fx.message(Ephemerality::Public);
+    let err = responder(&shared)
+        .reply_as(v2("a"), Ephemerality::Ephemeral)
+        .await
+        .unwrap_err();
     assert!(matches!(err, ResponderError::EphemeralUnsupported), "{err}");
     assert!(fx.requests().is_empty());
+    let shared = fx.message(Ephemerality::Ephemeral);
+    let _ = responder(&shared)
+        .reply_as(v2("a"), Ephemerality::Public)
+        .await
+        .unwrap()
+        .done();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        (requests[0].0.clone(), requests[0].1.as_str()),
+        (Method::POST, "/api/v10/channels/5/messages")
+    );
+}
+
+/// Matrix 48-50: a declared-ephemeral Command deferred publicly on the
+/// message transport posts its first message through an edit or a
+/// returned message.
+#[tokio::test]
+async fn message_transport_public_defer_of_ephemeral_command() {
+    let fx = Fixture::start(discord()).await;
+    for via_finish in [false, true] {
+        fx.server.log.lock().unwrap().clear();
+        let shared = fx.message(Ephemerality::Ephemeral);
+        let acked = responder(&shared)
+            .defer_reply_as(Ephemerality::Public)
+            .await
+            .unwrap();
+        if via_finish {
+            shared.finish(v2("a").into()).await.unwrap();
+        } else {
+            acked.edit_reply(v2("a")).await.unwrap();
+        }
+        let _ = acked.done();
+        let requests = fx.requests();
+        assert_eq!(requests.len(), 2, "via_finish = {via_finish}");
+        assert_eq!(requests[0].1, "/api/v10/channels/5/typing");
+        assert_eq!(
+            (requests[1].0.clone(), requests[1].1.as_str()),
+            (Method::POST, "/api/v10/channels/5/messages")
+        );
+    }
 }
 
 /// Matrix 52: the detached transport sends nothing and still validates.
