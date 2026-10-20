@@ -2,7 +2,8 @@
 title: 'Story 6.2: Typed options with `derive(Options)` and `derive(Choices)`'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '7b308e1b9f4f117418268afd237dc30fd2c98baa'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
