@@ -530,7 +530,7 @@ thumbnail := thumbnail "(" media [, alt = string-literal | expr] ")"
 gallery   := gallery "[" item,* "]"             (items or {hole}s)
 item      := item "(" media [, alt = string-literal | expr] ")"
 file      := file "(" attachment_ref ")"
-separator := separator [ "(" spacing = small | large [, divider = expr] ")" ]   (keys in any order, each once)
+separator := separator [ "(" [spacing = small | large] [, divider = expr] ")" ]   (both optional, any order, each once)
 row       := row "[" (button | {hole}),* "]" | row "[" select "]"
 button    := route.button() | route.button(label) [.setter(..)]* | link(url = "…", label = "…") | premium(sku)
 select    := route.string_select(options) | route.user_select() | route.role_select()
@@ -548,6 +548,8 @@ spread    := ".." expr                          IntoIterator of components; top 
 - `link` needs literal `url` and `label`, in that order. `button_with` arrives with
   Story 9.3 [planned]. Spreads in a `row`, `section` or `gallery` are a syntax error:
   build a dynamic row with `ActionRow::try_buttons` and pass it as a `{hole}`.
+- A `{hole}` inside `row [ .. ]` is a button; a pre-built select there fails with E0277
+  `[CV2-05]`. Pass it as a node-level hole instead: `{ActionRow::select(sel)}`.
 - Syntax errors (unknown keyword such as `box [ ]`, a non-component expression at a
   node position, an unknown or repeated argument) carry no rule id.
 
@@ -590,6 +592,8 @@ receivers with identical tokens (button or select) fail with
 ``[CID-02] duplicate custom_id: `Press { n : 1 }` is already used at row[0].button[0]``
 on the second and ``[CID-02] first use of the duplicate custom_id …`` on the first.
 `Press { n }`, `Press { n: x }`, variables and `1` vs `1u8` are not compared.
+A `by_ref` Route written twice with equal literal values is rejected too, although its
+runtime Refs differ; build one of them in a `{hole}` or give them distinct values.
 
 **Runtime backstop.** Holes, spreads, non-literal text, labels and options are a static
 lower bound only: `noctis::ui::validate` (§16) checks the actual tree before sending.

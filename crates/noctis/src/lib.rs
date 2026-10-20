@@ -417,14 +417,14 @@ pub mod ui {
     //! ```text
     //! components! { node,* }
     //! node      := container | section | text | gallery | file | separator | row | {hole} | ..spread
-    //! container := container [ ( accent = expr ) ] [ node,* ]
-    //! section   := section [ text,* ; accessory = (thumbnail | button | {hole}) ]
-    //! text      := text( string-literal | expr )
-    //! thumbnail := thumbnail( media [, alt = text] )      // a string literal media is a URL
-    //! gallery   := gallery [ item( media [, alt = text] ),* ]
-    //! file      := file( attachment_ref )
-    //! separator := separator [ ( spacing = small | large , divider = expr ) ]  // keys in any order
-    //! row       := row [ (button | {hole}),* ] | row [ select ]
+    //! container := container [ "(" accent = expr ")" ] "[" node,* "]"
+    //! section   := section "[" text,* ";" accessory = (thumbnail | button | {hole}) "]"
+    //! text      := text "(" string-literal | expr ")"
+    //! thumbnail := thumbnail "(" media [, alt = text] ")"      // a string literal media is a URL
+    //! gallery   := gallery "[" item "(" media [, alt = text] ")",* "]"
+    //! file      := file "(" attachment_ref ")"
+    //! separator := separator [ "(" [spacing = small | large] [, divider = expr] ")" ]  // both optional, any order
+    //! row       := row "[" (button | {hole}),* "]" | row "[" select "]"
     //! button    := route.button( [label] ) .setter(..)* | link(url = "..", label = "..") | premium(sku)
     //! select    := route.string_select(options) .setter(..)* | route.user_select() .setter(..)* | ..
     //! ```

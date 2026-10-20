@@ -310,7 +310,14 @@ fn peek_keyword(input: ParseStream<'_>) -> Option<Ident> {
         return None;
     }
     let ends = fork.is_empty() || fork.peek(Token![,]) || fork.peek(Token![;]);
-    if fork.peek(token::Paren) || fork.peek(token::Bracket) || (name == "separator" && ends) {
+    if fork.peek(token::Paren) || fork.peek(token::Bracket) {
+        // `row[0].button()` or `text(x).button()`: a Route receiver, not a node.
+        let _: TokenTree = fork.parse().ok()?;
+        if fork.peek(Token![.]) && !fork.peek(Token![..]) {
+            return None;
+        }
+        Some(ident)
+    } else if name == "separator" && ends {
         Some(ident)
     } else {
         None
@@ -808,5 +815,24 @@ mod tests {
         assert!(err(quote!(row[P.button("a", "b")])).contains("takes no argument or one label"));
         assert!(err(quote!(separator(spacing = large, spacing = small))).starts_with("duplicate"));
         assert_eq!(err(quote!(routes[0].button())), "ok");
+    }
+
+    #[test]
+    fn keyword_named_receivers() {
+        let nodes = parse(quote! {
+            row [ row[0].button(), text(x).button("a"), section(1).string_select([o]) ],
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        let Kind::Row(items) = &nodes[0].kind else {
+            panic!("row");
+        };
+        let receivers: Vec<_> = items
+            .iter()
+            .map(|i| match &i.kind {
+                Kind::Route(r) => r.receiver.to_token_stream().to_string(),
+                other => panic!("route expected, got {}", other.name()),
+            })
+            .collect();
+        assert_eq!(receivers, ["row [0]", "text (x)", "section (1)"]);
     }
 }

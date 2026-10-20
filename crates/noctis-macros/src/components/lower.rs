@@ -394,11 +394,13 @@ fn select_counts(r: &RouteNode) -> Vec<(&'static str, &Expr)> {
             "max_values" => "max_values",
             _ => continue,
         };
+        // A later call overrides an earlier one, so a non-literal call
+        // drops the literal it replaces and leaves the bound to the runtime.
+        out.retain(|(n, _)| *n != name);
         if s.args.len() == 1
             && let Some(arg) = s.args.first()
             && lit_int(arg).is_some()
         {
-            out.retain(|(n, _)| *n != name);
             out.push((name, arg));
         }
     }
@@ -746,6 +748,39 @@ mod tests {
     }
 
     #[test]
+    fn select_matrix_cases() {
+        let long = "p".repeat(151);
+        let msgs = messages(quote! {
+            row [ Q.string_select([o]).placeholder(#long) ],
+        });
+        assert_eq!(msgs.len(), 1, "{msgs:#?}");
+        assert!(
+            msgs[0].starts_with("[CV2-09] row[0].select[0].placeholder"),
+            "{msgs:#?}"
+        );
+
+        let msgs = messages(quote! {
+            row [ Q.string_select([o, o, o]).min_values(3).max_values(2) ],
+        });
+        assert_eq!(msgs.len(), 1, "{msgs:#?}");
+        assert!(msgs[0].starts_with("[CV2-"), "{msgs:#?}");
+        assert!(msgs[0].contains("min_values"), "{msgs:#?}");
+
+        let msgs = messages(quote!(container[item(m)]));
+        assert_eq!(msgs.len(), 1, "{msgs:#?}");
+        assert!(msgs[0].starts_with("[CV2-05]"), "{msgs:#?}");
+    }
+
+    #[test]
+    fn select_counts_follow_the_last_call() {
+        let msgs = messages(quote! {
+            row [ Q.string_select([o, o]).min_values(3).min_values(n).max_values(2) ],
+            row [ R.string_select([o, o]).max_values(0).max_values(m) ],
+        });
+        assert!(msgs.is_empty(), "{msgs:#?}");
+    }
+
+    #[test]
     fn cid_02_keys() {
         let key = |e: Expr| cid_key(&e);
         assert_eq!(
@@ -790,5 +825,33 @@ mod tests {
             msgs[2],
             "[CID-02] first use of the duplicate custom_id `Press { n : 1 }`"
         );
+    }
+
+    #[test]
+    fn cid_02_duplicates_across_places() {
+        let msgs = messages(quote! {
+            section [ text("a"); accessory = Acc.button("x") ],
+            container [ row [ Acc.button() ] ],
+            row [ U.button(), U.button() ],
+            row [ Page(1).button(), Page(1).button() ],
+            row [ Same.button() ],
+            row [ Same.string_select([o]) ],
+        });
+        let dups: Vec<_> = msgs
+            .iter()
+            .filter(|m| m.starts_with("[CID-02] duplicate"))
+            .collect();
+        assert_eq!(dups.len(), 4, "{msgs:#?}");
+        for (key, at) in [
+            ("Acc", "section[0].accessory"),
+            ("U", "row[2].button[0]"),
+            ("Page (1)", "row[3].button[0]"),
+            ("Same", "row[4].button[0]"),
+        ] {
+            let text = format!("`{key}` is already used at {at}");
+            assert!(dups.iter().any(|m| m.contains(&text)), "{text}: {msgs:#?}");
+        }
+        let firsts = msgs.iter().filter(|m| m.contains("first use")).count();
+        assert_eq!(firsts, 4, "{msgs:#?}");
     }
 }

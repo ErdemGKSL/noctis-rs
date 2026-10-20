@@ -2,10 +2,10 @@
 title: 'Story 4.4: Compile-time checks for literals, arity and the `components!` tree macro'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'fc56965d9bcf5fca782e2b06ce7c5eb792d32377'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-4-context.md'
   - '{project-root}/docs/discord-rules.md'
@@ -318,6 +318,40 @@ Notation:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 30 findings — high 0, medium 2, low 12, false 15, maybe-false 1
+- findings:
+  - `[low]` `[reject]` rgb!/accent literal suffix ignored (`rgb!(0x1FFu8)` retyped to u32) — real (`base10_parse::<u32>` drops the suffix, literal.rs:103, expand.rs:111), but the value is still a valid colour, non-u32 suffixes are unlikely, and the fix adds a suffix guard.
+  - `[low]` `[patch]` select_counts keeps the last literal min/max_values even when a later non-literal call overrides it (false CV2-09) — confirmed at lower.rs:386-406; shares root cause with edge #1; fix: a non-literal call of the same setter drops the earlier literal.
+  - `[low]` `[patch]` a pre-built select cannot be a `{hole}` inside `row [..]` (wrapped in `row_button`, E0277 `[CV2-05] ... Action Row button`) — confirmed expand.rs:145-153; grammar says `(button | {hole})` without stating it; fix: document that a row hole is a button and a dynamic select goes in as `{ActionRow::select(sel)}`.
+  - `[low]` `[patch]` peek_keyword takes `row[0].button()` / `text(x).button()` as a node keyword — confirmed parse.rs:305-318 (keyword + paren/bracket, no check for a following `.`); shares root cause with edge #3; fix: after the group, a following `.` means a Route expression.
+  - `[maybe-false]` `[reject]` error path drops user expressions, causing unused-variable warnings — would need a fixture with a tree-only variable to see whether rustc emits liveness lints after the compile_error!s; if true only cosmetic (low).
+  - `[low]` `[reject]` CV2-03 emits one note per top-level node (wall of notes) — Matrix 39 mandates exactly this; the fix would edit the spec.
+  - `[low]` `[reject]` `link(..)` takes no setters and needs literal url/label — Matrix 59 and the grammar line settle the form; accepting setters adds grammar surface, and `{hole}` is the documented way out.
+  - `[low]` `[reject]` newtypes lack `TryFrom<&str>`/`Display` — signatures are fixed by task 5; the fix would edit the spec.
+  - `[false]` `[reject]` CID-02 "first use" error lacks `= help:` — the help convention applies to a rule violation's message; the first-use error is the secondary span marker whose text Matrix 55 fixes.
+  - `[low]` `[patch]` misuse paths pinned only by id-less doctests; no `components!` tests for CV2-09 min>max / placeholder 151 / misplaced `item` — doctests are allowed by task 11, but Matrix 49 placeholder/min>max and 45 `item` have no test; grouped with vgap #1; fix: add the cases.
+  - `[false]` `[reject]` CID-02 on two identical select receivers is a false positive because of the nonce — the select nonce is per render (routes-payloads-refs.md L69, L323), so both selects carry the same id; Matrix 56 requires the button/select duplicate.
+  - `[low]` `[patch]` grammar shows `spacing` as required in `separator(..)`, and literal vs optional brackets are unquoted in the rustdoc grammar — confirmed components-v2.md:533 vs parse accepting `separator(divider = false)`; fix: make spacing optional in both grammars and quote literal brackets in `crates/noctis/src/lib.rs`.
+  - `[false]` `[reject]` `string_select(expr)` lowered as User weakens CV2-09 — the Design Notes lowering table settles it, user-select bounds are only looser (no false error), and the docs already say "array-literal options".
+  - `[low]` `[patch]` (edge) select_counts override — same as blind #2.
+  - `[low]` `[patch]` (edge) CID-02 rejects two equal literal values of a `by_ref` Route although runtime Refs are minted randomly (`Ref::mint`, noctis-codec refs.rs:53) — real but rare; the macro cannot see `by_ref`; fix: state the limit in the skill's CID-02 section (use `{hole}` or distinct values).
+  - `[low]` `[patch]` (edge) keyword-named receiver misparse — same as blind #4.
+  - `[false]` `[reject]` (edge) `separator(spacing = Spacing::Large)` reports CV2-13 — Matrix 26 mandates CE[CV2-13] for non-`small`/`large` spacing, and CV2-13 covers Separator spacing (discord-rules.md L201).
+  - `[medium]` `[patch]` (vgap) no `components!` test for an over-limit literal `.placeholder` (Matrix 49) — pre-verified; fix: add a lower.rs `rules_and_own_checks` case (or fixture) asserting `[CV2-09] row[0].select[0].placeholder`.
+  - `[medium]` `[patch]` (vgap) CID-02 untested for accessory + container row, unit/tuple receivers, button + select (Matrix 56) — pre-verified; fix: extend `cid_02_duplicates`.
+  - `[false]` `[reject]` (intent) builder setters still take `impl Into<Cow>` — Design Notes ("Why newtypes convert into Cow") and the Code Map settle it.
+  - `[false]` `[reject]` (intent) no attribute-macro form — the spec reads "builder macro attribute" as the `components!` literal positions.
+  - `[false]` `[reject]` (intent) no standalone description newtype for CV2-11 — Never excludes `alt!`/`lit!`; Matrix 50-51 place CV2-10/11 alt checks in `components!`.
+  - `[false]` `[reject]` (intent) `button_with` rejected — Never list and Matrix 59 (Story 9.3).
+  - `[false]` `[reject]` (intent) `View::render` untested — Never list (Epic 8).
+  - `[false]` `[reject]` (intent) CID-02 as two errors — Matrix 55 specifies the two errors.
+  - `[false]` `[reject]` (intent) CID-02 key heuristics — Design Notes "CID-02 key" and Matrix 56/58 settle them.
+  - `[false]` `[reject]` (intent) grammar extensions — Design Notes grammar resolutions and Matrix 25-31.
+  - `[false]` `[reject]` (intent) MSG-01 / CV2-17 beyond the epic Implements — the intent Problem names both rules.
+  - `[false]` `[reject]` (intent) CV2-03 notes per top-level node only — Matrix 39.
+  - `[false]` `[reject]` (intent) no CV2-15 work — already enforced by the pre-existing `LegacyRows` bound; nothing was left to do.
+
 ## Design Notes
 
 - **Why newtypes convert into `Cow`:** the AC wants builders to take `Label`/`Placeholder`, and the template passes localized `String`s to `.label(..)`. If every text setter keeps `impl Into<Cow<'static, str>>` and `From<Label> for Cow` exists, both work and nothing breaks. `TryFrom<String>` cannot coexist with an unchecked `From<String>`, so there is no `From<String> for Label`. `try_*` and `TryFrom` never truncate; Lenient truncation stays in `validate`.
@@ -387,3 +421,12 @@ Notation:
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- exit 0 each.
 - `bash .github/scripts/check-build-config.sh` -- exit 0; `test ! -d target/debug` -- true.
 - `grep -c 'story = "4.4"' xtask/rules-pending.toml` -- prints 0.
+
+## Auto Run Result
+
+- **Summary:** compile-time Discord limit checks: checked text newtypes (`Label`, `Placeholder`, ...) with `try_*`/`TryFrom` and literal macros, arity traits, `rgb!`, and the `components!` tree macro (noctis-macros `components/{parse,lower,expand}`) that lowers a literal tree to descriptors and runs the runtime rules at compile time (CV2-03/04/05/07/09/10/11/13/17, MSG-01, CID-02) with path-precise spans.
+- **Files changed:** `crates/noctis-macros/src/components/*` (parser, lowering, expansion); `crates/noctis/src/lib.rs` (macro re-export, rustdoc grammar); newtype/arity modules in noctis core crates; `crates/noctis/tests/ui/**` (compile_fail fixtures per rule id); `docs/discord-rules.md`, `xtask/rules-pending.toml` (rules moved to enforced); `xtask/public-api.txt` (re-blessed); `examples/project-template/` (setup.rs, AGENTS.md, noctis skill: components-v2, limits-cheatsheet, responder, API hash).
+- **Review findings:** 30 total (high 0, medium 2, low 12, false 15, maybe-false 1). Patched: 2 medium (placeholder-151 / min>max / misplaced `item` tests; CID-02 coverage for accessory, container row, unit/tuple receivers, button+select) and 6 low (select_counts non-literal override, row-hole doc, keyword-receiver misparse `row[0].button()`, separator `spacing` optional + quoted grammar brackets, `by_ref` CID-02 limit documented, duplicate edge entries). Deferred: none. Rejected: rgb! literal suffix ignored (still valid colour), unused-variable warnings on error path (unverified, cosmetic), CV2-03 per-node notes (Matrix 39), `link(..)` setters (Matrix 59), newtype `TryFrom<&str>`/`Display` (task 5 signatures), plus 15 false findings settled by spec Design Notes / Matrix / Never list.
+- **Follow-up review recommended: true** (first pass, 2 medium patched; high 0, medium 2, low 6). Named risk: the parser change for keyword-named receivers (`.`-after-group lookahead) and the select_counts override logic were patched after review and have not been independently re-reviewed for new misparses of valid trees.
+- **Verification:** all local gates green via gates.sh (fmt, clippy -D warnings, test --release, cargo hack --each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** rustc diagnostic text in trybuild `.stderr` may drift with toolchain updates; CID-02 cannot see `by_ref` Routes (documented); non-literal `string_select(expr)` options are only checked at runtime.
