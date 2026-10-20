@@ -2,7 +2,8 @@
 title: 'Story 5.1: App builder, Runtime, Plugin seam and startup safety'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'b5527bcd15202b614cd2b20495a2d9ca54c53913'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

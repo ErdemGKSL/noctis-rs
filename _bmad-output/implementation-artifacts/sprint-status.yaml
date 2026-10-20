@@ -71,7 +71,7 @@ development_status:
   epic-4-retrospective: optional
 
   epic-5: backlog
-  5-1-app-builder-runtime-plugin-seam-and-startup-safety: backlog
+  5-1-app-builder-runtime-plugin-seam-and-startup-safety: in-progress
   5-2-discord-http-fake-and-the-test-runtime: backlog
   5-3-discord-gateway-fake: backlog
   5-4-automatic-sharding-with-bucketed-identify: backlog
