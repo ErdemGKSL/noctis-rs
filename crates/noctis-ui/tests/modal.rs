@@ -13,11 +13,13 @@ use noctis_codec::{FieldWriter, Parts, Payload, Route, RouteId, RouteShape, Sele
 use noctis_rules::len::discord_len;
 use noctis_rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
 use noctis_ui::{
-    Checkbox, CheckboxGroup, CostReport, FileUpload, Handled, LimitWarning, Modal, ModalInput,
-    ModalLabel, ModalOption, ModalStringSelect, ModalUserSelect, RadioGroup, RouteComponents,
-    SelectOption, TextDisplay, TextInput, TextInputStyle, UiError, cost, validate,
+    Checkbox, CheckboxGroup, CostReport, FileUpload, Handled, LimitWarning, Modal,
+    ModalChannelSelect, ModalInput, ModalLabel, ModalMentionableSelect, ModalOption,
+    ModalRoleSelect, ModalStringSelect, ModalUserSelect, RadioGroup, RouteComponents, SelectOption,
+    TextDisplay, TextInput, TextInputStyle, UiError, cost, validate,
 };
 use serde_json::Value;
+use twilight_model::id::Id;
 
 /// A hand-written handled Route without fields whose Payload is itself.
 macro_rules! route {
@@ -468,6 +470,23 @@ fn cv2_09_modal_string_select_bounds() {
     );
 }
 
+#[test]
+fn cv2_09_modal_select_default_values() {
+    let path = "label[0].select.default_values";
+    let users = || ModalUserSelect::new("u").default_users([Id::new(1), Id::new(2), Id::new(3)]);
+    fails_at(one(users()), RuleId::CV2_09, path);
+    passes(one(users().max_values(3)));
+    let channels =
+        || ModalChannelSelect::new("c").default_channels([Id::new(1), Id::new(2), Id::new(3)]);
+    fails_at(one(channels()), RuleId::CV2_09, path);
+    passes(one(channels().max_values(3)));
+    passes(
+        Save.modal("T")
+            .push(label(ModalRoleSelect::new("r")))
+            .push(label(ModalMentionableSelect::new("m"))),
+    );
+}
+
 // Rows 25-27.
 
 #[test]
@@ -496,6 +515,78 @@ fn cid_02_duplicate_keys() {
         errs[0].notes,
         ["first used at label[0].text_input.custom_id"]
     );
+}
+
+#[test]
+fn cid_02_duplicate_select_keys() {
+    let m = Save
+        .modal("T")
+        .push(label(short("a")))
+        .push(label(ModalStringSelect::new("a", select_opts(1))))
+        .push(label(ModalUserSelect::new("a")));
+    let errs = errs(m);
+    assert_eq!(rules(&errs), [RuleId::CID_02, RuleId::CID_02]);
+    assert_eq!(errs[0].path, "label[1].select.custom_id");
+    assert_eq!(errs[1].path, "label[2].select.custom_id");
+    for v in &errs {
+        assert_eq!(v.notes, ["first used at label[0].text_input.custom_id"]);
+    }
+}
+
+#[test]
+fn cid_02_keys_after_text_display() {
+    let m = Save
+        .modal("T")
+        .push(TextDisplay::new("intro"))
+        .push(label(short("a")))
+        .push(label(Checkbox::new("a")));
+    let errs = errs(m);
+    assert_eq!(rules(&errs), [RuleId::CID_02]);
+    assert_eq!(errs[0].path, "label[2].checkbox.custom_id");
+    assert_eq!(
+        errs[0].notes,
+        ["first used at label[1].text_input.custom_id"]
+    );
+}
+
+#[test]
+fn cv2_04_modal_text_display_total() {
+    passes(
+        Save.modal("T")
+            .push(TextDisplay::new(a(2000)))
+            .push(TextDisplay::new(a(2000))),
+    );
+    let errs = fails_at(
+        Save.modal("T")
+            .push(TextDisplay::new(a(2000)))
+            .push(TextDisplay::new(a(2001))),
+        RuleId::CV2_04,
+        "components",
+    );
+    assert_eq!(rules(&errs), [RuleId::CV2_04]);
+    assert_eq!(errs[0].actual, Actual::Count(4001));
+}
+
+#[test]
+fn cv2_04_modal_lenient_truncates_text_displays() {
+    let mut m = Save
+        .modal("T")
+        .push(TextDisplay::new(a(3000)))
+        .push(label(short("k")))
+        .push(TextDisplay::new(a(3000)));
+    let report = validate(&mut m, &lenient()).expect("lenient fits");
+    let cut: Vec<(RuleId, &str)> = report
+        .warnings
+        .iter()
+        .map(|w| (w.rule().expect("a truncation"), w.path()))
+        .collect();
+    assert_eq!(cut, [(RuleId::CV2_04, "components")]);
+    assert_eq!(report.text_chars, 4000);
+    let value = json(&m);
+    let last = value["components"][2]["content"]
+        .as_str()
+        .expect("a string");
+    assert!(last.ends_with('…'), "{last}");
 }
 
 #[test]
@@ -553,6 +644,73 @@ fn mod_01_lenient_truncates() {
         assert!(text.ends_with('…'), "{text}");
         assert_eq!(discord_len(text), max);
     }
+}
+
+#[test]
+fn mod_04_lenient_truncates_every_site() {
+    let mut m = Save
+        .modal("T")
+        .push(ModalLabel::new("L", short("t").placeholder(a(101))).description(a(101)))
+        .push(label(
+            ModalStringSelect::new("s", [SelectOption::new(a(101), "v").description(a(101))])
+                .placeholder(a(151)),
+        ))
+        .push(label(CheckboxGroup::new(
+            "g",
+            [ModalOption::new(a(101), "v").description(a(101))],
+        )));
+    let report = validate(&mut m, &lenient()).expect("lenient fits");
+    let cut: Vec<(RuleId, &str)> = report
+        .warnings
+        .iter()
+        .map(|w| (w.rule().expect("a truncation"), w.path()))
+        .collect();
+    assert_eq!(
+        cut,
+        [
+            (RuleId::MOD_04, "label[0].description"),
+            (RuleId::MOD_05, "label[0].text_input.placeholder"),
+            (RuleId::CV2_09, "label[1].select.placeholder"),
+            (RuleId::CV2_09, "label[1].select.options[0].label"),
+            (RuleId::CV2_09, "label[1].select.options[0].description"),
+            (RuleId::MOD_07, "label[2].checkbox_group.options[0].label"),
+            (
+                RuleId::MOD_07,
+                "label[2].checkbox_group.options[0].description"
+            ),
+        ]
+    );
+    let value = json(&m);
+    let c = &value["components"];
+    let texts = [
+        (c[0]["description"].as_str(), 100),
+        (c[0]["component"]["placeholder"].as_str(), 100),
+        (c[1]["component"]["placeholder"].as_str(), 150),
+        (c[1]["component"]["options"][0]["label"].as_str(), 100),
+        (c[1]["component"]["options"][0]["description"].as_str(), 100),
+        (c[2]["component"]["options"][0]["label"].as_str(), 100),
+        (c[2]["component"]["options"][0]["description"].as_str(), 100),
+    ];
+    for (text, max) in texts {
+        let text = text.expect("a string");
+        assert!(text.ends_with('…'), "{text}");
+        assert_eq!(discord_len(text), max);
+    }
+}
+
+#[test]
+fn mod_04_lenient_path_after_text_display() {
+    let mut m = Save
+        .modal("T")
+        .push(TextDisplay::new("intro"))
+        .push(ModalLabel::new(a(50), short("k")));
+    let report = validate(&mut m, &lenient()).expect("lenient fits");
+    let cut: Vec<(RuleId, &str)> = report
+        .warnings
+        .iter()
+        .map(|w| (w.rule().expect("a truncation"), w.path()))
+        .collect();
+    assert_eq!(cut, [(RuleId::MOD_04, "label[1].label")]);
 }
 
 #[test]

@@ -136,7 +136,7 @@
 //! [`TextInputStyle`]), [`ModalStringSelect`], [`ModalUserSelect`],
 //! [`ModalRoleSelect`], [`ModalMentionableSelect`], [`ModalChannelSelect`],
 //! [`FileUpload`], [`RadioGroup`] and [`CheckboxGroup`] (of [`ModalOption`]s)
-//! or [`Checkbox`]. Any message component fails `cargo check` with
+//! or [`Checkbox`]. Any other message component fails `cargo check` with
 //! `[MOD-03]`; modal selects have no `disabled` and a Checkbox has no
 //! `required`. Each input takes a string key, its `custom_id`, naming the
 //! submitted field. A modal serializes as callback `data`
@@ -182,7 +182,9 @@
 //! measures one without changing it. Both lower a message tree into
 //! `noctis_rules::component` descriptors (a modal into `noctis_rules::modal`
 //! ones), so counts, paths and violation order match `components!`;
-//! they add CID-02, ATT-05, ATT-06, MSG-01, MSG-04 and MSG-09. A failure is
+//! for messages they add CID-02, ATT-05, ATT-06, MSG-01, MSG-04 and MSG-09,
+//! and for a modal CID-01 and CID-02 on its input keys and CV2-04 on its
+//! Text Displays. A failure is
 //! [`UiError::Limits`] with path-precise violations; Lenient mode truncates
 //! display text with `…` instead, as a [`LimitWarning::Truncated`]. Images
 //! without alt text are a [`LimitWarning::MissingAlt`] in both modes.

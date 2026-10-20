@@ -201,6 +201,12 @@ impl ModalUserSelect {
 ///     serde_json::json!({"type": 6, "custom_id": "role", "default_values": [{"id": "9", "type": "role"}]})
 /// );
 /// ```
+///
+/// ```compile_fail,E0599
+/// use noctis_ui::ModalRoleSelect;
+///
+/// let _ = ModalRoleSelect::new("r").disabled(true); // [MOD-03]
+/// ```
 #[derive(Debug, Clone)]
 pub struct ModalRoleSelect {
     pub(crate) common: ModalCommon,
@@ -238,6 +244,12 @@ impl ModalRoleSelect {
 ///     serde_json::to_value(&select).unwrap(),
 ///     serde_json::json!({"type": 7, "custom_id": "target", "placeholder": "Who?"})
 /// );
+/// ```
+///
+/// ```compile_fail,E0599
+/// use noctis_ui::ModalMentionableSelect;
+///
+/// let _ = ModalMentionableSelect::new("m").disabled(true); // [MOD-03]
 /// ```
 #[derive(Debug, Clone)]
 pub struct ModalMentionableSelect {
@@ -287,6 +299,12 @@ impl ModalMentionableSelect {
 ///     serde_json::to_value(&select).unwrap(),
 ///     serde_json::json!({"type": 8, "custom_id": "where", "channel_types": [0]})
 /// );
+/// ```
+///
+/// ```compile_fail,E0599
+/// use noctis_ui::ModalChannelSelect;
+///
+/// let _ = ModalChannelSelect::new("c").disabled(true); // [MOD-03]
 /// ```
 #[derive(Debug, Clone)]
 pub struct ModalChannelSelect {

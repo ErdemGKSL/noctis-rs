@@ -179,9 +179,10 @@ impl fmt::Display for LimitWarning {
 /// A [`Modal`] gets the `noctis_rules::modal::validate_modal` violations
 /// (MOD-01..07, CV2-09) in their order, then CID-01 for every input key in
 /// pre-order (path `label[i].<input>.custom_id`), then CID-02 for every
-/// repeated key. Lenient mode truncates its title, Label texts and
-/// descriptions, Text Input placeholders, select placeholders and option
-/// labels and descriptions; never a Text Input `value`, an option value or a
+/// repeated key, then CV2-04 (path `components`) when its Text Displays
+/// together exceed the total. Lenient mode truncates its title, Label texts
+/// and descriptions, Text Input placeholders, select placeholders, option
+/// labels and descriptions, and its Text Displays to fit CV2-04; never a Text Input `value`, an option value or a
 /// key.
 ///
 /// # Errors
@@ -343,7 +344,16 @@ impl sealed::Check for Modal {
             .err()
             .unwrap_or_default();
         check_modal_keys(self, limits, &mut violations);
-        finish(modal_cost(self, warnings), violations)
+        let report = modal_cost(self, warnings);
+        if report.text_chars > limits.text_total_len {
+            violations.push(Violation::new(
+                RuleId::CV2_04,
+                "components",
+                Bound::AtMost(limits.text_total_len),
+                Actual::Count(report.text_chars),
+            ));
+        }
+        finish(report, violations)
     }
 
     fn cost_with(&self, _limits: &Limits) -> CostReport {

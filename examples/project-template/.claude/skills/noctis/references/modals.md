@@ -260,7 +260,8 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
 - `noctis::ui::validate(&mut modal, &limits)` returns a `CostReport` or
   `UiError::Limits { violations }`. Order: the `noctis::rules::modal::validate_modal`
   violations (MOD-01 title, MOD-02 count, then per component; §7), then CID-01 for every
-  input key in order, then CID-02 for each repeated key (note `first used at <path>`).
+  input key in order, then CID-02 for each repeated key (note `first used at <path>`),
+  then CV2-04 at `components` when the Text Displays together exceed 4000 characters.
 - Paths: `title`, `components`, `label[i].label`, `label[i].description`,
   `label[i].text_input.max_length`, `label[i].select.options[k].label`,
   `label[i].file_upload.file_types[k]`, `label[i].radio_group.options`,
@@ -271,7 +272,8 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
 - Lenient mode (`limits.mode = LimitMode::Lenient`) first truncates with `…`, each a
   `LimitWarning::Truncated`: the title (MOD-01), Label text and description (MOD-04),
   Text Input placeholders (MOD-05), select placeholders and String Select option labels
-  and descriptions (CV2-09), Radio/Checkbox option labels and descriptions (MOD-07).
+  and descriptions (CV2-09), Radio/Checkbox option labels and descriptions (MOD-07),
+  then the Text Displays to fit the CV2-04 total (one warning at `components`).
   Never a Text Input `value`, option values, keys or counts: those still fail. Strict
   mode (the default) never changes the modal.
 - Sending it (`r.modal(modal)` on an `OpensModal` responder) is core's [planned, Story 7.8].

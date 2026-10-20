@@ -296,7 +296,14 @@ pub(super) fn with_modal<R>(modal: &Modal, f: impl FnOnce(&rm::Modal<'_>) -> R) 
             ModalInputNode::FileUpload(u) => {
                 file_types.push(u.file_types.iter().map(|t| &**t).collect::<Vec<&str>>());
             }
-            _ => {}
+            ModalInputNode::TextInput(_)
+            | ModalInputNode::Select(
+                ModalSelectNode::User(_)
+                | ModalSelectNode::Role(_)
+                | ModalSelectNode::Mentionable(_)
+                | ModalSelectNode::Channel(_),
+            )
+            | ModalInputNode::Checkbox(_) => {}
         }
     }
 

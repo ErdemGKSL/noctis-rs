@@ -307,7 +307,8 @@ fn select_text_sites<'m>(
 }
 
 /// Truncates the display text of a modal, in pre-order: the title, then per
-/// Label its text, description and input text.
+/// Label its text, description and input text; then the Text Displays to fit
+/// the CV2-04 total.
 pub(super) fn fit_modal(modal: &mut Modal, limits: &Limits, warnings: &mut Vec<LimitWarning>) {
     let mut sites = Sites::default();
     sites.field(
@@ -317,8 +318,12 @@ pub(super) fn fit_modal(modal: &mut Modal, limits: &Limits, warnings: &mut Vec<L
         &mut modal.title,
     );
     for (i, component) in modal.components.iter_mut().enumerate() {
-        let ModalTopNode::Label(label) = &mut component.0 else {
-            continue;
+        let label = match &mut component.0 {
+            ModalTopNode::Label(label) => label,
+            ModalTopNode::Text(t) => {
+                sites.texts.push((format!("text[{i}]"), &mut t.content));
+                continue;
+            }
         };
         let path = format!("label[{i}]");
         sites.field(
@@ -367,6 +372,7 @@ pub(super) fn fit_modal(modal: &mut Modal, limits: &Limits, warnings: &mut Vec<L
         }
     }
     fit_fields(sites.fields, limits, warnings);
+    fit_texts(sites.texts, limits, warnings);
 }
 
 /// Radio and Checkbox Group option labels and descriptions (MOD-07).

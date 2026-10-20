@@ -2,7 +2,7 @@
 title: 'Story 4.5: Modal component model and modal validation'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '5911db8d264ce7b04169a5f7a877246171ec7634'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,21 @@ context:
   - '{project-root}/docs/discord-rules.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/modals.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      A runtime Radio Group with two or more options marked default(true) passes validation.
+    evidence: |-
+      Unverified (maybe-false). noctis_rules::modal::validate_modal (Story 1.6, unchanged by spec) does not check option default counts and the catalog MOD-07 row lists no such limit. Settle by confirming in Discord's Radio Group docs or an API call that more than one default option is rejected; if so, add the limit to docs/discord-rules.md and noctis-rules with the same rule id.
+    location: >-
+      crates/noctis-rules/src/modal.rs (validate_modal, RadioGroup arm)
+    severity: medium (unverified)
+  - summary: >-
+      A runtime Checkbox Group whose default option count lies outside min_values..=max_values passes validation.
+    evidence: |-
+      Unverified (maybe-false). check_checkbox_group in noctis_rules::modal does not compare default options with min/max values, and the catalog MOD-07 row lists no such limit. Settle by confirming Discord's behaviour for out-of-range defaults; if rejected, add the limit to docs/discord-rules.md and noctis-rules together.
+    location: >-
+      crates/noctis-rules/src/modal.rs (check_checkbox_group)
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -229,6 +243,40 @@ The default Limits apply. "err R @ P" means a `UiError::Limits` that contains ru
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 30 findings — high 0, medium 2, low 14, false 11, maybe-false 3
+- findings:
+  - `[medium]` `[patch]` Lenient never truncates a modal top-level Text Display (blind) — grouped with the edge finding below: modal Text Display content is neither checked (CV2-04) nor truncated; patch adds the CV2-04 check and a Lenient site.
+  - `[low]` `[reject]` No "wrap it in ModalLabel" hint and no trybuild case for a bare TextInput at the top level (blind) — the ModalTopLevel note already says the top level takes a ModalLabel or a TextDisplay; a fixture would re-test the same sealed bound MOD-03_button_in_modal proves.
+  - `[low]` `[patch]` Lenient test covers only 3 of the documented truncation sites (blind) — grouped with the verification-gap Lenient finding; patch extends the Lenient modal test to every site.
+  - `[low]` `[patch]` Role/Mentionable/Channel modal selects and select default_values never reach validate in a test (blind) — grouped with the verification-gap default_values finding; patch adds a CV2-09 default_values test.
+  - `[low]` `[patch]` docs/discord-rules.md How cells for MOD-01/02/04/05/06 and CID-02 do not mention the new runtime modal checks (blind) — Enforcement columns were deliberately left unchanged by Task 12 (the catalog parser needs evidence per tier), but the How text is stale; patch adds the runtime clause to those How cells.
+  - `[false]` `[reject]` skill_check BUILDERS omits Modal and ModalOption (blind) — BUILDERS lists component builders only (V2Message is absent too); Modal is documented in modals.md §4b and the spec deliberately enumerated the BUILDERS additions.
+  - `[false]` `[reject]` RouteComponents::modal accepts a select-shaped Route (blind) — the spec bound (Route<Payload=Self> + Handled) and Matrix row 31 ("declared view (or select)") deliberately allow it; dispatch of submissions is Story 4.6.
+  - `[low]` `[reject]` Modal has no Extend / &mut push for runtime lists (blind) — a by-value push in a loop or fold works; adding Extend is new public surface beyond the spec's settled API, not a defect.
+  - `[low]` `[patch]` with_modal level-1 leaf match uses a `_ => {}` wildcard (blind) — a future input variant with leaves would desync the level-2 cursors; patch makes the match exhaustive.
+  - `[low]` `[patch]` noctis-ui crate `# Limits` doc lists only message rules and `# Modals` says any message component fails though TextDisplay is allowed (blind) — verified at crates/noctis-ui/src/lib.rs:139 and :185; patch corrects both sentences.
+  - `[false]` `[reject]` ModalSelectNode could be pub(crate) (blind) — it is a variant payload of the pub ModalInputNode that the sealed IntoModalInput returns, so it must stay pub; neither appears in xtask/public-api.txt.
+  - `[low]` `[reject]` PartialEq derived on ModalOption only (blind) — the spec settles Debug + Clone for builders; adding derives is public surface with no defect behind it.
+  - `[low]` `[patch]` No CID-02 test for a duplicate key on a modal select (blind) — the select key goes through ModalInputNode::key → common().key, untested; patch adds a select duplicate to the CID-02 test.
+  - `[low]` `[reject]` required:false emission tested only for TextInput and RadioGroup (blind) — all inputs share required_entry and doctests show the key; Matrix row 34 fixes the tested pair; a per-type test adds little.
+  - `[medium]` `[patch]` Modal top-level Text Display over 4000 chars passes validate (edge) — validate_modal's Text arm checks nothing and Check for Modal adds no CV2-04 check; patch adds CV2-04 on the summed Text Display length after CID-02 plus a Lenient truncation site.
+  - `[maybe-false]` `[defer]` Radio Group with more than one default option passes validate (edge) — pre-existing noctis_rules gap, not in the catalog; needs Discord confirmation; deferred as medium (unverified).
+  - `[maybe-false]` `[defer]` Checkbox Group defaults outside min/max pass validate (edge) — pre-existing noctis_rules gap, not in the catalog; needs Discord confirmation; deferred as medium (unverified).
+  - `[low]` `[patch]` Modal select default_values count is lowered but untested (vgap, pre-verified) — patch adds cv2_09_modal_select_default_values (User and Channel selects, fail then pass with max_values).
+  - `[low]` `[patch]` Most modal Lenient truncation sites are untested (vgap, pre-verified) — patch adds a Lenient test with one over-long value at every remaining site.
+  - `[low]` `[patch]` Key and Lenient paths after a leading Text Display are never asserted (vgap, pre-verified) — patch adds Strict CID-02 and Lenient tests with a TextDisplay before the Labels asserting label[1] paths.
+  - `[false]` `[reject]` Checkbox `required` is a type-level absence, not a runtime MOD-07 error (intent) — the spec's Design Notes deliberately make it unrepresentable; the rules unit test covers the runtime branch.
+  - `[low]` `[patch]` `disabled` compile_fail doctests exist only for ModalStringSelect and ModalUserSelect (intent) — the AC says "any modal select type"; patch adds E0599 doctests for Role, Mentionable and Channel.
+  - `[false]` `[reject]` MOD-03 fixtures do not compile Section, MediaGallery, top-level Container or Button in Label (intent) — the traits are sealed and implemented only for the listed types; the AC names the three task-9 fixtures as its coverage.
+  - `[false]` `[reject]` FR-29 "builder rejects" not implemented in builders (intent) — the spec deliberately settles infallible constructors and validator-only rejection (Integer types, Design Notes).
+  - `[false]` `[reject]` min_values 0 + required reports CV2-09/MOD-06 for selects/uploads, not MOD-07 (intent) — Matrix rows 14, 20 and 23 settle these rule ids, inherited from the unchanged validate_modal.
+  - `[false]` `[reject]` No-Action-Row/no-label guarantee tested by one snapshot (intent) — structural (no label field, no Action Row type), and the spec settles the snapshot as the evidence.
+  - `[false]` `[reject]` Usage Skill/skill-check do not have own entries for Modal, ModalOption, ModalComponent (intent) — same as the BUILDERS finding; the spec deliberately scopes entries to modal components.
+  - `[maybe-false]` `[reject]` Modal custom_id length (MOD-08) not checked at runtime for hand-written Route impls (intent) — identical to every Route component (pre-existing CID-01 design via derive(Route)); would need a hand-written over-long Route to settle, and if true it is only low, so rejected.
+  - `[false]` `[reject]` Scope beyond the intent: CID keys, Lenient, cost, value pre-fill (intent) — the spec's Approach and Boundaries deliberately include these (FR-63 named in the Problem).
+  - `[false]` `[reject]` FR-78 compile-time reduces to MOD-03 (intent) — the spec deliberately leaves MOD-01/02/04-07 compile-time to Story 4.6 and forbids fixtures for them.
+
 ## Design Notes
 
 - **Why `ModalLabel` and `Modal*Select`.** `noctis::ui::Label` (4.4) and the message selects already own those names. skill-check deduplicates builders by bare name, so the same name in a submodule would merge two entries. AD-12 requires separate message and modal select types. The memlog records this decision.
@@ -257,3 +305,15 @@ The default Limits apply. "err R @ P" means a `UiError::Limits` that contains ru
 - `cargo deny check` -- exit 0.
 - `cargo run --release -p xtask -- deps-check`, then `-- rules-catalog`, `-- api-snapshot` and `-- skill-check` -- each exits 0.
 - `grep -c 'story = "4.5"' xtask/rules-pending.toml` -- prints 0. `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Typed modal model in noctis-ui: `Modal` built from a Route via `RouteComponents::modal`, top-level `ModalLabel`/`TextDisplay`, inputs `TextInput`, `RadioGroup`, `CheckboxGroup`, `Checkbox`, `FileUpload` and `Modal*Select` (String/User/Role/Mentionable/Channel) with string keys; sealed placement traits reject message components (MOD-03, compile-time); runtime `validate` lowers modals to `noctis_rules` (MOD-01..08, CV2-04/09, CID-02) with path-precise errors and Lenient truncation; re-exported through `noctis`.
+- **Files changed:** `crates/noctis-ui/src/modal/{mod,input,select}.rs` (new modal types); `crates/noctis-ui/src/{placement,route,lib,error}.rs`, `component/{mod,select}.rs` (placement traits, `modal()`, docs); `crates/noctis-ui/src/limits/{mod,lower,lenient}.rs` (modal validation, lowering, Lenient sites); `crates/noctis-rules/src/modal.rs` + tests; `crates/noctis-ui/tests/modal.rs` + snapshot; `crates/noctis/src/lib.rs`, `tests/boundary/modal.rs`, `tests/ui/mod/MOD-03_*` (re-exports, boundary, trybuild); `docs/discord-rules.md`; `examples/project-template/` skill refs and AGENTS.md; `xtask/public-api.txt`, `xtask/rules-pending.toml`, `xtask/src/skill_check/components.rs`.
+- **Review findings:** 30 total (high 0, medium 2, low 14, false 11, maybe-false 3).
+  - Patched (medium 2 grouped into one fix, low 10): CV2-04 check + Lenient site for modal top-level Text Display; Lenient test across all sites; CV2-09 modal select default_values test; CID-02 duplicate key on modal select; key/Lenient paths after leading TextDisplay; exhaustive leaf match in `with_modal`; noctis-ui crate docs corrected; discord-rules How cells mention runtime modal checks; E0599 `disabled` doctests for Role/Mentionable/Channel selects.
+  - Deferred (2, maybe-false, pre-existing noctis_rules gaps needing Discord confirmation): Radio Group with >1 default; Checkbox Group defaults outside min/max.
+  - Rejected (16): no ModalLabel hint/trybuild for bare TextInput (covered by sealed bound); BUILDERS omits Modal/ModalOption (builders list only); select-shaped Route for modal (spec allows); no Extend on Modal (new surface); ModalSelectNode pub (required); PartialEq only on ModalOption (no defect); required:false tested for two types (shared code); Checkbox required unrepresentable (by design); MOD-03 fixtures scope (sealed traits); FR-29 infallible builders (spec); min_values 0 rule ids (Matrix); structural no-Action-Row (snapshot evidence); skill entries for Modal (spec scope); MOD-08 for hand-written Route (pre-existing CID-01 design, low at most); scope beyond intent (spec includes it); FR-78 compile tier deferred to 4.6 (spec).
+- **Follow-up review recommended:** false (first pass; patched by verdict: high 0, medium 1 grouped fix covering 2 medium entries on one defect, low 10; no specific unverified risk can be named).
+- **Verification:** all local gates via `gates.sh` green: fmt, clippy `-D warnings`, release tests (incl. snapshots, trybuild, doctests), cargo-hack each-feature, MSRV 1.91 check, cargo deny, xtask deps-check / rules-catalog / api-snapshot / skill-check. CI paused by maintainer.
+- **Residual risks:** the two deferred radio/checkbox default-count gaps; MOD-01/02/04-07 compile-time tier and submission dispatch remain for Story 4.6.
