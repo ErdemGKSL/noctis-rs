@@ -82,8 +82,8 @@ development_status:
   5-9-warm-deadline-safe-discord-http-edge: done
   epic-5-retrospective: optional
 
-  epic-6: backlog
-  6-1-command-with-compile-time-command-path-and-pattern-validatio: in-progress
+  epic-6: in-progress
+  6-1-command-with-compile-time-command-path-and-pattern-validatio: done
   6-2-typed-options-with-derive-options-and-derive-choices: backlog
   6-3-command-metadata-and-context-menu-commands: backlog
   6-4-app-build-merge-and-conflict-checks-for-commands: backlog

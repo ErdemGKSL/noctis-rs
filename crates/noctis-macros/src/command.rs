@@ -915,6 +915,20 @@ mod tests {
         rules::expand(pattern, &Limits::default()).unwrap()
     }
 
+    /// A qualified `<Fn>Path` parameter type is accepted.
+    #[test]
+    fn accepts_a_qualified_path_type() {
+        for ty in ["crate::m::ConfigPath", "self::ConfigPath"] {
+            let src = format!(
+                "async fn config(c: CommandCtx, p: {ty}) -> HandlerResult<()> {{ Ok(()) }}"
+            );
+            assert!(
+                expand(quote!("config (set|get)", description = "d"), item(&src)).is_ok(),
+                "{ty}"
+            );
+        }
+    }
+
     /// Matrix 46: variant collision.
     #[test]
     fn variant_collision() {

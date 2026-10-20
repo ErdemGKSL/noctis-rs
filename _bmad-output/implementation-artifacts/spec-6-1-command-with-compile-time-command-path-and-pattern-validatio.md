@@ -2,7 +2,7 @@
 title: 'Story 6.1: `#[command]` with compile-time Command Path and Pattern validation'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '0dfc51968c5fb2ca3cd21949d68895b37e68cb70'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,21 @@ context:
   - '{project-root}/docs/discord-rules.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/commands.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The template AGENTS.md describes `#[command]` handlers as `async fn(ctx: CommandCtx) -> HandlerResult<()>` while the template's own command handlers still use planned View returns, State extractors and planned arguments.
+    evidence: |-
+      examples/project-template/AGENTS.md line 40 vs src/modules/dashboard.rs (returns HandlerResult<DashboardView>, takes State<BotMeta>, passes permissions/contexts marked [planned]); an agent reading both sees contradictory forms. The fix rewords an agent-context file (AGENTS.md), so it is deferred; resolve when 6.2/6.5 land the planned forms or reword the bullet to say which parts are planned.
+    location: >-
+      examples/project-template/AGENTS.md:40
+    severity: low
+  - summary: >-
+      Attributes on a `#[command]` fn (e.g. `#[tracing::instrument]`, `#[deprecated]`) land on the sync descriptor constructor, not on the async handler body.
+    evidence: |-
+      crates/noctis-macros/src/command.rs `expand` emits `#(#attrs)*` on `fn name() -> CommandHandler`; the user body becomes the inner `__noctis_command`. `#[event]` (crates/noctis-macros/src/event.rs:131-151) has the same pre-existing behaviour, so a coherent fix (forward, reject or document non-doc/non-cfg attributes) spans both macros.
+    location: >-
+      crates/noctis-macros/src/command.rs (expand, generated descriptor fn)
+    severity: low
 ---
 
 <intent-contract>
@@ -182,6 +196,41 @@ The default description in each row is `description = "d"` unless the row says o
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 31 findings — high 0, medium 0, low 17, false 14, maybe-false 0
+- findings:
+  - `[low]` `[reject]` CMD-15 over-cap help suggests `max_expansions = 26`, which then fails CMD-13 for 26 children under one parent (grouped with edge #2) — real, but the help already offers "or split the pattern", the wording is the spec's (Matrix 32), and a feasibility check adds branches for a rare case.
+  - `[low]` `[reject]` `max_expansions` has no upper bound; a huge cap with wide groups makes `expand` materialise millions of paths (grouped with edge #1) — reaching it needs a source literal with thousands of alternatives plus an explicit huge cap; the fix adds a new guard and limit.
+  - `[low]` `[reject]` Missing description gives one CMD-04 per expanded path — real (messages differ by path, so rustc does not dedupe) but Matrix 24 specifies it; deduplication adds special-casing.
+  - `[false]` `[reject]` First parameter type never checked — Matrix 44 deliberately leaves a wrong ctx type to rustc at the `__new` call (return-type span, `quote_spanned!{output_span=>}`), pinned by `tests/types/command_handler_returns_value`.
+  - `[low]` `[reject]` Path-parameter check matches only the last segment, so a different `other::ConfigPath` passes and fails later in rustc — needs two distinct types with the generated name; rustc still rejects it; fix adds resolution logic a proc macro cannot do.
+  - `[low]` `[reject]` No trybuild fixture pins spans of the macro's own (non-rule) errors — spec assigns them to macro unit tests and spans come from `new_spanned` on the offending token; adding a fixture suite is more than a direct correction.
+  - `[low]` `[patch]` Bot authors have no documented way to unit-test a `#[command]` handler (`CommandCtx::new` is `pub(crate)`, only `__private` seam exists) — patch: commands.md §8 states handlers cannot be invoked from bot tests until Story 6.5 and `noctis::__private` must not be used.
+  - `[low]` `[defer]` Template AGENTS.md handler form contradicts the template's planned-API handlers — real; fix edits an agent-context file, so deferred.
+  - `[false]` `[reject]` Template description literals not shown to match `en-US.yaml` — checked: `Open the server dashboard`, `Show a member's profile card`, `Configure the bot for this server, step by step` equal `locales/en-US.yaml` lines 14-18.
+  - `[low]` `[patch]` commands.md CMD-11 error example has no `description`, so it would also print CMD-04 errors the shown output omits — patch: add `description = "…"` to the snippet.
+  - `[false]` `[reject]` discord-rules CMD-01 row now says spans point at the pattern literal without a decision — the spec's Always list deliberately spans every violation on the pattern literal; the row matches it.
+  - `[low]` `[patch]` CMD-05 row's How column says the macro emits `const SIZE: usize`, but the macro checks CMD-05 through `validate_tree` and emits no constant (grouped with intent #7) — patch: reword the row.
+  - `[false]` `[reject]` `public-api.txt` lists `impl Descriptor for CommandHandler` twice — cargo-public-api output; `EventHandler` is listed three times in the same pre-existing snapshot (lines 925-932).
+  - `[low]` `[patch]` `CommandHandler` Debug uses `#[expect(clippy::missing_fields_in_debug)]` + `.finish()` instead of `.finish_non_exhaustive()` like `CommandCtx` — patch: use `finish_non_exhaustive()` and drop the `expect`.
+  - `[low]` `[defer]` Fn attributes land on the descriptor fn, not the async body — same pre-existing behaviour as `#[event]`; deferred for a cross-macro decision.
+  - `[false]` `[reject]` `PathKind` unused by the macro and `of` lacks `#[must_use]` — no harm named; the workspace sets `must_use_candidate = "allow"` (Cargo.toml:108) and the spec places the kind mapping in `PathKind::of`.
+  - `[low]` `[reject]` (edge) `max_expansions` huge → expand hangs — grouped with blind #2; rejected there.
+  - `[low]` `[reject]` (edge) CMD-15 help with saturated count or infeasible cap — grouped with blind #1; rejected there.
+  - `[low]` `[reject]` (edge) CMD-11/12 help removes every `?`, dropping valid paths in patterns such as `(a|b)? c (d)?` — rare multi-optional patterns; a precise help needs per-group attribution logic.
+  - `[low]` `[reject]` (edge) group pattern on a receiver-less associated fn emits the enum inside an `impl` — rare placement; rustc rejects it; a proc macro cannot see the impl context.
+  - `[false]` `[reject]` (edge) `PathKind::of("a\tb")` returns `Some(Command)` — matches its documented contract (split on single ASCII spaces); paths from `expand` never contain other whitespace and CMD-01 owns the charset.
+  - `[low]` `[patch]` (gap) Qualified `<Fn>Path` parameter acceptance (`self::ConfigPath`, `crate::m::ConfigPath`) is unpinned — patch: add a macro unit test asserting a qualified path type is accepted.
+  - `[false]` `[reject]` (intent 1) FR-7 kind lives in `PathKind::of`, not the descriptor — spec AC 1 and Matrix 1-3 deliberately settle this.
+  - `[false]` `[reject]` (intent 2) Variant delivery exercised only through the `__testing` seam — spec Matrix 5 and scope (dispatch in 6.5) settle this.
+  - `[false]` `[reject]` (intent 3) OPT-14 holds by construction only — spec Always list settles it with the existing `OptionType::SubCommand` doctest.
+  - `[false]` `[reject]` (intent 4) Passing AC fixtures live outside `tests/ui/cmd/` — AGENTS.md (trybuild is compile_fail only) and spec Never list settle it.
+  - `[false]` `[reject]` (intent 5) Template reconciliation is description-only — spec Tasks deliberately mark unsupported arguments `// [planned]`; the template is excluded from the workspace.
+  - `[false]` `[reject]` (intent 6) CMD-11 fixture has two errors — Matrix 9 specifies 2 errors.
+  - `[low]` `[patch]` (intent 7) CMD-05 doc mechanism vs implementation — grouped with blind #12.
+  - `[false]` `[reject]` (intent 8) Description copied onto every leaf — Matrix 24 and the Always list settle it.
+  - `[false]` `[reject]` (intent 9) Public API beyond the story text — every item is listed in the spec's Tasks.
+
 ## Design Notes
 
 Generated code for `#[command("config (set|get) (prefix|welcome)", description = "Configure")] pub async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> { … }`:
@@ -231,3 +280,12 @@ The skill already promised `<Fn>Path` and concatenated UpperCamelCase alternativ
 - `cargo run --release -p xtask -- skill-check` -- expected: ok (every new public item mentioned)
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok (MSRV)
+
+## Auto Run Result
+
+- **Summary:** `#[command("pattern", description = "...")]` attribute macro: expands Command Path patterns (groups, optional groups) at compile time, validates CMD-01..05, CMD-10..13, CMD-15, CMD-16 with spans on the pattern literal, generates a `<Fn>Path` enum (`ALL`, `as_str`, `CommandPath` impl) for grouped patterns and a type-erased `CommandHandler` descriptor; adds minimal `CommandCtx`, `PathKind::of`, `validate_pattern_spacing`.
+- **Files changed:** `crates/noctis-core/src/command.rs` (CommandHandler, CommandPath, CommandCtx, PathKind, spacing check); `crates/noctis-macros/src/command.rs` (the macro, naming, validation, unit tests); `crates/noctis/tests/ui/cmd/*` (compile_fail fixtures per rule); `docs/discord-rules.md` (CMD rows); `xtask/rules-pending.toml` (rules moved to catalog); `xtask/public-api.txt` (re-blessed); `examples/project-template/` (handlers, AGENTS.md, noctis skill `commands.md`, API hash).
+- **Review findings:** 31 total (high 0, medium 0, low 17, false 14). Patched 6 low: commands.md §8 on testing handlers before Story 6.5; CMD-11 example gains `description`; CMD-05 doc row reworded (no `const SIZE`); `CommandHandler` Debug uses `finish_non_exhaustive()`; unit test for qualified `<Fn>Path` parameter; (intent 7 grouped with CMD-05 row). Deferred 2: template AGENTS.md handler form vs planned-API handlers; fn attributes landing on descriptor fn (shared with `#[event]`). Rejected 23 with recorded reasons in the spec triage log (CMD-15 help feasibility, unbounded `max_expansions`, per-path CMD-04 duplicates, last-segment path type match, receiver-less impl placement, multi-optional help wording, plus 14 false findings settled by spec Matrix/Always/Never).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 6).
+- **Verification:** all local gates via gates.sh green (fmt, clippy -D warnings, workspace tests incl. trybuild cmd fixtures, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** huge `max_expansions` with wide groups can blow up expansion time; CMD-11/12 help text may be imprecise for multi-optional patterns; `CommandCtx` is a minimal placeholder until Story 6.5.

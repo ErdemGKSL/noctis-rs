@@ -126,7 +126,7 @@ Expands to: `config set prefix`, `config set welcome`, `config get prefix`,
 ### Patterns that do not compile
 
 ```rust
-#[command("config (set|get) (prefix|welcome)?")]
+#[command("config (set|get) (prefix|welcome)?", description = "Configure the bot")]
 ```
 ```text
 error: [CMD-11] config set: limit a subcommand or a subcommand group, not both, actual `set`
@@ -483,6 +483,8 @@ and answer "disabled here".
 
 Available now: `ctx.command_path() -> &'static str`, the invoked Command Path (`"config set
 prefix"`). `CommandCtx` is `Clone` and `Debug`.
+`#[command]` handlers cannot be invoked from bot tests until Story 6.5 adds a test
+context; never use `noctis::__private`.
 
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user_id()`, `user()`,
 `guild_id()`, `channel_id()`, `user_locale()`, `guild_locale()`, `response_locale()`,

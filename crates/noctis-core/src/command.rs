@@ -220,17 +220,13 @@ fn unknown(path: &str, command: &'static str) -> BoxFuture<'static, HandlerResul
     Box::pin(std::future::ready(Err(error)))
 }
 
-#[expect(
-    clippy::missing_fields_in_debug,
-    reason = "the description is user text and the closure has no Debug"
-)]
 impl fmt::Debug for CommandHandler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommandHandler")
             .field("name", &self.name)
             .field("pattern", &self.pattern)
             .field("paths", &self.paths)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
