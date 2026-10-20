@@ -70,7 +70,7 @@ development_status:
   4-6-derive-modal-and-typed-modal-submissions-from-raw-json: done
   epic-4-retrospective: optional
 
-  epic-5: in-progress
+  epic-5: done
   5-1-app-builder-runtime-plugin-seam-and-startup-safety: done
   5-2-discord-http-fake-and-the-test-runtime: done
   5-3-discord-gateway-fake: done
