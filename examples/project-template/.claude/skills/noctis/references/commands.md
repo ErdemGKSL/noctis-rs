@@ -535,7 +535,7 @@ use noctis::ui::{ResolvedMessage, ResolvedUser};
 #[user_command("Show profile", contexts = [Guild])]
 async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
     let _ = ctx.command_path(); // "Show profile"
-    let _ = (target.user.id, target.member); // member: None outside a guild
+    let _ = (target.user.id, target.member); // member: None when the target is not a member of the guild, including outside a guild
     Ok(())
 }
 

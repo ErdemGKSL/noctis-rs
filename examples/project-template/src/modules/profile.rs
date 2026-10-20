@@ -60,7 +60,8 @@ async fn profile(ctx: CommandCtx, opts: ProfileOptions) -> HandlerResult<Profile
 
 /// Right-click a user → Apps → "Show profile". The name is localized as a whole
 /// (`ctxcmd.show_profile.name`); CMD-01/03 do not apply to context-menu names (CTX-01).
-/// The target is the right-clicked user, with `member` inside a guild.
+/// The target is the right-clicked user; `member` is `None` when the target is
+/// not a member of the guild, including outside a guild.
 #[user_command(
     "Show profile",
     key = "show_profile", // [planned]: rejected until its release

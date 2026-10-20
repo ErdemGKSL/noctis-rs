@@ -498,7 +498,7 @@ pub mod observe {
 /// applies its default. They belong to the **base** command of every path
 /// the handler declares (META-02): a per-path form such as
 /// `permissions(set = …)` is a `[META-02]` compile error, and handlers
-/// sharing a base must agree (checked at App build).
+/// sharing a base must agree (checked at App build, \[planned\] Story 6.4).
 ///
 /// | Argument | Takes | Rules |
 /// | --- | --- | --- |
@@ -541,7 +541,8 @@ pub use noctis_macros::command;
 /// otherwise); its type comes from the macro (CTX-03).
 ///
 /// The handler's target is the right-clicked user,
-/// [`ResolvedUser`](crate::ui::ResolvedUser) (`member` is `None` outside a
+/// [`ResolvedUser`](crate::ui::ResolvedUser) (`member` is `None` when the
+/// target is not a member of the guild, including outside a
 /// guild); [`message_command`](macro@message_command) gives a
 /// [`ResolvedMessage`](crate::ui::ResolvedMessage). `ctx.command_path()` is
 /// the menu name. An interaction without its target in the resolved data

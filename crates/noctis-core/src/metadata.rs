@@ -12,7 +12,8 @@ use twilight_model::id::marker::GuildMarker;
 /// Unset fields are `None` (and `guilds` empty): Publish omits them, so
 /// Discord applies its own default. The values belong to the **base**
 /// command (META-02): one `#[command]` sets them for every path it declares,
-/// and handlers sharing a base must agree (checked at App build). Lists keep
+/// and handlers sharing a base must agree (checked at App build, \[planned\]
+/// Story 6.4). Lists keep
 /// their declared order.
 ///
 /// ```

@@ -2,7 +2,7 @@
 title: 'Story 6.3: Command metadata and context-menu Commands'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '80622f9587d1e931bf3ae6af820bee782ad41b22'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,21 @@ context:
   - '{project-root}/docs/discord-rules.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/commands.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      PERMISSIONS mirrors twilight-model 0.17.1, so Discord permission bits twilight lacks (1 << 48, SET_VOICE_CHANNEL_STATUS) cannot be declared in `permissions = ..`.
+    evidence: |-
+      crates/noctis-rules/src/command/meta.rs jumps from SEND_VOICE_MESSAGES (1 << 46) to SEND_POLLS (1 << 49); twilight-model 0.17.1 defines no flag at 1 << 48. The table is pinned to twilight by design (spec Design Notes), so the gap comes from the dependency, not this story. Settle by documenting the gap in docs/discord-rules.md META-01 or adding a raw-bits form when twilight or a later story adds the flag.
+    location: >-
+      crates/noctis-rules/src/command/meta.rs:125
+    severity: low
+  - summary: >-
+      CTX-01 checks only length, so a menu name with leading or trailing whitespace (" padded ") compiles; if Discord trims stored names, the byte-exact name match at dispatch never matches.
+    evidence: |-
+      Matrix 31 makes " padded " compile and call_context_menu compares `input.name != handler.menu_name` byte for byte. Unverified: settle by registering a USER command named " padded " against Discord and checking whether the returned and invoked `data.name` is trimmed; if it is, add a CTX-01 whitespace check (an intent change to Matrix 31).
+    location: >-
+      crates/noctis-macros/src/menu.rs (check_name); crates/noctis-core/src/menu.rs (call_context_menu)
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -315,6 +329,40 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 30 findings — high 0, medium 0, low 12, false 16, maybe-false 2
+- findings:
+  - `[low]` `[reject]` blind: `from_json` reads `data.type` before checking interaction `type`, so a non-command interaction with a non-integer `data.type` is Malformed, not NotContextMenu — real, but Discord never sends such a payload and the fix needs a separate branch for non-command interactions.
+  - `[false]` `[reject]` blind: NotContextMenu reports a made-up command type 1 — Matrix 50 deliberately defines "absent counts as 1" and the `command_type: u64` field shape.
+  - `[false]` `[reject]` blind: name mismatch reuses UnknownCommandPath — Matrix 51 and Tasks step 3 deliberately select UnknownCommandPath.
+  - `[low]` `[reject]` blind: `path_last` ignores the qualifier (`contexts = [IntegrationType::Guild]`) — the value is resolved by its last segment as Matrix 4/12 specify, so the result matches the name; misqualified paths are rare and rejecting them adds per-argument prefix checks.
+  - `[low]` `[defer]` blind: PERMISSIONS lacks Discord bit 1 << 48 (SET_VOICE_CHANNEL_STATUS) — confirmed twilight-model 0.17.1 has no flag there; the table is pinned to twilight by design, so the gap is the dependency's; deferred.
+  - `[low]` `[patch]` blind: rustdoc says handlers sharing a base "must agree (checked at App build)" as current behaviour — confirmed at crates/noctis-core/src/metadata.rs:15 and crates/noctis/src/lib.rs:501 while `to_rules`/`scopes`/`menus()` are dead until 6.4; patch: mark the check as planned (Story 6.4).
+  - `[maybe-false]` `[defer]` blind: CTX-01 accepts surrounding whitespace, so a padded name may never match at dispatch — depends on whether Discord trims context-menu names; Matrix 31 deliberately allows it; deferred (medium, unverified) with the Discord check that settles it.
+  - `[low]` `[reject]` blind: `check_params` does not check that the first parameter is `CommandCtx` — the wrong type still fails to compile at the constructor bound (Matrix 41 leaves the real type check to rustc, as `#[command]` does); only the diagnostic is less direct, and the fix adds a check plus fixture.
+  - `[false]` `[reject]` blind: `__with_metadata` vs constructor argument inconsistency — Boundaries mandate `.__with_metadata(..)` only when metadata is given so 6.1/6.2 token output stays unchanged; no harm named.
+  - `[low]` `[reject]` blind: unreachable `WrongKind` arms and the `Target` enum in the erased closures — confirmed unreachable after `call_context_menu`'s kind check, but harmless defensive code; removing it is a restructure, not a direct correction.
+  - `[low]` `[reject]` blind: `MenuInput::target(&self)` clones the resolved Message — real one clone per invocation, invisible to users; avoiding it needs a new take-by-value resolution path.
+  - `[false]` `[reject]` blind: META-03 note names only the first guild — Matrix 21 deliberately specifies `scope: guild 7` (first id).
+  - `[false]` `[reject]` blind: inconsistent receivers and non-const `is_guild_scoped` — spec Tasks define `pub fn is_guild_scoped()`; the type is Copy so receivers behave identically, and no caller needs a const context.
+  - `[false]` `[reject]` blind: `Module` Debug lists menus by menu name — the Tasks deliberately specify "`menus` (menu names) in its `Debug`".
+  - `[false]` `[reject]` blind: `metadata_argument_errors` omits `rate_limit` — `rate_limit(user, 3)` is already asserted planned at crates/noctis-macros/src/command.rs:820.
+  - `[low]` `[reject]` blind: no trybuild fixtures for list-argument errors — the messages are asserted by exact-string unit tests through the same parser; spans through the real expansion are the only gap, and the fixture list is the spec's.
+  - `[false]` `[reject]` blind: twilight-model types in the root public API — the spec mandates the `Permissions` re-export and the facade already exposes twilight-model types (`ResolvedUser.user`), so no new coupling class is added.
+  - `[maybe-false]` `[defer]` edge: CTX-01 does not reject leading/trailing whitespace — same root cause and deferred entry as the blind whitespace finding.
+  - `[low]` `[reject]` edge: any path prefix accepted for permissions/contexts — same evidence as the blind `path_last` finding.
+  - `[low]` `[reject]` edge: a present but non-integer interaction `type` reports "missing interaction `type`" — real misleading reason, but Discord always sends an integer and the fix splits the match into a new branch.
+  - `[low]` `[patch]` edge: docs say `member` is None only outside a guild, but it is also None when the target user is not a member of the guild — confirmed at crates/noctis/src/lib.rs:544 and the Usage Skill commands.md:538; patch: reword both (and the template comment).
+  - `[false]` `[reject]` edge: `to_rules(self)` vs spec `&self` — `CommandMetadata` is Copy and `to_rules` is pub(crate), so behaviour is identical and no caller can diverge.
+  - `[false]` `[reject]` intent D1: runtime target delivery only through the test seam — the spec's Never list excludes dispatch (6.5, 6.6) and the AC names `__testing::call_context_menu` as the surface.
+  - `[false]` `[reject]` intent D2: registered menus and metadata are never read — Registry merge and Publish are excluded (6.4, 6.9) by the spec's Never list.
+  - `[false]` `[reject]` intent D3: template `show_profile` keeps `key` and returns `HandlerResult<ProfileView>` — the template is a planned-API showcase (file header note), `key` is marked `[planned]` as the Tasks require, and the slash `profile` handler already used the same View return before this story.
+  - `[false]` `[reject]` intent D4: `skill-check` passing is not shown in the diff — gates are run by the Verification step, not carried by a diff.
+  - `[false]` `[reject]` intent D5: `guilds` narrowed to literals without a const-rejection test — deliberate spec decision (Never: no const paths) and `guilds = [DEV]` is asserted in crates/noctis-macros/src/meta.rs:606.
+  - `[false]` `[reject]` intent D6: `nsfw` stored as `Option<bool>` — the spec deliberately keeps unset as `None` (FR-11).
+  - `[false]` `[reject]` intent D7: META-03 only for attribute-local `guilds` — Module-level scope is excluded (6.4) by the spec's Never list.
+  - `[low]` `[reject]` intent D8: no compile-fail fixtures for `permissions`/`nsfw` errors on menu macros — the menu macros call the same `parse_meta_arg` covered by unit tests; adding fixtures is not a direct correction and divergence is unlikely.
+
 ## Design Notes
 
 **Separate descriptor (decision).** Context menus get their own `ContextMenuHandler`, not a `CommandHandler` kind:
@@ -347,3 +395,15 @@ They reuse `CommandCtx` (`command_path()` = the menu name), so 6.5's Responder a
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok (MSRV)
+
+## Auto Run Result
+
+- **Summary:** Story 6.3 adds command metadata (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`) to `#[command]` with compile-time rule checks (META-01/02/03/05, CMD-07), plus `#[user_command]`/`#[message_command]` context-menu handlers (own `ContextMenuHandler` descriptor, CTX-01/02 checks) that take `ResolvedUser` / new `ResolvedMessage` targets, a `__testing::call_context_menu` seam, and a `Permissions` re-export.
+- **Files changed:** `crates/noctis-macros` (metadata parser, menu macros); `crates/noctis-core/src/metadata.rs` (CommandMetadata, permission table pinned to twilight); `crates/noctis/src/lib.rs` (menu descriptor, Module menus, test seam); `crates/noctis-ui/src/modal/resolved.rs` (ResolvedMessage); `crates/noctis/tests/*` (menus, commands, boundary, ui fixtures cmd/ctx/meta); `docs/discord-rules.md` and `xtask/rules-pending.toml` (rules moved to enforced); `examples/project-template/*` (code, AGENTS.md, Usage Skill + API hash); `xtask/public-api.txt` (re-blessed).
+- **Review findings (30):** high 0, medium 0, low 12, false 16, maybe-false 2.
+  - Patched (2, both low): rustdoc now marks cross-handler metadata agreement as planned (Story 6.4); `member` None semantics reworded (also None when target user is not a guild member) in lib.rs, Usage Skill, template.
+  - Deferred (2 roots): PERMISSIONS lacks bit 1<<48 (absent in twilight-model 0.17.1); CTX-01 whitespace in names (needs Discord trimming check).
+  - Rejected (26): see Review Triage Log for each reason (spec-mandated behaviour, Never-list scope for 6.4/6.5/6.9, harmless defensive code, unit-test coverage in place of fixtures).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 2).
+- **Verification:** all local gates via gates.sh green (fmt, clippy -D warnings, workspace tests incl. trybuild ui, cargo hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** menus and metadata are not yet merged, validated across handlers, dispatched or published (6.4/6.5/6.9); whitespace-padded menu names may not match at dispatch; one missing permission bit pending twilight.

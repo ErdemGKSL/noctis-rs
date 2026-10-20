@@ -85,7 +85,7 @@ development_status:
   epic-6: in-progress
   6-1-command-with-compile-time-command-path-and-pattern-validatio: done
   6-2-typed-options-with-derive-options-and-derive-choices: done
-  6-3-command-metadata-and-context-menu-commands: in-progress
+  6-3-command-metadata-and-context-menu-commands: done
   6-4-app-build-merge-and-conflict-checks-for-commands: backlog
   6-5-command-pipeline-and-the-responder-typestate: backlog
   6-6-automatic-deferral-token-lifetime-and-follow-up-cap: backlog
