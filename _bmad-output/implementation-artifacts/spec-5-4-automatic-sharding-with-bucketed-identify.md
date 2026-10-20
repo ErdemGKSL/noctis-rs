@@ -2,7 +2,8 @@
 title: 'Story 5.4: Automatic sharding with bucketed identify'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '19b7c81b4ea05e8ef99c14c540738f0b90652628'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
