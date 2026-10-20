@@ -834,7 +834,7 @@ list in CI.
     3. Boot Flag, `GuildAccessList` and Module-enabled checks ("disabled here");
     4. locale resolution, including the App's optional `LocaleResolver`;
     5. rate-limit `incr_with_ttl` (FR-46);
-    6. auto-defer armed at `received_at + ack_deadline` (default 2500 ms) unless
+    6. auto-defer armed at `received_at + ack_deadline` (default 2000 ms) unless
        `opens_modal`;
     7. before-Middleware, parent Module first, then registration order (may override
        locale, insert Extensions or stop);
@@ -868,12 +868,21 @@ list in CI.
     (default 10 s), and passes it to `noctis-gateway`. No other crate constructs a
     Discord HTTP client. A Cluster without a proxy logs a startup warning naming the
     risk (FR-52).
+  - **Discord edge.** Core always points that client at its internal, loopback-only
+    edge forwarder (`proxy("127.0.0.1:<port>", true)`), which forwards `/api/v10/`
+    requests byte-for-byte to discord.com, or to the configured proxy (or fake), over
+    one tuned upstream hyper client: h2 with PING keep-alive (20 s / 5 s), TCP
+    keepalive and nodelay, connect timeout, async TTL-cached DNS, and a connection
+    pre-warmed at startup and after each close. Interaction callbacks skip twilight's
+    RateLimiter and go directly over that client, with one hedged attempt on a fresh
+    connection after a budget (Discord 40060 counts as success). Liveness never polls
+    API endpoints. The edge is crate-internal; only its config and metrics are public.
   - **Discord fakes for tests** live in `noctis-testkit` (`noctis_testkit::fake`):
     `FakeDiscordHttp`, a local `hyper` server with per-test routes and a request
     log, and `FakeGateway`, a local `tokio-websockets` server speaking HELLO,
     IDENTIFY/READY, RESUME, heartbeats, dispatches and close codes. The App reaches
-    them only through twilight's own override points: the HTTP proxy setting above
-    and the gateway `proxy_url` (exposed as `.gateway_url(..)`, also used for gateway
+    them only through the production override points: the configured HTTP proxy
+    (the edge's upstream, so tests run the edge too) and the gateway `proxy_url` (exposed as `.gateway_url(..)`, also used for gateway
     proxies). Core has no test-only branch. End-to-end tests for Epics 5 to 7 live in
     `crates/noctis-testkit/tests/`, and `TestApp` (Story 8.6) runs on the same fakes.
   - Non-Discord HTTP exists only in `noctis-image`'s `AssetFetcher` (AD-15).

@@ -38,7 +38,7 @@ recorded here.
   chose [C] Continue (no Advanced Elicitation or Party Mode). Epic order and the
   placement of FR-51 and the V2 model are explained under Epic List.
 - **Step 3, story review and final menu:** each epic's stories were accepted as
-  written (96 stories in 15 epics) and [C] Continue was chosen (no Advanced
+  written (96 stories in 15 epics; Story 5.9 was added later from the warm-transport research) and [C] Continue was chosen (no Advanced
   Elicitation or Party Mode). Story-level decisions: the Project Template build job
   runs in tracking mode until Story 14.2 (see Story conventions); `xtask/rules-pending.toml`
   lets the rules-catalog gate be required from Story 1.7 while rule tests land epic by
@@ -67,7 +67,7 @@ recorded here.
   criterion when it changes the public API.
 - **Dependencies:** no story depends on a later story in its own epic; the
   cross-epic mentions of later stories (1.7 → 2.2, 1.8 → 4.1, 2.5 → 7.5/7.7/7.8,
-  2.6 → 7.1, 4.3 → 9.1, 5.2 → 12.4, 5.6 → 12.5/13.1, 5.8 → 13.5, 6.1 → 11.4, 6.5 → 15.4,
+  2.6 → 7.1, 4.3 → 9.1, 5.2 → 12.4, 5.6 → 12.5/13.1, 5.8 → 13.5, 5.9 → 6.5/6.6/12.4, 6.1 → 11.4, 6.5 → 15.4,
   6.9 → 12.3/13.2, 12.6 → 14.3)
   are "later extended by" notes, not prerequisites. Each epic uses only
   earlier epics' outputs. The readiness fixes (`implementation-readiness.md`,
@@ -183,7 +183,7 @@ Priority tier from PRD §8 in brackets.
 - FR-18 [P0]: Expired Handler — missing/expired Ref goes to the Expired Handler; default is a short ephemeral localized notice; overridable per App or per Route (e.g. re-render the starting View).
 - FR-19 [P0]: Untrusted input — malformed `custom_id`, unknown Route or undecodable Payload is a typed error + logged warning, never a panic; Route Guards (invoking user only, required permission) run before the handler and fail with a localized ephemeral notice; optional integrity tag on inline Payloads, mismatch handled as unknown Route.
 - FR-20 [P0]: Middleware with typed Extensions — before/after interactions and events; can stop processing; attaches typed Extensions read by type; deterministic order (registration order, parent before child).
-- FR-21 [P0]: Automatic acknowledgement — deferred response if the handler hasn't responded by a configurable deadline (default 2500 ms from gateway receipt); ephemerality declared up front per Command/Route; Commands defer as new deferred message, components/modal submits as in-place update; late responses (> 5 s) still delivered; V2 flag applied on the follow-up edit; modal-opening handlers never auto-deferred (missed deadline logs an error naming the handler), modal-in-response-to-modal-submit is a typed error; after 15 min public Views fall back to bot-token edit, ephemeral ones return `TokenExpired`; user-installed follow-up cap returns a typed error.
+- FR-21 [P0]: Automatic acknowledgement — deferred response if the handler hasn't responded by a configurable deadline (default 2000 ms from gateway receipt); ephemerality declared up front per Command/Route; Commands defer as new deferred message, components/modal submits as in-place update; late responses (> 5 s) still delivered; V2 flag applied on the follow-up edit; modal-opening handlers never auto-deferred (missed deadline logs an error naming the handler), modal-in-response-to-modal-submit is a typed error; after 15 min public Views fall back to bot-token edit, ephemeral ones return `TokenExpired`; user-installed follow-up cap returns a typed error.
 - FR-22 [P0]: Error routing — default: short localized ephemeral user error plus full structured trace with interaction context; Error Sinks selected by origin (Command, Component/Modal, Autocomplete, Event, Render).
 
 **4.4 Components V2 UI Kit**
@@ -483,7 +483,7 @@ is mapped.
 | FR-18 | P0 | E7 | Expired Handler, defaults and overrides |
 | FR-19 | P0 | E2 + E7 | Total decoding and integrity tag (E2); pipeline handling and Route Guards (E7) |
 | FR-20 | P0 | E7 | Middleware and typed Extensions |
-| FR-21 | P0 | E6 + E7 | Responder typestate and auto-defer for Commands (E6); components and modals (E7) |
+| FR-21 | P0 | E6 + E7 (+E5) | Responder typestate and auto-defer for Commands (E6); components and modals (E7); warm, hedged, deadline-bounded callback transport (E5, Story 5.9) |
 | FR-22 | P0 | E5 + E6 | Error Sinks by origin (E5); user-facing localized errors and panics as responses (E6) |
 | FR-23 | P0 | E4 | Typed V2 builders, flags, legacy path |
 | FR-24 | P0 | E4 | Runtime Limit validator, strict/lenient, configurable `Limits` |
@@ -514,7 +514,7 @@ is mapped.
 | FR-49 | P0 | E1 + all + E14 | CI template job (E1); each API story reconciles the template; template green and gate required (E14) |
 | FR-50 | P0 | E1 + all + E14 | `api-snapshot`/`skill-check` gates (E1); each API story updates the Usage Skill; completeness audit (E14) |
 | FR-51 | P1 | E5 + E8 + E10 | Discord HTTP and gateway fakes and `Runtime::for_test()` (E5, Stories 5.1 to 5.3); testkit simulated interactions and View snapshots (E8, per roadmap M2); pixel snapshots (E10) |
-| FR-52 | P1 | E12 | HTTP proxy mode, Cluster warning, timeout |
+| FR-52 | P1 | E12 (+E5) | HTTP proxy mode, Cluster warning, timeout (E12); Discord edge forwarding to the configured proxy (E5, Story 5.9) |
 | FR-53 | P2 | E15 | Presence and gateway commands |
 | FR-54 | P1 | E13 | Lifecycle Hooks API (shard status events produced in E5) |
 | FR-55 | P1 | E12 | Resumable shutdown, `--no-resume` |
@@ -593,7 +593,7 @@ illegal structures don't compile and every Limit is checked before sending.
 A bot author builds an App, runs it sharded across all cores with correct identify
 concurrency, and handles gateway events without ever stalling heartbeats or dropping
 interactions.
-**FRs covered:** FR-1, FR-2, FR-5, FR-6, FR-22 (Error Sinks), FR-51 (Discord fakes); NFR-4, NFR-5.
+**FRs covered:** FR-1, FR-2, FR-5, FR-6, FR-21 (callback transport), FR-22 (Error Sinks), FR-51 (Discord fakes), FR-52 (edge to proxy); NFR-4, NFR-5.
 
 ### Epic 6: Slash commands and Publish (P0, roadmap M1)
 A bot author declares tescord-style Commands, Patterns, typed options, autocomplete and
@@ -1549,6 +1549,78 @@ So that deploys don't lose interactions and dead shards never fail silently.
 **When** the gateway reports it as a `ShardEvent`
 **Then** core logs it, sets `noctis_shard_status{shard}`, and emits an internal shard-status event that Story 13.5 exposes as a Lifecycle Hook; it is never a silent stop
 
+### Story 5.9: Warm, deadline-safe Discord HTTP edge
+
+As a bot operator,
+I want Discord HTTP connections kept warm and interaction callbacks sent outside the shared rate-limit queue,
+So that the first request after a quiet period never hangs on a dead connection and no interaction misses its 3 s deadline, without polling Discord to stay warm.
+
+**Implements:** FR-21 (transport side of the ack deadline), FR-51 (HTTP fake: h2c, connection log, black-hole), FR-52 (proxy composition, request timeout), NFR-4, NFR-5, NFR-6; AD-13, AD-21, AD-24, AD-29; rules INT-01, INT-13, RL-01.
+
+**Acceptance Criteria:**
+
+**Given** an App (research: `research/http-warm-transport.md` §7)
+**When** it is built
+**Then** core binds a loopback-only listener (`127.0.0.1:0`, a std socket so `build()` stays sync) for its crate-internal Discord edge and builds the App's one `Arc<twilight_http::Client>` with twilight's public `proxy("127.0.0.1:<port>", true)`; no other crate constructs a Discord HTTP client (AD-24)
+**And** the edge forwards only paths under `/api/v10/` (anything else is answered 403 and never forwarded), rewrites only the authority/`Host`, forwards method, headers and body byte-for-byte, streams the response back unchanged (so twilight's RateLimiter keeps learning buckets, RL-01), and never adds or logs `Authorization` or any header carrying personal data (NFR-6)
+
+**Given** no `.http_proxy(..)` configured
+**When** the edge forwards
+**Then** its upstream is `https://discord.com` over one tuned hyper client: ALPN `h2, http/1.1`, `TokioTimer` timers, h2 PING keep-alive every 20 s with a 5 s timeout while idle, `TCP_NODELAY`, TCP keepalive (30 s / 10 s / 3 probes, plus `TCP_USER_TIMEOUT` on Linux), a 1.5 s connect timeout per address, a 3 s TLS timeout, async DNS with an in-memory cache honoring TTL (floor 30 s, cap 5 min, background refresh at 75 % of TTL, last good answer served on resolver failure for up to 1 h), and the process-default rustls `ring` provider (AD-21)
+
+**Given** `.http_proxy(url)` configured (the Story 5.2 setter, also used for the fakes and for a Cluster's shared proxy)
+**When** the edge forwards
+**Then** its upstream is that URL instead of discord.com, twilight keeps `ratelimiter(None)` as Story 5.2 set it, the proxy's own behavior (including its rate limiting) is preserved, and a byte-equality test against `FakeDiscordHttp` shows the same method, path, headers (except `Host`) and body as twilight produced, including a multipart upload and `X-Audit-Log-Reason`
+**And** the Story 5.2 and 5.3 smoke tests pass unchanged, so tests run the same edge code path as production with no test-only branch in core
+
+**Given** `FakeDiscordHttp` (this story adds h2c prior-knowledge serving on the same port, a per-connection log with h2 PING frames, a stall control per route, and a black-hole mode that keeps the TCP connection open but silently discards bytes)
+**When** `App::run` starts
+**Then** the edge's keeper opens one upstream connection and completes TCP, TLS (for https) and the h2 handshake before `GET /gateway/bot` and before the first shard identifies, and redials with jittered back-off (0, 0.5, 1, 2, 5 s cap) whenever the connection closes (GOAWAY, PING timeout, error) and when a shard reconnects after a network loss; warm-up makes no API request (connection log shows zero HTTP requests from it)
+**And** an `http://` upstream uses h2c only when `HttpConfig::upstream_h2c` is set (the testkit helper sets it), otherwise HTTP/1.1 with the same TCP settings
+
+**Given** an idle App with no requests for 10 minutes against the fake (paused tokio clock, or the same test with intervals scaled down through `HttpConfig`)
+**When** time advances
+**Then** the fake observes h2 PING frames at the configured interval and zero HTTP requests, and the next request reuses the warm connection (`noctis_http_conn_reused_total{reused="true"}` increments); no code path polls an API endpoint to keep connections warm
+
+**Given** the fake black-holes the upstream connection
+**When** one PING interval plus the PING timeout passes
+**Then** the keeper detects the dead connection, redials, and a callback sent afterwards succeeds on the new connection; **Given** a callback sent onto the black-holed connection before detection **Then** its hedge on a fresh connection succeeds before the interaction's deadline, and no request waits for twilight's 10 s timeout
+
+**Given** a crate-internal interaction-callback path (Story 6.5's Responder later sends every initial callback through it; AD-11's single Responder path is unchanged)
+**When** core sends `POST /api/v10/interactions/{id}/{token}/callback` (with `?with_response=true` when asked) with a body built from twilight-model types
+**Then** it goes directly over the edge's upstream client, bypassing twilight's RateLimiter (INT-13: interaction endpoints are outside the global limit), while follow-ups and edits stay on twilight
+**And** four concurrent callbacks against a fake route answering after 1 s all complete within 1.2 s (no serialization; twilight's limiter baseline is 1/2/3/4 s)
+
+**Given** a fake route that stalls the first callback attempt indefinitely
+**When** no response headers arrive within `hedge_after` (default `min(1000 ms, deadline − now − 1200 ms)`, never below 300 ms)
+**Then** an identical second attempt goes out on a new connection that bypasses the pool, the first 2xx wins and the loser is cancelled, at most 2 attempts are made, the ack succeeds before the deadline, and `noctis_interaction_ack_hedges_total{outcome="won"}` increments
+**And** an HTTP 400 with Discord code 40060 ("already acknowledged") on either attempt counts as success, increments `{outcome="40060"}` and logs no error
+
+**Given** a callback's deadline (`Inbound::received_at` + 3 s − 100 ms, INT-01)
+**When** it passes, or a 429's `retry_after` doesn't fit before it
+**Then** the call returns a typed `AckDeadlineMissed` error (AD-13) and makes no further attempts
+
+**Given** a request that failed before any byte was written (connect refused, DNS or TLS error, h2 `REFUSED_STREAM`, GOAWAY with `last_stream_id` below ours)
+**When** the edge handles it
+**Then** exactly one retry goes out; a non-callback request that failed after bytes were written is not retried and the edge answers twilight with 502 within the per-phase timeouts instead of hanging until twilight's timeout (default 10 s, still applied to every request)
+
+**Given** a DNS answer with TTL 60 s (unit test with a scripted resolver behind a crate-internal seam)
+**When** 50 s pass
+**Then** the cache refreshes in the background and no request in the window waits on DNS; **Given** the resolver then fails **Then** the cached address is still used
+
+**Given** any upstream request (Story 5.7 observability contract: `metrics` facade, `noctis_` prefix, `app` label)
+**When** it completes
+**Then** `noctis_http_phase_seconds{phase="dns|connect|tls|ttfb|total"}` has samples (dns/connect/tls on new connections only), and `noctis_http_connections_total{reason="warmup|redial|hedge"}`, `noctis_http_conn_reused_total{reused}`, `noctis_http_h2_ping_rtt_seconds`, `noctis_http_ping_timeouts_total` and `noctis_interaction_ack_hedges_total{outcome}` are recorded, with matching fields on a `noctis.http` span
+**And** the Story 5.7 label test covers them: no label, span field or header the edge adds carries a token, id or personal data
+
+**Given** shutdown (Story 5.8)
+**When** core follows the AD-21 order
+**Then** the edge and its keeper stay live while lanes drain ("HTTP still live") and stop only after `gateway.closed()`
+
+**Given** the new public API (`HttpConfig { ping_interval, ping_timeout, hedge_after, connect_timeout, dns_ttl_floor, dns_ttl_cap, upstream_h2c }` with the defaults above, set through `AppBuilder::http(HttpConfig)`, and the `AckDeadlineMissed` error)
+**When** the story is done
+**Then** `examples/project-template/` (code, `AGENTS.md`, Usage Skill: `references/app-and-sharding.md` documents the edge, `HttpConfig` and the metrics), `xtask/public-api.txt` and the Usage Skill's `API hash` line are updated in the same commit, and `skill-check` and every local gate in AGENTS.md pass
+
 ## Epic 6: Slash commands and Publish
 
 A bot author declares tescord-style Commands, Command Patterns, typed options,
@@ -1702,9 +1774,9 @@ So that users never see "interaction failed" and late updates still land.
 
 **Acceptance Criteria:**
 
-**Given** a Command handler that hasn't responded by the deadline (default 2500 ms, configurable, measured from `Inbound::received_at` so queueing time counts)
+**Given** a Command handler that hasn't responded by the deadline (default 2000 ms, configurable, measured from `Inbound::received_at` so queueing time counts)
 **When** the deadline passes
-**Then** core sends a type-5 deferred response with only the declared `EPHEMERAL` flag (INT-08), and the handler's later `reply` becomes `edit_original` carrying the V2 flag (runtime state machine shared by the handler and the auto-defer task)
+**Then** core sends a type-5 deferred response with only the declared `EPHEMERAL` flag (INT-08) over the direct, hedged callback path (Story 5.9), and the handler's later `reply` becomes `edit_original` carrying the V2 flag (runtime state machine shared by the handler and the auto-defer task)
 **And** a handler responding after 5 s still delivers its message (test with paused clock), and `noctis_autodefer_total` and `noctis_ack_latency_seconds` are recorded
 
 **Given** `#[command(.., opens_modal)]` whose handler takes `CommandResponder<OpensModal>`
@@ -2928,7 +3000,7 @@ So that processes sharing one token never exceed Discord's per-token limits.
 
 **Given** a proxy URL configured (builder or `NOCTIS_HTTP_PROXY`)
 **When** the App's single HTTP client is built
-**Then** it uses `proxy(url, true)` and `ratelimiter(None)`, and a test with a mock proxy shows no request bypasses it (including raw REST and webhook requests)
+**Then** twilight keeps routing through core's Discord edge (AD-24, Story 5.9), which forwards to the proxy, with `ratelimiter(None)`, and a test with a mock proxy shows no request bypasses it (including raw REST, webhook requests and interaction callbacks)
 **And** 429 responses with `X-RateLimit-Scope: shared` are surfaced as typed errors and counted, never hard-coded as limits (RL-04), and 401/403/429 counts feed a metric toward the invalid-request limit (RL-03)
 
 **Given** a Cluster configuration (a Shard Range smaller than the total) without a proxy

@@ -63,7 +63,7 @@ Sources: the memlog and `../../research/`.
   miss heartbeat ACKs and get the connection dropped. Interactions go to a separate
   unbounded-in-practice lane; other events go to a bounded queue with per-type drop
   policy. Optional per-guild ordering by guild-hashed workers.
-- **Auto-defer deadline (FR-21):** default 2500 ms measured from gateway receipt.
+- **Auto-defer deadline (FR-21):** default 2000 ms measured from gateway receipt.
   Commands defer with `DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE` (5), whose only allowed
   flag is `EPHEMERAL`; the V2 flag goes on Edit Original. Components and modal
   submits defer with `DEFERRED_UPDATE_MESSAGE` (6). `MODAL` (9) must be the first

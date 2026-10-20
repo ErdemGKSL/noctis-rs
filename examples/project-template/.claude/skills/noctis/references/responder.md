@@ -25,7 +25,7 @@ for Views unless opted in (MSG-05), and runs the Limits validator before any HTT
 
 ## 2. Auto-defer (FR-21)
 
-If your handler hasn't answered `ack_deadline` (default 2500 ms) after the gateway
+If your handler hasn't answered `ack_deadline` (default 2000 ms) after the gateway
 received the interaction (queueing time counts), Noctis defers:
 
 - commands: type 5 with only `EPHEMERAL` if declared (INT-08); the V2 flag goes on the

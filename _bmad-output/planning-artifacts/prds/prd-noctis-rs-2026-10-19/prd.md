@@ -566,7 +566,7 @@ A Module can register Middleware before and after interactions and events.
   child.
 
 #### FR-21: Automatic acknowledgement
-If a handler has not responded before a configurable deadline (default 2500 ms,
+If a handler has not responded before a configurable deadline (default 2000 ms,
 measured from gateway receipt so queueing time counts), Noctis sends a deferred
 response. Later responses edit the original message.
 **Consequences (testable):**

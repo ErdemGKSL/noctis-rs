@@ -202,7 +202,7 @@ locale returns `None`.
 
 | Id | Limit | Where |
 | --- | --- | --- |
-| INT-01 | initial response within 3 s (auto-defer at 2.5 s) | R |
+| INT-01 | initial response within 3 s (auto-defer at 2 s) | R |
 | INT-02 | token valid 15 min (`TokenExpired`) | R |
 | INT-03 | exactly one initial callback (typestate) | C / R |
 | INT-04 | callback types per interaction kind (context types) | C |
@@ -318,6 +318,6 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 | frames / duration | 90 / 6 s |
 | fps | GIF ≤ 50, WebP/APNG ≤ 90 |
 | size target | ≈ 2 MB (and ≤ Upload Budget) |
-| auto-defer deadline | 2500 ms |
+| auto-defer deadline | 2000 ms |
 | Ref TTL | 24 h |
 | ModuleStateStore poll | 5 s |

@@ -93,7 +93,7 @@ Planned (signatures may change):
 | `.publisher(bool)` [planned, Story 6.9] | `false` | this process publishes at startup |
 | `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
-| `.ack_deadline(Duration)` [planned] | 2500 ms | auto-defer deadline, measured from gateway receipt |
+| `.ack_deadline(Duration)` [planned] | 2000 ms | auto-defer deadline, measured from gateway receipt |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
 | `.expired_handler(f)` [planned] | localized ephemeral notice | see `routes-payloads-refs.md` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
