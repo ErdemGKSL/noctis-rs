@@ -2,7 +2,8 @@
 title: 'Story 6.4: App-build merge and conflict checks for Commands'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'c7901aa0b63da004c5d62e3bd68fc21bbc87bbc8'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
