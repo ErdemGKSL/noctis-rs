@@ -2,7 +2,8 @@
 title: 'Story 6.10: Simplification: remove the widget envelope and view-state support from shipped crates'
 type: 'refactor'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'd5bdb24eb357efeae0cd966eae742f92e7e89cd6'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
