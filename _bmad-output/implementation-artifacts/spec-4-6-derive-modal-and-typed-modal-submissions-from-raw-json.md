@@ -2,7 +2,8 @@
 title: 'Story 4.6: `derive(Modal)` and typed modal submissions from raw JSON'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'ae7a27d5f788510fc31be4ac797ec9ddbaa7b4a3'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
