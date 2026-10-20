@@ -2,7 +2,7 @@
 title: 'Story 6.8: User-facing errors, built-in notices and panics as responses'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '5a5afef358ddfce1e205550ab500654abf796ac8'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -225,6 +225,38 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 28 findings — high 0, medium 1, low 13, false 14, maybe-false 0
+- findings:
+  - `[low]` `[reject]` Blind: `send_notice` is not raced against the shutdown cancel token — the shutdown sequence waits at most 1 s after cancelling and the notice is one bounded HTTP request; rare and the fix adds a select branch.
+  - `[low]` `[reject]` Blind: PENDING notice for an `opens_modal` Command failing after 3 s gets a rejected callback — same as any late callback today (one warn); rare, and the fix adds an expiry guard.
+  - `[false]` `[reject]` Blind: PENDING notice stores `message_id: None`, later edits would misfire — nothing runs on this `Shared` after the notice; the outcome does not occur.
+  - `[false]` `[reject]` Blind: decode failures map to `noctis.validation.failed` and also reach the sink — the spec deliberately settled this key rule (Always, Matrix 6) and decode failures are bugs worth reporting.
+  - `[false]` `[reject]` Blind: custom sinks that log now double-log; Event/Component sinks do not pre-log — the spec decided `LogSink`-first for Command/Autocomplete only; FR-22's "by default" logging is met.
+  - `[low]` `[patch]` Blind: `notice_respects_cap_and_expiry` warn assertions are loose (any "follow-up", second warn unchecked) — patch: assert the FollowupCap and TokenExpired error texts.
+  - `[low]` `[reject]` Blind: pipeline locale selection not verified end to end (all locales render en-US) — code at `pipeline.rs` passes `notice::locale(user, guild)`, unit-tested; a stub-Translate harness is more than a direct correction and no user-visible defect exists today.
+  - `[false]` `[reject]` Blind: `Report.locale = EnUs` for autocomplete is meaningless — autocomplete sends no notice (spec Never); no bad outcome.
+  - `[false]` `[reject]` Blind: `user_condition` is `pub(crate)`; debug log omits the inner error — spec settled both (no new public surface; debug fields `handler`, `key`; AD-29 keeps option values out of logs).
+  - `[low]` `[patch]` Blind: `with_message` doc reads as if user conditions reach the sink — patch: reword the doc sentence.
+  - `[low]` `[patch]` Blind: facade "Errors shown to users" example uses bot keys that render generic text and warn until Epic 11 — patch: add a comment in the example.
+  - `[false]` `[reject]` Blind: event `user()` errors reach the sink with the synthetic Display — spec Never settles "Event `user()` errors are reported like any other error", and Task 2 fixes that Display.
+  - `[false]` `[reject]` Blind: spec frontmatter `status: in-progress` is stale — the workflow sets status at review and finalize.
+  - `[medium]` `[patch]` Edge: DEFERRED notice deletes the original even after `edit_original` filled it (`edit_original` sets `Shape::Sent`, state stays `DEFERRED`), deleting the handler's delivered response — patch: delete only while `original().shape` is `Shape::Deferred`, plus a test.
+  - `[low]` `[reject]` Edge: notice not raced against cancel — same as the first Blind row (bounded by the 1 s post-cancel wait).
+  - `[low]` `[patch]` Edge: user-condition debug says "notice sent" even when the notice failed or was skipped — patch: reword the message.
+  - `[low]` `[reject]` Edge: a custom sink set to `LogSink` itself logs twice — unlikely configuration and the fix needs a type check.
+  - `[low]` `[patch]` Gap: autocomplete `LogSink`-before-custom-sink is untested — patch: autocomplete twin of `the_error_is_logged_once`.
+  - `[low]` `[patch]` Gap: `user(a).with_message(b)` staying a user condition is unpinned — patch: add a routing test case.
+  - `[false]` `[reject]` Intent D1: user conditions skip the sink despite "with or without a key" — spec Design Notes and memlog decision settle it; keyed `new(..).with_message(..)` errors still reach the sink.
+  - `[false]` `[reject]` Intent D2: bot keys render generic text before Epic 11 — spec settled (no catalog setter until Epic 11, Matrix 4); reserved-key advice does not invent new `noctis.*` keys.
+  - `[false]` `[reject]` Intent D3: delete-then-follow-up order — spec Design Notes settle the order as an allowed AD-23 reading.
+  - `[false]` `[reject]` Intent D4: expired/disabled/rate-limit/guard notices exist as strings only — AC1 requires the strings; emission belongs to Epics 7/13.
+  - `[false]` `[reject]` Intent D5: validator key vs fallback indistinguishable — the pipeline test with a bot validator key renders generic text, not validation text, so the validator's key is proven used; routing difference is spec-settled.
+  - `[false]` `[reject]` Intent D6: Dispatcher notices are public — spec Design Notes decision; message transports have no ephemeral messages.
+  - `[low]` `[patch]` Intent D7: no test asserts a panic is logged — patch: add a panic case asserting one `ERROR` `noctis::command` line.
+  - `[false]` `[reject]` Intent D8: full logging only wired for Command/Autocomplete — FR-22 covers default logging; the spec scopes the pre-log to these origins and only Command sends notices.
+  - `[low]` `[patch]` Intent D9: `i18n.md` §6 tags the implemented en-US fallback `[planned, Epic 11]` (skill-check evidence part is a verification step, not a diff defect) — patch: move the tag to the override sentence.
+
 ## Design Notes
 
 **User conditions skip the sink (decision).**
@@ -258,3 +290,23 @@ db.save(x).await.map_err(|e| HandlerError::new(e).with_message(keys::SAVE_FAILED
 - `cargo run --release -p xtask -- skill-check` -- expected: ok
 - `cargo deny check` -- expected: ok
 - `cargo +1.91 check --release --workspace` -- expected: ok
+
+## Auto Run Result
+
+- **Summary:** Handler errors, validator failures and panics now become user-facing ephemeral notices (Command origin) rendered through `noctis-i18n` built-in en-US strings with a generic fallback; `HandlerError::user(key)` conditions log at debug and skip the sink, other errors are logged once by `LogSink` before any custom sink (Command/Autocomplete); notices after auto-defer delete the deferred original then follow up; Dispatcher (message transport) notices are public; built-in strings for expired/disabled/rate-limit/guard notices are present for Epics 7/13.
+- **Files changed:**
+  - `crates/noctis-i18n/src/lib.rs`, `Cargo.toml` — built-in en-US notice catalog and key resolution.
+  - `crates/noctis-core/src/notice.rs` — notice composition and locale selection.
+  - `crates/noctis-core/src/handler.rs` — `HandlerError::user`/`with_message` routing, user-condition classification.
+  - `crates/noctis-core/src/pipeline.rs`, `responder.rs` — error/panic to notice flow, LogSink-first reporting, defer-aware delete+follow-up.
+  - `crates/noctis-core/src/{app,command,lib}.rs`, `Cargo.toml` — wiring and core → i18n dependency.
+  - `crates/noctis-core/src/pipeline/tests.rs`, `responder/tests.rs`, `crates/noctis-testkit/tests/commands.rs`, `crates/noctis/tests/options.rs` — tests.
+  - `crates/noctis/src/lib.rs` — facade docs "Errors shown to users".
+  - `examples/project-template/` (AGENTS.md, Usage Skill references, API hash), `xtask/public-api.txt`, `docs/discord-rules.md`, architecture memlog — docs, snapshot, decisions.
+- **Review findings:** 28 total (high 0, medium 1, low 13, false 14).
+  - Patched (9; medium 1, low 8): DEFERRED notice deleted an original already filled by `edit_original` (now deletes only while shape is `Deferred`, with test); tightened cap/expiry warn assertions; `with_message` doc wording; facade example comment on bot keys before Epic 11; user-condition debug message wording; autocomplete LogSink-first test; `user(a).with_message(b)` routing test; panic-is-logged test; `i18n.md` §6 planned tag moved.
+  - Deferred: none.
+  - Rejected (19): notice not raced against shutdown cancel (x2, bounded by 1 s wait); late PENDING callback for modal commands (rare, one warn); custom sink equal to `LogSink` double-logs (unlikely config); end-to-end locale harness (unit-tested, no defect); 14 false/spec-settled findings (decode failures to sink, LogSink-first scope, `pub(crate)` surface, bot-key generic text, delete-then-follow-up order, public Dispatcher notices, strings-only notices for Epics 7/13, stale status, etc.).
+- **Follow-up review recommended:** false — first pass patched 0 high and 1 medium (below the two-medium threshold).
+- **Verification:** all local gates via `gates.sh` green (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91 check). CI paused by maintainer.
+- **Residual risks:** bot-defined message keys render generic text with a warn until Epic 11 adds a catalog setter; notice delivery is not raced against shutdown cancel; non-en-US locale rendering is not exercised end to end.

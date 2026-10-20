@@ -343,7 +343,7 @@ async fn execute(
                     target: "noctis::command",
                     handler = report.handler,
                     key = error.user_message().map(MessageKey::as_str),
-                    "user condition: notice sent"
+                    "user condition"
                 );
             });
             return;

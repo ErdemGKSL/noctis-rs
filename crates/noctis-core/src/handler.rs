@@ -113,8 +113,9 @@ impl HandlerError {
     }
 
     /// Shows `key`'s localized text to the user instead of the generic
-    /// notice. The error itself still reaches the Error Sink (a user
-    /// condition stays one).
+    /// notice. On a [`new`](Self::new) error the error itself still reaches
+    /// the Error Sink; on a [`user`](Self::user) error only the key is
+    /// replaced and it stays a user condition (no sink report).
     ///
     /// ```
     /// use std::io;

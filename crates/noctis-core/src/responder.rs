@@ -1099,6 +1099,7 @@ impl Shared {
             DEFERRED => {
                 drop(gate);
                 if let Transport::Interaction(_) = &self.transport
+                    && matches!(self.original().shape, Shape::Deferred)
                     && let Err(error) = self.delete_original().await
                 {
                     tracing::warn!(

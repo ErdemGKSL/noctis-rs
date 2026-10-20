@@ -2046,6 +2046,25 @@ mod autocomplete {
         assert!(seen[0].kind.contains("focused"), "{}", seen[0].kind);
     }
 
+    /// FR-22: a failing autocomplete handler is logged exactly once, with a
+    /// custom Autocomplete sink and with the default one.
+    #[tokio::test]
+    async fn the_error_is_logged_once() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let (p, sink) = start(discord()).await;
+        run(&p, ac("err", "x")).await;
+        assert_eq!(sink.seen().len(), 1);
+        let lines = capture.lines_with(&["ERROR", "noctis::autocomplete", "boom"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+
+        let default = Pipeline::start_default_sink(Module::new("m").add(config())).await;
+        run(&default, ac("err", "x")).await;
+        let lines = capture.lines_with(&["ERROR", "noctis::autocomplete", "boom"]);
+        assert_eq!(lines.len(), 2, "{}", capture.text());
+    }
+
     /// Matrix 35: the callback records the ack latency.
     #[tokio::test]
     async fn ack_latency_is_recorded() {
@@ -2132,6 +2151,9 @@ mod notices {
             }))
             .add(failing("m::bot", &["bot"], || {
                 HandlerError::user(MessageKey::new("shop.missing"))
+            }))
+            .add(failing("m::rekeyed", &["rekeyed"], || {
+                HandlerError::user(keys::DISABLED_HERE).with_message(keys::GUARD_OWNER)
             }));
         let p = Pipeline::start(module).await;
         p.run(run_slash("plain")).await;
@@ -2140,21 +2162,23 @@ mod notices {
         assert_eq!(errors_total(&snapshotter), 1);
         p.run(run_slash("user")).await;
         p.run(run_slash("bot")).await;
+        p.run(run_slash("rekeyed")).await;
         assert_eq!(
             errors_total(&snapshotter),
             0,
             "user conditions are not counted"
         );
         let requests = p.requests();
-        assert_eq!(requests.len(), 4, "{requests:?}");
+        assert_eq!(requests.len(), 5, "{requests:?}");
         assert_notice(&requests[0], GENERIC);
         assert_notice(&requests[1], OWNER);
         assert_notice(&requests[2], DISABLED);
         assert_notice(&requests[3], GENERIC);
+        assert_notice(&requests[4], OWNER);
         let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
         assert_eq!(kinds, ["error:boom", "error:db down"]);
         let debug = capture.lines_with(&["DEBUG", "noctis::command", "user condition"]);
-        assert_eq!(debug.len(), 2, "{}", capture.text());
+        assert_eq!(debug.len(), 3, "{}", capture.text());
         assert!(
             debug[0].contains("handler=\"m::user\"")
                 && debug[0].contains("key=\"noctis.disabled_here\""),
@@ -2331,6 +2355,17 @@ mod notices {
                     let _ = r.reply(v2("a")).await?.done();
                     Err::<V2Message, _>(io("x"))
                 },
+            ))
+            .add(CommandHandler::__new_plain(
+                "m::filled",
+                &["filled"],
+                "d",
+                |_: CommandCtx, r: CommandResponder| async move {
+                    let acked = r.defer(Ephemerality::Public).await?;
+                    acked.edit_original(v2("a")).await?;
+                    let _ = acked.done();
+                    Err::<V2Message, _>(io("x"))
+                },
             ));
         let p = Pipeline::start(module).await;
         p.run(run_slash("deferred")).await;
@@ -2349,7 +2384,20 @@ mod notices {
         assert_eq!(requests.len(), 2, "{requests:?}");
         assert_eq!(requests[0].1, CB_REPLY);
         assert_followup_notice(&requests[1], GENERIC);
-        assert_eq!(p.reports().len(), 2);
+
+        // A deferred original filled by `edit_original` is kept.
+        p.fx.server.log.lock().unwrap().clear();
+        p.run(run_slash("filled")).await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 3, "{requests:?}");
+        assert_eq!(requests[0].2, json!({ "type": 5 }));
+        assert_eq!(requests[1].0, Method::PATCH, "{requests:?}");
+        assert!(
+            requests.iter().all(|r| r.0 != Method::DELETE),
+            "{requests:?}"
+        );
+        assert_followup_notice(&requests[2], GENERIC);
+        assert_eq!(p.reports().len(), 3);
     }
 
     /// Matrix 11 and 17: a failed delete still sends the follow-up; a
@@ -2471,11 +2519,10 @@ mod notices {
 
         let warns = capture.lines_with(&["WARN", "could not send the error notice"]);
         assert_eq!(warns.len(), 2, "{}", capture.text());
-        assert!(
-            warns[0].contains("FollowupCap") || warns[0].contains("follow-up"),
-            "{}",
-            warns[0]
-        );
+        let cap = ResponderError::FollowupCap.to_string();
+        let expired = ResponderError::TokenExpired.to_string();
+        assert!(warns[0].contains(&cap), "{}", warns[0]);
+        assert!(warns[1].contains(&expired), "{}", warns[1]);
         let kinds: Vec<String> = p.reports().into_iter().map(|r| r.kind).collect();
         assert_eq!(kinds, ["error:after five", "error:expired"]);
     }
@@ -2563,8 +2610,12 @@ mod notices {
         let capture = Capture::default();
         let _guard = tracing::subscriber::set_default(capture.subscriber());
         tracing::callsite::rebuild_interest_cache();
-        let custom =
-            Pipeline::start(Module::new("m").add(failing("m::f", &["f"], || io("boom")))).await;
+        let custom = Pipeline::start(
+            Module::new("m")
+                .add(failing("m::f", &["f"], || io("boom")))
+                .add(panicking("m::p", &["p"], "custom kaboom")),
+        )
+        .await;
         custom.run(run_slash("f")).await;
         assert_eq!(custom.reports().len(), 1);
         let lines = capture.lines_with(&["ERROR", "noctis::command", "command handler failed"]);
@@ -2574,14 +2625,43 @@ mod notices {
             "{}",
             lines[0]
         );
+        custom.run(run_slash("p")).await;
+        assert_eq!(custom.reports().len(), 2);
+        let lines = capture.lines_with(&["ERROR", "noctis::command", "custom kaboom"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
 
-        let default =
-            Pipeline::start_default_sink(
-                Module::new("m").add(failing("m::g", &["g"], || io("bang"))),
-            )
-            .await;
+        let default = Pipeline::start_default_sink(
+            Module::new("m")
+                .add(failing("m::g", &["g"], || io("bang")))
+                .add(panicking("m::q", &["q"], "default kaboom")),
+        )
+        .await;
         default.run(run_slash("g")).await;
         let lines = capture.lines_with(&["ERROR", "noctis::command", "bang"]);
         assert_eq!(lines.len(), 1, "{}", capture.text());
+        default.run(run_slash("q")).await;
+        let lines = capture.lines_with(&["ERROR", "noctis::command", "default kaboom"]);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+    }
+
+    /// A Command at `path` panicking with `message`.
+    fn panicking(
+        name: &'static str,
+        paths: &'static [&'static str],
+        message: &'static str,
+    ) -> CommandHandler {
+        CommandHandler::__new_plain(
+            name,
+            paths,
+            "d",
+            move |_: CommandCtx, _: CommandResponder| async move {
+                tokio::task::yield_now().await;
+                Ok::<V2Message, HandlerError>(panic_with(message))
+            },
+        )
+    }
+
+    fn panic_with(message: &str) -> V2Message {
+        panic!("{message}")
     }
 }

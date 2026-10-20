@@ -90,7 +90,7 @@ development_status:
   6-5-command-pipeline-and-the-responder-typestate: done
   6-6-automatic-deferral-token-lifetime-and-follow-up-cap: done
   6-7-autocomplete: done
-  6-8-user-facing-errors-built-in-notices-and-panics-as-responses: in-progress
+  6-8-user-facing-errors-built-in-notices-and-panics-as-responses: done
   6-9-publish-with-diff-dry-run-and-cli-modes: backlog
   epic-6-retrospective: optional
 

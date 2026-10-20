@@ -356,6 +356,8 @@
 //! use noctis::rules::MessageKey;
 //! use noctis::ui::{Components, TextDisplay};
 //!
+//! // Bot keys: until locale files arrive (Epic 11) these show the generic
+//! // text and log a `noctis::i18n` warning.
 //! const GUILD_ONLY: MessageKey = MessageKey::new("common.guild_only");
 //! const SAVE_FAILED: MessageKey = MessageKey::new("shop.save_failed");
 //!
