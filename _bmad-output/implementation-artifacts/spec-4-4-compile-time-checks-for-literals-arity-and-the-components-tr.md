@@ -2,7 +2,8 @@
 title: 'Story 4.4: Compile-time checks for literals, arity and the `components!` tree macro'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'fc56965d9bcf5fca782e2b06ce7c5eb792d32377'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
