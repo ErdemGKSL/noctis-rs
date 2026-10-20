@@ -1,0 +1,26 @@
+error[E0277]: [MOD-03] `StringSelect` cannot be a modal Label input
+  --> tests/ui/mod/MOD-03_message_select_in_label.rs:10:34
+   |
+10 |     let _ = ModalLabel::new("L", Pick.string_select([SelectOption::new("a", "a")]));
+   |             ---------------      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not a modal input
+   |             |
+   |             required by a bound introduced by this call
+   |
+   = help: the trait `ModalInput` is not implemented for `StringSelect`
+   = note: a ModalLabel takes a TextInput, ModalStringSelect, ModalUserSelect, ModalRoleSelect, ModalMentionableSelect, ModalChannelSelect, FileUpload, RadioGroup, CheckboxGroup or Checkbox
+   = note: message selects are not modal selects: use ModalStringSelect, ModalUserSelect, ModalRoleSelect, ModalMentionableSelect or ModalChannelSelect
+   = help: the following other types implement trait `ModalInput`:
+             ModalChannelSelect
+             ModalMentionableSelect
+             ModalRoleSelect
+             ModalStringSelect
+             ModalUserSelect
+             noctis::ui::Checkbox
+             noctis::ui::CheckboxGroup
+             noctis::ui::FileUpload
+           and $N others
+note: required by a bound in `ModalLabel::new`
+  --> $WORKSPACE/crates/noctis-ui/src/modal/mod.rs
+   |
+   |     pub fn new(label: impl Into<Text>, input: impl ModalInput) -> Self {
+   |                                                    ^^^^^^^^^^ required by this bound in `ModalLabel::new`

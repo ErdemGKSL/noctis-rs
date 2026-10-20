@@ -489,8 +489,9 @@ is checked by `noctis::ui::validate` (§16).
 | Separator 14 | yes | yes | — | — | no |
 | Action Row 1 | yes | yes | — | — | deprecated |
 | Button 2 | no | no | accessory | 1–5 | no |
-| Selects 3,5–8 | no | no | — | alone | inside Label |
-| Label 18, Text Input 4, File Upload 19, Radio 21, Checkbox Group 22, Checkbox 23 | — | — | — | — | see `modals.md` |
+| Selects 3,5–8 | no | no | — | alone | inside Label, as the separate `Modal*Select` types (no `disabled`) |
+| Label 18 (`ModalLabel`) | — | — | — | — | top level (`ModalTopLevel`) |
+| Text Input 4, File Upload 19, Radio 21, Checkbox Group 22, Checkbox 23 | — | — | — | — | inside Label only (`ModalInput`); see `modals.md` |
 
 ## 14. `components!`: literal trees checked at compile time
 

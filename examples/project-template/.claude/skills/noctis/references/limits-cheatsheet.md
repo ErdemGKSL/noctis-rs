@@ -118,7 +118,7 @@ functions live in `noctis::rules::command` (see `commands.md` §2 "Rule function
 | `component::{validate_components, validate_legacy_components, cost, Component, Container, Section, Accessory, Media, Separator, Spacing, Button, ButtonStyle, Select, SelectKind, SelectOption, Cost}` | Components V2 trees and legacy rows, CV2-03..13, CV2-15..17 (`components-v2.md` §15) |
 | `component::{validate_button_label, validate_link_url, validate_select_placeholder, validate_gallery_description, validate_thumbnail_description, validate_media_url, validate_accent_color, validate_spacing}` | single CV2 values (path `""`) (`components-v2.md` §15) |
 | `modal::{validate_modal, Modal, ModalComponent, Label, LabelChild, TextInput, TextInputStyle, ModalSelect, FileUpload, RadioGroup, CheckboxGroup, Checkbox, ModalOption}` | modals, MOD-01..07 and CV2-09 for modal selects (`modals.md` §7) |
-| `modal::{validate_modal_title, validate_label_text, validate_label_description, validate_text_input, validate_text_input_value}` | single modal values (`modals.md` §7) |
+| `modal::{validate_modal_title, validate_label_text, validate_label_description, validate_text_input, validate_text_input_value, validate_input_custom_id}` | single modal values; `validate_input_custom_id` is CID-01 for a modal input key (`modals.md` §7) |
 | `message::{validate_content, validate_mentions, validate_nonce, validate_sticker_ids, validate_v2_not_empty, validate_legacy_not_empty, validate_webhook_name, AllowedMentions, MentionIds}` | MSG-01, MSG-03..06, MSG-09, WH-04 (`components-v2.md` §15) |
 | `attachment::{validate_attachments, validate_file_size, validate_attachment_description, validate_attachment_ref, AttachmentDecl}` | ATT-01..03, ATT-05, ATT-06 (`components-v2.md` §15) |
 | `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (126, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
@@ -258,14 +258,14 @@ Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
 
 | Id | Limit | Where |
 | --- | --- | --- |
-| MOD-01 | title ≤ 45 | C / R |
-| MOD-02 | 1–5 top-level (Label or Text Display) | C |
-| MOD-03 | no buttons/sections/containers/galleries; no `disabled` | C |
-| MOD-04 | Label ≤ 45, description ≤ 100 | C / B / R |
+| MOD-01 | title ≤ 45 (`noctis::ui::validate` on a `Modal`; Lenient truncates) | C / R |
+| MOD-02 | 1–5 top-level (`ModalLabel` or `TextDisplay`) | C / R |
+| MOD-03 | no buttons/sections/containers/galleries/Action Rows/message selects (`ModalTopLevel` / `ModalInput`, `[MOD-03]`); modal selects have no `disabled` | C |
+| MOD-04 | `ModalLabel` text 1–45, description ≤ 100 | C / B / R |
 | MOD-05 | Text Input min 0–4000, max 1–4000, value ≤ 4000, placeholder ≤ 100 | C / R |
-| MOD-06 | File Upload min 0–10, max 1–10, `file_types` ≤ 10 | C |
-| MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required; option label/value 1–100, description ≤ 100 | C |
-| MOD-08 | modal `custom_id` 1–100 | C |
+| MOD-06 | File Upload min 0–10 (0 only when not required), max 1–10, `file_types` ≤ 10 | C / R |
+| MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required (`Checkbox` has no `required`); option label/value 1–100, description ≤ 100 | C / R |
+| MOD-08 | modal `custom_id` 1–100 (a Route's, via `RouteComponents::modal`); input keys 1–100 (CID-01, runtime) | C / R |
 | MOD-09 | submitted values untrusted; upload URLs ephemeral | R |
 
 ## Messages, attachments, webhooks

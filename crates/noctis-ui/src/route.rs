@@ -2,6 +2,7 @@
 //! the hidden [`CustomId`] they carry (AD-18, AD-19, FR-58).
 
 use core::fmt;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrayvec::ArrayString;
@@ -10,11 +11,11 @@ use noctis_codec::{
     encode_id,
 };
 
-use crate::UiError;
 use crate::component::{
     ChannelSelect, MentionableSelect, RoleSelect, RouteButton, SelectOption, StringSelect,
     UserSelect,
 };
+use crate::{Modal, UiError};
 
 /// A Route that has a handler.
 ///
@@ -29,7 +30,8 @@ use crate::component::{
 )]
 pub trait Handled: Route {}
 
-/// Builds message components from a Route value; in the prelude.
+/// Builds message components and modals from a Route value; in the
+/// prelude.
 ///
 /// The value is the component's Payload, so its `custom_id` is always the
 /// Route's encoding and never a hand-written string (AD-19). Every method
@@ -129,6 +131,62 @@ pub trait RouteComponents: Route + Sized {
         Self: Route<Payload = Self> + Handled + SelectRoute + Send + Sync + 'static,
     {
         ChannelSelect::from_id(CustomId::new(self))
+    }
+
+    /// A [`Modal`] titled `title` whose `custom_id` encodes `self` (MOD-08):
+    /// the submission goes to this Route's handler. Push its Labels and
+    /// Text Displays with [`Modal::push`].
+    ///
+    /// ```
+    /// # use core::fmt;
+    /// # use noctis_codec::{Field, FieldWriter, Payload, Route, RouteId, RouteShape};
+    /// use noctis_ui::{Checkbox, ModalLabel, RouteComponents};
+    ///
+    /// struct Report { id: u64 }
+    /// # impl Payload for Report {
+    /// #     const MAX_ENCODED_LEN: Option<usize> = <u64 as Field>::MAX_LEN;
+    /// #     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result { out.field(&self.id) }
+    /// # }
+    /// # impl Route for Report {
+    /// #     const ID: RouteId = RouteId::new("mod.report");
+    /// #     const SHAPE: RouteShape = RouteShape::INLINE;
+    /// #     const SCHEMA: u8 = 0;
+    /// #     type Payload = Self;
+    /// # }
+    /// # impl noctis_ui::Handled for Report {}
+    ///
+    /// let modal = Report { id: 7 }.modal("Report a user").push(ModalLabel::new("I agree", Checkbox::new("ok")));
+    /// let json = serde_json::to_value(&modal).unwrap();
+    /// assert_eq!(json["custom_id"], "0mod.report:7");
+    /// assert_eq!(json["title"], "Report a user");
+    /// ```
+    ///
+    /// A Route without a handler cannot open a modal:
+    ///
+    /// ```compile_fail,E0277
+    /// # use core::fmt;
+    /// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
+    /// use noctis_ui::RouteComponents;
+    ///
+    /// struct Orphan;
+    /// # impl Payload for Orphan {
+    /// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
+    /// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
+    /// # }
+    /// # impl Route for Orphan {
+    /// #     const ID: RouteId = RouteId::new("orphan");
+    /// #     const SHAPE: RouteShape = RouteShape::INLINE;
+    /// #     const SCHEMA: u8 = 0;
+    /// #     type Payload = Self;
+    /// # }
+    ///
+    /// let _ = Orphan.modal("Title"); // [CID-04]
+    /// ```
+    fn modal(self, title: impl Into<Cow<'static, str>>) -> Modal
+    where
+        Self: Route<Payload = Self> + Handled + Send + Sync + 'static,
+    {
+        Modal::from_id(CustomId::new(self), title.into())
     }
 }
 

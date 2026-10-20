@@ -11,12 +11,14 @@
 use std::slice;
 
 use noctis_rules::component as rc;
+use noctis_rules::modal as rm;
 
 use crate::component::{
     AccessoryNode, ActionRow, Button, ButtonNode, ChildNode, Container, ContainerComponent,
     RowNode, SelectNode, TopNode,
 };
-use crate::{ButtonStyle, Components, Media, SelectOption, Spacing};
+use crate::modal::{ModalInputNode, ModalSelectNode, ModalTopNode};
+use crate::{ButtonStyle, Components, Media, Modal, ModalOption, SelectOption, Spacing};
 
 /// Lowers a V2 tree and runs `f` on it.
 pub(super) fn with_v2<R>(components: &Components, f: impl FnOnce(&[rc::Component<'_>]) -> R) -> R {
@@ -263,4 +265,156 @@ fn lower_option(option: &SelectOption) -> rc::SelectOption<'_> {
         Some(d) => out.description(d),
         None => out,
     }
+}
+
+/// Lowers a modal into `noctis_rules::modal` descriptors and runs `f` on it.
+///
+/// Level 1 collects, in pre-order, the String Select options, the Radio and
+/// Checkbox Group options and the File Upload types; level 2 builds the
+/// Labels, borrowing them through cursors in the same order.
+pub(super) fn with_modal<R>(modal: &Modal, f: impl FnOnce(&rm::Modal<'_>) -> R) -> R {
+    let inputs = || {
+        modal.components.iter().filter_map(|c| match &c.0 {
+            ModalTopNode::Label(l) => Some(&l.input),
+            ModalTopNode::Text(_) => None,
+        })
+    };
+
+    // Level 1: leaves.
+    let mut select_options = Vec::new();
+    let mut modal_options = Vec::new();
+    let mut file_types = Vec::new();
+    for input in inputs() {
+        match input {
+            ModalInputNode::Select(ModalSelectNode::String(s)) => {
+                select_options.push(s.options.iter().map(lower_option).collect::<Vec<_>>());
+            }
+            ModalInputNode::RadioGroup(r) => modal_options.push(lower_modal_options(&r.options)),
+            ModalInputNode::CheckboxGroup(g) => {
+                modal_options.push(lower_modal_options(&g.options));
+            }
+            ModalInputNode::FileUpload(u) => {
+                file_types.push(u.file_types.iter().map(|t| &**t).collect::<Vec<&str>>());
+            }
+            _ => {}
+        }
+    }
+
+    // Level 2: the top level.
+    let mut cursor = ModalCursor {
+        select_options: select_options.iter(),
+        modal_options: modal_options.iter(),
+        file_types: file_types.iter(),
+    };
+    let components: Vec<rm::ModalComponent<'_>> = modal
+        .components
+        .iter()
+        .map(|c| match &c.0 {
+            ModalTopNode::Text(t) => rm::ModalComponent::Text(&t.content),
+            ModalTopNode::Label(l) => {
+                let label = rm::Label::new(&l.label, lower_input(&l.input, &mut cursor));
+                rm::ModalComponent::Label(match l.description.as_deref() {
+                    Some(d) => label.description(d),
+                    None => label,
+                })
+            }
+        })
+        .collect();
+    f(&rm::Modal::new(&modal.title, &components))
+}
+
+/// The leaf lists of a modal, handed out in pre-order.
+struct ModalCursor<'s> {
+    select_options: slice::Iter<'s, Vec<rc::SelectOption<'s>>>,
+    modal_options: slice::Iter<'s, Vec<rm::ModalOption<'s>>>,
+    file_types: slice::Iter<'s, Vec<&'s str>>,
+}
+
+fn lower_input<'s>(input: &'s ModalInputNode, cursor: &mut ModalCursor<'s>) -> rm::LabelChild<'s> {
+    match input {
+        ModalInputNode::TextInput(t) => {
+            let mut out = rm::TextInput::new(t.style).required(t.required);
+            if let Some(min) = t.min_length {
+                out = out.min_length(usize::from(min));
+            }
+            if let Some(max) = t.max_length {
+                out = out.max_length(usize::from(max));
+            }
+            if let Some(v) = t.value.as_deref() {
+                out = out.value(v);
+            }
+            if let Some(p) = t.placeholder.as_deref() {
+                out = out.placeholder(p);
+            }
+            rm::LabelChild::TextInput(out)
+        }
+        ModalInputNode::Select(s) => {
+            let kind = match s {
+                ModalSelectNode::String(_) => {
+                    rc::SelectKind::String(take(&mut cursor.select_options))
+                }
+                ModalSelectNode::User(_) => rc::SelectKind::User,
+                ModalSelectNode::Role(_) => rc::SelectKind::Role,
+                ModalSelectNode::Mentionable(_) => rc::SelectKind::Mentionable,
+                ModalSelectNode::Channel(_) => rc::SelectKind::Channel,
+            };
+            let common = s.common();
+            let mut select = rc::Select::new(kind)
+                .default_values(s.default_count())
+                .disabled(false);
+            if let Some(p) = common.placeholder.as_deref() {
+                select = select.placeholder(p);
+            }
+            if let Some(min) = common.min_values {
+                select = select.min_values(usize::from(min));
+            }
+            if let Some(max) = common.max_values {
+                select = select.max_values(usize::from(max));
+            }
+            rm::LabelChild::Select(rm::ModalSelect::new(select).required(common.required))
+        }
+        ModalInputNode::FileUpload(u) => {
+            let mut out = rm::FileUpload::new()
+                .required(u.required)
+                .file_types(take(&mut cursor.file_types));
+            if let Some(min) = u.min_values {
+                out = out.min_values(usize::from(min));
+            }
+            if let Some(max) = u.max_values {
+                out = out.max_values(usize::from(max));
+            }
+            rm::LabelChild::FileUpload(out)
+        }
+        ModalInputNode::RadioGroup(r) => rm::LabelChild::RadioGroup(
+            rm::RadioGroup::new(take(&mut cursor.modal_options)).required(r.required),
+        ),
+        ModalInputNode::CheckboxGroup(g) => {
+            let mut out =
+                rm::CheckboxGroup::new(take(&mut cursor.modal_options)).required(g.required);
+            if let Some(min) = g.min_values {
+                out = out.min_values(usize::from(min));
+            }
+            if let Some(max) = g.max_values {
+                out = out.max_values(usize::from(max));
+            }
+            rm::LabelChild::CheckboxGroup(out)
+        }
+        // A Checkbox is never required (MOD-07 by construction).
+        ModalInputNode::Checkbox(c) => {
+            rm::LabelChild::Checkbox(rm::Checkbox::new().default(c.default))
+        }
+    }
+}
+
+fn lower_modal_options(options: &[ModalOption]) -> Vec<rm::ModalOption<'_>> {
+    options
+        .iter()
+        .map(|o| {
+            let out = rm::ModalOption::new(&o.label, &o.value).default(o.default);
+            match o.description.as_deref() {
+                Some(d) => out.description(d),
+                None => out,
+            }
+        })
+        .collect()
 }

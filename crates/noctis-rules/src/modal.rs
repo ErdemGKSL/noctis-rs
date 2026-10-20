@@ -2,8 +2,9 @@
 //! granular functions for single literals.
 //!
 //! `derive(Modal)` and the runtime validator describe a modal as a [`Modal`]
-//! and call these functions. The descriptors carry no `custom_id` (MOD-08 is
-//! checked as CID-01 by Routes).
+//! and call these functions. The descriptors carry no `custom_id`: the
+//! modal's own is a Route's (MOD-08, checked as CID-01 by `derive(Route)`),
+//! and each input's key is checked by [`validate_input_custom_id`] (CID-01).
 //!
 //! # Paths
 //!
@@ -829,6 +830,23 @@ pub fn validate_text_input(input: &TextInput<'_>, limits: &Limits) -> Vec<Violat
 pub fn validate_text_input_value(value: &str, limits: &Limits) -> Vec<Violation> {
     let mut out = Vec::new();
     text_at_most(RuleId::MOD_05, "", limits.text_input_len, value, &mut out);
+    out
+}
+
+/// CID-01: a modal input's `custom_id` (its key) of 1 to `custom_id_len`
+/// characters, measured with `discord_len`. The path is empty.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::modal::validate_input_custom_id;
+///
+/// assert!(validate_input_custom_id("reason", &Limits::default()).is_empty());
+/// assert_eq!(validate_input_custom_id("", &Limits::default())[0].rule, RuleId::CID_01);
+/// assert_eq!(validate_input_custom_id(&"a".repeat(101), &Limits::default())[0].path, "");
+/// ```
+pub fn validate_input_custom_id(id: &str, limits: &Limits) -> Vec<Violation> {
+    let mut out = Vec::new();
+    text_between(RuleId::CID_01, "", 1, limits.custom_id_len, id, &mut out);
     out
 }
 

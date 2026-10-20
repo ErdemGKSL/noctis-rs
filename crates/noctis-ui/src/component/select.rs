@@ -106,7 +106,7 @@ impl Common {
 
 /// A pre-selected value of an auto-populated select.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DefaultValue {
+pub(crate) enum DefaultValue {
     User(Id<UserMarker>),
     Role(Id<RoleMarker>),
     Channel(Id<ChannelMarker>),
@@ -126,8 +126,51 @@ impl Serialize for DefaultValue {
     }
 }
 
-/// Writes a select: `type`, `id`, `custom_id`, `extra`, then the shared
-/// fields with `default_values` after `placeholder`.
+/// The select fields after `custom_id` and the kind's own entries, shared by
+/// message and modal selects.
+pub(crate) struct SelectTail<'a> {
+    pub(crate) placeholder: Option<&'a str>,
+    pub(crate) defaults: &'a [DefaultValue],
+    pub(crate) min_values: Option<u8>,
+    pub(crate) max_values: Option<u8>,
+}
+
+/// Starts a select: `type`, `id`, `custom_id`, `extra`, then `placeholder`,
+/// `default_values`, `min_values` and `max_values`. The caller writes the
+/// trailing flag (`disabled` or `required`) and ends the map.
+pub(crate) fn select_map<S: Serializer, I: Serialize + ?Sized>(
+    ty: u8,
+    custom_id: &I,
+    ids: Option<&Ids>,
+    s: S,
+    extra: impl FnOnce(&mut S::SerializeMap) -> Result<(), S::Error>,
+    tail: &SelectTail<'_>,
+) -> Result<S::SerializeMap, S::Error> {
+    let mut map = head(s, ty, ids)?;
+    map.serialize_entry("custom_id", custom_id)?;
+    extra(&mut map)?;
+    opt(&mut map, "placeholder", tail.placeholder)?;
+    if !tail.defaults.is_empty() {
+        map.serialize_entry("default_values", tail.defaults)?;
+    }
+    opt(&mut map, "min_values", tail.min_values.as_ref())?;
+    opt(&mut map, "max_values", tail.max_values.as_ref())?;
+    Ok(map)
+}
+
+/// Writes `channel_types` (as Discord's codes) when `types` is not empty.
+pub(crate) fn channel_types_entry<M: SerializeMap>(
+    map: &mut M,
+    types: &[ChannelType],
+) -> Result<(), M::Error> {
+    if types.is_empty() {
+        return Ok(());
+    }
+    let codes: Vec<u8> = types.iter().map(|&t| u8::from(t)).collect();
+    map.serialize_entry("channel_types", &codes)
+}
+
+/// Writes a message select: [`select_map`], then `disabled`.
 fn wire_select<S: Serializer>(
     ty: u8,
     common: &Common,
@@ -136,15 +179,13 @@ fn wire_select<S: Serializer>(
     extra: impl FnOnce(&mut S::SerializeMap) -> Result<(), S::Error>,
     defaults: &[DefaultValue],
 ) -> Result<S::Ok, S::Error> {
-    let mut map = head(s, ty, ids)?;
-    map.serialize_entry("custom_id", &common.custom_id)?;
-    extra(&mut map)?;
-    opt(&mut map, "placeholder", common.placeholder.as_deref())?;
-    if !defaults.is_empty() {
-        map.serialize_entry("default_values", defaults)?;
-    }
-    opt(&mut map, "min_values", common.min_values.as_ref())?;
-    opt(&mut map, "max_values", common.max_values.as_ref())?;
+    let tail = SelectTail {
+        placeholder: common.placeholder.as_deref(),
+        defaults,
+        min_values: common.min_values,
+        max_values: common.max_values,
+    };
+    let mut map = select_map(ty, &common.custom_id, ids, s, extra, &tail)?;
     flag(&mut map, "disabled", common.disabled)?;
     map.end()
 }
@@ -378,13 +419,7 @@ wire_auto!(UserSelect = 5, RoleSelect = 6, MentionableSelect = 7);
 impl Wire for ChannelSelect {
     fn wire<S: Serializer>(&self, ids: Option<&Ids>, s: S) -> Result<S::Ok, S::Error> {
         let types = &self.channel_types;
-        let extra = |m: &mut S::SerializeMap| {
-            if types.is_empty() {
-                return Ok(());
-            }
-            let codes: Vec<u8> = types.iter().map(|&t| u8::from(t)).collect();
-            m.serialize_entry("channel_types", &codes)
-        };
+        let extra = |m: &mut S::SerializeMap| channel_types_entry(m, types);
         wire_select(8, &self.common, ids, s, extra, &self.defaults)
     }
 

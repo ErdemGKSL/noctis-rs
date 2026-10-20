@@ -584,3 +584,23 @@ fn mod_05_text_input_style_values() {
     assert!(!Checkbox::new().required);
     assert_eq!(FileUpload::default(), FileUpload::new());
 }
+
+#[test]
+fn cid_01_modal_input_custom_id_bounds() {
+    let l = Limits::default();
+    assert!(validate_input_custom_id("a", &l).is_empty());
+    assert!(validate_input_custom_id(&"a".repeat(100), &l).is_empty());
+    assert_eq!(
+        validate_input_custom_id(&"a".repeat(101), &l),
+        [v(RuleId::CID_01, "", btw(1, 100), cnt(101))]
+    );
+    assert_eq!(
+        validate_input_custom_id("", &l),
+        [v(RuleId::CID_01, "", btw(1, 100), cnt(0))]
+    );
+    assert!(validate_input_custom_id(&"😀".repeat(50), &l).is_empty());
+    assert_eq!(
+        validate_input_custom_id(&"😀".repeat(51), &l),
+        [v(RuleId::CID_01, "", btw(1, 100), cnt(102))]
+    );
+}

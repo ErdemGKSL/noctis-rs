@@ -294,11 +294,6 @@ evidence = "diagnosed"
 story = "4.6"
 
 [[rule]]
-id = "MOD-03"
-evidence = "diagnosed"
-story = "4.5"
-
-[[rule]]
 id = "MOD-04"
 evidence = "diagnosed"
 story = "4.6"

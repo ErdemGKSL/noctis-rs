@@ -993,6 +993,7 @@ pub trait noctis::prelude::RouteComponents: noctis::codec::Route + core::marker:
 pub fn noctis::prelude::RouteComponents::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::RouteComponents::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::RouteComponents::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::prelude::RouteComponents::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::RouteComponents::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::RouteComponents::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::RouteComponents::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
@@ -1000,6 +1001,7 @@ impl<R: noctis::codec::Route> noctis::prelude::RouteComponents for R
 pub fn R::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn R::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
+pub fn R::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn R::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
@@ -2167,6 +2169,7 @@ impl<'a> core::fmt::Debug for noctis::rules::modal::TextInput<'a>
 pub fn noctis::rules::modal::TextInput<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for noctis::rules::modal::TextInput<'a>
 impl<'a> core::marker::StructuralPartialEq for noctis::rules::modal::TextInput<'a>
+pub fn noctis::rules::modal::validate_input_custom_id(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::modal::validate_label_description(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::modal::validate_label_text(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::modal::validate_modal(&noctis::rules::modal::Modal<'_>, &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
@@ -2414,6 +2417,32 @@ impl noctis::ui::RowSelect for noctis::ui::ChannelSelect
 impl serde_core::ser::Serialize for noctis::ui::ChannelSelect
 pub fn noctis::ui::ChannelSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::ChannelSelect
+pub struct noctis::ui::Checkbox
+impl noctis::ui::Checkbox
+pub fn noctis::ui::Checkbox::default(self, bool) -> Self
+pub fn noctis::ui::Checkbox::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for noctis::ui::Checkbox
+pub fn noctis::ui::Checkbox::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::Checkbox
+pub fn noctis::ui::Checkbox::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::Checkbox
+impl serde_core::ser::Serialize for noctis::ui::Checkbox
+pub fn noctis::ui::Checkbox::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::Checkbox
+pub struct noctis::ui::CheckboxGroup
+impl noctis::ui::CheckboxGroup
+pub fn noctis::ui::CheckboxGroup::max_values(self, u8) -> Self
+pub fn noctis::ui::CheckboxGroup::min_values(self, u8) -> Self
+pub fn noctis::ui::CheckboxGroup::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::ModalOption>) -> Self
+pub fn noctis::ui::CheckboxGroup::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::CheckboxGroup
+pub fn noctis::ui::CheckboxGroup::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::CheckboxGroup
+pub fn noctis::ui::CheckboxGroup::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::CheckboxGroup
+impl serde_core::ser::Serialize for noctis::ui::CheckboxGroup
+pub fn noctis::ui::CheckboxGroup::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::CheckboxGroup
 pub struct noctis::ui::Components
 impl noctis::ui::Components
 pub fn noctis::ui::Components::is_empty(&self) -> bool
@@ -2602,6 +2631,21 @@ impl serde_core::ser::Serialize for noctis::ui::File
 pub fn noctis::ui::File::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::File
 impl noctis::ui::TopLevel for noctis::ui::File
+pub struct noctis::ui::FileUpload
+impl noctis::ui::FileUpload
+pub fn noctis::ui::FileUpload::file_types(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::borrow::Cow<'static, str>>>) -> Self
+pub fn noctis::ui::FileUpload::max_values(self, u8) -> Self
+pub fn noctis::ui::FileUpload::min_values(self, u8) -> Self
+pub fn noctis::ui::FileUpload::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::FileUpload::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::FileUpload
+pub fn noctis::ui::FileUpload::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::FileUpload
+pub fn noctis::ui::FileUpload::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::FileUpload
+impl serde_core::ser::Serialize for noctis::ui::FileUpload
+pub fn noctis::ui::FileUpload::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::FileUpload
 pub trait noctis::ui::GalleryItems: noctis::__private::ui::sealed::Sealed
 pub struct noctis::ui::Label(_)
 impl noctis::ui::Label
@@ -2797,6 +2841,152 @@ impl core::hash::Hash for noctis::ui::MessageFormat
 pub fn noctis::ui::MessageFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ui::MessageFormat
 impl core::marker::StructuralPartialEq for noctis::ui::MessageFormat
+pub struct noctis::ui::Modal
+impl noctis::ui::Modal
+pub fn noctis::ui::Modal::is_empty(&self) -> bool
+pub fn noctis::ui::Modal::len(&self) -> usize
+pub fn noctis::ui::Modal::push<C: noctis::ui::ModalTopLevel>(self, C) -> Self
+pub fn noctis::ui::Modal::title(&self) -> &str
+impl core::clone::Clone for noctis::ui::Modal
+pub fn noctis::ui::Modal::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::Modal
+pub fn noctis::ui::Modal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::Validate for noctis::ui::Modal
+impl serde_core::ser::Serialize for noctis::ui::Modal
+pub fn noctis::ui::Modal::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::Validate for noctis::ui::Modal
+pub struct noctis::ui::ModalChannelSelect
+impl noctis::ui::ModalChannelSelect
+pub fn noctis::ui::ModalChannelSelect::channel_types(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::channel::channel_type::ChannelType>) -> Self
+pub fn noctis::ui::ModalChannelSelect::default_channels(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>) -> Self
+pub fn noctis::ui::ModalChannelSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl noctis::ui::ModalChannelSelect
+pub fn noctis::ui::ModalChannelSelect::max_values(self, u8) -> Self
+pub fn noctis::ui::ModalChannelSelect::min_values(self, u8) -> Self
+pub fn noctis::ui::ModalChannelSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalChannelSelect::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::ModalChannelSelect
+pub fn noctis::ui::ModalChannelSelect::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::ModalChannelSelect
+pub fn noctis::ui::ModalChannelSelect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::ModalChannelSelect
+impl serde_core::ser::Serialize for noctis::ui::ModalChannelSelect
+pub fn noctis::ui::ModalChannelSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::ModalChannelSelect
+pub struct noctis::ui::ModalComponent(_)
+impl core::clone::Clone for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::clone(&self) -> Self
+impl core::convert::From<noctis::ui::ModalLabel> for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::from(noctis::ui::ModalLabel) -> Self
+impl core::convert::From<noctis::ui::TextDisplay> for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::from(noctis::ui::TextDisplay) -> Self
+impl core::fmt::Debug for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalTopLevel for noctis::ui::ModalComponent
+impl serde_core::ser::Serialize for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::ModalLabel> for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::from(noctis::ui::ModalLabel) -> Self
+impl core::convert::From<noctis::ui::TextDisplay> for noctis::ui::ModalComponent
+pub fn noctis::ui::ModalComponent::from(noctis::ui::TextDisplay) -> Self
+impl noctis::ui::ModalTopLevel for noctis::ui::ModalComponent
+pub trait noctis::ui::ModalInput: noctis::__private::ui::sealed::IntoModalInput
+pub struct noctis::ui::ModalLabel
+impl noctis::ui::ModalLabel
+pub fn noctis::ui::ModalLabel::description(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalLabel::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl noctis::ui::ModalInput) -> Self
+impl core::clone::Clone for noctis::ui::ModalLabel
+pub fn noctis::ui::ModalLabel::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::ModalLabel
+pub fn noctis::ui::ModalLabel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalTopLevel for noctis::ui::ModalLabel
+impl serde_core::ser::Serialize for noctis::ui::ModalLabel
+pub fn noctis::ui::ModalLabel::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalTopLevel for noctis::ui::ModalLabel
+pub struct noctis::ui::ModalMentionableSelect
+impl noctis::ui::ModalMentionableSelect
+pub fn noctis::ui::ModalMentionableSelect::default_roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+pub fn noctis::ui::ModalMentionableSelect::default_users(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+pub fn noctis::ui::ModalMentionableSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl noctis::ui::ModalMentionableSelect
+pub fn noctis::ui::ModalMentionableSelect::max_values(self, u8) -> Self
+pub fn noctis::ui::ModalMentionableSelect::min_values(self, u8) -> Self
+pub fn noctis::ui::ModalMentionableSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalMentionableSelect::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::ModalMentionableSelect
+pub fn noctis::ui::ModalMentionableSelect::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::ModalMentionableSelect
+pub fn noctis::ui::ModalMentionableSelect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::ModalMentionableSelect
+impl serde_core::ser::Serialize for noctis::ui::ModalMentionableSelect
+pub fn noctis::ui::ModalMentionableSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::ModalMentionableSelect
+pub struct noctis::ui::ModalOption
+impl noctis::ui::ModalOption
+pub fn noctis::ui::ModalOption::default(self, bool) -> Self
+pub fn noctis::ui::ModalOption::description(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalOption::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for noctis::ui::ModalOption
+pub fn noctis::ui::ModalOption::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::ModalOption
+impl core::cmp::PartialEq for noctis::ui::ModalOption
+pub fn noctis::ui::ModalOption::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ModalOption
+pub fn noctis::ui::ModalOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ModalOption
+impl serde_core::ser::Serialize for noctis::ui::ModalOption
+pub fn noctis::ui::ModalOption::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+pub struct noctis::ui::ModalRoleSelect
+impl noctis::ui::ModalRoleSelect
+pub fn noctis::ui::ModalRoleSelect::default_roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+pub fn noctis::ui::ModalRoleSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl noctis::ui::ModalRoleSelect
+pub fn noctis::ui::ModalRoleSelect::max_values(self, u8) -> Self
+pub fn noctis::ui::ModalRoleSelect::min_values(self, u8) -> Self
+pub fn noctis::ui::ModalRoleSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalRoleSelect::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::ModalRoleSelect
+pub fn noctis::ui::ModalRoleSelect::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::ModalRoleSelect
+pub fn noctis::ui::ModalRoleSelect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::ModalRoleSelect
+impl serde_core::ser::Serialize for noctis::ui::ModalRoleSelect
+pub fn noctis::ui::ModalRoleSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::ModalRoleSelect
+pub struct noctis::ui::ModalStringSelect
+impl noctis::ui::ModalStringSelect
+pub fn noctis::ui::ModalStringSelect::max_values(self, u8) -> Self
+pub fn noctis::ui::ModalStringSelect::min_values(self, u8) -> Self
+pub fn noctis::ui::ModalStringSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalStringSelect::required(self, bool) -> Self
+impl noctis::ui::ModalStringSelect
+pub fn noctis::ui::ModalStringSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> Self
+impl core::clone::Clone for noctis::ui::ModalStringSelect
+pub fn noctis::ui::ModalStringSelect::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::ModalStringSelect
+pub fn noctis::ui::ModalStringSelect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::ModalStringSelect
+impl serde_core::ser::Serialize for noctis::ui::ModalStringSelect
+pub fn noctis::ui::ModalStringSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::ModalStringSelect
+pub trait noctis::ui::ModalTopLevel: noctis::__private::ui::sealed::IntoModalTop
+pub struct noctis::ui::ModalUserSelect
+impl noctis::ui::ModalUserSelect
+pub fn noctis::ui::ModalUserSelect::default_users(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+pub fn noctis::ui::ModalUserSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl noctis::ui::ModalUserSelect
+pub fn noctis::ui::ModalUserSelect::max_values(self, u8) -> Self
+pub fn noctis::ui::ModalUserSelect::min_values(self, u8) -> Self
+pub fn noctis::ui::ModalUserSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalUserSelect::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::ModalUserSelect
+pub fn noctis::ui::ModalUserSelect::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::ModalUserSelect
+pub fn noctis::ui::ModalUserSelect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::ModalUserSelect
+impl serde_core::ser::Serialize for noctis::ui::ModalUserSelect
+pub fn noctis::ui::ModalUserSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::ModalUserSelect
 pub struct noctis::ui::Placeholder(_)
 impl noctis::ui::Placeholder
 pub fn noctis::ui::Placeholder::as_str(&self) -> &str
@@ -2840,6 +3030,18 @@ impl serde_core::ser::Serialize for noctis::ui::PremiumButton
 pub fn noctis::ui::PremiumButton::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowItem for noctis::ui::PremiumButton
 impl noctis::ui::SectionAccessory for noctis::ui::PremiumButton
+pub struct noctis::ui::RadioGroup
+impl noctis::ui::RadioGroup
+pub fn noctis::ui::RadioGroup::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::ModalOption>) -> Self
+pub fn noctis::ui::RadioGroup::required(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::RadioGroup
+pub fn noctis::ui::RadioGroup::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::RadioGroup
+pub fn noctis::ui::RadioGroup::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::RadioGroup
+impl serde_core::ser::Serialize for noctis::ui::RadioGroup
+pub fn noctis::ui::RadioGroup::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::RadioGroup
 pub struct noctis::ui::Rgb(_)
 impl noctis::ui::Rgb
 pub const fn noctis::ui::Rgb::new(u8, u8, u8) -> Self
@@ -2910,6 +3112,7 @@ pub trait noctis::ui::RouteComponents: noctis::codec::Route + core::marker::Size
 pub fn noctis::ui::RouteComponents::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ui::RouteComponents::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ui::RouteComponents::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::ui::RouteComponents::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ui::RouteComponents::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ui::RouteComponents::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ui::RouteComponents::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
@@ -2917,6 +3120,7 @@ impl<R: noctis::codec::Route> noctis::ui::RouteComponents for R
 pub fn R::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn R::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
+pub fn R::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn R::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub fn R::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
@@ -3024,11 +3228,30 @@ impl core::fmt::Debug for noctis::ui::TextDisplay
 pub fn noctis::ui::TextDisplay::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::TextDisplay
 impl noctis::ui::ContainerChild for noctis::ui::TextDisplay
+impl noctis::ui::ModalTopLevel for noctis::ui::TextDisplay
 impl noctis::ui::TopLevel for noctis::ui::TextDisplay
 impl serde_core::ser::Serialize for noctis::ui::TextDisplay
 pub fn noctis::ui::TextDisplay::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::TextDisplay
+impl noctis::ui::ModalTopLevel for noctis::ui::TextDisplay
 impl noctis::ui::TopLevel for noctis::ui::TextDisplay
+pub struct noctis::ui::TextInput
+impl noctis::ui::TextInput
+pub fn noctis::ui::TextInput::max_length(self, u16) -> Self
+pub fn noctis::ui::TextInput::min_length(self, u16) -> Self
+pub fn noctis::ui::TextInput::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::rules::modal::TextInputStyle) -> Self
+pub fn noctis::ui::TextInput::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::TextInput::required(self, bool) -> Self
+pub fn noctis::ui::TextInput::value(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for noctis::ui::TextInput
+pub fn noctis::ui::TextInput::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::TextInput
+pub fn noctis::ui::TextInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::ModalInput for noctis::ui::TextInput
+impl serde_core::ser::Serialize for noctis::ui::TextInput
+pub fn noctis::ui::TextInput::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ModalInput for noctis::ui::TextInput
+pub use noctis::ui::TextInputStyle
 pub struct noctis::ui::Thumbnail
 impl noctis::ui::Thumbnail
 pub fn noctis::ui::Thumbnail::alt(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self

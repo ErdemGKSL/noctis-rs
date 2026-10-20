@@ -28,7 +28,7 @@ pub enum UiError {
         "a Components V2 message cannot be edited back into a legacy message (CV2-01: the IS_COMPONENTS_V2 flag cannot be removed)"
     )]
     V2ToLegacy,
-    /// The message breaks Discord Limits ([`validate`](crate::validate));
+    /// The message or modal breaks Discord Limits ([`validate`](crate::validate));
     /// never empty. Displays each violation on its own line.
     #[error("{}", display_violations(.violations))]
     Limits {

@@ -1,0 +1,70 @@
+---
+source: crates/noctis-ui/tests/modal.rs
+expression: value
+---
+{
+  "components": [
+    {
+      "content": "Tell us what happened.",
+      "type": 10
+    },
+    {
+      "component": {
+        "custom_id": "reason",
+        "max_length": 500,
+        "style": 2,
+        "type": 4
+      },
+      "description": "Be specific",
+      "label": "Reason",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "cat",
+        "options": [
+          {
+            "label": "o0",
+            "value": "v0"
+          },
+          {
+            "label": "o1",
+            "value": "v1"
+          }
+        ],
+        "placeholder": "Pick one",
+        "type": 3
+      },
+      "label": "Category",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "sev",
+        "options": [
+          {
+            "label": "Low",
+            "value": "l"
+          },
+          {
+            "label": "High",
+            "value": "h"
+          }
+        ],
+        "type": 21
+      },
+      "label": "Severity",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "ok",
+        "type": 23
+      },
+      "label": "I agree",
+      "type": 18
+    }
+  ],
+  "custom_id": "0form.save:",
+  "title": "Report"
+}

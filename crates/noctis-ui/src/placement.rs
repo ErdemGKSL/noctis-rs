@@ -1,5 +1,5 @@
 //! Where a component may appear, as sealed marker traits (CV2-05, CV2-06,
-//! CV2-07; catalog §13).
+//! CV2-07, MOD-03; catalog §13).
 //!
 //! Each trait's bound sits on the method that places a component, so a
 //! misplaced component fails `cargo check` with the rule id in the message.
@@ -9,6 +9,11 @@ use crate::component::{
     LinkButton, MediaGallery, MentionableSelect, PremiumButton, RoleSelect, RouteButton, Section,
     SelectNode, Separator, StringSelect, TextDisplay, Thumbnail, TopLevelComponent, UserSelect,
 };
+use crate::modal::{
+    Checkbox, CheckboxGroup, FileUpload, ModalChannelSelect, ModalComponent, ModalInputNode,
+    ModalLabel, ModalMentionableSelect, ModalRoleSelect, ModalSelectNode, ModalStringSelect,
+    ModalUserSelect, RadioGroup, TextInput,
+};
 
 /// The private supertraits: only Noctis types implement the placement
 /// traits, and each carries its conversion into the node it becomes.
@@ -16,6 +21,7 @@ pub(crate) mod sealed {
     use crate::component::{
         AccessoryNode, Button, ContainerComponent, SelectNode, TopLevelComponent,
     };
+    use crate::modal::{ModalComponent, ModalInputNode};
 
     /// Implemented only by Noctis component types and the legal
     /// [`Arity`](crate::Arity) values.
@@ -46,8 +52,18 @@ pub(crate) mod sealed {
         fn into_select(self) -> SelectNode;
     }
 
+    /// Conversion behind [`ModalTopLevel`](super::ModalTopLevel).
+    pub trait IntoModalTop: Sealed {
+        fn into_modal_top(self) -> ModalComponent;
+    }
+
+    /// Conversion behind [`ModalInput`](super::ModalInput).
+    pub trait IntoModalInput: Sealed {
+        fn into_modal_input(self) -> ModalInputNode;
+    }
+
     /// The checks behind [`Validate`](crate::Validate), implemented in
-    /// `limits` for the two message types. It lives here so every sealed
+    /// `limits` for the two message types and `Modal`. It lives here so every sealed
     /// supertrait of the public API has one path.
     pub trait Check: Sealed {
         fn validate_with(
@@ -105,6 +121,44 @@ pub trait RowItem: sealed::IntoRowButton {}
     note = "buttons go in ActionRow::buttons([..])"
 )]
 pub trait RowSelect: sealed::IntoSelect {}
+
+/// A component that may sit at the top level of a modal: a
+/// [`ModalLabel`] or a [`TextDisplay`].
+///
+/// ```
+/// use noctis_ui::{ModalComponent, ModalLabel, ModalTopLevel, TextDisplay};
+///
+/// fn top<C: ModalTopLevel>() {}
+/// top::<ModalLabel>();
+/// top::<TextDisplay>();
+/// top::<ModalComponent>();
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "[MOD-03] `{Self}` cannot be a top-level modal component",
+    label = "not allowed at the top level of a modal",
+    note = "a modal's top level takes a ModalLabel or a TextDisplay (MOD-02: 1 to 5)",
+    note = "buttons, Sections, Containers, galleries, files and Action Rows never go in a modal"
+)]
+pub trait ModalTopLevel: sealed::IntoModalTop {}
+
+/// The input a [`ModalLabel`] wraps: a [`TextInput`], a modal select, a
+/// [`FileUpload`], a [`RadioGroup`], a [`CheckboxGroup`] or a [`Checkbox`].
+///
+/// ```
+/// use noctis_ui::{Checkbox, ModalInput, ModalUserSelect, TextInput};
+///
+/// fn input<C: ModalInput>() {}
+/// input::<TextInput>();
+/// input::<ModalUserSelect>();
+/// input::<Checkbox>();
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "[MOD-03] `{Self}` cannot be a modal Label input",
+    label = "not a modal input",
+    note = "a ModalLabel takes a TextInput, ModalStringSelect, ModalUserSelect, ModalRoleSelect, ModalMentionableSelect, ModalChannelSelect, FileUpload, RadioGroup, CheckboxGroup or Checkbox",
+    note = "message selects are not modal selects: use ModalStringSelect, ModalUserSelect, ModalRoleSelect, ModalMentionableSelect or ModalChannelSelect"
+)]
+pub trait ModalInput: sealed::IntoModalInput {}
 
 macro_rules! sealed {
     ($($ty:ty),* $(,)?) => {$( impl sealed::Sealed for $ty {} )*};
@@ -181,6 +235,67 @@ sealed!(
     ChannelSelect,
 );
 impl<R> sealed::Sealed for RouteButton<R> {}
+
+sealed!(
+    ModalLabel,
+    ModalComponent,
+    TextInput,
+    ModalStringSelect,
+    ModalUserSelect,
+    ModalRoleSelect,
+    ModalMentionableSelect,
+    ModalChannelSelect,
+    FileUpload,
+    RadioGroup,
+    CheckboxGroup,
+    Checkbox,
+);
+
+impl sealed::IntoModalTop for ModalLabel {
+    fn into_modal_top(self) -> ModalComponent {
+        ModalComponent::from(self)
+    }
+}
+impl ModalTopLevel for ModalLabel {}
+
+impl sealed::IntoModalTop for TextDisplay {
+    fn into_modal_top(self) -> ModalComponent {
+        ModalComponent::from(self)
+    }
+}
+impl ModalTopLevel for TextDisplay {}
+
+impl sealed::IntoModalTop for ModalComponent {
+    fn into_modal_top(self) -> ModalComponent {
+        self
+    }
+}
+impl ModalTopLevel for ModalComponent {}
+
+macro_rules! modal_input {
+    ($($ty:ident => |$x:ident| $node:expr),* $(,)?) => {$(
+        impl sealed::IntoModalInput for $ty {
+            fn into_modal_input(self) -> ModalInputNode {
+                let $x = self;
+                $node
+            }
+        }
+        impl ModalInput for $ty {}
+    )*};
+}
+
+modal_input!(
+    TextInput => |x| ModalInputNode::TextInput(x),
+    ModalStringSelect => |x| ModalInputNode::Select(ModalSelectNode::String(x)),
+    ModalUserSelect => |x| ModalInputNode::Select(ModalSelectNode::User(x)),
+    ModalRoleSelect => |x| ModalInputNode::Select(ModalSelectNode::Role(x)),
+    ModalMentionableSelect => |x| ModalInputNode::Select(ModalSelectNode::Mentionable(x)),
+    ModalChannelSelect => |x| ModalInputNode::Select(ModalSelectNode::Channel(x)),
+    FileUpload => |x| ModalInputNode::FileUpload(x),
+    RadioGroup => |x| ModalInputNode::RadioGroup(x),
+    CheckboxGroup => |x| ModalInputNode::CheckboxGroup(x),
+    Checkbox => |x| ModalInputNode::Checkbox(x),
+);
 
 top_level!(
     Container,

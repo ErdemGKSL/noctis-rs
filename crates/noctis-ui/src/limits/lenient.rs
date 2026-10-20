@@ -5,7 +5,12 @@
 //! their rule: Text Display content (CV2-04 total), button labels (CV2-08),
 //! select placeholders and String Select option labels and descriptions
 //! (CV2-09), gallery item alt text (CV2-10), Thumbnail alt text (CV2-11),
-//! attachment alt text (ATT-06) and legacy content (MSG-01).
+//! attachment alt text (ATT-06) and legacy content (MSG-01). In a modal:
+//! the title (MOD-01), Label text and description (MOD-04), Text Input
+//! placeholders (MOD-05), modal select placeholders and String Select option
+//! labels and descriptions (CV2-09), and Radio and Checkbox Group option
+//! labels and descriptions (MOD-07); never a Text Input `value`, an option
+//! value, a key or a count.
 
 use std::borrow::Cow;
 
@@ -18,7 +23,8 @@ use crate::component::{
     AccessoryNode, ActionRow, Button, ButtonNode, ChildNode, ContainerComponent, RowNode,
     SelectNode, TopNode,
 };
-use crate::{LegacyMessage, V2Message};
+use crate::modal::{ModalInputNode, ModalTopNode};
+use crate::{LegacyMessage, Modal, ModalOption, SelectOption, V2Message};
 
 type Text = Cow<'static, str>;
 
@@ -261,7 +267,19 @@ fn select_sites<'m>(
     sites: &mut Sites<'m>,
 ) {
     let (common, options) = select.parts_mut();
-    if let Some(p) = &mut common.placeholder {
+    select_text_sites(common.placeholder.as_mut(), options, path, limits, sites);
+}
+
+/// A select's placeholder and String Select option labels and descriptions
+/// (CV2-09), for message and modal selects alike.
+fn select_text_sites<'m>(
+    placeholder: Option<&'m mut Text>,
+    options: Option<&'m mut Vec<SelectOption>>,
+    path: &str,
+    limits: &Limits,
+    sites: &mut Sites<'m>,
+) {
+    if let Some(p) = placeholder {
         sites.field(
             RuleId::CV2_09,
             limits.select_placeholder_len,
@@ -284,6 +302,91 @@ fn select_sites<'m>(
                 format!("{option_path}.description"),
                 d,
             );
+        }
+    }
+}
+
+/// Truncates the display text of a modal, in pre-order: the title, then per
+/// Label its text, description and input text.
+pub(super) fn fit_modal(modal: &mut Modal, limits: &Limits, warnings: &mut Vec<LimitWarning>) {
+    let mut sites = Sites::default();
+    sites.field(
+        RuleId::MOD_01,
+        limits.modal_title_len,
+        "title".to_owned(),
+        &mut modal.title,
+    );
+    for (i, component) in modal.components.iter_mut().enumerate() {
+        let ModalTopNode::Label(label) = &mut component.0 else {
+            continue;
+        };
+        let path = format!("label[{i}]");
+        sites.field(
+            RuleId::MOD_04,
+            limits.label_len,
+            format!("{path}.label"),
+            &mut label.label,
+        );
+        if let Some(d) = &mut label.description {
+            sites.field(
+                RuleId::MOD_04,
+                limits.label_description_len,
+                format!("{path}.description"),
+                d,
+            );
+        }
+        let child = format!("{path}.{}", label.input.kind());
+        match &mut label.input {
+            ModalInputNode::TextInput(t) => {
+                if let Some(p) = &mut t.placeholder {
+                    sites.field(
+                        RuleId::MOD_05,
+                        limits.text_input_placeholder_len,
+                        format!("{child}.placeholder"),
+                        p,
+                    );
+                }
+            }
+            ModalInputNode::Select(s) => {
+                let (common, options) = s.parts_mut();
+                select_text_sites(
+                    common.placeholder.as_mut(),
+                    options,
+                    &child,
+                    limits,
+                    &mut sites,
+                );
+            }
+            ModalInputNode::RadioGroup(r) => {
+                modal_option_sites(&mut r.options, &child, limits, &mut sites);
+            }
+            ModalInputNode::CheckboxGroup(g) => {
+                modal_option_sites(&mut g.options, &child, limits, &mut sites);
+            }
+            ModalInputNode::FileUpload(_) | ModalInputNode::Checkbox(_) => {}
+        }
+    }
+    fit_fields(sites.fields, limits, warnings);
+}
+
+/// Radio and Checkbox Group option labels and descriptions (MOD-07).
+fn modal_option_sites<'m>(
+    options: &'m mut [ModalOption],
+    path: &str,
+    limits: &Limits,
+    sites: &mut Sites<'m>,
+) {
+    let max = limits.modal_option_text_len;
+    for (k, option) in options.iter_mut().enumerate() {
+        let option_path = format!("{path}.options[{k}]");
+        sites.field(
+            RuleId::MOD_07,
+            max,
+            format!("{option_path}.label"),
+            &mut option.label,
+        );
+        if let Some(d) = &mut option.description {
+            sites.field(RuleId::MOD_07, max, format!("{option_path}.description"), d);
         }
     }
 }

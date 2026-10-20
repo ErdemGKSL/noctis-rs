@@ -1,5 +1,5 @@
 //! The runtime Limit validator: [`validate`] and [`cost`] for a built
-//! [`V2Message`] or [`LegacyMessage`] (FR-24, FR-78, AD-3, AD-4).
+//! [`V2Message`], [`LegacyMessage`] or [`Modal`] (FR-24, FR-78, AD-3, AD-4).
 //!
 //! Both lower the typed tree into `noctis_rules::component` descriptors and
 //! call `validate_components` / `validate_legacy_components` / `cost`, so
@@ -7,7 +7,9 @@
 //! that they check what the descriptors do not carry: duplicate `custom_id`s
 //! (CID-02), `attachment://` references (ATT-05), attachment alt text
 //! (ATT-06), legacy `content` (MSG-01), empty bodies (MSG-09) and mention id
-//! counts (MSG-04).
+//! counts (MSG-04). A modal is lowered into `noctis_rules::modal`
+//! descriptors and checked by `validate_modal`, then its input keys by CID-01
+//! and CID-02.
 
 mod lenient;
 mod lower;
@@ -26,29 +28,34 @@ use noctis_rules::message::{
     AllowedMentions, MentionIds, validate_content, validate_legacy_not_empty, validate_mentions,
     validate_v2_not_empty,
 };
+use noctis_rules::modal as rm;
 use noctis_rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
 
 use self::walk::Visit;
+use crate::modal::ModalTopNode;
 use crate::{
-    AttachmentOrigin, AttachmentSet, LegacyMessage, Mentions, Roles, UiError, Users, V2Message,
+    AttachmentOrigin, AttachmentSet, LegacyMessage, Mentions, Modal, Roles, UiError, Users,
+    V2Message,
 };
 
 use crate::placement::sealed;
 
-/// A message [`validate`] and [`cost`] accept: [`V2Message`] or
-/// [`LegacyMessage`]. It is sealed.
+/// What [`validate`] and [`cost`] accept: [`V2Message`], [`LegacyMessage`]
+/// or [`Modal`]. It is sealed.
 ///
 /// ```
-/// use noctis_ui::{LegacyMessage, Validate, V2Message};
+/// use noctis_ui::{LegacyMessage, Modal, Validate, V2Message};
 ///
 /// fn checked<M: Validate>() {}
 /// checked::<V2Message>();
 /// checked::<LegacyMessage>();
+/// checked::<Modal>();
 /// ```
 pub trait Validate: sealed::Check {}
 
 impl Validate for V2Message {}
 impl Validate for LegacyMessage {}
+impl Validate for Modal {}
 
 /// What a message uses of the Limits budget, and the warnings found.
 ///
@@ -57,6 +64,9 @@ impl Validate for LegacyMessage {}
 /// gallery items not) and `text_chars` is the `discord_len` sum of every Text
 /// Display (CV2-04). For a [`LegacyMessage`], `components` counts its Action
 /// Rows and their items, and `text_chars` is the length of its `content`.
+/// For a [`Modal`], `components` counts its top-level components plus one
+/// per Label input, and `text_chars` is the `discord_len` sum of its Text
+/// Displays.
 ///
 /// ```
 /// use noctis_rules::Limits;
@@ -143,7 +153,8 @@ impl fmt::Display for LimitWarning {
     }
 }
 
-/// Checks `message` against `limits` before it is sent.
+/// Checks `message` (a [`V2Message`], [`LegacyMessage`] or [`Modal`])
+/// against `limits` before it is sent.
 ///
 /// In [`LimitMode::Strict`] (the default) `message` is never changed. In
 /// [`LimitMode::Lenient`] over-long display text is first truncated with `…`
@@ -164,6 +175,14 @@ impl fmt::Display for LimitWarning {
 ///
 /// In Lenient mode the truncations stay applied to `message` even when
 /// `validate` then returns `Err`.
+///
+/// A [`Modal`] gets the `noctis_rules::modal::validate_modal` violations
+/// (MOD-01..07, CV2-09) in their order, then CID-01 for every input key in
+/// pre-order (path `label[i].<input>.custom_id`), then CID-02 for every
+/// repeated key. Lenient mode truncates its title, Label texts and
+/// descriptions, Text Input placeholders, select placeholders and option
+/// labels and descriptions; never a Text Input `value`, an option value or a
+/// key.
 ///
 /// # Errors
 ///
@@ -208,7 +227,8 @@ pub fn validate<M: Validate>(message: &mut M, limits: &Limits) -> Result<CostRep
     message.validate_with(limits)
 }
 
-/// Measures `message` without changing or sending it: its component count,
+/// Measures `message` (a [`V2Message`], [`LegacyMessage`] or [`Modal`])
+/// without changing or sending it: its component count,
 /// text characters and missing-alt warnings (no truncation is done or
 /// reported, and nothing is logged).
 ///
@@ -307,6 +327,86 @@ impl sealed::Check for LegacyMessage {
             components: c.components,
             text_chars: discord_len(&self.content),
             warnings: Vec::new(),
+        }
+    }
+}
+
+impl sealed::Sealed for Modal {}
+
+impl sealed::Check for Modal {
+    fn validate_with(&mut self, limits: &Limits) -> Result<CostReport, UiError> {
+        let mut warnings = Vec::new();
+        if limits.mode == LimitMode::Lenient {
+            lenient::fit_modal(self, limits, &mut warnings);
+        }
+        let mut violations = lower::with_modal(self, |m| rm::validate_modal(m, limits))
+            .err()
+            .unwrap_or_default();
+        check_modal_keys(self, limits, &mut violations);
+        finish(modal_cost(self, warnings), violations)
+    }
+
+    fn cost_with(&self, _limits: &Limits) -> CostReport {
+        modal_cost(self, Vec::new())
+    }
+}
+
+/// The top-level count plus one per Label input, and the Text Display
+/// characters.
+fn modal_cost(modal: &Modal, warnings: Vec<LimitWarning>) -> CostReport {
+    let mut components = modal.components.len();
+    let mut text_chars = 0_usize;
+    for c in &modal.components {
+        match &c.0 {
+            ModalTopNode::Label(_) => components += 1,
+            ModalTopNode::Text(t) => {
+                text_chars = text_chars.saturating_add(discord_len(&t.content));
+            }
+        }
+    }
+    CostReport {
+        components,
+        text_chars,
+        warnings,
+    }
+}
+
+/// CID-01 on every input key in pre-order, then CID-02: each later use of a
+/// key is a violation noting the first.
+fn check_modal_keys(modal: &Modal, limits: &Limits, out: &mut Vec<Violation>) {
+    let keys: Vec<(String, &str)> = modal
+        .components
+        .iter()
+        .enumerate()
+        .filter_map(|(i, c)| match &c.0 {
+            ModalTopNode::Label(l) => Some((
+                format!("label[{i}].{}.custom_id", l.input.kind()),
+                l.input.key(),
+            )),
+            ModalTopNode::Text(_) => None,
+        })
+        .collect();
+    for (path, key) in &keys {
+        for mut v in rm::validate_input_custom_id(key, limits) {
+            v.path.clone_from(path);
+            out.push(v);
+        }
+    }
+    let mut first: HashMap<&str, &str> = HashMap::new();
+    for (path, key) in &keys {
+        match first.entry(key) {
+            Entry::Vacant(e) => {
+                e.insert(path);
+            }
+            Entry::Occupied(e) => out.push(
+                Violation::new(
+                    RuleId::CID_02,
+                    path.as_str(),
+                    Bound::Describe("a custom_id unique within the modal"),
+                    Actual::Text((*key).to_owned()),
+                )
+                .with_note(format!("first used at {}", e.get())),
+            ),
         }
     }
 }

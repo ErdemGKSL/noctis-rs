@@ -297,8 +297,9 @@ pub mod prelude {
     //! - [`PayloadEnum`]: `#[derive(PayloadEnum)]` on a unit enum of at most 62
     //!   variants, a one-character [`Field`](crate::codec::Field).
     //! - [`RouteComponents`]: `.button()`, `.string_select(..)`,
-    //!   `.user_select()`, `.role_select()`, `.mentionable_select()` and
-    //!   `.channel_select()` on a Route value (see [`ui`](crate::ui)).
+    //!   `.user_select()`, `.role_select()`, `.mentionable_select()`,
+    //!   `.channel_select()` and `.modal(title)` on a Route value (see
+    //!   [`ui`](crate::ui)).
     //! - [`Rgb`] and the macros [`components!`], [`label!`],
     //!   [`placeholder!`], [`content!`] and [`rgb!`].
 
@@ -497,8 +498,8 @@ pub mod ui {
     //!
     //! # Limits
     //!
-    //! - [`validate`]`(&mut msg, &limits)`: checks a built [`V2Message`] or
-    //!   [`LegacyMessage`] (the sealed [`Validate`] trait) against
+    //! - [`validate`]`(&mut msg, &limits)`: checks a built [`V2Message`],
+    //!   [`LegacyMessage`] or [`Modal`] (the sealed [`Validate`] trait) against
     //!   [`Limits`](crate::rules::Limits) before sending and returns a
     //!   [`CostReport`], or [`UiError::Limits`]` { violations }` with every
     //!   violation. It lowers the tree into
@@ -540,6 +541,68 @@ pub mod ui {
     //! assert_eq!(report.warnings.len(), 1);
     //! ```
     //!
+    //! # Modals
+    //!
+    //! - [`Modal`]: interaction callback `data` (type 9), built only from a
+    //!   Route value with `.modal(title)` ([`RouteComponents::modal`]), so its
+    //!   `custom_id` is the Route's encoding (MOD-08); push 1 to 5
+    //!   [`ModalLabel`]s or [`TextDisplay`]s ([`ModalTopLevel`], MOD-02).
+    //!   [`ModalComponent`] holds either, for lists built at runtime.
+    //! - [`ModalLabel`] (type 18): Discord's Label component, with text, an
+    //!   optional description and exactly one input ([`ModalInput`]). It is
+    //!   not [`Label`], the checked button-label text.
+    //! - Inputs, each built from a string key (its `custom_id`, the submitted
+    //!   field's name): [`TextInput`] (type 4, [`TextInputStyle`]; `.value`
+    //!   pre-fills it), [`ModalStringSelect`] (3), [`ModalUserSelect`] (5),
+    //!   [`ModalRoleSelect`] (6), [`ModalMentionableSelect`] (7),
+    //!   [`ModalChannelSelect`] (8), [`FileUpload`] (19), [`RadioGroup`] (21)
+    //!   and [`CheckboxGroup`] (22) of [`ModalOption`]s, and [`Checkbox`] (23).
+    //! - A message component in a modal fails `cargo check` with `[MOD-03]`;
+    //!   modal selects have no `disabled` and a [`Checkbox`] has no `required`.
+    //!   A modal never has an Action Row or a Text Input `label`.
+    //! - [`validate`] and [`cost`] take a [`Modal`]: MOD-01..07 and CV2-09 in
+    //!   the [`rules::modal`](crate::rules::modal) order, then CID-01 and
+    //!   CID-02 on the input keys (paths like `label[2].text_input.custom_id`).
+    //!
+    //! ```
+    //! use noctis::prelude::*;
+    //! use noctis::rules::Limits;
+    //! use noctis::ui::{
+    //!     Checkbox, FileUpload, ModalLabel, ModalOption, RadioGroup, TextDisplay, TextInput,
+    //!     TextInputStyle, validate,
+    //! };
+    //!
+    //! #[derive(Route)]
+    //! #[route("mod.report")]
+    //! struct Report {
+    //!     id: u64,
+    //! }
+    //! # impl noctis::__private::ui::Handled for Report {}
+    //!
+    //! let mut modal = Report { id: 7 }
+    //!     .modal("Report a user")
+    //!     .push(TextDisplay::new("Tell us what happened."))
+    //!     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
+    //!     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))
+    //!     .push(ModalLabel::new("Evidence", FileUpload::new("files").required(false).min_values(0).max_values(3)))
+    //!     .push(ModalLabel::new("I agree", Checkbox::new("ok")));
+    //! assert_eq!(validate(&mut modal, &Limits::default()).unwrap().components, 9);
+    //! let json = serde_json::to_value(&modal).unwrap();
+    //! assert_eq!(json["components"][1]["component"]["type"], 4);
+    //! ```
+    //!
+    //! ```compile_fail,E0277
+    //! use noctis::prelude::*;
+    //! use noctis::ui::LinkButton;
+    //!
+    //! #[derive(Route)]
+    //! #[route("mod.form")]
+    //! struct Form;
+    //! # impl noctis::__private::ui::Handled for Form {}
+    //!
+    //! let _ = Form.modal("T").push(LinkButton::new("https://x.y")); // [MOD-03]
+    //! ```
+    //!
     //! # Placement
     //!
     //! The placing methods are bounded by sealed traits, so a misplaced
@@ -556,7 +619,8 @@ pub mod ui {
     //! # Components from Routes
     //!
     //! [`RouteComponents`] (also in the [`prelude`](crate::prelude)) builds
-    //! buttons and selects from a Route value; there is no string `custom_id`.
+    //! buttons, selects and modals from a Route value; there is no string
+    //! `custom_id`.
     //! The Route needs a handler (`#[handler]`), or the call fails with
     //! `[CID-04]`; a select also needs a Route declared `select`
     //! ([`SelectRoute`](crate::codec::SelectRoute)). `custom_id`s that need a
@@ -603,14 +667,17 @@ pub mod ui {
 
     pub use noctis_ui::{
         ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button,
-        ButtonStyle, CallbackFlags, ChannelSelect, Components, Container, ContainerChild,
-        ContainerComponent, Content, CostReport, CreateFlags, EditFlags, Emoji, File, GalleryItems,
-        Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton, Media, MediaGallery, MediaItem,
-        MentionableSelect, Mentions, MessageBody, MessageFormat, Placeholder, PremiumButton, Rgb,
-        RoleSelect, Roles, RouteButton, RouteComponents, RowButtons, RowItem, RowSelect, Section,
-        SectionAccessory, SectionTexts, SelectOption, Separator, Spacing, StringSelect,
-        TextDisplay, Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message,
-        Validate, cost, validate,
+        ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup, Components, Container,
+        ContainerChild, ContainerComponent, Content, CostReport, CreateFlags, EditFlags, Emoji,
+        File, FileUpload, GalleryItems, Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton,
+        Media, MediaGallery, MediaItem, MentionableSelect, Mentions, MessageBody, MessageFormat,
+        Modal, ModalChannelSelect, ModalComponent, ModalInput, ModalLabel, ModalMentionableSelect,
+        ModalOption, ModalRoleSelect, ModalStringSelect, ModalTopLevel, ModalUserSelect,
+        Placeholder, PremiumButton, RadioGroup, Rgb, RoleSelect, Roles, RouteButton,
+        RouteComponents, RowButtons, RowItem, RowSelect, Section, SectionAccessory, SectionTexts,
+        SelectOption, Separator, Spacing, StringSelect, TextDisplay, TextInput, TextInputStyle,
+        Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate,
+        cost, validate,
     };
 }
 

@@ -126,12 +126,62 @@
 //! # Ok::<(), UiError>(())
 //! ```
 //!
+//! # Modals
+//!
+//! A [`Modal`] is built only from a Route value with
+//! [`RouteComponents::modal`], so its `custom_id` is the Route's encoding
+//! (MOD-08) and there is no other constructor. Its top level takes a
+//! [`ModalLabel`] or a [`TextDisplay`] ([`ModalTopLevel`], MOD-02); a
+//! [`ModalLabel`] wraps one input ([`ModalInput`]): [`TextInput`] (with
+//! [`TextInputStyle`]), [`ModalStringSelect`], [`ModalUserSelect`],
+//! [`ModalRoleSelect`], [`ModalMentionableSelect`], [`ModalChannelSelect`],
+//! [`FileUpload`], [`RadioGroup`] and [`CheckboxGroup`] (of [`ModalOption`]s)
+//! or [`Checkbox`]. Any message component fails `cargo check` with
+//! `[MOD-03]`; modal selects have no `disabled` and a Checkbox has no
+//! `required`. Each input takes a string key, its `custom_id`, naming the
+//! submitted field. A modal serializes as callback `data`
+//! (`{"custom_id", "title", "components"}`) with no numeric ids and no Action
+//! Rows. [`validate`] and [`cost`] take a modal too.
+//!
+//! ```
+//! # use core::fmt;
+//! # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
+//! use noctis_rules::Limits;
+//! use noctis_ui::{
+//!     Checkbox, ModalLabel, ModalOption, RadioGroup, RouteComponents, TextDisplay, TextInput,
+//!     TextInputStyle, validate,
+//! };
+//!
+//! struct Report;
+//! # impl Payload for Report {
+//! #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
+//! #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
+//! # }
+//! # impl Route for Report {
+//! #     const ID: RouteId = RouteId::new("mod.report");
+//! #     const SHAPE: RouteShape = RouteShape::INLINE;
+//! #     const SCHEMA: u8 = 0;
+//! #     type Payload = Self;
+//! # }
+//! # impl noctis_ui::Handled for Report {}
+//!
+//! let mut modal = Report
+//!     .modal("Report a user")
+//!     .push(TextDisplay::new("Tell us what happened."))
+//!     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
+//!     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))
+//!     .push(ModalLabel::new("I agree", Checkbox::new("ok")));
+//! assert_eq!(validate(&mut modal, &Limits::default())?.components, 7);
+//! # Ok::<(), noctis_ui::UiError>(())
+//! ```
+//!
 //! # Limits
 //!
-//! [`validate`] checks a built [`V2Message`] or [`LegacyMessage`] against
-//! `noctis_rules::Limits` before it is sent, and [`cost`] measures one
-//! without changing it. Both lower the tree into `noctis_rules::component`
-//! descriptors, so counts, paths and violation order match `components!`;
+//! [`validate`] checks a built [`V2Message`], [`LegacyMessage`] or
+//! [`Modal`] against `noctis_rules::Limits` before it is sent, and [`cost`]
+//! measures one without changing it. Both lower a message tree into
+//! `noctis_rules::component` descriptors (a modal into `noctis_rules::modal`
+//! ones), so counts, paths and violation order match `components!`;
 //! they add CID-02, ATT-05, ATT-06, MSG-01, MSG-04 and MSG-09. A failure is
 //! [`UiError::Limits`] with path-precise violations; Lenient mode truncates
 //! display text with `…` instead, as a [`LimitWarning::Truncated`]. Images
@@ -159,6 +209,7 @@ mod error;
 mod limits;
 mod literal;
 mod message;
+mod modal;
 mod placement;
 mod route;
 mod wire;
@@ -179,7 +230,14 @@ pub use message::{
     CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,
     Roles, Users, V2Message,
 };
-pub use placement::{ContainerChild, RowItem, RowSelect, SectionAccessory, TopLevel};
+pub use modal::{
+    Checkbox, CheckboxGroup, FileUpload, Modal, ModalChannelSelect, ModalComponent, ModalLabel,
+    ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalUserSelect,
+    RadioGroup, TextInput, TextInputStyle,
+};
+pub use placement::{
+    ContainerChild, ModalInput, ModalTopLevel, RowItem, RowSelect, SectionAccessory, TopLevel,
+};
 #[doc(hidden)]
 pub use route::CustomId;
 pub use route::{Handled, RouteComponents};

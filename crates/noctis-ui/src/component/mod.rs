@@ -11,8 +11,8 @@ pub use button::{Button, ButtonStyle, Emoji, LinkButton, PremiumButton, RouteBut
 pub(crate) use layout::{AccessoryNode, ChildNode, RowNode, TopNode};
 pub use layout::{ActionRow, Container, ContainerComponent, Rgb, Section, TopLevelComponent};
 pub use media::{File, Media, MediaGallery, MediaItem, Thumbnail};
-pub(crate) use select::SelectNode;
 pub use select::{
     ChannelSelect, MentionableSelect, RoleSelect, SelectOption, StringSelect, UserSelect,
 };
+pub(crate) use select::{DefaultValue, SelectNode, SelectTail, channel_types_entry, select_map};
 pub use text::{Separator, Spacing, TextDisplay};
