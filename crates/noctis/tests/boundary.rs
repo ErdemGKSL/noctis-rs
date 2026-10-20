@@ -16,3 +16,6 @@ mod modal;
 
 #[path = "boundary/cmd.rs"]
 mod cmd;
+
+#[path = "boundary/opt.rs"]
+mod opt;

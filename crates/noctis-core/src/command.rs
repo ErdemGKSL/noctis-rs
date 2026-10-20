@@ -7,8 +7,10 @@ use std::future::Future;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
+use noctis_rules::command::OptionDecl;
 
 use crate::handler::{HandlerError, HandlerResult};
+use crate::options::{CommandInput, Options};
 
 /// The typed Command Paths of one Command Pattern; implemented by
 /// `#[command]` for the `<Fn>Path` enum it generates.
@@ -52,20 +54,32 @@ pub trait CommandPath: Copy + Send + Sync + 'static {
 
 /// The context a Command handler receives.
 ///
-/// Cheap to clone (one `Arc`). Today it carries only the invoked
-/// [`command_path`](Self::command_path); the interaction accessors arrive with
+/// Cheap to clone (one `Arc`). Today it carries the invoked
+/// [`command_path`](Self::command_path) and the decoded interaction input
+/// the options struct is built from; the interaction accessors arrive with
 /// the Command pipeline.
 #[derive(Clone)]
 pub struct CommandCtx(Arc<CtxInner>);
 
 struct CtxInner {
     path: &'static str,
+    input: CommandInput,
 }
 
 impl CommandCtx {
-    /// A context for an invocation of `path`.
+    /// A context for an invocation of `path` without options.
     pub(crate) fn new(path: &'static str) -> Self {
-        Self(Arc::new(CtxInner { path }))
+        Self::with_input(path, CommandInput::empty(path))
+    }
+
+    /// A context for an invocation of `path` with the decoded `input`.
+    pub(crate) fn with_input(path: &'static str, input: CommandInput) -> Self {
+        Self(Arc::new(CtxInner { path, input }))
+    }
+
+    /// The decoded interaction input.
+    pub(crate) fn input(&self) -> &CommandInput {
+        &self.0.input
     }
 
     /// The invoked Command Path, words joined by one ASCII space
@@ -112,8 +126,8 @@ type ErasedCommand = dyn Fn(CommandCtx) -> BoxFuture<'static, HandlerResult<()>>
 /// One slash Command handler, as `#[command]` builds it; add it to a
 /// [`Module`](crate::Module).
 ///
-/// Opaque and cheap to clone. `Debug` prints the name, the pattern and the
-/// paths. Annotating `async fn config` with `#[command(..)]` gives a
+/// Opaque and cheap to clone. `Debug` prints the name, the pattern, the
+/// paths and the option names. Annotating `async fn config` with `#[command(..)]` gives a
 /// `fn config()` that returns its `CommandHandler`.
 #[derive(Clone)]
 pub struct CommandHandler {
@@ -121,6 +135,7 @@ pub struct CommandHandler {
     pattern: &'static str,
     description: &'static str,
     paths: &'static [&'static str],
+    options: &'static [OptionDecl<'static>],
     call: Arc<ErasedCommand>,
 }
 
@@ -150,6 +165,42 @@ impl CommandHandler {
             pattern,
             description,
             paths: P::PATHS,
+            options: &[],
+            call: Arc::new(call),
+        }
+    }
+
+    /// Like [`__new`](Self::__new) for a handler that also takes the options
+    /// struct `O`: the path is checked, `O` is decoded and validated, then
+    /// the handler runs.
+    #[doc(hidden)]
+    pub fn __new_with_options<P, O, F, Fut>(
+        name: &'static str,
+        pattern: &'static str,
+        description: &'static str,
+        f: F,
+    ) -> Self
+    where
+        P: CommandPath,
+        O: Options,
+        F: Fn(CommandCtx, P, O) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+    {
+        let call = move |ctx: CommandCtx| -> BoxFuture<'static, HandlerResult<()>> {
+            let Some(path) = P::from_path(ctx.command_path()) else {
+                return unknown(ctx.command_path(), name);
+            };
+            match decode::<O>(&ctx) {
+                Ok(options) => Box::pin(f(ctx, path, options)),
+                Err(error) => failed(error),
+            }
+        };
+        Self {
+            name,
+            pattern,
+            description,
+            paths: P::PATHS,
+            options: O::OPTIONS,
             call: Arc::new(call),
         }
     }
@@ -179,6 +230,40 @@ impl CommandHandler {
             pattern: paths.first().copied().unwrap_or_default(),
             description,
             paths,
+            options: &[],
+            call: Arc::new(call),
+        }
+    }
+
+    /// Like [`__new_plain`](Self::__new_plain) for a handler that also takes
+    /// the options struct `O`.
+    #[doc(hidden)]
+    pub fn __new_plain_with_options<O, F, Fut>(
+        name: &'static str,
+        paths: &'static [&'static str],
+        description: &'static str,
+        f: F,
+    ) -> Self
+    where
+        O: Options,
+        F: Fn(CommandCtx, O) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+    {
+        let call = move |ctx: CommandCtx| -> BoxFuture<'static, HandlerResult<()>> {
+            if !paths.contains(&ctx.command_path()) {
+                return unknown(ctx.command_path(), name);
+            }
+            match decode::<O>(&ctx) {
+                Ok(options) => Box::pin(f(ctx, options)),
+                Err(error) => failed(error),
+            }
+        };
+        Self {
+            name,
+            pattern: paths.first().copied().unwrap_or_default(),
+            description,
+            paths,
+            options: O::OPTIONS,
             call: Arc::new(call),
         }
     }
@@ -204,6 +289,12 @@ impl CommandHandler {
         self.paths
     }
 
+    /// The option declarations of the handler's options struct, in field
+    /// order; empty for a handler without one.
+    pub fn options(&self) -> &'static [OptionDecl<'static>] {
+        self.options
+    }
+
     /// Starts the handler for `ctx`; an [`UnknownCommandPath`] error when
     /// `ctx`'s path is not one of [`paths`](Self::paths).
     pub(crate) fn call(&self, ctx: CommandCtx) -> BoxFuture<'static, HandlerResult<()>> {
@@ -213,11 +304,23 @@ impl CommandHandler {
 
 /// A ready future failing with [`UnknownCommandPath`].
 fn unknown(path: &str, command: &'static str) -> BoxFuture<'static, HandlerResult<()>> {
-    let error = HandlerError::new(UnknownCommandPath {
+    failed(HandlerError::new(UnknownCommandPath {
         path: path.into(),
         command,
-    });
+    }))
+}
+
+/// A ready future failing with `error`.
+fn failed(error: HandlerError) -> BoxFuture<'static, HandlerResult<()>> {
     Box::pin(std::future::ready(Err(error)))
+}
+
+/// Decodes `O` from the context's input, then runs its validators; a
+/// decode error comes first, so validators never see a partial struct.
+fn decode<O: Options>(ctx: &CommandCtx) -> Result<O, HandlerError> {
+    let options = O::from_input(ctx.input()).map_err(HandlerError::new)?;
+    options.validate(ctx).map_err(HandlerError::new)?;
+    Ok(options)
 }
 
 impl fmt::Debug for CommandHandler {
@@ -226,6 +329,10 @@ impl fmt::Debug for CommandHandler {
             .field("name", &self.name)
             .field("pattern", &self.pattern)
             .field("paths", &self.paths)
+            .field(
+                "options",
+                &self.options.iter().map(|o| o.name).collect::<Vec<_>>(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -237,6 +344,22 @@ pub(crate) fn call_command(
     path: &'static str,
 ) -> BoxFuture<'static, HandlerResult<()>> {
     handler.call(CommandCtx::new(path))
+}
+
+/// Decodes `json` (an interaction object) and runs `handler` for its path;
+/// the test seam for options (see `crate::__testing`).
+pub(crate) fn call_command_json(
+    handler: &CommandHandler,
+    json: &[u8],
+) -> BoxFuture<'static, HandlerResult<()>> {
+    let input = match CommandInput::from_json(json) {
+        Ok(input) => input,
+        Err(error) => return failed(HandlerError::new(error)),
+    };
+    match handler.paths.iter().find(|p| **p == input.path()) {
+        Some(path) => handler.call(CommandCtx::with_input(path, input)),
+        None => unknown(input.path(), handler.name),
+    }
 }
 
 #[cfg(test)]
@@ -349,5 +472,187 @@ mod tests {
             format!("{ctx:?}"),
             "CommandCtx { command_path: \"a b\", .. }"
         );
+    }
+
+    mod with_options {
+        use std::sync::Mutex;
+
+        use noctis_rules::MessageKey;
+        use noctis_rules::command::{OptionDecl, OptionType};
+
+        use super::*;
+        use crate::options::__options::{optional, required};
+        use crate::options::{InvalidOption, OptionError};
+
+        #[derive(Debug, Clone, PartialEq)]
+        struct W {
+            days: i64,
+            reason: Option<i64>,
+        }
+
+        fn positive(v: i64) -> Result<(), MessageKey> {
+            if v > 0 {
+                Ok(())
+            } else {
+                Err(MessageKey::new("warn.days.positive"))
+            }
+        }
+
+        impl Options for W {
+            const OPTIONS: &'static [OptionDecl<'static>] = &[
+                OptionDecl::new("days", OptionType::Integer, "d").required(true),
+                OptionDecl::new("reason", OptionType::Integer, "d"),
+            ];
+            fn from_input(input: &CommandInput) -> Result<Self, OptionError> {
+                Ok(Self {
+                    days: required(input, "days")?,
+                    reason: optional(input, "reason")?,
+                })
+            }
+            fn validate(&self, _: &CommandCtx) -> Result<(), InvalidOption> {
+                positive(self.days).map_err(|k| InvalidOption::__new("days", k))?;
+                if let Some(v) = self.reason {
+                    positive(v).map_err(|k| InvalidOption::__new("reason", k))?;
+                }
+                Ok(())
+            }
+        }
+
+        static GOT: Mutex<Vec<W>> = Mutex::new(Vec::new());
+
+        async fn warn(_: CommandCtx, w: W) -> HandlerResult<()> {
+            GOT.lock().map_err(|_| fmt::Error)?.push(w);
+            Ok(())
+        }
+
+        async fn typed(_: CommandCtx, path: TestPath, w: W) -> HandlerResult<()> {
+            assert_eq!(path, TestPath::B);
+            GOT.lock().map_err(|_| fmt::Error)?.push(w);
+            Ok(())
+        }
+
+        fn json(path: &str, options: &str) -> Vec<u8> {
+            let mut words = path.split(' ');
+            let base = words.next().unwrap_or_default();
+            let mut opts = options.to_owned();
+            for word in words.rev() {
+                opts = format!(r#"[{{"type":1,"name":"{word}","options":{opts}}}]"#);
+            }
+            format!(r#"{{"type":2,"data":{{"name":"{base}","options":{opts}}}}}"#).into_bytes()
+        }
+
+        fn seen(w: &W) -> bool {
+            GOT.lock().is_ok_and(|g| g.contains(w))
+        }
+
+        #[tokio::test]
+        async fn decodes_validates_and_runs() {
+            let h = CommandHandler::__new_plain_with_options("m::warn", &["warn"], "d", warn);
+            assert_eq!(h.options().len(), 2);
+            assert!(format!("{h:?}").contains("options: [\"days\", \"reason\"]"));
+            let ok = call_command_json(
+                &h,
+                &json(
+                    "warn",
+                    r#"[{"name":"days","type":4,"value":5},{"name":"foo","type":3,"value":"x"}]"#,
+                ),
+            )
+            .await;
+            assert!(ok.is_ok(), "{ok:?}");
+            assert!(seen(&W {
+                days: 5,
+                reason: None
+            }));
+
+            let err = call_command_json(
+                &h,
+                &json("warn", r#"[{"name":"days","type":4,"value":-1}]"#),
+            )
+            .await
+            .unwrap_err();
+            let invalid = err
+                .as_error()
+                .downcast_ref::<InvalidOption>()
+                .unwrap_or_else(|| panic!("{err}"));
+            assert_eq!(invalid.option(), "days");
+            assert_eq!(invalid.key(), MessageKey::new("warn.days.positive"));
+            assert_eq!(
+                err.to_string(),
+                "option `days` failed validation: warn.days.positive"
+            );
+            assert!(!seen(&W {
+                days: -1,
+                reason: None
+            }));
+
+            // Validators run in declaration order; the first failure wins.
+            let err = call_command_json(&h, &json("warn", r#"[{"name":"reason","type":4,"value":-3},{"name":"days","type":4,"value":-2}]"#))
+                .await
+                .unwrap_err();
+            let invalid = err
+                .as_error()
+                .downcast_ref::<InvalidOption>()
+                .unwrap_or_else(|| panic!("{err}"));
+            assert_eq!(invalid.option(), "days");
+
+            // Decode errors come before validators.
+            let err = call_command_json(
+                &h,
+                &json("warn", r#"[{"name":"reason","type":4,"value":-3}]"#),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                err.as_error().downcast_ref::<OptionError>(),
+                Some(&OptionError::Missing {
+                    option: "days".into()
+                })
+            );
+
+            let err = call_command_json(&h, &json("kick", "[]"))
+                .await
+                .unwrap_err();
+            assert!(
+                err.as_error()
+                    .downcast_ref::<UnknownCommandPath>()
+                    .is_some()
+            );
+
+            let err = call_command_json(&h, b"{").await.unwrap_err();
+            assert!(matches!(
+                err.as_error().downcast_ref::<OptionError>(),
+                Some(OptionError::Malformed { .. })
+            ));
+        }
+
+        #[tokio::test]
+        async fn pattern_with_options() {
+            let h = CommandHandler::__new_with_options::<TestPath, W, _, _>(
+                "m::t", "t (a|b)", "d", typed,
+            );
+            assert_eq!(h.options()[0].name, "days");
+            let ok = call_command_json(&h, &json("t b", r#"[{"name":"days","type":4,"value":7}]"#))
+                .await;
+            assert!(ok.is_ok(), "{ok:?}");
+            assert!(seen(&W {
+                days: 7,
+                reason: None
+            }));
+            let err = call_command_json(&h, &json("t c", "[]")).await.unwrap_err();
+            assert!(
+                err.as_error()
+                    .downcast_ref::<UnknownCommandPath>()
+                    .is_some()
+            );
+        }
+
+        #[tokio::test]
+        async fn no_options_handler_ignores_options() {
+            let h = CommandHandler::__new_plain("m::ping", &["ping"], "d", plain);
+            assert!(h.options().is_empty());
+            let ok =
+                call_command_json(&h, &json("ping", r#"[{"name":"x","type":4,"value":1}]"#)).await;
+            assert!(ok.is_ok(), "{ok:?}");
+        }
     }
 }

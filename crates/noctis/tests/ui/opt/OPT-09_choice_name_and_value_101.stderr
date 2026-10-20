@@ -1,0 +1,15 @@
+error: [OPT-09] A: limit between 1 and 100, actual 101
+         = note: in the choice name
+         = note: the same limit applies to modal and select options (MOD-07, CV2-09)
+ --> tests/ui/opt/OPT-09_choice_name_and_value_101.rs:5:14
+  |
+5 |     #[choice("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: [OPT-09] B: limit at most 100, actual 101
+         = note: in the choice value
+         = note: the same limit applies to modal and select options (MOD-07, CV2-09)
+ --> tests/ui/opt/OPT-09_choice_name_and_value_101.rs:7:27
+  |
+7 |     #[choice("B", value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,16 @@
+error[E0277]: `std::string::String` is not an options struct
+ --> tests/types/command_options_not_derived.rs:4:43
+  |
+4 | async fn warn(_ctx: CommandCtx, _options: String) -> HandlerResult<()> {
+  |                                           ^^^^^^ not an options struct
+  |
+  = help: the trait `Options` is not implemented for `std::string::String`
+  = note: derive it with `#[derive(Options)]`
+note: required by a bound in `CommandHandler::__new_plain_with_options`
+ --> $WORKSPACE/crates/noctis-core/src/command.rs
+  |
+  |     pub fn __new_plain_with_options<O, F, Fut>(
+  |            ------------------------ required by a bound in this associated function
+...
+  |         O: Options,
+  |            ^^^^^^^ required by this bound in `CommandHandler::__new_plain_with_options`

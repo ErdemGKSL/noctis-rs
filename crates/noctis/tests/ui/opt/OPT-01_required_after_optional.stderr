@@ -1,0 +1,6 @@
+error: [OPT-01] b: limit required options before optional ones, actual `b`
+         = note: after optional `a`
+ --> tests/ui/opt/OPT-01_required_after_optional.rs:8:5
+  |
+8 |     b: String,
+  |     ^

@@ -1270,6 +1270,8 @@ dependencies = [
  "metrics-util",
  "noctis-gateway",
  "noctis-ports",
+ "noctis-rules",
+ "noctis-ui",
  "rcgen",
  "rustls",
  "rustls-platform-verifier",

@@ -1,7 +1,7 @@
 //! `#[command]`: checks a Command Path or Pattern at expansion with
 //! `noctis_rules::command` and turns an `async fn(ctx: CommandCtx[, path:
-//! <Fn>Path])` into a descriptor function returning a `CommandHandler`
-//! (FR-7, FR-8, FR-75, FR-77, AD-8, AD-16, AD-26).
+//! <Fn>Path][, options: O])` into a descriptor function returning a
+//! `CommandHandler` (FR-7, FR-8, FR-10, FR-75, FR-77, AD-8, AD-16, AD-26).
 
 use noctis_rules::command::{
     self as rules, CommandDecl, LocalizedText, validate_pattern_spacing, validate_tree,
@@ -391,23 +391,35 @@ fn ident(name: &str, span: Span) -> syn::Result<Ident> {
     Ok(ident)
 }
 
-/// Step 6: the parameter count and the path parameter's type.
-fn check_params(item: &ItemFn, pattern: &str, path_enum: Option<&str>) -> syn::Result<()> {
+/// Step 6: the parameter count and the path parameter's type; the trailing
+/// options parameter's type, if there is one.
+fn check_params(
+    item: &ItemFn,
+    pattern: &str,
+    path_enum: Option<&str>,
+) -> syn::Result<Option<Type>> {
     let sig = &item.sig;
     let (count, message) = match path_enum {
         None => (
             1,
-            format!("`#[command({pattern:?})]` handlers take `(ctx: CommandCtx)`"),
+            format!(
+                "`#[command({pattern:?})]` handlers take `(ctx: CommandCtx)` or `(ctx: CommandCtx, options: O)` with `O: Options`"
+            ),
         ),
         Some(name) => (
             2,
-            format!("`#[command({pattern:?})]` handlers take `(ctx: CommandCtx, path: {name})`"),
+            format!(
+                "`#[command({pattern:?})]` handlers take `(ctx: CommandCtx, path: {name})` or `(ctx: CommandCtx, path: {name}, options: O)` with `O: Options`"
+            ),
         ),
     };
     if let Some(receiver) = sig.receiver() {
         return Err(syn::Error::new_spanned(receiver, message));
     }
-    if sig.inputs.len() != count || !sig.inputs.iter().all(|a| matches!(a, FnArg::Typed(_))) {
+    let len = sig.inputs.len();
+    if (len != count && len != count + 1)
+        || !sig.inputs.iter().all(|a| matches!(a, FnArg::Typed(_)))
+    {
         let span = if sig.inputs.is_empty() {
             sig.ident.span()
         } else {
@@ -436,7 +448,11 @@ fn check_params(item: &ItemFn, pattern: &str, path_enum: Option<&str>) -> syn::R
             ));
         }
     }
-    Ok(())
+    let options = match sig.inputs.iter().nth(count) {
+        Some(FnArg::Typed(param)) => Some((*param.ty).clone()),
+        _ => None,
+    };
+    Ok(options)
 }
 
 /// The generated `<Fn>Path` enum and its impls.
@@ -519,7 +535,7 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
     } else {
         None
     };
-    check_params(
+    let options = check_params(
         &item,
         &pattern,
         enum_ident.as_ref().map(|(e, _)| e.to_string()).as_deref(),
@@ -546,16 +562,26 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let inner = inner.into_token_stream();
     let (generated, call) = if let Some((enum_ident, variants)) = &enum_ident {
         let generated = path_enum(&item, enum_ident, &fn_name, &pattern, &paths, variants);
-        let new = quote_spanned! {output_span=>
-            ::noctis::__private::core::CommandHandler::__new::<#enum_ident, _, _>
+        let new = match &options {
+            None => quote_spanned! {output_span=>
+                ::noctis::__private::core::CommandHandler::__new::<#enum_ident, _, _>
+            },
+            Some(ty) => quote_spanned! {output_span=>
+                ::noctis::__private::core::CommandHandler::__new_with_options::<#enum_ident, #ty, _, _>
+            },
         };
         (
             generated,
             quote! { #new(::core::concat!(::core::module_path!(), "::", #fn_name), #pattern, #description, __noctis_command) },
         )
     } else {
-        let new = quote_spanned! {output_span=>
-            ::noctis::__private::core::CommandHandler::__new_plain
+        let new = match &options {
+            None => quote_spanned! {output_span=>
+                ::noctis::__private::core::CommandHandler::__new_plain
+            },
+            Some(ty) => quote_spanned! {output_span=>
+                ::noctis::__private::core::CommandHandler::__new_plain_with_options::<#ty, _, _>
+            },
         };
         (
             TokenStream::new(),
@@ -831,18 +857,20 @@ mod tests {
             ),
             (
                 "async fn ping(&self) -> HandlerResult<()> { Ok(()) }",
-                "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx)`",
+                PLAIN_PARAMS,
             ),
         ] {
             assert_eq!(error(args(), src), expected, "{src}");
         }
     }
 
-    /// Matrix 42 and 43: parameter count and the path parameter.
+    const PLAIN_PARAMS: &str = "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx)` or `(ctx: CommandCtx, options: O)` with `O: Options`";
+
+    /// Matrix 42 and 43 (6.1) and 78 (6.2): parameter count and the path
+    /// parameter.
     #[test]
     fn parameter_errors() {
-        const PLAIN_PARAMS: &str = "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx)`";
-        const PATTERN_PARAMS: &str = "`#[command(\"config (set|get)\")]` handlers take `(ctx: CommandCtx, path: ConfigPath)`";
+        const PATTERN_PARAMS: &str = "`#[command(\"config (set|get)\")]` handlers take `(ctx: CommandCtx, path: ConfigPath)` or `(ctx: CommandCtx, path: ConfigPath, options: O)` with `O: Options`";
         let ping = || quote!("ping", description = "d");
         let config = || quote!("config (set|get)", description = "d");
         for (args, src, expected) in [
@@ -853,7 +881,7 @@ mod tests {
             ),
             (
                 ping(),
-                "async fn ping(c: CommandCtx, x: u8) -> HandlerResult<()> { Ok(()) }",
+                "async fn ping(c: CommandCtx, x: W, y: u8) -> HandlerResult<()> { Ok(()) }",
                 PLAIN_PARAMS,
             ),
             (
@@ -863,7 +891,7 @@ mod tests {
             ),
             (
                 config(),
-                "async fn config(c: CommandCtx, p: ConfigPath, x: u8) -> HandlerResult<()> { Ok(()) }",
+                "async fn config(c: CommandCtx, p: ConfigPath, x: W, y: u8) -> HandlerResult<()> { Ok(()) }",
                 PATTERN_PARAMS,
             ),
             (
@@ -874,6 +902,36 @@ mod tests {
         ] {
             assert_eq!(error(args, src), expected, "{src}");
         }
+    }
+
+    /// Matrix 75-77: the options parameter picks the `*_with_options`
+    /// constructor.
+    #[test]
+    fn options_parameter() {
+        let out = expand(
+            quote!("warn", description = "d"),
+            item("async fn warn(c: CommandCtx, o: W) -> HandlerResult<()> { Ok(()) }"),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            out.contains("__new_plain_with_options :: < W , _ , _ >"),
+            "{out}"
+        );
+        let out = expand(
+            quote!("mod (ban|kick)", description = "d"),
+            item("async fn r#mod(c: CommandCtx, p: ModPath, o: W) -> HandlerResult<()> { Ok(()) }"),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            out.contains("__new_with_options :: < ModPath , W , _ , _ >"),
+            "{out}"
+        );
+        let out = expand(quote!("ping", description = "d"), item(PING))
+            .unwrap()
+            .to_string();
+        assert!(!out.contains("with_options"), "{out}");
     }
 
     /// Matrix 45: variant naming.

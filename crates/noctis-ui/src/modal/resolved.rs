@@ -9,11 +9,15 @@ use std::future::Future;
 
 use bytes::Bytes;
 use noctis_rules::Limits;
-use twilight_model::application::interaction::{InteractionChannel, InteractionMember};
+use twilight_model::application::interaction::{
+    InteractionChannel, InteractionDataResolved, InteractionMember,
+};
 use twilight_model::channel::Attachment;
 use twilight_model::guild::Role;
 use twilight_model::id::Id;
-use twilight_model::id::marker::AttachmentMarker;
+use twilight_model::id::marker::{
+    AttachmentMarker, ChannelMarker, GenericMarker, RoleMarker, UserMarker,
+};
 use twilight_model::user::User;
 
 /// A user picked in a User or Mentionable Select, with their guild member
@@ -97,6 +101,88 @@ pub enum Mentionable {
     Role(ResolvedRole),
 }
 
+impl ResolvedUser {
+    /// The user `id` from `resolved.users`, with its member from
+    /// `resolved.members` when present; `None` when the user is missing.
+    ///
+    /// ```
+    /// use noctis_ui::ResolvedUser;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    /// use twilight_model::id::Id;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// assert!(ResolvedUser::from_resolved(&resolved, Id::new(1)).is_none());
+    /// ```
+    pub fn from_resolved(resolved: &InteractionDataResolved, id: Id<UserMarker>) -> Option<Self> {
+        resolved.users.get(&id).map(|user| Self {
+            user: user.clone(),
+            member: resolved.members.get(&id).cloned(),
+        })
+    }
+}
+
+impl ResolvedRole {
+    /// The role `id` from `resolved.roles`, or `None`.
+    ///
+    /// ```
+    /// use noctis_ui::ResolvedRole;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    /// use twilight_model::id::Id;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// assert!(ResolvedRole::from_resolved(&resolved, Id::new(1)).is_none());
+    /// ```
+    pub fn from_resolved(resolved: &InteractionDataResolved, id: Id<RoleMarker>) -> Option<Self> {
+        resolved
+            .roles
+            .get(&id)
+            .map(|role| Self { role: role.clone() })
+    }
+}
+
+impl ResolvedChannel {
+    /// The channel `id` from `resolved.channels`, or `None`.
+    ///
+    /// ```
+    /// use noctis_ui::ResolvedChannel;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    /// use twilight_model::id::Id;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// assert!(ResolvedChannel::from_resolved(&resolved, Id::new(1)).is_none());
+    /// ```
+    pub fn from_resolved(
+        resolved: &InteractionDataResolved,
+        id: Id<ChannelMarker>,
+    ) -> Option<Self> {
+        resolved.channels.get(&id).map(|channel| Self {
+            channel: channel.clone(),
+        })
+    }
+}
+
+impl Mentionable {
+    /// The user `id` (checked first, with its member) or else the role `id`,
+    /// or `None` when neither is resolved.
+    ///
+    /// ```
+    /// use noctis_ui::Mentionable;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    /// use twilight_model::id::Id;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// assert!(Mentionable::from_resolved(&resolved, Id::new(1)).is_none());
+    /// ```
+    pub fn from_resolved(
+        resolved: &InteractionDataResolved,
+        id: Id<GenericMarker>,
+    ) -> Option<Self> {
+        ResolvedUser::from_resolved(resolved, id.cast())
+            .map(Self::User)
+            .or_else(|| ResolvedRole::from_resolved(resolved, id.cast()).map(Self::Role))
+    }
+}
+
 /// A file uploaded through a File Upload (type 19).
 ///
 /// Its URL is an **ephemeral**, signed Discord CDN URL that expires: download
@@ -126,6 +212,25 @@ const CDN_PREFIXES: [&str; 2] = [
 ];
 
 impl ResolvedAttachment {
+    /// The attachment `id` from `resolved.attachments`, or `None`.
+    ///
+    /// ```
+    /// use noctis_ui::ResolvedAttachment;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    /// use twilight_model::id::Id;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// assert!(ResolvedAttachment::from_resolved(&resolved, Id::new(1)).is_none());
+    /// ```
+    pub fn from_resolved(
+        resolved: &InteractionDataResolved,
+        id: Id<AttachmentMarker>,
+    ) -> Option<Self> {
+        resolved.attachments.get(&id).map(|attachment| Self {
+            attachment: attachment.clone(),
+        })
+    }
+
     /// The attachment id.
     pub fn id(&self) -> Id<AttachmentMarker> {
         self.attachment.id

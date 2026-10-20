@@ -105,6 +105,41 @@ impl OptionType {
     }
 }
 
+/// Discord's channel types by their twilight-model `ChannelType` variant
+/// name, with their values (OPT-07): what `channel_types = [GuildText, …]`
+/// lowers to.
+pub const CHANNEL_TYPES: [(&str, u8); 13] = [
+    ("GuildText", 0),
+    ("Private", 1),
+    ("GuildVoice", 2),
+    ("Group", 3),
+    ("GuildCategory", 4),
+    ("GuildAnnouncement", 5),
+    ("AnnouncementThread", 10),
+    ("PublicThread", 11),
+    ("PrivateThread", 12),
+    ("GuildStageVoice", 13),
+    ("GuildDirectory", 14),
+    ("GuildForum", 15),
+    ("GuildMedia", 16),
+];
+
+/// The value of the channel type named `name` in [`CHANNEL_TYPES`] (an
+/// exact, case-sensitive match), or `None`.
+///
+/// ```
+/// use noctis_rules::command::channel_type;
+///
+/// assert_eq!(channel_type("GuildForum"), Some(15));
+/// assert_eq!(channel_type("GuildTxt"), None);
+/// ```
+pub fn channel_type(name: &str) -> Option<u8> {
+    CHANNEL_TYPES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, v)| *v)
+}
+
 /// A `min_value` / `max_value` bound.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NumericValue {
@@ -980,6 +1015,18 @@ mod tests {
                 "ATTACHMENT"
             ]
         );
+    }
+
+    #[test]
+    fn opt_07_channel_type_names() {
+        let values: Vec<u8> = CHANNEL_TYPES.iter().map(|(_, v)| *v).collect();
+        assert_eq!(values, [0, 1, 2, 3, 4, 5, 10, 11, 12, 13, 14, 15, 16]);
+        for (name, value) in CHANNEL_TYPES {
+            assert_eq!(channel_type(name), Some(value), "{name}");
+        }
+        assert_eq!(channel_type("GuildText"), Some(0));
+        assert_eq!(channel_type("guildtext"), None);
+        assert_eq!(channel_type(""), None);
     }
 
     #[test]

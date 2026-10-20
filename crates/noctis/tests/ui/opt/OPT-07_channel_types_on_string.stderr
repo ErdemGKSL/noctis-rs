@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: [OPT-07] a.channel_types: limit channel_types only on CHANNEL options, actual `STRING`
+ --> tests/ui/opt/OPT-07_channel_types_on_string.rs:5:5
+  |
+5 |     #[option(description = "d", channel_types = [GuildText])]
+  |     ^ evaluation of `_` failed here

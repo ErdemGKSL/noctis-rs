@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: [OPT-11] a.autocomplete: limit autocomplete only on STRING, INTEGER or NUMBER options, actual `BOOLEAN`
+ --> tests/ui/opt/OPT-11_autocomplete_on_bool.rs:7:5
+  |
+7 |     #[option(description = "d", autocomplete = suggest)]
+  |     ^ evaluation of `_` failed here

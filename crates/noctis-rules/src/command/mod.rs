@@ -96,6 +96,10 @@
 //! assert_eq!(validate_tree(&[decl], &limits), Ok(()));
 //! ```
 //!
+//! [`CHANNEL_TYPES`] maps Discord's channel type names (twilight-model's
+//! `ChannelType` variants) to their values for OPT-07's `channel_types`;
+//! [`channel_type`] looks one name up.
+//!
 //! # Autocomplete
 //!
 //! [`validate_autocomplete`] checks the choices an autocomplete handler
@@ -133,8 +137,8 @@ pub use merge::validate_merge;
 pub use meta::{CommandMeta, IntegrationType, InteractionContext, validate_meta};
 pub use name::{validate_context_menu_name, validate_name};
 pub use option::{
-    Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, measure_options,
-    validate_autocomplete, validate_options,
+    CHANNEL_TYPES, Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, channel_type,
+    measure_options, validate_autocomplete, validate_options,
 };
 pub(crate) use option::{FILE_TYPE, is_file_type};
 pub use pattern::{expand, validate_pattern_spacing};

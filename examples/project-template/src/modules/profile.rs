@@ -41,6 +41,8 @@ pub fn module() -> Module {
 /// (OPT-01); `Option<T>` makes this one optional.
 #[derive(Options, Debug)]
 pub struct ProfileOptions {
+    /// The literal equals `cmd.profile.opt.user.description` in `locales/en-US.yaml`.
+    #[option(description = "Whose profile to show (default you)")]
     pub user: Option<ResolvedUser>,
 }
 

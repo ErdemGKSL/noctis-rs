@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: [OPT-06] a.max_length: limit between 1 and 6000, actual 6001
+ --> tests/ui/opt/OPT-06_max_length_6001.rs:5:5
+  |
+5 |     #[option(description = "d", max_length = 6001)]
+  |     ^ evaluation of `_` failed here

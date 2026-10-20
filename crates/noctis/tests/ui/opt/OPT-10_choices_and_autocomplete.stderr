@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: [OPT-10] a: limit choices or autocomplete, not both, actual `a`
+  --> tests/ui/opt/OPT-10_choices_and_autocomplete.rs:13:5
+   |
+13 |     #[option(description = "d", autocomplete = suggest)]
+   |     ^ evaluation of `_` failed here

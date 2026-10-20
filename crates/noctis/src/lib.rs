@@ -296,11 +296,111 @@
 
 pub use noctis_core::{
     AckDeadlineMissed, App, AppBuilder, BuildError, BuildViolation, CommandCtx, CommandHandler,
-    CommandPath, Descriptor, EnvError, Error, ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError,
-    HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, LogSink, Module,
-    Plugin, ReportKind, Resource, ResourceConflict, RunError, Runtime, StartError, State, Token,
-    TokenError, UnknownCommandPath,
+    CommandInput, CommandOption, CommandPath, Descriptor, EnvError, Error, ErrorOrigin,
+    ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
+    HttpConfigError, HttpProxyError, InvalidOption, LogSink, Module, OptionError, OptionValue,
+    Options, Plugin, ReportKind, Resource, ResourceConflict, RunError, Runtime, StartError, State,
+    Token, TokenError, UnknownCommandPath,
 };
+
+/// Derives [`Options`](trait@Options) for a struct with named fields: each
+/// field is one option of a slash Command, in declaration order (never
+/// reordered), and every literal is checked at compile time.
+///
+/// A `#[command]` handler takes the struct as its last parameter. On each
+/// invocation the interaction's options are decoded into it (a missing,
+/// mistyped or out-of-range value is an [`OptionError`], never a panic),
+/// then each field's validator runs (a failure is an [`InvalidOption`]
+/// carrying its [`MessageKey`](crate::rules::MessageKey)), and only then the
+/// handler. Unknown incoming options are ignored.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::ResolvedUser;
+///
+/// #[derive(Choices, Clone, Copy, Debug, PartialEq)]
+/// enum Severity {
+///     #[choice("Low")]
+///     Low,
+///     #[choice("High", value = "hi")]
+///     High,
+/// }
+///
+/// fn positive(days: &i64, _ctx: &CommandCtx) -> Result<(), MessageKey> {
+///     if *days > 0 { Ok(()) } else { Err(MessageKey::new("warn.days.positive")) }
+/// }
+///
+/// #[derive(Options)]
+/// struct WarnOptions {
+///     /// Rustdoc only: never the option's description.
+///     #[option(description = "Who to warn")]
+///     member: ResolvedUser,
+///     #[option(description = "How bad it is")]
+///     severity: Severity,
+///     #[option(description = "How long, in days", min_value = 1, max_value = 30, validate = positive)]
+///     days: Option<i64>,
+///     #[option(description = "Why", max_length = 200)]
+///     reason: Option<String>,
+/// }
+///
+/// #[command("warn", description = "Warn a member")]
+/// async fn warn(_ctx: CommandCtx, options: WarnOptions) -> HandlerResult<()> {
+///     let _ = (options.member.user.id, options.severity, options.days, options.reason);
+///     Ok(())
+/// }
+///
+/// assert_eq!(warn().options().len(), 4);
+/// assert_eq!(WarnOptions::OPTIONS[2].name, "days");
+/// assert!(!WarnOptions::OPTIONS[2].required);
+/// ```
+///
+/// Field attribute `#[option(..)]`, arguments in any order, each at most
+/// once:
+///
+/// | Argument | Takes | Option types |
+/// | --- | --- | --- |
+/// | `description = "…"` | 1 to 100 characters, required (CMD-04) | all |
+/// | `rename = "…"` | the option name (default: the field name, `r#` stripped; CMD-01..03) | all |
+/// | `min_value = n`, `max_value = n` | unsuffixed integer or float literal, optionally negated (OPT-03..05) | INTEGER, NUMBER |
+/// | `min_length = n`, `max_length = n` | unsuffixed integer, 0..=6000 and 1..=6000 (OPT-06) | STRING |
+/// | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (OPT-07) | CHANNEL |
+/// | `file_types = ["image", ".pdf"]` | `image`, `video`, `audio` or `.ext`, at most 10 (OPT-13) | ATTACHMENT |
+/// | `autocomplete = path` | an existing function; sets the autocomplete flag (OPT-10, OPT-11) | STRING, INTEGER, NUMBER |
+/// | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>`, called only for present values | all |
+///
+/// Field types ([`CommandOption`]; any other is an `[OPT-02]` compile
+/// error); wrap a type in `Option<T>` to make the option optional, and put
+/// optional fields after required ones (OPT-01):
+///
+/// | Type | Option type |
+/// | --- | --- |
+/// | `String`, a `#[derive(Choices)]` enum | STRING |
+/// | `i64` | INTEGER |
+/// | `f64` | NUMBER |
+/// | `bool` | BOOLEAN |
+/// | `Id<UserMarker>`, [`ResolvedUser`](crate::ui::ResolvedUser) | USER |
+/// | `Id<ChannelMarker>`, [`ResolvedChannel`](crate::ui::ResolvedChannel) | CHANNEL |
+/// | `Id<RoleMarker>`, [`ResolvedRole`](crate::ui::ResolvedRole) | ROLE |
+/// | `Id<GenericMarker>`, [`Mentionable`](crate::ui::Mentionable) | MENTIONABLE |
+/// | `Id<AttachmentMarker>`, [`ResolvedAttachment`](crate::ui::ResolvedAttachment) | ATTACHMENT |
+///
+/// Rules that do not depend on the field type are compile errors at
+/// expansion, all at once (CMD-01..04, CMD-06, CMD-13, OPT-01, OPT-13
+/// entries). Rules that do are free `const _` items over the field's
+/// [`CommandOption::KIND`]: they fail as `error[E0080]: evaluation
+/// panicked: [RULE-ID] …` (OPT-03..08, OPT-10, OPT-11, OPT-13 misuse).
+///
+/// A missing description does not compile:
+///
+/// ```compile_fail
+/// use noctis::prelude::*;
+///
+/// #[derive(Options)]
+/// struct O {
+///     days: i64, // [CMD-04]
+/// }
+/// ```
+pub use noctis_macros::Options;
 
 pub mod observe {
     //! The observability contract: the metric catalog ([`METRICS`]) and
@@ -373,6 +473,10 @@ pub mod observe {
 /// A path (no group) takes `(ctx: CommandCtx)`. A pattern with a group
 /// generates `enum <Fn>Path` (the fn name in `UpperCamelCase` plus `Path`,
 /// with the fn's visibility) and takes `(ctx: CommandCtx, path: <Fn>Path)`.
+/// Either form may take a trailing options struct, `options: O` with `O:
+/// Options` (see [`derive(Options)`](derive@Options)); the struct is decoded
+/// and validated before the handler runs, and
+/// [`CommandHandler::options`] lists its declarations.
 /// Its variants concatenate the chosen alternatives in `UpperCamelCase`
 /// (words split on `-` and `_`; `Bare` when every group is absent; `_` before
 /// a leading digit; `Self_` for `Self`); two equal names are a compile error.
@@ -765,17 +869,21 @@ pub mod prelude {
     //!   and [`HandlerResult`]: typed gateway Event Handlers grouped in
     //!   Modules.
     //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands.
+    //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
+    //!   a Command's typed options; [`CommandOption`] (the field types) and
+    //!   [`MessageKey`] (what option validators return).
     //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
-        App, AppBuilder, CommandCtx, ErrorOrigin, ErrorSink, HandlerError, HandlerResult, Module,
-        State,
+        App, AppBuilder, CommandCtx, CommandOption, ErrorOrigin, ErrorSink, HandlerError,
+        HandlerResult, Module, Options, State,
     };
-    pub use noctis_macros::{Choices, Modal, Payload, PayloadEnum, Route};
+    pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
     pub use noctis_macros::{command, event};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
+    pub use noctis_rules::MessageKey;
     pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};
 }
 
@@ -784,6 +892,7 @@ pub mod prelude {
 pub mod __private {
     pub use noctis_codec as codec;
     pub use noctis_core as core;
+    pub use noctis_rules as rules;
     pub use noctis_ui as ui;
 }
 
@@ -1109,7 +1218,15 @@ pub mod ui {
     //!   String Select 1-25 ([`StringSelectOptions`]).
     //! - `#[derive(Choices)]` on a unit enum: `#[choice("Label")]` or
     //!   `#[choice("Label", value = "v", description = "d")]` per variant (the
-    //!   value defaults to the variant name); texts 1-100 (MOD-07).
+    //!   value defaults to the variant name); labels and values 1-100,
+    //!   reported as OPT-09 (the same limit as MOD-07 and CV2-09), and
+    //!   descriptions at most 100 (MOD-07). The derive also implements
+    //!   [`CommandOption`](crate::CommandOption), so the enum is a STRING
+    //!   command option with these choices.
+    //! - [`ResolvedUser::from_resolved`], [`ResolvedRole::from_resolved`],
+    //!   [`ResolvedChannel::from_resolved`], [`Mentionable::from_resolved`]
+    //!   and [`ResolvedAttachment::from_resolved`] look an id up in an
+    //!   interaction's resolved data.
     //! - Decoding ([`ModalSubmission::from_slice`], then
     //!   [`ModalForm::from_submission`]) reads Label-wrapped and legacy
     //!   Action-Row-wrapped inputs, including Radio Groups, Checkbox Groups

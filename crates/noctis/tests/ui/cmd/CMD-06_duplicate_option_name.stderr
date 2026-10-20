@@ -1,0 +1,6 @@
+error: [CMD-06] a: limit unique option names, actual `a`
+         = note: declared at positions 0, 1
+ --> tests/ui/cmd/CMD-06_duplicate_option_name.rs:8:5
+  |
+8 |     b: i64,
+  |     ^

@@ -1,0 +1,58 @@
+error[E0277]: [OPT-02] `u8` is not a command option type
+ --> tests/ui/opt/OPT-02_unsupported_type.rs:6:8
+  |
+6 |     a: u8,
+  |        ^^ not a command option type
+  |
+  = help: the trait `noctis::CommandOption` is not implemented for `u8`
+  = note: option fields are String, i64, f64, bool, Id<UserMarker>, Id<ChannelMarker>, Id<RoleMarker>, Id<GenericMarker>, Id<AttachmentMarker>, ResolvedUser, ResolvedChannel, ResolvedRole, Mentionable, ResolvedAttachment or a #[derive(Choices)] enum; wrap optional ones in Option<T>
+help: the following other types implement trait `noctis::CommandOption`
+ --> $WORKSPACE/crates/noctis-core/src/options.rs
+  |
+  |           impl CommandOption for $ty {
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |           |
+  |           `f64`
+  |           `i64`
+...
+  | / plain_option! {
+  | |     String => String, String(v) => Ok(v.clone());
+  | |     i64 => Integer, Integer(v) => Ok(*v);
+  | |     f64 => Number, Number(v) => Ok(*v);
+... |
+  | |     Id<AttachmentMarker> => Attachment, Attachment(v) => Ok(*v);
+  | | }
+  | |_- in this macro invocation
+  = note: this error originates in the macro `plain_option` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [OPT-02] `u8` is not a command option type
+ --> tests/ui/opt/OPT-02_unsupported_type.rs:6:8
+  |
+6 |     a: u8,
+  |        ^^ not a command option type
+  |
+  = help: the trait `noctis::CommandOption` is not implemented for `u8`
+  = note: option fields are String, i64, f64, bool, Id<UserMarker>, Id<ChannelMarker>, Id<RoleMarker>, Id<GenericMarker>, Id<AttachmentMarker>, ResolvedUser, ResolvedChannel, ResolvedRole, Mentionable, ResolvedAttachment or a #[derive(Choices)] enum; wrap optional ones in Option<T>
+help: the following other types implement trait `noctis::CommandOption`
+ --> $WORKSPACE/crates/noctis-core/src/options.rs
+  |
+  |           impl CommandOption for $ty {
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |           |
+  |           `f64`
+  |           `i64`
+...
+  | / plain_option! {
+  | |     String => String, String(v) => Ok(v.clone());
+  | |     i64 => Integer, Integer(v) => Ok(*v);
+  | |     f64 => Number, Number(v) => Ok(*v);
+... |
+  | |     Id<AttachmentMarker> => Attachment, Attachment(v) => Ok(*v);
+  | | }
+  | |_- in this macro invocation
+note: required by a bound in `noctis::__private::noctis_core::options::__options::required`
+ --> $WORKSPACE/crates/noctis-core/src/options.rs
+  |
+  |     pub fn required<T: CommandOption>(
+  |                        ^^^^^^^^^^^^^ required by this bound in `required`
+  = note: this error originates in the macro `plain_option` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -5,11 +5,11 @@
 //!
 //! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
 //! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
-//! `components!`, the `Modal` and `Choices` derives, and the `#[event]` and
-//! `#[command]` attributes.
+//! `components!`, the `Modal`, `Choices` and `Options` derives, and the
+//! `#[event]` and `#[command]` attributes.
 //!
 //! Generated code names runtime items only through
-//! `::noctis::__private::{codec, ui, core}` and std items through `::core`/`::std`
+//! `::noctis::__private::{codec, ui, core, rules}` and std items through `::core`/`::std`
 //! (AD-2). Errors are `[RULE-ID] what is wrong` plus a `= help:` line (or a
 //! `noctis_rules::Violation`'s `Display`), spanned on the offending token.
 
@@ -23,6 +23,7 @@ mod components;
 mod event;
 mod literal;
 mod modal;
+mod options;
 mod payload;
 mod payload_enum;
 mod route;
@@ -89,9 +90,22 @@ pub fn derive_modal(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Derives `Choices` for an enum of unit variants, each with
+/// Derives `Options` for a struct with named fields: each field one
+/// chat-input command option, its `#[option(..)]` literals checked at
+/// expansion with `noctis_rules::command::validate_options` (CMD-01..04,
+/// CMD-06, CMD-13, OPT-01, OPT-03..11, OPT-13); see `noctis::Options`.
+#[proc_macro_derive(Options, attributes(option))]
+pub fn derive_options(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    options::expand(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives `Choices` and `CommandOption` (a STRING option with choices) for
+/// an enum of unit variants, each with
 /// `#[choice("Label", value = "v", description = "d")]`, checked at
-/// expansion (MOD-07).
+/// expansion (OPT-09 for labels and values, MOD-07 for descriptions).
 #[proc_macro_derive(Choices, attributes(choice))]
 pub fn derive_choices(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

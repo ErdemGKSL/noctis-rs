@@ -47,6 +47,17 @@
 //! fails with [`UnknownCommandPath`]. The handler receives a [`CommandCtx`].
 //! The Registry and dispatch of Commands arrive with the Command pipeline.
 //!
+//! # Options
+//!
+//! A handler may take an options struct as its last parameter: a type
+//! implementing [`Options`] (written with `#[derive(Options)]` in `noctis`),
+//! whose fields implement [`CommandOption`]. A call decodes the
+//! interaction into a [`CommandInput`], builds the struct from its leaf
+//! options, runs the field validators, and only then runs the handler. A
+//! missing, mistyped or out-of-range value is an [`OptionError`] and a
+//! failed validator an [`InvalidOption`] carrying its `MessageKey`; neither
+//! panics, and the handler does not run.
+//!
 //! # Discord HTTP
 //!
 //! Every request of the App's one HTTP client passes a loopback edge that
@@ -96,6 +107,7 @@ mod handler;
 mod lifecycle;
 mod module;
 pub mod observe;
+mod options;
 mod plugin;
 mod ports;
 mod proxy;
@@ -120,6 +132,9 @@ pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};
 pub use module::{Descriptor, Module};
+#[doc(hidden)]
+pub use options::__options;
+pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, OptionValue, Options};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use runtime::{Resource, ResourceConflict, Runtime};
@@ -146,5 +161,16 @@ pub mod __testing {
         path: &'static str,
     ) -> BoxFuture<'static, HandlerResult<()>> {
         crate::command::call_command(handler, path)
+    }
+
+    /// Decodes `json` (an interaction object) and runs `handler` for its
+    /// Command Path: an `OptionError` for bad JSON, an `UnknownCommandPath`
+    /// for a path the handler does not declare, else the options pipeline
+    /// (decode, validators, handler).
+    pub fn call_command_json(
+        handler: &CommandHandler,
+        json: &[u8],
+    ) -> BoxFuture<'static, HandlerResult<()>> {
+        crate::command::call_command_json(handler, json)
     }
 }

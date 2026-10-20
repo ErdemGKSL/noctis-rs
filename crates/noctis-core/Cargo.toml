@@ -19,6 +19,8 @@ hyper-util = { workspace = true, features = ["tokio"] }
 metrics.workspace = true
 noctis-gateway.workspace = true
 noctis-ports.workspace = true
+noctis-rules.workspace = true
+noctis-ui.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true
 serde_json.workspace = true

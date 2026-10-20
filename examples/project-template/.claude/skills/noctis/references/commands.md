@@ -18,9 +18,13 @@ tells the kind: `Command` (1 word), `Subcommand` (2), `GroupSubcommand` (3), `No
 `.words()` gives 1/2/3. Subcommand and group nodes come only from paths: nothing sets
 `required` on them (OPT-14).
 
-The handler forms that work now: a path takes `(ctx: CommandCtx)`, a pattern with a group
-takes `(ctx: CommandCtx, path: <Fn>Path)` (§2); both return `HandlerResult<()>`. Doc
-comments stay rustdoc and never become the description.
+The handler forms that work now: a path takes `(ctx: CommandCtx)` or `(ctx: CommandCtx,
+options: O)`, a pattern with a group takes `(ctx: CommandCtx, path: <Fn>Path)` or `(ctx:
+CommandCtx, path: <Fn>Path, options: O)` (§2), with `O` a `#[derive(Options)]` struct (§3);
+all return `HandlerResult<()>`. Any other parameter list is a compile error (`` `#[command("ping")]`
+handlers take `(ctx: CommandCtx)` or `(ctx: CommandCtx, options: O)` with `O: Options` ``);
+a non-Options type as the last parameter is E0277 `` `String` is not an options struct ``.
+Doc comments stay rustdoc and never become the description.
 
 ```rust
 use noctis::prelude::*;
@@ -33,13 +37,14 @@ pub async fn setup_start(ctx: CommandCtx) -> HandlerResult<()> {
 }
 ```
 
-[planned] Options structs and extractors as further parameters (Story 6.2), returning a
-View (`HandlerResult<T>` where `T: IntoResponse`) and the Responder (Story 6.5).
+[planned] Extractors as further parameters, returning a View (`HandlerResult<T>` where
+`T: IntoResponse`) and the Responder (Story 6.5).
 
 Register it: `Module::new("setup").add(setup_start())` (the macro turns the fn into a
 descriptor constructor `fn setup_start() -> CommandHandler`; call it with `()`).
 `CommandHandler` has `name()` (`module_path::fn`), `pattern()` (the literal),
-`description()` and `paths()` (every Command Path, expansion order).
+`description()`, `paths()` (every Command Path, expansion order) and `options()` (the
+options struct's `OPTIONS`, empty without one).
 
 Compile-time checks on the literal (each error names its rule):
 
@@ -228,53 +233,133 @@ Each `Violation` prints ``[CMD-11] config set: limit …, actual `set` ``, then 
 
 ## 3. Options
 
+A handler's options are one struct with `#[derive(Options)]`, taken as the handler's last
+parameter. Each field is one option, in declaration order (never reordered).
+
 ```rust
+use noctis::prelude::*; // Options (trait + derive), Choices, CommandOption, MessageKey
+use noctis::twilight::model::id::{Id, marker::ChannelMarker};
+use noctis::ui::{ResolvedAttachment, ResolvedUser};
+
 #[derive(Options, Debug)]
 pub struct WarnOptions {
-    /// Doc comments are rustdoc only. Descriptions: `#[option(description = "…")]`, or
-    /// with the `i18n` feature cmd.<path>.opt.<name>.description.
-    pub member: ResolvedUser,                       // required (not Option)
-    #[option(min = 1, max = 30)]
-    pub days: Option<i64>,                          // optional
-    #[option(min_length = 3, max_length = 200)]
+    /// Rustdoc only: never the option's description.
+    #[option(description = "Who to warn")]
+    pub member: ResolvedUser,                                  // required (not Option)
+    #[option(description = "How bad it is")]
+    pub severity: Severity,                                    // STRING with choices
+    #[option(description = "How long, in days", min_value = 1, max_value = 30, validate = positive)]
+    pub days: Option<i64>,                                     // optional
+    #[option(description = "Why", min_length = 3, max_length = 200)]
     pub reason: Option<String>,
-    #[option(channel_types(GuildText, GuildAnnouncement))]
-    pub log_to: Option<ResolvedChannel>,
-    pub severity: Option<Severity>,                 // choices from derive(Choices)
-    #[option(autocomplete = rule_suggest)]
+    #[option(description = "Where to log", channel_types = [GuildText, GuildAnnouncement])]
+    pub log_to: Option<Id<ChannelMarker>>,
+    #[option(description = "Which rule", autocomplete = rule_suggest)]
     pub rule: Option<String>,
-    #[option(file_types = ["image", ".pdf"])]
+    #[option(description = "Evidence", file_types = ["image", ".pdf"])]
     pub evidence: Option<ResolvedAttachment>,
-    #[option(rename = "silent", validate = no_self_warn)]
+    #[option(description = "Do not notify", rename = "silent")]
     pub quiet: Option<bool>,
 }
 
-#[command("mod warn", permissions = MODERATE_MEMBERS)]
-async fn warn(ctx: CommandCtx, opts: WarnOptions) -> HandlerResult<WarnView> { … }
+fn positive(days: &i64, _ctx: &CommandCtx) -> Result<(), MessageKey> {
+    if *days > 0 { Ok(()) } else { Err(MessageKey::new("mod.warn.days.positive")) }
+}
+
+#[command("mod warn", description = "Warn a member")]
+async fn warn(ctx: CommandCtx, opts: WarnOptions) -> HandlerResult<()> { … }
 ```
 
-Field type → option type (OPT-02); unsupported types don't implement `CommandOption`:
+### `#[option(..)]` arguments
+
+Each at most once (`` duplicate `#[option]` argument `description` ``), one `#[option]` per
+field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``).
+
+| Argument | Takes | Option types | Rules |
+| --- | --- | --- | --- |
+| `description = "…"` | string literal, 1–100 chars (UTF-16 counted); **required**: a field without one is CMD-04 with `` help: add `#[option(description = "…")]` `` | all | CMD-04 |
+| `rename = "…"` | string literal; the option name (default: field name, `r#` stripped) | all | CMD-01..03, CMD-06 |
+| `min_value = n`, `max_value = n` | unsuffixed integer or float literal, optionally negated (`-5`, `1.5`); an integer outside `i64` fails at expansion | INTEGER (`i64`, integers only, ±(2^53−1)), NUMBER (`f64`, ±2^53) | OPT-03..05 |
+| `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
+| `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (`GuildText`, `Private`, `GuildVoice`, `Group`, `GuildCategory`, `GuildAnnouncement`, `AnnouncementThread`, `PublicThread`, `PrivateThread`, `GuildStageVoice`, `GuildDirectory`, `GuildForum`, `GuildMedia`; a path's last segment counts, `ChannelType::GuildText` works); at least one | CHANNEL | OPT-07 |
+| `file_types = ["image", ".pdf"]` | string literals: `image`, `video`, `audio` or `.` + ASCII letters/digits; ≤ 10 | ATTACHMENT | OPT-13 |
+| `autocomplete = path` | an existing fn (E0425 otherwise); sets the autocomplete flag only. The autocomplete handler itself is wired in Story 6.7 [planned] | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
+| `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>` (`T` = the field type without `Option`; E0308 on another signature); sync, called only when the value is present, in field order, after the whole struct decoded | all | — |
+
+### Field types (`CommandOption`, OPT-02)
 
 | Rust type | Discord option |
 | --- | --- |
 | `String` | STRING (3) |
-| `i64` (also `i32`, `u32`… with implied ranges) | INTEGER (4), range ±(2^53−1) (OPT-03) |
-| `f64` | NUMBER (10) (OPT-04) |
+| `i64` | INTEGER (4) (no other integer types) |
+| `f64` | NUMBER (10) |
 | `bool` | BOOLEAN (5) |
-| `ResolvedUser { user, member: Option<PartialMember> }` / `Id<UserMarker>` | USER (6) |
-| `ResolvedChannel` / `Id<ChannelMarker>` | CHANNEL (7) |
-| `ResolvedRole` / `Id<RoleMarker>` | ROLE (8) |
-| `Mentionable` (user or role) | MENTIONABLE (9) |
-| `ResolvedAttachment` | ATTACHMENT (11) |
-| enum with `derive(Choices)` | STRING/INTEGER with choices |
-| `Option<T>` | the same, not required |
+| `noctis::ui::ResolvedUser { user, member: Option<InteractionMember> }` / `Id<UserMarker>` | USER (6) |
+| `noctis::ui::ResolvedChannel` / `Id<ChannelMarker>` | CHANNEL (7) |
+| `noctis::ui::ResolvedRole` / `Id<RoleMarker>` | ROLE (8) |
+| `noctis::ui::Mentionable` (`User(ResolvedUser)` or `Role(ResolvedRole)`; user wins) / `Id<GenericMarker>` | MENTIONABLE (9) |
+| `noctis::ui::ResolvedAttachment` / `Id<AttachmentMarker>` | ATTACHMENT (11) |
+| enum with `derive(Choices)` | STRING with choices |
+| `Option<T>` (last path segment `Option`, one argument) | the same, not required |
 
-Compile-time rules: required fields before optional ones — the derive never reorders
-(OPT-01); `min`/`max` only on numbers, `min ≤ max` (OPT-05); `min_length` 0–6000,
-`max_length` 1–6000 only on strings (OPT-06); `channel_types` only on channels (OPT-07);
-≤ 25 options per level (CMD-13); unique names (CMD-06); `file_types` ≤ 10 entries,
-attachment only (OPT-13); choices **or** autocomplete, never both (OPT-10); autocomplete
-only on string/integer/number (OPT-11).
+Any other type (`u8`, `Vec<String>`, `Option<Option<i64>>`, `&str`) is E0277
+`` [OPT-02] `u8` is not a command option type `` with a note listing these. `Id` types decode
+from the id alone; `Resolved*` / `Mentionable` look the id up in the interaction's resolved
+data (`ResolvedUser::from_resolved(&resolved, id)` etc. do the same by hand).
+
+### Compile errors
+
+All expansion errors are reported at once. Rules that do not depend on the field type are
+normal errors spanned on the literal or field: CMD-04 (description), CMD-01..03 (name; an
+empty `rename = ""` reports path `options[i]`), CMD-13 (> 25 fields, on the struct),
+OPT-01 (a required field after an optional one, on the field, ``note: after optional `a` ``),
+CMD-06 (duplicate names, on the later field, `note: declared at positions 0, 1`), OPT-13
+entries and count. Rules that depend on it are `const _` items over
+`<T as CommandOption>::KIND` and fail as:
+
+```text
+error[E0080]: evaluation panicked: [OPT-05] days.min_value: limit min_value / max_value only on INTEGER or NUMBER options, actual `STRING`
+```
+
+These are OPT-03/04 (bound ranges), OPT-05 (misuse, a float bound on `i64`, `min_value ≤
+max_value`), OPT-06, OPT-07, OPT-11, OPT-13 misuse, OPT-08 (a Choices type with more than 25
+variants: `` [OPT-08] p.choices: limit at most 25, actual `more than 25` ``, note `` `Big` has
+more variants than a command option takes ``) and OPT-10 (Choices plus `autocomplete`).
+Several problems on one field each get their own error.
+
+### Runtime decoding
+
+`noctis::CommandInput::from_json(&[u8])` walks the APPLICATION_COMMAND interaction:
+`path()` (`"mod warn"`, subcommands and groups followed), `get(name) -> Option<&OptionValue>`
+(the leaf options), `resolved()`. `OptionValue` is `#[non_exhaustive]`: `String`, `Integer(i64)`,
+`Number(f64)`, `Boolean`, `User(Id)`, `Channel(Id)`, `Role(Id)`, `Mentionable(Id<GenericMarker>)`,
+`Attachment(Id)`; `.kind() -> OptionType`. Unknown options and `focused` are ignored.
+
+The struct is decoded first (field order; first error wins), then the validators run, then
+the handler. Decoding never panics; every failure is a `HandlerError` wrapping a typed
+error (downcast with `err.as_error().downcast_ref::<OptionError>()`), and the handler does not run:
+
+| `noctis::OptionError` (`#[non_exhaustive]`) | `Display` |
+| --- | --- |
+| `Malformed { reason }` | `malformed command interaction: <reason>` (bad JSON, numeric snowflakes, …) |
+| `NotSlashCommand { interaction_type, command_type }` | `not a slash command: interaction type 3, command type 1` |
+| `Duplicate { option }` | ``option `days` is sent twice`` |
+| `Missing { option }` | ``required option `member` is missing`` |
+| `WrongType { option, expected, found }` | ``[OPT-02] option `days`: expected INTEGER, found STRING`` |
+| `OutOfRange { option, value }` | ``[OPT-03] option `days`: 9223372036854775808 is not an i64`` |
+| `Unresolved { option, id }` | ``option `member`: id 42 is not in the resolved data`` |
+| `UnknownChoice { option, value }` | ``option `severity`: `zzz` is not one of its choices`` |
+
+A failing validator gives `noctis::InvalidOption` (`option() -> &'static str`, `key() ->
+MessageKey`; ``option `days` failed validation: mod.warn.days.positive``). Sending its key as a
+localized ephemeral notice is Story 6.8 [planned]; today the error reaches the Error Sink.
+Discord enforces declared bounds itself; Noctis does not re-check `min_value`, `max_length`,
+`channel_types` at runtime (use a validator for custom checks).
+
+Traits: `Options` (`const OPTIONS: &[OptionDecl]`, `from_input(&CommandInput)`,
+`validate(&self, &CommandCtx)`), `CommandOption` (`const KIND: OptionType`, `const CHOICES:
+&[Choice]`, `decode`). Write them with the derives; `OPTIONS[i].description.default` is the
+literal.
 
 ### Rule functions (options)
 
@@ -311,6 +396,7 @@ validate_tree(&[decl], &limits).map_err(report)?;
 | `measure_options(&[OptionDecl], &Limits) -> usize` | the array's CMD-05 share (saturating): per option the longest of name and `name_localized` + longest description variant + per choice (longest name variant + value length: `discord_len` of a string, the `Display` length of a number, `2.0` → `2` = 1) |
 | `OptionDecl<'a>` | `#[non_exhaustive]`, pub fields `name`, `name_localized: &[&str]` (only measured), `description: LocalizedText`, `kind: OptionType`, `required`, `min_value` / `max_value: Option<NumericValue>`, `min_length` / `max_length: Option<usize>`, `channel_types: &[u8]` (raw Discord channel type values), `choices: &[Choice]`, `autocomplete`, `file_types: &[&str]`; empty slices mean unset. `OptionDecl::new(name, OptionType::String, "description")` (optional, everything unset), by-value `const` setters `.name_localized(&[…])`, `.description_localized(&[…])`, `.required(bool)`, `.min_value(v)`, `.max_value(v)`, `.min_length(n)`, `.max_length(n)`, `.channel_types(&[0, 5])`, `.choices(&[…])`, `.autocomplete(bool)`, `.file_types(&["image", ".pdf"])` |
 | `OptionType` | `String`, `Integer`, `Boolean`, `User`, `Channel`, `Role`, `Mentionable`, `Number`, `Attachment` (OPT-02; no subcommand types, OPT-14); `OptionType::ALL`; `.value()` → 3..=11; `.name()` → `"STRING"`, … |
+| `CHANNEL_TYPES` / `channel_type(name) -> Option<u8>` | the 13 `(name, value)` pairs `channel_types = [..]` accepts (`("GuildText", 0)` … `("GuildMedia", 16)`) and an exact-name lookup (`channel_type("GuildForum") == Some(15)`) |
 | `NumericValue` | `Int(i64)` or `Float(f64)`; `Display` (`1.0` → `1`, NaN → `NaN`, ∞ → `inf`) |
 | `ChoiceValue<'a>` | `Str(&str)`, `Int(i64)` or `Float(f64)` |
 | `Choice<'a>` | `#[non_exhaustive]` `{ name: LocalizedText, value: ChoiceValue }`; `Choice::new("Low", ChoiceValue::Str("low"))`, `.name_localized(&[…])` |
@@ -339,25 +425,24 @@ name, first-occurrence order (`= note: declared at positions 0, 2`). Orderings r
 both bounds passed their own checks. Localized option names are not validated here
 (LOC-02, planned).
 
-Runtime: a missing required option or wrong type is a typed error, never a panic. A
-failing `validate = fn` (`fn(&T, &CommandCtx) -> Result<(), MessageKey>`) sends a
-localized ephemeral message and the handler doesn't run. File-type filters are
-extension-only; check `content_type` yourself (FR-19).
-
 ### Choices
 
 ```rust
 #[derive(Choices, Debug, Clone, Copy)]
 pub enum Severity {
-    #[choice("low")]  Low,
-    #[choice("high")] High,
+    #[choice("Low")]  Low,                        // value "Low" (the variant name)
+    #[choice("High", value = "hi")] High,
 }
 ```
 
-One variant = one choice; ≤ 25 (OPT-08); value ≤ 100 chars (OPT-09). Choice names come
-from `cmd.<path>.opt.<opt>.choice.<value>`; enums used in modals/selects use
-`#[choices(key = "prefix")]` → `<prefix>.<value>` and expose `fn label(&self, Locale) ->
-String`. Integer choices: `#[choice(1)]` with `#[repr(i64)]`-like values. [planned]
+One derive serves modals and commands: it implements `Choices` and `CommandOption` (KIND
+STRING, `CHOICES` = `[("Low", "Low"), ("High", "hi")]`, decoding by value; an unknown value is
+`OptionError::UnknownChoice`). Labels and values are 1–100 chars, reported as `` [OPT-09] High:
+limit at most 100, actual 101 `` with notes `in the choice value` and `the same limit applies
+to modal and select options (MOD-07, CV2-09)`; an empty `value = ""` and descriptions stay
+MOD-07. The enum may have more than 25 variants (modal selects), but as an option field it
+fails OPT-08. Command choices are STRING only: integer/number choices are [planned].
+[planned] Localized choice names from `cmd.<path>.opt.<opt>.choice.<value>` (Story 11.4).
 
 ## 4. Autocomplete
 

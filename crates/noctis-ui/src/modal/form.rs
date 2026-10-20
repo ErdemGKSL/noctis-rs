@@ -325,19 +325,12 @@ fn user(s: &ModalSubmission, key: &str, id: u64) -> Result<Option<ResolvedUser>,
     let Some(id) = twilight_model::id::Id::new_checked(id) else {
         return Err(unresolved(key, id));
     };
-    let r = s.resolved();
-    Ok(r.users.get(&id).map(|user| ResolvedUser {
-        user: user.clone(),
-        member: r.members.get(&id).cloned(),
-    }))
+    Ok(ResolvedUser::from_resolved(s.resolved(), id))
 }
 
 fn role(s: &ModalSubmission, id: u64) -> Option<ResolvedRole> {
     let id = twilight_model::id::Id::new_checked(id)?;
-    s.resolved()
-        .roles
-        .get(&id)
-        .map(|role| ResolvedRole { role: role.clone() })
+    ResolvedRole::from_resolved(s.resolved(), id)
 }
 
 fn user_items(s: &ModalSubmission, key: &str) -> Result<Option<Vec<ResolvedUser>>, SubmitError> {
@@ -401,10 +394,7 @@ fn channel_items(
     ids.map(|ids| {
         ids.iter()
             .map(|id| {
-                s.resolved()
-                    .channels
-                    .get(id)
-                    .map(|c| ResolvedChannel { channel: c.clone() })
+                ResolvedChannel::from_resolved(s.resolved(), *id)
                     .ok_or_else(|| unresolved(key, id.get()))
             })
             .collect()
@@ -423,12 +413,7 @@ fn attachment_items(
     ids.map(|ids| {
         ids.iter()
             .map(|id| {
-                s.resolved()
-                    .attachments
-                    .get(id)
-                    .map(|a| ResolvedAttachment {
-                        attachment: a.clone(),
-                    })
+                ResolvedAttachment::from_resolved(s.resolved(), *id)
                     .ok_or_else(|| unresolved(key, id.get()))
             })
             .collect()

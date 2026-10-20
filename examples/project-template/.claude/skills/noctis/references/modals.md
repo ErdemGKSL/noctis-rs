@@ -104,9 +104,16 @@ pub enum Topic {
 
 - A non-generic enum of **unit variants**; each takes `#[choice("Label")]` or
   `#[choice("Label", value = "v", description = "d")]`. Label and value 1–100,
-  description ≤ 100 (MOD-07), checked at `cargo check`. `value` defaults to the variant
-  name (`r#` stripped); two variants with one value are an error (`duplicate choice value`).
-  Zero variants, a variant with fields or generics are `[MOD-07]` errors.
+  description ≤ 100, checked at `cargo check`. A long label or value is reported as
+  OPT-09 (the same limit; slash-command choices share the derive): `` [OPT-09] Rust: limit
+  between 1 and 100, actual 101 `` with `= note: in the choice name` (or `in the choice
+  value`, `limit at most 100`) and `= note: the same limit applies to modal and select
+  options (MOD-07, CV2-09)`. An empty `value = ""` and a long description stay
+  `[MOD-07]`. `value` defaults to the variant name (`r#` stripped); two variants with one
+  value are an error (`duplicate choice value`). Zero variants, a variant with fields or
+  generics are `[MOD-07]` errors.
+- The derive also implements `noctis::CommandOption`, so the same enum is a STRING slash
+  command option with choices (`commands.md` §3).
 - It implements `noctis::ui::Choices` (also in the prelude): `Choices::ALL` (every
   variant, in order), `.label()`, `.value()`, `.description()`, `Choices::from_value(&str)
   -> Option<Self>`, and `type Count = Arity<N>` (`N` = the variant count).
@@ -202,7 +209,11 @@ submission.unknown();                                        // &[serde_json::Va
   Option<InteractionMember> }`, `ResolvedRole { role }`, `ResolvedChannel { channel:
   InteractionChannel }`, `Mentionable::{User(ResolvedUser), Role(ResolvedRole)}`,
   `ResolvedAttachment { attachment }` with `.id()`, `.filename()`, `.size()`,
-  `.content_type()`, `.url()`.
+  `.content_type()`, `.url()`. Build one from resolved data by hand with
+  `ResolvedUser::from_resolved(&resolved, id)` (member attached when present),
+  `ResolvedRole::from_resolved`, `ResolvedChannel::from_resolved`,
+  `ResolvedAttachment::from_resolved` and `Mentionable::from_resolved(&resolved,
+  Id<GenericMarker>)` (user first, then role); each returns `None` when the id is missing.
 - Submitted values are untrusted (MOD-09): re-validate ranges and authorization.
 - If the modal was opened from a message component, returning a View **updates that
   message** (type 7); from a command, it sends a new message. `ModalResponder` has no
