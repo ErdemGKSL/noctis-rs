@@ -2,7 +2,7 @@
 title: 'Story 5.4: Automatic sharding with bucketed identify'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '19b7c81b4ea05e8ef99c14c540738f0b90652628'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -168,6 +168,34 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 24 findings — high 0, medium 0, low 9, false 15, maybe-false 0
+- findings:
+  - `[low]` `[reject]` Startup can hang forever when a shard never reaches READY (unreachable gateway, repeated non-fatal closes); no startup timeout — real: `await_startup` has no bound and twilight reconnects indefinitely, but each failure is logged at `warn` by `drive`, retrying through a network outage at boot is defensible, a bad `gateway_url` is rare, and the fix needs a timeout plus a new public `StartError` variant.
+  - `[low]` `[reject]` Fatal closes after startup end `run` with `Ok(())`, indistinguishable from a clean stop — real (`supervise` then `Ok(())`), but out of scope by intent: epics assign post-startup fatal-close reporting to Story 5.8 ("Graceful shutdown and fatal-close reporting") and the hook to 13.5; `run`'s return contract is settled there.
+  - `[low]` `[reject]` One shard ending after startup goes unnoticed except for an `error` log — out of scope by intent: shard-state hooks and metrics are Story 13.5 / 5.7 / 5.8 per epics.
+  - `[false]` `[reject]` Out-of-range `/gateway/bot` body maps to `GatewayInfo{None}` with a network-oriented message — the spec mandates `GatewayInfo{status: None}` for an undecodable body (Matrix 25), the message points at the HTTP proxy (the only realistic source of such a body), and the decode error is logged at `error` with its `Display`.
+  - `[false]` `[reject]` Lease dropped before the identify is sent — `noctis_ports::Lease` is a plain value with no `Drop`; the port contract (identify.rs) defines the window as "at most one Lease per bucket per 5 s" at grant time, not at drop.
+  - `[false]` `[reject]` GW-03 Enforcement cell still says "App-build" — the doc's convention treats the startup `/gateway/bot` fetch as App-build (GW-01's cell reads "App-build (fetch `GET /gateway/bot` at startup)"), and the spec deliberately keeps Enforcement cells for the rules-catalog classification.
+  - `[false]` `[reject]` GW-01 row still promises "buckets in order" — that Limit cell restates Discord's rule; the Notes cell makes no ordering claim about noctis, and Discord does not reject out-of-order identifies within the 5 s per-bucket limit, which `MemoryIdentifyQueue` enforces.
+  - `[false]` `[reject]` GW-01..03 enforcement evidence missing — `xtask/src/rules_catalog/mod.rs` matches `unit` evidence by the test-name snake token; `gw_01_*` (testkit sharding.rs, gateway queue.rs), `gw_02_*` and `gw_03_*` (core sharding.rs, testkit sharding.rs) exist.
+  - `[low]` `[reject]` Very large totals allocate `vec![false; total]` and spawn `total` tasks — needs a proxy returning `remaining` ≥ a huge total (`plan` refuses with `SessionStartLimit` otherwise); not met in everyday use, and the fix is a new sanity ceiling.
+  - `[false]` `[reject]` Unbounded shard-event channel can grow — its only consumer, `App::run`, drains it until close (`await_startup` then `supervise`); `noctis-gateway` is not re-exported through the facade, and events are tiny and paced by twilight's reconnect backoff.
+  - `[false]` `[reject]` GW-01 E2E timing assertions flaky / too loose — the 2 s first-round window is ample for 16 loopback handshakes, and a serialized-bucket regression fails exactly that check; the second-round ≥ 4.5 s check pins the 5 s window.
+  - `[false]` `[reject]` No test for re-READY during startup or `Ended` after READY — `startup_waits_for_every_ready_and_maps_closed_channel` sends duplicate `Ready`s and checks dedup; failing startup on any `Ended` before all shards are ready is the spec's protocol (Boundaries, run step 5).
+  - `[false]` `[reject]` No test that a setter overrides `NOCTIS_SHARD_TOTAL` — `from_lookup` and `shard_total(..)` write the same `AppBuilder.shard_total` field, so the setter cannot fail to win; `0` rejected at build is documented in the skill and tested (`from_env_shard_total_zero_fails_at_build`).
+  - `[low]` `[reject]` Permanent port error (bot-set `MemoryIdentifyQueue` smaller than `max_concurrency`) retries forever and startup hangs — real, but only for an explicit mis-sized port; each retry logs the `InvalidValue` at `warn`, and a fatal path needs a new error channel from the queue to core.
+  - `[low]` `[reject]` A panicking `IdentifyQueue::acquire` drops `tx` and twilight re-enqueues in a hot loop — requires a buggy port (the shipped one never panics); the fix (`catch_unwind` plus backoff) adds complexity.
+  - `[low]` `[reject]` `await_startup` has no startup timeout (edge) — same defect as the first row; rejected for the same reasons.
+  - `[false]` `[reject]` `/gateway/bot`'s `url` is dropped — the spec's Never list forbids using it deliberately; shards use `gateway_url` or twilight's default Discord gateway.
+  - `[low]` `[patch]` (gap) Shard-task logs that must never carry the payload are untested — pre-verified; patch: add `crates/noctis-testkit/tests/shard_log_redaction.rs` with a capturing subscriber that sends an undeserializable frame and an unparsable `INTERACTION_CREATE` carrying a sentinel and asserts the warnings appear without it.
+  - `[low]` `[patch]` (gap) `InboundKind::Interaction`'s payload-free `Debug` is unasserted — pre-verified; patch: assert `!format!("{inbound:?}").contains("interaction-token")` in `interaction_keeps_exact_raw_bytes`.
+  - `[false]` `[reject]` (intent D1) GW-03 uses ⌈recommended×2/5⌉ and fails at start, not a guild count at build — the spec settled it deliberately: no guild count exists before READY, the epic AC allows "`build`/start", and only `shard_total(0)` is knowable at build.
+  - `[false]` `[reject]` (intent D2) After startup a 4014 ends `run` with `Ok(())` — the epic AC is scoped to "when startup runs"; post-startup fatal-close reporting belongs to Stories 5.8 and 13.5.
+  - `[false]` `[reject]` (intent D3) `Inbound` production is checked at the `Gateway` surface, not via `App::run` — lanes are Story 5.5; the AC concerns shard tasks, which Matrix 30 exercises directly.
+  - `[false]` `[reject]` (intent D4) GW-01 "buckets in order" and timing checked loosely — per-bucket FIFO and the 5 s window hold; shard-id ordering is a recorded decision and not a Discord-enforced limit; the timing test covers both readings AC1-(i)/(ii).
+  - `[false]` `[reject]` (intent D5) GW-05 cited but its row is unchanged — GW-05's enforcement is the handler-derived intent check at `build()` (Story 5.6); this story implements the 4014 → `DisallowedIntents` mapping (Matrix 26) and the spec keeps GW-05 pending deliberately.
+
 ## Design Notes
 
 - **Why a sink trait, not lanes:** AD-10 lanes and drop policy are Story 5.5. 5.4 fixes the shard-side contract (parse, then a non-blocking push). 5.5 implements `InboundSink` with its lanes, and in 5.4 core discards because no handler exists yet (5.6). Tests observe `Inbound` through `Gateway::start` with their own sink.
@@ -193,3 +221,23 @@ deferred: []
 - `cargo deny check`: exit 0.
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog` (GW-01..03 now covered), `-- api-snapshot` and `-- skill-check`: each exits 0. api-snapshot needs `nightly-2026-10-15` and `cargo-public-api` 0.52.0 (see AGENTS.md pitfalls).
 - `cargo tree -i aws-lc-rs`: no match. `test ! -d target/debug`: true.
+
+## Auto Run Result
+
+- **Summary:** Automatic sharding in `App::run`: fetches `GET /gateway/bot`, plans the shard total (recommended, `NOCTIS_SHARD_TOTAL` or the `shard_total(..)` setter), checks session-start limits and the GW-03 minimum (ceil(recommended*2/5)), starts shards through `noctis-gateway` with identify paced by an `IdentifyQueue` port (`MemoryIdentifyQueue`: `max_concurrency` buckets, at most one lease per bucket per 5 s), waits for every READY, maps fatal closes (4004/4010/4011/4013/4014) to typed `StartError` variants, and parses frames into payload-free `Inbound` values pushed to an `InboundSink` (core discards them until Stories 5.5 and 5.6).
+- **Files changed:**
+  - `crates/noctis-core/src/app.rs`, `app/tests.rs`: run/startup orchestration, env/setter shard total, tests.
+  - `crates/noctis-core/src/sharding.rs`: shard plan, GW-02/GW-03 checks.
+  - `crates/noctis-core/src/error.rs`, `lib.rs`, `ports.rs`: `StartError` variants, exports.
+  - `crates/noctis-gateway/src/{gateway,shard,queue,inbound,lib}.rs`: shard tasks, port-backed identify queue, `Inbound`/`InboundSink`.
+  - `crates/noctis-testkit/tests/sharding.rs`, `sharding_warning.rs`, `shard_log_redaction.rs`: E2E sharding, GW-01 timing, warning and log-redaction tests.
+  - `docs/discord-rules.md`, `xtask/rules-pending.toml`: GW-01..03 marked enforced.
+  - `xtask/public-api.txt`, `examples/project-template/**` (skill, references, `.env.example`, README): API snapshot and Usage Skill updates.
+  - `Cargo.toml`, `Cargo.lock`, crate `Cargo.toml`s: dependencies.
+- **Review findings (24: high 0, medium 0, low 9, false 15):**
+  - Patched (2, both low): a shard log-redaction test (`shard_log_redaction.rs`) and a payload-free `Debug` assertion for `InboundKind::Interaction`.
+  - Deferred: none.
+  - Rejected (22): no startup timeout (twice; retrying is logged at warn, and a fix needs a new public error); post-startup fatal close returns `Ok(())` and an unnoticed shard end (Stories 5.8, 5.7, 13.5); undecodable `/gateway/bot` maps to `GatewayInfo{None}` (as the spec requires); lease drop timing (`Lease` has no `Drop`); GW-03 Enforcement cell (follows the doc convention); GW-01 "buckets in order" wording (restates Discord's rule); missing GW evidence (tests exist); huge-total allocation (needs a hostile proxy); unbounded event channel (drained by `run`); E2E timing flakiness (windows are ample and precise); missing re-READY/`Ended` test (already covered); setter vs env precedence (same field); mis-sized port retrying forever (warn-logged, needs a new channel); panicking port hot loop (needs a buggy port); dropped `/gateway/bot` `url` (spec forbids using it); intent items D1 to D5 (settled by the spec or scoped to Stories 5.5, 5.6 and 5.8).
+- **Follow-up review recommended:** false. Patched by verdict: high 0, medium 0, low 2.
+- **Verification:** all local gates in `gates.sh` green: fmt, clippy `-D warnings`, workspace tests (release), cargo-hack each-feature, MSRV 1.91 check, cargo deny, xtask deps-check, rules-catalog, api-snapshot and skill-check. No `target/debug`. CI is paused by the maintainer.
+- **Residual risks:** startup has no timeout (an unreachable gateway or a mis-sized identify port retries forever, logged at warn); a fatal close after startup is not yet surfaced (Story 5.8); no ceiling on the shard total when a proxy returns huge values.

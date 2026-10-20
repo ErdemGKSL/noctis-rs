@@ -213,6 +213,9 @@ mod tests {
         let out = classify(text, EventTypeFlags::INTERACTION_CREATE, ShardId::ONE, at);
         assert_eq!(out.status, None);
         let inbound = out.inbound.unwrap();
+        let debug = format!("{inbound:?}");
+        assert!(!debug.contains("interaction-token"), "{debug}");
+        assert!(!debug.contains("ü🙂ü"), "{debug}");
         assert_eq!(inbound.shard, ShardId::ONE);
         assert_eq!(inbound.received_at, at);
         let InboundKind::Interaction(interaction, raw) = inbound.kind else {
