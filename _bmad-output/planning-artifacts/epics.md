@@ -2011,7 +2011,7 @@ So that forged or malformed ids never crash the bot and clicks feel instant.
 | `defer_reply(eph)` (Pending) | `deferReply` | callback type 5 (only `EPHEMERAL` flag) | a new "is thinking…" message | command, component, modal submit |
 | `update(msg)` (Pending) | `update` | callback type 7 with the full body | the **component's own message** changes at once (one request) | component; modal submit only when the modal was opened from a component message |
 | `defer_update()` (Pending) | `deferUpdate` | callback type 6, no body | nothing changes; the click stops spinning | same as `update` |
-| `show_modal(m)` (Pending, `OpensModal`) | `showModal` | callback type 9 | a modal | command, component (never modal submit, never after any ack) |
+| `show_modal(m)` (Pending, `OpensModal`) | `showModal` | callback type 9 | a modal | command, component (never modal submit, never after any ack — `reply`, `defer_reply`, `update`, `defer_update` or an auto-defer; `opens_modal` handlers have no auto-defer, and a runtime race returns `ModalUnavailable` without a request) |
 | `edit_reply(msg)` (Acked) | `editReply` | `PATCH /webhooks/{application_id}/{token}/messages/@original` | edits `@original`: the new reply after `reply`/`defer_reply`, **the component's message** after `update`/`defer_update` | after any ack |
 | `fetch_reply()` / `delete_reply()` (Acked) | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | — | after any ack |
 | `follow_up(msg, vis)` (Acked) | `followUp` | `POST /webhooks/{application_id}/{token}` | another new message, its own ephemerality | after any ack |

@@ -149,10 +149,12 @@ renames the shipped command methods (`defer` → `defer_reply`, `modal` → `sho
 | `defer_reply(eph)` | `deferReply` | type 5 | new "is thinking…" message, filled later by `edit_reply` | the new message needs > 2 s of work |
 | `update(msg)` | `update` | type 7 | edits **the clicked component's message** in one request | every button/select that re-renders its own screen (the default) |
 | `defer_update()` | `deferUpdate` | type 6 | nothing visible; stops the click spinner | the re-render needs > 2 s; then `edit_reply` |
-| `show_modal(m)` | `showModal` | type 9 | opens a modal | first response only, never from a modal submit |
+| `show_modal(m)` | `showModal` | type 9 | opens a modal | first response only: impossible after any ack, including a defer; never from a modal submit |
 | `edit_reply(msg)` | `editReply` | `PATCH …/messages/@original` | edits `@original`: the reply after `reply`/`defer_reply`, the component's message after `update`/`defer_update` | after any ack |
 | `fetch_reply()` / `delete_reply()` | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | | after any ack |
 | `follow_up(msg, vis)` | `followUp` | `POST /webhooks/{app}/{token}` | another new message | after any ack |
+
+A modal can't follow a defer, so handlers declared `opens_modal` get no auto-defer and must call `show_modal` within 3 s: open the modal first and do slow work after the submit, never before it.
 
 Equivalences: `defer_update()` + `edit_reply(msg)` ends like `update(msg)`, but takes two
 requests, so prefer `update` when the render is fast. `defer_reply(e)` + `edit_reply(msg)`
