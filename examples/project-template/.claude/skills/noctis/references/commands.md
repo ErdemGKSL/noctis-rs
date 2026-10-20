@@ -108,12 +108,51 @@ assert_eq!(handler.metadata().nsfw, None); // unset, omitted on Publish
 per-path form (`` [META-02] `permissions` applies to the base command of every path this
 handler declares; Discord keeps it only on the base command, so it has no per-path form ``
 for `permissions(set = …)`). Every leaf under one base must agree, across all Modules, or
-App build fails (META-01, META-02, CMD-07, REG-04, FR-9; see §6 "Metadata rules"; the App
-build check lands in Story 6.4). Declare them once explicitly with [planned]
-`Module::new("x").base("config", BaseMeta::new().permissions(Permissions::MANAGE_GUILD))`
-([planned] `BaseMeta`).
-Base and group descriptions come from `cmd.config.description` and `cmd.config.set.description`; if
-missing, a deterministic rule picks one and logs a warning (never registration order).
+`App::build` fails with a `BuildViolation::Command` (META-01, META-02, CMD-07, REG-04,
+FR-9; see §6). Without an explicit base declaration **unset is a value**: a leaf with
+`permissions = MANAGE_GUILD` and another without conflict. Declare a base's description and
+metadata once with `Module::base`, a subcommand group's description with `Module::group`:
+
+```rust
+use noctis::{BaseMeta, Permissions};
+
+pub fn module() -> Module {
+    Module::new("config")
+        .add(config_set())                 // "config set prefix", "config set welcome"
+        .base(
+            "config",
+            BaseMeta::new()
+                .description("Configure the bot")            // = cmd.config.description
+                .default_member_permissions(Permissions::MANAGE_GUILD),
+        )
+        .group("config set", "Change a setting")          // = cmd.config.set.description
+}
+```
+
+- `BaseMeta` (`noctis::BaseMeta`, `#[non_exhaustive]`, `Copy`, `Default`): pub fields
+  `description: Option<&'static str>`, `default_member_permissions: Option<Permissions>`,
+  `contexts: Option<&'static [InteractionContext]>`, `integration_types:
+  Option<&'static [IntegrationType]>`, `nsfw: Option<bool>`; `BaseMeta::new()` and by-value
+  `const` setters of the same names. No `guilds`: scope comes from the handlers.
+- `Module::base(name, BaseMeta) -> Module` and `Module::group(path, description) -> Module`
+  (both `#[must_use]`, kept in call order, any Module may declare them). They are checked at
+  `App::build` after merging: a set metadata field is the explicit base value (unset leaves
+  inherit it, set leaves must match); two Modules with different descriptions for one node
+  are REG-04 (`` `a` declares `A` ``, `` `b` declares `B` ``); a path no handler registers is
+  REG-04 `metadata only for a registered command path`; a description outside 1-100
+  characters is CMD-04 (note `` declared by `b` ``); a `BaseMeta` metadata field on a path
+  below a base is META-02 (``help: declare it on `config` ``); a path of more than 3 words
+  is CMD-10; `contexts`/`integration_types` on a base whose handlers are guild-scoped is
+  META-03. The values apply in every scope the node exists in.
+- Description fallback (FR-57): a base or group with no handler at its exact path and no
+  declared description takes the description of a leaf below it: the leaves of the
+  lexicographically smallest Module id (byte order), then the smallest path, then the first
+  registered. The fallback counts toward CMD-05. When the build passes it logs one warning
+  per scope and node (target `noctis::registry`): ``no description declared for `config`
+  (scope: global): using the description of `config set` from Module `a`; declare one with
+  `Module::base` or `Module::group` `` (guild scopes print `scope: guild 42`). Declare every
+  base and group description to keep the log clean (see `src/modules/setup.rs`). Metadata
+  never falls back: only descriptions do.
 
 ## 2. Command Patterns
 
@@ -223,7 +262,8 @@ one CMD-15 (`= note: produced N times`). `""` expands to `[""]` (CMD-10 later).
 | `expand(pattern, &Limits) -> Result<Vec<String>, Vec<Violation>>` | pattern → ordered Command Paths; CMD-16, else CMD-15 cap, else CMD-15 duplicates; never checks names |
 | `validate_name(word, &Limits) -> Vec<Violation>` | one name word, path `""`; order CMD-02 (length via `discord_len`), CMD-01 (charset; note `` first invalid character `'` (U+0027) ``, help `` use `ʼ` (U+02BC) instead of `'` `` for ASCII `'`), CMD-03 (help `` use `config` ``); an empty word gives CMD-02 only |
 | `validate_tree(&[CommandDecl], &Limits) -> Result<(), Vec<Violation>>` | one tree set (scope ignored): CMD-10 per decl (that decl is then skipped), REG-04 duplicate handler paths (notes `` registered by `m1` ``; the first counts for the budget) and metadata for unregistered paths, then per node in first-appearance pre-order: names (CMD-01..03, path = node path), CMD-04, CMD-11 / CMD-12 (notes name both contributing paths and `` (from `module`) ``), CMD-13 (children, then handler options), CMD-05 per base after its subtree (`= note: longest variant per field`); then REG-04 conflicting descriptions; last, per base in first-appearance order, the metadata checks (§6 "Metadata rules") |
-| `validate_merge(&[CommandDecl], &[ContextMenuDecl], &Limits) -> Result<(), Vec<Violation>>` | the whole App: per `Scope` (first appearance, commands then menus) `validate_tree` with a `= note: scope: global` / `scope: guild 42`, then META-03 per command, then per context-menu command (input order; path `` `<path or name>.contexts` `` / `.integration_types`, notes `` declared by `m1` `` then the scope), then CTX-01 per context-menu name (path = the name, same notes), then counts (REG-01 global / REG-02 guild; paths `chat-input commands`, `user commands`, `message commands`; a merged base counts once; meta decls and empty paths don't count), then REG-03 for two context-menu commands with the same type and exact name |
+| `validate_merge(&[CommandDecl], &[ContextMenuDecl], &Limits) -> Result<(), Vec<Violation>>` | the whole App (what `App::build` runs): per `Scope` (first appearance, commands then menus) `validate_tree` with a `= note: scope: global` / `scope: guild 42` (always the last note), then META-03 per command, then per context-menu command (input order; path `` `<path or name>.contexts` `` / `.integration_types`, notes `` declared by `m1` `` then the scope), then CTX-01 per context-menu name (path = the name, same notes), then counts (REG-01 global / REG-02 guild; paths `chat-input commands`, `user commands`, `message commands`; a merged base counts once; meta decls and empty paths don't count; note `` registered by `a`, `b` `` naming the counted sources), then REG-03 for two context-menu commands with the same type and exact name |
+| Module notes | when any involved `source` is non-empty, each violation names its sources before the scope note: CMD-13 children and CMD-05 `` contributed by `a`, `b` `` (distinct subtree sources, input order; CMD-05's after `longest variant per field`), CMD-13 options, CMD-10 and CMD-04 `` declared by `a` `` (CMD-04: the declaration that gave the description, or the first handler when missing), REG-01/REG-02 `` registered by `a`, `b` ``; `""` prints `(unnamed)`, and all-`""` sources add no note |
 | `CommandDecl<'a>` | `#[non_exhaustive]`, pub fields `source` (Module name, `""` = unnamed), `path` (words split on single ASCII spaces, so `"config  set"` has an empty word → CMD-02), `scope`, `kind`, `description: Option<LocalizedText>`, `name_localized: &[&str]` (localized names of the last word; only counted by CMD-05), `metadata: CommandMeta` (default all unset). `CommandDecl::handler(source, path)` (no options), `CommandDecl::meta(source, path)`; by-value `const` setters `.description(text)`, `.name_localized(&[…])`, `.scope(Scope)`, `.metadata(CommandMeta)`, `.with_options(count, size)` (makes it a handler; pass `with_options(opts.len(), measure_options(&opts, &limits))`) |
 | `DeclKind` | `#[non_exhaustive]`: `Handler { options, options_size }` (`options_size` = your computed CMD-05 share of the options: names, descriptions, choice names/values, longest variant each) or `Meta` (description / localized names for a node handlers create) |
 | `LocalizedText<'a>` | `{ default, localized: &[&str] }`; `LocalizedText::new("d")`, `.with_localized(&[…])`, `.longest()` (max `discord_len`) |
@@ -584,12 +624,29 @@ let module = Module::new("mod").add(show_profile()).add(report());
 
 ## 6. Merging across Modules
 
-Commands sharing a base word merge into one Discord command (tescord semantics). App
-build fails, naming both Modules, when: metadata conflicts (META-01/02), a path is
-duplicated (REG-04), a base mixes options and subcommands (CMD-12), the merged tree
-breaks CMD-11/13/05, or the App exceeds 100 global chat-input commands (REG-01).
-`App::build` runs `noctis::rules::command::validate_merge` on everything registered
-(see §2 "Rule functions"), so every conflict is reported at once.
+Commands sharing a base word merge into one Discord command (tescord semantics): Module
+`a` with `"config set"` and Module `b` with `"config get prefix"` give one `/config` with
+`set` and `get prefix`. Merging is per scope: global commands and each guild of `guilds =
+[..]` are separate (a guild `config set` and a global `config get` never merge or
+conflict). `App::build` lowers every mounted Module's `#[command]` paths (one declaration
+per path and scope, `source` = the Module id), context menus and `Module::base` /
+`Module::group` declarations, and runs `noctis::rules::command::validate_merge` once with
+the default `Limits` (see §2 "Rule functions"). Every broken rule becomes one
+`BuildViolation::Command(Violation)` in the single `BuildError`, all at once, never "first
+wins": after the setter/plugin violations and `[GW-05]` `MissingIntent`, before the
+crypto/runtime checks. Its `Display` is the violation (`[META-01] config: limit …` with
+`= note:` lines); the notes name the Modules (`(from …)`, `registered by`, `declared by`,
+`contributed by`) and end with `scope: global` / `scope: guild <id>`.
+
+It fails when: metadata conflicts (META-01/02, CMD-07), a path is registered twice (REG-04,
+also the same descriptor added twice to one Module), two Modules declare different
+base/group descriptions (REG-04), a base has a handler and subcommands (CMD-12), a
+subcommand is also a group (CMD-11), the merged tree breaks CMD-13 (25 children per level)
+or CMD-05 (8000 characters, including fallback descriptions), a scope exceeds 100
+chat-input, 15 user or 15 message commands (REG-01 global, REG-02 per guild; a merged base
+counts once), or two context menus of the same type share a name in one scope (REG-03,
+byte equality; user and message menus and chat-input commands never clash). Different
+scopes never conflict.
 
 ### Metadata rules
 

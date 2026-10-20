@@ -8,6 +8,7 @@
 //! actions (two selects and Finish).
 
 use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
+use noctis::BaseMeta;
 use noctis::prelude::*;
 use noctis::ui::{ActionRow, ButtonStyle, ContainerComponent, TextDisplay};
 use serde::{Deserialize, Serialize};
@@ -16,8 +17,12 @@ use crate::strings::{Strings, keys};
 
 const ACCENT: Rgb = rgb!(0x5865_F2);
 
+/// The Module. `.base` declares the description of the `/setup` base command (FR-57),
+/// equal to `cmd.setup.description` in `locales/en-US.yaml`; without it `App::build`
+/// would borrow `setup start`'s description and log a warning.
 pub fn module() -> Module {
     Module::new("setup")
+        .base("setup", BaseMeta::new().description("Set up the bot for this server"))
         .add(setup_start())
         .add(open_setup())
         .add(pick_log_channel())

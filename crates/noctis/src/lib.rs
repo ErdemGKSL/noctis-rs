@@ -246,6 +246,50 @@
 //! }
 //! ```
 //!
+//! # Merging Commands
+//!
+//! `build()` also merges the slash Commands of every mounted Module: handlers
+//! whose paths share a base word become one base command, in each scope
+//! (global, or each guild of `guilds = [..]`) separately. The merged set is
+//! checked once with the same rules as `#[command]` (tree shape, sizes,
+//! counts, metadata agreement, duplicate paths and context-menu names); each
+//! broken rule is one [`BuildViolation::Command`] whose notes name the
+//! Modules and the scope. [`Module::base`] declares a base command's
+//! description and [`BaseMeta`] (permissions, contexts, integration types,
+//! nsfw), [`Module::group`] a subcommand group's description. A base or group
+//! nobody describes takes the description of the handler below it from the
+//! lexicographically smallest Module id (then the smallest path), and
+//! `build()` logs a warning naming it.
+//!
+//! ```
+//! use noctis::prelude::*;
+//! use noctis::{BaseMeta, Permissions};
+//!
+//! #[command("config set", description = "Change a setting")]
+//! async fn config_set(_ctx: CommandCtx) -> HandlerResult<()> {
+//!     Ok(())
+//! }
+//!
+//! #[command("config get prefix", description = "Show the prefix")]
+//! async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<()> {
+//!     Ok(())
+//! }
+//!
+//! # #[tokio::main(flavor = "current_thread")] async fn main() {
+//! let settings = Module::new("settings").add(config_set()).base(
+//!     "config",
+//!     BaseMeta::new()
+//!         .description("Configure the bot")
+//!         .default_member_permissions(Permissions::MANAGE_GUILD),
+//! );
+//! let prefix = Module::new("prefix")
+//!     .add(config_get_prefix())
+//!     .group("config get", "Read a setting");
+//! // One `/config` with `set` and `get prefix`, MANAGE_GUILD for both.
+//! assert!(App::builder().module(settings).module(prefix).build().is_ok());
+//! # }
+//! ```
+//!
 //! # Observability and Error Sinks
 //!
 //! Every handler error, handler panic and event dropped by a full event
@@ -301,10 +345,10 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, App, AppBuilder, BuildError, BuildViolation, CommandCtx, CommandHandler,
-    CommandInput, CommandMetadata, CommandOption, CommandPath, ContextMenuHandler, Descriptor,
-    EnvError, Error, ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError, HandlerError,
-    HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
+    AckDeadlineMissed, App, AppBuilder, BaseMeta, BuildError, BuildViolation, CommandCtx,
+    CommandHandler, CommandInput, CommandMetadata, CommandOption, CommandPath, ContextMenuHandler,
+    Descriptor, EnvError, Error, ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError,
+    HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
     InteractionContext, InvalidOption, LogSink, MenuKind, MenuTargetError, Module, OptionError,
     OptionValue, Options, Permissions, Plugin, ReportKind, Resource, ResourceConflict, RunError,
     Runtime, StartError, State, Token, TokenError, UnknownCommandPath,
@@ -498,7 +542,9 @@ pub mod observe {
 /// applies its default. They belong to the **base** command of every path
 /// the handler declares (META-02): a per-path form such as
 /// `permissions(set = …)` is a `[META-02]` compile error, and handlers
-/// sharing a base must agree (checked at App build, \[planned\] Story 6.4).
+/// sharing a base, in any Module, must agree, unset included, unless a
+/// [`Module::base`] declaration sets the field (checked at App build,
+/// [`BuildViolation::Command`]).
 ///
 /// | Argument | Takes | Rules |
 /// | --- | --- | --- |

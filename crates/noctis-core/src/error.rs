@@ -238,6 +238,14 @@ pub enum BuildViolation {
         /// The missing privileged intent.
         intent: Intents,
     },
+    /// A chat-input or context-menu command rule broken after merging the
+    /// commands of every mounted Module (FR-9, FR-56, FR-57): duplicate
+    /// paths, conflicting descriptions or base metadata, tree shape, size and
+    /// count limits. The [`Violation`](noctis_rules::Violation) carries the
+    /// rule id, the path, the values, notes naming the Modules involved and,
+    /// last, the scope (`scope: global` or `scope: guild <id>`).
+    #[error("{0}")]
+    Command(noctis_rules::Violation),
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]
     Plugin {

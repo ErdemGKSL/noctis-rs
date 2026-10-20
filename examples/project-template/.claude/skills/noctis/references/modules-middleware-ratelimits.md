@@ -12,7 +12,9 @@ use noctis::prelude::*;                    // Module, #[event], EventCtx, Handle
 pub fn module() -> Module {
     Module::new("profile")                 // path-like id: "a/b/c"
         .add(award_xp())                   // #[event]
-        .add(profile())                    // #[command] [planned, Epic 6]
+        .add(profile())                    // #[command]
+        .base("profile", BaseMeta::new().description("Show a profile card"))  // base command
+        .group("profile badges", "Manage badges")   // subcommand group description
         .add(open_profile())               // #[handler] [planned, Epic 7]
         .template::<ProfileCard>()         // image Templates [planned]
         .locales(profile_strings::catalog())   // Module-scoped strings [planned]
@@ -25,20 +27,27 @@ pub fn module() -> Module {
 builder.module(profile::module()).module(ops::module());
 ```
 
-Implemented: `Module::new(id)`, `.add(descriptor)`, `.module(child)`, `.id()`, `Clone`,
-`Debug`, and `AppBuilder::module(Module)`.
+Implemented: `Module::new(id)`, `.add(descriptor)`, `.module(child)`, `.base(name,
+BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
+`AppBuilder::module(Module)`.
 
 - `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
   too (in `install`); those trees fold after the ones mounted before `build()`.
 - `.add(x())` takes any `Descriptor` (a sealed trait). Today that is the
-  `EventHandler` an `#[event]` function returns; `#[command]`, `#[user_command]`,
-  `#[message_command]`, `#[handler]`, `#[autocomplete]` and `#[hook]` descriptors join
-  in later stories [planned].
+  `EventHandler` an `#[event]` function returns and the `#[command]`, `#[user_command]`
+  and `#[message_command]` descriptors; `#[handler]`, `#[autocomplete]` and `#[hook]`
+  descriptors join in later stories [planned].
 - Registration is data: nothing runs when you add or nest, and the call order of `.add`
   and `.module` does not matter. `build()` folds every mounted tree **once**, pre-order:
   a Module's own registrations in `.add` order, then each child in `.module` order
   (parent before child). Each registration records its Module id and the ancestor path.
   Adding the same descriptor twice registers (and runs) it twice.
+- `.base(name, BaseMeta)` declares a base command's description and metadata,
+  `.group(path, description)` a subcommand group's description (`noctis::BaseMeta`; both
+  `#[must_use]`, kept in call order). Any Module may declare them for commands other
+  Modules add: `build()` merges every Module's commands per scope and checks the merged
+  set, failing with `BuildViolation::Command` (rule id, Module notes, scope). See
+  `commands.md` §1 and §6.
 - The same Module tree can be mounted on several Apps (`Module` is `Clone`); each App
   folds its own copy.
 - Ids are not validated yet: unique, path-shaped ids are checked from Story 13.1

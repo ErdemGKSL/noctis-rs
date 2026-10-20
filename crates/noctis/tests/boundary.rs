@@ -25,3 +25,6 @@ mod ctx;
 
 #[path = "boundary/meta.rs"]
 mod meta;
+
+#[path = "boundary/reg.rs"]
+mod reg;

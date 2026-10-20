@@ -140,3 +140,61 @@ impl ErrorSink for Recording {
         });
     }
 }
+
+/// A chat-input handler named `name` serving `paths`, described `description`.
+pub(crate) fn command(
+    name: &'static str,
+    paths: &'static [&'static str],
+    description: &'static str,
+) -> crate::CommandHandler {
+    crate::CommandHandler::__new_plain(name, paths, description, |_: crate::CommandCtx| async {
+        Ok(())
+    })
+}
+
+/// [`command`] with `metadata`.
+pub(crate) fn command_with(
+    name: &'static str,
+    paths: &'static [&'static str],
+    metadata: crate::CommandMetadata,
+) -> crate::CommandHandler {
+    command(name, paths, "d").__with_metadata(metadata)
+}
+
+/// A `'static` path (or path list) built at run time.
+pub(crate) fn leak(text: String) -> &'static str {
+    Box::leak(text.into_boxed_str())
+}
+
+/// A `'static` one-path list.
+pub(crate) fn leak_paths(path: &str) -> &'static [&'static str] {
+    Box::leak(vec![leak(path.to_owned())].into_boxed_slice())
+}
+
+/// A `USER` command handler named `name` for the menu `menu`.
+pub(crate) fn user_menu(
+    name: &'static str,
+    menu: &'static str,
+    metadata: crate::CommandMetadata,
+) -> crate::ContextMenuHandler {
+    crate::ContextMenuHandler::__new_user(
+        name,
+        menu,
+        metadata,
+        |_: crate::CommandCtx, _: noctis_ui::ResolvedUser| async { Ok(()) },
+    )
+}
+
+/// A `MESSAGE` command handler named `name` for the menu `menu`.
+pub(crate) fn message_menu(
+    name: &'static str,
+    menu: &'static str,
+    metadata: crate::CommandMetadata,
+) -> crate::ContextMenuHandler {
+    crate::ContextMenuHandler::__new_message(
+        name,
+        menu,
+        metadata,
+        |_: crate::CommandCtx, _: noctis_ui::ResolvedMessage| async { Ok(()) },
+    )
+}

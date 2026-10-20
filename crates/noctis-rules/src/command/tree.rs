@@ -3,7 +3,10 @@
 
 use std::collections::HashMap;
 
-use super::{CommandDecl, DeclKind, LocalizedText, from_suffix, meta, source_name, validate_name};
+use super::{
+    CommandDecl, DeclKind, LocalizedText, from_suffix, meta, source_name, sources_note,
+    validate_name, with_optional_note,
+};
 use crate::len::discord_len;
 use crate::{Actual, Bound, Limits, RuleId, Violation};
 
@@ -55,27 +58,34 @@ impl<'a> Tree<'_, 'a> {
         }
 
         let first_handler = self.handlers(node).next();
-        self.check_description_len(node, first_handler.is_some(), out);
+        self.check_description_len(node, first_handler, out);
         if let (Some(leaf), Some(child)) = (first_handler, node.first_child_decl) {
             out.push(self.leaf_with_children(node, leaf, child));
         }
 
         if node.children.len() > limits.command_options {
-            out.push(Violation::new(
-                RuleId::CMD_13,
-                node.path,
-                Bound::AtMost(limits.command_options),
-                Actual::Count(node.children.len()),
+            out.push(with_optional_note(
+                Violation::new(
+                    RuleId::CMD_13,
+                    node.path,
+                    Bound::AtMost(limits.command_options),
+                    Actual::Count(node.children.len()),
+                ),
+                self.contributed_by(index),
             ));
         }
-        if let Some(DeclKind::Handler { options, .. }) = first_handler.map(|i| self.decl(i).kind)
+        if let Some(leaf) = first_handler
+            && let DeclKind::Handler { options, .. } = self.decl(leaf).kind
             && options > limits.command_options
         {
-            out.push(Violation::new(
-                RuleId::CMD_13,
-                node.path,
-                Bound::AtMost(limits.command_options),
-                Actual::Count(options),
+            out.push(with_optional_note(
+                Violation::new(
+                    RuleId::CMD_13,
+                    node.path,
+                    Bound::AtMost(limits.command_options),
+                    Actual::Count(options),
+                ),
+                sources_note("declared by", [self.decl(leaf).source]),
             ));
         }
 
@@ -86,7 +96,7 @@ impl<'a> Tree<'_, 'a> {
         if node.depth == 1 {
             let size = self.size(index);
             if size > limits.command_size {
-                out.push(
+                out.push(with_optional_note(
                     Violation::new(
                         RuleId::CMD_05,
                         node.path,
@@ -94,21 +104,47 @@ impl<'a> Tree<'_, 'a> {
                         Actual::Count(size),
                     )
                     .with_note("longest variant per field"),
-                );
+                    self.contributed_by(index),
+                ));
             }
         }
     }
 
-    /// CMD-04 for the node's description.
-    fn check_description_len(&self, node: &Node<'a>, is_handler: bool, out: &mut Vec<Violation>) {
+    /// ``contributed by `a`, `b` `` over the subtree's declarations in input
+    /// order, or `None` when they are all unnamed.
+    fn contributed_by(&self, index: usize) -> Option<String> {
+        let mut indices = Vec::new();
+        self.subtree_decls(index, &mut indices);
+        indices.sort_unstable();
+        sources_note(
+            "contributed by",
+            indices.into_iter().map(|i| self.decl(i).source),
+        )
+    }
+
+    /// CMD-04 for the node's description; `first_handler` is the node's first
+    /// handler declaration, if any.
+    fn check_description_len(
+        &self,
+        node: &Node<'a>,
+        first_handler: Option<usize>,
+        out: &mut Vec<Violation>,
+    ) {
         let limits = self.limits;
         let description_bound = Bound::Between {
             min: 1,
             max: limits.command_description_len,
         };
-        let Some(text) = self.description(node) else {
-            if is_handler {
-                out.push(
+        let described = node
+            .decls
+            .iter()
+            .copied()
+            .find(|&i| self.decl(i).description.is_some());
+        let Some((text, source)) =
+            described.and_then(|i| self.decl(i).description.map(|d| (d, self.decl(i).source)))
+        else {
+            if let Some(leaf) = first_handler {
+                out.push(with_optional_note(
                     Violation::new(
                         RuleId::CMD_04,
                         node.path,
@@ -116,10 +152,12 @@ impl<'a> Tree<'_, 'a> {
                         Actual::Count(0),
                     )
                     .with_note("missing description"),
-                );
+                    sources_note("declared by", [self.decl(leaf).source]),
+                ));
             }
             return;
         };
+        let declared_by = sources_note("declared by", [source]);
         let variants = std::iter::once((text.default, "in the default description".to_owned()))
             .chain(
                 text.localized
@@ -130,7 +168,7 @@ impl<'a> Tree<'_, 'a> {
         for (variant, note) in variants {
             let len = discord_len(variant);
             if len == 0 || len > limits.command_description_len {
-                out.push(
+                out.push(with_optional_note(
                     Violation::new(
                         RuleId::CMD_04,
                         node.path,
@@ -138,7 +176,8 @@ impl<'a> Tree<'_, 'a> {
                         Actual::Count(len),
                     )
                     .with_note(note),
-                );
+                    declared_by.clone(),
+                ));
             }
         }
     }
@@ -310,11 +349,9 @@ fn check_depth(decls: &[CommandDecl<'_>], limits: &Limits, out: &mut Vec<Violati
             } else {
                 Bound::AtMost(limits.command_path_words)
             };
-            out.push(Violation::new(
-                RuleId::CMD_10,
-                decl.path,
-                limit,
-                Actual::Count(words),
+            out.push(with_optional_note(
+                Violation::new(RuleId::CMD_10, decl.path, limit, Actual::Count(words)),
+                sources_note("declared by", [decl.source]),
             ));
         } else {
             valid.push(i);
@@ -889,6 +926,101 @@ mod tests {
                 RuleId::CMD_03,
                 RuleId::REG_04
             ]
+        );
+    }
+
+    #[test]
+    fn cmd_13_children_note_names_the_contributing_sources() {
+        let names: Vec<String> = (0..26).map(|i| format!("x s{i}")).collect();
+        let decls: Vec<_> = names
+            .iter()
+            .enumerate()
+            .map(|(i, p)| h(if i < 13 { "a" } else { "b" }, p))
+            .collect();
+        assert_eq!(check(&decls[..25]), []);
+        assert_eq!(
+            check(&decls),
+            [
+                Violation::new(RuleId::CMD_13, "x", Bound::AtMost(25), Actual::Count(26))
+                    .with_note("contributed by `a`, `b`")
+            ]
+        );
+        let grouped: Vec<String> = (0..26).map(|i| format!("x g s{i}")).collect();
+        let decls: Vec<_> = grouped
+            .iter()
+            .enumerate()
+            .map(|(i, p)| h(if i % 2 == 0 { "b" } else { "a" }, p))
+            .collect();
+        let errs = check(&decls);
+        assert_eq!(errs[0].path, "x g");
+        assert_eq!(errs[0].notes, ["contributed by `b`, `a`"]);
+    }
+
+    #[test]
+    fn cmd_13_options_note_names_the_declaring_source() {
+        assert_eq!(
+            check(&[h("a", "x y").with_options(26, 0)]),
+            [
+                Violation::new(RuleId::CMD_13, "x y", Bound::AtMost(25), Actual::Count(26))
+                    .with_note("declared by `a`")
+            ]
+        );
+    }
+
+    #[test]
+    fn cmd_13_mixed_unnamed_and_named_sources() {
+        let limits = Limits {
+            command_options: 1,
+            ..Limits::default()
+        };
+        let errs = check_with(&[h("", "x a"), h("a", "x b")], &limits);
+        assert_eq!(errs[0].notes, ["contributed by (unnamed), `a`"]);
+    }
+
+    #[test]
+    fn cmd_05_note_after_longest_variant() {
+        let x100 = "x".repeat(100);
+        let a = CommandDecl::handler("a", "x a").description(LocalizedText::new(&x100));
+        let b = CommandDecl::handler("b", "x b").description(LocalizedText::new(&x100));
+        let base = m("b", "x").description(LocalizedText::new("d"));
+        // 1 + 1 (base) + 2 * (1 + 100) = 204; options fill the rest.
+        assert_eq!(
+            check(&[a.with_options(0, 3898), b.with_options(0, 3898), base]),
+            []
+        );
+        assert_eq!(
+            check(&[a.with_options(0, 3898), b.with_options(0, 3899), base]),
+            [cmd_05("x", 8000, 8001).with_note("contributed by `a`, `b`")]
+        );
+    }
+
+    #[test]
+    fn cmd_04_note_names_the_describing_source() {
+        let x101 = "x".repeat(101);
+        assert_eq!(
+            check(&[
+                h("a", "config set"),
+                m("b", "config").description(LocalizedText::new(&x101)),
+            ]),
+            [cmd_04("config", 101, "in the default description").with_note("declared by `b`")]
+        );
+        assert_eq!(
+            check(&[CommandDecl::handler("a", "ping")]),
+            [cmd_04("ping", 0, "missing description").with_note("declared by `a`")]
+        );
+    }
+
+    #[test]
+    fn cmd_10_note_names_the_declaring_source() {
+        assert_eq!(
+            check(&[m("a", "a b c d").description(D)]),
+            [Violation::new(
+                RuleId::CMD_10,
+                "a b c d",
+                Bound::AtMost(3),
+                Actual::Count(4)
+            )
+            .with_note("declared by `a`")]
         );
     }
 }

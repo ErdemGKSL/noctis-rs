@@ -1374,6 +1374,9 @@ fn cv2_08_warnings_are_logged() {
         Section::new([t("a")], Thumbnail::new(image())).into(),
     ]);
     let report = tracing::subscriber::with_default(capture.clone(), || {
+        // Parallel tests may register the `warn!` callsites with no subscriber
+        // concurrently with `with_default`, caching `Interest::never`; rebuild it.
+        tracing::callsite::rebuild_interest_cache();
         let report = validate(&mut m.clone(), &lenient()).expect("warnings only");
         let _ = cost(&m, &lenient());
         report

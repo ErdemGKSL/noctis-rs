@@ -67,6 +67,30 @@ pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 's
 pub fn noctis::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::AppBuilder
 pub fn noctis::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::BaseMeta
+pub noctis::BaseMeta::contexts: core::option::Option<&'static [noctis::InteractionContext]>
+pub noctis::BaseMeta::default_member_permissions: core::option::Option<twilight_model::guild::permissions::Permissions>
+pub noctis::BaseMeta::description: core::option::Option<&'static str>
+pub noctis::BaseMeta::integration_types: core::option::Option<&'static [noctis::IntegrationType]>
+pub noctis::BaseMeta::nsfw: core::option::Option<bool>
+impl noctis::BaseMeta
+pub const fn noctis::BaseMeta::contexts(self, &'static [noctis::InteractionContext]) -> Self
+pub const fn noctis::BaseMeta::default_member_permissions(self, twilight_model::guild::permissions::Permissions) -> Self
+pub const fn noctis::BaseMeta::description(self, &'static str) -> Self
+pub const fn noctis::BaseMeta::integration_types(self, &'static [noctis::IntegrationType]) -> Self
+pub const fn noctis::BaseMeta::new() -> Self
+pub const fn noctis::BaseMeta::nsfw(self, bool) -> Self
+impl core::clone::Clone for noctis::BaseMeta
+pub fn noctis::BaseMeta::clone(&self) -> Self
+impl core::cmp::Eq for noctis::BaseMeta
+impl core::cmp::PartialEq for noctis::BaseMeta
+pub fn noctis::BaseMeta::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::BaseMeta
+pub fn noctis::BaseMeta::default() -> Self
+impl core::fmt::Debug for noctis::BaseMeta
+pub fn noctis::BaseMeta::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::BaseMeta
+impl core::marker::StructuralPartialEq for noctis::BaseMeta
 pub struct noctis::BuildError
 impl noctis::BuildError
 pub fn noctis::BuildError::into_violations(self) -> alloc::vec::Vec<noctis::BuildViolation>
@@ -83,6 +107,7 @@ impl core::fmt::Display for noctis::BuildError
 pub fn noctis::BuildError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::BuildError
 #[non_exhaustive] pub enum noctis::BuildViolation
+pub noctis::BuildViolation::Command(noctis::rules::Violation)
 pub noctis::BuildViolation::CryptoProvider
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
@@ -541,6 +566,8 @@ impl core::marker::StructuralPartialEq for noctis::MenuTargetError
 pub struct noctis::Module
 impl noctis::Module
 pub fn noctis::Module::add(self, impl noctis::Descriptor) -> Self
+pub fn noctis::Module::base(self, &'static str, noctis::BaseMeta) -> Self
+pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
 pub fn noctis::Module::module(self, noctis::Module) -> Self
 pub fn noctis::Module::new(&'static str) -> Self
@@ -2149,6 +2176,8 @@ pub fn noctis::prelude::ModalForm::modal(Self::Route) -> noctis::ui::Modal
 pub struct noctis::prelude::Module
 impl noctis::prelude::Module
 pub fn noctis::prelude::Module::add(self, impl noctis::Descriptor) -> Self
+pub fn noctis::prelude::Module::base(self, &'static str, noctis::BaseMeta) -> Self
+pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
 pub fn noctis::prelude::Module::module(self, noctis::prelude::Module) -> Self
 pub fn noctis::prelude::Module::new(&'static str) -> Self

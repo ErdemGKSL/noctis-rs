@@ -314,7 +314,6 @@ impl App {
     }
 
     /// The folded Registry.
-    #[cfg(test)]
     pub(crate) fn registry(&self) -> &Arc<Registry> {
         &self.registry
     }
@@ -1439,7 +1438,10 @@ impl AppBuilder {
     /// timeout, the HTTP proxy, the gateway URL, the shard total, the event
     /// lane, handler concurrency, the shutdown grace and the [`HttpConfig`],
     /// binds the Discord HTTP edge's loopback listener, folds the mounted
-    /// Modules into the Registry (deriving the gateway filter and intents, GW-05), the rustls
+    /// Modules into the Registry (deriving the gateway filter and intents, GW-05,
+    /// and merging every Module's Commands and context menus: the command
+    /// rules run once on the merged set, per scope, and an undescribed base or
+    /// group takes a handler's description with a warning), the rustls
     /// crypto provider (installing `ring`'s when none is set) and the tokio
     /// runtime (any flavor). The edge then starts serving on the current
     /// runtime. The builder is left empty, attached to the same Runtime.
@@ -1447,7 +1449,9 @@ impl AppBuilder {
     /// # Errors
     ///
     /// One [`BuildError`] with every violation: setters', plugins' reports
-    /// and the checks', in that order.
+    /// and the checks', in that order; among the checks, missing intents
+    /// (GW-05), then every [`BuildViolation::Command`] (in the rule engine's
+    /// order), then the crypto provider and the runtime.
     ///
     /// ```no_run
     /// # #[tokio::main] async fn main() -> Result<(), noctis_core::BuildError> {

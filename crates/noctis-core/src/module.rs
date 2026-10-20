@@ -5,6 +5,7 @@ use std::fmt;
 use crate::command::CommandHandler;
 use crate::events::EventHandler;
 use crate::menu::ContextMenuHandler;
+use crate::metadata::BaseMeta;
 
 pub(crate) mod sealed {
     use crate::Module;
@@ -61,6 +62,19 @@ impl sealed::Sealed for ContextMenuHandler {
 
 impl Descriptor for ContextMenuHandler {}
 
+/// A description (and base metadata) a Module declares for a command node
+/// with [`Module::base`] or [`Module::group`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NodeDecl {
+    /// `Module::base(name, meta)`.
+    Base { name: &'static str, meta: BaseMeta },
+    /// `Module::group(path, description)`.
+    Group {
+        path: &'static str,
+        description: &'static str,
+    },
+}
+
 /// A group of registrations under a path-like id (`"a/b/c"`), mounted on an
 /// App with `AppBuilder::module`.
 ///
@@ -75,6 +89,11 @@ impl Descriptor for ContextMenuHandler {}
 /// gives a `fn award_xp()` that returns the handler to [`add`](Self::add).
 /// Slash Commands come from `#[command]` the same way, context-menu
 /// commands from `#[user_command]` and `#[message_command]`.
+///
+/// Commands of every mounted Module merge at `build()`: Modules sharing a
+/// base word build one base command, and [`base`](Self::base) /
+/// [`group`](Self::group) declare the descriptions (and base metadata) of
+/// the nodes no single handler owns.
 ///
 /// ```
 /// # use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
@@ -96,6 +115,7 @@ pub struct Module {
     handlers: Vec<EventHandler>,
     commands: Vec<CommandHandler>,
     menus: Vec<ContextMenuHandler>,
+    nodes: Vec<NodeDecl>,
     children: Vec<Module>,
 }
 
@@ -111,6 +131,7 @@ impl Module {
             handlers: Vec::new(),
             commands: Vec::new(),
             menus: Vec::new(),
+            nodes: Vec::new(),
             children: Vec::new(),
         }
     }
@@ -142,6 +163,59 @@ impl Module {
         self
     }
 
+    /// Declares the description and base metadata of the base command
+    /// `name` (a 1-word Command Path, FR-57).
+    ///
+    /// Checked at `build()`, after merging every Module: the base must exist
+    /// (some handler path starts with `name`, else REG-04), the description
+    /// must be 1 to 100 characters (CMD-04), metadata fields must agree with
+    /// the handlers that set them (META-01, META-02, CMD-07; unset handlers
+    /// inherit them) and with every other Module's declaration (REG-04 for
+    /// descriptions). The values apply in every scope the base exists in;
+    /// `contexts` and `integration_types` on a guild-scoped base are META-03.
+    /// A metadata field on a path below a base is META-02. Without a
+    /// description, the base takes a handler's description (see the crate
+    /// docs) and `build()` logs a warning.
+    ///
+    /// ```
+    /// use noctis_core::{BaseMeta, Module, Permissions};
+    ///
+    /// let config = Module::new("config").base(
+    ///     "config",
+    ///     BaseMeta::new()
+    ///         .description("Configure the bot")
+    ///         .default_member_permissions(Permissions::MANAGE_GUILD),
+    /// );
+    /// assert!(format!("{config:?}").contains("Configure the bot"));
+    /// ```
+    #[must_use = "Module::base returns the Module with the declaration added"]
+    pub fn base(mut self, name: &'static str, meta: BaseMeta) -> Self {
+        self.nodes.push(NodeDecl::Base { name, meta });
+        self
+    }
+
+    /// Declares the description of the subcommand group `path` (FR-57).
+    ///
+    /// Meant for 2-word group paths such as `"config set"`; any other
+    /// registered path just gets the description (it must then match the
+    /// handler's). Checked at `build()` like [`base`](Self::base): the path
+    /// must exist in some handler path (REG-04), the description must be 1 to
+    /// 100 characters (CMD-04) and agree with every other declaration of the
+    /// path (REG-04); a path of more than 3 words is CMD-10. The description
+    /// applies in every scope the group exists in.
+    ///
+    /// ```
+    /// use noctis_core::Module;
+    ///
+    /// let config = Module::new("config").group("config set", "Change a setting");
+    /// assert!(format!("{config:?}").contains("config set"));
+    /// ```
+    #[must_use = "Module::group returns the Module with the declaration added"]
+    pub fn group(mut self, path: &'static str, description: &'static str) -> Self {
+        self.nodes.push(NodeDecl::Group { path, description });
+        self
+    }
+
     /// The Module's id.
     pub fn id(&self) -> &'static str {
         self.id
@@ -153,21 +227,18 @@ impl Module {
     }
 
     /// Its own Commands, in `add` order.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Story 6.4 folds commands into the Registry")
-    )]
     pub(crate) fn commands(&self) -> &[CommandHandler] {
         &self.commands
     }
 
     /// Its own context-menu commands, in `add` order.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Story 6.4 folds context menus into the Registry")
-    )]
     pub(crate) fn menus(&self) -> &[ContextMenuHandler] {
         &self.menus
+    }
+
+    /// Its `base`/`group` declarations, in call order.
+    pub(crate) fn nodes(&self) -> &[NodeDecl] {
+        &self.nodes
     }
 
     /// Its children, in `module` order.
@@ -190,6 +261,7 @@ impl fmt::Debug for Module {
             .field("handlers", &handlers)
             .field("commands", &commands)
             .field("menus", &menus)
+            .field("nodes", &self.nodes)
             .field("children", &self.children)
             .finish()
     }

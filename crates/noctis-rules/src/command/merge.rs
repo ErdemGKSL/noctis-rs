@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use super::{
     CommandDecl, CommandMeta, ContextMenuDecl, DeclKind, MenuKind, Scope, source_name,
-    validate_context_menu_name, validate_meta, validate_tree,
+    sources_note, validate_context_menu_name, validate_meta, validate_tree, with_optional_note,
 };
 use crate::{Actual, Bound, Limits, RuleId, Violation};
 
@@ -28,8 +28,9 @@ fn scope_note(scope: Scope) -> String {
 /// note before the scope note, then the counts against
 /// `limits.chat_input_commands` (distinct first words of non-empty handler
 /// paths, so a merged base counts once), `limits.user_commands` and
-/// `limits.message_commands` (REG-01 for the global scope, REG-02 for a guild),
-/// then REG-03: two context-menu commands of the same type with the same name
+/// `limits.message_commands` (REG-01 for the global scope, REG-02 for a guild;
+/// a ``registered by `a`, `b` `` note names the distinct sources of the counted
+/// declarations when any is named), then REG-03: two context-menu commands of the same type with the same name
 /// (byte equality), in first-occurrence order. Same-name chat-input handlers
 /// are merged, so their clashes are REG-04 from the tree check, never REG-03.
 ///
@@ -84,33 +85,42 @@ pub fn validate_merge(
             Scope::Global => RuleId::REG_01,
             Scope::Guild(_) => RuleId::REG_02,
         };
-        let bases: HashSet<&str> = in_scope
+        let counted: Vec<&CommandDecl<'_>> = in_scope
             .iter()
             .filter(|c| matches!(c.kind, DeclKind::Handler { .. }) && !c.path.is_empty())
+            .collect();
+        let bases: HashSet<&str> = counted
+            .iter()
             .filter_map(|c| c.path.split(' ').next())
             .collect();
-        let count_of = |kind| menus_in_scope.iter().filter(|m| m.kind == kind).count();
-        for (what, count, max) in [
+        let menus_of = |kind| menus_in_scope.iter().filter(move |m| m.kind == kind);
+        for (what, count, max, sources) in [
             (
                 "chat-input commands",
                 bases.len(),
                 limits.chat_input_commands,
+                counted.iter().map(|c| c.source).collect::<Vec<_>>(),
             ),
             (
                 "user commands",
-                count_of(MenuKind::User),
+                menus_of(MenuKind::User).count(),
                 limits.user_commands,
+                menus_of(MenuKind::User).map(|m| m.source).collect(),
             ),
             (
                 "message commands",
-                count_of(MenuKind::Message),
+                menus_of(MenuKind::Message).count(),
                 limits.message_commands,
+                menus_of(MenuKind::Message).map(|m| m.source).collect(),
             ),
         ] {
             if count > max {
                 out.push(
-                    Violation::new(count_rule, what, Bound::AtMost(max), Actual::Count(count))
-                        .with_note(note.clone()),
+                    with_optional_note(
+                        Violation::new(count_rule, what, Bound::AtMost(max), Actual::Count(count)),
+                        sources_note("registered by", sources),
+                    )
+                    .with_note(note.clone()),
                 );
             }
         }
@@ -607,5 +617,53 @@ mod tests {
                 (RuleId::REG_03, "X"),
             ]
         );
+    }
+
+    #[test]
+    fn reg_01_note_names_the_registering_sources() {
+        let bases = names(101);
+        let decls: Vec<_> = bases
+            .iter()
+            .enumerate()
+            .map(|(i, p)| h(if i < 50 { "a" } else { "b" }, p))
+            .collect();
+        assert_eq!(
+            check(&decls, &[]),
+            [Violation::new(
+                RuleId::REG_01,
+                "chat-input commands",
+                Bound::AtMost(100),
+                Actual::Count(101)
+            )
+            .with_note("registered by `a`, `b`")
+            .with_note("scope: global")]
+        );
+        let user: Vec<_> = bases[..16]
+            .iter()
+            .map(|n| ContextMenuDecl::new("a", MenuKind::User, n))
+            .collect();
+        let errs = check(&[], &user);
+        assert_eq!(errs[0].notes, ["registered by `a`", "scope: global"]);
+    }
+
+    #[test]
+    fn reg_02_note_before_the_scope_note() {
+        let bases = names(101);
+        let decls: Vec<_> = bases
+            .iter()
+            .map(|p| h("a", p).scope(Scope::Guild(1)))
+            .collect();
+        let errs = check(&decls, &[]);
+        assert_eq!(rules(&errs), [RuleId::REG_02]);
+        assert_eq!(errs[0].notes, ["registered by `a`", "scope: guild 1"]);
+    }
+
+    #[test]
+    fn cmd_13_tree_notes_come_before_the_scope_note() {
+        let names: Vec<String> = (0..26).map(|i| format!("x s{i}")).collect();
+        let decls: Vec<_> = names.iter().map(|p| h("a", p)).collect();
+        let errs = check(&decls, &[]);
+        assert_eq!(rules(&errs), [RuleId::CMD_13]);
+        assert_eq!(errs[0].notes, ["contributed by `a`", "scope: global"]);
     }
 }

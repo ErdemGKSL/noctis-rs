@@ -1,5 +1,8 @@
 //! The immutable Registry `build()` folds once from the mounted Module trees
-//! (AD-7, AD-9, GW-05).
+//! (AD-7, AD-9, GW-05), including the merged command Registry
+//! ([`commands`]).
+
+pub(crate) mod commands;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,6 +14,8 @@ use twilight_model::gateway::event::EventType;
 use crate::BuildViolation;
 use crate::events::EventHandler;
 use crate::module::Module;
+
+use self::commands::{Commands, Folded};
 
 /// The intents Discord gates behind the Developer Portal.
 const PRIVILEGED: Intents = Intents::GUILD_MEMBERS
@@ -56,21 +61,29 @@ pub(crate) struct Registry {
     event_types: EventTypeFlags,
     droppable: EventTypeFlags,
     intents: Intents,
+    commands: Commands,
 }
 
 impl Registry {
     /// Folds `roots` pre-order: a Module's own registrations in `add`
-    /// order, then each child. Returns the Registry and one
+    /// order, then each child. Returns the Registry and its violations: one
     /// [`BuildViolation::MissingIntent`] per handler whose privileged intent
-    /// is not in `requested`, in fold order.
+    /// is not in `requested`, in fold order, then one
+    /// [`BuildViolation::Command`] per command rule broken after merging
+    /// every Module's commands (`validate_merge` order).
     pub(crate) fn fold(roots: &[Module], requested: Intents) -> (Self, Vec<BuildViolation>) {
         let mut entries = Vec::new();
+        let mut folded = Vec::new();
         let mut stack: Vec<(&Module, Arc<[&'static str]>)> = roots
             .iter()
             .rev()
             .map(|root| (root, Arc::from([])))
             .collect();
         while let Some((module, ancestors)) = stack.pop() {
+            folded.push(Folded {
+                module,
+                ancestors: Arc::clone(&ancestors),
+            });
             entries.extend(module.handlers().iter().map(|handler| {
                 Arc::new(Entry {
                     module: module.id(),
@@ -126,7 +139,10 @@ impl Registry {
             .fold(DROPPABLE_EVENTS, |flags, (dispatch, _)| {
                 flags | EventTypeFlags::from(*dispatch)
             });
+        let (commands, command_violations) = Commands::fold(&folded);
+        violations.extend(command_violations);
         let registry = Self {
+            commands,
             entries,
             handlers: by_dispatch
                 .into_iter()
@@ -137,6 +153,11 @@ impl Registry {
             intents,
         };
         (registry, violations)
+    }
+
+    /// The merged command Registry (empty when its checks failed).
+    pub(crate) fn commands(&self) -> &Commands {
+        &self.commands
     }
 
     /// The handlers dispatched on `kind` (an event's `Event::kind()`), if

@@ -45,7 +45,15 @@
 //! A pattern with a group gives the handler a [`CommandPath`] enum naming
 //! the invoked path; an invocation with a path the handler does not declare
 //! fails with [`UnknownCommandPath`]. The handler receives a [`CommandCtx`].
-//! The Registry and dispatch of Commands arrive with the Command pipeline.
+//! `App::build` merges the Commands of every mounted Module (a base split
+//! over several Modules becomes one base command), checks the merged
+//! Registry with the same rule engine as the macros and reports every
+//! conflict as a [`BuildViolation::Command`] naming the Modules and the
+//! scope; [`Module::base`] and [`Module::group`] declare a base's
+//! description and [`BaseMeta`], or a group's description. A node nobody
+//! describes takes the description of a handler below it from the
+//! lexicographically first Module id, with a warning. Dispatch arrives
+//! with the Command pipeline.
 //!
 //! # Command metadata and context menus
 //!
@@ -146,7 +154,7 @@ pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};
 pub use menu::{ContextMenuHandler, MenuTargetError};
-pub use metadata::CommandMetadata;
+pub use metadata::{BaseMeta, CommandMetadata};
 pub use module::{Descriptor, Module};
 #[doc(hidden)]
 pub use options::__options;
@@ -171,7 +179,14 @@ pub mod __testing {
 
     use futures_util::future::BoxFuture;
 
-    use crate::{CommandHandler, ContextMenuHandler, HandlerResult};
+    use crate::{App, CommandHandler, ContextMenuHandler, HandlerResult};
+
+    /// The merged command Registry of `app`, one line per scope, base,
+    /// child and context menu (format in Story 6.4's spec); `""` when it has
+    /// no commands.
+    pub fn command_tree(app: &App) -> String {
+        app.registry().commands().render()
+    }
 
     /// Runs `handler` as if `path` had been invoked: its handler with the
     /// path's variant, or an `UnknownCommandPath` error.

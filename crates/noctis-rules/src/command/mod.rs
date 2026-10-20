@@ -64,11 +64,24 @@
 //! metadata checks: misplaced metadata (META-02, input order), then META-01,
 //! META-02 `contexts`, META-02 `integration_types` and CMD-07 conflicts.
 //!
+//! Violations name the declarations' sources (Modules) in notes placed after
+//! the rule's own notes: CMD-11/12, META-01/02 and CMD-07 conflicts
+//! `(from `a`)`, REG-04 ``registered by `a` `` / ``declared by `a` `` /
+//! ``` `a` declares `x` ```, misplaced META-02 ``declared by `a` ``, CMD-13
+//! children and CMD-05 ``contributed by `a`, `b` `` (the subtree's distinct
+//! sources in input order), CMD-13 options, CMD-10 and CMD-04
+//! ``declared by `a` `` (for CMD-04 the declaration that supplied the
+//! description, or the first handler when it is missing). An empty source
+//! prints `(unnamed)`. The CMD-13, CMD-05, CMD-04, CMD-10 and REG-01/02
+//! notes appear only when at least one involved source is non-empty, so the
+//! `#[command]` macro's output (all sources `""`) has none of them.
+//!
 //! [`validate_merge`] groups declarations by [`Scope`] (first appearance,
 //! commands before menus) and reports per scope the tree violations (with a
 //! `scope: …` note), META-03 for commands then menus (input order), CTX-01 per
-//! menu (input order), the REG-01/REG-02 counts and REG-03 context-menu name
-//! clashes.
+//! menu (input order), the REG-01/REG-02 counts (with a ``registered by `a`, `b` ``
+//! note) and REG-03 context-menu name clashes. The scope note always comes
+//! last.
 //!
 //! # Options
 //!
@@ -153,6 +166,7 @@ pub(crate) use option::{FILE_TYPE, is_file_type};
 pub use pattern::{expand, validate_pattern_spacing};
 pub use tree::validate_tree;
 
+use crate::Violation;
 use crate::len::discord_len;
 
 /// What a Command Path of 1, 2 or 3 words registers (CMD-10).
@@ -460,6 +474,31 @@ fn source_name(source: &str) -> String {
         "(unnamed)".to_owned()
     } else {
         format!("`{source}`")
+    }
+}
+
+/// ``<verb> `a`, `b` `` over the distinct `sources` in first-appearance order
+/// (`(unnamed)` for `""`), or `None` when every source is `""`, so unnamed
+/// (compile-time) declarations keep their output unchanged.
+fn sources_note<'s>(verb: &str, sources: impl IntoIterator<Item = &'s str>) -> Option<String> {
+    let mut distinct: Vec<&str> = Vec::new();
+    for source in sources {
+        if !distinct.contains(&source) {
+            distinct.push(source);
+        }
+    }
+    if distinct.iter().all(|s| s.is_empty()) {
+        return None;
+    }
+    let names: Vec<String> = distinct.into_iter().map(source_name).collect();
+    Some(format!("{verb} {}", names.join(", ")))
+}
+
+/// Appends `note` when it is `Some`.
+fn with_optional_note(violation: Violation, note: Option<String>) -> Violation {
+    match note {
+        Some(note) => violation.with_note(note),
+        None => violation,
     }
 }
 
