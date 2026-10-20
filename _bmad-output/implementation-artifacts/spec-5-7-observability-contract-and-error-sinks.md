@@ -2,7 +2,8 @@
 title: 'Story 5.7: Observability contract and Error Sinks'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '28bfb398f6e0b1750ea1a016bdd31f14e97b63d6'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
