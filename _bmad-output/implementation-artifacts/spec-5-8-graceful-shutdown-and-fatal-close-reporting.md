@@ -2,7 +2,8 @@
 title: 'Story 5.8: Graceful shutdown and fatal-close reporting'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '7f88c4aac02802426e7de78a7e1a46b2c65378ee'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
