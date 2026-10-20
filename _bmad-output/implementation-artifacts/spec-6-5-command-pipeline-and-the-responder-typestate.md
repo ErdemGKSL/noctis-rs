@@ -2,7 +2,8 @@
 title: 'Story 6.5: Command pipeline and the Responder typestate'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '70586997f3c568fd0d19e1fef7aa8f182d6f897c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
