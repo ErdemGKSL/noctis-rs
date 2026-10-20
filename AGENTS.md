@@ -15,6 +15,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Where things are
 
 - Architecture contract: `_bmad-output/planning-artifacts/architecture/architecture-noctis-rs-2026-10-19/ARCHITECTURE-SPINE.md`; follow its ADs (crate layers, `custom_id` format, ports) when adding or moving code.
+- Maintainer decisions: `_bmad-output/planning-artifacts/maintainer-decisions.md`; binding for planning, implementation and review, and it wins over any older spec or story text that contradicts it.
 - Requirements: `_bmad-output/planning-artifacts/prds/prd-noctis-rs-2026-10-19/prd.md` (FR/NFR ids).
 - Discord rules and where each is enforced: `docs/discord-rules.md`; a new or changed limit updates this file and `noctis-rules` together, using the same rule id.
 
