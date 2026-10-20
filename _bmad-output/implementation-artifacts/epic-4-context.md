@@ -43,6 +43,7 @@ Give bot authors Noctis's own typed model for every Components V2 message and mo
 - Mentions type is `noctis::ui::Mentions` with `Users`/`Roles::{None (default), All, Only(Vec<Id>)}`; `allowed_mentions` is always sent (default `{"parse":[]}`); `Only(vec![])` serializes like `None`.
 - CV2-15 compile tier lands in 4.2: `LegacyMessage::rows<const N>` bounded by sealed `Arity<N>: LegacyRows` (N 0..=5); public `Arity<const N>` is reused by 4.4's arity traits. MSG-01 literal tier is 4.4's; 4.2 legacy content is checked at runtime by 4.3's `noctis_rules::message::validate_content`.
 - `noctis-ui` never names gateway types like `RawJson`; `derive(Modal)` output takes bytes.
+- Runtime validator API: `noctis_ui::{validate, cost}` over a sealed `Validate` trait (only `V2Message`, `LegacyMessage`); `validate(&mut M, &Limits) -> Result<CostReport, UiError>` (`&mut` because Lenient truncates in place), `cost(&M, &Limits) -> CostReport { components, text_chars, warnings }`. Errors are `UiError::Limits { violations }`; warnings `LimitWarning::{Truncated, MissingAlt}` are also logged via `tracing::warn!(target: "noctis::ui")`. Unresolved `custom_id`s are skipped by CID-02. New rule MSG-09 (non-empty message) lives in `noctis_rules::message`.
 
 ## Cross-Story Dependencies
 
