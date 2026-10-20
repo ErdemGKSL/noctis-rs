@@ -1,11 +1,15 @@
 # Responses and the Responder
 
-Covers: what a handler may return, `IntoResponse`, auto-defer, ephemerality, the
+Covers: what a handler may return, `IntoResponse`, the context methods
+`ctx.respond` / `ctx.update` / `ctx.reply_text`, auto-defer, ephemerality, the
 typestate `Responder`, follow-ups, modals, errors shown to users, token expiry,
 `LegacyMessage`, webhooks. Rules: INT-01..13, WH-01..05, MSG-05, MSG-07, CV2-01/02.
 
-**Default: return a View and write no response code.** Use the Responder only for
-modals, follow-ups, or replies that need several messages.
+**Default: build the message with your render function and send it with
+`ctx.respond(msg)` or `ctx.update(msg)` (§1b) [planned, Story 8.1]; today a Command
+returns the message.** Write no response-type code. Use the typestate Responder only for
+modals, follow-ups, or replies that need several messages. A View is just a function
+returning a `V2Message` (`views-and-recipes.md`); there is no View trait.
 
 ## 1. Return values (`IntoResponse`)
 
@@ -15,8 +19,7 @@ A Command handler (`#[command]`, `#[user_command]`, `#[message_command]`) return
 | Handler returns | Command | Component / modal submit [planned, Epic 7] |
 | --- | --- | --- |
 | `V2Message` or `Components` (`noctis::ui`) | new message (public, or ephemeral if declared) | — |
-| a `View` (or `view.at(Nav::…)`, `.with_notice(key)`) [planned, Epic 8] | new message | **updates the message in place** (or a new message with `#[handler(response = ephemeral \| public)]`) |
-| a `StaticView` [planned, Epic 8] | new message, no components | updates in place (components removed) |
+| `V2Message` from a component or modal handler [planned, Epic 7] | — | **updates the message in place** (or a new message with `#[handler(response = ephemeral \| public)]`) |
 | `LegacyMessage` | plain `content` notice (not for interactive UI, UD-1) | typed error if it would turn a V2 message back to legacy |
 | `()` | **does not compile**: a command must answer (E0277 `` `()` is not a Command response ``, pointing at the return type) | acknowledges with a deferred update; the message stays as it is |
 | `Responded` (from `acked.done()`) | you answered through the Responder | same |
@@ -36,6 +39,40 @@ today, before any request.
 
 A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
 the `Command` Error Sink (§5).
+
+## 1b. `ctx.respond`, `ctx.update`, `ctx.reply_text` [planned, Story 8.1]
+
+The handler context answers in one call and picks the callback type, deferral, flags
+and ephemerality itself. Each returns `HandlerResult<Responded>`; return it.
+
+```rust
+#[command("dashboard", description = "Open the server dashboard", contexts = [Guild])]
+async fn dashboard(ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
+    let data = db.dashboard(ctx.guild_id()).await?;
+    ctx.respond(render_dashboard(&data, &Strings::of(ctx.response_locale()), DashTab::Overview)).await
+}
+
+#[handler]
+async fn open_tab(ctx: ComponentCtx, to: OpenTab, db: State<Db>) -> HandlerResult<Responded> {
+    if !db.owns(ctx.guild_id(), to.guild).await? {
+        return ctx.reply_text(keys::NOT_FOUND).await;          // ephemeral one-liner
+    }
+    let data = db.dashboard(Some(to.guild)).await?;
+    ctx.update(render_dashboard(&data, &Strings::of(ctx.response_locale()), to.tab)).await
+}
+```
+
+| Method | On | Sends |
+| --- | --- | --- |
+| `ctx.respond(msg)` | every interactive context | a new message: the initial response (type 4, declared ephemerality) while unanswered; the edit of the deferred original after a Command's auto-defer; a follow-up (declared visibility) once answered |
+| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx` (not `CommandCtx`: E0599, INT-04) | an edit of the message the component lives on: type 7 while unanswered, `edit_original` after the type-6 auto-defer |
+| `ctx.reply_text(text)` | every interactive context | one Text Display, **ephemeral** unless `.public()`; the initial response, or an ephemeral follow-up once answered or deferred. `text` is a `String`, a `&'static str` or a `MessageKey` (localized) |
+
+All three add `IS_COMPONENTS_V2`, validate against the Limits and ping nobody (MSG-05).
+A second initial response through the ctx methods or a typestate Responder in the same
+handler is `ResponderError::AlreadyResponded`, with no request. The doctrine lint
+(`xtask skill-check`) accepts these three calls in handlers and rejects
+`.reply(`/`.update(`/`.defer(`/`.edit_original(` on any other receiver.
 
 ## 2. Auto-defer (FR-21, INT-01)
 
@@ -82,7 +119,7 @@ Declared at registration, never toggled later:
 
 - `#[command("…", ephemeral)]` (also on `#[user_command]` / `#[message_command]`; bare
   flag, no value: `ephemeral = true` is a compile error) — private reply (single-user
-  UI: settings, wizards). `CommandHandler::ephemerality()` / `ctx.ephemerality()` read
+  UI: settings, setup flows). `CommandHandler::ephemerality()` / `ctx.ephemerality()` read
   it (`Ephemerality::Ephemeral` / `Ephemerality::Public`).
 - Commands default to public (shared content).
 - [planned, Epic 7] Components default to update-in-place (keep the message's
@@ -96,7 +133,8 @@ E0061).
 
 Locale follows visibility: `ctx.response_locale()` gives the User Locale (then the Guild
 Locale) for ephemeral Commands and the Guild Locale (then the User Locale) for public
-ones, `"en-US"` when Discord sent neither. [planned] `ViewCx::locale()` (Epic 8).
+ones, `"en-US"` when Discord sent neither. Pass `Strings::of(ctx.response_locale())` to
+your render function.
 
 ## 4. The Responder (typestate, INT-03/04)
 
@@ -135,7 +173,7 @@ handle.delete().await?                  -> ()
 ```
 
 `msg` is anything `Into<OutgoingMessage>`: `V2Message`, `Components` or `LegacyMessage`
-([planned] a View, `StaticView`). Calling a method that doesn't exist for the kind or
+([planned] `StaticMessage`). Calling a method that doesn't exist for the kind or
 state is a compile error: a second `reply` (E0599), `update` or `modal` on a
 `CommandResponder` without `OpensModal` (E0599), `defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
 `Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
@@ -303,12 +341,12 @@ V2 → legacy is a typed error (CV2-01).
 ## 7. Webhooks (FR-65) [planned]
 
 ```rust
-// Application-owned webhook: any View.
-ctx.webhooks().execute(webhook_id, &token, LogView::new(entry)).await?;
-ctx.webhooks().edit(webhook_id, &token, message_id, LogView::new(entry)).await?;
+// Application-owned webhook: any V2 message (from your render function).
+ctx.webhooks().execute(webhook_id, &token, render_log(&entry, &s)).await?;
+ctx.webhooks().edit(webhook_id, &token, message_id, render_log(&entry, &s)).await?;
 
-// A webhook you don't own: only non-interactive StaticViews (WH-02), checked by type.
-ForeignWebhook::new(url).send(CaseLog::new(case)).await?;
+// A webhook you don't own: only a non-interactive StaticMessage (WH-02), checked by type.
+ForeignWebhook::new(url).send(StaticMessage::new(render_case_text(&case, &s))).await?;
 ```
 
 Noctis always sends `?with_components=true` (WH-01) and only the flags valid for the

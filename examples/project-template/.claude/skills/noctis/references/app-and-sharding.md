@@ -500,7 +500,7 @@ must outlive a handler; put it behind a port.
 ```rust
 #[handler]
 async fn h(ctx: ComponentCtx, p: MyRoute, meta: State<BotMeta>, premium: Ext<Premium>)
-    -> HandlerResult<MyView>
+    -> HandlerResult<Responded>
 ```
 
 `#[event]` handlers take exactly `(ctx: EventCtx, event: <payload>)`; read state with

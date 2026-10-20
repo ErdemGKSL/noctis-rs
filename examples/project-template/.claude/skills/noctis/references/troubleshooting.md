@@ -22,9 +22,9 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CID-03] route id: limit between 1 and 24, actual 25` | empty or too long id | 1 to 24 characters |
 | ``[CID-03] route id: limit an id that does not start with `_`, actual `_x` `` | `_` prefix is reserved for Noctis | rename |
 | `[CID-03] #[derive(Route)] needs a #[route("id")] attribute` / `a Route takes exactly one #[route] attribute` / `#[route] takes a list: the route id, then codec arguments` / `#[route] is missing the route id` / `the route id must be a string literal` | attribute missing, doubled or malformed | `#[route("shop.buy", args…)]` |
-| ``[CID-03] unknown #[route] argument `colour` `` | typo or unsupported argument | codec arguments: `by_ref`, `overflow = spill`, `schema = n`, `view`, `select`, `signed` |
+| ``[CID-03] unknown #[route] argument `colour` `` | typo or unsupported argument | codec arguments: `by_ref`, `overflow = spill`, `schema = n`, `select`, `signed` (`view` is withdrawn: delete it; tabs and pages are Payload fields) |
 | ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet`` (also `one_shot`, `owner`, `permissions`, `guard`, `opens_modal`) | runtime arguments are [planned] | remove it until the release that supports it |
-| ``[CID-03] #[route] argument `view` is given twice`` / ``[CID-03] `view` is a flag and takes no value`` / ``malformed #[route] argument `by_ref` `` | duplicate argument, `view = true`, `by_ref()` | write each flag once, bare |
+| ``[CID-03] #[route] argument `select` is given twice`` / ``[CID-03] `select` is a flag and takes no value`` / ``malformed #[route] argument `by_ref` `` | duplicate argument, `select = true`, `by_ref()` | write each flag once, bare |
 | ``[CID-03] `overflow = error` is not a #[route] argument`` (`` = help: the plain inline Route (no `overflow`) is the error policy: leave `overflow` out ``) / ``the only `overflow` policy is `spill` `` / ``[CID-03] `overflow` needs a value`` | another overflow policy | `overflow = spill`, or nothing |
 | ``[CID-03] `schema` must be in 1..=61 (one base62 digit), found `62` `` / ``[CID-03] `schema = 0` is the default schema`` (`` = help: leave it out for schema 0 ``) / ``[CID-03] `schema` must be an integer literal`` / ``[CID-03] `schema` needs a value`` | schema out of range or not an integer literal | `schema = 1` … `schema = 61`; no `schema` for 0 |
 | ``[CID-03] `by_ref` and `overflow = spill` cannot be combined`` | both body policies | pick one |
@@ -56,7 +56,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | ``[CV2-07] `X` is not a Section accessory`` / Section arity | no accessory (e.g. `()`), or 0 or > 3 texts | pass a button or Thumbnail; merge texts; use a plain `TextDisplay` if there is no accessory |
 | mismatched types: expected `AttachmentRef`, found `&str` on `File::new` | hand-written `attachment://` name (CV2-12) | `File::new(set.add(Attachment::new(bytes, "png")?))` |
 | `[CV2-08] label too long` | literal > 80 | shorten (guideline ≤ 34 with emoji) |
-| `[MOD-02] more than 5 fields` | modal too big | split into a Wizard with two modal Steps |
+| `[MOD-02] more than 5 fields` | modal too big | split into a step flow with two modal steps (`views-and-recipes.md` §3.3) |
 | `[MOD-07]` radio options | enum with < 2 or > 10 variants | adjust the `Choices` enum |
 | unknown Tailwind class `bg-gradient-to-r`, help: `bg-linear-to-r` | v3 name | use the v4 name (see `images.md` §4) |
 | unknown class `bg-brand` | token missing from `noctis-theme.css` | add `--color-brand` under `@theme` |
@@ -103,8 +103,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | clicking an old message shows "expired" | Ref TTL passed, or Payload schema changed (stale) | longer `ttl`, `on_expired`/`on_stale` handler that re-opens the View |
 | clicks on another user's panel say "not allowed" | `owner = …` guard working as designed | make the View ephemeral or remove the guard |
 | select shows old choice after update | missing `select` on the Route or no `default_*` set | add `select` and set defaults to the current value |
-| mentions in a View don't ping | Views default to `parse: []` | override `View::mentions` |
-| `Violation { rule, path, limit, actual }`, printed as `[CV2-03] components: limit at most 40, actual 41` (`[RULE-ID] path: limit …, actual …`) | dynamic content exceeds a Limit | let the Paginator handle lists; shorten text; `LimitMode::Lenient` truncates text only |
+| mentions in a message don't ping | messages default to `parse: []` | opt in with `V2Message::mentions(..)` |
+| `Violation { rule, path, limit, actual }`, printed as `[CV2-03] components: limit at most 40, actual 41` (`[RULE-ID] path: limit …, actual …`) | dynamic content exceeds a Limit | paginate the list yourself, sizing pages with `Budget` (`views-and-recipes.md` §3.2); shorten text; `LimitMode::Lenient` truncates text only |
 | `[CV2-03] components: limit at most 40, actual 41` with notes `container[0]: 38` … | the tree has too many nodes (Section texts and accessories count) | paginate or split the message; see the per-node notes for the biggest subtree |
 | `[CV2-04] components: limit at most 4000, actual 4210` | Text Displays together are too long | shorten text, paginate, or move long text into a modal or image |
 | `[CV2-06] row[1]: limit between 1 and 5, actual 6` / `limit exactly one select, alone in its row, actual 2` | too many buttons in one row, or a select shares its row | split into several rows; give each select its own row |
@@ -115,8 +115,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[ATT-02] request: limit at most 26214400, actual 27000000` | all files plus JSON over 25 MiB | send fewer files per message |
 | `` [ATT-05] limit attachment://<name> of a file in this message, actual `attachment://card.png` `` | the URL names a file that is not attached (names are case-sensitive) | attach the file in the same message, or fix the name |
 | `[INT-07] choices: limit at most 25, actual 40` (`= help: Noctis sends the first 25 choices and logs this as a warning`) | the autocomplete returned too many suggestions | filter or `take(25)` before `respond` |
-| `UiError::ItemTooLarge` | a single list item can't fit beside the Chrome | render it as an image or a detail View |
-| `UiError::TooManyTabs` | > 5 Navbar tabs | select-based nav or split Views |
+| `Budget::fits` returns 0 | not even one row fits beside the fixed parts | shorten the row, render it as an image, or show it on a detail screen |
 | `RenderError::Overloaded` | render queue full | show the busy notice; raise pool/queue in `ImageConfig`; cache more |
 | `RenderError::CapExceeded` | too many pixels/frames/fps | smaller size, fewer frames, lower fps |
 | card text is invisible / boxes for emoji | no font / no emoji font | `default-font`; `image-emoji` + `EmojiFont::Twemoji` |

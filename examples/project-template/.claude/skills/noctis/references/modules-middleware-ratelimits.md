@@ -224,7 +224,7 @@ Module::new("premium")
     .after(Middleware::after(audit));
 
 #[handler]
-async fn h(ctx: ComponentCtx, p: MyRoute, settings: Ext<GuildSettings>) -> HandlerResult<MyView> { … }
+async fn h(ctx: ComponentCtx, p: MyRoute, settings: Ext<GuildSettings>) -> HandlerResult<Responded> { … }
 ```
 
 - Order: parent Module before child, then registration order; after-Middleware in
@@ -329,4 +329,4 @@ ctx.rate_limits().reset(RateScope::User, "bio-edit").await?;
 ```
 
 Override the notice per App, Command or Route with `rate_limited = fn` [planned]:
-`async fn(ctx: &dyn Ctx, retry_after: Duration) -> HandlerResult<StaticViewBox>`.
+`async fn(ctx: &dyn Ctx, retry_after: Duration) -> HandlerResult<StaticMessage>`.

@@ -435,7 +435,7 @@ fn d_combined_bad_template() {
         &[
             &format!("{path}:1: [UD-1] embeds are not an interactive output; build a View"),
             &format!(
-                "{path}:10: [UD-3] manual response-type selection; return a View and let Noctis pick the response"
+                "{path}:10: [UD-3] manual response-type selection; send the rendered message with ctx.respond/ctx.update and let Noctis pick the response"
             ),
             &format!("{path}:11: [UD-7] collectors are not allowed; one #[handler] per Route"),
             &format!(
@@ -447,7 +447,9 @@ fn d_combined_bad_template() {
             &format!(
                 "{path}:4: [UD-3] take a Responder only to open a modal (CommandResponder<OpensModal>)"
             ),
-            &format!("{path}:5: [UD-3] manual response through the Responder; return a View"),
+            &format!(
+                "{path}:5: [UD-3] manual response through the Responder; use ctx.respond(msg) or ctx.update(msg)"
+            ),
             &format!(
                 "{path}:6: [UD-7] task spawned per interaction or event; use a Ref TTL or a port"
             ),

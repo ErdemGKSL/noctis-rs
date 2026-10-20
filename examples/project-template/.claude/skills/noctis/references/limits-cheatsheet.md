@@ -227,10 +227,15 @@ locale returns `None`.
 | CID-06 | `custom_id` is untrusted client input | R |
 | CID-07 | ASCII-only encoding | C |
 
-Layout widths: `F` 1, route ≤ 24, `:` 1, schema 1, view envelope 5, select nonce 2,
-Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
-`u32` 6, `u64`/`Id` 11, `PayloadEnum` 1, `Option<T>` +1, `BoundedStr<N>` 2N,
-`String`/`Vec` unbounded. Worst by-ref id: 46.
+Layout widths: `F` 1, route ≤ 24, `:` 1, schema 1, select nonce 2, Ref marker + Ref
+12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3, `u32` 6, `u64`/`Id` 11,
+`PayloadEnum` 1, `Option<T>` +1, `BoundedStr<N>` 2N, `String`/`Vec` unbounded. Worst
+by-ref id: 41 (46 in this release, which still reserves the withdrawn 5-character view
+envelope; Story 6.10 removes it).
+
+Page sizing: `Budget::of(&fixed_parts, &limits).fits(&row)` [planned, Story 8.3]
+answers "how many rows of this shape still fit" against CV2-03 (40 components) and
+CV2-04 (4000 characters) together (`views-and-recipes.md` §4).
 
 ## Components V2 (messages)
 

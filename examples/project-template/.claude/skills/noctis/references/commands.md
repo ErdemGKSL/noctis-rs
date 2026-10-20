@@ -46,7 +46,8 @@ pub async fn setup_start(ctx: CommandCtx) -> HandlerResult<Components> {
 `ephemeral` (bare flag) makes every response private (INT-10, `responder.md` §3);
 `CommandHandler::ephemerality()` reads it.
 
-[planned] Extractors as further parameters and returning a View (Epic 8).
+[planned] Extractors as further parameters, and `ctx.respond(render_x(..))` as the
+default answer (Story 8.1; `views-and-recipes.md`).
 
 Register it: `Module::new("setup").add(setup_start())` (the macro turns the fn into a
 descriptor constructor `fn setup_start() -> CommandHandler`; call it with `()`).
@@ -171,11 +172,11 @@ also yields the path without it. Expansion is left to right in declaration order
 ```rust
 #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
 async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
-    let view = match path {
+    let msg = match path {
         ConfigPath::SetPrefix | ConfigPath::SetWelcome => { … }
         ConfigPath::GetPrefix | ConfigPath::GetWelcome => { … }
     };
-    Ok(view)
+    Ok(msg)
 }
 ```
 
@@ -619,8 +620,8 @@ let module = Module::new("mod").add(show_profile()).add(report());
   `(ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])` (or `ResolvedMessage`
   for `#[message_command]`) returning `HandlerResult<R>` like a slash Command (`R` a
   `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
-  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); returning a View
-  (Epic 8).
+  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); `ctx.respond(..)`
+  (Story 8.1).
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
   `Limits::context_menu_name_len`), path `""`, CTX-01 `Between{1,32}` / `Count(n)`;

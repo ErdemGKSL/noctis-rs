@@ -1,7 +1,7 @@
 # Testing
 
 Covers: the testkit (`noctis::testkit`), simulated commands and clicks, assertions on
-Views, response kind and ephemerality, View JSON snapshots, Limit cost, Template pixel
+rendered messages, response kind and ephemerality, message JSON snapshots, Limit cost, Template pixel
 snapshots, Adapter conformance, `assert_memory_flat`. FR-51. Enable the `testkit`
 feature in `[dev-dependencies]` only:
 
@@ -17,7 +17,8 @@ Always run tests with `--release` (`cargo test --release`); never create a debug
 
 - Put everything in `src/lib.rs` with a `configure(&mut AppBuilder) -> &mut AppBuilder`; `main.rs`
   only calls it. Integration tests in `tests/` import the lib.
-- Keep `View::render` pure so Views can be rendered from plain data in unit tests.
+- Keep render functions (`render_x(data, &s, ids…) -> V2Message`) pure so they can be
+  called from plain data in unit tests.
 
 ## 2. A TestApp [planned]
 
@@ -63,28 +64,31 @@ app.event(MessageCreate::test(GUILD, MEMBER, "hello")).await?;
 | `text()` | all Text Display content joined (for `contains` checks) |
 | `button(label)`, `button_by_emoji(e)`, `component::<R>()` | handles to click; `is_disabled()`, `style()` |
 | `components()` | flattened list |
-| `view_json()` | the exact JSON Noctis would send (for `insta::assert_json_snapshot!`) |
+| `message_json()` | the exact JSON Noctis would send (for `insta::assert_json_snapshot!`) |
 | `cost()` | `Cost { components, text_chars, pages }` |
 | `attachments()` | names, sizes, alt texts |
 | `is_guard_notice()`, `is_rate_limited()`, `is_expired_notice()`, `is_error()` | pipeline outcomes |
 | `followups()` | follow-up messages |
 | `http_calls()` | what would have gone over the wire (empty when validation failed first) |
 
-Snapshot rule: a View snapshot changes only when its rendered JSON changes (select
+Snapshot rule: a message snapshot changes only when its rendered JSON changes (select
 nonces are normalized). Review with `cargo insta review`.
 
 ```rust
-insta::assert_json_snapshot!("setup_step1", step1.view_json());
+insta::assert_json_snapshot!("setup_step1", step1.message_json());
 assert!(roles.cost().components <= 40);
 ```
 
-## 5. Unit-testing a View without an App
+## 5. Unit-testing a render function without an App
+
+A View is a plain function, so call it:
 
 ```rust
-let view = SetupWizard::new(SetupState { owner: ADMIN, log_channel: None, mod_role: None });
-let rendered = noctis::testkit::render_view(&view, Nav::step(0), Locale::EnUs)?;
-insta::assert_json_snapshot!(rendered.json());
-assert!(rendered.cost().components <= 40);
+let s = Strings::of("en-US");
+let st = SetupState { owner: ADMIN, step: SetupStep::Channel, log_channel: None, mod_role: None };
+let msg = render_setup(st, &s);
+insta::assert_json_snapshot!(serde_json::to_value(msg.create_body(CreateFlags::empty())?)?);
+assert!(noctis::ui::cost(&msg, &Limits::default()).components <= 40);
 ```
 
 ## 6. Template pixel snapshots
@@ -126,10 +130,11 @@ per-message state.
 
 ## 9. What to test in every feature
 
-1. The entry command returns the expected View (snapshot) with the right kind and
+1. The entry command sends the expected message (snapshot) with the right kind and
    ephemerality.
 2. Each author Route: click → expected update; guard rejects other users.
-3. Overflow: seed enough data to paginate; assert Navbar and Limits on page 2.
+3. Long lists: seed enough data for several pages; assert the tab row, prev/next
+   disabled at the bounds and the Limits on every page.
 4. Empty state renders.
-5. Modal: open, submit, View updated; invalid input gives the notice.
+5. Modal: open, submit, message updated; invalid input gives the notice.
 6. Custom Adapters pass conformance.

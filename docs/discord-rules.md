@@ -171,8 +171,8 @@ points straight back to this file.
 
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
-| **CID-01** Length | **1-100** characters on buttons, selects, text inputs, file uploads, radio/checkbox groups, checkboxes and modals **[D]** (counting unit **[U]**) | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time | `derive(Route)` computes `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)` (see [Compile-time strategy §1-2](#1-the-custom_id-layout-and-fixed-length-refs)) and emits a const assertion that it is ≤ 100. An inline Route with an unbounded field does not compile; it must declare `#[route("id", by_ref)]` or `#[route("id", overflow = spill)]`. Because a Route id is at most 24 characters, a by-ref `custom_id` is at most 46 characters. Modal input keys are user strings, checked at runtime by `noctis_rules::modal::validate_input_custom_id` (through `noctis::ui::validate`). |
-| **CID-02** Unique per message | No two components in one message may share a `custom_id` **[D]** | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time (`components!` trees with literal Payloads) / Runtime (all trees) | `components!` rejects two Route components whose Route type and Payload are token-identical with only literal field values (`[CID-02]`, both spans shown); `view!` is the unrelated image Template macro. `noctis_ui::validate` compares every resolved `custom_id` of the tree before sending and reports each later duplicate at its `….custom_id` path with a note naming the first use. Disabled "label" buttons (page indicator) still need a unique id. For a runtime-built `Modal`, `noctis::ui::validate` checks that its input keys are unique within the modal. |
+| **CID-01** Length | **1-100** characters on buttons, selects, text inputs, file uploads, radio/checkbox groups, checkboxes and modals **[D]** (counting unit **[U]**) | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time | `derive(Route)` computes `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)` (`E` is withdrawn; see [Compile-time strategy §1](#1-the-custom_id-layout-and-fixed-length-refs)) (see [Compile-time strategy §1-2](#1-the-custom_id-layout-and-fixed-length-refs)) and emits a const assertion that it is ≤ 100. An inline Route with an unbounded field does not compile; it must declare `#[route("id", by_ref)]` or `#[route("id", overflow = spill)]`. Because a Route id is at most 24 characters, a by-ref `custom_id` is at most 46 characters. Modal input keys are user strings, checked at runtime by `noctis_rules::modal::validate_input_custom_id` (through `noctis::ui::validate`). |
+| **CID-02** Unique per message | No two components in one message may share a `custom_id` **[D]** | [CR §Anatomy of a Component](https://discord.com/developers/docs/components/reference#anatomy-of-a-component) | Compile-time (`components!` trees with literal Payloads) / Runtime (all trees) | `components!` rejects two Route components whose Route type and Payload are token-identical with only literal field values (`[CID-02]`, both spans shown); `view!` is the unrelated image Template macro. `noctis_ui::validate` compares every resolved `custom_id` of the tree before sending and reports each later duplicate at its `….custom_id` path with a note naming the first use. Disabled buttons (an author's active-tab button or page indicator) still need a unique id. For a runtime-built `Modal`, `noctis::ui::validate` checks that its input keys are unique within the modal. |
 | **CID-03** Route format | Route id = `[a-z0-9._-]{1,24}` (so it never contains `:` `,` `~` `!`); ids starting with `_` are reserved for Noctis **[N]** | — | Compile-time | `#[route("shop.buy")]` literal validated in the derive. |
 | **CID-04** Route uniqueness | Exactly one handler per Route (FR-15) **[N]** | — | Compile-time (`R: Handled` bound on component constructors) / App-build | `noctis-ui` component constructors require `R: Handled`, which only `#[handler]` implements (`[CID-04]`, FR-58). Routes from all Modules go into one map; duplicates are a `BuildError` naming both Modules. |
 | **CID-05** Ref entropy and binding | Ref = 11 base62 characters from the OS CSPRNG (`getrandom`, ≈ 65.5 bits ≥ 64 bits), never sequential, never derived from interaction data; namespaced per App. The stored `RefRecord` carries the Route id and schema version **[N]** (PRD triage) | — | Compile-time (fixed width, by construction) / Runtime (generation, record check) | Ref width is a `const`, so every by-ref `custom_id` length is known at compile time. Refs are minted in two phases: `noctis-ui` emits `RefSlot` placeholders and the Responder stores them and finalizes the `custom_id` before sending. A record whose Route differs from the `custom_id`'s Route is treated as forged; a schema mismatch is a Stale Payload. |
@@ -271,7 +271,7 @@ Every "–" is a compile error raised by the sealed placement traits (`TopLevel`
 | Rule | Limit/value | Source | Enforcement | How |
 |---|---|---|---|---|
 | **WH-01** `with_components` | `?with_components=true` is required for `components` to be respected on Execute / Edit Webhook Message **[D]** | [WH §Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) | Compile-time (by construction) | Noctis' webhook client always sets it when components are present. |
-| **WH-02** Non-owned webhooks | Can only send **non-interactive** components; application-owned webhooks can send all **[D]** | [WH §Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) | Compile-time | `ForeignWebhook::send` takes a `StaticView` whose node types exclude buttons and selects (`Interactive` marker trait not allowed; the bound carries `#[diagnostic::on_unimplemented(message = "[WH-02] …")]`). |
+| **WH-02** Non-owned webhooks | Can only send **non-interactive** components; application-owned webhooks can send all **[D]** | [WH §Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) | Compile-time | `ForeignWebhook::send` takes a `StaticMessage` (formerly `StaticView`) whose node types exclude buttons and selects (`Interactive` marker trait not allowed; the bound carries `#[diagnostic::on_unimplemented(message = "[WH-02] …")]`). |
 | **WH-03** V2 + webhook body | With V2, `content`, `embeds`, `files[n]`, `poll` → 400 on execute; on edit they must be set to `null` first **[D]** | [WH §Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) | Compile-time (by construction) | Same `V2Message` type as CV2-02. |
 | **WH-04** Webhook name | 1-80 characters **[D]** | [WH §Create Webhook](https://discord.com/developers/docs/resources/webhook#create-webhook) | Compile-time (literal) / Runtime | |
 | **WH-05** Forum/media channels | Must pass `thread_id` or `thread_name` **[D]** | [WH §Execute Webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) | Runtime | Requires the channel type, known only at runtime. |
@@ -317,7 +317,9 @@ F      1 char    base62 digit = 16 * generation + flags
                  v1 writes generation 0 (F < 16); F >= 16 is a CodecError
 route  1..24     [a-z0-9._-], unique per App; ids starting with "_" are reserved
 S      1 char    Route schema version 1..=61 (#[route(schema = n)]); absent = 0
-E      5 chars   View envelope: action 1, tab 1, page 2, state version 1
+E      5 chars   WITHDRAWN (2026-10-20): View envelope (action, tab, page,
+                 state version). No Route may declare it; Story 6.10 removes
+                 it from noctis-codec and flag 2 becomes reserved (must be 0)
 N      2 chars   per-render select nonce (FR-25); select Routes only
 body   inline    field ("," field)*
        by ref    "~" + 11 base62 Ref
@@ -336,6 +338,12 @@ T      6 chars   integrity tag: base62 of truncated keyed BLAKE3 over all
 | `REF_LEN` | 11 |
 | `TAG_LEN` | 6 |
 
+`VIEW_ENV_LEN` and the `E` section are withdrawn (maintainer decision 2026-10-20:
+Noctis has no UI widgets, no view envelope and no `view` Route shape; tab, page and
+step ids are ordinary Payload fields). The row stays only while `noctis-codec`
+still defines the constant; Story 6.10 deletes the constant, this row and every `E`
+term below, and the by-ref worst case becomes 41 characters.
+
 A Ref is always exactly **11 base62 characters** (CID-05). 62^11 ≈ 5.2 × 10^19, which
 is ≈ 65.5 bits, above the 64-bit entropy floor. Because every part except the inline
 body has a fixed width, the worst case is known at compile time:
@@ -345,10 +353,12 @@ MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)
 inline  = Payload::MAX_ENCODED_LEN + T
 by_ref  = REF_MARKER_LEN + REF_LEN = 12
 S, E, N, T count only when the Route declares them (1, 5, 2, 6), else 0
+E is withdrawn (2026-10-20) and is 0 for every Route once Story 6.10 lands
 ```
 
 A Route id is at most 24 characters, so a by-ref `custom_id` is at most
-1 + 24 + 1 + 1 + 5 + 2 + 12 = 46 characters: `#[route("wizard.step", by_ref)]` and
+1 + 24 + 1 + 1 + 5 + 2 + 12 = 46 characters (41 once the withdrawn `E` is removed):
+`#[route("setup.step", by_ref)]` and
 `overflow = spill` Routes always fit, and the derive still proves it with a const
 assertion. A `signed` Route can't be `by_ref` (the Ref is already unguessable).
 
@@ -413,7 +423,8 @@ fn __noctis_route_width_BuyButton() { /* prints and asserts route_width::<BuyBut
 
 The one attribute syntax is `#[route("id")]`, `#[route("id", by_ref)]` or
 `#[route("id", overflow = spill)]`, optionally with the other codec arguments
-`schema = n`, `view`, `select` and `signed` in any order, plus the runtime arguments
+`schema = n`, `select` and `signed` in any order (`view` is withdrawn as of
+2026-10-20 and becomes an unknown argument, CID-03, in Story 6.10), plus the runtime arguments
 (`ttl`, `one_shot`, `owner`, `permissions`, `guard`, `opens_modal`) that AD-6 lists and
 that don't change the length. Until the story that implements each runtime argument,
 the derive rejects it (CID-03) instead of ignoring it. The derive validates the id
@@ -537,7 +548,7 @@ macro or the checked runtime conversion.
   - **Static custom_id uniqueness** (CID-02): it sees every Route component and
     rejects two whose Route type and Payload expression are token-identical and use
     only literal field values, showing both spans.
-- **Dynamic parts** (`{expr}` holes, `..expr` spreads, `Paginator` pages) are checked
+- **Dynamic parts** (`{expr}` holes, `..expr` spreads, author-built page slices) are checked
   by the runtime validator on the actual tree before sending (FR-24).
 - `view!` is a different macro: it builds image Template nodes (AD-15) and has no
   Components V2 rules.

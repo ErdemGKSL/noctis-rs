@@ -1,7 +1,7 @@
 ---
 title: "PRD Addendum: Noctis"
 created: 2026-10-19
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # Addendum: technical direction for architecture
@@ -117,6 +117,15 @@ Sources: the memlog and `../../research/`.
   select types).
 - **`Limits` struct:** configurable, so changes to Discord limits don't require a
   release.
+- **No widget layer (2026-10-20):** Noctis ships no Navbar, Wizard or Paginator,
+  no widget state, no view envelope or `view` route argument in `custom_id`, and no
+  automatic re-render or pagination. A View is a plain author-written function
+  `render_x(state) -> Message`; tab, page and step ids are ordinary typed Payload
+  fields of the module's Routes, and handlers call the same render function and
+  pass the result to `ctx.update(..)`. This mirrors the maintainer's TypeScript bot
+  (schwi-v2). The UX patterns (tabs, pagination, step flows) are Usage Skill
+  recipes. Budget helpers (FR-62) expose a message's cost and how many items of a
+  given shape still fit.
 - **Gaps in twilight 0.17.1:**
   - Checkbox and Checkbox Group are missing; Radio Group is missing everywhere.
   - Unknown component types lose their data.

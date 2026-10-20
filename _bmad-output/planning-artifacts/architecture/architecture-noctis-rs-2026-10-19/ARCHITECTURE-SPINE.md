@@ -7,7 +7,7 @@ paradigm: 'hexagonal (ports and adapters) core over an event-driven, lane-based 
 scope: 'The noctis-rs monorepo: every noctis-* crate, the noctis facade, examples/project-template, xtask and CI'
 status: final
 created: '2026-10-19'
-updated: '2026-10-19'
+updated: '2026-10-20'
 binds: ['FR-1..FR-79', 'NFR-1..NFR-10', 'UD-1..UD-8']
 sources:
   - ../../prds/prd-noctis-rs-2026-10-19/prd.md
@@ -212,6 +212,9 @@ list in CI.
 ### AD-5 — `custom_id` wire format
 - **Binds:** `noctis-codec`, `noctis-core`, `noctis-ui`, `noctis-macros`; FR-15 to
   FR-19, FR-25, FR-60, FR-76; CID-01 to CID-07.
+- **Amended (2026-10-20):** the View envelope `E` and the `view` Route shape are
+  withdrawn with AD-20 (maintainer decision: no UI widgets). Tab, page and step ids
+  are ordinary Payload fields. Story 6.10 removes the shipped `E` code.
 - **Prevents:**
   - length miscounts from non-ASCII characters;
   - two encoders producing incompatible ids;
@@ -222,14 +225,15 @@ list in CI.
     quotes it:
 
     ```text
-    custom_id = F route ":" [S] [E] [N] body [T]
+    custom_id = F route ":" [S] [N] body [T]
 
     F      1 char    base62 digit = 16 * generation + flags
-                     flags: 1 = S present, 2 = E present, 4 = N present, 8 = T present
-                     v1 writes generation 0 (F < 16); F >= 16 is a CodecError
+                     flags: 1 = S present, 2 = reserved (must be 0), 4 = N present,
+                     8 = T present
+                     v1 writes generation 0 (F < 16); F >= 16 or flag 2 set is a
+                     CodecError
     route  1..24     [a-z0-9._-], unique per App; ids starting with "_" are reserved
     S      1 char    Route schema version 1..=61 (#[route(schema = n)]); absent = 0
-    E      5 chars   View envelope (AD-20): action 1, tab 1, page 2, state version 1
     N      2 chars   per-render select nonce (FR-25); select Routes only
     body   inline    field ("," field)*
            by ref    "~" + 11 base62 Ref
@@ -244,7 +248,7 @@ list in CI.
     unknown-Route path (FR-19).
   - Appending `Option<T>` fields is compatible: missing trailing fields decode as
     `None`, with no schema bump. Every other Payload change, and changing a Route's
-    `view`, `select`, `signed` or `by_ref` shape, bumps `schema`. Renaming a Route id
+    `select`, `signed` or `by_ref` shape, bumps `schema`. Renaming a Route id
     breaks live components.
   - Fields are base62 integers (signed ones zig-zag), snowflakes, 1-char enums and
     booleans, `Option` with a 1-char presence tag, and `BoundedStr<N>` (ASCII only,
@@ -258,12 +262,15 @@ list in CI.
     Cluster. One previous key may be configured for verification during rotation.
     It is never logged and never passed to an adapter.
   - The codec is the only code that builds or parses a `custom_id`. Its layout
-    constants (`FMT_LEN`, `SEP_LEN`, `SCHEMA_LEN`, `VIEW_ENV_LEN`, `NONCE_LEN`,
+    constants (`FMT_LEN`, `SEP_LEN`, `SCHEMA_LEN`, `NONCE_LEN`,
     `REF_MARKER_LEN`, `REF_LEN`, `TAG_LEN`) are `pub const`, and
     `xtask rules-catalog` asserts the catalog quotes the same values.
 
 ### AD-6 — Payload length is a compile-time property
 - **Binds:** `noctis-codec`, `noctis-macros`; FR-16, FR-17, FR-76; CID-01.
+- **Amended (2026-10-20):** the `view` codec argument and the `E` term are
+  withdrawn with AD-20; `#[route]` rejects `view` as an unknown argument (CID-03)
+  once Story 6.10 lands.
 - **Prevents:** a Route that overflows 100 characters only for some values, and a
   macro bound that disagrees with the real encoding.
 - **Rule:**
@@ -276,13 +283,13 @@ list in CI.
     inspects type names: it emits a `const` sum of `<F as Field>::MAX_LEN` plus
     `fields − 1` separators through codec `const fn`s. Generic Routes are rejected.
   - The bound is
-    `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)`,
+    `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + N + max(inline, by_ref)`,
     where `inline = Payload::MAX_ENCODED_LEN + T` and `by_ref = REF_MARKER_LEN + REF_LEN = 12`.
-    `S`, `E`, `N` and `T` count only when the Route declares them (1, 5, 2, 6).
+    `S`, `N` and `T` count only when the Route declares them (1, 2, 6).
   - One attribute syntax. `#[route("id", …)]` takes two kinds of arguments, and
     the derive rejects anything else:
     - **Codec arguments** change the `custom_id` shape and length, and Story 2.5
-      derives them: `by_ref` or `overflow = spill`, `schema = n` (1..=61), `view`,
+      derives them: `by_ref` or `overflow = spill`, `schema = n` (1..=61),
       `select` (adds the `N` nonce; select constructors require it) and `signed`.
     - **Runtime arguments** don't change the encoding. The derive records them in an
       associated `RouteRuntime` const that core reads: `ttl = "…"` and `one_shot`
@@ -399,8 +406,8 @@ list in CI.
     `Command<M>`, `Component<M>` or `ModalSubmit`, where `M` is `NoModal` (default)
     or `OpensModal`. A handler that responds explicitly takes it as a parameter
     through the aliases `CommandResponder<M = NoModal>`,
-    `ComponentResponder<M = NoModal>` and `ModalResponder`; a handler that returns a
-    View takes none. `Responder<Pending>` and `Responder<Acked>` in the rules below
+    `ComponentResponder<M = NoModal>` and `ModalResponder`; a handler that only
+    sends a rendered message through its context (below) takes none. `Responder<Pending>` and `Responder<Acked>` in the rules below
     mean `Responder<K, Pending>` and `Responder<K, Acked>` for any `K`.
   - `Responder<Pending>` methods (`reply`, `defer`, `update`, `modal`) consume
     `self` and return `Responder<Acked>`, which offers only `edit_original`,
@@ -420,12 +427,19 @@ list in CI.
     update-in-place for components); the auto-defer uses it. Commands defer with
     type 5 (only `EPHEMERAL`), components and modal submits with type 6; the V2 flag
     goes on the edit (INT-08).
-  - A handler that returns a View gets the right callback without author code
-    (FR-61). The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
+  - A View is a plain author-written function returning a message (FR-25); there is
+    no View trait or registry and core never re-renders on its own. The handler
+    context offers an ergonomic layer over the typestate (FR-61):
+    `ctx.respond(msg)` (new message, or follow-up after a defer), `ctx.update(msg)`
+    (edit the component's message; `Component`/`ModalSubmit` only) and
+    `ctx.reply_text(text)` (a one-line notice, ephemeral by default). Each picks the
+    callback type, defer variant and flags from the declared ephemerality and the
+    runtime state machine, so the author never selects a response type. The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
     finalizes Refs (AD-18) and attachments (AD-22), and runs the runtime validator.
   - Webhook sends and edits go through the same serializer: always
     `with_components=true`, per-endpoint flag sets, and `ForeignWebhook::send` takes
-    only a non-interactive `StaticView` (WH-02).
+    only a non-interactive `StaticMessage` (WH-02; renamed from `StaticView` on
+    2026-10-20, since Views are plain functions).
 
 ### AD-12 — Noctis owns the Components V2 model
 - **Binds:** `noctis-ui`, `noctis-core`; FR-23 to FR-31, FR-63, FR-64; CV2-*,
@@ -593,7 +607,7 @@ list in CI.
 - **Prevents:**
   - runtime "missing key" surprises and placeholder mismatches;
   - command names and content using different sources;
-  - widgets hard-coding English or each crate defining its own `Locale`;
+  - framework strings hard-coding English or each crate defining its own `Locale`;
   - an overlay changing a published command name.
 - **Rule:**
   - `i18n!(default = "en-US", dir = "locales")` compiles the crate's locale files
@@ -613,8 +627,9 @@ list in CI.
     `noctis-i18n` for the built-in `noctis.*` strings, so the `core → i18n` edge is
     unconditional.
   - `Locale` (the closed 32-code enum), `MessageKey` and `trait Translate` live in
-    `noctis-rules`. Widgets in `noctis-ui` take `&dyn Translate` and use only keys
-    under the reserved `noctis.` namespace. `noctis-i18n` implements `Translate` and
+    `noctis-rules`. Framework-emitted strings (default notices and errors) go
+    through `&dyn Translate` and use only keys under the reserved `noctis.`
+    namespace. `noctis-i18n` implements `Translate` and
     ships default `noctis.*` strings.
   - Each Module's catalog is a descriptor. `App::build` merges catalogs per
     language; a key defined by two Modules fails with an error naming both (FR-72).
@@ -664,18 +679,18 @@ list in CI.
 
 ### AD-18 — Refs are minted in two phases
 - **Binds:** `noctis-codec`, `noctis-ui`, `noctis-core`, `noctis-ports`; FR-17,
-  FR-27, FR-58.
-- **Prevents:** a pure View minting a dangling Ref, a crate below core touching
-  `RefStore`, and widgets that can't delete their Refs.
+  FR-58.
+- **Prevents:** a pure render function minting a dangling Ref, a crate below core
+  touching `RefStore`, and pure code that can't delete its Refs.
 - **Rule:**
   - `noctis-codec` defines `EncodedId = Inline(ArrayString<100>) | RefSlot(PendingRef)`
     with `PendingRef { route, schema, payload: Bytes, ttl, one_shot }`. `noctis-ui`
-    and widgets produce only `EncodedId`; they never generate Ref characters.
+    and render functions produce only `EncodedId`; they never generate Ref characters.
   - Before validation and send, core's Responder stores each `RefSlot` with
     `RefStore::put_if_absent` (retrying on collision) and calls
     `codec::finish(slot, ref)` for the final `custom_id`. Identical slots in one
     message share one Ref.
-  - Ref deletions requested by pure code (Wizard cancel) are a `RefOps` list on the
+  - Ref deletions requested by pure code (a step flow's cancel) are a `RefOps` list on the
     returned response; only core executes them. One-shot Refs are consumed with
     `take`.
   - No crate below `noctis-core` holds a `RefStore` handle.
@@ -698,27 +713,21 @@ list in CI.
     in their own descriptor; `App::build` fails when a Route referenced by a mounted
     Module's descriptors has no mounted handler (dynamic half).
 
-### AD-20 — Widget state rides the View's own Route
-- **Binds:** `noctis-ui`, `noctis-codec`, `noctis-core`; FR-25 to FR-28, FR-62,
-  UD-4 to UD-6.
-- **Prevents:** widgets registering framework Routes that collide with bot Routes,
-  runtime-appended fields breaking the proven length, and modal-opening widget
-  controls on Routes the author didn't declare.
-- **Rule:**
-  - Widgets never register Routes. Every control (tab, page, jump, wizard
-    next/back/cancel, page indicator) encodes to the owning View's Route, declared
-    `#[route("id", view)]`, through the `E` envelope (AD-5): action (`_` author,
-    `t` tab, `p` page, `j` jump, `n`/`b`/`c` wizard, `i` inert indicator), tab, page
-    and state version.
-  - Core handles widget actions by re-rendering the View with the new tab, page or
-    step; action `_` goes to the author's handler.
-  - Jump-to-page is a String Select, never a modal.
-  - A View with a state version (FR-25) re-renders from current state with a notice
-    when the incoming version is older.
-  - Controls differ by envelope, so ids in one message are unique (CID-02); the
-    runtime validator still checks.
-  - Wizard step state travels in the Payload when it fits; otherwise the View Route
-    is `overflow = spill`.
+### AD-20 — Widget state rides the View's own Route — Withdrawn (2026-10-20)
+- **Status:** Withdrawn by maintainer decision (2026-10-20). Noctis ships no UI
+  widgets (Navbar, Wizard, Paginator; FR-26 to FR-28 withdrawn), no
+  framework-managed widget state, no `view` Route shape, no `E` envelope in
+  `custom_id` (AD-5), no widget actions, no View state versions and no automatic
+  re-render by core. The id is kept so references stay stable.
+- **Replacement:** a View is a plain author-written function returning a message
+  (FR-25), as in the maintainer's TypeScript bot. Tab, page, step and selection
+  ids are ordinary typed fields of the module's own Route Payloads (a
+  `#[derive(PayloadEnum)]` tab, a `page: u16`), so AD-6 proves their width like
+  any other field. The handler decodes the Payload, validates and authorizes,
+  writes storage and calls `ctx.update(render_x(..))` (AD-11). Distinct Payloads
+  keep the ids in one message unique (CID-02); the runtime validator still checks.
+  Story 6.10 removes the shipped envelope code from `noctis-codec`,
+  `noctis-macros`, `noctis-ui`, the facade, the rules catalog and the Usage Skill.
 
 ### AD-21 — Gateway lifecycle: startup safety, sessions and shutdown order
 - **Binds:** `noctis-gateway`, `noctis-core`; FR-1 to FR-4, FR-53 to FR-55;
@@ -976,27 +985,35 @@ list in CI.
   - Where tescord's behavior and Discord's rules disagree, Noctis follows Discord
     and fails at compile time.
 
-### AD-27 — The UI Doctrine is built into `noctis-ui`
+### AD-27 — The UI Doctrine is taught, not built in (amended 2026-10-20)
 - **Binds:** `noctis-ui`, `noctis-core`, `noctis-image`, Project Template, Usage
-  Skill; UD-1 to UD-6, FR-25 to FR-28, FR-61, FR-62.
-- **Prevents:** built-in widgets or examples drifting from the doctrine, and lists
-  that fail on Limits instead of paginating.
+  Skill; UD-1 to UD-6, FR-25, FR-61, FR-62.
+- **Prevents:** examples and recipes drifting from the doctrine, a widget layer
+  that hides cost and state from the author, and lists that hit a Limit at
+  runtime because the author had no way to size a page.
+- **Amended (2026-10-20):** formerly "The UI Doctrine is built into `noctis-ui`",
+  with built-in `View`, `Navbar`, `Wizard` and `Paginator` widgets and a default
+  paginating Overflow Policy. Those are withdrawn (FR-26 to FR-28, AD-20); the
+  rule below replaces them.
 - **Rule:**
-  - Built-in widgets (`View`, `Navbar`, `Wizard`, `Paginator`) produce only V2
-    messages. Legacy `content` and embeds exist only behind `LegacyMessage`
-    (UD-1).
-  - Rendered images enter Views only as Thumbnail or Media Gallery attachments and
-    never carry actionable information (UD-2).
-  - A Command with no options and a View-returning handler needs no response code
-    (UD-3, FR-61).
-  - `Wizard` shows "Step n of m: Title" progress, never page numbers (UD-4).
-    `Navbar` is a top Action Row of View-Route buttons with the active tab disabled;
-    more tabs than one row holds is a typed error (UD-5).
-  - The default Overflow Policy paginates (UD-6, FR-62): the Paginator reserves the
-    Chrome's cost, packs items against the App's `Limits`, and paginates inside the
-    active Navbar tab. Only an item that can't fit beside the Chrome is a typed
-    error. `Error` and `Truncate` are opt-in.
-  - Views default to `allowed_mentions.parse = []` (MSG-05).
+  - `noctis-ui` is a Components V2 wrapper, not a widget toolkit: typed components
+    with placement in the type system, the runtime validator, per-component and
+    per-message cost, and budget helpers (FR-62) that report how many items of a
+    given shape still fit beside a partly built message. It never paginates,
+    truncates or splits a message on its own; an over-Limit message is the FR-24
+    error.
+  - V2 is the only interactive output; legacy `content` and embeds exist only
+    behind `LegacyMessage` (UD-1).
+  - Rendered images enter messages only as Thumbnail or Media Gallery attachments
+    and never carry actionable information (UD-2).
+  - A Command with no options whose handler calls `ctx.respond(render_x(..))`
+    needs no response-type code (UD-3, FR-61).
+  - Step flows, tabs and pagination (UD-4 to UD-6) are recipes in the Usage Skill
+    (`references/views-and-recipes.md`) with complete code, and the Project
+    Template's modules implement them by hand: a `step`, tab (`PayloadEnum`) or
+    `page: u16` Payload field, a `match` in the render function, Route buttons with
+    the active tab disabled and prev/next disabled at the bounds.
+  - Messages default to `allowed_mentions.parse = []` (MSG-05).
   - `xtask skill-check` also lints the Project Template for doctrine violations
     (embeds or `content` in interactive surfaces, manual response-type selection).
 
@@ -1163,7 +1180,7 @@ noctis-rs/
     noctis/                  # facade: re-exports, features, prelude (incl. feature extension traits)
     noctis-rules/            # Discord limits and validators (rule ids), Limits, Locale, MessageKey, Translate
     noctis-codec/            # custom_id layout, Route/Payload/Field traits, EncodedId, RefRecord, BoundedStr
-    noctis-ui/               # V2 and modal model, Attachment, validator, View/Navbar/Wizard/Paginator
+    noctis-ui/               # V2 and modal model, Attachment, validator, cost and budget helpers
     noctis-ports/            # port traits incl. DiscordCache, Template/RenderJob/Renderer seam, memory defaults
     noctis-gateway/          # shard tasks, lanes, Inbound, identify, SessionStore writer
     noctis-core/             # App, Runtime, Plugin, Dispatcher, Module, Registry, pipeline, workers, Responder, HTTP client, publish
@@ -1238,7 +1255,8 @@ flowchart LR
 | FR-15 to FR-17, FR-58 to FR-60 Routes, Payloads, Refs, route-bound components, defaults, evolution | noctis-codec, noctis-ui, noctis-core | AD-5, AD-6, AD-18, AD-19 |
 | FR-18 to FR-22 Expired Handler, untrusted input, Middleware, auto-ack, error routing | noctis-core | AD-23, AD-11, AD-13 |
 | FR-23, FR-24, FR-29, FR-31, FR-63, FR-64 V2 builders, Limits, modals, raw escape hatch, pre-fill, Radio/Checkbox | noctis-ui, noctis-rules, noctis-macros (`components!`) | AD-12, AD-3, AD-4, AD-11 |
-| FR-25 to FR-28, FR-61, FR-62 Views, Navbar, Wizard, Paginator, View responses and overflow | noctis-ui, noctis-core | AD-20, AD-27, AD-11 |
+| FR-25, FR-61, FR-62 Views as plain render functions, Responder ergonomics (`respond`/`update`/`reply_text`), cost and budget helpers | noctis-ui, noctis-core | AD-27, AD-11, AD-12 |
+| FR-26 to FR-28 Navbar, Wizard, Paginator — Withdrawn (2026-10-20); Usage Skill recipes only | Usage Skill, Project Template | AD-20 (withdrawn), AD-27 |
 | FR-30 attachments | noctis-ui, noctis-core | AD-22 |
 | FR-65 Views over webhooks | noctis-core, noctis-ui | AD-11, AD-12 |
 | FR-32 to FR-37, FR-66 to FR-70 Templates, formats, render pool, fonts, cache, Renderer seam, Tailwind, remote images, emoji, animation, caps | noctis-image, noctis-macros, noctis-ports, noctis-core (`Plugin`, `Runtime`) | AD-15, AD-22, AD-24 |
@@ -1250,7 +1268,7 @@ flowchart LR
 | FR-51 testing kit | noctis-testkit | AD-10, AD-14, AD-24, AD-25 |
 | FR-74 launch documentation | docs, CI | AD-28, AD-26 |
 | FR-75 to FR-79 enforcement points, provable length, compile-time commands and trees, rules catalog | noctis-rules, noctis-macros, noctis-codec, docs | AD-3, AD-4, AD-5, AD-6, AD-8 |
-| UD-1 to UD-6 UI Doctrine | noctis-ui, Project Template | AD-27, AD-20 |
+| UD-1 to UD-6 UI Doctrine (author-implemented; recipes in the Usage Skill) | Usage Skill, Project Template, noctis-ui (validator, budget helpers) | AD-27 |
 | UD-7, NFR-2 no per-message state | noctis-core | AD-9, AD-25 |
 | UD-8, NFR-1, NFR-9 allocation and memory budgets | noctis-core, noctis-codec | AD-25 |
 | NFR-3 latency benchmarks (event mix, reference card) | noctis-core benches | AD-25, AD-28 |

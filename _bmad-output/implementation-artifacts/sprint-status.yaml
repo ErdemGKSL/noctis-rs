@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-19-2026 15:45
-last_updated: 10-20-2026 06:32
+last_updated: 10-20-2026 17:46
 project: noctis-rs
 project_key: NOKEY
 tracking_system: file-system
@@ -92,6 +92,7 @@ development_status:
   6-7-autocomplete: backlog
   6-8-user-facing-errors-built-in-notices-and-panics-as-responses: backlog
   6-9-publish-with-diff-dry-run-and-cli-modes: backlog
+  6-10-simplification-remove-the-widget-envelope-and-view-state-sup: backlog
   epic-6-retrospective: optional
 
   epic-7: backlog
@@ -106,13 +107,11 @@ development_status:
   epic-7-retrospective: optional
 
   epic-8: backlog
-  8-1-views-and-view-responses: backlog
-  8-2-view-routes-widget-envelope-and-state-versions: backlog
-  8-3-paginator-and-the-default-overflow-policy: backlog
-  8-4-navbar: backlog
-  8-5-wizard: backlog
-  8-6-testing-kit-simulated-interactions-and-view-snapshots: backlog
-  8-7-ui-doctrine-example-and-the-ui-quality-rulebook: backlog
+  8-1-responder-ergonomics-ctx-respond-ctx-update-and-ctx-reply_te: backlog
+  8-2-deterministic-renders-select-freshness-and-safe-text: backlog
+  8-3-budget-helpers-cost-and-how-many-items-fit: backlog
+  8-4-testing-kit-simulated-interactions-and-message-snapshots: backlog
+  8-5-ui-recipes-and-example-tabs-pagination-step-flows-and-settin: backlog
   epic-8-retrospective: optional
 
   epic-9: backlog

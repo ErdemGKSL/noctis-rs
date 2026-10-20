@@ -21,7 +21,9 @@ pub struct ToggleModule {
 }
 
 #[handler]
-async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<impl IntoResponse> { … }
+async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<Responded> {
+    // decode (done) → authorize → write → ctx.update(render_dashboard(..))
+}
 ```
 
 - The struct's fields **are** the Payload. The handler receives the decoded value.
@@ -54,8 +56,10 @@ string literal (`"shop.buy"`, `r"shop.buy"`); the arguments follow in any order,
 separated by commas, and a trailing comma is fine.
 
 Codec arguments (they change the `custom_id` and count toward the length proof):
-`view`, `select`, `by_ref`, `overflow = spill`, `signed`, `schema = n`. These work
-today. Runtime arguments (no effect on the length): `ttl`, `one_shot`, `opens_modal`,
+`select`, `by_ref`, `overflow = spill`, `signed`, `schema = n`. These work today.
+(`view` is **withdrawn**: never write it. It still parses in this release and is
+removed by Story 6.10, after which it is a CID-03 error. Tabs, pages and steps are
+ordinary Payload fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length): `ttl`, `one_shot`, `opens_modal`,
 `owner`, `permissions`, `guard` are **[planned]**: this release **rejects** them with
 ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not
 support yet`` (a silently ignored guard would be a security hole), and each one is
@@ -65,7 +69,6 @@ limits go on `#[handler]`, not here.
 | Argument | Meaning |
 | --- | --- |
 | `"id"` | Route id (required, first) |
-| `view` | this is a View's own Route: adds the 5-char view envelope (action, tab, page, state version) so Navbar/Wizard/Paginator controls work |
 | `select` | used on select menus: adds a 2-char per-render nonce so clients show the server's defaults after a re-render (FR-25) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
 | `overflow = spill` | inline when the actual value fits, else by Ref |
@@ -86,8 +89,8 @@ There is no `overflow = error`: a plain inline Route that could exceed 100 chara
 simply doesn't compile (`[CID-01]`), which is the "error" policy.
 
 The derive turns the declaration into `Route::SHAPE`: `RouteShape::INLINE`,
-`RouteShape::BY_REF` or `RouteShape::SPILL`, then `.view()`, `.select()` and
-`.signed()` when declared; `Route::SCHEMA` is `n`, or 0 without `schema`.
+`RouteShape::BY_REF` or `RouteShape::SPILL`, then `.select()` and `.signed()` when
+declared; `Route::SCHEMA` is `n`, or 0 without `schema`.
 
 #### `#[route]` errors (CID-03)
 
@@ -98,7 +101,7 @@ Each is a compile error spanned on the offending token, `[CID-03] …` plus a `h
 - an id outside the grammar: wrong characters (`"Shop"`, `"a:b"`, `"é"`), empty or over
   24 characters, or starting with `_` (all applicable problems are reported);
 - an unknown argument (`colour`, named in the error), a runtime argument (above), an
-  argument given twice (`view, view`), a value on a flag (`view = true`, `by_ref()`);
+  argument given twice (`select, select`), a value on a flag (`select = true`, `by_ref()`);
 - `overflow` without `= spill` (`overflow = error`, `overflow = inline`, bare
   `overflow`);
 - `schema` that is not an integer literal 1..=61 (`schema = 0` says "leave it out for
@@ -112,7 +115,7 @@ Accepted spellings include `r"a"`, `"shop\x2Ebuy"` (the value counts: `shop.buy`
 
 | Argument | Meaning |
 | --- | --- |
-| `response = update` (default) / `ephemeral` / `public` | how a returned View is sent: edit in place, or a new ephemeral/public message (sub-panels) |
+| `response = update` (default) / `ephemeral` / `public` | how the handler's rendered message is sent: edit in place, or a new ephemeral/public message (sub-panels) |
 | `on_expired = fn` | this Route's Expired Handler |
 | `on_stale = fn` | this Route's Stale Payload handler |
 | `rate_limit(user, 5, per = "1m")` | see `modules-middleware-ratelimits.md` |
@@ -268,9 +271,11 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   — what `#[derive(Route)]` implements.
 - `RouteId`: `RouteId::new("shop.buy")` is a `const fn` (a bad literal in a `const`
   does not compile), `as_str()`, `is_reserved()` (starts with `_`), `Display`.
-- `RouteShape`: `INLINE`, `BY_REF`, `SPILL`, the `const` builders `view()`, `select()`,
+- `RouteShape`: `INLINE`, `BY_REF`, `SPILL`, the `const` builders `select()` and
   `signed()` (`BY_REF.signed()` is a compile error in a `const`), and the getters
-  `body() -> BodyKind`, `has_view()`, `has_select()`, `is_signed()`.
+  `body() -> BodyKind`, `has_select()`, `is_signed()`. The builder `view()` and the
+  getter `has_view()` belong to the withdrawn view envelope; don't use them (removed
+  by Story 6.10).
 - `BodyKind`: `Inline`, `ByRef`, `Spill`.
 - `trait Payload { const MAX_ENCODED_LEN: Option<usize>; fn encode_fields(&self, out: &mut FieldWriter<'_>) -> core::fmt::Result; }`
   — `MAX_ENCODED_LEN` is the worst-case body width: the fields' `MAX_LEN`s plus one
@@ -285,7 +290,8 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   `RefLength { len }`, `MissingField { field }`, `ExtraField { field }`,
   `Field { field, error }` (a `FieldError`), `UnexpectedSection { section }`.
 - `Section` (`#[non_exhaustive]`): the fixed-width layout sections `Schema`,
-  `Envelope`, `Nonce`, `Tag`.
+  `Nonce`, `Tag` (and `Envelope`, of the withdrawn view envelope; removed by Story
+  6.10).
 
 `#[derive(Payload)]` implements `Payload` and `PayloadDecode` for a struct, exactly as
 `#[derive(Route)]` does, for the Payload of a hand-written `Route`. It is not a field
@@ -314,26 +320,26 @@ it), so an overlong id fails only at encode time; prefer `#[derive(Route)]`.
 ## 4. The `custom_id` format (normative, AD-5)
 
 ```text
-custom_id = F route ":" [S] [E] [N] body [T]
+custom_id = F route ":" [S] [N] body [T]
 
-F      1 char    base62 digit = 16 * generation + flags (1=S, 2=E, 4=N, 8=T)
+F      1 char    base62 digit = 16 * generation + flags (1=S, 4=N, 8=T; 2 is reserved)
 route  1..24     [a-z0-9._-]
 S      1 char    schema version (only if schema = n)
-E      5 chars   view envelope: action, tab, page (2), state version (only with `view`)
 N      2 chars   per-render select nonce (only with `select`)
 body   inline    field ("," field)*      or      by ref: "~" + 11 base62 Ref
 T      6 chars   integrity tag (only with `signed`, inline only)
 ```
 
-All ASCII (CID-07), so "characters" are unambiguous. Envelope actions: `_` author,
-`t` tab, `p` page, `j` jump, `n`/`b`/`c` wizard next/back/cancel, `i` inert indicator.
+All ASCII (CID-07), so "characters" are unambiguous. (The withdrawn 5-character view
+envelope `E` still exists in this release's codec and is removed by Story 6.10; no
+Route of yours should declare it.)
 
 ## 5. The length proof (CID-01: ≤ 100)
 
 ```text
-MAX_LEN = 1 + route.len() + 1 + S + E + N + max(inline, by_ref)
+MAX_LEN = 1 + route.len() + 1 + S + N + max(inline, by_ref)
 inline  = Payload::MAX_ENCODED_LEN + T        by_ref = 1 + 11 = 12
-S, E, N, T = 1, 5, 2, 6 when declared, else 0
+S, N, T = 1, 2, 6 when declared, else 0
 ```
 
 Only an **inline** Route must fit with its worst-case body: `by_ref` needs only
@@ -350,22 +356,24 @@ proof but no runnable width test, and rustc warns `cannot test inner items` unle
 function carries `#[allow(unnameable_test_items)]`. The breakdown line:
 
 ```text
-shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)
-wizard.step: F 1 + route 11 + sep 1 + S 0 + E 0 + N 0 + ref 12 = 25 (limit 100)
-s: F 1 + route 1 + sep 1 + S 0 + E 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)
+shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)
+setup.big: F 1 + route 9 + sep 1 + S 0 + N 0 + ref 12 = 23 (limit 100)
+s: F 1 + route 1 + sep 1 + S 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)
 ```
 
 (inline, `by_ref` and `overflow = spill` Routes; `body` is `Payload::MAX_ENCODED_LEN`).
+This release still prints an `E 0` term between `S` and `N`; it disappears with the
+withdrawn envelope (Story 6.10).
 Copy the line into the Route's doc comment so reviewers see the budget.
 
 Worked examples from the template:
 
 | Route | Calculation | Max |
 | --- | --- | --- |
-| `SetupState` `#[route("setup", view)]` {owner `Id`, log_channel `Option<Id>`, mod_role `Option<Id>`} | 1 + 5 + 1 + E5 + (11 + 12 + 12 + 2 sep) | 49 |
+| `SetupState` `#[route("setup")]` {owner `Id`, step enum, log_channel `Option<Id>`, mod_role `Option<Id>`} | 1 + 5 + 1 + (11 + 1 + 12 + 12 + 3 sep) | 46 |
 | `PickLogChannel` `#[route("setup.ch", select)]` {owner `Id`, mod_role `Option<Id>`} | 1 + 8 + 1 + N2 + (11 + 12 + 1) | 36 |
 | `ToggleModule` `#[route("dash.mod")]` {guild `Id`, module enum, enable `bool`} | 1 + 8 + 1 + (11 + 1 + 1 + 2) | 25 |
-| any `by_ref` Route, 24-char id, `view` + `select` + schema | 1 + 24 + 1 + 1 + 5 + 2 + 12 | 46 |
+| any `by_ref` Route, 24-char id, `select` + schema | 1 + 24 + 1 + 1 + 2 + 12 | 41 |
 
 So `by_ref` and `spill` Routes always fit. An inline Route with a `String` field:
 
@@ -393,10 +401,10 @@ Messages live for months; old components still get clicked after a deploy.
   as `None`, through `FieldDecode::absent`; `<Option<T>>::absent()` is `Some(None)`,
   every other field's is `None`, so a missing non-`Option` field stays an error).
 - **Everything else bumps `schema`:** removing/reordering/retyping fields, adding a
-  non-`Option` field, and changing `view`, `select`, `signed` or `by_ref`.
+  non-`Option` field, and changing `select`, `signed` or `by_ref`.
 - A mismatched schema or shape decodes as **Stale**: it goes to the Route's `on_stale`
-  handler, else the Expired Handler. Typical stale handler: re-open the View from
-  scratch with a notice.
+  handler, else the Expired Handler. Typical stale handler: call the screen's render
+  function from scratch and add a `ctx.reply_text` notice.
 - Renaming the Route id = old components become unknown (logged, generic notice).
 
 ## 7. Refs
@@ -419,7 +427,8 @@ pub struct ConfirmBan {
 - Resolution: `one_shot` → `take`, else `get`. Missing/expired → **Expired Handler**.
   A record whose route differs from the id's route → forged (unknown-Route path).
   Schema mismatch → stale.
-- Wizard Cancel deletes the Wizard's Refs automatically.
+- A step flow's Cancel handler can delete the flow's Refs: return the deletions as
+  `RefOps` with the response; core runs them after a successful send.
 
 ## 8. Expired, stale, unknown, forged
 
@@ -430,15 +439,17 @@ pub struct ConfirmBan {
 | Unknown Route, malformed id, bad integrity tag | logged warning + generic notice; never a panic (FR-19) |
 
 ```rust
-/// Re-open Step 1 of the setup Wizard when its Ref is gone (UJ-1).
-async fn restart_setup(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<impl IntoResponse> {
-    Ok(SetupWizard::new(SetupState { owner: ctx.user_id(), log_channel: None, mod_role: None })
-        .at(Nav::step(0))
-        .with_notice(keys::NOCTIS_EXPIRED))
+/// Re-open step 1 of the setup flow when its Ref is gone (UJ-1): the same render
+/// function, plus a one-line notice.
+async fn restart_setup(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<Responded> {
+    let s = Strings::of(ctx.response_locale());
+    let first = SetupState { owner: ctx.user_id(), step: SetupStep::Channel, log_channel: None, mod_role: None };
+    ctx.update(render_setup(first, &s)).await?;
+    ctx.reply_text(keys::NOCTIS_EXPIRED).await                // ephemeral follow-up
 }
 
 #[handler(on_expired = restart_setup)]
-async fn open_setup(_ctx: ComponentCtx, state: SetupState) -> HandlerResult<SetupWizard> { … }
+async fn go_to_step(ctx: ComponentCtx, st: SetupState) -> HandlerResult<Responded> { … }
 ```
 
 ## 9. Building components from Routes

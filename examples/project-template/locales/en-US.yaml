@@ -35,6 +35,8 @@ common:
   disabled: disabled
   enable: Enable
   disable: Disable
+  previous: Previous
+  next: Next
 
 setup:
   step:
@@ -51,6 +53,11 @@ setup:
   summary: "**Log channel:** {channel}\n**Moderator role:** {role}\n-# Press Finish to save."
   finish: Finish
   done: "### Setup complete\nLogs go to {channel}; {role} can moderate."
+  progress: "Step {n} of {total}: {title}"
+  back: Back
+  next: Next
+  cancel: Cancel
+  cancelled: "-# Setup cancelled. Run /setup start to begin again."
 
 dashboard:
   tab:
@@ -61,8 +68,9 @@ dashboard:
   subtitle: "Noctis template v{version}"
   overview: "**Roles:** {roles}\n**Enabled modules:** {modules}\n**Online since:** {started}"
   no_roles: "-# This server has no roles yet."
+  page: "Page {page} of {pages}"
   module:
-    setup: Setup wizard
+    setup: Server setup
     profile: Profiles and XP
 
 profile:
@@ -85,7 +93,7 @@ profile:
     any: any pronouns
 
 # --- Overrides of framework strings (optional) ------------------------------------------
-# Keys under `noctis.` are owned by Noctis widgets and ship with defaults; define one only
+# Keys under `noctis.` are owned by Noctis (built-in notices) and ship with defaults; define one only
 # to change its wording (for example the expired notice).
 noctis:
   expired: This panel has expired. Run the command again.

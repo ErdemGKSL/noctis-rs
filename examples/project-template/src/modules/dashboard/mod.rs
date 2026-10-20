@@ -1,0 +1,93 @@
+// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
+
+//! `/dashboard`: a tabbed server dashboard (UD-5) whose Roles tab is paginated by hand
+//! (UD-6), and whose Modules tab is a settings screen of enable/disable toggles.
+//!
+//! The feature follows the Usage Skill's layout: `mod.rs` holds the Module and the
+//! Routes, `view.rs` the render function (the single source of truth for the message),
+//! `handlers.rs` the Command and component handlers. All UI state (tab, page) is a
+//! typed Payload field of this module's own Routes; nothing is stored per message.
+
+mod handlers;
+pub mod view;
+
+use noctis::id::marker::GuildMarker;
+use noctis::prelude::*;
+
+pub fn module() -> Module {
+    Module::new("dashboard")
+        .add(handlers::dashboard())
+        .add(handlers::open_tab())
+        .add(handlers::turn_page())
+        .add(handlers::toggle_module())
+}
+
+// ---------------------------------------------------------------------------------------
+// Routes: every id the dashboard needs to redraw itself travels here.
+// ---------------------------------------------------------------------------------------
+
+/// The dashboard's tabs. `PayloadEnum` encodes as one character; append variants, never
+/// reorder them (or bump the Route's `schema`).
+#[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashTab {
+    Overview,
+    Roles,
+    Modules,
+}
+
+impl DashTab {
+    pub const ALL: [Self; 3] = [Self::Overview, Self::Roles, Self::Modules];
+}
+
+/// A tab button. The active tab's button is rendered disabled, so the tab row shows the
+/// current state. `permissions` is a Route Guard checked on every click.
+///
+/// Width (`noctis_route_width`): `dash.tab: F 1 + route 8 + sep 1 + S 0 + N 0 + body 13 + T 0 = 23 (limit 100)`.
+#[derive(Route, Debug, Clone, Copy)]
+#[route("dash.tab", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
+pub struct OpenTab {
+    pub guild: Id<GuildMarker>,
+    pub tab: DashTab,
+}
+
+/// Prev/next on the Roles tab: the target page is the Payload. A Route of its own keeps
+/// the prev and next ids distinct from the tab buttons (CID-02).
+///
+/// Width (`noctis_route_width`): `dash.page: F 1 + route 9 + sep 1 + S 0 + N 0 + body 15 + T 0 = 26 (limit 100)`.
+#[derive(Route, Debug, Clone, Copy)]
+#[route("dash.page", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
+pub struct TurnPage {
+    pub guild: Id<GuildMarker>,
+    pub page: u16,
+}
+
+/// Modules this dashboard can switch on and off.
+#[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleKey {
+    Setup,
+    Profile,
+}
+
+impl ModuleKey {
+    pub const ALL: [Self; 2] = [Self::Setup, Self::Profile];
+
+    /// The id the Module was mounted with (`Module::new(..)`).
+    pub fn module_id(self) -> &'static str {
+        match self {
+            Self::Setup => "setup",
+            Self::Profile => "profile",
+        }
+    }
+}
+
+/// Enable/disable toggle on the Modules tab. `enable` is the action the button performs,
+/// so a stale click can't flip the state the wrong way.
+///
+/// Width (`noctis_route_width`): `dash.mod: F 1 + route 8 + sep 1 + S 0 + N 0 + body 15 + T 0 = 25 (limit 100)`.
+#[derive(Route, Debug, Clone, Copy)]
+#[route("dash.mod", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
+pub struct ToggleModule {
+    pub guild: Id<GuildMarker>,
+    pub module: ModuleKey,
+    pub enable: bool,
+}

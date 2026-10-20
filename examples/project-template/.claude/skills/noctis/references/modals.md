@@ -4,7 +4,7 @@ Covers: `#[derive(Modal)]` and `#[derive(Choices)]`, typed submissions
 (`ModalForm::from_json`, `ModalSubmission`, resolved entities, the File Upload download
 helper), the runtime `Modal` builder, Labels, every modal component (Text Input, selects,
 File Upload, Radio Group, Checkbox Group, Checkbox, Text Display), pre-fill, opening a
-modal, modal-based Wizard Steps. Rules: MOD-01..09, INT-05, CV2-04, CV2-09, CID-01, FR-29,
+modal, modals in step flows and the button → modal → re-render chain. Rules: MOD-01..09, INT-05, CV2-04, CV2-09, CID-01, FR-29,
 FR-63, FR-64.
 
 ## 1. Anatomy: `#[derive(Modal)]`
@@ -173,9 +173,10 @@ The `#[handler]` side (`ModalSubmitCtx`, the submit Route and the form as parame
 
 ```rust
 #[handler]
-async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerResult<ProfileView> {
-    …
-    ProfileView::load(&ctx, save.user).await
+async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerResult<Responded> {
+    …                                                             // validate, then save
+    let data = load(&ctx, save.user).await?;
+    ctx.update(render_profile(&data, &Strings::of(ctx.response_locale()), true)).await
 }
 ```
 
@@ -419,7 +420,7 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   `is_empty()`.
 - JSON: `{"custom_id","title","components":[…]}`, no numeric `id` anywhere, never an
   Action Row (type 1) and never a Text Input `label`. A Route whose `custom_id` needs a
-  View envelope, select nonce or signature is resolved by the Responder before sending;
+  select nonce or signature is resolved by the Responder before sending;
   serializing it unresolved is a serde error naming the Route.
 - `noctis::ui::validate(&mut modal, &limits)` returns a `CostReport` or
   `UiError::Limits { violations }`. Order: the `noctis::rules::modal::validate_modal`
@@ -444,11 +445,31 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   with `ResponderError::Invalid`) before any request, then sends callback type 9 (Story
   6.6); from components it is [planned, Story 7.8].
 
-## 5. Modals in Wizards
+## 5. Button → modal → re-render (settings screens and step flows)
 
-A Step that needs free text shows a button (an `opens_modal` Route carrying the
-Wizard state). The modal's submit Route also carries the state; its handler returns
-`MyWizard::new(new_state).at(Nav::step(k + 1))`, updating the Wizard message.
+A setting or a step that needs free text shows a button (an `opens_modal` Route). The
+modal's submit Route carries **the same Payload** (the entity id, or the whole step
+state), so its handler knows which message to redraw:
+
+```rust
+#[handler]
+async fn edit_text(ctx: ComponentCtx, e: EditText, r: ComponentResponder<OpensModal>, db: State<Db>)
+    -> HandlerResult<Responded>
+{
+    let current = db.button_text(e.system).await?;                 // pre-fill from storage
+    Ok(r.modal(TextForm::modal(SaveText { system: e.system }).text(current)).await?.done())
+}
+
+#[handler]
+async fn save_text(ctx: ModalSubmitCtx, s: SaveText, form: TextForm, db: State<Db>) -> HandlerResult<Responded> {
+    db.set_button_text(s.system, form.text).await?;                // validate first
+    let data = db.ticket_systems(ctx.guild_id()).await?;
+    ctx.update(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), Some(s.system))).await
+}
+```
+
+In a step flow the submit handler calls `ctx.update(render_setup(next_state, &s))`.
+Never answer a modal submit with another modal (INT-04): render a message step first.
 
 ## 6. Choosing modal vs message components
 

@@ -46,8 +46,9 @@ send [planned]) and at `cargo check` by `components!` for literal trees (§14);
 `noctis::ui::cost(&msg, &limits)` measures a message, and the rule functions of §15
 check bare descriptor trees.
 
-In Views you rarely build the message by hand: `Layout::new()…build(cx)` does it, adds
-Chrome and paginates (see `views-and-widgets.md`) [planned].
+A View is a render function that builds this message itself (`views-and-recipes.md`).
+Noctis never adds pagination or extra rows to it: size lists with `Budget`
+[planned, Story 8.3].
 
 Cost cheatsheet: Container 1, Text Display 1, Separator 1, Media Gallery 1 (any items),
 File 1, Section + 1 text + button = 3, Section + 3 texts + thumbnail = 5, Action Row + 5
@@ -134,8 +135,8 @@ every `#[derive(Route)]` struct.
   Module`). Never implement that marker by hand.
 - Selects need a Route declared `select` (`#[route("id", select)]`, which implements
   `noctis::codec::SelectRoute`): otherwise ``route `X` is not declared `select` ``.
-- A plain Route (no `view`, `select` or `signed`) is encoded when you build the
-  component. Ids that need a View envelope, a select nonce, a signature or a Ref are
+- A plain Route (no `select` or `signed`) is encoded when you build the
+  component. Ids that need a select nonce, a signature or a Ref are
   finalized by the Responder before sending [planned, Epic 7]; you never handle them
   (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
 
@@ -259,7 +260,8 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
   `.is_empty()`.
 - `AttachmentRef` has no public constructor: `.name()`, `.url()`
   (`attachment://<name>`), `.origin()`; `Clone + Eq + Hash`.
-- In Views, `cx.attach(&att) -> AttachmentRef` adds to the View's set [planned]. The
+- In a render function, `files.add(att) -> AttachmentRef` on the message's
+  `AttachmentSet`, then `V2Message::attachments(files)`. The
   Upload Budget (ATT-01..03) is checked by the Responder [planned].
 
 ## 7. Separator: `Separator`
@@ -312,8 +314,8 @@ Each kind is its own type (CV2-08), so a Link button cannot get a `custom_id` an
 Premium button cannot get a label. `Button` is the opaque "any button" they all convert
 into (`Button::from(x)` / `.into()`), for mixed rows. Never in modals. Guidelines: one
 Primary per group; equal-weight actions all Secondary; Danger only for destructive
-actions. View controls (`cx.reload_button()`, Navbar/Wizard/Paginator buttons) are
-generated [planned].
+actions. Tab rows, prev/next and Back/Next/Cancel are ordinary Route buttons you build
+in your render function (`views-and-recipes.md` §3).
 
 ### 9a. Route button: `RouteButton`
 
@@ -363,11 +365,11 @@ Shared fields of all five:
 | `disabled` | `.disabled(bool)` | messages only | CV2-09 |
 
 - **Cost:** 2 (row + select). Options don't count.
-- After every re-render, selects show the View's defaults (nonce, FR-25); always set
+- After every re-render, selects show the render function's defaults (nonce, FR-25); always set
   `default`/`default_*` to the current value (visible active state).
 - Empty list: render a disabled select with one explanatory option, or an empty-state
   Text Display, never nothing.
-- More than 25 items: `Paginator::…as_select(..)` chunks into several selects [planned].
+- More than 25 items: page them (25 options per page with prev/next, `views-and-recipes.md` §3.2).
 - `derive(Choices)` enums can produce options: `Severity::select_options(locale)` [planned].
 - Selected values in the handler: `ctx.values().strings()`, `.users()`, `.roles()`,
   `.mentionables()`, `.channels()`, plus `ctx.resolved()` [planned].
