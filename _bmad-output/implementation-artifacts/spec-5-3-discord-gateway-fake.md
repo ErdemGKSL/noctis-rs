@@ -2,7 +2,7 @@
 title: 'Story 5.3: Discord gateway fake'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'c5436851c1e741a33c14058050e7ebd66698bd0f'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -124,6 +124,50 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 40 findings — high 0, medium 1, low 27, false 12, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `dropped_fake`: loop exits only at `errors >= 2`, so `assert!(closes + errors >= 2)` is vacuous and `closes` dead — confirmed at gateway_fake.rs L783-797; patch: delete the dead counter and assert (grouped with edge "Matrix 32 closes never checked").
+  - `[low]` `[reject]` (blind) `shard_config` claims no panic but the rustls provider is unchecked — with the workspace's ring-only rustls, rustls auto-selects ring, and `AppBuilder::build` installs it before any App-driven call; a panic needs a second provider unified in by a bot crate plus a direct call before `build()`, which is documented as a precondition; a typed check needs a new `rustls` dependency (grouped with edge "Connector::new provider panic").
+  - `[low]` `[reject]` (blind) `check_gateway_url` accepts `ws://p/path`, `ws://u@p`, `ws://p:0` that core rejects — true, but the spec fixes this check deliberately (core cannot be called from noctis-gateway) and 5.4 passes only core-normalized URLs; sharing the authority check across crates is more than a direct correction (grouped with edge "uppercase scheme" and edge "path/userinfo accepted").
+  - `[low]` `[reject]` (blind) `Connector::new()` built and dropped per call — twilight's `ConfigBuilder::new` already builds one per shard, so the cost is at most doubled at startup; spec mandates the check; caching adds state.
+  - `[false]` `[reject]` (blind) tokio-websockets features unify differently from twilight's TLS choice — workspace `twilight-gateway` enables `rustls-platform-verifier`, exactly the feature noctis-gateway sets; no second root backend is added.
+  - `[low]` `[reject]` (blind) RESUME Auto attaches a session another live connection still holds, so dispatch double-counts seq — mechanically true at gateway.rs L992-997, but needs a test to resume a still-live session; twilight closes the old connection long before its 1 s reconnect delay; fix adds a detach loop (grouped with edge "resume of attached session" and edge "close 1000 forgets a shared session").
+  - `[false]` `[reject]` (blind) `dispatch` keeps the seq increment when `tx.send` fails — `rx` lives until the end of `serve`, after `live.remove(&id)` under the lock, so `send` cannot fail while the `live` entry exists.
+  - `[low]` `[patch]` (blind) `heartbeat_interval` under 1 ms announces 0 and twilight's `interval_at` panics on a zero period — confirmed (twilight shard.rs L801-811); patch: clamp the HELLO value to at least 1 ms and document it (grouped with edge "heartbeat_interval below 1 ms").
+  - `[low]` `[patch]` (blind) `identifies` counted for `Close`/`Ignore` while docs say "IDENTIFYs answered" — confirmed at gateway.rs L121 and L954-956; patch: reword doc and comment, no behaviour change.
+  - `[false]` `[reject]` (blind) `wait_for_frame` returns the first match of the whole log, undocumented — the spec mandates whole-log search and the rustdoc says "The first frame in the log matching `pred`".
+  - `[low]` `[reject]` (blind) `accept_loop` retries accept errors silently — permanent accept failures on a local 127.0.0.1 listener are not met in practice; recording them adds state.
+  - `[low]` `[reject]` (blind) `heartbeat_timing` has no upper bound per gap — `>= 3` beats in 2 s already bounds the average; a tight upper bound on wall-clock gaps invites flakes.
+  - `[false]` `[reject]` (blind) `fatal_close_ends_the_shard` sleeps 1.5 s per code needlessly — Matrix 19 requires "after 1.5 s still exactly 1 connection"; the sleep is the specified check.
+  - `[low]` `[patch]` (blind) Usage Skill presents "the testkit's `FakeGateway`" to bot authors though it stays crate-internal until 8.6 — confirmed at app-and-sharding.md L68 and L249; patch: mark `[planned, Story 8.6]`.
+  - `[false]` `[reject]` (blind) proxy.rs `map_err` vs `From` lets the mappings drift — `AuthorityError` is a crate-private exhaustive enum, so a new variant fails both matches at compile time; no drift is possible.
+  - `[low]` `[patch]` (blind) `GatewayUrlError::TooLong` says "host" but `len` is the whole authority — confirmed at gateway_url.rs L42; patch: say "authority (host and port)".
+  - `[low]` `[patch]` (blind) `.env.example` omits the `resume_gateway_url` caveat — confirmed at .env.example L10-11; patch: add the one-line caveat.
+  - `[low]` `[patch]` (edge) heartbeat_interval below 1 ms ⇒ twilight zero-period panic — same root cause as the blind row; patched with it.
+  - `[low]` `[reject]` (edge) RESUME Auto for a session attached to another live connection — grouped with the blind double-resume row; rejected with it.
+  - `[low]` `[reject]` (edge) client close 1000 forgets a session another live connection holds — same root cause (a session attached to two connections); rejected with that group.
+  - `[low]` `[reject]` (edge) a panicking `on_heartbeat` hook kills the task before cleanup — the hook is test code and a panic there already fails the test loudly; `catch_unwind` adds complexity.
+  - `[low]` `[reject]` (edge) `wait_for_frame(Duration::MAX)` overflows `Instant + Duration` and panics — true (tokio `Instant` add panics), but tests pass bounded timeouts; the guard adds a branch.
+  - `[low]` `[reject]` (edge) a TCP client that never sends the upgrade lingers until the fake drops — only a stuck task inside a test fake; the timeout adds code for no observed harm.
+  - `[low]` `[reject]` (edge) `shard_config` accepts `WS://` uppercase and tokio-websockets then fails `UnsupportedScheme` at connect (http keeps the scheme case, client.rs L284-295) — true for direct callers only; core lowercases the scheme and 5.4 passes core's value; normalizing in shard_config deviates from the spec's check; grouped with the blind validator-drift row.
+  - `[low]` `[reject]` (edge) `shard_config` accepts path/trailing slash/userinfo — grouped with the blind validator-drift row; rejected with it.
+  - `[low]` `[reject]` (edge) `%` in a gateway reg-name passes `build()` but http rejects it in `shard_config` — true (http 1.5 `rejects_percent_in_hostname`), but no real host contains `%`, and removing `%` from the shared allowlist changes 5.2 proxy behaviour.
+  - `[low]` `[reject]` (edge) `Connector::new().unwrap()` in twilight can panic with two rustls providers — grouped with the blind crypto-provider row; rejected with it.
+  - `[low]` `[patch]` (edge) Matrix 32 `closes` never checked — same root cause as the blind `dropped_fake` row; patched with it.
+  - `[low]` `[reject]` (edge) Matrix 16 "one op 11 ACK per heartbeat" not counted — missing ACKs are caught (the shard would zombie-reconnect and `connections().len() == 1` fails) and Matrix 23 checks one ACK per raw heartbeat; counting client-side adds a harness.
+  - `[low]` `[patch]` (vgap) `send_raw` never exercised with a live connection — pre-verified gap; patch: raw-client test with two clients asserting count 2 and exact text.
+  - `[low]` `[patch]` (vgap) `IdentifyReply::Ignore` untested — pre-verified gap; patch: `identify_ignored` raw-client test (next frame after a heartbeat is op 11).
+  - `[medium]` `[patch]` (vgap) RESUME's authenticated effects unverified (dispatch after RESUMED, second RESUME ⇒ 4005) — pre-verified gap on the path 5.6 resume tests rely on; patch: extend `resumable_close_resumes` with a dispatch and seq 3, add a RESUME-twice ⇒ 4005 raw case.
+  - `[low]` `[patch]` (vgap) client close 1001 forgetting the session untested — filed as defer, but it is this story's code and the fix is one test block; patch: add a 1001 block to `client_close_semantics`.
+  - `[false]` `[reject]` (intent) the App does not connect, a test-assembled shard does — the spec settles reading R2 (Design Notes "Why `shard_config` and not `App::run`"); shard startup is Story 5.4 in epics.
+  - `[false]` `[reject]` (intent) "only through `proxy_url`, no test branch" asserted for a path core does not take — core has no shard path until 5.4, and the spec binds 5.4 to `shard_config` in crate docs; no test branch exists in core.
+  - `[false]` `[reject]` (intent) the HTTP fake is not on the shard's connect path — `GET /gateway/bot` from core is excluded by the spec's Never list (5.4); Matrix 15 deliberately drives both fakes from the App.
+  - `[false]` `[reject]` (intent) resumes reach the fake via `resume_gateway_url`, not `proxy_url` — Discord's protocol sends resumes there; the spec settles it (fake points it at itself, skill warns proxies must rewrite it).
+  - `[false]` `[reject]` (intent) the smoke test passes a literal token, not an App-derived one — the App has no token getter by design; token plumbing belongs to 5.4's shard startup.
+  - `[false]` `[reject]` (intent) lanes and shutdown are not exercised end to end — they are Stories 5.5 and 5.8; the story provides the fake they will use.
+  - `[false]` `[reject]` (intent) extra public surface beyond `.gateway_url` — env var, `GatewayUrlError`, `BuildViolation::InvalidGatewayUrl` and `shard_config` are the spec's deliberate settlement (Boundaries) and follow the 5.2 `http_proxy` pattern.
+
 ## Design Notes
 
 - **Why `shard_config` and not `App::run`:** shard startup is Story 5.4 (needs `GET /gateway/bot`, the `IdentifyQueue` adapter and lanes) and shutdown is 5.8. The App's gateway path in 5.3 is therefore `App` getters → `noctis_gateway::shard_config` → twilight `Config::proxy_url`; 5.4's `App::run` must build every shard through the same function (crate docs say so), and its E2E tests then go through `App::run` itself. Core has no test branch. Generic `Q` lets 5.4 pass its port-backed queue (GW-01: never `InMemoryQueue::default()` in production); tests pass an explicit `InMemoryQueue::new(..)`.
@@ -150,3 +194,12 @@ deferred: []
 - `cargo deny check` -- exit 0.
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- each exit 0 (api-snapshot needs `nightly-2026-10-15` + `cargo-public-api` 0.52.0, see AGENTS.md pitfalls).
 - `cargo tree -p noctis-testkit -e normal -i twilight-http` -- no path from noctis-testkit's own deps; `cargo tree -i aws-lc-rs` -- no match; `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Added the in-process Discord gateway fake (`noctis-testkit::fake::gateway`: HELLO/IDENTIFY/READY/RESUME, heartbeats + ACK, dispatch with seq, scripted/validated closes, `send_raw`, frame log with `wait_for_frame`), the `App` gateway URL setting (`.gateway_url` builder, env var, `GatewayUrlError`, `BuildViolation::InvalidGatewayUrl`, shared authority validation with the 5.2 proxy), and `noctis_gateway::shard_config` which builds twilight shard configs via `proxy_url`; 5.4 must build every shard through it.
+- **Files changed:** `crates/noctis-core/src/{app.rs,app/tests.rs,authority.rs,error.rs,gateway_url.rs,lib.rs,proxy.rs}` (gateway URL setting + shared authority check); `crates/noctis-gateway/{Cargo.toml,src/lib.rs,src/shard_config.rs}` (shard config builder); `crates/noctis-testkit/{Cargo.toml,src/fake.rs,src/fake/gateway.rs,src/lib.rs,tests/gateway_fake.rs}` (fake + matrix tests); `crates/noctis/src/lib.rs` (re-export); `examples/project-template/` (Usage Skill, `.env.example`, README); `xtask/public-api.txt` (re-blessed); `Cargo.lock`.
+- **Review findings:** 40 total (high 0, medium 1, low 27, false 12). Patched 11 entries (medium 1, low 10): dead `closes` counter/vacuous assert, HELLO heartbeat_interval clamp to >= 1 ms (twilight zero-period panic), `identifies` doc wording, Usage Skill `FakeGateway` marked `[planned, Story 8.6]`, `TooLong` message says authority, `.env.example` resume_gateway_url caveat, `send_raw` live test, `IdentifyReply::Ignore` test, RESUME dispatch/seq + RESUME-twice => 4005 (medium), client close 1001 test. Deferred: none. Rejected: 29 (12 false, 17 low) with reasons recorded in the Review Triage Log (validator drift vs core, rustls provider precondition, double-attached session on resume, hook panics, unbounded timeouts, etc.).
+- **Follow-up review recommended:** false (first pass; patched high 0, medium 1, low 10).
+- **Verification:** all local gates green via the gates script (fmt, clippy -D warnings, workspace tests incl. gateway_fake, cargo-hack each-feature, MSRV 1.91 check, cargo deny, xtask deps-check/rules-catalog/api-snapshot/skill-check). CI is paused by the maintainer.
+- **Residual risks:** `shard_config` accepts some URLs core rejects (uppercase scheme, path/userinfo) for direct callers; a second rustls provider in a bot crate could panic twilight's connector before `build()`; the fake can attach one session to two live connections on RESUME; twilight resumes via `resume_gateway_url`, so real gateway proxies must rewrite it.

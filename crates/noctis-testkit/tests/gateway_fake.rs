@@ -414,6 +414,16 @@ async fn resumable_close_resumes() {
     assert_eq!(close_code(&event), Some(4000));
     until(&mut shard, |e| matches!(e, Event::Resumed)).await;
     assert_eq!(shard.session().map(Session::sequence), Some(2));
+    // The resumed connection is authenticated: it gets dispatches.
+    assert_eq!(
+        gw.dispatch(
+            "MESSAGE_DELETE",
+            json!({ "id": "3", "channel_id": "2", "guild_id": "1" })
+        ),
+        1
+    );
+    until(&mut shard, |e| matches!(e, Event::MessageDelete(_))).await;
+    assert_eq!(shard.session().unwrap().sequence(), 3);
     let frames = gw.frames();
     let resume = frames.iter().find(|f| f.op() == Some(6)).unwrap();
     assert_eq!(resume.connection, 2);
@@ -533,6 +543,18 @@ async fn protocol_errors() {
     assert_eq!(recv(&mut ws).await, json!({ "op": 11 }));
     let ops: Vec<Option<u64>> = gw.frames().iter().map(RecordedFrame::op).collect();
     assert_eq!(ops, [Some(2), Some(3), Some(1)]);
+
+    // A RESUME on a connection authenticated by RESUME.
+    let (mut ws, _) = raw(&gw).await;
+    send(&mut ws, &identify(None)).await;
+    let ready = recv(&mut ws).await;
+    let session = ready["d"]["session_id"].as_str().unwrap().to_owned();
+    client_close(ws, 4000).await;
+    let (mut ws, _) = raw(&gw).await;
+    send(&mut ws, &resume(&session, 1)).await;
+    assert_eq!(recv(&mut ws).await["t"], "RESUMED");
+    send(&mut ws, &resume(&session, 2)).await;
+    assert_eq!(recv_close(&mut ws).await, 4005);
 }
 
 // ---- Matrix 23 ----
@@ -596,6 +618,38 @@ async fn nothing_live() {
     assert_eq!(gw.close(4000, ""), Ok(0));
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn send_raw_reaches_every_live_connection() {
+    let gw = FakeGateway::start().await.unwrap();
+    let (mut authed, _) = raw(&gw).await;
+    send(&mut authed, &identify(None)).await;
+    assert_eq!(recv(&mut authed).await["t"], "READY");
+    let (mut fresh, _) = raw(&gw).await;
+    eventually(|| gw.connections().len() == 2).await;
+    let text = r#"{"op":7,"d":null}"#;
+    assert_eq!(gw.send_raw(text), 2);
+    for ws in [&mut authed, &mut fresh] {
+        let message = tokio::time::timeout(WAIT, ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(message.as_text(), Some(text));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn identify_ignored() {
+    let gw = FakeGateway::start_with(config(|c| c.identify = IdentifyReply::Ignore))
+        .await
+        .unwrap();
+    let (mut ws, _) = raw(&gw).await;
+    send(&mut ws, &identify(None)).await;
+    send(&mut ws, &json!({ "op": 1, "d": null })).await;
+    assert_eq!(recv(&mut ws).await, json!({ "op": 11 }));
+    assert!(has_op(&gw.frames(), 2));
+}
+
 // ---- Matrix 26 ----
 
 #[tokio::test(flavor = "multi_thread")]
@@ -642,6 +696,14 @@ async fn client_close_semantics() {
     let resumed = recv(&mut ws).await;
     assert_eq!(resumed["t"], "RESUMED");
     assert_eq!(resumed["s"], 2);
+
+    let (mut ws, _) = raw(&gw).await;
+    send(&mut ws, &identify(None)).await;
+    assert_eq!(recv(&mut ws).await["d"]["session_id"], "fake-session-3");
+    client_close(ws, 1001).await;
+    let (mut ws, _) = raw(&gw).await;
+    send(&mut ws, &resume("fake-session-3", 1)).await;
+    assert_eq!(recv(&mut ws).await, json!({ "op": 9, "d": false }));
 }
 
 // ---- Matrix 28 ----
@@ -781,7 +843,6 @@ async fn dropped_fake() {
     ready(&mut shard).await;
     drop(gw);
     let mut errors = 0;
-    let mut closes = 0;
     let deadline = tokio::time::Instant::now() + WAIT;
     while errors < 2 {
         let item = tokio::time::timeout_at(deadline, shard.next_event(EventTypeFlags::all()))
@@ -789,10 +850,8 @@ async fn dropped_fake() {
             .expect("items after the fake is gone");
         match item {
             Some(Err(_)) => errors += 1,
-            Some(Ok(Event::GatewayClose(_))) => closes += 1,
             Some(Ok(_)) => {}
             None => panic!("shard ended"),
         }
     }
-    assert!(closes + errors >= 2);
 }

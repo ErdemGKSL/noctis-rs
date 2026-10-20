@@ -56,7 +56,8 @@ mod code {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FakeGatewayConfig {
-    /// The interval HELLO announces, in whole milliseconds (default 41 250 ms).
+    /// The interval HELLO announces, sent in whole milliseconds, at least 1
+    /// (default 41 250 ms).
     pub heartbeat_interval: Duration,
     /// Whether each heartbeat is answered with an op 11 ACK (default `true`).
     pub heartbeat_ack: bool,
@@ -118,8 +119,9 @@ impl Default for ReadyData {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentifyReply {
-    /// Create session `fake-session-{n}` (`n` counts the IDENTIFYs answered)
-    /// and send READY (seq 1).
+    /// Create session `fake-session-{n}` (`n` counts every IDENTIFY received
+    /// on an unauthenticated connection, whatever the reply) and send READY
+    /// (seq 1).
     Ready,
     /// Send op 9 `INVALID_SESSION` with `d: resumable`.
     InvalidSession {
@@ -352,7 +354,7 @@ struct State {
     live: BTreeMap<u64, Live>,
     /// Known sessions and their last sequence number.
     sessions: HashMap<String, u64>,
-    /// IDENTIFYs answered on unauthenticated connections.
+    /// IDENTIFYs received on unauthenticated connections, whatever the reply.
     identifies: u64,
 }
 
@@ -394,7 +396,9 @@ impl Shared {
 /// A local Discord gateway fake: a WebSocket server on `127.0.0.1:0`.
 ///
 /// Each connection gets HELLO, then IDENTIFY is answered with READY (session
-/// `fake-session-{n}`, `n` counting the IDENTIFYs this fake answered), RESUME with RESUMED, heartbeats with ACKs, as
+/// `fake-session-{n}`, `n` counting every IDENTIFY received on an
+/// unauthenticated connection, whatever the reply), RESUME with RESUMED,
+/// heartbeats with ACKs, as
 /// [`FakeGatewayConfig`] scripts. It sends uncompressed text frames only and
 /// records every frame it receives (see [`frames`](Self::frames)). Protocol
 /// errors close the connection with Discord's codes (4001, 4002, 4003,
@@ -775,7 +779,9 @@ async fn serve(stream: TcpStream, shared: Shared) {
         state.live.insert(id, Live { tx, session: None });
         (id, state.config.heartbeat_interval)
     };
-    let interval = u64::try_from(interval.as_millis()).unwrap_or(u64::MAX);
+    let interval = u64::try_from(interval.as_millis())
+        .unwrap_or(u64::MAX)
+        .max(1);
     let hello = json!({ "op": 10, "d": { "heartbeat_interval": interval } }).to_string();
     let mut conn = Connection {
         id,
@@ -951,8 +957,9 @@ impl Connection {
         if live.session.is_some() {
             return Reply::Close(code::ALREADY_AUTHENTICATED);
         }
-        // `n` of `fake-session-{n}` counts every IDENTIFY answered, so a
-        // retry after INVALID_SESSION gets a new number.
+        // `n` of `fake-session-{n}` counts every IDENTIFY received on an
+        // unauthenticated connection, whatever the reply, so a retry after
+        // INVALID_SESSION gets a new number.
         state.identifies += 1;
         match state.config.identify {
             IdentifyReply::Ready => {

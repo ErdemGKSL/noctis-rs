@@ -39,7 +39,10 @@ pub enum GatewayUrlError {
     )]
     NotAnAuthority,
     /// The authority is longer than 255 bytes.
-    #[error("the gateway host is {len} bytes long: use an authority of at most 255 bytes")]
+    #[error(
+        "the gateway authority (host and port) is {len} bytes long: use an authority of at most \
+         255 bytes"
+    )]
     TooLong {
         /// The rejected length in bytes.
         len: usize,

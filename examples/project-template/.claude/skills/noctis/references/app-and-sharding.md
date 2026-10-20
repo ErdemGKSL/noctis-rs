@@ -65,7 +65,7 @@ Implemented:
 | `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it |
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
-| `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy, or the testkit's `FakeGateway`) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
+| `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
@@ -246,7 +246,7 @@ Events dropped under back-pressure are not replayed (at-most-once).
 With `.gateway_url(..)` (or `NOCTIS_GATEWAY_URL`) set, shards connect to that URL
 instead of Discord's gateway, but **resumes go to the `resume_gateway_url` that READY
 names**: a gateway proxy must rewrite that field to its own URL, or resumes bypass it.
-The testkit's `FakeGateway` already names itself there.
+The testkit's `FakeGateway` [planned, Story 8.6] already names itself there.
 
 ## 5. HTTP
 
