@@ -4,21 +4,20 @@ Covers: `#[derive(Modal)]` and `#[derive(Choices)]`, typed submissions
 (`ModalForm::from_json`, `ModalSubmission`, resolved entities, the File Upload download
 helper), the runtime `Modal` builder, Labels, every modal component (Text Input, selects,
 File Upload, Radio Group, Checkbox Group, Checkbox, Text Display), pre-fill, opening a
-modal, modal-based Wizard Steps. Rules: MOD-01..09, INT-05, CV2-04, CV2-09, CID-01, FR-29,
+modal, modals in step flows and the button → modal → re-render chain. Rules: MOD-01..09, INT-05, CV2-04, CV2-09, CID-01, FR-29,
 FR-63, FR-64.
 
 ## 1. Anatomy: `#[derive(Modal)]`
 
-A modal form is a struct plus the Route its submission goes to. `derive(Modal)` (in
-`noctis::prelude`) implements `noctis::ui::ModalForm` for it:
+A modal is one struct, like every interaction [planned: Story 6.11]: `#[derive(Modal)]`
+with `#[modal("id", <routing args>, defaults(title = …))]`. Fields **without** an input
+attribute are its Payload (encoded in the modal's `custom_id`, length-proven like any
+component, MOD-08); fields **with** one are the inputs. Its handler is a method on it
+(§3). `derive(Modal)` (in `noctis::prelude`) implements `noctis::ui::ModalForm`:
 
 ```rust
-use noctis::prelude::*;                    // Route, Modal, Choices, ModalForm, …
+use noctis::prelude::*;                    // Modal, Choices, ModalForm, …
 use noctis::ui::{ResolvedAttachment, SubmitError};
-
-#[derive(Route, Debug, Clone, Copy)]
-#[route("mod.report")]                     // the submit Route (MOD-08: same custom_id rules)
-pub struct Report { pub id: u64 }
 
 #[derive(Choices, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -29,8 +28,9 @@ pub enum Severity {
 }
 
 #[derive(Modal, Debug)]
-#[modal(route = Report, title = "Report a user")]          // title 1–45 (MOD-01)
+#[modal("mod.report", response = ephemeral, defaults(title = "mod.report.title"))]  // title 1–45 (MOD-01); a locale key
 pub struct ReportForm {
+    pub id: u64,                                             // Payload: no input attribute
     #[text_display("Tell us what happened.")]
     _intro: (),                                              // Text Display, submits nothing
     #[text_input("Reason", style = paragraph, max_length = 500)]
@@ -43,15 +43,23 @@ pub struct ReportForm {
     pub agree: bool,
 }
 
-let modal: noctis::ui::Modal = ReportForm::modal(Report { id: 7 });  // ModalForm::modal
+let modal: noctis::ui::Modal = ReportForm::blank(7).build();         // Payload only, inputs empty
 let form: ReportForm = ReportForm::from_json(raw_interaction_bytes)?; // ModalForm::from_json
 ```
 
-- `#[modal(route = R, title = "…")]` is required: `R` is the submit Route (it needs a
-  `#[handler]`, else `[CID-04]`), the title a literal.
-- **One field = one top-level component**, in declaration order; 1–5 fields (MOD-02),
-  counted at `cargo check`. Each field carries **exactly one** component attribute: none
-  is `[MOD-02] field … is not a modal component`, two are `[MOD-03] … has two component
+`X { .. }.build()` builds from a whole value and pre-fills every input with its field;
+`X::blank(<payload fields in order>)` builds with empty inputs, for forms whose required
+inputs (`String`, a `Choices` enum, `bool`) have no "empty" value.
+
+- `#[modal("id", .., defaults(title = "…"))]` is required: the id is the modal's own
+  (it needs a `#[handler]` method, else `[CID-04]`), `defaults(..)` must give `title`
+  (a missing block or key is a compile error naming it), and an unknown key is an error.
+  This release spells it `#[modal(route = R, title = "…")]` with a separate submit
+  `#[derive(Route)]` struct `R` and opens it with `ReportForm::modal(R { .. })`.
+- **One input field = one top-level component**, in declaration order; 1–5 inputs (MOD-02),
+  counted at `cargo check`. Each input field carries **exactly one** component attribute
+  (a field with none is a Payload field; this release: `[MOD-02] field … is not a modal
+  component`), two are `[MOD-03] … has two component
   attributes`. A tuple/unit struct, an enum or generics are `[MOD-02]` errors.
 - The **field name is the input key** (its `custom_id`, `r#` stripped: `r#type` → `"type"`;
   1–100 characters, CID-01). The modal's own `custom_id` is the Route's.
@@ -127,39 +135,57 @@ pub enum Topic {
 
 ## 2. Opening it
 
-A Command opens a modal today (Story 6.6): declare `#[command(.., opens_modal)]`, take
-`r: CommandResponder<OpensModal>` and return `r.modal(m).await?.done()`:
+Only a handler declared **`auto_defer = false`** can open a modal, and it must take the
+`Manual` responder: a modal must be the first response (INT-05), and an auto-defer would
+make it impossible. A Command:
 
 ```rust
-#[command("bio", description = "Edit your profile bio", opens_modal, contexts = [Guild])]
-async fn bio(ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
-    Ok(r.modal(BioForm::modal(SaveBio { user: ctx.user_id() })).await?.done())
+#[derive(SlashCommand)]
+#[command("bio", description = "Edit your profile bio", auto_defer = false, contexts = [Guild])]
+pub struct Bio;
+
+impl Bio {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
+        let form = BioForm { user: ctx.user_id(), bio: None, pronouns: None };  // empty inputs
+        Ok(r.show_modal(form.build()).await?.done())
+    }
 }
 ```
 
-From a component, the **opening** Route must be declared `opens_modal` (no auto-defer,
-INT-05) [planned, Story 7.8]:
+This release (Story 6.6) spells it `#[command(.., opens_modal)]`, `r: CommandResponder<OpensModal>`
+and `r.modal(BioForm::modal(SaveBio { .. }))`; Story 6.10 renames the first three
+(`auto_defer = false`, `CommandResponder<Manual>`, `show_modal`) and Story 6.11 replaces
+the `BioForm::modal(..)` opener with `.build()`.
+
+**A button that opens a modal must be `auto_defer = false`** [planned, Story 7.8]:
 
 ```rust
-#[derive(Route, Debug, Clone, Copy)]
-#[route("profile.bio", opens_modal, owner = user)]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = "profile.edit_bio"))]
 pub struct EditBio { pub user: Id<UserMarker> }
 
-#[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
-    let stored: StoredProfile = ctx.kv().get(&key).await?.unwrap_or_default();
-    let modal = BioForm::modal(SaveBio { user: e.user })   // ModalForm::modal → noctis::ui::Modal
-        .bio(stored.bio)                                     // pre-fill setters [planned, Story 9.4]
-        .pronouns(stored.pronouns);
-    Ok(r.modal(modal).await?.done())
+impl EditBio {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+        let stored: StoredProfile = ctx.kv().get(&key).await?.unwrap_or_default();
+        // The value's input fields pre-fill the inputs [planned, Story 9.4].
+        let form = BioForm { user: self.user, bio: stored.bio, pronouns: stored.pronouns };
+        Ok(r.show_modal(form.build()).await?.done())
+    }
 }
 ```
 
-The `OpensModal` responder is required exactly when `opens_modal` is declared (an
-`[INT-05]` compile error otherwise), and no auto-defer is armed for that handler; one
-that has not answered within 2.9 s logs an error naming it. `modal(m)` after another
-initial response, or over the `Dispatcher`, is `ResponderError::ModalUnavailable`.
-Do your I/O fast: a modal must be the first response within 3 s.
+Per-render overrides on a built modal: `.title(..)` and `.value(field, ..)` (one input's
+initial value); anything not overridden comes from `defaults(..)` and the value.
+
+The `Manual` responder is required exactly when `auto_defer = false` is declared (an
+`[INT-05]` compile error otherwise), `show_modal` on an auto-defer responder fails with
+`[INT-05] show_modal needs auto_defer = false on this handler`, and no auto-defer is
+armed for that handler; one that has not answered within 2.9 s logs an error naming it.
+`show_modal(m)` after another initial response, or over the `Dispatcher`, is
+`ResponderError::ModalUnavailable`. Do your I/O fast: a modal must be the first response
+within 3 s.
 
 Today a derived modal has no pre-fill; build the `Modal` at runtime (§4b, `TextInput::value`,
 `.default_users(..)`, `ModalOption::default(true)`) when you need one. Pre-filled values go
@@ -168,16 +194,26 @@ error (FR-63).
 
 ## 3. Receiving it: typed submissions
 
-The `#[handler]` side (`ModalSubmitCtx`, the submit Route and the form as parameters) is
-[planned, Story 7.8]:
+The handler is a method on the modal struct; `self` is the decoded Payload plus the
+submitted values [planned, Story 7.8]. Modal submits never get `show_modal`; they may
+declare `response` and `auto_defer` on `#[modal(..)]` (`responder.md` §2b):
 
 ```rust
-#[handler]
-async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerResult<ProfileView> {
-    …
-    ProfileView::load(&ctx, save.user).await
+impl BioForm {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        …                                                         // validate self.bio, then save
+        let data = load(&ctx, self.user).await?;
+        ctx.update(render_profile(&data, &Strings::of(ctx.response_locale()), true)).await
+    }
 }
 ```
+
+`response = update` (the default) redraws the message the opening button was on; a
+modal opened from a slash command has no such message, so declare `response = public`
+or `ephemeral` for it and answer with `ctx.respond(..)`: there `ctx.update` returns
+`ResponderError::UpdateUnavailable` and sends nothing (it never falls back to a new
+message).
 
 Decoding works today, from the raw interaction JSON (`&[u8]` of the whole interaction
 object, `"type": 5`):
@@ -227,8 +263,10 @@ submission.unknown();                                        // &[serde_json::Va
   Id<GenericMarker>)` (user first, then role); each returns `None` when the id is missing.
 - Submitted values are untrusted (MOD-09): re-validate ranges and authorization.
 - If the modal was opened from a message component, returning a View **updates that
-  message** (type 7); from a command, it sends a new message. `ModalResponder` has no
-  `modal()`: modals can't chain (INT-05). [planned, Story 7.8]
+  message** (type 7); from a command, there is no message to update: `update` and
+  `ctx.update` return `UpdateUnavailable` without a request, so send a new message with
+  `ctx.respond`. `ModalResponder` has no `show_modal()`: modals can't chain (INT-05).
+  [planned, Story 7.8]
 - Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`.
 
 ### 3.1 Downloading uploads
@@ -391,10 +429,11 @@ and counts toward the 5. In a derived modal it is a `#[text_display("…")]` fie
 
 ## 4b. Building a modal at runtime: `Modal`
 
-`Modal` is the callback `data` of a modal (type 9). It is built only from a Route value,
-so its `custom_id` is that Route's encoding (MOD-08) and the submission goes to that
-Route's handler. There is no `Modal::new`, no string id and no `Default`; a Route without
-a `#[handler]` fails with `[CID-04]`.
+`Modal` is the callback `data` of a modal (type 9). It is built only from a modal struct
+value (`form.build()`; this release: from a Route value), so its `custom_id` is that
+struct's encoding (MOD-08) and the submission goes to its handler. There is no
+`Modal::new`, no string id and no `Default`; a struct without a `#[handler]` fails with
+`[CID-04]`.
 
 ```rust
 use noctis::prelude::*;
@@ -404,7 +443,7 @@ use noctis::ui::{
     TextInputStyle, validate,
 };
 
-let mut modal = Report { id: 7 }.modal("Report a user")      // RouteComponents::modal
+let mut modal = Report { id: 7 }.modal("Report a user")      // RouteComponents::modal (this release; Story 6.11 folds it into .build())
     .push(TextDisplay::new("Tell us what happened."))
     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))
@@ -419,7 +458,7 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   `is_empty()`.
 - JSON: `{"custom_id","title","components":[…]}`, no numeric `id` anywhere, never an
   Action Row (type 1) and never a Text Input `label`. A Route whose `custom_id` needs a
-  View envelope, select nonce or signature is resolved by the Responder before sending;
+  select nonce or signature is resolved by the Responder before sending;
   serializing it unresolved is a serde error naming the Route.
 - `noctis::ui::validate(&mut modal, &limits)` returns a `CostReport` or
   `UiError::Limits { violations }`. Order: the `noctis::rules::modal::validate_modal`
@@ -440,15 +479,50 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   then the Text Displays to fit the CV2-04 total (one warning at `components`).
   Never a Text Input `value`, option values, keys or counts: those still fail. Strict
   mode (the default) never changes the modal.
-- `r.modal(modal)` on a `CommandResponder<OpensModal>` runs this validator (and fails
+- `r.show_modal(modal)` on a `CommandResponder<Manual>` (this release: `r.modal(modal)` on
+  `CommandResponder<OpensModal>`) runs this validator (and fails
   with `ResponderError::Invalid`) before any request, then sends callback type 9 (Story
   6.6); from components it is [planned, Story 7.8].
 
-## 5. Modals in Wizards
+## 5. Button → modal → re-render (settings screens and step flows)
 
-A Step that needs free text shows a button (an `opens_modal` Route carrying the
-Wizard state). The modal's submit Route also carries the state; its handler returns
-`MyWizard::new(new_state).at(Nav::step(k + 1))`, updating the Wizard message.
+A setting or a step that needs free text shows a button declared `auto_defer = false`.
+The modal struct carries **the same Payload** (the entity id, or the whole step state),
+so its handler knows which message to redraw:
+
+```rust
+#[derive(Button, Debug, Clone, Copy)]
+#[button("ticket.text", auto_defer = false, defaults(style = Secondary, label = "ticket.edit_text"))]
+pub struct EditText { pub system: u32 }
+
+#[derive(Modal, Debug)]
+#[modal("ticket.text.save", defaults(title = "ticket.text_title"))]
+pub struct TextForm {
+    pub system: u32,                                               // the same Payload
+    #[text_input("Button text", max_length = 80)]
+    pub text: Option<String>,
+}
+
+impl EditText {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>, db: State<Db>) -> HandlerResult<Responded> {
+        let current = db.button_text(self.system).await?;          // pre-fill from storage
+        Ok(r.show_modal(TextForm { system: self.system, text: current }.build()).await?.done())
+    }
+}
+
+impl TextForm {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx, db: State<Db>) -> HandlerResult<Responded> {
+        db.set_button_text(self.system, self.text).await?;        // validate first
+        let data = db.ticket_systems(ctx.guild_id()).await?;
+        ctx.update(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), Some(self.system))).await
+    }
+}
+```
+
+In a step flow the submit handler calls `ctx.update(render_setup(next_state, &s))`.
+Never answer a modal submit with another modal (INT-04): render a message step first.
 
 ## 6. Choosing modal vs message components
 

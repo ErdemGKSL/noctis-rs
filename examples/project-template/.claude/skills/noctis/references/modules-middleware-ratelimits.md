@@ -7,17 +7,17 @@ limits. FR-5, FR-6, FR-20, FR-22, FR-44..47, FR-73; AD-7, AD-23.
 ## 1. Modules
 
 ```rust
-use noctis::prelude::*;                    // Module, #[event], EventCtx, HandlerResult, …
+use noctis::prelude::*;                    // Module, EventHandler, EventCtx, HandlerResult, …
 use noctis::BaseMeta;                      // Module::base metadata (not in the prelude)
 
 pub fn module() -> Module {
     Module::new("profile")                 // path-like id: "a/b/c"
-        .add(award_xp())                   // #[event]
-        .add(profile_show())               // #[command("profile show")]
-        .add(badges_list())                // #[command("profile badges list")]
+        .add::<AwardXp>()                  // #[derive(EventHandler)]
+        .add::<ProfileShow>()              // #[derive(SlashCommand)] #[command("profile show")]
+        .add::<BadgesList>()               // #[derive(SlashCommand)] #[command("profile badges list")]
         .base("profile", BaseMeta::new().description("Profile commands"))  // base command
         .group("profile badges", "Manage badges")   // subcommand group description
-        .add(open_profile())               // #[handler] [planned, Epic 7]
+        .add::<OpenProfile>()              // #[derive(Button)] [planned, Epic 7]
         .template::<ProfileCard>()         // image Templates [planned]
         .locales(profile_strings::catalog())   // Module-scoped strings [planned]
         .before(Middleware::before(load_settings).provides::<GuildSettings>())   // [planned, Story 7.6]
@@ -31,7 +31,9 @@ builder.module(profile::module()).module(ops::module());
 
 Implemented: `Module::new(id)`, `.add(descriptor)`, `.module(child)`, `.base(name,
 BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
-`AppBuilder::module(Module)`.
+`AppBuilder::module(Module)`. [planned: Story 6.11] `.add::<X>()` registers a struct by
+type and replaces `.add(x())`, which takes the descriptor function a free-function macro
+generates in this release.
 
 - `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
   too (in `install`); those trees fold after the ones mounted before `build()`.
@@ -82,28 +84,48 @@ answer a localized ephemeral "disabled here" (`noctis.disabled_here`). Hook:
 
 ## 4. Gateway Event Handlers (FR-6)
 
+An event handler is a unit struct, like every handler [planned: Story 6.11; this release:
+a free `#[event] async fn award_xp(ctx: EventCtx, msg: MessageCreate)` added with
+`.add(award_xp())`, and the signature rules and errors below are that release's]:
+
 ```rust
 use noctis::events::{EventCtx, MemberAdd, MessageCreate, ReactionAdd};
 use noctis::prelude::*;
 
 /// +1 XP per message. Derives GUILD_MESSAGES (not privileged, no message content).
+#[derive(EventHandler)]
 #[event]
-async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    let Some(guild) = ctx.guild_id() else { return Ok(()) };
-    let meta = ctx.state::<BotMeta>();         // Option<State<BotMeta>>
-    ctx.http().create_message(msg.channel_id).content("hi").await?;   // the App's one client
-    Ok(())
+pub struct AwardXp;
+
+impl AwardXp {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+        let Some(guild) = ctx.guild_id() else { return Ok(()) };
+        let meta = ctx.state::<BotMeta>();         // Option<State<BotMeta>>
+        ctx.http().create_message(msg.channel_id).content("hi").await?;   // the App's one client
+        Ok(())
+    }
 }
 
 /// Runs before the concurrent handlers of the event, one event at a time per guild.
 /// Needs the privileged GUILD_MEMBERS: `.intents(Intents::GUILD_MEMBERS)` + the Portal.
+#[derive(EventHandler)]
 #[event(ordered)]
-async fn audit_join(ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> { … }
+pub struct AuditJoin;
+impl AuditJoin {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> { … }
+}
 
+#[derive(EventHandler)]
 #[event(droppable)]                   // this handler tolerates its event being dropped
-async fn on_reaction(ctx: EventCtx, ev: ReactionAdd) -> HandlerResult<()> { … }
+pub struct OnReaction;
+impl OnReaction {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: ReactionAdd) -> HandlerResult<()> { … }
+}
 
-Module::new("profile").add(award_xp()).add(audit_join()).add(on_reaction());
+Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
 ```
 
 - **Signature:** exactly `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`,
@@ -227,8 +249,10 @@ Module::new("premium")
     .before(Middleware::before(premium_only))
     .after(Middleware::after(audit));
 
-#[handler]
-async fn h(ctx: ComponentCtx, p: MyRoute, settings: Ext<GuildSettings>) -> HandlerResult<MyView> { … }
+impl MyRoute {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, settings: Ext<GuildSettings>) -> HandlerResult<Responded> { … }
+}
 ```
 
 - Order: parent Module before child, then registration order; after-Middleware in
@@ -314,8 +338,8 @@ builder
 Declarative, checked before the handler and before any auto-defer:
 
 ```rust
-#[command("profile", rate_limit(user, 3, per = "10s"))]
-#[handler(rate_limit(member, 1, per = "1m"))]
+#[command("profile", rate_limit(user, 3, per = "10s"))]                       // on a SlashCommand struct
+#[button("vote", rate_limit(member, 1, per = "1m"), defaults(style = Primary, label = "vote"))]  // on a component
 ```
 
 Scopes: `user`, `member` (user per guild), `channel`, `guild`, `message`. Semantics: N
@@ -333,4 +357,4 @@ ctx.rate_limits().reset(RateScope::User, "bio-edit").await?;
 ```
 
 Override the notice per App, Command or Route with `rate_limited = fn` [planned]:
-`async fn(ctx: &dyn Ctx, retry_after: Duration) -> HandlerResult<StaticViewBox>`.
+`async fn(ctx: &dyn Ctx, retry_after: Duration) -> HandlerResult<StaticMessage>`.

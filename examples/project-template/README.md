@@ -11,13 +11,20 @@ image rendering.
 
 | Feature | Where | Shows |
 | --- | --- | --- |
-| `/setup start` | `src/modules/setup.rs` | Wizard with Steps, validation, selects, Finish |
-| `/dashboard` | `src/modules/dashboard.rs` | Navbar tabs, auto-paginated role list, module toggles |
-| `/profile`, "Show profile" | `src/modules/profile.rs` | Rendered card (Template) in a Media Gallery, bio modal with pre-fill, XP event handler, user command |
+| `/setup start` | `src/modules/setup/` | Hand-written three-step flow: the step in a Payload field, "Step n of 3" progress, pre-filled selects, Back/Next/Cancel, Finish |
+| `/dashboard` | `src/modules/dashboard/` | Hand-written tabs (a `PayloadEnum` field), a role list paginated with the budget helper, module toggles |
+| `/profile`, "Show profile" | `src/modules/profile/` | Rendered card (Template) in a Media Gallery, button → modal → re-render bio editing, XP event handler, user command |
 | Custom Adapter | `src/adapters/bounded_cache.rs` | Implementing the `CacheStore` port yourself |
 | Locales | `locales/en-US.yaml`, `locales/tr.yaml` | Typed strings, word-by-word command translation |
 | Tests | `tests/` | Testkit flows, Adapter conformance, pixel snapshot |
 | Agent setup | `AGENTS.md`, `.claude/skills/` | Noctis Usage Skill + rust-best-practices |
+
+Every feature folder has the same shape: `mod.rs` (the Module and its Routes),
+`view.rs` (render functions, the one place a message is built), `handlers.rs`
+(Commands, component and modal handlers, each ending in `ctx.respond(render_x(..))` or
+`ctx.update(render_x(..))`) and, when needed, `events.rs`. Noctis has no widgets: tabs,
+pages and steps are fields of your own Routes (see the Usage Skill's
+`references/views-and-recipes.md`).
 
 ## Start a new bot from it
 

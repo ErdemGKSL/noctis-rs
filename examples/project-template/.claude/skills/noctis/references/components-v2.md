@@ -46,8 +46,9 @@ send [planned]) and at `cargo check` by `components!` for literal trees (§14);
 `noctis::ui::cost(&msg, &limits)` measures a message, and the rule functions of §15
 check bare descriptor trees.
 
-In Views you rarely build the message by hand: `Layout::new()…build(cx)` does it, adds
-Chrome and paginates (see `views-and-widgets.md`) [planned].
+A View is a render function that builds this message itself (`views-and-recipes.md`).
+Noctis never adds pagination or extra rows to it: size lists with `Budget`
+[planned, Story 8.3].
 
 Cost cheatsheet: Container 1, Text Display 1, Separator 1, Media Gallery 1 (any items),
 File 1, Section + 1 text + button = 3, Section + 3 texts + thumbnail = 5, Action Row + 5
@@ -119,10 +120,15 @@ let items: Vec<ContainerComponent> = vec![TextDisplay::new("a").into(), Separato
 let container = items.into_iter().fold(Container::new(), Container::push);
 ```
 
-### Components from Routes: `RouteComponents`
+### Components from Routes: `.build()` (and today's `RouteComponents`)
 
 Buttons and selects that send an interaction are built only from a Route value (AD-19);
-there is no string `custom_id` constructor. `RouteComponents` (in the prelude, also
+there is no string `custom_id` constructor. **Converged form [planned: Story 6.11]:** the
+struct's derive names its kind (`#[derive(Button)]`, `#[derive(StringSelectMenu)]`,
+`#[derive(UserSelectMenu)]`, `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]`,
+`#[derive(ChannelSelectMenu)]`) with mandatory `defaults(..)`, and `X { .. }.build()`
+returns that component with the defaults applied; the setters below are per-render
+overrides (`routes-payloads-refs.md` §1 and §9). **This release:** `RouteComponents` (in the prelude, also
 `noctis::ui::RouteComponents`) adds `.button()`, `.string_select(options)`,
 `.user_select()`, `.role_select()`, `.mentionable_select()` and `.channel_select()` to
 every `#[derive(Route)]` struct.
@@ -132,10 +138,11 @@ every `#[derive(Route)]` struct.
   ``[CID-04] Route `X` has no handler, so no component can be built for it``
   (`note: the #[handler] macro implements Handled; add a handler for X to a mounted
   Module`). Never implement that marker by hand.
-- Selects need a Route declared `select` (`#[route("id", select)]`, which implements
+- Selects need a Route declared `select` (this release: `#[route("id", select)]`; from
+  Story 6.11 every select kind carries it; it implements
   `noctis::codec::SelectRoute`): otherwise ``route `X` is not declared `select` ``.
-- A plain Route (no `view`, `select` or `signed`) is encoded when you build the
-  component. Ids that need a View envelope, a select nonce, a signature or a Ref are
+- A plain Route (no `select` or `signed`) is encoded when you build the
+  component. Ids that need a select nonce, a signature or a Ref are
   finalized by the Responder before sending [planned, Epic 7]; you never handle them
   (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
 
@@ -259,7 +266,8 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
   `.is_empty()`.
 - `AttachmentRef` has no public constructor: `.name()`, `.url()`
   (`attachment://<name>`), `.origin()`; `Clone + Eq + Hash`.
-- In Views, `cx.attach(&att) -> AttachmentRef` adds to the View's set [planned]. The
+- In a render function, `files.add(att) -> AttachmentRef` on the message's
+  `AttachmentSet`, then `V2Message::attachments(files)`. The
   Upload Budget (ATT-01..03) is checked by the Responder [planned].
 
 ## 7. Separator: `Separator`
@@ -287,7 +295,7 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
 
 ```rust
 ActionRow::buttons([
-    Button::from(Save { guild }.button().style(ButtonStyle::Primary).label("Save")),
+    Button::from(Save { guild }.build().style(ButtonStyle::Primary)),   // label from the defaults
     Button::from(LinkButton::new("https://example.com/help").label("Help")),
 ])
 ```
@@ -312,27 +320,28 @@ Each kind is its own type (CV2-08), so a Link button cannot get a `custom_id` an
 Premium button cannot get a label. `Button` is the opaque "any button" they all convert
 into (`Button::from(x)` / `.into()`), for mixed rows. Never in modals. Guidelines: one
 Primary per group; equal-weight actions all Secondary; Danger only for destructive
-actions. View controls (`cx.reload_button()`, Navbar/Wizard/Paginator buttons) are
-generated [planned].
+actions. Tab rows, prev/next and Back/Next/Cancel are ordinary Route buttons you build
+in your render function (`views-and-recipes.md` §3).
 
 ### 9a. Route button: `RouteButton`
 
 - **Where:** Action Row (`RowItem`) or Section accessory (`SectionAccessory`).
 - **Limits:** styles 1–4; label ≤ 80 (CV2-08); `custom_id` ≤ 100, proven by the Route
   derive (CID-01).
-- **Builder:** `MyRoute { .. }.button()` → `RouteButton<MyRoute>`; `.style(ButtonStyle::
+- **Builder:** `MyRoute { .. }.build()` on a `#[derive(Button)]` struct (this release:
+  `.button()`) → `RouteButton<MyRoute>`, starting from the struct's `defaults(..)`; `.style(ButtonStyle::
   Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)`,
   `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`. A click reaches the Route's handler
-  with the decoded Payload. Default styles per Route (`ComponentRoute`) and
-  `button_with` [planned, Story 9.3]. A literal label can be checked at `cargo check`
+  with the decoded Payload as `self`. The defaults live on the struct (`#[button("id",
+  defaults(style = .., label = ..))]`, `ComponentRoute`) [planned, Story 9.3]. A literal label can be checked at `cargo check`
   with `label!("Save")` (a `Label`, also usable in a `const`); runtime text (localized
   labels included) is passed as is or checked with `Label::try_new(text, &limits)`.
 
 ```rust
 ToggleModule { guild, module, enable: !enabled }
-    .button()
-    .label(s.common.enable())
-    .style(ButtonStyle::Success)
+    .build()                                  // defaults(style = Success, label = "common.enable")
+    .label(s.common.disable())                // override for this render
+    .style(ButtonStyle::Danger)
 ```
 
 ### 9b. Link button: `LinkButton`
@@ -350,8 +359,10 @@ ToggleModule { guild, module, enable: !enabled }
 
 ## 10. Select menus (types 3, 5, 6, 7, 8) — message variants
 
-The Route must declare `select` (adds the per-render nonce, FR-25). A select sits alone
-in its row: `ActionRow::select(route.string_select(options))`.
+Every select carries the per-render nonce (FR-25; this release: the Route must declare
+`select`). A select sits alone in its row: `ActionRow::select(route.build())` (this
+release: `route.string_select(options)` etc.). The shared fields below are `defaults(..)`
+keys on the struct and per-render overrides.
 
 Shared fields of all five:
 
@@ -363,11 +374,11 @@ Shared fields of all five:
 | `disabled` | `.disabled(bool)` | messages only | CV2-09 |
 
 - **Cost:** 2 (row + select). Options don't count.
-- After every re-render, selects show the View's defaults (nonce, FR-25); always set
+- After every re-render, selects show the render function's defaults (nonce, FR-25); always set
   `default`/`default_*` to the current value (visible active state).
 - Empty list: render a disabled select with one explanatory option, or an empty-state
   Text Display, never nothing.
-- More than 25 items: `Paginator::…as_select(..)` chunks into several selects [planned].
+- More than 25 items: page them (25 options per page with prev/next, `views-and-recipes.md` §3.2).
 - `derive(Choices)` enums can produce options: `Severity::select_options(locale)` [planned].
 - Selected values in the handler: `ctx.values().strings()`, `.users()`, `.roles()`,
   `.mentionables()`, `.channels()`, plus `ctx.resolved()` [planned].
@@ -377,42 +388,52 @@ Shared fields of all five:
 - **Where:** alone in an Action Row (`RowSelect`).
 - **Limits:** ≤ 25 options; option label/value/description ≤ 100; `default` count
   within [min, max] (CV2-09). Zero options build (the validator checks them).
-- **Builder:** `route.string_select([SelectOption; N])` (any `IntoIterator<Item =
-  SelectOption>`, so a `Vec` works); `SelectOption::new(label, value).description(..)
+- **Builder:** `route.build()` on a `#[derive(StringSelectMenu)]` struct, with options from
+  `defaults(options = SomeChoicesEnum)` or `.options(..)` per render (required by the
+  typestate when the defaults have none); this release: `route.string_select([SelectOption;
+  N])` (any `IntoIterator<Item = SelectOption>`, so a `Vec` works); `SelectOption::new(label, value).description(..)
   .emoji(..).default(true)`. JSON type 3. `try_string_select` [planned].
 
 ```rust
-Size { item }.string_select([
-    SelectOption::new("Small", "s").default(current == Size::Small),
-    SelectOption::new("Large", "l").default(current == Size::Large),
-]).placeholder("Size")
+#[derive(StringSelectMenu, Debug, Clone, Copy)]
+#[string_select("shop.size", defaults(placeholder = "shop.size"))]
+pub struct Size { pub item: u32 }
+
+Size { item }.build().options([
+    SelectOption::new("Small", "s").default(current == SizeKind::Small),
+    SelectOption::new("Large", "l").default(current == SizeKind::Large),
+])
 ```
 
 ### 10b. User Select: `UserSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** shared fields; `default_values` count within [min, max] (CV2-09).
-- **Builder:** `route.user_select()`, `.default_users(ids)` (any `IntoIterator<Item =
+- **Builder:** `route.build()` on a `#[derive(UserSelectMenu)]` struct (this release
+  `route.user_select()`), `.default_values(ids)` (this release `.default_users(ids)`) (any `IntoIterator<Item =
   Id<UserMarker>>`, so an `Option` works; appends). JSON type 5.
 
 ### 10c. Role Select: `RoleSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** as User Select.
-- **Builder:** `route.role_select()`, `.default_roles(ids)`. JSON type 6.
+- **Builder:** `route.build()` on a `#[derive(RoleSelectMenu)]` struct (this release
+  `route.role_select()`), `.default_values(ids)` (this release `.default_roles(ids)`). JSON type 6.
 
 ### 10d. Mentionable Select: `MentionableSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** as User Select.
-- **Builder:** `route.mentionable_select()`, `.default_users(ids)`, `.default_roles(ids)`
+- **Builder:** `route.build()` on a `#[derive(MentionableSelectMenu)]` struct (this
+  release `route.mentionable_select()`), `.default_users(ids)`, `.default_roles(ids)`
   (appended in call order). JSON type 7.
 
 ### 10e. Channel Select: `ChannelSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** as User Select.
-- **Builder:** `route.channel_select()`, `.default_channels(ids)`,
+- **Builder:** `route.build()` on a `#[derive(ChannelSelectMenu)]` struct (this release
+  `route.channel_select()`), `.default_values(ids)` (this release `.default_channels(ids)`),
   `.channel_types([ChannelType::GuildText])` (twilight's `ChannelType`; none = every
   type). JSON type 8.
 
@@ -553,10 +574,10 @@ let body = components! {
     container(accent = rgb!(0x5865_F2)) [
         text("### Server settings"),
         separator(spacing = small),
-        section [ text("Logs go to the channel you pick."), text(current); accessory = SetLogs { guild }.button(label!("Change")) ],
+        section [ text("Logs go to the channel you pick."), text(current); accessory = SetLogs { guild }.build() ],
         gallery [ item(card_ref, alt = "Profile card") ],
-        row [ Save { guild }.button("Save").style(ButtonStyle::Primary), link(url = "https://example.com/help", label = "Help") ],
-        row [ Pick { guild }.channel_select().placeholder("Log channel") ],
+        row [ Save { guild }.build().style(ButtonStyle::Primary), link(url = "https://example.com/help", label = "Help") ],
+        row [ Pick { guild }.build() ],          // placeholder from the struct's defaults
         ..extra_rows,                 // spread: any IntoIterator of Container children
     ],
     {footer},                         // hole: one component you built elsewhere
@@ -578,17 +599,20 @@ item      := item "(" media [, alt = string-literal | expr] ")"
 file      := file "(" attachment_ref ")"
 separator := separator [ "(" [spacing = small | large] [, divider = expr] ")" ]   (both optional, any order, each once)
 row       := row "[" (button | {hole}),* "]" | row "[" select "]"
-button    := route.button() | route.button(label) [.setter(..)]* | link(url = "…", label = "…") | premium(sku)
-select    := route.string_select(options) | route.user_select() | route.role_select()
-             | route.mentionable_select() | route.channel_select()   [.setter(..)]*
+button    := route.build() [.setter(..)]* | link(url = "…", label = "…") | premium(sku)
+             (this release: route.button() | route.button(label) [.setter(..)]*)
+select    := route.build() [.setter(..)]*
+             (this release: route.string_select(options) | route.user_select() | route.role_select()
+             | route.mentionable_select() | route.channel_select()   [.setter(..)]*)
 hole      := "{" expr "}"                       one already-built component (block statements allowed)
 spread    := ".." expr                          IntoIterator of components; top level or container only
 ```
 
 - `media` is a string literal (an `https` URL, becomes `Media::url(..)`) or any
   expression convertible into `Media` (an `AttachmentRef`, a `Media`).
-- A Route component is any expression whose method chain contains `.button(..)` or
-  `.<kind>_select(..)`: the receiver is the Route value and the calls after it
+- A Route component is any expression whose method chain contains `.build()` (this
+  release: `.button(..)` or `.<kind>_select(..)`); its kind comes from the struct's
+  derive: the receiver is the Route value and the calls after it
   (`.style(..)`, `.label(..)`, `.placeholder(..)`, `.max_values(..)`, `.disabled(..)`,
   `.emoji(..)`, …) are re-applied in order. `.button(label)` is `.button().label(label)`.
 - `link` needs literal `url` and `label`, in that order. `button_with` arrives with

@@ -27,8 +27,8 @@ fields; a struct literal does not compile. Every field is a `usize` maximum.
   fail, and so do the structural rules CV2-03, CV2-05, CV2-06, CID-01 and CID-02.
   `limits.truncates(rule)` answers only whether the mode permits truncation for that
   rule: `true` only in Lenient mode and only for a non-structural rule.
-- Autocomplete is always truncated to 25 (INT-07), in both modes; `truncates` does
-  not govern it (it returns `false` for INT-07 in Strict mode).
+- Autocomplete is always truncated to 25 (INT-07), and labels to 100, in both modes;
+  `truncates` does not govern it (it returns `false` for INT-07 in Strict mode).
 - Macros check literals against the defaults. Lowering a field makes the runtime
   re-check every tree, static ones included; raising one never relaxes a
   compile-time check.
@@ -227,10 +227,15 @@ locale returns `None`.
 | CID-06 | `custom_id` is untrusted client input | R |
 | CID-07 | ASCII-only encoding | C |
 
-Layout widths: `F` 1, route ≤ 24, `:` 1, schema 1, view envelope 5, select nonce 2,
-Ref marker + Ref 12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3,
-`u32` 6, `u64`/`Id` 11, `PayloadEnum` 1, `Option<T>` +1, `BoundedStr<N>` 2N,
-`String`/`Vec` unbounded. Worst by-ref id: 46.
+Layout widths: `F` 1, route ≤ 24, `:` 1, schema 1, select nonce 2, Ref marker + Ref
+12, integrity tag 6. Field widths: `bool` 1, `u8` 2, `u16` 3, `u32` 6, `u64`/`Id` 11,
+`PayloadEnum` 1, `Option<T>` +1, `BoundedStr<N>` 2N, `String`/`Vec` unbounded. Worst
+by-ref id: 41 (46 in this release, which still reserves the withdrawn 5-character view
+envelope; Story 6.10 removes it).
+
+Page sizing: `Budget::of(&fixed_parts, &limits).fits(&row)` [planned, Story 8.3]
+answers "how many rows of this shape still fit" against CV2-03 (40 components) and
+CV2-04 (4000 characters) together (`views-and-recipes.md` §4).
 
 ## Components V2 (messages)
 

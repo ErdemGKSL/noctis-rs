@@ -22,15 +22,15 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[CID-03] route id: limit between 1 and 24, actual 25` | empty or too long id | 1 to 24 characters |
 | ``[CID-03] route id: limit an id that does not start with `_`, actual `_x` `` | `_` prefix is reserved for Noctis | rename |
 | `[CID-03] #[derive(Route)] needs a #[route("id")] attribute` / `a Route takes exactly one #[route] attribute` / `#[route] takes a list: the route id, then codec arguments` / `#[route] is missing the route id` / `the route id must be a string literal` | attribute missing, doubled or malformed | `#[route("shop.buy", args…)]` |
-| ``[CID-03] unknown #[route] argument `colour` `` | typo or unsupported argument | codec arguments: `by_ref`, `overflow = spill`, `schema = n`, `view`, `select`, `signed` |
-| ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet`` (also `one_shot`, `owner`, `permissions`, `guard`, `opens_modal`) | runtime arguments are [planned] | remove it until the release that supports it |
-| ``[CID-03] #[route] argument `view` is given twice`` / ``[CID-03] `view` is a flag and takes no value`` / ``malformed #[route] argument `by_ref` `` | duplicate argument, `view = true`, `by_ref()` | write each flag once, bare |
+| ``[CID-03] unknown #[route] argument `colour` `` | typo or unsupported argument | codec arguments: `by_ref`, `overflow = spill`, `schema = n`, `select`, `signed` (`view` is withdrawn: delete it; tabs and pages are Payload fields) |
+| ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet`` (also `one_shot`, `owner`, `permissions`, `guard`, and the withdrawn `opens_modal`) | runtime arguments are [planned]; `opens_modal` is gone (Story 6.10) | remove it until the release that supports it; for a modal, declare `auto_defer = false` |
+| ``[CID-03] #[route] argument `select` is given twice`` / ``[CID-03] `select` is a flag and takes no value`` / ``malformed #[route] argument `by_ref` `` | duplicate argument, `select = true`, `by_ref()` | write each flag once, bare |
 | ``[CID-03] `overflow = error` is not a #[route] argument`` (`` = help: the plain inline Route (no `overflow`) is the error policy: leave `overflow` out ``) / ``the only `overflow` policy is `spill` `` / ``[CID-03] `overflow` needs a value`` | another overflow policy | `overflow = spill`, or nothing |
 | ``[CID-03] `schema` must be in 1..=61 (one base62 digit), found `62` `` / ``[CID-03] `schema = 0` is the default schema`` (`` = help: leave it out for schema 0 ``) / ``[CID-03] `schema` must be an integer literal`` / ``[CID-03] `schema` needs a value`` | schema out of range or not an integer literal | `schema = 1` … `schema = 61`; no `schema` for 0 |
 | ``[CID-03] `by_ref` and `overflow = spill` cannot be combined`` | both body policies | pick one |
 | ``[CID-03] a `by_ref` route cannot be `signed` `` | a Ref is already unguessable | drop `signed` |
 | conflicting implementations of `Payload` | `#[derive(Route)]` and `#[derive(Payload)]` on one struct | keep only `Route`; it includes the Payload |
-| ``[CID-04] Route `X` has no handler, so no component can be built for it`` | building a component from a Route with no `#[handler]` | write the handler (and `.add(it())` to a Module) |
+| ``[CID-04] Route `X` has no handler, so no component can be built for it`` | building a component from a Route with no `#[handler]` | write the `#[handler]` method (and `.add::<X>()` to a Module) |
 | ``route `X` is not declared `select` `` | `.string_select(..)` / `.user_select()` … on a Route without `select` | `#[route("id", select)]` |
 | `[CMD-11] config set: limit a subcommand or a subcommand group, not both, actual \`set\`` followed by `= note: \`config set\` makes \`set\` a subcommand` and `= note: \`config set prefix\` makes \`set\` a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
@@ -42,6 +42,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | description literal differs from the locale file | both sources set, with different text | delete the literal; the locale file is the source with `i18n` |
 | `[OPT-01] required option after optional` | field order | move required fields first (never reordered for you) |
 | `[OPT-10] choices and autocomplete` | both on one option | pick one |
+| `[OPT-11]` autocomplete flag without a method, method without a flag or for an unknown field, or `Suggestions<T>` of the wrong type | the `autocomplete` flag and the `#[autocomplete(field)]` method must pair up, with `T` = the field's type | add the missing half; return `Suggestions<i64>` for an `i64` field (`commands.md` §4) [planned, Story 6.11] |
 | ``[OPT-05] days: limit min_value ≤ max_value, actual `6 > 5` `` / `[OPT-05] name.min_value: limit min_value / max_value only on INTEGER or NUMBER options` / `limit a choice value within min_value and max_value` | swapped bounds, bounds on a non-number, or a choice outside the bounds | swap the bounds; drop them on non-numbers; fix the choice |
 | `[OPT-06] reason.max_length: limit between 1 and 6000, actual 0` / `limit min_length ≤ max_length` / `only on STRING options` | length out of range, swapped, or on a non-string | `min_length` 0–6000, `max_length` 1–6000, `min ≤ max`, strings only |
 | `[OPT-08] name.choices: limit at most 25, actual 26` / `limit choices only on STRING, INTEGER or NUMBER options` | too many choices or choices on another type | ≤ 25 choices; use autocomplete for more; choices only on string/integer/number |
@@ -56,7 +57,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | ``[CV2-07] `X` is not a Section accessory`` / Section arity | no accessory (e.g. `()`), or 0 or > 3 texts | pass a button or Thumbnail; merge texts; use a plain `TextDisplay` if there is no accessory |
 | mismatched types: expected `AttachmentRef`, found `&str` on `File::new` | hand-written `attachment://` name (CV2-12) | `File::new(set.add(Attachment::new(bytes, "png")?))` |
 | `[CV2-08] label too long` | literal > 80 | shorten (guideline ≤ 34 with emoji) |
-| `[MOD-02] more than 5 fields` | modal too big | split into a Wizard with two modal Steps |
+| `[MOD-02] more than 5 fields` | modal too big | split into a step flow with two modal steps (`views-and-recipes.md` §3.3) |
 | `[MOD-07]` radio options | enum with < 2 or > 10 variants | adjust the `Choices` enum |
 | unknown Tailwind class `bg-gradient-to-r`, help: `bg-linear-to-r` | v3 name | use the v4 name (see `images.md` §4) |
 | unknown class `bg-brand` | token missing from `noctis-theme.css` | add `--color-brand` under `@theme` |
@@ -64,10 +65,13 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | missing key / wrong number of arguments on `s.x.y(..)` | key absent in `en-US.yaml` or placeholders differ | add the key; match placeholders |
 | `HashMap` field in a Template | non-deterministic cache key | `BTreeMap` or `Vec` |
 | a handler taking a Responder doesn't return `Responded` | macro contract | return `acked.done()` |
-| `modal` not found on `ComponentResponder` | Route not `opens_modal`, or the handler takes `ComponentResponder` instead of `ComponentResponder<OpensModal>` | declare `opens_modal` on the Route and take the `OpensModal` alias |
-| `[INT-05]` responder alias doesn't match `opens_modal` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` `` / `` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``) | one declared without the other | declare both or neither |
-| `` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal `` | `#[command(.., opens_modal)]` on a handler with no responder parameter | add `r: CommandResponder<OpensModal>` and return `r.modal(m).await?.done()` |
-| `modal` not found on `CommandResponder` (E0599) | the Command is not `opens_modal`, or takes `CommandResponder` | declare `opens_modal` and take `CommandResponder<OpensModal>` |
+| `[INT-05] show_modal needs auto_defer = false on this handler` (E0277) | `show_modal` on an auto-defer responder (`CommandResponder`, `ComponentResponder`) or on any `ModalResponder` | declare `auto_defer = false` on the command or component struct and take `CommandResponder<Manual>` / `ComponentResponder<Manual>`; a modal submit can never open a modal [planned: Story 6.10; this release: `modal` not found (E0599) without `OpensModal`] |
+| `[INT-05]` responder alias doesn't match `auto_defer` (`auto_defer = false` declared but the handler takes `CommandResponder`/`ComponentResponder` or no responder, or it takes the `Manual` alias without `auto_defer = false`) | one declared without the other | declare both or neither [planned: Story 6.10; this release's messages: `` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` `` / `` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` `` / `` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal ``] |
+| `[INT-06]` `auto_defer`/`response` on `#[autocomplete]` | autocomplete has no defer | remove it; finish within 3 s [planned, Story 6.11] |
+| a free `async fn` with `#[handler]`/`#[command]`/`#[event]`, or `#[derive(Route)]`/`#[derive(Options)]` (help shows the struct form) | the shipped free-function style | one struct per interaction: `#[derive(SlashCommand/Button/…)] struct X` + `impl X { #[handler] async fn handle(self, ctx) }` [planned: Story 6.11] |
+| `.build()` not found, help lists the kind derives | a struct without a kind derive (`Button`, `StringSelectMenu`, …) | derive the kind and add `defaults(..)` [planned: Story 6.11] |
+| missing `defaults(..)` / missing `style`, `label` or `emoji`, `placeholder`, `title` | the mandatory defaults of the kind | add the keys the error names [planned: Story 6.11] |
+| `.options(..)` required before the string select converts into a component | a `StringSelectMenu` with no `options` in its defaults | call `.options(..)` per render or add `options = SomeChoicesEnum` |
 | `update` not found on `CommandResponder` | commands can't update | `reply` |
 
 ## App build errors (`BuildError`, all violations listed at once)
@@ -75,7 +79,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | Message | Fix |
 | --- | --- |
 | duplicate Route `x` in Modules A and B | rename one Route id (before release!) |
-| Route `x` has no mounted handler | `.add(handler())` on a mounted Module |
+| Route `x` has no mounted handler | `.add::<X>()` on a mounted Module (this release: `.add(handler())`) |
 | duplicate Command Path / pattern expansion | one handler per path (FR-56) |
 | conflicting `default_member_permissions` (or contexts, integration types, nsfw) on base `x` | make leaves agree or declare `Module::base("x", …)` |
 | base `x` has options and subcommands | split the paths |
@@ -94,17 +98,17 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| "This interaction failed" | handler panicked before the deadline on an `opens_modal` Route, or slow work before `r.modal(..)` | keep modal handlers fast (< 3 s); load data after opening if possible |
-| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the interaction waited in the queue past the deadline, so even the auto-defer failed (`WARN noctis::dispatch: auto-defer failed handler=..`), or an `opens_modal` handler was slow | Commands are auto-deferred at `ack_deadline` (2000 ms) and answer late by editing; keep `ack_deadline` ≤ 2000 ms, raise `.handler_concurrency(n)` if lanes back up. Check `noctis_ack_latency_seconds`, `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
-| `ERROR noctis::dispatch: an `opens_modal` handler did not answer within the 3 s ack deadline handler=.. module=..` | an `opens_modal` Command did slow work before `r.modal(..)` (no auto-defer for it) | open the modal first; load data after, or pre-load it cheaply |
-| `ModalUnavailable` (`a modal can only be the first response to an interaction`) | `r.modal(..)` over the `Dispatcher` (prefix commands), or after another initial response | answer prefix invocations with a message; open modals only from interactions |
+| "This interaction failed" | handler panicked before the deadline on an `auto_defer = false` handler, or slow work before `r.show_modal(..)` | keep modal-opening handlers fast (< 3 s); load data after opening if possible; never set `auto_defer = false` on a handler that does not open a modal |
+| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the interaction waited in the queue past the deadline, so even the auto-defer failed (`WARN noctis::dispatch: auto-defer failed handler=..`), or an `auto_defer = false` handler was slow | Commands are auto-deferred at `ack_deadline` (2000 ms) and answer late by editing; keep `ack_deadline` ≤ 2000 ms, raise `.handler_concurrency(n)` if lanes back up. Check `noctis_ack_latency_seconds`, `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
+| `ERROR noctis::dispatch: an `auto_defer = false` handler did not answer within the 3 s ack deadline handler=.. module=..` (this release prints `an `opens_modal` handler`) | an `auto_defer = false` handler did slow work before `r.show_modal(..)` (no auto-defer for it) | open the modal first; load data after, or pre-load it cheaply |
+| `ModalUnavailable` (`a modal can only be the first response to an interaction`) | `r.show_modal(..)` (this release `r.modal(..)`) over the `Dispatcher` (prefix commands), or after another initial response | answer prefix invocations with a message; open modals only from interactions |
 | the first Discord request after a quiet period is slow, or `RequestTimedOut` after ~10 s | a NAT/firewall silently dropped an idle connection, or slow DNS | nothing to add: the HTTP edge keeps one connection warm with HTTP/2 PINGs and redials dead ones; do **not** poll `GET /users/@me`. If it persists, lower `HttpConfig::ping_interval` and check `noctis_http_ping_timeouts_total` and `noctis_http_phase_seconds{phase="dns"}` |
 | `ERROR noctis::http: the Discord HTTP edge could not start` | the tokio runtime has no IO driver | build it with `enable_all()` (as `#[tokio::main]` does) |
 | clicking an old message shows "expired" | Ref TTL passed, or Payload schema changed (stale) | longer `ttl`, `on_expired`/`on_stale` handler that re-opens the View |
 | clicks on another user's panel say "not allowed" | `owner = …` guard working as designed | make the View ephemeral or remove the guard |
 | select shows old choice after update | missing `select` on the Route or no `default_*` set | add `select` and set defaults to the current value |
-| mentions in a View don't ping | Views default to `parse: []` | override `View::mentions` |
-| `Violation { rule, path, limit, actual }`, printed as `[CV2-03] components: limit at most 40, actual 41` (`[RULE-ID] path: limit …, actual …`) | dynamic content exceeds a Limit | let the Paginator handle lists; shorten text; `LimitMode::Lenient` truncates text only |
+| mentions in a message don't ping | messages default to `parse: []` | opt in with `V2Message::mentions(..)` |
+| `Violation { rule, path, limit, actual }`, printed as `[CV2-03] components: limit at most 40, actual 41` (`[RULE-ID] path: limit …, actual …`) | dynamic content exceeds a Limit | paginate the list yourself, sizing pages with `Budget` (`views-and-recipes.md` §3.2); shorten text; `LimitMode::Lenient` truncates text only |
 | `[CV2-03] components: limit at most 40, actual 41` with notes `container[0]: 38` … | the tree has too many nodes (Section texts and accessories count) | paginate or split the message; see the per-node notes for the biggest subtree |
 | `[CV2-04] components: limit at most 4000, actual 4210` | Text Displays together are too long | shorten text, paginate, or move long text into a modal or image |
 | `[CV2-06] row[1]: limit between 1 and 5, actual 6` / `limit exactly one select, alone in its row, actual 2` | too many buttons in one row, or a select shares its row | split into several rows; give each select its own row |
@@ -114,14 +118,13 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `[ATT-01] attachments[0].size: limit at most 20971520, actual 31457280` (``= note: file `card.gif` ``) | one file over the per-file limit (or the interaction's `attachment_size_limit`) | render smaller (fewer frames, lower size) |
 | `[ATT-02] request: limit at most 26214400, actual 27000000` | all files plus JSON over 25 MiB | send fewer files per message |
 | `` [ATT-05] limit attachment://<name> of a file in this message, actual `attachment://card.png` `` | the URL names a file that is not attached (names are case-sensitive) | attach the file in the same message, or fix the name |
-| `[INT-07] choices: limit at most 25, actual 40` (`= help: Noctis sends the first 25 choices and logs this as a warning`) | the autocomplete returned too many suggestions | filter or `take(25)` before `respond` |
-| warn `noctis::autocomplete` `[INT-07] too many autocomplete choices: sent the first ones` (`returned=40 sent=25`) | an `#[autocomplete]` handler passed more than 25 choices to `respond` | filter or `.take(25)` before `respond` |
-| warn `noctis::autocomplete` `invalid autocomplete choices dropped` (`dropped=n rules=OPT-09`) | a choice name outside 1–100 characters, a STRING value over 100, a value of another type than the option, or a number out of range | fix the choices; match the value type to the option (`&str` for STRING, `i64` for INTEGER) |
-| `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` (E0277) | `autocomplete = path` names a plain fn, or a handler taking `Partial<Other>` | annotate the fn with `#[autocomplete]`; take `Partial<O>` of the struct that links it, or no `partial` |
-| Autocomplete Error Sink: `the autocomplete handler did not respond within 2.5s` (`AutocompleteError::DeadlineMissed`) | the handler took longer than 2.5 s; Discord got an empty list | cache the data (a port), bound slow lookups with `tokio::time::timeout`, answer from what you have |
-| warn `noctis::dispatch` `no autocomplete handler` | Discord sent autocomplete for an option without `autocomplete = …` (stale published commands) | publish again, or link a handler |
-| `UiError::ItemTooLarge` | a single list item can't fit beside the Chrome | render it as an image or a detail View |
-| `UiError::TooManyTabs` | > 5 Navbar tabs | select-based nav or split Views |
+| `[INT-07] choices: limit at most 25, actual 40` (`= help: Noctis sends the first 25 choices and logs this as a warning`) | the autocomplete returned too many suggestions | cap the query at 25 (`LIMIT 25`) or `.take(25)` before `collect()` |
+| warn `noctis::autocomplete` `[INT-07] too many autocomplete choices: sent the first ones` (`returned=40 sent=25`) | an `#[autocomplete]` method returned more than 25 suggestions (this release: passed them to `respond`) | cap the query at 25, or `.take(25)` before `collect()` (this release: before `respond`) |
+| warn `noctis::autocomplete` `invalid autocomplete choices dropped` (`dropped=n rules=OPT-09`) | a suggestion label outside 1–100 characters, a STRING value over 100, a value of another type than the option, or a number out of range | fix the suggestions; the value type is the field's type (`String`, `i64`, `f64`) |
+| `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` (E0277), this release only | `autocomplete = path` names a plain fn, or a handler taking `Partial<Other>` | annotate the fn with `#[autocomplete]`; take `Partial<O>` of the struct that links it, or no `partial` (Story 6.11 replaces this with the `[OPT-11]` flag/method pairing check) |
+| Autocomplete Error Sink: `the autocomplete handler did not respond within 2.5s` (`AutocompleteError::DeadlineMissed`) | the method took longer than its budget (this release: 2.5 s from receipt); Discord got an empty list | cache the data (a port), bound slow lookups with `tokio::time::timeout`, answer from what you have |
+| warn `noctis::dispatch` `no autocomplete handler` | Discord sent autocomplete for an option without an autocomplete method (stale published commands) | publish again, or add the `#[autocomplete(field)]` method (this release: link it with `autocomplete = …`) |
+| `Budget::fits` returns 0 | not even one row fits beside the fixed parts | shorten the row, render it as an image, or show it on a detail screen |
 | `RenderError::Overloaded` | render queue full | show the busy notice; raise pool/queue in `ImageConfig`; cache more |
 | `RenderError::CapExceeded` | too many pixels/frames/fps | smaller size, fewer frames, lower fps |
 | card text is invisible / boxes for emoji | no font / no emoji font | `default-font`; `image-emoji` + `EmojiFont::Twemoji` |

@@ -1,36 +1,70 @@
 # Routes, Payloads and Refs
 
-Covers: `#[derive(Route)]`, `#[derive(Payload)]`, `#[derive(PayloadEnum)]`, the codec
+Covers: the component kind derives (`#[derive(Button)]`, the select derives,
+`#[derive(Modal)]`; this release `#[derive(Route)]`), `defaults(..)` and `.build()`,
+`#[derive(Payload)]`, `#[derive(PayloadEnum)]`, the codec
 traits (`Route`, `Payload`, `PayloadDecode`), Payload field types, `#[handler]`, the `custom_id` wire
 format and its compile-time length proof, `by_ref` and `overflow = spill`, Ref TTL and
 one-shot, Route Guards, schema evolution, stale and expired handling, integrity tags.
 Rules: CID-01..07, FR-15..19, FR-58..60. Never build a `custom_id` yourself.
 
-## 1. Declaring a Route
+## 1. Declaring a component (a Route)
+
+One struct = its id + its typed data + its handler [planned: Story 6.11]. The derive
+names the component kind; a Route is any such struct.
 
 ```rust
 use noctis::prelude::*;
 use noctis::id::marker::{GuildMarker, UserMarker};
 
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.mod", permissions = MANAGE_GUILD)] // `permissions` is [planned]
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "dash.mod",                                     // the id, first
+    permissions = MANAGE_GUILD,                     // routing arguments; `permissions` is [planned]
+    defaults(style = Success, label = "common.enable"),  // mandatory
+)]
 pub struct ToggleModule {
     pub guild: Id<GuildMarker>,
     pub module: ModuleKey,       // #[derive(PayloadEnum)]
     pub enable: bool,
 }
 
-#[handler]
-async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<impl IntoResponse> { … }
+impl ToggleModule {
+    #[handler]                   // takes no arguments
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        // decode (done: `self`) → authorize → write → ctx.update(render_dashboard(..))
+    }
+}
+
+// mod.rs
+Module::new("dashboard").add::<ToggleModule>()
 ```
 
-- The struct's fields **are** the Payload. The handler receives the decoded value.
-- Exactly one `#[handler]` per Route (CID-04, App build). The handler macro marks the
-  Route as handled; components can only be built from handled Routes, so a button
-  pointing at a Route with no handler does not compile (``[CID-04] Route `X` has no
-  handler``, FR-58). Remember
-  `.add(toggle_module())` on the Module, or App build fails ("Route has no mounted
-  handler").
+| Derive | Attribute | Builds | Required in `defaults(..)` | Optional keys (default) |
+| --- | --- | --- | --- | --- |
+| `Button` | `#[button("id", ..)]` | `RouteButton<Self>` | `style`, and `label` or `emoji` | the other of `label`/`emoji`, `disabled` (`false`) |
+| `StringSelectMenu` | `#[string_select("id", ..)]` | `StringSelect` | `placeholder` | `options = SomeChoicesEnum`, `min_values` (1), `max_values` (1), `disabled` (`false`) |
+| `UserSelectMenu` / `RoleSelectMenu` / `MentionableSelectMenu` | `#[user_select(..)]` / `#[role_select(..)]` / `#[mentionable_select(..)]` | `UserSelect` / `RoleSelect` / `MentionableSelect` | `placeholder` | `min_values` (1), `max_values` (1), `disabled` (`false`) |
+| `ChannelSelectMenu` | `#[channel_select("id", ..)]` | `ChannelSelect` | `placeholder` | the above plus `channel_types = [GuildText, …]` |
+| `Modal` | `#[modal("id", ..)]` | `Modal` (`modals.md`) | `title` | — |
+
+A missing `defaults(..)` block or required key is a compile error naming the kind's
+required keys; an unknown key is a compile error; literal values are checked against
+Discord's limits (CV2-08, CV2-09, MOD-01). Text values are locale keys with the `i18n`
+feature (checked against the default-locale file) and literal text without it. Link and
+Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
+
+- The struct's fields **are** the Payload. The handler receives the decoded value as
+  `self`; a free `async fn` with `#[handler]` does not compile.
+- Exactly one handler per component id (CID-04, App build). The `#[handler]` method
+  marks the struct as handled; components can only be built from handled structs, so
+  `.build()` on one with no handler does not compile (``[CID-04] Route `X` has no
+  handler``, FR-58). Remember `.add::<ToggleModule>()` on the Module, or App build fails
+  ("Route has no mounted handler").
+- **This release** spells all of this `#[derive(Route)] #[route("dash.mod", ..)]` with a
+  free `#[handler] async fn toggle_module(ctx: ComponentCtx, t: ToggleModule)` and
+  `.add(toggle_module())`; the grammar and errors below are the shipped `#[route]` ones,
+  which carry over unchanged to the kind attributes (minus `select`).
 - Generic Routes are rejected (`[CID-01] a Route cannot be generic`), and so are enums
   and unions: a Route is a struct with named fields, tuple fields or none
   (`struct Ping;`).
@@ -47,36 +81,43 @@ async fn toggle_module(ctx: ComponentCtx, t: ToggleModule) -> HandlerResult<impl
 live component using it.** Ids starting with `_` are reserved. Use short dotted ids
 (`setup.ch`, `dash.mod`) to leave room for the Payload.
 
-### `#[route(...)]` arguments
+### Arguments after the id (`#[button(..)]`, `#[string_select(..)]`, …; this release `#[route(...)]`)
 
-Grammar: exactly one `#[route("id", args…)]` attribute. The first element is the id as a
+Grammar: exactly one kind attribute (this release: `#[route("id", args…)]`). The first element is the id as a
 string literal (`"shop.buy"`, `r"shop.buy"`); the arguments follow in any order,
 separated by commas, and a trailing comma is fine.
 
 Codec arguments (they change the `custom_id` and count toward the length proof):
-`view`, `select`, `by_ref`, `overflow = spill`, `signed`, `schema = n`. These work
-today. Runtime arguments (no effect on the length): `ttl`, `one_shot`, `opens_modal`,
-`owner`, `permissions`, `guard` are **[planned]**: this release **rejects** them with
+`by_ref`, `overflow = spill`, `signed`, `schema = n`, and (this release only) `select`:
+from Story 6.11 every select kind carries the nonce and the bare `select` is withdrawn.
+These work today.
+(`view` is **withdrawn**: never write it. It still parses in this release and is
+removed by Story 6.10, after which it is a CID-03 error. Tabs, pages and steps are
+ordinary Payload fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length): `response`, `auto_defer`, `ttl`, `one_shot`,
+`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: this release **rejects** them (and the
+withdrawn `opens_modal`, which Story 6.10 makes an unknown argument) with
 ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not
 support yet`` (a silently ignored guard would be a security hole), and each one is
-accepted from the release that implements it. Anything else is a compile error; rate
-limits go on `#[handler]`, not here.
+accepted from the release that implements it. Anything else is a compile error.
+`#[handler]` itself takes no arguments: every setting is here.
 
 | Argument | Meaning |
 | --- | --- |
 | `"id"` | Route id (required, first) |
-| `view` | this is a View's own Route: adds the 5-char view envelope (action, tab, page, state version) so Navbar/Wizard/Paginator controls work |
-| `select` | used on select menus: adds a 2-char per-render nonce so clients show the server's defaults after a re-render (FR-25) |
+| `select` (this release) | used on select menus: adds a 2-char per-render nonce so clients show the server's defaults after a re-render (FR-25); implied by every select kind from Story 6.11 |
+| `response = update \| ephemeral \| public` [planned, Story 7.2] | how the click is answered: edit in place (default; auto-defer type 6), or a new ephemeral/public message (sub-panels; auto-defer type 5) |
+| `auto_defer = true \| false` [planned, Story 7.2] | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
 | `overflow = spill` | inline when the actual value fits, else by Ref |
 | `ttl = "2d"` [planned] | Ref TTL (by_ref/spill only); default `AppBuilder::ref_ttl` (24 h) |
 | `one_shot` [planned] | Ref is deleted on first use (`take`); for confirmations |
 | `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`); not with `by_ref` |
 | `schema = n` | Payload schema version 1..=61 (see §6) |
-| `opens_modal` [planned] | the handler answers with a modal and takes `ComponentResponder<OpensModal>`; no auto-defer (INT-05) |
 | `owner = field` [planned] | Route Guard: only the user whose id is in `field` may click |
 | `permissions = A \| B` [planned] | Route Guard: the clicking member needs these permissions |
 | `guard = path::to::fn` [planned] | custom guard `async fn(&ComponentCtx, &Self) -> Result<(), MessageKey>` |
+| `rate_limit(user, 5, per = "1m")` [planned, Story 13.4] | see `modules-middleware-ratelimits.md` |
+| `defaults(..)` | the component defaults (table above); mandatory |
 
 Guards run before the handler on every interaction; a failure sends a localized
 ephemeral notice and the handler does not run. Still re-check authorization for
@@ -86,8 +127,8 @@ There is no `overflow = error`: a plain inline Route that could exceed 100 chara
 simply doesn't compile (`[CID-01]`), which is the "error" policy.
 
 The derive turns the declaration into `Route::SHAPE`: `RouteShape::INLINE`,
-`RouteShape::BY_REF` or `RouteShape::SPILL`, then `.view()`, `.select()` and
-`.signed()` when declared; `Route::SCHEMA` is `n`, or 0 without `schema`.
+`RouteShape::BY_REF` or `RouteShape::SPILL`, then `.select()` and `.signed()` when
+declared; `Route::SCHEMA` is `n`, or 0 without `schema`.
 
 #### `#[route]` errors (CID-03)
 
@@ -98,7 +139,7 @@ Each is a compile error spanned on the offending token, `[CID-03] …` plus a `h
 - an id outside the grammar: wrong characters (`"Shop"`, `"a:b"`, `"é"`), empty or over
   24 characters, or starting with `_` (all applicable problems are reported);
 - an unknown argument (`colour`, named in the error), a runtime argument (above), an
-  argument given twice (`view, view`), a value on a flag (`view = true`, `by_ref()`);
+  argument given twice (`select, select`), a value on a flag (`select = true`, `by_ref()`);
 - `overflow` without `= spill` (`overflow = error`, `overflow = inline`, bare
   `overflow`);
 - `schema` that is not an integer literal 1..=61 (`schema = 0` says "leave it out for
@@ -108,14 +149,13 @@ Each is a compile error spanned on the offending token, `[CID-03] …` plus a `h
 Accepted spellings include `r"a"`, `"shop\x2Ebuy"` (the value counts: `shop.buy`) and
 `schema = 61u8`.
 
-### `#[handler(...)]` arguments [planned]
+### Methods in the struct's `impl` [planned]
 
-| Argument | Meaning |
+| Method attribute | Meaning |
 | --- | --- |
-| `response = update` (default) / `ephemeral` / `public` | how a returned View is sent: edit in place, or a new ephemeral/public message (sub-panels) |
-| `on_expired = fn` | this Route's Expired Handler |
-| `on_stale = fn` | this Route's Stale Payload handler |
-| `rate_limit(user, 5, per = "1m")` | see `modules-middleware-ratelimits.md` |
+| `#[handler] async fn handle(self, ctx, ..)` | the handler (exactly one; takes no arguments) |
+| `#[on_expired] async fn …(ctx, expired: Expired)` | this component's Expired Handler (no `self`: the Payload is gone) [Story 7.3] |
+| `#[on_stale] async fn …(ctx)` | this component's Stale Payload handler (no `self`) [Story 7.3] |
 
 ## 2. Field types and widths (AD-6)
 
@@ -268,9 +308,11 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   — what `#[derive(Route)]` implements.
 - `RouteId`: `RouteId::new("shop.buy")` is a `const fn` (a bad literal in a `const`
   does not compile), `as_str()`, `is_reserved()` (starts with `_`), `Display`.
-- `RouteShape`: `INLINE`, `BY_REF`, `SPILL`, the `const` builders `view()`, `select()`,
+- `RouteShape`: `INLINE`, `BY_REF`, `SPILL`, the `const` builders `select()` and
   `signed()` (`BY_REF.signed()` is a compile error in a `const`), and the getters
-  `body() -> BodyKind`, `has_view()`, `has_select()`, `is_signed()`.
+  `body() -> BodyKind`, `has_select()`, `is_signed()`. The builder `view()` and the
+  getter `has_view()` belong to the withdrawn view envelope; don't use them (removed
+  by Story 6.10).
 - `BodyKind`: `Inline`, `ByRef`, `Spill`.
 - `trait Payload { const MAX_ENCODED_LEN: Option<usize>; fn encode_fields(&self, out: &mut FieldWriter<'_>) -> core::fmt::Result; }`
   — `MAX_ENCODED_LEN` is the worst-case body width: the fields' `MAX_LEN`s plus one
@@ -285,7 +327,8 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   `RefLength { len }`, `MissingField { field }`, `ExtraField { field }`,
   `Field { field, error }` (a `FieldError`), `UnexpectedSection { section }`.
 - `Section` (`#[non_exhaustive]`): the fixed-width layout sections `Schema`,
-  `Envelope`, `Nonce`, `Tag`.
+  `Nonce`, `Tag` (and `Envelope`, of the withdrawn view envelope; removed by Story
+  6.10).
 
 `#[derive(Payload)]` implements `Payload` and `PayloadDecode` for a struct, exactly as
 `#[derive(Route)]` does, for the Payload of a hand-written `Route`. It is not a field
@@ -314,26 +357,26 @@ it), so an overlong id fails only at encode time; prefer `#[derive(Route)]`.
 ## 4. The `custom_id` format (normative, AD-5)
 
 ```text
-custom_id = F route ":" [S] [E] [N] body [T]
+custom_id = F route ":" [S] [N] body [T]
 
-F      1 char    base62 digit = 16 * generation + flags (1=S, 2=E, 4=N, 8=T)
+F      1 char    base62 digit = 16 * generation + flags (1=S, 4=N, 8=T; 2 is reserved)
 route  1..24     [a-z0-9._-]
 S      1 char    schema version (only if schema = n)
-E      5 chars   view envelope: action, tab, page (2), state version (only with `view`)
 N      2 chars   per-render select nonce (only with `select`)
 body   inline    field ("," field)*      or      by ref: "~" + 11 base62 Ref
 T      6 chars   integrity tag (only with `signed`, inline only)
 ```
 
-All ASCII (CID-07), so "characters" are unambiguous. Envelope actions: `_` author,
-`t` tab, `p` page, `j` jump, `n`/`b`/`c` wizard next/back/cancel, `i` inert indicator.
+All ASCII (CID-07), so "characters" are unambiguous. (The withdrawn 5-character view
+envelope `E` still exists in this release's codec and is removed by Story 6.10; no
+Route of yours should declare it.)
 
 ## 5. The length proof (CID-01: ≤ 100)
 
 ```text
-MAX_LEN = 1 + route.len() + 1 + S + E + N + max(inline, by_ref)
+MAX_LEN = 1 + route.len() + 1 + S + N + max(inline, by_ref)
 inline  = Payload::MAX_ENCODED_LEN + T        by_ref = 1 + 11 = 12
-S, E, N, T = 1, 5, 2, 6 when declared, else 0
+S, N, T = 1, 2, 6 when declared, else 0
 ```
 
 Only an **inline** Route must fit with its worst-case body: `by_ref` needs only
@@ -350,22 +393,24 @@ proof but no runnable width test, and rustc warns `cannot test inner items` unle
 function carries `#[allow(unnameable_test_items)]`. The breakdown line:
 
 ```text
-shop.buy: F 1 + route 8 + sep 1 + S 0 + E 0 + N 0 + body 14 + T 0 = 24 (limit 100)
-wizard.step: F 1 + route 11 + sep 1 + S 0 + E 0 + N 0 + ref 12 = 25 (limit 100)
-s: F 1 + route 1 + sep 1 + S 0 + E 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)
+shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)
+setup.big: F 1 + route 9 + sep 1 + S 0 + N 0 + ref 12 = 23 (limit 100)
+s: F 1 + route 1 + sep 1 + S 0 + N 0 + body unbounded + T 0 inline, else ref 12 = 100 (limit 100)
 ```
 
 (inline, `by_ref` and `overflow = spill` Routes; `body` is `Payload::MAX_ENCODED_LEN`).
+This release still prints an `E 0` term between `S` and `N`; it disappears with the
+withdrawn envelope (Story 6.10).
 Copy the line into the Route's doc comment so reviewers see the budget.
 
 Worked examples from the template:
 
 | Route | Calculation | Max |
 | --- | --- | --- |
-| `SetupState` `#[route("setup", view)]` {owner `Id`, log_channel `Option<Id>`, mod_role `Option<Id>`} | 1 + 5 + 1 + E5 + (11 + 12 + 12 + 2 sep) | 49 |
-| `PickLogChannel` `#[route("setup.ch", select)]` {owner `Id`, mod_role `Option<Id>`} | 1 + 8 + 1 + N2 + (11 + 12 + 1) | 36 |
-| `ToggleModule` `#[route("dash.mod")]` {guild `Id`, module enum, enable `bool`} | 1 + 8 + 1 + (11 + 1 + 1 + 2) | 25 |
-| any `by_ref` Route, 24-char id, `view` + `select` + schema | 1 + 24 + 1 + 1 + 5 + 2 + 12 | 46 |
+| `SetupState` `#[button("setup")]` {owner `Id`, step enum, log_channel `Option<Id>`, mod_role `Option<Id>`} | 1 + 5 + 1 + (11 + 1 + 12 + 12 + 3 sep) | 46 |
+| `PickLogChannel` `#[channel_select("setup.ch")]` (nonce N) {owner `Id`, mod_role `Option<Id>`} | 1 + 8 + 1 + N2 + (11 + 12 + 1) | 36 |
+| `ToggleModule` `#[button("dash.mod")]` {guild `Id`, module enum, enable `bool`} | 1 + 8 + 1 + (11 + 1 + 1 + 2) | 25 |
+| any `by_ref` Route, 24-char id, `select` + schema | 1 + 24 + 1 + 1 + 2 + 12 | 41 |
 
 So `by_ref` and `spill` Routes always fit. An inline Route with a `String` field:
 
@@ -393,10 +438,10 @@ Messages live for months; old components still get clicked after a deploy.
   as `None`, through `FieldDecode::absent`; `<Option<T>>::absent()` is `Some(None)`,
   every other field's is `None`, so a missing non-`Option` field stays an error).
 - **Everything else bumps `schema`:** removing/reordering/retyping fields, adding a
-  non-`Option` field, and changing `view`, `select`, `signed` or `by_ref`.
+  non-`Option` field, and changing `select`, `signed` or `by_ref`.
 - A mismatched schema or shape decodes as **Stale**: it goes to the Route's `on_stale`
-  handler, else the Expired Handler. Typical stale handler: re-open the View from
-  scratch with a notice.
+  handler, else the Expired Handler. Typical stale handler: call the screen's render
+  function from scratch and add a `ctx.reply_text` notice.
 - Renaming the Route id = old components become unknown (logged, generic notice).
 
 ## 7. Refs
@@ -405,8 +450,9 @@ A Ref is 11 base62 chars from the OS CSPRNG (~65.5 bits), never sequential, name
 per App. It maps to a `RefRecord { route, schema, payload }` in the `RefStore`.
 
 ```rust
-#[derive(Route, Debug, Clone)]
-#[route("mod.ban.ok", by_ref, one_shot, ttl = "15m", permissions = BAN_MEMBERS)] // runtime args [planned]
+#[derive(Button, Debug, Clone)]
+#[button("mod.ban.ok", by_ref, one_shot, ttl = "15m", permissions = BAN_MEMBERS,   // runtime args [planned]
+         defaults(style = Danger, label = "mod.ban.confirm"))]
 pub struct ConfirmBan {
     pub target: Id<UserMarker>,
     pub reason: String,               // fine: by_ref has no inline length limit
@@ -419,7 +465,8 @@ pub struct ConfirmBan {
 - Resolution: `one_shot` → `take`, else `get`. Missing/expired → **Expired Handler**.
   A record whose route differs from the id's route → forged (unknown-Route path).
   Schema mismatch → stale.
-- Wizard Cancel deletes the Wizard's Refs automatically.
+- A step flow's Cancel handler can delete the flow's Refs: return the deletions as
+  `RefOps` with the response; core runs them after a successful send.
 
 ## 8. Expired, stale, unknown, forged
 
@@ -430,18 +477,45 @@ pub struct ConfirmBan {
 | Unknown Route, malformed id, bad integrity tag | logged warning + generic notice; never a panic (FR-19) |
 
 ```rust
-/// Re-open Step 1 of the setup Wizard when its Ref is gone (UJ-1).
-async fn restart_setup(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<impl IntoResponse> {
-    Ok(SetupWizard::new(SetupState { owner: ctx.user_id(), log_channel: None, mod_role: None })
-        .at(Nav::step(0))
-        .with_notice(keys::NOCTIS_EXPIRED))
-}
+impl SetupState {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> { … }
 
-#[handler(on_expired = restart_setup)]
-async fn open_setup(_ctx: ComponentCtx, state: SetupState) -> HandlerResult<SetupWizard> { … }
+    /// Re-open step 1 of the setup flow when its Ref is gone (UJ-1): the same render
+    /// function, plus a one-line notice.
+    #[on_expired]
+    async fn restart(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<Responded> {
+        let s = Strings::of(ctx.response_locale());
+        let first = SetupState { owner: ctx.user_id(), step: SetupStep::Channel, log_channel: None, mod_role: None };
+        ctx.update(render_setup(first, &s)).await?;
+        ctx.reply_text(keys::NOCTIS_EXPIRED).await                // ephemeral follow-up
+    }
+}
 ```
 
-## 9. Building components from Routes
+## 9. Building components: `.build()` [planned: Story 6.11, defaults Story 9.3]
+
+```rust
+ToggleModule { guild, module, enable }.build()      // the declared kind, from `defaults(..)`
+    .label(s.common.disable())                      // per-render overrides replace one field each
+    .style(ButtonStyle::Danger)
+    .disabled(false);
+
+TicketSystem.build()                                // a string select whose defaults have no `options`:
+    .options(systems.iter().map(|t| SelectOption::new(&t.name, t.id.to_string())))  // required before use (typestate)
+    .default_values([current]);
+```
+
+Overrides: `.label(..)`, `.emoji(..)`, `.style(..)`, `.disabled(..)`, `.placeholder(..)`,
+`.options(..)`, `.default_values(..)`, `.min_values(..)`, `.max_values(..)`; for modals
+`.title(..)` and `.value(field, ..)`. Anything not overridden comes from the defaults;
+the result is validated against the Limits (Strict or Lenient) when sent. `.build()`
+requires a handler (`[CID-04]`); on a struct without a declared kind it is a compile
+error whose help lists the kind derives.
+
+**This release** builds with the `RouteComponents` methods instead (prelude;
+`components-v2.md` §0), each requiring a handler (`[CID-04]`) and the selects a Route
+declared `select`:
 
 ```rust
 route.button()                 -> RouteButton<R> // .label .style .emoji .disabled
@@ -450,15 +524,8 @@ route.user_select()            -> UserSelect
 route.role_select()            -> RoleSelect
 route.mentionable_select()     -> MentionableSelect
 route.channel_select()         -> ChannelSelect
-FormType::modal(route)         -> FormTypeModal // modals.md [planned]
+FormType::modal(route)         -> FormTypeModal // modals.md
 ```
-
-These are the `RouteComponents` methods (prelude; `components-v2.md` §0). Each requires
-a handler for the Route (`[CID-04]`), and the selects a Route declared `select`.
-
-Route component defaults (FR-59) [planned]: `impl ComponentRoute for ToggleModule { const
-DEFAULTS: ComponentDefaults = ComponentDefaults::new().style(ButtonStyle::Secondary); }`;
-per-render overrides win; the result is validated against the Limits.
 
 Selected values: `ctx.values()` → `.strings()`, `.users()`, `.roles()`, `.channels()`,
 `.mentionables()`; resolved entities: `ctx.resolved()`.
@@ -467,6 +534,6 @@ Selected values: `ctx.values()` → `.strings()`, `.users()`, `.roles()`, `.chan
 
 1. decode `custom_id` / resolve command → 2. resolve Ref → 3. Boot Flag, guild access,
 Module enabled ("disabled here") → 4. locale resolution → 5. rate limit → 6. arm
-auto-defer (unless `opens_modal`) → 7. before-Middleware → 8. Route Guards → 9. your
+auto-defer (unless `auto_defer = false`; shaped by `response`) → 7. before-Middleware → 8. Route Guards → 9. your
 handler → 10. after-Middleware, Error Sinks. Stages 1–5 run none of your code (except a
 `LocaleResolver`).

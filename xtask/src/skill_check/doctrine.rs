@@ -14,9 +14,11 @@
 //!   `content:` struct-literal field.
 //! - UD-3, anywhere: the response-type idents (`InteractionResponseType`, …).
 //!   In an interactive handler: `.defer(`, `.reply(`, `.update(`,
-//!   `.edit_original(`; a `Responder`/`CommandResponder`/`ComponentResponder`
-//!   parameter without `OpensModal` in its generic args, and any
-//!   `ModalResponder` parameter.
+//!   `.edit_original(` on any receiver but `ctx` (the handler context's
+//!   `ctx.update(msg)` picks the response type itself, FR-61); a `Responder`/`CommandResponder`/`ComponentResponder`
+//!   parameter without `Manual` (the `auto_defer = false` marker; the shipped
+//!   `OpensModal` is accepted until Story 6.10 renames it) in its generic args,
+//!   and any `ModalResponder` parameter.
 //! - UD-7, anywhere: an ident with the word `collector(s)` or `listener(s)`;
 //!   the await-loop idents (`wait_for`, …); a `.on_<x>(` call or a method
 //!   whose words contain `listen`/`listener`, with a top-level `|` or `move`
@@ -32,9 +34,9 @@ use super::Problems;
 const UD1_EMBED: &str = "[UD-1] embeds are not an interactive output; build a View";
 const UD1_LEGACY: &str = "[UD-1] LegacyMessage in an interactive handler; return a View";
 const UD1_CONTENT: &str = "[UD-1] content as handler output; return a View";
-const UD3_TYPE: &str =
-    "[UD-3] manual response-type selection; return a View and let Noctis pick the response";
-const UD3_CALL: &str = "[UD-3] manual response through the Responder; return a View";
+const UD3_TYPE: &str = "[UD-3] manual response-type selection; send the rendered message with ctx.respond/ctx.update and let Noctis pick the response";
+const UD3_CALL: &str =
+    "[UD-3] manual response through the Responder; use ctx.respond(msg) or ctx.update(msg)";
 const UD7_COLLECTOR: &str = "[UD-7] collectors are not allowed; one #[handler] per Route";
 const UD7_AWAIT: &str = "[UD-7] await-component loop; state goes in Payloads, Refs or ports";
 const UD7_LISTENER: &str = "[UD-7] inline listener; register a #[handler] for a Route";
@@ -60,6 +62,9 @@ const AWAIT_LOOPS: &[&str] = &[
     "interaction_stream",
 ];
 const RESPONDER_CALLS: &[&str] = &["defer", "reply", "update", "edit_original"];
+/// The receiver whose methods pick the response type themselves
+/// (`ctx.respond`, `ctx.update`, `ctx.reply_text`).
+const CTX_RECEIVER: &str = "ctx";
 const RESPONDERS: &[&str] = &[
     "Responder",
     "CommandResponder",
@@ -360,7 +365,9 @@ fn check_handler(
                     if n == "content" {
                         out.push((line(method), UD1_CONTENT.to_owned()));
                     }
-                    if RESPONDER_CALLS.contains(&n.as_str()) {
+                    let on_ctx = i > 0
+                        && matches!(level.get(i - 1), Some(TokenTree::Ident(id)) if name(id) == CTX_RECEIVER);
+                    if RESPONDER_CALLS.contains(&n.as_str()) && !on_ctx {
                         out.push((line(method), UD3_CALL.to_owned()));
                     }
                 }
@@ -390,7 +397,7 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
         if is_punct(params.get(i + 1), ':') {
             continue;
         }
-        let mut opens_modal = false;
+        let mut manual = false;
         if is_punct(params.get(i + 1), '<') {
             let mut depth = 0_i32;
             let mut prev_minus = false;
@@ -398,7 +405,9 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
                 match tt {
                     TokenTree::Punct(p) if p.as_char() == '<' => depth += 1,
                     TokenTree::Punct(p) if p.as_char() == '>' && !prev_minus => depth -= 1,
-                    TokenTree::Ident(arg) if arg == "OpensModal" => opens_modal = true,
+                    TokenTree::Ident(arg) if arg == "Manual" || arg == "OpensModal" => {
+                        manual = true;
+                    }
                     _ => {}
                 }
                 prev_minus = matches!(tt, TokenTree::Punct(p) if p.as_char() == '-');
@@ -407,10 +416,10 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
                 }
             }
         }
-        if n == "ModalResponder" || !opens_modal {
+        if n == "ModalResponder" || !manual {
             out.push((
                 line(id),
-                format!("[UD-3] take a Responder only to open a modal ({n}<OpensModal>)"),
+                format!("[UD-3] take a Responder only to open a modal ({n}<Manual>)"),
             ));
         }
     }
@@ -510,19 +519,31 @@ mod tests {
             );
         }
         clean("fn plain() { r.update(x); }");
+        // The handler context's methods pick the response type (FR-61).
+        clean("#[handler]\nasync fn h(ctx: ComponentCtx) { ctx.update(render(x)).await }");
+        clean(
+            "#[command(\"x\")]\nasync fn h(ctx: CommandCtx) { ctx.respond(m).await; ctx.reply_text(k).await }",
+        );
+        flags(
+            "#[handler]\nasync fn h() { my_ctx.update(x).await }",
+            UD3_CALL,
+        );
     }
 
     #[test]
     fn d10_d11_responders() {
-        let msg = "[UD-3] take a Responder only to open a modal (ComponentResponder<OpensModal>)";
+        let msg = "[UD-3] take a Responder only to open a modal (ComponentResponder<Manual>)";
         flags("#[handler]\nasync fn h(r: ComponentResponder) {}", msg);
         flags(
             "#[handler]\nasync fn h(r: noctis::ComponentResponder<Plain>) {}",
             msg,
         );
         flags(
-            "#[handler]\nasync fn h(r: ModalResponder<OpensModal>) {}",
-            "[UD-3] take a Responder only to open a modal (ModalResponder<OpensModal>)",
+            "#[handler]\nasync fn h(r: ModalResponder<Manual>) {}",
+            "[UD-3] take a Responder only to open a modal (ModalResponder<Manual>)",
+        );
+        clean(
+            "impl EditBio {\n#[handler]\nasync fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }\n}",
         );
         clean(
             "#[handler]\nasync fn edit_bio(ctx: ComponentCtx, responder: ComponentResponder<OpensModal>) -> HandlerResult<Responded> { Ok(responder.modal(m).await?.done()) }",

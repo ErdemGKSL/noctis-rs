@@ -15,6 +15,10 @@ cmd:
       description: Botu bu sunucu için adım adım yapılandır
   dashboard:
     description: Sunucu panelini aç
+    opt:
+      module:
+        name: modül
+        description: Bir modülün ayarlarına git
   profile:
     description: Bir üyenin profil kartını göster
     opt:
@@ -41,6 +45,8 @@ common:
   disabled: kapalı
   enable: Aç
   disable: Kapat
+  previous: Önceki
+  next: Sonraki
 
 setup:
   step:
@@ -57,6 +63,11 @@ setup:
   summary: "**Kayıt kanalı:** {channel}\n**Moderatör rolü:** {role}\n-# Kaydetmek için Bitir'e bas."
   finish: Bitir
   done: "### Kurulum tamamlandı\nKayıtlar {channel} kanalına gider; {role} moderasyon yapabilir."
+  progress: "Adım {n} / {total}: {title}"
+  back: Geri
+  next: İleri
+  cancel: İptal
+  cancelled: "-# Kurulum iptal edildi. Yeniden başlamak için /setup start çalıştır."
 
 dashboard:
   tab:
@@ -67,8 +78,9 @@ dashboard:
   subtitle: "Noctis şablonu v{version}"
   overview: "**Roller:** {roles}\n**Açık modüller:** {modules}\n**Çevrimiçi:** {started}"
   no_roles: "-# Bu sunucuda henüz rol yok."
+  page: "Sayfa {page} / {pages}"
   module:
-    setup: Kurulum sihirbazı
+    setup: Sunucu kurulumu
     profile: Profiller ve XP
 
 profile:

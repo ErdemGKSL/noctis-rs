@@ -3,7 +3,7 @@
 Covers: the `image` features, `#[derive(Template)]`, `view!` and `tw!`, Tailwind v4
 class names and the strict grammar, typed dynamic styles, the Theme file, fonts, emoji,
 remote images, animation, output formats and size budget, the render pool, caps and
-cache, attaching to Views. Doctrine: UD-2 (images are read-only). FR-32..37, FR-66..70.
+cache, attaching to messages. Doctrine: UD-2 (images are read-only). FR-32..37, FR-66..70.
 
 ## 1. Enable it
 
@@ -170,7 +170,7 @@ let anim = ctx.render_with(card_data, RenderOptions::new()
 let report = anim.render_report();   // format, size, fps, quality actually used, cache hit
 ```
 
-- Always render **in the handler** (or its `load` fn), never in `View::render`; the
+- Always render **in the handler** (or its `load` fn), never in a render function; the
   auto-defer covers slow renders.
 - Runs on a dedicated bounded rayon pool, never on tokio workers. A full queue fails
   fast: `RenderError::Overloaded` (show a "busy, try again" notice).

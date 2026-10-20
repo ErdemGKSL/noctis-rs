@@ -2,7 +2,7 @@
 title: "PRD: Noctis"
 status: final
 created: 2026-10-19
-updated: 2026-10-19
+updated: 2026-10-20
 ---
 
 # PRD: Noctis
@@ -45,9 +45,10 @@ rewriting handlers.
 
 ### 2.1 Jobs To Be Done
 
-- **Bot author:** When I add a feature, I declare a command and a View and get a
-  working, paginated, limit-safe dashboard. I don't hand-assemble JSON or count
-  components.
+- **Bot author:** When I add a feature, I declare a command and write a View (a
+  plain render function) with typed components, and get a limit-safe dashboard.
+  I don't hand-assemble JSON or count components by hand: the builder validates
+  every Limit and budget helpers tell me how many items fit.
 - **Bot author:** When my bot grows, I raise shard counts, split Shards across
   processes, and swap in-memory stores for my database. I don't touch my handlers
   when I do.
@@ -70,21 +71,26 @@ rewriting handlers.
 
 ### 2.3 Key User Journeys
 
-- **UJ-1. Deniz ships a setup wizard in an afternoon.** Deniz maintains a moderation
+- **UJ-1. Deniz ships a setup flow in an afternoon.** Deniz maintains a moderation
   bot. They create a project from the Project Template and register the Command
-  `"setup start"`, which takes no options. The Command responds with a Wizard View:
-  a Container with a progress header and three Steps (log channel, roles,
-  confirmation). Each click edits the same message. Selected values travel in
-  Payloads or Refs and are never kept in a per-message listener. Deniz runs the bot
-  with `--publish-guild <test guild id>`, and `/setup start` appears in the test
-  guild. **Edge case:** a user opens the wizard, leaves for two days and clicks
-  "Next". The Ref has expired, so Noctis routes the click to the Expired Handler,
-  which re-renders Step 1 with a notice.
+  `"setup start"`, which takes no options. The Command responds with a View Deniz
+  wrote by hand from the Usage Skill's step-flow recipe: a Container with a
+  progress line and three Steps (log channel, roles, confirmation), where the step
+  is an ordinary typed field of the module's Route Payload. Each click calls the
+  same render function and edits the same message (`ctx.update(..)`). Selected
+  values travel in Payloads or Refs and are never kept in a per-message listener. Deniz
+  runs the bot with `--publish-guild <test guild id>`, and `/setup start` appears in the test
+  guild. **Edge case:** a user opens the setup flow, leaves for two days and clicks
+  "Next". The Ref has expired, so Noctis routes the click to the Expired Handler;
+  Deniz's override calls the same render function for Step 1 and adds a notice.
 - **UJ-2. Deniz adds a server dashboard with tabs.** The Command
-  `"dashboard"` sends a Container with a Navbar (Overview, Members, Logs). Members
-  has 300 entries, so the View paginates them automatically under the component
-  budget, and the Navbar stays on every page. The Overview tab embeds a generated
-  activity-chart image in a Media Gallery.
+  `"dashboard"` sends a Container with a row of tab buttons (Overview, Members,
+  Logs), following the Usage Skill's tabs recipe: the tab and page are typed fields
+  of the dashboard Route's Payload, and the active tab's button is disabled.
+  Members has 300 entries, so Deniz's render function uses a budget helper to learn
+  how many rows fit, slices the list and adds prev/next Route buttons, keeping the
+  tab row on every page. The Overview tab embeds a generated activity-chart image
+  in a Media Gallery.
 - **UJ-3. Ece scales from one process to a cluster.** Ece's bot reaches 400k guilds.
   She changes configuration so each of four processes runs one Shard Range, points
   the App at a shared HTTP rate-limit proxy, and switches the RefStore,
@@ -159,18 +165,21 @@ rewriting handlers.
   channels, roles, members, …).
 - **Boot Flag** — A label on a Module or registration that decides at startup
   whether it exists at all in this run.
-- **View** — A function from state to a Components V2 message. The same View
-  renders the first response and every update.
-- **Chrome** — The fixed parts of a View (header, Navbar, footer actions) that are
-  kept on every page when the View paginates.
-- **Overflow Policy** — What a View does when its content exceeds the Limits:
-  paginate (default), error or truncate.
-- **Navbar** — A row of tab buttons at the top of a View. Clicking a tab swaps the
-  Container's content. The active tab is shown disabled.
-- **Wizard** — A View made of ordered **Steps**, with a progress indicator and
-  next/back navigation, used for setup-style flows.
-- **Paginator** — A component that splits content into pages that each fit the
-  Limits, with page navigation.
+- **View** — A convention, not a framework type: a plain function the bot author
+  writes (`render_x(state) -> Message`) that turns state into a Components V2
+  message. The same function renders the first response and every update; the
+  handler calls it and passes the result to the Responder. Noctis has no View
+  trait, registry, widget state or automatic re-render.
+- **Budget helper** — A Noctis function that reports a message's or component's
+  Limit cost (components, characters) and how many more items of a given shape
+  still fit, so a render function can slice a list into pages itself.
+- **Recipe** — A hand-written UI pattern documented in the Usage Skill with
+  complete code, which the bot author copies and adapts. The v1 recipes are
+  **tabs** (a tab row of Route buttons, active tab disabled, tab id as a Payload
+  field), **pagination** (a `page` Payload field, a slice and prev/next Route
+  buttons) and **step flow** (a `step` Payload field with a progress line).
+  "Navbar", "Wizard" and "Paginator" are only informal recipe names; they are not
+  framework components (withdrawn 2026-10-20).
 - **Limits** — The Discord Components V2 constraints that Noctis enforces, such as
   40 components per message and 4000 text characters. The Components V2 research
   report (§0) lists them all.
@@ -204,25 +213,33 @@ rewriting handlers.
 
 ### 4.0 UI Doctrine
 
-These rules are normative. Built-in widgets, the Project Template and the Usage
-Skill follow them, and the Usage Skill teaches them (FR-50).
+These rules are normative UX guidance for bots built on Noctis. Noctis does not
+implement them as framework features: there are no built-in widgets (withdrawn
+2026-10-20). The bot author implements them in hand-written render functions, the
+Usage Skill documents each one as a recipe with complete code (FR-50), and the
+Project Template and every example follow them.
 
 - **UD-1 Components V2 for anything interactive.** Every interactive or dashboard
-  surface is a Components V2 message built from a View. Plain `content` and embeds
-  are secondary output; built-in widgets and examples never use them.
+  surface is a Components V2 message built by a View (a render function). Plain
+  `content` and embeds are secondary output; recipes and examples never use them.
 - **UD-2 Images for read-only visuals.** Generated images show dense, read-only data
   (cards, charts, leaderboards). They are embedded in a View (Thumbnail, Media
   Gallery) and never carry information the user must act on.
 - **UD-3 Commands are entry points.** A chat-input Command is a parameter-light
   bootstrap that opens a View. Configuration and data entry happen inside the View
-  (selects, modals, Wizard Steps), not through long option lists. Options remain for
+  (selects, modals, setup Steps), not through long option lists. Options remain for
   quick actions, autocomplete lookups and context-menu targets.
 - **UD-4 Steps for setup flows.** Setup and configuration flows split content
-  logically into Wizard Steps with a progress indicator, never into "page 2 of 3".
-- **UD-5 Navbar for general views that don't fit.** A general-purpose View that
-  doesn't fit one Container splits into Navbar tabs.
-- **UD-6 Pagination on overflow.** Homogeneous lists paginate automatically when
-  they exceed the Limits, inside a Navbar tab when there is one.
+  logically into Steps with a progress indicator, never into "page 2 of 3". The
+  author implements this with the step-flow recipe (a `step` Payload field).
+- **UD-5 Tabs for general views that don't fit.** A general-purpose View that
+  doesn't fit one Container splits into tabs: a row of Route buttons with the
+  active one disabled. The author implements this with the tabs recipe.
+- **UD-6 Pagination for long lists.** Homogeneous lists that exceed the Limits are
+  paginated by the author's render function (pagination recipe: a `page` Payload
+  field, a slice sized with a budget helper, prev/next Route buttons), inside a
+  tab when there is one. Noctis never paginates automatically; it rejects an
+  over-Limit message with a path-precise error (FR-24).
 - **UD-7 No listener per message or component.** Interactive state travels in
   Payloads and Refs to one handler per Route. There is no collector, await-component
   loop or inline per-message closure (NFR-2).
@@ -428,7 +445,15 @@ choices, ranges, channel types, autocomplete and optional validators.
 - If an autocomplete handler errors or misses the response deadline, Noctis responds
   with an empty choice list and routes the error to the Autocomplete Error Sink.
 - An autocomplete handler for an option of a 3-word Command Path receives the focused
-  value and the other filled options as a typed partial struct.
+  value as the raw typed text (a string even for integer and number options, possibly
+  partial) and the other filled options as a typed partial struct.
+- An option marked for autocomplete and its autocomplete handler are declared
+  together on the command struct; a mark without a handler, a handler without a mark
+  or for an unknown option, and a handler whose suggestion type differs from the
+  option's type are compile errors.
+- The handler returns typed suggestions (value plus label) and Noctis sends the
+  response; labels over 100 characters are truncated with a warning, and autocomplete
+  can never be deferred.
 - A failed option validator returns a localized ephemeral message and the handler
   doesn't run.
 
@@ -570,18 +595,23 @@ If a handler has not responded before a configurable deadline (default 2000 ms,
 measured from gateway receipt so queueing time counts), Noctis sends a deferred
 response. Later responses edit the original message.
 **Consequences (testable):**
-- Each Command and Route declares up front whether its reply is ephemeral (default:
-  public for Commands, update-in-place for components). The auto-defer uses that
-  declaration, because ephemerality can't change after the first response.
-- Commands defer as a new deferred message; component and modal-submit interactions
-  defer as an in-place update.
+- Each handler declares up front, with one `response` argument, whether its reply is
+  public, ephemeral or an in-place update (default: public for Commands,
+  update-in-place for components). The auto-defer uses that declaration, because
+  ephemerality can't change after the first response.
+- Commands defer as a new deferred message; component and component-opened
+  modal-submit interactions defer as an in-place update unless declared `ephemeral`
+  or `public`.
+- Each handler can turn the auto-defer off (`auto_defer = false`; default on). The
+  deadline itself is App-wide.
 - A handler that responds after 5 s still delivers its message, with no
   "interaction failed" shown to the user.
 - On a deferred chat-input response, the Components V2 flag is applied on the
   follow-up edit, as Discord requires.
-- A handler declared as modal-opening is never auto-deferred, because a modal must
-  be the first response. If it misses the deadline, Noctis logs an error naming the
-  handler. Responding to a modal submit with another modal is a typed error.
+- Only a handler declared `auto_defer = false` can open a modal (a compile-time
+  rule), because a modal must be the first response. If it misses the deadline,
+  Noctis logs an error naming the handler. Responding to a modal submit with another
+  modal is a typed error.
 - After the 15-minute interaction token lifetime, updates to a public View fall back
   to a bot-token message edit; updates to an ephemeral one return a typed
   `TokenExpired` error.
@@ -598,11 +628,14 @@ Errors returned by handlers go to configurable Error Sinks.
 
 ### 4.4 Components V2 UI Kit
 
-**Description:** Components V2 is Noctis's primary interactive surface (UD-1), and
-Views are how authors build it. The builder makes illegal structures impossible to
-express. Before anything is sent, it checks every Limit. Views paginate on overflow
-(UD-6), and Navbar, Wizard and Paginator are built-in widgets that report their own
-component and character cost. Realizes UJ-1, UJ-2.
+**Description:** Components V2 is Noctis's primary interactive surface (UD-1).
+Noctis is a high-quality Components V2 wrapper, not a widget toolkit: typed
+components with placement checked by the type system, compile-time and runtime
+Limit validation, cost and budget helpers, Route-built components with
+length-proven `custom_id`s, and an ergonomic Responder. Views are plain render
+functions the bot author writes; tabs, pagination and step flows are author-written
+recipes taught by the Usage Skill (UD-4 to UD-6), not built-in widgets (Navbar,
+Wizard and Paginator were withdrawn on 2026-10-20). Realizes UJ-1, UJ-2.
 
 #### FR-23: Typed V2 builders
 A bot author can build every Components V2 component through typed builders:
@@ -639,85 +672,76 @@ Noctis validates a message against all Limits before sending it.
   appears in the Limit cost report.
 
 #### FR-25: Views
-A bot author can define a View that renders state into a message. The same View is
-used for the first response and for every update after a component interaction.
+A View is a plain function the bot author writes (`render_x(state) -> Message`)
+that renders state into a Components V2 message. The same function is called for
+the first response and for every update after a component interaction. Noctis
+defines no View trait, registry, widget state or automatic re-render; page, tab,
+step and selection ids are ordinary typed fields of the module's own Route
+Payloads (revised 2026-10-20).
 **Consequences (testable):**
 - Rendering the same state twice yields identical components, except for
   per-render select identifiers.
-- After an update, every select shows the View's declared defaults, not the user's
-  previous local selection.
-- Views send no parsed mentions by default: a View listing `<@id>` pings nobody
-  unless the author opts in per View or per message. A helper escapes Markdown and
+- After an update, every select shows the defaults the render function declares,
+  not the user's previous local selection.
+- Messages send no parsed mentions by default: a message listing `<@id>` pings
+  nobody unless the author opts in per message. A helper escapes Markdown and
   mentions in user-supplied text.
-- A View can opt into a state version. An interaction carrying an older version
-  re-renders from current state instead of applying the stale action, and the user
-  sees a short notice.
-- A View's Limit cost (components, characters) is available without sending it.
+- A message's Limit cost (components, characters) is available without sending it
+  (FR-62).
+- No public Noctis API mentions a view envelope, widget action or view state
+  version; a `custom_id` carries only the Route, its Payload (or Ref) and the
+  FR-60 schema version.
 
-#### FR-61: View responses
-A Command, Component Handler or Modal Handler can return a View, optionally with
-attachments, and Noctis sends it with the right response type.
+#### FR-61: View responses and Responder ergonomics
+A Command, Component Handler or Modal Handler sends a rendered message through the
+Responder, which picks the right response type, flags and deferral.
 **Consequences (testable):**
-- A Command declared with no options and a View-returning handler compiles,
-  publishes with an empty option list, and sends the View as its initial response
-  with no response code from the author (UD-3).
-- A Component Handler returning a View updates the message in place; FR-21 deferred
-  variants are applied when the deadline passes.
+- `ctx.respond(msg)` sends a new message (initial response, or follow-up after a
+  defer) and `ctx.update(msg)` edits the message the component lives on, applying
+  the FR-21 deferred variant when the deadline has passed. The Components V2 flag
+  and the declared ephemerality are applied without author code.
+- On the submit of a modal opened from a slash command (no source message),
+  `ctx.update(msg)` returns `UpdateUnavailable` and sends no request, like the
+  typestate `update`; it never falls back to sending a new message. The author
+  answers such a submit with `ctx.respond(msg)`.
+- `ctx.reply_text(..)` sends a one-line notice (ephemeral by default) for
+  confirmations and errors, without building a Container.
+- A Command declared with no options whose handler calls `ctx.respond(render(..))`
+  compiles, publishes with an empty option list, and sends the message as its
+  initial response (UD-3).
 - The Project Template contains no manual response-type selection.
 
-#### FR-62: View overflow
-A View paginates automatically when its content exceeds the Limits. This is its
-default Overflow Policy; `Error` and `Truncate` are opt-in.
+#### FR-62: Limit budget helpers (revised 2026-10-20)
+Overflow is the bot author's decision. Noctis never paginates, truncates or splits
+a message automatically (the automatic-pagination Overflow Policy and Chrome
+reservation were withdrawn on 2026-10-20); instead it gives the render function
+what it needs to paginate by hand.
 **Consequences (testable):**
-- A View whose list grows from 10 to 300 items produces a paginated message with no
-  code change and no Limit error.
-- The View's Chrome (header, Navbar, footer actions) appears on every page, and its
-  cost is reserved before content is packed.
-- Only when a single item can't fit on one page alongside the Chrome does the View
-  return a typed error naming the item, so the author can render it as an image or a
-  detail view.
-- With `Error`, any overflow yields the FR-24 error naming the path and Limit.
+- Every component and message reports its cost (components at every nesting
+  level, Text Display characters) without sending it.
+- A budget helper answers "how many more items of this shape fit" given a partly
+  built message (the fixed parts such as a tab row and footer) and one sample
+  item, so a render function can size a page slice before building it.
+- A message over any Limit is rejected with the FR-24 error naming the path, Limit
+  and actual value; it is never silently paginated.
 
-#### FR-26: Navbar
-A bot author can add a Navbar to a View. Selecting a tab updates the same message
-with that tab's content, and the active tab is shown disabled (UD-5).
-**Consequences (testable):**
-- Clicking a tab edits the same message in place; no new message is sent.
-- The active tab's button is disabled and the others are enabled, on every page.
-- The selected tab travels in the Payload; switching tabs stores nothing.
-- A tab whose content overflows paginates inside the tab (FR-62) with the Navbar on
-  every page.
-- A Navbar with more tabs than fit one Action Row is a typed error.
+#### FR-26: Navbar — Withdrawn (2026-10-20)
+Withdrawn by maintainer decision: Noctis ships no tab widget. Tabs are an
+author-written recipe (UD-5): a tab enum as a Payload field of the module's Route,
+a `match` in the render function and a row of Route buttons with the active one
+disabled, documented in the Usage Skill. The id is kept so references stay stable.
 
-#### FR-27: Wizard
-A bot author can define a Wizard with Steps, progress display, back/next/cancel and
-per-Step validation. Step state travels in Payloads or Refs (UD-4).
-**Consequences (testable):**
-- The progress indicator shows the current Step's position and title out of the
-  total ("Step 2 of 3: Roles"), never page numbers.
-- A Step whose validation fails stays on that Step and shows the validation message
-  inline; Next doesn't advance.
-- Back returns to the previous Step with its earlier values kept.
-- Cancel edits the message to a cancelled state, removes its interactive components
-  and deletes the Wizard's Refs.
-- When a Step's Ref has expired, the click goes to the Expired Handler, which by
-  default re-renders Step 1 with a notice (UJ-1).
-- A Step that collects input through a modal returns to a message Step before any
-  next modal; the Wizard handles this without author code.
+#### FR-27: Wizard — Withdrawn (2026-10-20)
+Withdrawn by maintainer decision: Noctis ships no step-flow widget. Step flows are
+an author-written recipe (UD-4): a `step` Payload field, a progress line ("Step 2
+of 3: Roles"), back/next/cancel Route buttons and per-step validation in the
+handler, documented in the Usage Skill. The id is kept so references stay stable.
 
-#### FR-28: Paginator
-A bot author can give a Paginator a list of items and a per-item renderer. The
-Paginator packs as many items as fit the Limits onto each page, reserving room for
-surrounding content such as a Navbar.
-**Consequences (testable):**
-- With 300 items, no page exceeds any Limit, and navigation reaches every item.
-- When a single item can't fit on one page, the Paginator returns a typed error, so
-  the author can render that item as an image or a detail view.
-- The current page travels in the Payload; page navigation stores nothing.
-- With more than 5 pages, a jump control reaches any page in a bounded number of
-  clicks.
-- The Paginator can render items as chunked String Selects (25 options each)
-  instead of one Section per item.
+#### FR-28: Paginator — Withdrawn (2026-10-20)
+Withdrawn by maintainer decision: Noctis ships no pagination widget. Pagination is
+an author-written recipe (UD-6): a `page: u16` Payload field, a slice sized with
+the FR-62 budget helper and prev/next Route buttons, documented in the Usage
+Skill. The id is kept so references stay stable.
 
 #### FR-29: Modals with V2 components
 A bot author can build modals whose top level is Label or Text Display, and whose
@@ -916,8 +940,9 @@ shares data across Shards or processes does so through an Adapter with an in-mem
 default, and a new feature that introduces such state must add or reuse one rather
 than hold process-local state that breaks under a Cluster. A bot author can
 implement the trait on their own struct and hand it to the App. The framework then
-uses it everywhere that concern appears. Wizard, Navbar and Paginator state are
-Payloads or Refs and need no Adapter of their own. Realizes UJ-3.
+uses it everywhere that concern appears. Tab, page and step state in
+author-written Views are ordinary Payload fields or Refs and need no Adapter of
+their own. Realizes UJ-3.
 
 #### FR-38: Adapter traits with defaults
 Noctis defines these Adapters in v1:
@@ -1089,9 +1114,9 @@ features, for example images, GIF output, prefix commands and the default font.
 
 #### FR-49: Project Template
 `examples/project-template/` builds and runs as a standalone bot. It demonstrates:
-- an option-less entry Command opening a View;
-- a Wizard;
-- a Navbar View with an overflowing list;
+- an option-less entry Command opening a View (a hand-written render function);
+- a hand-written step flow (step-flow recipe);
+- a hand-written tabbed View with a paginated list (tabs and pagination recipes);
 - a Template rendered into a Media Gallery;
 - a custom Adapter implementation;
 - Locale files.
@@ -1112,7 +1137,11 @@ covers:
   active state, confirmation for destructive actions, ephemeral for single-user UI
   and public for shared content, a way back or cancel on every interactive View,
   designed empty and error states);
-- when to use Wizard, Navbar or Paginator (UD-4 to UD-6);
+- the UI recipes with complete code: tabs, pagination and step flow (UD-4 to
+  UD-6), the render-function update flow and the budget helpers;
+- best practices modelled on the maintainer's production bot (one module per
+  feature, one render function reused by every handler, state only in typed
+  Payload fields);
 - patterns and anti-patterns;
 - common mistakes.
 
@@ -1295,7 +1324,7 @@ the Priority Tier decides what slips first.
 - **P0 core** (a single-process bot with Commands and routed Views; nothing ships
   without it): FR-1, FR-2, FR-5, FR-6, FR-7, FR-8, FR-9, FR-10, FR-11, FR-12, FR-13,
   FR-15, FR-16, FR-17, FR-18, FR-19, FR-20, FR-21, FR-22, FR-23, FR-24, FR-25,
-  FR-26, FR-27, FR-28, FR-29, FR-38, FR-48, FR-49, FR-50, FR-56, FR-57, FR-58,
+  FR-29, FR-38, FR-48, FR-49, FR-50, FR-56, FR-57, FR-58,
   FR-60, FR-61, FR-62, FR-71, FR-75, FR-76, FR-77, FR-78, FR-79.
 - **P1 required for v1** (launch-blocking, built after P0): FR-3, FR-4, FR-30,
   FR-31, FR-32, FR-33, FR-34, FR-35, FR-36, FR-39, FR-40, FR-41, FR-42, FR-43,
@@ -1305,6 +1334,8 @@ the Priority Tier decides what slips first.
   first): FR-14 (prefix commands, `prefix` feature, off by default), FR-37
   (Renderer seam), FR-47 (multiple Apps), FR-53 (presence and gateway commands).
 - In-memory defaults for every Adapter.
+- Withdrawn on 2026-10-20 (not in any tier): FR-26 (Navbar), FR-27 (Wizard),
+  FR-28 (Paginator). Their UX lives on as Usage Skill recipes (UD-4 to UD-6).
 
 ### 8.2 Out of Scope for MVP
 
@@ -1322,6 +1353,10 @@ the Priority Tier decides what slips first.
   FR-19 typed error is the v1 behavior.
 - A named-emoji registry with per-environment ids. Deferred.
 - Component Embeds (link previews) and a legacy text fallback for DMs. Deferred.
+- Built-in UI widgets (tabs, step flows, paginators), framework-managed widget
+  state, a view envelope in `custom_id` and automatic re-render or pagination of
+  Views. Withdrawn on 2026-10-20 and not planned: these stay author-written
+  recipes, as in the maintainer's TypeScript bot.
 - A library of reusable Views and Templates (cards, leaderboards, charts) beyond the
   Project Template examples. Deferred to v1.x.
 
@@ -1337,8 +1372,8 @@ the Priority Tier decides what slips first.
 **Primary**
 
 - **SM-1:** The Project Template bot has sharding, auto-published Commands, a
-  3-Step Wizard and a rendered card, all in ≤ 150 lines of user code. Validates
-  FR-1, FR-7, FR-27, FR-32 and FR-49.
+  hand-written 3-Step setup flow and a rendered card, all in ≤ 150 lines of user
+  code. Validates FR-1, FR-7, FR-32 and FR-49.
 - **SM-2:** The author's next production bot (the schwi successor) runs on Noctis.
   `[ASSUMPTION: it is the first production consumer]`
 - **SM-3:** A Claude Code agent given only the Project Template completes the UJ-5

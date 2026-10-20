@@ -2,8 +2,9 @@
 
 //! A starter Noctis bot:
 //!
-//! - `setup` — `/setup start` opens a three-Step Wizard (UD-4).
-//! - `dashboard` — `/dashboard` opens a Navbar View whose Roles tab paginates (UD-5, UD-6).
+//! - `setup` — `/setup start` opens a hand-written three-step setup flow (UD-4).
+//! - `dashboard` — `/dashboard` opens a tabbed dashboard whose Roles tab is paginated by
+//!   hand and whose Modules tab toggles features (UD-5, UD-6).
 //! - `profile` — `/profile` and the "Show profile" user command render a card image into
 //!   a Media Gallery (UD-2), with a modal to edit the bio.
 //!

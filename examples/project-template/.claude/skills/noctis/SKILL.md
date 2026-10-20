@@ -5,8 +5,10 @@ description: >-
   twilight-rs and tokio (built-in sharding, Components V2 UI kit, Tailwind image
   rendering). Use this skill WHENEVER you write, review, debug or explain code for a bot
   built on Noctis: slash commands and Command Patterns, options and autocomplete,
-  context menus, Routes and Payloads, buttons and selects, Views, Navbar, Wizard,
-  Paginator, modals, the Responder, Templates and images (tw!, view!), Adapters and
+  context menus, Routes and Payloads, buttons and selects, Views (plain render
+  functions) and the UI recipes for tabs, pagination, step flows and settings screens,
+  modals, the Responder (ctx.respond, ctx.update, ctx.reply_text), budget helpers,
+  Templates and images (tw!, view!), Adapters and
   ports, i18n and locale files, Modules, Middleware, rate limits, sharding and Clusters,
   publishing, and tests with the testkit. Also use it when a compile error or BuildError
   names a rule id like [CID-01] or [CMD-11], or when the user asks "how do I … in
@@ -32,31 +34,42 @@ For general Rust, use the `rust-best-practices` skill.
 
 ```text
 Discord ──gateway──▶ Shard tasks ──▶ Interaction lane (never dropped) ─▶ pipeline ─▶ your handler
-                                 └─▶ Event lane (bounded)               ─▶ pipeline ─▶ your #[event]
-your handler ──returns──▶ View / StaticView / Responded ──▶ Responder ──▶ Discord HTTP
+                                 └─▶ Event lane (bounded)               ─▶ pipeline ─▶ your event handler
+your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ──▶ Responder ──▶ Discord HTTP
 ```
 
 - **App** is the root: token, Modules, Adapters, state. `App::from_env()` → `&mut` builder →
   `.build()?` → `.run().await?`. Sharding is automatic. One binary also publishes
   commands (`--publish-guild <id>`).
-- **Module** groups features (tescord's Pack): `Module::new("profile").add(...)`.
-  Everything you register is a *descriptor* produced by a macro (`#[command]`,
-  `#[handler]`, `#[event]`, `#[hook]`) and added with `.add(fn_name())`.
-- **Command** = an `async fn` with a Command Path: `#[command("settings logs channel")]`.
-  Commands are *entry points* that open Views (UD-3).
-- **Route** = a typed struct with `#[derive(Route)]` and a stable id
-  (`#[route("shop.buy")]`). Its fields are the **Payload**, encoded into the component's
-  `custom_id`. Every button/select/modal is built *from a Route value*
-  (`BuyItem { item, qty }.button()`), and each Route has exactly **one** `#[handler]`.
-  Too big for 100 chars? `by_ref` stores it in the RefStore and puts an 11-char **Ref**
-  in the id instead.
-- **View** = a pure function from state to a Components V2 message:
-  `impl View { fn render(&self, cx) -> UiResult<V2Message> }`. The same View renders the
-  first response and every update. Handlers *return* Views; Noctis picks the response
-  type, defers when slow, sets the V2 flag and validates every Discord limit.
-- **Widgets** (`Navbar`, `Wizard`, `Paginator`) live inside a View and ride on the
-  View's own Route (`#[route("id", view)]`): tab, page and step travel in the
-  `custom_id`, so they need no handler code and no storage.
+- **One struct per interaction** (tescord's `pack.button` / `pack.slashCommand`): the
+  derive names the kind, the struct holds the id and the typed data, and the handler is
+  always a method on it, `impl X { #[handler] async fn handle(self, ctx: …) }`
+  (`#[handler]` takes no arguments; there are no free-function handlers). **[planned:
+  Story 6.11]**: this release still uses free functions; see §8 for today's names.
+- **Module** groups features (tescord's Pack) and registers each struct by type:
+  `Module::new("profile").add::<Profile>().add::<EditBio>()`.
+- **Command** = a `#[derive(SlashCommand)]` struct whose fields are its options (a unit
+  struct when there are none) with its Command Path: `#[command("settings logs
+  channel")]`. Context menus: `#[derive(UserCommand)]` / `#[derive(MessageCommand)]`.
+  Commands are *entry points* that open a View (UD-3).
+- **Component** = a struct whose derive names its kind: `#[derive(Button)]`,
+  `#[derive(StringSelectMenu)]` (and the user/role/mentionable/channel selects),
+  `#[derive(Modal)]`, with a stable id and **mandatory defaults**
+  (`#[button("shop.buy", defaults(style = Primary, label = "shop.buy"))]`). Its fields
+  are the **Payload**, encoded into the component's `custom_id`. Build it from a value
+  (`BuyItem { item, qty }.build()`, then per-render overrides such as `.disabled(..)`);
+  each component id has exactly **one** handler. Too big for 100 chars? `by_ref` stores
+  it in the RefStore and puts an 11-char **Ref** in the id instead.
+- **View** = a plain function you write: `render_x(data, &strings, ids…) -> V2Message`,
+  pure, one per screen. The slash Command and every component and modal handler call
+  the same function and send the result with `ctx.respond(msg)` (new message),
+  `ctx.update(msg)` (edit in place) or, for a one-line notice, `ctx.reply_text(key)`.
+  Noctis picks the response type, defers when slow, sets the V2 flag and validates
+  every Discord limit.
+- **No widgets.** Noctis has no View trait, Navbar, Wizard or Paginator and keeps no UI
+  state. Tabs, pages, steps and the selected entity are typed fields of your own Route
+  Payloads; the recipes in `references/views-and-recipes.md` show each pattern with
+  complete code. Budget helpers tell you how many rows fit on a page.
 - **Handlers are stateless.** No collectors, no per-message closures, no timers. State
   lives in Payloads/Refs, in ports (`ctx.kv()` for your key-value data), or in
   `State<T>`. Cached Discord resources are read with `ctx.cache()`.
@@ -78,20 +91,20 @@ Follow these in every bot. Reviews should flag violations.
 
 | Rule | Do | Never |
 | --- | --- | --- |
-| **UD-1 V2 for anything interactive** | Build every interactive or dashboard surface as a Components V2 `View`. | Embeds or plain `content` as the primary output of an interactive feature. `LegacyMessage` is for plain notices only. |
+| **UD-1 V2 for anything interactive** | Build every interactive or dashboard surface as a Components V2 message from a render function. | Embeds or plain `content` as the primary output of an interactive feature. `LegacyMessage` is for plain notices only. |
 | **UD-2 Images for read-only visuals** | Render dense read-only data (cards, charts, leaderboards) with a Template; place it in a Media Gallery (wide) or Thumbnail (small); always set alt text. | Put information the user must act on (buttons, links, instructions) inside an image. |
-| **UD-3 Commands are entry points** | Option-less or option-light command → returns a View. Configuration and data entry happen inside the View (selects, modals, Wizard Steps). | Long option lists for configuration. Options are for quick actions, autocomplete lookups, context-menu targets. |
-| **UD-4 Steps for setup flows** | Setup/config flows are a `Wizard` with "Step n of m: Title". | "Page 2 of 3" for a setup flow. |
-| **UD-5 Navbar for general views that don't fit** | A general View that doesn't fit one Container splits into `Navbar` tabs (≤ 5). | Cramming unrelated sections into one scroll, or a 6th tab (typed error). |
-| **UD-6 Paginate on overflow** | Homogeneous lists go through `Paginator` (default Overflow Policy); inside the active tab when there is a Navbar. | Hand-rolled page math, `take(25)`, or truncating a list to dodge a limit. |
+| **UD-3 Commands are entry points** | Option-less or option-light command → `ctx.respond(render_x(..))`. Configuration and data entry happen inside the View (selects, modals, steps). | Long option lists for configuration. Options are for quick actions, autocomplete lookups, context-menu targets. |
+| **UD-4 Steps for setup flows** | Setup/config flows use the step-flow recipe: a `step` Payload field, "Step n of m: Title", Back/Cancel/Next. | "Page 2 of 3" for a setup flow. |
+| **UD-5 Tabs for general views that don't fit** | A general View that doesn't fit one Container splits into tabs (recipe: a `PayloadEnum` tab field, a `match`, a Route button row with the active tab disabled; ≤ 5). | Cramming unrelated sections into one scroll, or a 6th tab (compile error). |
+| **UD-6 Paginate long lists** | Homogeneous lists use the pagination recipe: a `page` Payload field, a slice sized with `Budget`, prev/next disabled at the bounds; inside the active tab when there is one. | `take(25)` with no way to see the rest, or truncating a list to dodge a limit. Noctis never paginates for you. |
 | **UD-7 No listener per message** | One handler per Route; state in Payloads, Refs or ports. One-off confirmations use a Route with a `one_shot` Ref. | Collectors, await-component loops, closures stored per message, `tokio::spawn` timers per message. |
 | **UD-8 Allocation-conscious** | Bounded caches, fixed-width Payload fields, pure `render`, I/O before rendering. | Unbounded maps keyed by guild/user/message; per-interaction global state. |
 
-**UI quality rulebook** (details in `references/views-and-widgets.md`):
+**UI quality rulebook** (details in `references/views-and-recipes.md` §6):
 1. One primary action per View (one `ButtonStyle::Primary` or `Success`).
 2. Visible active state (disabled active tab, `default` on the current select option).
 3. Confirmation for destructive actions (Danger button → confirm View → one-shot Route).
-4. Ephemeral for single-user UI (settings, wizards, errors); public for shared content.
+4. Ephemeral for single-user UI (settings, setup flows, errors); public for shared content.
    Locale follows: User Locale for ephemeral, Guild Locale for public.
 5. A way back or cancel on every interactive View.
 6. Designed empty states and error states (never a missing block or a raw error).
@@ -105,93 +118,134 @@ Each recipe is complete and uses the same names as the project template.
 ```rust
 use noctis::prelude::*;
 
-#[command("dashboard", permissions = MANAGE_GUILD, contexts = [Guild])]
-async fn dashboard(ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<DashboardView> {
-    let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
-    DashboardView::load(&ctx, DashRoute { guild }, &meta).await
+// view.rs: the single source of truth for the message. Pure: data in, message out.
+pub fn render_dashboard(d: &DashData, s: &Strings, tab: DashTab, page: u16, limits: &Limits) -> V2Message { /* §3.3 */ }
+
+// handlers.rs: the command is a struct (unit: no options); its handler is a method.
+#[derive(SlashCommand)]
+#[command("dashboard", description = "Open the server dashboard", permissions = MANAGE_GUILD, contexts = [Guild])]
+pub struct Dashboard;
+
+impl Dashboard {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+        let Some(guild) = ctx.guild_id() else {
+            return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;     // one-line notice
+        };
+        let data = load(&ctx, guild, &meta).await?;                   // all I/O first
+        let s = Strings::of(ctx.response_locale());
+        ctx.respond(render_dashboard(&data, &s, DashTab::Overview, 0, ctx.limits())).await
+    }
 }
 
+// mod.rs
 pub fn module() -> Module {
-    Module::new("dashboard").add(dashboard()).add(open_dashboard())
+    Module::new("dashboard").add::<Dashboard>().add::<OpenTab>().add::<TurnPage>()
 }
 ```
 
-No response code: returning a View sends it (FR-61). With the `i18n` feature the
-description comes from `cmd.dashboard.description` in `locales/en-US.yaml`; without it, write
-`description = "…"` in the attribute. A missing one is a compile error (CMD-04), and a
-literal that differs from the locale file is a compile error too.
+`ctx.respond`, `ctx.update` and `ctx.reply_text` are [planned, Story 8.1]; until then a
+Command returns its `V2Message` (`responder.md` §1). With the `i18n` feature the
+description comes from `cmd.dashboard.description` in `locales/en-US.yaml`; without it,
+write `description = "…"` in the attribute. A missing one is a compile error (CMD-04),
+and a literal that differs from the locale file is a compile error too.
 
-### 3.2 A Route, a button, its handler
+### 3.2 A button: struct, defaults, handler
 
 ```rust
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.mod", permissions = MANAGE_GUILD)]   // id ≤ 24 chars [a-z0-9._-]; guard [planned]
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "dash.mod",                                      // id ≤ 24 chars [a-z0-9._-]
+    permissions = MANAGE_GUILD,                      // Route Guard [planned]
+    defaults(style = Success, label = "common.enable"),   // mandatory; texts are locale keys
+)]
 pub struct ToggleModule { pub guild: Id<GuildMarker>, pub module: ModuleKey, pub enable: bool }
 
-// in a View's render:
+// in the render function: the defaults, plus per-render overrides
 let toggle = ToggleModule { guild, module, enable: !enabled }
-    .button()
-    .label(s.common.enable())
-    .style(ButtonStyle::Success);
+    .build()
+    .label(if enabled { s.common.disable() } else { s.common.enable() })
+    .style(if enabled { ButtonStyle::Danger } else { ButtonStyle::Success });
 
-#[handler]
-async fn toggle_module(ctx: ComponentCtx, t: ToggleModule, meta: State<BotMeta>)
-    -> HandlerResult<impl IntoResponse>
-{
-    ctx.modules().set_enabled(t.module.module_id(), ModuleScope::Guild(t.guild), t.enable).await?;
-    Ok(DashboardView::load(&ctx, DashRoute { guild: t.guild }, &meta).await?.at(Nav::tab(2)))
-}
-```
-
-Returning a View from a component handler updates the message in place.
-
-### 3.3 A View with Navbar and auto-pagination
-
-```rust
-impl View for DashboardView {
-    type Route = DashRoute;                       // #[route("dash", view)]
-    fn state(&self) -> &DashRoute { &self.route }
-
-    fn render(&self, cx: &mut ViewCx<'_, DashRoute>) -> UiResult<V2Message> {
-        let s = Strings::of(cx.locale());
-        let navbar = Navbar::new(cx, [s.dashboard.tab.overview(), s.dashboard.tab.roles()])?;
-        let body = match navbar.active() {
-            0 => Body::from(vec![TextDisplay::new(s.dashboard.overview(/* … */)).into()]),
-            _ => Paginator::new(&self.roles, |r| TextDisplay::new(r.mention.clone()))
-                .empty(TextDisplay::new(s.dashboard.no_roles()))
-                .into(),
-        };
-        Layout::new()
-            .accent(rgb!(0x5865_F2))
-            .header(TextDisplay::new(format!("## {}", s.dashboard.title(&self.guild_name))))
-            .navbar(navbar)
-            .body(body)
-            .footer(ActionRow::buttons([cx.reload_button().label(s.common.refresh())]))
-            .build(cx)
+// decode (`self`) → validate/authorize (Route Guard) → write → redraw in place
+impl ToggleModule {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+        ctx.modules().set_enabled(self.module.module_id(), ModuleScope::Guild(self.guild), self.enable).await?;
+        let data = load(&ctx, self.guild, &meta).await?;
+        let s = Strings::of(ctx.response_locale());
+        ctx.update(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits())).await
     }
 }
 ```
 
-The View Route needs a loader handler (`#[handler] async fn open_dashboard(ctx:
-ComponentCtx, r: DashRoute, …) -> HandlerResult<DashboardView>`); core calls it for
-tab, page and jump clicks after moving `ctx.nav()`.
+`response = update` (default) redraws the clicked message; `response = ephemeral |
+public` opens a new message instead. Every handler is auto-deferred at 2000 ms unless
+its struct declares `auto_defer = false` (§3.6).
 
-### 3.4 A Wizard
+### 3.3 Tabs and a paginated list (recipes)
 
 ```rust
-let wizard = Wizard::new(cx, [s.setup.step.channel(), s.setup.step.roles(), s.setup.step.confirm()])
-    .require(0, st.log_channel.is_some(), s.setup.need_channel())
-    .require(1, st.mod_role.is_some(), s.setup.need_role());
-let body = match wizard.step() { 0 => step_channel(..), 1 => step_roles(..), _ => summary(..) };
-Layout::new().wizard(wizard.finish(FinishSetup { .. }.button().label(s.setup.finish())))
-    .body(body)
-    .build(cx)
+#[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashTab { Overview, Roles, Modules }
+
+#[derive(Button, Debug, Clone, Copy)]
+#[button("dash.tab", defaults(style = Secondary, label = "dashboard.tab.overview"))]
+pub struct OpenTab { pub guild: Id<GuildMarker>, pub tab: DashTab }
+#[derive(Button, Debug, Clone, Copy)]
+#[button("dash.page", defaults(style = Secondary, label = "common.next"))]
+pub struct TurnPage { pub guild: Id<GuildMarker>, pub page: u16 }
+
+// Tab row: the active tab is disabled.
+let tabs = ActionRow::buttons(DashTab::ALL.map(|t| {
+    OpenTab { guild, tab: t }.build().label(tab_label(s, t)).disabled(t == tab)
+}));
+let body = match tab {                                 // sections by `match`
+    DashTab::Overview => overview(d, s),
+    DashTab::Roles => roles_page(d, s, page, limits), // slice sized with Budget::fits
+    DashTab::Modules => module_rows(d, s),
+};
+// Pager: prev disabled on the first page, next on the last.
+ActionRow::buttons([
+    TurnPage { guild, page: page.saturating_sub(1) }.build().label(s.common.previous()).disabled(page == 0),
+    TurnPage { guild, page: page + 1 }.build().disabled(page + 1 >= pages),
+])
 ```
 
-Back/Next/Cancel are automatic. Selected values travel in the Payloads of the select
-Routes (`PickLogChannel { owner, mod_role }`), never in a listener.
+Full code: `references/views-and-recipes.md` §3.1-3.2 and `src/modules/dashboard/`.
 
-### 3.5 A rendered image in a View
+### 3.4 A step flow (recipe)
+
+```rust
+#[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupStep { Channel, Role, Confirm }
+
+#[derive(Button, Debug, Clone, Copy)]                  // Back and Next: the state + target step
+#[button("setup", owner = owner, defaults(style = Primary, label = "setup.next"))]
+pub struct SetupState { pub owner: Id<UserMarker>, pub step: SetupStep,
+    pub log_channel: Option<Id<ChannelMarker>>, pub mod_role: Option<Id<RoleMarker>> }
+
+pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
+    // "## Step 2 of 3: Moderator role", the step's pre-filled select, then
+    // Back · Cancel · Next (Next disabled until the value is set; Finish on the last step).
+}
+
+impl SetupState {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        if self.step != SetupStep::Channel && self.log_channel.is_none() {
+            return ctx.reply_text(keys::SETUP_NEED_CHANNEL).await;   // Payloads are client input
+        }
+        ctx.update(render_setup(self, &Strings::of(ctx.response_locale()))).await
+    }
+}
+```
+
+Selected values travel in the Payloads of the select structs (`#[derive(ChannelSelectMenu)]
+PickLogChannel { owner, mod_role }`), never in a listener. Full code: `references/views-and-recipes.md` §3.3 and
+`src/modules/setup/`.
+
+### 3.5 A rendered image in a message
 
 ```rust
 #[derive(Template, Serialize, Deserialize)]   // the Renderer decodes the value it gets
@@ -211,34 +265,57 @@ impl TemplateView for ProfileCard {
 
 // in a handler (rendering is awaited in the handler, so auto-defer covers it):
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;
-// in render():
-MediaGallery::new([MediaItem::new(cx.attach(&self.card)).alt(s.profile.card_alt(&name))])
+// in the render function:
+let mut files = AttachmentSet::new();
+let card = files.add(data.card.clone());
+let gallery = MediaGallery::new([MediaItem::new(card).alt(s.profile.card_alt(&name))]);
+// … V2Message::new(components).attachments(files)
 ```
 
-### 3.6 A modal with pre-fill
+### 3.6 A button that opens a modal (with pre-fill)
 
 ```rust
-#[derive(Route, Clone, Copy)] #[route("profile.bio", opens_modal, owner = user)] // runtime args [planned]
+// A button that opens a modal MUST be `auto_defer = false` and take the `Manual` responder.
+#[derive(Button, Clone, Copy)]
+#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = "profile.edit_bio"))]
 pub struct EditBio { pub user: Id<UserMarker> }
-#[derive(Route, Clone, Copy)] #[route("profile.save", owner = user)]
-pub struct SaveBio { pub user: Id<UserMarker> }
 
+// The modal is its own struct: fields without an input attribute are its Payload.
 #[derive(Modal, Debug)]
-#[modal(route = SaveBio, title = "Edit your profile")]   // literal texts, checked at cargo check
+#[modal("profile.save", owner = user, defaults(title = "profile.bio_modal.title"))]
 pub struct BioForm {
+    pub user: Id<UserMarker>,                              // Payload: whose profile to redraw
     #[text_input("Bio", style = paragraph, max_length = 300)]
-    pub bio: Option<String>,                              // Option ⇒ not required
+    pub bio: Option<String>,                               // input; Option ⇒ not required
 }
 
-#[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
-    let modal = BioForm::modal(SaveBio { user: e.user }).bio(current_bio); // pre-fill [planned, Story 9.4]
-    Ok(r.modal(modal).await?.done())
+impl EditBio {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+        let form = BioForm { user: self.user, bio: current_bio };   // the value pre-fills the inputs
+        Ok(r.show_modal(form.build()).await?.done())                // first response, within 3 s
+    }
 }
 
-#[handler]
-async fn save_bio(ctx: ModalSubmitCtx, s: SaveBio, form: BioForm) -> HandlerResult<ProfileView> { /* … */ }
+impl BioForm {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        // `self` = Payload + submitted values: save, reload, redraw the button's message
+        ctx.update(render_profile(&load(&ctx, self.user).await?, &Strings::of(ctx.response_locale()), true)).await
+    }
+}
 ```
+
+Which handlers may open a modal, and how each one answers, is declared on the struct:
+
+| Handler | Declare | Responder parameter | `show_modal` |
+| --- | --- | --- | --- |
+| command or button that answers with a message (most) | nothing (`auto_defer = true` by default) | none, or `CommandResponder` / `ComponentResponder` | no: `[INT-05] show_modal needs auto_defer = false on this handler` |
+| command or button that opens a modal | `auto_defer = false` | `CommandResponder<Manual>` / `ComponentResponder<Manual>` (required) | yes, as the first response within 3 s |
+| modal submit | `auto_defer`, `response` as needed on `#[modal(..)]` | none, `ModalResponder` or `ModalResponder<Manual>` | never |
+| autocomplete (`#[autocomplete(field)]` method) | neither (`[INT-06]` compile error) | none: `AutocompleteCtx`, return `Suggestions<T>` | never |
+
+Details and the `response = …` argument: `references/responder.md` §2b.
 
 ### 3.7 Wiring the App
 
@@ -266,17 +343,17 @@ async fn main() -> anyhow::Result<()> {
 
 | Situation | Use | Why |
 | --- | --- | --- |
-| Configure something in ordered steps (setup, onboarding, create-X) | **Wizard** | UD-4: progress "Step n of m", validation per Step, Back/Cancel |
-| Re-editable settings of one entity | **View** with Sections (value + "Edit" accessory) | Faster than a Wizard for edits; schwi-style settings panel |
-| A general View with distinct sections that don't fit one Container | **Navbar** (≤ 5 tabs) | UD-5 |
-| A homogeneous list that can exceed 40 components / 4000 chars | **Paginator** (inside the active tab) | UD-6; never hand-roll paging |
-| Pick one of many entities (> 5) | **Paginator** `.as_select(..)` or a String Select | 25 options cost 2 components |
+| Configure something in ordered steps (setup, onboarding, create-X) | **step-flow recipe** | UD-4: progress "Step n of m", validation per step, Back/Cancel |
+| Re-editable settings of one or more entities | **settings-screen recipe** (Sections with an "Edit" accessory, pre-filled selects, toggles, entity switcher) | Faster than a step flow for edits; schwi-style settings panel |
+| A general View with distinct sections that don't fit one Container | **tabs recipe** (≤ 5 tabs) | UD-5 |
+| A homogeneous list that can exceed 40 components / 4000 chars | **pagination recipe** (inside the active tab), page sized with `Budget` | UD-6 |
+| Pick one of many entities (> 5) | a String Select (≤ 25 options per page) + prev/next | 25 options cost 2 components |
 | Dense read-only data: cards, charts, tables, leaderboards | **Template image** in Media Gallery / Thumbnail | UD-2; 1 component, 0 text chars |
-| Free text, numbers, or 2+ inputs that must be submitted together | **Modal** opened from a button | Message selects fire per change; modals batch |
+| Free text, numbers, or 2+ inputs that must be submitted together | **Modal** opened from a button declared `auto_defer = false` | Message selects fire per change; modals batch |
 | Destructive action | Danger button → confirm View → `one_shot` by-ref Route | Quality rule 3 |
-| Per-user settings on a shared message | Ephemeral sub-panel (`#[handler(response = ephemeral)]`) | INT-10: ephemerality is fixed at creation |
-| A one-line notice, no interaction | `HandlerError::user(key)` or a small `StaticView` | Localized, ephemeral |
-| Post to a log channel or white-label persona | `StaticView` through a webhook | WH-01/02 |
+| Per-user settings on a shared message | Ephemeral sub-panel (`#[button("id", response = ephemeral, defaults(..))]`, `ctx.respond(..)`) | INT-10: ephemerality is fixed at creation |
+| A one-line notice, no interaction | `ctx.reply_text(key)` or `HandlerError::user(key)` | Localized, ephemeral |
+| Post to a log channel or white-label persona | a non-interactive `StaticMessage` through a webhook | WH-01/02 |
 
 Image vs text: if users need to **read** many numbers at a glance → image; if they need
 to **act** on an item → a Section with an accessory button or a select option.
@@ -285,32 +362,64 @@ to **act** on an item → a Section with an accessory button or a select option.
 
 | Never | Instead |
 | --- | --- |
-| A per-message listener, collector, `await` for the next click, or `tokio::spawn` + sleep tied to a message | One `#[handler]` per Route; state in the Payload/Ref; expiry via Ref TTL and the Expired Handler |
-| Hand-building a `custom_id` string (`format!("buy:{id}")`) | `#[derive(Route)]` struct → `.button()` / `.string_select(..)`; Noctis owns the format (AD-5) |
+| A per-message listener, collector, `await` for the next click, or `tokio::spawn` + sleep tied to a message | One `#[handler]` per component struct; state in the Payload/Ref; expiry via Ref TTL and the Expired Handler |
+| Hand-building a `custom_id` string (`format!("buy:{id}")`) | A `#[derive(Button)]` / `#[derive(StringSelectMenu)]` / … struct → `.build()`; Noctis owns the format (AD-5) |
+| A free `async fn` handler, or a handler that takes the Payload as an argument | `impl X { #[handler] async fn handle(self, ctx) }` on the struct; `#[handler]` takes no arguments |
+| A button that opens a modal without `auto_defer = false` | `#[button("id", auto_defer = false, defaults(..))]` + `ComponentResponder<Manual>` + `show_modal` |
+| `auto_defer = false` on a handler that does not open a modal | Keep the default: a handler that misses 3 s shows "This interaction failed" |
+| Choosing ephemerality per call | `response = ephemeral` on the struct's attribute |
+| Repeating the same label/style at every render | Put it in `defaults(..)`; override only what changes |
 | Free text (reasons, names, URLs) in a Payload | Bounded ASCII `BoundedStr<N>` only if tiny; otherwise `by_ref`, or store it via a port and put the id in the Payload |
 | `String`/`Vec` fields in an inline Route | They are unbounded → compile error `[CID-01]`; use `by_ref` / `overflow = spill` |
 | Trusting Payload data for authorization | Route Guards (`owner = field`, `permissions = …`) plus checks in the handler; Payloads are client input (CID-06) |
-| Choosing response types, calling defer/edit by hand when a View would do | Return the View; use the Responder only for modals, follow-ups, or multi-step replies |
+| Choosing response types, calling defer/edit by hand | `ctx.respond(render_x(..))` / `ctx.update(render_x(..))`; the typestate Responder only for modals, follow-ups, or multi-step replies |
+| Building the same message in the Command and in a handler | One `render_x(..)` per screen in `view.rs`, called from both |
+| Waiting for a framework Navbar/Wizard/Paginator | They don't exist: tabs, pages and steps are Payload fields (`references/views-and-recipes.md`) |
 | `content`/embeds for an interactive feature | A V2 View (UD-1) |
-| Doing I/O in `View::render` | Load data in the handler (or a `load` fn), keep `render` pure |
+| Doing I/O in a render function | Load data in the handler (or a `load` fn), keep `render_x` pure |
 | Formatting Tailwind classes at runtime (`format!("w-[{}%]", p)`) | Typed style setters: `style={Style::new().width_pct(p)}` |
 | Putting buttons, instructions or links in an image | Components next to the image (UD-2) |
-| Hard-coded English in Views or Templates | Locale keys via `Strings::of(cx.locale())` |
+| Hard-coded English in render functions or Templates | Locale keys via `Strings::of(ctx.response_locale())`, passed to `render_x` |
 | `static mut`, global `HashMap`s, `lazy_static` registries | `State<T>` or a port |
-| More than 5 tabs, more than 5 buttons in a row, two selects in a row | Typed errors / compile errors; restructure (select nav, more rows, a Paginator) |
+| More than 5 tabs, more than 5 buttons in a row, two selects in a row | Compile errors (CV2-06); restructure (select nav, more rows, pagination) |
+| Counting only top-level components before sending | `noctis::ui::cost` / `Budget` count every depth |
 | Publishing on every start or on shard ready | `--publish-guild` in dev, `--publish` (or one `NOCTIS_PUBLISHER` process) in prod; publish is diff-based and never runs on READY |
 | `app.run()` in a test | `app.run_with_args(std::iter::empty::<&str>())`: `run()` parses the process arguments and rejects the test harness's flags |
 | Reading Noctis source to learn the API | This skill; say what is missing |
+
+## 5b. Best practices (schwi-style)
+
+From the maintainer's production bot; full list, pitfalls and complete code in
+`references/views-and-recipes.md` §3.4 and §7.
+
+1. One Module per feature: `src/modules/<feature>/{mod.rs, view.rs, handlers.rs, events.rs}`
+   (component structs in `mod.rs`, command structs and the `#[handler]` impls in
+   `handlers.rs`).
+2. `render_x(data, &strings, selected_id, page…) -> V2Message` is the single source of
+   truth, reused by the slash Command and every component/modal handler.
+3. UI state only in typed Payload fields of the module's own Routes (ids, page, section).
+4. Handler flow: decode Payload → validate/authorize → write to storage →
+   `ctx.update(render_x(..))`.
+5. Settings screens: Section + accessory button rows, pre-filled selects, enable/disable
+   toggles, add/delete rows, an entity switcher select when there is more than one.
+6. Sections chosen by a `match` on a `PayloadEnum`; prev/next disabled at the bounds.
+7. Autocomplete backed by storage queries capped at 25 in the query, returned as
+   `Suggestions<T>` (`commands.md` §4).
+8. Button → modal → re-render chains carry the same Payload through.
+9. Every user-visible string via locales; one-line notices with `ctx.reply_text`.
 
 ## 6. tescord → Noctis concept map
 
 | tescord / dbi | Noctis |
 | --- | --- |
 | `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
-| `pack.slashCommand({ name: "a (b\|c)" })` | `#[command("a (b\|c)")]`; the handler gets a generated `APath` enum |
-| `options: { user: { type: "User" } }` | `#[derive(Options)] struct … { user: ResolvedUser }` |
-| `autoComplete` | `#[option(autocomplete = fn)]` + an `#[autocomplete]` fn returning `Ok(ctx.respond(choices))` (sync, no Module registration; `commands.md` §4) |
-| `pack.button({ id, options })` + `buildComponent({ id, data, overrides })` | `#[derive(Route)]` + `Route { .. }.button().label(..)` + `#[handler]` |
+| `pack.slashCommand({ name: "a (b\|c)", handle })` | `#[derive(SlashCommand)] #[command("a (b\|c)")] struct A;` + `impl A { #[handler] async fn handle(self, ctx, path: APath) }` |
+| `options: { user: { type: "User" } }` | fields of the command struct: `struct Ban { #[option(..)] user: ResolvedUser }` |
+| `autoComplete` | `#[option(.., autocomplete)]` + an `#[autocomplete(field)] async fn x(ctx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` method on the command struct; Noctis sends the result [planned, Story 6.11]; this release: `#[option(autocomplete = fn)]` + an `#[autocomplete]` fn returning `Ok(ctx.respond(choices))` (sync, no Module registration; `commands.md` §4b) |
+| `pack.button({ id, options, handle })` + `buildComponent({ id, data, overrides })` | `#[derive(Button)] #[button("id", defaults(..))] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` + `X { .. }.build().label(..)` |
+| `pack.stringSelect` / `userSelect` / … / `modal` | `#[derive(StringSelectMenu)]`, `UserSelectMenu`, `RoleSelectMenu`, `MentionableSelectMenu`, `ChannelSelectMenu`, `Modal` |
+| `pack.event({ name, handle })` | `#[derive(EventHandler)] #[event] struct X;` + `impl X { #[handler] async fn handle(self, ctx, event: MessageCreate) }` |
+| `renderSetupMenu(..)` + `deferUpdate()` + `editReply({ components, flags })` | `render_x(..) -> V2Message` + `ctx.update(render_x(..))` (flags and deferral are automatic) |
 | `data[i] as number` | typed Payload fields |
 | dbi references / store | `by_ref` Routes + `RefStore` |
 | `locale.user.x.y(a)` / `locale.guild…` | `Strings::of(ctx.user_locale()).x.y(a)` / `ctx.guild_locale()` |
@@ -331,7 +440,7 @@ Read only what the task touches.
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |
 | `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`rgb!` |
-| `references/views-and-widgets.md` | write a View, Layout, Navbar, Wizard, Paginator, attachments, mentions; UI quality rulebook and patterns |
+| `references/views-and-recipes.md` | write a render function and the update flow; recipes with complete code for tabs, pagination, step flows and settings screens; budget helpers; attachments, mentions, select freshness; UI quality rulebook; schwi-style best practices and pitfalls |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |
 | `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing, `ctx.kv()` and `ctx.cache()` |
@@ -340,3 +449,26 @@ Read only what the task touches.
 | `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |
+
+## 8. Shipped names until Stories 6.10 and 6.11
+
+This skill teaches the converged API. The current release still ships the older
+authoring surface without aliases: Story 6.10 renames the Responder methods and
+replaces `opens_modal` and the bare `ephemeral` flag (the last three rows), and
+Story 6.11 converts the rest to one struct per interaction. Until then write:
+
+| Converged (taught above) | This release |
+| --- | --- |
+| `#[derive(SlashCommand)] #[command("p", ..)] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` | `#[derive(Options)] struct XOptions {..}` + a free `#[command("p", ..)] async fn x(ctx: CommandCtx, opts: XOptions)` |
+| `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit struct + `#[handler]` method | a free `#[user_command(..)]` / `#[message_command(..)]` `async fn(ctx, target)` |
+| `#[derive(EventHandler)] #[event] struct X;` + `#[handler]` method | a free `#[event] async fn x(ctx: EventCtx, event: ..)` |
+| `#[derive(Button)] #[button("id", .., defaults(..))]` and the select kinds | `#[derive(Route)] #[route("id", ..)]` (selects add the bare `select` argument) |
+| `X { .. }.build()` | `X { .. }.button()`, `.string_select(options)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()` (`RouteComponents`) |
+| `#[derive(Modal)] #[modal("id", defaults(title = ..))]` with Payload fields | `#[modal(route = R, title = "…")]` with a separate `#[derive(Route)]` submit Route, opened with `BioForm::modal(R { .. })` |
+| `Module::add::<X>()` | `Module::add(x())` (the descriptor function the macro generates) |
+| `response = public \| ephemeral` on commands | the bare `ephemeral` flag (`CommandHandler::ephemerality()`) |
+| `auto_defer = false` + `CommandResponder<Manual>` + `show_modal(m)` | `opens_modal` + `CommandResponder<OpensModal>` (`NoModal` by default; `CommandHandler::opens_modal()`) + `modal(m)` |
+| `defer_reply()` / `edit_reply` / `follow_up` / `delete_reply` | `defer(Ephemerality)` / `edit_original` / `followup` / `delete_original` |
+| `#[option(.., autocomplete)]` + `#[autocomplete(field)]` method returning `Suggestions<T>` | `#[option(autocomplete = path)]` naming a free `#[autocomplete] async fn(ctx: AutocompleteCtx[, partial: Partial<XOptions>]) -> HandlerResult<Responded>` (an `AutocompleteHandler<O>` descriptor, never `Module::add`ed) that answers `Ok(ctx.respond(choices))` with `AutocompleteChoice`s (`commands.md` §4b) |
+
+Component, modal-submit and event handlers that need Epic 7 are [planned] either way.

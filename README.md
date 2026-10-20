@@ -42,7 +42,9 @@ command tree, publish script, `custom_id` parser and image pipeline yourself.
 Noctis provides all of that as one layer with sensible defaults:
 
 - **Slash commands as entry points.** `/setup start` takes no options and opens a
-  full interactive View with steps, tabs and pages.
+  full interactive screen. You write each screen as a plain render function; tabs,
+  pages and steps are typed fields of your own Routes, and one call
+  (`ctx.update(render(..))`) redraws the message with the right flags and deferral.
 - **Discord's rules checked at compile time.** If a `custom_id` could exceed 100
   characters, if a command pattern is illegal, or if a static component tree breaks
   nesting rules, `cargo build` fails, not production.
@@ -66,7 +68,7 @@ Noctis provides all of that as one layer with sensible defaults:
 | **Gateway and sharding** | Recommended shard count and identify concurrency, one tokio task per shard, Shard Ranges for multi-process Clusters, session resume across restarts, graceful shutdown |
 | **Commands** | `"settings logs channel"` becomes command, group and subcommand. Patterns like `"config (set\|get) (prefix\|welcome)"` are supported, with typed option structs, autocomplete, context menus, localized names, and Publish only when something changed |
 | **Interaction routing** | O(1) dispatch by Route, typed Payloads with a compile-time length proof, Refs (11-char, ≥64-bit random keys) for large state, expiry handling, middleware with typed extensions, automatic defer before the 3 s deadline |
-| **Components V2 UI kit** | Typed builders for every V2 and modal component, a full limit validator, Views, Navbar tabs, step Wizards, an auto-packing Paginator, attachment tracking |
+| **Components V2 UI kit** | Typed builders for every V2 and modal component with placement checked by the type system, compile-time and runtime limit validation, cost and "how many rows fit" budget helpers, Route-built components with length-proven `custom_id`s, an ergonomic Responder (`ctx.respond`, `ctx.update`, `ctx.reply_text`), attachment tracking. No widget layer: tabs, pagination and step flows are short recipes you own |
 | **Images and GIFs** | `view!` / `tw!` templates with Tailwind v4 classes validated at compile time, a bounded render pool, render cache with request de-duplication, font and asset registry |
 | **Adapters** | RefStore, SessionStore, RateLimitStore, RenderCache, AssetStore, LocaleSource, CacheStore, ModuleStateStore, IdentifyQueue. In-memory defaults ship, and a conformance test suite checks your own implementations |
 | **Localization** | Locale files compiled into typed accessors, word-by-word command name translation, User and Guild Locale on every context |
@@ -80,35 +82,54 @@ Noctis provides all of that as one layer with sensible defaults:
 ```rust
 use noctis::prelude::*;
 
-/// Typed state carried inside the button's custom_id.
-/// Its maximum encoded length is checked at compile time.
-#[derive(Payload)]
-struct MembersPage {
-    guild: Id<GuildMarker>,
-    page: u16,
+#[derive(PayloadEnum, Clone, Copy, PartialEq, Eq)]
+enum Tab { Overview, Members }
+
+/// Typed state carried inside each button's custom_id.
+/// Its maximum encoded length is proven at compile time.
+#[derive(Route, Clone, Copy)]
+#[route("dash.tab")]
+struct OpenTab { guild: Id<GuildMarker>, tab: Tab }
+
+#[derive(Route, Clone, Copy)]
+#[route("dash.page")]
+struct MembersPage { guild: Id<GuildMarker>, page: u16 }
+
+/// The View: a plain function. The command and every click call it.
+fn render_dashboard(members: &[Member], guild: Id<GuildMarker>, tab: Tab, page: u16) -> V2Message {
+    let tabs = ActionRow::buttons([Tab::Overview, Tab::Members].map(|t| {
+        OpenTab { guild, tab: t }.button().label(t.label()).disabled(t == tab)
+    }));
+    let c = Container::new().push(tabs);
+    let c = match tab {
+        Tab::Overview => c.push(TextDisplay::new(format!("**{}** members", members.len()))),
+        Tab::Members => c.push(TextDisplay::new(page_text(members, page))).push(ActionRow::buttons([
+            MembersPage { guild, page: page.saturating_sub(1) }.button().label("◀").disabled(page == 0),
+            MembersPage { guild, page: page + 1 }.button().label("▶").disabled(is_last(members, page)),
+        ])),
+    };
+    V2Message::new(Components::new().push(c))   // limits are validated before sending
 }
 
-#[derive(Route)]
-#[route("members-page")]
-struct MembersPageRoute(MembersPage);
-
-/// `/dashboard`: no options, opens a tabbed View.
+/// `/dashboard`: no options, opens the dashboard.
 #[command("dashboard", description = "Open the server dashboard")]
-async fn dashboard(ctx: CommandCtx) -> HandlerResult {
-    let guild = ctx.guild_id()?;
-    ctx.respond(render_dashboard(&ctx, guild, Tab::Overview).await?).await
+async fn dashboard(ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
+    let Some(guild) = ctx.guild_id() else { return ctx.reply_text("Servers only.").await };
+    let members = db.members(guild).await?;
+    ctx.respond(render_dashboard(&members, guild, Tab::Overview, 0)).await
 }
 
-/// One handler for every "members page" button, on every message, on every shard.
-#[component(MembersPageRoute)]
-async fn members_page(ctx: ComponentCtx, MembersPage { guild, page }: MembersPage) -> HandlerResult {
-    let members = ctx.state::<Db>().members(guild).await?;
-    ctx.update(
-        View::v2()
-            .navbar(Tab::Members)
-            .paginate(members, page, |m, s| s.text(format!("**{}**: {}", m.name, m.role))),
-    )
-    .await
+/// One handler for every tab button, on every message, on every shard.
+#[handler]
+async fn open_tab(ctx: ComponentCtx, to: OpenTab, db: State<Db>) -> HandlerResult<Responded> {
+    let members = db.members(to.guild).await?;
+    ctx.update(render_dashboard(&members, to.guild, to.tab, 0)).await   // flags, defer, limits handled
+}
+
+#[handler]
+async fn members_page(ctx: ComponentCtx, to: MembersPage, db: State<Db>) -> HandlerResult<Responded> {
+    let members = db.members(to.guild).await?;
+    ctx.update(render_dashboard(&members, to.guild, Tab::Members, to.page)).await
 }
 
 #[tokio::main]
@@ -194,7 +215,7 @@ done. Live per-story status is in
 | 5 | A running sharded bot | P0 | 🔨 In progress (4 / 8) |
 | 6 | Slash commands and Publish | P0 | ⏳ Next |
 | 7 | Routed components, Refs and modals | P0 | ⏳ |
-| 8 | Views, navigation widgets and the testing kit | P0 | ⏳ |
+| 8 | Views as plain functions, Responder ergonomics and the testing kit | P0 | ⏳ |
 | 9 | Attachments, webhooks and advanced component surfaces | P1 | ⏳ |
 | 10 | Generated images and GIFs | P1 | ⏳ |
 | 11 | Localization | P1 | ⏳ |
@@ -243,8 +264,8 @@ done. Live per-story status is in
 ## Project template
 
 [`examples/project-template/`](examples/project-template/) is a ready-to-copy bot. It
-includes a setup Wizard, a tabbed dashboard with pagination, and a rendered profile
-card. It ships with:
+includes a hand-written setup flow, a tabbed dashboard with pagination, and a rendered
+profile card. It ships with:
 
 - an `AGENTS.md` for AI coding agents;
 - **the Noctis Usage Skill**, a detailed skill that documents the whole public API,

@@ -5,12 +5,28 @@ autocomplete, context menus, command metadata, merging across Modules, Publish.
 Rules: CMD-01..15, OPT-01..14, CTX-01..03, META-01..05, REG-01..06, LOC-01..06.
 Doctrine: commands are **entry points** that open Views (UD-3).
 
+> **Converged form [planned: Stories 6.10 and 6.11].** A command is a struct: `#[derive(SlashCommand)]`
+> (fields = options, unit struct when none) with `#[command("path", ..)]`, and its handler
+> is `impl X { #[handler] async fn handle(self, ctx: CommandCtx[, path: XPath][, r]) }`;
+> context menus are `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit structs;
+> the Module registers them with `.add::<X>()`. `response = public | ephemeral` and
+> `auto_defer = true | false` are command arguments. The examples below use that form.
+> **This release** still takes free functions: `#[command("path", ..)] async fn x(ctx:
+> CommandCtx[, path][, r][, opts: XOptions])` with `#[derive(Options)] struct XOptions`,
+> the bare `ephemeral` flag, `opens_modal`, and `Module::add(x())`. The parameter-order
+> and argument errors quoted below are this release's; Story 6.10 replaces `ephemeral`
+> and `opens_modal`, and Story 6.11 rewrites the rest for the struct form (SKILL.md §8
+> maps every name).
+
 ## 1. Command Paths
 
 ```rust
-#[command("dashboard", description = "Open the dashboard")]          // 1 word  → command
-#[command("setup start", description = "Start the setup")]           // 2 words → subcommand of /setup
-#[command("settings logs channel", description = "Set the log channel")] // 3 words → group "logs" + subcommand "channel"
+#[derive(SlashCommand)] #[command("dashboard", description = "Open the dashboard")]          // 1 word  → command
+pub struct Dashboard;
+#[derive(SlashCommand)] #[command("setup start", description = "Start the setup")]           // 2 words → subcommand of /setup
+pub struct SetupStart;
+#[derive(SlashCommand)] #[command("settings logs channel", description = "Set the log channel")] // 3 words → group "logs" + subcommand "channel"
+pub struct LogsChannel { #[option(description = "Where")] pub channel: Id<ChannelMarker> }
 ```
 
 Words are separated by exactly one ASCII space. `noctis::rules::command::PathKind::of(path)`
@@ -36,17 +52,25 @@ use noctis::prelude::*;
 use noctis::ui::{Components, TextDisplay};
 
 /// Rustdoc only.
-#[command("setup start", description = "Start the setup", ephemeral)]
-pub async fn setup_start(ctx: CommandCtx) -> HandlerResult<Components> {
-    let _ = ctx.command_path(); // "setup start"
-    Ok(Components::new().push(TextDisplay::new("Let's set things up.")))
+#[derive(SlashCommand)]
+#[command("setup start", description = "Start the setup", response = ephemeral)]
+pub struct SetupStart;
+
+impl SetupStart {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Components> {
+        let _ = ctx.command_path(); // "setup start"
+        Ok(Components::new().push(TextDisplay::new("Let's set things up.")))
+    }
 }
 ```
 
-`ephemeral` (bare flag) makes every response private (INT-10, `responder.md` §3);
-`CommandHandler::ephemerality()` reads it.
+`response = ephemeral` makes every response private, the auto-defer included (INT-10,
+`responder.md` §2b and §3); `CommandHandler::ephemerality()` reads it. This release
+spells it as the bare flag `ephemeral`.
 
-[planned] Extractors as further parameters and returning a View (Epic 8).
+[planned] Extractors as further parameters, and `ctx.respond(render_x(..))` as the
+default answer (Story 8.1; `views-and-recipes.md`).
 
 Register it: `Module::new("setup").add(setup_start())` (the macro turns the fn into a
 descriptor constructor `fn setup_start() -> CommandHandler`; call it with `()`).
@@ -74,15 +98,16 @@ The first argument is the path or pattern, a string literal (raw strings work). 
 not supported yet ``); an unknown one lists the landed names (`` unknown `#[command]`
 argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `opens_modal`,
 `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds` ``), and each argument
-may appear once (`` duplicate `#[command]` argument `nsfw` ``).
+may appear once (`` duplicate `#[command]` argument `nsfw` ``). Story 6.10 replaces `ephemeral` with `response = …` and `opens_modal` with
+`auto_defer = …` in these lists, with no aliases.
 
 | Argument | Meaning |
 | --- | --- |
 | `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
 | `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
 | `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
-| `ephemeral` | reply privately (default public): a bare flag (`` `ephemeral` takes no value `` otherwise). Fixed at registration (INT-10); `reply`, a returned message and the auto-defer use it |
-| `opens_modal` | the handler may open a modal (`r.modal(m)`) and must take `r: CommandResponder<OpensModal>`; disables the auto-defer (INT-05). A bare flag (`` `opens_modal` takes no value `` otherwise). A mismatch is a compile error citing `[INT-05]`: the flag with a plain `CommandResponder` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` ``), `CommandResponder<OpensModal>` without the flag (`` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``), or the flag without a responder parameter (`` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal ``). `CommandHandler::opens_modal()` reads it. See `responder.md` §4 |
+| `response = public \| ephemeral` | [planned: Story 6.10; today the bare flag `ephemeral`, `` `ephemeral` takes no value `` otherwise] how the command answers (default public). Fixed at registration (INT-10); `reply`, `defer_reply()`, a returned message and the auto-defer use it; `response = update` is a compile error (INT-04) |
+| `auto_defer = true \| false` | [planned: Story 6.10; today the bare flag `opens_modal`] default `true`. `false` disables the auto-defer and is required to open a modal: the handler must take `r: CommandResponder<Manual>` (today `CommandResponder<OpensModal>`) and may call `r.show_modal(m)` (today `r.modal(m)`); a mismatch is a compile error citing `[INT-05]` (`responder.md` §2b): the flag with a plain `CommandResponder` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` ``), `CommandResponder<OpensModal>` without the flag (`` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``), or the flag without a responder parameter (`` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal ``). `CommandHandler::opens_modal()` reads it. See `responder.md` §4 |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
 | `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used (`noctis::InteractionContext` names; `InteractionContext::Guild` works): at least one, no duplicates, declared order kept (`` unknown context `Gild`; expected one of Guild, BotDm, PrivateChannel ``, `` duplicate context `Guild` ``) |
 | `integration_types = [GuildInstall, UserInstall]` | install types (`noctis::IntegrationType`), same shape; META-04: must be enabled on the app |
@@ -104,10 +129,15 @@ global); `CommandMetadata::new()` = all unset, by-value `const` setters of the f
 `is_guild_scoped()`):
 
 ```rust
+#[derive(SlashCommand)]
 #[command("ban", description = "Ban a member", permissions = BAN_MEMBERS, contexts = [Guild])]
-async fn ban(ctx: CommandCtx) -> HandlerResult<LegacyMessage> { Ok(LegacyMessage::new("Banned.")) }
+pub struct Ban;
+impl Ban {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<LegacyMessage> { Ok(LegacyMessage::new("Banned.")) }
+}
 
-let handler = ban();
+let handler = Ban::descriptor(); // [planned: Story 6.11]; this release: `ban()` from a free fn
 assert_eq!(handler.metadata().default_member_permissions, Some(noctis::Permissions::BAN_MEMBERS));
 assert_eq!(handler.metadata().nsfw, None); // unset, omitted on Publish
 ```
@@ -169,18 +199,24 @@ One handler for several paths. `(a|b)` gives one alternative per word; `?` after
 also yields the path without it. Expansion is left to right in declaration order.
 
 ```rust
+#[derive(SlashCommand)]
 #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
-async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
-    let view = match path {
-        ConfigPath::SetPrefix | ConfigPath::SetWelcome => { … }
-        ConfigPath::GetPrefix | ConfigPath::GetWelcome => { … }
-    };
-    Ok(view)
+pub struct Config;
+
+impl Config {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
+        let msg = match path {
+            ConfigPath::SetPrefix | ConfigPath::SetWelcome => { … }
+            ConfigPath::GetPrefix | ConfigPath::GetWelcome => { … }
+        };
+        Ok(msg)
+    }
 }
 ```
 
-A pattern with at least one group generates the path enum next to the fn; a plain path
-generates none.
+A pattern with at least one group generates the path enum `<Struct>Path` next to the
+struct (this release: `<Fn>Path` next to the fn); a plain path generates none.
 
 - Name: the fn name (`r#` stripped) split on `_`, each part's first letter uppercased,
   plus `Path`: `config` → `ConfigPath`, `set_prefix` → `SetPrefixPath`, `r#type` →
@@ -311,16 +347,18 @@ Each `Violation` prints ``[CMD-11] config set: limit …, actual `set` ``, then 
 
 ## 3. Options
 
-A handler's options are one struct with `#[derive(Options)]`, taken as the handler's last
-parameter. Each field is one option, in declaration order (never reordered).
+A command's options are the fields of its `#[derive(SlashCommand)]` struct, read through
+`self` (this release: a separate `#[derive(Options)]` struct taken as the handler's last
+parameter). Each field is one option, in declaration order (never reordered).
 
 ```rust
-use noctis::prelude::*; // Options (trait + derive), Choices, CommandOption, MessageKey
+use noctis::prelude::*; // SlashCommand, Options (trait), Choices, CommandOption, MessageKey
 use noctis::twilight::model::id::{Id, marker::ChannelMarker};
 use noctis::ui::{ResolvedAttachment, ResolvedUser};
 
-#[derive(Options, Debug)]
-pub struct WarnOptions {
+#[derive(SlashCommand, Debug)]
+#[command("mod warn", description = "Warn a member")]
+pub struct Warn {
     /// Rustdoc only: never the option's description.
     #[option(description = "Who to warn")]
     pub member: ResolvedUser,                                  // required (not Option)
@@ -332,7 +370,7 @@ pub struct WarnOptions {
     pub reason: Option<String>,
     #[option(description = "Where to log", channel_types = [GuildText, GuildAnnouncement])]
     pub log_to: Option<Id<ChannelMarker>>,
-    #[option(description = "Which rule", autocomplete = rule_suggest)]
+    #[option(description = "Which rule", autocomplete)]          // see §4
     pub rule: Option<String>,
     #[option(description = "Evidence", file_types = ["image", ".pdf"])]
     pub evidence: Option<ResolvedAttachment>,
@@ -344,8 +382,10 @@ fn positive(days: &i64, _ctx: &CommandCtx) -> Result<(), MessageKey> {
     if *days > 0 { Ok(()) } else { Err(MessageKey::new("mod.warn.days.positive")) }
 }
 
-#[command("mod warn", description = "Warn a member")]
-async fn warn(ctx: CommandCtx, opts: WarnOptions) -> HandlerResult<Components> { … }
+impl Warn {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Components> { /* self.member, self.days, … */ }
+}
 ```
 
 ### `#[option(..)]` arguments
@@ -361,7 +401,7 @@ field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``)
 | `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
 | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (`GuildText`, `Private`, `GuildVoice`, `Group`, `GuildCategory`, `GuildAnnouncement`, `AnnouncementThread`, `PublicThread`, `PrivateThread`, `GuildStageVoice`, `GuildDirectory`, `GuildForum`, `GuildMedia`; a path's last segment counts, `ChannelType::GuildText` works); at least one | CHANNEL | OPT-07 |
 | `file_types = ["image", ".pdf"]` | string literals: `image`, `video`, `audio` or `.` + ASCII letters/digits; ≤ 10 | ATTACHMENT | OPT-13 |
-| `autocomplete = path` | an `#[autocomplete]` fn for this options struct (§4); sets the autocomplete flag and links the handler (no Module registration). Anything else is E0277 `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
+| `autocomplete` | [planned: Story 6.11] a bare flag, paired with the struct's `#[autocomplete(field)]` method returning `Suggestions<T>` (§4); one without the other is an OPT-11 compile error. This release (Story 6.7): `autocomplete = path` names an `#[autocomplete]` fn for this options struct (§4b); it sets the flag and links the handler (no Module registration), and anything else is E0277 `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
 | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>` (`T` = the field type without `Option`; E0308 on another signature); sync, called only when the value is present, in field order, after the whole struct decoded | all | — |
 
 ### Field types (`CommandOption`, OPT-02)
@@ -527,6 +567,79 @@ fails OPT-08. Command choices are STRING only: integer/number choices are [plann
 
 ## 4. Autocomplete
 
+[planned, Story 6.11] Mark the option with the bare `autocomplete` flag and add
+the paired `#[autocomplete(field)]` method to the command struct's `impl`. The method
+returns the suggestions; Noctis sends them. You never call `respond` in autocomplete.
+
+```rust
+#[derive(SlashCommand)]
+#[command("warn", description = "Warn a member", response = ephemeral)]
+struct Warn {
+    #[option(description = "Who to warn")]
+    user: ResolvedUser,
+    #[option(description = "Which rule", autocomplete)]
+    rule: i64,
+}
+
+impl Warn {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { /* self.rule: re-check it exists */ }
+
+    #[autocomplete(rule)]
+    async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> {
+        // Filter and cap in the query (LIMIT 25), not after loading every row.
+        let rules = ctx.state::<Db>().search_rules(ctx.guild_id()?, typed, 25).await?;
+        Ok(rules.into_iter().map(|r| (r.id, r.name)).collect())
+    }
+}
+```
+
+The flag and the method pair up, checked at `cargo check`:
+
+| You write | Result |
+| --- | --- |
+| `autocomplete` on a field, no `#[autocomplete(field)]` method | `[OPT-11]` compile error |
+| `#[autocomplete(f)]` where `f` has no `autocomplete` flag, or no field `f` exists | `[OPT-11]` compile error |
+| `autocomplete` on a `Choices` field | `[OPT-10]` compile error (choices or autocomplete) |
+| `autocomplete` on a type other than `String`, `i64`, `f64` (or their `Option`) | `[OPT-11]` compile error |
+| `Suggestions<T>` with `T` other than the field's type without `Option` | `[OPT-11]` compile error |
+| `auto_defer` or `response` on `#[autocomplete]`, or a `self` parameter | `[INT-06]` compile error (autocomplete has no defer) |
+
+The method's parameters, always these three, in this order:
+
+- `ctx: AutocompleteCtx`: `guild_id()` returns `Result<Id<GuildMarker>, HandlerError>` (an
+  error outside a guild, so `?` answers an empty list), `state::<T>()` returns `State<T>`
+  (registered with `.state(..)`), plus `user_locale()`, `cache()`, `modules()` and
+  `limits()`. No
+  `respond`, no `defer`, no Responder (INT-04, INT-06).
+- `typed: &str`: the raw focused input. Discord sends it as a string even for INTEGER and
+  NUMBER options, and it may be partial (`""`, `"-"`, `"1"`). Parse it yourself
+  (`typed.parse::<i64>().ok()`), never unwrap.
+- `filled: Partial<Self>`: every other option as `Option<_>`, untrusted and partially
+  filled; Discord may omit even required options (OPT-12). Use it to narrow the search
+  (`filled.user`), and re-validate the final values in `handle`: autocomplete values
+  are not constrained to your suggestions.
+
+The return value, `HandlerResult<Suggestions<T>>`:
+
+- `Suggestions<T>` collects from `(T, label)` pairs; the label is a `String`, a `&str` or
+  a `MessageKey` (resolved in the user's locale): `.map(|r| (r.id, r.name)).collect()`.
+- More than 25 suggestions: the first 25 are sent and a warning is logged (INT-07, in
+  every mode). Cap the query at 25 instead.
+- A label over 100 characters is cut to 100 with `…` and a warning. A value Discord would
+  reject (a `String` over 100 characters, an INTEGER outside ±2^53, a non-finite NUMBER)
+  is dropped with a warning.
+- An error, a panic or more than 3 s sends an empty list and routes the error to the
+  Autocomplete Error Sink. Keep the work to one bounded query; there is no defer.
+- Registering the command (`.add::<Warn>()`) registers its autocomplete methods too.
+
+### 4b. This release (Story 6.7): the shipped autocomplete shape
+
+Until Story 6.11 converts it to the form above, autocomplete is a free function linked
+from the options struct. Sending already follows the rules above (25 cap with a warning,
+empty list and the Autocomplete Error Sink on failure), except that an over-long choice
+name is dropped rather than truncated and the budget is 2.5 s from receipt.
+
 ```rust
 use noctis::prelude::*; // autocomplete, AutocompleteCtx, AutocompleteChoice, Partial
 
@@ -597,7 +710,8 @@ let module = Module::new("config").add(config()); // no `.add(prefix_suggest())`
   never your code.
 
 Rule function: `noctis::rules::command::validate_autocomplete(&choices, OptionType::String,
-&limits) -> Vec<Violation>` checks a response the way `respond` does. More than
+&limits) -> Vec<Violation>` checks a choice list the way Noctis checks returned
+suggestions; use it for lists you send outside a `#[autocomplete]` method. More than
 `autocomplete_choices` (25) choices is one INT-07 violation at path `choices`
 (`help: Noctis sends the first 25 choices and logs this as a warning`): the caller
 truncates and warns, in every mode. Each kept choice (`choices[j]`) follows OPT-09 (name
@@ -628,26 +742,39 @@ choices.truncate(limits.autocomplete_choices);
 use noctis::prelude::*; // user_command, message_command
 use noctis::ui::{Components, ResolvedMessage, ResolvedUser, TextDisplay};
 
-#[user_command("Show profile", contexts = [Guild], ephemeral)]
-async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
-    let _ = ctx.command_path(); // "Show profile"
-    let _ = target.member; // None when the target is not a member of the guild, including outside a guild
-    Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
+#[derive(UserCommand)]
+#[user_command("Show profile", contexts = [Guild], response = ephemeral)]
+pub struct ShowProfile;
+
+impl ShowProfile {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
+        let _ = ctx.command_path(); // "Show profile"
+        let _ = target.member; // None when the target is not a member of the guild, including outside a guild
+        Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
+    }
 }
 
+#[derive(MessageCommand)]
 #[message_command("Report message")]
-async fn report(ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
-    let acked = r.defer(Ephemerality::Ephemeral).await?;
-    acked.edit_original(Components::new().push(TextDisplay::new("Reported."))).await?;
-    let _ = target.message.content;
-    Ok(acked.done())
+pub struct ReportMessage;
+
+impl ReportMessage {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
+        let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;          // this release: r.defer(..)
+        acked.edit_reply(Components::new().push(TextDisplay::new("Reported."))).await?;  // this release: edit_original
+        let _ = target.message.content;
+        Ok(acked.done())
+    }
 }
 
-let module = Module::new("mod").add(show_profile()).add(report());
+let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
 ```
 
-- The macro turns the fn into `fn show_profile() -> noctis::ContextMenuHandler` for
-  `Module::add`. `ContextMenuHandler` has `name()` (`module_path::fn`), `menu_name()`,
+- The derive builds a `noctis::ContextMenuHandler` descriptor for `Module::add::<X>()`
+  (this release: the macro turns a free fn into `fn show_profile() ->
+  noctis::ContextMenuHandler` for `Module::add`). `ContextMenuHandler` has `name()` (`module_path::fn`), `menu_name()`,
   `kind() -> noctis::MenuKind` (`User` / `Message`, from the macro: CTX-03; `.value()` 2 / 3,
   `.name()` `"USER"` / `"MESSAGE"`), `metadata() -> &CommandMetadata` and
   `ephemerality() -> Ephemerality`.
@@ -655,8 +782,9 @@ let module = Module::new("mod").add(show_profile()).add(report());
   name as its first argument: `#[user_command("Show profile")]` `` / `` … needs its menu
   name as a string literal ``), then the metadata arguments of §1 (`permissions`,
   `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
-  and the bare flag `ephemeral`. `key = "…"` (localization key), `opens_modal` (landed
-  for `#[command]` only), `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
+  and `response = public | ephemeral` (this release: the bare flag `ephemeral`).
+  `auto_defer` (this release: `opens_modal`, landed for `#[command]` only), `key = "…"`
+  (localization key), `rate_limit(..)`, `flags` and `apps` are [planned] here; `max_expansions` and other names are
   unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
@@ -666,8 +794,8 @@ let module = Module::new("mod").add(show_profile()).add(report());
   `(ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])` (or `ResolvedMessage`
   for `#[message_command]`) returning `HandlerResult<R>` like a slash Command (`R` a
   `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
-  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); returning a View
-  (Epic 8).
+  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); `ctx.respond(..)`
+  (Story 8.1).
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
   `Limits::context_menu_name_len`), path `""`, CTX-01 `Between{1,32}` / `Count(n)`;

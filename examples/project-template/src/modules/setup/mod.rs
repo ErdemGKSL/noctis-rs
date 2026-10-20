@@ -1,0 +1,144 @@
+// NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
+
+//! `/setup start`: a hand-written three-step setup flow (UD-4).
+//!
+//! The current step and every value picked so far travel in the Payloads of this
+//! module's Routes, so there is no listener, collector or per-message state (UD-7).
+//! `view.rs` renders a step from that state; `handlers.rs` decodes a click, checks it,
+//! and redraws with `ctx.update(render_setup(..))`.
+//! [planned: Story 6.11] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
+
+mod handlers;
+pub mod view;
+
+use noctis::BaseMeta;
+use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
+use noctis::prelude::*;
+use serde::{Deserialize, Serialize};
+
+/// The Module. `.base` declares the description of the `/setup` base command (FR-57),
+/// equal to `cmd.setup.description` in `locales/en-US.yaml`.
+pub fn module() -> Module {
+    Module::new("setup")
+        .base("setup", BaseMeta::new().description("Set up the bot for this server"))
+        .add::<handlers::SetupStart>()
+        .add::<SetupState>()
+        .add::<PickLogChannel>()
+        .add::<PickModRole>()
+        .add::<CancelSetup>()
+        .add::<FinishSetup>()
+}
+
+// ---------------------------------------------------------------------------------------
+// State and components (their `#[handler]` impls are in `handlers.rs`)
+// ---------------------------------------------------------------------------------------
+
+/// The steps, in order. One character in a Payload.
+#[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupStep {
+    Channel,
+    Role,
+    Confirm,
+}
+
+impl SetupStep {
+    pub const ALL: [Self; 3] = [Self::Channel, Self::Role, Self::Confirm];
+
+    /// 1-based position for "Step n of 3".
+    pub fn number(self) -> usize {
+        self as usize + 1
+    }
+}
+
+/// Back and Next: the whole flow state, with the step to show. `owner = owner` is a Route
+/// Guard: only the admin who ran the command can click (FR-19). The defaults are the
+/// Next button; Back overrides label and style per render.
+///
+/// Width (`noctis_route_width`): `setup: F 1 + route 5 + sep 1 + S 0 + N 0 + body 39 + T 0 = 46 (limit 100)`.
+#[derive(Button, Debug, Clone, Copy, PartialEq, Eq)]
+#[button(
+    "setup",
+    owner = owner, // [planned]: runtime arguments are rejected until their release
+    defaults(style = Primary, label = "setup.next"),
+)]
+pub struct SetupState {
+    pub owner: Id<UserMarker>,
+    pub step: SetupStep,
+    pub log_channel: Option<Id<ChannelMarker>>,
+    pub mod_role: Option<Id<RoleMarker>>,
+}
+
+/// Channel Select on the first step. Carries the rest of the state; the picked channel
+/// arrives in `ctx.values()`. Every select carries the per-render nonce (`N`), so the
+/// client always shows the server's default after a re-render (FR-25).
+///
+/// Width (`noctis_route_width`): `setup.ch: F 1 + route 8 + sep 1 + S 0 + N 2 + body 24 + T 0 = 36 (limit 100)`.
+#[derive(ChannelSelectMenu, Debug, Clone, Copy)]
+#[channel_select(
+    "setup.ch",
+    owner = owner, // [planned]: runtime arguments are rejected until their release
+    defaults(placeholder = "setup.channel_placeholder", channel_types = [GuildText]),
+)]
+pub struct PickLogChannel {
+    pub owner: Id<UserMarker>,
+    pub mod_role: Option<Id<RoleMarker>>,
+}
+
+/// Role Select on the second step.
+///
+/// Width (`noctis_route_width`): `setup.role: F 1 + route 10 + sep 1 + S 0 + N 2 + body 24 + T 0 = 38 (limit 100)`.
+#[derive(RoleSelectMenu, Debug, Clone, Copy)]
+#[role_select(
+    "setup.role",
+    owner = owner, // [planned]: runtime arguments are rejected until their release
+    defaults(placeholder = "setup.role_placeholder"),
+)]
+pub struct PickModRole {
+    pub owner: Id<UserMarker>,
+    pub log_channel: Option<Id<ChannelMarker>>,
+}
+
+/// Cancel, on every step.
+///
+/// Width (`noctis_route_width`): `setup.cancel: F 1 + route 12 + sep 1 + S 0 + N 0 + body 11 + T 0 = 25 (limit 100)`.
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "setup.cancel",
+    owner = owner, // [planned]: runtime arguments are rejected until their release
+    defaults(style = Secondary, label = "setup.cancel"),
+)]
+pub struct CancelSetup {
+    pub owner: Id<UserMarker>,
+}
+
+/// Finish on the last step. Only rendered once both values are set, so its fields are
+/// not `Option`s: the type proves the configuration is complete.
+///
+/// Width (`noctis_route_width`): `setup.done: F 1 + route 10 + sep 1 + S 0 + N 0 + body 35 + T 0 = 47 (limit 100)`.
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "setup.done",
+    owner = owner, // [planned]: runtime arguments are rejected until their release
+    defaults(style = Success, label = "setup.finish"),
+)]
+pub struct FinishSetup {
+    pub owner: Id<UserMarker>,
+    pub log_channel: Id<ChannelMarker>,
+    pub mod_role: Id<RoleMarker>,
+}
+
+// ---------------------------------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------------------------------
+
+/// What the flow saves. Stored through the `CacheStore` port here; a real bot keeps this
+/// in its own database behind a port or `State<T>`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct GuildConfig {
+    pub log_channel: Id<ChannelMarker>,
+    pub mod_role: Id<RoleMarker>,
+}
+
+pub fn config_key(guild: Id<GuildMarker>) -> String {
+    format!("guildcfg:{guild}")
+}

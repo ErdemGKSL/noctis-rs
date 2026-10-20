@@ -7,7 +7,7 @@ paradigm: 'hexagonal (ports and adapters) core over an event-driven, lane-based 
 scope: 'The noctis-rs monorepo: every noctis-* crate, the noctis facade, examples/project-template, xtask and CI'
 status: final
 created: '2026-10-19'
-updated: '2026-10-19'
+updated: '2026-10-20'
 binds: ['FR-1..FR-79', 'NFR-1..NFR-10', 'UD-1..UD-8']
 sources:
   - ../../prds/prd-noctis-rs-2026-10-19/prd.md
@@ -157,7 +157,8 @@ list in CI.
   - Limit values sit in one `Limits` struct with Discord's defaults and a
     `mode: Strict | Lenient` (default Strict). Lenient truncates text with `…` and
     warns; it never applies to structural rules (CV2-03, CV2-05, CV2-06, CID-01,
-    CID-02). Autocomplete choices are always truncated to 25 with a warning.
+    CID-02). Autocomplete suggestions are always truncated to 25, and their labels
+    to 100 characters, with a warning.
   - Every function that measures, packs or validates takes `&Limits`.
     `Limits::default()` is called only by App builder defaults, macros and tests.
   - Macros check against the defaults. A runtime override that lowers a limit makes
@@ -212,6 +213,9 @@ list in CI.
 ### AD-5 — `custom_id` wire format
 - **Binds:** `noctis-codec`, `noctis-core`, `noctis-ui`, `noctis-macros`; FR-15 to
   FR-19, FR-25, FR-60, FR-76; CID-01 to CID-07.
+- **Amended (2026-10-20):** the View envelope `E` and the `view` Route shape are
+  withdrawn with AD-20 (maintainer decision: no UI widgets). Tab, page and step ids
+  are ordinary Payload fields. Story 6.10 removes the shipped `E` code.
 - **Prevents:**
   - length miscounts from non-ASCII characters;
   - two encoders producing incompatible ids;
@@ -222,19 +226,20 @@ list in CI.
     quotes it:
 
     ```text
-    custom_id = F route ":" [S] [E] [N] body [T]
+    custom_id = F route ":" [S] [N] body [T]
 
     F      1 char    base62 digit = 16 * generation + flags
-                     flags: 1 = S present, 2 = E present, 4 = N present, 8 = T present
-                     v1 writes generation 0 (F < 16); F >= 16 is a CodecError
+                     flags: 1 = S present, 2 = reserved (must be 0), 4 = N present,
+                     8 = T present
+                     v1 writes generation 0 (F < 16); F >= 16 or flag 2 set is a
+                     CodecError
     route  1..24     [a-z0-9._-], unique per App; ids starting with "_" are reserved
-    S      1 char    Route schema version 1..=61 (#[route(schema = n)]); absent = 0
-    E      5 chars   View envelope (AD-20): action 1, tab 1, page 2, state version 1
+    S      1 char    Route schema version 1..=61 (`schema = n` on the kind attribute); absent = 0
     N      2 chars   per-render select nonce (FR-25); select Routes only
     body   inline    field ("," field)*
            by ref    "~" + 11 base62 Ref
     T      6 chars   integrity tag: base62 of truncated keyed BLAKE3 over all
-                     preceding chars; inline bodies of #[route(signed)] only
+                     preceding chars; inline bodies of `signed` Routes only
     ```
 
   - Decoding is total: malformed input gives `CodecError`, never a panic. A flag set
@@ -244,7 +249,7 @@ list in CI.
     unknown-Route path (FR-19).
   - Appending `Option<T>` fields is compatible: missing trailing fields decode as
     `None`, with no schema bump. Every other Payload change, and changing a Route's
-    `view`, `select`, `signed` or `by_ref` shape, bumps `schema`. Renaming a Route id
+    `select`, `signed` or `by_ref` shape, bumps `schema`. Renaming a Route id
     breaks live components.
   - Fields are base62 integers (signed ones zig-zag), snowflakes, 1-char enums and
     booleans, `Option` with a 1-char presence tag, and `BoundedStr<N>` (ASCII only,
@@ -258,12 +263,15 @@ list in CI.
     Cluster. One previous key may be configured for verification during rotation.
     It is never logged and never passed to an adapter.
   - The codec is the only code that builds or parses a `custom_id`. Its layout
-    constants (`FMT_LEN`, `SEP_LEN`, `SCHEMA_LEN`, `VIEW_ENV_LEN`, `NONCE_LEN`,
+    constants (`FMT_LEN`, `SEP_LEN`, `SCHEMA_LEN`, `NONCE_LEN`,
     `REF_MARKER_LEN`, `REF_LEN`, `TAG_LEN`) are `pub const`, and
     `xtask rules-catalog` asserts the catalog quotes the same values.
 
 ### AD-6 — Payload length is a compile-time property
 - **Binds:** `noctis-codec`, `noctis-macros`; FR-16, FR-17, FR-76; CID-01.
+- **Amended (2026-10-20):** the `view` codec argument and the `E` term are
+  withdrawn with AD-20; `#[route]` rejects `view` as an unknown argument (CID-03)
+  once Story 6.10 lands.
 - **Prevents:** a Route that overflows 100 characters only for some values, and a
   macro bound that disagrees with the real encoding.
 - **Rule:**
@@ -272,27 +280,51 @@ list in CI.
     `u32`/`i32` 6, `u64`/`i64`/`Id<T>` 11, `#[derive(PayloadEnum)]` (≤ 62 variants)
     1, `Option<T>` `T + 1`, `BoundedStr<N>` `2N`, `String`/`Vec<T>` `None`. A bot
     type joins by implementing `Field`.
-  - `#[derive(Route)]` on a struct implements `Route` and `Payload` for it. It never
+  - A kind derive (below) on a struct implements `Route` and `Payload` for it. It never
     inspects type names: it emits a `const` sum of `<F as Field>::MAX_LEN` plus
     `fields − 1` separators through codec `const fn`s. Generic Routes are rejected.
   - The bound is
-    `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + E + N + max(inline, by_ref)`,
+    `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + N + max(inline, by_ref)`,
     where `inline = Payload::MAX_ENCODED_LEN + T` and `by_ref = REF_MARKER_LEN + REF_LEN = 12`.
-    `S`, `E`, `N` and `T` count only when the Route declares them (1, 5, 2, 6).
-  - One attribute syntax. `#[route("id", …)]` takes two kinds of arguments, and
-    the derive rejects anything else:
-    - **Codec arguments** change the `custom_id` shape and length, and Story 2.5
-      derives them: `by_ref` or `overflow = spill`, `schema = n` (1..=61), `view`,
-      `select` (adds the `N` nonce; select constructors require it) and `signed`.
+    `S`, `N` and `T` count only when the Route declares them (1, 2, 6).
+  - One attribute per kind (amended 2026-10-20, maintainer decisions §7). A Route
+    is declared by the derive that names its component kind: `#[derive(Button)]`
+    with `#[button("id", …)]`, `#[derive(StringSelectMenu)]` with
+    `#[string_select("id", …)]`, likewise `UserSelectMenu`/`user_select`,
+    `RoleSelectMenu`/`role_select`, `MentionableSelectMenu`/`mentionable_select`,
+    `ChannelSelectMenu`/`channel_select`, and `#[derive(Modal)]` with
+    `#[modal("id", …)]` (the Payload is the fields without an input attribute). Each
+    implements `Route` and `Payload` with the length proof below. (Shipped as
+    `#[derive(Route)]` + `#[route("id", …)]`; Story 6.11 converts it, and the bare
+    derive leaves the public authoring surface.) The attribute takes the id, then
+    three kinds of arguments, and rejects anything else:
+    - **Codec arguments** change the `custom_id` shape and length (Story 2.5):
+      `by_ref` or `overflow = spill`, `schema = n` (1..=61) and `signed`. Every
+      select kind carries the `N` nonce (the bare `select` argument is withdrawn by
+      Story 6.11).
     - **Runtime arguments** don't change the encoding. The derive records them in an
-      associated `RouteRuntime` const that core reads: `ttl = "…"` and `one_shot`
-      (by_ref/spill Routes only; Story 7.5), `owner = field`, `permissions = …` and
-      `guard = path` (Route Guards; Story 7.7), and `opens_modal` (Story 7.8). Each
-      runtime argument enters the derive in the story named.
-  - `#[handler(…)]` takes only handler arguments: `response = update | ephemeral |
-    public` (Story 7.2), `on_expired = fn` and `on_stale = fn` (Story 7.3), and
-    `rate_limit(..)` (Story 13.4). Rate limits are declared on `#[command]` and
-    `#[handler]`, never on `#[route]`.
+      associated `RouteRuntime` const (and a defer-mode associated type, AD-11) that
+      core reads: `response = update | ephemeral | public` and `auto_defer = true |
+      false` (Story 7.2; AD-11), `ttl = "…"` and `one_shot` (by_ref/spill Routes
+      only; Story 7.5), `owner = field`, `permissions = …` and `guard = path` (Route
+      Guards; Story 7.7), and `rate_limit(..)` (Story 13.4). Each enters the derive
+      in the story named. Expired and stale handling are `#[on_expired]` /
+      `#[on_stale]` methods in the struct's `impl`, without `self` (Story 7.3).
+      `opens_modal` is not an argument anywhere (AD-11).
+    - **`defaults(..)`** is mandatory and holds the FR-59 component defaults (AD-19):
+      Button needs `style` and `label` or `emoji` (`disabled`), selects need
+      `placeholder` (`min_values`, `max_values`, `options = ChoicesEnum` for string
+      selects, `default_values`), a modal needs `title`. A missing block or required
+      key names the kind's required keys; an unknown key is a compile error; literal
+      values are checked against Discord's limits (CV2-08, CV2-09, MOD-01, …).
+  - The handler lives on its struct: `impl X { #[handler] async fn handle(self, ctx:
+    …) }` for every kind (components, modals, `#[derive(SlashCommand)]`,
+    `#[derive(UserCommand)]`, `#[derive(MessageCommand)]` and
+    `#[derive(EventHandler)]` structs). `#[handler]` takes **no arguments**; `self` is
+    the decoded value. Commands put `response = public | ephemeral`, `auto_defer`,
+    `rate_limit(..)` and their metadata on `#[command]`, `#[user_command]` or
+    `#[message_command]`; `#[autocomplete(field)]` methods take neither `response`
+    nor `auto_defer`. Free-function handlers are not part of the API.
   - An inline Route whose bound is `None` or over 100 doesn't compile; `by_ref`
     with `signed` doesn't compile. A `spill` Route encodes inline when the actual
     value fits, else by Ref. FR-17's "error" overflow policy is this compile-time
@@ -347,8 +379,9 @@ list in CI.
 - **Prevents:** a per-message listener, closure or timer, and hidden global mutable
   state.
 - **Rule:**
-  - A handler is an `async fn` taking the context, the decoded Payload or options,
-    and injected `State<T>`, `Ext<T>` and port handles.
+  - A handler is an `async fn handle(self, ctx, ..)` method on its struct (AD-6),
+    taking the decoded Payload or options as `self`, the context, and injected
+    `State<T>`, `Ext<T>` and port handles.
   - The framework never stores a closure, task or timer per message or component.
     Interactive state travels in Payloads and Refs, or the bot keeps it behind a port.
   - Mutable shared bot state goes in `State<T>` registered at build. There are no
@@ -394,38 +427,79 @@ list in CI.
 - **Rule:**
   - Handler kinds have their own context types (`CommandCtx`, `ComponentCtx`,
     `ModalSubmitCtx`, `AutocompleteCtx`), so the kind fixes the legal callbacks at
-    compile time (INT-04). `AutocompleteCtx` offers only `respond`.
-  - The full type is `Responder<K, S = Pending>`. `K` is the handler kind:
-    `Command<M>`, `Component<M>` or `ModalSubmit`, where `M` is `NoModal` (default)
-    or `OpensModal`. A handler that responds explicitly takes it as a parameter
-    through the aliases `CommandResponder<M = NoModal>`,
-    `ComponentResponder<M = NoModal>` and `ModalResponder`; a handler that returns a
-    View takes none. `Responder<Pending>` and `Responder<Acked>` in the rules below
-    mean `Responder<K, Pending>` and `Responder<K, Acked>` for any `K`.
-  - `Responder<Pending>` methods (`reply`, `defer`, `update`, `modal`) consume
-    `self` and return `Responder<Acked>`, which offers only `edit_original`,
-    `followup(msg, Visibility) -> FollowupHandle` and `delete_original` (INT-03);
-    `done()` turns it into the `Responded` value the handler returns. `update`
-    exists only for `Component` and `ModalSubmit`. `modal` exists only for
-    `Command<OpensModal>` and `Component<OpensModal>` (INT-05).
-  - `opens_modal` is declared on the `#[command]` or on the `#[route]` the handler
-    serves. The handler macro requires the `OpensModal` responder alias exactly when
-    it is declared (any mismatch is an INT-05 compile error), and the declaration
-    disables auto-defer for that handler.
+    compile time (INT-04). `AutocompleteCtx` has no response method and no Responder:
+    an `#[autocomplete(field)]` method returns `HandlerResult<Suggestions<T>>` and
+    Noctis sends callback type 8 itself (maintainer decisions §8).
+  - The full type is `Responder<K, S = Pending, D = AutoDefer>`. `K` is the handler
+    kind: `Command`, `Component` or `ModalSubmit`; `D` is the sealed defer mode,
+    `AutoDefer` (default) or `Manual`. A handler that responds explicitly takes it as
+    a parameter through the aliases `CommandResponder<D = AutoDefer>`,
+    `ComponentResponder<D = AutoDefer>` and `ModalResponder<D = AutoDefer>`; a
+    handler that only sends a rendered message through its context (below) takes
+    none. `Responder<Pending>` and `Responder<Acked>` in the rules below mean
+    `Responder<K, Pending, D>` and `Responder<K, Acked, D>` for any `K` and `D`.
+    (Amended 2026-10-20: the `M = NoModal | OpensModal` parameter of
+    `Command<M>`/`Component<M>` and the `opens_modal` declaration are replaced by `D`
+    and `auto_defer`; Story 6.10 converts the shipped code.)
+  - Method names and semantics follow discord.js interaction responses.
+    `Responder<Pending>` methods (`reply` type 4, `defer_reply` type 5, `update`
+    type 7, `defer_update` type 6, `show_modal` type 9) consume `self` and return
+    `Responder<Acked>`, which offers only `edit_reply`, `fetch_reply`,
+    `delete_reply` (all on `@original`) and `follow_up(msg, Visibility) ->
+    FollowupHandle` (INT-03); `done()` turns it into the `Responded` value the
+    handler returns. `update`/`defer_update` exist only for `Component` and
+    `ModalSubmit` (a modal not opened from a component message gets
+    `UpdateUnavailable` at run time). `show_modal` exists only for
+    `Responder<Command, Pending, Manual>` and `Responder<Component, Pending, Manual>`
+    (INT-05): it is bounded by a sealed trait whose
+    `#[diagnostic::on_unimplemented]` message reads `[INT-05] show_modal needs
+    auto_defer = false on this handler` (and notes that a modal submit can never open
+    a modal), so calling it on an `AutoDefer` responder or a `ModalResponder` is an
+    E0277 compile error.
+  - Every interaction handler declares `auto_defer = true | false` (default `true`)
+    with its registration arguments: on `#[command]`, `#[user_command]` or
+    `#[message_command]`, or on the kind attribute of a component or modal
+    (`#[button(..)]`, `#[string_select(..)]`, `#[modal(..)]`, …; AD-6). `#[autocomplete]` rejects it (INT-06: autocomplete has no defer).
+    The derive emits the mode as an associated type and the `#[handler]`
+    method macro emits a trait-bound assertion between it and the responder parameter, so
+    the INT-05 match below is still a compile error even though the two attributes
+    are on different items. `auto_defer = false` arms no auto-defer for
+    that handler; the handler may still call `defer_reply`/`defer_update`, and one
+    that has not answered by the 3 s deadline logs an error naming it. The handler
+    macro requires the `Manual` responder alias exactly when `auto_defer = false` is
+    declared, and the reverse (any mismatch is an INT-05 compile error). The deadline
+    stays App-wide (`AppBuilder::ack_deadline`, default 2000 ms).
   - A runtime state machine (an atomic shared by the handler and the auto-defer
     task) covers what types can't: when the auto-defer wins, a `Pending` call becomes
-    `edit_original`; follow-ups are counted (5 for user-installed apps, INT-11); after
+    `edit_reply`; follow-ups are counted (5 for user-installed apps, INT-11); after
     15 minutes calls return `TokenExpired` without an HTTP request (INT-02).
-  - Ephemerality is declared at registration (default: public for Commands,
-    update-in-place for components); the auto-defer uses it. Commands defer with
-    type 5 (only `EPHEMERAL`), components and modal submits with type 6; the V2 flag
-    goes on the edit (INT-08).
-  - A handler that returns a View gets the right callback without author code
-    (FR-61). The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
+  - Each handler declares its default response at registration with one argument,
+    `response = …`, checked at compile time; the auto-defer and the default
+    ephemerality of `reply(msg)`/`defer_reply()` use it (`reply_as(msg, e)` and
+    `defer_reply_as(e)` override per call). Commands and context menus: `public`
+    (default) or `ephemeral`, auto-defer type 5 with only `EPHEMERAL` when declared
+    (`update` is an INT-04 compile error). Components and component-opened modal
+    submits: `update` (default, auto-defer type 6), `ephemeral` or `public`
+    (auto-defer type 5, new message). A modal submit without a source message (a
+    slash-opened modal) can only be `public` or `ephemeral`; since the opener is not
+    known at compile time, a declared `update` there falls back to type 5 public for
+    the auto-defer and `update`/`defer_update` return `UpdateUnavailable`. `response`
+    is independent of `auto_defer`. The V2 flag goes on the edit (INT-08).
+  - A View is a plain author-written function returning a message (FR-25); there is
+    no View trait or registry and core never re-renders on its own. The handler
+    context offers an ergonomic layer over the typestate (FR-61):
+    `ctx.respond(msg)` (new message, or follow-up after a defer), `ctx.update(msg)`
+    (edit the component's message; `Component`/`ModalSubmit` only; on a submit of a
+    slash-opened modal, which has no message, it returns `UpdateUnavailable` without a
+    request and never falls back to a new message: use `ctx.respond`) and
+    `ctx.reply_text(text)` (a one-line notice, ephemeral by default). Each picks the
+    callback type, defer variant and flags from the declared ephemerality and the
+    runtime state machine, so the author never selects a response type. The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
     finalizes Refs (AD-18) and attachments (AD-22), and runs the runtime validator.
   - Webhook sends and edits go through the same serializer: always
     `with_components=true`, per-endpoint flag sets, and `ForeignWebhook::send` takes
-    only a non-interactive `StaticView` (WH-02).
+    only a non-interactive `StaticMessage` (WH-02; renamed from `StaticView` on
+    2026-10-20, since Views are plain functions).
 
 ### AD-12 — Noctis owns the Components V2 model
 - **Binds:** `noctis-ui`, `noctis-core`; FR-23 to FR-31, FR-63, FR-64; CV2-*,
@@ -593,7 +667,7 @@ list in CI.
 - **Prevents:**
   - runtime "missing key" surprises and placeholder mismatches;
   - command names and content using different sources;
-  - widgets hard-coding English or each crate defining its own `Locale`;
+  - framework strings hard-coding English or each crate defining its own `Locale`;
   - an overlay changing a published command name.
 - **Rule:**
   - `i18n!(default = "en-US", dir = "locales")` compiles the crate's locale files
@@ -613,8 +687,9 @@ list in CI.
     `noctis-i18n` for the built-in `noctis.*` strings, so the `core → i18n` edge is
     unconditional.
   - `Locale` (the closed 32-code enum), `MessageKey` and `trait Translate` live in
-    `noctis-rules`. Widgets in `noctis-ui` take `&dyn Translate` and use only keys
-    under the reserved `noctis.` namespace. `noctis-i18n` implements `Translate` and
+    `noctis-rules`. Framework-emitted strings (default notices and errors) go
+    through `&dyn Translate` and use only keys under the reserved `noctis.`
+    namespace. `noctis-i18n` implements `Translate` and
     ships default `noctis.*` strings.
   - Each Module's catalog is a descriptor. `App::build` merges catalogs per
     language; a key defined by two Modules fails with an error naming both (FR-72).
@@ -664,18 +739,18 @@ list in CI.
 
 ### AD-18 — Refs are minted in two phases
 - **Binds:** `noctis-codec`, `noctis-ui`, `noctis-core`, `noctis-ports`; FR-17,
-  FR-27, FR-58.
-- **Prevents:** a pure View minting a dangling Ref, a crate below core touching
-  `RefStore`, and widgets that can't delete their Refs.
+  FR-58.
+- **Prevents:** a pure render function minting a dangling Ref, a crate below core
+  touching `RefStore`, and pure code that can't delete its Refs.
 - **Rule:**
   - `noctis-codec` defines `EncodedId = Inline(ArrayString<100>) | RefSlot(PendingRef)`
     with `PendingRef { route, schema, payload: Bytes, ttl, one_shot }`. `noctis-ui`
-    and widgets produce only `EncodedId`; they never generate Ref characters.
+    and render functions produce only `EncodedId`; they never generate Ref characters.
   - Before validation and send, core's Responder stores each `RefSlot` with
     `RefStore::put_if_absent` (retrying on collision) and calls
     `codec::finish(slot, ref)` for the final `custom_id`. Identical slots in one
     message share one Ref.
-  - Ref deletions requested by pure code (Wizard cancel) are a `RefOps` list on the
+  - Ref deletions requested by pure code (a step flow's cancel) are a `RefOps` list on the
     returned response; only core executes them. One-shot Refs are consumed with
     `take`.
   - No crate below `noctis-core` holds a `RefStore` handle.
@@ -687,38 +762,44 @@ list in CI.
   components pointing at Routes with no handler.
 - **Rule:**
   - `noctis-codec` defines `trait Route { const ID: RouteId; const SHAPE: RouteShape; const SCHEMA: u8; type Payload: Payload; }`,
-    the `Payload` and `Field` traits and the codec. `#[derive(Route)]` implements
+    the `Payload` and `Field` traits and the codec. The kind derives (AD-6) implement
     exactly these.
-  - `noctis-ui` builds every component from `R: Route` plus an `R::Payload` value
-    (`BuyButton { .. }.button()`); there is no string `custom_id` constructor. Route
-    component defaults (FR-59) are an associated const on `noctis-ui`'s
-    `ComponentRoute`; per-render overrides apply, then the Limits check.
-  - Component constructors require `R: Handled`, which only the handler macro
-    implements (compile-time half of FR-58). `noctis-core` binds handlers by `R::ID`
+  - `noctis-ui` builds every component from `R: Route` plus an `R::Payload` value;
+    there is no string `custom_id` constructor. The kind derive (AD-6) stores the
+    mandatory `defaults(..)` as an associated const on `noctis-ui`'s
+    `ComponentRoute`, and `R { .. }.build()` emits that kind from the defaults with
+    the value's Payload as the `custom_id` (tescord's `buildComponent({ id, data,
+    overrides })`). Chainable typed overrides replace one field each (`.label(..)`,
+    `.emoji(..)`, `.style(..)`, `.disabled(..)`, `.placeholder(..)`, `.options(..)`,
+    `.default_values(..)`, `.min_values(..)`, `.max_values(..)`; modals `.title(..)`
+    and `.value(field, ..)`), then the Limits check runs at run time (Strict or
+    Lenient). A string select with no `options` in its defaults returns a builder
+    whose typestate requires `.options(..)` before it becomes a component; a modal
+    built from a value pre-fills its inputs with the value's fields, and
+    `X::blank(<payload fields>)` builds one with empty inputs. Link and Premium
+    buttons have no Route and stay plain builders (`LinkButton::new(url)`). (Amended
+    2026-10-20: the per-kind `.button()`/`.string_select(..)`/… constructors are
+    folded into `.build()`; Story 6.11 converts the shipped ones.)
+  - `.build()` requires `R: Handled`, which only the `#[handler]` method macro
+    implements (compile-time half of FR-58, CID-04). `noctis-core` binds handlers by `R::ID`
     in their own descriptor; `App::build` fails when a Route referenced by a mounted
     Module's descriptors has no mounted handler (dynamic half).
 
-### AD-20 — Widget state rides the View's own Route
-- **Binds:** `noctis-ui`, `noctis-codec`, `noctis-core`; FR-25 to FR-28, FR-62,
-  UD-4 to UD-6.
-- **Prevents:** widgets registering framework Routes that collide with bot Routes,
-  runtime-appended fields breaking the proven length, and modal-opening widget
-  controls on Routes the author didn't declare.
-- **Rule:**
-  - Widgets never register Routes. Every control (tab, page, jump, wizard
-    next/back/cancel, page indicator) encodes to the owning View's Route, declared
-    `#[route("id", view)]`, through the `E` envelope (AD-5): action (`_` author,
-    `t` tab, `p` page, `j` jump, `n`/`b`/`c` wizard, `i` inert indicator), tab, page
-    and state version.
-  - Core handles widget actions by re-rendering the View with the new tab, page or
-    step; action `_` goes to the author's handler.
-  - Jump-to-page is a String Select, never a modal.
-  - A View with a state version (FR-25) re-renders from current state with a notice
-    when the incoming version is older.
-  - Controls differ by envelope, so ids in one message are unique (CID-02); the
-    runtime validator still checks.
-  - Wizard step state travels in the Payload when it fits; otherwise the View Route
-    is `overflow = spill`.
+### AD-20 — Widget state rides the View's own Route — Withdrawn (2026-10-20)
+- **Status:** Withdrawn by maintainer decision (2026-10-20). Noctis ships no UI
+  widgets (Navbar, Wizard, Paginator; FR-26 to FR-28 withdrawn), no
+  framework-managed widget state, no `view` Route shape, no `E` envelope in
+  `custom_id` (AD-5), no widget actions, no View state versions and no automatic
+  re-render by core. The id is kept so references stay stable.
+- **Replacement:** a View is a plain author-written function returning a message
+  (FR-25), as in the maintainer's TypeScript bot. Tab, page, step and selection
+  ids are ordinary typed fields of the module's own Route Payloads (a
+  `#[derive(PayloadEnum)]` tab, a `page: u16`), so AD-6 proves their width like
+  any other field. The handler decodes the Payload, validates and authorizes,
+  writes storage and calls `ctx.update(render_x(..))` (AD-11). Distinct Payloads
+  keep the ids in one message unique (CID-02); the runtime validator still checks.
+  Story 6.10 removes the shipped envelope code from `noctis-codec`,
+  `noctis-macros`, `noctis-ui`, the facade, the rules catalog and the Usage Skill.
 
 ### AD-21 — Gateway lifecycle: startup safety, sessions and shutdown order
 - **Binds:** `noctis-gateway`, `noctis-core`; FR-1 to FR-4, FR-53 to FR-55;
@@ -835,7 +916,7 @@ list in CI.
     4. locale resolution, including the App's optional `LocaleResolver`;
     5. rate-limit `incr_with_ttl` (FR-46);
     6. auto-defer armed at `received_at + ack_deadline` (default 2000 ms) unless
-       `opens_modal`;
+       the handler declares `auto_defer = false`, shaped by its declared `response`;
     7. before-Middleware, parent Module first, then registration order (may override
        locale, insert Extensions or stop);
     8. Route Guards;
@@ -960,15 +1041,30 @@ list in CI.
 - **Prevents:** an API that is idiomatic but foreign to the target author, so that
   migrating from tescord becomes a rewrite.
 - **Rule:**
-  - A Command is an `async fn` with its Command Path or Pattern:
-    `#[command("settings logs channel")]`. Word count decides command, subcommand
-    or group. Static commands have no builder trees. Context-menu commands use
-    `#[user_command]` and `#[message_command]`.
+  - One struct = its id + typed data + its handler (amended 2026-10-20, maintainer
+    decisions §7). A Command is a `#[derive(SlashCommand)]` struct whose fields are
+    its typed options (a unit struct when it has none), with its Command Path or
+    Pattern on `#[command("settings logs channel")]` and its handler in `impl X {
+    #[handler] async fn handle(self, ctx: CommandCtx) }`. Word count decides command,
+    subcommand or group. Static commands have no builder trees. Context menus use
+    `#[derive(UserCommand)]`/`#[user_command]` and
+    `#[derive(MessageCommand)]`/`#[message_command]`; components the kind derives
+    (`Button`, `StringSelectMenu`, …), modals `#[derive(Modal)]`, events
+    `#[derive(EventHandler)]`, all with the same `#[handler]` method. Free-function
+    handlers are not part of the API.
   - A Module is the unit a tescord Pack maps to: `Module::new("a/b")` collects
-    commands, Routes, event handlers, Middleware and hooks; Modules merge by base
-    word (FR-9).
-  - Components are built from Route values (`BuyButton { .. }.button()`), the typed
-    counterpart of tescord's `buildComponent`.
+    commands, Routes, event handlers, Middleware and hooks, registered by type
+    (`Module::add::<T>()`); Modules merge by base word (FR-9).
+  - Components are built from Route values (`BuyButton { .. }.build()`, the kind and
+    mandatory defaults declared by the derive), the typed counterpart of tescord's
+    `buildComponent`.
+  - Autocomplete (amended 2026-10-20, maintainer decisions §8): an option carries the
+    bare `autocomplete` flag, and the struct's `impl` holds the paired
+    `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled:
+    Partial<Self>) -> HandlerResult<Suggestions<T>>` method, `T` being the field's type.
+    The derive checks the pairing at compile time: a flag without a method, a method
+    without a flag or naming an unknown field (OPT-11), the flag on a `Choices` field
+    (OPT-10), and a `Suggestions<T>` whose `T` differs from the field type are errors.
   - Publish needs no registration code, but it is diff-based and runs only in the
     publisher process or the CLI mode (FR-13), never on Shard ready.
   - Names follow tescord where the concept exists (Module ≈ Pack, Route, Ref,
@@ -976,27 +1072,35 @@ list in CI.
   - Where tescord's behavior and Discord's rules disagree, Noctis follows Discord
     and fails at compile time.
 
-### AD-27 — The UI Doctrine is built into `noctis-ui`
+### AD-27 — The UI Doctrine is taught, not built in (amended 2026-10-20)
 - **Binds:** `noctis-ui`, `noctis-core`, `noctis-image`, Project Template, Usage
-  Skill; UD-1 to UD-6, FR-25 to FR-28, FR-61, FR-62.
-- **Prevents:** built-in widgets or examples drifting from the doctrine, and lists
-  that fail on Limits instead of paginating.
+  Skill; UD-1 to UD-6, FR-25, FR-61, FR-62.
+- **Prevents:** examples and recipes drifting from the doctrine, a widget layer
+  that hides cost and state from the author, and lists that hit a Limit at
+  runtime because the author had no way to size a page.
+- **Amended (2026-10-20):** formerly "The UI Doctrine is built into `noctis-ui`",
+  with built-in `View`, `Navbar`, `Wizard` and `Paginator` widgets and a default
+  paginating Overflow Policy. Those are withdrawn (FR-26 to FR-28, AD-20); the
+  rule below replaces them.
 - **Rule:**
-  - Built-in widgets (`View`, `Navbar`, `Wizard`, `Paginator`) produce only V2
-    messages. Legacy `content` and embeds exist only behind `LegacyMessage`
-    (UD-1).
-  - Rendered images enter Views only as Thumbnail or Media Gallery attachments and
-    never carry actionable information (UD-2).
-  - A Command with no options and a View-returning handler needs no response code
-    (UD-3, FR-61).
-  - `Wizard` shows "Step n of m: Title" progress, never page numbers (UD-4).
-    `Navbar` is a top Action Row of View-Route buttons with the active tab disabled;
-    more tabs than one row holds is a typed error (UD-5).
-  - The default Overflow Policy paginates (UD-6, FR-62): the Paginator reserves the
-    Chrome's cost, packs items against the App's `Limits`, and paginates inside the
-    active Navbar tab. Only an item that can't fit beside the Chrome is a typed
-    error. `Error` and `Truncate` are opt-in.
-  - Views default to `allowed_mentions.parse = []` (MSG-05).
+  - `noctis-ui` is a Components V2 wrapper, not a widget toolkit: typed components
+    with placement in the type system, the runtime validator, per-component and
+    per-message cost, and budget helpers (FR-62) that report how many items of a
+    given shape still fit beside a partly built message. It never paginates,
+    truncates or splits a message on its own; an over-Limit message is the FR-24
+    error.
+  - V2 is the only interactive output; legacy `content` and embeds exist only
+    behind `LegacyMessage` (UD-1).
+  - Rendered images enter messages only as Thumbnail or Media Gallery attachments
+    and never carry actionable information (UD-2).
+  - A Command with no options whose handler calls `ctx.respond(render_x(..))`
+    needs no response-type code (UD-3, FR-61).
+  - Step flows, tabs and pagination (UD-4 to UD-6) are recipes in the Usage Skill
+    (`references/views-and-recipes.md`) with complete code, and the Project
+    Template's modules implement them by hand: a `step`, tab (`PayloadEnum`) or
+    `page: u16` Payload field, a `match` in the render function, Route buttons with
+    the active tab disabled and prev/next disabled at the bounds.
+  - Messages default to `allowed_mentions.parse = []` (MSG-05).
   - `xtask skill-check` also lints the Project Template for doctrine violations
     (embeds or `content` in interactive surfaces, manual response-type selection).
 
@@ -1093,14 +1197,14 @@ list in CI.
 | Concern | Convention |
 | --- | --- |
 | Crate naming | `noctis-<area>`, lib name `noctis_<area>`; facade feature names equal the area (`image`, `prefix`, `i18n`, `testkit`), plus `image-gif`, `image-emoji` and `default-font` |
-| Route ids | `[a-z0-9._-]{1,24}` ASCII, set by `#[route("id")]`, stable across releases; ids starting with `_` are reserved; renaming one breaks live components |
+| Route ids | `[a-z0-9._-]{1,24}` ASCII, set by the kind attribute (`#[button("id", ..)]`, …), stable across releases; ids starting with `_` are reserved; renaming one breaks live components |
 | Module ids | path-like `a/b/c`, unique per App |
 | App ids | `[a-z0-9-]{1,32}`, identical across a Cluster |
 | Rule ids | `<AREA>-<nn>` as assigned in `docs/discord-rules.md`, shared by code, error messages, docs and tests; new rules take the next number; ids are never reused |
 | Text length | `noctis_rules::len::discord_len` for user text; framework-encoded strings are ASCII |
 | Compile errors | `[<RULE-ID>] <what is wrong>`, `= note:` lines with the derivation, a `= help:` line with a concrete fix, span on the offending token |
 | BuildError | lists every violation; each names the rule id, the Module(s) and the actual vs allowed value; `--publish --dry-run` runs the same checks |
-| Options | `derive(Options)` rejects a required field after an optional one (OPT-01); it never reorders |
+| Options | `derive(SlashCommand)` (shipped as `derive(Options)`) rejects a required field after an optional one (OPT-01); it never reorders |
 | Errors | `thiserror` enum per crate, named `<Area>Error`; `HandlerError` is the only type-erased public error |
 | Async | tokio only; public async APIs are `async fn` or return `impl Future + Send`; no blocking calls in async |
 | Ids and time | twilight `Id<Marker>` everywhere; durations are `std::time::Duration`; timestamps are UTC; deadlines measure from `Inbound::received_at` |
@@ -1163,7 +1267,7 @@ noctis-rs/
     noctis/                  # facade: re-exports, features, prelude (incl. feature extension traits)
     noctis-rules/            # Discord limits and validators (rule ids), Limits, Locale, MessageKey, Translate
     noctis-codec/            # custom_id layout, Route/Payload/Field traits, EncodedId, RefRecord, BoundedStr
-    noctis-ui/               # V2 and modal model, Attachment, validator, View/Navbar/Wizard/Paginator
+    noctis-ui/               # V2 and modal model, Attachment, validator, cost and budget helpers
     noctis-ports/            # port traits incl. DiscordCache, Template/RenderJob/Renderer seam, memory defaults
     noctis-gateway/          # shard tasks, lanes, Inbound, identify, SessionStore writer
     noctis-core/             # App, Runtime, Plugin, Dispatcher, Module, Registry, pipeline, workers, Responder, HTTP client, publish
@@ -1238,7 +1342,8 @@ flowchart LR
 | FR-15 to FR-17, FR-58 to FR-60 Routes, Payloads, Refs, route-bound components, defaults, evolution | noctis-codec, noctis-ui, noctis-core | AD-5, AD-6, AD-18, AD-19 |
 | FR-18 to FR-22 Expired Handler, untrusted input, Middleware, auto-ack, error routing | noctis-core | AD-23, AD-11, AD-13 |
 | FR-23, FR-24, FR-29, FR-31, FR-63, FR-64 V2 builders, Limits, modals, raw escape hatch, pre-fill, Radio/Checkbox | noctis-ui, noctis-rules, noctis-macros (`components!`) | AD-12, AD-3, AD-4, AD-11 |
-| FR-25 to FR-28, FR-61, FR-62 Views, Navbar, Wizard, Paginator, View responses and overflow | noctis-ui, noctis-core | AD-20, AD-27, AD-11 |
+| FR-25, FR-61, FR-62 Views as plain render functions, Responder ergonomics (`respond`/`update`/`reply_text`), cost and budget helpers | noctis-ui, noctis-core | AD-27, AD-11, AD-12 |
+| FR-26 to FR-28 Navbar, Wizard, Paginator — Withdrawn (2026-10-20); Usage Skill recipes only | Usage Skill, Project Template | AD-20 (withdrawn), AD-27 |
 | FR-30 attachments | noctis-ui, noctis-core | AD-22 |
 | FR-65 Views over webhooks | noctis-core, noctis-ui | AD-11, AD-12 |
 | FR-32 to FR-37, FR-66 to FR-70 Templates, formats, render pool, fonts, cache, Renderer seam, Tailwind, remote images, emoji, animation, caps | noctis-image, noctis-macros, noctis-ports, noctis-core (`Plugin`, `Runtime`) | AD-15, AD-22, AD-24 |
@@ -1250,7 +1355,7 @@ flowchart LR
 | FR-51 testing kit | noctis-testkit | AD-10, AD-14, AD-24, AD-25 |
 | FR-74 launch documentation | docs, CI | AD-28, AD-26 |
 | FR-75 to FR-79 enforcement points, provable length, compile-time commands and trees, rules catalog | noctis-rules, noctis-macros, noctis-codec, docs | AD-3, AD-4, AD-5, AD-6, AD-8 |
-| UD-1 to UD-6 UI Doctrine | noctis-ui, Project Template | AD-27, AD-20 |
+| UD-1 to UD-6 UI Doctrine (author-implemented; recipes in the Usage Skill) | Usage Skill, Project Template, noctis-ui (validator, budget helpers) | AD-27 |
 | UD-7, NFR-2 no per-message state | noctis-core | AD-9, AD-25 |
 | UD-8, NFR-1, NFR-9 allocation and memory budgets | noctis-core, noctis-codec | AD-25 |
 | NFR-3 latency benchmarks (event mix, reference card) | noctis-core benches | AD-25, AD-28 |
