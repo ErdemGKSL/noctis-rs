@@ -298,12 +298,14 @@ there is one style only.
 The option carries a bare `autocomplete` flag; the suggestions come from a method on the
 same command struct, named by `#[autocomplete(field)]`. Noctis sends the response.
 
-The snippet is the approved shape of the option and the method. Its `defaults(description
-= ..)` on `#[command]` is not part of this decision: command metadata follows §7.
+Commands have no `defaults(..)` block: that block exists only for components and modals,
+whose rendered fields can be overridden per render. Command metadata is fixed at
+registration, so it is written directly: `#[command("warn", description = "warn.desc", ..)]`
+(a locale key with the `i18n` feature, a literal otherwise; §7).
 
 ```rust
 #[derive(SlashCommand)]
-#[command("warn", response = ephemeral, defaults(description = "warn.desc"))]
+#[command("warn", description = "warn.desc", response = ephemeral)]
 struct Warn {
     #[option(description = "warn.user")]
     user: ResolvedUser,
