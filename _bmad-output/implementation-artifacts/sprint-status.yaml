@@ -91,7 +91,7 @@ development_status:
   6-6-automatic-deferral-token-lifetime-and-follow-up-cap: done
   6-7-autocomplete: done
   6-8-user-facing-errors-built-in-notices-and-panics-as-responses: done
-  6-9-publish-with-diff-dry-run-and-cli-modes: backlog
+  6-9-publish-with-diff-dry-run-and-cli-modes: in-progress
   epic-6-retrospective: optional
 
   epic-7: backlog

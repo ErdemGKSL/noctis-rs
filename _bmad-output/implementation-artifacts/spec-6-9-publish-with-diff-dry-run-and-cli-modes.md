@@ -2,7 +2,8 @@
 title: 'Story 6.9: Publish with diff, dry run and CLI modes'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '2fa651644f2ba08422500432c4a2c81feeaf2830'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
