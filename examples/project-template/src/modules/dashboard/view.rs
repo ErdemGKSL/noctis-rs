@@ -47,7 +47,7 @@ pub fn render_dashboard(
     // The tab row: one Route button per tab, the active one disabled (UD-5).
     let tabs = ActionRow::buttons(DashTab::ALL.map(|t| {
         OpenTab { guild: data.guild, tab: t }
-            .button()
+            .build()
             .label(match t {
                 DashTab::Overview => s.dashboard.tab.overview(),
                 DashTab::Roles => s.dashboard.tab.roles(),
@@ -141,13 +141,10 @@ fn page_line(s: &Strings, page: u16, pages: u16) -> TextDisplay {
 /// their target pages differ, so their ids are unique in the message (CID-02).
 fn pager(data: &DashData, s: &Strings, page: u16, pages: u16) -> ActionRow {
     let prev = TurnPage { guild: data.guild, page: page.saturating_sub(1) }
-        .button()
+        .build()
         .label(s.common.previous())
         .disabled(page == 0);
-    let next = TurnPage { guild: data.guild, page: page + 1 }
-        .button()
-        .label(s.common.next())
-        .disabled(page + 1 >= pages);
+    let next = TurnPage { guild: data.guild, page: page + 1 }.build().disabled(page + 1 >= pages);
     ActionRow::buttons([prev, next])
 }
 
@@ -160,7 +157,7 @@ fn module_row(data: &DashData, s: &Strings, module: ModuleKey, enabled: bool) ->
     };
     let state = if enabled { s.common.enabled() } else { s.common.disabled() };
     let toggle = ToggleModule { guild: data.guild, module, enable: !enabled }
-        .button()
+        .build()
         .label(if enabled { s.common.disable() } else { s.common.enable() })
         .style(if enabled { ButtonStyle::Danger } else { ButtonStyle::Success });
     Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle).into()

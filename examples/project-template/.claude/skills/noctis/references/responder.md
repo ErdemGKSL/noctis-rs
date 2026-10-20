@@ -19,7 +19,7 @@ A Command handler (`#[command]`, `#[user_command]`, `#[message_command]`) return
 | Handler returns | Command | Component / modal submit [planned, Epic 7] |
 | --- | --- | --- |
 | `V2Message` or `Components` (`noctis::ui`) | new message (public, or ephemeral if declared) | — |
-| `V2Message` from a component or modal handler [planned, Epic 7] | — | **updates the message in place** (or a new message with `#[handler(response = ephemeral \| public)]`) |
+| `V2Message` from a component or modal handler [planned, Epic 7] | — | **updates the message in place** (or a new message with `response = ephemeral \| public` on its kind attribute) |
 | `LegacyMessage` | plain `content` notice (not for interactive UI, UD-1) | typed error if it would turn a V2 message back to legacy |
 | `()` | **does not compile**: a command must answer (E0277 `` `()` is not a Command response ``, pointing at the return type) | acknowledges with a deferred update; the message stays as it is |
 | `Responded` (from `acked.done()`) | you answered through the Responder | same |
@@ -46,26 +46,34 @@ The handler context answers in one call and picks the callback type, deferral, f
 and ephemerality itself. Each returns `HandlerResult<Responded>`; return it.
 
 ```rust
+#[derive(SlashCommand)]
 #[command("dashboard", description = "Open the server dashboard", contexts = [Guild])]
-async fn dashboard(ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
-    let data = db.dashboard(ctx.guild_id()).await?;
-    ctx.respond(render_dashboard(&data, &Strings::of(ctx.response_locale()), DashTab::Overview)).await
+pub struct Dashboard;
+
+impl Dashboard {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
+        let data = db.dashboard(ctx.guild_id()).await?;
+        ctx.respond(render_dashboard(&data, &Strings::of(ctx.response_locale()), DashTab::Overview)).await
+    }
 }
 
-#[handler]
-async fn open_tab(ctx: ComponentCtx, to: OpenTab, db: State<Db>) -> HandlerResult<Responded> {
-    if !db.owns(ctx.guild_id(), to.guild).await? {
-        return ctx.reply_text(keys::NOT_FOUND).await;          // ephemeral one-liner
+impl OpenTab {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
+        if !db.owns(ctx.guild_id(), self.guild).await? {
+            return ctx.reply_text(keys::NOT_FOUND).await;          // ephemeral one-liner
+        }
+        let data = db.dashboard(Some(self.guild)).await?;
+        ctx.update(render_dashboard(&data, &Strings::of(ctx.response_locale()), self.tab)).await
     }
-    let data = db.dashboard(Some(to.guild)).await?;
-    ctx.update(render_dashboard(&data, &Strings::of(ctx.response_locale()), to.tab)).await
 }
 ```
 
 | Method | On | Sends |
 | --- | --- | --- |
 | `ctx.respond(msg)` | every interactive context | a new message: the initial response (type 4, declared ephemerality) while unanswered; the edit of the deferred original after a Command's auto-defer; a follow-up (declared visibility) once answered |
-| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx` (not `CommandCtx`: E0599, INT-04) | an edit of the message the component lives on: type 7 while unanswered, `edit_original` after the type-6 auto-defer |
+| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx` (not `CommandCtx`: E0599, INT-04) | an edit of the message the component lives on: type 7 while unanswered, `edit_original` after the type-6 auto-defer; on a submit of a modal opened from a slash command (no message to edit) it sends a new public message, like the auto-defer's fallback |
 | `ctx.reply_text(text)` | every interactive context | one Text Display, **ephemeral** unless `.public()`; the initial response, or an ephemeral follow-up once answered or deferred. `text` is a `String`, a `&'static str` or a `MessageKey` (localized) |
 
 All three add `IS_COMPONENTS_V2`, validate against the Limits and ping nobody (MSG-05).
@@ -85,7 +93,12 @@ interaction (queueing time counts), Noctis defers it for you:
   environment variable for it.
 - commands: exactly `{"type":5}`, or `{"type":5,"data":{"flags":64}}` when the Command is
   declared `ephemeral` (INT-08); the V2 flag goes on the later edit;
-- [planned, Epic 7] components and modal submits: type 6 (no loading state).
+- [planned, Epic 7] components and component-opened modal submits: type 6 (no loading
+  state) with the default `response = update`, type 5 with `response = ephemeral |
+  public`.
+
+The deadline is App-wide; whether a handler is auto-deferred at all is per handler
+(`auto_defer`, §2b).
 
 One gate serializes every initial response, so at most one callback is ever sent
 (INT-03): whichever of your handler and the timer gets there first answers. After the
@@ -95,9 +108,87 @@ auto-defer, your `reply(msg)` or returned message becomes an edit of the origina
 "interaction failed". The timer stops when your handler returns, fails, panics or is
 cancelled.
 
-`opens_modal` Commands are never auto-deferred (a modal must be the first response,
-INT-05); if one has not answered within the 3 s deadline (2.9 s), Noctis logs one
-`error` on target `noctis::dispatch` naming `handler` and `module`.
+Handlers declared `auto_defer = false` are never auto-deferred (a modal must be the
+first response, INT-05); if one has not answered within the 3 s deadline (2.9 s), Noctis
+logs one `error` on target `noctis::dispatch` naming `handler` and `module`.
+
+## 2b. `auto_defer` and `response`: pick per handler [planned: Story 6.10]
+
+Every interaction handler declares two things on its own attribute, both checked at
+compile time:
+
+- `auto_defer = true | false` (default `true`): whether Noctis defers it at the
+  deadline. Allowed on `#[command]`, `#[user_command]`, `#[message_command]` and on a
+  component's or modal's kind attribute (`#[button(..)]`, `#[string_select(..)]`, …,
+  `#[modal(..)]`; [planned, Story 7.2/7.8]). `#[handler]` itself takes no arguments.
+  Never on `#[autocomplete]` (no defer exists for it: `[INT-06]` compile error).
+- `response = …`: what the (auto-)defer and the default reply look like. Commands and
+  context menus: `public` (default) or `ephemeral`. Components and component-opened
+  modal submits: `update` (default, edits the message in place), `ephemeral` or
+  `public` (a new message). A modal opened from a slash command has no message to
+  update, so its submit handler should declare `public` or `ephemeral` (a declared
+  `update` there auto-defers as type 5 public, and `update(..)` returns
+  `UpdateUnavailable`).
+
+`response` is independent of `auto_defer`: with `auto_defer = false` it still sets what
+`reply(msg)` and `defer_reply()` use; `reply_as(msg, e)` and `defer_reply_as(e)`
+override it for one call.
+
+```rust
+#[derive(SlashCommand)]
+#[command("settings", description = "Server settings", response = ephemeral)]
+pub struct Settings;                         // auto-defer: type 5 + EPHEMERAL
+
+#[derive(Button)]
+#[button("mod.ban", response = ephemeral, auto_defer = true, defaults(style = Danger, label = "mod.ban"))]
+pub struct Ban { pub user: Id<UserMarker> }  // a click opens a new private panel
+
+#[derive(Button)]                            // a button that opens a modal
+#[button("profile.bio", auto_defer = false, defaults(style = Primary, label = "profile.edit_bio"))]
+pub struct OpenBioModal { pub user: Id<UserMarker> }
+
+impl OpenBioModal {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+        Ok(r.show_modal(BioForm { user: self.user, bio: None }.build()).await?.done())
+    }
+}
+```
+
+| The handler … | Declare | Take |
+| --- | --- | --- |
+| answers with a message, maybe slowly (most handlers) | nothing (`auto_defer` defaults to `true`) | no responder, or `CommandResponder` / `ComponentResponder` / `ModalResponder` |
+| opens a modal (a Command or a button) | `auto_defer = false` | `CommandResponder<Manual>` / `ComponentResponder<Manual>`, then `show_modal(m)` within 3 s |
+| must control the ack itself (rare) | `auto_defer = false` | the `Manual` responder; call `defer_reply()` / `defer_update()` yourself |
+| answers privately | `response = ephemeral` | — |
+| opens a new public message from a button | `response = public` | — |
+| is a modal submit | `auto_defer` and `response` as needed | `ModalResponder` or `ModalResponder<Manual>`; never `show_modal` |
+| is autocomplete | neither (compile error) | `AutocompleteCtx` only |
+
+Compile-time checks (`[INT-05]`): the `#[handler]` method must take the
+`…Responder<Manual>` alias exactly when its struct declares `auto_defer = false` (one without the other, or
+`auto_defer = false` with no responder parameter, does not compile), and `show_modal` on
+an auto-defer responder fails with `[INT-05] show_modal needs auto_defer = false on this
+handler`.
+
+Anti-patterns:
+
+- **A button that opens a modal must be `auto_defer = false`.** With the default the
+  responder has no `show_modal`, and at runtime the auto-defer would make a modal
+  impossible anyway.
+- Never declare `auto_defer = false` to "be faster": a handler that misses 3 s shows
+  "This interaction failed". Keep the default unless you open a modal.
+- Never do slow work before `show_modal`: open the modal first, work after the submit.
+- Never pick ephemerality per call to work around a missing declaration: declare
+  `response = ephemeral`; use `reply_as`/`defer_reply_as` only for the rare mixed case.
+
+Shipped names until Story 6.10: this release spells `auto_defer = false` on a Command as
+the bare flag `opens_modal` (`CommandHandler::opens_modal()`) and has no component
+handlers yet, the `Manual` alias as
+`CommandResponder<OpensModal>` (the sealed `ModalMarker`: `NoModal` by default or
+`OpensModal`), `show_modal` as `modal`, and `response = ephemeral` as the bare flag
+`ephemeral`; `response = …`, `auto_defer` and `Manual` do not compile yet. Story 6.10
+renames them with no aliases.
 
 If the auto-defer itself fails (for example the interaction sat in the queue past
 2.9 s), it logs `warn` "auto-defer failed" (target `noctis::dispatch`, field `handler`)
@@ -117,13 +208,14 @@ renders are covered automatically.
 
 Declared at registration, never toggled later:
 
-- `#[command("…", ephemeral)]` (also on `#[user_command]` / `#[message_command]`; bare
-  flag, no value: `ephemeral = true` is a compile error) — private reply (single-user
+- `#[command("…", response = ephemeral)]` (also on `#[user_command]` /
+  `#[message_command]`; [planned: Story 6.10], today the bare flag `ephemeral`, and
+  `ephemeral = true` is a compile error) — private reply (single-user
   UI: settings, setup flows). `CommandHandler::ephemerality()` / `ctx.ephemerality()` read
   it (`Ephemerality::Ephemeral` / `Ephemerality::Public`).
 - Commands default to public (shared content).
 - [planned, Epic 7] Components default to update-in-place (keep the message's
-  visibility); `#[handler(response = ephemeral)]` — the component opens a **new**
+  visibility); `response = ephemeral` on the kind attribute — the component opens a **new**
   private sub-panel.
 
 `reply` and a returned message use the declared value; `defer(Ephemerality)` takes it
@@ -145,16 +237,16 @@ renames the shipped command methods (`defer` → `defer_reply`, `modal` → `sho
 
 | Method | discord.js | Callback / route | Effect | Use when |
 | --- | --- | --- | --- | --- |
-| `reply(msg)` | `reply` | type 4 | sends a **new** message (ephemeral or public, chosen now) | answering a command, or a sub-panel off a component |
-| `defer_reply(eph)` | `deferReply` | type 5 | new "is thinking…" message, filled later by `edit_reply` | the new message needs > 2 s of work |
+| `reply(msg)` / `reply_as(msg, eph)` | `reply` | type 4 | sends a **new** message (the declared `response`, or `eph`) | answering a command, or a sub-panel off a component |
+| `defer_reply()` / `defer_reply_as(eph)` | `deferReply` | type 5 | new "is thinking…" message, filled later by `edit_reply` | the new message needs > 2 s of work |
 | `update(msg)` | `update` | type 7 | edits **the clicked component's message** in one request | every button/select that re-renders its own screen (the default) |
 | `defer_update()` | `deferUpdate` | type 6 | nothing visible; stops the click spinner | the re-render needs > 2 s; then `edit_reply` |
-| `show_modal(m)` | `showModal` | type 9 | opens a modal | first response only: impossible after any ack, including a defer; never from a modal submit |
+| `show_modal(m)` | `showModal` | type 9 | opens a modal | `auto_defer = false` handlers only (`Manual` responder); first response only: impossible after any ack, including a defer; never from a modal submit |
 | `edit_reply(msg)` | `editReply` | `PATCH …/messages/@original` | edits `@original`: the reply after `reply`/`defer_reply`, the component's message after `update`/`defer_update` | after any ack |
 | `fetch_reply()` / `delete_reply()` | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | | after any ack |
 | `follow_up(msg, vis)` | `followUp` | `POST /webhooks/{app}/{token}` | another new message | after any ack |
 
-A modal can't follow a defer, so handlers declared `opens_modal` get no auto-defer and must call `show_modal` within 3 s: open the modal first and do slow work after the submit, never before it.
+A modal can't follow a defer, so only handlers declared `auto_defer = false` (taking the `Manual` responder, §2b) have `show_modal`; they get no auto-defer and must call it within 3 s: open the modal first and do slow work after the submit, never before it.
 
 Equivalences: `defer_update()` + `edit_reply(msg)` ends like `update(msg)`, but takes two
 requests, so prefer `update` when the render is fast. `defer_reply(e)` + `edit_reply(msg)`
@@ -163,21 +255,25 @@ auto-defer fires at 2000 ms (type 6 for components, type 5 for commands).
 
 ## 4. The Responder (typestate, INT-03/04)
 
-The type is `Responder<K, S = Pending>`: `K` is the handler kind (`Command<M>`, sealed
-`ResponderKind`; `M` is the sealed `ModalMarker`: `NoModal` by default or `OpensModal`), `S` the state (`Pending` or `Acked`, sealed `ResponderState`). Take it
+The type is `Responder<K, S = Pending>` today: `K` is the handler kind (`Command<M>`,
+sealed `ResponderKind`; `M` is the sealed `ModalMarker`), `S` the state (`Pending` or
+`Acked`, sealed `ResponderState`). [planned: Story 6.10] it becomes `Responder<K, S =
+Pending, D = AutoDefer>` with `K` = `Command` (later `Component`, `ModalSubmit`) and the
+sealed defer mode `D` = `AutoDefer` (default) or `Manual` (§2b). Take it
 as a handler parameter through its alias, right after `ctx` (and the path), before the
 options: `(ctx[, path][, r: CommandResponder][, options])`, or `(ctx, target[, r:
 CommandResponder])` on a context menu. Any other order, or two responders, is a compile
-error listing these forms. A handler that returns a message takes none (and if it takes
+error listing these forms. [planned: Story 6.10] the options become `self`, so the
+method is `handle(self, ctx[, path][, r])` / `handle(self, ctx, target[, r])`. A handler that returns a message takes none (and if it takes
 one but never uses it, nothing is sent from it).
 
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
-| `CommandResponder` (= `CommandResponder<NoModal>`) | `reply(msg)`, `defer(ephemerality)` | chat input / context menu |
-| `CommandResponder<OpensModal>` | the above plus `modal(m)`; required exactly when the command is `#[command(.., opens_modal)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
-| `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` | buttons, selects |
-| `ComponentResponder<OpensModal>` [planned, Epic 7] | the above plus `modal(m)` | component that opens a modal |
-| `ModalResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` — **no** `modal` | modal submit |
+| `CommandResponder` (auto-defer) | `reply(msg)`, `defer(ephemerality)` — **no** `show_modal` | chat input / context menu |
+| `CommandResponder<Manual>` [planned: Story 6.10; today `CommandResponder<OpensModal>`] | the above plus `show_modal(m)`; required exactly when the command is `#[command(.., auto_defer = false)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
+| `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **no** `show_modal` | buttons, selects |
+| `ComponentResponder<Manual>` [planned, Epic 7] | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
+| `ModalResponder` / `ModalResponder<Manual>` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **never** `show_modal` | modal submit |
 
 Autocomplete has no Responder: `AutocompleteCtx` offers only
 `ctx.respond(choices).await? -> Responded` (`commands.md` §4) [planned, Story 6.7].
@@ -187,7 +283,7 @@ Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 ```rust
 r.reply(msg).await?                     -> Responder<Command, Acked>  // callback type 4, declared ephemerality
 r.defer(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // callback type 5, only EPHEMERAL (INT-08)
-r.modal(m).await?                       -> Responder<Command<OpensModal>, Acked> // CommandResponder<OpensModal> only: callback type 9
+r.modal(m).await?                       -> Responder<Command<OpensModal>, Acked> // today's name of show_modal (Manual responder only): callback type 9
 acked.edit_original(msg).await?         -> ()
 acked.followup(msg, Visibility::Public).await? -> FollowupHandle
 acked.delete_original().await?          -> ()
@@ -199,8 +295,10 @@ handle.delete().await?                  -> ()
 
 `msg` is anything `Into<OutgoingMessage>`: `V2Message`, `Components` or `LegacyMessage`
 ([planned] `StaticMessage`). Calling a method that doesn't exist for the kind or
-state is a compile error: a second `reply` (E0599), `update` or `modal` on a
-`CommandResponder` without `OpensModal` (E0599), `defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
+state is a compile error: a second `reply` (E0599), `update` on a `CommandResponder`
+(E0599), `show_modal` on an auto-defer responder (`[INT-05] show_modal needs auto_defer
+= false on this handler`; today `modal` without `OpensModal` is E0599),
+`defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
 `Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
 
 Edits keep the format rules: editing a legacy original into a V2 message sends the
@@ -222,7 +320,7 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `Transport` | no usable response |
 | `TokenExpired` | 15 min after the interaction arrived: a follow-up, or an edit/delete of an ephemeral message or of one whose id is unknown (INT-02) |
 | `FollowupCap` | the 6th follow-up of a user-install-only interaction (INT-11) |
-| `ModalUnavailable` | `modal(m)` after another initial response (an auto-defer cannot happen for `opens_modal`), or over the `Dispatcher` |
+| `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), or over the `Dispatcher` |
 
 Runtime guards the types can't express:
 - if the auto-defer already fired, your `reply` becomes `edit_original` transparently
@@ -242,22 +340,34 @@ Runtime guards the types can't express:
 Example: reply privately, then post a public log line.
 
 ```rust
-#[command("mod warn", description = "Warn a member", permissions = MODERATE_MEMBERS, ephemeral)]
-async fn warn(ctx: CommandCtx, r: CommandResponder, opts: WarnOptions) -> HandlerResult<Responded> {
-    let case = record_warning(&ctx, &opts).await?;
-    let acked = r.reply(warn_result(&case)).await?;           // V2Message or Components
-    acked.followup(case_log(&case), Visibility::Public).await?;
-    Ok(acked.done())
+#[derive(SlashCommand)]
+#[command("mod warn", description = "Warn a member", permissions = MODERATE_MEMBERS, response = ephemeral)]
+pub struct Warn { #[option(description = "Who")] pub user: ResolvedUser }
+
+impl Warn {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        let case = record_warning(&ctx, &self).await?;
+        let acked = r.reply(warn_result(&case)).await?;           // V2Message or Components
+        acked.followup(case_log(&case), Visibility::Public).await?;
+        Ok(acked.done())
+    }
 }
 ```
 
 Example: defer, work, then return the message (it edits the deferred original):
 
 ```rust
+#[derive(SlashCommand)]
 #[command("report", description = "Build the weekly report")]
-async fn report(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
-    let _ = r.defer(Ephemerality::Public).await?.done();
-    Ok(build_report(&ctx).await?)
+pub struct Report;
+
+impl Report {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
+        let _ = r.defer(Ephemerality::Public).await?.done();     // [planned: Story 6.10] defer_reply()
+        Ok(build_report(&ctx).await?)
+    }
 }
 ```
 
@@ -265,21 +375,38 @@ Example: a Command that opens a modal (INT-05). After a modal there is no origin
 message, so return `done()`:
 
 ```rust
-#[command("bio", description = "Edit your profile bio", opens_modal, contexts = [Guild])]
-async fn bio(ctx: CommandCtx, r: CommandResponder<OpensModal>) -> HandlerResult<Responded> {
-    Ok(r.modal(BioForm::modal(SaveBio { user: ctx.user_id() })).await?.done())
+#[derive(SlashCommand)]
+#[command("bio", description = "Edit your profile bio", auto_defer = false, contexts = [Guild])]
+pub struct Bio;
+
+impl Bio {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
+        let form = BioForm { user: ctx.user_id(), bio: None, pronouns: None };
+        Ok(r.show_modal(form.build()).await?.done())
+    }
 }
 ```
 
-`modal(m)` validates the modal against the Limits (`Invalid`) and encodes it (`Encode`
+[planned: Story 6.10] Until then write `opens_modal`, `CommandResponder<OpensModal>` and
+`r.modal(..)` (§2b).
+
+`show_modal(m)` validates the modal against the Limits (`Invalid`) and encodes it (`Encode`
 for an unresolved Route id) before any request.
 
-[planned, Epic 7] Example: a component that opens a modal (Route declared `opens_modal`):
+[planned, Epic 7] Example: a component that opens a modal (its struct declares
+`auto_defer = false`):
 
 ```rust
-#[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
-    Ok(r.modal(BioForm::modal(SaveBio { user: e.user })).await?.done())
+#[derive(Button, Clone, Copy)]
+#[button("profile.bio", auto_defer = false, defaults(style = Primary, label = "profile.edit_bio"))]
+pub struct EditBio { pub user: Id<UserMarker> }
+
+impl EditBio {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+        Ok(r.show_modal(BioForm { user: self.user, bio: None, pronouns: None }.build()).await?.done())
+    }
 }
 ```
 
@@ -289,25 +416,31 @@ async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModa
 registered Command outside an interaction, for example a prefix command:
 
 ```rust
+#[derive(EventHandler)]
 #[event]
-async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    if msg.author.bot {
-        return Ok(()); // never answer bots (or yourself)
+pub struct Prefix;
+
+impl Prefix {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+        if msg.author.bot {
+            return Ok(()); // never answer bots (or yourself)
+        }
+        let Some(text) = msg.content.strip_prefix('!') else { return Ok(()) };
+        // `!warn 3`: the first word is the Command Path, the rest its arguments.
+        let mut words = text.split_whitespace();
+        let Some(path) = words.next() else { return Ok(()) };
+        let mut input = CommandInput::new(path);
+        if let Some(days) = words.next().and_then(|w| w.parse().ok()) {
+            input = input.with_option("days", OptionValue::Integer(days));
+        }
+        let invocation = CommandInvocation::new(input, msg.channel_id, msg.id, msg.author.id)
+            .guild_id(msg.guild_id) // the guild's scope first, then global
+            .shard(ctx.shard())     // optional, default 0
+            .locale("tr");          // optional User Locale
+        ctx.dispatcher().run_command(invocation).await?; // Result<(), DispatchError>
+        Ok(())
     }
-    let Some(text) = msg.content.strip_prefix('!') else { return Ok(()) };
-    // `!warn 3`: the first word is the Command Path, the rest its arguments.
-    let mut words = text.split_whitespace();
-    let Some(path) = words.next() else { return Ok(()) };
-    let mut input = CommandInput::new(path);
-    if let Some(days) = words.next().and_then(|w| w.parse().ok()) {
-        input = input.with_option("days", OptionValue::Integer(days));
-    }
-    let invocation = CommandInvocation::new(input, msg.channel_id, msg.id, msg.author.id)
-        .guild_id(msg.guild_id) // the guild's scope first, then global
-        .shard(ctx.shard())     // optional, default 0
-        .locale("tr");          // optional User Locale
-    ctx.dispatcher().run_command(invocation).await?; // Result<(), DispatchError>
-    Ok(())
 }
 ```
 

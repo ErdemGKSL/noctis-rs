@@ -16,8 +16,9 @@
 //!   In an interactive handler: `.defer(`, `.reply(`, `.update(`,
 //!   `.edit_original(` on any receiver but `ctx` (the handler context's
 //!   `ctx.update(msg)` picks the response type itself, FR-61); a `Responder`/`CommandResponder`/`ComponentResponder`
-//!   parameter without `OpensModal` in its generic args, and any
-//!   `ModalResponder` parameter.
+//!   parameter without `Manual` (the `auto_defer = false` marker; the shipped
+//!   `OpensModal` is accepted until Story 6.10 renames it) in its generic args,
+//!   and any `ModalResponder` parameter.
 //! - UD-7, anywhere: an ident with the word `collector(s)` or `listener(s)`;
 //!   the await-loop idents (`wait_for`, …); a `.on_<x>(` call or a method
 //!   whose words contain `listen`/`listener`, with a top-level `|` or `move`
@@ -396,7 +397,7 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
         if is_punct(params.get(i + 1), ':') {
             continue;
         }
-        let mut opens_modal = false;
+        let mut manual = false;
         if is_punct(params.get(i + 1), '<') {
             let mut depth = 0_i32;
             let mut prev_minus = false;
@@ -404,7 +405,9 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
                 match tt {
                     TokenTree::Punct(p) if p.as_char() == '<' => depth += 1,
                     TokenTree::Punct(p) if p.as_char() == '>' && !prev_minus => depth -= 1,
-                    TokenTree::Ident(arg) if arg == "OpensModal" => opens_modal = true,
+                    TokenTree::Ident(arg) if arg == "Manual" || arg == "OpensModal" => {
+                        manual = true;
+                    }
                     _ => {}
                 }
                 prev_minus = matches!(tt, TokenTree::Punct(p) if p.as_char() == '-');
@@ -413,10 +416,10 @@ fn responder_params(params: &[TokenTree], out: &mut Vec<Finding>) {
                 }
             }
         }
-        if n == "ModalResponder" || !opens_modal {
+        if n == "ModalResponder" || !manual {
             out.push((
                 line(id),
-                format!("[UD-3] take a Responder only to open a modal ({n}<OpensModal>)"),
+                format!("[UD-3] take a Responder only to open a modal ({n}<Manual>)"),
             ));
         }
     }
@@ -529,15 +532,18 @@ mod tests {
 
     #[test]
     fn d10_d11_responders() {
-        let msg = "[UD-3] take a Responder only to open a modal (ComponentResponder<OpensModal>)";
+        let msg = "[UD-3] take a Responder only to open a modal (ComponentResponder<Manual>)";
         flags("#[handler]\nasync fn h(r: ComponentResponder) {}", msg);
         flags(
             "#[handler]\nasync fn h(r: noctis::ComponentResponder<Plain>) {}",
             msg,
         );
         flags(
-            "#[handler]\nasync fn h(r: ModalResponder<OpensModal>) {}",
-            "[UD-3] take a Responder only to open a modal (ModalResponder<OpensModal>)",
+            "#[handler]\nasync fn h(r: ModalResponder<Manual>) {}",
+            "[UD-3] take a Responder only to open a modal (ModalResponder<Manual>)",
+        );
+        clean(
+            "impl EditBio {\n#[handler]\nasync fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }\n}",
         );
         clean(
             "#[handler]\nasync fn edit_bio(ctx: ComponentCtx, responder: ComponentResponder<OpensModal>) -> HandlerResult<Responded> { Ok(responder.modal(m).await?.done()) }",

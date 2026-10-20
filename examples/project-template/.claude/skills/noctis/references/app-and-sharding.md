@@ -450,13 +450,19 @@ limit (GW-04, 120/60 s per shard) → `GatewayError::RateLimited`.
 ```rust
 use noctis::lifecycle::{AllShardsReady, ShardFatal};
 
+#[derive(Hook)]                       // one struct per handler, like commands and events
 #[hook]
-async fn ready(ctx: HookCtx, ev: AllShardsReady) -> HandlerResult<()> {
-    tracing::info!(shards = ev.shard_count, "online");
-    Ok(())
+pub struct Ready;
+
+impl Ready {
+    #[handler]
+    async fn handle(self, ctx: HookCtx, ev: AllShardsReady) -> HandlerResult<()> {
+        tracing::info!(shards = ev.shard_count, "online");
+        Ok(())
+    }
 }
 
-Module::new("ops").add(ready());
+Module::new("ops").add::<Ready>();
 ```
 
 Events (`noctis::lifecycle`): `AppStarted`, `ShardReady`, `ShardResumed`,
@@ -498,16 +504,20 @@ must outlive a handler; put it behind a port.
 ## 9. `State<T>` and handler parameters
 
 ```rust
-#[handler]
-async fn h(ctx: ComponentCtx, p: MyRoute, meta: State<BotMeta>, premium: Ext<Premium>)
-    -> HandlerResult<Responded>
+impl MyRoute {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>, premium: Ext<Premium>)
+        -> HandlerResult<Responded>
+}
 ```
 
-`#[event]` handlers take exactly `(ctx: EventCtx, event: <payload>)`; read state with
+Event handlers take exactly `(self, ctx: EventCtx, event: <payload>)` (this release:
+`(ctx: EventCtx, event: <payload>)` on a free `#[event]` fn); read state with
 `ctx.state::<T>()` (`Option<State<T>>`). Extractor parameters on `#[event]` handlers
 [planned].
 
-Parameter order: context, then Payload / options / form / target, then extractors in any
+Parameter order: `self` (the decoded Payload / options / form; [planned: Story 6.10]),
+context, then path / target, then extractors in any
 order: `State<T>` (registered with `.state(T)`, `Deref<Target = T>`), `Ext<T>` /
 `Option<Ext<T>>` (from Middleware), a Responder alias. Missing `State<T>` or an
 `Ext<T>` no Middleware provides is a `BuildError`. Mutable state: put interior

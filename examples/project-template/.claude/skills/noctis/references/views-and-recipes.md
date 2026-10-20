@@ -46,7 +46,7 @@ Every handler has the same four steps:
 
 ```text
 decode the Payload  →  validate / authorize  →  write to storage  →  ctx.update(render_x(..))
-(the #[handler] arg)   (Route Guards + checks)   (port, State<T>)      (or ctx.respond / ctx.reply_text)
+(`self` in #[handler])  (Route Guards + checks)   (port, State<T>)      (or ctx.respond / ctx.reply_text)
 ```
 
 | Call [planned, Story 8.1] | Sends | Use for |
@@ -89,14 +89,15 @@ pub enum DashTab { Overview, Roles, Modules }        // append variants, never r
 
 impl DashTab { pub const ALL: [Self; 3] = [Self::Overview, Self::Roles, Self::Modules]; }
 
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.tab", permissions = MANAGE_GUILD)]     // runtime argument [planned]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("dash.tab", permissions = MANAGE_GUILD,     // runtime argument [planned]
+         defaults(style = Secondary, label = "dashboard.tab.overview"))]
 pub struct OpenTab { pub guild: Id<GuildMarker>, pub tab: DashTab }
 
 pub fn render_dashboard(d: &DashData, s: &Strings, tab: DashTab) -> V2Message {
     let tabs = ActionRow::buttons(DashTab::ALL.map(|t| {
         OpenTab { guild: d.guild, tab: t }
-            .button()
+            .build()                                  // defaults, then per-render overrides
             .label(match t {
                 DashTab::Overview => s.dashboard.tab.overview(),
                 DashTab::Roles => s.dashboard.tab.roles(),
@@ -117,10 +118,12 @@ pub fn render_dashboard(d: &DashData, s: &Strings, tab: DashTab) -> V2Message {
     V2Message::new(Components::new().push(container))
 }
 
-#[handler]
-async fn open_tab(ctx: ComponentCtx, to: OpenTab, db: State<Db>) -> HandlerResult<Responded> {
-    let data = db.dashboard(to.guild).await?;
-    ctx.update(render_dashboard(&data, &Strings::of(ctx.response_locale()), to.tab)).await
+impl OpenTab {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
+        let data = db.dashboard(self.guild).await?;
+        ctx.update(render_dashboard(&data, &Strings::of(ctx.response_locale()), self.tab)).await
+    }
 }
 ```
 
@@ -137,8 +140,8 @@ worst-case row so page boundaries don't move when names get longer.
 ```rust
 /// Prev/next carry the target page. Its own Route keeps the ids distinct from the tab
 /// buttons, and prev/next target different pages, so ids are unique (CID-02).
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.page", permissions = MANAGE_GUILD)]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("dash.page", permissions = MANAGE_GUILD, defaults(style = Secondary, label = "common.next"))]
 pub struct TurnPage { pub guild: Id<GuildMarker>, pub page: u16 }
 
 const ROW_MAX_CHARS: usize = 230;                     // mention + escaped 100-char name
@@ -167,9 +170,9 @@ pub fn render_roles(d: &DashData, s: &Strings, page: u16, limits: &Limits) -> V2
 fn pager(d: &DashData, s: &Strings, page: u16, pages: u16) -> ActionRow {
     ActionRow::buttons([
         TurnPage { guild: d.guild, page: page.saturating_sub(1) }
-            .button().label(s.common.previous()).disabled(page == 0),
+            .build().label(s.common.previous()).disabled(page == 0),
         TurnPage { guild: d.guild, page: page + 1 }
-            .button().label(s.common.next()).disabled(page + 1 >= pages),
+            .build().disabled(page + 1 >= pages),        // label "Next" from the defaults
     ])
 }
 
@@ -182,11 +185,13 @@ fn frame(s: &Strings, body: Vec<ContainerComponent>) -> V2Message {
     V2Message::new(Components::new().push(body.into_iter().fold(header, Container::push)))
 }
 
-#[handler]
-async fn turn_page(ctx: ComponentCtx, to: TurnPage, db: State<Db>) -> HandlerResult<Responded> {
-    let data = db.dashboard(to.guild).await?;
-    let s = Strings::of(ctx.response_locale());
-    ctx.update(render_roles(&data, &s, to.page, ctx.limits())).await
+impl TurnPage {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
+        let data = db.dashboard(self.guild).await?;
+        let s = Strings::of(ctx.response_locale());
+        ctx.update(render_roles(&data, &s, self.page, ctx.limits())).await
+    }
 }
 ```
 
@@ -206,8 +211,9 @@ step is valid, and a check in the handler for old or forged clicks.
 pub enum SetupStep { Channel, Role, Confirm }
 
 /// Back and Next carry the whole state plus the step to show.
-#[derive(Route, Debug, Clone, Copy)]
-#[route("setup", owner = owner)]                      // only the invoker may click [planned]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("setup", owner = owner,                      // only the invoker may click [planned]
+         defaults(style = Primary, label = "setup.next"))]
 pub struct SetupState {
     pub owner: Id<UserMarker>,
     pub step: SetupStep,
@@ -215,12 +221,12 @@ pub struct SetupState {
     pub mod_role: Option<Id<RoleMarker>>,
 }
 
-#[derive(Route, Debug, Clone, Copy)]
-#[route("setup.ch", select, owner = owner)]           // select: fresh defaults on every render
+#[derive(ChannelSelectMenu, Debug, Clone, Copy)]       // every select: fresh defaults on every render
+#[channel_select("setup.ch", owner = owner, defaults(placeholder = "setup.channel_placeholder"))]
 pub struct PickLogChannel { pub owner: Id<UserMarker>, pub mod_role: Option<Id<RoleMarker>> }
 
-#[derive(Route, Debug, Clone, Copy)]
-#[route("setup.cancel", owner = owner)]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("setup.cancel", owner = owner, defaults(style = Secondary, label = "setup.cancel"))]
 pub struct CancelSetup { pub owner: Id<UserMarker> }
 
 pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
@@ -233,22 +239,21 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
     let input: ContainerComponent = match st.step {
         SetupStep::Channel => ActionRow::select(
             PickLogChannel { owner: st.owner, mod_role: st.mod_role }
-                .channel_select()
-                .default_channels(st.log_channel),    // pre-filled with the current value
+                .build()
+                .default_values(st.log_channel),      // pre-filled with the current value
         ).into(),
         SetupStep::Role => ActionRow::select(
             PickModRole { owner: st.owner, log_channel: st.log_channel }
-                .role_select()
-                .default_roles(st.mod_role),
+                .build()
+                .default_values(st.mod_role),
         ).into(),
         SetupStep::Confirm => TextDisplay::new(summary(s, st)).into(),
     };
-    let cancel = Button::from(CancelSetup { owner: st.owner }.button().label(s.setup.cancel()));
-    let next = |step, ok: bool| Button::from(
-        SetupState { step, ..st }.button().label(s.setup.next())
-            .style(ButtonStyle::Primary).disabled(!ok),
+    let cancel = Button::from(CancelSetup { owner: st.owner }.build());
+    let next = |step, ok: bool| Button::from(SetupState { step, ..st }.build().disabled(!ok));
+    let back = |step| Button::from(
+        SetupState { step, ..st }.build().label(s.setup.back()).style(ButtonStyle::Secondary),
     );
-    let back = |step| Button::from(SetupState { step, ..st }.button().label(s.setup.back()));
     let nav = match st.step {
         SetupStep::Channel => ActionRow::buttons([cancel, next(SetupStep::Role, st.log_channel.is_some())]),
         SetupStep::Role => ActionRow::buttons([back(SetupStep::Channel), cancel, next(SetupStep::Confirm, st.mod_role.is_some())]),
@@ -258,42 +263,49 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
     V2Message::new(Components::new().push(c))
 }
 
-/// Back and Next. The button was disabled while invalid, but Payloads are client input.
-#[handler]
-async fn go_to_step(ctx: ComponentCtx, st: SetupState) -> HandlerResult<Responded> {
-    if st.step != SetupStep::Channel && st.log_channel.is_none() {
-        return ctx.reply_text(keys::SETUP_NEED_CHANNEL).await;   // ephemeral one-liner
+impl SetupState {
+    /// Back and Next. The button was disabled while invalid, but Payloads are client input.
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        if self.step != SetupStep::Channel && self.log_channel.is_none() {
+            return ctx.reply_text(keys::SETUP_NEED_CHANNEL).await;   // ephemeral one-liner
+        }
+        ctx.update(render_setup(self, &Strings::of(ctx.response_locale()))).await
     }
-    ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
 }
 
-#[handler]
-async fn pick_log_channel(ctx: ComponentCtx, p: PickLogChannel) -> HandlerResult<Responded> {
-    let st = SetupState {
-        owner: p.owner,
-        step: SetupStep::Channel,                     // stay; the user presses Next
-        log_channel: ctx.values().channels().first().copied(),
-        mod_role: p.mod_role,
-    };
-    ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
+impl PickLogChannel {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let st = SetupState {
+            owner: self.owner,
+            step: SetupStep::Channel,                 // stay; the user presses Next
+            log_channel: ctx.values().channels().first().copied(),
+            mod_role: self.mod_role,
+        };
+        ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
+    }
 }
 
-#[handler]
-async fn cancel_setup(ctx: ComponentCtx, _c: CancelSetup) -> HandlerResult<Responded> {
-    // Same message, no components left (a way out on every step).
-    let s = Strings::of(ctx.response_locale());
-    ctx.update(V2Message::new(Components::new().push(TextDisplay::new(s.setup.cancelled())))).await
+impl CancelSetup {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        // Same message, no components left (a way out on every step).
+        let s = Strings::of(ctx.response_locale());
+        ctx.update(V2Message::new(Components::new().push(TextDisplay::new(s.setup.cancelled())))).await
+    }
 }
 ```
 
 - Progress is "Step n of m: Title", never "page 2 of 3".
-- The Finish button exists only when every value is set; make its Route's fields
+- The Finish button exists only when every value is set; make its struct's fields
   non-`Option` so the type proves the configuration is complete.
-- Free text in a step: a button opens a modal whose submit Route carries the same state;
+- Free text in a step: a button declared `auto_defer = false` opens a modal struct that
+  carries the same state;
   its handler validates and calls `ctx.update(render_setup(next_state, &s))`. Never chain
   modal → modal: go back to a message step first (`modals.md` §5).
 - State too large for 100 characters: make the state Route `overflow = spill` (by Ref
-  when it does not fit, with a TTL); an expired Ref reaches your `on_expired` handler,
+  when it does not fit, with a TTL); an expired Ref reaches your `#[on_expired]` method,
   which can call `render_setup` for step 1 plus a `reply_text` notice.
 
 ### 3.4 Settings screen (re-editable config, schwi-style)
@@ -303,29 +315,35 @@ button, pre-filled selects, toggles, add and delete rows, and a button → modal
 re-render chain. This is a complete "ticket systems" feature.
 
 ```rust
-// ---- mod.rs: Routes. Every one carries the id of the system being edited. ---------
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.pick", select)]
+// ---- mod.rs: components. Every one carries the id of the system being edited. ------
+#[derive(StringSelectMenu, Debug, Clone, Copy)]
+#[string_select("ticket.pick", defaults(placeholder = "ticket.pick"))]   // options per render
 pub struct PickSystem;                                // the chosen id arrives in ctx.values()
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.text", opens_modal)]
+#[derive(Button, Debug, Clone, Copy)]                 // opens a modal: auto_defer = false
+#[button("ticket.text", auto_defer = false, defaults(style = Secondary, label = "common.edit"))]
 pub struct EditText { pub system: u32 }
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.text.save")]
-pub struct SaveText { pub system: u32 }              // same Payload as EditText
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.roles", select)]
+#[derive(RoleSelectMenu, Debug, Clone, Copy)]
+#[role_select("ticket.roles", defaults(placeholder = "ticket.responsible_roles", max_values = 25))]
 pub struct SetRoles { pub system: u32 }
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.toggle")]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("ticket.toggle", defaults(style = Success, label = "common.enable"))]
 pub struct ToggleSystem { pub system: u32, pub enable: bool }  // the action, not the state
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.add")]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("ticket.add", defaults(style = Primary, label = "common.add"))]
 pub struct AddSystem;
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.del")]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("ticket.del", defaults(style = Danger, label = "common.delete"))]
 pub struct AskDelete { pub system: u32 }
-#[derive(Route, Debug, Clone, Copy)] #[route("ticket.del.ok", by_ref, one_shot, ttl = "15m")]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("ticket.del.ok", by_ref, one_shot, ttl = "15m", defaults(style = Danger, label = "common.confirm"))]
 pub struct ConfirmDelete { pub system: u32 }
 
 #[derive(Modal, Debug)]
-#[modal(route = SaveText, title = "Button text")]
+#[modal("ticket.text.save", defaults(title = "ticket.button_text"))]
 pub struct TextForm {
+    pub system: u32,                                  // same Payload as EditText
     #[text_input("Text", max_length = 80)]
-    pub text: Option<String>,
+    pub text: Option<String>,                         // pre-filled from the built value
 }
 
 // ---- view.rs ------------------------------------------------------------------------
@@ -339,7 +357,7 @@ pub fn render_ticket_setup(d: &TicketData, s: &Strings, selected: Option<u32>) -
 
     // Entity switcher, only when there is something to switch between.
     if d.systems.len() > 1 {
-        c = c.push(ActionRow::select(PickSystem.string_select(d.systems.iter().map(|t| {
+        c = c.push(ActionRow::select(PickSystem.build().options(d.systems.iter().map(|t| {
             SelectOption::new(s.ticket.system_label(t.id), t.id.to_string())
                 .default(Some(t.id) == current.map(|c| c.id))
         }))));
@@ -352,128 +370,149 @@ pub fn render_ticket_setup(d: &TicketData, s: &Strings, selected: Option<u32>) -
             .push(Separator::small())
             .push(Section::new(
                 [TextDisplay::new(format!("**{}**\n-# {text}", s.ticket.button_text()))],
-                EditText { system: t.id }.button().label(s.common.edit()).style(
+                EditText { system: t.id }.build().style(
                     if t.button_text.is_some() { ButtonStyle::Secondary } else { ButtonStyle::Primary },
                 ),
             ))
             // Multi-value setting: a caption plus a select pre-filled with the current roles.
             .push(TextDisplay::new(s.ticket.responsible_roles()))
             .push(ActionRow::select(
-                SetRoles { system: t.id }.role_select().max_values(25).default_roles(t.roles.iter().copied()),
+                SetRoles { system: t.id }.build().default_values(t.roles.iter().copied()),
             ))
             // Toggle: state in the text, action in the button (Success enables, Danger disables).
             .push(Section::new(
                 [TextDisplay::new(format!("**{}** · {}", s.ticket.enabled(),
                     if t.enabled { s.common.enabled() } else { s.common.disabled() }))],
-                ToggleSystem { system: t.id, enable: !t.enabled }.button()
+                ToggleSystem { system: t.id, enable: !t.enabled }.build()
                     .label(if t.enabled { s.common.disable() } else { s.common.enable() })
                     .style(if t.enabled { ButtonStyle::Danger } else { ButtonStyle::Success }),
             ))
             .push(Separator::large())
             .push(Section::new([TextDisplay::new(s.ticket.delete())],
-                AskDelete { system: t.id }.button().label(s.common.delete()).style(ButtonStyle::Danger)));
+                AskDelete { system: t.id }.build()));
     } else {
         c = c.push(TextDisplay::new(format!("-# {}", s.ticket.none_yet())));   // empty state
     }
     if d.systems.len() < 25 {                         // the switcher holds at most 25 options
-        c = c.push(Section::new([TextDisplay::new(s.ticket.add())],
-            AddSystem.button().label(s.common.add()).style(ButtonStyle::Primary)));
+        c = c.push(Section::new([TextDisplay::new(s.ticket.add())], AddSystem.build()));
     }
     V2Message::new(Components::new().push(c))
 }
 
 // ---- handlers.rs ----------------------------------------------------------------------
-#[command("ticket setup", description = "Set up ticket systems", ephemeral,
+#[derive(SlashCommand, Debug)]
+#[command("ticket setup", description = "Set up ticket systems", response = ephemeral,
           permissions = ADMINISTRATOR, contexts = [Guild])]
-async fn ticket_setup(ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
-    let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
-    let data = db.ticket_systems(guild, 25).await?;
-    ctx.respond(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), None)).await
-}
+pub struct TicketSetup;
 
-#[handler]
-async fn pick_system(ctx: ComponentCtx, _p: PickSystem, db: State<Db>) -> HandlerResult<Responded> {
-    // Select values are client input: parse, never cast.
-    let Some(id) = ctx.values().strings().first().and_then(|v| v.parse::<u32>().ok()) else {
-        return ctx.reply_text(keys::TICKET_NOT_FOUND).await;
-    };
-    redraw(&ctx, &db, Some(id)).await
-}
-
-/// Button → modal: the modal Route gets the same Payload, pre-filled with the stored value.
-#[handler]
-async fn edit_text(ctx: ComponentCtx, e: EditText, r: ComponentResponder<OpensModal>, db: State<Db>)
-    -> HandlerResult<Responded>
-{
-    let current = db.ticket_system(e.system).await?.and_then(|t| t.button_text);
-    Ok(r.modal(TextForm::modal(SaveText { system: e.system }).text(current)).await?.done())
-}
-
-/// Modal → re-render the message the button was on.
-#[handler]
-async fn save_text(ctx: ModalSubmitCtx, save: SaveText, form: TextForm, db: State<Db>)
-    -> HandlerResult<Responded>
-{
-    let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
-    // Authorize: the id came from the client; it must belong to this guild.
-    if !db.owns(guild, save.system).await? {
-        return ctx.reply_text(keys::TICKET_NOT_FOUND).await;
+impl TicketSetup {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
+        let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
+        let data = db.ticket_systems(guild, 25).await?;
+        ctx.respond(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), None)).await
     }
-    db.set_button_text(save.system, form.text.filter(|t| !t.trim().is_empty())).await?;
-    redraw(&ctx, &db, Some(save.system)).await
 }
 
-#[handler]
-async fn toggle_system(ctx: ComponentCtx, t: ToggleSystem, db: State<Db>) -> HandlerResult<Responded> {
-    db.set_enabled(t.system, t.enable).await?;
-    redraw(&ctx, &db, Some(t.system)).await
-}
-
-#[handler]
-async fn add_system(ctx: ComponentCtx, _a: AddSystem, db: State<Db>) -> HandlerResult<Responded> {
-    let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
-    if db.ticket_systems(guild, 25).await?.systems.len() >= 25 {
-        return ctx.reply_text(keys::TICKET_LIMIT).await;
+impl PickSystem {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
+        // Select values are client input: parse, never cast.
+        let Some(id) = ctx.values().strings().first().and_then(|v| v.parse::<u32>().ok()) else {
+            return ctx.reply_text(keys::TICKET_NOT_FOUND).await;
+        };
+        redraw(&ctx, &db, Some(id)).await
     }
-    let id = db.create_ticket_system(guild).await?;
-    redraw(&ctx, &db, Some(id)).await                  // switch to the new one
 }
 
-/// Destructive: ask first, on a one-shot Route that expires (quality rule 3).
-#[handler]
-async fn ask_delete(ctx: ComponentCtx, a: AskDelete) -> HandlerResult<Responded> {
-    let s = Strings::of(ctx.response_locale());
-    ctx.update(render_confirm_delete(a.system, &s)).await
+impl EditText {
+    /// Button → modal: the modal struct gets the same Payload, pre-filled with the stored value.
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>, db: State<Db>) -> HandlerResult<Responded> {
+        let current = db.ticket_system(self.system).await?.and_then(|t| t.button_text);
+        Ok(r.show_modal(TextForm { system: self.system, text: current }.build()).await?.done())
+    }
 }
 
-/// The handler every redraw goes through: load, then the one render function.
+impl TextForm {
+    /// Modal → re-render the message the button was on.
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx, db: State<Db>) -> HandlerResult<Responded> {
+        let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
+        // Authorize: the id came from the client; it must belong to this guild.
+        if !db.owns(guild, self.system).await? {
+            return ctx.reply_text(keys::TICKET_NOT_FOUND).await;
+        }
+        db.set_button_text(self.system, self.text.filter(|t| !t.trim().is_empty())).await?;
+        redraw(&ctx, &db, Some(self.system)).await
+    }
+}
+
+impl ToggleSystem {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
+        db.set_enabled(self.system, self.enable).await?;
+        redraw(&ctx, &db, Some(self.system)).await
+    }
+}
+
+impl AddSystem {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
+        let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
+        if db.ticket_systems(guild, 25).await?.systems.len() >= 25 {
+            return ctx.reply_text(keys::TICKET_LIMIT).await;
+        }
+        let id = db.create_ticket_system(guild).await?;
+        redraw(&ctx, &db, Some(id)).await              // switch to the new one
+    }
+}
+
+impl AskDelete {
+    /// Destructive: ask first, on a one-shot component that expires (quality rule 3).
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let s = Strings::of(ctx.response_locale());
+        ctx.update(render_confirm_delete(self.system, &s)).await
+    }
+}
+
+/// The helper every redraw goes through: load, then the one render function.
 async fn redraw(ctx: &impl Ctx, db: &Db, selected: Option<u32>) -> HandlerResult<Responded> {
     let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(keys::COMMON_GUILD_ONLY))?;
     let data = db.ticket_systems(guild, 25).await?;
     ctx.update(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), selected)).await
 }
 
-// ---- autocomplete backed by storage, capped at 25 ------------------------------------
-#[derive(Options, Debug)]
-pub struct SendOptions {
-    #[option(description = "Ticket system", autocomplete = system_suggest)]
+// ---- autocomplete backed by storage, capped at 25 [planned, Story 6.7] ----------------
+#[derive(SlashCommand, Debug)]
+#[command("ticket send", description = "Send a ticket panel")]
+pub struct TicketSend {
+    #[option(description = "Ticket system", autocomplete)]
     pub system: i64,
 }
 
-#[autocomplete]
-async fn system_suggest(ctx: AutocompleteCtx, focused: Focused<String>, _p: Partial<SendOptions>, db: State<Db>)
-    -> HandlerResult<Responded>
-{
-    let Some(guild) = ctx.guild_id() else { return Ok(ctx.respond([]).await?) };
-    // Filter and cap in the query (LIMIT 25), not after loading every row.
-    let rows = db.search_ticket_systems(guild, focused.as_str(), 25).await?;
-    Ok(ctx.respond(rows.into_iter().map(|t| Choice::new(t.label, i64::from(t.id)))).await?)
+impl TicketSend {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> { … }
+
+    #[autocomplete(system)]
+    async fn system_suggest(ctx: AutocompleteCtx, focused: Focused<String>, _p: Partial<Self>, db: State<Db>)
+        -> HandlerResult<Responded>
+    {
+        let Some(guild) = ctx.guild_id() else { return Ok(ctx.respond([]).await?) };
+        // Filter and cap in the query (LIMIT 25), not after loading every row.
+        let rows = db.search_ticket_systems(guild, focused.as_str(), 25).await?;
+        Ok(ctx.respond(rows.into_iter().map(|t| Choice::new(t.label, i64::from(t.id)))).await?)
+    }
 }
 ```
 
 `redraw` is called with a `&impl Ctx`; `update` is available on component and modal
-contexts. Register every handler on the Module (`.add(pick_system())` …) and every
-string in `locales/en-US.yaml`.
+contexts. Register every struct on the Module (`.add::<TicketSetup>().add::<PickSystem>()`
+…) and every string in `locales/en-US.yaml`. [planned: Story 6.10] for the struct form;
+this release writes the same recipe with free functions, `#[derive(Route)]` and
+`.button()`/`.string_select(..)` (SKILL.md §8).
 
 ## 4. Budget helpers and cost [planned, Story 8.3]
 
@@ -590,7 +629,7 @@ are how every Noctis bot should be written.
 | free text (names, reasons) in custom-id data | breaks the 100-character limit at runtime and lets users forge it | typed Payload fields with a compile-time length proof; free text goes in storage or a `by_ref` Route |
 | legacy Action Row-wrapped Text Inputs in modals (`type: 1, components: [TextInput]`) | deprecated shape; `label` on Text Input is deprecated | `#[derive(Modal)]` emits Label-wrapped inputs only |
 | `data[0] as number`, `as any` on overrides | untyped data; a stale or forged id becomes a wrong value silently | typed Payload decode; a bad id is a typed error routed to the Expired/stale handler |
-| copy-pasted rate-limit code in handlers | inconsistent and easy to forget | `rate_limit(..)` on `#[command]`/`#[handler]` (`modules-middleware-ratelimits.md`) |
+| copy-pasted rate-limit code in handlers | inconsistent and easy to forget | `rate_limit(..)` on `#[command]` or the component's kind attribute (`modules-middleware-ratelimits.md`) |
 | `flags: Ephemeral | IsComponentsV2` repeated in every handler, `deferUpdate` + `editReply` by hand | forgotten flags are 400s; a slow handler fails | `ctx.update(..)` / `ctx.respond(..)` set flags, ephemerality and deferral |
 | `Math.random()` in select data to force fresh defaults | ad-hoc, wastes custom-id space | `select` Routes get a per-render nonce |
 | next page disabled when `rows.length < 25` | one empty page too many when the last page is exactly full | query `per_page + 1` rows |

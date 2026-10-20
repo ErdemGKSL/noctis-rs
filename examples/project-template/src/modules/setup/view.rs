@@ -4,7 +4,7 @@
 
 use noctis::prelude::*;
 use noctis::ui::{
-    ActionRow, Button, ButtonStyle, ChannelType, Components, Container, ContainerComponent,
+    ActionRow, Button, ButtonStyle, Components, Container, ContainerComponent,
     Separator, TextDisplay, V2Message,
 };
 
@@ -32,11 +32,10 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
         SetupStep::Channel => vec![
             TextDisplay::new(s.setup.channel_help()).into(),
             ActionRow::select(
+                // Placeholder and channel types come from the declared defaults.
                 PickLogChannel { owner: st.owner, mod_role: st.mod_role }
-                    .channel_select()
-                    .channel_types([ChannelType::GuildText])
-                    .placeholder(s.setup.channel_placeholder())
-                    .default_channels(st.log_channel), // pre-filled with the current value
+                    .build()
+                    .default_values(st.log_channel), // pre-filled with the current value
             )
             .into(),
         ],
@@ -44,9 +43,8 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
             TextDisplay::new(s.setup.role_help()).into(),
             ActionRow::select(
                 PickModRole { owner: st.owner, log_channel: st.log_channel }
-                    .role_select()
-                    .placeholder(s.setup.role_placeholder())
-                    .default_roles(st.mod_role),
+                    .build()
+                    .default_values(st.mod_role),
             )
             .into(),
         ],
@@ -63,17 +61,24 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
 
 /// Back (not on the first step), Cancel, and Next or Finish. One primary action.
 fn nav_row(st: SetupState, s: &Strings) -> ActionRow {
-    let cancel = Button::from(CancelSetup { owner: st.owner }.button().label(s.setup.cancel()));
-    let back = |step| Button::from(SetupState { step, ..st }.button().label(s.setup.back()));
+    // Defaults (label, style) come from each component's `#[button(.., defaults(..))]`;
+    // Back reuses the `SetupState` button and overrides its label and style.
+    let cancel = Button::from(CancelSetup { owner: st.owner }.build());
+    let back = |step| {
+        Button::from(
+            SetupState { step, ..st }
+                .build()
+                .label(s.setup.back())
+                .style(ButtonStyle::Secondary),
+        )
+    };
 
     match st.step {
         SetupStep::Channel => ActionRow::buttons([
             cancel,
             Button::from(
                 SetupState { step: SetupStep::Role, ..st }
-                    .button()
-                    .label(s.setup.next())
-                    .style(ButtonStyle::Primary)
+                    .build()
                     .disabled(st.log_channel.is_none()),
             ),
         ]),
@@ -82,9 +87,7 @@ fn nav_row(st: SetupState, s: &Strings) -> ActionRow {
             cancel,
             Button::from(
                 SetupState { step: SetupStep::Confirm, ..st }
-                    .button()
-                    .label(s.setup.next())
-                    .style(ButtonStyle::Primary)
+                    .build()
                     .disabled(st.mod_role.is_none()),
             ),
         ]),
@@ -94,12 +97,7 @@ fn nav_row(st: SetupState, s: &Strings) -> ActionRow {
                 (Some(log_channel), Some(mod_role)) => ActionRow::buttons([
                     back,
                     cancel,
-                    Button::from(
-                        FinishSetup { owner: st.owner, log_channel, mod_role }
-                            .button()
-                            .label(s.setup.finish())
-                            .style(ButtonStyle::Success),
-                    ),
+                    Button::from(FinishSetup { owner: st.owner, log_channel, mod_role }.build()),
                 ]),
                 _ => ActionRow::buttons([back, cancel]),
             }

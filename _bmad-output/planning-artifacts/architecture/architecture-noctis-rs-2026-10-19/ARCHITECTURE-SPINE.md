@@ -233,12 +233,12 @@ list in CI.
                      v1 writes generation 0 (F < 16); F >= 16 or flag 2 set is a
                      CodecError
     route  1..24     [a-z0-9._-], unique per App; ids starting with "_" are reserved
-    S      1 char    Route schema version 1..=61 (#[route(schema = n)]); absent = 0
+    S      1 char    Route schema version 1..=61 (`schema = n` on the kind attribute); absent = 0
     N      2 chars   per-render select nonce (FR-25); select Routes only
     body   inline    field ("," field)*
            by ref    "~" + 11 base62 Ref
     T      6 chars   integrity tag: base62 of truncated keyed BLAKE3 over all
-                     preceding chars; inline bodies of #[route(signed)] only
+                     preceding chars; inline bodies of `signed` Routes only
     ```
 
   - Decoding is total: malformed input gives `CodecError`, never a panic. A flag set
@@ -279,27 +279,51 @@ list in CI.
     `u32`/`i32` 6, `u64`/`i64`/`Id<T>` 11, `#[derive(PayloadEnum)]` (≤ 62 variants)
     1, `Option<T>` `T + 1`, `BoundedStr<N>` `2N`, `String`/`Vec<T>` `None`. A bot
     type joins by implementing `Field`.
-  - `#[derive(Route)]` on a struct implements `Route` and `Payload` for it. It never
+  - A kind derive (below) on a struct implements `Route` and `Payload` for it. It never
     inspects type names: it emits a `const` sum of `<F as Field>::MAX_LEN` plus
     `fields − 1` separators through codec `const fn`s. Generic Routes are rejected.
   - The bound is
     `MAX_LEN = FMT_LEN + route.len() + SEP_LEN + S + N + max(inline, by_ref)`,
     where `inline = Payload::MAX_ENCODED_LEN + T` and `by_ref = REF_MARKER_LEN + REF_LEN = 12`.
     `S`, `N` and `T` count only when the Route declares them (1, 2, 6).
-  - One attribute syntax. `#[route("id", …)]` takes two kinds of arguments, and
-    the derive rejects anything else:
-    - **Codec arguments** change the `custom_id` shape and length, and Story 2.5
-      derives them: `by_ref` or `overflow = spill`, `schema = n` (1..=61),
-      `select` (adds the `N` nonce; select constructors require it) and `signed`.
+  - One attribute per kind (amended 2026-10-20, maintainer decisions §7). A Route
+    is declared by the derive that names its component kind: `#[derive(Button)]`
+    with `#[button("id", …)]`, `#[derive(StringSelectMenu)]` with
+    `#[string_select("id", …)]`, likewise `UserSelectMenu`/`user_select`,
+    `RoleSelectMenu`/`role_select`, `MentionableSelectMenu`/`mentionable_select`,
+    `ChannelSelectMenu`/`channel_select`, and `#[derive(Modal)]` with
+    `#[modal("id", …)]` (the Payload is the fields without an input attribute). Each
+    implements `Route` and `Payload` with the length proof below. (Shipped as
+    `#[derive(Route)]` + `#[route("id", …)]`; Story 6.10 converts it, and the bare
+    derive leaves the public authoring surface.) The attribute takes the id, then
+    three kinds of arguments, and rejects anything else:
+    - **Codec arguments** change the `custom_id` shape and length (Story 2.5):
+      `by_ref` or `overflow = spill`, `schema = n` (1..=61) and `signed`. Every
+      select kind carries the `N` nonce (the bare `select` argument is withdrawn by
+      Story 6.10).
     - **Runtime arguments** don't change the encoding. The derive records them in an
-      associated `RouteRuntime` const that core reads: `ttl = "…"` and `one_shot`
-      (by_ref/spill Routes only; Story 7.5), `owner = field`, `permissions = …` and
-      `guard = path` (Route Guards; Story 7.7), and `opens_modal` (Story 7.8). Each
-      runtime argument enters the derive in the story named.
-  - `#[handler(…)]` takes only handler arguments: `response = update | ephemeral |
-    public` (Story 7.2), `on_expired = fn` and `on_stale = fn` (Story 7.3), and
-    `rate_limit(..)` (Story 13.4). Rate limits are declared on `#[command]` and
-    `#[handler]`, never on `#[route]`.
+      associated `RouteRuntime` const (and a defer-mode associated type, AD-11) that
+      core reads: `response = update | ephemeral | public` and `auto_defer = true |
+      false` (Story 7.2; AD-11), `ttl = "…"` and `one_shot` (by_ref/spill Routes
+      only; Story 7.5), `owner = field`, `permissions = …` and `guard = path` (Route
+      Guards; Story 7.7), and `rate_limit(..)` (Story 13.4). Each enters the derive
+      in the story named. Expired and stale handling are `#[on_expired]` /
+      `#[on_stale]` methods in the struct's `impl`, without `self` (Story 7.3).
+      `opens_modal` is not an argument anywhere (AD-11).
+    - **`defaults(..)`** is mandatory and holds the FR-59 component defaults (AD-19):
+      Button needs `style` and `label` or `emoji` (`disabled`), selects need
+      `placeholder` (`min_values`, `max_values`, `options = ChoicesEnum` for string
+      selects, `default_values`), a modal needs `title`. A missing block or required
+      key names the kind's required keys; an unknown key is a compile error; literal
+      values are checked against Discord's limits (CV2-08, CV2-09, MOD-01, …).
+  - The handler lives on its struct: `impl X { #[handler] async fn handle(self, ctx:
+    …) }` for every kind (components, modals, `#[derive(SlashCommand)]`,
+    `#[derive(UserCommand)]`, `#[derive(MessageCommand)]` and
+    `#[derive(EventHandler)]` structs). `#[handler]` takes **no arguments**; `self` is
+    the decoded value. Commands put `response = public | ephemeral`, `auto_defer`,
+    `rate_limit(..)` and their metadata on `#[command]`, `#[user_command]` or
+    `#[message_command]`; `#[autocomplete(field)]` methods take neither `response`
+    nor `auto_defer`. Free-function handlers are not part of the API.
   - An inline Route whose bound is `None` or over 100 doesn't compile; `by_ref`
     with `signed` doesn't compile. A `spill` Route encodes inline when the actual
     value fits, else by Ref. FR-17's "error" overflow policy is this compile-time
@@ -354,8 +378,9 @@ list in CI.
 - **Prevents:** a per-message listener, closure or timer, and hidden global mutable
   state.
 - **Rule:**
-  - A handler is an `async fn` taking the context, the decoded Payload or options,
-    and injected `State<T>`, `Ext<T>` and port handles.
+  - A handler is an `async fn handle(self, ctx, ..)` method on its struct (AD-6),
+    taking the decoded Payload or options as `self`, the context, and injected
+    `State<T>`, `Ext<T>` and port handles.
   - The framework never stores a closure, task or timer per message or component.
     Interactive state travels in Payloads and Refs, or the bot keeps it behind a port.
   - Mutable shared bot state goes in `State<T>` registered at build. There are no
@@ -402,13 +427,17 @@ list in CI.
   - Handler kinds have their own context types (`CommandCtx`, `ComponentCtx`,
     `ModalSubmitCtx`, `AutocompleteCtx`), so the kind fixes the legal callbacks at
     compile time (INT-04). `AutocompleteCtx` offers only `respond`.
-  - The full type is `Responder<K, S = Pending>`. `K` is the handler kind:
-    `Command<M>`, `Component<M>` or `ModalSubmit`, where `M` is `NoModal` (default)
-    or `OpensModal`. A handler that responds explicitly takes it as a parameter
-    through the aliases `CommandResponder<M = NoModal>`,
-    `ComponentResponder<M = NoModal>` and `ModalResponder`; a handler that only
-    sends a rendered message through its context (below) takes none. `Responder<Pending>` and `Responder<Acked>` in the rules below
-    mean `Responder<K, Pending>` and `Responder<K, Acked>` for any `K`.
+  - The full type is `Responder<K, S = Pending, D = AutoDefer>`. `K` is the handler
+    kind: `Command`, `Component` or `ModalSubmit`; `D` is the sealed defer mode,
+    `AutoDefer` (default) or `Manual`. A handler that responds explicitly takes it as
+    a parameter through the aliases `CommandResponder<D = AutoDefer>`,
+    `ComponentResponder<D = AutoDefer>` and `ModalResponder<D = AutoDefer>`; a
+    handler that only sends a rendered message through its context (below) takes
+    none. `Responder<Pending>` and `Responder<Acked>` in the rules below mean
+    `Responder<K, Pending, D>` and `Responder<K, Acked, D>` for any `K` and `D`.
+    (Amended 2026-10-20: the `M = NoModal | OpensModal` parameter of
+    `Command<M>`/`Component<M>` and the `opens_modal` declaration are replaced by `D`
+    and `auto_defer`; Story 6.10 converts the shipped code.)
   - Method names and semantics follow discord.js interaction responses.
     `Responder<Pending>` methods (`reply` type 4, `defer_reply` type 5, `update`
     type 7, `defer_update` type 6, `show_modal` type 9) consume `self` and return
@@ -418,24 +447,47 @@ list in CI.
     handler returns. `update`/`defer_update` exist only for `Component` and
     `ModalSubmit` (a modal not opened from a component message gets
     `UpdateUnavailable` at run time). `show_modal` exists only for
-    `Command<OpensModal>` and `Component<OpensModal>` (INT-05).
-  - `opens_modal` is declared on the `#[command]` or on the `#[route]` the handler
-    serves. The handler macro requires the `OpensModal` responder alias exactly when
-    it is declared (any mismatch is an INT-05 compile error), and the declaration
-    disables auto-defer for that handler.
+    `Responder<Command, Pending, Manual>` and `Responder<Component, Pending, Manual>`
+    (INT-05): it is bounded by a sealed trait whose
+    `#[diagnostic::on_unimplemented]` message reads `[INT-05] show_modal needs
+    auto_defer = false on this handler` (and notes that a modal submit can never open
+    a modal), so calling it on an `AutoDefer` responder or a `ModalResponder` is an
+    E0277 compile error.
+  - Every interaction handler declares `auto_defer = true | false` (default `true`)
+    with its registration arguments: on `#[command]`, `#[user_command]` or
+    `#[message_command]`, or on the kind attribute of a component or modal
+    (`#[button(..)]`, `#[string_select(..)]`, `#[modal(..)]`, …; AD-6). `#[autocomplete]` rejects it (INT-06: autocomplete has no defer).
+    The derive emits the mode as an associated type and the `#[handler]`
+    method macro emits a trait-bound assertion between it and the responder parameter, so
+    the INT-05 match below is still a compile error even though the two attributes
+    are on different items. `auto_defer = false` arms no auto-defer for
+    that handler; the handler may still call `defer_reply`/`defer_update`, and one
+    that has not answered by the 3 s deadline logs an error naming it. The handler
+    macro requires the `Manual` responder alias exactly when `auto_defer = false` is
+    declared, and the reverse (any mismatch is an INT-05 compile error). The deadline
+    stays App-wide (`AppBuilder::ack_deadline`, default 2000 ms).
   - A runtime state machine (an atomic shared by the handler and the auto-defer
     task) covers what types can't: when the auto-defer wins, a `Pending` call becomes
     `edit_reply`; follow-ups are counted (5 for user-installed apps, INT-11); after
     15 minutes calls return `TokenExpired` without an HTTP request (INT-02).
-  - Ephemerality is declared at registration (default: public for Commands,
-    update-in-place for components); the auto-defer uses it. Commands defer with
-    type 5 (only `EPHEMERAL`), components and modal submits with type 6; the V2 flag
-    goes on the edit (INT-08).
+  - Each handler declares its default response at registration with one argument,
+    `response = …`, checked at compile time; the auto-defer and the default
+    ephemerality of `reply(msg)`/`defer_reply()` use it (`reply_as(msg, e)` and
+    `defer_reply_as(e)` override per call). Commands and context menus: `public`
+    (default) or `ephemeral`, auto-defer type 5 with only `EPHEMERAL` when declared
+    (`update` is an INT-04 compile error). Components and component-opened modal
+    submits: `update` (default, auto-defer type 6), `ephemeral` or `public`
+    (auto-defer type 5, new message). A modal submit without a source message (a
+    slash-opened modal) can only be `public` or `ephemeral`; since the opener is not
+    known at compile time, a declared `update` there falls back to type 5 public for
+    the auto-defer and `update`/`defer_update` return `UpdateUnavailable`. `response`
+    is independent of `auto_defer`. The V2 flag goes on the edit (INT-08).
   - A View is a plain author-written function returning a message (FR-25); there is
     no View trait or registry and core never re-renders on its own. The handler
     context offers an ergonomic layer over the typestate (FR-61):
     `ctx.respond(msg)` (new message, or follow-up after a defer), `ctx.update(msg)`
-    (edit the component's message; `Component`/`ModalSubmit` only) and
+    (edit the component's message; `Component`/`ModalSubmit` only; on a submit of a
+    slash-opened modal, which has no message, it sends a new public message) and
     `ctx.reply_text(text)` (a one-line notice, ephemeral by default). Each picks the
     callback type, defer variant and flags from the declared ephemerality and the
     runtime state machine, so the author never selects a response type. The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
@@ -706,14 +758,26 @@ list in CI.
   components pointing at Routes with no handler.
 - **Rule:**
   - `noctis-codec` defines `trait Route { const ID: RouteId; const SHAPE: RouteShape; const SCHEMA: u8; type Payload: Payload; }`,
-    the `Payload` and `Field` traits and the codec. `#[derive(Route)]` implements
+    the `Payload` and `Field` traits and the codec. The kind derives (AD-6) implement
     exactly these.
-  - `noctis-ui` builds every component from `R: Route` plus an `R::Payload` value
-    (`BuyButton { .. }.button()`); there is no string `custom_id` constructor. Route
-    component defaults (FR-59) are an associated const on `noctis-ui`'s
-    `ComponentRoute`; per-render overrides apply, then the Limits check.
-  - Component constructors require `R: Handled`, which only the handler macro
-    implements (compile-time half of FR-58). `noctis-core` binds handlers by `R::ID`
+  - `noctis-ui` builds every component from `R: Route` plus an `R::Payload` value;
+    there is no string `custom_id` constructor. The kind derive (AD-6) stores the
+    mandatory `defaults(..)` as an associated const on `noctis-ui`'s
+    `ComponentRoute`, and `R { .. }.build()` emits that kind from the defaults with
+    the value's Payload as the `custom_id` (tescord's `buildComponent({ id, data,
+    overrides })`). Chainable typed overrides replace one field each (`.label(..)`,
+    `.emoji(..)`, `.style(..)`, `.disabled(..)`, `.placeholder(..)`, `.options(..)`,
+    `.default_values(..)`, `.min_values(..)`, `.max_values(..)`; modals `.title(..)`
+    and `.value(field, ..)`), then the Limits check runs at run time (Strict or
+    Lenient). A string select with no `options` in its defaults returns a builder
+    whose typestate requires `.options(..)` before it becomes a component; a modal
+    built from a value pre-fills its inputs with the value's fields, and
+    `X::blank(<payload fields>)` builds one with empty inputs. Link and Premium
+    buttons have no Route and stay plain builders (`LinkButton::new(url)`). (Amended
+    2026-10-20: the per-kind `.button()`/`.string_select(..)`/… constructors are
+    folded into `.build()`; Story 6.10 converts the shipped ones.)
+  - `.build()` requires `R: Handled`, which only the `#[handler]` method macro
+    implements (compile-time half of FR-58, CID-04). `noctis-core` binds handlers by `R::ID`
     in their own descriptor; `App::build` fails when a Route referenced by a mounted
     Module's descriptors has no mounted handler (dynamic half).
 
@@ -848,7 +912,7 @@ list in CI.
     4. locale resolution, including the App's optional `LocaleResolver`;
     5. rate-limit `incr_with_ttl` (FR-46);
     6. auto-defer armed at `received_at + ack_deadline` (default 2000 ms) unless
-       `opens_modal`;
+       the handler declares `auto_defer = false`, shaped by its declared `response`;
     7. before-Middleware, parent Module first, then registration order (may override
        locale, insert Extensions or stop);
     8. Route Guards;
@@ -973,15 +1037,23 @@ list in CI.
 - **Prevents:** an API that is idiomatic but foreign to the target author, so that
   migrating from tescord becomes a rewrite.
 - **Rule:**
-  - A Command is an `async fn` with its Command Path or Pattern:
-    `#[command("settings logs channel")]`. Word count decides command, subcommand
-    or group. Static commands have no builder trees. Context-menu commands use
-    `#[user_command]` and `#[message_command]`.
+  - One struct = its id + typed data + its handler (amended 2026-10-20, maintainer
+    decisions §7). A Command is a `#[derive(SlashCommand)]` struct whose fields are
+    its typed options (a unit struct when it has none), with its Command Path or
+    Pattern on `#[command("settings logs channel")]` and its handler in `impl X {
+    #[handler] async fn handle(self, ctx: CommandCtx) }`. Word count decides command,
+    subcommand or group. Static commands have no builder trees. Context menus use
+    `#[derive(UserCommand)]`/`#[user_command]` and
+    `#[derive(MessageCommand)]`/`#[message_command]`; components the kind derives
+    (`Button`, `StringSelectMenu`, …), modals `#[derive(Modal)]`, events
+    `#[derive(EventHandler)]`, all with the same `#[handler]` method. Free-function
+    handlers are not part of the API.
   - A Module is the unit a tescord Pack maps to: `Module::new("a/b")` collects
-    commands, Routes, event handlers, Middleware and hooks; Modules merge by base
-    word (FR-9).
-  - Components are built from Route values (`BuyButton { .. }.button()`), the typed
-    counterpart of tescord's `buildComponent`.
+    commands, Routes, event handlers, Middleware and hooks, registered by type
+    (`Module::add::<T>()`); Modules merge by base word (FR-9).
+  - Components are built from Route values (`BuyButton { .. }.build()`, the kind and
+    mandatory defaults declared by the derive), the typed counterpart of tescord's
+    `buildComponent`.
   - Publish needs no registration code, but it is diff-based and runs only in the
     publisher process or the CLI mode (FR-13), never on Shard ready.
   - Names follow tescord where the concept exists (Module ≈ Pack, Route, Ref,
@@ -1114,14 +1186,14 @@ list in CI.
 | Concern | Convention |
 | --- | --- |
 | Crate naming | `noctis-<area>`, lib name `noctis_<area>`; facade feature names equal the area (`image`, `prefix`, `i18n`, `testkit`), plus `image-gif`, `image-emoji` and `default-font` |
-| Route ids | `[a-z0-9._-]{1,24}` ASCII, set by `#[route("id")]`, stable across releases; ids starting with `_` are reserved; renaming one breaks live components |
+| Route ids | `[a-z0-9._-]{1,24}` ASCII, set by the kind attribute (`#[button("id", ..)]`, …), stable across releases; ids starting with `_` are reserved; renaming one breaks live components |
 | Module ids | path-like `a/b/c`, unique per App |
 | App ids | `[a-z0-9-]{1,32}`, identical across a Cluster |
 | Rule ids | `<AREA>-<nn>` as assigned in `docs/discord-rules.md`, shared by code, error messages, docs and tests; new rules take the next number; ids are never reused |
 | Text length | `noctis_rules::len::discord_len` for user text; framework-encoded strings are ASCII |
 | Compile errors | `[<RULE-ID>] <what is wrong>`, `= note:` lines with the derivation, a `= help:` line with a concrete fix, span on the offending token |
 | BuildError | lists every violation; each names the rule id, the Module(s) and the actual vs allowed value; `--publish --dry-run` runs the same checks |
-| Options | `derive(Options)` rejects a required field after an optional one (OPT-01); it never reorders |
+| Options | `derive(SlashCommand)` (shipped as `derive(Options)`) rejects a required field after an optional one (OPT-01); it never reorders |
 | Errors | `thiserror` enum per crate, named `<Area>Error`; `HandlerError` is the only type-erased public error |
 | Async | tokio only; public async APIs are `async fn` or return `impl Future + Send`; no blocking calls in async |
 | Ids and time | twilight `Id<Marker>` everywhere; durations are `std::time::Duration`; timestamps are UTC; deadlines measure from `Inbound::received_at` |

@@ -23,14 +23,14 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | ``[CID-03] route id: limit an id that does not start with `_`, actual `_x` `` | `_` prefix is reserved for Noctis | rename |
 | `[CID-03] #[derive(Route)] needs a #[route("id")] attribute` / `a Route takes exactly one #[route] attribute` / `#[route] takes a list: the route id, then codec arguments` / `#[route] is missing the route id` / `the route id must be a string literal` | attribute missing, doubled or malformed | `#[route("shop.buy", args…)]` |
 | ``[CID-03] unknown #[route] argument `colour` `` | typo or unsupported argument | codec arguments: `by_ref`, `overflow = spill`, `schema = n`, `select`, `signed` (`view` is withdrawn: delete it; tabs and pages are Payload fields) |
-| ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet`` (also `one_shot`, `owner`, `permissions`, `guard`, `opens_modal`) | runtime arguments are [planned] | remove it until the release that supports it |
+| ``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet`` (also `one_shot`, `owner`, `permissions`, `guard`, and the withdrawn `opens_modal`) | runtime arguments are [planned]; `opens_modal` is gone (Story 6.10) | remove it until the release that supports it; for a modal, declare `auto_defer = false` |
 | ``[CID-03] #[route] argument `select` is given twice`` / ``[CID-03] `select` is a flag and takes no value`` / ``malformed #[route] argument `by_ref` `` | duplicate argument, `select = true`, `by_ref()` | write each flag once, bare |
 | ``[CID-03] `overflow = error` is not a #[route] argument`` (`` = help: the plain inline Route (no `overflow`) is the error policy: leave `overflow` out ``) / ``the only `overflow` policy is `spill` `` / ``[CID-03] `overflow` needs a value`` | another overflow policy | `overflow = spill`, or nothing |
 | ``[CID-03] `schema` must be in 1..=61 (one base62 digit), found `62` `` / ``[CID-03] `schema = 0` is the default schema`` (`` = help: leave it out for schema 0 ``) / ``[CID-03] `schema` must be an integer literal`` / ``[CID-03] `schema` needs a value`` | schema out of range or not an integer literal | `schema = 1` … `schema = 61`; no `schema` for 0 |
 | ``[CID-03] `by_ref` and `overflow = spill` cannot be combined`` | both body policies | pick one |
 | ``[CID-03] a `by_ref` route cannot be `signed` `` | a Ref is already unguessable | drop `signed` |
 | conflicting implementations of `Payload` | `#[derive(Route)]` and `#[derive(Payload)]` on one struct | keep only `Route`; it includes the Payload |
-| ``[CID-04] Route `X` has no handler, so no component can be built for it`` | building a component from a Route with no `#[handler]` | write the handler (and `.add(it())` to a Module) |
+| ``[CID-04] Route `X` has no handler, so no component can be built for it`` | building a component from a Route with no `#[handler]` | write the `#[handler]` method (and `.add::<X>()` to a Module) |
 | ``route `X` is not declared `select` `` | `.string_select(..)` / `.user_select()` … on a Route without `select` | `#[route("id", select)]` |
 | `[CMD-11] config set: limit a subcommand or a subcommand group, not both, actual \`set\`` followed by `= note: \`config set\` makes \`set\` a subcommand` and `= note: \`config set prefix\` makes \`set\` a subcommand group` | optional group creating `a b` and `a b c` | remove `?`, or move the bare form to its own path (`config show`) |
 | `[CMD-12]` base invokable with children | `"x (y)?"` or `x` + `x y` | give the bare form its own word |
@@ -64,10 +64,13 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | missing key / wrong number of arguments on `s.x.y(..)` | key absent in `en-US.yaml` or placeholders differ | add the key; match placeholders |
 | `HashMap` field in a Template | non-deterministic cache key | `BTreeMap` or `Vec` |
 | a handler taking a Responder doesn't return `Responded` | macro contract | return `acked.done()` |
-| `modal` not found on `ComponentResponder` | Route not `opens_modal`, or the handler takes `ComponentResponder` instead of `ComponentResponder<OpensModal>` | declare `opens_modal` on the Route and take the `OpensModal` alias |
-| `[INT-05]` responder alias doesn't match `opens_modal` (`` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` `` / `` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` ``) | one declared without the other | declare both or neither |
-| `` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal `` | `#[command(.., opens_modal)]` on a handler with no responder parameter | add `r: CommandResponder<OpensModal>` and return `r.modal(m).await?.done()` |
-| `modal` not found on `CommandResponder` (E0599) | the Command is not `opens_modal`, or takes `CommandResponder` | declare `opens_modal` and take `CommandResponder<OpensModal>` |
+| `[INT-05] show_modal needs auto_defer = false on this handler` (E0277) | `show_modal` on an auto-defer responder (`CommandResponder`, `ComponentResponder`) or on any `ModalResponder` | declare `auto_defer = false` on the command or component struct and take `CommandResponder<Manual>` / `ComponentResponder<Manual>`; a modal submit can never open a modal [planned: Story 6.10; this release: `modal` not found (E0599) without `OpensModal`] |
+| `[INT-05]` responder alias doesn't match `auto_defer` (`auto_defer = false` declared but the handler takes `CommandResponder`/`ComponentResponder` or no responder, or it takes the `Manual` alias without `auto_defer = false`) | one declared without the other | declare both or neither [planned: Story 6.10; this release's messages: `` [INT-05] `opens_modal` is declared, so the handler must take `CommandResponder<OpensModal>` `` / `` [INT-05] this handler takes `CommandResponder<OpensModal>`, so its `#[command]` must declare `opens_modal` `` / `` [INT-05] `opens_modal` handlers take `r: CommandResponder<OpensModal>` to send the modal ``] |
+| `[INT-06]` `auto_defer`/`response` on `#[autocomplete]` | autocomplete has no defer | remove it [planned, Story 6.7/6.10] |
+| a free `async fn` with `#[handler]`/`#[command]`/`#[event]`, or `#[derive(Route)]`/`#[derive(Options)]` (help shows the struct form) | the shipped free-function style | one struct per interaction: `#[derive(SlashCommand/Button/…)] struct X` + `impl X { #[handler] async fn handle(self, ctx) }` [planned: Story 6.10] |
+| `.build()` not found, help lists the kind derives | a struct without a kind derive (`Button`, `StringSelectMenu`, …) | derive the kind and add `defaults(..)` [planned: Story 6.10] |
+| missing `defaults(..)` / missing `style`, `label` or `emoji`, `placeholder`, `title` | the mandatory defaults of the kind | add the keys the error names [planned: Story 6.10] |
+| `.options(..)` required before the string select converts into a component | a `StringSelectMenu` with no `options` in its defaults | call `.options(..)` per render or add `options = SomeChoicesEnum` |
 | `update` not found on `CommandResponder` | commands can't update | `reply` |
 
 ## App build errors (`BuildError`, all violations listed at once)
@@ -75,7 +78,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | Message | Fix |
 | --- | --- |
 | duplicate Route `x` in Modules A and B | rename one Route id (before release!) |
-| Route `x` has no mounted handler | `.add(handler())` on a mounted Module |
+| Route `x` has no mounted handler | `.add::<X>()` on a mounted Module (this release: `.add(handler())`) |
 | duplicate Command Path / pattern expansion | one handler per path (FR-56) |
 | conflicting `default_member_permissions` (or contexts, integration types, nsfw) on base `x` | make leaves agree or declare `Module::base("x", …)` |
 | base `x` has options and subcommands | split the paths |
@@ -94,10 +97,10 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| "This interaction failed" | handler panicked before the deadline on an `opens_modal` Route, or slow work before `r.modal(..)` | keep modal handlers fast (< 3 s); load data after opening if possible |
-| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the interaction waited in the queue past the deadline, so even the auto-defer failed (`WARN noctis::dispatch: auto-defer failed handler=..`), or an `opens_modal` handler was slow | Commands are auto-deferred at `ack_deadline` (2000 ms) and answer late by editing; keep `ack_deadline` ≤ 2000 ms, raise `.handler_concurrency(n)` if lanes back up. Check `noctis_ack_latency_seconds`, `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
-| `ERROR noctis::dispatch: an `opens_modal` handler did not answer within the 3 s ack deadline handler=.. module=..` | an `opens_modal` Command did slow work before `r.modal(..)` (no auto-defer for it) | open the modal first; load data after, or pre-load it cheaply |
-| `ModalUnavailable` (`a modal can only be the first response to an interaction`) | `r.modal(..)` over the `Dispatcher` (prefix commands), or after another initial response | answer prefix invocations with a message; open modals only from interactions |
+| "This interaction failed" | handler panicked before the deadline on an `auto_defer = false` handler, or slow work before `r.show_modal(..)` | keep modal-opening handlers fast (< 3 s); load data after opening if possible; never set `auto_defer = false` on a handler that does not open a modal |
+| "This interaction failed" / `AckDeadlineMissed` (`interaction not acknowledged in time: … past the 2.9 s ack deadline`) | the interaction waited in the queue past the deadline, so even the auto-defer failed (`WARN noctis::dispatch: auto-defer failed handler=..`), or an `auto_defer = false` handler was slow | Commands are auto-deferred at `ack_deadline` (2000 ms) and answer late by editing; keep `ack_deadline` ≤ 2000 ms, raise `.handler_concurrency(n)` if lanes back up. Check `noctis_ack_latency_seconds`, `noctis_http_phase_seconds{phase="ttfb"}` and `noctis_interaction_ack_hedges_total` for a slow network |
+| `ERROR noctis::dispatch: an `auto_defer = false` handler did not answer within the 3 s ack deadline handler=.. module=..` (this release prints `an `opens_modal` handler`) | an `auto_defer = false` handler did slow work before `r.show_modal(..)` (no auto-defer for it) | open the modal first; load data after, or pre-load it cheaply |
+| `ModalUnavailable` (`a modal can only be the first response to an interaction`) | `r.show_modal(..)` (this release `r.modal(..)`) over the `Dispatcher` (prefix commands), or after another initial response | answer prefix invocations with a message; open modals only from interactions |
 | the first Discord request after a quiet period is slow, or `RequestTimedOut` after ~10 s | a NAT/firewall silently dropped an idle connection, or slow DNS | nothing to add: the HTTP edge keeps one connection warm with HTTP/2 PINGs and redials dead ones; do **not** poll `GET /users/@me`. If it persists, lower `HttpConfig::ping_interval` and check `noctis_http_ping_timeouts_total` and `noctis_http_phase_seconds{phase="dns"}` |
 | `ERROR noctis::http: the Discord HTTP edge could not start` | the tokio runtime has no IO driver | build it with `enable_all()` (as `#[tokio::main]` does) |
 | clicking an old message shows "expired" | Ref TTL passed, or Payload schema changed (stale) | longer `ttl`, `on_expired`/`on_stale` handler that re-opens the View |

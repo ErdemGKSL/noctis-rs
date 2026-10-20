@@ -6,7 +6,8 @@
 //! The feature follows the Usage Skill's layout: `mod.rs` holds the Module and the
 //! Routes, `view.rs` the render function (the single source of truth for the message),
 //! `handlers.rs` the Command and component handlers. All UI state (tab, page) is a
-//! typed Payload field of this module's own Routes; nothing is stored per message.
+//! typed Payload field of this module's own components; nothing is stored per message.
+//! [planned: Story 6.10] kind derives, `defaults(..)`, `.build()` and `add::<T>()`.
 
 mod handlers;
 pub mod view;
@@ -16,10 +17,10 @@ use noctis::prelude::*;
 
 pub fn module() -> Module {
     Module::new("dashboard")
-        .add(handlers::dashboard())
-        .add(handlers::open_tab())
-        .add(handlers::turn_page())
-        .add(handlers::toggle_module())
+        .add::<handlers::Dashboard>()
+        .add::<OpenTab>()
+        .add::<TurnPage>()
+        .add::<ToggleModule>()
 }
 
 // ---------------------------------------------------------------------------------------
@@ -40,11 +41,16 @@ impl DashTab {
 }
 
 /// A tab button. The active tab's button is rendered disabled, so the tab row shows the
-/// current state. `permissions` is a Route Guard checked on every click.
+/// current state. `permissions` is a Route Guard checked on every click. The render
+/// overrides the label (one per tab), the style and `disabled`.
 ///
 /// Width (`noctis_route_width`): `dash.tab: F 1 + route 8 + sep 1 + S 0 + N 0 + body 13 + T 0 = 23 (limit 100)`.
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.tab", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "dash.tab",
+    permissions = MANAGE_GUILD, // [planned]: runtime arguments are rejected until their release
+    defaults(style = Secondary, label = "dashboard.tab.overview"),
+)]
 pub struct OpenTab {
     pub guild: Id<GuildMarker>,
     pub tab: DashTab,
@@ -54,8 +60,12 @@ pub struct OpenTab {
 /// the prev and next ids distinct from the tab buttons (CID-02).
 ///
 /// Width (`noctis_route_width`): `dash.page: F 1 + route 9 + sep 1 + S 0 + N 0 + body 15 + T 0 = 26 (limit 100)`.
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.page", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "dash.page",
+    permissions = MANAGE_GUILD, // [planned]: runtime arguments are rejected until their release
+    defaults(style = Secondary, label = "common.next"),
+)]
 pub struct TurnPage {
     pub guild: Id<GuildMarker>,
     pub page: u16,
@@ -84,8 +94,12 @@ impl ModuleKey {
 /// so a stale click can't flip the state the wrong way.
 ///
 /// Width (`noctis_route_width`): `dash.mod: F 1 + route 8 + sep 1 + S 0 + N 0 + body 15 + T 0 = 25 (limit 100)`.
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.mod", permissions = MANAGE_GUILD)] // [planned]: runtime arguments are rejected until their release
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "dash.mod",
+    permissions = MANAGE_GUILD, // [planned]: runtime arguments are rejected until their release
+    defaults(style = Success, label = "common.enable"),
+)]
 pub struct ToggleModule {
     pub guild: Id<GuildMarker>,
     pub module: ModuleKey,

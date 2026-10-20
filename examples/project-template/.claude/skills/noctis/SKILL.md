@@ -34,24 +34,32 @@ For general Rust, use the `rust-best-practices` skill.
 
 ```text
 Discord ──gateway──▶ Shard tasks ──▶ Interaction lane (never dropped) ─▶ pipeline ─▶ your handler
-                                 └─▶ Event lane (bounded)               ─▶ pipeline ─▶ your #[event]
+                                 └─▶ Event lane (bounded)               ─▶ pipeline ─▶ your event handler
 your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ──▶ Responder ──▶ Discord HTTP
 ```
 
 - **App** is the root: token, Modules, Adapters, state. `App::from_env()` → `&mut` builder →
   `.build()?` → `.run().await?`. Sharding is automatic. One binary also publishes
   commands (`--publish-guild <id>`).
-- **Module** groups features (tescord's Pack): `Module::new("profile").add(...)`.
-  Everything you register is a *descriptor* produced by a macro (`#[command]`,
-  `#[handler]`, `#[event]`, `#[hook]`) and added with `.add(fn_name())`.
-- **Command** = an `async fn` with a Command Path: `#[command("settings logs channel")]`.
+- **One struct per interaction** (tescord's `pack.button` / `pack.slashCommand`): the
+  derive names the kind, the struct holds the id and the typed data, and the handler is
+  always a method on it, `impl X { #[handler] async fn handle(self, ctx: …) }`
+  (`#[handler]` takes no arguments; there are no free-function handlers). **[planned:
+  Story 6.10]**: this release still uses free functions; see §8 for today's names.
+- **Module** groups features (tescord's Pack) and registers each struct by type:
+  `Module::new("profile").add::<Profile>().add::<EditBio>()`.
+- **Command** = a `#[derive(SlashCommand)]` struct whose fields are its options (a unit
+  struct when there are none) with its Command Path: `#[command("settings logs
+  channel")]`. Context menus: `#[derive(UserCommand)]` / `#[derive(MessageCommand)]`.
   Commands are *entry points* that open a View (UD-3).
-- **Route** = a typed struct with `#[derive(Route)]` and a stable id
-  (`#[route("shop.buy")]`). Its fields are the **Payload**, encoded into the component's
-  `custom_id`. Every button/select/modal is built *from a Route value*
-  (`BuyItem { item, qty }.button()`), and each Route has exactly **one** `#[handler]`.
-  Too big for 100 chars? `by_ref` stores it in the RefStore and puts an 11-char **Ref**
-  in the id instead.
+- **Component** = a struct whose derive names its kind: `#[derive(Button)]`,
+  `#[derive(StringSelectMenu)]` (and the user/role/mentionable/channel selects),
+  `#[derive(Modal)]`, with a stable id and **mandatory defaults**
+  (`#[button("shop.buy", defaults(style = Primary, label = "shop.buy"))]`). Its fields
+  are the **Payload**, encoded into the component's `custom_id`. Build it from a value
+  (`BuyItem { item, qty }.build()`, then per-render overrides such as `.disabled(..)`);
+  each component id has exactly **one** handler. Too big for 100 chars? `by_ref` stores
+  it in the RefStore and puts an 11-char **Ref** in the id instead.
 - **View** = a plain function you write: `render_x(data, &strings, ids…) -> V2Message`,
   pure, one per screen. The slash Command and every component and modal handler call
   the same function and send the result with `ctx.respond(msg)` (new message),
@@ -113,20 +121,26 @@ use noctis::prelude::*;
 // view.rs: the single source of truth for the message. Pure: data in, message out.
 pub fn render_dashboard(d: &DashData, s: &Strings, tab: DashTab, page: u16, limits: &Limits) -> V2Message { /* §3.3 */ }
 
-// handlers.rs
+// handlers.rs: the command is a struct (unit: no options); its handler is a method.
+#[derive(SlashCommand)]
 #[command("dashboard", description = "Open the server dashboard", permissions = MANAGE_GUILD, contexts = [Guild])]
-async fn dashboard(ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
-    let Some(guild) = ctx.guild_id() else {
-        return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;     // one-line notice
-    };
-    let data = load(&ctx, guild, &meta).await?;                   // all I/O first
-    let s = Strings::of(ctx.response_locale());
-    ctx.respond(render_dashboard(&data, &s, DashTab::Overview, 0, ctx.limits())).await
+pub struct Dashboard;
+
+impl Dashboard {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+        let Some(guild) = ctx.guild_id() else {
+            return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;     // one-line notice
+        };
+        let data = load(&ctx, guild, &meta).await?;                   // all I/O first
+        let s = Strings::of(ctx.response_locale());
+        ctx.respond(render_dashboard(&data, &s, DashTab::Overview, 0, ctx.limits())).await
+    }
 }
 
 // mod.rs
 pub fn module() -> Module {
-    Module::new("dashboard").add(handlers::dashboard()).add(handlers::open_tab()).add(handlers::turn_page())
+    Module::new("dashboard").add::<Dashboard>().add::<OpenTab>().add::<TurnPage>()
 }
 ```
 
@@ -136,28 +150,38 @@ description comes from `cmd.dashboard.description` in `locales/en-US.yaml`; with
 write `description = "…"` in the attribute. A missing one is a compile error (CMD-04),
 and a literal that differs from the locale file is a compile error too.
 
-### 3.2 A Route, a button, its handler
+### 3.2 A button: struct, defaults, handler
 
 ```rust
-#[derive(Route, Debug, Clone, Copy)]
-#[route("dash.mod", permissions = MANAGE_GUILD)]   // id ≤ 24 chars [a-z0-9._-]; guard [planned]
+#[derive(Button, Debug, Clone, Copy)]
+#[button(
+    "dash.mod",                                      // id ≤ 24 chars [a-z0-9._-]
+    permissions = MANAGE_GUILD,                      // Route Guard [planned]
+    defaults(style = Success, label = "common.enable"),   // mandatory; texts are locale keys
+)]
 pub struct ToggleModule { pub guild: Id<GuildMarker>, pub module: ModuleKey, pub enable: bool }
 
-// in the render function:
+// in the render function: the defaults, plus per-render overrides
 let toggle = ToggleModule { guild, module, enable: !enabled }
-    .button()
-    .label(s.common.enable())
-    .style(ButtonStyle::Success);
+    .build()
+    .label(if enabled { s.common.disable() } else { s.common.enable() })
+    .style(if enabled { ButtonStyle::Danger } else { ButtonStyle::Success });
 
-// decode (the argument) → validate/authorize (Route Guard) → write → redraw in place
-#[handler]
-async fn toggle_module(ctx: ComponentCtx, t: ToggleModule, meta: State<BotMeta>) -> HandlerResult<Responded> {
-    ctx.modules().set_enabled(t.module.module_id(), ModuleScope::Guild(t.guild), t.enable).await?;
-    let data = load(&ctx, t.guild, &meta).await?;
-    let s = Strings::of(ctx.response_locale());
-    ctx.update(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits())).await
+// decode (`self`) → validate/authorize (Route Guard) → write → redraw in place
+impl ToggleModule {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+        ctx.modules().set_enabled(self.module.module_id(), ModuleScope::Guild(self.guild), self.enable).await?;
+        let data = load(&ctx, self.guild, &meta).await?;
+        let s = Strings::of(ctx.response_locale());
+        ctx.update(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits())).await
+    }
 }
 ```
+
+`response = update` (default) redraws the clicked message; `response = ephemeral |
+public` opens a new message instead. Every handler is auto-deferred at 2000 ms unless
+its struct declares `auto_defer = false` (§3.6).
 
 ### 3.3 Tabs and a paginated list (recipes)
 
@@ -165,14 +189,16 @@ async fn toggle_module(ctx: ComponentCtx, t: ToggleModule, meta: State<BotMeta>)
 #[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashTab { Overview, Roles, Modules }
 
-#[derive(Route, Debug, Clone, Copy)] #[route("dash.tab")]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("dash.tab", defaults(style = Secondary, label = "dashboard.tab.overview"))]
 pub struct OpenTab { pub guild: Id<GuildMarker>, pub tab: DashTab }
-#[derive(Route, Debug, Clone, Copy)] #[route("dash.page")]
+#[derive(Button, Debug, Clone, Copy)]
+#[button("dash.page", defaults(style = Secondary, label = "common.next"))]
 pub struct TurnPage { pub guild: Id<GuildMarker>, pub page: u16 }
 
 // Tab row: the active tab is disabled.
 let tabs = ActionRow::buttons(DashTab::ALL.map(|t| {
-    OpenTab { guild, tab: t }.button().label(tab_label(s, t)).disabled(t == tab)
+    OpenTab { guild, tab: t }.build().label(tab_label(s, t)).disabled(t == tab)
 }));
 let body = match tab {                                 // sections by `match`
     DashTab::Overview => overview(d, s),
@@ -181,8 +207,8 @@ let body = match tab {                                 // sections by `match`
 };
 // Pager: prev disabled on the first page, next on the last.
 ActionRow::buttons([
-    TurnPage { guild, page: page.saturating_sub(1) }.button().label(s.common.previous()).disabled(page == 0),
-    TurnPage { guild, page: page + 1 }.button().label(s.common.next()).disabled(page + 1 >= pages),
+    TurnPage { guild, page: page.saturating_sub(1) }.build().label(s.common.previous()).disabled(page == 0),
+    TurnPage { guild, page: page + 1 }.build().disabled(page + 1 >= pages),
 ])
 ```
 
@@ -194,8 +220,8 @@ Full code: `references/views-and-recipes.md` §3.1-3.2 and `src/modules/dashboar
 #[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupStep { Channel, Role, Confirm }
 
-#[derive(Route, Debug, Clone, Copy)]
-#[route("setup", owner = owner)]                      // Back and Next: the state + target step
+#[derive(Button, Debug, Clone, Copy)]                  // Back and Next: the state + target step
+#[button("setup", owner = owner, defaults(style = Primary, label = "setup.next"))]
 pub struct SetupState { pub owner: Id<UserMarker>, pub step: SetupStep,
     pub log_channel: Option<Id<ChannelMarker>>, pub mod_role: Option<Id<RoleMarker>> }
 
@@ -204,17 +230,19 @@ pub fn render_setup(st: SetupState, s: &Strings) -> V2Message {
     // Back · Cancel · Next (Next disabled until the value is set; Finish on the last step).
 }
 
-#[handler]
-async fn go_to_step(ctx: ComponentCtx, st: SetupState) -> HandlerResult<Responded> {
-    if st.step != SetupStep::Channel && st.log_channel.is_none() {
-        return ctx.reply_text(keys::SETUP_NEED_CHANNEL).await;   // Payloads are client input
+impl SetupState {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        if self.step != SetupStep::Channel && self.log_channel.is_none() {
+            return ctx.reply_text(keys::SETUP_NEED_CHANNEL).await;   // Payloads are client input
+        }
+        ctx.update(render_setup(self, &Strings::of(ctx.response_locale()))).await
     }
-    ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
 }
 ```
 
-Selected values travel in the Payloads of the select Routes (`PickLogChannel { owner,
-mod_role }`), never in a listener. Full code: `references/views-and-recipes.md` §3.3 and
+Selected values travel in the Payloads of the select structs (`#[derive(ChannelSelectMenu)]
+PickLogChannel { owner, mod_role }`), never in a listener. Full code: `references/views-and-recipes.md` §3.3 and
 `src/modules/setup/`.
 
 ### 3.5 A rendered image in a message
@@ -244,33 +272,50 @@ let gallery = MediaGallery::new([MediaItem::new(card).alt(s.profile.card_alt(&na
 // … V2Message::new(components).attachments(files)
 ```
 
-### 3.6 A modal with pre-fill
+### 3.6 A button that opens a modal (with pre-fill)
 
 ```rust
-#[derive(Route, Clone, Copy)] #[route("profile.bio", opens_modal, owner = user)] // runtime args [planned]
+// A button that opens a modal MUST be `auto_defer = false` and take the `Manual` responder.
+#[derive(Button, Clone, Copy)]
+#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = "profile.edit_bio"))]
 pub struct EditBio { pub user: Id<UserMarker> }
-#[derive(Route, Clone, Copy)] #[route("profile.save", owner = user)]
-pub struct SaveBio { pub user: Id<UserMarker> }
 
+// The modal is its own struct: fields without an input attribute are its Payload.
 #[derive(Modal, Debug)]
-#[modal(route = SaveBio, title = "Edit your profile")]   // literal texts, checked at cargo check
+#[modal("profile.save", owner = user, defaults(title = "profile.bio_modal.title"))]
 pub struct BioForm {
+    pub user: Id<UserMarker>,                              // Payload: whose profile to redraw
     #[text_input("Bio", style = paragraph, max_length = 300)]
-    pub bio: Option<String>,                              // Option ⇒ not required
+    pub bio: Option<String>,                               // input; Option ⇒ not required
 }
 
-#[handler]
-async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModal>) -> HandlerResult<Responded> {
-    let modal = BioForm::modal(SaveBio { user: e.user }).bio(current_bio); // pre-fill [planned, Story 9.4]
-    Ok(r.modal(modal).await?.done())
+impl EditBio {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+        let form = BioForm { user: self.user, bio: current_bio };   // the value pre-fills the inputs
+        Ok(r.show_modal(form.build()).await?.done())                // first response, within 3 s
+    }
 }
 
-#[handler]
-async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerResult<Responded> {
-    // save, reload, then redraw the message the button was on (button → modal → re-render)
-    ctx.update(render_profile(&load(&ctx, save.user).await?, &Strings::of(ctx.response_locale()), true)).await
+impl BioForm {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        // `self` = Payload + submitted values: save, reload, redraw the button's message
+        ctx.update(render_profile(&load(&ctx, self.user).await?, &Strings::of(ctx.response_locale()), true)).await
+    }
 }
 ```
+
+Which handlers may open a modal, and how each one answers, is declared on the struct:
+
+| Handler | Declare | Responder parameter | `show_modal` |
+| --- | --- | --- | --- |
+| command or button that answers with a message (most) | nothing (`auto_defer = true` by default) | none, or `CommandResponder` / `ComponentResponder` | no: `[INT-05] show_modal needs auto_defer = false on this handler` |
+| command or button that opens a modal | `auto_defer = false` | `CommandResponder<Manual>` / `ComponentResponder<Manual>` (required) | yes, as the first response within 3 s |
+| modal submit | `auto_defer`, `response` as needed on `#[modal(..)]` | none, `ModalResponder` or `ModalResponder<Manual>` | never |
+| autocomplete | neither (compile error) | `AutocompleteCtx` only | never |
+
+Details and the `response = …` argument: `references/responder.md` §2b.
 
 ### 3.7 Wiring the App
 
@@ -304,9 +349,9 @@ async fn main() -> anyhow::Result<()> {
 | A homogeneous list that can exceed 40 components / 4000 chars | **pagination recipe** (inside the active tab), page sized with `Budget` | UD-6 |
 | Pick one of many entities (> 5) | a String Select (≤ 25 options per page) + prev/next | 25 options cost 2 components |
 | Dense read-only data: cards, charts, tables, leaderboards | **Template image** in Media Gallery / Thumbnail | UD-2; 1 component, 0 text chars |
-| Free text, numbers, or 2+ inputs that must be submitted together | **Modal** opened from a button | Message selects fire per change; modals batch |
+| Free text, numbers, or 2+ inputs that must be submitted together | **Modal** opened from a button declared `auto_defer = false` | Message selects fire per change; modals batch |
 | Destructive action | Danger button → confirm View → `one_shot` by-ref Route | Quality rule 3 |
-| Per-user settings on a shared message | Ephemeral sub-panel (`#[handler(response = ephemeral)]`, `ctx.respond(..)`) | INT-10: ephemerality is fixed at creation |
+| Per-user settings on a shared message | Ephemeral sub-panel (`#[button("id", response = ephemeral, defaults(..))]`, `ctx.respond(..)`) | INT-10: ephemerality is fixed at creation |
 | A one-line notice, no interaction | `ctx.reply_text(key)` or `HandlerError::user(key)` | Localized, ephemeral |
 | Post to a log channel or white-label persona | a non-interactive `StaticMessage` through a webhook | WH-01/02 |
 
@@ -317,8 +362,13 @@ to **act** on an item → a Section with an accessory button or a select option.
 
 | Never | Instead |
 | --- | --- |
-| A per-message listener, collector, `await` for the next click, or `tokio::spawn` + sleep tied to a message | One `#[handler]` per Route; state in the Payload/Ref; expiry via Ref TTL and the Expired Handler |
-| Hand-building a `custom_id` string (`format!("buy:{id}")`) | `#[derive(Route)]` struct → `.button()` / `.string_select(..)`; Noctis owns the format (AD-5) |
+| A per-message listener, collector, `await` for the next click, or `tokio::spawn` + sleep tied to a message | One `#[handler]` per component struct; state in the Payload/Ref; expiry via Ref TTL and the Expired Handler |
+| Hand-building a `custom_id` string (`format!("buy:{id}")`) | A `#[derive(Button)]` / `#[derive(StringSelectMenu)]` / … struct → `.build()`; Noctis owns the format (AD-5) |
+| A free `async fn` handler, or a handler that takes the Payload as an argument | `impl X { #[handler] async fn handle(self, ctx) }` on the struct; `#[handler]` takes no arguments |
+| A button that opens a modal without `auto_defer = false` | `#[button("id", auto_defer = false, defaults(..))]` + `ComponentResponder<Manual>` + `show_modal` |
+| `auto_defer = false` on a handler that does not open a modal | Keep the default: a handler that misses 3 s shows "This interaction failed" |
+| Choosing ephemerality per call | `response = ephemeral` on the struct's attribute |
+| Repeating the same label/style at every render | Put it in `defaults(..)`; override only what changes |
 | Free text (reasons, names, URLs) in a Payload | Bounded ASCII `BoundedStr<N>` only if tiny; otherwise `by_ref`, or store it via a port and put the id in the Payload |
 | `String`/`Vec` fields in an inline Route | They are unbounded → compile error `[CID-01]`; use `by_ref` / `overflow = spill` |
 | Trusting Payload data for authorization | Route Guards (`owner = field`, `permissions = …`) plus checks in the handler; Payloads are client input (CID-06) |
@@ -341,7 +391,9 @@ to **act** on an item → a Section with an accessory button or a select option.
 From the maintainer's production bot; full list, pitfalls and complete code in
 `references/views-and-recipes.md` §3.4 and §7.
 
-1. One Module per feature: `src/modules/<feature>/{mod.rs, view.rs, handlers.rs, events.rs}`.
+1. One Module per feature: `src/modules/<feature>/{mod.rs, view.rs, handlers.rs, events.rs}`
+   (component structs in `mod.rs`, command structs and the `#[handler]` impls in
+   `handlers.rs`).
 2. `render_x(data, &strings, selected_id, page…) -> V2Message` is the single source of
    truth, reused by the slash Command and every component/modal handler.
 3. UI state only in typed Payload fields of the module's own Routes (ids, page, section).
@@ -359,10 +411,12 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 | tescord / dbi | Noctis |
 | --- | --- |
 | `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
-| `pack.slashCommand({ name: "a (b\|c)" })` | `#[command("a (b\|c)")]`; the handler gets a generated `APath` enum |
-| `options: { user: { type: "User" } }` | `#[derive(Options)] struct … { user: ResolvedUser }` |
-| `autoComplete` | `#[option(autocomplete = fn)]` + `#[autocomplete]` fn calling `ctx.respond(..)` |
-| `pack.button({ id, options })` + `buildComponent({ id, data, overrides })` | `#[derive(Route)]` + `Route { .. }.button().label(..)` + `#[handler]` |
+| `pack.slashCommand({ name: "a (b\|c)", handle })` | `#[derive(SlashCommand)] #[command("a (b\|c)")] struct A;` + `impl A { #[handler] async fn handle(self, ctx, path: APath) }` |
+| `options: { user: { type: "User" } }` | fields of the command struct: `struct Ban { #[option(..)] user: ResolvedUser }` |
+| `autoComplete` | `#[option(autocomplete)]` + an `#[autocomplete(field)]` method on the command struct calling `ctx.respond(..)` [planned, Story 6.7] |
+| `pack.button({ id, options, handle })` + `buildComponent({ id, data, overrides })` | `#[derive(Button)] #[button("id", defaults(..))] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` + `X { .. }.build().label(..)` |
+| `pack.stringSelect` / `userSelect` / … / `modal` | `#[derive(StringSelectMenu)]`, `UserSelectMenu`, `RoleSelectMenu`, `MentionableSelectMenu`, `ChannelSelectMenu`, `Modal` |
+| `pack.event({ name, handle })` | `#[derive(EventHandler)] #[event] struct X;` + `impl X { #[handler] async fn handle(self, ctx, event: MessageCreate) }` |
 | `renderSetupMenu(..)` + `deferUpdate()` + `editReply({ components, flags })` | `render_x(..) -> V2Message` + `ctx.update(render_x(..))` (flags and deferral are automatic) |
 | `data[i] as number` | typed Payload fields |
 | dbi references / store | `by_ref` Routes + `RefStore` |
@@ -393,3 +447,23 @@ Read only what the task touches.
 | `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |
+
+## 8. Shipped names until Story 6.10
+
+This skill teaches the converged API. The current release still ships the older
+authoring surface, which Story 6.10 renames without aliases. Until then write:
+
+| Converged (taught above) | This release |
+| --- | --- |
+| `#[derive(SlashCommand)] #[command("p", ..)] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` | `#[derive(Options)] struct XOptions {..}` + a free `#[command("p", ..)] async fn x(ctx: CommandCtx, opts: XOptions)` |
+| `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit struct + `#[handler]` method | a free `#[user_command(..)]` / `#[message_command(..)]` `async fn(ctx, target)` |
+| `#[derive(EventHandler)] #[event] struct X;` + `#[handler]` method | a free `#[event] async fn x(ctx: EventCtx, event: ..)` |
+| `#[derive(Button)] #[button("id", .., defaults(..))]` and the select kinds | `#[derive(Route)] #[route("id", ..)]` (selects add the bare `select` argument) |
+| `X { .. }.build()` | `X { .. }.button()`, `.string_select(options)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()` (`RouteComponents`) |
+| `#[derive(Modal)] #[modal("id", defaults(title = ..))]` with Payload fields | `#[modal(route = R, title = "…")]` with a separate `#[derive(Route)]` submit Route, opened with `BioForm::modal(R { .. })` |
+| `Module::add::<X>()` | `Module::add(x())` (the descriptor function the macro generates) |
+| `response = public \| ephemeral` on commands | the bare `ephemeral` flag (`CommandHandler::ephemerality()`) |
+| `auto_defer = false` + `CommandResponder<Manual>` + `show_modal(m)` | `opens_modal` + `CommandResponder<OpensModal>` (`NoModal` by default; `CommandHandler::opens_modal()`) + `modal(m)` |
+| `defer_reply()` / `edit_reply` / `follow_up` / `delete_reply` | `defer(Ephemerality)` / `edit_original` / `followup` / `delete_original` |
+
+Component, modal-submit and event handlers that need Epic 7 are [planned] either way.

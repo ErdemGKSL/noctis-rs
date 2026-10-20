@@ -7,7 +7,7 @@ use noctis::id::marker::UserMarker;
 use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
 use noctis::prelude::*;
 use noctis::ui::{
-    ActionRow, Attachment, AttachmentSet, Button, ButtonStyle, Components, Container,
+    ActionRow, Attachment, AttachmentSet, Button, Components, Container,
     MediaGallery, MediaItem, Separator, TextDisplay, V2Message, escape_markdown,
 };
 use serde::{Deserialize, Serialize};
@@ -41,12 +41,10 @@ pub fn render_profile(p: &ProfileData, s: &Strings, editable: bool) -> V2Message
         .map_or_else(|| format!("-# {}", s.profile.no_bio()), escape_markdown);
 
     // A row takes a fixed-size array: one branch per shape; mixed kinds convert to `Button`.
-    let refresh = RefreshProfile { user: p.user, editable }.button().label(s.common.refresh());
+    // `.build()` uses each Route's declared defaults (label, style); no overrides needed.
+    let refresh = RefreshProfile { user: p.user, editable }.build();
     let footer = if editable {
-        let edit = EditBio { user: p.user }
-            .button()
-            .label(s.profile.edit_bio())
-            .style(ButtonStyle::Primary);
+        let edit = EditBio { user: p.user }.build();
         ActionRow::buttons([Button::from(edit), Button::from(refresh)])
     } else {
         ActionRow::buttons([refresh])

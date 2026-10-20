@@ -133,7 +133,7 @@ recorded here.
   (`IntoResponse`, `ModuleScope`, `ref_ttl`,
   `theme!()`, `.locales(..)`) are settled by the story that delivers the behavior
   behind them, which reconciles the template and skill. Behaviors have acceptance
-  criteria (for example `#[handler(response = …)]` in Story 7.2).
+  criteria (for example `response = …` in Story 7.2).
 - **Discord in tests:** tests that need Discord use the testkit fakes from Stories 5.2
   and 5.3 (`noctis_testkit::fake`, AD-24) on an App built on `Runtime::for_test()`;
   no story builds its own mock.
@@ -193,7 +193,7 @@ Priority tier from PRD §8 in brackets.
 - FR-18 [P0]: Expired Handler — missing/expired Ref goes to the Expired Handler; default is a short ephemeral localized notice; overridable per App or per Route (e.g. re-render the starting View).
 - FR-19 [P0]: Untrusted input — malformed `custom_id`, unknown Route or undecodable Payload is a typed error + logged warning, never a panic; Route Guards (invoking user only, required permission) run before the handler and fail with a localized ephemeral notice; optional integrity tag on inline Payloads, mismatch handled as unknown Route.
 - FR-20 [P0]: Middleware with typed Extensions — before/after interactions and events; can stop processing; attaches typed Extensions read by type; deterministic order (registration order, parent before child).
-- FR-21 [P0]: Automatic acknowledgement — deferred response if the handler hasn't responded by a configurable deadline (default 2000 ms from gateway receipt); ephemerality declared up front per Command/Route; Commands defer as new deferred message, components/modal submits as in-place update; late responses (> 5 s) still delivered; V2 flag applied on the follow-up edit; modal-opening handlers never auto-deferred (missed deadline logs an error naming the handler), modal-in-response-to-modal-submit is a typed error; after 15 min public Views fall back to bot-token edit, ephemeral ones return `TokenExpired`; user-installed follow-up cap returns a typed error.
+- FR-21 [P0]: Automatic acknowledgement — deferred response if the handler hasn't responded by a configurable deadline (default 2000 ms from gateway receipt); response (`public`/`ephemeral`/`update`) declared up front per handler, and `auto_defer` per handler (default on, App-wide deadline); Commands defer as new deferred message, components/component-opened modal submits as in-place update unless declared otherwise; late responses (> 5 s) still delivered; V2 flag applied on the follow-up edit; only `auto_defer = false` handlers can open modals (compile time) and are never auto-deferred (missed deadline logs an error naming the handler), modal-in-response-to-modal-submit is a typed error; after 15 min public Views fall back to bot-token edit, ephemeral ones return `TokenExpired`; user-installed follow-up cap returns a typed error.
 - FR-22 [P0]: Error routing — default: short localized ephemeral user error plus full structured trace with interaction context; Error Sinks selected by origin (Command, Component/Modal, Autocomplete, Event, Render).
 
 **4.4 Components V2 UI Kit**
@@ -354,9 +354,10 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
 - **AD-5 / AD-6 / AD-18 / AD-19 / AD-20 codec:** normative `custom_id` layout
   (`F route ":" [S] [N] body [T]`; the `E` view envelope was withdrawn on
   2026-10-20 and Story 6.10 removes it), `pub const` layout constants checked against
-  the catalog, total decoding, `Field::MAX_LEN` widths, `#[derive(Route)]` with
+  the catalog, total decoding, `Field::MAX_LEN` widths, the component kind derives
+  (`Button`, the select derives, `Modal`; `#[derive(Route)]` until Story 6.10) with
   `assert_fits`, `EncodedId = Inline | RefSlot(PendingRef)`, two-phase Ref minting by
-  the Responder, `R: Handled` component constructors (AD-20, widget state on the View
+  the Responder, `R: Handled` `.build()` from mandatory `defaults(..)` (AD-20, widget state on the View
   Route, is withdrawn), integrity tag keyed by `NOCTIS_PAYLOAD_KEY` (32 bytes, rotation with one
   previous key, never logged).
 - **AD-7 Registry:** Modules produce descriptors; Boot Flags and per-App filters apply
@@ -367,10 +368,13 @@ noctis-core, noctis-macros, noctis-i18n, noctis-image, noctis-prefix, noctis-tes
 - **AD-10 lanes:** `Inbound { shard, received_at, kind }`, shard tasks only `try_send`,
   interaction lane priority, bounded event lane with droppable/overflow policy,
   semaphore-bounded worker set in core, guild-keyed ordered sub-queues.
-- **AD-11 Responder:** per-kind ctx types, `Responder<K, S = Pending>` taken as a
-  handler parameter (`CommandResponder<M>`, `ComponentResponder<M>`, `ModalResponder`,
-  `M = NoModal | OpensModal`), `Responder<Pending>` → `Responder<Acked>`
-  typestate, `opens_modal` declared on `#[command]` or `#[route]`, atomic runtime state machine shared with auto-defer, follow-up counting,
+- **AD-11 Responder:** per-kind ctx types, `Responder<K, S = Pending, D = AutoDefer>`
+  taken as a handler parameter (`CommandResponder<D>`, `ComponentResponder<D>`,
+  `ModalResponder<D>`, `D = AutoDefer | Manual`), `Responder<Pending>` →
+  `Responder<Acked>` typestate, per-handler `auto_defer = true | false` (default
+  `true`) and `response = …` declared on `#[command]`/`#[user_command]`/
+  `#[message_command]` or the component/modal kind attribute (`show_modal` only on `Manual` command and
+  component responders, INT-05; `opens_modal` removed), App-wide ack deadline, atomic runtime state machine shared with auto-defer, follow-up counting,
   `TokenExpired`, typed flag sets, webhook serializer with `with_components=true`.
 - **AD-12 V2 model:** Noctis's own component types serialized directly (raw
   twilight-http body); twilight-model only for ids, interactions, events, commands;
@@ -495,7 +499,7 @@ is mapped.
 | FR-18 | P0 | E7 | Expired Handler, defaults and overrides |
 | FR-19 | P0 | E2 + E7 | Total decoding and integrity tag (E2); pipeline handling and Route Guards (E7) |
 | FR-20 | P0 | E7 | Middleware and typed Extensions |
-| FR-21 | P0 | E6 + E7 (+E5) | Responder typestate and auto-defer for Commands (E6); components and modals (E7); warm, hedged, deadline-bounded callback transport (E5, Story 5.9) |
+| FR-21 | P0 | E6 + E7 (+E5) | Responder typestate and auto-defer for Commands (E6; per-handler `auto_defer` and declared `response` converged in Story 6.10); components and modals (E7, `auto_defer`/`response` on the kind attribute); warm, hedged, deadline-bounded callback transport (E5, Story 5.9) |
 | FR-22 | P0 | E5 + E6 | Error Sinks by origin (E5); user-facing localized errors and panics as responses (E6) |
 | FR-23 | P0 | E4 | Typed V2 builders, flags, legacy path |
 | FR-24 | P0 | E4 | Runtime Limit validator, strict/lenient, configurable `Limits` |
@@ -533,7 +537,7 @@ is mapped.
 | FR-56 | P0 | E6 | Unique Command Paths and context-menu names |
 | FR-57 | P0 | E6 | Explicit base/group metadata, deterministic fallback |
 | FR-58 | P0 | E4 + E7 | `R: Handled` component constructors (E4); handler macro and App-build check (E7) |
-| FR-59 | P1 | E9 | Route component defaults and per-render overrides |
+| FR-59 | P1 | E9 (+E6 Story 6.10) | Route component defaults and per-render overrides (mandatory `defaults(..)` on the kind derives and `.build()`, Story 6.10; overrides, Story 9.3) |
 | FR-60 | P0 | E2 + E7 | Schema version and Stale decoding (E2); stale routing (E7) |
 | FR-61 | P0 | E6 + E8 | Returned message as the Command response (E6, Story 6.5); `ctx.respond`/`ctx.update`/`ctx.reply_text` (E8, Story 8.1) |
 | FR-62 | P0 | E4 + E8 | `cost` (E4, Story 4.3); budget helpers "how many items fit" (E8, Story 8.3) |
@@ -550,7 +554,7 @@ is mapped.
 | FR-73 | P1 | E13 | Boot Flags |
 | FR-74 | P1 | E14 | Launch documentation |
 | FR-75 | P0 | E1 + all | trybuild harness and catalog check (E1); each rule story adds its fixtures |
-| FR-76 | P0 | E2 | `derive(Route)` compile-time length proof |
+| FR-76 | P0 | E2 (+E6 Story 6.10) | `derive(Route)` compile-time length proof (carried by the component kind derives from Story 6.10) |
 | FR-77 | P0 | E6 | `#[command]` compile-time validation |
 | FR-78 | P0 | E4 | Static component tree (`components!`) and literal checks |
 | FR-79 | P0 | E1 | Rules catalog as code and CI cross-check (+E14 pending list empty) |
@@ -1023,7 +1027,7 @@ So that a length bug fails `cargo check` instead of failing in production.
 **Given** the codec arguments of AD-6: `by_ref`, `overflow = spill`, `schema = n` (1..=61), `view`, `select`, `signed`
 **When** they are combined legally
 **Then** the derived `SHAPE` and the length bound include `S`, `E`, `N`, `T` only when declared (`select` sets the `N` nonce section), and `spill` Routes encode inline when the value fits and by Ref otherwise
-**And** the derive emits an empty `RouteRuntime` const that later stories fill (runtime arguments `ttl`/`one_shot` in Story 7.5, `owner`/`permissions`/`guard` in 7.7, `opens_modal` in 7.8), and any argument not yet in AD-6's grammar is a compile error naming it
+**And** the derive emits an empty `RouteRuntime` const that later stories fill (runtime arguments `ttl`/`one_shot` in Story 7.5, `owner`/`permissions`/`guard` in 7.7; deferral is the handler argument `auto_defer`, not a Route argument), and any argument not yet in AD-6's grammar is a compile error naming it
 
 **Given** `#[derive(PayloadEnum)]` on an enum
 **When** it has at most 62 unit variants
@@ -1761,7 +1765,7 @@ So that double acknowledgements and illegal callback types can't happen.
 **When** core dispatches it
 **Then** it resolves the Command from the Registry's O(1) map by default (unlocalized) names (LOC-06) and runs the AD-23 stages that apply to Commands at this point (resolve, locale default, auto-defer arm point, handler, error routing)
 
-**Given** a Command handler taking a `CommandResponder` parameter (AD-11: `Responder<Command<NoModal>, Pending>`)
+**Given** a Command handler taking a `CommandResponder` parameter (AD-11: `Responder<Command<NoModal>, Pending>` as shipped; Story 6.10 turns it into `Responder<Command, Pending, AutoDefer>`)
 **When** the handler responds
 **Then** `Responder<Pending>` offers `reply` and `defer`, each consuming `self` and returning `Responder<Acked>`, which offers only `edit_original`, `followup(msg, Visibility) -> FollowupHandle` and `delete_original` (INT-03), and `done()` yields the `Responded` the handler returns
 **And** `CommandResponder` has no `update` and `CommandResponder<NoModal>` has no `modal` (INT-04, by construction: trybuild fixtures carrying `// [INT-04]`), a second `reply` after `Responder<Acked>` doesn't compile (INT-03, `// [INT-03]`), `defer` takes only an `Ephemerality` value (INT-08), and every V2 send or edit carries `IS_COMPONENTS_V2`
@@ -1793,7 +1797,7 @@ So that users never see "interaction failed" and late updates still land.
 **Then** core sends a type-5 deferred response with only the declared `EPHEMERAL` flag (INT-08) over the direct, hedged callback path (Story 5.9), and the handler's later `reply` becomes `edit_original` carrying the V2 flag (runtime state machine shared by the handler and the auto-defer task)
 **And** a handler responding after 5 s still delivers its message (test with paused clock), and `noctis_autodefer_total` and `noctis_ack_latency_seconds` are recorded
 
-**Given** `#[command(.., opens_modal)]` whose handler takes `CommandResponder<OpensModal>`
+**Given** `#[command(.., opens_modal)]` whose handler takes `CommandResponder<OpensModal>` (shipped names; Story 6.10 converts them to `auto_defer = false` and `CommandResponder<Manual>`)
 **When** it is dispatched
 **Then** auto-defer is never armed and `modal(..)` is available (INT-05); if it misses the deadline, an error naming the handler is logged; declaring `opens_modal` without the `OpensModal` responder, or the reverse, fails to compile (INT-05 fixture)
 
@@ -1815,7 +1819,7 @@ So that suggestions are easy to write and never break the interaction.
 
 **Acceptance Criteria:**
 
-**Given** `#[option(autocomplete = handler)]` on a supported field, where `handler` is an `#[autocomplete]` fn
+**Given** `#[option(autocomplete)]` on a supported field of a command struct, whose handler is an `#[autocomplete(field)]` method in the struct's `impl` (no `self`; maintainer decisions §7; if this story lands before Story 6.10 on the shipped free-function shape `#[option(autocomplete = handler)]`, Story 6.10 converts it)
 **When** an autocomplete interaction arrives for an option of a 3-word Command Path
 **Then** the handler receives an `AutocompleteCtx` (which offers only `respond(choices) -> Responded`, no defer: INT-06) with the focused value and a `Partial<Options>` whose fields are all `Option<T>` (OPT-12), and returns the `Responded` from `respond`
 
@@ -1826,6 +1830,10 @@ So that suggestions are easy to write and never break the interaction.
 **Given** a handler that errors or misses the response deadline
 **When** the deadline passes
 **Then** Noctis responds with an empty choice list and routes the error to the Autocomplete Error Sink
+
+**Given** `#[autocomplete(field, auto_defer = ..)]` or `#[autocomplete(field, response = ..)]`
+**When** it compiles
+**Then** it fails with an `[INT-06]` error saying autocomplete has no defer (trybuild fixture); if this story lands before Story 6.10, Story 6.10 adds the fixture
 
 **Given** the new public API
 **When** the story is done
@@ -1902,9 +1910,9 @@ As a bot author,
 I want the shipped crates to carry no trace of the withdrawn widget layer (the `view` Route shape, the `E` view envelope, widget actions and view state versions),
 So that the public API, the `custom_id` layout and the docs match the plain-render-function model and nothing is built on a removed concept.
 
-**Implements:** correct course 2026-10-20 (FR-26 to FR-28 withdrawn, FR-25 revised); AD-5, AD-6 (amended), AD-17, AD-20 (withdrawn), AD-27; rules CID-01, CID-02, CID-03, CID-07.
+**Implements:** correct course 2026-10-20 (FR-26 to FR-28 withdrawn, FR-25 revised; per-handler `auto_defer` and declared `response`, maintainer decisions §2; one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`, §7); AD-5, AD-6 (amended), AD-9, AD-11 (amended), AD-17, AD-19, AD-26, AD-20 (withdrawn), AD-23, AD-27; rules CID-01, CID-02, CID-03, CID-04, CID-07, CV2-08, CV2-09, MOD-01, INT-01, INT-03, INT-04, INT-05, INT-06, INT-08, INT-10.
 
-This story only removes code that Epics 1 to 6 already shipped; it depends on no later story, and Epics 7 onwards assume the simplified codec.
+This story only removes or converts code that Epics 1 to 6 already shipped; it depends on no later story, and Epics 7 onwards assume the simplified codec and the converged authoring surface (maintainer decisions §2 and §7: per-handler `auto_defer` and `response`, one struct per interaction with kind derives, mandatory `defaults(..)` and `#[handler]` on `self`). It is large; the implementer may split it into 6.10a (widget removal) and 6.10b (authoring convergence) in the sprint status.
 
 **Acceptance Criteria:**
 
@@ -1929,6 +1937,29 @@ This story only removes code that Epics 1 to 6 already shipped; it depends on no
 **When** the story is done
 **Then** its methods are renamed to the discord.js interaction-response flows, with no other behaviour change: `defer(ephemerality)` → `defer_reply(ephemerality)` (type 5), `modal(m)` → `show_modal(m)` (type 9), `edit_original(msg)` → `edit_reply(msg)`, `delete_original()` → `delete_reply()`, `followup(msg, visibility)` → `follow_up(msg, visibility)`; `reply(msg)` (type 4) keeps its name, and `fetch_reply()` (`GET /webhooks/{application_id}/{token}/messages/@original`) is added
 **And** the old names don't exist (no deprecated aliases before 0.1), every test, doc, Usage Skill file (`responder.md` method matrix) and template call site uses the new names, and the public-API snapshot is re-blessed
+
+**Given** the shipped `opens_modal` declaration and the `OpensModal`/`NoModal` markers (Stories 6.5 and 6.6, `#[command]`, the context-menu attributes, `CommandHandler::opens_modal()`, and anything Stories 6.7 to 6.9 add)
+**When** the story is done
+**Then** they are replaced by the per-handler `auto_defer = true | false` argument (default `true`) on `#[command]`, `#[user_command]` and `#[message_command]`, and by the sealed defer-mode parameter of `Responder<K, S = Pending, D = AutoDefer>` with `D = AutoDefer | Manual` (`K` loses its `M` parameter: `Command`, later `Component` and `ModalSubmit`), through the aliases `CommandResponder` (= `CommandResponder<AutoDefer>`) and `CommandResponder<Manual>`; the descriptor exposes `auto_defer()` instead of `opens_modal()`, and the deadline stays App-wide (`AppBuilder::ack_deadline`)
+**And** `opens_modal`, `OpensModal` and `NoModal` no longer exist: `#[command(.., opens_modal)]` fails as an unknown argument whose help names `auto_defer = false`, and `opens_modal` on any component or modal kind attribute is an unknown argument (CID-03), no longer a "planned runtime argument"
+**And** `show_modal` exists only on `Responder<Command, Pending, Manual>` (and, from Epic 7, `Responder<Component, Pending, Manual>`), bounded by a sealed trait whose `#[diagnostic::on_unimplemented]` message is `[INT-05] show_modal needs auto_defer = false on this handler`, so `show_modal` on an `AutoDefer` responder is a compile error carrying that text (fixture `INT-05_show_modal_needs_manual`)
+**And** the handler macros require `CommandResponder<Manual>` exactly when `auto_defer = false` is declared and reject it otherwise: `auto_defer = false` without a responder parameter, with `CommandResponder<AutoDefer>`, or `CommandResponder<Manual>` without `auto_defer = false` each fail citing `[INT-05]` (the `INT-05_*` fixtures are renamed and their `.stderr` re-blessed); `auto_defer = false` arms no auto-defer, a handler that misses the 3 s deadline logs one error naming it, and it can still call `defer_reply` itself (unit test `int_05_manual_never_auto_defers`, renamed from `int_05_opens_modal_never_auto_defers`)
+**And** `#[autocomplete]` rejects `auto_defer` and `response` with an `[INT-06]` error (fixture), if Story 6.7 has not already added it
+
+**Given** the shipped ephemerality declaration (`#[command(.., ephemeral)]` bare flag, the same flag on the context-menu attributes, `CommandHandler::ephemerality()`) and `defer(Ephemerality)`
+**When** the story is done
+**Then** it is converged on the one `response = …` argument of maintainer decisions §2 and AD-11: commands and context menus take `response = public` (default) or `response = ephemeral`, `response = update` on them is an `[INT-04]` compile error, and the bare `ephemeral` flag fails as an unknown argument whose help names `response = ephemeral`
+**And** the auto-defer sends type 5 with `EPHEMERAL` exactly when `response = ephemeral`, `reply(msg)` and `defer_reply()` use the declared response by default, `reply_as(msg, Ephemerality)` and `defer_reply_as(Ephemerality)` override it per call (INT-08: still only an `Ephemerality` value), and the declared response applies with `auto_defer = false` too (unit tests on the wire for both values with and without the auto-defer)
+
+**Given** the shipped authoring surface (Stories 2.5, 4.4 to 4.6, 5.6, 6.1 to 6.3, and anything Stories 6.7 to 6.9 add): free-function `#[command]`, `#[user_command]`, `#[message_command]` and `#[event]` handlers, `#[derive(Options)]`, `#[derive(Route)]` with `#[route("id", ..)]` (the bare `select` argument included), the `RouteComponents` constructors `.button()`, `.string_select(..)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()`, the `#[modal(route = R, title = "…")]` form with its separate submit Route, the `components!` grammar's Route items, and `Module::add(descriptor)`
+**When** the story is done
+**Then** they converge on maintainer decisions §7 with no aliases: commands are `#[derive(SlashCommand)]` / `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` structs (fields = typed options, unit struct when none; the Pattern enum is `<Struct>Path`) with `#[command("path", ..)]` / `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]`; components are `#[derive(Button)]`, `#[derive(StringSelectMenu)]`, `#[derive(UserSelectMenu)]`, `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]` and `#[derive(ChannelSelectMenu)]` structs with `#[button("id", .., defaults(..))]` etc. (every select carrying the `N` nonce); modals are `#[derive(Modal)] #[modal("id", .., defaults(title = ..))]` whose fields without an input attribute are the Payload; events are `#[derive(EventHandler)]` unit structs with `#[event(..)]`; every handler is `impl X { #[handler] async fn handle(self, ctx: ..) }` and `#[handler]` takes no arguments; registration is `Module::add::<X>()`
+**And** `defaults(..)` is mandatory on every component and modal kind (missing block, missing required key, unknown key and out-of-limit literal are compile errors naming the kind's required keys: Button `style` and `label` or `emoji`, selects `placeholder`, modal `title`), and `R { .. }.build()` replaces every per-kind constructor, with the chainable overrides of Story 9.3 that already exist for the shipped builders (`label`, `emoji`, `style`, `disabled`, `placeholder`, `min_values`, `max_values`, `options`, `default_values`); a string select without `options` in its defaults returns a builder whose typestate requires `.options(..)`; `.build()` still requires `R: Handled` (CID-04) and the CID-01 length proof is unchanged; Link and Premium buttons stay plain builders (`LinkButton::new(url)`)
+**And** a free `async fn` with `#[handler]`, `#[command]`, `#[user_command]`, `#[message_command]` or `#[event]`, `#[derive(Route)]`/`#[route]` and `#[derive(Options)]` fail with a compile error whose help shows the new form (trybuild fixtures), every CID, CMD, OPT, CTX, META, MOD and INT fixture is rewritten in the new form and its `.stderr` re-blessed, and the macro unit tests follow
+
+**Given** the conversions above
+**When** the story is done
+**Then** the `INT-03`, `INT-04`, `INT-05`, `INT-08` and `INT-10` trybuild fixtures and `.stderr` files are re-blessed, `xtask/public-api.txt` is re-blessed with the Usage Skill's `API hash` line, the skill-check UD-3 lint accepts `…Responder<Manual>` (and no longer `OpensModal`) as the only allowed Responder parameter, and the template (every module) and the Usage Skill (every file) drop their "[planned: Story 6.10]" notes; a search of `crates/`, `docs/`, `examples/` and `xtask/` (except this history) for `opens_modal`, `OpensModal`, `NoModal`, `derive(Options)`, `derive(Route)` and `.button()` finds nothing
 
 **Given** `docs/discord-rules.md`
 **When** `xtask rules-catalog` runs
@@ -1955,9 +1986,9 @@ So that one function handles a button on every message, shard and restart.
 
 **Acceptance Criteria:**
 
-**Given** `#[handler]` on an `async fn(ctx: ComponentCtx, payload: R)` for Route `R`
+**Given** a component struct declared by its kind derive (`#[derive(Button)] #[button("id", .., defaults(..))]` or a select kind; maintainer decisions §7, AD-6) and `impl R { #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> }`
 **When** it compiles
-**Then** it implements `Handled` for `R` (so components for `R` can now be constructed) and produces a handler descriptor bound by `R::ID`
+**Then** the `#[handler]` method (which takes no arguments) implements `Handled` for `R` (so `R { .. }.build()` can now be called; without it `.build()` fails to compile, CID-04) and produces a handler descriptor bound by `R::ID`, registered with `module.add::<R>()`; a free `async fn` with `#[handler]` is a compile error whose help shows the `impl R { #[handler] async fn handle(self, ctx) }` form
 
 **Given** two Modules registering handlers for the same Route id
 **When** `App::build` runs
@@ -1974,7 +2005,7 @@ So that one function handles a button on every message, shard and restart.
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill's routes reference documents `#[handler]` and the one-handler-per-Route rule, the template's handlers are reconciled, and `skill-check` passes
+**Then** the Usage Skill's routes reference documents the kind derives, the `#[handler]` method and the one-handler-per-Route rule, the template's handlers are reconciled, and `skill-check` passes
 
 ### Story 7.2: Component pipeline, untrusted input and in-place updates
 
@@ -1994,32 +2025,36 @@ So that forged or malformed ids never crash the bot and clicks feel instant.
 **When** a signed Route's id is verified
 **Then** a valid tag passes, a tag from the previous key passes during rotation, a bad tag takes the unknown-Route path, and the key is never logged or passed to a port
 
-**Given** a component handler taking `ComponentResponder` (AD-11)
+**Given** a component handler taking `ComponentResponder` (= `ComponentResponder<AutoDefer>`, AD-11)
 **When** the handler responds
-**Then** `Responder<Pending>` offers `update` (type 7), `defer` (type 6 in-place) and `reply`; the declared default for components is update-in-place; the auto-defer uses type 6 at the deadline and later updates become `edit_original` with the V2 flag
+**Then** `Responder<Pending>` offers `update` (type 7), `defer_update` (type 6 in-place), `reply`/`reply_as` and `defer_reply`/`defer_reply_as`, but no `show_modal` (an `[INT-05] show_modal needs auto_defer = false on this handler` compile error); the declared default for components is `response = update`; the auto-defer uses type 6 at the deadline and later updates become `edit_reply` with the V2 flag
 
-**Given** `#[handler(response = ephemeral)]` or `#[handler(response = public)]` (AD-6 handler arguments)
+**Given** `response = ephemeral` or `response = public` on the kind attribute (AD-6 runtime arguments, which this story adds), e.g. `#[button("mod.ban", response = ephemeral, auto_defer = true, defaults(..))]`
 **When** the handler sends its rendered message (by returning it, or through the typestate Responder)
 **Then** it is sent as a new ephemeral or public message (type 4, auto-defer type 5 with only the declared `EPHEMERAL` flag) instead of updating in place; `response = update` is the default, and the skill's sub-panel pattern uses this
+
+**Given** `auto_defer = false` on a component's kind attribute, e.g. `#[button("profile.bio", auto_defer = false, defaults(..))] struct OpenBioModal` (AD-6 runtime argument, default `true`)
+**When** it is dispatched
+**Then** no auto-defer is armed, the `#[handler]` method must take `ComponentResponder<Manual>` (taking it without `auto_defer = false`, or declaring `auto_defer = false` with `ComponentResponder` or no responder, is an `[INT-05]` compile error, checked through the derive's defer-mode associated type; trybuild fixtures), `show_modal` is available on it, `defer_update`/`defer_reply` stay available, its declared `response` still sets the default of `reply`/`defer_reply`, and missing the 3 s deadline logs one error naming the handler
 **And** spans `noctis.interaction` cover every stage, and `noctis_handler_duration_seconds{kind}` and `noctis_handler_errors_total{kind}` are recorded
 
 **Given** the interaction-response flows, named after discord.js (`InteractionResponses`, verified against discord.js 14.27.0) — each a distinct flow, not aliases:
 
 | Method (state) | discord.js | Request | What the user sees | Allowed on |
 | --- | --- | --- | --- | --- |
-| `reply(msg)` (Pending) | `reply` | `POST /interactions/{id}/{token}/callback` type 4 | a **new** message (ephemeral or public, fixed now) | command, component, modal submit |
-| `defer_reply(eph)` (Pending) | `deferReply` | callback type 5 (only `EPHEMERAL` flag) | a new "is thinking…" message | command, component, modal submit |
+| `reply(msg)` / `reply_as(msg, eph)` (Pending) | `reply` | `POST /interactions/{id}/{token}/callback` type 4 | a **new** message (ephemeral or public, fixed now; the declared `response` unless `_as` overrides it) | command, component, modal submit |
+| `defer_reply()` / `defer_reply_as(eph)` (Pending) | `deferReply` | callback type 5 (only `EPHEMERAL` flag) | a new "is thinking…" message | command, component, modal submit |
 | `update(msg)` (Pending) | `update` | callback type 7 with the full body | the **component's own message** changes at once (one request) | component; modal submit only when the modal was opened from a component message |
 | `defer_update()` (Pending) | `deferUpdate` | callback type 6, no body | nothing changes; the click stops spinning | same as `update` |
-| `show_modal(m)` (Pending, `OpensModal`) | `showModal` | callback type 9 | a modal | command, component (never modal submit, never after any ack — `reply`, `defer_reply`, `update`, `defer_update` or an auto-defer; `opens_modal` handlers have no auto-defer, and a runtime race returns `ModalUnavailable` without a request) |
+| `show_modal(m)` (Pending, `Manual`) | `showModal` | callback type 9 | a modal | command, component declared `auto_defer = false` (never modal submit, never after any ack — `reply`, `defer_reply`, `update`, `defer_update` or an auto-defer; `auto_defer = false` handlers have no auto-defer, and a runtime race returns `ModalUnavailable` without a request) |
 | `edit_reply(msg)` (Acked) | `editReply` | `PATCH /webhooks/{application_id}/{token}/messages/@original` | edits `@original`: the new reply after `reply`/`defer_reply`, **the component's message** after `update`/`defer_update` | after any ack |
 | `fetch_reply()` / `delete_reply()` (Acked) | `fetchReply` / `deleteReply` | `GET` / `DELETE …/messages/@original` | — | after any ack |
 | `follow_up(msg, vis)` (Acked) | `followUp` | `POST /webhooks/{application_id}/{token}` | another new message, its own ephemerality | after any ack |
 
 **When** a handler uses them
-**Then** the typestate enforces the table at compile time: exactly one Pending method; `update`/`defer_update` exist only on `ComponentResponder`/`ModalResponder`; `show_modal` only with `OpensModal` and never on `ModalResponder`; Acked methods only after an ack; `reply` and `defer_reply` fix ephemerality, `update`/`defer_update` can't change it (no `EPHEMERAL` parameter; the message keeps its own)
+**Then** the typestate enforces the table at compile time: exactly one Pending method; `update`/`defer_update` exist only on `ComponentResponder`/`ModalResponder`; `show_modal` only on `CommandResponder<Manual>`/`ComponentResponder<Manual>` (handlers declared `auto_defer = false`) and never on `ModalResponder`, with the `[INT-05] show_modal needs auto_defer = false on this handler` message otherwise; Acked methods only after an ack; `reply` and `defer_reply` fix ephemerality, `update`/`defer_update` can't change it (no `EPHEMERAL` parameter; the message keeps its own)
 **And** the documented equivalences hold and are tested: `defer_update()` then `edit_reply(msg)` produces the same final message as `update(msg)` (two requests instead of one, so `update` is preferred when the render is fast); `defer_reply(e)` then `edit_reply(msg)` produces the same final message as `reply(msg)` with ephemerality `e`
-**And** for a modal submit from a modal opened by a slash command (no source message), `update`/`defer_update` return `ResponderError::UpdateUnavailable` without a request; the auto-defer (2000 ms) uses type 6 for components and component-opened modal submits, type 5 otherwise
+**And** for a modal submit from a modal opened by a slash command (no source message), `update`/`defer_update` return `ResponderError::UpdateUnavailable` without a request (the ergonomic `ctx.update(msg)` of Story 8.1 sends a new public message there instead, like the auto-defer fallback); the auto-defer (App-wide deadline, 2000 ms) follows the declared `response`: type 6 for `update` on components and component-opened modal submits, type 5 (with `EPHEMERAL` only for `ephemeral`) for commands, for `ephemeral`/`public` and for a slash-opened modal submit, where a declared `update` falls back to type 5 public
 
 **Given** `update(msg)` or `edit_reply(msg)` with a V2 body
 **When** core sends it
@@ -2043,13 +2078,13 @@ So that months-old messages degrade gracefully.
 
 **Given** a `custom_id` that decodes as `Stale` (schema or shape mismatch)
 **When** it is dispatched
-**Then** it goes to the Route's stale handler when declared (`#[handler(on_stale = fn)]`), else to the Expired Handler, never to a generic decode error
+**Then** it goes to the Route's stale handler when declared (an `#[on_stale]` method in the Route's `impl`, no `self`), else to the Expired Handler, never to a generic decode error
 
 **Given** the default Expired Handler
 **When** it runs
 **Then** it replies with a short ephemeral notice from `noctis.expired`
 
-**Given** an App-level override or a Route-level `#[handler(on_expired = fn)]`
+**Given** an App-level override or a Route-level `#[on_expired]` method in the Route's `impl` (no `self`)
 **When** a Route's interaction expires
 **Then** the override runs instead, and can return a View-like response such as re-rendering a starting message (test with a `V2Message`)
 
@@ -2102,7 +2137,7 @@ So that I can carry rich state in components without hitting the 100-character l
 **When** the Responder finalizes it before validation and sending
 **Then** it stores each slot with `RefStore::put_if_absent` (retrying on collision), calls `codec::finish` for the final `custom_id`, and identical slots in one message share one Ref; no crate below `noctis-core` holds a `RefStore` handle
 
-**Given** the runtime arguments `ttl = "…"` and `one_shot`, which this story adds to `#[derive(Route)]` (AD-6), and the App default TTL
+**Given** the runtime arguments `ttl = "…"` and `one_shot`, which this story adds to the component kind derives (AD-6), and the App default TTL
 **When** Refs are stored
 **Then** the Route's TTL applies when declared, else the App default; a Route marked `one_shot` resolves with `take` so the Ref is deleted on use; `ttl` or `one_shot` on a plain inline Route fails to compile
 
@@ -2155,7 +2190,7 @@ So that unauthorized clicks are rejected before my handler runs.
 
 **Acceptance Criteria:**
 
-**Given** the runtime arguments this story adds to `#[derive(Route)]` (AD-6): `#[route("dash.mod", permissions = MANAGE_GUILD)]`, `owner = user` (Payload-carried invoking user) or `guard = path::to::fn`
+**Given** the runtime arguments this story adds to the component kind derives (AD-6): `#[button("dash.mod", permissions = MANAGE_GUILD, defaults(..))]`, `owner = user` (Payload-carried invoking user) or `guard = path::to::fn`
 **When** a user without the permission, or a different user, clicks
 **Then** stage 8 rejects it with a localized ephemeral notice (`noctis.guard.*`) and the handler doesn't run
 
@@ -2177,18 +2212,22 @@ So that data entry works across restarts with no per-message state.
 
 **Acceptance Criteria:**
 
-**Given** a Route declared `#[route(.., opens_modal)]` (the runtime argument this story adds to the derive; Commands declare it on `#[command]` since Story 6.6)
+**Given** a component declared `auto_defer = false` on its kind attribute (Story 7.2; Commands declare `auto_defer = false` on `#[command]` since Story 6.10) whose `#[handler]` opens a modal
 **When** its handler runs
-**Then** it takes `ComponentResponder<OpensModal>`, whose `Responder<Pending>` alone offers `modal(..)`, auto-defer is disabled for it, and a handler taking `ComponentResponder<NoModal>` calling `modal` fails to compile, as does a mismatch between the declaration and the alias (INT-05 trybuild fixtures)
+**Then** it takes `ComponentResponder<Manual>`, whose `Responder<Pending>` alone offers `show_modal(..)`, auto-defer is disabled for it, and a handler taking `ComponentResponder` (`AutoDefer`) calling `show_modal` fails to compile with `[INT-05] show_modal needs auto_defer = false on this handler`, as does a mismatch between the declaration and the alias (INT-05 trybuild fixtures)
 
-**Given** a modal-submit interaction
-**When** it is dispatched to the modal Route's handler
-**Then** the handler receives `ModalSubmitCtx` and the typed `derive(Modal)` struct, which core decodes by passing the bytes of the interaction's `RawJson` to the Story 4.6 decoder, including Radio Group, Checkbox Group and Checkbox values that twilight drops (FR-64 end-to-end test through `FakeGateway`)
-**And** `ModalResponder` has no `modal` method (INT-04), so responding to a submit with another modal can't be expressed; a dynamic attempt is a typed error
+**Given** a modal-submit interaction for a `#[derive(Modal)] #[modal("id", .., defaults(title = ..))]` struct (maintainer decisions §7: fields without an input attribute are the Payload, input fields the submitted values) with `impl Form { #[handler] async fn handle(self, ctx: ModalSubmitCtx) }`
+**When** it is dispatched to that handler
+**Then** the handler receives `ModalSubmitCtx` and the typed struct as `self`, which core decodes by passing the bytes of the interaction's `RawJson` to the Story 4.6 decoder, including Radio Group, Checkbox Group and Checkbox values that twilight drops (FR-64 end-to-end test through `FakeGateway`)
+**And** `ModalResponder` has no `show_modal` method, with or without `Manual` (INT-04, INT-05), so responding to a submit with another modal can't be expressed; a dynamic attempt is a typed error
+
+**Given** a modal declared `#[modal("id", auto_defer = false, ..)]` and/or `#[modal("id", response = .., ..)]`
+**When** it compiles and runs
+**Then** `auto_defer = false` requires the `#[handler]` method to take `ModalResponder<Manual>` (INT-05 mismatch fixtures as for components) and arms no auto-defer, and `response` is `update` (default), `ephemeral` or `public`
 
 **Given** a modal submit
 **When** the handler is slow
-**Then** the auto-defer uses type 6 (in-place update), as for components
+**Then** the auto-defer follows the declared `response`: type 6 (in-place update) for `update` when the modal was opened from a component message, as for components; type 5 for `ephemeral`/`public` and for a slash-opened modal (where `update` falls back to type 5 public)
 
 **Given** the new public API
 **When** the story is done
@@ -2432,13 +2471,17 @@ So that every component for that Route looks consistent and I override only what
 
 **Acceptance Criteria:**
 
-**Given** a Route declaring component defaults (associated const on `ComponentRoute`)
-**When** a component is built with no overrides
-**Then** it uses the defaults; literal defaults are checked at compile time (CV2-08, CV2-09 fixtures)
+**Given** a component struct with its mandatory `defaults(..)` block (maintainer decisions §7, AD-6, AD-19; associated const on `ComponentRoute`), e.g. `#[button("punish-history-set", defaults(style = Secondary, label = "punish.next", emoji = "➡️"))]` or `#[string_select("ticket-system", defaults(placeholder = "ticket.pick", options = TicketKind))]`
+**When** it compiles
+**Then** a missing `defaults` block or required key (Button: `style` and `label` or `emoji`; selects: `placeholder`; modal: `title`) is a compile error naming the kind's required keys, an unknown key is a compile error, literal values are checked against Discord's limits (CV2-08, CV2-09, MOD-01 fixtures), omitted keys take the documented kind defaults (`min_values = 1`, `max_values = 1`, `disabled = false`), and text defaults are literals without `i18n` or locale keys checked against the default-locale file with it (AD-16)
 
-**Given** a render with overrides (for example `disabled` or a localized label)
+**Given** `R { .. }.build()` with no overrides
 **When** the component is built
-**Then** the overrides apply to that render only, and the result is validated against the Limits after overrides apply
+**Then** it is the declared kind with the defaults and the value's Payload as `custom_id`; a string select whose defaults carry no `options` returns a builder whose typestate requires `.options(..)` before it converts into a component (trybuild fixture)
+
+**Given** a render with chainable overrides (`.label(..)`, `.emoji(..)`, `.style(..)`, `.disabled(..)`, `.placeholder(..)`, `.options(..)`, `.default_values(..)`, `.min_values(..)`, `.max_values(..)`)
+**When** the component is built
+**Then** each override replaces one field for that render only, the rest comes from the defaults, and the result is validated against the Limits (Strict or Lenient) after overrides apply
 
 **Given** the new public API
 **When** the story is done
@@ -2454,8 +2497,8 @@ So that editing feels natural instead of starting from blank fields.
 
 **Acceptance Criteria:**
 
-**Given** a `derive(Modal)` struct
-**When** it is opened with `prefill(..)`
+**Given** a `derive(Modal)` struct value (maintainer decisions §7)
+**When** it is built with `.build()` (its input fields' values pre-fill the inputs, `None` = empty), with `X::blank(<payload fields>)` (empty inputs, for forms whose required inputs have no empty value), or with the per-field override `.value(field, ..)` and `.title(..)`
 **Then** Text Inputs receive initial values and selects, Radio Groups and Checkbox Groups receive default selections
 
 **Given** a pre-filled value that breaks a field's limit (Text Input `value` over 4000 or over its `max_length`, more defaults than `max_values`)
@@ -3199,7 +3242,7 @@ So that abuse is throttled before my handler runs, consistently across a Cluster
 
 **Acceptance Criteria:**
 
-**Given** `#[command("profile", rate_limit(user, 3, per = "10s"))]` or `#[handler(rate_limit(..))]` on a Route's handler (AD-6: never on `#[route]`)
+**Given** `#[command("profile", rate_limit(user, 3, per = "10s"))]` or `rate_limit(..)` on a component's kind attribute (`#[button("id", rate_limit(..), defaults(..))]`; AD-6, maintainer decisions §7: `#[handler]` takes no arguments)
 **When** a user invokes it a fourth time within 10 s
 **Then** stage 5 increments through `RateLimitStore::incr_with_ttl` before any auto-defer and the handler, and the user gets an immediate localized ephemeral notice including the time remaining
 

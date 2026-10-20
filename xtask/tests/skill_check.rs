@@ -445,7 +445,7 @@ fn d_combined_bad_template() {
             &format!("{path}:18: [UD-1] content as handler output; return a View"),
             &format!("{path}:4: [UD-1] LegacyMessage in an interactive handler; return a View"),
             &format!(
-                "{path}:4: [UD-3] take a Responder only to open a modal (CommandResponder<OpensModal>)"
+                "{path}:4: [UD-3] take a Responder only to open a modal (CommandResponder<Manual>)"
             ),
             &format!(
                 "{path}:5: [UD-3] manual response through the Responder; use ctx.respond(msg) or ctx.update(msg)"

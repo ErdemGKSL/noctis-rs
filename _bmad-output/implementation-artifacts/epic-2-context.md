@@ -65,7 +65,7 @@ Give bot authors Routes and Payloads whose encoded `custom_id` is proven at comp
   - Routes with a bad route id
   - Routes with arguments outside AD-6's grammar
 - Codec arguments in this epic: `by_ref`, `overflow = spill`, `schema = n`, `view`, `select`, `signed`. A `spill` Route encodes inline when the value fits and by Ref otherwise.
-- The derive emits an empty `RouteRuntime` const. Later stories fill it: `ttl`/`one_shot` in 7.5, `owner`/`permissions`/`guard` in 7.7, `opens_modal` in 7.8.
+- The derive emits an empty `RouteRuntime` const. Later stories fill it: `ttl`/`one_shot` in 7.5, `owner`/`permissions`/`guard` in 7.7. (`opens_modal` was dropped from `#[route]` on 2026-10-20: deferral is the `#[handler]` argument `auto_defer`; Story 6.10 makes it an unknown Route argument.)
 - Two-phase Refs:
   - The codec yields `EncodedId::Inline(ArrayString<100>)` or `EncodedId::RefSlot(PendingRef { route, schema, payload: Bytes, ttl, one_shot })`.
   - `codec::finish(slot, ref)` builds the final id, which is at most 46 characters with a 24-character route.

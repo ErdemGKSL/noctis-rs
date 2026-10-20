@@ -587,18 +587,23 @@ If a handler has not responded before a configurable deadline (default 2000 ms,
 measured from gateway receipt so queueing time counts), Noctis sends a deferred
 response. Later responses edit the original message.
 **Consequences (testable):**
-- Each Command and Route declares up front whether its reply is ephemeral (default:
-  public for Commands, update-in-place for components). The auto-defer uses that
-  declaration, because ephemerality can't change after the first response.
-- Commands defer as a new deferred message; component and modal-submit interactions
-  defer as an in-place update.
+- Each handler declares up front, with one `response` argument, whether its reply is
+  public, ephemeral or an in-place update (default: public for Commands,
+  update-in-place for components). The auto-defer uses that declaration, because
+  ephemerality can't change after the first response.
+- Commands defer as a new deferred message; component and component-opened
+  modal-submit interactions defer as an in-place update unless declared `ephemeral`
+  or `public`.
+- Each handler can turn the auto-defer off (`auto_defer = false`; default on). The
+  deadline itself is App-wide.
 - A handler that responds after 5 s still delivers its message, with no
   "interaction failed" shown to the user.
 - On a deferred chat-input response, the Components V2 flag is applied on the
   follow-up edit, as Discord requires.
-- A handler declared as modal-opening is never auto-deferred, because a modal must
-  be the first response. If it misses the deadline, Noctis logs an error naming the
-  handler. Responding to a modal submit with another modal is a typed error.
+- Only a handler declared `auto_defer = false` can open a modal (a compile-time
+  rule), because a modal must be the first response. If it misses the deadline,
+  Noctis logs an error naming the handler. Responding to a modal submit with another
+  modal is a typed error.
 - After the 15-minute interaction token lifetime, updates to a public View fall back
   to a bot-token message edit; updates to an ephemeral one return a typed
   `TokenExpired` error.

@@ -57,10 +57,61 @@ Each method is a distinct flow:
   submit gets `UpdateUnavailable` and no request is sent.
 - **`show_modal` comes first or not at all.** It is impossible after any ack: `reply`,
   `defer_reply`, `update`, `defer_update` or an auto-defer.
-  - Handlers declared `opens_modal` have no auto-defer, so they must open the modal
-    within 3 s.
+  - Handlers declared `auto_defer = false` have no auto-defer, so they must open the
+    modal within 3 s.
   - The typestate removes the method after an ack.
   - A runtime race returns `ModalUnavailable` and sends no request.
+- **Per-handler `auto_defer` (replaces `opens_modal`).** Every interaction handler has
+  an `auto_defer` flag, default `true`, declared where the handler's other
+  registration arguments live (§7): `#[command(.., auto_defer = false)]`,
+  `#[user_command(..)]`, `#[message_command(..)]`, and the kind attribute of a
+  component or modal (`#[button(..)]`, `#[string_select(..)]`, `#[modal(..)]`, …). Autocomplete has no defer,
+  so `auto_defer` on `#[autocomplete]` is a compile error (INT-06). The deadline
+  itself stays App-wide (`AppBuilder::ack_deadline`, 2000 ms default).
+  - `opens_modal` and the `OpensModal`/`NoModal` markers are removed everywhere (Story
+    6.10 converts the shipped ones); `auto_defer = false` replaces them.
+  - The responder carries the choice in its type: `Responder<K, S = Pending, D =
+    AutoDefer>` with the sealed `D = AutoDefer | Manual`, through the aliases
+    `CommandResponder`, `ComponentResponder`, `ModalResponder` (all `AutoDefer` by
+    default) and `CommandResponder<Manual>`, `ComponentResponder<Manual>`,
+    `ModalResponder<Manual>`.
+  - With `auto_defer = true` (the default) the responder has **no** `show_modal`:
+    calling it is a compile error whose message says `[INT-05] show_modal needs
+    auto_defer = false on this handler`. The `Manual` alias is required exactly when
+    `auto_defer = false` is declared, and vice versa (a mismatch is an INT-05 compile
+    error, checked between the derive's declared mode and the `#[handler]` method's
+    responder parameter).
+  - With `auto_defer = false` no auto-defer is armed, `show_modal` is available for
+    commands and components (never for modal submits), the handler may still call
+    `defer_reply`/`defer_update` itself, and missing the 3 s deadline logs an error
+    naming the handler.
+  - A button that opens a modal must be `auto_defer = false`.
+- **Declared `response` (one knob, compile-time checked).** Every handler declares at
+  registration what its (auto-)defer and default response look like, with one
+  attribute argument `response = …` (no separate `ephemeral` flag):
+  - commands and context menus: `response = public` (default) or `ephemeral`: the
+    auto-defer is type 5 without or with `EPHEMERAL`, and `reply`/`defer_reply` use
+    that ephemerality by default; `update` is a compile error (INT-04);
+  - components and component-opened modal submits: `response = update` (default,
+    auto-defer type 6, `update` in place), `ephemeral` or `public` (auto-defer type 5
+    without or with `EPHEMERAL`, a new message);
+  - slash-opened modal submits can only be `public` or `ephemeral`. Which interaction
+    opened a modal is not known at compile time, so `response = update` on a modal
+    submit is legal; when the submit has no source message, the auto-defer falls back
+    to type 5 public and an explicit `update`/`defer_update` returns
+    `UpdateUnavailable` without a request (the ergonomic `ctx.update(msg)` sends a new
+    public message there instead).
+  - `response` is independent of `auto_defer`: with `auto_defer = false` it still sets
+    the default ephemerality of `reply(msg)` and `defer_reply()`; `reply_as(msg, e)`
+    and `defer_reply_as(e)` override it per call. Modal submits declare it on their
+    `#[modal(..)]`.
+  - Examples: `#[command("settings", response = ephemeral)]`, `#[button("mod.ban",
+    response = ephemeral, auto_defer = true, defaults(..))] struct Ban { .. }`,
+    `#[button("profile.bio", auto_defer = false, defaults(..))] struct OpenBioModal {
+    .. }` (the `#[handler]` method itself takes no arguments, §7).
+  - Story 6.10 converges the shipped `#[command(.., ephemeral)]` flag and
+    `defer(Ephemerality)` onto `response = ephemeral` and `defer_reply()`/
+    `defer_reply_as(e)`.
 - **Updates never change ephemerality.**
   - A legacy message converts to V2 by setting the flag and sending `content: null`
     and `embeds: []`.
@@ -138,3 +189,102 @@ Each method is a distinct flow:
 - **Crates.** Noctis is published as the facade crate `noctis`, with `noctis-*`
   sub-crates behind its features. It is licensed MIT OR Apache-2.0, and `cssparser`'s
   MPL-2.0 is accepted.
+
+## 7. One struct per interaction: kind derive, mandatory defaults, handler on `self`
+
+One struct = its id + its typed data + its handler, like tescord's `pack.button` /
+`pack.stringSelect` registrations. Free-function handlers are not part of the API;
+there is one style only.
+
+- **The derive names the kind.** Components: `#[derive(Button)]`,
+  `#[derive(StringSelectMenu)]`, `#[derive(UserSelectMenu)]`,
+  `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]`,
+  `#[derive(ChannelSelectMenu)]`, `#[derive(Modal)]`. Commands:
+  `#[derive(SlashCommand)]`, `#[derive(UserCommand)]`, `#[derive(MessageCommand)]`,
+  whose struct fields are the typed options (this replaces `#[derive(Options)]` plus
+  a function attribute). Gateway events use `#[derive(EventHandler)]` on a unit
+  struct, so every registration has one shape. Link and Premium buttons have no
+  handler and stay plain builders (`LinkButton::new(url)`).
+- **One attribute per kind**: the id first, then the routing arguments, then (for
+  components and modals) a **mandatory** `defaults(..)` block:
+
+  ```rust
+  #[derive(Button)]
+  #[button("punish-history-set", response = update,
+           defaults(style = Secondary, label = "punish.next", emoji = "➡️", disabled = false))]
+  struct PunishHistorySet { user: Id<UserMarker>, guild: Id<GuildMarker>, page: u16 }
+
+  impl PunishHistorySet {
+      #[handler]
+      async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> { /* … */ }
+  }
+
+  #[derive(StringSelectMenu)]
+  #[string_select("ticket-system", defaults(placeholder = "ticket.pick", min_values = 1, max_values = 1))]
+  struct TicketSystem;
+
+  #[derive(Modal)]
+  #[modal("bio", defaults(title = "profile.bio_title"))]
+  struct BioForm {
+      user: Id<UserMarker>,                                   // Payload field (in the custom_id)
+      #[text_input("Bio", style = paragraph, max_length = 300)]
+      bio: Option<String>,                                    // input field (submitted, pre-filled)
+  }
+
+  #[derive(SlashCommand)]
+  #[command("ban user", description = "Ban a member", response = ephemeral)]
+  struct Ban { #[option(description = "Who")] user: ResolvedUser, #[option(description = "Why")] reason: Option<String> }
+  impl Ban { #[handler] async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { /* … */ } }
+  ```
+
+  Routing arguments: `response`, `auto_defer` (§2), the codec arguments (`by_ref`,
+  `overflow = spill`, `schema = n`, `signed`; a select kind always carries the select
+  nonce, so the bare `select` argument is gone) and the runtime arguments (`ttl`,
+  `one_shot`, `owner`, `permissions`, `guard = path`, `rate_limit(..)`). Expired and
+  stale handling are methods too: `#[on_expired]` / `#[on_stale]` in the same `impl`
+  (no `self`, since the Payload did not decode). Commands keep their metadata arguments (`description`,
+  `permissions`, `contexts`, …) and have no `defaults` block. A command without
+  options is a unit struct (`struct Dashboard;`); a Pattern generates `<Struct>Path`,
+  taken as the handler's parameter after `ctx`.
+- **The handler is `impl X { #[handler] async fn handle(self, ctx: …) }` for every
+  kind**; `#[handler]` takes no arguments. `self` is the decoded Payload (component),
+  the decoded options (command), the Payload plus submitted values (modal), or the
+  unit struct (context menu, which also takes its resolved target; event, which
+  also takes the event payload). Autocomplete handlers are methods on the command
+  struct: `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, partial:
+  Partial<Self>)`, which take no `self`, `response` or `auto_defer`.
+- **Modals.** Fields without an input attribute are the Payload (encoded in the
+  `custom_id`, length-proven like a Route); fields with `#[text_input]`,
+  `#[radio_group]`, … are the inputs. Building from a struct value pre-fills the inputs
+  with its values (`None` = empty); the derive also generates `X::blank(<payload
+  fields>)`, which builds with empty inputs for forms whose required inputs have no
+  empty value. The shipped `#[modal(route = R, title = "…")]`
+  form and its separate submit Route converge on this (Story 6.10).
+- **`defaults(..)` is mandatory.** A missing block, or a missing required field for
+  the kind (Button: `style` and `label` or `emoji`; selects: `placeholder`, plus
+  optional `channel_types` on channel selects and `options = ChoicesEnum` on string
+  selects; modal: `title`) is a compile error naming the kind's required fields; unknown keys are
+  compile errors; literal values are checked against Discord's limits at compile time
+  (CV2-08, CV2-09, MOD-01, …). Values the kind fixes when omitted are documented:
+  `min_values = 1`, `max_values = 1`, `disabled = false`. Text in `defaults` follows
+  the `description` rule (AD-16): a literal without the `i18n` feature; with it, a
+  locale key resolved per response locale and checked against the default-locale
+  file at compile time.
+- **`.build()`** emits the component from the defaults plus the struct's Payload as
+  the `custom_id` (tescord `buildComponent({ id, data, overrides })`). Overrides are
+  chainable typed setters that replace one field each: `.label(..)`, `.emoji(..)`,
+  `.style(..)`, `.disabled(..)`, `.placeholder(..)`, `.options(..)`,
+  `.default_values(..)`, `.min_values(..)`, `.max_values(..)`; for modals `.title(..)`
+  and `.value(field, ..)`. Anything not overridden comes from the defaults; overrides
+  are validated at run time (Strict or Lenient). A string select's options come from
+  `defaults(options = SomeChoicesEnum)` or per render; with neither, `.build()`
+  returns a builder whose typestate requires `.options(..)` before it converts into
+  a component (a compile error otherwise).
+- **Registration** is by type: `Module::add::<T>()` (`module.add::<PunishHistorySet>()`,
+  `module.add::<Ban>()`), replacing the shipped `Module::add(descriptor)`.
+- **CID-04 stays**: no `#[handler]` impl, no `.build()`; one id, one handler; the
+  `custom_id` length proof (CID-01) is unchanged.
+- **Conversion.** Story 6.10 converts the shipped code: free-function `#[command]`,
+  `#[user_command]`, `#[message_command]` and `#[event]` handlers, `#[derive(Options)]`,
+  `#[derive(Route)]`/`#[route]` and the `.button()`/`.string_select(..)`/… constructors,
+  the `#[modal(route = ..)]` form, and `Module::add(descriptor)`.
