@@ -1998,6 +1998,21 @@ So that forged or malformed ids never crash the bot and clicks feel instant.
 **Then** it is sent as a new ephemeral or public message (type 4, auto-defer type 5 with only the declared `EPHEMERAL` flag) instead of updating in place; `response = update` is the default, and the skill's sub-panel pattern uses this
 **And** spans `noctis.interaction` cover every stage, and `noctis_handler_duration_seconds{kind}` and `noctis_handler_errors_total{kind}` are recorded
 
+**Given** a component (or a modal opened from a component message) answered with `ctx.update(msg)` before any acknowledgement — parity with discord.js `ButtonInteraction#update`
+**When** core responds
+**Then** it sends exactly one request, `POST /interactions/{id}/{token}/callback` with `{"type": 7, "data": …}`, through the Discord edge (Story 5.9) with no bot `Authorization` header (interaction endpoints, INT-13), and `data` carries: `components`; `flags` with `IS_COMPONENTS_V2` for V2 messages (never `EPHEMERAL`: an update keeps the message's ephemerality, so the typestate offers no way to change it); `allowed_mentions` (none unless opted in, MSG-05); and the `attachments` keep-list plus new files as multipart `payload_json` + `files[n]` (Story 9.1)
+**And** updating a legacy (non-V2) message into a V2 one sets the flag and sends `content: null`, `embeds: []` (CV2-01, CV2-02); the reverse is a compile error
+**And** `ctx.update_with_response(msg)` adds `?with_response=true` and returns the edited message parsed from the callback response's `resource.message`
+
+**Given** `ctx.defer_update()` (type 6, discord.js `deferUpdate`) or the type-6 auto-defer
+**When** the handler later calls `ctx.update(msg)` within the token's 15 minutes
+**Then** core sends `PATCH /webhooks/{application_id}/{token}/messages/@original?with_components=true` (discord.js `editReply` after `deferUpdate`) with the same body rules, through the edge and without the bot token
+**And** after the token expires (INT-02), `ctx.update` returns `ResponderError::TokenExpired` instead of sending; for a non-ephemeral message the author can fall back to `ctx.edit_message_as_bot(msg)` (`PATCH /channels/{channel_id}/messages/{message_id}` with the bot token, normal rate limits), which the skill documents
+
+**Given** the fake Discord HTTP server (Story 5.2)
+**When** the tests above run
+**Then** each case asserts the exact method, path, query, headers (no `Authorization` on interaction endpoints) and JSON/multipart body that was sent
+
 ### Story 7.3: Expired Handler and stale Payload routing
 
 As a bot author,
