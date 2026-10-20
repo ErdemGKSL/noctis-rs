@@ -351,6 +351,8 @@ Optional features attach to an App through `Plugin`:
 ```rust
 use noctis::{AppBuilder, BuildViolation, Plugin};
 
+pub struct Greeting(pub &'static str);
+
 pub struct GreetingPlugin { pub greeting: &'static str }
 
 impl Plugin for GreetingPlugin {

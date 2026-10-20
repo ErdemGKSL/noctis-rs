@@ -2,7 +2,7 @@
 title: 'Story 5.1: App builder, Runtime, Plugin seam and startup safety'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'b5527bcd15202b614cd2b20495a2d9ca54c53913'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -10,7 +10,14 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-5-context.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/app-and-sharding.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The configured HTTP timeout is only asserted on the App field, never observed on the twilight client.
+    evidence: |-
+      twilight-http 0.17.1 Client has no timeout getter; timeout_bounds and build_happy read App::http_timeout(), so dropping `.timeout(config.http_timeout)` in AppBuilder::build would pass every test. The only observable boundary is a real request against a stalled local server, which belongs with the REST/gateway stories (5.4+).
+    location: >-
+      crates/noctis-core/src/app.rs (AppBuilder::build)
+    severity: low
 ---
 
 <intent-contract>
@@ -131,6 +138,44 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 34 findings — high 0, medium 1, low 17, false 16, maybe-false 0
+- findings:
+  - `[low]` `[reject]` Plugins cannot declare a shared sub-plugin (diamond ⇒ unavoidable DuplicatePlugin) — AD-24's `.image()`/`.theme()` register before `build`, where `plugin_mut` sees registered plugins; only a plugin adding a plugin inside `install` hits it, no planned plugin does, and the fix adds public surface.
+  - `[low]` `[reject]` A plugin's setter silently overrides a port/renderer the user set — real by the spec's last-call-wins + install-in-build order, but only when the user adds a plugin that sets the same slot; a warn/"set if unset" path adds new API and branches.
+  - `[false]` `[reject]` `App::run` returns `Ok(())` after a warn — the spec deliberately stages this until Story 5.4 and the skill documents it.
+  - `[false]` `[reject]` `noctis::twilight::http` re-export defeats the deps-check one-client rule — the rule governs noctis crates (one client per App); a bot author's own Client is not an App client, and AD-2 mandates the re-export.
+  - `[low]` `[reject]` Client-construction scan is textual (misses aliases/whitespace/tests, flags comments) — the spec defines exactly this scan; evasion needs a deliberate alias and a false positive fails loudly; a robust scan is more than a direct correction.
+  - `[false]` `[reject]` twilight types in public API couple semver — AD-2/AD-24 choose this coupling; workspace pins hold one twilight version.
+  - `[false]` `[reject]` ring provider may land on a different rustls copy than twilight's — Cargo.lock resolves a single `rustls` 0.23.46.
+  - `[low]` `[reject]` UI-test stderr now prints `noctis::ui::ActionRow` etc. — real cosmetic diagnostics change caused by the spec-mandated twilight-model dependency; no direct fix.
+  - `[false]` `[reject]` Template `configure` chains methods the real builder lacks — the template is excluded from the workspace, carries "written against the planned Noctis API" and the skill marks those methods `[planned, Story N]`; the signature was reconciled as the spec asks.
+  - `[low]` `[reject]` `build()` discards the configuration on failure — spec-settled unconditional move-out; retrying a failed build on the same builder is rare (builder is usually a temporary) and a conditional reset would also need violation/plugin re-state.
+  - `[false]` `[reject]` Redaction not checked on `app.http()` Debug — twilight-http 0.17.1 `Client` derives Debug over its private `Token`, whose Debug writes `<redacted>`; the token text never appears.
+  - `[low]` `[patch]` `report` rustdoc example reports framework-owned `CryptoProvider` — patch: example uses `BuildViolation::plugin::<P>(..)`.
+  - `[false]` `[reject]` `#[allow]` instead of `#[expect]` on temporary suppressions — `app.ports()` is read by `app/tests.rs` (L123, L140), so `dead_code` does not fire under `cfg(test)` and an `#[expect]` would be unfulfilled there; `allow` is the correct tool.
+  - `[low]` `[patch]` Minor API/doc inconsistencies — `Greeting` undefined in skill §12 example is real (patch: define it); `INITS` sub-claim is false (`freeze_and_conflict` asserts `COUNTED_INITS == 1`); `Error` without Clone/PartialEq and the NoRuntime wording are negligible.
+  - `[low]` `[reject]` `NOCTIS_TOKEN="Bot "` trims to a literal token `Bot` — real but requires an env value that is only the prefix; failure surfaces as a Discord 401; fix adds a guard.
+  - `[low]` `[reject]` Pre-installed provider without usable cipher suites panics in twilight's connector — needs a deliberately broken custom provider; a TLS probe in build is extra machinery.
+  - `[low]` `[reject]` `Resource::init` recursing into `resource_or_init::<T>` overflows the stack — a programmer bug that fails loudly; an in-progress set adds thread-local state.
+  - `[low]` `[reject]` A plugin switching `runtime(..)` mid-install splits resources across Runtimes — contrived; a guard adds state tracking.
+  - `[low]` `[patch]` DuplicatePlugin message advises `plugin_mut`, which cannot reach an installed plugin — patch: reword the message so the advice holds.
+  - `[false]` `[reject]` Failed build still installs ring's provider — the spec orders the checks unconditionally and never replaces an installed provider; authors install their own before building.
+  - `[low]` `[reject]` deps-check walk follows symlink loops — no symlinks in the scanned `src/` trees; a loop guard is extra complexity.
+  - `[low]` `[reject]` deps-check flags `Client::new(` in comments/strings — same as the textual-scan entry: loud false positive, spec-defined scan.
+  - `[low]` `[reject]` Alias or whitespace evades the client-construction scan — same as the textual-scan entry.
+  - `[low]` `[reject]` Unusable custom provider still panics in `build()` — same as the cipher-suite entry.
+  - `[medium]` `[patch]` Token never verified to reach the App's HTTP client — patch: assert `app.http().token()` with/without token and for a `"Bot "`-prefixed input.
+  - `[low]` `[defer]` Configured HTTP timeout never observed on the client — deferred to the REST/gateway stories (needs a stalled local server).
+  - `[false]` `[reject]` `from_env` reads only `NOCTIS_TOKEN` — the spec deliberately defers the other variables to their setters' stories; the skill marks them planned.
+  - `[false]` `[reject]` Plugin getter is `current_runtime()`, not `runtime()` — Rust cannot overload the attach setter; the spec's Design Notes settle the name.
+  - `[false]` `[reject]` ResourceConflict becomes a BuildError only via plugin `report` — per AD-24 resources are requested by plugins; the spec's AC tests exactly that path.
+  - `[false]` `[reject]` Crypto provider ensured in both build and run — twilight's client build needs the provider, so the spec puts the check in both.
+  - `[false]` `[reject]` `build()` requires a tokio runtime — twilight-http's ClientBuilder spawns its rate limiter; the spec settles `NoTokioRuntime`.
+  - `[false]` `[reject]` Template body not reconciled — same as the template entry above.
+  - `[false]` `[reject]` "Never logged" not tested at the log surface — the token has no public getter (`expose` is `pub(crate)`) and no tracing call takes it.
+  - `[false]` `[reject]` Public surface beyond the intent — every listed item is specified in the spec's Boundaries.
+
 ## Design Notes
 
 - Mutable builder: AD-24 fixes `install(&self, app: &mut AppBuilder)` and requires install to use the same public port setters; consuming setters cannot be called through `&mut`, and duplicating every setter is API noise. tokio's `runtime::Builder` is the precedent. Doc example:
@@ -153,3 +198,22 @@ deferred: []
 - `cargo deny check` -- exit 0 (no `aws-lc-rs`/`aws-lc-sys` in the graph).
 - `cargo run --release -p xtask -- deps-check`, then `-- rules-catalog`, `-- api-snapshot`, `-- skill-check` -- each exit 0 (`api-snapshot` needs `nightly-2026-10-15` + `cargo-public-api` 0.52.0, see AGENTS.md pitfalls).
 - `cargo tree -p noctis -e normal -i aws-lc-rs` -- fails with "did not match any packages" (aws-lc-rs absent). `test ! -d target/debug` -- true.
+
+## Auto Run Result
+
+- **Summary:** Added the noctis-core App layer: mutable `AppBuilder` (`App::builder`/`App::from_env`), `Runtime` with typed resources (`resource_or_init`, conflict detection), the `Plugin` seam (AD-24 `install(&self, &mut AppBuilder)`, `plugin_mut`, `report`), ports slots, redacted `Token` (`NOCTIS_TOKEN`, `Bot ` prefix stripped), startup safety (ring CryptoProvider ensured, `NoTokioRuntime`, missing-token start error), typed `BuildError`/`BuildViolation`, and an xtask deps-check rule enforcing one twilight-http Client per App; `noctis` facade re-exports and the project template/skill were updated.
+- **Files changed:**
+  - `crates/noctis-core/src/{app.rs,app/tests.rs}` — AppBuilder, App, build/run checks and tests.
+  - `crates/noctis-core/src/{error.rs,plugin.rs,ports.rs,runtime.rs,startup.rs,state.rs,token.rs,lib.rs}` — errors, Plugin trait, port slots, Runtime/resources, crypto/startup checks, shared state, redacted token, exports.
+  - `crates/noctis-core/tests/crypto_{provider,preinstalled}.rs` — provider install integration tests.
+  - `crates/noctis/{Cargo.toml,src/lib.rs}` — facade features and re-exports (incl. `noctis::twilight`).
+  - `crates/noctis/tests/ui/**.stderr` — re-blessed diagnostics (paths now print `noctis::ui::*`).
+  - `examples/project-template/**` — skill (app-and-sharding reference rewritten, API hash), AGENTS.md, code reconciled to the builder signature.
+  - `xtask/public-api.txt`, `xtask/src/deps_check.rs`, `xtask/tests/deps_check.rs` — API snapshot; client-construction scan.
+- **Review findings (34: high 0, medium 1, low 17, false 16):**
+  - Patched (1 medium, 3 low): token reaching `app.http()` now asserted (plain, absent, `Bot `-prefixed); `report` rustdoc example uses `BuildViolation::plugin::<P>`; DuplicatePlugin message reworded; skill section 12 example defines `Greeting`.
+  - Deferred (1 low): configured HTTP timeout not observed on the client — to REST/gateway stories (needs stalled local server).
+  - Rejected (13 low, 16 false), reasons recorded in the triage log: shared sub-plugin diamond (no planned plugin hits it), plugin setter overrides user slot (last-call-wins by spec), staged `run` Ok(()) until 5.4, twilight re-export vs one-client rule (rule governs noctis crates), textual client scan limits (spec-defined, loud false positives), twilight semver coupling (AD-2/AD-24), single rustls copy, UI stderr paths, template planned methods, build consumes config on failure, Debug redaction (twilight Token Debug is `<redacted>`), `allow` vs `expect`, `NOCTIS_TOKEN="Bot "`, broken custom provider panics, recursive init overflow, runtime switch mid-install, failed build installs ring, symlink loops, from_env only token, `current_runtime` naming, ResourceConflict via report, provider check in build and run, build needs tokio, log-surface token test, public surface per Boundaries.
+- **Follow-up review recommended:** false — first pass patched 0 high and 1 medium (below the two-medium threshold).
+- **Verification:** all local gates via gates.sh green — fmt, clippy `-D warnings`, `cargo test --release --workspace`, `cargo hack --each-feature`, MSRV 1.91 check, cargo deny, xtask deps-check/rules-catalog/api-snapshot/skill-check; aws-lc-rs absent from the graph; no `target/debug`. CI paused by the maintainer.
+- **Residual risks:** HTTP timeout unverified at runtime (deferred); `App::run` is a staged no-op after checks until Story 5.4; client-construction scan is textual; plugin setters silently override user-set slots.

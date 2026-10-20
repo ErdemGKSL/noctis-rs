@@ -116,6 +116,12 @@ async fn build_happy() {
         .build()
         .unwrap();
     assert!(Arc::ptr_eq(app.http(), app.http()));
+    assert_eq!(app.http().token(), Some(&*format!("Bot {SECRET}")));
+    let prefixed = App::builder()
+        .token(Token::new("Bot abc").unwrap())
+        .build()
+        .unwrap();
+    assert_eq!(prefixed.http().token(), Some("Bot abc"));
     assert_eq!(app.http_timeout(), Duration::from_secs(10));
     assert_eq!(app.intents(), Intents::GUILDS);
     assert_eq!(*app.state::<Meta>().unwrap(), Meta("noctis"));
@@ -130,6 +136,7 @@ async fn build_without_token_and_two_apps() {
     let a = App::builder().build().unwrap();
     let b = App::builder().build().unwrap();
     assert!(a.token.is_none());
+    assert!(a.http().token().is_none());
     assert!(!Arc::ptr_eq(a.http(), b.http()));
 }
 

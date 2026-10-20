@@ -450,10 +450,16 @@ impl AppBuilder {
     /// report with [`BuildViolation::plugin`].
     ///
     /// ```
-    /// use noctis_core::{App, BuildViolation};
+    /// use noctis_core::{App, AppBuilder, BuildViolation, Plugin};
+    ///
+    /// struct MyPlugin;
+    ///
+    /// impl Plugin for MyPlugin {
+    ///     fn install(&self, _app: &mut AppBuilder) {}
+    /// }
     ///
     /// let mut builder = App::builder();
-    /// builder.report(BuildViolation::CryptoProvider);
+    /// builder.report(BuildViolation::plugin::<MyPlugin>("greeting is empty: pass some text"));
     /// ```
     pub fn report(&mut self, violation: BuildViolation) -> &mut Self {
         self.violations.push(violation);

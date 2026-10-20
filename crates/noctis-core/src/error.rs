@@ -124,8 +124,8 @@ pub enum BuildViolation {
     },
     /// Two plugins of one type; the first is kept.
     #[error(
-        "plugin `{type_name}` was added twice: add it once and change it with \
-         `AppBuilder::plugin_mut`"
+        "plugin `{type_name}` was added twice: add it once; before `build`, \
+         change the added one with `AppBuilder::plugin_mut`"
     )]
     DuplicatePlugin {
         /// The plugin's type name.
