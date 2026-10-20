@@ -1,0 +1,5 @@
+error: [CMD-07] `nsfw` takes `true` or `false`
+ --> tests/ui/cmd/CMD-07_nsfw_not_bool.rs:3:38
+  |
+3 | #[command("ping", description = "d", nsfw = 1)]
+  |                                      ^^^^

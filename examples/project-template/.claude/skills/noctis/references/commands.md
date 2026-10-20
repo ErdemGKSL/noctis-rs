@@ -60,29 +60,58 @@ Compile-time checks on the literal (each error names its rule):
 ### Attribute arguments
 
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
-`description` and `max_expansions`. Every other argument below is [planned] and is a
-compile error today (`` `#[command]` argument `ephemeral` is planned and not supported yet ``).
+`description`, `max_expansions` and the metadata arguments `permissions`, `contexts`,
+`integration_types`, `nsfw` and `guilds`. Every argument marked [planned] is a compile
+error today (`` `#[command]` argument `ephemeral` is planned and not supported yet ``);
+an unknown one lists the landed names (`` unknown `#[command]` argument `foo`: expected
+`description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or
+`guilds` ``), and each argument may appear once (`` duplicate `#[command]` argument `nsfw` ``).
 
 | Argument | Meaning |
 | --- | --- |
 | `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
 | `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
 | `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
-| `ephemeral` | reply privately (default public). Fixed at registration (INT-10); the auto-defer uses it |
-| `opens_modal` | the handler answers with a modal and takes `CommandResponder<OpensModal>`; disables auto-defer (INT-05) |
-| `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01); unknown names are compile errors |
-| `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used |
-| `integration_types = [GuildInstall, UserInstall]` | install types (META-04: must be enabled on the app) |
-| `nsfw` | age-restricted (CMD-07) |
-| `guilds = DEV_GUILDS` | guild-scoped: published only to these guilds (`const DEV_GUILDS: &[u64]`); `contexts`/`integration_types` are then invalid (META-03) |
-| `rate_limit(user, 3, per = "10s")` | see `modules-middleware-ratelimits.md` |
-| `flags = ["beta"]` | Boot Flags |
-| `apps = ["main"]` | publish only for these Apps (multi-App) |
+| `ephemeral` | [planned] reply privately (default public). Fixed at registration (INT-10); the auto-defer uses it |
+| `opens_modal` | [planned] the handler answers with a modal and takes `CommandResponder<OpensModal>`; disables auto-defer (INT-05) |
+| `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
+| `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used (`noctis::InteractionContext` names; `InteractionContext::Guild` works): at least one, no duplicates, declared order kept (`` unknown context `Gild`; expected one of Guild, BotDm, PrivateChannel ``, `` duplicate context `Guild` ``) |
+| `integration_types = [GuildInstall, UserInstall]` | install types (`noctis::IntegrationType`), same shape; META-04: must be enabled on the app |
+| `nsfw = true` | age-restricted: `true` or `false`, anything else is `` [CMD-07] `nsfw` takes `true` or `false` `` |
+| `guilds = [123456789012345678]` | guild-scoped: published only to these guilds. Integer literals only (no consts or paths), non-zero, distinct, `u64` (`42u64` works). `contexts`/`integration_types` are then a compile error: ``[META-03] contexts: limit only on global commands, actual `[Guild]` `` with `= note: scope: guild 42` (the first id). Dev-guild publishing comes from `--publish-guild` |
+| `rate_limit(user, 3, per = "10s")` | [planned] see `modules-middleware-ratelimits.md` |
+| `flags = ["beta"]` | [planned] Boot Flags |
+| `apps = ["main"]` | [planned] publish only for these Apps (multi-App) |
+
+There is no `dm_permission` (`` [META-05] `dm_permission` is deprecated by Discord and not
+supported; use `contexts = [Guild]` to keep a command out of DMs ``). An argument left out
+stays unset and is omitted when publishing, so Discord applies its own default (FR-11).
+
+Read the result with `handler.metadata() -> &noctis::CommandMetadata` (`#[non_exhaustive]`,
+`Copy`, pub fields `default_member_permissions: Option<Permissions>`, `contexts:
+Option<&'static [InteractionContext]>`, `integration_types: Option<&'static
+[IntegrationType]>`, `nsfw: Option<bool>`, `guilds: &'static [Id<GuildMarker>]` (empty =
+global); `CommandMetadata::new()` = all unset, by-value `const` setters of the field names,
+`is_guild_scoped()`):
+
+```rust
+#[command("ban", description = "Ban a member", permissions = BAN_MEMBERS, contexts = [Guild])]
+async fn ban(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }
+
+let handler = ban();
+assert_eq!(handler.metadata().default_member_permissions, Some(noctis::Permissions::BAN_MEMBERS));
+assert_eq!(handler.metadata().nsfw, None); // unset, omitted on Publish
+```
 
 `permissions`, `contexts`, `integration_types` and `nsfw` belong to the **base** command
-(META-02). Every leaf under one base must agree, across all Modules, or App build fails
-(META-01, META-02, CMD-07, REG-04, FR-9; see §6 "Metadata rules"). Declare them once explicitly with [planned]
-`Module::new("x").base("config", BaseMeta::new().permissions(Permissions::MANAGE_GUILD))`.
+(META-02): on a pattern they apply to every path the handler declares, and there is no
+per-path form (`` [META-02] `permissions` applies to the base command of every path this
+handler declares; Discord keeps it only on the base command, so it has no per-path form ``
+for `permissions(set = …)`). Every leaf under one base must agree, across all Modules, or
+App build fails (META-01, META-02, CMD-07, REG-04, FR-9; see §6 "Metadata rules"; the App
+build check lands in Story 6.4). Declare them once explicitly with [planned]
+`Module::new("x").base("config", BaseMeta::new().permissions(Permissions::MANAGE_GUILD))`
+([planned] `BaseMeta`).
 Base and group descriptions come from `cmd.config.description` and `cmd.config.set.description`; if
 missing, a deterministic rule picks one and logs a warning (never registration order).
 
@@ -500,20 +529,56 @@ OPT-11) means Discord rejects the response, so fix or drop the offending choices
 ## 5. Context-menu commands
 
 ```rust
-#[user_command("Show profile", key = "show_profile", contexts = [Guild])]
-async fn show_profile(ctx: CommandCtx, target: TargetUser) -> HandlerResult<ProfileView> { … }
+use noctis::prelude::*; // user_command, message_command
+use noctis::ui::{ResolvedMessage, ResolvedUser};
 
-#[message_command("Report message", key = "report")]
-async fn report(ctx: CommandCtx, target: TargetMessage) -> HandlerResult<ReportView> { … }
+#[user_command("Show profile", contexts = [Guild])]
+async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+    let _ = ctx.command_path(); // "Show profile"
+    let _ = (target.user.id, target.member); // member: None outside a guild
+    Ok(())
+}
+
+#[message_command("Report message")]
+async fn report(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> {
+    let _ = target.message.content;
+    Ok(())
+}
+
+let module = Module::new("mod").add(show_profile()).add(report());
 ```
 
-- Name 1–32 chars, mixed case and spaces allowed (CTX-01); no description, no options
-  (CTX-02). Localized as a whole: `ctxcmd.<key>.name`.
+- The macro turns the fn into `fn show_profile() -> noctis::ContextMenuHandler` for
+  `Module::add`. `ContextMenuHandler` has `name()` (`module_path::fn`), `menu_name()`,
+  `kind() -> noctis::MenuKind` (`User` / `Message`, from the macro: CTX-03; `.value()` 2 / 3,
+  `.name()` `"USER"` / `"MESSAGE"`) and `metadata() -> &CommandMetadata`.
+- Arguments: the name literal first (raw strings work; `` `#[user_command]` needs the menu
+  name as its first argument: `#[user_command("Show profile")]` `` / `` … needs its menu
+  name as a string literal ``), then the metadata arguments of §1 (`permissions`,
+  `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included).
+  `key = "…"` (localization key), `ephemeral`, `opens_modal`, `rate_limit(..)`, `flags` and
+  `apps` are [planned]; `max_expansions` and other names are unknown arguments.
+- Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
+  (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
+  with a META-03 error). No description and no options (CTX-02): `description = "…"` is
+  `` [CTX-02] context-menu commands have no description ``, an extra parameter is
+  `` [CTX-02] context-menu commands take no options: … ``. The handler is exactly
+  `(ctx: CommandCtx, target: ResolvedUser)` (or `ResolvedMessage` for `#[message_command]`)
+  returning `HandlerResult<()>`. [planned] Localized as a whole: `ctxcmd.<key>.name`
+  (with `key`, Epic 11); returning a View (Story 6.5).
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
   `Limits::context_menu_name_len`), path `""`, CTX-01 `Between{1,32}` / `Count(n)`;
   `"Show Profile"`, `"It's"`, `"Report 🚩"` pass. `validate_merge` runs it on every menu.
-- `TargetUser { user, member: Option<PartialMember> }`, `TargetMessage { message }`.
+- Targets: `noctis::ui::ResolvedUser { user, member: Option<InteractionMember> }` (the
+  same type as a USER option) and `noctis::ui::ResolvedMessage { message }` (twilight
+  `Message`; `ResolvedMessage::from_resolved(&resolved, id)`). The target is looked up by the
+  interaction's `target_id` in its resolved data. When that fails the handler does not run
+  and the call returns a `HandlerError` wrapping `noctis::MenuTargetError` (`#[non_exhaustive]`):
+  `Malformed { reason }` (`malformed context-menu interaction: …`), `NotContextMenu {
+  interaction_type, command_type }`, `WrongKind { expected, found }` (`expected a USER
+  command, got a MESSAGE command`), `Unresolved { id }` (`target 99 is not in the resolved
+  data`). Another menu name is `UnknownCommandPath` (exact byte match).
 - Same name + same type twice is a `BuildError` (REG-03). Limits: 15 user and 15
   message commands globally (REG-01).
 
@@ -531,8 +596,9 @@ breaks CMD-11/13/05, or the App exceeds 100 global chat-input commands (REG-01).
 | Item | What it is |
 | --- | --- |
 | `CommandMeta<'a>` | `#[non_exhaustive]`, `Default`; pub fields `default_member_permissions: Option<u64>` (raw permission bits), `contexts: Option<&[InteractionContext]>`, `integration_types: Option<&[IntegrationType]>`, `nsfw: Option<bool>`; `None` = unset. `CommandMeta::new()` plus by-value `const` setters of the same names; no `dm_permission` (META-05: use `contexts`) |
-| `InteractionContext` | `Guild` (0), `BotDm` (1), `PrivateChannel` (2); `.value()`, `.name()` (variant name) |
-| `IntegrationType` | `GuildInstall` (0), `UserInstall` (1); `.value()`, `.name()` |
+| `InteractionContext` | `Guild` (0), `BotDm` (1), `PrivateChannel` (2); `InteractionContext::ALL`, `.value()`, `.name()` (variant name); also `noctis::InteractionContext` |
+| `IntegrationType` | `GuildInstall` (0), `UserInstall` (1); `IntegrationType::ALL`, `.value()`, `.name()`; also `noctis::IntegrationType` |
+| `PERMISSIONS` / `permission(name) -> Option<u64>` | the 51 `(name, bit)` pairs `permissions = …` accepts (twilight's `Permissions` names in declaration order, no deprecated aliases) and an exact, case-sensitive lookup (`permission("MANAGE_GUILD") == Some(32)`) |
 | `validate_meta(&CommandMeta, Scope, &Limits) -> Vec<Violation>` | META-03: a `Scope::Guild` declaration may not set `contexts` or `integration_types`; paths `contexts`, `integration_types` (that order), `Describe("only on global commands")`, actual the set sorted by value and deduplicated (`` `[Guild, PrivateChannel]` ``, `` `[]` ``), note `scope: guild 42` |
 
 Attach metadata with `CommandDecl::handler(..).metadata(CommandMeta::new().nsfw(true))`
@@ -567,7 +633,7 @@ and answer "disabled here".
 ## 8. Handler context (`CommandCtx`)
 
 Available now: `ctx.command_path() -> &'static str`, the invoked Command Path (`"config set
-prefix"`). `CommandCtx` is `Clone` and `Debug`.
+prefix"`), or the menu name for a context-menu command (`"Show profile"`). `CommandCtx` is `Clone` and `Debug`.
 `#[command]` handlers cannot be invoked from bot tests until Story 6.5 adds a test
 context; never use `noctis::__private`.
 

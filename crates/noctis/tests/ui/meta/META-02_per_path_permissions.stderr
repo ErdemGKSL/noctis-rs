@@ -1,0 +1,5 @@
+error: [META-02] `permissions` applies to the base command of every path this handler declares; Discord keeps it only on the base command, so it has no per-path form
+ --> tests/ui/meta/META-02_per_path_permissions.rs:3:50
+  |
+3 | #[command("config (set|get)", description = "d", permissions(set = MANAGE_GUILD))]
+  |                                                  ^^^^^^^^^^^

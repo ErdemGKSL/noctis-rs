@@ -100,8 +100,8 @@ pub fn config_key(guild: Id<GuildMarker>) -> String {
     "setup start",
     description = "Configure the bot for this server, step by step",
     ephemeral,                  // [planned]: rejected until its release
-    permissions = MANAGE_GUILD, // [planned]: rejected until its release
-    contexts = [Guild],         // [planned]: rejected until its release
+    permissions = MANAGE_GUILD,
+    contexts = [Guild],
 )]
 async fn setup_start(ctx: CommandCtx) -> HandlerResult<SetupWizard> {
     Ok(SetupWizard::new(SetupState {

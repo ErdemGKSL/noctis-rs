@@ -144,6 +144,7 @@ pub fn noctis::CommandCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fm
 pub struct noctis::CommandHandler
 impl noctis::CommandHandler
 pub fn noctis::CommandHandler::description(&self) -> &'static str
+pub fn noctis::CommandHandler::metadata(&self) -> &noctis::CommandMetadata
 pub fn noctis::CommandHandler::name(&self) -> &'static str
 pub fn noctis::CommandHandler::options(&self) -> &'static [noctis::rules::command::OptionDecl<'static>]
 pub fn noctis::CommandHandler::paths(&self) -> &'static [&'static str]
@@ -164,6 +165,31 @@ impl core::clone::Clone for noctis::CommandInput
 pub fn noctis::CommandInput::clone(&self) -> Self
 impl core::fmt::Debug for noctis::CommandInput
 pub fn noctis::CommandInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::CommandMetadata
+pub noctis::CommandMetadata::contexts: core::option::Option<&'static [noctis::InteractionContext]>
+pub noctis::CommandMetadata::default_member_permissions: core::option::Option<twilight_model::guild::permissions::Permissions>
+pub noctis::CommandMetadata::guilds: &'static [twilight_model::id::Id<twilight_model::id::marker::GuildMarker>]
+pub noctis::CommandMetadata::integration_types: core::option::Option<&'static [noctis::IntegrationType]>
+pub noctis::CommandMetadata::nsfw: core::option::Option<bool>
+impl noctis::CommandMetadata
+pub const fn noctis::CommandMetadata::contexts(self, &'static [noctis::InteractionContext]) -> Self
+pub const fn noctis::CommandMetadata::default_member_permissions(self, twilight_model::guild::permissions::Permissions) -> Self
+pub const fn noctis::CommandMetadata::guilds(self, &'static [twilight_model::id::Id<twilight_model::id::marker::GuildMarker>]) -> Self
+pub const fn noctis::CommandMetadata::integration_types(self, &'static [noctis::IntegrationType]) -> Self
+pub fn noctis::CommandMetadata::is_guild_scoped(&self) -> bool
+pub const fn noctis::CommandMetadata::new() -> Self
+pub const fn noctis::CommandMetadata::nsfw(self, bool) -> Self
+impl core::clone::Clone for noctis::CommandMetadata
+pub fn noctis::CommandMetadata::clone(&self) -> Self
+impl core::cmp::Eq for noctis::CommandMetadata
+impl core::cmp::PartialEq for noctis::CommandMetadata
+pub fn noctis::CommandMetadata::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::CommandMetadata
+pub fn noctis::CommandMetadata::default() -> Self
+impl core::fmt::Debug for noctis::CommandMetadata
+pub fn noctis::CommandMetadata::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::CommandMetadata
+impl core::marker::StructuralPartialEq for noctis::CommandMetadata
 pub trait noctis::CommandOption: core::marker::Sized + core::marker::Send + core::marker::Sync + 'static
 pub const noctis::CommandOption::CHOICES: &'static [noctis::rules::command::Choice<'static>]
 pub const noctis::CommandOption::KIND: noctis::rules::command::OptionType
@@ -208,6 +234,18 @@ pub trait noctis::CommandPath: core::marker::Copy + core::marker::Send + core::m
 pub const noctis::CommandPath::PATHS: &'static [&'static str]
 pub fn noctis::CommandPath::as_str(self) -> &'static str
 pub fn noctis::CommandPath::from_path(&str) -> core::option::Option<Self>
+pub struct noctis::ContextMenuHandler
+impl noctis::ContextMenuHandler
+pub fn noctis::ContextMenuHandler::kind(&self) -> noctis::MenuKind
+pub fn noctis::ContextMenuHandler::menu_name(&self) -> &'static str
+pub fn noctis::ContextMenuHandler::metadata(&self) -> &noctis::CommandMetadata
+pub fn noctis::ContextMenuHandler::name(&self) -> &'static str
+impl core::clone::Clone for noctis::ContextMenuHandler
+pub fn noctis::ContextMenuHandler::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ContextMenuHandler
+pub fn noctis::ContextMenuHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::Descriptor for noctis::ContextMenuHandler
+impl noctis::Descriptor for noctis::ContextMenuHandler
 pub trait noctis::Descriptor: noctis::__private::core::module::sealed::Sealed
 #[non_exhaustive] pub enum noctis::EnvError
 pub noctis::EnvError::InvalidShardTotal
@@ -394,6 +432,51 @@ impl core::fmt::Display for noctis::HttpProxyError
 pub fn noctis::HttpProxyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::HttpProxyError
 impl core::marker::StructuralPartialEq for noctis::HttpProxyError
+pub enum noctis::IntegrationType
+pub noctis::IntegrationType::GuildInstall
+pub noctis::IntegrationType::UserInstall
+impl noctis::IntegrationType
+pub const noctis::IntegrationType::ALL: [Self; 2]
+pub const fn noctis::IntegrationType::name(self) -> &'static str
+pub const fn noctis::IntegrationType::value(self) -> u8
+impl core::clone::Clone for noctis::IntegrationType
+pub fn noctis::IntegrationType::clone(&self) -> Self
+impl core::cmp::Eq for noctis::IntegrationType
+impl core::cmp::Ord for noctis::IntegrationType
+pub fn noctis::IntegrationType::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::IntegrationType
+pub fn noctis::IntegrationType::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::IntegrationType
+pub fn noctis::IntegrationType::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::IntegrationType
+pub fn noctis::IntegrationType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::IntegrationType
+pub fn noctis::IntegrationType::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::IntegrationType
+impl core::marker::StructuralPartialEq for noctis::IntegrationType
+pub enum noctis::InteractionContext
+pub noctis::InteractionContext::BotDm
+pub noctis::InteractionContext::Guild
+pub noctis::InteractionContext::PrivateChannel
+impl noctis::InteractionContext
+pub const noctis::InteractionContext::ALL: [Self; 3]
+pub const fn noctis::InteractionContext::name(self) -> &'static str
+pub const fn noctis::InteractionContext::value(self) -> u8
+impl core::clone::Clone for noctis::InteractionContext
+pub fn noctis::InteractionContext::clone(&self) -> Self
+impl core::cmp::Eq for noctis::InteractionContext
+impl core::cmp::Ord for noctis::InteractionContext
+pub fn noctis::InteractionContext::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for noctis::InteractionContext
+pub fn noctis::InteractionContext::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for noctis::InteractionContext
+pub fn noctis::InteractionContext::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for noctis::InteractionContext
+pub fn noctis::InteractionContext::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::InteractionContext
+pub fn noctis::InteractionContext::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::InteractionContext
+impl core::marker::StructuralPartialEq for noctis::InteractionContext
 pub struct noctis::InvalidOption
 impl noctis::InvalidOption
 pub fn noctis::InvalidOption::key(&self) -> noctis::prelude::MessageKey
@@ -417,6 +500,44 @@ impl noctis::ErrorSink for noctis::LogSink
 pub fn noctis::LogSink::report(&self, noctis::ErrorReport<'_>)
 impl noctis::ErrorSink for noctis::LogSink
 pub fn noctis::LogSink::report(&self, noctis::ErrorReport<'_>)
+pub enum noctis::MenuKind
+pub noctis::MenuKind::Message
+pub noctis::MenuKind::User
+impl noctis::MenuKind
+pub const fn noctis::MenuKind::name(self) -> &'static str
+pub const fn noctis::MenuKind::value(self) -> u8
+impl core::clone::Clone for noctis::MenuKind
+pub fn noctis::MenuKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::MenuKind
+impl core::cmp::PartialEq for noctis::MenuKind
+pub fn noctis::MenuKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::MenuKind
+pub fn noctis::MenuKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::MenuKind
+pub fn noctis::MenuKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::MenuKind
+impl core::marker::StructuralPartialEq for noctis::MenuKind
+#[non_exhaustive] pub enum noctis::MenuTargetError
+pub noctis::MenuTargetError::Malformed
+pub noctis::MenuTargetError::Malformed::reason: alloc::string::String
+pub noctis::MenuTargetError::NotContextMenu
+pub noctis::MenuTargetError::NotContextMenu::command_type: u64
+pub noctis::MenuTargetError::NotContextMenu::interaction_type: u64
+pub noctis::MenuTargetError::Unresolved
+pub noctis::MenuTargetError::Unresolved::id: u64
+pub noctis::MenuTargetError::WrongKind
+pub noctis::MenuTargetError::WrongKind::expected: noctis::MenuKind
+pub noctis::MenuTargetError::WrongKind::found: noctis::MenuKind
+impl core::clone::Clone for noctis::MenuTargetError
+pub fn noctis::MenuTargetError::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::MenuTargetError
+pub fn noctis::MenuTargetError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::MenuTargetError
+impl core::fmt::Debug for noctis::MenuTargetError
+pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::MenuTargetError
+pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::MenuTargetError
 pub struct noctis::Module
 impl noctis::Module
 pub fn noctis::Module::add(self, impl noctis::Descriptor) -> Self
@@ -484,6 +605,7 @@ pub const noctis::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl
 pub fn noctis::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::Options::validate(&self, &noctis::CommandCtx) -> core::result::Result<(), noctis::InvalidOption>
 pub proc macro noctis::#[derive(Options)]
+pub use noctis::Permissions
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
 #[non_exhaustive] pub enum noctis::ReportKind<'a>
@@ -629,8 +751,10 @@ pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::#[event]
 pub proc macro noctis::label!()
+pub proc macro noctis::#[message_command]
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
+pub proc macro noctis::#[user_command]
 pub mod noctis::bytes
 pub use noctis::bytes::Bytes
 pub mod noctis::codec
@@ -2095,8 +2219,10 @@ pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
 pub proc macro noctis::prelude::#[event]
 pub proc macro noctis::prelude::label!()
+pub proc macro noctis::prelude::#[message_command]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
+pub proc macro noctis::prelude::#[user_command]
 pub mod noctis::rules
 #[non_exhaustive] pub enum noctis::rules::Actual
 pub noctis::rules::Actual::Count(usize)
@@ -2540,6 +2666,7 @@ pub enum noctis::rules::command::IntegrationType
 pub noctis::rules::command::IntegrationType::GuildInstall
 pub noctis::rules::command::IntegrationType::UserInstall
 impl noctis::rules::command::IntegrationType
+pub const noctis::rules::command::IntegrationType::ALL: [Self; 2]
 pub const fn noctis::rules::command::IntegrationType::name(self) -> &'static str
 pub const fn noctis::rules::command::IntegrationType::value(self) -> u8
 impl core::clone::Clone for noctis::rules::command::IntegrationType
@@ -2562,6 +2689,7 @@ pub noctis::rules::command::InteractionContext::BotDm
 pub noctis::rules::command::InteractionContext::Guild
 pub noctis::rules::command::InteractionContext::PrivateChannel
 impl noctis::rules::command::InteractionContext
+pub const noctis::rules::command::InteractionContext::ALL: [Self; 3]
 pub const fn noctis::rules::command::InteractionContext::name(self) -> &'static str
 pub const fn noctis::rules::command::InteractionContext::value(self) -> u8
 impl core::clone::Clone for noctis::rules::command::InteractionContext
@@ -2582,6 +2710,9 @@ impl core::marker::StructuralPartialEq for noctis::rules::command::InteractionCo
 pub enum noctis::rules::command::MenuKind
 pub noctis::rules::command::MenuKind::Message
 pub noctis::rules::command::MenuKind::User
+impl noctis::rules::command::MenuKind
+pub const fn noctis::rules::command::MenuKind::name(self) -> &'static str
+pub const fn noctis::rules::command::MenuKind::value(self) -> u8
 impl core::clone::Clone for noctis::rules::command::MenuKind
 pub fn noctis::rules::command::MenuKind::clone(&self) -> Self
 impl core::cmp::Eq for noctis::rules::command::MenuKind
@@ -2799,9 +2930,11 @@ pub fn noctis::rules::command::OptionDecl<'a>::fmt(&self, &mut core::fmt::Format
 impl<'a> core::marker::Copy for noctis::rules::command::OptionDecl<'a>
 impl<'a> core::marker::StructuralPartialEq for noctis::rules::command::OptionDecl<'a>
 pub const noctis::rules::command::CHANNEL_TYPES: [(&str, u8); 13]
+pub const noctis::rules::command::PERMISSIONS: [(&str, u64); 51]
 pub fn noctis::rules::command::channel_type(&str) -> core::option::Option<u8>
 pub fn noctis::rules::command::expand(&str, &noctis::rules::Limits) -> core::result::Result<alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<noctis::rules::Violation>>
 pub fn noctis::rules::command::measure_options(&[noctis::rules::command::OptionDecl<'_>], &noctis::rules::Limits) -> usize
+pub fn noctis::rules::command::permission(&str) -> core::option::Option<u64>
 pub fn noctis::rules::command::validate_autocomplete(&[noctis::rules::command::Choice<'_>], noctis::rules::command::OptionType, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_context_menu_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::command::validate_merge(&[noctis::rules::command::CommandDecl<'_>], &[noctis::rules::command::ContextMenuDecl<'_>], &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
@@ -4327,6 +4460,17 @@ pub fn noctis::ui::ResolvedChannel::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::ui::ResolvedChannel
 pub fn noctis::ui::ResolvedChannel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::ResolvedChannel
+#[non_exhaustive] pub struct noctis::ui::ResolvedMessage
+pub noctis::ui::ResolvedMessage::message: twilight_model::channel::message::Message
+impl noctis::ui::ResolvedMessage
+pub fn noctis::ui::ResolvedMessage::from_resolved(&twilight_model::application::interaction::resolved::InteractionDataResolved, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> core::option::Option<Self>
+impl core::clone::Clone for noctis::ui::ResolvedMessage
+pub fn noctis::ui::ResolvedMessage::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::ResolvedMessage
+pub fn noctis::ui::ResolvedMessage::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::ResolvedMessage
+pub fn noctis::ui::ResolvedMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::ResolvedMessage
 #[non_exhaustive] pub struct noctis::ui::ResolvedRole
 pub noctis::ui::ResolvedRole::role: twilight_model::guild::role::Role
 impl noctis::ui::ResolvedRole

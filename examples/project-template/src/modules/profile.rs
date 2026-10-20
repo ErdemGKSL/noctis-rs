@@ -12,7 +12,8 @@ use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
 use noctis::prelude::*;
 use noctis::ui::{
-    ActionRow, Button, ButtonStyle, MediaGallery, MediaItem, Separator, TextDisplay, escape_markdown,
+    ActionRow, Button, ButtonStyle, MediaGallery, MediaItem, ResolvedUser, Separator, TextDisplay,
+    escape_markdown,
 };
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +50,7 @@ pub struct ProfileOptions {
 #[command(
     "profile",
     description = "Show a member's profile card",
-    contexts = [Guild],                    // [planned]: rejected until its release
+    contexts = [Guild],
     rate_limit(user, 3, per = "10s"),      // [planned]: rejected until its release
 )]
 async fn profile(ctx: CommandCtx, opts: ProfileOptions) -> HandlerResult<ProfileView> {
@@ -59,8 +60,13 @@ async fn profile(ctx: CommandCtx, opts: ProfileOptions) -> HandlerResult<Profile
 
 /// Right-click a user → Apps → "Show profile". The name is localized as a whole
 /// (`ctxcmd.show_profile.name`); CMD-01/03 do not apply to context-menu names (CTX-01).
-#[user_command("Show profile", key = "show_profile", contexts = [Guild])]
-async fn show_profile(ctx: CommandCtx, target: TargetUser) -> HandlerResult<ProfileView> {
+/// The target is the right-clicked user, with `member` inside a guild.
+#[user_command(
+    "Show profile",
+    key = "show_profile", // [planned]: rejected until its release
+    contexts = [Guild],
+)]
+async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<ProfileView> {
     ProfileView::load(&ctx, target.user.id).await
 }
 

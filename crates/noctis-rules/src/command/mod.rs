@@ -125,6 +125,13 @@
 //! value and must agree too; with one, unset handlers inherit it. Metadata on a
 //! meta declaration below the base is META-02. [`validate_meta`] rejects
 //! `contexts` and `integration_types` on guild-scoped declarations (META-03).
+//!
+//! [`PERMISSIONS`] lists the permission names `#[command(permissions = …)]`
+//! accepts (twilight-model's `Permissions` flags, without deprecated aliases)
+//! with their bits; [`permission`] looks one name up (META-01).
+//! [`InteractionContext::ALL`] and [`IntegrationType::ALL`] list the
+//! `contexts` and `integration_types` values; [`MenuKind::value`] gives a
+//! context menu's command type (CTX-03).
 
 mod merge;
 mod meta;
@@ -134,7 +141,9 @@ mod pattern;
 mod tree;
 
 pub use merge::validate_merge;
-pub use meta::{CommandMeta, IntegrationType, InteractionContext, validate_meta};
+pub use meta::{
+    CommandMeta, IntegrationType, InteractionContext, PERMISSIONS, permission, validate_meta,
+};
 pub use name::{validate_context_menu_name, validate_name};
 pub use option::{
     CHANNEL_TYPES, Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, channel_type,
@@ -362,6 +371,31 @@ pub enum MenuKind {
     Message,
 }
 
+impl MenuKind {
+    /// The Discord command type: `USER` is 2, `MESSAGE` is 3.
+    ///
+    /// ```
+    /// use noctis_rules::command::MenuKind;
+    ///
+    /// assert_eq!(MenuKind::User.value(), 2);
+    /// assert_eq!(MenuKind::Message.name(), "MESSAGE");
+    /// ```
+    pub const fn value(self) -> u8 {
+        match self {
+            Self::User => 2,
+            Self::Message => 3,
+        }
+    }
+
+    /// The Discord command type name, `"USER"` or `"MESSAGE"`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::User => "USER",
+            Self::Message => "MESSAGE",
+        }
+    }
+}
+
 /// One context-menu command declaration.
 ///
 /// It has no description and no options (CTX-02):
@@ -432,6 +466,15 @@ fn source_name(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Matrix 58: the context-menu command types.
+    #[test]
+    fn ctx_03_menu_kind_values() {
+        assert_eq!(MenuKind::User.value(), 2);
+        assert_eq!(MenuKind::Message.value(), 3);
+        assert_eq!(MenuKind::User.name(), "USER");
+        assert_eq!(MenuKind::Message.name(), "MESSAGE");
+    }
 
     #[test]
     fn cmd_10_path_kind_by_word_count() {

@@ -1,0 +1,5 @@
+error: [CTX-02] context-menu commands take no options: `#[message_command]` handlers take `(ctx: CommandCtx, target: ResolvedMessage)`
+  --> tests/ui/ctx/CTX-02_message_command_options_param.rs:10:17
+   |
+10 | async fn report(_ctx: CommandCtx, _target: noctis::ui::ResolvedMessage, _o: O) -> HandlerResult<()> { // [CTX-02]
+   |                 ^^^^

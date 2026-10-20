@@ -1,0 +1,6 @@
+error: [META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER`
+         = help: see noctis::rules::command::PERMISSIONS for every name
+ --> tests/ui/meta/META-01_unknown_permission.rs:3:54
+  |
+3 | #[command("config", description = "d", permissions = MANAGE_SERVER)]
+  |                                                      ^^^^^^^^^^^^^

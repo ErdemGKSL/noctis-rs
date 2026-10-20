@@ -1,0 +1,5 @@
+error: [META-05] `dm_permission` is deprecated by Discord and not supported; use `contexts = [Guild]` to keep a command out of DMs
+ --> tests/ui/meta/META-05_dm_permission.rs:3:38
+  |
+3 | #[command("ping", description = "d", dm_permission = false)] // [META-05]
+  |                                      ^^^^^^^^^^^^^

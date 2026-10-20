@@ -14,11 +14,6 @@
 # empty by Story 14.4, except entries for Epic 15 stories.
 
 [[rule]]
-id = "CMD-07"
-evidence = "diagnosed"
-story = "6.3"
-
-[[rule]]
 id = "OPT-12"
 evidence = "by-construction"
 story = "6.7"
@@ -57,26 +52,6 @@ story = "11.4"
 id = "LOC-06"
 evidence = "unit"
 story = "6.5"
-
-[[rule]]
-id = "CTX-01"
-evidence = "diagnosed"
-story = "6.3"
-
-[[rule]]
-id = "META-01"
-evidence = "diagnosed"
-story = "6.3"
-
-[[rule]]
-id = "META-02"
-evidence = "diagnosed"
-story = "6.3"
-
-[[rule]]
-id = "META-03"
-evidence = "diagnosed"
-story = "6.3"
 
 [[rule]]
 id = "META-04"

@@ -8,7 +8,11 @@
 //! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
 //!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`event`](macro@event),
 //!   [`command`](macro@command), [`CommandHandler`], [`CommandCtx`],
-//!   [`CommandPath`], [`UnknownCommandPath`], [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
+//!   [`CommandPath`], [`UnknownCommandPath`], [`CommandMetadata`]
+//!   ([`Permissions`], [`InteractionContext`], [`IntegrationType`]),
+//!   [`user_command`](macro@user_command),
+//!   [`message_command`](macro@message_command), [`ContextMenuHandler`],
+//!   [`MenuKind`], [`MenuTargetError`], [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
 //!   edge's tuning) and the errors ([`Error`], [`BuildError`],
 //!   [`BuildViolation`], [`StartError`], [`RunError`], [`EnvError`],
 //!   [`TokenError`], [`ResourceConflict`], [`HttpConfigError`],
@@ -23,8 +27,10 @@
 //!   derives, the `Route` and `Payload` traits,
 //!   [`RouteComponents`](prelude::RouteComponents), [`Rgb`](ui::Rgb) and the
 //!   macros [`components!`], [`label!`], [`placeholder!`], [`content!`] and
-//!   [`rgb!`], and the [`event`](macro@event) and [`command`](macro@command)
-//!   attributes with [`CommandCtx`] into scope.
+//!   [`rgb!`], and the [`event`](macro@event), [`command`](macro@command),
+//!   [`user_command`](macro@user_command) and
+//!   [`message_command`](macro@message_command) attributes with
+//!   [`CommandCtx`] into scope.
 //! - [`ui`]: the Components V2 message model: one type per component,
 //!   placement checked by the compiler, components built from Routes, and
 //!   attachments.
@@ -296,11 +302,12 @@
 
 pub use noctis_core::{
     AckDeadlineMissed, App, AppBuilder, BuildError, BuildViolation, CommandCtx, CommandHandler,
-    CommandInput, CommandOption, CommandPath, Descriptor, EnvError, Error, ErrorOrigin,
-    ErrorReport, ErrorSink, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
-    HttpConfigError, HttpProxyError, InvalidOption, LogSink, Module, OptionError, OptionValue,
-    Options, Plugin, ReportKind, Resource, ResourceConflict, RunError, Runtime, StartError, State,
-    Token, TokenError, UnknownCommandPath,
+    CommandInput, CommandMetadata, CommandOption, CommandPath, ContextMenuHandler, Descriptor,
+    EnvError, Error, ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError, HandlerError,
+    HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
+    InteractionContext, InvalidOption, LogSink, MenuKind, MenuTargetError, Module, OptionError,
+    OptionValue, Options, Permissions, Plugin, ReportKind, Resource, ResourceConflict, RunError,
+    Runtime, StartError, State, Token, TokenError, UnknownCommandPath,
 };
 
 /// Derives [`Options`](trait@Options) for a struct with named fields: each
@@ -482,7 +489,93 @@ pub mod observe {
 /// a leading digit; `Self_` for `Self`); two equal names are a compile error.
 /// The enum has `ALL` (expansion order), `as_str()` and implements
 /// [`CommandPath`]. Both forms return `HandlerResult<()>`.
+///
+/// # Metadata
+///
+/// These arguments set the Command's [`CommandMetadata`], read with
+/// [`CommandHandler::metadata`]. An argument left out stays unset (`None`,
+/// or no guilds) and is omitted when the Command is published, so Discord
+/// applies its default. They belong to the **base** command of every path
+/// the handler declares (META-02): a per-path form such as
+/// `permissions(set = …)` is a `[META-02]` compile error, and handlers
+/// sharing a base must agree (checked at App build).
+///
+/// | Argument | Takes | Rules |
+/// | --- | --- | --- |
+/// | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions`: [`Permissions`] names joined by `\|` (a path's last segment counts, `Permissions::MANAGE_GUILD` works); the names are [`rules::command::PERMISSIONS`] (twilight's, so `USE_SLASH_COMMANDS`); an unknown name or other syntax fails. For admin-only use `ADMINISTRATOR` | META-01 |
+/// | `contexts = [Guild, BotDm, PrivateChannel]` | [`InteractionContext`] names, at least one, no duplicates, declared order | META-03 |
+/// | `integration_types = [GuildInstall, UserInstall]` | [`IntegrationType`] names, same shape | META-03, META-04 |
+/// | `nsfw = true` | `true` or `false` | CMD-07 |
+/// | `guilds = [123456789012345678]` | guild id integer literals (non-zero, distinct): the Command is published only to these guilds, and `contexts` / `integration_types` are then a `[META-03]` error | META-03 |
+///
+/// `dm_permission` does not exist (`[META-05]`; use `contexts = [Guild]`).
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::{InteractionContext, Permissions};
+///
+/// #[command("ban", description = "Ban a member", permissions = BAN_MEMBERS | MANAGE_GUILD, contexts = [Guild], nsfw = false)]
+/// async fn ban(_ctx: CommandCtx) -> HandlerResult<()> {
+///     Ok(())
+/// }
+///
+/// let handler = ban();
+/// let meta = handler.metadata();
+/// assert_eq!(meta.default_member_permissions, Some(Permissions::BAN_MEMBERS | Permissions::MANAGE_GUILD));
+/// assert_eq!(meta.contexts, Some(&[InteractionContext::Guild][..]));
+/// assert_eq!(meta.integration_types, None);
+/// assert_eq!(meta.nsfw, Some(false));
+/// ```
 pub use noctis_macros::command;
+
+/// Declares a `USER` context-menu command: checks its name at compile time
+/// and turns `async fn name(ctx: CommandCtx, target: ResolvedUser) ->
+/// HandlerResult<()>` into `fn name() -> ContextMenuHandler`, which
+/// [`Module::add`] takes.
+///
+/// The first argument is the menu name, a string literal of 1 to 32
+/// characters (UTF-16 counted; mixed case, spaces, apostrophes and emoji are
+/// fine, CTX-01). Then the metadata arguments of [`command`](macro@command)
+/// (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`). A
+/// context-menu command has no description and no options (`[CTX-02]`
+/// otherwise); its type comes from the macro (CTX-03).
+///
+/// The handler's target is the right-clicked user,
+/// [`ResolvedUser`](crate::ui::ResolvedUser) (`member` is `None` outside a
+/// guild); [`message_command`](macro@message_command) gives a
+/// [`ResolvedMessage`](crate::ui::ResolvedMessage). `ctx.command_path()` is
+/// the menu name. An interaction without its target in the resolved data
+/// fails with a [`MenuTargetError`] and the handler does not run.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{ResolvedMessage, ResolvedUser};
+/// use noctis::{CommandMetadata, MenuKind};
+///
+/// #[user_command("Show profile", contexts = [Guild])]
+/// async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+///     assert_eq!(ctx.command_path(), "Show profile");
+///     let _ = target.user.id;
+///     Ok(())
+/// }
+///
+/// #[message_command("Quote")]
+/// async fn quote(_ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> {
+///     let _ = target.message.content;
+///     Ok(())
+/// }
+///
+/// assert_eq!(show_profile().kind(), MenuKind::User);
+/// assert_eq!(quote().menu_name(), "Quote");
+/// assert_eq!(quote().metadata(), &CommandMetadata::new());
+/// let _module = Module::new("profile").add(show_profile()).add(quote());
+/// ```
+pub use noctis_macros::user_command;
+
+/// Declares a `MESSAGE` context-menu command: like
+/// [`user_command`](macro@user_command), with `target:
+/// ResolvedMessage` ([`ResolvedMessage`](crate::ui::ResolvedMessage)).
+pub use noctis_macros::message_command;
 
 /// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
 /// into `fn name() -> EventHandler`, which [`Module::add`] takes. See
@@ -868,7 +961,9 @@ pub mod prelude {
     //! - [`event`](macro@event), [`Module`], [`EventCtx`], [`HandlerError`]
     //!   and [`HandlerResult`]: typed gateway Event Handlers grouped in
     //!   Modules.
-    //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands.
+    //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands;
+    //!   [`user_command`](macro@user_command) and
+    //!   [`message_command`](macro@message_command): context-menu commands.
     //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
     //!   a Command's typed options; [`CommandOption`] (the field types) and
     //!   [`MessageKey`] (what option validators return).
@@ -881,7 +976,7 @@ pub mod prelude {
         HandlerResult, Module, Options, State,
     };
     pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
-    pub use noctis_macros::{command, event};
+    pub use noctis_macros::{command, event, message_command, user_command};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_rules::MessageKey;
     pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};
@@ -894,6 +989,7 @@ pub mod __private {
     pub use noctis_core as core;
     pub use noctis_rules as rules;
     pub use noctis_ui as ui;
+    pub use twilight_model as model;
 }
 
 pub mod ui {
@@ -1224,9 +1320,11 @@ pub mod ui {
     //!   [`CommandOption`](crate::CommandOption), so the enum is a STRING
     //!   command option with these choices.
     //! - [`ResolvedUser::from_resolved`], [`ResolvedRole::from_resolved`],
-    //!   [`ResolvedChannel::from_resolved`], [`Mentionable::from_resolved`]
-    //!   and [`ResolvedAttachment::from_resolved`] look an id up in an
-    //!   interaction's resolved data.
+    //!   [`ResolvedChannel::from_resolved`], [`Mentionable::from_resolved`],
+    //!   [`ResolvedAttachment::from_resolved`] and
+    //!   [`ResolvedMessage::from_resolved`] look an id up in an
+    //!   interaction's resolved data. [`ResolvedUser`] and [`ResolvedMessage`]
+    //!   are also the targets of context-menu commands.
     //! - Decoding ([`ModalSubmission::from_slice`], then
     //!   [`ModalForm::from_submission`]) reads Label-wrapped and legacy
     //!   Action-Row-wrapped inputs, including Radio Groups, Checkbox Groups
@@ -1398,11 +1496,12 @@ pub mod ui {
         ModalChannelSelect, ModalComponent, ModalForm, ModalInput, ModalLabel,
         ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalSubmission,
         ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup, RadioOptions,
-        ResolvedAttachment, ResolvedChannel, ResolvedRole, ResolvedUser, Rgb, RoleSelect, Roles,
-        RouteButton, RouteComponents, RowButtons, RowItem, RowSelect, Section, SectionAccessory,
-        SectionTexts, SelectOption, Separator, Spacing, StringSelect, StringSelectOptions,
-        SubmitError, SubmittedValue, TextDisplay, TextInput, TextInputStyle, Thumbnail, TopLevel,
-        TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate, cost, validate,
+        ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole, ResolvedUser, Rgb,
+        RoleSelect, Roles, RouteButton, RouteComponents, RowButtons, RowItem, RowSelect, Section,
+        SectionAccessory, SectionTexts, SelectOption, Separator, Spacing, StringSelect,
+        StringSelectOptions, SubmitError, SubmittedValue, TextDisplay, TextInput, TextInputStyle,
+        Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate,
+        cost, validate,
     };
 }
 

@@ -369,7 +369,7 @@ impl CommandInput {
     }
 }
 
-fn empty_resolved() -> InteractionDataResolved {
+pub(crate) fn empty_resolved() -> InteractionDataResolved {
     InteractionDataResolved {
         attachments: HashMap::new(),
         channels: HashMap::new(),

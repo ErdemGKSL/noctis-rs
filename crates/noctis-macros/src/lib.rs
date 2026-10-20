@@ -6,10 +6,11 @@
 //! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
 //! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
 //! `components!`, the `Modal`, `Choices` and `Options` derives, and the
-//! `#[event]` and `#[command]` attributes.
+//! `#[event]`, `#[command]`, `#[user_command]` and `#[message_command]`
+//! attributes.
 //!
 //! Generated code names runtime items only through
-//! `::noctis::__private::{codec, ui, core, rules}` and std items through `::core`/`::std`
+//! `::noctis::__private::{codec, ui, core, rules, model}` and std items through `::core`/`::std`
 //! (AD-2). Errors are `[RULE-ID] what is wrong` plus a `= help:` line (or a
 //! `noctis_rules::Violation`'s `Display`), spanned on the offending token.
 
@@ -22,6 +23,8 @@ mod common;
 mod components;
 mod event;
 mod literal;
+mod menu;
+mod meta;
 mod modal;
 mod options;
 mod payload;
@@ -175,12 +178,36 @@ pub fn event(args: TokenStream, item: TokenStream) -> TokenStream {
 /// <Fn>Path]) -> HandlerResult<()>` into `fn name() -> CommandHandler`, a
 /// descriptor for `Module::add`.
 ///
-/// Takes the path or pattern literal first, then `description = "…"` and
-/// `max_expansions = n`; a pattern with a group also generates the
-/// `<Fn>Path` enum. See `noctis::command`.
+/// Takes the path or pattern literal first, then `description = "…"`,
+/// `max_expansions = n` and the metadata arguments `permissions`,
+/// `contexts`, `integration_types`, `nsfw` and `guilds` (META-01..03,
+/// CMD-07); a pattern with a group also generates the `<Fn>Path` enum. See
+/// `noctis::command`.
 #[proc_macro_attribute]
 pub fn command(args: TokenStream, item: TokenStream) -> TokenStream {
     command::expand(args.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Checks a `USER` context-menu name at expansion (CTX-01) and turns
+/// `async fn name(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()>`
+/// into `fn name() -> ContextMenuHandler`, a descriptor for `Module::add`.
+///
+/// Takes the menu name literal first, then the metadata arguments. See
+/// `noctis::user_command`.
+#[proc_macro_attribute]
+pub fn user_command(args: TokenStream, item: TokenStream) -> TokenStream {
+    menu::expand(menu::Menu::User, args.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Like [`user_command`] for a `MESSAGE` context-menu command, whose handler
+/// takes `target: ResolvedMessage`. See `noctis::message_command`.
+#[proc_macro_attribute]
+pub fn message_command(args: TokenStream, item: TokenStream) -> TokenStream {
+    menu::expand(menu::Menu::Message, args.into(), item.into())
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

@@ -184,7 +184,8 @@
 //! [`ResolvedUser`]s, [`ResolvedRole`]s, [`ResolvedChannel`]s,
 //! [`Mentionable`]s and [`ResolvedAttachment`]s, keeps unknown components as
 //! `serde_json::Value`s and reports every bad value as a [`SubmitError`]
-//! (MOD-09). [`Choices`] is a closed option set whose type-level count is
+//! (MOD-09). [`ResolvedUser`] and [`ResolvedMessage`] are also the targets of
+//! USER and MESSAGE context-menu commands. [`Choices`] is a closed option set whose type-level count is
 //! bounded by [`RadioOptions`], [`CheckboxOptions`] and
 //! [`StringSelectOptions`]. [`ResolvedAttachment::download`] fetches an
 //! upload through a [`FileFetcher`] (this crate does no I/O), checking the
@@ -268,8 +269,8 @@ pub use modal::{
     Checkbox, CheckboxGroup, Choices, DownloadError, FileFetcher, FileUpload, Mentionable, Modal,
     ModalChannelSelect, ModalComponent, ModalForm, ModalLabel, ModalMentionableSelect, ModalOption,
     ModalRoleSelect, ModalStringSelect, ModalSubmission, ModalUserSelect, RadioGroup,
-    ResolvedAttachment, ResolvedChannel, ResolvedRole, ResolvedUser, SubmitError, SubmittedValue,
-    TextInput, TextInputStyle,
+    ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole, ResolvedUser, SubmitError,
+    SubmittedValue, TextInput, TextInputStyle,
 };
 pub use placement::{
     ContainerChild, ModalInput, ModalTopLevel, RowItem, RowSelect, SectionAccessory, TopLevel,

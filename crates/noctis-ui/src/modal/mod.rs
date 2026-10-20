@@ -17,8 +17,8 @@ pub use input::{
     Checkbox, CheckboxGroup, FileUpload, ModalOption, RadioGroup, TextInput, TextInputStyle,
 };
 pub use resolved::{
-    DownloadError, FileFetcher, Mentionable, ResolvedAttachment, ResolvedChannel, ResolvedRole,
-    ResolvedUser,
+    DownloadError, FileFetcher, Mentionable, ResolvedAttachment, ResolvedChannel, ResolvedMessage,
+    ResolvedRole, ResolvedUser,
 };
 pub(crate) use select::ModalSelectNode;
 pub use select::{

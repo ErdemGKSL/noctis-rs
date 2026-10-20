@@ -162,3 +162,128 @@ fn module_add() {
         "{debug}"
     );
 }
+
+mod metadata {
+    //! Command metadata through `metadata()` (Story 6.3, Matrix 1, 2, 3, 12,
+    //! 15, 17 and 28).
+
+    use noctis::prelude::*;
+    use noctis::twilight::model::id::Id;
+    use noctis::{CommandMetadata, IntegrationType, InteractionContext, Permissions};
+
+    #[command(
+        "ac",
+        description = "d",
+        permissions = MANAGE_GUILD | BAN_MEMBERS,
+        contexts = [Guild],
+        nsfw = true
+    )]
+    async fn ac(_ctx: CommandCtx) -> HandlerResult<()> {
+        Ok(())
+    }
+
+    #[command("admin", description = "d", permissions = ADMINISTRATOR)]
+    async fn admin(_ctx: CommandCtx) -> HandlerResult<()> {
+        Ok(())
+    }
+
+    #[command(
+        "where",
+        description = "d",
+        contexts = [Guild, InteractionContext::BotDm, PrivateChannel,],
+        integration_types = [UserInstall, GuildInstall],
+        nsfw = false
+    )]
+    async fn r#where(_ctx: CommandCtx) -> HandlerResult<()> {
+        Ok(())
+    }
+
+    #[command("dev", description = "d", guilds = [123456789012345678, 42u64])]
+    async fn dev(_ctx: CommandCtx) -> HandlerResult<()> {
+        Ok(())
+    }
+
+    #[command("config (set|get)", description = "d", permissions = Permissions::MANAGE_GUILD)]
+    async fn config(_ctx: CommandCtx, _path: ConfigPath) -> HandlerResult<()> {
+        Ok(())
+    }
+
+    #[command("plain", description = "d")]
+    async fn plain(_ctx: CommandCtx) -> HandlerResult<()> {
+        Ok(())
+    }
+
+    /// Matrix 1: the acceptance example.
+    #[test]
+    fn meta_01_acceptance_example() {
+        let handler = ac();
+        let meta = handler.metadata();
+        assert_eq!(
+            meta.default_member_permissions,
+            Some(Permissions::MANAGE_GUILD | Permissions::BAN_MEMBERS)
+        );
+        assert_eq!(meta.contexts, Some(&[InteractionContext::Guild][..]));
+        assert_eq!(meta.nsfw, Some(true));
+        assert_eq!(meta.integration_types, None);
+        assert!(meta.guilds.is_empty());
+    }
+
+    /// Matrix 2 and 3.
+    #[test]
+    fn meta_01_unset_and_single() {
+        assert_eq!(plain().metadata(), &CommandMetadata::new());
+        assert_eq!(
+            admin()
+                .metadata()
+                .default_member_permissions
+                .map(|p| p.bits()),
+            Some(8)
+        );
+    }
+
+    /// Matrix 12 and 15: lists keep their order.
+    #[test]
+    fn meta_03_lists_in_declared_order() {
+        let handler = r#where();
+        let meta = handler.metadata();
+        assert_eq!(
+            meta.contexts,
+            Some(
+                &[
+                    InteractionContext::Guild,
+                    InteractionContext::BotDm,
+                    InteractionContext::PrivateChannel
+                ][..]
+            )
+        );
+        assert_eq!(
+            meta.integration_types,
+            Some(&[IntegrationType::UserInstall, IntegrationType::GuildInstall][..])
+        );
+        assert_eq!(meta.nsfw, Some(false));
+    }
+
+    /// Matrix 17: guild scope.
+    #[test]
+    fn meta_03_guilds() {
+        let handler = dev();
+        let meta = handler.metadata();
+        assert_eq!(meta.guilds, [Id::new(123_456_789_012_345_678), Id::new(42)]);
+        assert!(meta.is_guild_scoped());
+        assert_eq!(meta.default_member_permissions, None);
+        assert_eq!(meta.contexts, None);
+        assert_eq!(meta.nsfw, None);
+    }
+
+    /// Matrix 28: metadata on a pattern applies to the handler.
+    #[test]
+    fn meta_02_pattern_metadata() {
+        let handler = config();
+        assert_eq!(handler.paths(), ["config set", "config get"]);
+        assert_eq!(
+            handler.metadata().default_member_permissions,
+            Some(Permissions::MANAGE_GUILD)
+        );
+        assert!(format!("{handler:?}").contains("metadata: CommandMetadata {"));
+    }
+}

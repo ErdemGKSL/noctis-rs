@@ -1,0 +1,6 @@
+error: [META-03] integration_types: limit only on global commands, actual `[UserInstall]`
+         = note: scope: guild 7
+ --> tests/ui/meta/META-03_integration_types_on_guild_user_command.rs:3:32
+  |
+3 | #[user_command("Show profile", integration_types = [UserInstall], guilds = [7, 8])]
+  |                                ^^^^^^^^^^^^^^^^^

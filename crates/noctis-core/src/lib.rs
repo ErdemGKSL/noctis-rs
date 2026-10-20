@@ -47,6 +47,18 @@
 //! fails with [`UnknownCommandPath`]. The handler receives a [`CommandCtx`].
 //! The Registry and dispatch of Commands arrive with the Command pipeline.
 //!
+//! # Command metadata and context menus
+//!
+//! A [`CommandHandler`] carries the [`CommandMetadata`] its `#[command]`
+//! declared (`default_member_permissions` as [`Permissions`], `contexts` as
+//! [`InteractionContext`]s, `integration_types` as [`IntegrationType`]s,
+//! `nsfw`, and the guilds of a guild-scoped command); unset fields stay
+//! `None`. A [`ContextMenuHandler`] (written with `#[user_command]` or
+//! `#[message_command]` in `noctis`) is one `USER` or `MESSAGE` command
+//! ([`MenuKind`]): a call decodes the interaction's target from its resolved
+//! data into a `ResolvedUser` or `ResolvedMessage`, or fails with a
+//! [`MenuTargetError`] without running the handler.
+//!
 //! # Options
 //!
 //! A handler may take an options struct as its last parameter: a type
@@ -105,6 +117,8 @@ pub mod events;
 mod gateway_url;
 mod handler;
 mod lifecycle;
+mod menu;
+mod metadata;
 mod module;
 pub mod observe;
 mod options;
@@ -131,6 +145,8 @@ pub use error::{
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};
+pub use menu::{ContextMenuHandler, MenuTargetError};
+pub use metadata::CommandMetadata;
 pub use module::{Descriptor, Module};
 #[doc(hidden)]
 pub use options::__options;
@@ -142,6 +158,9 @@ pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};
 pub use state::State;
 pub use token::{Token, TokenError};
 
+pub use noctis_rules::command::{IntegrationType, InteractionContext, MenuKind};
+pub use twilight_model::guild::Permissions;
+
 /// Test-only seams for the testkit's end-to-end tests; not part of the API.
 #[doc(hidden)]
 pub mod __testing {
@@ -152,7 +171,7 @@ pub mod __testing {
 
     use futures_util::future::BoxFuture;
 
-    use crate::{CommandHandler, HandlerResult};
+    use crate::{CommandHandler, ContextMenuHandler, HandlerResult};
 
     /// Runs `handler` as if `path` had been invoked: its handler with the
     /// path's variant, or an `UnknownCommandPath` error.
@@ -172,5 +191,16 @@ pub mod __testing {
         json: &[u8],
     ) -> BoxFuture<'static, HandlerResult<()>> {
         crate::command::call_command_json(handler, json)
+    }
+
+    /// Decodes `json` (a USER or MESSAGE command interaction) and runs
+    /// `handler` with its resolved target: a `MenuTargetError` for bad JSON,
+    /// another interaction, the wrong kind or a missing target, an
+    /// `UnknownCommandPath` for another menu name, else the handler.
+    pub fn call_context_menu(
+        handler: &ContextMenuHandler,
+        json: &[u8],
+    ) -> BoxFuture<'static, HandlerResult<()>> {
+        crate::menu::call_context_menu(handler, json)
     }
 }

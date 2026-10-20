@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::command::CommandHandler;
 use crate::events::EventHandler;
+use crate::menu::ContextMenuHandler;
 
 pub(crate) mod sealed {
     use crate::Module;
@@ -15,8 +16,9 @@ pub(crate) mod sealed {
     }
 }
 
-/// Something [`Module::add`] accepts: an `#[event]` handler or a
-/// `#[command]` descriptor today; Routes and hooks join later. Sealed.
+/// Something [`Module::add`] accepts: an `#[event]` handler, a
+/// `#[command]` descriptor or a `#[user_command]` / `#[message_command]`
+/// descriptor today; Routes and hooks join later. Sealed.
 ///
 /// Event handlers come from `#[event]`: annotating `async fn on_user` gives
 /// a `fn on_user()` that returns the handler.
@@ -51,6 +53,14 @@ impl sealed::Sealed for CommandHandler {
 
 impl Descriptor for CommandHandler {}
 
+impl sealed::Sealed for ContextMenuHandler {
+    fn register(self, module: &mut Module) {
+        module.menus.push(self);
+    }
+}
+
+impl Descriptor for ContextMenuHandler {}
+
 /// A group of registrations under a path-like id (`"a/b/c"`), mounted on an
 /// App with `AppBuilder::module`.
 ///
@@ -63,7 +73,8 @@ impl Descriptor for CommandHandler {}
 ///
 /// Event handlers come from `#[event]`: annotating `async fn award_xp`
 /// gives a `fn award_xp()` that returns the handler to [`add`](Self::add).
-/// Slash Commands come from `#[command]` the same way.
+/// Slash Commands come from `#[command]` the same way, context-menu
+/// commands from `#[user_command]` and `#[message_command]`.
 ///
 /// ```
 /// # use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
@@ -84,6 +95,7 @@ pub struct Module {
     id: &'static str,
     handlers: Vec<EventHandler>,
     commands: Vec<CommandHandler>,
+    menus: Vec<ContextMenuHandler>,
     children: Vec<Module>,
 }
 
@@ -98,12 +110,13 @@ impl Module {
             id,
             handlers: Vec::new(),
             commands: Vec::new(),
+            menus: Vec::new(),
             children: Vec::new(),
         }
     }
 
-    /// Adds a registration: an `#[event]` handler or a `#[command]`
-    /// descriptor. Adding the same descriptor twice registers it twice.
+    /// Adds a registration: an `#[event]` handler, a `#[command]`
+    /// descriptor or a context-menu descriptor. Adding the same descriptor twice registers it twice.
     #[must_use = "Module::add returns the Module with the registration added"]
     #[expect(
         clippy::should_implement_trait,
@@ -148,6 +161,15 @@ impl Module {
         &self.commands
     }
 
+    /// Its own context-menu commands, in `add` order.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "Story 6.4 folds context menus into the Registry")
+    )]
+    pub(crate) fn menus(&self) -> &[ContextMenuHandler] {
+        &self.menus
+    }
+
     /// Its children, in `module` order.
     pub(crate) fn children(&self) -> &[Module] {
         &self.children
@@ -158,10 +180,16 @@ impl fmt::Debug for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let handlers: Vec<&str> = self.handlers.iter().map(EventHandler::name).collect();
         let commands: Vec<&str> = self.commands.iter().map(CommandHandler::name).collect();
+        let menus: Vec<&str> = self
+            .menus
+            .iter()
+            .map(ContextMenuHandler::menu_name)
+            .collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
             .field("commands", &commands)
+            .field("menus", &menus)
             .field("children", &self.children)
             .finish()
     }

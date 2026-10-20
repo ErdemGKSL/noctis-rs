@@ -14,8 +14,8 @@ use syn::{FnArg, Ident, ItemFn, LitInt, LitStr, ReturnType, Safety, Type};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 use crate::common::combine;
+use crate::meta::{self, MetaArgs};
 
-const PLAIN: &str = "`#[command]` handlers must be a plain `async fn`";
 const MISSING_PATTERN: &str = "`#[command]` needs a Command Path or Pattern as its first argument: `#[command(\"ping\", description = \"…\")]`";
 const NOT_A_LITERAL: &str = "`#[command]` needs its Command Path or Pattern as a string literal; check runtime-built patterns with `noctis::rules::command::{validate_pattern_spacing, expand, validate_tree}`";
 const DESCRIPTION_LITERAL: &str = "`description` takes a string literal";
@@ -24,29 +24,27 @@ const CAP_LITERAL: &str =
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
 /// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 11] = [
+const PLANNED: [&str; 6] = [
     "ephemeral",
     "opens_modal",
-    "permissions",
-    "contexts",
-    "integration_types",
-    "nsfw",
-    "guilds",
     "rate_limit",
     "flags",
     "apps",
     "locales",
 ];
 
+const EXPECTED: &str = "expected `description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+
 /// The parsed `#[command(..)]` arguments.
 struct Args {
     pattern: LitStr,
     description: Option<LitStr>,
     max_expansions: Option<usize>,
+    meta: MetaArgs,
 }
 
 /// Splits `args` on top-level commas, dropping one trailing empty segment.
-fn segments(args: TokenStream) -> Vec<Vec<TokenTree>> {
+pub(crate) fn segments(args: TokenStream) -> Vec<Vec<TokenTree>> {
     let mut segments: Vec<Vec<TokenTree>> = vec![Vec::new()];
     for tt in args {
         match &tt {
@@ -64,14 +62,14 @@ fn segments(args: TokenStream) -> Vec<Vec<TokenTree>> {
     segments
 }
 
-fn span_of(segment: &[TokenTree]) -> Span {
+pub(crate) fn span_of(segment: &[TokenTree]) -> Span {
     segment
         .first()
         .map_or_else(Span::call_site, TokenTree::span)
 }
 
 /// The name of a `name`, `name = …` or `name(…)` argument.
-fn arg_name(segment: &[TokenTree]) -> Option<String> {
+pub(crate) fn arg_name(segment: &[TokenTree]) -> Option<String> {
     match segment.first() {
         Some(TokenTree::Ident(ident)) => Some(ident.to_string()),
         _ => None,
@@ -88,7 +86,8 @@ fn value_of(segment: &[TokenTree]) -> Option<TokenStream> {
     }
 }
 
-/// Parses `"pattern"[, description = "…"][, max_expansions = n]`.
+/// Parses `"pattern"[, description = "…"][, max_expansions = n]` and the
+/// metadata arguments.
 fn parse_args(args: TokenStream) -> syn::Result<Args> {
     let segments = segments(args);
     let mut iter = segments.into_iter();
@@ -106,6 +105,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         pattern,
         description: None,
         max_expansions: None,
+        meta: MetaArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -114,13 +114,12 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             let tokens: TokenStream = segment.iter().cloned().collect();
             return Err(syn::Error::new(
                 span,
-                format!(
-                    "unknown `#[command]` argument `{tokens}`: expected `description` or `max_expansions`"
-                ),
+                format!("unknown `#[command]` argument `{tokens}`: {EXPECTED}"),
             ));
         };
         match name.as_str() {
             "description" | "max_expansions" => {}
+            other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
                     span,
@@ -130,9 +129,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             _ => {
                 return Err(syn::Error::new(
                     span,
-                    format!(
-                        "unknown `#[command]` argument `{name}`: expected `description` or `max_expansions`"
-                    ),
+                    format!("unknown `#[command]` argument `{name}`: {EXPECTED}"),
                 ));
             }
         }
@@ -143,6 +140,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             ));
         }
         seen.push(name.clone());
+        if let Some(result) = parsed.meta.parse(&name, &segment) {
+            result?;
+            continue;
+        }
         let value = value_of(&segment);
         if name == "description" {
             let lit = value
@@ -165,38 +166,41 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
     Ok(parsed)
 }
 
-/// Checks the signature shape: a plain, non-generic `async fn`.
-fn check_shape(item: &ItemFn) -> syn::Result<()> {
+/// Checks the signature shape: a plain, non-generic `async fn`; `attr` is
+/// the macro (`#[command]`) the messages name.
+pub(crate) fn check_shape(item: &ItemFn, attr: &str) -> syn::Result<()> {
+    let plain = format!("`{attr}` handlers must be a plain `async fn`");
+    let plain = plain.as_str();
     let sig = &item.sig;
     if let Some(constness) = &sig.constness {
-        return Err(syn::Error::new_spanned(constness, PLAIN));
+        return Err(syn::Error::new_spanned(constness, plain));
     }
     if let Safety::Unsafe(unsafety) = &sig.safety {
-        return Err(syn::Error::new_spanned(unsafety, PLAIN));
+        return Err(syn::Error::new_spanned(unsafety, plain));
     }
     if let Safety::Safe(safety) = &sig.safety {
-        return Err(syn::Error::new_spanned(safety, PLAIN));
+        return Err(syn::Error::new_spanned(safety, plain));
     }
     if let Some(abi) = &sig.abi {
-        return Err(syn::Error::new_spanned(abi, PLAIN));
+        return Err(syn::Error::new_spanned(abi, plain));
     }
     if item.modifiers.require_empty().is_err() {
-        return Err(syn::Error::new(sig.fn_token.span(), PLAIN));
+        return Err(syn::Error::new(sig.fn_token.span(), plain));
     }
     if sig.asyncness.is_none() {
         return Err(syn::Error::new_spanned(
             sig.fn_token,
-            "`#[command]` needs an `async fn`",
+            format!("`{attr}` needs an `async fn`"),
         ));
     }
     if !sig.generics.params.is_empty() || sig.generics.where_clause.is_some() {
         return Err(syn::Error::new_spanned(
             &sig.generics,
-            "`#[command]` handlers cannot be generic",
+            format!("`{attr}` handlers cannot be generic"),
         ));
     }
     if let Some(variadic) = &sig.variadic {
-        return Err(syn::Error::new_spanned(variadic, PLAIN));
+        return Err(syn::Error::new_spanned(variadic, plain));
     }
     Ok(())
 }
@@ -273,10 +277,15 @@ fn check_pattern(args: &Args) -> Result<Vec<String>, Vec<Violation>> {
     }
 }
 
-/// The violations as one error: on the description literal for CMD-04 when
-/// one is given, else on the pattern literal.
-fn report(args: &Args, violations: &[Violation]) -> syn::Error {
-    let errors = violations
+/// The pattern violations (on the description literal for CMD-04 when one
+/// is given, else on the pattern literal), then META-03 (on the argument
+/// name), as one error; `Ok` with the paths when there is none.
+fn report(args: &Args, checked: Result<Vec<String>, Vec<Violation>>) -> syn::Result<Vec<String>> {
+    let (paths, violations) = match checked {
+        Ok(paths) => (Some(paths), Vec::new()),
+        Err(violations) => (None, violations),
+    };
+    let mut errors: Vec<syn::Error> = violations
         .iter()
         .map(|v| {
             let span = match (&args.description, v.rule) {
@@ -286,9 +295,9 @@ fn report(args: &Args, violations: &[Violation]) -> syn::Error {
             syn::Error::new(span, v.to_string())
         })
         .collect();
-    combine(errors).err().unwrap_or_else(|| {
-        syn::Error::new(args.pattern.span(), "`#[command]` pattern check failed")
-    })
+    errors.extend(args.meta.meta03());
+    combine(errors)?;
+    paths.ok_or_else(|| syn::Error::new(args.pattern.span(), "`#[command]` pattern check failed"))
 }
 
 /// One word in `UpperCamelCase`: split on `seps`, each non-empty segment's
@@ -516,8 +525,8 @@ fn path_enum(
 pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let args = parse_args(args)?;
     let item: ItemFn = syn::parse2(item)?;
-    check_shape(&item)?;
-    let paths = check_pattern(&args).map_err(|violations| report(&args, &violations))?;
+    check_shape(&item, "#[command]")?;
+    let paths = report(&args, check_pattern(&args))?;
     let pattern = args.pattern.value();
     let name = item.sig.ident.clone();
     let fn_name = name.to_string();
@@ -587,6 +596,12 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
             TokenStream::new(),
             quote! { #new(::core::concat!(::core::module_path!(), "::", #fn_name), &[#(#paths),*], #description, __noctis_command) },
         )
+    };
+    let call = if args.meta.is_empty() {
+        call
+    } else {
+        let metadata = args.meta.tokens();
+        quote! { #call.__with_metadata(#metadata) }
     };
     Ok(quote! {
         #generated
@@ -791,15 +806,15 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description` or `max_expansions`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
                 quote!("ping", ephemeral),
                 "`#[command]` argument `ephemeral` is planned and not supported yet",
             ),
             (
-                quote!("ping", permissions = X),
-                "`#[command]` argument `permissions` is planned and not supported yet",
+                quote!("ping", default_member_permissions = X),
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -861,6 +876,99 @@ mod tests {
             ),
         ] {
             assert_eq!(error(args(), src), expected, "{src}");
+        }
+    }
+
+    const PLAIN: &str = "`#[command]` handlers must be a plain `async fn`";
+
+    /// Matrix 1, 2 and 28 (6.3): `__with_metadata` only with a metadata
+    /// argument.
+    #[test]
+    fn metadata_is_appended_only_when_given() {
+        let out = expand(quote!("ping", description = "d"), item(PING))
+            .unwrap()
+            .to_string();
+        assert!(!out.contains("__with_metadata"), "{out}");
+        let out = expand(
+            quote!(
+                "ping",
+                description = "d",
+                permissions = MANAGE_GUILD | BAN_MEMBERS,
+                contexts = [Guild],
+                nsfw = true
+            ),
+            item(PING),
+        )
+        .unwrap()
+        .to_string()
+        .replace(' ', "");
+        assert!(
+            out.contains("__noctis_command).__with_metadata({constM:::noctis::__private::core::CommandMetadata"),
+            "{out}"
+        );
+        assert!(out.contains("from_bits_retain(36u64)"), "{out}");
+        let out = expand(
+            quote!(
+                "config (set|get)",
+                description = "d",
+                permissions = MANAGE_GUILD
+            ),
+            item(CONFIG),
+        )
+        .unwrap()
+        .to_string();
+        assert!(out.contains("__with_metadata"), "{out}");
+    }
+
+    /// Matrix 20 and 23 (6.3): META-03 after the pattern violations, in one
+    /// error.
+    #[test]
+    fn meta_03_joins_the_pattern_violations() {
+        let errs = messages(
+            quote!("ping", description = "d", guilds = [42], contexts = [Guild]),
+            PING,
+        );
+        assert_eq!(
+            errs,
+            [
+                "[META-03] contexts: limit only on global commands, actual `[Guild]`\n  = note: scope: guild 42"
+            ]
+        );
+        let errs = messages(quote!("Ping", guilds = [1], contexts = [Guild]), PING);
+        let rules: Vec<_> = errs.iter().map(|e| &e[..9]).collect();
+        assert_eq!(rules, ["[CMD-03] ", "[CMD-04] ", "[META-03]"], "{errs:?}");
+        assert!(
+            expand(
+                quote!(
+                    "ping",
+                    description = "d",
+                    guilds = [42],
+                    permissions = MANAGE_GUILD,
+                    nsfw = true
+                ),
+                item(PING)
+            )
+            .is_ok()
+        );
+    }
+
+    /// Matrix 25-27 (6.3): argument-level errors.
+    #[test]
+    fn metadata_argument_errors() {
+        for (args, expected) in [
+            (quote!("ping", nsfw = true, nsfw = false), "duplicate `#[command]` argument `nsfw`".to_owned()),
+            (quote!("ping", dm_permission = false), "[META-05] `dm_permission` is deprecated by Discord and not supported; use `contexts = [Guild]` to keep a command out of DMs".to_owned()),
+            (quote!("ping", nsfw = 1), "[CMD-07] `nsfw` takes `true` or `false`".to_owned()),
+            (quote!("ping", permissions(set = A)), "[META-02] `permissions` applies to the base command of every path this handler declares; Discord keeps it only on the base command, so it has no per-path form".to_owned()),
+        ] {
+            assert_eq!(error(args.clone(), PING), expected, "{args}");
+        }
+        for planned in ["ephemeral", "opens_modal", "flags", "apps", "locales"] {
+            let ident = quote::format_ident!("{planned}");
+            assert_eq!(
+                error(quote!("ping", #ident), PING),
+                format!("`#[command]` argument `{planned}` is planned and not supported yet")
+            );
         }
     }
 

@@ -1,6 +1,7 @@
 //! The entities a modal select or File Upload resolves to:
 //! [`ResolvedUser`], [`ResolvedRole`], [`ResolvedChannel`], [`Mentionable`]
-//! and [`ResolvedAttachment`], plus the attachment download seam
+//! and [`ResolvedAttachment`], the context-menu target [`ResolvedMessage`],
+//! plus the attachment download seam
 //! [`FileFetcher`] (MOD-09). This crate does no I/O (AD-2, AD-15): core
 //! supplies the HTTP fetcher.
 
@@ -12,11 +13,11 @@ use noctis_rules::Limits;
 use twilight_model::application::interaction::{
     InteractionChannel, InteractionDataResolved, InteractionMember,
 };
-use twilight_model::channel::Attachment;
+use twilight_model::channel::{Attachment, Message};
 use twilight_model::guild::Role;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{
-    AttachmentMarker, ChannelMarker, GenericMarker, RoleMarker, UserMarker,
+    AttachmentMarker, ChannelMarker, GenericMarker, MessageMarker, RoleMarker, UserMarker,
 };
 use twilight_model::user::User;
 
@@ -38,6 +39,23 @@ pub struct ResolvedUser {
     pub user: User,
     /// The guild member, absent outside a guild.
     pub member: Option<InteractionMember>,
+}
+
+/// The message a MESSAGE context-menu command targets.
+///
+/// ```
+/// use noctis_ui::ResolvedMessage;
+///
+/// fn text(target: &ResolvedMessage) -> &str {
+///     &target.message.content
+/// }
+/// # let _ = text;
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct ResolvedMessage {
+    /// The message.
+    pub message: Message,
 }
 
 /// A role picked in a Role or Mentionable Select.
@@ -117,6 +135,27 @@ impl ResolvedUser {
         resolved.users.get(&id).map(|user| Self {
             user: user.clone(),
             member: resolved.members.get(&id).cloned(),
+        })
+    }
+}
+
+impl ResolvedMessage {
+    /// The message `id` from `resolved.messages`, or `None`.
+    ///
+    /// ```
+    /// use noctis_ui::ResolvedMessage;
+    /// use twilight_model::application::interaction::InteractionDataResolved;
+    /// use twilight_model::id::Id;
+    ///
+    /// let resolved: InteractionDataResolved = serde_json::from_str("{}").unwrap();
+    /// assert!(ResolvedMessage::from_resolved(&resolved, Id::new(1)).is_none());
+    /// ```
+    pub fn from_resolved(
+        resolved: &InteractionDataResolved,
+        id: Id<MessageMarker>,
+    ) -> Option<Self> {
+        resolved.messages.get(&id).map(|message| Self {
+            message: message.clone(),
         })
     }
 }

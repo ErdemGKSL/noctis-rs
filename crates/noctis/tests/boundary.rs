@@ -19,3 +19,9 @@ mod cmd;
 
 #[path = "boundary/opt.rs"]
 mod opt;
+
+#[path = "boundary/ctx.rs"]
+mod ctx;
+
+#[path = "boundary/meta.rs"]
+mod meta;

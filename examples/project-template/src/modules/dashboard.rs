@@ -75,8 +75,8 @@ pub struct ToggleModule {
 #[command(
     "dashboard",
     description = "Open the server dashboard",
-    permissions = MANAGE_GUILD, // [planned]: rejected until its release
-    contexts = [Guild],         // [planned]: rejected until its release
+    permissions = MANAGE_GUILD,
+    contexts = [Guild],
 )]
 async fn dashboard(ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<DashboardView> {
     let guild = ctx

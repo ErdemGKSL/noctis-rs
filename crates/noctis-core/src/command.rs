@@ -10,6 +10,7 @@ use futures_util::future::BoxFuture;
 use noctis_rules::command::OptionDecl;
 
 use crate::handler::{HandlerError, HandlerResult};
+use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, Options};
 
 /// The typed Command Paths of one Command Pattern; implemented by
@@ -83,7 +84,8 @@ impl CommandCtx {
     }
 
     /// The invoked Command Path, words joined by one ASCII space
-    /// (`"config set prefix"`).
+    /// (`"config set prefix"`); for a context-menu command, its menu name
+    /// (`"Show profile"`).
     pub fn command_path(&self) -> &'static str {
         self.0.path
     }
@@ -127,7 +129,7 @@ type ErasedCommand = dyn Fn(CommandCtx) -> BoxFuture<'static, HandlerResult<()>>
 /// [`Module`](crate::Module).
 ///
 /// Opaque and cheap to clone. `Debug` prints the name, the pattern, the
-/// paths and the option names. Annotating `async fn config` with `#[command(..)]` gives a
+/// paths, the option names and the metadata. Annotating `async fn config` with `#[command(..)]` gives a
 /// `fn config()` that returns its `CommandHandler`.
 #[derive(Clone)]
 pub struct CommandHandler {
@@ -136,6 +138,7 @@ pub struct CommandHandler {
     description: &'static str,
     paths: &'static [&'static str],
     options: &'static [OptionDecl<'static>],
+    metadata: CommandMetadata,
     call: Arc<ErasedCommand>,
 }
 
@@ -166,6 +169,7 @@ impl CommandHandler {
             description,
             paths: P::PATHS,
             options: &[],
+            metadata: CommandMetadata::new(),
             call: Arc::new(call),
         }
     }
@@ -201,6 +205,7 @@ impl CommandHandler {
             description,
             paths: P::PATHS,
             options: O::OPTIONS,
+            metadata: CommandMetadata::new(),
             call: Arc::new(call),
         }
     }
@@ -231,6 +236,7 @@ impl CommandHandler {
             description,
             paths,
             options: &[],
+            metadata: CommandMetadata::new(),
             call: Arc::new(call),
         }
     }
@@ -264,6 +270,7 @@ impl CommandHandler {
             description,
             paths,
             options: O::OPTIONS,
+            metadata: CommandMetadata::new(),
             call: Arc::new(call),
         }
     }
@@ -295,6 +302,22 @@ impl CommandHandler {
         self.options
     }
 
+    /// The declared metadata (`permissions`, `contexts`,
+    /// `integration_types`, `nsfw`, `guilds`); [`CommandMetadata::new`]
+    /// when none was given. It applies to the base command of every path
+    /// (META-02).
+    pub fn metadata(&self) -> &CommandMetadata {
+        &self.metadata
+    }
+
+    /// Replaces the metadata; what `#[command]` appends when a metadata
+    /// argument is given.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_metadata(self, metadata: CommandMetadata) -> Self {
+        Self { metadata, ..self }
+    }
+
     /// Starts the handler for `ctx`; an [`UnknownCommandPath`] error when
     /// `ctx`'s path is not one of [`paths`](Self::paths).
     pub(crate) fn call(&self, ctx: CommandCtx) -> BoxFuture<'static, HandlerResult<()>> {
@@ -303,7 +326,7 @@ impl CommandHandler {
 }
 
 /// A ready future failing with [`UnknownCommandPath`].
-fn unknown(path: &str, command: &'static str) -> BoxFuture<'static, HandlerResult<()>> {
+pub(crate) fn unknown(path: &str, command: &'static str) -> BoxFuture<'static, HandlerResult<()>> {
     failed(HandlerError::new(UnknownCommandPath {
         path: path.into(),
         command,
@@ -311,7 +334,7 @@ fn unknown(path: &str, command: &'static str) -> BoxFuture<'static, HandlerResul
 }
 
 /// A ready future failing with `error`.
-fn failed(error: HandlerError) -> BoxFuture<'static, HandlerResult<()>> {
+pub(crate) fn failed(error: HandlerError) -> BoxFuture<'static, HandlerResult<()>> {
     Box::pin(std::future::ready(Err(error)))
 }
 
@@ -333,6 +356,7 @@ impl fmt::Debug for CommandHandler {
                 "options",
                 &self.options.iter().map(|o| o.name).collect::<Vec<_>>(),
             )
+            .field("metadata", &self.metadata)
             .finish_non_exhaustive()
     }
 }
@@ -425,6 +449,10 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"));
         assert!(SEEN.lock().is_ok_and(|seen| seen.contains(&TestPath::B)));
         assert!(format!("{handler:?}").contains("\"t (a|b)\""));
+        assert_eq!(handler.metadata(), &CommandMetadata::new());
+        let handler = handler.__with_metadata(CommandMetadata::new().nsfw(true));
+        assert_eq!(handler.metadata().nsfw, Some(true));
+        assert!(format!("{handler:?}").contains("nsfw: Some(true)"));
     }
 
     #[tokio::test]

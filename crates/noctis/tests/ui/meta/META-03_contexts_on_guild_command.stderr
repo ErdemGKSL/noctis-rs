@@ -1,0 +1,6 @@
+error: [META-03] contexts: limit only on global commands, actual `[Guild]`
+         = note: scope: guild 42
+ --> tests/ui/meta/META-03_contexts_on_guild_command.rs:3:53
+  |
+3 | #[command("ping", description = "d", guilds = [42], contexts = [Guild])]
+  |                                                     ^^^^^^^^
