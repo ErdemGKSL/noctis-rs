@@ -440,6 +440,30 @@ impl LaneReceiver {
         }
     }
 
+    /// Waits for the next interaction only; queued events stay queued.
+    ///
+    /// Returns `None` once every [`LaneSender`] has dropped and the
+    /// Interaction Lane is empty, even while events remain. Cancel-safe:
+    /// dropping the future loses no item. Core awaits it while it waits for
+    /// a worker permit, so interactions never wait behind events.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let (sender, mut receiver) = noctis_gateway::lanes(Default::default());
+    /// drop(sender);
+    /// assert!(receiver.recv_interaction().await.is_none());
+    /// # }
+    /// ```
+    pub async fn recv_interaction(&mut self) -> Option<Inbound> {
+        loop {
+            match self.pop_interaction() {
+                Popped::Item(inbound) => return Some(inbound),
+                Popped::Closed => return None,
+                Popped::Empty => self.shared.notify.notified().await,
+            }
+        }
+    }
+
     /// Takes the next item without waiting, if one is queued.
     ///
     /// ```
@@ -461,6 +485,22 @@ impl LaneReceiver {
     /// ```
     pub fn depths(&self) -> LaneDepths {
         self.shared.depths()
+    }
+
+    fn pop_interaction(&self) -> Popped {
+        let (item, depths) = {
+            let mut queues = self.shared.lock();
+            let Some(item) = queues.interaction.pop_front() else {
+                return if queues.senders == 0 {
+                    Popped::Closed
+                } else {
+                    Popped::Empty
+                };
+            };
+            (item, queues.depths())
+        };
+        self.shared.gauges.set(depths);
+        Popped::Item(item)
     }
 
     fn pop(&self) -> Popped {

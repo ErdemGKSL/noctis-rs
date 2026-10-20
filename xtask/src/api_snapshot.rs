@@ -59,13 +59,23 @@ const TARGET_DIR: &str = "target/public-api";
 /// Internal paths public signatures name on purpose although the facade
 /// re-exports them only through its hidden `__private` module (or not at
 /// all), with their snapshot spelling: the `#[handler]` marker that component
-/// constructors require (FR-58) and the sealed supertraits of the placement
-/// traits (CV2-05), which nothing outside `noctis-ui` can name.
+/// constructors require (FR-58), the sealed supertraits of the placement
+/// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
+/// supertraits of `EventPayload` and `Descriptor`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
         "noctis_ui::placement::sealed",
         "noctis::__private::ui::sealed",
+    ),
+    // The sealed supertraits of `EventPayload` and `Descriptor` (AD-7).
+    (
+        "noctis_core::events::sealed",
+        "noctis::__private::core::events::sealed",
+    ),
+    (
+        "noctis_core::module::sealed",
+        "noctis::__private::core::module::sealed",
     ),
 ];
 

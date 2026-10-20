@@ -679,3 +679,54 @@ fn row25_debug_redaction() {
     assert!(sender_debug.starts_with("LaneSender"));
     assert!(receiver_debug.starts_with("LaneReceiver"));
 }
+
+/// Story 5.6 Matrix 39: `recv_interaction` takes only interactions.
+#[tokio::test(flavor = "current_thread")]
+async fn recv_interaction_skips_events() {
+    let (sender, mut receiver) = lanes(config(3, 2));
+    push_all(&sender, [m(1), i(1)]);
+    let got = receiver.recv_interaction().await.unwrap();
+    assert_eq!(tag(&got), "I1");
+    assert_eq!(event_tags(&receiver), ["M1"]);
+    drop(sender);
+}
+
+/// Story 5.6 Matrix 39: closed with only events queued returns `None`.
+#[tokio::test(flavor = "current_thread")]
+async fn recv_interaction_closed_with_events() {
+    let (sender, mut receiver) = lanes(config(3, 2));
+    sender.push(m(1));
+    drop(sender);
+    assert!(receiver.recv_interaction().await.is_none());
+    assert_eq!(tag(&receiver.recv().await.unwrap()), "M1");
+    assert!(receiver.recv().await.is_none());
+}
+
+/// Story 5.6 Matrix 39: a pending call wakes for an interaction and stays
+/// pending for an event, which `recv` still pops.
+#[tokio::test(flavor = "current_thread")]
+async fn recv_interaction_pending() {
+    let (sender, mut receiver) = lanes(config(3, 2));
+    {
+        let waiting = receiver.recv_interaction();
+        tokio::pin!(waiting);
+        assert!(futures_util::poll!(waiting.as_mut()).is_pending());
+        sender.push(m(1));
+        tokio::task::yield_now().await;
+        assert!(futures_util::poll!(waiting.as_mut()).is_pending());
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(futures_util::poll!(waiting.as_mut()).is_pending());
+        sender.push(i(1));
+        let got = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(tag(&got), "I1");
+    }
+    let got = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(tag(&got), "M1");
+    drop(sender);
+}

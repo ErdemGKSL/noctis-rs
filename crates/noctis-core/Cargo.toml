@@ -8,18 +8,21 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+futures-util.workspace = true
 noctis-gateway.workspace = true
 noctis-ports.workspace = true
 rustls.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "sync"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tracing.workspace = true
 twilight-http.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "test-util"] }
+tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 
 [lints]
 workspace = true

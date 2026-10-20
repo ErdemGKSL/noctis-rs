@@ -16,6 +16,21 @@
 //! Interaction Lane and the bounded event lane) to one core drain task,
 //! which takes interactions first.
 //!
+//! # Modules and events
+//!
+//! A [`Module`] groups typed event handlers ([`EventHandler`], written with
+//! `#[event]` in `noctis`) and nests other Modules;
+//! [`AppBuilder::module`] mounts a tree. `build()` folds every tree once,
+//! parent before child, into an immutable Registry: the gateway then parses
+//! only interactions and the handled event types, and the handlers'
+//! non-privileged intents are added to the requested set (a missing
+//! privileged one is [`BuildViolation::MissingIntent`], GW-05). At run time
+//! a semaphore bounds how many events run their handlers at once
+//! ([`AppBuilder::handler_concurrency`]); interactions never wait for it.
+//! Ordered handlers run first, in per-guild order; every handler future
+//! runs under `catch_unwind`, so a panic is logged and the shard keeps
+//! running. The payload types are in [`events`].
+//!
 //! ```no_run
 //! use noctis_core::{App, AppBuilder, Error, State};
 //!
@@ -37,19 +52,29 @@
 mod app;
 mod authority;
 mod error;
+pub mod events;
 mod gateway_url;
+mod handler;
+mod module;
 mod plugin;
 mod ports;
 mod proxy;
+mod registry;
 mod runtime;
 mod sharding;
 mod startup;
 mod state;
+#[cfg(test)]
+mod test_support;
 mod token;
+mod worker;
 
 pub use app::{App, AppBuilder};
 pub use error::{BuildError, BuildViolation, EnvError, Error, StartError};
+pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
+pub use handler::{HandlerError, HandlerResult};
+pub use module::{Descriptor, Module};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use runtime::{Resource, ResourceConflict, Runtime};

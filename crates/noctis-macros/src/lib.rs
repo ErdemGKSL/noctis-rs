@@ -5,10 +5,11 @@
 //!
 //! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
 //! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
-//! `components!`, and the `Modal` and `Choices` derives.
+//! `components!`, the `Modal` and `Choices` derives, and the `#[event]`
+//! attribute.
 //!
 //! Generated code names runtime items only through
-//! `::noctis::__private::{codec, ui}` and std items through `::core`/`::std`
+//! `::noctis::__private::{codec, ui, core}` and std items through `::core`/`::std`
 //! (AD-2). Errors are `[RULE-ID] what is wrong` plus a `= help:` line (or a
 //! `noctis_rules::Violation`'s `Display`), spanned on the offending token.
 
@@ -18,6 +19,7 @@ use syn::{DeriveInput, parse_macro_input};
 mod choices;
 mod common;
 mod components;
+mod event;
 mod literal;
 mod modal;
 mod payload;
@@ -139,4 +141,16 @@ pub fn rgb(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn components(input: TokenStream) -> TokenStream {
     components::components(input.into()).into()
+}
+
+/// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
+/// into `fn name() -> EventHandler`, a descriptor for `Module::add`.
+///
+/// Takes `ordered` (run before the concurrent handlers, in per-guild order)
+/// and `droppable` (the event may be dropped under load), in any order.
+#[proc_macro_attribute]
+pub fn event(args: TokenStream, item: TokenStream) -> TokenStream {
+    event::expand(args.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
