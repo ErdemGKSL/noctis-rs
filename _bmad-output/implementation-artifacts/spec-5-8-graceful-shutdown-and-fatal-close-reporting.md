@@ -2,7 +2,7 @@
 title: 'Story 5.8: Graceful shutdown and fatal-close reporting'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '7f88c4aac02802426e7de78a7e1a46b2c65378ee'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -208,6 +208,37 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 27 findings — high 0, medium 0, low 16, false 11, maybe-false 0
+- findings:
+  - `[low]` `[reject]` Startup-error path (`result?` after `await_startup`) skips the shutdown sequence; handlers started before all shards were READY are cancelled by the drop guard and report after `run_until` returned — real, but the spec settles startup errors as "the 5.4 `StartError` path is unchanged" plus the cancel guard; needs a fatal close after some events were dispatched during startup, and the fix would add a wind-down to every error path.
+  - `[low]` `[patch]` `shut_down` logs `reason="signal"` for a `run_until` stop triggered from code — real (app.rs:530 maps every `Stop::Requested` to "signal"); patch: `run` labels its stop "signal", a direct `run_until` stop is labelled "requested" (private parameter), test and skill line updated.
+  - `[low]` `[reject]` `Signals::install` relies on `catch_unwind`, which prints via the panic hook and catches nothing under `panic = "abort"` — real, but the mechanism is spec-mandated, it needs a runtime built without IO, and a non-panicking IO-driver probe does not exist in tokio's public API.
+  - `[low]` `[reject]` Non-unix `register()` installs nothing, so Ctrl-C registers lazily on first poll and an IO-less runtime panics instead of `SignalHandler`; `ctrl_c()` error leaves `recv` pending — real on Windows only with a runtime lacking IO; the shutdown future is polled from the first startup `select!`, so no early signal is lost in practice; a cfg(windows) rewrite cannot be checked by the local gates.
+  - `[low]` `[reject]` No force-quit on a second Ctrl-C/SIGTERM during a long grace — real, but the intent's Never list excludes "second-signal force-quit" and `process::exit`.
+  - `[false]` `[reject]` `close_shard` may stop on the `Message::Close` of its own frame instead of the gateway's reply — twilight-gateway 0.17.1 `disconnect(CloseInitiator::Shard)` queues the frame in `pending`, which `poll_send` writes to the socket; `poll_next` only yields `Message::Close` read from the connection, so the first close returned is the gateway's reply.
+  - `[low]` `[reject]` `CloseMode::Fresh` sends no frame to a shard that is resuming, so Discord keeps that session — real, but the spec sets "not identified → stop at once, no frame", core never uses `Fresh` before Story 12.3, and a shard mid-resume at shutdown is rare.
+  - `[false]` `[reject]` "handlers still running after cancellation" over-counts sub-queue loops — the drain is `biased` on `cancel` and returns on its next poll, dropping `Workers`; idle `run_subqueue` loops then end, and a loop still alive is one running an ordered handler, which is a running handler; queued jobs after cancel report `Cancelled` without running.
+  - `[false]` `[reject]` `GatewayOptions.close_timeout` is a new required field (breaking) with no validation — the spec mandates this exact field and updating every literal; the only producer is core, which passes `SHARD_CLOSE_TIMEOUT`.
+  - `[low]` `[patch]` The `select!`s in `run_until` over `gateway_info`/`await_startup` and `shutdown` are not `biased`, so an already-resolved shutdown can lose to a finished startup step, and `run_until_already_requested` claims "no request beyond GET /gateway/bot" without asserting it — patch: add `biased;` with the `shutdown` branch first in both selects and fix the test's doc comment.
+  - `[false]` `[reject]` A handler finishing on the same poll as the cancellation is reported `Cancelled` — with `biased` cancel-first the handler future is not polled once cancel is seen, so it never completed; it is dropped, which is a cancellation (spec mandates this order, Matrix 21).
+  - `[low]` `[reject]` `close_resumable`'s no-reconnect check is a fixed 300 ms sleep, and twilight reconnects inside the `close_timeout` window if the transport ends without a close frame (skill does not mention it) — real (twilight `poll_next` sets `connection = None` and reconnects on stream end), but it needs a gateway that drops TCP without replying to the close; dispatches are still discarded; avoiding it needs a custom poll around twilight; logged as a known limit in the memlog.
+  - `[low]` `[reject]` (edge) `close_all` landing after `shard.next()` returned but before `lane.sink.push` can push one item after the drain saw empty lanes — real but the window is a few synchronous instructions; delivery is at-most-once at shutdown by design; a re-check guard would not close the race fully.
+  - `[low]` `[reject]` (edge) Receive error in the `close_shard` loop makes twilight reconnect and resume during shutdown — same root cause as the reconnect-window row above (errors are swallowed while disconnected; the stream end triggers the reconnect); same rejection.
+  - `[low]` `[reject]` (edge) Second signal cannot force-exit — same as the force-quit row; excluded by the intent's Never list.
+  - `[low]` `[reject]` (edge) Non-unix runtime without IO: `register()` returns Ok and `ctrl_c()` fails later — same root cause and rejection as the non-unix row above.
+  - `[low]` `[patch]` (edge) `reason=signal` for a code-triggered shutdown — grouped with the `reason="signal"` row; same patch.
+  - `[low]` `[patch]` (edge) A shutdown during `GET /gateway/bot` returns `Ok(())` with only "shutdown requested before the shards started": no `shutdown started`, no `ShutdownStarted`, no `shutdown complete` — real (app.rs:445-451) and a deviation from "if shutdown resolves before every shard is READY, the shutdown sequence runs"; patch: on that path log `shutdown started` (with the reason and grace), broadcast `ShutdownStarted` once and log `shutdown complete`, with a test assertion.
+  - `[low]` `[patch]` (vgap) No wind-down test covers the concurrent part spawned by an ordered sub-queue (worker.rs:285) — pre-verified regression gap; patch: add `ordered_then_concurrent_cancelled` to `mod shutdown` in `worker/tests.rs` (ordered `o` + blocked concurrent `bot::c`, grace 100 ms; assert one `cancelled` for `bot::c` and an empty tracker).
+  - `[false]` `[reject]` (intent 1) Undispatched lane items are summarised in a `warn`, not sent to the Error Sink — settled by the intent (Never: "no per-item sink reports for discarded lane items") and the Design Notes.
+  - `[false]` `[reject]` (intent 2) `gateway.closed()` bounded at 6 s plus a 1 s `CANCEL_WAIT` — the intent's sequence (steps 4-5) specifies both bounds.
+  - `[false]` `[reject]` (intent 3) "Shutdown started"/shard events go to a crate-internal broadcast — the intent defines `LifecycleEvent` as crate-internal and leaves hooks to 13.5.
+  - `[false]` `[reject]` (intent 4) Scope beyond the story (`RunError`, `run_until`, env, `SignalHandler`, `CloseMode::Fresh`) — each is required by the intent contract.
+  - `[false]` `[reject]` (intent 5) No explicit port-drop step — the intent says "The ports drop with `self`".
+  - `[low]` `[patch]` (intent 6) `shutdown_sequence_order`'s doc claims "ends with every gauge at 0" but no recorder is installed and no gauge asserted; other placement notes match the matrix — patch: drop the gauge claim from the doc comment (gauge on close is covered by Matrix 32/36).
+  - `[false]` `[reject]` (intent 7) Partial fatal close verified only at unit level — the intent assigns Matrix 28 to `supervise` unit tests and Matrix 38 to E2E.
+  - `[false]` `[reject]` (intent 8) Only event handlers are cancelled — interaction handlers do not exist before Epic 6, which the intent's Never list excludes.
+
 ## Design Notes
 
 - **`run_until`:** tests and embedders need a shutdown trigger that is not a process signal; `run` stays the one-liner for bots. Signals are installed by `run` only, so tests never touch process signal state (except Matrix 39's own binary).
@@ -235,3 +266,15 @@ Abbreviations:
 - `cargo +1.91 check --release --workspace --all-targets` and `cargo deny check` -- expected: exit 0.
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`, `-- deps-check`, `-- rules-catalog` and `-- skill-check` -- expected: each exits 0 (needs `nightly-2026-10-15` + `cargo-public-api` 0.52.0).
 - `test ! -d target/debug` -- expected: true.
+
+## Auto Run Result
+
+- **Summary:** Graceful shutdown for noctis: `App::run` installs SIGINT/SIGTERM (fails fast with `SignalHandler`), `App::run_until(future)` takes any shutdown trigger. Sequence: stop enqueuing, drain lanes within the grace period (default 10 s), cancel remaining handlers (each reported `Cancelled` once), close shards (resumable close, 6 s bound), drop ports. Fatal gateway close codes are reported per shard (log, gauge, lifecycle event); `RunError::AllShardsEnded` when every shard dies. Crate-internal lifecycle `broadcast` seam for Story 13.5.
+- **Files changed:** `crates/noctis-core/src/app.rs` (run/run_until, shutdown sequence), `lifecycle.rs` (internal lifecycle events), `startup.rs` (signal install), `worker.rs` (cancellable drain), `error.rs`/`sink.rs` (new error variants, cancelled outcome); `crates/noctis-gateway/src/{gateway,shard,inbound,lib}.rs` (close_all, close modes, `close_timeout`, fatal close reporting); `crates/noctis/src/lib.rs` (re-exports); tests in `noctis-core` unit tests and `noctis-testkit/tests/{shutdown,gateway_close,shutdown_signal}.rs`; `examples/project-template/` code, AGENTS.md and usage skill; `xtask/public-api.txt` re-blessed.
+- **Review findings:** 27 total (high 0, medium 0, low 16, false 11).
+  - Patched (6 entries, all low, 4 distinct fixes): stop reason labelled `requested` for direct `run_until` vs `signal` for `run`; `biased` selects with shutdown first in `run_until`; shutdown during `GET /gateway/bot` now runs the full started/`ShutdownStarted`/complete sequence; new `ordered_then_concurrent_cancelled` worker test; doc comment fixes.
+  - Deferred: none.
+  - Rejected (21): startup-error path unchanged per spec; `catch_unwind` signal probe spec-mandated; non-unix IO-less runtime edge (unverifiable locally); second-signal force-quit excluded by intent; `CloseMode::Fresh` without frame per spec; twilight reconnect window on TCP drop without close reply (logged as known limit in memlog, two entries); close_all/push micro-race (at-most-once by design); plus 11 false positives (twilight close-frame ordering, sub-queue counting, required `close_timeout` field, cancel-vs-finish ordering, lane summary warning, timeout bounds, internal lifecycle broadcast, scope, port drop, Matrix 28/38 placement, interaction handlers pre-Epic 6).
+- **Follow-up review recommended:** false (patched by verdict: high 0, medium 0, low 6).
+- **Verification:** all local gates green via gates.sh (fmt, clippy release -D warnings, workspace tests, cargo-hack each-feature, MSRV 1.91 check, cargo deny, api-snapshot, deps-check, rules-catalog, skill-check; no debug target). CI paused by the maintainer.
+- **Residual risks:** twilight may reconnect during the close window if the gateway drops TCP without a close reply; no force-quit on a second signal; Windows runtime without IO surfaces signal errors late; startup-error path skips wind-down.

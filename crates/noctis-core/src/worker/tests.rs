@@ -1409,6 +1409,28 @@ mod shutdown {
         assert_eq!(log.count("start:2"), 0, "{:?}", log.lines());
     }
 
+    /// The concurrent part spawned after ordered handlers runs on the
+    /// tracker: the wind-down waits for it and cancels it at the deadline.
+    #[tokio::test]
+    async fn ordered_then_concurrent_cancelled() {
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut run = Running::start(
+            App::builder().module(
+                Module::new("ops")
+                    .add(logging("o", true, &log))
+                    .add(gated("bot::c", false, &log, &gate)),
+            ),
+        );
+        run.push(message_delete(1, Some(GA)));
+        until("C started", || log.count("start:1") == 1).await;
+        run.wind_down(Duration::from_millis(100)).await;
+        assert_eq!(run.kinds(), ["cancelled"]);
+        let seen = run.recording.seen();
+        assert_eq!(seen[0].handler.as_deref(), Some("bot::c"), "{seen:?}");
+        assert!(run.controls.tracker.is_empty());
+    }
+
     /// Matrix 20: only the blocked one of two concurrent handlers is
     /// cancelled.
     #[tokio::test]

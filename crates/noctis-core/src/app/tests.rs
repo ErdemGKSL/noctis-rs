@@ -1212,10 +1212,12 @@ fn run_error_message() {
     );
 }
 
-/// A shutdown that arrives before the shards start ends `run_until` with
-/// `Ok(())` and no request beyond `GET /gateway/bot`.
+/// An already-resolved shutdown ends `run_until` with `Ok(())` before any
+/// request is sent, logging `shutdown started` and `shutdown complete`.
 #[tokio::test(flavor = "multi_thread")]
 async fn run_until_already_requested() {
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
     let app = App::builder()
         .token(token())
         .http_proxy("127.0.0.1:1")
@@ -1223,6 +1225,18 @@ async fn run_until_already_requested() {
         .unwrap();
     let outcome = tokio::time::timeout(Duration::from_secs(15), app.run_until(async {})).await;
     assert!(matches!(outcome, Ok(Ok(()))), "{outcome:?}");
+    let text = capture.text();
+    let started = text
+        .find("shutdown started")
+        .unwrap_or_else(|| panic!("shutdown started missing: {text}"));
+    let complete = text
+        .find("shutdown complete")
+        .unwrap_or_else(|| panic!("shutdown complete missing: {text}"));
+    assert!(started < complete, "{text}");
+    assert!(
+        text.contains("reason=\"requested\"") || text.contains("reason=requested"),
+        "{text}"
+    );
 }
 
 // ---- supervise and lifecycle (Story 5.8 Matrix 28-34) ----
@@ -1517,7 +1531,7 @@ async fn app_lifecycle_channel() {
 }
 
 /// Matrix 34: one `ShutdownStarted`, broadcast before any shard reports
-/// `Closed`; the sequence logs in order and ends with every gauge at 0.
+/// `Closed`; the sequence logs in order.
 #[tokio::test(flavor = "multi_thread")]
 async fn shutdown_sequence_order() {
     use std::num::NonZeroU16;
@@ -1559,7 +1573,14 @@ async fn shutdown_sequence_order() {
     };
     tokio::time::timeout(
         Duration::from_secs(15),
-        app.shut_down(Stop::Requested, gateway, watch, &controls, &mut drain),
+        app.shut_down(
+            Stop::Requested,
+            "requested",
+            gateway,
+            watch,
+            &controls,
+            &mut drain,
+        ),
     )
     .await
     .unwrap();
@@ -1578,7 +1599,7 @@ async fn shutdown_sequence_order() {
             .unwrap_or_else(|| panic!("{needle} missing: {text}"))
     };
     assert!(
-        text.contains("reason=\"signal\"") || text.contains("reason=signal"),
+        text.contains("reason=\"requested\"") || text.contains("reason=requested"),
         "{text}"
     );
     assert!(at("shutdown started") < at("shard closed"), "{text}");

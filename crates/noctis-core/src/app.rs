@@ -366,7 +366,7 @@ impl App {
         check_runtime(true)?;
         ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
         let signals = Signals::install()?;
-        self.run_until(signals.recv()).await
+        self.run_with(signals.recv(), "signal").await
     }
 
     /// Starts the App and runs it until `shutdown` resolves, then shuts it
@@ -433,6 +433,16 @@ impl App {
     /// # Ok(()) }
     /// ```
     pub async fn run_until(self, shutdown: impl Future<Output = ()> + Send) -> Result<(), Error> {
+        self.run_with(shutdown, "requested").await
+    }
+
+    /// [`run_until`](Self::run_until), logging `reason` when `shutdown`
+    /// resolves (`"signal"` from [`run`](Self::run), else `"requested"`).
+    async fn run_with(
+        self,
+        shutdown: impl Future<Output = ()> + Send,
+        reason: &'static str,
+    ) -> Result<(), Error> {
         check_runtime(true)?;
         ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
         let Some(token) = &self.token else {
@@ -444,11 +454,17 @@ impl App {
         let _cancel_guard = controls.cancel.clone().drop_guard();
         let mut shutdown = pin!(shutdown);
         let info = tokio::select! {
-            info = self.gateway_info() => info?,
+            biased;
             () = &mut shutdown => {
-                tracing::info!(target: "noctis::app", "shutdown requested before the shards started");
+                // No gateway or drain exists yet: only the log lines and
+                // the lifecycle broadcast of the shutdown sequence apply.
+                let grace = self.shutdown_grace;
+                tracing::info!(target: "noctis::app", reason, grace = ?grace, "shutdown started");
+                self.lifecycle.send(LifecycleEvent::ShutdownStarted);
+                tracing::info!(target: "noctis::app", "shutdown complete");
                 return Ok(());
             }
+            info = self.gateway_info() => info?,
         };
         let plan = plan(info, self.shard_total)?;
         let total = plan.total.get();
@@ -493,8 +509,9 @@ impl App {
         };
         status.init();
         let started = tokio::select! {
-            result = await_startup(&mut events, &status, &self.lifecycle) => Some(result),
+            biased;
             () = &mut shutdown => None,
+            result = await_startup(&mut events, &status, &self.lifecycle) => Some(result),
         };
         let stop = match started {
             Some(result) => {
@@ -509,7 +526,7 @@ impl App {
             status: &status,
             lifecycle: &self.lifecycle,
         };
-        self.shut_down(stop, gateway, watch, &controls, &mut drain)
+        self.shut_down(stop, reason, gateway, watch, &controls, &mut drain)
             .await;
         match stop {
             Stop::Requested => Ok(()),
@@ -521,13 +538,14 @@ impl App {
     async fn shut_down(
         &self,
         stop: Stop,
+        requested: &'static str,
         mut gateway: Gateway,
         mut watch: Watch<'_>,
         controls: &Shutdown,
         drain: &mut AbortOnDrop,
     ) {
         let reason = match stop {
-            Stop::Requested => "signal",
+            Stop::Requested => requested,
             Stop::AllEnded => "all shards ended",
         };
         let grace = self.shutdown_grace;

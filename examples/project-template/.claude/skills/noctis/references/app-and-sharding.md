@@ -414,8 +414,8 @@ stops the App.
 resolves, and both also when every shard has ended (then they return
 `RunError::AllShardsEnded`). A second signal does nothing extra. The order:
 
-1. `info` log `shutdown started` (`reason = "signal"` or `"all shards ended"`,
-   `grace`). [planned, Story 13.5: the `ShutdownStarted` Lifecycle Hook fires here]
+1. `info` log `shutdown started` (`reason = "signal"` from `run()`,
+   `"requested"` from `run_until` or `"all shards ended"`, `grace`). [planned, Story 13.5: the `ShutdownStarted` Lifecycle Hook fires here]
 2. Every shard closes with code 4000 (resumable; Discord keeps the session).
    [planned, Story 12.3: `--no-resume` closes with 1000 and session writes to the
    `SessionStore`] From here no new gateway event enters the lanes.
