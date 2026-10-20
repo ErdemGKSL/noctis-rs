@@ -56,7 +56,7 @@ the variables in your deployment.
 | `NOCTIS_DEV_GUILD` | no | Default guild for `--publish-guild` with no id. |
 | `NOCTIS_SHARDS` | no | Shard Range for this process, e.g. `0..32`. Default: all shards. |
 | `NOCTIS_SHARD_TOTAL` | no | Fixed shard total. Default: Discord's recommendation. |
-| `NOCTIS_HTTP_PROXY` | for Clusters | Shared HTTP rate-limit proxy URL (twilight-http-proxy, nirn-proxy). |
+| `NOCTIS_HTTP_PROXY` | for Clusters | Shared HTTP rate-limit proxy (twilight-http-proxy, nirn-proxy) as `host:port` or `http://host:port` (plain HTTP; HTTPS is not supported). |
 | `NOCTIS_PUBLISHER` | no | `true` on the one process that publishes commands at startup. |
 | `RUST_LOG` | no | Log filter, e.g. `info,noctis=debug`. |
 

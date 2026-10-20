@@ -49,6 +49,7 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
 
 The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `Arc<noctis::twilight::http::Client>`, the same `Arc` on every call), `app.http_timeout()`,
+`app.http_proxy()` (`Option<&str>`: the normalized proxy authority, e.g. `Some("proxy:3000")`),
 `app.intents()`, `app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
@@ -62,6 +63,7 @@ Implemented:
 | `.state(T)` | — | typed shared state, read as `State<T>` (one per type; a second is `BuildViolation::DuplicateState`) |
 | `.intents(Intents)` | `Intents::GUILDS` | adds to the requested set (`noctis::twilight::model::gateway::Intents`); `GUILDS` is always in it |
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
+| `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
 | `.plugin(impl Plugin)` / `.plugin_mut::<P>()` | — | attach a plugin (one per type) / change it before `build()` (§12) |
@@ -75,7 +77,6 @@ Planned (signatures may change):
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.http_proxy(url)` [planned, Story 5.2] | none | see §5 |
 | `.gateway_url(url)` [planned, Story 5.3] | Discord | gateway proxy, or the testkit's `FakeGateway` |
 | `.shards(ShardRange)` / `.shard_total(u32)` [planned, Story 5.4] | all / recommended | see §4 |
 | `.module(Module)` [planned, Story 5.6] | — | mount a Module tree (ids must be unique); handler intents are derived and added |
@@ -109,12 +110,19 @@ token.
 - `BuildViolation`: `NoTokioRuntime` (build outside a tokio runtime), `CryptoProvider`
   (no rustls provider could be installed), `DuplicateState { type_name }`,
   `DuplicatePlugin { type_name }`, `ResourceConflict(ResourceConflict)` (§10),
-  `InvalidHttpTimeout { actual }`, `Plugin { plugin, message }` (built with
+  `InvalidHttpTimeout { actual }`, `InvalidHttpProxy { reason: HttpProxyError }`
+  (message `"invalid HTTP proxy: {reason}"`, never the value), `Plugin { plugin, message }` (built with
   `BuildViolation::plugin::<P>("message")`).
 - `StartError`: `NoRuntime`, `NotMultiThread`, `CryptoProvider`, `MissingToken` (see
   `App::run()` above).
 - `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`; the
   value is never shown.
+- `HttpProxyError` (why `.http_proxy(..)` was rejected; checked in this order):
+  `Empty` (nothing after an optional `http://` and one trailing `/`),
+  `UnsupportedScheme` (any scheme but `http://`, e.g. `https://`), `InvalidChar { index }`
+  (outside printable ASCII, e.g. whitespace), `NotAnAuthority` (a path, `?`, `#`, `user@`
+  or `\`), `TooLong { len }` (over 255 bytes), `InvalidHost` (empty host, more than one
+  `:` without brackets, malformed `[ipv6]`), `InvalidPort` (not 1-5 digits in 1..=65535).
 - `TokenError`: `Empty` (nothing after an optional `"Bot "` prefix), `InvalidChar {
   index }` (a character outside printable ASCII `!`..`~`, e.g. whitespace).
 
@@ -139,7 +147,7 @@ match configure(&mut App::builder()).build() {
 | `NOCTIS_DEV_GUILD` [planned, Story 6.9] | default for `--publish-guild` without an id |
 | `NOCTIS_SHARDS` [planned, Story 5.4] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
 | `NOCTIS_SHARD_TOTAL` [planned, Story 5.4] | fixed shard total |
-| `NOCTIS_HTTP_PROXY` [planned, Story 5.2] | rate-limit proxy URL |
+| `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
 | `NOCTIS_PUBLISHER` [planned, Story 6.9] | `true` on the one publishing process |
 | `NOCTIS_FEATURES` [planned] | Boot Flags (`a,b` or `all`), same as `--features` |
 | `RUST_LOG` | tracing filter (Noctis uses `tracing`; you install the subscriber) |
@@ -228,8 +236,11 @@ Events dropped under back-pressure are not replayed (at-most-once).
 
 Noctis owns one twilight HTTP client per App (`ctx.http()` returns
 `&noctis::twilight::http::Client` for endpoints Noctis doesn't wrap). With
-`http_proxy(url)` set, every request goes through the proxy and the local limiter is
-off. Request timeout defaults to 10 s. Raw requests (FR-31) [planned]:
+`.http_proxy(..)` (or `NOCTIS_HTTP_PROXY`) set, every request goes to
+`http://{proxy}/api/v10/..` over plain HTTP and the App's local rate limiter is off (the
+proxy limits). Accepted forms: `host`, `host:port`, `[ipv6]`, `[ipv6]:port`, each
+optionally prefixed with `http://` (any case) and followed by one `/`; HTTPS proxies,
+paths and credentials are rejected (`HttpProxyError`). Request timeout defaults to 10 s. Raw requests (FR-31) [planned]:
 `ctx.http_raw().request(Method::Get, "/applications/@me", None).await?` — still rate
 limited / proxied.
 

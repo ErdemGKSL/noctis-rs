@@ -16,6 +16,7 @@ use twilight_model::gateway::Intents;
 
 use crate::plugin::PluginEntry;
 use crate::ports::{PortOverrides, Ports};
+use crate::proxy::normalize_http_proxy;
 use crate::startup::{check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
 use crate::{
@@ -24,6 +25,8 @@ use crate::{
 
 /// The environment variable [`App::from_env`] reads the token from.
 const TOKEN_VAR: &str = "NOCTIS_TOKEN";
+/// The environment variable [`App::from_env`] reads the HTTP proxy from.
+const HTTP_PROXY_VAR: &str = "NOCTIS_HTTP_PROXY";
 /// The HTTP request timeout when `http_timeout` is not called.
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The allowed `http_timeout` range.
@@ -53,6 +56,7 @@ pub struct App {
     token: Option<Token>,
     http: Arc<twilight_http::Client>,
     http_timeout: Duration,
+    http_proxy: Option<String>,
     intents: Intents,
     states: StateMap,
     ports: Ports,
@@ -73,8 +77,10 @@ impl App {
 
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
-    /// Reads `NOCTIS_TOKEN`, trimmed of ASCII whitespace; an empty value counts
-    /// as unset. Setters called afterwards win.
+    /// Reads `NOCTIS_TOKEN` and then `NOCTIS_HTTP_PROXY`, each trimmed of
+    /// ASCII whitespace; an empty value counts as unset. The proxy is passed
+    /// to [`AppBuilder::http_proxy`] and validated by `build()`. Setters called
+    /// afterwards win.
     ///
     /// # Errors
     ///
@@ -123,6 +129,18 @@ impl App {
     /// ```
     pub fn http_timeout(&self) -> Duration {
         self.http_timeout
+    }
+
+    /// The normalized HTTP proxy authority (`host[:port]`), if one was set.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().http_proxy("http://proxy:3000").build().unwrap();
+    /// assert_eq!(app.http_proxy(), Some("proxy:3000"));
+    /// # }
+    /// ```
+    pub fn http_proxy(&self) -> Option<&str> {
+        self.http_proxy.as_deref()
     }
 
     /// The requested gateway intents (at least `GUILDS`).
@@ -209,6 +227,7 @@ impl fmt::Debug for App {
             .field("runtime", &self.runtime)
             .field("token", &self.token)
             .field("http_timeout", &self.http_timeout)
+            .field("http_proxy", &self.http_proxy)
             .field("intents", &self.intents)
             .field("states", &self.states)
             .field("default_ports", self.ports.default_slots())
@@ -245,6 +264,8 @@ pub struct AppBuilder {
     token: Option<Token>,
     intents: Intents,
     http_timeout: Duration,
+    /// The raw, unvalidated proxy; `build` normalizes it.
+    http_proxy: Option<String>,
     states: StateMap,
     ports: PortOverrides,
     renderer: Option<Arc<dyn Renderer>>,
@@ -281,6 +302,7 @@ impl AppBuilder {
             token: None,
             intents: Intents::GUILDS,
             http_timeout: DEFAULT_HTTP_TIMEOUT,
+            http_proxy: None,
             states: StateMap::default(),
             ports: PortOverrides::default(),
             renderer: None,
@@ -293,18 +315,15 @@ impl AppBuilder {
     /// [`App::from_env`] over `lookup` instead of the process environment.
     pub(crate) fn from_lookup(lookup: impl Fn(&str) -> Option<OsString>) -> Result<Self, EnvError> {
         let mut builder = App::builder();
-        if let Some(raw) = lookup(TOKEN_VAR) {
-            let raw = raw
-                .into_string()
-                .map_err(|_| EnvError::NotUnicode { var: TOKEN_VAR })?;
-            let trimmed = raw.trim_matches(|c: char| c.is_ascii_whitespace());
-            if !trimmed.is_empty() {
-                let token = Token::new(trimmed).map_err(|source| EnvError::InvalidToken {
-                    var: TOKEN_VAR,
-                    source,
-                })?;
-                builder.token(token);
-            }
+        if let Some(raw) = read_var(&lookup, TOKEN_VAR)? {
+            let token = Token::new(&raw).map_err(|source| EnvError::InvalidToken {
+                var: TOKEN_VAR,
+                source,
+            })?;
+            builder.token(token);
+        }
+        if let Some(proxy) = read_var(&lookup, HTTP_PROXY_VAR)? {
+            builder.http_proxy(proxy);
         }
         Ok(builder)
     }
@@ -366,6 +385,23 @@ impl AppBuilder {
     /// ```
     pub fn http_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.http_timeout = timeout;
+        self
+    }
+
+    /// Sends every Discord HTTP request through a proxy (e.g. twilight's
+    /// http-proxy, or the testkit's Discord HTTP fake) over plain HTTP and
+    /// turns the local rate limiter off. The last call wins.
+    ///
+    /// Takes `host[:port]` or `http://host[:port]` (IPv6 hosts in brackets);
+    /// `build()` validates it and records a
+    /// [`BuildViolation::InvalidHttpProxy`] when it is anything else.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.http_proxy("http://proxy:3000");
+    /// ```
+    pub fn http_proxy(&mut self, proxy: impl Into<String>) -> &mut Self {
+        self.http_proxy = Some(proxy.into());
         self
     }
 
@@ -510,7 +546,7 @@ impl AppBuilder {
     ///
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
-    /// timeout, the rustls crypto provider (installing `ring`'s when none is
+    /// timeout, the HTTP proxy, the rustls crypto provider (installing `ring`'s when none is
     /// set) and the tokio runtime (any flavor). The builder is left empty,
     /// attached to the same Runtime.
     ///
@@ -531,6 +567,15 @@ impl AppBuilder {
                 actual: self.http_timeout,
             });
         }
+        let http_proxy = match self.http_proxy.as_deref().map(normalize_http_proxy) {
+            None => None,
+            Some(Ok(proxy)) => Some(proxy),
+            Some(Err(reason)) => {
+                self.violations
+                    .push(BuildViolation::InvalidHttpProxy { reason });
+                None
+            }
+        };
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }
@@ -546,11 +591,15 @@ impl AppBuilder {
         if let Some(token) = &config.token {
             http = http.token(token.expose().to_owned());
         }
+        if let Some(proxy) = &http_proxy {
+            http = http.proxy(proxy.clone(), true).ratelimiter(None);
+        }
         Ok(App {
             runtime: config.runtime,
             token: config.token,
             http: Arc::new(http.build()),
             http_timeout: config.http_timeout,
+            http_proxy,
             intents: config.intents,
             states: config.states,
             ports: Ports::resolve(config.ports),
@@ -585,6 +634,7 @@ impl fmt::Debug for AppBuilder {
             .field("token", &self.token)
             .field("intents", &self.intents)
             .field("http_timeout", &self.http_timeout)
+            .field("http_proxy", &self.http_proxy.is_some())
             .field("states", &self.states)
             .field("ports", &self.ports.set_slots())
             .field("has_renderer", &self.renderer.is_some())
@@ -592,6 +642,22 @@ impl fmt::Debug for AppBuilder {
             .field("violations", &self.violations)
             .finish()
     }
+}
+
+/// Reads `var` through `lookup`: trimmed of ASCII whitespace, empty means
+/// unset.
+fn read_var(
+    lookup: &impl Fn(&str) -> Option<OsString>,
+    var: &'static str,
+) -> Result<Option<String>, EnvError> {
+    let Some(raw) = lookup(var) else {
+        return Ok(None);
+    };
+    let raw = raw
+        .into_string()
+        .map_err(|_| EnvError::NotUnicode { var })?;
+    let trimmed = raw.trim_matches(|c: char| c.is_ascii_whitespace());
+    Ok((!trimmed.is_empty()).then(|| trimmed.to_owned()))
 }
 
 #[cfg(test)]

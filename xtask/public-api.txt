@@ -5,6 +5,7 @@ pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::App::has_renderer(&self) -> bool
 pub fn noctis::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::App::http_proxy(&self) -> core::option::Option<&str>
 pub fn noctis::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub async fn noctis::App::run(self) -> core::result::Result<(), noctis::Error>
@@ -20,6 +21,7 @@ pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
+pub fn noctis::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
@@ -59,6 +61,8 @@ pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
+pub noctis::BuildViolation::InvalidHttpProxy
+pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
 pub noctis::BuildViolation::InvalidHttpTimeout::actual: core::time::Duration
 pub noctis::BuildViolation::NoTokioRuntime
@@ -124,6 +128,28 @@ impl core::convert::From<noctis::StartError> for noctis::Error
 pub fn noctis::Error::from(noctis::StartError) -> Self
 impl core::convert::From<noctis::BuildError> for noctis::Error
 pub fn noctis::Error::from(noctis::BuildError) -> Self
+#[non_exhaustive] pub enum noctis::HttpProxyError
+pub noctis::HttpProxyError::Empty
+pub noctis::HttpProxyError::InvalidChar
+pub noctis::HttpProxyError::InvalidChar::index: usize
+pub noctis::HttpProxyError::InvalidHost
+pub noctis::HttpProxyError::InvalidPort
+pub noctis::HttpProxyError::NotAnAuthority
+pub noctis::HttpProxyError::TooLong
+pub noctis::HttpProxyError::TooLong::len: usize
+pub noctis::HttpProxyError::UnsupportedScheme
+impl core::clone::Clone for noctis::HttpProxyError
+pub fn noctis::HttpProxyError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::HttpProxyError
+impl core::cmp::PartialEq for noctis::HttpProxyError
+pub fn noctis::HttpProxyError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::HttpProxyError
+impl core::fmt::Debug for noctis::HttpProxyError
+pub fn noctis::HttpProxyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::HttpProxyError
+pub fn noctis::HttpProxyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::HttpProxyError
+impl core::marker::StructuralPartialEq for noctis::HttpProxyError
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
 pub trait noctis::Resource: core::marker::Send + core::marker::Sync + 'static
@@ -1176,6 +1202,7 @@ pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::prelude::App::has_renderer(&self) -> bool
 pub fn noctis::prelude::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::App::http_proxy(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub async fn noctis::prelude::App::run(self) -> core::result::Result<(), noctis::Error>
@@ -1191,6 +1218,7 @@ pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::C
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
+pub fn noctis::prelude::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self

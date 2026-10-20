@@ -5,7 +5,7 @@ use std::any::type_name;
 use std::fmt;
 use std::time::Duration;
 
-use crate::{Plugin, ResourceConflict, TokenError};
+use crate::{HttpProxyError, Plugin, ResourceConflict, TokenError};
 
 /// Every error `App::from_env`, `build` and `run` return.
 ///
@@ -139,6 +139,13 @@ pub enum BuildViolation {
     InvalidHttpTimeout {
         /// The rejected timeout.
         actual: Duration,
+    },
+    /// `http_proxy` is not `host[:port]` or `http://host[:port]`; the message
+    /// never contains the value.
+    #[error("invalid HTTP proxy: {reason}")]
+    InvalidHttpProxy {
+        /// Why the proxy was rejected.
+        reason: HttpProxyError,
     },
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]

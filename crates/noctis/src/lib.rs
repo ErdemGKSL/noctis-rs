@@ -131,7 +131,7 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    App, AppBuilder, BuildError, BuildViolation, EnvError, Error, Plugin, Resource,
+    App, AppBuilder, BuildError, BuildViolation, EnvError, Error, HttpProxyError, Plugin, Resource,
     ResourceConflict, Runtime, StartError, State, Token, TokenError,
 };
 

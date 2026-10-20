@@ -18,10 +18,19 @@ fn token() -> Token {
     Token::new(SECRET).unwrap()
 }
 
+/// A lookup answering only `NOCTIS_TOKEN` (every other variable is unset).
 fn lookup(value: Option<OsString>) -> impl Fn(&str) -> Option<OsString> {
+    lookup_var("NOCTIS_TOKEN", value)
+}
+
+/// A lookup answering only `name` (every other variable is unset).
+fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> Option<OsString> {
     move |var| {
-        assert_eq!(var, "NOCTIS_TOKEN");
-        value.clone()
+        assert!(
+            var == "NOCTIS_TOKEN" || var == "NOCTIS_HTTP_PROXY",
+            "unexpected variable {var}"
+        );
+        if var == name { value.clone() } else { None }
     }
 }
 
@@ -508,4 +517,116 @@ async fn run_multi_thread() {
         app.run().await,
         Err(Error::Start(StartError::MissingToken))
     ));
+}
+
+// ---- http_proxy (Story 5.2 Matrix 9-11) ----
+
+#[tokio::test]
+async fn http_proxy_wiring() {
+    let app = App::builder().http_proxy("http://p:1").build().unwrap();
+    assert_eq!(app.http_proxy(), Some("p:1"));
+    assert!(format!("{app:?}").contains("http_proxy: Some(\"p:1\")"));
+
+    let app = App::builder()
+        .http_proxy("a:1")
+        .http_proxy("b:2")
+        .build()
+        .unwrap();
+    assert_eq!(app.http_proxy(), Some("b:2"));
+
+    let app = App::builder().build().unwrap();
+    assert_eq!(app.http_proxy(), None);
+
+    let err = App::builder()
+        .http_proxy("https://x")
+        .http_timeout(Duration::ZERO)
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [
+            BuildViolation::InvalidHttpTimeout {
+                actual: Duration::ZERO
+            },
+            BuildViolation::InvalidHttpProxy {
+                reason: crate::HttpProxyError::UnsupportedScheme
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn http_proxy_redaction() {
+    let mut builder = App::builder();
+    builder.http_proxy("user:SECRET@h");
+    let debug = format!("{builder:?}");
+    assert!(debug.contains("http_proxy: true"), "{debug}");
+    assert!(!debug.contains("SECRET"), "{debug}");
+    let err = builder.build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidHttpProxy {
+            reason: crate::HttpProxyError::NotAnAuthority
+        }]
+    );
+    assert!(err.to_string().contains("invalid HTTP proxy: "));
+    for text in [err.to_string(), format!("{err:?}")] {
+        assert!(!text.contains("SECRET"), "{text}");
+    }
+}
+
+#[tokio::test]
+async fn from_env_http_proxy() {
+    for raw in [None, Some(""), Some("  \n")] {
+        let b = AppBuilder::from_lookup(lookup_var("NOCTIS_HTTP_PROXY", raw.map(OsString::from)))
+            .unwrap();
+        assert!(b.http_proxy.is_none(), "{raw:?}");
+    }
+    let app = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_HTTP_PROXY",
+        Some(" http://p:1 \n".into()),
+    ))
+    .unwrap()
+    .build()
+    .unwrap();
+    assert_eq!(app.http_proxy(), Some("p:1"));
+
+    let err = AppBuilder::from_lookup(lookup_var("NOCTIS_HTTP_PROXY", Some("https://x".into())))
+        .unwrap()
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidHttpProxy {
+            reason: crate::HttpProxyError::UnsupportedScheme
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn from_env_http_proxy_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_HTTP_PROXY",
+        Some(OsString::from_vec(vec![b'a', 0xff])),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_HTTP_PROXY"
+        }
+    );
+}
+
+#[test]
+fn from_env_reads_token_first() {
+    let seen = Mutex::new(Vec::new());
+    let _ = AppBuilder::from_lookup(|var| {
+        seen.lock().unwrap().push(var.to_owned());
+        None
+    })
+    .unwrap();
+    assert_eq!(*seen.lock().unwrap(), ["NOCTIS_TOKEN", "NOCTIS_HTTP_PROXY"]);
 }
