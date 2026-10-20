@@ -1,5 +1,6 @@
 //! The lane metrics of a running App (Story 5.5, Matrix 27). Its own test
-//! binary, because it installs a global `metrics` recorder.
+//! binary, because it installs a global `metrics` recorder and a global
+//! capturing tracing subscriber.
 
 #![allow(
     clippy::unwrap_used,
@@ -7,18 +8,51 @@
     reason = "tests panic with the failing case"
 )]
 
+use std::io;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use metrics_util::MetricKind;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 use noctis_core::{App, Runtime, Token};
 use noctis_testkit::fake::{FakeDiscordHttp, FakeGateway, GatewayBot};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::fmt::MakeWriter;
 
 /// The bound on every single wait.
 const WAIT: Duration = Duration::from_secs(15);
 
 /// A labeled gauge in a snapshot: its name and sorted labels.
 type GaugeId = (String, Vec<(String, String)>);
+
+/// Appends every log line to a shared buffer.
+#[derive(Clone, Default)]
+struct Capture(Arc<Mutex<Vec<u8>>>);
+
+impl Capture {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl io::Write for Capture {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for Capture {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
 
 fn gauge_id(name: &str, labels: &[(&str, &str)]) -> GaugeId {
     let mut labels: Vec<_> = labels
@@ -34,6 +68,12 @@ async fn app_reports_lane_depths() {
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
     metrics::set_global_recorder(recorder).unwrap();
+    let capture = Capture::default();
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_ansi(false)
+        .with_writer(capture.clone())
+        .init();
 
     let http = FakeDiscordHttp::start_with(GatewayBot {
         shards: 1,
@@ -64,6 +104,20 @@ async fn app_reports_lane_depths() {
         )),
         1
     );
+
+    // The core drain received the interaction from the Interaction Lane.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !capture
+        .text()
+        .lines()
+        .any(|line| line.contains("no handler registered") && line.contains("kind=Interaction"))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the drain did not see the interaction"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 
     let interaction = gauge_id(
         "noctis_lane_depth",

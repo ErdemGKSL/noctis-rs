@@ -242,9 +242,9 @@ impl App {
     /// bucket `shard_id % max_concurrency` (GW-01). Shard tasks push every
     /// parsed item into the lanes without waiting: interactions into the
     /// never-dropped Interaction Lane, other events into the bounded event
-    /// lane (AD-10); one core task drains them, interactions first. Startup finishes once
-    /// every shard has received READY; afterwards `run` returns `Ok(())`
-    /// when every shard task has ended.
+    /// lane (AD-10); one core task drains them, interactions first. Startup
+    /// finishes once every shard has received READY; afterwards `run`
+    /// returns `Ok(())` when every shard task has ended.
     ///
     /// # Errors
     ///
