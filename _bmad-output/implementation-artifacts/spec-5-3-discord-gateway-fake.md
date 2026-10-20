@@ -2,7 +2,8 @@
 title: 'Story 5.3: Discord gateway fake'
 type: 'feature'
 created: '2026-10-20'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'c5436851c1e741a33c14058050e7ebd66698bd0f'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
