@@ -53,6 +53,51 @@ Cost cheatsheet: Container 1, Text Display 1, Separator 1, Media Gallery 1 (any 
 File 1, Section + 1 text + button = 3, Section + 3 texts + thumbnail = 5, Action Row + 5
 buttons = 6, Action Row + 1 select (25 options) = 2.
 
+## Where each component can be used (placement matrix)
+
+✅ allowed · ❌ rejected at `cargo check` with the rule id · ➖ not applicable.
+Message columns are Components V2 messages; the last column is a legacy (non-V2)
+message. Modal columns are a `Modal`'s top level and the single input inside a
+`ModalLabel`.
+
+| Component (type) | Noctis type | Message top level | Container child | Section text | Section accessory | Action Row | Modal top level | Inside a modal Label | Legacy message |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Action Row (1) | `ActionRow` | ✅ | ✅ | ❌ | ❌ | ➖ | ❌ (deprecated in modals; Noctis never emits it) | ❌ | ✅ up to 5 rows |
+| Button (2) | `RouteButton<R>`, `LinkButton`, `PremiumButton` | ❌ | ❌ | ❌ | ✅ | ✅ 1-5 per row | ❌ | ❌ | ✅ in a row |
+| String Select (3) | `StringSelect` / `ModalStringSelect` | ❌ | ❌ | ❌ | ❌ | ✅ alone in its row | ❌ | ✅ (`ModalStringSelect`) | ✅ alone in a row |
+| Text Input (4) | `TextInput` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| User / Role / Mentionable / Channel Select (5-8) | `UserSelect`… / `ModalUserSelect`… | ❌ | ❌ | ❌ | ❌ | ✅ alone in its row | ❌ | ✅ (`Modal*Select`) | ✅ alone in a row |
+| Section (9) | `Section` | ✅ | ✅ | ➖ | ➖ | ❌ | ❌ | ❌ | ❌ |
+| Text Display (10) | `TextDisplay` | ✅ | ✅ | ✅ 1-3 per Section | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Thumbnail (11) | `Thumbnail` | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Media Gallery (12) | `MediaGallery` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| File (13) | `File` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Separator (14) | `Separator` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Container (17) | `Container` | ✅ | ❌ (no nesting) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Label (18) | `ModalLabel` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (wraps exactly one input) | ➖ | ❌ |
+| File Upload (19) | `FileUpload` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Radio Group (21) | `RadioGroup` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Checkbox Group (22) | `CheckboxGroup` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Checkbox (23) | `Checkbox` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+
+How it's enforced, and what to remember:
+
+- **Rule ids.** Messages: CV2-05 (placement), CV2-06 (a row holds buttons or one
+  select), CV2-07 (Section), CV2-15 (legacy). Modals: MOD-02 (1-5 top-level
+  components), MOD-03 (allowed children, no `disabled`). The traits are sealed:
+  `TopLevel`, `ContainerChild`, `SectionAccessory`, `RowItem`, `RowSelect`,
+  `ModalTopLevel`, `ModalInput`. A wrong placement is a compile error naming the rule
+  id, never a runtime 400.
+- **Selects in modals are separate types.** `ModalStringSelect`,
+  `ModalUserSelect`, `ModalRoleSelect`, `ModalMentionableSelect` and
+  `ModalChannelSelect` go inside a `ModalLabel`. They have `required` and no
+  `disabled`. The message selects (`StringSelect`, …) don't implement `ModalInput`.
+- **Modal-only inputs.** Text Input, File Upload, Radio Group, Checkbox Group and
+  Checkbox exist only in modals. To collect free text in a message flow, open a modal
+  (see `modals.md` §6, "Choosing modal vs message components").
+- **No modal buttons.** Buttons, Sections, Containers, galleries and files never go in
+  a modal. A modal's only action is its Submit, which Discord renders itself.
+
 ### Placement traits
 
 Each placing method is bounded by a sealed trait; only Noctis types implement them, and

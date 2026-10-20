@@ -204,6 +204,28 @@ Values from `research/discord-components-v2.md` §0-§2, rechecked against
 | **CV2-16** Unknown component types | Must round-trip as opaque raw JSON **[D]** | [CR §Section](https://discord.com/developers/docs/components/reference#section) | Runtime | Raw escape hatch (FR-31) is still counted against CV2-03. |
 | **CV2-17** Media URL length | Media Gallery item and Thumbnail media `url` ≤ **2048** characters **[U]** (2048 is documented only for Component Embeds) | research `discord-components-v2.md` §Media | Compile-time (literal) / Runtime (dynamic) | Measured with `discord_len`; the default sits in `Limits` (PRD Q4). `components!` checks literal media URLs (`thumbnail("…")`, `item("…")`) at expansion; `noctis_ui::validate` checks every URL at runtime. |
 
+
+### Placement summary (CV2-05, CV2-06, CV2-07, CV2-15, MOD-02, MOD-03)
+
+| Component (type) | V2 top level | Container | Section text / accessory | Action Row | Modal top level | Modal Label input | Legacy row |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Action Row (1) | ✓ | ✓ | – | – | deprecated, never emitted | – | ✓ (≤ 5 rows) |
+| Button (2) | – | – | accessory | ✓ (1-5) | – | – | ✓ |
+| Selects (3, 5-8) | – | – | – | ✓ (alone) | – | ✓ (modal select types) | ✓ (alone) |
+| Text Input (4) | – | – | – | – | – | ✓ | – |
+| Section (9) | ✓ | ✓ | – | – | – | – | – |
+| Text Display (10) | ✓ | ✓ | text (1-3) | – | ✓ | – | – |
+| Thumbnail (11) | – | – | accessory | – | – | – | – |
+| Media Gallery (12), File (13), Separator (14) | ✓ | ✓ | – | – | – | – | – |
+| Container (17) | ✓ | – (no nesting) | – | – | – | – | – |
+| Label (18) | – | – | – | – | ✓ (one input) | – | – |
+| File Upload (19), Radio Group (21), Checkbox Group (22), Checkbox (23) | – | – | – | – | – | ✓ | – |
+
+Every "–" is a compile error raised by the sealed placement traits (`TopLevel`,
+`ContainerChild`, `SectionAccessory`, `RowItem`, `RowSelect`, `ModalTopLevel`,
+`ModalInput`), and the error names the rule id. Runtime-built trees (`TopLevelComponent`,
+`ContainerComponent`, raw JSON) are checked by `noctis::ui::validate`.
+
 ## 10. Modals
 
 | Rule | Limit/value | Source | Enforcement | How |
