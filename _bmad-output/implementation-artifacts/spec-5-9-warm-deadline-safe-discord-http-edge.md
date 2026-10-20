@@ -2,10 +2,10 @@
 title: 'Story 5.9: Warm, deadline-safe Discord HTTP edge'
 type: 'feature'
 created: '2026-10-20'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '1984f25ae01463817040db869e5d6b822f29ff8b'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-5-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/research/http-warm-transport.md'
@@ -287,6 +287,53 @@ Abbreviations:
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 43 findings — high 0, medium 9, low 16, false 18, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) An h2 demand/retry dial replaces the primary but leaves `watched` on the keeper's connection, causing churn and an unwatched primary — confirmed in `Pool::open` `(Use::Demand, Sender::H2)`: the old watched connection loses its only pooled sender, closes, wakes the keeper, whose redial replaces the demand primary; patch: the demand arm also sets `state.watched = Some(id)`.
+  - `[low]` `[patch]` (blind) The keeper's `Notify` permit causes back-to-back redials — confirmed: `notify_one()` stores a permit while `keep` is dialing, so several shard network losses yield a second dial that discards the new connection; patch: drain a stale permit after a successful dial, redial only if `watched` was cleared.
+  - `[low]` `[reject]` (blind) Back-off resets after each successful dial, so an upstream that closes right after the handshake is redialed in a tight loop — real but the reset after a successful handshake is the spec's rule, it needs a misbehaving upstream (not Discord), and the fix adds connection-lifetime state.
+  - `[medium]` `[patch]` (blind) No bound covers a whole dial; DNS is untimed, and warm-up/hedge bounds assume one exists — the sequential 3-address × `connect_timeout` part is the spec's rule, but the DNS wait has no edge-side bound (see the grouped DNS rows below); patch: bound the DNS wait and fall back to the stale answer.
+  - `[false]` (blind) Without an IO driver the listener stays bound and requests hang — `TcpListener::from_std(listener)` consumes the std listener inside the `catch_unwind` closure, so a panic or error drops (closes) it; clients are refused, as the spec requires.
+  - `[low]` `[reject]` (blind) A missing platform TLS verifier is only an `error!` log and every request then 502s — the cause is logged at `error` and `run` fails with `GatewayInfo{status: None}`; turning it into a `BuildViolation` adds public surface for a rare misconfiguration, and the `ServerName` fallback is unreachable dead code.
+  - `[false]` (blind) The forwarder buffers bodies up to 512 MiB with no concurrency cap — the buffered body and the 512 MiB cap are the spec's deliberate choice (retry needs the body; Discord's largest upload tier is 500 MiB); the listener is loopback-only.
+  - `[low]` `[reject]` (blind) The DNS background refresh is a bare `tokio::spawn` not tied to the cancel token — real, but the task only lives until one resolver lookup returns and holds no connection; nobody meets it in use, and the fix plumbs the token into `DnsCache`.
+  - `[medium]` `[patch]` (blind) `connect/tests.rs` is empty, so authority/URI logic is untested — confirmed (one blank line); grouped with the verification-gap dialer row; patch: add table tests for `split_authority`, `authority`, `to_request` and multi-address fallback.
+  - `[false]` (blind) The callback path re-pools an HTTP/1.1 connection whose body read failed, and truncates success bodies — `release` pools only after `sender.ready()` resolves `Ok`, which an errored or partly-read (dropped body) h1 connection never does; the 1 MiB success-body cap is the spec's rule.
+  - `[false]` (blind) New Discord limits are not added to `docs/discord-rules.md`/`noctis-rules`, and the message cites a pending INT-01 — the spec's Never list forbids touching `docs/discord-rules.md` (the INT-01/INT-13/RL-01 rows already name the edge), and the exact `AckDeadlineMissed` message with "INT-01" is spec-mandated; only test names may not cite the pending rules.
+  - `[low]` `[patch]` (blind) `Timed` records `total` only when the body ends; dropped bodies record nothing — confirmed, no `Drop` impl; patch: `impl Drop for Timed` calling `finish()`.
+  - `[low]` `[reject]` (blind) The forwarder has no deadline of its own and keeps working after twilight gives up — reachable only when the dial phases together exceed twilight's 10 s (several black-holed addresses); the fix plumbs `http_timeout` into the edge.
+  - `[false]` (blind) `HOP_BY_HOP` omits `proxy-authorization`/`proxy-authenticate` — the spec fixes the hop-by-hop list, and twilight (the edge's only client) never sends these headers.
+  - `[false]` (blind) Ping timeouts are detected by display text with no test pinning it — `is_ping_timeout` checks `is_timeout()` first, and the E2E `black_hole_is_redialed_before_the_callback` asserts `noctis_http_ping_timeouts_total` +1 against a real hyper keep-alive timeout, so a hyper wording change fails CI.
+  - `[low]` `[patch]` (edge) A huge 429 `retry_after` overflows `Instant + Duration` and panics — confirmed at `callback.rs` `RateLimited` branch (`try_from_secs_f64` accepts 1e19 s); patch: `checked_add`.
+  - `[low]` `[patch]` (edge) A keeper connection whose driver ends before `open` sets `watched` is never redialed — confirmed: `spawn_driver` runs before the lock; patch: place the connection and set `watched` first, then spawn the driver.
+  - `[medium]` `[patch]` (edge) An h2 demand/retry dial replaces the primary while `watched` still names the old connection — same root cause as the first blind row; patch shared.
+  - `[false]` (edge) A remote GOAWAY error on a stream at or below `last_stream_id` is treated as retry-safe — in h2 0.4.20 `recv_go_away` fails only streams with `id > last_stream_id` with the remote GOAWAY error; a later EOF closes the rest with `BrokenPipe`, which `refused()` classifies as unsafe.
+  - `[low]` `[patch]` (edge) A non-fitting 429 on attempt 1 followed by a failed hedge returns `Transport`/`Rejected` instead of `AckDeadlineMissed` — confirmed in `race` (`last` is overwritten by the later `Retryable`); the epic requires `AckDeadlineMissed` for a 429 that does not fit; patch: remember the non-fitting 429 and return `Err(None)`.
+  - `[false]` (edge) 40060 is counted under the hedge metric without a hedge — Matrix 31 explicitly requires `outcome="40060"` +1 for the single-attempt 40060 case.
+  - `[low]` `[patch]` (edge) A stored `Notify` permit causes a spurious redial after a fresh dial — same root cause as the blind `Notify` row; patch shared.
+  - `[medium]` `[patch]` (edge) An expired DNS entry with a slow or failing resolver makes every dial wait the full resolver timeout before the stale answer — confirmed in `DnsCache::lookup` (expired entries await the flight unbounded; a failed refresh does not update the entry); grouped with the DNS-bound rows; patch: bound the wait, serve stale on timeout.
+  - `[medium]` `[patch]` (edge) A hanging DNS lookup leaves the dial phase unbounded — confirmed: `Dialer::dial` awaits `dns.lookup` with no timeout; same root cause as the previous row; patch shared.
+  - `[low]` `[reject]` (edge) The warm-up bound `connect_timeout + 6 s` is shorter than a worst-case dial — real only with several black-holed addresses, and then `GET /gateway/bot` merely opens a demand connection; the bound is the spec's own formula, so the fix edits the spec.
+  - `[medium]` `[patch]` (edge, claim) A demand-dialed h2 primary that dies is never redialed — same root cause as the first blind row; patch shared.
+  - `[medium]` `[patch]` (verification gap) A non-proxied App keeping twilight's local rate limiter is untested — pre-verified; patch: unit test in `app/tests.rs` for `ratelimiter().is_some()` without `http_proxy` and `is_none()` with it.
+  - `[low]` `[patch]` (verification gap) A real upstream 502 keeping `GatewayInfo{status: Some(502)}` is untested — pre-verified; patch: a fake `/gateway/bot` 502 with a Discord body and an assertion of `Some(502)`.
+  - `[low]` `[patch]` (verification gap) HTTP/1.1 idle reuse is never exercised by a second request — pre-verified; patch: an h1 variant of `phases_and_reuse` in `edge/tests.rs`.
+  - `[medium]` `[patch]` (verification gap) The dialer's multi-address fallback and per-address `connect_timeout` are untested — pre-verified; grouped with the empty `connect/tests.rs` row; patch shared.
+  - `[low]` `[patch]` (verification gap) The callback retry on a fresh connection (`hedge` reason) is not asserted — pre-verified; patch: assert distinct connection ids and a `reason="hedge"` delta of 1 in `server_errors_and_transport`.
+  - `[low]` `[patch]` (verification gap, other) A non-fitting 429 then a failed other attempt returns `Rejected`/`Transport` — same root cause as the edge 429 row; patch shared.
+  - `[low]` `[patch]` (verification gap, other) The fake's black-holed `poll_read` returns `Pending` on EOF without a wake-up — confirmed in `fake/http.rs`; the connection never reports `closed_at`; patch: return `Ready(Ok(()))` on EOF.
+  - `[false]` (intent) The shard network-loss redial fires at disconnect, not reconnect, and is tested only by a counter — Matrix 24 settles both the trigger (`Disconnected{close_code: None}`) and the crate-internal counter; the keeper's back-off retries until the network returns, so the reconnect outcome holds.
+  - `[false]` (intent) A forwarded request stalled after write has no bound besides twilight's — research §6 (the source of the AC) defines the "per-phase timeouts" as the dial bounds and keeps twilight's timeout for normal requests; the spec settles this ("twilight's own timeout still applies"), and detected post-write failures answer 502 at once (Matrix 15).
+  - `[false]` (intent) "No test-only branch in core" vs the `__testing` seam — the forwarder that every smoke test uses has no test branch; the doc-hidden seam is spec-settled (and `keep_warm` only starts the production keeper), logged as a memlog decision.
+  - `[false]` (intent) The callback body is not built from twilight-model types end to end — the spec fixes the seam signature to `body: Bytes`, and Matrix 26 compares the sent body with `InteractionResponse`'s serde_json bytes; `CallbackBody::json` is one serde_json call for Story 6.5.
+  - `[false]` (intent) Metric label sets add `demand`, `lost` and `requests_total`, and a callback retry counts as `hedge` — all are in the spec's metric list and Design Notes (`METRICS.len() == 13`), and the retry-on-fresh-connection reason is a logged decision.
+  - `[false]` (intent) The `noctis.http` span lacks phase/reason/outcome fields — the spec fixes the span's field set (`app, kind, method, attempt, reused, status_class`) deliberately.
+  - `[false]` (intent) The forwarder strips hop-by-hop headers, rewrites `Host`, caps bodies and rejects dot segments — each is a spec rule (a proxy must drop hop-by-hop headers; the path filter is a security bound).
+  - `[false]` (intent) The DNS stale window runs from the answer's expiry rather than the last resolution — Matrix 43 (TTL 60 s, 3600 + 59 s served, 3600 + 61 s fails) is only satisfiable with `last_success = fetched_at + ttl`, so the spec selected this reading.
+  - `[false]` (intent) The edge 502 is remapped to `GatewayInfo{status: None}` by body prefix — spec contract and Design Notes ("Edge 502 marker") settle it.
+  - `[false]` (intent) The callback deadline guarantee is not on a production path yet — the epic and the spec's Never list scope Responder wiring to Story 6.5.
+
 ## Design Notes
 
 - **Why a loopback forwarder:** `proxy(.., true)` is twilight's only transport hook (research §1.5). It gives full control without a fork, and the fakes keep using the same production path (AD-24).
@@ -318,3 +365,12 @@ Abbreviations:
 - `cargo +1.91 check --release --workspace --all-targets` and `cargo deny check`: expected exit 0, and `cargo tree -i aws-lc-rs` must find nothing.
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`, `-- deps-check`, `-- rules-catalog` and `-- skill-check`: each must exit 0.
 - `test ! -d target/debug`: expected true.
+
+## Auto Run Result
+
+- **Summary:** Story 5.9 adds a warm, deadline-safe Discord HTTP edge in `noctis-core::edge`: a loopback forwarder behind twilight's `proxy(.., true)` hook, an own hyper `conn` pool (HTTP/2 primary + HTTP/1.1), a keeper that warms up at `run` and redials on loss/PING timeout with back-off, hickory DNS cache with TTL refresh and bounded stale serving, per-phase dial timeouts, PING RTT sniffer, a crate-internal interaction-callback path with hedging/429 deadline logic (`AckDeadlineMissed`), 13 `noctis_http_*` metrics, and public HTTP config on the App builder (local rate limiter dropped when proxied).
+- **Files changed:** `crates/noctis-core/src/edge/{mod,callback,config,connect,dns,metrics,pool,sniff,testing,test_support}.rs` (+ unit tests) — the edge; `error.rs`, `observe.rs`, `lib.rs`, `handler.rs`, `app/tests.rs` — error variants, metrics registration, wiring; `noctis-testkit/src/fake{,/http}.rs`, `tests/http_edge.rs` — fake upstream (h2/h1, black-hole, GOAWAY) and E2E suite; `tests/observability.rs`, `tests/shutdown.rs`, `noctis/src/lib.rs`, `noctis/tests/http_config.rs` — re-exports and config tests; `examples/project-template/**` and the noctis usage skill — API docs; `xtask/public-api.txt` — re-blessed snapshot.
+- **Review findings (43):** high 0, medium 9, low 16, false 18. Patched: medium 9 (4 root causes: h2 demand dial left `watched` on the old connection; unbounded DNS wait / stale fallback; dialer multi-address and authority tests; rate-limiter-off-when-proxied test), low 12 (Notify stale permit, `Timed` drop, 429 `checked_add`, keeper driver/watch ordering, non-fitting 429 then failed hedge returns `AckDeadlineMissed`, upstream 502 test, h1 reuse test, hedge reason assertion, fake black-hole EOF wake-up). Deferred: none. Rejected (low 4): back-off reset after handshake (spec rule, needs misbehaving upstream); missing TLS verifier only logged (rare, avoids public surface); DNS refresh task not tied to cancel token (short-lived, no connection held); forwarder has no own deadline / warm-up bound shorter than worst-case multi-blackhole dial (spec formula, twilight timeout applies). 18 false findings rejected as spec-settled or disproven (see Review Triage Log).
+- **Follow-up review recommended: true** — first pass patched 9 medium (0 high). Named risk: the pool/keeper patches (h2 demand dial now sets `watched`, driver spawned after placement, stale Notify permit drained) change connection-ownership concurrency and the bounded-DNS stale fallback is new logic; both deserve an independent re-review for races and redial churn.
+- **Verification:** all local gates green via gates.sh (cargo fmt, clippy --release -D warnings, test --release, cargo hack --each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91 check). CI paused by maintainer.
+- **Residual risks:** rejected low items above (tight redial loop vs. misbehaving upstream, untied DNS refresh task, multi-blackhole dial exceeding warm-up bound); callback path not on a production route until Story 6.5 wires the Responder.

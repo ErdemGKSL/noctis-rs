@@ -474,6 +474,33 @@ async fn upstream_refused_is_502() {
     );
 }
 
+/// A real upstream 502 (a Discord body, not the edge's) keeps its status.
+#[tokio::test(flavor = "multi_thread")]
+async fn upstream_502_keeps_its_status() {
+    let _serial = serial().await;
+    let _ = globals();
+    let fake = FakeDiscordHttp::start().await.unwrap();
+    fake.route(
+        Method::GET,
+        "/gateway/bot",
+        FakeResponse::json(
+            StatusCode::BAD_GATEWAY,
+            &json!({ "message": "502: Bad Gateway", "code": 0 }),
+        ),
+    );
+    let app = builder(&fake).build().unwrap();
+    let outcome = tokio::time::timeout(WAIT, app.run_until(std::future::pending()))
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            outcome,
+            Err(Error::Start(StartError::GatewayInfo { status: Some(502) }))
+        ),
+        "{outcome:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn post_write_failure_is_not_retried() {
     let _serial = serial().await;
@@ -1081,7 +1108,7 @@ async fn other_client_errors_are_rejected() {
 #[tokio::test(flavor = "multi_thread")]
 async fn server_errors_and_transport() {
     let _serial = serial().await;
-    let _ = globals();
+    let (_, snapshotter) = globals();
     let unavailable = FakeResponse::empty(StatusCode::SERVICE_UNAVAILABLE);
     let fake = FakeDiscordHttp::start().await.unwrap();
     sequence(
@@ -1092,8 +1119,21 @@ async fn server_errors_and_transport() {
         ],
     );
     let app = builder(&fake).build().unwrap();
+    let before = Metrics::take(snapshotter);
     assert!(cb(&app, Duration::ZERO).await.is_ok());
-    assert_eq!(callbacks(&fake).len(), 2);
+    let requests = callbacks(&fake);
+    assert_eq!(requests.len(), 2);
+    assert_ne!(requests[1].connection, requests[0].connection);
+    let after = Metrics::take(snapshotter);
+    assert_eq!(
+        delta(
+            &before,
+            &after,
+            "noctis_http_connections_total",
+            Some(("reason", "hedge"))
+        ),
+        1
+    );
 
     let fake = FakeDiscordHttp::start().await.unwrap();
     fake.route(Method::POST, CB, unavailable);

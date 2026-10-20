@@ -213,3 +213,29 @@ async fn empty_answer_is_stale_served() {
     at(start, 31).await;
     assert_eq!(cache.lookup("h").await.unwrap(), [A]);
 }
+
+/// A slow, failing resolver cannot hold an expired entry's caller past the
+/// bound: the stale answer comes back at 2 s, and past the stale window the
+/// lookup fails with `TimedOut`.
+#[tokio::test(start_paused = true)]
+async fn expired_wait_is_bounded() {
+    let script = Script::new(|at| {
+        if at < Duration::from_secs(1) {
+            (Duration::ZERO, answer(A, 60))
+        } else {
+            (Duration::from_secs(10), Err(io::Error::other("slow")))
+        }
+    });
+    let start = script.start;
+    let cache = cache(&script);
+    cache.lookup("h").await.unwrap();
+    at(start, 70).await;
+    let before = Instant::now();
+    assert_eq!(cache.lookup("h").await.unwrap(), [A]);
+    assert_eq!(before.elapsed(), EXPIRED_WAIT);
+    at(start, 3600 + 120).await;
+    let before = Instant::now();
+    let error = cache.lookup("h").await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert_eq!(before.elapsed(), EXPIRED_WAIT);
+}

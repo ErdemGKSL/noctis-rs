@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures_util::FutureExt;
 use http_body_util::Full;
 use hyper::client::conn::{http1, http2};
 use tokio::sync::{Notify, oneshot};
@@ -152,12 +153,14 @@ impl Pool {
         let dialed = self.dialer.dial().await?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         self.metrics().connection(reason);
-        self.spawn_driver(id, dialed.driver);
         let sender = dialed.sender;
         let mut state = self.lock();
-        Ok(match (use_, sender) {
+        let placed = match (use_, sender) {
             (Use::Demand, Sender::H2(sender)) => {
+                // The demand primary replaces the keeper's: watch it instead,
+                // so its close (not the dropped old one's) triggers a redial.
                 state.primary = Some((id, sender.clone()));
+                state.watched = Some(id);
                 Some(Sender::H2(sender))
             }
             (Use::Fresh | Use::Demand, sender) => Some(sender),
@@ -174,7 +177,12 @@ impl Pool {
                 state.watched = Some(id);
                 None
             }
-        })
+        };
+        drop(state);
+        // Spawned only after the connection is placed and watched, so a
+        // driver that ends at once still finds `watched == Some(id)`.
+        self.spawn_driver(id, dialed.driver);
+        Ok(placed)
     }
 
     /// Drives a connection until it closes or the edge is dropped.
@@ -233,6 +241,12 @@ impl Pool {
                 }
             }
         });
+    }
+
+    /// How many idle HTTP/1.1 connections are pooled.
+    #[cfg(test)]
+    pub(crate) fn idle_len(&self) -> usize {
+        self.lock().idle.len()
     }
 
     /// Asks the keeper to replace the watched connection.
@@ -331,6 +345,14 @@ async fn keep(
                 let _ = tx.send(failed.map_or(Ok(()), Err));
             }
             let Some(error) = failed else {
+                // A redial requested while this dial ran is already served by
+                // the new connection: drop its stored permit, unless that
+                // connection closed meanwhile.
+                let _ = pool.redial.notified().now_or_never();
+                if pool.lock().watched.is_none() {
+                    reason = Reason::Redial;
+                    continue;
+                }
                 break;
             };
             tracing::debug!(target: "noctis::http", %error, "upstream dial failed");

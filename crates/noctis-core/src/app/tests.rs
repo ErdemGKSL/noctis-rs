@@ -537,6 +537,16 @@ async fn run_multi_thread() {
 
 // ---- http_proxy (Story 5.2 Matrix 9-11) ----
 
+/// Every client goes through the edge, but only `.http_proxy` drops
+/// twilight's local rate limiter.
+#[tokio::test]
+async fn ratelimiter_kept_without_http_proxy() {
+    let app = App::builder().build().unwrap();
+    assert!(app.http().ratelimiter().is_some());
+    let app = App::builder().http_proxy("p:1").build().unwrap();
+    assert!(app.http().ratelimiter().is_none());
+}
+
 #[tokio::test]
 async fn http_proxy_wiring() {
     let app = App::builder().http_proxy("http://p:1").build().unwrap();

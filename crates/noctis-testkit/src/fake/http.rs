@@ -222,7 +222,10 @@ impl AsyncRead for FakeIo {
             loop {
                 let mut sink = ReadBuf::new(&mut scratch);
                 match Pin::new(&mut this.inner).poll_read(cx, &mut sink) {
-                    Poll::Ready(Ok(())) if sink.filled().is_empty() => return Poll::Pending,
+                    // EOF: the client closed; let the server see the end.
+                    Poll::Ready(Ok(())) if sink.filled().is_empty() => {
+                        return Poll::Ready(Ok(()));
+                    }
                     Poll::Ready(Ok(())) => {}
                     Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
                     Poll::Pending => return Poll::Pending,

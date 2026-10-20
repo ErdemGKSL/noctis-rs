@@ -15,6 +15,9 @@ use tokio::time::Instant;
 /// How long past its TTL a cached answer is still served when the resolver
 /// fails.
 const STALE_MAX: Duration = Duration::from_hours(1);
+/// How long a caller waits on the lookup of an expired entry before the
+/// stale rule applies, so a slow resolver cannot eat the ack deadline.
+const EXPIRED_WAIT: Duration = Duration::from_secs(2);
 
 /// One resolver answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,8 +124,9 @@ struct CacheInner {
 ///
 /// A fresh answer is returned from the cache; from 75 % of its TTL on, one
 /// background refresh starts (single-flight). An expired answer makes
-/// callers await one shared lookup. A failed or empty lookup serves the
-/// cached answer for up to 1 h past its TTL, else it is an error.
+/// callers await one shared lookup for at most 2 s. A failed, empty or
+/// timed-out lookup serves the cached answer for up to 1 h past its TTL,
+/// else it is an error.
 #[derive(Clone)]
 pub(crate) struct DnsCache {
     inner: Arc<CacheInner>,
@@ -162,12 +166,29 @@ impl DnsCache {
                     return Ok(addrs);
                 }
             }
-            entry
+            let expired = entry.cached.is_some();
+            let flight = entry
                 .inflight
-                .get_or_insert_with(|| self.flight(host))
-                .clone()
+                .get_or_insert_with(|| {
+                    // Spawned, so a late answer still fills the cache after
+                    // a bounded waiter gave up.
+                    let flight = self.flight(host);
+                    tokio::spawn(flight.clone());
+                    flight
+                })
+                .clone();
+            (flight, expired)
         };
-        flight.await.map_err(io::Error::from)
+        match flight {
+            (flight, false) => flight.await.map_err(io::Error::from),
+            (flight, true) => match tokio::time::timeout(EXPIRED_WAIT, flight).await {
+                Ok(answer) => answer.map_err(io::Error::from),
+                Err(_) => self.inner.stale(host).ok_or_else(|| {
+                    tracing::debug!(target: "noctis::http", "DNS lookup timed out");
+                    io::ErrorKind::TimedOut.into()
+                }),
+            },
+        }
     }
 
     /// A shared lookup that stores its answer (or applies the stale rule)
@@ -187,6 +208,16 @@ impl DnsCache {
 impl CacheInner {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
         self.entries.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The cached answer of `host` while it may still be served stale.
+    fn stale(&self, host: &str) -> Option<Vec<IpAddr>> {
+        let now = Instant::now();
+        self.lock()
+            .get(host)
+            .and_then(|entry| entry.cached.as_ref())
+            .filter(|cached| now.saturating_duration_since(cached.last_success) <= STALE_MAX)
+            .map(|cached| cached.addrs.clone())
     }
 
     /// Stores a lookup's outcome and returns what callers get.

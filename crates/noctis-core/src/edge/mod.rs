@@ -463,7 +463,7 @@ fn relay(
     Response::from_parts(parts, body.boxed())
 }
 
-/// A body that records `total` when it ends (or fails).
+/// A body that records `total` when it ends, fails or is dropped.
 struct Timed {
     inner: Incoming,
     done: Option<(EdgeMetrics, Instant)>,
@@ -474,6 +474,14 @@ impl Timed {
         if let Some((metrics, started)) = self.done.take() {
             metrics.phase(Phase::Total, started.elapsed());
         }
+    }
+}
+
+/// A body dropped early (twilight's timeout, a cancelled request) still
+/// records its `total`.
+impl Drop for Timed {
+    fn drop(&mut self) {
+        self.finish();
     }
 }
 

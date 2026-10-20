@@ -242,9 +242,11 @@ async fn race(
     let mut hedge_slot: Option<usize> = None;
     let mut used = 1_u8;
     let mut last: Option<CallbackError> = None;
+    // A 429 that did not fit decides the result, whatever ends after it.
+    let mut unfit_429 = false;
     loop {
         if slots.iter().all(Option::is_none) {
-            return Err(last);
+            return Err(if unfit_429 { None } else { last });
         }
         let can_hedge = used < 2 && hedge_at.is_some();
         let [first, second] = &mut slots;
@@ -284,14 +286,18 @@ async fn race(
                 return Err(Some(CallbackError::Rejected { status, code }));
             }
             Outcome::RateLimited(retry_after) => {
-                let fits = retry_after.filter(|wait| Instant::now() + *wait < deadline);
+                let fits = retry_after.filter(|wait| {
+                    Instant::now()
+                        .checked_add(*wait)
+                        .is_some_and(|at| at < deadline)
+                });
                 match fits {
                     Some(wait) if used < 2 => {
                         used = 2;
                         hedge_at = None;
                         slots[index] = Some(attempt(pool, outgoing, Conn::Pooled, 2, Some(wait)));
                     }
-                    _ => last = None,
+                    _ => unfit_429 = true,
                 }
                 if slots.iter().all(Option::is_none) {
                     return Err(None);

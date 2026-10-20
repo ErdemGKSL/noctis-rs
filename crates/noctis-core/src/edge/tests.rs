@@ -505,3 +505,86 @@ fn end_to_end_keeps_order() {
         .collect();
     assert_eq!(names, [("x-a", "1"), ("x-a", "3")]);
 }
+
+/// `Outgoing::to_request`: an absolute URI and no `host` over h2, the
+/// origin form with the upstream `host` over HTTP/1.1.
+#[tokio::test]
+async fn to_request_forms() {
+    for h2 in [true, false] {
+        let server = TestServer::start(h2).await;
+        let config = HttpConfig::default();
+        let dialer = Dialer {
+            upstream: Upstream::http(&server.authority(), h2),
+            dns: DnsCache::new(
+                Arc::new(SystemResolver::default()),
+                config.dns_ttl_floor,
+                config.dns_ttl_cap,
+            ),
+            config,
+            metrics: EdgeMetrics::new(Arc::from("default")),
+        };
+        let pool = Pool::new(dialer, CancellationToken::new());
+        let conn = pool.dialer.dial().await.unwrap();
+        let mut headers = HeaderMap::new();
+        headers.append(header::HOST, HeaderValue::from_static("127.0.0.1:1"));
+        headers.append("x-a", HeaderValue::from_static("1"));
+        let outgoing = Outgoing {
+            method: Method::POST,
+            target: "/api/v10/a?b=%31".to_owned(),
+            headers,
+            body: Bytes::from_static(b"body"),
+        };
+        let request = outgoing.to_request(&pool, &conn.sender).unwrap();
+        assert_eq!(request.method(), Method::POST);
+        assert_eq!(request.headers()["x-a"], "1");
+        if h2 {
+            assert_eq!(
+                request.uri().to_string(),
+                format!("http://{}/api/v10/a?b=%31", server.authority())
+            );
+            assert!(!request.headers().contains_key(header::HOST));
+        } else {
+            assert_eq!(request.uri().to_string(), "/api/v10/a?b=%31");
+            assert_eq!(request.headers()[header::HOST], server.authority().as_str());
+        }
+    }
+}
+
+/// Matrix 48 over HTTP/1.1: a released idle connection serves the next
+/// request.
+#[tokio::test]
+async fn h1_idle_reuse() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _guard = ::metrics::set_default_local_recorder(&recorder);
+    let server = TestServer::start(false).await;
+    let edge = start(Upstream::http(&server.authority(), false));
+    raw(edge.local_addr(), &get("/api/v10/a")).await;
+    let first = samples(&snapshotter);
+    let demand = |s: &[_]| {
+        count(
+            s,
+            "noctis_http_connections_total",
+            Some(("reason", "demand")),
+        )
+    };
+    let reused = |s: &[_]| count(s, "noctis_http_conn_reused_total", Some(("reused", "true")));
+    assert_eq!(demand(&first), 1);
+    assert_eq!(reused(&first), 0);
+    // The release task pools the connection once its response finished.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while edge.pool.idle_len() == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    raw(edge.local_addr(), &get("/api/v10/b")).await;
+    // The debugging recorder resets counters on snapshot: no new dial.
+    let second = samples(&snapshotter);
+    assert_eq!(demand(&second), 0);
+    assert_eq!(reused(&second), 1);
+    let seen = server.seen();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].conn, seen[1].conn);
+}
