@@ -56,18 +56,22 @@ fn short(reason: &String, _ctx: &CommandCtx) -> Result<(), MessageKey> {
 static WARNED: Mutex<Vec<W>> = Mutex::new(Vec::new());
 
 #[command("warn", description = "Warn a member")]
-async fn warn(_ctx: CommandCtx, options: W) -> HandlerResult<()> {
+async fn warn(_ctx: CommandCtx, options: W) -> HandlerResult<noctis::ui::LegacyMessage> {
     WARNED.lock().unwrap().push(options);
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[derive(Options, Debug, Clone, PartialEq)]
 struct Empty {}
 
 #[command("mod (ban|kick)", description = "Moderate")]
-async fn moderate(_ctx: CommandCtx, path: ModeratePath, options: Kind) -> HandlerResult<()> {
+async fn moderate(
+    _ctx: CommandCtx,
+    path: ModeratePath,
+    options: Kind,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
     KINDS.lock().unwrap().push((path, options.severity));
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[derive(Choices, Debug, Clone, Copy, PartialEq)]
@@ -87,8 +91,8 @@ struct Kind {
 static KINDS: Mutex<Vec<(ModeratePath, Severity)>> = Mutex::new(Vec::new());
 
 #[command("ping", description = "Ping")]
-async fn ping(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn ping(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 fn suggest() {}
@@ -129,7 +133,7 @@ struct Ids {
 static IDS: Mutex<Vec<[u64; 5]>> = Mutex::new(Vec::new());
 
 #[command("ids", description = "d")]
-async fn ids(_ctx: CommandCtx, o: Ids) -> HandlerResult<()> {
+async fn ids(_ctx: CommandCtx, o: Ids) -> HandlerResult<noctis::ui::LegacyMessage> {
     IDS.lock().unwrap().push([
         o.user.get(),
         o.channel.get(),
@@ -137,7 +141,7 @@ async fn ids(_ctx: CommandCtx, o: Ids) -> HandlerResult<()> {
         o.mentionable.get(),
         o.attachment.get(),
     ]);
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[derive(Options)]
@@ -149,14 +153,14 @@ struct Who {
 static WHO: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
 
 #[command("who", description = "d")]
-async fn who(_ctx: CommandCtx, o: Who) -> HandlerResult<()> {
+async fn who(_ctx: CommandCtx, o: Who) -> HandlerResult<noctis::ui::LegacyMessage> {
     let kind = match o.who {
         Mentionable::User(_) => "user",
         Mentionable::Role(_) => "role",
         _ => "other",
     };
     WHO.lock().unwrap().push(kind);
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[derive(Options)]
@@ -167,8 +171,8 @@ struct Ratio {
 }
 
 #[command("ratio", description = "d")]
-async fn ratio(_ctx: CommandCtx, _o: Ratio) -> HandlerResult<()> {
-    Ok(())
+async fn ratio(_ctx: CommandCtx, _o: Ratio) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 fn user(id: &str) -> Value {
@@ -554,9 +558,9 @@ fn loud(quiet: &bool, _ctx: &CommandCtx) -> Result<(), MessageKey> {
 static RENAMED: Mutex<Vec<(i64, bool)>> = Mutex::new(Vec::new());
 
 #[command("renamed", description = "d")]
-async fn renamed(_ctx: CommandCtx, o: Renamed) -> HandlerResult<()> {
+async fn renamed(_ctx: CommandCtx, o: Renamed) -> HandlerResult<noctis::ui::LegacyMessage> {
     RENAMED.lock().unwrap().push((o.r#type, o.quiet));
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 /// Matrix 9 at runtime: raw idents and `rename` decode by option name.
@@ -588,9 +592,9 @@ struct Required {
 static REQUIRED: Mutex<Vec<i64>> = Mutex::new(Vec::new());
 
 #[command("required", description = "d")]
-async fn required(_ctx: CommandCtx, o: Required) -> HandlerResult<()> {
+async fn required(_ctx: CommandCtx, o: Required) -> HandlerResult<noctis::ui::LegacyMessage> {
     REQUIRED.lock().unwrap().push(o.count);
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 /// Matrix 67 on a required field.

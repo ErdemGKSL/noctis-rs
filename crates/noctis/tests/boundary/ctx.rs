@@ -6,18 +6,27 @@ use noctis::prelude::*;
 use noctis::ui::{ResolvedMessage, ResolvedUser};
 
 #[user_command("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-async fn ctx_01_32_chars(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<()> {
-    Ok(())
+async fn ctx_01_32_chars(
+    _ctx: CommandCtx,
+    _target: ResolvedUser,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[message_command("😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀")]
-async fn ctx_01_16_emoji(_ctx: CommandCtx, _target: ResolvedMessage) -> HandlerResult<()> {
-    Ok(())
+async fn ctx_01_16_emoji(
+    _ctx: CommandCtx,
+    _target: ResolvedMessage,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[user_command("x")]
-async fn ctx_01_one_char(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<()> {
-    Ok(())
+async fn ctx_01_one_char(
+    _ctx: CommandCtx,
+    _target: ResolvedUser,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[test]

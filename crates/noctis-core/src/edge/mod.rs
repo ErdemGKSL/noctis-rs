@@ -17,7 +17,7 @@ mod metrics;
 mod pool;
 mod sniff;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 pub(crate) mod testing;
 
 use std::convert::Infallible;

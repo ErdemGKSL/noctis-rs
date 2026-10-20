@@ -16,12 +16,14 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::Instrument;
 use tracing::field::Empty;
+use twilight_model::application::interaction::InteractionType;
 use twilight_model::gateway::event::Event;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
 use crate::events::EventCtx;
 use crate::handler::{AppShared, HandlerResult};
+use crate::pipeline::run_interaction;
 use crate::registry::{Entry, Handlers, Registry};
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
 
@@ -122,6 +124,27 @@ impl Workers {
         self.ordered.len()
     }
 
+    /// Hands one interaction to the Command pipeline as one task on the
+    /// tracker (never taking a permit); any other interaction is traced and
+    /// dropped until its pipeline lands (Epic 7, Story 6.7).
+    fn interaction(&self, inbound: Inbound) {
+        let command = matches!(
+            &inbound.kind,
+            InboundKind::Interaction(interaction, _)
+                if interaction.kind == InteractionType::ApplicationCommand
+        );
+        if command {
+            self.shutdown.tracker.spawn(run_interaction(
+                Arc::clone(&self.registry),
+                Arc::clone(&self.app),
+                inbound,
+                self.shutdown.cancel.clone(),
+            ));
+        } else {
+            interaction_unhandled(inbound, &self.app.app);
+        }
+    }
+
     /// Hands one event to its handlers; never awaits.
     fn dispatch(&self, shard: u32, event: Event, permit: OwnedSemaphorePermit) {
         let kind = event.kind();
@@ -192,7 +215,7 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
                     tokio::select! {
                         biased;
                         () = cancel.cancelled() => return discard(&receiver, 1),
-                        Some(interaction) = receiver.recv_interaction() => interaction_unhandled(interaction, &workers.app.app),
+                        Some(interaction) = receiver.recv_interaction() => workers.interaction(interaction),
                         permit = Arc::clone(&workers.semaphore).acquire_owned() => break permit,
                     }
                 };
@@ -200,7 +223,7 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
                 let Ok(permit) = permit else { return };
                 workers.dispatch(shard, *event, permit);
             }
-            _ => interaction_unhandled(inbound, &workers.app.app),
+            _ => workers.interaction(inbound),
         }
     }
 }
@@ -221,9 +244,8 @@ fn discard(receiver: &LaneReceiver, waiting: usize) {
     }
 }
 
-/// Handles one interaction in span `noctis.interaction` (Epic 6 records
-/// its `module` and `path`). No interaction handler exists before Epic 6:
-/// traced and dropped.
+/// Handles one interaction without a pipeline yet (components, modals,
+/// autocomplete, pings) in span `noctis.interaction`: traced and dropped.
 fn interaction_unhandled(inbound: Inbound, app: &str) {
     let shard = inbound.shard.number();
     let guild_id = match &inbound.kind {

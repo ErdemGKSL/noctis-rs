@@ -4,8 +4,8 @@ use noctis::prelude::*;
     description = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     max_expansions = 64
 )]
-async fn h(_ctx: CommandCtx, _path: HPath) -> HandlerResult<()> {
-    Ok(())
+async fn h(_ctx: CommandCtx, _path: HPath) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 fn main() {}

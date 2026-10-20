@@ -20,6 +20,7 @@ use noctis_ports::{
     AssetStore, CacheStore, DiscordCache, GuildAccessList, IdentifyQueue, LocaleSource,
     ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, SessionStore,
 };
+use noctis_rules::Limits;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use twilight_model::gateway::Intents;
@@ -199,6 +200,21 @@ impl App {
         self.http_timeout
     }
 
+    /// The Limits every Responder validates outgoing messages against
+    /// ([`AppBuilder::limits`]; [`Limits::default`], Strict, when unset).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// use noctis_rules::Limits;
+    ///
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.limits(), &Limits::default());
+    /// # }
+    /// ```
+    pub fn limits(&self) -> &Limits {
+        &self.shared.limits
+    }
+
     /// The normalized HTTP proxy authority (`host[:port]`), if one was set.
     ///
     /// ```
@@ -224,6 +240,12 @@ impl App {
     }
 
     /// The App's Discord HTTP edge.
+    /// What every handler invocation shares with this App.
+    #[cfg(test)]
+    pub(crate) fn shared(&self) -> &Arc<AppShared> {
+        &self.shared
+    }
+
     pub(crate) fn edge(&self) -> &Edge {
         &self.shared.edge
     }
@@ -939,6 +961,7 @@ impl fmt::Debug for App {
             .field("handler_concurrency", &self.handler_concurrency)
             .field("shutdown_grace", &self.shutdown_grace)
             .field("error_sinks", &self.shared.sinks)
+            .field("limits", &self.shared.limits)
             .finish_non_exhaustive()
     }
 }
@@ -992,6 +1015,8 @@ pub struct AppBuilder {
     shutdown_grace: Duration,
     /// The custom Error Sinks, by origin.
     error_sinks: ErrorSinks,
+    /// The Limits every Responder validates against.
+    limits: Limits,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1037,6 +1062,7 @@ impl AppBuilder {
             handler_concurrency: DEFAULT_HANDLER_CONCURRENCY,
             shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
             error_sinks: ErrorSinks::default(),
+            limits: Limits::default(),
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -1119,6 +1145,24 @@ impl AppBuilder {
     /// ```
     pub fn intents(&mut self, intents: Intents) -> &mut Self {
         self.intents |= intents;
+        self
+    }
+
+    /// Sets the Limits every Responder validates outgoing messages against
+    /// before any HTTP request (default: [`Limits::default`], Strict). In
+    /// Lenient mode an over-long text is truncated with `…` instead of
+    /// failing with `ResponderError::Invalid`; the last call wins.
+    ///
+    /// ```
+    /// use noctis_rules::{LimitMode, Limits};
+    ///
+    /// let mut limits = Limits::default();
+    /// limits.mode = LimitMode::Lenient;
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.limits(limits);
+    /// ```
+    pub fn limits(&mut self, limits: Limits) -> &mut Self {
+        self.limits = limits;
         self
     }
 
@@ -1458,6 +1502,10 @@ impl AppBuilder {
     /// let app = noctis_core::App::builder().build()?;
     /// # Ok(()) }
     /// ```
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one linear pass: every check, then the App's parts"
+    )]
     pub fn build(&mut self) -> Result<App, BuildError> {
         self.install_plugins();
         if !HTTP_TIMEOUT_RANGE.contains(&self.http_timeout) {
@@ -1514,6 +1562,7 @@ impl AppBuilder {
         }
         let edge_listener = self.check_http();
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
+        let registry = Arc::new(registry);
         self.violations.extend(missing);
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
@@ -1543,6 +1592,8 @@ impl AppBuilder {
                 http: Arc::new(http),
                 states: config.states,
                 edge,
+                limits: config.limits,
+                registry: Arc::clone(&registry),
             }),
             http_timeout: config.http_timeout,
             http_proxy,
@@ -1552,7 +1603,7 @@ impl AppBuilder {
             intents: config.intents | registry.intents(),
             ports: Ports::resolve(config.ports),
             renderer: config.renderer,
-            registry: Arc::new(registry),
+            registry,
             event_capacity,
             overflow_capacity: overflow,
             handler_concurrency: config.handler_concurrency,
@@ -1617,6 +1668,7 @@ impl fmt::Debug for AppBuilder {
             .field("handler_concurrency", &self.handler_concurrency)
             .field("shutdown_grace", &self.shutdown_grace)
             .field("error_sinks", &self.error_sinks)
+            .field("limits", &self.limits)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

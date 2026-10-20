@@ -81,7 +81,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.intents()` (the requested intents plus the ones your event handlers derive),
 `app.shutdown_grace()` (`Duration`, default 10 s),
 `app.http_config()` (`HttpConfig`, §5),
-`app.state::<T>()` (`Option<State<T>>`) and `app.has_renderer()`
+`app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`) and `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`).
 
 ### AppBuilder methods
@@ -126,7 +126,7 @@ Planned (signatures may change):
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` [planned] | none | from `AppBuilderImageExt` (`image` feature); installs the `ImagePlugin` (see `images.md`) |
-| `.limits(Limits)` [planned] | `Limits::default()` | strict mode; see `limits-cheatsheet.md` |
+| `.limits(Limits)` | `Limits::default()` (Strict) | the Limits every Responder validates outgoing messages against before any request; `LimitMode::Lenient` truncates over-long texts with `…` instead of failing with `ResponderError::Invalid`; the last call wins. Read back with `app.limits() -> &Limits`; see `limits-cheatsheet.md` |
 | `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |
 | `.presence(Presence)` [planned] | none | initial presence |
 | `.boot_flags(BootFlags)` [planned] | env/CLI | which flagged Modules exist this run |
@@ -212,8 +212,9 @@ token.
   interaction was not acknowledged within 2.9 s of its gateway receipt (Discord allows
   3 s; INT-01). Message: `"interaction not acknowledged in time: {elapsed:?} after
   receipt, past the 2.9 s ack deadline (Discord allows 3 s; INT-01): defer slow work"`.
-  The Responder returns it inside its own error [planned, Story 6.5]; defer slow work
-  instead of answering late.
+  The Responder returns it inside its own error
+  (`ResponderError::AckDeadlineMissed`, `responder.md` §4); defer slow work instead of
+  answering late.
 - `TokenError`: `Empty` (nothing after an optional `"Bot "` prefix), `InvalidChar {
   index }` (a character outside printable ASCII `!`..`~`, e.g. whitespace).
 
@@ -403,7 +404,8 @@ unanswered PING or a shard losing the network makes it redial with back-off. A r
 that never left (refused connection, refused stream) is retried once; one that may have
 reached Discord is not, and fails with a 502 instead of hanging (twilight's timeout
 still applies). Interaction callbacks bypass twilight's limiter on this connection,
-hedged once if no answer arrives in time [planned: the Responder, Story 6.5]. A twilight
+hedged once if no answer arrives in time (the Responder's `reply`/`defer`, `responder.md`
+§4); edits and follow-ups go through twilight with the interaction token. A twilight
 `Arc<Client>` kept after its App is dropped gets connection errors.
 
 `HttpConfig` (`#[non_exhaustive]`; start from `HttpConfig::default()` and set fields):

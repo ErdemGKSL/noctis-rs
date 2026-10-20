@@ -160,7 +160,9 @@ Module::new("profile").add(award_xp()).add(audit_join()).add(on_reaction());
 - **`EventCtx`** (cheap `Clone`): `shard() -> u32`, `guild_id() ->
   Option<Id<GuildMarker>>`, `module() -> &'static str` (the Module the handler was
   added to), `state::<T>() -> Option<State<T>>`, `http() -> &Arc<Client>` (the App's
-  one client). No Responder. Planned: `guild_locale()`, `kv()`, `cache()`,
+  one client), `dispatcher() -> &Dispatcher` (runs a registered Command and replies to
+  a message, e.g. a prefix command; `responder.md` §4.1). No Responder. Planned:
+  `guild_locale()`, `kv()`, `cache()`,
   `modules()` [planned].
 - **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
   'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the

@@ -104,7 +104,7 @@ pub fn config_key(guild: Id<GuildMarker>) -> String {
 #[command(
     "setup start",
     description = "Configure the bot for this server, step by step",
-    ephemeral,                  // [planned]: rejected until its release
+    ephemeral,
     permissions = MANAGE_GUILD,
     contexts = [Guild],
 )]

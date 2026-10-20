@@ -141,15 +141,23 @@ impl ErrorSink for Recording {
     }
 }
 
+/// A one-text V2 message body.
+pub(crate) fn msg() -> noctis_ui::Components {
+    noctis_ui::Components::new().push(noctis_ui::TextDisplay::new("ok"))
+}
+
 /// A chat-input handler named `name` serving `paths`, described `description`.
 pub(crate) fn command(
     name: &'static str,
     paths: &'static [&'static str],
     description: &'static str,
 ) -> crate::CommandHandler {
-    crate::CommandHandler::__new_plain(name, paths, description, |_: crate::CommandCtx| async {
-        Ok(())
-    })
+    crate::CommandHandler::__new_plain(
+        name,
+        paths,
+        description,
+        |_: crate::CommandCtx, _: crate::CommandResponder| async { Ok(msg()) },
+    )
 }
 
 /// [`command`] with `metadata`.
@@ -181,7 +189,9 @@ pub(crate) fn user_menu(
         name,
         menu,
         metadata,
-        |_: crate::CommandCtx, _: noctis_ui::ResolvedUser| async { Ok(()) },
+        |_: crate::CommandCtx, _: noctis_ui::ResolvedUser, _: crate::CommandResponder| async {
+            Ok(msg())
+        },
     )
 }
 
@@ -195,6 +205,8 @@ pub(crate) fn message_menu(
         name,
         menu,
         metadata,
-        |_: crate::CommandCtx, _: noctis_ui::ResolvedMessage| async { Ok(()) },
+        |_: crate::CommandCtx, _: noctis_ui::ResolvedMessage, _: crate::CommandResponder| async {
+            Ok(msg())
+        },
     )
 }

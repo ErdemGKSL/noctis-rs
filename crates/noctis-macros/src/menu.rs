@@ -11,7 +11,9 @@ use quote::{ToTokens, quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{FnArg, Ident, ItemFn, LitStr, ReturnType, Type};
 
-use crate::command::{arg_name, check_shape, segments, span_of};
+use crate::command::{
+    arg_name, check_shape, ephemerality_call, is_responder, parse_ephemeral, segments, span_of,
+};
 use crate::common::combine;
 use crate::meta::{self, MetaArgs};
 
@@ -53,7 +55,7 @@ impl Menu {
 
     fn signature(self) -> String {
         format!(
-            "`{}` handlers take `(ctx: CommandCtx, target: {})`",
+            "`{}` handlers take `(ctx: CommandCtx, target: {}[, r: CommandResponder])`",
             self.attr(),
             self.target()
         )
@@ -61,23 +63,17 @@ impl Menu {
 }
 
 /// Arguments later stories add.
-const PLANNED: [&str; 6] = [
-    "key",
-    "ephemeral",
-    "opens_modal",
-    "rate_limit",
-    "flags",
-    "apps",
-];
+const PLANNED: [&str; 5] = ["key", "opens_modal", "rate_limit", "flags", "apps"];
 
 const EXPECTED: &str =
-    "expected `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+    "expected `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
 
 const NO_DESCRIPTION: &str = "[CTX-02] context-menu commands have no description";
 
 /// The parsed arguments.
 struct Args {
     name: LitStr,
+    ephemeral: bool,
     meta: MetaArgs,
 }
 
@@ -102,6 +98,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         syn::parse2::<LitStr>(tokens).map_err(|_| syn::Error::new(span_of(&first), not_literal))?;
     let mut parsed = Args {
         name,
+        ephemeral: false,
         meta: MetaArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -116,6 +113,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         };
         match name.as_str() {
             "description" => return Err(syn::Error::new(span, NO_DESCRIPTION)),
+            "ephemeral" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -137,6 +135,10 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
             ));
         }
         seen.push(name.clone());
+        if name == "ephemeral" {
+            parsed.ephemeral = parse_ephemeral(&segment)?;
+            continue;
+        }
         if let Some(result) = parsed.meta.parse(&name, &segment) {
             result?;
         }
@@ -155,21 +157,23 @@ fn check_name(args: &Args) -> syn::Result<()> {
     combine(errors)
 }
 
-/// Exactly `(ctx, target: <Target>)`; more parameters are CTX-02 options.
-fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<()> {
+/// `(ctx, target: <Target>[, r: CommandResponder])`; any other parameter
+/// is a CTX-02 option. Whether the responder is taken.
+fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<bool> {
     let sig = &item.sig;
     let message = menu.signature();
     if let Some(receiver) = sig.receiver() {
         return Err(syn::Error::new_spanned(receiver, message));
     }
-    if sig.inputs.len() > 2 && sig.inputs.iter().all(|a| matches!(a, FnArg::Typed(_))) {
-        return Err(syn::Error::new(
-            sig.inputs.span(),
-            format!("[CTX-02] context-menu commands take no options: {message}"),
-        ));
-    }
-    let Some(FnArg::Typed(target)) = sig.inputs.iter().nth(1).filter(|_| sig.inputs.len() == 2)
-    else {
+    let typed: Vec<&syn::PatType> = sig
+        .inputs
+        .iter()
+        .filter_map(|a| match a {
+            FnArg::Typed(t) => Some(t),
+            FnArg::Receiver(_) => None,
+        })
+        .collect();
+    let Some(target) = typed.get(1) else {
         let span = if sig.inputs.is_empty() {
             sig.ident.span()
         } else {
@@ -188,10 +192,16 @@ fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<()> {
         }
         _ => false,
     };
-    if ok {
-        Ok(())
-    } else {
-        Err(syn::Error::new_spanned(&target.ty, message))
+    if !ok {
+        return Err(syn::Error::new_spanned(&target.ty, message));
+    }
+    match typed.as_slice() {
+        [_, _] => Ok(false),
+        [_, _, r] if is_responder(&r.ty) => Ok(true),
+        _ => Err(syn::Error::new(
+            sig.inputs.span(),
+            format!("[CTX-02] context-menu commands take no options: {message}"),
+        )),
     }
 }
 
@@ -201,7 +211,7 @@ pub(crate) fn expand(menu: Menu, args: TokenStream, item: TokenStream) -> syn::R
     let item: ItemFn = syn::parse2(item)?;
     check_shape(&item, menu.attr())?;
     check_name(&args)?;
-    check_params(menu, &item)?;
+    let responder = check_params(menu, &item)?;
 
     let ItemFn {
         attrs,
@@ -230,11 +240,34 @@ pub(crate) fn expand(menu: Menu, args: TokenStream, item: TokenStream) -> syn::R
     } else {
         args.meta.tokens()
     };
+    let id = |name: &str| Ident::new(name, output_span);
+    let (ctx, target, handler) = (
+        id("__noctis_ctx"),
+        id("__noctis_target"),
+        id("__noctis_menu"),
+    );
+    let adapter = if responder {
+        // Every parameter is passed through: the handler itself fits.
+        quote_spanned! {output_span=> #handler }
+    } else {
+        let skip = id("_");
+        quote_spanned! {output_span=> |#ctx, #target, #skip| #handler(#ctx, #target) }
+    };
+    let call = quote_spanned! {output_span=>
+        #new(::core::concat!(::core::module_path!(), "::", #fn_name), #menu_name, #metadata, #adapter)
+    };
+    let ephemeral = if args.ephemeral {
+        ephemerality_call()
+    } else {
+        TokenStream::new()
+    };
     Ok(quote! {
         #(#attrs)*
         #vis fn #name() -> ::noctis::__private::core::ContextMenuHandler {
+            // A handler needs no `.await` to be `async` (the macro requires it).
+            #[allow(clippy::unused_async)]
             #inner #block
-            #new(::core::concat!(::core::module_path!(), "::", #fn_name), #menu_name, #metadata, __noctis_menu)
+            #call #ephemeral
         }
     })
 }
@@ -247,8 +280,7 @@ mod tests {
         "async fn show(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> { Ok(()) }";
     const QUOTE: &str =
         "async fn quote(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> { Ok(()) }";
-    const USER_SIG: &str =
-        "`#[user_command]` handlers take `(ctx: CommandCtx, target: ResolvedUser)`";
+    const USER_SIG: &str = "`#[user_command]` handlers take `(ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])`";
 
     fn item(src: &str) -> TokenStream {
         src.parse().unwrap()
@@ -286,7 +318,7 @@ mod tests {
         assert!(out.contains("# [cfg (test)]"), "{out}");
         assert!(out.contains("ContextMenuHandler :: __new_user"), "{out}");
         assert!(
-            out.contains("\"Show profile\" , :: noctis :: __private :: core :: CommandMetadata :: new () , __noctis_menu"),
+            out.contains("\"Show profile\" , :: noctis :: __private :: core :: CommandMetadata :: new () , | __noctis_ctx , __noctis_target , _ | __noctis_menu (__noctis_ctx , __noctis_target))"),
             "{out}"
         );
         let out = expand(Menu::Message, quote!(r"Quote"), item(QUOTE))
@@ -402,16 +434,53 @@ mod tests {
         );
     }
 
+    /// Story 6.5 Matrix 41, 42 and 44: `ephemeral` and the responder.
+    #[test]
+    fn ephemeral_and_responder() {
+        let src = "async fn show(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder) -> HandlerResult<Responded> { todo!() }";
+        let out = expand(Menu::User, quote!("Show", ephemeral), item(src))
+            .unwrap()
+            .to_string()
+            .replace(' ', "");
+        assert!(
+            out.contains("CommandMetadata::new(),__noctis_menu)"),
+            "{out}"
+        );
+        assert!(
+            out.ends_with(
+                ".__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)}"
+            ),
+            "{out}"
+        );
+        assert_eq!(
+            error(Menu::User, quote!("X", ephemeral = true), SHOW),
+            "`ephemeral` takes no value"
+        );
+        assert_eq!(
+            error(Menu::Message, quote!("X", ephemeral, ephemeral), QUOTE),
+            "duplicate `#[message_command]` argument `ephemeral`"
+        );
+    }
+
     /// Matrix 39, 41 and 42: signatures.
     #[test]
     fn signature_errors() {
-        let msg_sig =
-            "`#[message_command]` handlers take `(ctx: CommandCtx, target: ResolvedMessage)`";
+        let msg_sig = "`#[message_command]` handlers take `(ctx: CommandCtx, target: ResolvedMessage[, r: CommandResponder])`";
         for (menu, src, expected) in [
             (
                 Menu::User,
                 "async fn f(ctx: CommandCtx, target: ResolvedUser, opts: O) -> HandlerResult<()> { Ok(()) }",
                 format!("[CTX-02] context-menu commands take no options: {USER_SIG}"),
+            ),
+            (
+                Menu::User,
+                "async fn f(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder, o: O) -> HandlerResult<()> { Ok(()) }",
+                format!("[CTX-02] context-menu commands take no options: {USER_SIG}"),
+            ),
+            (
+                Menu::User,
+                "async fn f(ctx: CommandCtx, r: CommandResponder, target: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
+                USER_SIG.to_owned(),
             ),
             (
                 Menu::User,

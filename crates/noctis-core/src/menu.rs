@@ -15,10 +15,11 @@ use twilight_model::application::interaction::InteractionDataResolved;
 use twilight_model::id::Id;
 use twilight_model::id::marker::GenericMarker;
 
-use crate::command::{CommandCtx, failed, unknown};
+use crate::command::{CommandCtx, HandlerFuture, boxed, failed, run_detached, unknown};
 use crate::handler::{HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
-use crate::options::empty_resolved;
+use crate::options::{CommandInput, empty_resolved};
+use crate::responder::{Command, CommandResponder, Ephemerality, IntoResponse};
 
 /// Why a context-menu interaction did not reach its handler.
 ///
@@ -78,13 +79,13 @@ impl MenuTargetError {
     clippy::large_enum_variant,
     reason = "built once per call and moved straight into the handler"
 )]
-enum Target {
+pub(crate) enum Target {
     User(ResolvedUser),
     Message(ResolvedMessage),
 }
 
 /// The erased handler call.
-type ErasedMenu = dyn Fn(CommandCtx, Target) -> BoxFuture<'static, HandlerResult<()>> + Send + Sync;
+type ErasedMenu = dyn Fn(CommandCtx, Target, CommandResponder) -> HandlerFuture + Send + Sync;
 
 /// One context-menu command handler, as `#[user_command]` or
 /// `#[message_command]` builds it; add it to a [`Module`](crate::Module).
@@ -100,62 +101,65 @@ pub struct ContextMenuHandler {
     menu_name: &'static str,
     kind: MenuKind,
     metadata: CommandMetadata,
+    ephemerality: Ephemerality,
     call: Arc<ErasedMenu>,
 }
 
 impl ContextMenuHandler {
     /// A `USER` command handler; what `#[user_command]` expands to.
     #[doc(hidden)]
-    pub fn __new_user<F, Fut>(
+    pub fn __new_user<F, Fut, R>(
         name: &'static str,
         menu_name: &'static str,
         metadata: CommandMetadata,
         f: F,
     ) -> Self
     where
-        F: Fn(CommandCtx, ResolvedUser) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+        F: Fn(CommandCtx, ResolvedUser, CommandResponder) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+        R: IntoResponse<Command>,
     {
-        let call =
-            move |ctx: CommandCtx, target: Target| -> BoxFuture<'static, HandlerResult<()>> {
-                match target {
-                    Target::User(user) => Box::pin(f(ctx, user)),
-                    Target::Message(_) => wrong_kind(MenuKind::User, MenuKind::Message),
-                }
-            };
+        let call = move |ctx: CommandCtx, target: Target, r: CommandResponder| -> HandlerFuture {
+            match target {
+                Target::User(user) => boxed(f(ctx, user, r)),
+                Target::Message(_) => wrong_kind(MenuKind::User, MenuKind::Message),
+            }
+        };
         Self {
             name,
             menu_name,
             kind: MenuKind::User,
             metadata,
+            ephemerality: Ephemerality::Public,
             call: Arc::new(call),
         }
     }
 
     /// A `MESSAGE` command handler; what `#[message_command]` expands to.
     #[doc(hidden)]
-    pub fn __new_message<F, Fut>(
+    pub fn __new_message<F, Fut, R>(
         name: &'static str,
         menu_name: &'static str,
         metadata: CommandMetadata,
         f: F,
     ) -> Self
     where
-        F: Fn(CommandCtx, ResolvedMessage) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = HandlerResult<()>> + Send + 'static,
+        F: Fn(CommandCtx, ResolvedMessage, CommandResponder) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+        R: IntoResponse<Command>,
     {
-        let call =
-            move |ctx: CommandCtx, target: Target| -> BoxFuture<'static, HandlerResult<()>> {
-                match target {
-                    Target::Message(message) => Box::pin(f(ctx, message)),
-                    Target::User(_) => wrong_kind(MenuKind::Message, MenuKind::User),
-                }
-            };
+        let call = move |ctx: CommandCtx, target: Target, r: CommandResponder| -> HandlerFuture {
+            match target {
+                Target::Message(message) => boxed(f(ctx, message, r)),
+                Target::User(_) => wrong_kind(MenuKind::Message, MenuKind::User),
+            }
+        };
         Self {
             name,
             menu_name,
             kind: MenuKind::Message,
             metadata,
+            ephemerality: Ephemerality::Public,
             call: Arc::new(call),
         }
     }
@@ -179,6 +183,32 @@ impl ContextMenuHandler {
     pub fn metadata(&self) -> &CommandMetadata {
         &self.metadata
     }
+
+    /// The declared ephemerality: [`Ephemerality::Ephemeral`] with
+    /// `ephemeral` in the attribute, else [`Ephemerality::Public`] (INT-10).
+    pub fn ephemerality(&self) -> Ephemerality {
+        self.ephemerality
+    }
+
+    /// Replaces the ephemerality; what the macros append for `ephemeral`.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_ephemerality(self, ephemerality: Ephemerality) -> Self {
+        Self {
+            ephemerality,
+            ..self
+        }
+    }
+
+    /// Starts the handler with its decoded `target`.
+    pub(crate) fn call(
+        &self,
+        ctx: CommandCtx,
+        target: Target,
+        responder: CommandResponder,
+    ) -> HandlerFuture {
+        (self.call)(ctx, target, responder)
+    }
 }
 
 impl fmt::Debug for ContextMenuHandler {
@@ -187,12 +217,13 @@ impl fmt::Debug for ContextMenuHandler {
             .field("name", &self.name)
             .field("menu_name", &self.menu_name)
             .field("kind", &self.kind)
+            .field("ephemerality", &self.ephemerality)
             .field("metadata", &self.metadata)
             .finish_non_exhaustive()
     }
 }
 
-fn wrong_kind(expected: MenuKind, found: MenuKind) -> BoxFuture<'static, HandlerResult<()>> {
+fn wrong_kind(expected: MenuKind, found: MenuKind) -> HandlerFuture {
     failed(HandlerError::new(MenuTargetError::WrongKind {
         expected,
         found,
@@ -200,16 +231,16 @@ fn wrong_kind(expected: MenuKind, found: MenuKind) -> BoxFuture<'static, Handler
 }
 
 /// The decoded parts of a context-menu interaction.
-struct MenuInput {
-    kind: MenuKind,
-    name: String,
+pub(crate) struct MenuInput {
+    pub(crate) kind: MenuKind,
+    pub(crate) name: String,
     target: Id<GenericMarker>,
     resolved: InteractionDataResolved,
 }
 
 impl MenuInput {
     /// Decodes an interaction object (the gateway `d` or the HTTP body).
-    fn from_json(raw: &[u8]) -> Result<Self, MenuTargetError> {
+    pub(crate) fn from_json(raw: &[u8]) -> Result<Self, MenuTargetError> {
         let value: Value = serde_json::from_slice(raw)
             .map_err(|e| MenuTargetError::malformed(format!("invalid JSON: {e}")))?;
         let Value::Object(mut root) = value else {
@@ -271,7 +302,7 @@ impl MenuInput {
     }
 
     /// The typed target, or [`MenuTargetError::Unresolved`].
-    fn target(&self) -> Result<Target, MenuTargetError> {
+    pub(crate) fn target(&self) -> Result<Target, MenuTargetError> {
         let unresolved = MenuTargetError::Unresolved {
             id: self.target.get(),
         };
@@ -298,13 +329,20 @@ pub(crate) fn call_context_menu(
         Err(error) => return failed(HandlerError::new(error)),
     };
     if input.kind != handler.kind {
-        return wrong_kind(handler.kind, input.kind);
+        return failed(HandlerError::new(MenuTargetError::WrongKind {
+            expected: handler.kind,
+            found: input.kind,
+        }));
     }
     if input.name != handler.menu_name {
         return unknown(&input.name, handler.name);
     }
     match input.target() {
-        Ok(target) => (handler.call)(CommandCtx::new(handler.menu_name), target),
+        Ok(target) => {
+            let path = handler.menu_name;
+            let ctx = CommandCtx::detached(path, CommandInput::empty(path), handler.ephemerality);
+            run_detached(|r| handler.call(ctx, target, r), handler.ephemerality)
+        }
         Err(error) => failed(HandlerError::new(error)),
     }
 }
@@ -313,6 +351,7 @@ pub(crate) fn call_context_menu(
 mod tests {
     use std::sync::Mutex;
 
+    use noctis_ui::Components;
     use serde_json::json;
 
     use super::*;
@@ -321,24 +360,36 @@ mod tests {
     static USERS: Mutex<Vec<(String, u64, bool)>> = Mutex::new(Vec::new());
     static MESSAGES: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 
-    async fn show(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+    async fn show(
+        ctx: CommandCtx,
+        target: ResolvedUser,
+        _: CommandResponder,
+    ) -> HandlerResult<Components> {
         USERS.lock().map_err(|_| fmt::Error)?.push((
             ctx.command_path().to_owned(),
             target.user.id.get(),
             target.member.is_some(),
         ));
-        Ok(())
+        Ok(crate::command::tests::msg())
     }
 
-    async fn quote(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> {
+    async fn quote(
+        ctx: CommandCtx,
+        target: ResolvedMessage,
+        r: CommandResponder,
+    ) -> HandlerResult<crate::Responded> {
         MESSAGES
             .lock()
             .map_err(|_| fmt::Error)?
             .push((ctx.command_path().to_owned(), target.message.id.get()));
-        Ok(())
+        Ok(r.reply(crate::command::tests::msg()).await?.done())
     }
 
-    async fn fails(_: CommandCtx, _: ResolvedUser) -> HandlerResult<()> {
+    async fn fails(
+        _: CommandCtx,
+        _: ResolvedUser,
+        _: CommandResponder,
+    ) -> HandlerResult<Components> {
         Err(HandlerError::new(fmt::Error))
     }
 
@@ -652,7 +703,10 @@ mod tests {
         assert_eq!(h.kind(), MenuKind::Message);
         assert_eq!(h.metadata(), &CommandMetadata::new());
         let debug = format!("{h:?}");
-        assert!(debug.starts_with("ContextMenuHandler { name: \"m::quote\", menu_name: \"Quote\", kind: Message, metadata: CommandMetadata {"), "{debug}");
+        assert!(debug.starts_with("ContextMenuHandler { name: \"m::quote\", menu_name: \"Quote\", kind: Message, ephemerality: Public, metadata: CommandMetadata {"), "{debug}");
+        assert_eq!(h.ephemerality(), Ephemerality::Public);
+        let h = h.__with_ephemerality(Ephemerality::Ephemeral);
+        assert_eq!(h.ephemerality(), Ephemerality::Ephemeral);
         let module = crate::Module::new("m")
             .add(h)
             .add(user_handler("Show profile"));

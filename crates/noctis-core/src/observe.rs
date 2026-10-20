@@ -12,7 +12,10 @@
 //! `noctis.event{app, shard, guild_id, module, handler, event_type}` around
 //! each event handler run, and
 //! `noctis.interaction{app, shard, guild_id, module, path}` around each
-//! interaction, and
+//! interaction (`module` and `path`, the Command Path or menu name, are
+//! recorded once the Command resolves),
+//! `noctis.dispatch{app, guild_id, module, path}` around each
+//! `Dispatcher::run_command`, and
 //! `noctis.http{app, kind, method, attempt, reused, status_class}` around
 //! each upstream attempt of the Discord HTTP edge (`kind` is `forward`,
 //! `callback` or `warmup`). No span field or label carries a path, a token,

@@ -15,6 +15,8 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::State;
 use crate::events::EventPayload;
+use crate::pipeline::Dispatcher;
+use crate::registry::Registry;
 use crate::sink::ErrorSinks;
 use crate::state::StateMap;
 
@@ -92,7 +94,8 @@ impl fmt::Debug for HandlerError {
 }
 
 /// What every handler invocation shares with its App: its name, the one
-/// HTTP client, the typed state and the Error Sinks.
+/// HTTP client, the typed state, the Error Sinks, the Limits and the
+/// Registry.
 pub(crate) struct AppShared {
     /// The `app` span field, metric label and report field (`"default"`
     /// until `AppId`, Story 7.4).
@@ -103,10 +106,15 @@ pub(crate) struct AppShared {
     /// The Discord HTTP edge the client sends through; dropping the last
     /// `AppShared` stops it.
     pub(crate) edge: crate::edge::Edge,
+    /// The Limits every Responder validates against (`AppBuilder::limits`).
+    pub(crate) limits: noctis_rules::Limits,
+    /// The folded Registry (the Dispatcher resolves Commands in it).
+    pub(crate) registry: Arc<Registry>,
 }
 
 /// The context an event handler receives: the shard, the guild, the
-/// handler's Module, the App's typed state and its HTTP client.
+/// handler's Module, the App's typed state, its HTTP client and its
+/// Command [`Dispatcher`].
 ///
 /// Cheap to clone (one `Arc`). `Debug` leaves the HTTP client out.
 ///
@@ -127,6 +135,7 @@ struct CtxInner {
     guild_id: Option<Id<GuildMarker>>,
     module: &'static str,
     app: Arc<AppShared>,
+    dispatcher: Dispatcher,
 }
 
 impl EventCtx {
@@ -136,11 +145,13 @@ impl EventCtx {
         module: &'static str,
         app: Arc<AppShared>,
     ) -> Self {
+        let dispatcher = Dispatcher::new(Arc::clone(&app));
         Self(Arc::new(CtxInner {
             shard,
             guild_id,
             module,
             app,
+            dispatcher,
         }))
     }
 
@@ -167,6 +178,12 @@ impl EventCtx {
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns).
     pub fn http(&self) -> &Arc<twilight_http::Client> {
         &self.0.app.http
+    }
+
+    /// The App's Command [`Dispatcher`]: runs a registered Command from
+    /// outside an interaction, such as a prefix command.
+    pub fn dispatcher(&self) -> &Dispatcher {
+        &self.0.dispatcher
     }
 }
 

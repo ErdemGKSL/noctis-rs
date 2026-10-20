@@ -52,8 +52,19 @@
 //! scope; [`Module::base`] and [`Module::group`] declare a base's
 //! description and [`BaseMeta`], or a group's description. A node nobody
 //! describes takes the description of a handler below it from the
-//! lexicographically first Module id, with a warning. Dispatch arrives
-//! with the Command pipeline.
+//! lexicographically first Module id, with a warning.
+//!
+//! # The Command pipeline and the Responder
+//!
+//! An `APPLICATION_COMMAND` interaction runs as one task (never taking a
+//! worker permit): its Command resolves by default names in its scope, the
+//! handler runs under `catch_unwind` and what it returned ([`IntoResponse`])
+//! is sent as the reply, or as an edit of the original once it deferred or
+//! replied. A handler taking a [`CommandResponder`] answers through the
+//! typestate [`Responder`] ([`Pending`] → [`Acked`] → [`Responded`]); every
+//! call returns a [`ResponderError`] on failure. A failure goes to the
+//! `Command` Error Sink. The [`Dispatcher`] (from `EventCtx::dispatcher`)
+//! runs a registered Command outside an interaction, replying to a message.
 //!
 //! # Command metadata and context menus
 //!
@@ -130,10 +141,12 @@ mod metadata;
 mod module;
 pub mod observe;
 mod options;
+mod pipeline;
 mod plugin;
 mod ports;
 mod proxy;
 mod registry;
+mod responder;
 mod runtime;
 mod sharding;
 mod sink;
@@ -159,8 +172,14 @@ pub use module::{Descriptor, Module};
 #[doc(hidden)]
 pub use options::__options;
 pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, OptionValue, Options};
+pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
+pub use responder::{
+    Acked, Command, CommandResponder, Ephemerality, FollowupHandle, IntoResponse, NoModal,
+    OutgoingMessage, Pending, Responded, Responder, ResponderError, ResponderKind, ResponderState,
+    Visibility,
+};
 pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};
 pub use state::State;

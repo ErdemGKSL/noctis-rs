@@ -49,11 +49,6 @@ evidence = "unit"
 story = "11.4"
 
 [[rule]]
-id = "LOC-06"
-evidence = "unit"
-story = "6.5"
-
-[[rule]]
 id = "META-04"
 evidence = "unit"
 story = "6.9"
@@ -75,18 +70,8 @@ story = "6.6"
 
 [[rule]]
 id = "INT-03"
-evidence = "by-construction"
-story = "6.5"
-
-[[rule]]
-id = "INT-03"
 evidence = "unit"
 story = "6.6"
-
-[[rule]]
-id = "INT-04"
-evidence = "by-construction"
-story = "6.5"
 
 [[rule]]
 id = "INT-05"
@@ -109,24 +94,9 @@ evidence = "unit"
 story = "6.7"
 
 [[rule]]
-id = "INT-08"
-evidence = "by-construction"
-story = "6.5"
-
-[[rule]]
-id = "INT-10"
-evidence = "by-construction"
-story = "6.5"
-
-[[rule]]
 id = "INT-11"
 evidence = "unit"
 story = "6.6"
-
-[[rule]]
-id = "INT-12"
-evidence = "unit"
-story = "6.5"
 
 [[rule]]
 id = "INT-13"

@@ -27,29 +27,32 @@ mod cmds {
 
     /// Pings.
     #[command("ping", description = "Check that the bot answers")]
-    pub async fn ping(ctx: CommandCtx) -> HandlerResult<()> {
+    pub async fn ping(ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
         assert_eq!(ctx.command_path(), "ping");
-        Ok(())
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     /// Starts the setup.
     #[command("setup start", description = "Start the setup")]
-    pub(crate) async fn setup_start(_ctx: CommandCtx) -> HandlerResult<()> {
-        Ok(())
+    pub(crate) async fn setup_start(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     /// Configures the bot.
     #[command("config (set|get) (prefix|welcome)", description = "Configure")]
-    pub async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> {
+    pub async fn config(
+        ctx: CommandCtx,
+        path: ConfigPath,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
         assert_eq!(ctx.command_path(), path.as_str());
         RECEIVED.lock().unwrap().push(path);
-        Ok(())
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     /// An optional leading group.
     #[command("(a|b)? c", description = "d")]
-    pub async fn opt(_ctx: CommandCtx, _path: OptPath) -> HandlerResult<()> {
-        Ok(())
+    pub async fn opt(_ctx: CommandCtx, _path: OptPath) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 }
 
@@ -178,13 +181,13 @@ mod metadata {
         contexts = [Guild],
         nsfw = true
     )]
-    async fn ac(_ctx: CommandCtx) -> HandlerResult<()> {
-        Ok(())
+    async fn ac(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     #[command("admin", description = "d", permissions = ADMINISTRATOR)]
-    async fn admin(_ctx: CommandCtx) -> HandlerResult<()> {
-        Ok(())
+    async fn admin(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     #[command(
@@ -194,23 +197,26 @@ mod metadata {
         integration_types = [UserInstall, GuildInstall],
         nsfw = false
     )]
-    async fn r#where(_ctx: CommandCtx) -> HandlerResult<()> {
-        Ok(())
+    async fn r#where(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     #[command("dev", description = "d", guilds = [123456789012345678, 42u64])]
-    async fn dev(_ctx: CommandCtx) -> HandlerResult<()> {
-        Ok(())
+    async fn dev(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     #[command("config (set|get)", description = "d", permissions = Permissions::MANAGE_GUILD)]
-    async fn config(_ctx: CommandCtx, _path: ConfigPath) -> HandlerResult<()> {
-        Ok(())
+    async fn config(
+        _ctx: CommandCtx,
+        _path: ConfigPath,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     #[command("plain", description = "d")]
-    async fn plain(_ctx: CommandCtx) -> HandlerResult<()> {
-        Ok(())
+    async fn plain(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     /// Matrix 1: the acceptance example.
@@ -285,5 +291,100 @@ mod metadata {
             Some(Permissions::MANAGE_GUILD)
         );
         assert!(format!("{handler:?}").contains("metadata: CommandMetadata {"));
+    }
+}
+
+/// Story 6.5: the Responder through the facade seams (Matrix 30, 41, 52).
+mod responder {
+    use noctis::__private::core::__testing::{call_command, call_context_menu};
+    use noctis::ResponderError;
+    use noctis::prelude::*;
+    use noctis::ui::{ActionRow, Components, ResolvedUser, SelectOption, TextDisplay};
+
+    #[derive(Route)]
+    #[route("t.pick", select)]
+    struct Pick;
+    impl ::noctis::__private::ui::Handled for Pick {}
+
+    fn text(t: &str) -> Components {
+        Components::new().push(TextDisplay::new(t.to_owned()))
+    }
+
+    #[command("answer", description = "d", ephemeral)]
+    async fn answer(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        assert_eq!(ctx.ephemerality(), Ephemerality::Ephemeral);
+        let acked = r.defer(Ephemerality::Ephemeral).await?;
+        acked.edit_original(text("done")).await?;
+        let handle = acked.followup(text("log"), Visibility::Public).await?;
+        handle.edit(text("log 2")).await?;
+        Ok(acked.done())
+    }
+
+    #[command("public", description = "d")]
+    async fn public(_ctx: CommandCtx) -> HandlerResult<Components> {
+        Ok(text("hi"))
+    }
+
+    #[command("unresolved", description = "d")]
+    async fn unresolved(_ctx: CommandCtx) -> HandlerResult<Components> {
+        Ok(Components::new().push(ActionRow::select(
+            Pick.string_select([SelectOption::new("A", "a")]),
+        )))
+    }
+
+    #[user_command("Wave", ephemeral)]
+    async fn wave(
+        _ctx: CommandCtx,
+        target: ResolvedUser,
+        r: CommandResponder,
+    ) -> HandlerResult<Responded> {
+        let text = format!("hi <@{}>", target.user.id);
+        Ok(r.reply(text_owned(text)).await?.done())
+    }
+
+    fn text_owned(t: String) -> Components {
+        Components::new().push(TextDisplay::new(t))
+    }
+
+    /// Matrix 41: the declared ephemerality.
+    #[test]
+    fn ephemeral_argument() {
+        assert_eq!(answer().ephemerality(), Ephemerality::Ephemeral);
+        assert_eq!(public().ephemerality(), Ephemerality::Public);
+        assert_eq!(wave().ephemerality(), Ephemerality::Ephemeral);
+    }
+
+    /// Matrix 52: the seams run responder handlers detached.
+    #[tokio::test]
+    async fn seams_run_responder_handlers() {
+        call_command(&answer(), "answer").await.unwrap();
+        call_command(&public(), "public").await.unwrap();
+        let json = serde_json::json!({
+            "type": 2,
+            "data": {
+                "type": 2, "name": "Wave", "target_id": "11",
+                "resolved": { "users": { "11": {
+                    "id": "11", "username": "u", "discriminator": "0000",
+                    "avatar": null, "global_name": null
+                } } }
+            }
+        });
+        call_context_menu(&wave(), json.to_string().as_bytes())
+            .await
+            .unwrap();
+    }
+
+    /// Matrix 30: an unresolved Route `custom_id` is an encode error.
+    #[tokio::test]
+    async fn unresolved_custom_id() {
+        let err = call_command(&unresolved(), "unresolved").await.unwrap_err();
+        let responder = err
+            .as_error()
+            .downcast_ref::<ResponderError>()
+            .unwrap_or_else(|| panic!("{err}"));
+        assert!(
+            matches!(responder, ResponderError::Encode { reason } if reason.contains("unresolved")),
+            "{responder}"
+        );
     }
 }

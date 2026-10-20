@@ -1,0 +1,5 @@
+error[E0599]: no method named `update` found for struct `Responder<K, S>` in the current scope
+ --> tests/ui/int/INT-04_command_update.rs:7:10
+  |
+7 |     Ok(r.update(msg).await?.done()) // [INT-04]
+  |          ^^^^^^ method not found in `Responder<noctis::Command>`

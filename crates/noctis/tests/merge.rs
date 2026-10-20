@@ -16,63 +16,75 @@ use noctis::ui::ResolvedUser;
 use noctis::{BaseMeta, BuildError, BuildViolation, Permissions, Runtime};
 
 #[command("config set", description = "Set a value")]
-async fn config_set(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn config_set(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config get prefix", description = "Show the prefix")]
-async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config get", description = "Read a value")]
-async fn config_get(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn config_get(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config set", description = "Set a value", guilds = [42])]
-async fn guild_config_set(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn guild_config_set(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config set", description = "Set a value", permissions = MANAGE_GUILD)]
-async fn managed_config_set(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn managed_config_set(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config get", description = "Read a value", permissions = ADMINISTRATOR)]
-async fn admin_config_get(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn admin_config_get(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config", description = "Configure")]
-async fn config(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn config(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("config (set|get)", description = "Set a value")]
-async fn config_any(_ctx: CommandCtx, _path: ConfigAnyPath) -> HandlerResult<()> {
-    Ok(())
+async fn config_any(
+    _ctx: CommandCtx,
+    _path: ConfigAnyPath,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("show profile", description = "Show a profile")]
-async fn show_profile(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn show_profile(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[user_command("Show profile")]
-async fn show_user(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<()> {
-    Ok(())
+async fn show_user(
+    _ctx: CommandCtx,
+    _target: ResolvedUser,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[user_command("Show profile")]
-async fn show_user_again(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<()> {
-    Ok(())
+async fn show_user_again(
+    _ctx: CommandCtx,
+    _target: ResolvedUser,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[message_command("Show profile")]
-async fn show_message(_ctx: CommandCtx, _target: noctis::ui::ResolvedMessage) -> HandlerResult<()> {
-    Ok(())
+async fn show_message(
+    _ctx: CommandCtx,
+    _target: noctis::ui::ResolvedMessage,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 fn build(modules: impl IntoIterator<Item = Module>) -> Result<App, BuildError> {

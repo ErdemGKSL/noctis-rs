@@ -1,0 +1,7 @@
+error[E0599]: no method named `reply` found for struct `Responder<noctis::Command, Acked>` in the current scope
+  --> tests/ui/int/INT-03_second_reply.rs:11:14
+   |
+11 |     Ok(acked.reply(msg()).await?.done()) // [INT-03]
+   |              ^^^^^ method not found in `Responder<noctis::Command, Acked>`
+   |
+   = note: the method was found for `Responder<noctis::Command<M>>`

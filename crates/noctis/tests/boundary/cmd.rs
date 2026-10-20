@@ -5,52 +5,63 @@ use noctis::prelude::*;
 use noctis::rules::command::PathKind;
 
 #[command("settings logs channel", description = "d")]
-async fn cmd_10_three_words(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_10_three_words(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", description = "d")]
-async fn cmd_02_word_32(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_02_word_32(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("ğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğ", description = "d")]
-async fn cmd_02_unicode_word_32(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_02_unicode_word_32(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command(
     "desc",
     description = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )]
-async fn cmd_04_description_100(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_04_description_100(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command(
     "emoji",
     description = "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
 )]
-async fn cmd_04_description_utf16_100(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_04_description_utf16_100(
+    _ctx: CommandCtx,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command(
     "b (a1|a2|a3|a4|a5|a6|a7|a8|a9|a10|a11|a12|a13|a14|a15|a16|a17|a18|a19|a20|a21|a22|a23|a24|a25)",
     description = "d"
 )]
-async fn cmd_13_children_25(_ctx: CommandCtx, _path: Cmd13Children25Path) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_13_children_25(
+    _ctx: CommandCtx,
+    _path: Cmd13Children25Path,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("(a|b) (c|d)", description = "d")]
-async fn cmd_14_two_bases(_ctx: CommandCtx, _path: Cmd14TwoBasesPath) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_14_two_bases(
+    _ctx: CommandCtx,
+    _path: Cmd14TwoBasesPath,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("mod (ban|kick)", description = "d")]
-async fn cmd_14_subcommands(_ctx: CommandCtx, _path: Cmd14SubcommandsPath) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_14_subcommands(
+    _ctx: CommandCtx,
+    _path: Cmd14SubcommandsPath,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command(
@@ -58,8 +69,11 @@ async fn cmd_14_subcommands(_ctx: CommandCtx, _path: Cmd14SubcommandsPath) -> Ha
     description = "d",
     max_expansions = 26
 )]
-async fn cmd_15_raised_cap(_ctx: CommandCtx, _path: Cmd15RaisedCapPath) -> HandlerResult<()> {
-    Ok(())
+async fn cmd_15_raised_cap(
+    _ctx: CommandCtx,
+    _path: Cmd15RaisedCapPath,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[test]

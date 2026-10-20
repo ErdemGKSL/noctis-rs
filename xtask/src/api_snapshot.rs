@@ -61,7 +61,7 @@ const TARGET_DIR: &str = "target/public-api";
 /// all), with their snapshot spelling: the `#[handler]` marker that component
 /// constructors require (FR-58), the sealed supertraits of the placement
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
-/// supertraits of `EventPayload` and `Descriptor`.
+/// supertraits of `EventPayload`, `Descriptor` and the Responder traits.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
@@ -76,6 +76,12 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_core::module::sealed",
         "noctis::__private::core::module::sealed",
+    ),
+    // The sealed supertraits of the Responder kinds, states and
+    // `IntoResponse` (AD-11).
+    (
+        "noctis_core::responder::sealed",
+        "noctis::__private::core::responder::sealed",
     ),
 ];
 

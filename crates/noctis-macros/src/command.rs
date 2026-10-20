@@ -24,22 +24,16 @@ const CAP_LITERAL: &str =
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
 /// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 6] = [
-    "ephemeral",
-    "opens_modal",
-    "rate_limit",
-    "flags",
-    "apps",
-    "locales",
-];
+const PLANNED: [&str; 5] = ["opens_modal", "rate_limit", "flags", "apps", "locales"];
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
 
 /// The parsed `#[command(..)]` arguments.
 struct Args {
     pattern: LitStr,
     description: Option<LitStr>,
     max_expansions: Option<usize>,
+    ephemeral: bool,
     meta: MetaArgs,
 }
 
@@ -86,6 +80,41 @@ fn value_of(segment: &[TokenTree]) -> Option<TokenStream> {
     }
 }
 
+/// Checks a bare `ephemeral` flag: it takes no value.
+pub(crate) fn parse_ephemeral(segment: &[TokenTree]) -> syn::Result<bool> {
+    if segment.len() == 1 {
+        Ok(true)
+    } else {
+        Err(syn::Error::new(
+            span_of(segment),
+            "`ephemeral` takes no value",
+        ))
+    }
+}
+
+/// The `.__with_ephemerality(..)` call `ephemeral` appends.
+pub(crate) fn ephemerality_call() -> TokenStream {
+    quote! {
+        .__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)
+    }
+}
+
+/// Whether `ty` is a responder parameter: a path whose last segment is
+/// `CommandResponder` or `Responder`.
+pub(crate) fn is_responder(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => {
+            path.qself.is_none()
+                && path
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|s| s.ident == "CommandResponder" || s.ident == "Responder")
+        }
+        _ => false,
+    }
+}
+
 /// Parses `"pattern"[, description = "…"][, max_expansions = n]` and the
 /// metadata arguments.
 fn parse_args(args: TokenStream) -> syn::Result<Args> {
@@ -105,6 +134,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         pattern,
         description: None,
         max_expansions: None,
+        ephemeral: false,
         meta: MetaArgs::default(),
     };
     let mut seen: Vec<String> = Vec::new();
@@ -118,7 +148,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
             ));
         };
         match name.as_str() {
-            "description" | "max_expansions" => {}
+            "description" | "max_expansions" | "ephemeral" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -142,6 +172,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         seen.push(name.clone());
         if let Some(result) = parsed.meta.parse(&name, &segment) {
             result?;
+            continue;
+        }
+        if name == "ephemeral" {
+            parsed.ephemeral = parse_ephemeral(&segment)?;
             continue;
         }
         let value = value_of(&segment);
@@ -400,25 +434,30 @@ fn ident(name: &str, span: Span) -> syn::Result<Ident> {
     Ok(ident)
 }
 
-/// Step 6: the parameter count and the path parameter's type; the trailing
-/// options parameter's type, if there is one.
-fn check_params(
-    item: &ItemFn,
-    pattern: &str,
-    path_enum: Option<&str>,
-) -> syn::Result<Option<Type>> {
+/// What `check_params` found after the fixed parameters.
+struct Params {
+    /// A `CommandResponder` parameter follows the fixed ones.
+    responder: bool,
+    /// The trailing options parameter's type.
+    options: Option<Type>,
+}
+
+/// Step 6: the parameter forms `(ctx[, path][, r: CommandResponder][,
+/// options])`: the path parameter's type, then an optional responder, then
+/// an optional options struct.
+fn check_params(item: &ItemFn, pattern: &str, path_enum: Option<&str>) -> syn::Result<Params> {
     let sig = &item.sig;
-    let (count, message) = match path_enum {
+    let (fixed, message) = match path_enum {
         None => (
             1,
             format!(
-                "`#[command({pattern:?})]` handlers take `(ctx: CommandCtx)` or `(ctx: CommandCtx, options: O)` with `O: Options`"
+                "`#[command({pattern:?})]` handlers take `(ctx: CommandCtx[, r: CommandResponder][, options: O])` with `O: Options`, in this order"
             ),
         ),
         Some(name) => (
             2,
             format!(
-                "`#[command({pattern:?})]` handlers take `(ctx: CommandCtx, path: {name})` or `(ctx: CommandCtx, path: {name}, options: O)` with `O: Options`"
+                "`#[command({pattern:?})]` handlers take `(ctx: CommandCtx, path: {name}[, r: CommandResponder][, options: O])` with `O: Options`, in this order"
             ),
         ),
     };
@@ -426,9 +465,15 @@ fn check_params(
         return Err(syn::Error::new_spanned(receiver, message));
     }
     let len = sig.inputs.len();
-    if (len != count && len != count + 1)
-        || !sig.inputs.iter().all(|a| matches!(a, FnArg::Typed(_)))
-    {
+    let typed: Vec<&syn::PatType> = sig
+        .inputs
+        .iter()
+        .filter_map(|a| match a {
+            FnArg::Typed(t) => Some(t),
+            FnArg::Receiver(_) => None,
+        })
+        .collect();
+    if len < fixed || len > fixed + 2 || typed.len() != len {
         let span = if sig.inputs.is_empty() {
             sig.ident.span()
         } else {
@@ -436,7 +481,7 @@ fn check_params(
         };
         return Err(syn::Error::new(span, message));
     }
-    if let (Some(name), Some(FnArg::Typed(param))) = (path_enum, sig.inputs.iter().nth(1)) {
+    if let (Some(name), Some(param)) = (path_enum, typed.get(1)) {
         let ok = match &*param.ty {
             Type::Path(path) => {
                 path.qself.is_none()
@@ -457,11 +502,26 @@ fn check_params(
             ));
         }
     }
-    let options = match sig.inputs.iter().nth(count) {
-        Some(FnArg::Typed(param)) => Some((*param.ty).clone()),
-        _ => None,
-    };
-    Ok(options)
+    match &typed[fixed..] {
+        [] => Ok(Params {
+            responder: false,
+            options: None,
+        }),
+        [one] if is_responder(&one.ty) => Ok(Params {
+            responder: true,
+            options: None,
+        }),
+        [one] => Ok(Params {
+            responder: false,
+            options: Some((*one.ty).clone()),
+        }),
+        [r, o] if is_responder(&r.ty) && !is_responder(&o.ty) => Ok(Params {
+            responder: true,
+            options: Some((*o.ty).clone()),
+        }),
+        [_, o] => Err(syn::Error::new_spanned(&o.ty, message)),
+        _ => Err(syn::Error::new(sig.inputs.span(), message)),
+    }
 }
 
 /// The generated `<Fn>Path` enum and its impls.
@@ -521,6 +581,37 @@ fn path_enum(
     }
 }
 
+/// The closure adapting `__noctis_command` to the constructor's uniform
+/// shape `(ctx, [path,] responder, [options])`; a handler without a
+/// responder parameter drops it.
+fn adapter(path: bool, responder: bool, options: bool, span: Span) -> TokenStream {
+    let ident = |name: &str| Ident::new(name, span);
+    let mut params = vec![ident("__noctis_ctx")];
+    let mut args = vec![ident("__noctis_ctx")];
+    if path {
+        params.push(ident("__noctis_path"));
+        args.push(ident("__noctis_path"));
+    }
+    if responder {
+        params.push(ident("__noctis_responder"));
+        args.push(ident("__noctis_responder"));
+    } else {
+        params.push(ident("_"));
+    }
+    if options {
+        params.push(ident("__noctis_options"));
+        args.push(ident("__noctis_options"));
+    }
+    let inner = ident("__noctis_command");
+    if responder {
+        // Every parameter is passed through: the handler itself fits.
+        return quote_spanned! {span=> #inner };
+    }
+    quote_spanned! {span=>
+        |#(#params),*| #inner(#(#args),*)
+    }
+}
+
 /// Expands `#[command(args)] item`.
 pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let args = parse_args(args)?;
@@ -544,7 +635,7 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
     } else {
         None
     };
-    let options = check_params(
+    let Params { responder, options } = check_params(
         &item,
         &pattern,
         enum_ident.as_ref().map(|(e, _)| e.to_string()).as_deref(),
@@ -569,19 +660,25 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         .map(LitStr::value)
         .unwrap_or_default();
     let inner = inner.into_token_stream();
+    let adapter = adapter(
+        enum_ident.is_some(),
+        responder,
+        options.is_some(),
+        output_span,
+    );
     let (generated, call) = if let Some((enum_ident, variants)) = &enum_ident {
         let generated = path_enum(&item, enum_ident, &fn_name, &pattern, &paths, variants);
         let new = match &options {
             None => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new::<#enum_ident, _, _>
+                ::noctis::__private::core::CommandHandler::__new::<#enum_ident, _, _, _>
             },
             Some(ty) => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new_with_options::<#enum_ident, #ty, _, _>
+                ::noctis::__private::core::CommandHandler::__new_with_options::<#enum_ident, #ty, _, _, _>
             },
         };
         (
             generated,
-            quote! { #new(::core::concat!(::core::module_path!(), "::", #fn_name), #pattern, #description, __noctis_command) },
+            quote_spanned! {output_span=> #new(::core::concat!(::core::module_path!(), "::", #fn_name), #pattern, #description, #adapter) },
         )
     } else {
         let new = match &options {
@@ -589,12 +686,12 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 ::noctis::__private::core::CommandHandler::__new_plain
             },
             Some(ty) => quote_spanned! {output_span=>
-                ::noctis::__private::core::CommandHandler::__new_plain_with_options::<#ty, _, _>
+                ::noctis::__private::core::CommandHandler::__new_plain_with_options::<#ty, _, _, _>
             },
         };
         (
             TokenStream::new(),
-            quote! { #new(::core::concat!(::core::module_path!(), "::", #fn_name), &[#(#paths),*], #description, __noctis_command) },
+            quote_spanned! {output_span=> #new(::core::concat!(::core::module_path!(), "::", #fn_name), &[#(#paths),*], #description, #adapter) },
         )
     };
     let call = if args.meta.is_empty() {
@@ -603,11 +700,19 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let metadata = args.meta.tokens();
         quote! { #call.__with_metadata(#metadata) }
     };
+    let call = if args.ephemeral {
+        let ephemeral = ephemerality_call();
+        quote! { #call #ephemeral }
+    } else {
+        call
+    };
     Ok(quote! {
         #generated
 
         #(#attrs)*
         #vis fn #name() -> ::noctis::__private::core::CommandHandler {
+            // A handler needs no `.await` to be `async` (the macro requires it).
+            #[allow(clippy::unused_async)]
             #inner #block
             #call
         }
@@ -653,10 +758,13 @@ mod tests {
         );
         assert!(out.contains("__new_plain"), "{out}");
         assert!(
-            out.contains("& [\"ping\"] , \"d\" , __noctis_command"),
+            out.contains(
+                "& [\"ping\"] , \"d\" , | __noctis_ctx , _ | __noctis_command (__noctis_ctx)"
+            ),
             "{out}"
         );
         assert!(!out.contains("enum"), "{out}");
+        assert!(!out.contains("__with_ephemerality"), "{out}");
         assert!(out.contains("doc"), "{out}");
     }
 
@@ -678,7 +786,11 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("GetWelcome"), "{out}");
-        assert!(out.contains("__new :: < ConfigPath , _ , _ >"), "{out}");
+        assert!(out.contains("__new :: < ConfigPath , _ , _ , _ >"), "{out}");
+        assert!(
+            out.contains("| __noctis_ctx , __noctis_path , _ | __noctis_command (__noctis_ctx , __noctis_path)"),
+            "{out}"
+        );
         assert!(
             out.contains("\"config (set|get) (prefix|welcome)\" , \"Configure\""),
             "{out}"
@@ -789,7 +901,7 @@ mod tests {
     /// Matrix 37-40: argument errors.
     #[test]
     fn argument_errors() {
-        let cases: [(TokenStream, &str); 17] = [
+        let cases: [(TokenStream, &str); 19] = [
             (quote!(), MISSING_PATTERN),
             (quote!(PATTERN), NOT_A_LITERAL),
             (quote!(description = "d"), MISSING_PATTERN),
@@ -806,15 +918,20 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
-                quote!("ping", ephemeral),
-                "`#[command]` argument `ephemeral` is planned and not supported yet",
+                quote!("ping", ephemeral = true),
+                "`ephemeral` takes no value",
+            ),
+            (quote!("ping", ephemeral(x)), "`ephemeral` takes no value"),
+            (
+                quote!("ping", ephemeral, ephemeral),
+                "duplicate `#[command]` argument `ephemeral`",
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -903,7 +1020,7 @@ mod tests {
         .to_string()
         .replace(' ', "");
         assert!(
-            out.contains("__noctis_command).__with_metadata({constM:::noctis::__private::core::CommandMetadata"),
+            out.contains("__noctis_command(__noctis_ctx)).__with_metadata({constM:::noctis::__private::core::CommandMetadata"),
             "{out}"
         );
         assert!(out.contains("from_bits_retain(36u64)"), "{out}");
@@ -963,7 +1080,7 @@ mod tests {
         ] {
             assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
-        for planned in ["ephemeral", "opens_modal", "flags", "apps", "locales"] {
+        for planned in ["opens_modal", "flags", "apps", "locales"] {
             let ident = quote::format_ident!("{planned}");
             assert_eq!(
                 error(quote!("ping", #ident), PING),
@@ -972,13 +1089,13 @@ mod tests {
         }
     }
 
-    const PLAIN_PARAMS: &str = "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx)` or `(ctx: CommandCtx, options: O)` with `O: Options`";
+    const PLAIN_PARAMS: &str = "`#[command(\"ping\")]` handlers take `(ctx: CommandCtx[, r: CommandResponder][, options: O])` with `O: Options`, in this order";
 
     /// Matrix 42 and 43 (6.1) and 78 (6.2): parameter count and the path
     /// parameter.
     #[test]
     fn parameter_errors() {
-        const PATTERN_PARAMS: &str = "`#[command(\"config (set|get)\")]` handlers take `(ctx: CommandCtx, path: ConfigPath)` or `(ctx: CommandCtx, path: ConfigPath, options: O)` with `O: Options`";
+        const PATTERN_PARAMS: &str = "`#[command(\"config (set|get)\")]` handlers take `(ctx: CommandCtx, path: ConfigPath[, r: CommandResponder][, options: O])` with `O: Options`, in this order";
         let ping = || quote!("ping", description = "d");
         let config = || quote!("config (set|get)", description = "d");
         for (args, src, expected) in [
@@ -990,6 +1107,21 @@ mod tests {
             (
                 ping(),
                 "async fn ping(c: CommandCtx, x: W, y: u8) -> HandlerResult<()> { Ok(()) }",
+                PLAIN_PARAMS,
+            ),
+            (
+                ping(),
+                "async fn ping(c: CommandCtx, o: W, r: CommandResponder) -> HandlerResult<()> { Ok(()) }",
+                PLAIN_PARAMS,
+            ),
+            (
+                ping(),
+                "async fn ping(c: CommandCtx, r: CommandResponder, s: Responder<Command>) -> HandlerResult<()> { Ok(()) }",
+                PLAIN_PARAMS,
+            ),
+            (
+                ping(),
+                "async fn ping(c: CommandCtx, r: CommandResponder, o: W, x: u8) -> HandlerResult<()> { Ok(()) }",
                 PLAIN_PARAMS,
             ),
             (
@@ -1023,7 +1155,11 @@ mod tests {
         .unwrap()
         .to_string();
         assert!(
-            out.contains("__new_plain_with_options :: < W , _ , _ >"),
+            out.contains("__new_plain_with_options :: < W , _ , _ , _ >"),
+            "{out}"
+        );
+        assert!(
+            out.contains("| __noctis_ctx , _ , __noctis_options | __noctis_command (__noctis_ctx , __noctis_options)"),
             "{out}"
         );
         let out = expand(
@@ -1033,13 +1169,51 @@ mod tests {
         .unwrap()
         .to_string();
         assert!(
-            out.contains("__new_with_options :: < ModPath , W , _ , _ >"),
+            out.contains("__new_with_options :: < ModPath , W , _ , _ , _ >"),
             "{out}"
         );
         let out = expand(quote!("ping", description = "d"), item(PING))
             .unwrap()
             .to_string();
         assert!(!out.contains("with_options"), "{out}");
+    }
+
+    /// Story 6.5 Matrix 41 and 44: `ephemeral` and the responder parameter.
+    #[test]
+    fn ephemeral_and_responder() {
+        let out = expand(quote!("ping", description = "d", ephemeral), item(PING))
+            .unwrap()
+            .to_string()
+            .replace(' ', "");
+        assert!(
+            out.contains(
+                ".__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)"
+            ),
+            "{out}"
+        );
+        for (pattern, src, adapter) in [
+            (
+                quote!("ping", description = "d"),
+                "async fn ping(c: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> { todo!() }",
+                "\"d\",__noctis_command)",
+            ),
+            (
+                quote!("ping", description = "d"),
+                "async fn ping(c: CommandCtx, r: noctis::Responder<Command>, o: W) -> HandlerResult<Responded> { todo!() }",
+                "__new_plain_with_options::<W,_,_,_>(::core::concat!(::core::module_path!(),\"::\",\"ping\"),&[\"ping\"],\"d\",__noctis_command)",
+            ),
+            (
+                quote!("config (set|get)", description = "d"),
+                "async fn config(c: CommandCtx, p: ConfigPath, r: CommandResponder, o: W) -> HandlerResult<Responded> { todo!() }",
+                "\"d\",__noctis_command)",
+            ),
+        ] {
+            let out = expand(pattern, item(src))
+                .unwrap()
+                .to_string()
+                .replace(' ', "");
+            assert!(out.contains(adapter), "{out}");
+        }
     }
 
     /// Matrix 45: variant naming.

@@ -263,16 +263,17 @@
 //!
 //! ```
 //! use noctis::prelude::*;
+//! use noctis::ui::{Components, TextDisplay};
 //! use noctis::{BaseMeta, Permissions};
 //!
 //! #[command("config set", description = "Change a setting")]
-//! async fn config_set(_ctx: CommandCtx) -> HandlerResult<()> {
-//!     Ok(())
+//! async fn config_set(_ctx: CommandCtx) -> HandlerResult<Components> {
+//!     Ok(Components::new().push(TextDisplay::new("Saved.")))
 //! }
 //!
 //! #[command("config get prefix", description = "Show the prefix")]
-//! async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<()> {
-//!     Ok(())
+//! async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<Components> {
+//!     Ok(Components::new().push(TextDisplay::new("Prefix: `!`")))
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")] async fn main() {
@@ -288,6 +289,48 @@
 //! // One `/config` with `set` and `get prefix`, MANAGE_GUILD for both.
 //! assert!(App::builder().module(settings).module(prefix).build().is_ok());
 //! # }
+//! ```
+//!
+//! # Answering Commands
+//!
+//! When an `APPLICATION_COMMAND` interaction arrives, noctis resolves its
+//! Command by default (unlocalized) names in the scope Discord sent
+//! (LOC-06), runs the handler (never waiting for a worker permit) and sends
+//! what it returned: a message is the reply, or an edit of the original
+//! once the handler has deferred or replied (INT-12). A handler that needs
+//! several messages takes a [`CommandResponder`], a typestate whose
+//! `reply` / `defer` consume it into an acknowledged responder offering
+//! only `edit_original`, `followup` and `delete_original` (INT-03, INT-04,
+//! INT-08, INT-10). Failures and panics go to the `Command` Error Sink.
+//! [`EventCtx::dispatcher`](crate::events::EventCtx::dispatcher) gives the
+//! [`Dispatcher`], which runs a registered Command from an event handler,
+//! such as a prefix command, replying to the invoking message.
+//!
+//! ```
+//! use noctis::events::{EventCtx, MessageCreate};
+//! use noctis::prelude::*;
+//! use noctis::ui::{Components, TextDisplay};
+//! use noctis::{CommandInput, CommandInvocation};
+//!
+//! #[command("ping", description = "Check that the bot answers")]
+//! async fn ping(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+//!     let acked = r.defer(Ephemerality::Public).await?;
+//!     let text = format!("Pong ({})", ctx.response_locale());
+//!     acked.edit_original(Components::new().push(TextDisplay::new(text))).await?;
+//!     Ok(acked.done())
+//! }
+//!
+//! #[event]
+//! async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+//!     if msg.content == "!ping" {
+//!         let invocation = CommandInvocation::new(CommandInput::new("ping"), msg.channel_id, msg.id, msg.author.id)
+//!             .guild_id(msg.guild_id);
+//!         ctx.dispatcher().run_command(invocation).await?;
+//!     }
+//!     Ok(())
+//! }
+//!
+//! let _module = Module::new("ping").add(ping()).add(prefix());
 //! ```
 //!
 //! # Observability and Error Sinks
@@ -345,13 +388,16 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, App, AppBuilder, BaseMeta, BuildError, BuildViolation, CommandCtx,
-    CommandHandler, CommandInput, CommandMetadata, CommandOption, CommandPath, ContextMenuHandler,
-    Descriptor, EnvError, Error, ErrorOrigin, ErrorReport, ErrorSink, GatewayUrlError,
-    HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
-    InteractionContext, InvalidOption, LogSink, MenuKind, MenuTargetError, Module, OptionError,
-    OptionValue, Options, Permissions, Plugin, ReportKind, Resource, ResourceConflict, RunError,
-    Runtime, StartError, State, Token, TokenError, UnknownCommandPath,
+    AckDeadlineMissed, Acked, App, AppBuilder, BaseMeta, BuildError, BuildViolation, Command,
+    CommandCtx, CommandHandler, CommandInput, CommandInvocation, CommandMetadata, CommandOption,
+    CommandPath, CommandResponder, ContextMenuHandler, Descriptor, DispatchError, Dispatcher,
+    EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink, FollowupHandle,
+    GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError,
+    IntegrationType, InteractionContext, IntoResponse, InvalidOption, LogSink, MenuKind,
+    MenuTargetError, Module, NoModal, OptionError, OptionValue, Options, OutgoingMessage, Pending,
+    Permissions, Plugin, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State, Token,
+    TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives [`Options`](trait@Options) for a struct with named fields: each
@@ -367,7 +413,7 @@ pub use noctis_core::{
 ///
 /// ```
 /// use noctis::prelude::*;
-/// use noctis::ui::ResolvedUser;
+/// use noctis::ui::{LegacyMessage, ResolvedUser};
 ///
 /// #[derive(Choices, Clone, Copy, Debug, PartialEq)]
 /// enum Severity {
@@ -395,9 +441,9 @@ pub use noctis_core::{
 /// }
 ///
 /// #[command("warn", description = "Warn a member")]
-/// async fn warn(_ctx: CommandCtx, options: WarnOptions) -> HandlerResult<()> {
+/// async fn warn(_ctx: CommandCtx, options: WarnOptions) -> HandlerResult<LegacyMessage> {
 ///     let _ = (options.member.user.id, options.severity, options.days, options.reason);
-///     Ok(())
+///     Ok(LegacyMessage::new("Warned."))
 /// }
 ///
 /// assert_eq!(warn().options().len(), 4);
@@ -461,7 +507,8 @@ pub mod observe {
     //! `metrics-exporter-prometheus`) to collect them. Spans:
     //! `noctis.shard{app, shard}`,
     //! `noctis.event{app, shard, guild_id, module, handler, event_type}`,
-    //! `noctis.interaction{app, shard, guild_id, module, path}` and
+    //! `noctis.interaction{app, shard, guild_id, module, path}`,
+    //! `noctis.dispatch{app, guild_id, module, path}` and
     //! `noctis.http{app, kind, method, attempt, reused, status_class}` (one
     //! per Discord HTTP upstream attempt; `kind` is `forward`, `callback` or
     //! `warmup`). No span field or label carries a path, token, id or header
@@ -483,25 +530,29 @@ pub mod observe {
 ///
 /// ```
 /// use noctis::prelude::*;
+/// use noctis::ui::{Components, TextDisplay};
 ///
 /// /// Rustdoc only: never the Command's description.
 /// #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
-/// async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> {
-///     match path {
-///         ConfigPath::SetPrefix | ConfigPath::SetWelcome => {}
-///         ConfigPath::GetPrefix | ConfigPath::GetWelcome => {}
-///     }
+/// async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
+///     let text = match path {
+///         ConfigPath::SetPrefix | ConfigPath::SetWelcome => "Saved.",
+///         ConfigPath::GetPrefix | ConfigPath::GetWelcome => "Current value: `!`",
+///     };
 ///     assert_eq!(ctx.command_path(), path.as_str());
-///     Ok(())
+///     Ok(Components::new().push(TextDisplay::new(text)))
 /// }
 ///
-/// #[command("ping", description = "Check that the bot answers")]
-/// async fn ping(_ctx: CommandCtx) -> HandlerResult<()> {
-///     Ok(())
+/// #[command("ping", description = "Check that the bot answers", ephemeral)]
+/// async fn ping(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+///     let acked = r.reply(Components::new().push(TextDisplay::new("Pong!"))).await?;
+///     acked.followup(Components::new().push(TextDisplay::new("Still here.")), Visibility::Public).await?;
+///     Ok(acked.done())
 /// }
 ///
 /// assert_eq!(ConfigPath::ALL[0].as_str(), "config set prefix");
 /// assert_eq!(config().paths(), ["config set prefix", "config set welcome", "config get prefix", "config get welcome"]);
+/// assert_eq!(ping().ephemerality(), Ephemerality::Ephemeral);
 /// let _module = Module::new("settings").add(config()).add(ping());
 /// ```
 ///
@@ -515,6 +566,10 @@ pub mod observe {
 /// - `description = "…"`: the description, 1 to 100 characters, required.
 ///   Doc comments stay rustdoc and never become it.
 /// - `max_expansions = n`: the pattern's expansion cap (default 25).
+/// - `ephemeral` (no value): every response of the Command is visible only
+///   to the invoking user; [`CommandHandler::ephemerality`] reads it. It is
+///   fixed (INT-10): `reply` and a returned message use it, `defer` and
+///   `followup` take theirs explicitly and no edit changes it.
 ///
 /// Every check of [`rules::command::validate_pattern_spacing`],
 /// [`rules::command::expand`] and [`rules::command::validate_tree`] runs at
@@ -532,7 +587,32 @@ pub mod observe {
 /// (words split on `-` and `_`; `Bare` when every group is absent; `_` before
 /// a leading digit; `Self_` for `Self`); two equal names are a compile error.
 /// The enum has `ALL` (expansion order), `as_str()` and implements
-/// [`CommandPath`]. Both forms return `HandlerResult<()>`.
+/// [`CommandPath`].
+///
+/// # Answering
+///
+/// A handler may take a [`CommandResponder`] right after `ctx` (and the
+/// path), before the options: `(ctx[, path][, r: CommandResponder][,
+/// options])`; any other order is a compile error listing these forms. It
+/// returns `HandlerResult<R>` with `R:` [`IntoResponse`]: a
+/// [`V2Message`](crate::ui::V2Message), [`Components`](crate::ui::Components)
+/// or [`LegacyMessage`](crate::ui::LegacyMessage) is sent as the reply
+/// (callback type 4) or, after `defer`/`reply`, as an edit of the original
+/// (INT-12); the [`Responded`] from `done()` means the handler answered
+/// itself. `HandlerResult<()>` does not compile: a Command must answer.
+/// Every V2 message gets `IS_COMPONENTS_V2` and passes the Limits validator
+/// ([`AppBuilder::limits`]) before any request. An `Err` or a panic goes to
+/// the `Command` [`ErrorSink`] and nothing is sent (the user-facing notice
+/// arrives with Story 6.8).
+///
+/// ```compile_fail,E0277
+/// use noctis::prelude::*;
+///
+/// #[command("ping", description = "d")]
+/// async fn ping(_ctx: CommandCtx) -> HandlerResult<()> { // not a Command response
+///     Ok(())
+/// }
+/// ```
 ///
 /// # Metadata
 ///
@@ -558,11 +638,12 @@ pub mod observe {
 ///
 /// ```
 /// use noctis::prelude::*;
+/// use noctis::ui::LegacyMessage;
 /// use noctis::{InteractionContext, Permissions};
 ///
 /// #[command("ban", description = "Ban a member", permissions = BAN_MEMBERS | MANAGE_GUILD, contexts = [Guild], nsfw = false)]
-/// async fn ban(_ctx: CommandCtx) -> HandlerResult<()> {
-///     Ok(())
+/// async fn ban(_ctx: CommandCtx) -> HandlerResult<LegacyMessage> {
+///     Ok(LegacyMessage::new("Banned."))
 /// }
 ///
 /// let handler = ban();
@@ -575,16 +656,19 @@ pub mod observe {
 pub use noctis_macros::command;
 
 /// Declares a `USER` context-menu command: checks its name at compile time
-/// and turns `async fn name(ctx: CommandCtx, target: ResolvedUser) ->
-/// HandlerResult<()>` into `fn name() -> ContextMenuHandler`, which
+/// and turns `async fn name(ctx: CommandCtx, target: ResolvedUser[, r:
+/// CommandResponder]) -> HandlerResult<R>` into `fn name() ->
+/// ContextMenuHandler`, which
 /// [`Module::add`] takes.
 ///
 /// The first argument is the menu name, a string literal of 1 to 32
 /// characters (UTF-16 counted; mixed case, spaces, apostrophes and emoji are
 /// fine, CTX-01). Then the metadata arguments of [`command`](macro@command)
-/// (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`). A
-/// context-menu command has no description and no options (`[CTX-02]`
-/// otherwise); its type comes from the macro (CTX-03).
+/// (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`) and
+/// `ephemeral`. A context-menu command has no description and no options
+/// (`[CTX-02]` otherwise); its type comes from the macro (CTX-03). It
+/// answers like a [`command`](macro@command): `R` is an [`IntoResponse`]
+/// value, and an optional [`CommandResponder`] comes after the target.
 ///
 /// The handler's target is the right-clicked user,
 /// [`ResolvedUser`](crate::ui::ResolvedUser) (`member` is `None` when the
@@ -596,23 +680,22 @@ pub use noctis_macros::command;
 ///
 /// ```
 /// use noctis::prelude::*;
-/// use noctis::ui::{ResolvedMessage, ResolvedUser};
+/// use noctis::ui::{Components, LegacyMessage, ResolvedMessage, ResolvedUser, TextDisplay};
 /// use noctis::{CommandMetadata, MenuKind};
 ///
-/// #[user_command("Show profile", contexts = [Guild])]
-/// async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+/// #[user_command("Show profile", contexts = [Guild], ephemeral)]
+/// async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
 ///     assert_eq!(ctx.command_path(), "Show profile");
-///     let _ = target.user.id;
-///     Ok(())
+///     Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
 /// }
 ///
 /// #[message_command("Quote")]
-/// async fn quote(_ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> {
-///     let _ = target.message.content;
-///     Ok(())
+/// async fn quote(_ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
+///     Ok(r.reply(LegacyMessage::new(format!("> {}", target.message.content))).await?.done())
 /// }
 ///
 /// assert_eq!(show_profile().kind(), MenuKind::User);
+/// assert_eq!(show_profile().ephemerality(), Ephemerality::Ephemeral);
 /// assert_eq!(quote().menu_name(), "Quote");
 /// assert_eq!(quote().metadata(), &CommandMetadata::new());
 /// let _module = Module::new("profile").add(show_profile()).add(quote());
@@ -1010,7 +1093,9 @@ pub mod prelude {
     //!   Modules.
     //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands;
     //!   [`user_command`](macro@user_command) and
-    //!   [`message_command`](macro@message_command): context-menu commands.
+    //!   [`message_command`](macro@message_command): context-menu commands;
+    //!   [`CommandResponder`], [`Responded`], [`IntoResponse`],
+    //!   [`Ephemerality`] and [`Visibility`]: how they answer.
     //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
     //!   a Command's typed options; [`CommandOption`] (the field types) and
     //!   [`MessageKey`] (what option validators return).
@@ -1019,8 +1104,9 @@ pub mod prelude {
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
-        App, AppBuilder, CommandCtx, CommandOption, ErrorOrigin, ErrorSink, HandlerError,
-        HandlerResult, Module, Options, State,
+        App, AppBuilder, CommandCtx, CommandOption, CommandResponder, Ephemerality, ErrorOrigin,
+        ErrorSink, HandlerError, HandlerResult, IntoResponse, Module, Options, Responded, State,
+        Visibility,
     };
     pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
     pub use noctis_macros::{command, event, message_command, user_command};

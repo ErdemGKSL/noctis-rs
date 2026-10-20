@@ -35,23 +35,29 @@ mod menus {
 
     /// Shows a profile.
     #[user_command("Show profile")]
-    pub(crate) async fn show(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+    pub(crate) async fn show(
+        ctx: CommandCtx,
+        target: ResolvedUser,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
         SHOWN.lock().unwrap().push((
             ctx.command_path().to_owned(),
             target.user.id.get(),
             target.member.is_some(),
         ));
-        Ok(())
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 
     /// Quotes a message.
     #[message_command("Quote")]
-    pub async fn quote(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> {
+    pub async fn quote(
+        ctx: CommandCtx,
+        target: ResolvedMessage,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
         QUOTED
             .lock()
             .unwrap()
             .push((ctx.command_path().to_owned(), target.message.id.get()));
-        Ok(())
+        Ok(noctis::ui::LegacyMessage::new("ok"))
     }
 }
 
@@ -64,20 +70,26 @@ use menus::{QUOTED, SHOWN, quote, show};
     integration_types = [GuildInstall],
     nsfw = false
 )]
-async fn moderate(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<()> {
-    Ok(())
+async fn moderate(
+    _ctx: CommandCtx,
+    _target: ResolvedUser,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 static UNICODE: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
 #[user_command("Profili göster 🚀")]
-async fn unicode(_ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+async fn unicode(
+    _ctx: CommandCtx,
+    target: ResolvedUser,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
     UNICODE.lock().unwrap().push(target.user.id.get());
-    Ok(())
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[user_command("Fail")]
-async fn fail(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<()> {
+async fn fail(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<noctis::ui::LegacyMessage> {
     Err(HandlerError::new(std::fmt::Error))
 }
 

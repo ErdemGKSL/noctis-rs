@@ -7,23 +7,37 @@ typestate `Responder`, follow-ups, modals, errors shown to users, token expiry,
 **Default: return a View and write no response code.** Use the Responder only for
 modals, follow-ups, or replies that need several messages.
 
-## 1. Return values (`IntoResponse`) [planned]
+## 1. Return values (`IntoResponse`)
 
-| Handler returns | Command | Component / modal submit |
+A Command handler (`#[command]`, `#[user_command]`, `#[message_command]`) returns
+`HandlerResult<R>` with `R: IntoResponse<Command>` (sealed):
+
+| Handler returns | Command | Component / modal submit [planned, Epic 7] |
 | --- | --- | --- |
-| a `View` (or `view.at(Nav::…)`, `.with_notice(key)`) | new message (public, or ephemeral if declared) | **updates the message in place** (or a new message with `#[handler(response = ephemeral \| public)]`) |
-| a `StaticView` | new message, no components | updates in place (components removed) |
+| `V2Message` or `Components` (`noctis::ui`) | new message (public, or ephemeral if declared) | — |
+| a `View` (or `view.at(Nav::…)`, `.with_notice(key)`) [planned, Epic 8] | new message | **updates the message in place** (or a new message with `#[handler(response = ephemeral \| public)]`) |
+| a `StaticView` [planned, Epic 8] | new message, no components | updates in place (components removed) |
 | `LegacyMessage` | plain `content` notice (not for interactive UI, UD-1) | typed error if it would turn a V2 message back to legacy |
-| `()` | not allowed: a command must answer (compile error) | acknowledges with a deferred update; the message stays as it is |
-| `Responded` | you answered through the Responder | same |
+| `()` | **does not compile**: a command must answer (E0277 `` `()` is not a Command response ``, pointing at the return type) | acknowledges with a deferred update; the message stays as it is |
+| `Responded` (from `acked.done()`) | you answered through the Responder | same |
 | `Err(HandlerError)` | error path (§5) | error path |
 
-Noctis picks the callback type: command → type 4 (or 5 + edit), component/modal submit
-→ type 7 (or 6 + edit). It adds `IS_COMPONENTS_V2` to every V2 send and edit (CV2-01),
-finalizes Refs, uploads attachments (diffed on edit), sets `allowed_mentions.parse = []`
-for Views unless opted in (MSG-05), and runs the Limits validator before any HTTP call.
+Any other type is the same E0277 (`` `u8` is not a Command response ``, label: return a
+`V2Message`, `Components`, a `LegacyMessage`, or the `Responded` from `done()`).
 
-## 2. Auto-defer (FR-21)
+Noctis picks the callback type: a returned message is callback type 4 while the
+interaction is unanswered, and an edit of the original (`PATCH …/messages/@original`)
+after the handler deferred or replied (INT-12). It adds `IS_COMPONENTS_V2` to every V2
+send and edit (CV2-01) and runs the Limits validator (`AppBuilder::limits`, Strict by
+default; Lenient truncates with `…`) before any HTTP call. The default `Mentions` ping
+nobody (MSG-05). [planned] Finalizing Refs (Story 7.5) and uploading attachments (Story
+9.1): a message with attachments fails with `ResponderError::AttachmentsUnsupported`
+today, before any request.
+
+A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
+the `Command` Error Sink (§5).
+
+## 2. Auto-defer (FR-21) [planned, Story 6.6]
 
 If your handler hasn't answered `ack_deadline` (default 2000 ms) after the gateway
 received the interaction (queueing time counts), Noctis defers:
@@ -37,6 +51,10 @@ answers after 5 s still delivers, without "interaction failed". `opens_modal` ha
 are never auto-deferred (a modal must be the first response, INT-05); if one misses the
 3 s deadline, Noctis logs an error naming it.
 
+Until it lands, a handler that may take longer than ~2.9 s must call
+`r.defer(..)` first; a late initial response fails with
+`ResponderError::AckDeadlineMissed`.
+
 Rendering images is awaited **inside** the handler (`ctx.render(..).await`), so slow
 renders are covered automatically.
 
@@ -44,69 +62,114 @@ renders are covered automatically.
 
 Declared at registration, never toggled later:
 
-- `#[command("…", ephemeral)]` — private reply (single-user UI: settings, wizards).
+- `#[command("…", ephemeral)]` (also on `#[user_command]` / `#[message_command]`; bare
+  flag, no value: `ephemeral = true` is a compile error) — private reply (single-user
+  UI: settings, wizards). `CommandHandler::ephemerality()` / `ctx.ephemerality()` read
+  it (`Ephemerality::Ephemeral` / `Ephemerality::Public`).
 - Commands default to public (shared content).
-- Components default to update-in-place (keep the message's visibility).
-- `#[handler(response = ephemeral)]` — the component opens a **new** private sub-panel
-  (e.g. per-user settings from a public dashboard).
+- [planned, Epic 7] Components default to update-in-place (keep the message's
+  visibility); `#[handler(response = ephemeral)]` — the component opens a **new**
+  private sub-panel.
 
-Locale follows visibility: `ctx.response_locale()` and `ViewCx::locale()` give the User
-Locale for ephemeral responses and the Guild Locale for public ones.
+`reply` and a returned message use the declared value; `defer(Ephemerality)` takes it
+explicitly; `followup(msg, Visibility)` takes one per follow-up (`Visibility` is an alias
+of `Ephemerality`); **no edit takes one** (`edit_original(msg, Ephemerality::…)` is
+E0061).
 
-## 4. The Responder (typestate, INT-03/04) [planned]
+Locale follows visibility: `ctx.response_locale()` gives the User Locale (then the Guild
+Locale) for ephemeral Commands and the Guild Locale (then the User Locale) for public
+ones, `"en-US"` when Discord sent neither. [planned] `ViewCx::locale()` (Epic 8).
 
-The type is `Responder<K, S = Pending>`: `K` is the handler kind, `S` the state
-(`Pending` or `Acked`). Take it as a handler parameter through an alias; a handler that
-returns a View takes none.
+## 4. The Responder (typestate, INT-03/04)
+
+The type is `Responder<K, S = Pending>`: `K` is the handler kind (`Command<M>`, sealed
+`ResponderKind`), `S` the state (`Pending` or `Acked`, sealed `ResponderState`). Take it
+as a handler parameter through its alias, right after `ctx` (and the path), before the
+options: `(ctx[, path][, r: CommandResponder][, options])`, or `(ctx, target[, r:
+CommandResponder])` on a context menu. Any other order, or two responders, is a compile
+error listing these forms. A handler that returns a message takes none (and if it takes
+one but never uses it, nothing is sent from it).
 
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
 | `CommandResponder` (= `CommandResponder<NoModal>`) | `reply(msg)`, `defer(ephemerality)` | chat input / context menu |
-| `CommandResponder<OpensModal>` | the above plus `modal(m)`; required when the command is `#[command(.., opens_modal)]` | command that opens a modal |
-| `ComponentResponder` (= `ComponentResponder<NoModal>`) | `reply(msg)`, `update(msg)`, `defer()` | buttons, selects |
-| `ComponentResponder<OpensModal>` | the above plus `modal(m)`; required when the Route is `#[route(.., opens_modal)]` | component that opens a modal |
-| `ModalResponder` | `reply(msg)`, `update(msg)`, `defer()` — **no** `modal` (no modal chaining) | modal submit |
+| `CommandResponder<OpensModal>` [planned, Story 6.6] | the above plus `modal(m)`; required when the command is `#[command(.., opens_modal)]` | command that opens a modal |
+| `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` | buttons, selects |
+| `ComponentResponder<OpensModal>` [planned, Epic 7] | the above plus `modal(m)` | component that opens a modal |
+| `ModalResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer()` — **no** `modal` | modal submit |
 
 Autocomplete has no Responder: `AutocompleteCtx` offers only
-`ctx.respond(choices).await? -> Responded` (`commands.md` §4).
-
-The handler macro checks that the alias matches the declaration: `opens_modal` without
-`OpensModal`, or `OpensModal` without `opens_modal`, is a compile error (INT-05).
+`ctx.respond(choices).await? -> Responded` (`commands.md` §4) [planned, Story 6.7].
 
 Every Pending method consumes the responder and returns `Responder<K, Acked>`:
 
 ```rust
-acked.edit_original(msg).await?        -> Responder<K, Acked>
-acked.followup(msg, Visibility::Ephemeral).await? -> FollowupHandle
-acked.delete_original().await?
-acked.done()                           -> Responded   // return this from the handler
+r.reply(msg).await?                     -> Responder<Command, Acked>  // callback type 4, declared ephemerality
+r.defer(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // callback type 5, only EPHEMERAL (INT-08)
+acked.edit_original(msg).await?         -> ()
+acked.followup(msg, Visibility::Public).await? -> FollowupHandle
+acked.delete_original().await?          -> ()
+acked.done()                            -> Responded   // return this from the handler
+handle.message_id()                     -> Id<MessageMarker>
+handle.edit(msg).await?                 -> ()
+handle.delete().await?                  -> ()
 ```
 
-`msg` is anything message-like: a View, `StaticView`, `LegacyMessage`. Calling a method
-that doesn't exist for the kind is a compile error (e.g. `update` on a command).
+`msg` is anything `Into<OutgoingMessage>`: `V2Message`, `Components` or `LegacyMessage`
+([planned] a View, `StaticView`). Calling a method that doesn't exist for the kind or
+state is a compile error: a second `reply` (E0599), `update` or `modal` on a
+`CommandResponder` (E0599), `defer(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
+`Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
 
-Runtime guards the types can't express:
-- if the auto-defer already fired, your `reply`/`update` becomes `edit_original`
-  transparently;
+Edits keep the format rules: editing a legacy original into a V2 message sends the
+legacy clears (CV2-02); a V2 original edited with a `LegacyMessage` is
+`ResponderError::Invalid(UiError::V2ToLegacy)` without a request.
+
+Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` converts it into
+`HandlerError`):
+
+| Variant | When (nothing is sent unless noted) |
+| --- | --- |
+| `Invalid(UiError)` | Limits violation (Strict) or a V2 → legacy edit |
+| `Encode { reason }` | the body cannot be serialized (an unresolved Route `custom_id`) |
+| `AttachmentsUnsupported` | the message has attachments ([planned, Story 9.1]) |
+| `EphemeralUnsupported` | an ephemeral response over a Dispatcher message reply (§4.1) |
+| `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |
+| `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01) |
+| `Rejected { status, code }` | Discord answered an error (`code`: its JSON error code, e.g. `Some(10015)`); a callback answered 40060 (already acknowledged) counts as success |
+| `Transport` | no usable response |
+
+Runtime guards the types can't express [planned, Story 6.6]:
+- if the auto-defer already fired, your `reply` becomes `edit_original` transparently;
 - follow-ups are counted: max 5 for user-installed apps not in the guild (INT-11) →
   `ResponderError::FollowupCap`;
 - after 15 minutes every call returns `ResponderError::TokenExpired` without an HTTP
   request (INT-02). Updates to a *public* View past 15 min fall back to a bot-token
   message edit automatically; ephemeral ones can't.
 
-Example: show a View, then post a public log line.
+Example: reply privately, then post a public log line.
 
 ```rust
-#[command("mod warn", permissions = MODERATE_MEMBERS, ephemeral)]
-async fn warn(ctx: CommandCtx, opts: WarnOptions, r: CommandResponder) -> HandlerResult<Responded> {
+#[command("mod warn", description = "Warn a member", permissions = MODERATE_MEMBERS, ephemeral)]
+async fn warn(ctx: CommandCtx, r: CommandResponder, opts: WarnOptions) -> HandlerResult<Responded> {
     let case = record_warning(&ctx, &opts).await?;
-    let acked = r.reply(WarnResultView::new(case.clone())).await?;
-    acked.followup(CaseLog::new(case), Visibility::Public).await?;
+    let acked = r.reply(warn_result(&case)).await?;           // V2Message or Components
+    acked.followup(case_log(&case), Visibility::Public).await?;
     Ok(acked.done())
 }
 ```
 
-Example: open a modal (Route declared `opens_modal`):
+Example: defer, work, then return the message (it edits the deferred original):
+
+```rust
+#[command("report", description = "Build the weekly report")]
+async fn report(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
+    let _ = r.defer(Ephemerality::Public).await?.done();
+    Ok(build_report(&ctx).await?)
+}
+```
+
+[planned, Epic 7] Example: open a modal (Route declared `opens_modal`):
 
 ```rust
 #[handler]
@@ -114,6 +177,40 @@ async fn edit_bio(ctx: ComponentCtx, e: EditBio, r: ComponentResponder<OpensModa
     Ok(r.modal(BioForm::modal(SaveBio { user: e.user })).await?.done())
 }
 ```
+
+### 4.1 Running a Command from elsewhere: the `Dispatcher`
+
+`ctx.dispatcher()` on an `EventCtx` gives the App's `Dispatcher` (`Clone`), which runs a
+registered Command outside an interaction, for example a prefix command:
+
+```rust
+#[event]
+async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+    if let Some(path) = msg.content.strip_prefix('!') {
+        let invocation = CommandInvocation::new(CommandInput::new(path), msg.channel_id, msg.id, msg.author.id)
+            .guild_id(msg.guild_id) // the guild's scope first, then global
+            .shard(ctx.shard())     // optional, default 0
+            .locale("tr");          // optional User Locale
+        ctx.dispatcher().run_command(invocation).await?; // Result<(), DispatchError>
+    }
+    Ok(())
+}
+```
+
+- `CommandInput::new(path)` plus `.with_option(name, OptionValue::…)` (a later value of
+  the same name replaces the earlier one): you decode your own options; the handler's
+  options struct is built and validated from them as usual (a missing required one is
+  an `OptionError` in the Command Error Sink).
+- `run_command` resolves the path in the guild's scope, then globally, and runs the
+  handler. An unregistered path is `Err(DispatchError::UnknownCommand { path })` with no
+  request; a failing handler goes to the `Command` Error Sink, not into the result.
+- The response is a message transport: `reply` and a returned message post a reply to
+  the invoking message (`message_reference`, `fail_if_not_exists: false`), `defer(Public)`
+  shows the typing indicator (the later message is then posted as the reply), edits and
+  deletes target that reply, follow-ups are plain channel messages. Anything ephemeral
+  (a declared `ephemeral` Command, `defer(Ephemeral)`, `followup(.., Ephemeral)`) is
+  `ResponderError::EphemeralUnsupported`, never a silent public post.
+- Span `noctis.dispatch{app, guild_id, module, path}`.
 
 ## 5. Errors shown to users (FR-22)
 
@@ -128,8 +225,12 @@ let row = db.load(id).await?;
 db.save(x).await.map_err(|e| HandlerError::new(e).with_message(keys::SAVE_FAILED))?;
 ```
 
-Default: the user sees a short localized ephemeral error (`noctis.error.generic`), and
-the full error is logged with interaction context. A panic in a handler is caught and
+Now: a Command handler's `Err`, a panic, or a cancellation at shutdown goes to the
+`Command` Error Sink (`ReportKind::Error` / `Panic` / `Cancelled`, with `module`,
+`handler` and `event_type = "INTERACTION_CREATE"`; `noctis_handler_errors_total{kind="command"}`)
+and nothing is sent to the user. [planned, Story 6.8] Default: the user sees a short
+localized ephemeral error (`noctis.error.generic`), and the full error is logged with
+interaction context. A panic in a handler is caught and
 treated the same way; the shard keeps running. Route errors by origin with Error Sinks
 (`modules-middleware-ratelimits.md`). Notices from the "disabled here", rate-limit and
 guard stages are ephemeral; after an auto-defer they arrive as an ephemeral follow-up

@@ -27,7 +27,10 @@ pub(crate) struct CommandEntry {
     /// The ids of that Module's ancestors, root first.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "Story 6.5 dispatches commands through it")
+        expect(
+            dead_code,
+            reason = "Middleware (Story 7.6) walks it; tests read it now"
+        )
     )]
     pub(crate) ancestors: Arc<[&'static str]>,
     pub(crate) handler: CommandHandler,
@@ -40,7 +43,10 @@ pub(crate) struct MenuEntry {
     /// The ids of that Module's ancestors, root first.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "Story 6.5 dispatches context menus through it")
+        expect(
+            dead_code,
+            reason = "Middleware (Story 7.6) walks it; tests read it now"
+        )
     )]
     pub(crate) ancestors: Arc<[&'static str]>,
     pub(crate) handler: ContextMenuHandler,
@@ -78,16 +84,11 @@ pub(crate) struct ScopeCommands {
 
 impl ScopeCommands {
     /// The handler registered at `path`, in O(1).
-    #[cfg_attr(not(test), expect(dead_code, reason = "Story 6.5 dispatches commands"))]
     pub(crate) fn command(&self, path: &str) -> Option<&Arc<CommandEntry>> {
         self.paths.get(path)
     }
 
     /// The context menu of `kind` named `name`, in O(1).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "Story 6.5 dispatches context menus")
-    )]
     pub(crate) fn menu(&self, kind: MenuKind, name: &str) -> Option<&Arc<MenuEntry>> {
         self.menus.get(&kind)?.get(name)
     }
@@ -186,7 +187,6 @@ impl Commands {
     }
 
     /// The commands of `scope`, if any are registered there.
-    #[cfg_attr(not(test), expect(dead_code, reason = "Story 6.5 dispatches commands"))]
     pub(crate) fn scope(&self, scope: Scope) -> Option<&ScopeCommands> {
         self.scopes.iter().find(|s| s.scope == scope)
     }

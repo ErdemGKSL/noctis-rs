@@ -143,7 +143,7 @@ pub(crate) fn hedge_delay(remaining: Duration, hedge_after: Duration) -> Option<
 }
 
 /// Whether `token` is 1..=512 bytes of `[A-Za-z0-9._-]`.
-fn valid_token(token: &str) -> bool {
+pub(crate) fn valid_token(token: &str) -> bool {
     (1..=512).contains(&token.len())
         && token
             .bytes()

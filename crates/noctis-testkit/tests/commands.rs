@@ -1,0 +1,321 @@
+//! Commands end to end (Story 6.5, Matrix 1, 2, 18-21, 24, 45 and 49): a
+//! `FakeGateway` `INTERACTION_CREATE` (or `MESSAGE_CREATE` through the
+//! Dispatcher) reaches the Command pipeline, whose responses `FakeDiscordHttp`
+//! records.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests panic with the failing case"
+)]
+
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use noctis::events::{EventCtx, MessageCreate};
+use noctis::prelude::*;
+use noctis::ui::{Components, TextDisplay};
+use noctis::{CommandInput, CommandInvocation, ErrorReport, ReportKind, Runtime, Token};
+use noctis_testkit::fake::{
+    FakeDiscordHttp, FakeGateway, FakeResponse, GatewayBot, Method, RecordedRequest, StatusCode,
+};
+use serde_json::{Value, json};
+use tokio::task::JoinHandle;
+
+/// The bound on every single wait.
+const WAIT: Duration = Duration::from_secs(15);
+
+const CALLBACK: &str = "/interactions/100/tok/callback";
+const ORIGINAL: &str = "/webhooks/7/tok/messages/@original";
+const FOLLOWUP: &str = "/webhooks/7/tok";
+const CHANNEL: &str = "/channels/5/messages";
+
+fn text(t: &str) -> Components {
+    Components::new().push(TextDisplay::new(t.to_owned()))
+}
+
+#[command("ping", description = "Check that the bot answers")]
+async fn ping(_ctx: CommandCtx) -> HandlerResult<Components> {
+    Ok(text("pong"))
+}
+
+#[command("secret", description = "A private answer", ephemeral)]
+async fn secret(_ctx: CommandCtx) -> HandlerResult<Components> {
+    Ok(text("psst"))
+}
+
+#[command("twice", description = "Reply, then return a message")]
+async fn twice(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
+    let _ = r.reply(text("first")).await?.done();
+    Ok(text("second"))
+}
+
+#[command("slow", description = "Defer, then return a message")]
+async fn slow(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
+    let _ = r.defer(Ephemerality::Ephemeral).await?.done();
+    Ok(text("later"))
+}
+
+#[command("log", description = "Defer, then a public follow-up")]
+async fn log(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+    let acked = r.defer(Ephemerality::Ephemeral).await?;
+    let handle = acked.followup(text("logged"), Visibility::Public).await?;
+    assert_eq!(handle.message_id().get(), 55);
+    Ok(acked.done())
+}
+
+#[event]
+async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+    if let Some(path) = msg.content.strip_prefix('!') {
+        let invocation = CommandInvocation::new(
+            CommandInput::new(path),
+            msg.channel_id,
+            msg.id,
+            msg.author.id,
+        )
+        .guild_id(msg.guild_id);
+        ctx.dispatcher().run_command(invocation).await?;
+    }
+    Ok(())
+}
+
+/// Records every Command report as `<handler>:<kind>`.
+#[derive(Clone, Default)]
+struct Reports(Arc<Mutex<Vec<String>>>);
+
+impl ErrorSink for Reports {
+    fn report(&self, report: ErrorReport<'_>) {
+        let kind = match report.kind {
+            ReportKind::Error(error) => error.to_string(),
+            other => format!("{other:?}"),
+        };
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("{}:{kind}", report.handler.unwrap_or_default()));
+    }
+}
+
+/// A running App on one shard against both fakes.
+struct Running {
+    gw: FakeGateway,
+    http: FakeDiscordHttp,
+    reports: Reports,
+    run: JoinHandle<Result<(), noctis::Error>>,
+}
+
+impl Running {
+    async fn start(module: Module) -> Self {
+        let http = FakeDiscordHttp::start_with(GatewayBot {
+            shards: 1,
+            ..GatewayBot::default()
+        })
+        .await
+        .unwrap();
+        http.route(
+            Method::POST,
+            CALLBACK,
+            FakeResponse::empty(StatusCode::NO_CONTENT),
+        )
+        .route(
+            Method::PATCH,
+            ORIGINAL,
+            FakeResponse::json(StatusCode::OK, &json!({ "id": "1" })),
+        )
+        .route(
+            Method::POST,
+            FOLLOWUP,
+            FakeResponse::json(StatusCode::OK, &json!({ "id": "55" })),
+        )
+        .route(
+            Method::POST,
+            CHANNEL,
+            FakeResponse::json(StatusCode::OK, &json!({ "id": "77" })),
+        );
+        let gw = FakeGateway::start().await.unwrap();
+        let reports = Reports::default();
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .token(Token::new("fake-token").unwrap())
+            .http_proxy(http.url())
+            .gateway_url(gw.url())
+            .error_sink(ErrorOrigin::Command, reports.clone())
+            .module(module);
+        let app = builder.build().unwrap();
+        let run = tokio::spawn(app.run());
+        let running = Self {
+            gw,
+            http,
+            reports,
+            run,
+        };
+        running.wait_ready().await;
+        running
+    }
+
+    /// Waits until the fake holds the shard's session.
+    async fn wait_ready(&self) {
+        let deadline = Instant::now() + WAIT;
+        while self.gw.dispatch("TYPING_START", json!({})) == 0 {
+            assert!(Instant::now() < deadline, "the shard has no session");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// Dispatches a chat-input interaction for `name` (id 100, token
+    /// `tok`, application 7).
+    fn invoke(&self, name: &str) {
+        let d = json!({
+            "id": "100",
+            "application_id": "7",
+            "type": 2,
+            "token": "tok",
+            "version": 1,
+            "authorizing_integration_owners": {},
+            "entitlements": [],
+            "user": user(),
+            "locale": "tr",
+            "data": { "id": "9", "name": name, "type": 1 },
+        });
+        assert_eq!(self.gw.dispatch("INTERACTION_CREATE", d), 1);
+    }
+
+    /// The requests to `path` other than `GET /gateway/bot`.
+    fn sent(&self) -> Vec<RecordedRequest> {
+        self.http
+            .requests()
+            .into_iter()
+            .filter(|r| r.route_path() != Some("/gateway/bot"))
+            .collect()
+    }
+
+    /// Polls until `n` responses were sent.
+    async fn wait_sent(&self, n: usize) -> Vec<RecordedRequest> {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let sent = self.sent();
+            if sent.len() >= n {
+                return sent;
+            }
+            assert!(Instant::now() < deadline, "{n} requests missing: {sent:?}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    async fn wait_report(&self) -> Vec<String> {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let reports = self.reports.0.lock().unwrap().clone();
+            if !reports.is_empty() {
+                return reports;
+            }
+            assert!(Instant::now() < deadline, "no report");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+}
+
+fn user() -> Value {
+    json!({ "id": "3", "username": "u", "discriminator": "0000", "avatar": null, "global_name": null })
+}
+
+fn body(request: &RecordedRequest) -> Value {
+    request.json().unwrap_or(Value::Null)
+}
+
+/// Matrix 1 and 2: a returned message is the type-4 callback, with the
+/// declared ephemerality.
+#[tokio::test(flavor = "multi_thread")]
+async fn returned_message_is_the_reply() {
+    let running = Running::start(Module::new("m").add(ping()).add(secret())).await;
+    running.invoke("ping");
+    let sent = running.wait_sent(1).await;
+    assert_eq!(sent[0].method, Method::POST);
+    assert_eq!(sent[0].route_path(), Some(CALLBACK));
+    assert!(sent[0].headers.get("authorization").is_none());
+    let reply = body(&sent[0]);
+    assert_eq!(reply["type"], 4);
+    assert_eq!(reply["data"]["flags"], 32768);
+    assert_eq!(reply["data"]["components"][0]["content"], "pong");
+    running.invoke("secret");
+    let sent = running.wait_sent(2).await;
+    assert_eq!(body(&sent[1])["data"]["flags"], 32832);
+    running.run.abort();
+}
+
+/// Matrix 18-21: a reply then a returned message edits the original; a
+/// defer then a returned message edits it with the V2 flag.
+#[tokio::test(flavor = "multi_thread")]
+async fn acknowledged_then_returned_edits_the_original() {
+    let running = Running::start(Module::new("m").add(twice()).add(slow())).await;
+    running.invoke("twice");
+    let sent = running.wait_sent(2).await;
+    assert_eq!(body(&sent[0])["type"], 4);
+    assert_eq!(sent[1].method, Method::PATCH);
+    assert_eq!(sent[1].route_path(), Some(ORIGINAL));
+    assert_eq!(body(&sent[1])["components"][0]["content"], "second");
+    running.invoke("slow");
+    let sent = running.wait_sent(4).await;
+    assert_eq!(
+        body(&sent[2]),
+        json!({ "type": 5, "data": { "flags": 64 } })
+    );
+    assert_eq!(sent[3].method, Method::PATCH);
+    assert_eq!(body(&sent[3])["flags"], 32768);
+    assert!(body(&sent[3]).get("content").is_none());
+    running.run.abort();
+}
+
+/// Matrix 24 and the Responder AC: an ephemeral defer, then a public
+/// follow-up.
+#[tokio::test(flavor = "multi_thread")]
+async fn defer_then_followup() {
+    let running = Running::start(Module::new("m").add(log())).await;
+    running.invoke("log");
+    let sent = running.wait_sent(2).await;
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 5, "data": { "flags": 64 } })
+    );
+    assert_eq!(sent[1].route_path(), Some(FOLLOWUP));
+    assert_eq!(
+        sent[1].query.as_deref(),
+        Some("wait=true&with_components=true")
+    );
+    assert_eq!(body(&sent[1])["flags"], 32768);
+    assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
+/// Matrix 45 and 49 and the Dispatcher AC: a `MESSAGE_CREATE` handler runs
+/// a Command whose message is posted as a reply; an unknown path sends
+/// nothing; a declared ephemeral Command cannot answer there.
+#[tokio::test(flavor = "multi_thread")]
+async fn dispatcher_replies_to_the_message() {
+    let running = Running::start(Module::new("m").add(ping()).add(secret()).add(prefix())).await;
+    let message = |content: &str| {
+        json!({
+            "id": "6", "channel_id": "5", "author": user(), "content": content,
+            "timestamp": "2024-01-01T00:00:00.000000+00:00", "edited_timestamp": null,
+            "tts": false, "mention_everyone": false, "mentions": [], "mention_roles": [],
+            "attachments": [], "embeds": [], "pinned": false, "type": 0
+        })
+    };
+    assert_eq!(running.gw.dispatch("MESSAGE_CREATE", message("!ping")), 1);
+    let sent = running.wait_sent(1).await;
+    assert_eq!(sent[0].method, Method::POST);
+    assert_eq!(sent[0].route_path(), Some(CHANNEL));
+    let reply = body(&sent[0]);
+    assert_eq!(reply["flags"], 32768);
+    assert_eq!(
+        reply["message_reference"],
+        json!({ "message_id": "6", "fail_if_not_exists": false })
+    );
+    assert_eq!(running.gw.dispatch("MESSAGE_CREATE", message("!secret")), 1);
+    let reports = running.wait_report().await;
+    assert!(reports[0].contains("secret"), "{reports:?}");
+    assert!(reports[0].contains("cannot be ephemeral"), "{reports:?}");
+    assert_eq!(running.sent().len(), 1);
+    running.run.abort();
+}

@@ -346,11 +346,48 @@ impl CommandInput {
     /// An input without options or resolved data, for a direct call of
     /// `path`.
     pub(crate) fn empty(path: &str) -> Self {
+        Self::new(path)
+    }
+
+    /// An input for the Command Path `path` (words joined by one ASCII
+    /// space), without options or resolved data; what a
+    /// [`Dispatcher`](crate::Dispatcher) caller builds after decoding its own
+    /// options.
+    ///
+    /// ```
+    /// use noctis_core::CommandInput;
+    ///
+    /// let input = CommandInput::new("config set prefix");
+    /// assert_eq!(input.path(), "config set prefix");
+    /// assert_eq!(input.get("value"), None);
+    /// ```
+    pub fn new(path: impl Into<String>) -> Self {
         Self {
-            path: path.to_owned(),
+            path: path.into(),
             options: Vec::new(),
             resolved: empty_resolved(),
         }
+    }
+
+    /// Adds the leaf option `name` with `value`, replacing an earlier value
+    /// of the same name.
+    ///
+    /// ```
+    /// use noctis_core::{CommandInput, OptionValue};
+    ///
+    /// let input = CommandInput::new("warn")
+    ///     .with_option("days", OptionValue::Integer(1))
+    ///     .with_option("days", OptionValue::Integer(3));
+    /// assert_eq!(input.get("days"), Some(&OptionValue::Integer(3)));
+    /// ```
+    #[must_use]
+    pub fn with_option(mut self, name: impl Into<String>, value: OptionValue) -> Self {
+        let name = name.into();
+        match self.options.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, slot)) => *slot = value,
+            None => self.options.push((name, value)),
+        }
+        self
     }
 
     /// The invoked Command Path, words joined by one ASCII space.

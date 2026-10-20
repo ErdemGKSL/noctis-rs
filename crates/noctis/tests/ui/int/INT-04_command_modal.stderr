@@ -1,0 +1,29 @@
+error[E0599]: the method `modal` exists for struct `Responder<noctis::Command>`, but its trait bounds were not satisfied
+ --> tests/ui/int/INT-04_command_modal.rs:5:10
+  |
+5 |     Ok(r.modal(()).await?.done()) // [INT-04]
+  |          ^^^^^ this is an associated function, not a method
+  |
+ ::: $WORKSPACE/crates/noctis-core/src/responder.rs
+  |
+  | pub struct Responder<K: ResponderKind, S: ResponderState = Pending> {
+  | ------------------------------------------------------------------- doesn't satisfy `Responder<noctis::Command>: noctis::codec::Route` or `_: RouteComponents`
+  |
+  = note: found the following associated functions; to be used as methods, functions must have a `self` parameter
+note: the candidate is defined in the trait `noctis::prelude::ModalForm`
+ --> $WORKSPACE/crates/noctis-ui/src/modal/form.rs
+  |
+  |     fn modal(route: Self::Route) -> Modal;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: the following trait bounds were not satisfied:
+          `Responder<noctis::Command>: noctis::codec::Route`
+          which is required by `Responder<noctis::Command>: noctis::prelude::RouteComponents`
+          `&Responder<noctis::Command>: noctis::codec::Route`
+          which is required by `&Responder<noctis::Command>: noctis::prelude::RouteComponents`
+          `&mut Responder<noctis::Command>: noctis::codec::Route`
+          which is required by `&mut Responder<noctis::Command>: noctis::prelude::RouteComponents`
+help: use associated function syntax instead
+  |
+5 -     Ok(r.modal(()).await?.done()) // [INT-04]
+5 +     Ok(Responder<noctis::Command>::modal(()).await?.done()) // [INT-04]
+  |

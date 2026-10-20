@@ -18,27 +18,35 @@ tells the kind: `Command` (1 word), `Subcommand` (2), `GroupSubcommand` (3), `No
 `.words()` gives 1/2/3. Subcommand and group nodes come only from paths: nothing sets
 `required` on them (OPT-14).
 
-The handler forms that work now: a path takes `(ctx: CommandCtx)` or `(ctx: CommandCtx,
-options: O)`, a pattern with a group takes `(ctx: CommandCtx, path: <Fn>Path)` or `(ctx:
-CommandCtx, path: <Fn>Path, options: O)` (§2), with `O` a `#[derive(Options)]` struct (§3);
-all return `HandlerResult<()>`. Any other parameter list is a compile error (`` `#[command("ping")]`
-handlers take `(ctx: CommandCtx)` or `(ctx: CommandCtx, options: O)` with `O: Options` ``);
-a non-Options type as the last parameter is E0277 `` `String` is not an options struct ``.
-Doc comments stay rustdoc and never become the description.
+The handler forms: a path takes `(ctx: CommandCtx[, r: CommandResponder][, options:
+O])`, a pattern with a group takes `(ctx: CommandCtx, path: <Fn>Path[, r:
+CommandResponder][, options: O])` (§2), with `O` a `#[derive(Options)]` struct (§3) and
+the responder as in `responder.md` §4, in exactly this order. Any other parameter list is
+a compile error (`` `#[command("ping")]` handlers take `(ctx: CommandCtx[, r:
+CommandResponder][, options: O])` with `O: Options`, in this order ``); a non-Options type
+as the last parameter is E0277 `` `String` is not an options struct ``. The handler
+returns `HandlerResult<R>` with `R` a `V2Message`, `Components`, a `LegacyMessage` or the
+`Responded` from `acked.done()` (`responder.md` §1): a returned message is the reply
+(or, after `defer`/`reply`, an edit of the original). `HandlerResult<()>` is E0277 `` `()`
+is not a Command response ``: a command must answer. Doc comments stay rustdoc and never
+become the description.
 
 ```rust
 use noctis::prelude::*;
+use noctis::ui::{Components, TextDisplay};
 
 /// Rustdoc only.
-#[command("setup start", description = "Start the setup")]
-pub async fn setup_start(ctx: CommandCtx) -> HandlerResult<()> {
+#[command("setup start", description = "Start the setup", ephemeral)]
+pub async fn setup_start(ctx: CommandCtx) -> HandlerResult<Components> {
     let _ = ctx.command_path(); // "setup start"
-    Ok(())
+    Ok(Components::new().push(TextDisplay::new("Let's set things up.")))
 }
 ```
 
-[planned] Extractors as further parameters, returning a View (`HandlerResult<T>` where
-`T: IntoResponse`) and the Responder (Story 6.5).
+`ephemeral` (bare flag) makes every response private (INT-10, `responder.md` §3);
+`CommandHandler::ephemerality()` reads it.
+
+[planned] Extractors as further parameters and returning a View (Epic 8).
 
 Register it: `Module::new("setup").add(setup_start())` (the macro turns the fn into a
 descriptor constructor `fn setup_start() -> CommandHandler`; call it with `()`).
@@ -60,19 +68,20 @@ Compile-time checks on the literal (each error names its rule):
 ### Attribute arguments
 
 The first argument is the path or pattern, a string literal (raw strings work). Landed:
-`description`, `max_expansions` and the metadata arguments `permissions`, `contexts`,
-`integration_types`, `nsfw` and `guilds`. Every argument marked [planned] is a compile
-error today (`` `#[command]` argument `ephemeral` is planned and not supported yet ``);
-an unknown one lists the landed names (`` unknown `#[command]` argument `foo`: expected
-`description`, `max_expansions`, `permissions`, `contexts`, `integration_types`, `nsfw` or
-`guilds` ``), and each argument may appear once (`` duplicate `#[command]` argument `nsfw` ``).
+`description`, `max_expansions`, `ephemeral` and the metadata arguments `permissions`,
+`contexts`, `integration_types`, `nsfw` and `guilds`. Every argument marked [planned] is a
+compile error today (`` `#[command]` argument `opens_modal` is planned and not supported
+yet ``); an unknown one lists the landed names (`` unknown `#[command]` argument `foo`:
+expected `description`, `max_expansions`, `ephemeral`, `permissions`, `contexts`,
+`integration_types`, `nsfw` or `guilds` ``), and each argument may appear once (``
+duplicate `#[command]` argument `nsfw` ``).
 
 | Argument | Meaning |
 | --- | --- |
 | `description = "…"` | the description (a string literal); required. [planned] optional with the `i18n` feature, then it must match the file |
 | `max_expansions = n` | Command Pattern cap (integer literal ≥ 1, default 25) |
 | `locales = "<dir>"` | [planned] where this command's default-locale file lives when it isn't the crate's `i18n!` dir (Module catalogs) |
-| `ephemeral` | [planned] reply privately (default public). Fixed at registration (INT-10); the auto-defer uses it |
+| `ephemeral` | reply privately (default public): a bare flag (`` `ephemeral` takes no value `` otherwise). Fixed at registration (INT-10); `reply` and a returned message use it, and the auto-defer will (Story 6.6) |
 | `opens_modal` | [planned] the handler answers with a modal and takes `CommandResponder<OpensModal>`; disables auto-defer (INT-05) |
 | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions` (META-01): `noctis::Permissions` names joined by `\|`, a path's last segment counts (`Permissions::MANAGE_GUILD`). The names are twilight's (`noctis::rules::command::PERMISSIONS`, 51 of them: `USE_SLASH_COMMANDS`, not `USE_APPLICATION_COMMANDS`; `MANAGE_GUILD_EXPRESSIONS`, not the deprecated `MANAGE_EMOJIS_AND_STICKERS`). Admin-only: `ADMINISTRATOR` (there is no `NONE`). Errors: ``[META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use `MANAGE_GUILD` `` for a wrong case), and ``[META-01] `permissions` takes permission names joined by `\|` `` for any other syntax (`8`, `"X"`, `A + B`, `A \|\| B`) |
 | `contexts = [Guild, BotDm, PrivateChannel]` | where it can be used (`noctis::InteractionContext` names; `InteractionContext::Guild` works): at least one, no duplicates, declared order kept (`` unknown context `Gild`; expected one of Guild, BotDm, PrivateChannel ``, `` duplicate context `Guild` ``) |
@@ -96,7 +105,7 @@ global); `CommandMetadata::new()` = all unset, by-value `const` setters of the f
 
 ```rust
 #[command("ban", description = "Ban a member", permissions = BAN_MEMBERS, contexts = [Guild])]
-async fn ban(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }
+async fn ban(ctx: CommandCtx) -> HandlerResult<LegacyMessage> { Ok(LegacyMessage::new("Banned.")) }
 
 let handler = ban();
 assert_eq!(handler.metadata().default_member_permissions, Some(noctis::Permissions::BAN_MEMBERS));
@@ -161,12 +170,12 @@ also yields the path without it. Expansion is left to right in declaration order
 
 ```rust
 #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
-async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<()> {
-    match path {
+async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
+    let view = match path {
         ConfigPath::SetPrefix | ConfigPath::SetWelcome => { … }
         ConfigPath::GetPrefix | ConfigPath::GetWelcome => { … }
-    }
-    Ok(())
+    };
+    Ok(view)
 }
 ```
 
@@ -336,7 +345,7 @@ fn positive(days: &i64, _ctx: &CommandCtx) -> Result<(), MessageKey> {
 }
 
 #[command("mod warn", description = "Warn a member")]
-async fn warn(ctx: CommandCtx, opts: WarnOptions) -> HandlerResult<()> { … }
+async fn warn(ctx: CommandCtx, opts: WarnOptions) -> HandlerResult<Components> { … }
 ```
 
 ### `#[option(..)]` arguments
@@ -570,19 +579,21 @@ OPT-11) means Discord rejects the response, so fix or drop the offending choices
 
 ```rust
 use noctis::prelude::*; // user_command, message_command
-use noctis::ui::{ResolvedMessage, ResolvedUser};
+use noctis::ui::{Components, ResolvedMessage, ResolvedUser, TextDisplay};
 
-#[user_command("Show profile", contexts = [Guild])]
-async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> {
+#[user_command("Show profile", contexts = [Guild], ephemeral)]
+async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
     let _ = ctx.command_path(); // "Show profile"
-    let _ = (target.user.id, target.member); // member: None when the target is not a member of the guild, including outside a guild
-    Ok(())
+    let _ = target.member; // None when the target is not a member of the guild, including outside a guild
+    Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
 }
 
 #[message_command("Report message")]
-async fn report(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> {
+async fn report(ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
+    let acked = r.defer(Ephemerality::Ephemeral).await?;
+    acked.edit_original(Components::new().push(TextDisplay::new("Reported."))).await?;
     let _ = target.message.content;
-    Ok(())
+    Ok(acked.done())
 }
 
 let module = Module::new("mod").add(show_profile()).add(report());
@@ -591,21 +602,25 @@ let module = Module::new("mod").add(show_profile()).add(report());
 - The macro turns the fn into `fn show_profile() -> noctis::ContextMenuHandler` for
   `Module::add`. `ContextMenuHandler` has `name()` (`module_path::fn`), `menu_name()`,
   `kind() -> noctis::MenuKind` (`User` / `Message`, from the macro: CTX-03; `.value()` 2 / 3,
-  `.name()` `"USER"` / `"MESSAGE"`) and `metadata() -> &CommandMetadata`.
+  `.name()` `"USER"` / `"MESSAGE"`), `metadata() -> &CommandMetadata` and
+  `ephemerality() -> Ephemerality`.
 - Arguments: the name literal first (raw strings work; `` `#[user_command]` needs the menu
   name as its first argument: `#[user_command("Show profile")]` `` / `` … needs its menu
   name as a string literal ``), then the metadata arguments of §1 (`permissions`,
-  `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included).
-  `key = "…"` (localization key), `ephemeral`, `opens_modal`, `rate_limit(..)`, `flags` and
-  `apps` are [planned]; `max_expansions` and other names are unknown arguments.
+  `contexts`, `integration_types`, `nsfw`, `guilds`, same rules and errors, META-03 included)
+  and the bare flag `ephemeral`. `key = "…"` (localization key), `opens_modal`,
+  `rate_limit(..)`, `flags` and `apps` are [planned]; `max_expansions` and other names are
+  unknown arguments.
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
   with a META-03 error). No description and no options (CTX-02): `description = "…"` is
   `` [CTX-02] context-menu commands have no description ``, an extra parameter is
   `` [CTX-02] context-menu commands take no options: … ``. The handler is exactly
-  `(ctx: CommandCtx, target: ResolvedUser)` (or `ResolvedMessage` for `#[message_command]`)
-  returning `HandlerResult<()>`. [planned] Localized as a whole: `ctxcmd.<key>.name`
-  (with `key`, Epic 11); returning a View (Story 6.5).
+  `(ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])` (or `ResolvedMessage`
+  for `#[message_command]`) returning `HandlerResult<R>` like a slash Command (`R` a
+  `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
+  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); returning a View
+  (Epic 8).
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
   `Limits::context_menu_name_len`), path `""`, CTX-01 `Between{1,32}` / `Count(n)`;
@@ -689,13 +704,30 @@ and answer "disabled here".
 
 ## 8. Handler context (`CommandCtx`)
 
-Available now: `ctx.command_path() -> &'static str`, the invoked Command Path (`"config set
-prefix"`), or the menu name for a context-menu command (`"Show profile"`). `CommandCtx` is `Clone` and `Debug`.
-`#[command]` handlers cannot be invoked from bot tests until Story 6.5 adds a test
-context; never use `noctis::__private`.
+`CommandCtx` is `Clone` (one `Arc`) and `Debug` (no HTTP client). Available now:
 
-[planned] Shared accessors (trait `Ctx`, also on every other context): `user_id()`, `user()`,
-`guild_id()`, `channel_id()`, `user_locale()`, `guild_locale()`, `response_locale()`,
+| Accessor | Returns |
+| --- | --- |
+| `command_path()` | `&'static str`: the invoked Command Path (`"config set prefix"`), or the menu name (`"Show profile"`) |
+| `module()` | `&'static str`: the id of the Module the handler was added to |
+| `shard()` | `u32`: the shard that received the interaction |
+| `guild_id()` | `Option<Id<GuildMarker>>` |
+| `channel_id()` | `Option<Id<ChannelMarker>>` |
+| `user_id()` | `Id<UserMarker>`: the invoking user |
+| `user_locale()` / `guild_locale()` | `Option<&str>`: Discord's `locale` / `guild_locale` |
+| `response_locale()` | `&str`: ephemeral → User, then Guild Locale; public → Guild, then User Locale; else `"en-US"` (`responder.md` §3) |
+| `ephemerality()` | `Ephemerality`: the declared one |
+| `state::<T>()` | `Option<State<T>>`: state registered with `AppBuilder::state` |
+| `http()` | `&Arc<twilight_http::Client>`: the App's one client |
+
+Interactions resolve by default (unlocalized) names only (LOC-06): `data.name` and the
+subcommand names, in the scope Discord sends (`data.guild_id` → that guild, else global;
+no fallback between them). An unknown name logs `unknown command` on target
+`noctis::dispatch` and sends nothing. The span `noctis.interaction` records `module` and
+`path`. Calling a handler directly from bot tests is [planned]; never use
+`noctis::__private`.
+
+[planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
 `kv()` (your key-value data), `cache()` (Discord resources), `modules()`,
-`rate_limits()`, `render(..)`, `http()`,
-`gateway()`, `app_permissions()`, `member()`. Command-only: `attachment_size_limit()`.
+`rate_limits()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
+Command-only: `attachment_size_limit()`.

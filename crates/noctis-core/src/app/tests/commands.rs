@@ -621,7 +621,9 @@ fn optioned_tree<O: crate::options::Options>() -> [Module; 2] {
             "m::h",
             path,
             "d",
-            |_: crate::CommandCtx, _: O| async { Ok(()) },
+            |_: crate::CommandCtx, _: crate::CommandResponder, _: O| async {
+                Ok(crate::test_support::msg())
+            },
         )
     }
     [

@@ -3,9 +3,9 @@
 
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::GuildMarker;
-use noctis::ui::{ResolvedMessage, ResolvedUser};
+use noctis::ui::{LegacyMessage, ResolvedMessage, ResolvedUser};
 use noctis::{App, BaseMeta, CommandCtx, CommandHandler, CommandMetadata, Module, Runtime};
-use noctis::{ContextMenuHandler, HandlerResult};
+use noctis::{CommandResponder, ContextMenuHandler, HandlerResult};
 
 fn leak(text: String) -> &'static str {
     Box::leak(text.into_boxed_str())
@@ -14,9 +14,12 @@ fn leak(text: String) -> &'static str {
 /// A hand-built handler of the one path `path`.
 fn handler(path: String, description: &'static str) -> CommandHandler {
     let paths: &'static [&'static str] = Box::leak(vec![leak(path)].into_boxed_slice());
-    CommandHandler::__new_plain("reg::h", paths, description, |_: CommandCtx| async {
-        Ok(())
-    })
+    CommandHandler::__new_plain(
+        "reg::h",
+        paths,
+        description,
+        |_: CommandCtx, _: CommandResponder| async { Ok(LegacyMessage::new("ok")) },
+    )
 }
 
 /// `count` handlers, the first `split` in Module `a`, the rest in `b`.
@@ -62,12 +65,16 @@ async fn reg_01_100_global_commands() {
     builds(modules);
 }
 
-async fn user(_: CommandCtx, _: ResolvedUser) -> HandlerResult<()> {
-    Ok(())
+async fn user(_: CommandCtx, _: ResolvedUser, _: CommandResponder) -> HandlerResult<LegacyMessage> {
+    Ok(LegacyMessage::new("ok"))
 }
 
-async fn message(_: CommandCtx, _: ResolvedMessage) -> HandlerResult<()> {
-    Ok(())
+async fn message(
+    _: CommandCtx,
+    _: ResolvedMessage,
+    _: CommandResponder,
+) -> HandlerResult<LegacyMessage> {
+    Ok(LegacyMessage::new("ok"))
 }
 
 #[tokio::test]

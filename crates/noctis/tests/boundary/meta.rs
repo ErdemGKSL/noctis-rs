@@ -60,18 +60,20 @@ use noctis::twilight::model::id::Id;
         | PIN_MESSAGES
         | BYPASS_SLOWMODE
 )]
-async fn meta_01_every_permission(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn meta_01_every_permission(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("scoped", description = "d", guilds = [42], permissions = MANAGE_GUILD, nsfw = true)]
-async fn meta_03_guild_without_contexts(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn meta_03_guild_without_contexts(
+    _ctx: CommandCtx,
+) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[command("max", description = "d", guilds = [18446744073709551615])]
-async fn meta_03_u64_max_guild(_ctx: CommandCtx) -> HandlerResult<()> {
-    Ok(())
+async fn meta_03_u64_max_guild(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+    Ok(noctis::ui::LegacyMessage::new("ok"))
 }
 
 #[test]
