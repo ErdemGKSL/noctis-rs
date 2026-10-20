@@ -918,15 +918,12 @@ name = "noctis-core"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures-util",
  "noctis-gateway",
  "noctis-ports",
  "rustls",
- "serde_json",
  "thiserror",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "twilight-http",
  "twilight-model",
 ]
@@ -1008,7 +1005,6 @@ dependencies = [
  "hyper-util",
  "metrics",
  "metrics-util",
- "noctis",
  "noctis-core",
  "noctis-gateway",
  "noctis-ports",

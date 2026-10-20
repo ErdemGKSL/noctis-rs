@@ -359,6 +359,11 @@ evidence = "unit"
 story = "15.3"
 
 [[rule]]
+id = "GW-05"
+evidence = "unit"
+story = "5.6"
+
+[[rule]]
 id = "GW-06"
 evidence = "diagnosed"
 story = "15.3"

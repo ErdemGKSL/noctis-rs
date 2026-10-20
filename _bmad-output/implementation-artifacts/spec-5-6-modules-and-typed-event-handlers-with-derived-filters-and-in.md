@@ -4,14 +4,56 @@ type: 'feature'
 created: '2026-10-20'
 status: 'in-progress'
 baseline_revision: '5a343f04ef66f5d9d4dde950db6fbebae47db260'
-review_loop_iteration: 0
+review_loop_iteration: 1
 followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-5-context.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/modules-middleware-ratelimits.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/app-and-sharding.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Template bootstrap writes a new .env and exits even when NOCTIS_TOKEN is already exported, contradicting its "env-only deployments never need a .env" doc; README says "next to itself" but the path is CWD-relative.
+    evidence: |-
+      load_or_create_env falls through to create_private on NotFound without checking the process environment; main.rs then returns early. From commit 9b82e43 (template single-binary work), not Story 5.6.
+    location: >-
+      examples/project-template/src/bootstrap.rs:51
+    severity: medium
+  - summary: >-
+      Template loads .env (dotenvy set_var) inside #[tokio::main] after the multi-thread runtime started.
+    evidence: |-
+      main.rs calls load_or_create_env inside the async main; env mutation while other threads exist is racy. Move it into a plain fn main before building the runtime. From commit 9b82e43, not Story 5.6.
+    location: >-
+      examples/project-template/src/main.rs:12
+    severity: low
+  - summary: >-
+      Template dependency versions base64 0.23, getrandom 0.4, zeroize 1.9 (and the getrandom::fill / STANDARD APIs) were not recorded as verified against crates.io.
+    evidence: |-
+      Unverified (maybe-false). Settle by checking crates.io/docs.rs for those versions and APIs; the template is outside workspace gates. From commit 9b82e43, not Story 5.6.
+    location: >-
+      examples/project-template/Cargo.toml:38
+    severity: medium (unverified)
+  - summary: >-
+      Sub-queue and concurrent handler tasks are not tracked, so handlers keep running after App::run returns.
+    evidence: |-
+      Workers::new and dispatch use bare tokio::spawn; only the drain task is under AbortOnDrop. Shutdown draining belongs to Story 5.8 (excluded by the intent's Never list).
+    location: >-
+      crates/noctis-core/src/worker.rs:75
+    severity: medium
+  - summary: >-
+      The biased select (queued interactions before a freed permit) has no test where both branches are ready.
+    evidence: |-
+      interaction_bypasses_permits only covers the permit-not-ready case. Interactions are traced and dropped until Epic 6, where the ordering becomes observable and should be pinned.
+    location: >-
+      crates/noctis-core/src/worker.rs:133
+    severity: low
+  - summary: >-
+      Template bootstrap.rs unit tests never run in any gate.
+    evidence: |-
+      examples/project-template is excluded from the workspace and the template CI job only builds with continue-on-error; the template cannot compile until planned API lands (Story 14.2). Then template-build should run cargo test --release.
+    location: >-
+      examples/project-template/src/bootstrap.rs
+    severity: medium
 ---
 
 <intent-contract>
@@ -105,6 +147,8 @@ deferred: []
 ## Code Map
 
 - `crates/noctis-core/src/app.rs`: `App` fields L67-79 (add `registry: Arc<Registry>`, lane/concurrency config; share `http` + `states` with `EventCtx` through an `Arc`); `run` L265-309 (`event_types` L292, `LaneConfig::default()` L298, drain L299); `AbortOnDrop`/`drain`/`dispatch` L398-425 → move into `worker.rs`; `AppBuilder` fields L488-507, `new` L529, `intents` L615, `install_plugins` L911, `build` L841-907 (fold after L875); `Debug` impls L448, L928.
+- `crates/noctis-core/src/registry.rs` (new): handler lists, `droppable` and the `handlers(EventType)` lookup are all keyed by the **dispatch key** (Design Notes), never by `KIND`. `GUILD_DELETE` holds both `GuildDelete` and `UnavailableGuild` handlers, merged in fold order; it is droppable only when every handler in that slot (of either payload) is `droppable`. `event_types` stays `INTERACTION_CREATE ∪ PARSE`, so every parsed type has a slot.
+- `crates/noctis-core/src/events.rs` (new): the payload table; `UnavailableGuild`'s sealed impl is the only hand-written `extract` (see Design Notes "Dispatch key"); module docs carry the `UnavailableGuild` sentence and the DM-intents sentence (Design Notes).
 - `crates/noctis-core/src/error.rs` L101-168: `BuildViolation` (add the three variants with rustdoc).
 - `crates/noctis-core/src/lib.rs`: `mod`s, root re-exports (`Module`, `Descriptor`, `HandlerError`, `HandlerResult`, and `EventCtx`, `EventHandler`, `EventPayload`, which the macro names as `::noctis::__private::core::EventHandler`), `pub mod events` (the trait, ctx, handler and the 64 payload re-exports), crate docs.
 - `crates/noctis-core/src/state.rs`: `StateMap::get` reused by `EventCtx::state`.
@@ -112,7 +156,7 @@ deferred: []
 - `crates/noctis-gateway/src/shard.rs` L40-110 `classify`: warns `"gateway payload could not be parsed; ignored"` on parse failure (the E2E counter, read-only).
 - `crates/noctis-macros/src/lib.rs`: add `#[proc_macro_attribute] pub fn event` + `mod event;`; follow `route.rs`/`common.rs` error style; unit tests on `proc_macro2` token streams in `event.rs`.
 - `crates/noctis/src/lib.rs`: root re-exports L133-136, `__private` L386-391, prelude L357-384; add `pub mod events` (core's `EventCtx`, `EventHandler`, `EventPayload` + the 64 payload types re-exported from `twilight_model::gateway::payload::incoming`), `pub use noctis_macros::event` at the root and in the prelude with `Module`, `EventCtx`, `HandlerError`, `HandlerResult`; a `# Modules and events` crate-docs section.
-- twilight (read-only, `~/.cargo/registry/src/*/`): model 0.17.1 `gateway/event/mod.rs` (`Event` variants, `guild_id()` L189, `kind()`), `gateway/event/kind.rs` (`EventType: Hash`, `name()` L98), `gateway/intents.rs`; gateway 0.17.1 `event.rs` (intent-group flags L200-330, `From<EventType>` L338), `json.rs` L26-47 (`parse` skips unwanted types before deserializing).
+- twilight (read-only, `~/.cargo/registry/src/*/`): model 0.17.1 `gateway/event/dispatch.rs` L294 (`GUILD_DELETE` always deserializes to `DispatchEvent::GuildDelete`; nothing in model or gateway 0.17.1 constructs `Event::UnavailableGuild`), `gateway/payload/incoming/{guild_delete.rs (id, unavailable: Option<bool>), unavailable_guild.rs (id only)}`, `gateway/event/mod.rs` (`Event` variants, `guild_id()` L189, `kind()`), `gateway/event/kind.rs` (`EventType: Hash`, `name()` L98), `gateway/intents.rs`; gateway 0.17.1 `event.rs` (intent-group flags L200-330, `From<EventType>` L338), `json.rs` L26-47 (`parse` skips unwanted types before deserializing).
 - `crates/noctis-testkit/tests/sharding.rs` L42-130: `Fakes` helper (`builder()` with `http_proxy`/`gateway_url`, `spawn`); `lane_metrics.rs`: trace-capture pattern and the 5.5 `"no handler registered"` interaction trace that must keep passing.
 - `xtask/rules-pending.toml` L361-364: the GW-05 entry to delete; `docs/discord-rules.md` L274: GW-05 row.
 - `examples/project-template/src/modules/profile.rs` L24-34, L162-181 (`award_xp`); skill `references/modules-middleware-ratelimits.md` §1, §4; `references/app-and-sharding.md` L60-90 (builder table, `.module` row marked planned), L107-140 (errors), §4 L257-260 (intents), §9 L343; `SKILL.md` API hash line.
@@ -122,12 +166,16 @@ deferred: []
 **Execution:**
 1. `Cargo.toml` files: core `[dependencies]` `futures-util.workspace = true`, tokio features + `macros`, `time`; core `[dev-dependencies]` `serde_json`, `tracing-subscriber = { workspace = true, features = ["fmt", "std"] }`; testkit `[dev-dependencies]` `noctis.workspace = true`. No new crates.
 2. `crates/noctis-gateway/src/lanes.rs` (+ tests): `recv_interaction`, Matrix 39.
-3. `crates/noctis-core/src/{handler.rs, events.rs, module.rs, registry.rs, worker.rs}`, `app.rs`, `error.rs`, `lib.rs`: implement per Boundaries; unit tests for Matrix 1-41 (core-level handlers via `EventHandler::__new`; the GW-05 tests' names contain `gw_05`); keep every 5.4/5.5 test green.
+3. `crates/noctis-core/src/{handler.rs, events.rs, module.rs, registry.rs, worker.rs}`, `app.rs`, `error.rs`, `lib.rs`: implement per Boundaries; unit tests for Matrix 1-41 (core-level handlers via `EventHandler::__new`; the GW-05 tests' names contain `gw_05`); keep every 5.4/5.5 test green. Also (Spec Change Log 1):
+   - registry: handlers stored under their dispatch key (Design Notes "Dispatch key"). Test `unavailable_guild_keyed_on_guild_delete`: an `UnavailableGuild` handler is returned by `handlers(EventType::GuildDelete)` and nothing is stored under `EventType::UnavailableGuild`; with a `GuildDelete` handler added, both appear in fold order. Test `droppable_unavailable_guild`: a droppable `UnavailableGuild` handler next to a non-droppable `GuildDelete` handler leaves `GUILD_DELETE` non-droppable; the droppable `UnavailableGuild` handler alone makes `GUILD_DELETE` droppable; `UNAVAILABLE_GUILD` is never added to `droppable` by the fold. Test `every_parsed_type_has_a_slot`: for each of the 64 payloads alone, `handlers(<the single EventType of its PARSE>)` is non-empty.
+   - events: unit test for `UnavailableGuild::extract` over `Event::GuildDelete` with `unavailable` `Some(true)` → `Some { id }`, `Some(false)` and `None` → `None`; `Event::UnavailableGuild(u)` → `Some(u)`.
+   - worker: test that a `GuildDelete` event with `unavailable: Some(true)` runs both an `UnavailableGuild` and a `GuildDelete` handler (each once), and with `unavailable: None` only the `GuildDelete` handler; neither case logs an error. Test (ordered) with `EventHandler::__new` whose closure panics before returning its future: one `"event handler panicked"` log with the message, and a later same-guild event is still handled (proves the `catch_unwind` around the constructing call).
+   - app: test through `App::run` (FakeGateway or the lane sender `App::run` actually builds) with `.event_lane(1, 0)` and one all-`droppable` handler blocked on a gate; flood the lane and assert at least one drop through the lane's dropped-event metric or its drop log. It must fail if `run` passes `LaneConfig::default()` instead of the builder's config.
 4. `crates/noctis-macros/src/{event.rs, lib.rs}`: the attribute; unit tests for Matrix 43.
-5. `crates/noctis/src/lib.rs` and `crates/noctis/tests/events.rs`: facade wiring, `compile_fail` doctests (Matrix 44), facade tests for Matrix 3, 11 (`gw_05_*`), 42 through `#[event]`.
-6. `crates/noctis-testkit/tests/events.rs`: Matrix 45-47 against `FakeDiscordHttp` + `FakeGateway` with `#[event]` handlers (multi-thread tokio, every wait ≤ 15 s).
+5. `crates/noctis/src/lib.rs` and `crates/noctis/tests/events.rs`: facade wiring, `compile_fail` doctests (Matrix 44), facade tests for Matrix 3, 11 (`gw_05_*`), 42 through `#[event]`. Add trybuild `compile_fail` cases in `crates/noctis/tests/ui` (the existing suite) for payload `String` and payload `InteractionCreate`, with `.stderr` snapshots that contain "is not a gateway event payload" (Matrix 44's message; doctests alone cannot assert it). Rustdoc of `pub use noctis_macros::event`: `ordered` states the hang hazard (Design Notes "Ordered hang hazard"); `droppable` states that `TYPING_START` and `PRESENCE_UPDATE` are always droppable regardless of the flag.
+6. `crates/noctis-testkit/tests/events.rs`: Matrix 45-47 against `FakeDiscordHttp` + `FakeGateway` with `#[event]` handlers (multi-thread tokio, every wait ≤ 15 s). Plus `unavailable_guild_e2e`: FakeGateway sends a real `GUILD_DELETE` dispatch `{"id":"<snowflake>","unavailable":true}`, an `#[event]` `UnavailableGuild` handler is called exactly once with that id; a following `GUILD_DELETE` without `unavailable` does not call it.
 7. `docs/discord-rules.md` GW-05 row: non-privileged intents are added automatically, a missing privileged one is `BuildViolation::MissingIntent`; delete GW-05 from `xtask/rules-pending.toml`.
-8. Usage Skill + template: `modules-middleware-ratelimits.md` §1/§4 show the real `Module`/`#[event]`/`EventCtx`/`HandlerError` API (mark `.template`, `.locales`, `.before`, `.flags`, `kv()`, `cache()`, `modules()` `[planned]`), ordering, droppable, intent derivation, and a table of the 64 payload types with their derived intents; `app-and-sharding.md`: `.module` (no longer planned), `.event_lane`, `.handler_concurrency`, the new violations, the worker set and interaction exemption; template `profile.rs` `award_xp` matches the real signature and states the derived intent. Re-bless the API snapshot and update `SKILL.md`'s API hash in the same commit.
+8. Usage Skill + template: `modules-middleware-ratelimits.md` §1/§4 show the real `Module`/`#[event]`/`EventCtx`/`HandlerError` API (mark `.template`, `.locales`, `.before`, `.flags`, `kv()`, `cache()`, `modules()` `[planned]`), ordering (with the hang-hazard paragraph), droppable, intent derivation (with the DM-intents sentence and the `UnavailableGuild` sentence, Design Notes), and a table of the 64 payload types with their derived intents; `app-and-sharding.md`: `.module` (no longer planned), `.event_lane`, `.handler_concurrency`, the new violations, the worker set and interaction exemption; template `profile.rs` `award_xp` matches the real signature and states the derived intent. Re-bless the API snapshot and update `SKILL.md`'s API hash in the same commit.
 9. `.memlog.md` (architecture): planning decisions are logged; append implementation decisions.
 
 **Acceptance Criteria:**
@@ -140,7 +188,57 @@ deferred: []
 
 ## Spec Change Log
 
+### 1 — 2026-10-20 — Review pass 1 loopback (bad_spec)
+- **Trigger:** `[high]` `UnavailableGuild` handlers never fire (blind 1, 15; edge 1; vgap 3; edge 3 grouped). twilight-model 0.17.1 turns every `GUILD_DELETE` into `Event::GuildDelete` (dispatch.rs:294) and never builds `Event::UnavailableGuild`; the Registry keyed handlers by `KIND` (`UnavailableGuild`) while the worker looked up `event.kind()` (`GuildDelete`). Side effects: `GUILD_DELETE` parsed and queued as a handlerless non-droppable event; the droppable fold marked `UNAVAILABLE_GUILD`, which the lane never sees; no test fed a real `GUILD_DELETE`.
+- **Decision:** keep the intent contract (64 payloads, `UnavailableGuild` with `PARSE = GUILD_DELETE`, Matrix 16/19) and make it true by keying on the dispatched type. Dropping the payload would edit `<intent-contract>`.
+- **Amended:** Code Map (`registry.rs`, `events.rs`, twilight refs); Tasks step 3 (registry/events/worker/app tests), step 5 (trybuild cases, `#[event]` rustdoc), step 6 (`unavailable_guild_e2e`), step 8 (skill paragraphs); Design Notes "Dispatch key", "DM intents", "Ordered hang hazard". Folded-in review patches: hang-hazard docs; `App::run` lane-config test; sync-panic `catch_unwind` test; trybuild `on_unimplemented` cases; DM-intents sentence; `droppable` rustdoc clause on typing/presence. Correction to the triage proposal: twilight's `UnavailableGuild` has only `id`, so `extract` builds `UnavailableGuild { id: d.id }`.
+- **Known-bad state avoided:** any registry, droppable fold or lookup keyed by `KIND` where `KIND != dispatch`; an `UnavailableGuild` handler that compiles, builds and derives `GUILD_DELETE` but is never called; a parsed type with no handler slot; `UNAVAILABLE_GUILD` in the droppable set; `LaneConfig::default()` in `run` going unnoticed by tests.
+- **KEEP (the code of commit 23afd8e is the base to rebuild from; restore it with `git show 23afd8e:<path>` and change only what this entry amends):** all 64 payload impls and intents; sealed `EventPayload` with the `on_unimplemented` diagnostic; `HandlerError`/`HandlerResult`/`EventCtx` design; `Module` pre-order fold with ancestor paths and call-order independence (Matrix 4-10); privileged-only GW-05 `MissingIntent` with the exact Display text; `event_lane`/`handler_concurrency` bounds and violations; the worker set (drain with `select! { biased; recv_interaction, acquire_owned }`, interactions never taking a permit, 64 hashed sub-queues spawned only with ordered handlers, clone-except-last, `catch_unwind` on both the constructing call and the future, `panic_message` fallback); `LaneReceiver::recv_interaction` and its Matrix 39 tests; the `#[event]` macro's token-level argument parsing, error messages, expansion shape and facade `__private::core`; testkit E2Es for Matrix 45-47; the docs/rules GW-05 row update; the skill/template/API-hash updates. Do not touch commits 9b82e43 (template bootstrap) and dfdf9ca (CV2 placement matrix): the loopback revert restores story paths to dfdf9ca, not to `baseline_revision`.
+
 ## Review Triage Log
+
+### 2026-10-20 — Review pass
+- verdicts: 39 findings — high 3, medium 8, low 15, false 12, maybe-false 1
+- findings:
+  - `[high]` `[bad_spec]` (blind) `UnavailableGuild` handlers never fire — verified: twilight-model 0.17.1 deserializes `GUILD_DELETE` only to `Event::GuildDelete` (dispatch.rs:294) and nothing constructs `Event::UnavailableGuild`; the handler is keyed under `EventType::UnavailableGuild`, so `registry.handlers(GuildDelete)` never finds it. Amendment: Design Note "Dispatch key" (handlers keyed by the dispatched type `PARSE`; `UnavailableGuild::extract` takes `Event::GuildDelete` with `unavailable == Some(true)`), droppable fold by dispatch key, new tests.
+  - `[low]` `[reject]` (blind) Drain takes a permit before checking for handlers — only reachable for handlerless parsed types, which exist solely through the UnavailableGuild bug (twilight `parse` skips unwanted dispatches); unreachable after the amendment.
+  - `[medium]` `[patch]` (blind) One hung ordered handler can freeze all event handling — real: queued ordered jobs hold permits, so a stuck sub-queue absorbs every permit. No AD prescribes handler timeouts; smallest fix is documenting the hazard (rustdoc of `#[event]` `ordered` and the skill's ordering section).
+  - `[low]` `[reject]` (blind) No handler timeout on concurrent handlers — a hung user future holding its permit is the normal semantics of a bounded pool; a timeout adds config surface no AD asks for.
+  - `[low]` `[reject]` (blind) `#[event]` attributes land on the descriptor fn — spec-prescribed; lint attrs still reach the nested fn lexically, only `#[tracing::instrument]` misses (5.7 adds `noctis.event` spans); partitioning attributes adds macro logic.
+  - `[low]` `[reject]` (blind) `#[event]` diagnostics lack `[RULE-ID]`/help, type errors left to rustc — messages are spec-prescribed (no rule id governs fn shape); type errors are deliberately routed through `on_unimplemented` (Matrix 44).
+  - `[low]` `[patch]` (blind) Negative type cases only covered by `compile_fail` doctests — Matrix 44 expects the `on_unimplemented` message, which a doctest cannot assert; the repo has a trybuild suite (`crates/noctis/tests/ui`). Add trybuild cases with `.stderr` for payload `String` and `InteractionCreate`.
+  - `[false]` `[reject]` (blind) Unrelated work bundled into the 5.6 diff — the bootstrap and placement-matrix work are separate commits (9b82e43, dfdf9ca) with their own messages; they only fall inside the baseline range.
+  - `[medium]` `[defer]` (blind) Template bootstrap writes `.env` and exits even when variables are exported — real, but from commit 9b82e43, not this story.
+  - `[low]` `[defer]` (blind) `.env` loaded after the tokio runtime started — real race window; from commit 9b82e43, not this story.
+  - `[maybe-false]` `[defer]` (blind) Template dependency versions unverified — settle by checking crates.io/docs.rs for base64 0.23, getrandom 0.4, zeroize 1.9 and their APIs; from commit 9b82e43; medium if true.
+  - `[low]` `[patch]` (blind) DM reaction/typing intents never derived and undocumented — the design (Design Notes) intends explicit DM intents, but only `MessageCreate` says so; add one sentence to the core `events` module docs and the skill naming `DIRECT_MESSAGE_REACTIONS`/`DIRECT_MESSAGE_TYPING`. (The `MESSAGE_CONTENT` part of `PRIVILEGED` is harmless.)
+  - `[false]` `[reject]` (blind) Common events (Ready, Resumed, …) missing — the 64-type set is a deliberate closed table in the intent; READY/RESUMED are consumed by the shard as status events.
+  - `[false]` `[reject]` (blind) `Ok(None)` handler mismatches dropped silently — `run_handler` only receives handlers looked up by `event.kind()`, and each `extract` matches its own `KIND` variant, so `None` is unreachable today (the UnavailableGuild handler is never looked up at all).
+  - `[high]` `[bad_spec]` (blind) Missing tests: saturation interactions and a real `GUILD_DELETE` parse/dispatch — the missing end-to-end `GUILD_DELETE` test is what let the UnavailableGuild defect through; grouped with it, amendment adds that test.
+  - `[high]` `[bad_spec]` (edge) UnavailableGuild handler never runs — same root as the first row; same amendment.
+  - `[false]` `[reject]` (edge) Typing/presence stay droppable despite a non-droppable handler — intent Matrix 22 mandates `DROPPABLE_EVENTS ∪ …`.
+  - `[medium]` `[bad_spec]` (edge) Handlerless parsed events (GUILD_DELETE for UnavailableGuild) occupy the lane as non-droppable — real only through the UnavailableGuild key mismatch; grouped, fixed by the dispatch-key amendment.
+  - `[medium]` `[patch]` (edge) Hung ordered handler stalls its sub-queue and exhausts permits — same root as the blind hang row; same doc patch.
+  - `[low]` `[reject]` (edge) Hung concurrent handler leaks its permit — see the blind timeout row.
+  - `[medium]` `[defer]` (edge) Spawned handler tasks outlive `App::run` — real (bare `tokio::spawn`), but shutdown draining is Story 5.8 per the intent's Never list.
+  - `[low]` `[reject]` (edge) Guildless ordered events share sub-queue 0 with some guilds — intent settles `subqueue(None) = 0` and AD-10 hashes guild ids; harm is throughput only and the fix adds a keying branch.
+  - `[low]` `[reject]` (edge) Instrument/lint attrs on the descriptor fn — see the blind attribute row.
+  - `[low]` `[reject]` (edge) `#[event(ordered,,droppable)]` yields an empty-name error — real but rare, and still a spanned error at the bad token.
+  - `[low]` `[reject]` (edge) `#[event]` on an associated fn using `Self` — rare; rustc still errors; a check adds macro logic.
+  - `[low]` `[patch]` (edge) Facade rustdoc for `droppable` omits that typing/presence are always droppable — direct doc correction in `crates/noctis/src/lib.rs` (the skill already says it).
+  - `[medium]` `[patch]` (vgap) `App::run` lane config unverified at the run boundary — pre-verified; add a test that goes through `App::run` with `.event_lane(1, 0)` and an all-droppable blocked handler and observes a drop.
+  - `[low]` `[patch]` (vgap) Synchronous panic in the handler-constructing call untested — pre-verified; add an ordered worker test with a closure that panics before returning its future.
+  - `[medium]` `[bad_spec]` (vgap) Droppable marking by dispatched kind for UnavailableGuild unpinned — the kind/parse split it tests is the UnavailableGuild defect; the amendment folds by dispatch key and adds the mixed GuildDelete/UnavailableGuild droppable test.
+  - `[low]` `[defer]` (vgap) Biased select order untested — pre-verified, filed defer; observable once Epic 6 adds interaction handlers.
+  - `[medium]` `[defer]` (vgap) Template `bootstrap.rs` tests never run — pre-verified, filed defer; from commit 9b82e43, needs the template to compile (Story 14.2).
+  - `[false]` `[reject]` (intent D1) GW-05 limited to privileged intents — deliberately settled (Design Notes "Privileged-only GW-05"; GW-05 rule text, FR-6 "derived").
+  - `[false]` `[reject]` (intent D2) Filter test is a parse-failure-warning proxy — deliberately settled in Matrix 45; twilight `parse` skips unwanted types before deserializing (json.rs), so a failed-parse counter observes exactly the deserialization attempts.
+  - `[false]` `[reject]` (intent D3) Interactions traced and dropped — the intent's Never list excludes interaction handlers; the bypass is what AC 5 asks.
+  - `[false]` `[reject]` (intent D4) 64 hashed sub-queues, not strictly per-guild — AD-10 prescribes guild ids hashed to fixed sub-queues; per-guild order holds.
+  - `[false]` `[reject]` (intent D5) Template still calls `ctx.kv()` — `kv()` is excluded by the intent and marked `[planned, Epic 7]` per the epics convention.
+  - `[false]` `[reject]` (intent D6) Template bootstrap out of scope — separate commit 9b82e43, not part of the story's change.
+  - `[false]` `[reject]` (intent D7) CV2 placement matrix out of scope — separate commit dfdf9ca.
+  - `[false]` `[reject]` (intent D8) Public API beyond the ACs — the intent's Approach explicitly names `event_lane`, `handler_concurrency`, `droppable` and the payload re-exports.
 
 ## Design Notes
 
@@ -154,6 +252,12 @@ deferred: []
           concat!(module_path!(), "::", "award_xp"), false, false, __noctis_event)
   }
   ```
+- **Dispatch key (Spec Change Log 1):** a handler is dispatched on the single `EventType` whose flag equals its `PARSE`; that type is its *dispatch key*. It equals `KIND` for 63 payloads; for `UnavailableGuild` it is `EventType::GuildDelete`, because twilight-model 0.17.1 deserializes every `GUILD_DELETE` into `Event::GuildDelete` and never constructs `Event::UnavailableGuild`. The sealed trait carries it explicitly as `const DISPATCH: EventType` (set in the `macro_rules!` table next to `KIND`/`PARSE`; a unit test asserts `EventTypeFlags::from(DISPATCH) == PARSE` for all 64). `EventHandler` stores `dispatch` next to `kind`. The Registry keys handler lists, the droppable fold and `handlers(..)` by `dispatch`; the worker keeps looking up `event.kind()`, which now always matches. `KIND` stays the user-facing name: `MissingIntent.event` and the `event_type` log field use `KIND.name()` (an `UnavailableGuild` handler failure logs `event_type = "UNAVAILABLE_GUILD"`).
+  - `UnavailableGuild`'s sealed `extract` is hand-written: `Event::GuildDelete(d)` with `d.unavailable == Some(true)` → `Some(UnavailableGuild { id: d.id })`; any other `GuildDelete` → `None`; `Event::UnavailableGuild(u)` → `Some(u)` (kept for completeness). Every other payload's `extract` matches only its own `KIND` variant.
+  - `None` from `extract` is a normal, silent skip of that handler for that event (no log, no error) — it is now reachable for `UnavailableGuild` on a guild the bot left. A handler slot with every handler skipped still releases its permit normally.
+  - Doc sentence (core `events` module docs, `noctis::events`, the skill's intents/payload section): "`UnavailableGuild` handlers run on a `GUILD_DELETE` dispatch with `unavailable: true` (an outage); a guild the bot left or was removed from reaches only `GuildDelete` handlers."
+- **DM intents:** `DIRECT_MESSAGES`, `DIRECT_MESSAGE_REACTIONS` and `DIRECT_MESSAGE_TYPING` are never derived (the table derives only guild intents) and must be requested with `.intents(..)`; one sentence saying so goes in the core `events` module docs and the skill's intents section.
+- **Ordered hang hazard:** a hung `ordered` handler blocks its sub-queue (every guild that hashes to it, and every guildless event in sub-queue 0), and the jobs queued behind it keep their permits, so it can eventually hold all `handler_concurrency` permits and stop event handling. No timeout is added (no AD asks for one); one short paragraph states this in the `#[event]` rustdoc (`ordered`) and in the skill's ordering section, advising bot authors to bound slow work in ordered handlers themselves (e.g. `tokio::time::timeout`).
 - **Snapshot size:** foreign re-exports appear as single `pub use` lines, so each payload name must appear in the skill (the table covers it).
 
 ## Verification

@@ -22,16 +22,13 @@ pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App,
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
-pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
-pub fn noctis::AppBuilder::handler_concurrency(&mut self, usize) -> &mut Self
 pub fn noctis::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
-pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
 pub fn noctis::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
@@ -68,23 +65,13 @@ pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
-pub noctis::BuildViolation::InvalidEventLane
-pub noctis::BuildViolation::InvalidEventLane::capacity: usize
-pub noctis::BuildViolation::InvalidEventLane::overflow: usize
 pub noctis::BuildViolation::InvalidGatewayUrl
 pub noctis::BuildViolation::InvalidGatewayUrl::reason: noctis::GatewayUrlError
-pub noctis::BuildViolation::InvalidHandlerConcurrency
-pub noctis::BuildViolation::InvalidHandlerConcurrency::actual: usize
 pub noctis::BuildViolation::InvalidHttpProxy
 pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
 pub noctis::BuildViolation::InvalidHttpTimeout::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidShardTotal
-pub noctis::BuildViolation::MissingIntent
-pub noctis::BuildViolation::MissingIntent::event: &'static str
-pub noctis::BuildViolation::MissingIntent::handler: &'static str
-pub noctis::BuildViolation::MissingIntent::intent: twilight_model::gateway::intents::Intents
-pub noctis::BuildViolation::MissingIntent::module: &'static str
 pub noctis::BuildViolation::NoTokioRuntime
 pub noctis::BuildViolation::Plugin
 pub noctis::BuildViolation::Plugin::message: alloc::string::String
@@ -108,7 +95,6 @@ pub fn noctis::BuildViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core
 impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
-pub trait noctis::Descriptor: noctis::__private::core::module::sealed::Sealed
 #[non_exhaustive] pub enum noctis::EnvError
 pub noctis::EnvError::InvalidShardTotal
 pub noctis::EnvError::InvalidShardTotal::var: &'static str
@@ -173,17 +159,6 @@ impl core::fmt::Display for noctis::GatewayUrlError
 pub fn noctis::GatewayUrlError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::GatewayUrlError
 impl core::marker::StructuralPartialEq for noctis::GatewayUrlError
-pub struct noctis::HandlerError(_)
-impl noctis::HandlerError
-pub fn noctis::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
-pub fn noctis::HandlerError::new(impl core::error::Error + core::marker::Send + core::marker::Sync + 'static) -> Self
-impl core::fmt::Debug for noctis::HandlerError
-pub fn noctis::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for noctis::HandlerError
-pub fn noctis::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::HandlerError
-pub fn noctis::HandlerError::from(E) -> Self
-pub type noctis::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
 #[non_exhaustive] pub enum noctis::HttpProxyError
 pub noctis::HttpProxyError::Empty
 pub noctis::HttpProxyError::InvalidChar
@@ -206,16 +181,6 @@ impl core::fmt::Display for noctis::HttpProxyError
 pub fn noctis::HttpProxyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::HttpProxyError
 impl core::marker::StructuralPartialEq for noctis::HttpProxyError
-pub struct noctis::Module
-impl noctis::Module
-pub fn noctis::Module::add(self, impl noctis::Descriptor) -> Self
-pub fn noctis::Module::id(&self) -> &'static str
-pub fn noctis::Module::module(self, noctis::Module) -> Self
-pub fn noctis::Module::new(&'static str) -> Self
-impl core::clone::Clone for noctis::Module
-pub fn noctis::Module::clone(&self) -> Self
-impl core::fmt::Debug for noctis::Module
-pub fn noctis::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
 pub trait noctis::Resource: core::marker::Send + core::marker::Sync + 'static
@@ -324,7 +289,6 @@ pub fn noctis::TokenError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fm
 impl core::marker::StructuralPartialEq for noctis::TokenError
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
-pub proc macro noctis::#[event]
 pub proc macro noctis::label!()
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
@@ -698,234 +662,6 @@ pub fn noctis::codec::check::assert_round_trip<T>(&T) where T: noctis::codec::Fi
 pub fn noctis::codec::check::assert_worst_case<T>(&T) where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub fn noctis::codec::check::round_trip<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
 pub fn noctis::codec::check::worst_case<T>(&T) -> core::result::Result<(), noctis::codec::check::CheckError> where T: noctis::codec::Field + for<'de> noctis::codec::FieldDecode<'de> + core::cmp::PartialEq + core::fmt::Debug
-pub mod noctis::events
-pub use noctis::events::AutoModerationActionExecution
-pub use noctis::events::AutoModerationRuleCreate
-pub use noctis::events::AutoModerationRuleDelete
-pub use noctis::events::AutoModerationRuleUpdate
-pub use noctis::events::BanAdd
-pub use noctis::events::BanRemove
-pub use noctis::events::ChannelCreate
-pub use noctis::events::ChannelDelete
-pub use noctis::events::ChannelPinsUpdate
-pub use noctis::events::ChannelUpdate
-pub use noctis::events::CommandPermissionsUpdate
-pub use noctis::events::EntitlementCreate
-pub use noctis::events::EntitlementDelete
-pub use noctis::events::EntitlementUpdate
-impl noctis::events::EventCtx
-pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
-pub fn noctis::events::EventCtx::module(&self) -> &'static str
-pub fn noctis::events::EventCtx::shard(&self) -> u32
-pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
-impl core::clone::Clone for noctis::events::EventCtx
-pub fn noctis::events::EventCtx::clone(&self) -> Self
-impl core::fmt::Debug for noctis::events::EventCtx
-pub fn noctis::events::EventCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::events::EventCtx(_)
-impl noctis::events::EventCtx
-pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
-pub fn noctis::events::EventCtx::module(&self) -> &'static str
-pub fn noctis::events::EventCtx::shard(&self) -> u32
-pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
-impl core::clone::Clone for noctis::events::EventCtx
-pub fn noctis::events::EventCtx::clone(&self) -> Self
-impl core::fmt::Debug for noctis::events::EventCtx
-pub fn noctis::events::EventCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::clone::Clone for noctis::events::EventHandler
-pub fn noctis::events::EventHandler::clone(&self) -> Self
-impl core::fmt::Debug for noctis::events::EventHandler
-pub fn noctis::events::EventHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl noctis::Descriptor for noctis::events::EventHandler
-pub struct noctis::events::EventHandler
-impl core::clone::Clone for noctis::events::EventHandler
-pub fn noctis::events::EventHandler::clone(&self) -> Self
-impl core::fmt::Debug for noctis::events::EventHandler
-pub fn noctis::events::EventHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl noctis::Descriptor for noctis::events::EventHandler
-impl noctis::Descriptor for noctis::events::EventHandler
-pub trait noctis::events::EventPayload: noctis::__private::core::events::sealed::Sealed + core::marker::Send + 'static
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_action_execution::AutoModerationActionExecution
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_create::AutoModerationRuleCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_delete::AutoModerationRuleDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_update::AutoModerationRuleUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::ban_add::BanAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::ban_remove::BanRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_create::ChannelCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_delete::ChannelDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_pins_update::ChannelPinsUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_update::ChannelUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::command_permissions_update::CommandPermissionsUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::entitlement_create::EntitlementCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::entitlement_delete::EntitlementDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::entitlement_update::EntitlementUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_audit_log_entry_create::GuildAuditLogEntryCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_create::GuildCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_delete::GuildDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_emojis_update::GuildEmojisUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_integrations_update::GuildIntegrationsUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_create::GuildScheduledEventCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_delete::GuildScheduledEventDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_update::GuildScheduledEventUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_user_add::GuildScheduledEventUserAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_user_remove::GuildScheduledEventUserRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_stickers_update::GuildStickersUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_update::GuildUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::integration_create::IntegrationCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::integration_delete::IntegrationDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::integration_update::IntegrationUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::invite_create::InviteCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::invite_delete::InviteDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_add::MemberAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_chunk::MemberChunk
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_remove::MemberRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_update::MemberUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_create::MessageCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_delete::MessageDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_delete_bulk::MessageDeleteBulk
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_poll_vote_add::MessagePollVoteAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_poll_vote_remove::MessagePollVoteRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_update::MessageUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::presence_update::PresenceUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_add::ReactionAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_remove::ReactionRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_remove_all::ReactionRemoveAll
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_remove_emoji::ReactionRemoveEmoji
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::role_create::RoleCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::role_delete::RoleDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::role_update::RoleUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::stage_instance_create::StageInstanceCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::stage_instance_delete::StageInstanceDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::stage_instance_update::StageInstanceUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_create::ThreadCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_delete::ThreadDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_list_sync::ThreadListSync
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_member_update::ThreadMemberUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_members_update::ThreadMembersUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_update::ThreadUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::typing_start::TypingStart
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::unavailable_guild::UnavailableGuild
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::user_update::UserUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::voice_server_update::VoiceServerUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::voice_state_update::VoiceStateUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::webhooks_update::WebhooksUpdate
-pub trait noctis::events::EventPayload: noctis::__private::core::events::sealed::Sealed + core::marker::Send + 'static
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_action_execution::AutoModerationActionExecution
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_create::AutoModerationRuleCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_delete::AutoModerationRuleDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_update::AutoModerationRuleUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::ban_add::BanAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::ban_remove::BanRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_create::ChannelCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_delete::ChannelDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_pins_update::ChannelPinsUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::channel_update::ChannelUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::command_permissions_update::CommandPermissionsUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::entitlement_create::EntitlementCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::entitlement_delete::EntitlementDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::entitlement_update::EntitlementUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_audit_log_entry_create::GuildAuditLogEntryCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_create::GuildCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_delete::GuildDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_emojis_update::GuildEmojisUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_integrations_update::GuildIntegrationsUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_create::GuildScheduledEventCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_delete::GuildScheduledEventDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_update::GuildScheduledEventUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_user_add::GuildScheduledEventUserAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_scheduled_event_user_remove::GuildScheduledEventUserRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_stickers_update::GuildStickersUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::guild_update::GuildUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::integration_create::IntegrationCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::integration_delete::IntegrationDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::integration_update::IntegrationUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::invite_create::InviteCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::invite_delete::InviteDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_add::MemberAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_chunk::MemberChunk
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_remove::MemberRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::member_update::MemberUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_create::MessageCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_delete::MessageDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_delete_bulk::MessageDeleteBulk
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_poll_vote_add::MessagePollVoteAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_poll_vote_remove::MessagePollVoteRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::message_update::MessageUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::presence_update::PresenceUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_add::ReactionAdd
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_remove::ReactionRemove
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_remove_all::ReactionRemoveAll
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::reaction_remove_emoji::ReactionRemoveEmoji
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::role_create::RoleCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::role_delete::RoleDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::role_update::RoleUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::stage_instance_create::StageInstanceCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::stage_instance_delete::StageInstanceDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::stage_instance_update::StageInstanceUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_create::ThreadCreate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_delete::ThreadDelete
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_list_sync::ThreadListSync
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_member_update::ThreadMemberUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_members_update::ThreadMembersUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::thread_update::ThreadUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::typing_start::TypingStart
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::unavailable_guild::UnavailableGuild
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::user_update::UserUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::voice_server_update::VoiceServerUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::voice_state_update::VoiceStateUpdate
-impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::webhooks_update::WebhooksUpdate
-pub use noctis::events::GuildAuditLogEntryCreate
-pub use noctis::events::GuildCreate
-pub use noctis::events::GuildDelete
-pub use noctis::events::GuildEmojisUpdate
-pub use noctis::events::GuildIntegrationsUpdate
-pub use noctis::events::GuildScheduledEventCreate
-pub use noctis::events::GuildScheduledEventDelete
-pub use noctis::events::GuildScheduledEventUpdate
-pub use noctis::events::GuildScheduledEventUserAdd
-pub use noctis::events::GuildScheduledEventUserRemove
-pub use noctis::events::GuildStickersUpdate
-pub use noctis::events::GuildUpdate
-pub use noctis::events::IntegrationCreate
-pub use noctis::events::IntegrationDelete
-pub use noctis::events::IntegrationUpdate
-pub use noctis::events::InviteCreate
-pub use noctis::events::InviteDelete
-pub use noctis::events::MemberAdd
-pub use noctis::events::MemberChunk
-pub use noctis::events::MemberRemove
-pub use noctis::events::MemberUpdate
-pub use noctis::events::MessageCreate
-pub use noctis::events::MessageDelete
-pub use noctis::events::MessageDeleteBulk
-pub use noctis::events::MessagePollVoteAdd
-pub use noctis::events::MessagePollVoteRemove
-pub use noctis::events::MessageUpdate
-pub use noctis::events::PresenceUpdate
-pub use noctis::events::ReactionAdd
-pub use noctis::events::ReactionRemove
-pub use noctis::events::ReactionRemoveAll
-pub use noctis::events::ReactionRemoveEmoji
-pub use noctis::events::RoleCreate
-pub use noctis::events::RoleDelete
-pub use noctis::events::RoleUpdate
-pub use noctis::events::StageInstanceCreate
-pub use noctis::events::StageInstanceDelete
-pub use noctis::events::StageInstanceUpdate
-pub use noctis::events::ThreadCreate
-pub use noctis::events::ThreadDelete
-pub use noctis::events::ThreadListSync
-pub use noctis::events::ThreadMemberUpdate
-pub use noctis::events::ThreadMembersUpdate
-pub use noctis::events::ThreadUpdate
-pub use noctis::events::TypingStart
-pub use noctis::events::UnavailableGuild
-pub use noctis::events::UserUpdate
-pub use noctis::events::VoiceServerUpdate
-pub use noctis::events::VoiceStateUpdate
-pub use noctis::events::WebhooksUpdate
 pub mod noctis::ports
 pub enum noctis::ports::AnimatedFormat
 pub noctis::ports::AnimatedFormat::Apng
@@ -1535,16 +1271,13 @@ pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noc
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
-pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
 pub fn noctis::prelude::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
-pub fn noctis::prelude::AppBuilder::handler_concurrency(&mut self, usize) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
-pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
@@ -1568,34 +1301,12 @@ pub fn noctis::prelude::Choices::description(&self) -> core::option::Option<&'st
 pub fn noctis::prelude::Choices::from_value(&str) -> core::option::Option<Self>
 pub fn noctis::prelude::Choices::label(&self) -> &'static str
 pub fn noctis::prelude::Choices::value(&self) -> &'static str
-pub struct noctis::prelude::EventCtx(_)
-pub struct noctis::prelude::HandlerError(_)
-impl noctis::prelude::HandlerError
-pub fn noctis::prelude::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
-pub fn noctis::prelude::HandlerError::new(impl core::error::Error + core::marker::Send + core::marker::Sync + 'static) -> Self
-impl core::fmt::Debug for noctis::prelude::HandlerError
-pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::fmt::Display for noctis::prelude::HandlerError
-pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::prelude::HandlerError
-pub fn noctis::prelude::HandlerError::from(E) -> Self
-pub type noctis::prelude::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
 pub proc macro noctis::prelude::#[derive(Modal)]
 pub trait noctis::prelude::ModalForm: core::marker::Sized
 pub type noctis::prelude::ModalForm::Route: noctis::codec::Route<Payload = Self::Route> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
 pub fn noctis::prelude::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> core::result::Result<Self, noctis::ui::SubmitError>
 pub fn noctis::prelude::ModalForm::modal(Self::Route) -> noctis::ui::Modal
-pub struct noctis::prelude::Module
-impl noctis::prelude::Module
-pub fn noctis::prelude::Module::add(self, impl noctis::Descriptor) -> Self
-pub fn noctis::prelude::Module::id(&self) -> &'static str
-pub fn noctis::prelude::Module::module(self, noctis::prelude::Module) -> Self
-pub fn noctis::prelude::Module::new(&'static str) -> Self
-impl core::clone::Clone for noctis::prelude::Module
-pub fn noctis::prelude::Module::clone(&self) -> Self
-impl core::fmt::Debug for noctis::prelude::Module
-pub fn noctis::prelude::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::prelude::Payload
 pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
@@ -1651,7 +1362,6 @@ pub type noctis::prelude::State<T>::Target = T
 pub fn noctis::prelude::State<T>::deref(&self) -> &T
 pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
-pub proc macro noctis::prelude::#[event]
 pub proc macro noctis::prelude::label!()
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()

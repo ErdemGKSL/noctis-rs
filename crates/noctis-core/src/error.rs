@@ -5,8 +5,6 @@ use std::any::type_name;
 use std::fmt;
 use std::time::Duration;
 
-use twilight_model::gateway::Intents;
-
 use crate::{GatewayUrlError, HttpProxyError, Plugin, ResourceConflict, TokenError};
 
 /// Every error `App::from_env`, `build` and `run` return.
@@ -159,42 +157,6 @@ pub enum BuildViolation {
     /// `shard_total(0)`: a fixed shard total must be at least 1.
     #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]
     InvalidShardTotal,
-    /// `event_lane(capacity, overflow)` is out of range: the capacity must be
-    /// in 1..=1048576 and the overflow in 0..=4194304.
-    #[error(
-        "event lane capacity {capacity} / overflow {overflow} is out of range: use a capacity in \
-         1..=1048576 and an overflow in 0..=4194304"
-    )]
-    InvalidEventLane {
-        /// The rejected capacity.
-        capacity: usize,
-        /// The rejected overflow cap.
-        overflow: usize,
-    },
-    /// `handler_concurrency` is outside 1..=65536.
-    #[error("handler concurrency {actual} is out of range: use a value in 1..=65536")]
-    InvalidHandlerConcurrency {
-        /// The rejected value.
-        actual: usize,
-    },
-    /// An event handler needs a privileged intent the App did not request
-    /// (GW-05). Non-privileged intents are added automatically.
-    #[error(
-        "[GW-05] event handler `{handler}` (Module `{module}`) handles {event}, which needs the \
-         privileged intent {name}: add `.intents(Intents::{name})` and enable it in the Discord \
-         Developer Portal",
-        name = IntentName(*intent)
-    )]
-    MissingIntent {
-        /// The id of the handler's Module.
-        module: &'static str,
-        /// The handler's path (`module_path!()::name`).
-        handler: &'static str,
-        /// The Discord event name, such as `GUILD_MEMBER_ADD`.
-        event: &'static str,
-        /// The missing privileged intent.
-        intent: Intents,
-    },
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]
     Plugin {
@@ -351,24 +313,6 @@ pub enum StartError {
          then restart"
     )]
     GatewayStopped,
-}
-
-/// The constant name of a privileged intent, such as `GUILD_MEMBERS`.
-struct IntentName(Intents);
-
-impl fmt::Display for IntentName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = if self.0 == Intents::GUILD_MEMBERS {
-            "GUILD_MEMBERS"
-        } else if self.0 == Intents::GUILD_PRESENCES {
-            "GUILD_PRESENCES"
-        } else if self.0 == Intents::MESSAGE_CONTENT {
-            "MESSAGE_CONTENT"
-        } else {
-            return write!(f, "{:?}", self.0);
-        };
-        f.write_str(name)
-    }
 }
 
 /// `" (HTTP {status})"`, or nothing.

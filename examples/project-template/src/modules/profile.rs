@@ -161,19 +161,17 @@ async fn save_bio(ctx: ModalSubmitCtx, save: SaveBio, form: BioForm) -> HandlerR
     ProfileView::load(&ctx, save.user).await.map(|v| v.editable(true))
 }
 
-/// +1 XP per message, at most once a minute per member. A `MessageCreate` handler
-/// derives the GUILD_MESSAGES intent: `build()` adds it to the App (not privileged, so
-/// no `.intents(..)` call; message content and DMs are not requested) and the gateway
-/// starts parsing MESSAGE_CREATE. Concurrent (not `ordered`), never droppable.
+/// +1 XP per message, at most once a minute per member. Registering a `MessageCreate`
+/// handler makes the App request GUILD_MESSAGES (not privileged; no message content).
 #[event]
 async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    let Some(guild) = ctx.guild_id() else {
+    let Some(guild) = msg.guild_id else {
         return Ok(());
     };
     if msg.author.bot {
         return Ok(());
     }
-    let kv = ctx.kv(); // [planned, Epic 7]
+    let kv = ctx.kv();
     let cooldown = format!("xpcd:{guild}:{}", msg.author.id);
     if kv
         .put_if_absent(&cooldown, &(), Some(Duration::from_secs(60)))
