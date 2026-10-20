@@ -171,6 +171,30 @@ match configure(&mut App::builder()).build() {
 }
 ```
 
+## Shipping one binary and the first run
+
+A Noctis bot is meant to deploy as a single executable. Locale files are compiled in by
+`i18n!`, the Template theme by `theme!()`, the default font by the `default-font`
+feature; embed everything else (fonts, images, `.env.example`) with `include_bytes!` /
+`include_str!`. Never read asset files at runtime; the only file a bot reads is `.env`.
+
+The project template's `src/bootstrap.rs` shows the first-run pattern. Call
+`load_or_create_env(Path::new(".env"))` before logging is set up:
+
+- If `.env` exists, it is loaded. Variables already in the environment win.
+- Otherwise `.env` is created from the embedded `.env.example`, with owner-only
+  permissions and a fresh 32-byte base64 `NOCTIS_PAYLOAD_KEY`, and the bot exits so the
+  owner can set `NOCTIS_TOKEN`.
+
+Memory rules for embedded data:
+
+- Data used once, like `.env.example`, stays a `&'static str` and is never copied to the
+  heap. Static data can't be zeroized, but its file-backed pages go cold and the OS
+  reclaims them.
+- Every buffer built from embedded data, and every secret, is a `zeroize::Zeroizing`
+  value, so it is wiped on drop.
+- Data used on every interaction, such as locale strings, stays resident.
+
 ## 2. Environment variables
 
 | Variable | Meaning |

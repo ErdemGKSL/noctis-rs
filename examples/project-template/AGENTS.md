@@ -17,6 +17,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 
 ## Where things are
 
+- `src/bootstrap.rs` first run: loads `.env`, or creates it from the embedded `.env.example` with a fresh payload key.
 - `src/main.rs` thin entry; `src/lib.rs` `configure(&mut AppBuilder) -> &mut AppBuilder` mounts Modules, Adapters and state (shared by main and tests).
 - `src/modules/{setup,dashboard,profile}.rs` one Module each; `src/adapters/` custom Adapters; `src/strings.rs` compiles `locales/*.yaml` (`en-US` is the default locale; file names are Discord locale codes).
 - `noctis-theme.css` Theme tokens and keyframes for Templates.
@@ -31,6 +32,7 @@ project template: `/setup start` (Wizard), `/dashboard` (Navbar + Paginator),
 
 ## Conventions that differ from defaults
 
+- Ship one self-contained binary: compile every asset in (`i18n!` for locales, `theme!()` for the theme, `include_bytes!`/`include_str!` for fonts, images and `.env.example`); never read asset files at runtime, only `.env`. Embedded data used once (like `.env.example`) is never copied to the heap; any buffer built from it, and every secret, lives in `zeroize::Zeroizing`. Data used on every interaction (locales) stays resident.
 - Never hand-build a `custom_id`, response type or interaction callback; build components from Route values and return Views.
 - Every user-visible string goes through `locales/*.yaml`; add new keys to `en-US.yaml` first.
 - Limits and Locales come from `noctis::rules` (`Locale::EnUs` = `en-US`); override limits on the App builder with `Limits`, never with hard-coded numbers.

@@ -44,8 +44,20 @@ image rendering.
 ## Configuration
 
 Configuration is code (`src/lib.rs`, `configure`) plus `NOCTIS_*` environment
-variables read by `App::from_env()`. Copy `.env.example` to `.env` and export it, or set
-the variables in your deployment.
+variables read by `App::from_env()`.
+
+The bot ships as **one self-contained binary**: locale files (`i18n!`), the theme
+(`theme!()`), the default font (`default-font` feature) and `.env.example` are compiled
+into it, so a deployment needs nothing but the executable. On first run it writes
+`.env` next to itself from the built-in `.env.example` (owner-only permissions, a
+freshly generated `NOCTIS_PAYLOAD_KEY`) and exits so you can fill in `NOCTIS_TOKEN`.
+Later runs load `.env`; variables already exported in the environment win, so a
+deployment that sets them directly never needs the file.
+
+Memory: locale strings stay resident, since every interaction uses them. The embedded
+`.env.example` is read-only static data that is touched only on first run, so the OS
+drops it from memory once it goes cold; every buffer built from it, including the
+generated key, is zeroized when it's dropped (`src/bootstrap.rs`).
 
 | Variable | Required | Meaning |
 | --- | --- | --- |

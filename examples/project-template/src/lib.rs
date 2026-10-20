@@ -11,6 +11,7 @@
 //! `main.rs` and the tests share it.
 
 pub mod adapters;
+pub mod bootstrap;
 pub mod modules;
 pub mod strings;
 
