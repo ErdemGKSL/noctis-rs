@@ -21,7 +21,7 @@ Let a bot author handle every button, select and modal through exactly one state
 
 - One handler per Route id; duplicates across Modules and Routes referenced without a mounted handler fail `App::build` with a `BuildError` (CID-04). `.build()` on a component requires `R: Handled` (compile-time half).
 - Untrusted input: malformed id, unknown Route, bad integrity tag or undecodable Payload yields a typed error plus logged warning and a generic ephemeral notice, never a panic (CID-06).
-- No per-message/per-component closure, task or timer; memory must stay flat with N messages (`assert_memory_flat`). Route lookup + fixed-width inline decode allocate nothing (dhat test).
+- No per-message/per-component closure, task or timer; memory must stay flat with N messages. Route lookup + fixed-width inline decode allocate nothing (dhat test).
 - `NOCTIS_PAYLOAD_KEY` (32 bytes, plus optional previous key for rotation) is never logged or passed to a port/adapter.
 - Observability: `noctis.interaction` spans across stages; `noctis_handler_duration_seconds{kind}`, `noctis_handler_errors_total{kind}`, `noctis_ref_lookups_total{result}` (hit/miss/stale/forged).
 - Every public API change updates the Usage Skill, project template, `xtask/public-api.txt` and passes `skill-check`, in the same commit.
@@ -39,6 +39,10 @@ Let a bot author handle every button, select and modal through exactly one state
 - **Ports:** `Namespaced<P>` prefixes `<app>:<port>:` (escape `:`); adapters store keys verbatim. `Shared::new(store)` passed to normal setter gives `_shared:<port>:`. `AppId` `[a-z0-9-]{1,32}`, default application id in base62. `ctx.kv()` typed CacheStore handle: postcard + schema byte (mismatch = miss), counters 8-byte big-endian.
 - **Extensions:** per-interaction type map; child replaces parent with debug trace; Middleware descriptors declare provided types; unprovided `Ext<T>` fails build, `Option<Ext<T>>` opts out; never written to ports.
 - **Registry:** immutable, built once from descriptors; O(1) maps keyed by `&'static str` looked up with borrowed keys.
+- **Route map:** components and modals share one App-wide map keyed by `<S as Route>::ID`; duplicates are `BuildViolation::DuplicateRoute`, and opt-in `Module::uses::<R: Handled>()` makes a used-but-unhandled Route a `BuildViolation::UnmountedRoute` (both CID-04).
+- **Staged rollout:** 7.1 dispatches but sends nothing; stale/Ref/forged/undecodable/kind-mismatch ids are a crate-private `Rejection` logged once at warn (`noctis::dispatch`, `reason`), each arm replaced by 7.2/7.3/7.5. Handler failures go to the Component Error Sink (`kind="component"`).
+- **Proofs:** dhat alloc test via hidden `__testing::route_table(..).probe(..)` (10 and 10 000 Routes) and memory flatness via `__testing::dispatch`; testkit `assert_memory_flat` is not added in this epic.
+- **Codec:** format-digit flag bit 2 is reserved (`CodecError::ReservedFlag`, malformed, never stale).
 
 ## Cross-Story Dependencies
 
