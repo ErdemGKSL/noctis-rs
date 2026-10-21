@@ -391,10 +391,7 @@ async fn defer_then_follow_up() {
         json!({ "type": 5, "data": { "flags": 64 } })
     );
     assert_eq!(sent[1].route_path(), Some(FOLLOWUP));
-    assert_eq!(
-        sent[1].query.as_deref(),
-        Some("wait=true&with_components=true")
-    );
+    assert_eq!(sent[1].query.as_deref(), Some("wait=true"));
     assert_eq!(body(&sent[1])["flags"], 32768);
     assert!(running.reports.0.lock().unwrap().is_empty());
     running.run.abort();

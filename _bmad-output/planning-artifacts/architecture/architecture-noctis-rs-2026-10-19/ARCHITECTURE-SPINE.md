@@ -302,11 +302,14 @@ list in CI.
       `by_ref` or `overflow = spill`, `schema = n` (1..=61) and `signed`. Every
       select kind carries the `N` nonce (the bare `select` argument is withdrawn by
       Story 6.11).
-    - **Runtime arguments** don't change the encoding. The derive records them in an
-      associated `RouteRuntime` const (and a defer-mode associated type, AD-11) that
-      core reads: `response = update | ephemeral | public` and `auto_defer = true |
-      false` (Story 7.2; AD-11), `ttl = "…"` and `one_shot` (by_ref/spill Routes
-      only; Story 7.5), `owner = field`, `permissions = …` and `guard = path` (Route
+    - **Runtime arguments** don't change the encoding. `response = update |
+      ephemeral | public` and `auto_defer = true | false` (Story 7.2; AD-11) ship on
+      the component attributes as `__Component::RESPONSE` and the derive's
+      `__Kind::Defer` (`Manual` for `auto_defer = false`), since `response` is a core
+      concept and codec sits below core (`#[modal]` takes them with Story 7.8). The
+      derive records the Ref-related arguments in an associated `RouteRuntime` const
+      that core reads: `ttl = "…"` and `one_shot` (by_ref/spill Routes only; Story
+      7.5), `owner = field`, `permissions = …` and `guard = path` (Route
       Guards; Story 7.7), and `rate_limit(..)` (Story 13.4). Each enters the derive
       in the story named. Expired and stale handling are `#[on_expired]` /
       `#[on_stale]` methods in the struct's `impl`, without `self` (Story 7.3).

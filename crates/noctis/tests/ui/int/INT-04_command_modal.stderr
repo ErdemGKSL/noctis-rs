@@ -13,11 +13,15 @@ help: the trait `CanShowModal` is implemented for `Manual`
 note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
   --> $WORKSPACE/crates/noctis-core/src/responder.rs
    |
-   |     pub async fn show_modal(
-   |                  ---------- required by a bound in this associated function
+   |             pub async fn show_modal(
+   |                          ---------- required by a bound in this associated function
 ...
-   |         D: CanShowModal,
-   |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+   |                 D: CanShowModal,
+   |                    ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0308]: mismatched types
   --> tests/ui/int/INT-04_command_modal.rs:10:25
@@ -30,8 +34,12 @@ error[E0308]: mismatched types
 note: method defined here
   --> $WORKSPACE/crates/noctis-core/src/responder.rs
    |
-   |     pub async fn show_modal(
-   |                  ^^^^^^^^^^
+   |             pub async fn show_modal(
+   |                          ^^^^^^^^^^
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
   --> tests/ui/int/INT-04_command_modal.rs:10:12
@@ -48,11 +56,15 @@ help: the trait `CanShowModal` is implemented for `Manual`
 note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
   --> $WORKSPACE/crates/noctis-core/src/responder.rs
    |
-   |     pub async fn show_modal(
-   |                  ---------- required by a bound in this associated function
+   |             pub async fn show_modal(
+   |                          ---------- required by a bound in this associated function
 ...
-   |         D: CanShowModal,
-   |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+   |                 D: CanShowModal,
+   |                    ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
   --> tests/ui/int/INT-04_command_modal.rs:10:29
@@ -69,8 +81,12 @@ help: the trait `CanShowModal` is implemented for `Manual`
 note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
   --> $WORKSPACE/crates/noctis-core/src/responder.rs
    |
-   |     pub async fn show_modal(
-   |                  ---------- required by a bound in this associated function
+   |             pub async fn show_modal(
+   |                          ---------- required by a bound in this associated function
 ...
-   |         D: CanShowModal,
-   |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+   |                 D: CanShowModal,
+   |                    ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)

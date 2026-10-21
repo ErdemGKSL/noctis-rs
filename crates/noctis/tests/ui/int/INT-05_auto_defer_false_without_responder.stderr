@@ -1,4 +1,4 @@
-error[E0277]: [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`
+error[E0277]: [INT-05] `auto_defer = false` handlers take a `Manual` responder
  --> tests/ui/int/INT-05_auto_defer_false_without_responder.rs:9:14
   |
 9 |     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::Components> {

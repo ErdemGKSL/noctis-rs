@@ -69,8 +69,8 @@ generated key, is zeroized when it's dropped (`src/bootstrap.rs`).
 | Variable | Required | Meaning |
 | --- | --- | --- |
 | `NOCTIS_TOKEN` | yes | Bot token. Never logged. |
-| `NOCTIS_PAYLOAD_KEY` | for `signed` Routes and Clusters | 32-byte key (base64) for `custom_id` integrity tags. Same value on every process. `openssl rand -base64 32`. |
-| `NOCTIS_PAYLOAD_KEY_PREVIOUS` | no | Previous key, accepted for verification while you rotate. |
+| `NOCTIS_PAYLOAD_KEY` | for `signed` Routes and Clusters | 32-byte key as **64 hex digits** for `custom_id` integrity tags (`build()` fails with `[CID-06]` when a `signed` Route is mounted without it). Same value on every process. `openssl rand -hex 32`. |
+| `NOCTIS_PAYLOAD_KEY_PREVIOUS` | no | Previous key (64 hex digits), accepted for verification while you rotate. |
 | `NOCTIS_APP_ID` | no | Key namespace for Adapters (`[a-z0-9-]{1,32}`); `configure` sets `noctis-template`. |
 | `NOCTIS_DEV_GUILD` | no | Default guild for `--publish-guild` with no id (your test guild's numeric id). |
 | `NOCTIS_SHARDS` | no | Shard Range for this process, e.g. `0..32`. Default: all shards. |

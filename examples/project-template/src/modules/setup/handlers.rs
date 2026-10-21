@@ -1,9 +1,11 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
 
 //! The command struct and every `#[handler]` impl: `self` is the decoded Payload (done
-//! by the derive), then validate, write, `ctx.update(render_setup(..))`.
+//! by the derive), then validate, write, and return `render_setup(..)`: a returned
+//! message updates the clicked panel in place (`response = update`, the default).
 
 use noctis::prelude::*;
+use noctis::ui::V2Message;
 
 use super::view::{render_setup, render_setup_cancelled, render_setup_done};
 use super::{
@@ -43,7 +45,7 @@ impl SetupState {
     /// client input (an old message, a forged id): check again and answer with a one-line
     /// notice instead of moving on.
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
         let missing = match self.step {
             SetupStep::Channel => None,
             SetupStep::Role => self.log_channel.is_none().then_some(keys::SETUP_NEED_CHANNEL),
@@ -51,55 +53,55 @@ impl SetupState {
                 .then_some(keys::SETUP_NEED_ROLE),
         };
         if let Some(key) = missing {
-            return ctx.reply_text(key).await; // ephemeral by default [planned, Story 8.1]
+            return Err(HandlerError::user(key)); // the ephemeral notice of `key`
         }
-        ctx.update(render_setup(self, &Strings::of(ctx.response_locale()))).await
+        Ok(render_setup(self, &Strings::of(ctx.response_locale())))
     }
 }
 
 impl PickLogChannel {
     /// Stays on the step so the user sees the choice, then presses Next.
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
         let st = SetupState {
             owner: self.owner,
             step: SetupStep::Channel,
             log_channel: ctx.values().channels().first().copied(),
             mod_role: self.mod_role,
         };
-        ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
+        Ok(render_setup(st, &Strings::of(ctx.response_locale())))
     }
 }
 
 impl PickModRole {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
         let st = SetupState {
             owner: self.owner,
             step: SetupStep::Role,
             log_channel: self.log_channel,
             mod_role: ctx.values().roles().first().copied(),
         };
-        ctx.update(render_setup(st, &Strings::of(ctx.response_locale()))).await
+        Ok(render_setup(st, &Strings::of(ctx.response_locale())))
     }
 }
 
 impl CancelSetup {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-        ctx.update(render_setup_cancelled(&Strings::of(ctx.response_locale()))).await
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
+        Ok(render_setup_cancelled(&Strings::of(ctx.response_locale())))
     }
 }
 
 impl FinishSetup {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
         let s = Strings::of(ctx.response_locale());
         let Some(guild) = ctx.guild_id() else {
-            return ctx.reply_text(keys::COMMON_GUILD_ONLY).await;
+            return Err(HandlerError::user(keys::COMMON_GUILD_ONLY));
         };
         let config = GuildConfig { log_channel: self.log_channel, mod_role: self.mod_role };
         ctx.kv().put(&config_key(guild), &config, None).await?;
-        ctx.update(render_setup_done(config, &s)).await
+        Ok(render_setup_done(config, &s))
     }
 }

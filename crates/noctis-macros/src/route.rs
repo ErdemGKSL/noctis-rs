@@ -22,7 +22,18 @@ pub(crate) enum Body {
     Spill,
 }
 
-/// The codec arguments of a valid kind attribute.
+/// The declared `response` of a component attribute (AD-11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Response {
+    /// `response = update` (the default).
+    Update,
+    /// `response = ephemeral`.
+    Ephemeral,
+    /// `response = public`.
+    Public,
+}
+
+/// The codec and runtime arguments of a valid kind attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RouteArgs {
     /// The route id's value.
@@ -35,19 +46,25 @@ pub(crate) struct RouteArgs {
     pub(crate) select: bool,
     /// `signed`.
     pub(crate) signed: bool,
+    /// `response = ..` (components only; `Update` when omitted).
+    pub(crate) response: Response,
+    /// `auto_defer = ..` (components only; `true` when omitted).
+    pub(crate) auto_defer: bool,
 }
 
-/// The runtime arguments of AD-6 that Epic 7 adds.
-const RUNTIME_ARGS: [&str; 8] = [
+/// The runtime arguments of AD-6 that later Epic 7 stories add.
+const RUNTIME_ARGS: [&str; 6] = [
     "ttl",
     "one_shot",
     "owner",
     "permissions",
     "guard",
     "rate_limit",
-    "response",
-    "auto_defer",
 ];
+
+/// The runtime arguments components take now and `#[modal]` takes with
+/// Story 7.8.
+const RESPONSE_ARGS: [&str; 2] = ["response", "auto_defer"];
 
 const ARGS_HELP: &str = "the codec arguments are `by_ref`, `overflow = spill`, `schema = n` and `signed`; the component's look goes in `defaults(..)`";
 
@@ -171,6 +188,8 @@ struct Seen {
     schema: Option<u8>,
     signed: Option<Ident>,
     defaults: Option<(Ident, TokenStream)>,
+    response: Option<Response>,
+    auto_defer: Option<bool>,
     names: Vec<String>,
 }
 
@@ -224,6 +243,8 @@ fn parse_list(
             schema: seen.schema.unwrap_or(0),
             select: kind.select,
             signed: seen.signed.is_some(),
+            response: seen.response.unwrap_or(Response::Update),
+            auto_defer: seen.auto_defer.unwrap_or(true),
         },
         seen.defaults,
     ))
@@ -296,35 +317,12 @@ fn parse_arg(
         return;
     };
     let key = name.to_string();
-    if RUNTIME_ARGS.contains(&key.as_str()) {
-        errors.push(cid_03(
-            name,
-            format!("`{key}` is a runtime argument of #[{a}] that this Noctis release does not support yet"),
-            "remove it for now; runtime arguments arrive with their release",
-        ));
+    if let Some(error) = unsupported_runtime_arg(name, &key, a) {
+        errors.push(error);
         return;
     }
     if key == "defaults" {
-        match rest {
-            [TokenTree::Group(group)]
-                if group.delimiter() == proc_macro2::Delimiter::Parenthesis =>
-            {
-                if seen.defaults.is_some() {
-                    errors.push(cid_03(
-                        name,
-                        format!("#[{a}] argument `defaults` is given twice"),
-                        "merge the keys into one `defaults(..)`",
-                    ));
-                } else {
-                    seen.defaults = Some((name.clone(), group.stream()));
-                }
-            }
-            _ => errors.push(cid_03(
-                stream(segment),
-                "`defaults` takes a list: `defaults(key = value, ..)`",
-                "write `defaults(..)` with the kind's keys",
-            )),
-        }
+        parse_defaults(name, rest, segment, a, seen, errors);
         return;
     }
     let value: Option<&[TokenTree]> = match rest {
@@ -347,7 +345,16 @@ fn parse_arg(
         ));
         return;
     }
-    if !["by_ref", "overflow", "schema", "signed"].contains(&key.as_str()) {
+    if ![
+        "by_ref",
+        "overflow",
+        "schema",
+        "signed",
+        "response",
+        "auto_defer",
+    ]
+    .contains(&key.as_str())
+    {
         errors.push(cid_03(
             name,
             format!("unknown #[{a}] argument `{key}`"),
@@ -373,7 +380,108 @@ fn parse_arg(
         ("by_ref", None) => seen.by_ref = Some(name.clone()),
         ("signed", None) => seen.signed = Some(name.clone()),
         ("overflow", value) => parse_overflow(name, value, segment, kind, seen, errors),
+        ("response", value) => parse_response(name, value, seen, errors),
+        ("auto_defer", value) => parse_auto_defer(name, value, seen, errors),
         (_, value) => parse_schema(name, value, seen, errors),
+    }
+}
+
+/// `defaults(..)`: its raw tokens, once.
+fn parse_defaults(
+    name: &Ident,
+    rest: &[TokenTree],
+    segment: &[TokenTree],
+    a: &str,
+    seen: &mut Seen,
+    errors: &mut Vec<syn::Error>,
+) {
+    match rest {
+        [TokenTree::Group(group)] if group.delimiter() == proc_macro2::Delimiter::Parenthesis => {
+            if seen.defaults.is_some() {
+                errors.push(cid_03(
+                    name,
+                    format!("#[{a}] argument `defaults` is given twice"),
+                    "merge the keys into one `defaults(..)`",
+                ));
+            } else {
+                seen.defaults = Some((name.clone(), group.stream()));
+            }
+        }
+        _ => errors.push(cid_03(
+            stream(segment),
+            "`defaults` takes a list: `defaults(key = value, ..)`",
+            "write `defaults(..)` with the kind's keys",
+        )),
+    }
+}
+
+/// The "not supported yet" error of a runtime argument this release does
+/// not take on `#[attr]` (`response`/`auto_defer` on `#[modal]` until Story
+/// 7.8).
+fn unsupported_runtime_arg(name: &Ident, key: &str, attr: &str) -> Option<syn::Error> {
+    let modal_response = attr == "modal" && RESPONSE_ARGS.contains(&key);
+    (RUNTIME_ARGS.contains(&key) || modal_response).then(|| {
+        cid_03(
+            name,
+            format!("`{key}` is a runtime argument of #[{attr}] that this Noctis release does not support yet"),
+            "remove it for now; runtime arguments arrive with their release",
+        )
+    })
+}
+
+/// `response = update | ephemeral | public` (a bare identifier).
+fn parse_response(
+    name: &Ident,
+    value: Option<&[TokenTree]>,
+    seen: &mut Seen,
+    errors: &mut Vec<syn::Error>,
+) {
+    let parsed = match value {
+        Some([TokenTree::Ident(v)]) if v == "update" => Some(Response::Update),
+        Some([TokenTree::Ident(v)]) if v == "ephemeral" => Some(Response::Ephemeral),
+        Some([TokenTree::Ident(v)]) if v == "public" => Some(Response::Public),
+        _ => None,
+    };
+    if let Some(response) = parsed {
+        seen.response = Some(response);
+    } else {
+        errors.push(cid_03(
+            value_tokens(name, value),
+            "`response` takes `update`, `ephemeral` or `public`",
+            "write `response = update` (the default: answer by updating the clicked message), `response = ephemeral` or `response = public` (a new message)",
+        ));
+    }
+}
+
+/// `auto_defer = true | false` (a bool literal).
+fn parse_auto_defer(
+    name: &Ident,
+    value: Option<&[TokenTree]>,
+    seen: &mut Seen,
+    errors: &mut Vec<syn::Error>,
+) {
+    let lit = match value {
+        Some([TokenTree::Ident(v)]) if v == "true" => Some(true),
+        Some([TokenTree::Ident(v)]) if v == "false" => Some(false),
+        _ => None,
+    };
+    if let Some(auto_defer) = lit {
+        seen.auto_defer = Some(auto_defer);
+    } else {
+        errors.push(cid_03(
+            value_tokens(name, value),
+            "`auto_defer` takes `true` or `false`",
+            "write `auto_defer = false` for a handler that answers within 3 s itself (it takes `ComponentResponder<Manual>`), or leave it out",
+        ));
+    }
+}
+
+/// The tokens an argument value error points at: the value, or the name
+/// when there is none.
+fn value_tokens(name: &Ident, value: Option<&[TokenTree]>) -> TokenStream {
+    match value {
+        Some(value) if !value.is_empty() => stream(value),
+        _ => quote!(#name),
     }
 }
 
@@ -532,6 +640,8 @@ mod tests {
             schema: 0,
             select: false,
             signed: false,
+            response: super::Response::Update,
+            auto_defer: true,
         }
     }
 
@@ -640,12 +750,32 @@ mod tests {
             "[CID-03] `rate_limit` is a runtime argument",
         ),
         (
-            "#[button(\"a\", response = update)] struct R;",
-            "[CID-03] `response` is a runtime argument",
+            "#[button(\"a\", response = edit)] struct R;",
+            "[CID-03] `response` takes `update`, `ephemeral` or `public`",
         ),
         (
-            "#[button(\"a\", auto_defer = false)] struct R;",
-            "[CID-03] `auto_defer` is a runtime argument",
+            "#[button(\"a\", response = \"update\")] struct R;",
+            "[CID-03] `response` takes `update`, `ephemeral` or `public`",
+        ),
+        (
+            "#[button(\"a\", response)] struct R;",
+            "[CID-03] `response` takes `update`, `ephemeral` or `public`",
+        ),
+        (
+            "#[button(\"a\", auto_defer = 1)] struct R;",
+            "[CID-03] `auto_defer` takes `true` or `false`",
+        ),
+        (
+            "#[button(\"a\", auto_defer = yes)] struct R;",
+            "[CID-03] `auto_defer` takes `true` or `false`",
+        ),
+        (
+            "#[button(\"a\", response = public, response = update)] struct R;",
+            "[CID-03] #[button] argument `response` is given twice",
+        ),
+        (
+            "#[button(\"a\", auto_defer = true, auto_defer = false)] struct R;",
+            "[CID-03] #[button] argument `auto_defer` is given twice",
         ),
         (
             "#[button(\"a\", defaults = 1)] struct R;",
@@ -701,6 +831,33 @@ mod tests {
         ),
     ];
 
+    /// Story 7.2 Matrix 52: `response` and `auto_defer`.
+    #[test]
+    fn response_and_auto_defer_parse() {
+        for (response, want) in [
+            (quote::quote!(update), super::Response::Update),
+            (quote::quote!(ephemeral), super::Response::Ephemeral),
+            (quote::quote!(public), super::Response::Public),
+        ] {
+            let input: DeriveInput = parse_quote!(
+                #[button("a", response = #response, auto_defer = false)]
+                struct R;
+            );
+            assert_eq!(
+                parse(&input).map(|a| (a.response, a.auto_defer)),
+                Ok((want, false))
+            );
+        }
+        assert_eq!(
+            parse(&parse_quote!(
+                #[button("a", auto_defer = true)]
+                struct R;
+            ))
+            .map(|a| (a.response, a.auto_defer)),
+            Ok((super::Response::Update, true))
+        );
+    }
+
     #[test]
     fn cid_03_route_attribute_matrix() {
         // Accepted.
@@ -752,6 +909,8 @@ mod tests {
                 schema: 61,
                 select: false,
                 signed: true,
+                response: super::Response::Update,
+                auto_defer: true,
             })
         );
         assert_eq!(

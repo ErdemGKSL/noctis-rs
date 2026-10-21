@@ -52,12 +52,16 @@
 //! # Components and modals
 //!
 //! A `MESSAGE_COMPONENT` or `MODAL_SUBMIT` interaction runs through
-//! [`component`] (Story 7.1, CID-04, CID-06): its `custom_id` is decoded
-//! once and its Route looked up in the Registry's Route map with the
-//! borrowed id (AD-25); the handler of the Route runs on the decoded struct
-//! under `catch_unwind` and the shutdown token, and failures go to the
-//! Component Error Sink. Any input that reaches no handler is one `warn`
-//! with a `reason` label and nothing else; responses arrive with Story 7.2.
+//! [`component`] (Stories 7.1 and 7.2; CID-04, CID-06, INT-01): its
+//! `custom_id` is decoded once and its Route looked up in the Registry's
+//! Route map with the borrowed id (AD-25); a `signed` Route's tag is
+//! verified with the App's payload key ring. Any input that reaches no
+//! handler is one `warn` with a `reason` label and, except a stale or Ref
+//! id, the generic ephemeral notice. The handler then runs through the
+//! same stages 6, 9 and 10 as a Command: the auto-defer follows its
+//! declared `response` (type 6 for `update` on a message, else type 5), a
+//! returned message is sent per that response, and failures send the
+//! notice and go to the Component Error Sink.
 
 use std::any::Any;
 use std::fmt;
@@ -156,7 +160,7 @@ impl Resolved {
 
 /// Aborts a spawned task when dropped: the auto-defer never outlives the
 /// handler run.
-struct AbortOnDrop(tokio::task::JoinHandle<()>);
+pub(crate) struct AbortOnDrop(tokio::task::JoinHandle<()>);
 
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
@@ -165,21 +169,31 @@ impl Drop for AbortOnDrop {
 }
 
 /// The most follow-ups a user-install-only interaction may send (INT-11).
-const USER_INSTALL_FOLLOWUPS: u8 = 5;
+pub(crate) const USER_INSTALL_FOLLOWUPS: u8 = 5;
 
-/// Stage 6: spawns the auto-defer task of an interaction received at
-/// `received_at` (INT-01), or for an `auto_defer = false` handler the task
-/// that logs a missed ack deadline (INT-05).
-fn arm(
+/// What stage 6 arms the timer for: the handler, its Module and whether it
+/// is auto-deferred.
+pub(crate) struct Armed {
+    pub(crate) handler: &'static str,
+    pub(crate) module: &'static str,
+    pub(crate) auto_defer: bool,
+}
+
+/// Stage 6, shared by Commands and components: spawns the auto-defer task
+/// of an interaction received at `received_at` (INT-01; its callback type
+/// follows the declared response, see `Shared::auto_defer`), or for an
+/// `auto_defer = false` handler the task that logs a missed ack deadline
+/// (INT-05).
+pub(crate) fn arm(
     app: &AppShared,
     shared: &Arc<Shared>,
-    resolved: &Resolved,
+    armed: &Armed,
     received_at: tokio::time::Instant,
     span: &Span,
 ) -> AbortOnDrop {
     let shared = Arc::clone(shared);
-    let handler = resolved.handler();
-    let task = if resolved.auto_defer() {
+    let handler = armed.handler;
+    let task = if armed.auto_defer {
         let deadline = received_at + app.ack_deadline;
         tokio::spawn(
             async move {
@@ -191,7 +205,7 @@ fn arm(
             .instrument(span.clone()),
         )
     } else {
-        let module = resolved.module();
+        let module = armed.module;
         let deadline = received_at + ACK_DEADLINE;
         tokio::spawn(
             async move {
@@ -265,33 +279,36 @@ fn resolve(registry: &Registry, data: &CommandData) -> Result<Resolved, String> 
 }
 
 /// Where a handler run is reported.
-struct Report<'a> {
-    app: &'a Arc<AppShared>,
-    shard: Option<u32>,
-    guild_id: Option<Id<GuildMarker>>,
-    module: &'static str,
-    handler: &'static str,
-    event_type: Option<&'static str>,
+pub(crate) struct Report<'a> {
+    pub(crate) app: &'a Arc<AppShared>,
+    /// The Error Sink and the `kind` label: Command or Component.
+    pub(crate) origin: ErrorOrigin,
+    pub(crate) shard: Option<u32>,
+    pub(crate) guild_id: Option<Id<GuildMarker>>,
+    pub(crate) module: &'static str,
+    pub(crate) handler: &'static str,
+    pub(crate) event_type: Option<&'static str>,
     /// The locale of the user-facing notice (User, then Guild Locale).
-    locale: Locale,
+    pub(crate) locale: Locale,
 }
 
 /// How one handler run ended.
-enum Outcome {
+pub(crate) enum Outcome {
     Returned(HandlerResult<()>),
     Panicked(Box<dyn Any + Send>),
     Cancelled,
 }
 
+/// A handler start: when it began, and its future or the panic of the
+/// call.
+pub(crate) struct Started {
+    pub(crate) at: Instant,
+    pub(crate) future: Result<HandlerFuture, Box<dyn Any + Send>>,
+}
+
 /// Stages 9 and 10: starts the handler with a Pending responder over
-/// `shared` (catching a panic at the call), sends what it returned
-/// (a returned message is the reply while Pending, else an edit of the
-/// original, INT-12), races the whole run against `cancel` and records the
-/// duration. An error or a panic first sends the user a localized
-/// ephemeral notice (FR-22, AD-23), then `timer` (the auto-defer) is
-/// aborted; a user condition is logged at `debug`, anything else is
-/// counted and reported to the Command Error Sink (a cancellation without
-/// a notice).
+/// `shared` (catching a panic at the call), then runs it (see
+/// [`run_started`]); nothing starts once `cancel` fired.
 async fn execute(
     span: &Span,
     cancel: Option<&CancellationToken>,
@@ -300,16 +317,42 @@ async fn execute(
     timer: Option<AbortOnDrop>,
     report: Report<'_>,
 ) {
-    let app = report.app;
-    let kind = ErrorOrigin::Command.as_str();
-    let outcome = if cancel.is_some_and(CancellationToken::is_cancelled) {
-        Outcome::Cancelled
+    let started = if cancel.is_some_and(CancellationToken::is_cancelled) {
+        None
     } else {
-        let started_at = Instant::now();
+        let at = Instant::now();
         let handle = Arc::clone(&shared);
-        let started =
-            span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| start(handle))));
-        let outcome = match started {
+        let future = span.in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| start(handle))));
+        Some(Started { at, future })
+    };
+    run_started(span, cancel, shared, started, timer, report).await;
+}
+
+/// Stages 9 and 10 of a started handler (`None`: cancelled before the
+/// start): sends what it returned (a returned message is the reply or
+/// `update` while Pending, else an edit of the original, INT-12), races the
+/// whole run against `cancel` and records the duration (handler plus the
+/// send). An error or a panic first sends the user a localized ephemeral
+/// notice (FR-22, AD-23), then `timer` (the auto-defer) is aborted; a user
+/// condition is logged at `debug`, anything else (a failed send of a
+/// returned message included) is counted and reported to the origin's
+/// Error Sink (a cancellation without a notice).
+pub(crate) async fn run_started(
+    span: &Span,
+    cancel: Option<&CancellationToken>,
+    shared: Arc<Shared>,
+    started: Option<Started>,
+    timer: Option<AbortOnDrop>,
+    report: Report<'_>,
+) {
+    let app = report.app;
+    let kind = report.origin.as_str();
+    let outcome = if let Some(Started {
+        at: started_at,
+        future,
+    }) = started
+    {
+        let outcome = match future {
             Ok(fut) => {
                 let finisher = Arc::clone(&shared);
                 let run = AssertUnwindSafe(async move {
@@ -345,6 +388,8 @@ async fn execute(
         )
         .record(started_at.elapsed().as_secs_f64());
         outcome
+    } else {
+        Outcome::Cancelled
     };
     // Sent before the auto-defer is dropped: the gate orders the two.
     if let Some(key) = notice_key(&outcome) {
@@ -354,13 +399,23 @@ async fn execute(
     let report_kind = match &outcome {
         Outcome::Returned(Ok(())) => return,
         Outcome::Returned(Err(error)) if error.is_user() => {
+            let key = error.user_message().map(MessageKey::as_str);
             span.in_scope(|| {
-                tracing::debug!(
-                    target: "noctis::command",
-                    handler = report.handler,
-                    key = error.user_message().map(MessageKey::as_str),
-                    "user condition"
-                );
+                if report.origin == ErrorOrigin::Component {
+                    tracing::debug!(
+                        target: "noctis::component",
+                        handler = report.handler,
+                        key,
+                        "user condition"
+                    );
+                } else {
+                    tracing::debug!(
+                        target: "noctis::command",
+                        handler = report.handler,
+                        key,
+                        "user condition"
+                    );
+                }
             });
             return;
         }
@@ -378,7 +433,7 @@ async fn execute(
         report_logged(
             app,
             ErrorReport {
-                origin: ErrorOrigin::Command,
+                origin: report.origin,
                 kind: report_kind,
                 app: &app.app,
                 shard: report.shard,
@@ -404,7 +459,12 @@ fn notice_key(outcome: &Outcome) -> Option<MessageKey> {
 
 /// Shows the user the notice of `key`. A failure to send it is one `warn`,
 /// never a report.
-async fn send_notice(span: &Span, shared: &Arc<Shared>, report: &Report<'_>, key: MessageKey) {
+pub(crate) async fn send_notice(
+    span: &Span,
+    shared: &Arc<Shared>,
+    report: &Report<'_>,
+    key: MessageKey,
+) {
     let text = span.in_scope(|| notice::text(&*report.app.strings, report.locale, key));
     if let Err(error) = shared.notice(text).instrument(span.clone()).await {
         span.in_scope(|| {
@@ -554,10 +614,16 @@ pub(crate) async fn run_interaction(
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
     let state = Shared::with_followup_cap(transport, ephemerality, app.limits.clone(), cap);
     // Stage 6: the auto-defer.
-    let timer = arm(&app, &state, &resolved, received_at, &span);
+    let armed = Armed {
+        handler: resolved.handler(),
+        module: resolved.module(),
+        auto_defer: resolved.auto_defer(),
+    };
+    let timer = arm(&app, &state, &armed, received_at, &span);
     // Stages 7 (before-Middleware, Story 7.6) and 8 (Guards, Story 7.7).
     let report = Report {
         app: &app,
+        origin: ErrorOrigin::Command,
         shard: Some(shard),
         guild_id,
         module: resolved.module(),
@@ -675,6 +741,7 @@ pub(crate) async fn run_autocomplete(
     };
     let report_for = |module, handler| Report {
         app: &app,
+        origin: ErrorOrigin::Autocomplete,
         shard: Some(shard),
         guild_id,
         module,
@@ -1158,6 +1225,7 @@ impl Dispatcher {
         let shared = Shared::new(transport, ephemerality, self.app.limits.clone());
         let report = Report {
             app: &self.app,
+            origin: ErrorOrigin::Command,
             shard: Some(shard),
             guild_id,
             module: entry.module,

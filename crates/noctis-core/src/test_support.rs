@@ -263,6 +263,18 @@ macro_rules! test_route {
 pub(crate) use test_route;
 
 test_route!(TBuy, "shop.buy", noctis_codec::RouteShape::INLINE, 0);
+test_route!(TSigned, "sig", noctis_codec::RouteShape::INLINE.signed(), 0);
+
+/// A component handler of the `signed` Route [`TSigned`] named `name`
+/// that does nothing.
+pub(crate) fn signed_button(name: &'static str) -> crate::ComponentHandler {
+    crate::ComponentHandler::__new::<TSigned, _, _>(
+        name,
+        "sig",
+        crate::ComponentKind::Button,
+        |_: TSigned, _: crate::ComponentCtx| async { Ok(crate::Responded::new()) },
+    )
+}
 
 /// A component handler of [`TBuy`] named `name` at `route` that does
 /// nothing.

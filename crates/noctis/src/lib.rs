@@ -61,8 +61,8 @@
 //! | [`SlashCommand`](macro@SlashCommand) | `#[command("path", description = "…", ..)]` | `(self, ctx: CommandCtx[, path: <Struct>Path][, r: CommandResponder<..>])` |
 //! | [`UserCommand`](macro@UserCommand) / [`MessageCommand`](macro@MessageCommand) | `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]` | `(self, ctx: CommandCtx, target: ResolvedUser \| ResolvedMessage[, r])` |
 //! | [`EventHandler`](macro@EventHandler) | optional `#[event(ordered, droppable)]` | `(self, ctx: EventCtx, event: <payload>)` |
-//! | [`Button`](macro@Button), the select derives | `#[button("id", <codec args>, defaults(..))]`, … | `(self, ctx: ComponentCtx)` |
-//! | [`Modal`](macro@Modal) | `#[modal("id", <codec args>, defaults(title = "…"))]` | `(self, ctx: ModalSubmitCtx)` |
+//! | [`Button`](macro@Button), the select derives | `#[button("id", <codec args>, response = .., auto_defer = .., defaults(..))]`, … | `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` |
+//! | [`Modal`](macro@Modal) | `#[modal("id", <codec args>, defaults(title = "…"))]` | `(self, ctx: ModalSubmitCtx[, r: ModalResponder])` |
 //!
 //! A component struct is a Route: its fields are the Payload of its
 //! `custom_id`, and the derive proves at compile time that every id fits
@@ -89,8 +89,8 @@
 //!     #[handler]
 //!     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
 //!         # unimplemented!()
-//!         // A click runs this on the decoded value; responding to it
-//!         // arrives with Story 7.2.
+//!         // A click runs this on the decoded value; see "Answering
+//!         // components" for the responses.
 //!     }
 //! }
 //!
@@ -104,8 +104,10 @@
 //!
 //! The kind attribute takes the id (1 to 24 characters of `[a-z0-9._-]`,
 //! not starting with `_`) and, in any order, the codec arguments `by_ref`,
-//! `overflow = spill`, `schema = n` (1..=61) and `signed`; every select kind
-//! carries the select nonce. Each component struct also gets a
+//! `overflow = spill`, `schema = n` (1..=61) and `signed` (which needs the
+//! payload key, `NOCTIS_PAYLOAD_KEY`), and for components the runtime
+//! arguments `response = update | ephemeral | public` and `auto_defer =
+//! true | false`; every select kind carries the select nonce. Each component struct also gets a
 //! `__noctis_route_width_<Name>` test that prints its width breakdown
 //! (`cargo test -- --nocapture noctis_route_width`).
 //!
@@ -411,6 +413,43 @@
 //! let _module = Module::new("ping").add::<Ping>().add::<Prefix>();
 //! ```
 //!
+//! # Answering components
+//!
+//! A click or a modal submit runs the handler of its Route with the
+//! decoded struct (an id that reaches no handler, a forged or undecodable
+//! one, shows the user a generic ephemeral notice, CID-06). Its declared
+//! `response` (`update`, the default, `ephemeral` or `public`) shapes the
+//! auto-defer (type 6 for `update`, else type 5) and a returned message:
+//! under `update` the clicked message is replaced in place. A handler that
+//! needs more takes a [`ComponentResponder`] (or [`ModalResponder`]):
+//! `update` / `defer_update` act on the clicked message, `reply` /
+//! `defer_reply` send a new one, and `show_modal` needs `auto_defer =
+//! false` ([`ComponentResponder<Manual>`](ComponentResponder)). A
+//! slash-opened modal submit has no message to update
+//! ([`ResponderError::UpdateUnavailable`]). `signed` Routes need the
+//! payload key ([`AppBuilder::payload_key`], `NOCTIS_PAYLOAD_KEY`).
+//!
+//! ```
+//! use noctis::prelude::*;
+//! use noctis::ui::{Components, TextDisplay};
+//!
+//! #[derive(Button)]
+//! #[button("shop.buy", defaults(style = Primary, label = "Buy"))]
+//! struct Buy {
+//!     item: u64,
+//! }
+//!
+//! impl Buy {
+//!     #[handler]
+//!     async fn handle(self, _ctx: ComponentCtx, r: ComponentResponder) -> HandlerResult<Responded> {
+//!         let panel = Components::new().push(TextDisplay::new(format!("Bought item {}.", self.item)));
+//!         Ok(r.update(panel).await?.done())
+//!     }
+//! }
+//!
+//! let _shop = Module::new("shop").add::<Buy>();
+//! ```
+//!
 //! # Errors shown to users
 //!
 //! When a Command handler returns `Err`, panics, or its options fail to
@@ -515,14 +554,15 @@
 
 pub use noctis_core::{
     AckDeadlineMissed, Acked, App, AppBuilder, AutoDefer, AutocompleteChoice, AutocompleteCtx,
-    AutocompleteError, AutocompleteValue, BaseMeta, BuildError, BuildViolation, CanShowModal,
-    Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation, CommandMetadata,
-    CommandOption, CommandPath, CommandResponder, ComponentCtx, ComponentHandler, ComponentKind,
-    ContextMenuHandler, DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error,
-    ErrorOrigin, ErrorReport, ErrorSink, Focused, FollowupHandle, GatewayUrlError, HandlerError,
-    HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
-    InteractionContext, IntoResponse, InvalidOption, LogSink, Manual, MenuKind, MenuTargetError,
-    ModalHandler, ModalSubmitCtx, Module, OptionError, OptionValue, Options, OutgoingMessage,
+    AutocompleteError, AutocompleteValue, BaseMeta, BuildError, BuildViolation, CallbackResource,
+    CanShowModal, Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation,
+    CommandMetadata, CommandOption, CommandPath, CommandResponder, Component, ComponentCtx,
+    ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler, DeferMode,
+    DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
+    Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
+    HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoResponse,
+    InvalidOption, LogSink, Manual, MenuKind, MenuTargetError, ModalHandler, ModalResponder,
+    ModalSubmit, ModalSubmitCtx, Module, OptionError, OptionValue, Options, OutgoingMessage,
     Partial, PartialOptions, Pending, Permissions, Plugin, Register, ReportKind, Resource,
     ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
     RunError, Runtime, StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token,
@@ -1039,10 +1079,12 @@ pub use noctis_macros::EventHandler;
 
 /// Derives an interactive button (styles 1-4) from a struct: the struct is
 /// a Route whose fields are the Payload of its `custom_id`, and its
-/// `#[handler]` method `(self, ctx: ComponentCtx) -> HandlerResult<Responded>`
-/// handles the click: `App::build` maps the Route id to it (one handler per
-/// Route id, CID-04) and a click on a component built from the struct runs
-/// it on the decoded value. Responding to the click arrives with Story 7.2.
+/// `#[handler]` method `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])
+/// -> HandlerResult<R>` handles the click: `App::build` maps the Route id to
+/// it (one handler per Route id, CID-04) and a click on a component built
+/// from the struct runs it on the decoded value. `R` is a message (sent per
+/// the declared `response`) or the `Responded` from the responder's
+/// `done()`.
 ///
 /// `#[button("id", <codec args>, defaults(..))]`: the Route id (CID-03), the
 /// codec arguments `by_ref`, `overflow = spill`, `schema = n`, `signed`, and
@@ -1052,10 +1094,23 @@ pub use noctis_macros::EventHandler;
 /// optionally `disabled = true`. Values are literals, checked at compile
 /// time; omitted keys are not sent. Link and Premium buttons have no handler:
 /// they stay plain builders ([`LinkButton`](crate::ui::LinkButton),
-/// [`PremiumButton`](crate::ui::PremiumButton)). The runtime arguments
-/// `ttl`, `one_shot`, `owner`, `permissions`, `guard`, `rate_limit`,
-/// `response` and `auto_defer` arrive with Epic 7 and are a `[CID-03]`
-/// compile error until then.
+/// [`PremiumButton`](crate::ui::PremiumButton)).
+///
+/// The runtime arguments (every component kind):
+///
+/// - `response = update | ephemeral | public` (default `update`): `update`
+///   auto-defers with type 6 and a returned message updates the clicked
+///   message in place; `ephemeral` / `public` auto-defer with type 5 and a
+///   returned message is a new message; `reply` and `defer_reply` default to
+///   it (`public` under `update`).
+/// - `auto_defer = true | false` (default `true`): `false` arms no
+///   auto-defer, so the handler answers within 3 s itself and takes
+///   [`ComponentResponder<Manual>`](crate::ComponentResponder), which has
+///   `show_modal` (INT-05; a mismatch is an `[INT-05]` compile error).
+///
+/// `ttl`, `one_shot`, `owner`, `permissions`, `guard` and `rate_limit`
+/// arrive with later Epic 7 stories and are a `[CID-03]` compile error until
+/// then.
 ///
 /// `X { .. }.build()` returns a [`RouteButton<X>`](crate::ui::RouteButton)
 /// from the defaults; its setters (`label`, `emoji`, `style`, `disabled`)
@@ -1083,6 +1138,53 @@ pub use noctis_macros::EventHandler;
 /// };
 /// assert_eq!(view.len(), 1);
 /// let _shop = Module::new("shop").add::<Buy>();
+/// ```
+///
+/// A button that opens a modal is `auto_defer = false`; one that answers
+/// with a new ephemeral message declares `response = ephemeral`:
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, TextDisplay};
+///
+/// #[derive(Modal)]
+/// #[modal("profile.bio", defaults(title = "Bio"))]
+/// struct BioForm {
+///     #[text_input("Bio")]
+///     bio: String,
+/// }
+///
+/// impl BioForm {
+///     #[handler]
+///     async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Components> {
+///         Ok(Components::new().push(TextDisplay::new(format!("Bio: {}", self.bio))))
+///     }
+/// }
+///
+/// #[derive(Button)]
+/// #[button("profile.edit", auto_defer = false, defaults(style = Secondary, label = "Edit"))]
+/// struct EditBio;
+///
+/// impl EditBio {
+///     #[handler]
+///     async fn handle(self, _ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
+///         let form = BioForm { bio: String::new() }.build();
+///         Ok(r.show_modal(form).await?.done())
+///     }
+/// }
+///
+/// #[derive(Button)]
+/// #[button("profile.peek", response = ephemeral, defaults(style = Primary, label = "Peek"))]
+/// struct Peek;
+///
+/// impl Peek {
+///     #[handler]
+///     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Components> {
+///         Ok(Components::new().push(TextDisplay::new("Only you see this.")))
+///     }
+/// }
+///
+/// let _profile = Module::new("profile").add::<BioForm>().add::<EditBio>().add::<Peek>();
 /// ```
 pub use noctis_macros::Button;
 
@@ -1438,6 +1540,11 @@ pub mod codec {
     //!   [`FieldWriter`] and read through [`FieldReader`].
     //! - [`CodecError`] and [`Section`]: why an inline body or a `custom_id`
     //!   did not decode, and which layout section was wrong.
+    //! - [`PayloadKey`] and [`KeyError`]: the 32-byte key that signs `signed`
+    //!   Routes (`NOCTIS_PAYLOAD_KEY`, 64 hex digits; see
+    //!   [`AppBuilder::payload_key`](crate::AppBuilder::payload_key)); [`Sign`],
+    //!   [`Verify`] and [`Tag`]: the integrity-tag traits it implements and the
+    //!   6-character tag.
     //!
     //! ```
     //! use noctis::codec::{BoundedStr, Field, FieldDecode, FieldError, check};
@@ -1470,8 +1577,8 @@ pub mod codec {
 
     pub use noctis_codec::{
         BodyKind, BoundedStr, BoundedStrError, CodecError, Field, FieldDecode, FieldError,
-        FieldReader, FieldWriter, Payload, PayloadDecode, Route, RouteId, RouteShape, Section,
-        SelectRoute, check,
+        FieldReader, FieldWriter, KeyError, Payload, PayloadDecode, PayloadKey, Route, RouteId,
+        RouteShape, Section, SelectRoute, Sign, Tag, Verify, check,
     };
 }
 
@@ -1621,8 +1728,9 @@ pub mod prelude {
     //! - The contexts [`CommandCtx`], [`EventCtx`], [`AutocompleteCtx`],
     //!   [`ComponentCtx`] and [`ModalSubmitCtx`]; [`HandlerError`] and
     //!   [`HandlerResult`].
-    //! - [`CommandResponder`], [`Manual`], [`Responded`], [`IntoResponse`],
-    //!   [`Ephemerality`] and [`Visibility`]: how Commands answer.
+    //! - [`CommandResponder`], [`ComponentResponder`], [`ModalResponder`],
+    //!   [`Manual`], [`Responded`], [`IntoResponse`], [`Ephemerality`] and
+    //!   [`Visibility`]: how handlers answer.
     //! - [`Options`](trait@Options) (what `SlashCommand` implements),
     //!   [`CommandOption`] (the option field types), [`MessageKey`] (what
     //!   option validators return), [`Partial`] and [`Suggestions`]
@@ -1641,9 +1749,9 @@ pub mod prelude {
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
         App, AppBuilder, AutocompleteCtx, CommandCtx, CommandOption, CommandResponder,
-        ComponentCtx, Ephemerality, ErrorOrigin, ErrorSink, HandlerError, HandlerResult,
-        IntoResponse, Manual, ModalSubmitCtx, Module, Options, Partial, Responded, State,
-        Suggestions, Visibility,
+        ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink, HandlerError,
+        HandlerResult, IntoResponse, Manual, ModalResponder, ModalSubmitCtx, Module, Options,
+        Partial, Responded, State, Suggestions, Visibility,
     };
     pub use noctis_macros::{
         Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,
@@ -1988,10 +2096,13 @@ pub mod ui {
     //! and the generated `X::blank(<Payload fields in order>)` build the
     //! [`Modal`] with empty inputs; `X::from_json(bytes)` ([`ModalForm`])
     //! decodes the raw modal-submit interaction JSON, Payload included. A
-    //! `#[handler]` method `(self, ctx: ModalSubmitCtx) ->
-    //! HandlerResult<Responded>` handles the submission: a modal submit whose
+    //! `#[handler]` method `(self, ctx: ModalSubmitCtx[, r: ModalResponder])
+    //! -> HandlerResult<R>` handles the submission: a modal submit whose
     //! `custom_id` names the Route runs it on the decoded struct (one handler
-    //! per Route id, CID-04); responding arrives with Story 7.2.
+    //! per Route id, CID-04). Its declared response is `update`: a returned
+    //! message updates the message the modal was opened from (a new public
+    //! message for a slash-opened modal), and `ModalResponder::update` of a
+    //! slash-opened modal is `ResponderError::UpdateUnavailable`.
     //!
     //! | Attribute | Arguments | Field types |
     //! | --- | --- | --- |

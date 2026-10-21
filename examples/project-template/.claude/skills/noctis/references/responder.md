@@ -6,39 +6,47 @@ typestate `Responder`, follow-ups, modals, errors shown to users, token expiry,
 `LegacyMessage`, webhooks. Rules: INT-01..13, WH-01..05, MSG-05, MSG-07, CV2-01/02.
 
 **Default: build the message with your render function and send it with
-`ctx.respond(msg)` or `ctx.update(msg)` (§1b) [planned, Story 8.1]; today a Command
-returns the message.** Write no response-type code. Use the typestate Responder only for
+`ctx.respond(msg)` or `ctx.update(msg)` (§1b) [planned, Story 8.1]; today a handler
+returns the message (a Command's is a new message, a component's updates the clicked
+message under the default `response = update`).** Write no response-type code. Use the typestate Responder only for
 modals, follow-ups, or replies that need several messages. A View is just a function
 returning a `V2Message` (`views-and-recipes.md`); there is no View trait.
 
 ## 1. Return values (`IntoResponse`)
 
-A Command handler (`#[command]`, `#[user_command]`, `#[message_command]`) returns
-`HandlerResult<R>` with `R: IntoResponse<Command>` (sealed):
+A handler returns `HandlerResult<R>` with `R: IntoResponse<K>` (sealed) for its kind:
+`IntoResponse<Command>` (`#[command]`, `#[user_command]`, `#[message_command]`),
+`IntoResponse<Component>` (`#[button]` and the select derives) or
+`IntoResponse<ModalSubmit>` (`#[modal]`):
 
-| Handler returns | Command | Component / modal submit [planned, Epic 7] |
+| Handler returns | Command | Component / modal submit |
 | --- | --- | --- |
-| `V2Message` or `Components` (`noctis::ui`) | new message (public, or ephemeral if declared) | — |
-| `V2Message` from a component or modal handler [planned, Epic 7] | — | **updates the message in place** (or a new message with `response = ephemeral \| public` on its kind attribute) |
-| `LegacyMessage` | plain `content` notice (not for interactive UI, UD-1) | typed error if it would turn a V2 message back to legacy |
-| `()` | **does not compile**: a command must answer (E0277 `` `()` is not a Command response ``, pointing at the return type) | acknowledges with a deferred update; the message stays as it is |
-| `Responded` (from `acked.done()`) | you answered through the Responder | same |
+| `V2Message` or `Components` (`noctis::ui`) | new message (public, or ephemeral if declared) | `response = update` (default): **updates the clicked message in place** (type 7; a slash-opened modal submit has no message, so it gets a new public message); `response = ephemeral \| public`: a new message (type 4) |
+| `LegacyMessage` | plain `content` notice (not for interactive UI, UD-1) | the same, but `Invalid(UiError::V2ToLegacy)` (no request) if it would turn a V2 message back to legacy |
+| `()` | **does not compile** (E0277 `` `()` is not a response of this handler ``, pointing at the return type) | same |
+| `Responded` (from `acked.done()`) | you answered through the Responder; nothing more is sent | same (the auto-defer still fires at the deadline if the handler runs that long without answering) |
 | `Err(HandlerError)` | error path (§5) | error path |
 
-Any other type is the same E0277 (`` `u8` is not a Command response ``, label: return a
-`V2Message`, `Components`, a `LegacyMessage`, or the `Responded` from `done()`).
+Any other type is the same E0277 (`` `u8` is not a response of this handler ``, label:
+return a `V2Message`, `Components`, a `LegacyMessage`, or the `Responded` from `done()`).
 
-Noctis picks the callback type: a returned message is callback type 4 while the
-interaction is unanswered, and an edit of the original (`PATCH …/messages/@original`)
-after the handler deferred or replied (INT-12). It adds `IS_COMPONENTS_V2` to every V2
-send and edit (CV2-01) and runs the Limits validator (`AppBuilder::limits`, Strict by
-default; Lenient truncates with `…`) before any HTTP call. The default `Mentions` ping
-nobody (MSG-05). [planned] Finalizing Refs (Story 7.5) and uploading attachments (Story
-9.1): a message with attachments fails with `ResponderError::AttachmentsUnsupported`
-today, before any request.
+Noctis picks the callback type: a returned message is callback type 4 (or 7 for a
+component's `update`) while the interaction is unanswered, and an edit of the original
+(`PATCH …/messages/@original`) after the handler or the auto-defer acknowledged it
+(INT-12). It adds `IS_COMPONENTS_V2` to every V2 send and edit (CV2-01), never
+`EPHEMERAL` on an edit or `update`, sends `allowed_mentions` on every body (the default
+`Mentions` ping nobody, MSG-05) and the attachments keep-list `"attachments": []` on every
+edit body (type-7 `data`, `PATCH @original`, follow-up edits, bot-token edits). It runs
+the Limits validator (`AppBuilder::limits`, Strict by default; Lenient truncates with
+`…`) before any HTTP call. Before encoding, every Route `custom_id` of the message is
+resolved: one fresh select nonce per send for every select of the message, and the App's
+payload key signs `signed` Routes. [planned] Finalizing Refs (Story 7.5: a `by_ref` or
+spilled Route is `ResponderError::Encode` naming the Route today) and uploading
+attachments (Story 9.1): a message with attachments fails with
+`ResponderError::AttachmentsUnsupported` today, before any request.
 
 A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
-the `Command` Error Sink (§5).
+the `Command` (or `Component`) Error Sink (§5).
 
 ## 1b. `ctx.respond`, `ctx.update`, `ctx.reply_text` [planned, Story 8.1]
 
@@ -84,7 +92,7 @@ handler is `ResponderError::AlreadyResponded`, with no request. The doctrine lin
 
 ## 2. Auto-defer (FR-21, INT-01)
 
-If your Command handler hasn't answered `ack_deadline` after the gateway received the
+If your handler hasn't answered `ack_deadline` after the gateway received the
 interaction (queueing time counts), Noctis defers it for you:
 
 - set it with `App::builder().ack_deadline(Duration::from_millis(1500))`: 0 ms..=2500 ms,
@@ -93,18 +101,22 @@ interaction (queueing time counts), Noctis defers it for you:
   environment variable for it.
 - commands: exactly `{"type":5}`, or `{"type":5,"data":{"flags":64}}` when the Command is
   declared `response = ephemeral` (INT-08); the V2 flag goes on the later edit;
-- [planned, Epic 7] components and component-opened modal submits: type 6 (no loading
-  state) with the default `response = update`, type 5 with `response = ephemeral |
-  public`.
+- components and component-opened modal submits: exactly `{"type":6}` (no loading
+  state, no `data`) with the default `response = update`; `{"type":5}` /
+  `{"type":5,"data":{"flags":64}}` with `response = public` / `ephemeral`;
+- a modal submit whose modal a slash command opened has no message to update, so under
+  `update` it defers `{"type":5}` (public).
 
 The deadline is App-wide; whether a handler is auto-deferred at all is per handler
 (`auto_defer`, §2b).
 
 One gate serializes every initial response, so at most one callback is ever sent
 (INT-03): whichever of your handler and the timer gets there first answers. After the
-auto-defer, your `reply(msg)` or returned message becomes an edit of the original
-(`PATCH …/messages/@original`, `reply` still returns `Ok(Acked)`), and a late
-`defer_reply(..)` sends nothing. A handler that answers after 5 s still delivers, without
+auto-defer, a returned message, `update(msg)` and (after a type-5 defer) `reply(msg)`
+become an edit of the original (`PATCH …/messages/@original`; the call still returns
+`Ok(Acked)`); after a type-6 defer `reply(msg)` is a **follow-up** (a new message, never
+an edit of the clicked panel); a late `defer_reply(..)` or `defer_update()` sends
+nothing. A handler that answers after 5 s still delivers, without
 "interaction failed". The timer stops when your handler returns, fails, panics or is
 cancelled.
 
@@ -119,16 +131,20 @@ compile time:
 
 - `auto_defer = true | false` (default `true`): whether Noctis defers it at the
   deadline. Allowed on `#[command]`, `#[user_command]`, `#[message_command]` and on a
-  component's or modal's kind attribute (`#[button(..)]`, `#[string_select(..)]`, …,
-  `#[modal(..)]`; [planned, Story 7.2/7.8]). `#[handler]` itself takes no arguments.
+  component's kind attribute (`#[button(..)]`, `#[string_select(..)]`,
+  `#[user_select(..)]`, `#[role_select(..)]`, `#[mentionable_select(..)]`,
+  `#[channel_select(..)]`); `#[modal(..)]` takes it with Story 7.8 [planned] (until then a
+  modal submit is `update` + auto-deferred). `#[handler]` itself takes no arguments.
   Never on `#[autocomplete]` (no defer exists for it: `[INT-06]` compile error).
 - `response = …`: what the (auto-)defer and the default reply look like. Commands and
   context menus: `public` (default) or `ephemeral`. Components and component-opened
   modal submits: `update` (default, edits the message in place), `ephemeral` or
   `public` (a new message). A modal opened from a slash command has no message to
-  update, so its submit handler should declare `public` or `ephemeral` (a declared
-  `update` there auto-defers as type 5 public, and both `update(..)` and `ctx.update(..)`
-  return `UpdateUnavailable` without sending anything: answer with `ctx.respond`).
+  update, so its submit handler should declare `public` or `ephemeral` once `#[modal]`
+  takes `response` (Story 7.8 [planned]); under the default `update` it auto-defers as
+  type 5 public, a returned message is a new public message, and both `update(..)` and
+  `ctx.update(..)` return `UpdateUnavailable` without sending anything: answer with
+  `reply(msg)` or a returned message.
 
 `response` is independent of `auto_defer`: with `auto_defer = false` it still sets what
 `reply(msg)` and `defer_reply()` use; `reply_as(msg, e)` and `defer_reply_as(e)`
@@ -162,7 +178,7 @@ impl OpenBioModal {
 | must control the ack itself (rare) | `auto_defer = false` | the `Manual` responder; call `defer_reply()` / `defer_update()` yourself |
 | answers privately | `response = ephemeral` | — |
 | opens a new public message from a button | `response = public` | — |
-| is a modal submit | `auto_defer` and `response` as needed | `ModalResponder` or `ModalResponder<Manual>`; never `show_modal` |
+| is a modal submit | nothing today (`update` + auto-defer; `#[modal(..)]` takes `auto_defer`/`response` with Story 7.8 [planned]) | `ModalResponder`; never `show_modal` |
 | is autocomplete | neither (`[INT-06]` compile error) | nothing: return `Suggestions<T>` |
 
 Compile-time checks (`[INT-05]`): the `#[handler]` method must take the
@@ -182,14 +198,19 @@ Anti-patterns:
 - Never pick ephemerality per call to work around a missing declaration: declare
   `response = ephemeral`; use `reply_as`/`defer_reply_as` only for the rare mixed case.
 
-`auto_defer` and `response` ship on `#[command]`, `#[user_command]` and
-`#[message_command]` (component and modal handlers arrive with Epic 7).
+`auto_defer` and `response` ship on `#[command]`, `#[user_command]`,
+`#[message_command]` and every component kind attribute; `#[modal]` takes them with
+Story 7.8 [planned] (today it is ``[CID-03] `response` is a runtime argument of #[modal]
+that this Noctis release does not support yet``).
 `CommandHandler::auto_defer()` and `ContextMenuHandler::auto_defer()` read the flag,
 `ephemerality()` the declared `response`. Argument errors: `response = update` on a
 command is ``[INT-04] a Command cannot `update` its message: write `response = public`
 or `response = ephemeral` ``; any other value is `` `response` takes `public` or
-`ephemeral` ``; `auto_defer` takes only a bool literal (`` `auto_defer` takes `true` or
-`false` ``); the withdrawn bare `ephemeral` flag and the old modal flag are unknown
+`ephemeral` ``; on a component, `response` takes a bare `update`, `ephemeral` or
+`public` (``[CID-03] `response` takes `update`, `ephemeral` or `public` ``, also for
+`response = "update"`); `auto_defer` takes only a bool literal (`` `auto_defer` takes
+`true` or `false` ``); either given twice is ``[CID-03] #[button] argument `response` is
+given twice``; the withdrawn bare `ephemeral` flag and the old modal flag are unknown
 arguments whose message names the replacement (`response = ephemeral`,
 `auto_defer = false` with `CommandResponder<Manual>`).
 
@@ -216,9 +237,9 @@ Declared at registration, never toggled later:
   UI: settings, setup flows). `CommandHandler::ephemerality()` / `ctx.ephemerality()` read
   it (`Ephemerality::Ephemeral` / `Ephemerality::Public`).
 - Commands default to public (shared content).
-- [planned, Epic 7] Components default to update-in-place (keep the message's
-  visibility); `response = ephemeral` on the kind attribute — the component opens a **new**
-  private sub-panel.
+- Components default to update-in-place (`response = update`: the message keeps its
+  visibility; `reply`/`defer_reply` then default to public); `response = ephemeral` on the
+  kind attribute — the component opens a **new** private sub-panel.
 
 `reply` and `defer_reply()` and a returned message use the declared value;
 `reply_as(msg, Ephemerality)` and `defer_reply_as(Ephemerality)` take it explicitly;
@@ -234,8 +255,7 @@ your render function.
 
 ## 3b. Interaction-response flows at a glance (discord.js names)
 
-Each method is its own flow, not an alias. Names follow discord.js. [planned: Story 7.2
-adds the component and modal-submit responders (`update`, `defer_update`).]
+Each method is its own flow, not an alias. Names follow discord.js.
 
 | Method | discord.js | Callback / route | Effect | Use when |
 | --- | --- | --- | --- | --- |
@@ -251,31 +271,78 @@ adds the component and modal-submit responders (`update`, `defer_update`).]
 
 A modal can't follow a defer, so only handlers declared `auto_defer = false` (taking the `Manual` responder, §2b) have `show_modal`; they get no auto-defer and must call it within 3 s: open the modal first and do slow work after the submit, never before it.
 
-Equivalences: `defer_update()` + `edit_reply(msg)` ends like `update(msg)`, but takes two
-requests, so prefer `update` when the render is fast. `defer_reply(e)` + `edit_reply(msg)`
-ends like `reply(msg)` with ephemerality `e`. You rarely call `defer_*` yourself: the
-auto-defer fires at 2000 ms (type 6 for components, type 5 for commands).
+Equivalences (asserted on the wire): `defer_update()` + `edit_reply(msg)` sends `{"type":6}`
+then `PATCH …/messages/@original` with exactly the type-7 `data` of `update(msg)`, so it
+ends like `update(msg)` but takes two requests; prefer `update` when the render is fast.
+`defer_reply_as(e)` + `edit_reply(msg)` ends like `reply_as(msg, e)` (the edit carries no
+`EPHEMERAL`; the message keeps the defer's ephemerality). You rarely call `defer_*`
+yourself: the auto-defer fires at 2000 ms (type 6 for components under `update`, type 5
+otherwise).
+
+### Component and modal-submit flows
+
+| Call (state) | `response = update` on a message | `response = ephemeral \| public` | slash-opened modal submit |
+| --- | --- | --- | --- |
+| `update(msg)` (Pending) | type 7 with `data` = the edit body of the message's format | type 7 (the clicked message) | `UpdateUnavailable`, no request, still unanswered |
+| `defer_update()` (Pending) | `{"type":6}` | `{"type":6}` | `UpdateUnavailable`, no request |
+| `reply(msg)` (Pending) | type 4, public | type 4 with the declared ephemerality | type 4, public |
+| `defer_reply()` (Pending) | `{"type":5}` | `{"type":5}` / `{"type":5,"data":{"flags":64}}` | `{"type":5}` |
+| returned message (Pending) | type 7 | type 4 | type 4, public |
+| auto-defer | `{"type":6}` | type 5 (+ `EPHEMERAL`) | `{"type":5}` |
+| `update(msg)` / returned message after any ack | `PATCH …/@original` | `PATCH …/@original` | `PATCH …/@original` |
+| `reply(msg)` after a type-6 ack | public follow-up (`POST /webhooks/{app}/{token}?wait=true`) | — | — |
+| `reply(msg)` after a type-5 ack | `PATCH …/@original` | `PATCH …/@original` | `PATCH …/@original` |
+| `defer_reply()` / `defer_update()` after any ack | nothing (`debug`) | nothing | nothing |
+| `show_modal(m)` after any ack | `ModalUnavailable`, no request | same | (no `show_modal` on a modal submit) |
+
+After `update`/`defer_update`, `@original` is the clicked message (its id and channel are
+known), so after 15 minutes a public one is still edited with the bot token (INT-02);
+an ephemeral one is `TokenExpired`.
+
+### `…_with_response`
+
+`reply_with_response(msg)` and `defer_reply_with_response()` (all kinds),
+`update_with_response(msg)` and `defer_update_with_response()` (components and modal
+submits) send the callback with `?with_response=true` and return
+`(Responder<K, Acked, D>, Option<CallbackResource>)`. `CallbackResource::kind()` is the
+callback type Discord answers (4, 5, 6 or 7) and `message()` the
+`noctis::model::channel::Message` it created or updated, when it sent one that parses.
+The resource is `None` exactly when no callback was sent (the interaction was already
+acknowledged, so the call became an edit, a follow-up or nothing); a response body without
+`resource` is `ResponderError::Transport`.
+
+```rust
+let (acked, resource) = r.update_with_response(panel).await?;
+if let Some(message) = resource.as_ref().and_then(|r| r.message()) {
+    tracing::debug!(id = %message.id, "panel updated");
+}
+Ok(acked.done())
+```
 
 ## 4. The Responder (typestate, INT-03/04)
 
 The type is `Responder<K, S = Pending, D = AutoDefer>`: `K` is the handler kind
-(`Command`, later `Component` and `ModalSubmit`; sealed `ResponderKind`), `S` the state
+(`Command`, `Component` or `ModalSubmit`; sealed `ResponderKind`), `S` the state
 (`Pending` or `Acked`, sealed `ResponderState`) and `D` the sealed `DeferMode`:
 `AutoDefer` (default) or `Manual` (§2b). Only `Manual` implements the sealed
 `CanShowModal`. Take it
 as the last handler parameter through its alias, after `ctx` (and the path or target):
-`handle(self, ctx[, path][, r: CommandResponder])`, or `handle(self, ctx, target[, r:
-CommandResponder])` on a context menu; the options are `self`. Any other order, or two
-responders, is a compile error listing these forms. A handler that returns a message takes none (and if it takes
+`handle(self, ctx[, path][, r: CommandResponder])`, `handle(self, ctx, target[, r:
+CommandResponder])` on a context menu, `handle(self, ctx: ComponentCtx[, r:
+ComponentResponder])` on a component and `handle(self, ctx: ModalSubmitCtx[, r:
+ModalResponder])` on a modal; the options, Payload and inputs are `self`. Any other
+order, two responders, or another kind's responder (a `CommandResponder` on a component)
+is a compile error listing these forms (`the parameters of this #[handler] method do not
+fit ..`). A handler that returns a message takes none (and if it takes
 one but never uses it, nothing is sent from it).
 
 | Alias | Pending methods | Kind |
 | --- | --- | --- |
 | `CommandResponder` (auto-defer) | `reply(msg)`, `reply_as(msg, e)`, `defer_reply()`, `defer_reply_as(e)` — **no** `show_modal` | chat input / context menu |
 | `CommandResponder<Manual>` | the above plus `show_modal(m)`; required exactly when the command is `#[command(.., auto_defer = false)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
-| `ComponentResponder` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **no** `show_modal` | buttons, selects |
-| `ComponentResponder<Manual>` [planned, Epic 7] | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
-| `ModalResponder` / `ModalResponder<Manual>` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **never** `show_modal` | modal submit |
+| `ComponentResponder` (auto-defer) | `reply(msg)`, `reply_as(msg, e)`, `update(msg)`, `defer_update()`, `defer_reply()`, `defer_reply_as(e)` and the `…_with_response` variants — **no** `show_modal` | buttons, selects |
+| `ComponentResponder<Manual>` | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
+| `ModalResponder` | `reply(msg)`, `reply_as(msg, e)`, `update(msg)`, `defer_update()`, `defer_reply()`, `defer_reply_as(e)` and the `…_with_response` variants — **never** `show_modal` (E0599, INT-04); `ModalResponder<Manual>` with `#[modal(.., auto_defer = false)]` arrives with Story 7.8 [planned] | modal submit |
 
 Autocomplete has no Responder and no response method: the `#[autocomplete(field)]`
 method returns `HandlerResult<Suggestions<T>>` and Noctis sends it (`commands.md` §4).
@@ -289,6 +356,9 @@ r.reply_as(msg, Ephemerality::Public).await? -> Responder<Command, Acked>  // pe
 r.defer_reply().await?                  -> Responder<Command, Acked>  // callback type 5, declared ephemerality; only EPHEMERAL (INT-08)
 r.defer_reply_as(Ephemerality::Ephemeral).await? -> Responder<Command, Acked>  // per-call override
 r.show_modal(m).await?                  -> Responder<Command, Acked, Manual> // Manual responder only: callback type 9
+r.update(msg).await?                    -> Responder<Component, Acked>  // ComponentResponder / ModalResponder: callback type 7
+r.defer_update().await?                 -> Responder<Component, Acked>  // callback type 6
+r.reply_with_response(msg).await?       -> (Responder<K, Acked>, Option<CallbackResource>)
 acked.edit_reply(msg).await?            -> ()
 acked.fetch_reply().await?              -> noctis::model::channel::Message
 acked.follow_up(msg, Visibility::Public).await? -> FollowupHandle
@@ -302,8 +372,8 @@ handle.delete().await?                  -> ()
 `msg` is anything `Into<OutgoingMessage>`: `V2Message`, `Components` or `LegacyMessage`
 ([planned] `StaticMessage`). Calling a method that doesn't exist for the kind or
 state is a compile error: a second `reply` (E0599), `update` on a `CommandResponder`
-(E0599), `show_modal` on an auto-defer responder (`[INT-05] show_modal needs auto_defer
-= false on this handler`, E0277),
+(E0599), `show_modal` on a `ModalResponder` (E0599), `show_modal` on an auto-defer
+responder (`[INT-05] show_modal needs auto_defer = false on this handler`, E0277),
 `defer_reply_as(CallbackFlags::EPHEMERAL)` (E0308). `Responder`,
 `Responded` and `FollowupHandle` are `#[must_use]`; `Debug` never prints the token.
 
@@ -317,7 +387,7 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | Variant | When (nothing is sent unless noted) |
 | --- | --- |
 | `Invalid(UiError)` | Limits violation (Strict) or a V2 → legacy edit |
-| `Encode { reason }` | the body cannot be serialized (an unresolved Route `custom_id`) |
+| `Encode { reason }` | a Route `custom_id` cannot be resolved (a `by_ref`/spilled Route until Story 7.5, or a `signed` Route without a payload key on a detached responder); `reason` names the Route |
 | `AttachmentsUnsupported` | the message has attachments ([planned, Story 9.1]) |
 | `EphemeralUnsupported` | an ephemeral response over a Dispatcher message reply (§4.1) |
 | `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |
@@ -328,10 +398,11 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `TokenExpired` | 15 min after the interaction arrived: a follow-up, or an edit/delete of an ephemeral message or of one whose id is unknown (INT-02) |
 | `FollowupCap` | the 6th follow-up of a user-install-only interaction (INT-11) |
 | `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), or over the `Dispatcher` |
+| `UpdateUnavailable` | `update`/`defer_update` (or their `…_with_response`) on a submit of a modal that a slash command opened: "there is no message to update: this modal was not opened from a component message"; the interaction stays unanswered, so `reply` still works |
 
 Runtime guards the types can't express:
 - if the auto-defer already fired, your `reply` becomes `edit_reply` transparently
-  (§2);
+  (a follow-up after a component's type-6 defer) and `update` becomes `edit_reply` (§2);
 - follow-ups are counted when `authorizing_integration_owners` has a user install and no
   guild install: at most 5, the 6th is `ResponderError::FollowupCap` with no request
   (INT-11). A follow-up that fails validation uses no slot; one Discord rejects still
@@ -398,8 +469,7 @@ impl Bio {
 `show_modal(m)` validates the modal against the Limits (`Invalid`) and encodes it (`Encode`
 for an unresolved Route id) before any request.
 
-[planned, Epic 7] Example: a component that opens a modal (its struct declares
-`auto_defer = false`):
+Example: a component that opens a modal (its struct declares `auto_defer = false`):
 
 ```rust
 #[derive(Button, Clone, Copy)]
@@ -489,9 +559,9 @@ Option<MessageKey>` (`Some(key)` for `user`/`with_message`, else `None`), `as_er
 (downcast the inner error; `user(key)` wraps a private error whose `Display` is
 ``user notice `<key>` ``). `HandlerResult<T>` = `Result<T, HandlerError>`.
 
-When a Command handler (`#[command]`, `#[user_command]`, `#[message_command]`) returns
-`Err`, panics, or its options fail to decode or validate, the user gets **one short
-notice** (a V2 message with one `TextDisplay`), then the error is handled:
+When a handler (Command, component or modal submit) returns `Err`, panics, or a
+Command's options fail to decode or validate, the user gets **one short notice** (a V2
+message with one `TextDisplay`), then the error is handled:
 
 | Key of the notice | When |
 | --- | --- |
@@ -505,7 +575,8 @@ Where it goes depends on what the handler already sent:
 | State when the handler failed | Notice |
 | --- | --- |
 | nothing sent yet | the reply: callback type 4 with `EPHEMERAL` (flags 32832), **even for a public Command** |
-| deferred (by you or by the auto-defer) | the deferred original is deleted (`DELETE …/messages/@original`; a failure is a `warn` and the notice is still sent), then an ephemeral follow-up (AD-23) |
+| deferred with type 5 (by you or by the auto-defer) | the deferred original is deleted (`DELETE …/messages/@original`; a failure is a `warn` and the notice is still sent), then an ephemeral follow-up (AD-23) |
+| a component deferred with type 6, or updated | an ephemeral follow-up; the clicked message is **never** deleted |
 | replied | an ephemeral follow-up only |
 | opened a modal | nothing (`debug` "no notice after a modal") |
 | cancelled at shutdown | nothing; reported as `ReportKind::Cancelled` |
@@ -518,14 +589,16 @@ notice" (target `noctis::dispatch`, field `handler`) and never retries; it is no
 Error Sink report.
 
 Then:
-- **Errors and panics**: `noctis_handler_errors_total{kind="command"}` +1 and a report to
-  the `Command` Error Sink (`ReportKind::Error` / `Panic`, with `module`, `handler` and
+- **Errors and panics**: `noctis_handler_errors_total{kind="command"}` (`kind="component"`
+  for components and modal submits, which also counts a returned message that could not
+  be sent) +1 and a report to the `Command` (or `Component`) Error Sink (`ReportKind::Error` / `Panic`, with `module`, `handler` and
   `event_type = "INTERACTION_CREATE"`). The full error chain is logged once inside the
   `noctis.interaction` span: by the default `LogSink`, or, with a custom `Command` (or
   `Autocomplete`) sink, by `LogSink` right before your sink is called — so a custom sink
   never hides the error from the logs. The shard keeps running (NFR-4).
 - **User conditions** (`HandlerError::user(key)` and a failed option validator): one
-  `debug` on target `noctis::command` (fields `handler`, `key`); no Error Sink, not
+  `debug` on target `noctis::command` (`noctis::component` for components; fields
+  `handler`, `key`); no Error Sink, not
   counted in `noctis_handler_errors_total`. `with_message` does **not** make an error a
   user condition.
 
@@ -540,6 +613,10 @@ Logs never contain the token, a user id, option values or the notice text.
 Autocomplete never shows a notice (it answers an empty list, `commands.md` §4); event
 handlers have no user to notify (`HandlerError::user` there is reported like any other
 error). Route errors by origin with Error Sinks (`modules-middleware-ratelimits.md`).
+A click or modal submit that reaches no handler (malformed, unknown Route, kind mismatch,
+forged, undecodable, invalid submission, no author) gets the same generic ephemeral
+notice (`noctis.error.generic`, type 4 with flags 32832) after its `warn` (CID-06,
+`routes-payloads-refs.md` §1); stale and Ref ids are routed by Stories 7.3/7.5 [planned].
 [planned, Epic 7/13] Notices from the "disabled here", rate-limit and guard stages use
 the same routing.
 

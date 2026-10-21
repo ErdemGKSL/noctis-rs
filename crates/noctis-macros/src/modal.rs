@@ -1073,6 +1073,25 @@ mod tests {
         (attr, defs)
     }
 
+    /// Story 7.2 Matrix 53: `response` and `auto_defer` on `#[modal]`
+    /// arrive with Story 7.8.
+    #[test]
+    fn modal_response_args_not_supported_yet() {
+        for arg in [quote!(response = update), quote!(auto_defer = false)] {
+            let out = run(quote! {
+                #[modal("f", #arg, defaults(title = "T"))]
+                struct F {
+                    #[text_input("Bio")]
+                    bio: String,
+                }
+            });
+            assert!(
+                out.contains("is a runtime argument of #[modal] that this Noctis release does not support yet"),
+                "{out}"
+            );
+        }
+    }
+
     #[test]
     fn attribute_parser_reads_every_argument() {
         let (attr, defs) = defs(quote! {
