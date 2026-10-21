@@ -2,10 +2,10 @@
 title: 'Story 8.2: Deterministic renders, select freshness and safe text'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '9bb875b6936c4f53935e9e50ce818e4f2fb9f3ac'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-8-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -251,6 +251,36 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 26 findings — high 0, medium 6, low 10, false 9, maybe-false 1
+- findings:
+  - `[medium]` `[patch]` (blind) 8-slot ring shared by interaction nonces and draws evicts the source nonce after ~8 sends, breaking the "never an earlier/interaction nonce" guarantee — verified `NonceSet::insert` overwrites the oldest slot and `Shared::draw_nonce` inserts every draw into the same ring; patch: keep scanned nonces in a separate never-written set, avoid both, test >8 draws, and word the docs as "the interaction's nonces and the run's last eight sends".
+  - `[low]` `[reject]` (blind) a resolved select id plus an unresolved one of equal Route/Payload passes pre-send CID-02 but may collide after resolution — real (`DupKey::Resolved` never equals `Inline`), but reaching it needs an author to hand-resolve via the hidden `resolve` or reuse a sent id; fixing it adds a re-keying branch.
+  - `[medium]` `[patch]` (blind) FR-25 tests through `Shared` are probabilistic and `Shared` hard-wires `fill_os` — grouped with the verification-gap finding; patch: deterministic avoid-set assertions plus a `#[cfg(test)]` scripted fill.
+  - `[low]` `[reject]` (blind) CID-02 help literal is duplicated across crates with no cross-check — the spec deliberately chose a repeated literal pinned by each crate's test; drift is unlikely and a shared constant adds cross-crate public surface.
+  - `[low]` `[reject]` (blind) `escape_mentions` misses `<id:customize>`-style guild navigation links — real but they ping nobody and are rare in user text; the fix adds a new arm beyond matrix E1-E9 and the E11 property.
+  - `[low]` `[patch]` (blind) `escape_markdown`/module docs claim text "renders as written" though timestamps, custom emoji and links stay live — verified the wording in `escape.rs` L5-6/L21-22; patch: reword the docs to list what stays live (docs only).
+  - `[maybe-false]` `[reject]` (blind) lone `\r`, U+2028/2029 and non-ASCII leading whitespace are not treated as line starts — would need Discord's renderer behavior for these inputs to settle; even if true only `low` (stray heading/list formatting from unusual whitespace).
+  - `[false]` `[reject]` (blind) template names skip `escape_mentions` against its own guidance — the guidance (AGENTS.md L41, views-and-recipes §5, troubleshooting) says `escape_mentions` only "where mentions must not render", the Code Map specifies it for the bio only, and `allowed_mentions` defaults to `parse: []`.
+  - `[false]` `[reject]` (blind) `duplicate_key` silently skips ids whose encode fails; re-encoding cost — matrix C6 deliberately settles "not compared, the Responder later reports Encode"; no measured cost and the dhat budgets are a gate.
+  - `[false]` `[reject]` (blind) CID-02/MSG-05 text changed in docs but not in `noctis-rules` — `noctis-rules` carries only the rule ids (`rule.rs` L57), no help or enforcement text, and no Limit or rule changed.
+  - `[low]` `[patch]` (blind) doc lines edited in `limits/mod.rs` were not re-wrapped — verified L8 (117 cols) and L175 (120 cols) come from this diff; patch: re-wrap those two paragraphs.
+  - `[low]` `[reject]` (blind) `std::sync::Mutex` held across the `getrandom` syscall — never across `.await` (as the Code Map requires); concurrent sends of one run are rare and a copy-draw-retry adds a loop for a microsecond wait.
+  - `[low]` `[reject]` (blind) testkit freshness tests rely on fixed sleeps and start two Apps — the helpers were copied from `responder_ergonomics.rs` as the spec instructed; replacing them with notifications or a paused clock is new harness machinery.
+  - `[false]` `[reject]` (blind) `same_state_renders_identical_json` would pass if the nonce were dropped or constant — those regressions are caught elsewhere: a dropped nonce fails `nonce_of` decoding in R1/R2 and a constant one fails `fr_25_each_send_of_a_run_gets_a_new_nonce` (4 distinct values).
+  - `[medium]` `[patch]` (edge) a run with >8 sends evicts the interaction nonces from the shared ring — same root cause as the first blind finding; same patch.
+  - `[low]` `[patch]` (edge) `resolve_ids` draws a nonce for messages with only unresolved signed/by-Ref ids — verified the draw happens for the first unresolved id regardless of shape, contradicting R5 and filling the ring; patch: draw only for `has_select()` ids and extend `fr_25_no_select_no_nonce`.
+  - `[low]` `[reject]` (edge) an already-resolved select id carrying the source nonce is kept — needs a hand-resolved or reused id (select ids from `.build()` are always unresolved); the fix adds a decode-and-reject guard.
+  - `[false]` `[reject]` (edge) a missing/unparseable `message` drops the data nonce — component interactions always carry `message` with id and channel; a slash-opened modal submit has no message and its data ids are input keys, never select nonces.
+  - `[low]` `[reject]` (edge) mixed resolved + unresolved equal select ids pass pre-send CID-02 — same root cause and verdict as the second blind finding.
+  - `[medium]` `[patch]` (edge, claim) "never equals an earlier send of the same run" is false past 8 draws — same root cause as the first blind finding; the patch rewords the claim to the bounded guarantee.
+  - `[medium]` `[patch]` (vgap, pre-verified) FR-25 avoid-set wiring in `Shared` is only checked by random draws — filed disposition `patch`; grouped with the third blind finding; patch adds the deterministic tests.
+  - `[medium]` `[patch]` (vgap, other) ring of 8 evicts the interaction's nonces after ~7 select-bearing sends — same root cause as the first blind finding; same patch.
+  - `[false]` `[reject]` (intent 1) AC2 implemented as a guarantee (R2b) rather than a fresh random draw; client surface not observed — the intent contract deliberately settles R2b ("fresh by construction") and the wire `custom_id` plus defaults is the only testable surface; the ring bound is handled by the patch above.
+  - `[false]` `[reject]` (intent 2) by-Ref Refs widen the AC1 exception and the test covers one Command path — the contract's Never list deliberately keeps by-Ref minting per send and documents it, and R6 fixes the test surface.
+  - `[false]` `[reject]` (intent 3) mention neutralizing is render-only, Markdown is formatting-only, tests are per-case not one table, MSG-05 opt-in checked at `create_body` — all deliberately settled by the contract (E/M matrices, S1/S2 over `create_body`, "allowed_mentions still decides").
+  - `[false]` `[reject]` (intent 4) CID-02 names the first path in a note and now reports unresolved ids — C1/C2 deliberately settle the note form and the Route + Payload comparison of unresolved ids.
+
 ## Design Notes
 
 - **Why guarantee freshness.** The client keys a select's local state by its `custom_id`. With a random nonce, 1 send in 3844 would silently keep the old selection, so we avoid the nonce the client holds. Only the select that produced an interaction can hold a local selection, but a button click re-render must also avoid the message's current nonce, because an earlier select pick may have been answered without a re-render. So the scan covers `data` and `message`. Every select of one send shares one nonce, so in practice the set holds 1-2 entries, and the cap of 8 is generous.
@@ -279,3 +309,15 @@ let bio = p.bio.as_deref().map_or_else(|| format!("-# {}", s.profile.no_bio()), 
 - `cargo metadata --format-version 1 --manifest-path examples/project-template/Cargo.toml > /dev/null` -- ok
 - `grep -rn "Story 8.2" examples/project-template crates docs` -- no `[planned` hit
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Story 8.2 makes renders deterministic and select menus fresh: each send with a select gets one new nonce that avoids the source interaction's nonces (scanned zero-allocation from raw `data`/`message` bytes) and the run's last eight sends; CID-02 now compares unresolved ids by Route + Payload; new `escape_markdown` / `escape_mentions` (U+200B) in `noctis-ui`, re-exported from `noctis`; profile template view uses them.
+- **Files changed:** `crates/noctis-core/src/responder/nonce.rs` (nonce scan, avoid sets, draws); `responder.rs` (wiring, draw only for select ids); `responder/tests/components.rs` (deterministic FR-25 tests, scripted fill); `noctis-ui/src/escape.rs` (escapes); `noctis-ui/src/route.rs`, `limits/mod.rs`, `tests/validate.rs` (CID-02 unresolved keying); `noctis-macros/src/components/lower.rs`; `noctis-testkit/tests/select_freshness.rs` + snapshot; `noctis/src/lib.rs`, `noctis/tests/escape.rs`; CID-02 trybuild `.stderr`; `docs/discord-rules.md`; ARCHITECTURE-SPINE; `examples/project-template/` (AGENTS.md, noctis skill refs, profile/dashboard views); `xtask/public-api.txt`.
+- **Review findings:** 26 total (high 0, medium 6, low 10, false 9, maybe-false 1).
+  - Patched (medium 6, low 3): interaction nonces kept in a separate never-written set beside the 8-slot draw ring (5 duplicate findings), test >8 draws, docs reworded to the bounded guarantee; deterministic avoid-set tests with a `#[cfg(test)]` scripted fill; draw a nonce only for `has_select()` ids; escape docs list what stays live; re-wrapped `limits/mod.rs` docs.
+  - Deferred: none.
+  - Rejected: resolved+unresolved equal select ids bypass pre-send CID-02 (needs hand-resolve, x2); duplicated CID-02 help literal (deliberate, pinned by tests); `<id:customize>` links unescaped (ping nobody); lone `\r`/U+2028 line starts (unverifiable, low); template names skip `escape_mentions` (false, per guidance); `duplicate_key` skips failing encodes (settled C6); noctis-rules text (false, ids only); Mutex across getrandom (never across await); testkit sleeps (copied helpers per spec); identical-JSON test weakness (caught elsewhere); pre-resolved select carrying source nonce (needs hand-resolve); missing `message` (false); intent 1-4 (settled by contract).
+- **Follow-up review recommended:** true (first pass, 6 medium patched, 0 high). Unverified risk: the reworked nonce avoid-set split (separate interaction set vs 8-slot draw ring) has not been independently reviewed.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests incl. trybuild/insta/proptest/dhat, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** freshness guarantee is bounded to the interaction's nonces and the run's last eight sends; hand-resolved ids can evade pre-send CID-02; guild navigation links and exotic line breaks are not escaped.

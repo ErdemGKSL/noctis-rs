@@ -3,7 +3,9 @@
 //! Noctis never escapes on its own: the author passes user-controlled text
 //! (names, reasons, bios) through [`escape_markdown`] and, where a mention
 //! must not render, [`escape_mentions`]. Both only insert characters, so
-//! what Discord shows is exactly the user's text.
+//! the user's formatting is neutralized; timestamps (`<t:..>`), custom emoji
+//! (`<:name:id>`, `<a:name:id>`) and links (`<https://..>`, bare URLs) stay
+//! live.
 
 /// The zero-width space [`escape_mentions`] inserts.
 const ZWSP: char = '\u{200B}';
@@ -18,8 +20,8 @@ const fn is_line_start_markup(c: char) -> bool {
     matches!(c, '#' | '>' | '-' | '+')
 }
 
-/// Escapes Discord Markdown in `text` with backslashes, so it renders as
-/// written.
+/// Escapes Discord Markdown in `text` with backslashes, so its formatting is
+/// neutralized; timestamps, custom emoji and links still render.
 ///
 /// - Everywhere: `\ * _ ~` `` ` `` `| [ ]` (bold, italics, underline,
 ///   strikethrough, code, spoilers, masked links, and the backslash itself).

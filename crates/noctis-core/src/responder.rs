@@ -136,6 +136,17 @@ use twilight_model::id::marker::{ChannelMarker, MessageMarker};
 
 pub use self::ergonomics::{NoticeText, ReplyText};
 pub(crate) use self::nonce::NonceSet;
+
+/// The nonce passed to `resolve_for_send` for an id without a select,
+/// which ignores it: such a send draws no nonce (FR-25).
+const PLACEHOLDER_NONCE: SelectNonce = match SelectNonce::new(0) {
+    Some(nonce) => nonce,
+    None => panic!("0 is a select nonce"),
+};
+
+/// A scripted `fill` for [`Shared`]'s nonce draw.
+#[cfg(test)]
+pub(crate) type ScriptedFill = Box<dyn FnMut(&mut [u8; 2]) -> Result<(), getrandom::Error> + Send>;
 pub(crate) use self::transport::{InteractionTarget, MessageTarget, Transport};
 use crate::AckDeadlineMissed;
 use crate::handler::AppShared;
@@ -1261,10 +1272,15 @@ pub(crate) struct Shared {
     followup_cap: Option<u8>,
     /// The run's [`GuardPhase`]; written only by the guarded handler future.
     guard_phase: AtomicU8,
-    /// The select nonces no send of this run may draw: those of the
-    /// interaction, then every nonce already drawn (FR-25). Never locked
-    /// across an `.await`.
-    nonces: Mutex<NonceSet>,
+    /// The select nonces of the interaction, which no send of this run may
+    /// draw (FR-25). Draws never write here, so they cannot evict them.
+    source_nonces: NonceSet,
+    /// The run's last eight drawn nonces, which no later send may draw
+    /// (FR-25). Never locked across an `.await`.
+    drawn: Mutex<NonceSet>,
+    /// A scripted `fill` for the nonce draw, replacing the OS CSPRNG.
+    #[cfg(test)]
+    fill: Mutex<Option<ScriptedFill>>,
     /// `true` for a modal submit: `show_modal` is refused with
     /// `ModalUnavailable` before any work (INT-04, INT-05).
     no_modal: bool,
@@ -1357,7 +1373,10 @@ impl Shared {
             followups: AtomicU8::new(0),
             followup_cap: cap,
             guard_phase: AtomicU8::new(GuardPhase::UNGUARDED),
-            nonces: Mutex::new(source.map_or(NonceSet::EMPTY, |s| s.nonces)),
+            source_nonces: source.map_or(NonceSet::EMPTY, |s| s.nonces),
+            drawn: Mutex::new(NonceSet::EMPTY),
+            #[cfg(test)]
+            fill: Mutex::new(None),
             no_modal,
             handler_answered: AtomicBool::new(false),
         })
@@ -1461,19 +1480,46 @@ impl Shared {
         Some((&app.refs, app.ref_ttl))
     }
 
-    /// One select nonce for a send, outside the run's avoid-set, which it
-    /// then joins (FR-25).
+    /// One select nonce for a send, outside the interaction's nonces and
+    /// the run's last eight draws, which it then joins (FR-25).
     fn draw_nonce(&self) -> Result<SelectNonce, ResponderError> {
-        let mut avoid = self.nonces.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut drawn = self.drawn.lock().unwrap_or_else(PoisonError::into_inner);
+        let avoid = [&self.source_nonces, &*drawn];
+        #[cfg(test)]
+        let nonce = {
+            let mut fill = self.fill.lock().unwrap_or_else(PoisonError::into_inner);
+            match fill.as_mut() {
+                Some(fill) => nonce::draw_nonce(&avoid, fill)?,
+                None => nonce::draw_nonce(&avoid, nonce::fill_os)?,
+            }
+        };
+        #[cfg(not(test))]
         let nonce = nonce::draw_nonce(&avoid, nonce::fill_os)?;
-        avoid.insert(nonce);
+        drawn.insert(nonce);
         Ok(nonce)
     }
 
+    /// Whether a draw must avoid `nonce`.
+    #[cfg(test)]
+    pub(crate) fn avoids(&self, nonce: SelectNonce) -> bool {
+        self.source_nonces.contains(nonce)
+            || self
+                .drawn
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .contains(nonce)
+    }
+
+    /// Replaces the OS CSPRNG of the nonce draw with `fill`.
+    #[cfg(test)]
+    pub(crate) fn script_fill(&self, fill: ScriptedFill) {
+        *self.fill.lock().unwrap_or_else(PoisonError::into_inner) = Some(fill);
+    }
+
     /// Resolves every unresolved Route `custom_id` for this send: one
-    /// select nonce for the whole message (never one the interaction
-    /// carries or an earlier send of the run drew), the signer only for `signed`
-    /// Routes, and a minted Ref for every Ref slot (AD-18). Equal slots
+    /// select nonce for the whole message, drawn only when a select needs
+    /// it (never a nonce of the interaction nor one of the run's last eight
+    /// sends), the signer only for `signed` Routes, and a minted Ref for every Ref slot (AD-18). Equal slots
     /// share one Ref; each distinct one is stored in the App's `RefStore`
     /// before anything is sent. An already-resolved id is kept.
     ///
@@ -1492,7 +1538,8 @@ impl Shared {
             }
             let nonce = match nonce {
                 Some(nonce) => nonce,
-                None => *nonce.insert(self.draw_nonce()?),
+                None if id.has_select() => *nonce.insert(self.draw_nonce()?),
+                None => PLACEHOLDER_NONCE,
             };
             match id.resolve_for_send(nonce, signer) {
                 Ok(None) => {}

@@ -841,17 +841,96 @@ async fn fr_25_each_send_of_a_run_gets_a_new_nonce() {
     }
 }
 
-/// FR-25 (R5): a message without selects draws no nonce.
+/// FR-25 (R5): a message without selects draws no nonce, even when its
+/// ids are unresolved (signed, by Ref).
 #[tokio::test]
 async fn fr_25_no_select_no_nonce() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.component(Declared::Update, source_with_nonce_ab());
-    let before = *shared.nonces.lock().unwrap();
-    let msg =
-        V2Message::new(Components::new().push(ActionRow::buttons([button(Form { item: 1 })])));
+    let msg = V2Message::new(
+        Components::new()
+            .push(ActionRow::buttons([button(Form { item: 1 })]))
+            .push(ActionRow::buttons([button(Stored { item: 1 })])),
+    );
     let _ = component(&shared).update(msg).await.unwrap().done();
-    assert_eq!(*shared.nonces.lock().unwrap(), before);
+    assert_eq!(*shared.drawn.lock().unwrap(), NonceSet::EMPTY);
     assert!(select_nonces(&fx.requests()[0].2).is_empty());
+}
+
+/// The nonce `ab` as the codec reads it.
+fn nonce_ab() -> SelectNonce {
+    noctis_codec::decode("4pick:ab1").unwrap().nonce().unwrap()
+}
+
+/// A scripted fill yielding `values` in order.
+fn scripted(values: Vec<u16>) -> ScriptedFill {
+    let mut it = values.into_iter();
+    Box::new(move |bytes| {
+        *bytes = it.next().unwrap().to_le_bytes();
+        Ok(())
+    })
+}
+
+/// FR-25: the avoid side holds the interaction's nonce from the start and
+/// every sent nonce after the send.
+#[tokio::test]
+async fn fr_25_avoid_side_holds_source_and_sent_nonces() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.component(Declared::Update, source_with_nonce_ab());
+    assert!(shared.avoids(nonce_ab()));
+    let _ = component(&shared)
+        .update(select_msg(1))
+        .await
+        .unwrap()
+        .done();
+    let sent = select_nonces(&fx.requests()[0].2);
+    assert_eq!(sent.len(), 1);
+    assert!(shared.avoids(nonce_ab()));
+    let drawn: Vec<String> = shared
+        .drawn
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|n| n.to_string())
+        .collect();
+    assert_eq!(drawn, sent);
+}
+
+/// FR-25: a draw that first yields the source nonce `ab` sends the next one.
+#[tokio::test]
+async fn fr_25_scripted_draw_skips_the_source_nonce() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.component(Declared::Update, source_with_nonce_ab());
+    let ab = nonce_ab();
+    let x = SelectNonce::new((ab.get() + 1) % (SelectNonce::MAX + 1)).unwrap();
+    shared.script_fill(scripted(vec![ab.get(), x.get()]));
+    let _ = component(&shared)
+        .update(select_msg(1))
+        .await
+        .unwrap()
+        .done();
+    assert_eq!(select_nonces(&fx.requests()[0].2), [x.to_string()]);
+}
+
+/// FR-25: more draws than the ring holds never evict the interaction's
+/// nonce.
+#[tokio::test]
+async fn fr_25_many_draws_keep_avoiding_the_source_nonce() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.component(Declared::Update, source_with_nonce_ab());
+    let ab = nonce_ab();
+    let others: Vec<u16> = (0..=SelectNonce::MAX)
+        .filter(|&v| v != ab.get())
+        .take(12)
+        .collect();
+    shared.script_fill(scripted(others.clone()));
+    for _ in &others {
+        shared.draw_nonce().unwrap();
+    }
+    assert!(shared.avoids(ab));
+    let x = others[0];
+    shared.script_fill(scripted(vec![ab.get(), x]));
+    assert_eq!(shared.draw_nonce().unwrap().get(), x);
 }
 
 /// C7: two equal select Routes resolve to one id (one nonce per send), so

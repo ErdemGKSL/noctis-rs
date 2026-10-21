@@ -328,6 +328,12 @@ impl CustomId {
         self.route.route()
     }
 
+    /// Whether the Route carries a select nonce, so resolving it for a
+    /// send needs a drawn one.
+    pub fn has_select(&self) -> bool {
+        self.route.shape().has_select()
+    }
+
     /// The encoded `custom_id`, or `None` while unresolved.
     pub fn get(&self) -> Option<&str> {
         self.id.as_ref().map(ArrayString::as_str)

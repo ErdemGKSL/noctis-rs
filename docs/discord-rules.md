@@ -325,10 +325,10 @@ T      6 chars   integrity tag: base62 of truncated keyed BLAKE3 over all
                  preceding chars; inline bodies of `signed` Routes only
 ```
 
-`N` is drawn per send and never equals a nonce of the interaction being answered or an
-earlier send of the same run (FR-25): the Responder scans the raw interaction for the
+`N` is drawn per send and never equals a nonce of the interaction being answered, nor one
+of the run's last eight sends (FR-25): the Responder scans the raw interaction for the
 nonces of its Noctis `custom_id`s (the clicked select's `data` and the source message's
-selects) and draws outside them and every nonce the run already drew, so a client always
+selects) and draws outside them and the run's last eight drawn nonces, so a client always
 shows the render's declared select defaults. By-Ref ids get a new Ref per send.
 
 | Constant (`noctis-codec`) | Value |

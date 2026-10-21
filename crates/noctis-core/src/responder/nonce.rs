@@ -4,9 +4,11 @@
 //! A client keys a select's local state by its `custom_id`, so a re-render
 //! whose select ids repeat the nonce the client holds would keep the user's
 //! old local selection instead of the render's declared defaults. Each send
-//! therefore draws its nonce outside a small avoid-set: the nonces found in
+//! therefore draws its nonce outside two small sets: the nonces found in
 //! the raw interaction (the clicked select's `data` and the source
-//! `message`'s components) and every nonce this run already drew.
+//! `message`'s components), which draws never overwrite, and the run's last
+//! eight drawn nonces. So a nonce is never one of the interaction being
+//! answered, nor one of the run's last eight sends.
 
 use noctis_codec::{MAX_ID_LEN, SelectNonce};
 
@@ -153,14 +155,14 @@ fn read_string<'r, 'b>(
 }
 
 /// One select nonce for a send, drawn uniformly in `0..=SelectNonce::MAX`
-/// outside `avoid` (rejection sampling over two bytes from `fill`, the OS
+/// outside every set of `avoid` (rejection sampling over two bytes from `fill`, the OS
 /// CSPRNG in production).
 ///
 /// # Errors
 ///
 /// [`ResponderError::Encode`] when `fill` fails.
 pub(crate) fn draw_nonce(
-    avoid: &NonceSet,
+    avoid: &[&NonceSet],
     mut fill: impl FnMut(&mut [u8; 2]) -> Result<(), getrandom::Error>,
 ) -> Result<SelectNonce, ResponderError> {
     let span = u32::from(SelectNonce::MAX) + 1;
@@ -175,7 +177,7 @@ pub(crate) fn draw_nonce(
         if value < limit
             && let Ok(n) = u16::try_from(value % span)
             && let Some(nonce) = SelectNonce::new(n)
-            && !avoid.contains(nonce)
+            && !avoid.iter().any(|set| set.contains(nonce))
         {
             return Ok(nonce);
         }
@@ -325,7 +327,7 @@ mod tests {
 
     #[test]
     fn d1_rejects_values_over_the_limit() {
-        let nonce = draw_nonce(&NonceSet::default(), scripted(&[u16::MAX, 7]));
+        let nonce = draw_nonce(&[&NonceSet::default()], scripted(&[u16::MAX, 7]));
         assert_eq!(nonce.map(SelectNonce::get).ok(), Some(7));
     }
 
@@ -333,13 +335,15 @@ mod tests {
     fn d2_skips_avoided_nonces() {
         let mut avoid = NonceSet::default();
         avoid.insert(n(5));
-        let nonce = draw_nonce(&avoid, scripted(&[5, 3844 + 5, 9]));
+        let nonce = draw_nonce(&[&avoid], scripted(&[5, 3844 + 5, 9]));
         assert_eq!(nonce.map(SelectNonce::get).ok(), Some(9));
     }
 
     #[test]
     fn d3_fill_error() {
-        let err = draw_nonce(&NonceSet::default(), |_| Err(getrandom::Error::UNSUPPORTED));
+        let err = draw_nonce(&[&NonceSet::default()], |_| {
+            Err(getrandom::Error::UNSUPPORTED)
+        });
         match err {
             Err(ResponderError::Encode { reason }) => {
                 assert!(
@@ -354,18 +358,18 @@ mod tests {
     #[test]
     fn d4_empty_avoid_takes_the_first_valid_draw() {
         assert_eq!(
-            draw_nonce(&NonceSet::default(), scripted(&[3843]))
+            draw_nonce(&[&NonceSet::default()], scripted(&[3843]))
                 .map(SelectNonce::get)
                 .ok(),
             Some(3843)
         );
         assert_eq!(
-            draw_nonce(&NonceSet::default(), scripted(&[3844]))
+            draw_nonce(&[&NonceSet::default()], scripted(&[3844]))
                 .map(SelectNonce::get)
                 .ok(),
             Some(0)
         );
-        let nonce = draw_nonce(&NonceSet::default(), fill_os).expect("the OS CSPRNG works");
+        let nonce = draw_nonce(&[&NonceSet::default()], fill_os).expect("the OS CSPRNG works");
         assert!(nonce.get() <= SelectNonce::MAX);
     }
 }

@@ -556,7 +556,7 @@ budget.fits_prefix(rows.iter());                      // how many rows from the 
   once (the helpers are not idempotent), in either order (they commute).
 - **Select freshness**: every select kind carries a nonce, and Noctis draws a new one
   on each send that never equals a nonce of the interaction being answered (the clicked
-  select, the message's selects) or of an earlier send of the same handler run. After
+  select, the message's selects), nor one of the handler run's last eight sends. After
   `ctx.update(..)` the client therefore shows the defaults your render function declared
   (`default_users`, `.default(true)`), not the user's previous local selection: always
   set them to the current value. Equal state renders equal JSON except these nonces

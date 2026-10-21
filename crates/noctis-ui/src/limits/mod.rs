@@ -5,11 +5,11 @@
 //! call `validate_components` / `validate_legacy_components` / `cost`, so
 //! counts, paths and violation order match `components!` exactly. On top of
 //! that they check what the descriptors do not carry: duplicate `custom_id`s
-//! (CID-02, unresolved ones compared by Route and Payload), `attachment://` references (ATT-05), attachment alt text
-//! (ATT-06), legacy `content` (MSG-01), empty bodies (MSG-09) and mention id
-//! counts (MSG-04). A modal is lowered into `noctis_rules::modal`
-//! descriptors and checked by `validate_modal`, then its input keys by CID-01
-//! and CID-02.
+//! (CID-02, unresolved ones compared by Route and Payload), `attachment://`
+//! references (ATT-05), attachment alt text (ATT-06), legacy `content`
+//! (MSG-01), empty bodies (MSG-09) and mention id counts (MSG-04). A modal
+//! is lowered into `noctis_rules::modal` descriptors and checked by
+//! `validate_modal`, then its input keys by CID-01 and CID-02.
 
 mod lenient;
 mod lower;
@@ -172,9 +172,10 @@ impl fmt::Display for LimitWarning {
 /// `container[0].section[2].accessory.label`. CID-02 compares unresolved
 /// `custom_id`s (select, signed and by-Ref Routes) by Route and Payload, so a
 /// duplicate fails before and after the Responder resolves it; its help
-/// suggests a Payload field that tells the components apart. Every warning is returned in the [`CostReport`] and logged
-/// with `tracing::warn!` (target `noctis::ui`, fields `rule` and `path`),
-/// also when the message then fails.
+/// suggests a Payload field that tells the components apart. Every warning
+/// is returned in the [`CostReport`] and logged with `tracing::warn!`
+/// (target `noctis::ui`, fields `rule` and `path`), also when the message
+/// then fails.
 ///
 /// In Lenient mode the truncations stay applied to `message` even when
 /// `validate` then returns `Err`.

@@ -142,7 +142,7 @@ says ``write `Route { .. }.build()` ``.
 - A plain Route (no `select` or `signed`) is encoded when you build the
   component. Ids that need a select nonce or a signature are finalized by the
   Responder when the message is sent (one fresh nonce per send, never equal to a nonce of
-  the interaction being answered or of an earlier send of the same handler run; the App's
+  the interaction being answered, nor one of the handler run's last eight sends; the App's
   payload key signs; every `by_ref`/spilled Route gets a Ref stored in the App's
   `RefStore`, a new one per send). You never handle them
   (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
@@ -383,7 +383,7 @@ Shared fields of all five:
 - **Cost:** 2 (row + select). Options don't count.
 - After every re-render, selects show the render function's defaults (nonce, FR-25): each send
   draws a nonce that differs from every nonce in the clicked interaction (the select's own id
-  and the message's selects) and from the handler's earlier sends, so the client never keeps
+  and the message's selects) and from the handler run's last eight sends, so the client never keeps
   the user's old local selection. Always set `default`/`default_*` to the current value
   (visible active state).
 - Empty list: render a disabled select with one explanatory option, or an empty-state
