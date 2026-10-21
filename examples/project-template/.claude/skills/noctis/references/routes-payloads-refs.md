@@ -165,7 +165,7 @@ from the release that implements it. Anything else is a compile error.
 | `one_shot` | Ref is deleted on first use (`take`); for confirmations (by_ref/spill only) |
 | `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`), signed when the message is sent and verified on every click; a mounted `signed` Route without a key fails `build()` (``[CID-06] Route `x` is `signed`, but no payload key is configured …``); not with `by_ref` |
 | `schema = n` | Payload schema version 1..=61 (see §6) |
-| `owner = field` | Route Guard: only the user whose id is in `field` (an `Id<UserMarker>` Payload field) may click or submit |
+| `owner = field` | Route Guard: only the user whose id is in `field` (an `Id<UserMarker>` Payload field) may click or submit (trusts the Payload: use `signed` or `by_ref`) |
 | `permissions = A \| B` | Route Guard: the clicking member's channel permissions contain these (`ADMINISTRATOR` passes; a DM is denied) |
 | `guard = path::to::fn` | custom Guard `async fn(ctx: &ComponentCtx, this: &Self) -> HandlerResult<Access>` (`&ModalSubmitCtx` on `#[modal]`) |
 | `rate_limit(user, 5, per = "1m")` [planned, Story 13.4] | see `modules-middleware-ratelimits.md` |
@@ -181,6 +181,15 @@ authorization for anything sensitive: Payloads are client input (CID-06).
 use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::UserMarker;
+
+/// The bot's staff list, registered with `AppBuilder::state`.
+pub struct Staff(std::collections::HashSet<Id<UserMarker>>);
+
+impl Staff {
+    pub fn contains(&self, user: Id<UserMarker>) -> bool {
+        self.0.contains(&user)
+    }
+}
 
 mod auth {
     use noctis::prelude::*;
@@ -215,6 +224,9 @@ pub struct Ban {
 - **`owner = field`** names a Payload field of type `Id<UserMarker>` (no `Option`,
   no other id type); the click's or submit's user must equal it. On `#[modal]` the
   field must be a Payload field (no input attribute): inputs are submitted text.
+  The check is only as trustworthy as the Payload: on an inline Route without
+  `signed` the id comes from the client-controlled `custom_id` (CID-06), so a forged
+  id can name any user; a real ownership check needs a `signed` or `by_ref` Route.
 - **`permissions = A | B`** uses the `noctis::Permissions` names (also as paths,
   `Permissions::BAN_MEMBERS`; repeated names OR together). It reads
   `member.permissions`, the member's permissions in the channel with overwrites, as

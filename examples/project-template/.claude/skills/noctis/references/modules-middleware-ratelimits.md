@@ -320,9 +320,9 @@ impl Boost {                                       // #[derive(Button)] #[button
   Before-Middleware run after the auto-defer is armed (stage 6), before Route Guards
   (stage 8: a component's or modal's `owner`, `permissions` and `guard = path`,
   `routes-payloads-refs.md` §1a) and the handler (stage 9): a slow Middleware is
-  deferred like a slow handler, a `Flow::Stop` wins over every Guard, and the Guards
-  see the frozen Extensions' run (a Guard denial runs the after-Middleware with
-  `RunOutcome::Denied`). Commands, context menus and events have no stage 8.
+  deferred like a slow handler, a `Flow::Stop` wins over every Guard, and Guards
+  cannot read Extensions (only the ctx accessors and `self`); a Guard denial runs
+  the after-Middleware with `RunOutcome::Denied` and the run's Extensions. Commands, context menus and events have no stage 8.
 - **`Flow`**: `Continue` runs the next Middleware, then the handler. `Stop(Some(key))`
   skips the rest and the handler and shows `key`'s localized ephemeral notice (after an
   auto-defer: the deferred original is deleted, then an ephemeral follow-up; under

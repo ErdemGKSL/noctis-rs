@@ -2,7 +2,7 @@
 title: 'Story 7.7: Route Guards'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '99256882c847dbd8c452997e5063a4ea61c11fb1'
 review_loop_iteration: 1
 followup_review_recommended: false
@@ -310,6 +310,34 @@ deferred:
   - `[false]` `[reject]` (intent D9) Extra public API (`member_permissions`, `RunOutcome::Denied`, `Access`) — all named in the intent contract; skill, template and API hash updated.
   - `[medium]` `[patch]` (vgap, pre-verified) No test runs a guarded by-Ref modal: the modal `start_record` guarded path and the modal one-shot restore TTL are unpinned — grouped with the blind modal-coverage row; carried into the bad_spec amendment as a required test.
 
+### 2026-10-21 — Review pass
+- verdicts: 24 findings — high 0, medium 1, low 10, false 13, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) `owner = field` on an unsigned inline Route trusts a user id decoded from the client-controlled `custom_id` (CID-06), and the skill presents it as an ownership guarantee — verified: §1a's owner bullet and the argument table say "only the user whose id is in `field` may click", the only caveat is a generic "re-check authorization" line, and the template's `SetupState`/`PickLogChannel`/`PickModRole`/`CancelSetup` use `owner = owner` with neither `signed` nor `by_ref`. Patch: state in §1a that the owner check is only as trustworthy as the Payload and needs `signed` or `by_ref` against forged ids.
+  - `[low]` `[patch]` (blind) `modules-middleware-ratelimits.md` says the Guards "see the frozen Extensions' run", but a custom Guard only gets `&ComponentCtx`/`&ModalSubmitCtx`, whose `extensions()` is `pub(crate)` (`command.rs:110`) — verified; a bot agent following the skill writes code that does not compile. Patch: correct the sentence.
+  - `[low]` `[patch]` (blind) The worked §1a custom-Guard example uses `super::Staff` with `.contains(ctx.user_id())` but never defines `Staff` — verified at `routes-payloads-refs.md:190`. Patch: define `Staff` in the snippet.
+  - `[false]` `[reject]` (blind) `GuardPhase` as raw `u8` constants allows typos/out-of-range values — no named harm: the three constants are used at the spec-mandated `AtomicU8` call sites only (`guarded`, `before_and_handler`, `run_started`), all crate-private, and nothing matches on the phase exhaustively.
+  - `[low]` `[reject]` (blind) `restore_ref` logs one text for `Ok(false)` and `Err`, drops the error, and says "after a Guard denial" for Guard errors/panics/cancel — real, but the text is fixed by the intent contract and the Design Notes ("no second text"); an operator-diagnostics enhancement, rarely met.
+  - `[false]` `[reject]` (blind) The unbounded `restore_ref` on the cancel path holds graceful shutdown — shutdown waits at most `CANCEL_WAIT` (1 s, `app.rs:90`) for cancelled handlers after the grace period, so a stalled store cannot hold it; the stage-2 `take` is equally unbounded by design.
+  - `[false]` `[reject]` (blind) `GuardDenied` mapped to `Outcome::Denied` without checking the phase — `GuardDenied` is crate-private and only constructed in `guarded` while the phase is `GUARDING`, so no other path can produce it; no bad outcome occurs.
+  - `[low]` `[reject]` (blind) No metric for Guard denials — the intent contract's Never list forbids new metrics; out of scope by intent.
+  - `[low]` `[reject]` (blind) No test of a Guard `Err`/panic after a type-5 auto-defer, or of a failing notice send on a denial — both halves are pinned separately (rows 30/31 for the after-defer `send_notice` path, G1-G3 for the restore, which is independent of the defer state); the combination adds a test with no distinct code path.
+  - `[low]` `[reject]` (blind) No advice that a slow custom Guard on `response = public` shows a public "thinking" placeholder — the behaviour is the documented one (§1a: a type-5 deferred original is deleted first); an advisory addition, not an incorrect statement.
+  - `[low]` `[reject]` (blind) `check_owner(..)?` returns early instead of joining the combined errors — real, but `modal.rs:972` already returns early on `combine(check(..))?`, so staged reporting is the existing pattern; two simultaneous attribute mistakes are rare and the fix adds error plumbing.
+  - `[low]` `[reject]` (edge) carried The one_shot restore re-grants the full TTL on every denial — the code still reads `ttl: target.ref_ttl().unwrap_or(app.ref_ttl)`; rejected in pass 1 (fix needs a `RefStore` port or record-format change).
+  - `[low]` `[reject]` (edge) The owner's concurrent click misses the Ref while a non-owner's slow Guard holds the taken record — real, but the Design Notes accept the restore window and AD-23 fixes the take (stage 2) before the Guards (stage 8); it needs truly concurrent clicks, and the fix is a pipeline redesign.
+  - `[false]` `[reject]` (edge) A stalled `put_if_absent` delays the notice past the ack deadline and blocks the shutdown drain — the auto-defer timer stays armed until after `send_notice`, so a slow put moves the notice onto the follow-up path, never past the 3 s ack; the drain is bounded by `CANCEL_WAIT`.
+  - `[low]` `[reject]` (vgap, pre-verified) The "restore before the notice" order is not pinned deterministically — real test gap, but the restore's record, Ref, TTL and phase gating are pinned; pinning the order needs a new cross-log sequencing hook in the test fixtures, more than a direct correction, for a window that only affects timing.
+  - `[false]` `[reject]` (intent 1) carried `owner` names any `Id<UserMarker>` Payload field rather than a fixed `user` — the intent contract defines `owner = field`.
+  - `[false]` `[reject]` (intent 2) carried Type-6 deferred original is not deleted — the intent contract settles it: "a type-5 deferred original is deleted".
+  - `[false]` `[reject]` (intent 3) A custom Guard's denial can carry any key and a Guard `Err`/panic sends the handler-error notice — Matrix rows 25-29 of the intent contract settle exactly this behaviour.
+  - `[false]` `[reject]` (intent 4) carried Guards also on `#[modal]` — the intent contract lists all seven kind attributes; maintainer decisions §7 agrees.
+  - `[false]` `[reject]` (intent 5) carried Stage 8 lives inside the handler future — the Design Note decision; the observable order matches AD-23.
+  - `[false]` `[reject]` (intent 6) carried Template reconciliation is textual, not compiled — the spec states the template is outside the gates; behaviour is covered by facade and testkit tests.
+  - `[false]` `[reject]` (intent 7) carried One-shot restore and Guard phase beyond the ACs — decided by the intent contract and the review-pass-1 Design Notes; `Restore`, `restore_ref` and `GuardPhase` are crate-private (absent from `xtask/public-api.txt`), and `App::ref_ttl` predates this story.
+  - `[false]` `[reject]` (intent 8) carried Localization tested only on en-US — notices route through the existing `send_notice` locale chain; no wrong outcome.
+  - `[false]` `[reject]` (intent 9) carried Extra public API (`member_permissions`, `RunOutcome::Denied`, `Access`) — all named in the intent contract; skill, template and API hash updated.
+
 ## Design Notes
 
 - **Guards live in core, not in `RouteRuntime` (decision).** The checks need `ComponentCtx`, `ModalSubmitCtx` and `Permissions`, which codec cannot name. The derive emits `__Guards<Ctx>` (RPITIT, stable since 1.75; MSRV is 1.91), and `RouteRuntime` keeps only the Ref policy. Spine AD-6 is amended accordingly.
@@ -370,3 +398,13 @@ deferred:
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rn "Story 7.7\|\[planned\]: runtime arguments" crates examples/project-template --include=*.rs --include=*.md` -- no hit
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Route Guards (AD-23 stage 8) for all seven kind attributes incl. `#[modal]`: built-in `permissions = ...`, `owner = field`, and custom `guard = path` (`async fn(&Ctx, &Self) -> HandlerResult<Access>`). Derive emits `__Guards<Ctx>` in core (RPITIT); guards wrap the handler future; denials send a localized ephemeral notice (type-5 deferred original deleted), yield `RunOutcome::Denied`, no duration sample/sink. One-shot Refs are restored via `put_if_absent` whenever the handler body never started (deny, Guard `Err`/panic, cancel during Guard), tracked by crate-private `guard_phase: AtomicU8`. New `member_permissions()` on Component/ModalSubmit/Expired ctx.
+- **Files changed:** `crates/noctis-macros/src/{guard,route,component,modal,meta}.rs` (guard parsing/codegen, hygiene-correct spans); `crates/noctis-core` pipeline/responder/test_support (stage 8, Denied outcome, restore, guard phase); `crates/noctis/src/lib.rs` (facade re-exports `Access`); tests: `noctis-core/src/pipeline/tests/guards.rs`, `noctis-testkit/tests/guards.rs`, `noctis/tests/guards.rs`, trybuild CID-03/META-01/types fixtures; `docs/discord-rules.md`; project template code, `AGENTS.md`, noctis usage skill; `xtask/public-api.txt` re-blessed.
+- **Review findings:** pass 1: 25 (high 0, medium 5, low 8, false 11, maybe-false 1) -> bad_spec loopback (Guard Err/panic/cancel burned one-shot Refs and recorded durations; macro hygiene; missing guarded-modal tests) amended and re-derived; 1 defer (before-Middleware `Flow::Stop` burns a one_shot Ref, pre-existing); rest rejected with recorded reasons (TTL re-grant on restore needs RefStore port change; CommandCtx accessor out of scope; trybuild snapshot churn is repo norm; intent-settled items D1-D9). Pass 2: 24 (high 0, medium 1, low 10, false 13) -> 3 patches (skill: `owner` needs `signed`/`by_ref` to be trustworthy; corrected Extensions sentence; defined `Staff` in example); others rejected (raw u8 phase, fixed warn text, no new metrics, concurrent-click window accepted, order-pinning needs new hooks).
+- **Patched counts by verdict (this pass):** high 0, medium 1, low 2.
+- **Follow-up review recommended:** false (no high patched; converged).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** restore re-grants the full TTL on each denial; brief window where the owner sees "expired" while a non-owner's Guard holds the taken record; before-Middleware stop still burns one_shot Refs (deferred); `owner` on unsigned inline Payloads is forgeable (documented); template changes are textual, not compiled.
