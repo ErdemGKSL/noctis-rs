@@ -1,0 +1,5 @@
+error: an `#[on_stale]` method cannot be generic
+  --> tests/types/on_stale_generic.rs:21:21
+   |
+21 |     async fn generic<T>(_ctx: ComponentCtx) -> HandlerResult<V2Message> {
+   |                     ^^^

@@ -11,14 +11,16 @@
 //!   [`UserCommand`](macro@UserCommand),
 //!   [`MessageCommand`](macro@MessageCommand),
 //!   [`EventHandler`](macro@EventHandler), [`Button`](macro@Button), the
-//!   select derives and [`Modal`](macro@Modal)), the [`handler`](macro@handler)
-//!   and [`autocomplete`](macro@autocomplete) method attributes,
+//!   select derives and [`Modal`](macro@Modal)), the [`handler`](macro@handler),
+//!   [`autocomplete`](macro@autocomplete), [`on_stale`](macro@on_stale) and
+//!   [`on_expired`](macro@on_expired) method attributes,
 //!   [`CommandHandler`], [`CommandCtx`], [`CommandPath`],
 //!   [`UnknownCommandPath`], [`CommandMetadata`]
 //!   ([`Permissions`], [`InteractionContext`], [`IntegrationType`]),
 //!   [`ContextMenuHandler`], [`MenuKind`], [`MenuTargetError`],
 //!   [`ComponentCtx`], [`ModalSubmitCtx`], [`ComponentHandler`],
-//!   [`ModalHandler`], [`ComponentKind`], [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
+//!   [`ModalHandler`], [`ComponentKind`], [`Expired`], [`ExpiredCtx`],
+//!   [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
 //!   edge's tuning) and the errors ([`Error`], [`BuildError`],
 //!   [`BuildViolation`], [`StartError`], [`RunError`], [`EnvError`],
 //!   [`TokenError`], [`ResourceConflict`], [`HttpConfigError`],
@@ -559,14 +561,14 @@ pub use noctis_core::{
     CommandMetadata, CommandOption, CommandPath, CommandResponder, Component, ComponentCtx,
     ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler, DeferMode,
     DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
-    Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig,
-    HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse,
-    InvalidOption, LogSink, Manual, MenuKind, MenuTargetError, ModalHandler, ModalResponder,
-    ModalSubmit, ModalSubmitCtx, Module, OptionError, OptionValue, Options, OutgoingMessage,
-    Partial, PartialOptions, Pending, Permissions, Plugin, Register, ReportKind, Resource,
-    ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
-    RunError, Runtime, StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token,
-    TokenError, UnknownCommandPath, Visibility,
+    Expired, ExpiredCtx, Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult,
+    HttpConfig, HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoEdit,
+    IntoResponse, InvalidOption, LogSink, Manual, MenuKind, MenuTargetError, ModalHandler,
+    ModalResponder, ModalSubmit, ModalSubmitCtx, Module, OptionError, OptionValue, Options,
+    OutgoingMessage, Partial, PartialOptions, Pending, Permissions, Plugin, Register, ReportKind,
+    Resource, ResourceConflict, Responded, Responder, ResponderError, ResponderKind,
+    ResponderState, RunError, Runtime, StartError, State, SuggestionLabel, SuggestionValue,
+    Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -989,6 +991,89 @@ pub use noctis_macros::autocomplete;
 /// let _ = Buy { item: 1 }.build();
 /// ```
 pub use noctis_macros::handler;
+
+/// Marks the method of a component or modal struct that answers a
+/// **stale** `custom_id`: one rendered before a deploy that changed the
+/// Route's `schema`, its body kind (`by_ref`, `overflow = spill`) or a flag
+/// (`signed`, a select's nonce) (FR-60, AD-23 stage 2). It takes no
+/// arguments and no `self` (the Payload did not decode):
+/// `async fn <any>(ctx: ComponentCtx[, r: ComponentResponder<..>]) ->
+/// HandlerResult<R>`, or `ModalSubmitCtx` and `ModalResponder<..>` on a
+/// modal. It inherits the Route's `response` and `auto_defer` (an
+/// `auto_defer = false` Route's hook takes the `Manual` responder, INT-05)
+/// and answers like the `#[handler]`: a returned View updates the clicked
+/// message under the default `response = update`.
+///
+/// A stale id runs `#[on_stale]`, else `#[on_expired]` with
+/// [`Expired::Stale`], else [`AppBuilder::expired_handler`], else the
+/// default `noctis.expired` notice. A struct has at most one `#[on_stale]`;
+/// `#[handler]`'s `descriptor()` attaches it, so `Module::add::<T>()`
+/// registers it with the handler.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, TextDisplay, V2Message};
+///
+/// fn render_shop(page: u16) -> V2Message {
+///     V2Message::new(Components::new().push(TextDisplay::new(format!("page {page}"))))
+/// }
+///
+/// #[derive(Button)]
+/// #[button("shop.next", schema = 2, defaults(style = Secondary, label = "Next"))]
+/// struct Next { page: u16 }
+///
+/// impl Next {
+///     #[handler]
+///     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<V2Message> {
+///         Ok(render_shop(self.page + 1))
+///     }
+///
+///     /// A pre-`schema = 2` button: re-render from the first page.
+///     #[on_stale]
+///     async fn restart(_ctx: ComponentCtx) -> HandlerResult<V2Message> {
+///         Ok(render_shop(0))
+///     }
+/// }
+///
+/// assert!(format!("{:?}", Next::descriptor()).contains("on_stale: true"));
+/// ```
+pub use noctis_macros::on_stale;
+
+/// Marks the method of a component or modal struct that answers an
+/// **expired** `custom_id`: a Ref whose record is missing or expired
+/// ([`Expired::RefMissing`]) or, without an [`on_stale`](macro@on_stale)
+/// method, a stale id ([`Expired::Stale`]). It takes no arguments and no
+/// `self`: `async fn <any>(ctx: ComponentCtx, expired: Expired[, r:
+/// ComponentResponder<..>]) -> HandlerResult<R>` (`ModalSubmitCtx` and
+/// `ModalResponder<..>` on a modal), and inherits the Route's `response`
+/// and `auto_defer` like `#[on_stale]`. Without it the App's
+/// [`AppBuilder::expired_handler`] runs, else the default `noctis.expired`
+/// ephemeral notice.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, TextDisplay, V2Message};
+///
+/// #[derive(Button)]
+/// #[button("ban.ok", by_ref, defaults(style = Danger, label = "Confirm"))]
+/// struct ConfirmBan { reason: String }
+///
+/// impl ConfirmBan {
+///     #[handler]
+///     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<V2Message> {
+///         Ok(V2Message::new(Components::new().push(TextDisplay::new("banned"))))
+///     }
+///
+///     #[on_expired]
+///     async fn gone(_ctx: ComponentCtx, expired: Expired) -> HandlerResult<V2Message> {
+///         let text = format!("This confirmation is gone ({}): run /ban again", expired.as_str());
+///         Ok(V2Message::new(Components::new().push(TextDisplay::new(text))))
+///     }
+/// }
+///
+/// assert!(format!("{:?}", ConfirmBan::descriptor()).contains("on_expired: true"));
+/// ```
+pub use noctis_macros::on_expired;
 
 /// Derives a `USER` context-menu command from a unit struct:
 /// `#[user_command("Name", ..)]` declares it and the `#[handler]` method
@@ -1721,12 +1806,15 @@ pub mod prelude {
     //!   [`Modal`](macro@Modal) (implementing [`ModalForm`], see
     //!   [`ui`](crate::ui#modal-forms)); [`handler`](macro@handler) marks the
     //!   method that handles the interaction and
-    //!   [`autocomplete`](macro@autocomplete) an option's suggestion method.
+    //!   [`autocomplete`](macro@autocomplete) an option's suggestion method;
+    //!   [`on_stale`](macro@on_stale) and [`on_expired`](macro@on_expired)
+    //!   answer stale and expired ids, [`Expired`] says which.
     //! - [`Module`] (registration with `Module::add::<T>()`), [`App`],
     //!   [`AppBuilder`] and [`State`]: building an App and reading its typed
     //!   state.
     //! - The contexts [`CommandCtx`], [`EventCtx`], [`AutocompleteCtx`],
-    //!   [`ComponentCtx`] and [`ModalSubmitCtx`]; [`HandlerError`] and
+    //!   [`ComponentCtx`], [`ModalSubmitCtx`] and [`ExpiredCtx`] (the App's
+    //!   `expired_handler`); [`HandlerError`] and
     //!   [`HandlerResult`].
     //! - [`CommandResponder`], [`ComponentResponder`], [`ModalResponder`],
     //!   [`Manual`], [`Responded`], [`IntoResponse`], [`Ephemerality`] and
@@ -1749,9 +1837,9 @@ pub mod prelude {
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
         App, AppBuilder, AutocompleteCtx, CommandCtx, CommandOption, CommandResponder,
-        ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink, HandlerError,
-        HandlerResult, IntoResponse, Manual, ModalResponder, ModalSubmitCtx, Module, Options,
-        Partial, Responded, State, Suggestions, Visibility,
+        ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink, Expired,
+        ExpiredCtx, HandlerError, HandlerResult, IntoResponse, Manual, ModalResponder,
+        ModalSubmitCtx, Module, Options, Partial, Responded, State, Suggestions, Visibility,
     };
     pub use noctis_macros::{
         Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,
@@ -1761,7 +1849,7 @@ pub mod prelude {
     /// Withdrawn forms: each fails with a `= help:` showing the struct form.
     #[doc(hidden)]
     pub use noctis_macros::{Options, Route, command, event, message_command, user_command};
-    pub use noctis_macros::{autocomplete, handler};
+    pub use noctis_macros::{autocomplete, handler, on_expired, on_stale};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_rules::MessageKey;
     pub use noctis_ui::{Choices, ModalForm, Rgb};

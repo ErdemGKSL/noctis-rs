@@ -1,0 +1,8 @@
+error[E0592]: duplicate definitions with name `__noctis_on_stale`
+  --> tests/types/on_stale_twice.rs:26:14
+   |
+21 |     async fn first(_ctx: ComponentCtx) -> HandlerResult<V2Message> {
+   |              ----- other definition for `__noctis_on_stale`
+...
+26 |     async fn second(_ctx: ComponentCtx) -> HandlerResult<V2Message> {
+   |              ^^^^^^ duplicate definitions for `__noctis_on_stale`

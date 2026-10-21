@@ -16,7 +16,8 @@ use noctis_ui::{ResolvedMessage, ResolvedUser};
 
 use crate::command::{CommandCtx, CommandHandler, CommandPath};
 use crate::component::{
-    ComponentCtx, ComponentHandler, ComponentKind, ModalHandler, ModalSubmitCtx,
+    __Absent, __ExpiredHook, __StaleHook, ComponentCtx, ComponentHandler, ComponentKind, Expired,
+    ModalHandler, ModalSubmitCtx,
 };
 use crate::events::{EventCtx, EventHandler, EventPayload};
 use crate::handler::HandlerResult;
@@ -587,6 +588,266 @@ where
         ModalHandler::__new_with_responder::<S, D, _, _, _>(name, route, f)
     }
 }
+
+// --- `#[on_stale]` and `#[on_expired]` -------------------------------------
+
+/// The hook shape `(ctx: C)`.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct __H<C>(PhantomData<C>);
+/// The hook shape `(ctx: C, r: R)` (or a second parameter of another type).
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct __HR<C, R>(PhantomData<(C, R)>);
+/// The hook shape `(ctx: C, expired: E)`.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct __HE<C, E>(PhantomData<(C, E)>);
+/// The hook shape `(ctx: C, expired: E, r: R)`.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct __HER<C, E, R>(PhantomData<(C, E, R)>);
+
+/// The context the `#[on_stale]`/`#[on_expired]` methods of a kind's
+/// structs take: [`ComponentCtx`], [`ModalSubmitCtx`], or [`__NoHookCtx`]
+/// for the kinds that have no hooks (their binding fails with
+/// [`__NotAHookStruct`]).
+#[doc(hidden)]
+pub trait __HookKind {
+    /// The hook context.
+    type Ctx;
+}
+
+/// The hook context of a command, context-menu or event kind: none.
+#[doc(hidden)]
+#[derive(Debug)]
+pub enum __NoHookCtx {}
+
+impl __HookKind for __ComponentKind {
+    type Ctx = ComponentCtx;
+}
+
+impl __HookKind for __ModalKind {
+    type Ctx = ModalSubmitCtx;
+}
+
+/// Never implemented: only component and modal structs take hooks.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "`#[on_stale]` and `#[on_expired]` are methods of a component or modal struct",
+    label = "not a component or modal struct"
+)]
+pub trait __NotAHookStruct {}
+
+/// Binds an `#[on_stale]` method of shape `Shape` of the struct `S`.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "the parameters of this `#[on_stale]`/`#[on_expired]` method do not fit `{S}`",
+    label = "unexpected parameters",
+    note = "components take `#[on_stale] async fn ..(ctx: ComponentCtx[, r: ComponentResponder<..>])` and `#[on_expired] async fn ..(ctx: ComponentCtx, expired: Expired[, r: ComponentResponder<..>])`; modals take `#[on_stale] async fn ..(ctx: ModalSubmitCtx[, r: ModalResponder<..>])` and `#[on_expired] async fn ..(ctx: ModalSubmitCtx, expired: Expired[, r: ModalResponder<..>])`"
+)]
+pub trait __BindStale<Shape, S, F>: __HookKind {
+    /// The hook of the method `f`.
+    fn __bind(f: F) -> __StaleHook<Self::Ctx>;
+}
+
+/// Binds an `#[on_expired]` method of shape `Shape` of the struct `S`.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "the parameters of this `#[on_stale]`/`#[on_expired]` method do not fit `{S}`",
+    label = "unexpected parameters",
+    note = "components take `#[on_stale] async fn ..(ctx: ComponentCtx[, r: ComponentResponder<..>])` and `#[on_expired] async fn ..(ctx: ComponentCtx, expired: Expired[, r: ComponentResponder<..>])`; modals take `#[on_stale] async fn ..(ctx: ModalSubmitCtx[, r: ModalResponder<..>])` and `#[on_expired] async fn ..(ctx: ModalSubmitCtx, expired: Expired[, r: ModalResponder<..>])`"
+)]
+pub trait __BindExpired<Shape, S, F>: __HookKind {
+    /// The hook of the method `f`.
+    fn __bind(f: F) -> __ExpiredHook<Self::Ctx>;
+}
+
+/// The four hook bindings of a kind whose structs implement `$family`, take
+/// `$ctx` and answer through responders of `$rk`.
+macro_rules! hook_binds {
+    ($kind:ty, $family:ident, $ctx:ty, $rk:ty) => {
+        impl<S, F, Fut, R> __BindStale<__H<$ctx>, S, F> for $kind
+        where
+            S: $family,
+            F: Fn($ctx) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+            R: IntoResponse<$rk>,
+        {
+            fn __bind(f: F) -> __StaleHook<$ctx> {
+                __StaleHook::__new::<S::Defer, _, _, _>(
+                    move |ctx: $ctx, _: Responder<$rk, Pending, S::Defer>| f(ctx),
+                )
+            }
+        }
+
+        impl<S, D, F, Fut, R> __BindStale<__HR<$ctx, Responder<$rk, Pending, D>>, S, F> for $kind
+        where
+            S: $family,
+            D: DeferMode,
+            F: Fn($ctx, Responder<$rk, Pending, D>) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+            R: IntoResponse<$rk>,
+        {
+            fn __bind(f: F) -> __StaleHook<$ctx> {
+                __StaleHook::__new::<D, _, _, _>(f)
+            }
+        }
+
+        impl<S, F, Fut, R> __BindExpired<__HE<$ctx, Expired>, S, F> for $kind
+        where
+            S: $family,
+            F: Fn($ctx, Expired) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+            R: IntoResponse<$rk>,
+        {
+            fn __bind(f: F) -> __ExpiredHook<$ctx> {
+                __ExpiredHook::__new::<S::Defer, _, _, _>(
+                    move |ctx: $ctx, expired: Expired, _: Responder<$rk, Pending, S::Defer>| {
+                        f(ctx, expired)
+                    },
+                )
+            }
+        }
+
+        impl<S, D, F, Fut, R> __BindExpired<__HER<$ctx, Expired, Responder<$rk, Pending, D>>, S, F>
+            for $kind
+        where
+            S: $family,
+            D: DeferMode,
+            F: Fn($ctx, Expired, Responder<$rk, Pending, D>) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+            R: IntoResponse<$rk>,
+        {
+            fn __bind(f: F) -> __ExpiredHook<$ctx> {
+                __ExpiredHook::__new::<D, _, _, _>(f)
+            }
+        }
+    };
+}
+
+hook_binds!(__ComponentKind, __Component, ComponentCtx, Component);
+hook_binds!(__ModalKind, __Modal, ModalSubmitCtx, ModalSubmit);
+
+/// The hook bindings of a kind without hooks: every shape fails with
+/// [`__NotAHookStruct`].
+macro_rules! no_hooks {
+    ($($kind:ty),*) => {$(
+        impl __HookKind for $kind {
+            type Ctx = __NoHookCtx;
+        }
+
+        impl<Shape, S, F> __BindStale<Shape, S, F> for $kind
+        where
+            S: __NotAHookStruct,
+        {
+            fn __bind(_: F) -> __StaleHook<__NoHookCtx> {
+                unreachable!("`__NotAHookStruct` is never implemented")
+            }
+        }
+
+        impl<Shape, S, F> __BindExpired<Shape, S, F> for $kind
+        where
+            S: __NotAHookStruct,
+        {
+            fn __bind(_: F) -> __ExpiredHook<__NoHookCtx> {
+                unreachable!("`__NotAHookStruct` is never implemented")
+            }
+        }
+    )*};
+}
+
+no_hooks!(__SlashKind, __MenuKind, __EventKind);
+
+/// The fallback of a struct without an `#[on_stale]` or `#[on_expired]`
+/// method: the inherent items of the same names (which the attributes
+/// emit) shadow it, so `#[handler]`'s `descriptor()` attaches exactly the
+/// hooks the struct has.
+#[doc(hidden)]
+pub trait __NoHooks {
+    /// No `#[on_stale]` method.
+    fn __noctis_on_stale() -> __Absent {
+        __Absent
+    }
+
+    /// No `#[on_expired]` method.
+    fn __noctis_on_expired() -> __Absent {
+        __Absent
+    }
+}
+
+impl<T: ?Sized> __NoHooks for T {}
+
+/// Attaches the hooks `St` and `Ex` (each a hook or [`__Absent`]) to a
+/// descriptor; a command, context-menu or event descriptor takes none.
+#[doc(hidden)]
+pub trait __AttachHooks<St, Ex>: Sized {
+    /// The descriptor with the hooks attached.
+    #[must_use]
+    fn __attach(self, on_stale: St, on_expired: Ex) -> Self;
+}
+
+/// What a command, context-menu or event descriptor attaches: nothing (a
+/// hook on such a struct already failed with [`__NotAHookStruct`]).
+#[doc(hidden)]
+pub trait __NoHookSlot {}
+
+impl __NoHookSlot for __Absent {}
+impl __NoHookSlot for __StaleHook<__NoHookCtx> {}
+impl __NoHookSlot for __ExpiredHook<__NoHookCtx> {}
+
+macro_rules! attach_nothing {
+    ($($descriptor:ty),*) => {$(
+        impl<St: __NoHookSlot, Ex: __NoHookSlot> __AttachHooks<St, Ex> for $descriptor {
+            fn __attach(self, _: St, _: Ex) -> Self {
+                self
+            }
+        }
+    )*};
+}
+
+attach_nothing!(CommandHandler, ContextMenuHandler, EventHandler);
+
+macro_rules! attach_none {
+    ($($descriptor:ty),*) => {$(
+        impl __AttachHooks<__Absent, __Absent> for $descriptor {
+            fn __attach(self, _: __Absent, _: __Absent) -> Self {
+                self
+            }
+        }
+    )*};
+}
+
+attach_none!(ComponentHandler, ModalHandler);
+
+macro_rules! attach_hooks {
+    ($descriptor:ty, $ctx:ty) => {
+        impl __AttachHooks<__StaleHook<$ctx>, __Absent> for $descriptor {
+            fn __attach(self, on_stale: __StaleHook<$ctx>, _: __Absent) -> Self {
+                self.__with_on_stale(on_stale)
+            }
+        }
+
+        impl __AttachHooks<__Absent, __ExpiredHook<$ctx>> for $descriptor {
+            fn __attach(self, _: __Absent, on_expired: __ExpiredHook<$ctx>) -> Self {
+                self.__with_on_expired(on_expired)
+            }
+        }
+
+        impl __AttachHooks<__StaleHook<$ctx>, __ExpiredHook<$ctx>> for $descriptor {
+            fn __attach(
+                self,
+                on_stale: __StaleHook<$ctx>,
+                on_expired: __ExpiredHook<$ctx>,
+            ) -> Self {
+                self.__with_on_stale(on_stale).__with_on_expired(on_expired)
+            }
+        }
+    };
+}
+
+attach_hooks!(ComponentHandler, ComponentCtx);
+attach_hooks!(ModalHandler, ModalSubmitCtx);
 
 // --- INT-05 -----------------------------------------------------------------
 

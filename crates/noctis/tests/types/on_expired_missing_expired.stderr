@@ -1,0 +1,5 @@
+error: an `#[on_expired]` method takes `(ctx, expired: Expired[, r: <Kind>Responder<..>])`
+  --> tests/types/on_expired_missing_expired.rs:21:19
+   |
+21 |     async fn gone(_ctx: ComponentCtx) -> HandlerResult<V2Message> {
+   |                   ^^^^

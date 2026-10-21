@@ -1,0 +1,11 @@
+error: an `#[on_stale]` method takes `(ctx[, r: <Kind>Responder<..>])`
+  --> tests/types/on_stale_params.rs:21:20
+   |
+21 |     async fn stale(_ctx: ComponentCtx, _x: Expired, _r: ComponentResponder) -> HandlerResult<V2Message> {
+   |                    ^^^^
+
+error: an `#[on_expired]` method takes `(ctx, expired: Expired[, r: <Kind>Responder<..>])`
+  --> tests/types/on_stale_params.rs:26:14
+   |
+26 |     async fn gone() -> HandlerResult<V2Message> {
+   |              ^^^^

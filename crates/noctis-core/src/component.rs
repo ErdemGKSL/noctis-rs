@@ -9,6 +9,12 @@
 //! or [`ModalResponder`](crate::ModalResponder) (Stories 7.1 and 7.2); the
 //! declared `response` and `auto_defer` shape the auto-defer and a returned
 //! message.
+//!
+//! An id that is stale or carries a Ref never reaches the handler (Story
+//! 7.3, AD-23 stage 2, FR-18, FR-60): it runs the Route's `#[on_stale]` or
+//! `#[on_expired]` method (bound into the descriptor beside the handler),
+//! else the App's `expired_handler` with an [`ExpiredCtx`], else the default
+//! `noctis.expired` notice; [`Expired`] says why.
 
 use std::any::Any;
 use std::fmt;
@@ -53,7 +59,7 @@ pub enum ComponentKind {
 
 /// The accessors [`ComponentCtx`] and [`ModalSubmitCtx`] share.
 macro_rules! ctx_accessors {
-    ($ty:ident) => {
+    ($ty:ident $(, $extra:ident = $field:ident)*) => {
         impl $ty {
             /// The id of the Module the handler was added to.
             pub fn module(&self) -> &'static str {
@@ -97,13 +103,15 @@ macro_rules! ctx_accessors {
 
             /// A detached context (the `__testing` seams): no App, shard 0,
             /// user 1.
+            #[allow(dead_code, reason = "`ExpiredCtx` has no detached seam outside the tests")]
             pub(crate) fn detached() -> Self {
                 Self(Arc::new(CtxInner::detached_parts(Ephemerality::Public)))
             }
 
-            /// A context of `parts` (the component pipeline).
-            pub(crate) fn from_parts(parts: CtxInner) -> Self {
-                Self(Arc::new(parts))
+            /// A context over the shared `parts` (the component pipeline,
+            /// which keeps them for the Expired Handler chain).
+            pub(crate) fn from_inner(parts: Arc<CtxInner>) -> Self {
+                Self(parts)
             }
         }
 
@@ -117,6 +125,7 @@ macro_rules! ctx_accessors {
                     .field("user_id", &self.0.user_id)
                     .field("user_locale", &self.0.user_locale)
                     .field("guild_locale", &self.0.guild_locale)
+                    $(.field(stringify!($extra), &self.0.$field))*
                     .finish_non_exhaustive()
             }
         }
@@ -145,6 +154,54 @@ ctx_accessors!(ComponentCtx);
 pub struct ModalSubmitCtx(Arc<CtxInner>);
 
 ctx_accessors!(ModalSubmitCtx);
+
+/// Why a component or modal interaction went to the Expired Handler chain
+/// instead of its handler (FR-18, FR-60).
+///
+/// ```
+/// use noctis_core::Expired;
+///
+/// assert_eq!(Expired::Stale.as_str(), "stale");
+/// assert_eq!(Expired::RefMissing.as_str(), "ref_missing");
+/// ```
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Expired {
+    /// The id is from another `schema`, body kind (inline or Ref) or flag
+    /// set (`N`, `T`) of the Route: a component rendered before a deploy
+    /// that changed the Route's declaration.
+    Stale,
+    /// The id carries a Ref (`by_ref`, `overflow = spill`) whose record is
+    /// missing or expired.
+    RefMissing,
+}
+
+impl Expired {
+    /// `"stale"` or `"ref_missing"`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Stale => "stale",
+            Self::RefMissing => "ref_missing",
+        }
+    }
+}
+
+/// The context the App's `expired_handler` receives: the accessors of
+/// [`ComponentCtx`] plus [`route`](Self::route), the Route id the expired
+/// or stale id named. Nothing of the stale body is decoded.
+///
+/// Cheap to clone (one `Arc`).
+#[derive(Clone)]
+pub struct ExpiredCtx(Arc<CtxInner>);
+
+ctx_accessors!(ExpiredCtx, route = path);
+
+impl ExpiredCtx {
+    /// The Route id of the component or modal (`"shop.buy"`).
+    pub fn route(&self) -> &'static str {
+        self.0.path
+    }
+}
 
 /// A started component or modal handler: what it returned, as the pipeline
 /// sends it.
@@ -252,6 +309,154 @@ fn declared(response: __Response) -> Declared {
     }
 }
 
+/// An erased `#[on_stale]` or `#[on_expired]` method: it builds its own
+/// responder (of the Route's defer mode) over the shared state.
+type HookFn<C> = dyn Fn(C, Expired, Arc<Shared>) -> HandlerFuture + Send + Sync;
+
+/// The context a hook of a component or modal struct takes, and its
+/// responder kind.
+#[doc(hidden)]
+pub trait __HookCtx: Send + 'static {
+    /// [`Component`] or [`ModalSubmit`].
+    type Kind: ResponderKind;
+}
+
+impl __HookCtx for ComponentCtx {
+    type Kind = Component;
+}
+
+impl __HookCtx for ModalSubmitCtx {
+    type Kind = ModalSubmit;
+}
+
+/// A bound `#[on_stale]` method of a struct whose context is `C`; what the
+/// attribute's hidden `__noctis_on_stale()` returns.
+#[doc(hidden)]
+pub struct __StaleHook<C>(Arc<HookFn<C>>);
+
+/// A bound `#[on_expired]` method of a struct whose context is `C`.
+#[doc(hidden)]
+pub struct __ExpiredHook<C>(Arc<HookFn<C>>);
+
+/// No `#[on_stale]` or `#[on_expired]` method: what the fallback of a
+/// struct without one returns.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct __Absent;
+
+impl<C: __HookCtx> __StaleHook<C> {
+    /// Binds `f`, taking a responder of defer mode `D`.
+    #[doc(hidden)]
+    pub fn __new<D, F, Fut, R>(f: F) -> Self
+    where
+        D: DeferMode,
+        F: Fn(C, Responder<C::Kind, Pending, D>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+        R: IntoResponse<C::Kind>,
+    {
+        Self(Arc::new(move |ctx: C, _: Expired, shared: Arc<Shared>| {
+            boxed::<C::Kind, R, _>(f(ctx, Responder::new(shared)))
+        }))
+    }
+}
+
+impl<C: __HookCtx> __ExpiredHook<C> {
+    /// Binds `f`, taking a responder of defer mode `D`.
+    #[doc(hidden)]
+    pub fn __new<D, F, Fut, R>(f: F) -> Self
+    where
+        D: DeferMode,
+        F: Fn(C, Expired, Responder<C::Kind, Pending, D>) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+        R: IntoResponse<C::Kind>,
+    {
+        Self(Arc::new(
+            move |ctx: C, expired: Expired, shared: Arc<Shared>| {
+                boxed::<C::Kind, R, _>(f(ctx, expired, Responder::new(shared)))
+            },
+        ))
+    }
+}
+
+impl<C> fmt::Debug for __StaleHook<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("__StaleHook")
+    }
+}
+
+impl<C> fmt::Debug for __ExpiredHook<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("__ExpiredHook")
+    }
+}
+
+/// The erased App-level Expired Handler (`AppBuilder::expired_handler`):
+/// `modal` picks the responder kind its returned message converts with.
+pub(crate) type AppExpiredFn = dyn Fn(ExpiredCtx, Expired, bool) -> HandlerFuture + Send + Sync;
+
+/// Erases the App-level Expired Handler `f`.
+pub(crate) fn app_expired<F, Fut, R>(f: F) -> Arc<AppExpiredFn>
+where
+    F: Fn(ExpiredCtx, Expired) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+    R: IntoResponse<Component> + IntoResponse<ModalSubmit>,
+{
+    Arc::new(move |ctx: ExpiredCtx, expired: Expired, modal: bool| {
+        let fut = f(ctx, expired);
+        if modal {
+            boxed::<ModalSubmit, R, _>(fut)
+        } else {
+            boxed::<Component, R, _>(fut)
+        }
+    })
+}
+
+/// Which link of the Expired Handler chain answers a stale or Ref id
+/// (AD-23 stage 2); its [`as_str`](Self::as_str) is the `hook` log field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExpiredLink {
+    /// The Route's `#[on_stale]` method.
+    OnStale,
+    /// The Route's `#[on_expired]` method.
+    OnExpired,
+    /// The App's `expired_handler`.
+    App,
+    /// The default `noctis.expired` notice.
+    Default,
+}
+
+impl ExpiredLink {
+    /// The log label.
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::OnStale => "on_stale",
+            Self::OnExpired => "on_expired",
+            Self::App => "app",
+            Self::Default => "default",
+        }
+    }
+
+    /// The link of `expired` for a Route with or without each hook and an
+    /// App with or without an `expired_handler`: a stale id tries
+    /// `on_stale`, then `on_expired`; a Ref id only `on_expired`.
+    pub(crate) const fn choose(
+        expired: Expired,
+        on_stale: bool,
+        on_expired: bool,
+        app: bool,
+    ) -> Self {
+        if on_stale && matches!(expired, Expired::Stale) {
+            Self::OnStale
+        } else if on_expired {
+            Self::OnExpired
+        } else if app {
+            Self::App
+        } else {
+            Self::Default
+        }
+    }
+}
+
 /// One component handler, as `#[derive(Button)]` (or a select derive) and
 /// `#[handler]` build it; `Module::add::<T>()` stores it.
 ///
@@ -269,6 +474,8 @@ pub struct ComponentHandler {
     call: Arc<ErasedCall<ComponentCtx>>,
     start: Arc<ComponentStart>,
     probe: fn(&Decoded<'_>) -> Result<(), DecodeError>,
+    on_stale: Option<Arc<HookFn<ComponentCtx>>>,
+    on_expired: Option<Arc<HookFn<ComponentCtx>>>,
 }
 
 impl ComponentHandler {
@@ -343,7 +550,52 @@ impl ComponentHandler {
             call: erase::<S, _, _>(typed),
             start: Arc::new(start),
             probe: probe::<S>,
+            on_stale: None,
+            on_expired: None,
         }
+    }
+
+    /// Attaches the struct's `#[on_stale]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_stale(mut self, hook: __StaleHook<ComponentCtx>) -> Self {
+        self.on_stale = Some(hook.0);
+        self
+    }
+
+    /// Attaches the struct's `#[on_expired]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_expired(mut self, hook: __ExpiredHook<ComponentCtx>) -> Self {
+        self.on_expired = Some(hook.0);
+        self
+    }
+
+    /// The link of the Expired Handler chain that answers `expired`.
+    pub(crate) fn expired_link(&self, expired: Expired, app: bool) -> ExpiredLink {
+        ExpiredLink::choose(
+            expired,
+            self.on_stale.is_some(),
+            self.on_expired.is_some(),
+            app,
+        )
+    }
+
+    /// Starts the hook of `link` (`OnStale` or `OnExpired`) with `ctx` and a
+    /// responder over `shared`; `None` for any other link.
+    pub(crate) fn start_hook(
+        &self,
+        link: ExpiredLink,
+        ctx: ComponentCtx,
+        expired: Expired,
+        shared: Arc<Shared>,
+    ) -> Option<HandlerFuture> {
+        let hook = match link {
+            ExpiredLink::OnStale => self.on_stale.as_ref()?,
+            ExpiredLink::OnExpired => self.on_expired.as_ref()?,
+            ExpiredLink::App | ExpiredLink::Default => return None,
+        };
+        Some(hook(ctx, expired, shared))
     }
 
     /// The struct's path (`module_path!()::Struct`).
@@ -417,6 +669,8 @@ impl fmt::Debug for ComponentHandler {
             .field("response", &self.response)
             .field("auto_defer", &self.auto_defer)
             .field("signed", &self.signed)
+            .field("on_stale", &self.on_stale.is_some())
+            .field("on_expired", &self.on_expired.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -437,6 +691,8 @@ pub struct ModalHandler {
     auto_defer: bool,
     call: Arc<ErasedCall<ModalSubmitCtx>>,
     start: Arc<ModalStart>,
+    on_stale: Option<Arc<HookFn<ModalSubmitCtx>>>,
+    on_expired: Option<Arc<HookFn<ModalSubmitCtx>>>,
 }
 
 impl ModalHandler {
@@ -512,7 +768,52 @@ impl ModalHandler {
             auto_defer: D::AUTO_DEFER,
             call: erase::<S, _, _>(typed),
             start: Arc::new(start),
+            on_stale: None,
+            on_expired: None,
         }
+    }
+
+    /// Attaches the struct's `#[on_stale]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_stale(mut self, hook: __StaleHook<ModalSubmitCtx>) -> Self {
+        self.on_stale = Some(hook.0);
+        self
+    }
+
+    /// Attaches the struct's `#[on_expired]` method.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_on_expired(mut self, hook: __ExpiredHook<ModalSubmitCtx>) -> Self {
+        self.on_expired = Some(hook.0);
+        self
+    }
+
+    /// The link of the Expired Handler chain that answers `expired`.
+    pub(crate) fn expired_link(&self, expired: Expired, app: bool) -> ExpiredLink {
+        ExpiredLink::choose(
+            expired,
+            self.on_stale.is_some(),
+            self.on_expired.is_some(),
+            app,
+        )
+    }
+
+    /// Starts the hook of `link` (`OnStale` or `OnExpired`) with `ctx` and a
+    /// responder over `shared`; `None` for any other link.
+    pub(crate) fn start_hook(
+        &self,
+        link: ExpiredLink,
+        ctx: ModalSubmitCtx,
+        expired: Expired,
+        shared: Arc<Shared>,
+    ) -> Option<HandlerFuture> {
+        let hook = match link {
+            ExpiredLink::OnStale => self.on_stale.as_ref()?,
+            ExpiredLink::OnExpired => self.on_expired.as_ref()?,
+            ExpiredLink::App | ExpiredLink::Default => return None,
+        };
+        Some(hook(ctx, expired, shared))
     }
 
     /// The struct's path (`module_path!()::Struct`).
@@ -576,6 +877,8 @@ impl fmt::Debug for ModalHandler {
             .field("response", &self.response)
             .field("auto_defer", &self.auto_defer)
             .field("signed", &self.signed)
+            .field("on_stale", &self.on_stale.is_some())
+            .field("on_expired", &self.on_expired.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -739,5 +1042,107 @@ mod tests {
         assert_eq!((ctx.user_locale(), ctx.guild_locale()), (None, None));
         assert!(ctx.state::<u8>().is_none());
         assert!(format!("{ctx:?}").starts_with("ModalSubmitCtx"));
+    }
+
+    /// Story 7.3: `Expired`, the chain's precedence, the attached hooks and
+    /// the descriptors' and `ExpiredCtx`'s `Debug`.
+    #[tokio::test]
+    async fn hooks_attach_and_debug() {
+        assert_eq!(
+            (Expired::Stale.as_str(), Expired::RefMissing.as_str()),
+            ("stale", "ref_missing")
+        );
+        let choose = ExpiredLink::choose;
+        let stale = Expired::Stale;
+        let missing = Expired::RefMissing;
+        assert_eq!(choose(stale, true, true, true), ExpiredLink::OnStale);
+        assert_eq!(choose(stale, false, true, true), ExpiredLink::OnExpired);
+        assert_eq!(choose(stale, false, false, true), ExpiredLink::App);
+        assert_eq!(choose(stale, false, false, false), ExpiredLink::Default);
+        assert_eq!(choose(missing, true, false, true), ExpiredLink::App);
+        assert_eq!(choose(missing, true, true, false), ExpiredLink::OnExpired);
+        assert_eq!(choose(missing, true, false, false), ExpiredLink::Default);
+        assert_eq!(
+            [
+                ExpiredLink::OnStale,
+                ExpiredLink::OnExpired,
+                ExpiredLink::App,
+                ExpiredLink::Default
+            ]
+            .map(ExpiredLink::as_str),
+            ["on_stale", "on_expired", "app", "default"]
+        );
+
+        let bare = ComponentHandler::__new::<Buy, _, _>(
+            "m::Buy",
+            "shop.buy",
+            ComponentKind::Button,
+            press,
+        );
+        let debug = format!("{bare:?}");
+        assert!(
+            debug.contains("on_stale: false") && debug.contains("on_expired: false"),
+            "{debug}"
+        );
+        assert_eq!(bare.expired_link(stale, false), ExpiredLink::Default);
+        let hooked = bare
+            .__with_on_stale(__StaleHook::__new::<AutoDefer, _, _, _>(
+                |_: ComponentCtx, _: Responder<Component, Pending, AutoDefer>| async move {
+                    Ok(Responded::new())
+                },
+            ))
+            .__with_on_expired(__ExpiredHook::__new::<AutoDefer, _, _, _>(
+                |_: ComponentCtx, _: Expired, _: Responder<Component, Pending, AutoDefer>| async move {
+                    Ok(Responded::new())
+                },
+            ));
+        let debug = format!("{hooked:?}");
+        assert!(
+            debug.contains("on_stale: true") && debug.contains("on_expired: true"),
+            "{debug}"
+        );
+        assert_eq!(hooked.expired_link(stale, false), ExpiredLink::OnStale);
+        assert_eq!(hooked.expired_link(missing, false), ExpiredLink::OnExpired);
+        let shared = detached(Declared::Update);
+        let started = hooked.start_hook(
+            ExpiredLink::OnStale,
+            ComponentCtx::detached(),
+            stale,
+            Arc::clone(&shared),
+        );
+        assert!(started.is_some());
+        assert!(
+            hooked
+                .start_hook(ExpiredLink::App, ComponentCtx::detached(), stale, shared)
+                .is_none()
+        );
+
+        let modal = ModalHandler::__new::<Buy, _, _>("m::Bio", "bio", submit).__with_on_stale(
+            __StaleHook::__new::<AutoDefer, _, _, _>(
+                |_: ModalSubmitCtx, _: Responder<ModalSubmit, Pending, AutoDefer>| async move {
+                    Ok(Responded::new())
+                },
+            ),
+        );
+        let debug = format!("{modal:?}");
+        assert!(
+            debug.contains("on_stale: true") && debug.contains("on_expired: false"),
+            "{debug}"
+        );
+        assert_eq!(modal.expired_link(missing, true), ExpiredLink::App);
+
+        let mut parts = CtxInner::detached_parts(Ephemerality::Public);
+        parts.path = "shop.buy";
+        let ctx = ExpiredCtx::from_inner(Arc::new(parts));
+        assert_eq!((ctx.route(), ctx.user_id()), ("shop.buy", Id::new(1)));
+        assert!(ExpiredCtx::detached().route().is_empty());
+        let debug = format!("{ctx:?}");
+        assert!(
+            debug.starts_with("ExpiredCtx") && debug.contains("route: \"shop.buy\""),
+            "{debug}"
+        );
+        assert_eq!(format!("{__Absent:?}"), "__Absent");
+        let hook = __StaleHook::<ComponentCtx>(Arc::new(|_, _, _| unreachable!()));
+        assert_eq!(format!("{hook:?}"), "__StaleHook");
     }
 }

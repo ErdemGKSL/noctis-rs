@@ -3,7 +3,8 @@
 //! `FakeGateway` `INTERACTION_CREATE` click or modal submit reaches the
 //! handler of its Route through the component pipeline, and every response
 //! is asserted on the `FakeDiscordHttp` wire (method, path, query, headers,
-//! body).
+//! body). Story 7.3 Matrix 1, 9, 11, 14, 29 and 32: stale and Ref ids reach
+//! the Expired Handler chain of derived structs.
 
 #![allow(
     clippy::unwrap_used,
@@ -22,7 +23,7 @@ use noctis::codec::PayloadKey;
 use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::UserMarker;
-use noctis::ui::{Components, Modal, TextDisplay};
+use noctis::ui::{Components, Modal, TextDisplay, V2Message};
 use noctis::{AppBuilder, BuildViolation, ResponderError, Runtime, Token};
 use noctis_testkit::fake::{
     FakeDiscordHttp, FakeGateway, FakeResponse, GatewayBot, RecordedRequest,
@@ -314,6 +315,131 @@ impl UpdFetchDelete {
     }
 }
 
+/// A Route with both hooks: `#[on_stale]` re-renders, `#[on_expired]`
+/// records why.
+#[derive(Button)]
+#[button("fresh", defaults(style = Primary, label = "Fresh"))]
+struct Fresh {
+    page: u16,
+}
+
+impl Fresh {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("fresh {}", self.page));
+        Ok(responded())
+    }
+
+    #[on_stale]
+    async fn stale(ctx: ComponentCtx) -> HandlerResult<V2Message> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("fresh on_stale module={}", ctx.module()));
+        Ok(V2Message::new(
+            Components::new().push(TextDisplay::new("stale-view")),
+        ))
+    }
+
+    #[on_expired]
+    async fn expired(ctx: ComponentCtx, expired: Expired) -> HandlerResult<V2Message> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("fresh on_expired {expired:?}"));
+        Ok(V2Message::new(
+            Components::new().push(TextDisplay::new("expired-view")),
+        ))
+    }
+}
+
+/// A `by_ref` Route with both hooks: a Ref id runs `#[on_expired]` only.
+#[derive(Button)]
+#[button("rh", by_ref, defaults(style = Primary, label = "Ref"))]
+struct RefHooks {
+    x: u64,
+}
+
+impl RefHooks {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("rh {}", self.x));
+        Ok(responded())
+    }
+
+    #[on_stale]
+    async fn stale(ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push("rh on_stale".to_owned());
+        Ok(responded())
+    }
+
+    #[on_expired]
+    async fn expired(
+        ctx: ComponentCtx,
+        expired: Expired,
+        r: ComponentResponder,
+    ) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("rh on_expired {}", expired.as_str()));
+        let panel = Components::new().push(TextDisplay::new("gone"));
+        Ok(r.reply_as(panel, Ephemerality::Ephemeral).await?.done())
+    }
+}
+
+/// The evolved Payload of a Route that appended an `Option` field without
+/// a `schema` bump (FR-60).
+#[derive(Button)]
+#[button("evo", defaults(style = Primary, label = "Evo"))]
+struct Evo {
+    item: u64,
+    qty: Option<u8>,
+}
+
+impl Evo {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("evo {} {:?}", self.item, self.qty));
+        Ok(responded())
+    }
+}
+
+/// A modal with an `#[on_stale]` method taking the modal context.
+#[derive(Modal, Debug)]
+#[modal("fb", defaults(title = "Feedback"))]
+struct Feedback {
+    item: u64,
+    #[text_input("Bio")]
+    #[allow(dead_code, reason = "the submitted input is decoded, not read")]
+    bio: Option<String>,
+}
+
+impl Feedback {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("fb {}", self.item));
+        Ok(responded())
+    }
+
+    #[on_stale]
+    async fn stale(ctx: ModalSubmitCtx) -> HandlerResult<V2Message> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("fb on_stale channel={:?}", ctx.channel_id()));
+        Ok(V2Message::new(
+            Components::new().push(TextDisplay::new("modal-view")),
+        ))
+    }
+}
+
 /// A running App on one shard against both fakes.
 struct Running {
     gw: FakeGateway,
@@ -389,6 +515,13 @@ impl Running {
                     .add::<SlowUpd>()
                     .add::<Open>()
                     .add::<UpdFetchDelete>(),
+            )
+            .module(
+                Module::new("expired")
+                    .add::<Fresh>()
+                    .add::<RefHooks>()
+                    .add::<Evo>()
+                    .add::<Feedback>(),
             )
             .module(Module::new("dash").uses::<Pick>().add::<Pick>());
         configure(&mut builder);
@@ -988,5 +1121,151 @@ async fn fetch_and_delete_after_update() {
     for request in &sent {
         assert_interaction_request(request);
     }
+    running.stop();
+}
+
+/// The default Expired Handler's text (`Builtin` ships en-US only).
+const EXPIRED_TEXT: &str = "This interaction has expired. Run the command again.";
+
+/// Waits for `n` requests, then a little longer, and asserts there were
+/// exactly `n`.
+async fn exactly(running: &Running, n: usize) -> Vec<RecordedRequest> {
+    running.wait_sent(n).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let sent = running.sent();
+    assert_eq!(sent.len(), n, "{sent:?}");
+    for request in &sent {
+        assert_interaction_request(request);
+    }
+    sent
+}
+
+/// Story 7.3 Matrix 1 (AC 1): a stale id of a Route without hooks is
+/// exactly one type-4 ephemeral `noctis.expired` notice; the handler does
+/// not run.
+#[tokio::test(flavor = "multi_thread")]
+async fn stale_click_gets_the_expired_notice() {
+    let running = Running::start().await;
+    running.dispatch(click(100, "1shop.buy:147", 2));
+    let sent = exactly(&running, 1).await;
+    assert_eq!(
+        (
+            &sent[0].method,
+            sent[0].route_path(),
+            sent[0].query.as_deref()
+        ),
+        (&Method::POST, Some(CALLBACK), None)
+    );
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 4, "data": {
+            "flags": 32832,
+            "components": [{ "type": 10, "id": 1, "content": EXPIRED_TEXT }],
+            "allowed_mentions": { "parse": [] },
+        } })
+    );
+    assert!(running.seen.lines().is_empty());
+    running.stop();
+}
+
+/// Story 7.3 Matrix 9 (AC 2): `#[on_stale]` re-renders the clicked V2
+/// message in place with one type-7 callback; neither `#[on_expired]` nor
+/// the handler runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn on_stale_rerenders_in_place() {
+    let running = Running::start().await;
+    running.dispatch(click_on_message("1fresh:11"));
+    let sent = exactly(&running, 1).await;
+    assert_eq!(
+        (&sent[0].method, sent[0].route_path()),
+        (&Method::POST, Some(CALLBACK))
+    );
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 7, "data": {
+            "flags": 32768,
+            "components": [{ "type": 10, "id": 1, "content": "stale-view" }],
+            "allowed_mentions": { "parse": [] },
+            "attachments": [],
+        } })
+    );
+    assert_eq!(running.seen.lines(), ["fresh on_stale module=expired"]);
+    running.stop();
+}
+
+/// Story 7.3 Matrix 11 and 15 (AC 3): the App's `expired_handler` answers
+/// a Route without hooks, with the Route id and the reason, per the
+/// Route's declared response.
+#[tokio::test(flavor = "multi_thread")]
+async fn app_expired_handler_runs() {
+    let running = Running::start_with(|b| {
+        b.payload_key(key_a())
+            .expired_handler(|ctx: ExpiredCtx, expired: Expired| async move {
+                let text = format!("app {} {}", ctx.route(), expired.as_str());
+                Ok(V2Message::new(
+                    Components::new().push(TextDisplay::new(text)),
+                ))
+            });
+    })
+    .await;
+    running.dispatch(click_on_message("1shop.buy:147"));
+    let sent = exactly(&running, 1).await;
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 7, "data": {
+            "flags": 32768,
+            "components": [{ "type": 10, "id": 1, "content": "app shop.buy stale" }],
+            "allowed_mentions": { "parse": [] },
+            "attachments": [],
+        } })
+    );
+    assert!(running.seen.lines().is_empty());
+    running.stop();
+}
+
+/// Story 7.3 Matrix 14 (AC 4): a Ref id of a `by_ref` Route with both
+/// hooks runs only `#[on_expired]`, with `Expired::RefMissing`.
+#[tokio::test(flavor = "multi_thread")]
+async fn ref_id_reaches_on_expired() {
+    let running = Running::start().await;
+    running.dispatch(click_on_message("0rh:~0123456789A"));
+    let sent = exactly(&running, 1).await;
+    let reply = body(&sent[0]);
+    assert_eq!(reply["type"], 4, "{reply}");
+    assert_eq!(reply["data"]["flags"], 32832, "{reply}");
+    assert_eq!(running.seen.lines(), ["rh on_expired ref_missing"]);
+    running.stop();
+}
+
+/// Story 7.3 Matrix 32 (AC 5): an id from before an `Option` field was
+/// appended still runs the handler, with the field `None`.
+#[tokio::test(flavor = "multi_thread")]
+async fn appended_option_field_still_decodes() {
+    let running = Running::start().await;
+    running.dispatch(click(100, "0evo:47", 2));
+    assert_eq!(running.wait_seen(1).await, ["evo 255 None"]);
+    running.stop();
+}
+
+/// Story 7.3 Matrix 29: a stale modal submit from a component message runs
+/// `#[on_stale]` with the modal context and updates that message.
+#[tokio::test(flavor = "multi_thread")]
+async fn modal_stale_submit_runs_on_stale() {
+    let running = Running::start().await;
+    let mut d = bio_submit(100, "1fb:147");
+    d["message"] = source_message();
+    d["channel"] = json!({ "id": "55", "type": 0 });
+    running.dispatch(d);
+    let sent = exactly(&running, 1).await;
+    let update = body(&sent[0]);
+    assert_eq!(update["type"], 7, "{update}");
+    assert_eq!(
+        update["data"]["components"][0]["content"], "modal-view",
+        "{update}"
+    );
+    assert_eq!(
+        running.seen.lines(),
+        ["fb on_stale channel=Some(Id<ChannelMarker>(55))"]
+    );
     running.stop();
 }

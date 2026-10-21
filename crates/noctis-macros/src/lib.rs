@@ -1,6 +1,7 @@
 //! Proc macros: the kind derives (`SlashCommand`, `UserCommand`,
 //! `MessageCommand`, `EventHandler`, `Button`, the five select derives,
-//! `Modal`), the `#[handler]` and `#[autocomplete(field)]` method attributes,
+//! `Modal`), the `#[handler]`, `#[autocomplete(field)]`, `#[on_stale]` and
+//! `#[on_expired]` method attributes,
 //! the `Payload`/`PayloadEnum`/`Choices` derives, `components!` and the
 //! literal macros.
 //!
@@ -31,6 +32,7 @@ mod components;
 mod defaults;
 mod event;
 mod handler;
+mod hook;
 mod kind;
 mod literal;
 mod menu;
@@ -221,6 +223,23 @@ pub fn handler(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn autocomplete(args: TokenStream, item: TokenStream) -> TokenStream {
     autocomplete::expand_or_fallback(args.into(), item.into()).into()
+}
+
+/// `#[on_stale]`: the method of a component or modal struct that answers
+/// a stale `custom_id` (another `schema`, body kind or flag set of the
+/// Route): `async fn <any>(ctx[, r: <Kind>Responder<..>])`, no `self`.
+#[proc_macro_attribute]
+pub fn on_stale(args: TokenStream, item: TokenStream) -> TokenStream {
+    hook::expand_or_fallback(hook::Hook::Stale, args.into(), item.into()).into()
+}
+
+/// `#[on_expired]`: the method of a component or modal struct that answers
+/// a missing Ref or, without `#[on_stale]`, a stale `custom_id`:
+/// `async fn <any>(ctx, expired: Expired[, r: <Kind>Responder<..>])`, no
+/// `self`.
+#[proc_macro_attribute]
+pub fn on_expired(args: TokenStream, item: TokenStream) -> TokenStream {
+    hook::expand_or_fallback(hook::Hook::Expired, args.into(), item.into()).into()
 }
 
 /// Withdrawn: `#[command]` on a free function. Fails with the

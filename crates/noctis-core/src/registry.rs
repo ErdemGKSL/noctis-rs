@@ -56,7 +56,7 @@ impl RouteHandler {
     }
 
     /// The Route id.
-    fn route(&self) -> &'static str {
+    pub(crate) fn route(&self) -> &'static str {
         match self {
             Self::Component(h) => h.route(),
             Self::Modal(h) => h.route(),

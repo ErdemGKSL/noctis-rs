@@ -52,12 +52,14 @@
 //! # Components and modals
 //!
 //! A `MESSAGE_COMPONENT` or `MODAL_SUBMIT` interaction runs through
-//! [`component`] (Stories 7.1 and 7.2; CID-04, CID-06, INT-01): its
+//! [`component`] (Stories 7.1, 7.2 and 7.3; CID-04, CID-06, INT-01): its
 //! `custom_id` is decoded once and its Route looked up in the Registry's
 //! Route map with the borrowed id (AD-25); a `signed` Route's tag is
-//! verified with the App's payload key ring. Any input that reaches no
-//! handler is one `warn` with a `reason` label and, except a stale or Ref
-//! id, the generic ephemeral notice. The handler then runs through the
+//! verified with the App's payload key ring. A stale or Ref id runs the
+//! Expired Handler chain (Route `#[on_stale]`, Route `#[on_expired]`, App
+//! `expired_handler`, default `noctis.expired` notice) like a handler; any
+//! other input that reaches no handler is one `warn` with a `reason` label
+//! and the generic ephemeral notice. The handler then runs through the
 //! same stages 6, 9 and 10 as a Command: the auto-defer follows its
 //! declared `response` (type 6 for `update` on a message, else type 5), a
 //! returned message is sent per that response, and failures send the

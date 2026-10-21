@@ -36,7 +36,8 @@ pub mod keys {
     pub const VALIDATION_FAILED: MessageKey = MessageKey::new("noctis.validation.failed");
     /// `noctis.expired`: the default Expired Handler notice.
     pub const EXPIRED: MessageKey = MessageKey::new("noctis.expired");
-    /// `noctis.stale`: the Stale Payload notice.
+    /// `noctis.stale`: reserved; v1 sends `noctis.expired` for stale ids
+    /// too.
     pub const STALE: MessageKey = MessageKey::new("noctis.stale");
     /// `noctis.disabled_here`: the Module is disabled in this guild.
     pub const DISABLED_HERE: MessageKey = MessageKey::new("noctis.disabled_here");

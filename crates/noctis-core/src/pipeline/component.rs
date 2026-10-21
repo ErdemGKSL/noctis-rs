@@ -1,7 +1,7 @@
-//! The component pipeline (Stories 7.1 and 7.2; AD-5, AD-19, AD-23,
-//! AD-25, AD-29; CID-04, CID-06, INT-01, INT-04): a `MESSAGE_COMPONENT` or
-//! `MODAL_SUBMIT` interaction runs the handler of its Route on the decoded
-//! struct, with a responder over the interaction.
+//! The component pipeline (Stories 7.1, 7.2 and 7.3; AD-5, AD-19, AD-23,
+//! AD-25, AD-29; CID-04, CID-06, INT-01, INT-04; FR-18, FR-60): a
+//! `MESSAGE_COMPONENT` or `MODAL_SUBMIT` interaction runs the handler of its
+//! Route on the decoded struct, with a responder over the interaction.
 //!
 //! 1. **Read the input:** the `custom_id` (and, for a click, the component
 //!    type) from the interaction; a modal submit is parsed as a
@@ -17,23 +17,33 @@
 //! 4. **Decode the struct and start the handler:** the Payload is decoded
 //!    once, verifying a `signed` Route's tag with the App's payload key ring
 //!    (current or previous key); a modal's inputs are decoded from that
-//!    verified Payload and the submission (`ModalFromPayload`).
+//!    verified Payload and the submission (`ModalFromPayload`). A stale id
+//!    (another `schema`, body kind or `N`/`T` flag set of the Route) or a
+//!    Ref id (no `RefStore` before Story 7.5: every Ref is missing) runs the
+//!    Expired Handler chain instead: a stale id the Route's `#[on_stale]`,
+//!    then its `#[on_expired]` with [`Expired::Stale`]; a Ref id only its
+//!    `#[on_expired]` with [`Expired::RefMissing`]; then the App's
+//!    `expired_handler`; else the default `noctis.expired` ephemeral notice
+//!    (one type-4 callback, no timer). Each is one `debug` on target
+//!    `noctis::dispatch` naming the `reason` and the `hook`.
 //! 5. **Arm the auto-defer** (shared with Commands): at the ack deadline a
 //!    type-6 callback under `response = update` when a source message
 //!    exists, else type 5 (`EPHEMERAL` only for `response = ephemeral`); an
-//!    `auto_defer = false` handler gets only the 2.9 s error log.
-//! 6. **Run and answer:** run the handler under `catch_unwind`, raced
+//!    `auto_defer = false` handler or hook gets only the 2.9 s error log.
+//!    The App's `expired_handler` is always auto-deferred.
+//! 6. **Run and answer:** run the handler (or hook) under `catch_unwind`, raced
 //!    against the shutdown cancel token, and send what it returned per the
 //!    declared `response`; an error or a panic sends the localized
 //!    ephemeral notice, then a user condition is logged at `debug`; any
 //!    other error, a panic, a failed send or a cancellation is counted and
 //!    reported to the Component Error Sink.
 //!
-//! Every input that does not reach a handler is a [`Rejection`]: one
-//! `warn` on target `noctis::dispatch` and, except a stale or Ref id (Stories
-//! 7.3 and 7.5 route those), the CID-06 generic ephemeral notice; no
-//! handler run and no panic. Nothing is stored per message or component:
-//! the one auto-defer task per interaction ends when the handler run ends.
+//! Every other input that does not reach a handler is a [`Rejection`]: one
+//! `warn` on target `noctis::dispatch` and the CID-06 generic ephemeral
+//! notice; no handler run and no panic. The checks before the Payload
+//! decode (malformed, unknown Route, kind mismatch, no author) win over a
+//! stale id. Nothing is stored per message or component: the one
+//! auto-defer task per interaction ends when the handler run ends.
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -54,7 +64,8 @@ use twilight_model::id::Id;
 use super::{Armed, INTERACTION_CREATE, Report, Started, USER_INSTALL_FOLLOWUPS, arm, run_started};
 use crate::command::CtxInner;
 use crate::component::{
-    ComponentCtx, ComponentHandler, ComponentKind, HandlerFuture, ModalHandler, ModalSubmitCtx,
+    ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ExpiredLink, HandlerFuture,
+    ModalHandler, ModalSubmitCtx,
 };
 use crate::handler::AppShared;
 use crate::notice;
@@ -65,7 +76,8 @@ use crate::responder::{
 use crate::sink::ErrorOrigin;
 
 /// Why a component or modal interaction did not reach a handler; its
-/// [`as_str`](Self::as_str) is the `reason` of the one `warn`.
+/// [`as_str`](Self::as_str) is the `reason` of the one `warn` (or, for a
+/// stale or Ref id, of the one `debug` of the Expired Handler chain).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Rejection {
     /// The `custom_id` failed codec phase 1, the click has no data or the
@@ -75,12 +87,13 @@ pub(crate) enum Rejection {
     UnknownRoute,
     /// The clicked component's type is not the handler's kind.
     KindMismatch,
-    /// The id is from another shape or schema of the Route (Story 7.3
-    /// routes it).
+    /// The id is from another shape or schema of the Route: the Expired
+    /// Handler chain answers it.
     Stale,
     /// A bad or missing integrity tag, or one no key of the ring verifies.
     Forged,
-    /// A Ref body (Story 7.5 resolves it).
+    /// A Ref body whose record is missing (no `RefStore` before Story 7.5):
+    /// the Expired Handler chain answers it.
     RefUnresolved,
     /// The inline body does not decode into the struct.
     Undecodable,
@@ -106,10 +119,14 @@ impl Rejection {
         }
     }
 
-    /// Whether the rejection answers with the CID-06 notice: every one but
-    /// a stale or Ref id (Stories 7.3 and 7.5 route those).
-    pub(crate) const fn sends_notice(self) -> bool {
-        !matches!(self, Self::Stale | Self::RefUnresolved)
+    /// Why a stale or Ref id goes to the Expired Handler chain; `None` for
+    /// every other rejection (the CID-06 notice answers those).
+    pub(crate) const fn expired(self) -> Option<Expired> {
+        match self {
+            Self::Stale => Some(Expired::Stale),
+            Self::RefUnresolved => Some(Expired::RefMissing),
+            _ => None,
+        }
     }
 
     /// The rejection of a phase-2 decode error.
@@ -164,22 +181,57 @@ enum Target<'a> {
 impl Target<'_> {
     fn start(
         &self,
-        parts: CtxInner,
+        parts: Arc<CtxInner>,
         decoded: &Decoded<'_>,
         shared: Arc<Shared>,
         keys: Option<&dyn Verify>,
     ) -> Result<HandlerFuture, Rejection> {
         match self {
             Self::Component(handler) => {
-                handler.start(ComponentCtx::from_parts(parts), decoded, shared, keys)
+                handler.start(ComponentCtx::from_inner(parts), decoded, shared, keys)
             }
             Self::Modal(handler, submission) => handler.start(
-                ModalSubmitCtx::from_parts(parts),
+                ModalSubmitCtx::from_inner(parts),
                 decoded,
                 submission,
                 shared,
                 keys,
             ),
+        }
+    }
+
+    /// The link of the Expired Handler chain that answers `expired`.
+    fn expired_link(&self, expired: Expired, app: &AppShared) -> ExpiredLink {
+        let app = app.expired_handler.is_some();
+        match self {
+            Self::Component(handler) => handler.expired_link(expired, app),
+            Self::Modal(handler, _) => handler.expired_link(expired, app),
+        }
+    }
+
+    /// Starts the hook or App handler of `link` with a context of `parts`
+    /// (and, for a hook, a responder over `shared`); `None` for the default
+    /// link.
+    fn start_expired(
+        &self,
+        link: ExpiredLink,
+        parts: Arc<CtxInner>,
+        expired: Expired,
+        shared: Arc<Shared>,
+        app: &AppShared,
+    ) -> Option<HandlerFuture> {
+        match (link, self) {
+            (ExpiredLink::App, _) => {
+                let handler = app.expired_handler.as_ref()?;
+                let modal = matches!(self, Self::Modal(..));
+                Some(handler(ExpiredCtx::from_inner(parts), expired, modal))
+            }
+            (_, Self::Component(handler)) => {
+                handler.start_hook(link, ComponentCtx::from_inner(parts), expired, shared)
+            }
+            (_, Self::Modal(handler, _)) => {
+                handler.start_hook(link, ModalSubmitCtx::from_inner(parts), expired, shared)
+            }
         }
     }
 
@@ -254,13 +306,10 @@ struct Rejecter<'a> {
 }
 
 impl Rejecter<'_> {
-    /// Logs `rejection`, then (except a stale or Ref id) sends the CID-06
-    /// generic ephemeral notice over `shared`; a failed send is one `warn`.
+    /// Logs `rejection`, then sends the CID-06 generic ephemeral notice over
+    /// `shared`; a failed send is one `warn`.
     async fn reject(&self, route: Option<&str>, rejection: Rejection, shared: &Arc<Shared>) {
         log_rejection(self.span, self.shard, route, rejection);
-        if !rejection.sends_notice() {
-            return;
-        }
         let text = self
             .span
             .in_scope(|| notice::text(&*self.app.strings, self.locale, keys::ERROR_GENERIC));
@@ -271,6 +320,41 @@ impl Rejecter<'_> {
                     reason = rejection.as_str(),
                     %error,
                     "could not send the error notice"
+                );
+            });
+        }
+    }
+}
+
+impl Rejecter<'_> {
+    /// Logs that the stale or Ref id `rejection` of `route` goes to `link`
+    /// of the Expired Handler chain (one `debug`).
+    fn log_expired(&self, route: &str, rejection: Rejection, link: ExpiredLink) {
+        self.span.in_scope(|| {
+            tracing::debug!(
+                target: "noctis::dispatch",
+                reason = rejection.as_str(),
+                shard = self.shard,
+                route,
+                hook = link.as_str(),
+                "component interaction expired"
+            );
+        });
+    }
+
+    /// The default Expired Handler: one type-4 ephemeral `noctis.expired`
+    /// notice over `shared`, sent at once; a failed send is one `warn`.
+    async fn expired_notice(&self, rejection: Rejection, shared: &Arc<Shared>) {
+        let text = self
+            .span
+            .in_scope(|| notice::text(&*self.app.strings, self.locale, keys::EXPIRED));
+        if let Err(error) = shared.notice(text).instrument(self.span.clone()).await {
+            self.span.in_scope(|| {
+                tracing::warn!(
+                    target: "noctis::dispatch",
+                    reason = rejection.as_str(),
+                    %error,
+                    "could not send the expired notice"
                 );
             });
         }
@@ -451,6 +535,9 @@ pub(crate) async fn run_component_over(
     };
     // Stage 3: build the context and the responder state.
     let parts = CtxInner {
+        // The Route id: `ExpiredCtx::route` (the component contexts do not
+        // read it).
+        path: entry.handler.route(),
         module: entry.module,
         shard,
         guild_id,
@@ -461,6 +548,7 @@ pub(crate) async fn run_component_over(
         app: Some(Arc::clone(&app)),
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
+    let parts = Arc::new(parts);
     let state = shared_for(transport, target.response());
     let report = Report {
         app: &app,
@@ -475,25 +563,45 @@ pub(crate) async fn run_component_over(
     if cancel.is_cancelled() {
         return run_started(&span, Some(&cancel), state, None, None, report).await;
     }
-    // Stage 4: decode the struct and start the handler.
+    // Stage 4: decode the struct and start the handler, or route a stale or
+    // Ref id through the Expired Handler chain.
     let at = Instant::now();
     let handle = Arc::clone(&state);
     let started = span.in_scope(|| {
         std::panic::catch_unwind(AssertUnwindSafe(|| {
             let keys = app.payload_keys.as_deref().map(|k| k as &dyn Verify);
-            target.start(parts, &decoded, handle, keys)
+            target.start(Arc::clone(&parts), &decoded, handle, keys)
         }))
     });
-    let future = match started {
-        Ok(Err(rejection)) => return answer.reject(Some(route), rejection, &state).await,
-        Ok(Ok(future)) => Ok(future),
-        Err(panic) => Err(panic),
+    let (future, auto_defer) = match started {
+        Ok(Ok(future)) => (Ok(future), target.auto_defer()),
+        Err(panic) => (Err(panic), target.auto_defer()),
+        Ok(Err(rejection)) => {
+            let Some(expired) = rejection.expired() else {
+                return answer.reject(Some(route), rejection, &state).await;
+            };
+            let link = target.expired_link(expired, &app);
+            answer.log_expired(route, rejection, link);
+            let handle = Arc::clone(&state);
+            let started = span.in_scope(|| {
+                std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    target.start_expired(link, parts, expired, handle, &app)
+                }))
+            });
+            let future = match started {
+                Ok(Some(future)) => Ok(future),
+                Ok(None) => return answer.expired_notice(rejection, &state).await,
+                Err(panic) => Err(panic),
+            };
+            // The App handler takes no responder: always auto-deferred.
+            (future, link == ExpiredLink::App || target.auto_defer())
+        }
     };
     // Stage 5: arm the auto-defer.
     let armed = Armed {
         handler: report.handler,
         module: report.module,
-        auto_defer: target.auto_defer(),
+        auto_defer,
     };
     let timer = arm(&app, &state, &armed, received_at, &span);
     // Stage 6: run and answer.

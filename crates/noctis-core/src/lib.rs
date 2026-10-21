@@ -210,7 +210,12 @@ pub use autocomplete::{
     PartialOptions, SuggestionLabel, SuggestionValue, Suggestions,
 };
 pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
-pub use component::{ComponentCtx, ComponentHandler, ComponentKind, ModalHandler, ModalSubmitCtx};
+#[doc(hidden)]
+pub use component::{__Absent, __ExpiredHook, __HookCtx, __StaleHook};
+pub use component::{
+    ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ModalHandler,
+    ModalSubmitCtx,
+};
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
     AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, RunError, StartError,
@@ -218,6 +223,11 @@ pub use error::{
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};
+#[doc(hidden)]
+pub use kind::{
+    __AttachHooks, __BindExpired, __BindStale, __H, __HE, __HER, __HR, __HookKind, __NoHookCtx,
+    __NoHookSlot, __NoHooks, __NotAHookStruct,
+};
 #[doc(hidden)]
 pub use kind::{
     __Bind, __C, __CR, __CX, __CXR, __Component, __ComponentKind, __ComponentParams, __ContextMenu,

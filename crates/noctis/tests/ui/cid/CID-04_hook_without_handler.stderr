@@ -1,0 +1,6 @@
+error[E0080]: evaluation panicked: [CID-04] `Buy` has no #[handler] method, so no component can be built for it
+                = help: add impl Buy { #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> }
+ --> tests/ui/cid/CID-04_hook_without_handler.rs:6:8
+  |
+6 | struct Buy {
+  |        ^^^ evaluation of `_` failed here

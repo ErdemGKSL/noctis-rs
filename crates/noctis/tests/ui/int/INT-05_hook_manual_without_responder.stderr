@@ -1,0 +1,20 @@
+error[E0277]: [INT-05] `auto_defer = false` handlers take a `Manual` responder
+  --> tests/ui/int/INT-05_hook_manual_without_responder.rs:21:14
+   |
+21 |     async fn stale(_ctx: ComponentCtx) -> HandlerResult<Components> {
+   |              ^^^^^ declared `auto_defer = false`
+   |
+   = help: the trait `noctis::__private::noctis_core::kind::__NoResponder` is not implemented for `noctis::Manual`
+help: the trait `noctis::__private::noctis_core::kind::__NoResponder` is implemented for `AutoDefer`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | impl __NoResponder for AutoDefer {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `noctis::__private::noctis_core::kind::__assert_no_responder`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | pub fn __assert_no_responder<S>()
+   |        --------------------- required by a bound in this function
+...
+   |     S::Defer: __NoResponder,
+   |               ^^^^^^^^^^^^^ required by this bound in `__assert_no_responder`

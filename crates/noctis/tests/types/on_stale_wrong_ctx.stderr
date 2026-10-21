@@ -1,0 +1,63 @@
+error[E0277]: the parameters of this `#[on_stale]`/`#[on_expired]` method do not fit `Buy`
+  --> tests/types/on_stale_wrong_ctx.rs:21:14
+   |
+21 |     async fn stale(_ctx: CommandCtx) -> HandlerResult<V2Message> {
+   |              ^^^^^ unexpected parameters
+   |
+   = help: the trait `noctis::__private::noctis_core::kind::__BindStale<noctis::__private::noctis_core::kind::__H<noctis::CommandCtx>, Buy, _>` is not implemented for `noctis::__private::noctis_core::kind::__ComponentKind`
+   = note: components take `#[on_stale] async fn ..(ctx: ComponentCtx[, r: ComponentResponder<..>])` and `#[on_expired] async fn ..(ctx: ComponentCtx, expired: Expired[, r: ComponentResponder<..>])`; modals take `#[on_stale] async fn ..(ctx: ModalSubmitCtx[, r: ModalResponder<..>])` and `#[on_expired] async fn ..(ctx: ModalSubmitCtx, expired: Expired[, r: ModalResponder<..>])`
+help: `noctis::__private::noctis_core::kind::__ComponentKind` implements trait `noctis::__private::noctis_core::kind::__BindStale<Shape, S, F>`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | /         impl<S, F, Fut, R> __BindStale<__H<$ctx>, S, F> for $kind
+   | |         where
+   | |             S: $family,
+   | |             F: Fn($ctx) -> Fut + Send + Sync + 'static,
+   | |             Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+   | |             R: IntoResponse<$rk>,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__BindStale<noctis::__private::noctis_core::kind::__H<noctis::ComponentCtx>, S, F>`
+...
+   | /         impl<S, D, F, Fut, R> __BindStale<__HR<$ctx, Responder<$rk, Pending, D>>, S, F> for $kind
+   | |         where
+   | |             S: $family,
+   | |             D: DeferMode,
+   | |             F: Fn($ctx, Responder<$rk, Pending, D>) -> Fut + Send + Sync + 'static,
+   | |             Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+   | |             R: IntoResponse<$rk>,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__BindStale<noctis::__private::noctis_core::kind::__HR<noctis::ComponentCtx, Responder<noctis::Component, noctis::Pending, D>>, S, F>`
+...
+   |   hook_binds!(__ComponentKind, __Component, ComponentCtx, Component);
+   |   ------------------------------------------------------------------ in this macro invocation
+   = note: this error originates in the macro `hook_binds` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the parameters of this `#[on_stale]`/`#[on_expired]` method do not fit `Buy`
+  --> tests/types/on_stale_wrong_ctx.rs:26:14
+   |
+26 |     async fn gone(_ctx: ComponentCtx, _why: u8) -> HandlerResult<V2Message> {
+   |              ^^^^ unexpected parameters
+   |
+   = help: the trait `noctis::__private::noctis_core::kind::__BindExpired<noctis::__private::noctis_core::kind::__HE<noctis::ComponentCtx, u8>, Buy, _>` is not implemented for `noctis::__private::noctis_core::kind::__ComponentKind`
+   = note: components take `#[on_stale] async fn ..(ctx: ComponentCtx[, r: ComponentResponder<..>])` and `#[on_expired] async fn ..(ctx: ComponentCtx, expired: Expired[, r: ComponentResponder<..>])`; modals take `#[on_stale] async fn ..(ctx: ModalSubmitCtx[, r: ModalResponder<..>])` and `#[on_expired] async fn ..(ctx: ModalSubmitCtx, expired: Expired[, r: ModalResponder<..>])`
+help: `noctis::__private::noctis_core::kind::__ComponentKind` implements trait `noctis::__private::noctis_core::kind::__BindExpired<Shape, S, F>`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | /         impl<S, F, Fut, R> __BindExpired<__HE<$ctx, Expired>, S, F> for $kind
+   | |         where
+   | |             S: $family,
+   | |             F: Fn($ctx, Expired) -> Fut + Send + Sync + 'static,
+   | |             Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+   | |             R: IntoResponse<$rk>,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__BindExpired<noctis::__private::noctis_core::kind::__HE<noctis::ComponentCtx, Expired>, S, F>`
+...
+   | /         impl<S, D, F, Fut, R> __BindExpired<__HER<$ctx, Expired, Responder<$rk, Pending, D>>, S, F>
+   | |             for $kind
+   | |         where
+   | |             S: $family,
+...  |
+   | |             Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+   | |             R: IntoResponse<$rk>,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__BindExpired<noctis::__private::noctis_core::kind::__HER<noctis::ComponentCtx, Expired, Responder<noctis::Component, noctis::Pending, D>>, S, F>`
+...
+   |   hook_binds!(__ComponentKind, __Component, ComponentCtx, Component);
+   |   ------------------------------------------------------------------ in this macro invocation
+   = note: this error originates in the macro `hook_binds` (in Nightly builds, run with -Z macro-backtrace for more info)

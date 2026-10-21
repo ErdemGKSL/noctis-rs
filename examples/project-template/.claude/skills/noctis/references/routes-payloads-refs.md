@@ -99,10 +99,11 @@ Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
   notice to the user (`noctis.error.generic`); nothing panics and no handler runs.
   `signed` Routes are verified with the App's payload key ring (`NOCTIS_PAYLOAD_KEY`,
   plus `NOCTIS_PAYLOAD_KEY_PREVIOUS` during a rotation; `app-and-sharding.md`): a bad or
-  missing tag is `forged`. **[planned]** `by_ref`/spilled ids are `ref_unresolved`
-  (Story 7.5) and stale ids have no stale/expired handler yet (Story 7.3); both are only
-  logged, without a notice. The rest of this file's runtime parts stay **[planned]**
-  where marked.
+  missing tag is `forged`. A **stale** id (another `schema`, body kind or flag set of
+  the Route) and a **Ref** id (`by_ref`/spilled; every Ref is missing until the
+  RefStore lands [planned, Story 7.5]) are not rejections: they go to the Expired
+  Handler chain (§8), logged once at `debug`. The rest of this file's runtime parts
+  stay **[planned]** where marked.
 
 - **Keys.** `noctis::codec::PayloadKey` is the 32-byte secret (`PayloadKey::from_hex(..)`
   for the 64-hex-digit `NOCTIS_PAYLOAD_KEY`, `PayloadKey::from_bytes([u8; 32])`; errors
@@ -196,8 +197,23 @@ Accepted spellings include `r"a"`, `"shop\x2Ebuy"` (the value counts: `shop.buy`
 | Method attribute | Meaning |
 | --- | --- |
 | `#[handler] async fn handle(self, ctx, ..)` | the handler (exactly one; takes no arguments) |
-| `#[on_expired] async fn …(ctx, expired: Expired)` | this component's Expired Handler (no `self`: the Payload is gone) [planned, Story 7.3] |
-| `#[on_stale] async fn …(ctx)` | this component's Stale Payload handler (no `self`) [planned, Story 7.3] |
+| `#[on_stale] async fn <any>(ctx: ComponentCtx[, r: ComponentResponder<..>]) -> HandlerResult<R>` | answers a stale id of this Route (no `self`: the Payload did not decode); at most one |
+| `#[on_expired] async fn <any>(ctx: ComponentCtx, expired: Expired[, r: ComponentResponder<..>]) -> HandlerResult<R>` | answers a missing Ref, or a stale id when there is no `#[on_stale]`; at most one |
+
+On a modal the hooks take `ModalSubmitCtx` and `ModalResponder<..>`. Both attributes
+take no arguments; the hooks inherit the Route's `response` and `auto_defer` (an
+`auto_defer = false` Route's hook takes `ComponentResponder<Manual>` and may
+`show_modal`, INT-05), and `R` is what a `#[handler]` may return (a View such as
+`V2Message`, or `Responded`). `.add::<X>()` registers them with the handler
+(`X::descriptor()`'s `Debug` shows `on_stale: true`). Compile errors: ``an
+`#[on_stale]` method takes no `self`: the Payload did not decode``, ``… must be
+`async` ``, ``… cannot be generic``, `` `#[on_stale]` takes no arguments``, ``an
+`#[on_expired]` method takes `(ctx, expired: Expired[, r: <Kind>Responder<..>])` ``
+(also when `Expired` is missing), E0277 `` `#[on_stale]` and `#[on_expired]` are
+methods of a component or modal struct`` on a command or event struct, E0277 ``the
+parameters of this `#[on_stale]`/`#[on_expired]` method do not fit `X` `` for a wrong
+context, `Expired` or responder type, and a duplicate-definition error for a second
+`#[on_stale]`. A hook does not count as the handler (`[CID-04]` still applies).
 
 ## 2. Field types and widths (AD-6)
 
@@ -477,10 +493,20 @@ Messages live for months; old components still get clicked after a deploy.
   every other field's is `None`, so a missing non-`Option` field stays an error).
 - **Everything else bumps `schema`:** removing/reordering/retyping fields, adding a
   non-`Option` field, and changing `select`, `signed` or `by_ref`.
-- A mismatched schema or shape decodes as **Stale**: it goes to the Route's `on_stale`
-  handler, else the Expired Handler. Typical stale handler: call the screen's render
-  function from scratch and add a `ctx.reply_text` notice.
+- A mismatched schema or shape decodes as **Stale**: it goes to the Route's
+  `#[on_stale]`, else the Expired Handler chain (§8). Typical stale handler: call the
+  screen's render function from scratch for `ctx.user_id()` and return it.
+- Any other change without a `schema` bump makes old ids **undecodable**: a `warn`
+  (`reason="undecodable"`) and the generic notice, never the stale handler. That is
+  why the bump is required.
 - Renaming the Route id = old components become unknown (logged, generic notice).
+
+| Change to `struct Buy { item: u64 }` (old id `0shop.buy:47`) | Old id |
+| --- | --- |
+| `struct Buy { item: u64, qty: Option<u8> }`, no bump | handler runs with `qty: None` |
+| `struct Buy { item: u64, qty: u8 }`, no bump | `undecodable` + generic notice |
+| a field removed, no bump (old id `0shop.buy:47,9`) | `undecodable` + generic notice |
+| any change with `schema = 1` | stale → `#[on_stale]` / Expired Handler chain |
 
 ## 7. Refs
 
@@ -508,27 +534,61 @@ pub struct ConfirmBan {
 
 ## 8. Expired, stale, unknown, forged
 
-| Case | Goes to |
+| Case | Goes to (first that exists) |
 | --- | --- |
-| Ref missing or expired | Route `on_expired`, else App `expired_handler`, else default localized ephemeral notice (`noctis.expired`) |
-| Schema/shape mismatch | Route `on_stale`, else as expired |
-| Unknown Route, malformed id, bad integrity tag | logged warning + generic notice; never a panic (FR-19) |
+| Stale id (schema, body kind or `N`/`T` flag mismatch) | Route `#[on_stale]` → Route `#[on_expired]` with `Expired::Stale` → App `.expired_handler(f)` with `Expired::Stale` → default notice |
+| Ref id, record missing or expired | Route `#[on_expired]` with `Expired::RefMissing` → App `.expired_handler(f)` → default notice (`#[on_stale]` never runs) |
+| Unknown Route, malformed id, kind mismatch, no author, bad integrity tag, undecodable body | logged warning + generic notice; never a panic (FR-19); these checks win over stale |
+
+- The **default notice** is one ephemeral type-4 callback with `noctis.expired`
+  ("This interaction has expired. Run the command again.") in the User, then Guild
+  Locale, else en-US; for stale ids too (`noctis.stale` is reserved).
+- Every stale or Ref id is one `DEBUG noctis::dispatch: component interaction expired`
+  with `reason` (`stale` | `ref_unresolved`), `route` and `hook` (`on_stale` |
+  `on_expired` | `app` | `default`); stale clicks after a deploy are expected, so no
+  warning.
+- Hooks and the App handler run like the `#[handler]`: auto-defer at the ack deadline,
+  a returned message sent per the Route's declared `response` (an in-place update by
+  default), and an error or panic shows the error notice and goes to the
+  `ErrorOrigin::Component` sink (`HandlerError::user(key)` only logs at `debug`).
+- `Expired` (`#[non_exhaustive]`): `Stale`, `RefMissing`; `expired.as_str()` is
+  `"stale"` / `"ref_missing"`.
+- **App-wide:** `.expired_handler(f)` on the `AppBuilder`, with
+  `f: async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<R>`. `ExpiredCtx`
+  has the `ComponentCtx` accessors (`module`, `shard`, `guild_id`, `channel_id`,
+  `user_id`, `user_locale`, `guild_locale`, `state::<T>()`) plus `route()`, the Route
+  id. It takes no responder and is always auto-deferred, even on an
+  `auto_defer = false` Route. The last call wins.
 
 ```rust
+use noctis::prelude::*;
+use noctis::ui::V2Message;
+
 impl SetupState {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> { … }
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> { … }
 
-    /// Re-open step 1 of the setup flow when its Ref is gone (UJ-1): the same render
-    /// function, plus a one-line notice.
-    #[on_expired]
-    async fn restart(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<Responded> {
-        let s = Strings::of(ctx.response_locale());
+    /// A Setup panel from before a `schema` bump: start over at step 1, in place.
+    #[on_stale]
+    async fn restart(ctx: ComponentCtx) -> HandlerResult<V2Message> {
         let first = SetupState { owner: ctx.user_id(), step: SetupStep::Channel, log_channel: None, mod_role: None };
-        ctx.update(render_setup(first, &s)).await?;
-        ctx.reply_text(keys::NOCTIS_EXPIRED).await                // ephemeral follow-up
+        Ok(render_setup(first, &Strings::of(ctx.user_locale().unwrap_or("en-US"))))
+    }
+
+    /// A missing Ref (or a stale id without `#[on_stale]`): the same restart.
+    #[on_expired]
+    async fn expired(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<V2Message> {
+        let first = SetupState { owner: ctx.user_id(), step: SetupStep::Channel, log_channel: None, mod_role: None };
+        Ok(render_setup(first, &Strings::of(ctx.user_locale().unwrap_or("en-US"))))
     }
 }
+
+// App-wide fallback for Routes without hooks.
+async fn expired(ctx: ExpiredCtx, why: Expired) -> HandlerResult<V2Message> {
+    tracing::debug!(route = ctx.route(), why = why.as_str(), "expired click");
+    Ok(render_start_over(&Strings::of(ctx.user_locale().unwrap_or("en-US"))))
+}
+builder.expired_handler(expired);
 ```
 
 ## 9. Building components: `.build()`

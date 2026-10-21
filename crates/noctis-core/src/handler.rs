@@ -224,6 +224,8 @@ pub(crate) struct AppShared {
     /// (`NOCTIS_PAYLOAD_KEY`, AD-5): never logged, never in a span field,
     /// never handed to a port or adapter (AD-29).
     pub(crate) payload_keys: Option<Arc<noctis_codec::PayloadKeys>>,
+    /// The App-level Expired Handler (`AppBuilder::expired_handler`).
+    pub(crate) expired_handler: Option<Arc<crate::component::AppExpiredFn>>,
 }
 
 /// The context an event handler receives: the shard, the guild, the

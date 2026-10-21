@@ -57,6 +57,30 @@ impl SetupState {
         }
         Ok(render_setup(self, &Strings::of(ctx.response_locale())))
     }
+
+    /// A Setup panel from before a `schema` bump of this Route: its Payload no longer
+    /// decodes, so start over at step 1 for whoever clicked, in place.
+    #[on_stale]
+    async fn restart(ctx: ComponentCtx) -> HandlerResult<V2Message> {
+        Ok(render_setup(first_step(&ctx), &Strings::of(ctx.response_locale())))
+    }
+
+    /// Any other expired id of this Route (a missing Ref once Routes use `by_ref`):
+    /// the same restart.
+    #[on_expired]
+    async fn expired(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<V2Message> {
+        Ok(render_setup(first_step(&ctx), &Strings::of(ctx.response_locale())))
+    }
+}
+
+/// Step 1 of the Setup flow for the user who clicked.
+fn first_step(ctx: &ComponentCtx) -> SetupState {
+    SetupState {
+        owner: ctx.user_id(),
+        step: SetupStep::Channel,
+        log_channel: None,
+        mod_role: None,
+    }
 }
 
 impl PickLogChannel {

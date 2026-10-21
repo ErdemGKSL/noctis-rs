@@ -1,7 +1,8 @@
 //! Story 7.1 Matrix 12-25 and 27 and Story 7.2 Matrix 1-12, 29-31, 34-38,
 //! 40-51 and S1-S4, S17, S18: the component pipeline over a recording upstream. Every
 //! rejection is one `warn` with its `reason`, no handler run, and the
-//! generic ephemeral notice (none for a stale or Ref id).
+//! generic ephemeral notice. Stale and Ref ids go to the Expired Handler
+//! chain (`super::expired`, Story 7.3).
 
 use std::fmt;
 
@@ -240,12 +241,8 @@ impl Components {
         );
         assert!(self.log.lines().is_empty(), "{:?}", self.log.lines());
         let requests = self.p.requests();
-        if matches!(reason, "stale" | "ref_unresolved") {
-            assert!(requests.is_empty(), "{reason}: {requests:?}");
-        } else {
-            assert_eq!(requests.len(), 1, "{reason}: {requests:?}");
-            assert_generic_notice(&requests[0]);
-        }
+        assert_eq!(requests.len(), 1, "{reason}: {requests:?}");
+        assert_generic_notice(&requests[0]);
         self.clear();
         assert!(self.sink.seen().is_empty());
     }
@@ -258,7 +255,7 @@ impl Components {
 
 /// Asserts `request` is the CID-06 notice: one ephemeral type-4 callback
 /// holding one Text Display, without a bot token.
-fn assert_generic_notice(request: &(Method, String, Value)) {
+pub(super) fn assert_generic_notice(request: &(Method, String, Value)) {
     assert_eq!(
         (&request.0, request.1.as_str()),
         (&Method::POST, CB),
@@ -282,7 +279,7 @@ fn assert_generic_notice(request: &(Method, String, Value)) {
 
 /// A `MESSAGE_COMPONENT` interaction (id 100, token `tok`, application 7,
 /// user 3) on a component of `component_type` with `custom_id`.
-fn click(custom_id: &str, component_type: u8) -> Value {
+pub(super) fn click(custom_id: &str, component_type: u8) -> Value {
     json!({
         "id": "100",
         "application_id": "7",
@@ -299,7 +296,7 @@ fn click(custom_id: &str, component_type: u8) -> Value {
 
 /// A `MODAL_SUBMIT` interaction with `custom_id` and the text input `bio`
 /// when `with_bio`.
-fn submit(custom_id: &str, with_bio: bool) -> Value {
+pub(super) fn submit(custom_id: &str, with_bio: bool) -> Value {
     let components = if with_bio {
         json!([{ "type": 18, "id": 1, "component": { "type": 4, "id": 2, "custom_id": "bio", "value": "hi" } }])
     } else {
@@ -374,14 +371,11 @@ async fn family_and_kind() {
     assert_eq!(c.log.lines(), ["m::Pick:255:shop:3"]);
 }
 
-/// Matrix 20-23: stale, Ref, signed and undecodable bodies.
+/// Matrix 20-23: signed and undecodable bodies (stale and Ref ids: Story
+/// 7.3, `super::expired`).
 #[tokio::test]
 async fn cid_06_rejections_send_the_notice() {
     let c = Components::start().await;
-    c.rejects(inbound(&click("1shop.buy:147", 2)), "stale")
-        .await;
-    c.rejects(inbound(&click("0r:~0123456789A", 2)), "ref_unresolved")
-        .await;
     c.rejects(inbound(&click("8sig:47abcdef", 2)), "forged")
         .await;
     c.rejects(inbound(&click("0sig:47", 2)), "forged").await;
@@ -545,7 +539,6 @@ async fn modal_submits() {
         .unwrap()
         .push(input);
     c.rejects(inbound(&twice), "submit_invalid").await;
-    c.rejects(inbound(&submit("1bio:147", true)), "stale").await;
 }
 
 // ---- Story 7.2: responses, notices and keys ----

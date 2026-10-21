@@ -1,0 +1,74 @@
+error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
+  --> tests/ui/int/INT-05_hook_show_modal_needs_manual.rs:21:14
+   |
+21 |         Ok(r.show_modal(form()).await?.done())
+   |              ^^^^^^^^^^ this handler auto-defers
+   |
+   = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+help: the trait `CanShowModal` is implemented for `Manual`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl CanShowModal for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Responder::<noctis::Component, noctis::Pending, D>::show_modal`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn show_modal(
+   |                          ---------- required by a bound in this associated function
+...
+   |                 D: CanShowModal,
+   |                    ^^^^^^^^^^^^ required by this bound in `Responder::<Component, Pending, D>::show_modal`
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
+  --> tests/ui/int/INT-05_hook_show_modal_needs_manual.rs:21:12
+   |
+21 |         Ok(r.show_modal(form()).await?.done())
+   |            ^^^^^^^^^^^^^^^^^^^^ this handler auto-defers
+   |
+   = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+help: the trait `CanShowModal` is implemented for `Manual`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl CanShowModal for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Responder::<noctis::Component, noctis::Pending, D>::show_modal`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn show_modal(
+   |                          ---------- required by a bound in this associated function
+...
+   |                 D: CanShowModal,
+   |                    ^^^^^^^^^^^^ required by this bound in `Responder::<Component, Pending, D>::show_modal`
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
+  --> tests/ui/int/INT-05_hook_show_modal_needs_manual.rs:21:33
+   |
+21 |         Ok(r.show_modal(form()).await?.done())
+   |                                 ^^^^^ this handler auto-defers
+   |
+   = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+help: the trait `CanShowModal` is implemented for `Manual`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl CanShowModal for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Responder::<noctis::Component, noctis::Pending, D>::show_modal`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn show_modal(
+   |                          ---------- required by a bound in this associated function
+...
+   |                 D: CanShowModal,
+   |                    ^^^^^^^^^^^^ required by this bound in `Responder::<Component, Pending, D>::show_modal`
+...
+   | show_modal!(Command, Component);
+   | ------------------------------- in this macro invocation
+   = note: this error originates in the macro `show_modal` (in Nightly builds, run with -Z macro-backtrace for more info)

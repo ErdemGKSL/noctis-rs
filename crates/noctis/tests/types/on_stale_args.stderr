@@ -1,0 +1,5 @@
+error: `#[on_stale]` takes no arguments
+  --> tests/types/on_stale_args.rs:20:16
+   |
+20 |     #[on_stale(response = ephemeral)]
+   |                ^^^^^^^^^^^^^^^^^^^^

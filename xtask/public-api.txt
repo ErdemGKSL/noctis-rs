@@ -57,6 +57,7 @@ pub fn noctis::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
+pub fn noctis::AppBuilder::expired_handler<F, Fut, R>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::ExpiredCtx, noctis::Expired) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<R>> + core::marker::Send + 'static, R: noctis::IntoResponse<noctis::Component> + noctis::IntoResponse<noctis::ModalSubmit>
 pub fn noctis::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
 pub fn noctis::AppBuilder::handler_concurrency(&mut self, usize) -> &mut Self
@@ -622,6 +623,38 @@ pub fn noctis::ErrorSink::report(&self, noctis::ErrorReport<'_>)
 impl<S: noctis::ErrorSink + ?core::marker::Sized> noctis::ErrorSink for alloc::rcs::arc::Arc<S>
 pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
 pub proc macro noctis::#[derive(EventHandler)]
+#[non_exhaustive] pub enum noctis::Expired
+pub noctis::Expired::RefMissing
+pub noctis::Expired::Stale
+impl noctis::Expired
+pub const fn noctis::Expired::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::Expired
+pub fn noctis::Expired::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Expired
+impl core::cmp::PartialEq for noctis::Expired
+pub fn noctis::Expired::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Expired
+pub fn noctis::Expired::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::Expired
+pub fn noctis::Expired::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::Expired
+impl core::marker::StructuralPartialEq for noctis::Expired
+pub struct noctis::ExpiredCtx(_)
+impl noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ExpiredCtx::module(&self) -> &'static str
+pub fn noctis::ExpiredCtx::shard(&self) -> u32
+pub fn noctis::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::route(&self) -> &'static str
+impl core::clone::Clone for noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::Focused
 impl noctis::Focused
 pub fn noctis::Focused::as_integer(&self) -> core::option::Option<i64>
@@ -1253,6 +1286,8 @@ pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::#[handler]
 pub proc macro noctis::label!()
+pub proc macro noctis::#[on_expired]
+pub proc macro noctis::#[on_stale]
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
 pub mod noctis::bytes
@@ -2626,6 +2661,7 @@ pub fn noctis::prelude::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
+pub fn noctis::prelude::AppBuilder::expired_handler<F, Fut, R>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::ExpiredCtx, noctis::Expired) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<R>> + core::marker::Send + 'static, R: noctis::IntoResponse<noctis::Component> + noctis::IntoResponse<noctis::ModalSubmit>
 pub fn noctis::prelude::AppBuilder::gateway_url(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::guild_access(&mut self, impl noctis::ports::GuildAccessList) -> &mut Self
 pub fn noctis::prelude::AppBuilder::handler_concurrency(&mut self, usize) -> &mut Self
@@ -2799,6 +2835,38 @@ impl<S: noctis::prelude::ErrorSink + ?core::marker::Sized> noctis::prelude::Erro
 pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
 pub struct noctis::prelude::EventCtx(_)
 pub proc macro noctis::prelude::#[derive(EventHandler)]
+#[non_exhaustive] pub enum noctis::prelude::Expired
+pub noctis::prelude::Expired::RefMissing
+pub noctis::prelude::Expired::Stale
+impl noctis::prelude::Expired
+pub const fn noctis::prelude::Expired::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::prelude::Expired
+pub fn noctis::prelude::Expired::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::Expired
+impl core::cmp::PartialEq for noctis::prelude::Expired
+pub fn noctis::prelude::Expired::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::Expired
+pub fn noctis::prelude::Expired::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::prelude::Expired
+pub fn noctis::prelude::Expired::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::prelude::Expired
+impl core::marker::StructuralPartialEq for noctis::prelude::Expired
+pub struct noctis::prelude::ExpiredCtx(_)
+impl noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
+pub fn noctis::prelude::ExpiredCtx::shard(&self) -> u32
+pub fn noctis::prelude::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::prelude::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::route(&self) -> &'static str
+impl core::clone::Clone for noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::HandlerError
 impl noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
@@ -2960,6 +3028,8 @@ pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
 pub proc macro noctis::prelude::#[handler]
 pub proc macro noctis::prelude::label!()
+pub proc macro noctis::prelude::#[on_expired]
+pub proc macro noctis::prelude::#[on_stale]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
 pub mod noctis::publish

@@ -29,6 +29,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
 use crate::cli::{CliError, CliMode, NoctisArgs, parse_guild_id};
+use crate::component::{AppExpiredFn, Expired, ExpiredCtx, app_expired};
 use crate::edge::{EDGE_BODY_PREFIX, Edge, HttpConfig, KeeperHandle, Upstream};
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
@@ -46,8 +47,8 @@ use crate::startup::{Signals, check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
 use crate::worker::{AbortOnDrop, Shutdown, Workers, drain};
 use crate::{
-    BuildError, BuildViolation, EnvError, Error, ErrorOrigin, ErrorSink, Plugin, RunError, Runtime,
-    StartError, State, Token,
+    BuildError, BuildViolation, Component, EnvError, Error, ErrorOrigin, ErrorSink, HandlerResult,
+    IntoResponse, ModalSubmit, Plugin, RunError, Runtime, StartError, State, Token,
 };
 
 /// The environment variable [`App::from_env`] reads the token from.
@@ -1223,6 +1224,8 @@ pub struct AppBuilder {
     payload_key: Option<PayloadKey>,
     /// The previous payload key of a rotation (never printed).
     previous_payload_key: Option<PayloadKey>,
+    /// The App-level Expired Handler (`expired_handler`).
+    expired_handler: Option<Arc<AppExpiredFn>>,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1274,6 +1277,7 @@ impl AppBuilder {
             dev_guild: None,
             payload_key: None,
             previous_payload_key: None,
+            expired_handler: None,
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -1474,6 +1478,41 @@ impl AppBuilder {
     /// ```
     pub fn previous_payload_key(&mut self, key: PayloadKey) -> &mut Self {
         self.previous_payload_key = Some(key);
+        self
+    }
+
+    /// Sets the App-level Expired Handler (FR-18, AD-23 stage 2): it answers
+    /// a click or a modal submit whose `custom_id` is stale (another
+    /// `schema`, body kind or flag set of a mounted Route; [`Expired::Stale`])
+    /// or carries a missing Ref ([`Expired::RefMissing`]) when the Route has
+    /// no `#[on_stale]`/`#[on_expired]` method for it. Without one, Noctis
+    /// sends the ephemeral `noctis.expired` notice. The last call wins.
+    ///
+    /// It takes no responder and is always auto-deferred: the auto-defer and
+    /// a returned message follow the Route's declared `response` (an
+    /// in-place update under `response = update`), even on an
+    /// `auto_defer = false` Route. An error or a panic shows the user the
+    /// error notice and goes to the Component Error Sink.
+    ///
+    /// ```
+    /// use noctis_core::{Expired, ExpiredCtx, HandlerResult};
+    /// use noctis_ui::{Components, TextDisplay, V2Message};
+    ///
+    /// async fn expired(ctx: ExpiredCtx, why: Expired) -> HandlerResult<V2Message> {
+    ///     let text = format!("`{}` is {}: run the command again", ctx.route(), why.as_str());
+    ///     Ok(V2Message::new(Components::new().push(TextDisplay::new(text))))
+    /// }
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.expired_handler(expired);
+    /// ```
+    pub fn expired_handler<F, Fut, R>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(ExpiredCtx, Expired) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+        R: IntoResponse<Component> + IntoResponse<ModalSubmit>,
+    {
+        self.expired_handler = Some(app_expired(f));
         self
     }
 
@@ -1943,6 +1982,7 @@ impl AppBuilder {
                 ack_deadline: config.ack_deadline,
                 strings: Arc::new(noctis_i18n::Builtin),
                 payload_keys,
+                expired_handler: config.expired_handler,
             }),
             http_timeout: config.http_timeout,
             http_proxy,
@@ -2025,6 +2065,7 @@ impl fmt::Debug for AppBuilder {
             .field("dev_guild", &self.dev_guild)
             .field("payload_key", &self.payload_key.is_some())
             .field("previous_payload_key", &self.previous_payload_key.is_some())
+            .field("expired_handler", &self.expired_handler.is_some())
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

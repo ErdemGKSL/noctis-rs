@@ -1,0 +1,23 @@
+error[E0277]: `#[on_stale]` and `#[on_expired]` are methods of a component or modal struct
+  --> tests/types/on_stale_on_command.rs:19:14
+   |
+19 |     async fn stale(_ctx: CommandCtx) -> HandlerResult<V2Message> {
+   |              ^^^^^ not a component or modal struct
+   |
+help: the trait `noctis::__private::noctis_core::kind::__NotAHookStruct` is not implemented for `Ping`
+  --> tests/types/on_stale_on_command.rs:10:1
+   |
+10 | struct Ping;
+   | ^^^^^^^^^^^
+help: the trait `noctis::__private::noctis_core::kind::__BindStale<Shape, S, F>` is implemented for `noctis::__private::noctis_core::kind::__SlashKind`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | /         impl<Shape, S, F> __BindStale<Shape, S, F> for $kind
+   | |         where
+   | |             S: __NotAHookStruct,
+   | |________________________________^
+...
+   |   no_hooks!(__SlashKind, __MenuKind, __EventKind);
+   |   ----------------------------------------------- in this macro invocation
+   = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__BindStale<noctis::__private::noctis_core::kind::__H<noctis::CommandCtx>, Ping, _>`
+   = note: this error originates in the macro `no_hooks` (in Nightly builds, run with -Z macro-backtrace for more info)

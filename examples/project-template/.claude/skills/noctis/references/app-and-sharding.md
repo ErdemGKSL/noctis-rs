@@ -122,6 +122,7 @@ Implemented:
 | `.payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY`, else none | the key that signs and verifies `signed` Routes (`noctis::codec::PayloadKey`, 32 bytes: `PayloadKey::from_hex(..)` takes exactly **64 hex digits**, e.g. `openssl rand -hex 32`; `KeyError::Length`/`InvalidChar` otherwise, naming a length or a position, never a character); required when a `signed` Route is mounted (``BuildViolation::MissingPayloadKey``: ``[CID-06] Route `x` is `signed`, but no payload key is configured: set NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)` ``); identical on every process of a Cluster; never logged (`Debug` shows `payload_key: true`); the last call wins |
 | `.previous_payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY_PREVIOUS`, else none | the previous key during a rotation: ids it signed still verify, new ids use the current key; without a current key it is ``BuildViolation::PreviousKeyWithoutKey`` (``[CID-06] a previous payload key is set without a current one: set NOCTIS_PAYLOAD_KEY (or call `.payload_key(..)`) too``); the last call wins |
 | `.ack_deadline(Duration)` | 2000 ms | auto-defer deadline, measured from gateway receipt (queueing counts): 0 ms..=2500 ms, else `BuildViolation::InvalidAckDeadline` (`ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms`); 0 always defers; no environment variable; the last call wins. Read back with `app.ack_deadline()`; see `responder.md` §2 |
+| `.expired_handler(f)` | the `noctis.expired` ephemeral notice | the App-level Expired Handler: `f: Fn(ExpiredCtx, Expired) -> impl Future<Output = HandlerResult<R>>` (an `async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<V2Message>` works), `R` a message or `Responded`; it answers a stale or Ref id of a Route without its own `#[on_stale]`/`#[on_expired]`; `ctx.route()` names the Route; no responder, always auto-deferred, the returned message follows the Route's declared `response`; the last call wins; see `routes-payloads-refs.md` §8 |
 | `.build()` | — | `Result<App, BuildError>` |
 
 Planned (signatures may change):
@@ -131,7 +132,6 @@ Planned (signatures may change):
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
 | `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
-| `.expired_handler(f)` [planned] | localized ephemeral notice | see `routes-payloads-refs.md` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` [planned] | none | from `AppBuilderImageExt` (`image` feature); installs the `ImagePlugin` (see `images.md`) |

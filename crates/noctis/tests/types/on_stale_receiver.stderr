@@ -1,0 +1,5 @@
+error: an `#[on_stale]` method takes no `self`: the Payload did not decode
+  --> tests/types/on_stale_receiver.rs:21:20
+   |
+21 |     async fn stale(self, _ctx: ComponentCtx) -> HandlerResult<V2Message> {
+   |                    ^^^^

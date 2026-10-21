@@ -933,6 +933,15 @@ list in CI.
     deleted.
   - Events run stages 3, 4, 7, 9 and 10. `noctis-prefix` reuses stages 3 to 10
     through core's public `Dispatcher` (AD-24).
+- **Amended (2026-10-21):** a stale id (stage 1 or 2) or a missing Ref (stage 2) runs
+  the Expired Handler chain with this precedence: stale id → Route `#[on_stale]` →
+  Route `#[on_expired]` with `Expired::Stale` → App `expired_handler` → default
+  `noctis.expired` notice; missing Ref → Route `#[on_expired]` with
+  `Expired::RefMissing` → App `expired_handler` → default notice (`#[on_stale]` never
+  runs for a Ref). The hooks are `impl` methods of the component or modal struct (no
+  `self`), bound into its descriptor by `#[handler]`; a hook or the App handler runs
+  like a handler (stages 6, 9, 10: auto-defer, declared `response`, notices, Error
+  Sink), the App handler always auto-deferred (Story 7.3).
   - Extensions are a per-interaction type map of `Send + Sync + 'static` values.
     Inserting an existing type replaces it (the child Module wins) with a debug
     trace. Middleware descriptors declare the types they provide; `App::build`

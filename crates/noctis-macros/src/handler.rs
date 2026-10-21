@@ -9,7 +9,10 @@
 //! then an optional path, target or event payload, then an optional
 //! responder (a type whose last segment is `CommandResponder`,
 //! `ComponentResponder`, `ModalResponder` or `Responder`). The INT-05 check
-//! compares the derive's declared defer mode with that responder.
+//! compares the derive's declared defer mode with that responder. The
+//! descriptor attaches the struct's `#[on_stale]`/`#[on_expired]` methods,
+//! Story 7.3: their inherent `__noctis_on_*()` items shadow core's
+//! `__NoHooks` fallback, which answers "no hook".
 
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote, quote_spanned};
@@ -164,9 +167,15 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
         /// The descriptor `Module::add::<Self>()` registers: this struct's
         /// `#[handler]` method with its kind declaration.
         #[must_use]
+        #[allow(unused_imports)]
         pub fn descriptor() -> <Self as #core::__Kind>::Descriptor {
+            use #core::__NoHooks as _;
             #assertion
-            #bind
+            #core::__AttachHooks::__attach(
+                #bind,
+                Self::__noctis_on_stale(),
+                Self::__noctis_on_expired(),
+            )
         }
     })
 }
@@ -193,6 +202,14 @@ mod tests {
             ),
         );
         assert!(out.contains(":: __C ,"), "{out}");
+        // Story 7.3: the descriptor attaches the struct's hooks.
+        assert!(out.contains("__NoHooks as _"), "{out}");
+        assert!(
+            out.contains("__AttachHooks :: __attach (")
+                && out.contains("Self :: __noctis_on_stale ()")
+                && out.contains("Self :: __noctis_on_expired ()"),
+            "{out}"
+        );
         assert!(out.contains("__assert_no_responder"), "{out}");
         assert!(out.contains("__NOCTIS_HAS_HANDLER"), "{out}");
         let out = run(
