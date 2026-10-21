@@ -17,7 +17,7 @@ use crate::defaults::{self, DefaultsKind};
 use crate::guard::{GuardCtx, check_owner, guards_impl};
 use crate::kind::{Family, scaffolding};
 use crate::payload;
-use crate::route::{AttrKind, Response, parse_kind_attr, route_impls};
+use crate::route::{AttrKind, parse_kind_attr, route_impls};
 
 /// A component derive.
 #[derive(Clone, Copy)]
@@ -125,11 +125,7 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
     let id = &attr.args.id;
     let variant = component.variant();
     let build = build_fn(component, &declared);
-    let response = match attr.args.response {
-        Response::Update => quote!(Update),
-        Response::Ephemeral => quote!(Ephemeral),
-        Response::Public => quote!(Public),
-    };
+    let response = attr.args.response.variant();
     let scaffolding = scaffolding(ident, Family::Component, !attr.args.auto_defer);
     Ok(quote! {
         #route

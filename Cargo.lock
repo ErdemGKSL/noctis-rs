@@ -1233,6 +1233,7 @@ dependencies = [
  "noctis-rules",
  "noctis-ui",
  "proptest",
+ "serde",
  "serde_json",
  "tokio",
  "trybuild",

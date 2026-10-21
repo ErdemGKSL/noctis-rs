@@ -399,6 +399,33 @@ async fn update_unavailable_without_a_source() {
     assert_eq!(fx.requests()[0].2["type"], 4);
 }
 
+/// Story 7.8 row 14: a modal submit's state refuses `show_modal` before
+/// resolving, validating or locking, and sends nothing (INT-04).
+#[tokio::test]
+async fn submit_refuses_show_modal() {
+    let fx = Fixture::start(discord()).await;
+    for (declared, source) in [
+        (Declared::Update, v2_source()),
+        (Declared::Update, None),
+        (Declared::Reply(Ephemerality::Ephemeral), None),
+        (Declared::Reply(Ephemerality::Public), v2_source()),
+    ] {
+        let shared = fx.submit(declared, source);
+        let err = shared.show_modal(form()).await.unwrap_err();
+        assert!(matches!(err, ResponderError::ModalUnavailable), "{err}");
+        assert_eq!(shared.state(), PENDING);
+    }
+    assert!(fx.requests().is_empty());
+    // The same state still answers through the modal responder.
+    let shared = fx.submit(Declared::Update, v2_source());
+    let _ = modal_responder(&shared)
+        .update(v2("a"))
+        .await
+        .unwrap()
+        .done();
+    assert_eq!(fx.requests()[0].2["type"], 7);
+}
+
 /// Discord's answers, echoing the callback type in `resource` when
 /// `with_response` is asked for; `bare` answers `{}` instead.
 fn discord_resource(bare: bool) -> Answer {

@@ -136,16 +136,16 @@ compile time:
   deadline. Allowed on `#[command]`, `#[user_command]`, `#[message_command]` and on a
   component's kind attribute (`#[button(..)]`, `#[string_select(..)]`,
   `#[user_select(..)]`, `#[role_select(..)]`, `#[mentionable_select(..)]`,
-  `#[channel_select(..)]`); `#[modal(..)]` takes it with Story 7.8 [planned] (until then a
-  modal submit is `update` + auto-deferred). `#[handler]` itself takes no arguments.
+  `#[channel_select(..)]`) and on `#[modal(..)]` (a modal submit). `#[handler]` itself
+  takes no arguments.
   Never on `#[autocomplete]` (no defer exists for it: `[INT-06]` compile error).
 - `response = …`: what the (auto-)defer and the default reply look like. Commands and
   context menus: `public` (default) or `ephemeral`. Components and component-opened
   modal submits: `update` (default, edits the message in place), `ephemeral` or
-  `public` (a new message). A modal opened from a slash command has no message to
-  update, so its submit handler should declare `public` or `ephemeral` once `#[modal]`
-  takes `response` (Story 7.8 [planned]); under the default `update` it auto-defers as
-  type 5 public, a returned message is a new public message, and both `update(..)` and
+  `public` (a new message), declared on `#[modal(..)]` for a submit. A modal opened from
+  a slash command has no message to update, so its submit may declare `response =
+  public` or `ephemeral`; under the default `update` it auto-defers as type 5 public, a
+  returned message is a new public message (type 4), and both `update(..)` and
   `ctx.update(..)` return `UpdateUnavailable` without sending anything: answer with
   `reply(msg)` or a returned message.
 
@@ -181,7 +181,7 @@ impl OpenBioModal {
 | must control the ack itself (rare) | `auto_defer = false` | the `Manual` responder; call `defer_reply()` / `defer_update()` yourself |
 | answers privately | `response = ephemeral` | — |
 | opens a new public message from a button | `response = public` | — |
-| is a modal submit | nothing today (`update` + auto-defer; `#[modal(..)]` takes `auto_defer`/`response` with Story 7.8 [planned]) | `ModalResponder`; never `show_modal` |
+| is a modal submit | nothing (`update` + auto-defer), or `#[modal(.., response = .., auto_defer = ..)]` | `ModalResponder` (`ModalResponder<Manual>` with `auto_defer = false`); never `show_modal` |
 | is autocomplete | neither (`[INT-06]` compile error) | nothing: return `Suggestions<T>` |
 
 Compile-time checks (`[INT-05]`): the `#[handler]` method must take the
@@ -202,11 +202,13 @@ Anti-patterns:
   `response = ephemeral`; use `reply_as`/`defer_reply_as` only for the rare mixed case.
 
 `auto_defer` and `response` ship on `#[command]`, `#[user_command]`,
-`#[message_command]` and every component kind attribute; `#[modal]` takes them with
-Story 7.8 [planned] (today it is ``[CID-03] `response` is a runtime argument of #[modal]
-that this Noctis release does not support yet``).
+`#[message_command]`, every component kind attribute and `#[modal]` (carried by the
+derive's `__Modal::RESPONSE` and `__Kind::Defer`); only `rate_limit(..)` is still
+``[CID-03] `rate_limit` is a runtime argument of #[..] that this Noctis release does not
+support yet``.
 `CommandHandler::auto_defer()` and `ContextMenuHandler::auto_defer()` read the flag,
-`ephemerality()` the declared `response`. Argument errors: `response = update` on a
+`ephemerality()` the declared `response`. Argument errors (the same on `#[modal]`, whose
+`auto_defer` help names `ModalResponder<Manual>`): `response = update` on a
 command is ``[INT-04] a Command cannot `update` its message: write `response = public`
 or `response = ephemeral` ``; any other value is `` `response` takes `public` or
 `ephemeral` ``; on a component, `response` takes a bare `update`, `ephemeral` or
@@ -370,7 +372,8 @@ one but never uses it, nothing is sent from it).
 | `CommandResponder<Manual>` | the above plus `show_modal(m)`; required exactly when the command is `#[command(.., auto_defer = false)]` (`[INT-05]` compile error otherwise) | command that opens a modal |
 | `ComponentResponder` (auto-defer) | `reply(msg)`, `reply_as(msg, e)`, `update(msg)`, `defer_update()`, `defer_reply()`, `defer_reply_as(e)` and the `…_with_response` variants — **no** `show_modal` | buttons, selects |
 | `ComponentResponder<Manual>` | the above plus `show_modal(m)`; required exactly when the component declares `auto_defer = false` | component that opens a modal |
-| `ModalResponder` | `reply(msg)`, `reply_as(msg, e)`, `update(msg)`, `defer_update()`, `defer_reply()`, `defer_reply_as(e)` and the `…_with_response` variants — **never** `show_modal` (E0599, INT-04); `ModalResponder<Manual>` with `#[modal(.., auto_defer = false)]` arrives with Story 7.8 [planned] | modal submit |
+| `ModalResponder` | `reply(msg)`, `reply_as(msg, e)`, `update(msg)`, `defer_update()`, `defer_reply()`, `defer_reply_as(e)` and the `…_with_response` variants — **never** `show_modal` (E0599, INT-04) | modal submit |
+| `ModalResponder<Manual>` | the same, never auto-deferred; required exactly when the modal declares `#[modal(.., auto_defer = false)]` (`[INT-05]` otherwise); still **no** `show_modal` (E0599) | modal submit that answers itself |
 
 Autocomplete has no Responder and no response method: the `#[autocomplete(field)]`
 method returns `HandlerResult<Suggestions<T>>` and Noctis sends it (`commands.md` §4).
@@ -431,7 +434,7 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `NoReply` | `fetch_reply()` with no reply message to fetch: a `Dispatcher` handler that has not replied yet (§4.1) |
 | `TokenExpired` | 15 min after the interaction arrived: a follow-up, or an edit/delete of an ephemeral message or of one whose id is unknown (INT-02) |
 | `FollowupCap` | the 6th follow-up of a user-install-only interaction (INT-11) |
-| `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), or over the `Dispatcher` |
+| `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), over the `Dispatcher`, or any dynamic attempt to show a modal on a modal submit (no request is sent) |
 | `UpdateUnavailable` | `update`/`defer_update` (or their `…_with_response`) on a submit of a modal that a slash command opened: "there is no message to update: this modal was not opened from a component message"; no request is sent and the interaction stays unanswered, but `update`/`defer_update` consumed the responder: answer by returning a message (a type-4 public reply), or call `reply` instead of `update` when the submit may come from a slash command |
 
 Runtime guards the types can't express:

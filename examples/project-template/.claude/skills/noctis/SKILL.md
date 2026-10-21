@@ -312,7 +312,7 @@ Which handlers may open a modal, and how each one answers, is declared on the st
 | --- | --- | --- | --- |
 | command or button that answers with a message (most) | nothing (`auto_defer = true` by default) | none, or `CommandResponder` / `ComponentResponder` | no: `[INT-05] show_modal needs auto_defer = false on this handler` |
 | command or button that opens a modal | `auto_defer = false` | `CommandResponder<Manual>` / `ComponentResponder<Manual>` (required) | yes, as the first response within 3 s |
-| modal submit | nothing today (`update`, auto-deferred; `#[modal(..)]` takes `auto_defer`/`response` with Story 7.8 [planned]) | none or `ModalResponder` | never |
+| modal submit | nothing (`update`, auto-deferred), or `#[modal(.., response = .., auto_defer = ..)]` | none or `ModalResponder`; `ModalResponder<Manual>` (required) with `auto_defer = false` | never (E0599; `ModalUnavailable` at run time) |
 | autocomplete (`#[autocomplete(field)]` method) | neither (`[INT-06]` compile error) | none: `AutocompleteCtx`, return `Suggestions<T>` | never |
 
 Details and the `response = …` argument: `references/responder.md` §2b.

@@ -13,7 +13,9 @@
 //!    component handler of its component kind, a submit a modal handler).
 //! 3. **Build the context and the responder state:** the [`ComponentCtx`]
 //!    or [`ModalSubmitCtx`] and the shared responder state with the
-//!    declared `response`.
+//!    declared `response` (a component's attribute, or a submit's
+//!    `#[modal(.., response = ..)]`, default `update`). A submit's state
+//!    refuses `show_modal` with `ModalUnavailable` and no request (INT-04).
 //! 4. **Decode the struct and start the handler:** the Payload is decoded
 //!    once, verifying a `signed` Route's tag with the App's payload key ring
 //!    (current or previous key); a modal's inputs are decoded from that
@@ -37,7 +39,8 @@
 //! 5. **Arm the auto-defer** (shared with Commands): at the ack deadline a
 //!    type-6 callback under `response = update` when a source message
 //!    exists, else type 5 (`EPHEMERAL` only for `response = ephemeral`); an
-//!    `auto_defer = false` handler or hook gets only the 2.9 s error log.
+//!    `auto_defer = false` handler or hook (a component's or a
+//!    `#[modal(.., auto_defer = false)]`) gets only the 2.9 s error log.
 //!    The App's `expired_handler` is always auto-deferred.
 //! 6. **Run and answer:** run the Module path's before-Middleware (not for
 //!    the Expired Handler chain), then the Route Guards (AD-23 stage 8;
@@ -578,8 +581,16 @@ pub(crate) async fn run_component_over(
     };
     // A user-install-only interaction may send 5 follow-ups (INT-11).
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
+    // A modal submit (`Input::Modal`) never shows a modal: its state refuses
+    // `show_modal` for the handler, the hooks and the notices (INT-04).
+    let submit = kind == InteractionType::ModalSubmit;
     let shared_for = |transport, declared| {
-        Shared::declared(
+        let build = if submit {
+            Shared::declared_submit
+        } else {
+            Shared::declared
+        };
+        build(
             transport,
             declared,
             SourceMessage::from_interaction(raw.as_bytes()),

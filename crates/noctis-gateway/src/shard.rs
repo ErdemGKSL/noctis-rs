@@ -95,12 +95,15 @@ pub(crate) fn classify(
         },
         Ok(_) => None,
         Err(_) => {
-            tracing::warn!(
-                target: "noctis::gateway",
-                event_type = event_type.as_deref().unwrap_or("-"),
-                "gateway payload could not be parsed; ignored"
-            );
-            None
+            let fallback = raw.and_then(modal_submit_without_components);
+            if fallback.is_none() {
+                tracing::warn!(
+                    target: "noctis::gateway",
+                    event_type = event_type.as_deref().unwrap_or("-"),
+                    "gateway payload could not be parsed; ignored"
+                );
+            }
+            fallback
         }
     };
     Classified {
@@ -111,6 +114,29 @@ pub(crate) fn classify(
             kind,
         }),
     }
+}
+
+/// A modal submit (interaction type 5) that twilight cannot parse, because
+/// it rejects some modal components (a Checkbox's boolean `value`, FR-64),
+/// parsed again with an empty `data.components`. Noctis never reads
+/// twilight's components of a submit: the component pipeline decodes the
+/// raw bytes, which are kept as they are (`ModalSubmission`, MOD-09).
+/// `None` for anything else.
+fn modal_submit_without_components(raw: Bytes) -> Option<InboundKind> {
+    let mut value: serde_json::Value = serde_json::from_slice(&raw).ok()?;
+    if value.get("type")?.as_u64()? != 5 {
+        return None;
+    }
+    let data = value.get_mut("data")?.as_object_mut()?;
+    data.insert(
+        "components".to_owned(),
+        serde_json::Value::Array(Vec::new()),
+    );
+    let interaction = serde_json::from_value(value).ok()?;
+    Some(InboundKind::Interaction(
+        Box::new(interaction),
+        RawJson::new(raw),
+    ))
 }
 
 /// Runs one shard until its stream ends or a close is requested, in span
@@ -313,6 +339,43 @@ mod tests {
         assert_eq!(interaction.id.get(), 5);
         assert_eq!(raw.as_bytes(), d.as_bytes());
         assert!(!format!("{raw:?}").contains("interaction-token"));
+    }
+
+    /// Story 7.8: a modal submit twilight rejects (a Checkbox's boolean
+    /// `value`) still reaches the sink, with its raw bytes unchanged; any
+    /// other unparsable interaction is still ignored.
+    #[test]
+    fn modal_submit_twilight_rejects_keeps_raw_bytes() {
+        let mut d = interaction_d();
+        d["type"] = json!(5);
+        d["data"] = json!({ "custom_id": "0m:", "components": [
+            { "type": 18, "id": 1, "component": { "type": 23, "id": 2, "custom_id": "agree", "value": true } }
+        ] });
+        let d = serde_json::to_string(&d).unwrap();
+        assert!(
+            serde_json::from_str::<twilight_model::application::interaction::Interaction>(&d)
+                .is_err()
+        );
+        let out = run(
+            &dispatch("INTERACTION_CREATE", &d),
+            EventTypeFlags::INTERACTION_CREATE,
+        );
+        let Some(Inbound {
+            kind: InboundKind::Interaction(interaction, raw),
+            ..
+        }) = out.inbound
+        else {
+            panic!("no interaction");
+        };
+        assert_eq!(interaction.id.get(), 5);
+        assert_eq!(raw.as_bytes(), d.as_bytes());
+
+        // A component click with the same flaw is not a submit.
+        let mut click = interaction_d();
+        click["type"] = json!(3);
+        click["data"] = json!({ "custom_id": "x", "component_type": true });
+        let text = dispatch("INTERACTION_CREATE", &click.to_string());
+        assert!(run(&text, EventTypeFlags::all()).inbound.is_none());
     }
 
     #[test]

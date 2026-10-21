@@ -153,7 +153,8 @@ impl Bio {
 }
 ```
 
-**A button that opens a modal must be `auto_defer = false`** [planned, Story 7.8]:
+**A button that opens a modal must be `auto_defer = false`**, and its handler takes
+`ComponentResponder<Manual>`:
 
 ```rust
 #[derive(Button, Debug, Clone, Copy)]
@@ -180,7 +181,9 @@ The `Manual` responder is required exactly when `auto_defer = false` is declared
 armed for that handler; one that has not answered within 2.9 s logs an error naming it.
 `show_modal(m)` after another initial response, or over the `Dispatcher`, is
 `ResponderError::ModalUnavailable`. Do your I/O fast: a modal must be the first response
-within 3 s.
+within 3 s. The button's type-9 callback carries the modal's `custom_id` (the struct's
+encoded Route id with its Payload) and the declared components; the submit of that id
+runs the struct's `#[handler]` (§3).
 
 Today a derived modal has no pre-fill; build the `Modal` at runtime (§4b, `TextInput::value`,
 `.default_users(..)`, `ModalOption::default(true)`) when you need one. Pre-filled values go
@@ -190,25 +193,58 @@ error (FR-63).
 ## 3. Receiving it: typed submissions
 
 The handler is a method on the modal struct; `self` is the decoded Payload plus the
-submitted values [planned, Story 7.8]. Modal submits never get `show_modal`; they may
-declare `response` and `auto_defer` on `#[modal(..)]` (`responder.md` §2b):
+submitted values, decoded by component dispatch from the raw interaction bytes (Radio
+Group, Checkbox Group and Checkbox included). It takes `(self, ctx: ModalSubmitCtx[, r:
+ModalResponder])` and returns the View:
 
 ```rust
 impl BioForm {
     #[handler]
-    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<V2Message> {
         …                                                         // validate self.bio, then save
         let data = load(&ctx, self.user).await?;
-        ctx.update(render_profile(&data, &Strings::of(ctx.response_locale()), true)).await
+        Ok(render_profile(&data, &Strings::of(ctx.response_locale()), true))   // updates the message
     }
 }
 ```
 
-`response = update` (the default) redraws the message the opening button was on; a
-modal opened from a slash command has no such message, so declare `response = public`
-or `ephemeral` for it and answer with `ctx.respond(..)`: there `ctx.update` returns
-`ResponderError::UpdateUnavailable` and sends nothing (it never falls back to a new
-message).
+The full flow, end to end: a button declared `auto_defer = false` →
+`r.show_modal(Form { .. }.build())` (type 9) → the user submits → `#[handler] async fn
+handle(self, ctx: ModalSubmitCtx)` returns the View → it updates the button's message
+(type 7). The `/bio` variant opens the same modal from `#[command("bio", ..,
+auto_defer = false)]` with `CommandResponder<Manual>` (§2); its submit has no message to
+update, so under the default `response = update` a returned View is a new **public**
+message (type 4).
+
+### 3.0 `response` and `auto_defer` on `#[modal]`
+
+`#[modal("id", response = update | ephemeral | public, auto_defer = true | false,
+defaults(..))]`: the same grammar as the component attributes, in any order, around
+`defaults(..)`, the Guards and the codec arguments. Neither changes the `custom_id`.
+
+| Declared | Slow handler (past `ack_deadline`): auto-defer | Returned message, unanswered |
+| --- | --- | --- |
+| `response = update` (default), opened from a component message | type 6, then `PATCH @original` | type 7: updates that message |
+| `response = update`, opened from a slash command (no `message`) | type 5 public, then `PATCH @original` | type 4, public |
+| `response = ephemeral` (with or without a source message) | type 5 `flags: 64`, then `PATCH @original` | type 4, `EPHEMERAL` |
+| `response = public` (with or without a source message) | type 5, then `PATCH @original` (a new message, never type 6) | type 4, public |
+| `auto_defer = false` | none; one `error` naming the handler at 2.9 s | as its `response` |
+
+- `auto_defer = false` requires the handler (and its `#[on_stale]`/`#[on_expired]`
+  hooks) to take `ModalResponder<Manual>`, and `ModalResponder<Manual>` requires
+  `auto_defer = false`: either mismatch is an `[INT-05]` compile error. It answers
+  within 3 s itself (`r.reply(..)`, `r.defer_reply()`, …).
+- `response = edit`, `response = "update"` or a bare `response` is ``[CID-03] `response`
+  takes `update`, `ephemeral` or `public` ``; `auto_defer = 0` is ``[CID-03] `auto_defer`
+  takes `true` or `false` `` (help: it takes `ModalResponder<Manual>`); either given twice
+  is ``[CID-03] #[modal] argument `response` is given twice``. `rate_limit(..)` is still
+  rejected (``[CID-03] `rate_limit` is a runtime argument of #[modal] that this Noctis
+  release does not support yet``).
+- **No modal answers a modal.** `ModalResponder` (`Manual` or not) has no `show_modal()`
+  (E0599, INT-04), and any dynamic attempt to show a modal on a submit is
+  `ResponderError::ModalUnavailable` with no request.
+- `ctx.update`/`ctx.respond` are [planned, Story 8.1]; today return the message, or
+  answer through the `ModalResponder`.
 
 Decoding works today, from the raw interaction JSON (`&[u8]` of the whole interaction
 object, `"type": 5`):
@@ -262,15 +298,20 @@ submission.unknown();                                        // &[serde_json::Va
   `ResolvedRole::from_resolved`, `ResolvedChannel::from_resolved`,
   `ResolvedAttachment::from_resolved` and `Mentionable::from_resolved(&resolved,
   Id<GenericMarker>)` (user first, then role); each returns `None` when the id is missing.
-- Submitted values are untrusted (MOD-09): re-validate ranges and authorization.
+- Submitted values are untrusted (MOD-09): re-validate ranges and authorization. A
+  submission that fails to decode (a `SubmitError` such as an unknown radio value, a
+  missing required input, too many values or a File Upload id missing from `resolved`)
+  never runs the handler: one `warn` on `noctis::dispatch` with `reason="submit_invalid"`
+  (`reason="malformed"` for broken JSON) and the generic ephemeral `noctis.error.generic`
+  notice (CID-06), never a panic.
 - If the modal was opened from a message component, returning a View **updates that
   message** (type 7; the auto-defer is type 6); from a command, there is no message to
   update: a returned View is a new public message (auto-defer type 5), and
   `ModalResponder::update`/`defer_update` (and `ctx.update` [planned, Story 8.1]) return
   `ResponderError::UpdateUnavailable` without a request, so answer with `r.reply(msg)`.
-  The handler takes `(self, ctx: ModalSubmitCtx[, r: ModalResponder])`.
-  `ModalResponder` has no `show_modal()`: modals can't chain (INT-05, E0599).
-  `response`/`auto_defer` on `#[modal(..)]` arrive with Story 7.8 [planned].
+  The handler takes `(self, ctx: ModalSubmitCtx[, r: ModalResponder])`, or
+  `ModalResponder<Manual>` with `#[modal(.., auto_defer = false)]` (§3.0).
+  `ModalResponder` has no `show_modal()`: modals can't chain (INT-04, E0599).
 - Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`.
 
 ### 3.1 Downloading uploads
@@ -494,9 +535,9 @@ validate(&mut modal, &Limits::default())?;                     // CostReport { c
   then the Text Displays to fit the CV2-04 total (one warning at `components`).
   Never a Text Input `value`, option values, keys or counts: those still fail. Strict
   mode (the default) never changes the modal.
-- `r.show_modal(modal)` on a `CommandResponder<Manual>` runs this validator (and fails
-  with `ResponderError::Invalid`) before any request, then sends callback type 9; from
-  components it is [planned, Story 7.8].
+- `r.show_modal(modal)` on a `CommandResponder<Manual>` or a `ComponentResponder<Manual>`
+  runs this validator (and fails with `ResponderError::Invalid`) before any request, then
+  sends callback type 9.
 
 ## 5. Button → modal → re-render (settings screens and step flows)
 
@@ -527,15 +568,16 @@ impl EditText {
 
 impl TextForm {
     #[handler]
-    async fn handle(self, ctx: ModalSubmitCtx, db: State<Db>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ModalSubmitCtx, db: State<Db>) -> HandlerResult<V2Message> {
         db.set_button_text(self.system, self.text).await?;        // validate first
         let data = db.ticket_systems(ctx.guild_id()).await?;
-        ctx.update(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), Some(self.system))).await
+        Ok(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), Some(self.system)))
     }
 }
 ```
 
-In a step flow the submit handler calls `ctx.update(render_setup(next_state, &s))`.
+In a step flow the submit handler returns `render_setup(next_state, &s)` (`response =
+update`: it redraws the step's message).
 Never answer a modal submit with another modal (INT-04): render a message step first.
 
 ## 6. Choosing modal vs message components

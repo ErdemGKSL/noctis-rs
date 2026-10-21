@@ -147,6 +147,20 @@ impl Fixture {
         Shared::declared(transport, declared, source, self.app.limits().clone(), None)
     }
 
+    /// As [`component`](Self::component), for a modal submit
+    /// (`Shared::declared_submit`).
+    pub(crate) fn submit(&self, declared: Declared, source: Option<SourceMessage>) -> Arc<Shared> {
+        let transport = Transport::Interaction(InteractionTarget {
+            app: Arc::clone(self.app.shared()),
+            application_id: Id::new(7),
+            interaction_id: Id::new(100),
+            token: "tok".to_owned(),
+            received_at: Instant::now(),
+            channel_id: Some(Id::new(9)),
+        });
+        Shared::declared_submit(transport, declared, source, self.app.limits().clone(), None)
+    }
+
     /// A message transport (channel 5, message 6).
     fn message(&self, ephemerality: Ephemerality) -> Arc<Shared> {
         let transport = Transport::Message(MessageTarget {

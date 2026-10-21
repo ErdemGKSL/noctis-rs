@@ -1,0 +1,9 @@
+error[E0599]: no method named `show_modal` found for struct `Responder<noctis::ModalSubmit, noctis::Pending, noctis::Manual>` in the current scope
+  --> tests/ui/int/INT-04_modal_manual_show_modal.rs:18:14
+   |
+18 |         Ok(r.show_modal(form()).await?.done()) // [INT-04]
+   |              ^^^^^^^^^^ method not found in `Responder<noctis::ModalSubmit, noctis::Pending, noctis::Manual>`
+   |
+   = note: the method was found for
+           - `Responder<noctis::Command, noctis::Pending, D>`
+           - `Responder<noctis::Component, noctis::Pending, D>`

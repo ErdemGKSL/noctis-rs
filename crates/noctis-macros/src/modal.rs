@@ -932,6 +932,8 @@ pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
         quote! {
             impl ::noctis::__private::core::__Modal for #ident {
                 const ROUTE: &'static ::core::primitive::str = "";
+                const RESPONSE: ::noctis::__private::core::__Response =
+                    ::noctis::__private::core::__Response::Update;
             }
 
             impl ::noctis::__private::core::__Guards<::noctis::__private::core::ModalSubmitCtx>
@@ -965,6 +967,20 @@ pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
     })
 }
 
+/// The `__Modal` impl: the Route id and the declared `response` (AD-11).
+fn modal_impl(name: &Ident, args: &RouteArgs) -> TokenStream {
+    let core = quote!(::noctis::__private::core);
+    let id = &args.id;
+    let response = args.response.variant();
+    quote! {
+        #[automatically_derived]
+        impl #core::__Modal for #name {
+            const ROUTE: &'static ::core::primitive::str = #id;
+            const RESPONSE: #core::__Response = #core::__Response::#response;
+        }
+    }
+}
+
 /// Expands `#[derive(Modal)]`.
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let (attr, defs, payload) = parse(input)?;
@@ -979,7 +995,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let guards = crate::guard::guards_impl(name, &attr.args.guards, crate::guard::GuardCtx::Modal);
 
     let ui = ui();
-    let core = quote!(::noctis::__private::core);
     let vis = &input.vis;
     let payload_ident = format_ident!("__NoctisModalPayload{}", name.unraw());
     let p_idents: Vec<&Ident> = payload.iter().map(|p| &p.ident).collect();
@@ -996,7 +1011,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     );
     let route = route_impls(name, &attr.args, &quote!(#payload_ident));
     let title = &attr.title;
-    let id = &attr.args.id;
     let m = Ident::new("__noctis_modal", Span::mixed_site());
     let s = Ident::new("__noctis_submission", Span::mixed_site());
     let p = Ident::new("__noctis_payload", Span::mixed_site());
@@ -1006,7 +1020,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let blank_doc = format!(
         " The modal with empty inputs, for these Payload fields (`{name}`'s fields without an input attribute, in order)."
     );
-    let scaffolding = crate::kind::scaffolding(name, crate::kind::Family::Modal, false);
+    let modal_impl = modal_impl(name, &attr.args);
+    let scaffolding =
+        crate::kind::scaffolding(name, crate::kind::Family::Modal, !attr.args.auto_defer);
     Ok(quote! {
         #[doc(hidden)]
         #[allow(non_camel_case_types, dead_code)]
@@ -1025,10 +1041,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             const DEFAULTS: Self::Defaults = #ui::__macro::ModalDefaults { title: #title };
         }
 
-        #[automatically_derived]
-        impl #core::__Modal for #name {
-            const ROUTE: &'static ::core::primitive::str = #id;
-        }
+        #modal_impl
 
         #guards
 
@@ -1153,11 +1166,62 @@ mod tests {
         assert!(out.contains("__owner_id (& self . user)"), "{out}");
     }
 
-    /// Story 7.2 Matrix 53: `response` and `auto_defer` on `#[modal]`
-    /// arrive with Story 7.8.
+    /// Story 7.8 rows 1-4 and 7: `response` and `auto_defer` on `#[modal]`
+    /// emit `__Modal::RESPONSE` and `__Kind::Defer`; the width line does
+    /// not change.
     #[test]
-    fn modal_response_args_not_supported_yet() {
-        for arg in [quote!(response = update), quote!(auto_defer = false)] {
+    fn modal_response_args() {
+        let expand = |args: TokenStream| {
+            run(quote! {
+                #[modal("f", #args)]
+                struct F {
+                    user: u64,
+                    #[text_input("Bio")]
+                    bio: String,
+                }
+            })
+            .replace(' ', "")
+        };
+        let response = |v: &str| {
+            format!(
+                "constRESPONSE:::noctis::__private::core::__Response=::noctis::__private::core::__Response::{v};"
+            )
+        };
+        let auto = "typeDefer=::noctis::__private::core::AutoDefer;";
+        let manual = "typeDefer=::noctis::__private::core::Manual;";
+        let default = expand(quote!(defaults(title = "T")));
+        assert!(default.contains(&response("Update")), "{default}");
+        assert!(default.contains(auto), "{default}");
+        for (arg, v) in [
+            (quote!(response = update), "Update"),
+            (quote!(response = ephemeral), "Ephemeral"),
+            (quote!(response = public), "Public"),
+        ] {
+            let out = expand(quote!(#arg, defaults(title = "T")));
+            assert!(out.contains(&response(v)), "{out}");
+            assert!(out.contains(auto), "{out}");
+        }
+        let out = expand(quote!(auto_defer = false, defaults(title = "T")));
+        assert!(out.contains(manual), "{out}");
+        assert!(out.contains(&response("Update")), "{out}");
+        for args in [
+            quote!(auto_defer = true, response = public, defaults(title = "T")),
+            quote!(defaults(title = "T"), response = public, auto_defer = true),
+        ] {
+            let out = expand(args);
+            assert!(out.contains(&response("Public")), "{out}");
+            assert!(out.contains(auto), "{out}");
+            // Only `RESPONSE` changes: the Route, its width line and the
+            // rest of the expansion stay the same.
+            assert_eq!(
+                out.replace(&response("Public"), &response("Update")),
+                default
+            );
+        }
+        for (arg, key) in [
+            (quote!(response = update, response = public), "response"),
+            (quote!(auto_defer = true, auto_defer = false), "auto_defer"),
+        ] {
             let out = run(quote! {
                 #[modal("f", #arg, defaults(title = "T"))]
                 struct F {
@@ -1166,10 +1230,25 @@ mod tests {
                 }
             });
             assert!(
-                out.contains("is a runtime argument of #[modal] that this Noctis release does not support yet"),
+                out.contains(&format!("#[modal] argument `{key}` is given twice")),
                 "{out}"
             );
         }
+        // The fallback of a broken derive declares `Update`.
+        let broken: DeriveInput = syn::parse2(quote! {
+            #[modal("f", response = edit, defaults(title = "T"))]
+            struct F {
+                #[text_input("Bio")]
+                bio: String,
+            }
+        })
+        .unwrap();
+        let out = expand_or_fallback(&broken).to_string();
+        assert!(
+            out.contains("`response` takes `update`, `ephemeral` or `public`"),
+            "{out}"
+        );
+        assert!(out.replace(' ', "").contains(&response("Update")), "{out}");
     }
 
     /// The derive implements `ModalFromPayload` (the inputs, from a decoded

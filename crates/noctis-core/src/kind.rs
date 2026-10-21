@@ -430,8 +430,8 @@ where
 
 // --- Components and modals --------------------------------------------------
 
-/// The declared `response = update | ephemeral | public` of a component
-/// attribute (AD-11).
+/// The declared `response = update | ephemeral | public` of a component or
+/// `#[modal]` attribute (AD-11).
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum __Response {
@@ -460,6 +460,8 @@ pub trait __Component: __Kind<Kind = __ComponentKind, Descriptor = ComponentHand
 pub trait __Modal: __Kind<Kind = __ModalKind, Descriptor = ModalHandler> {
     /// The Route id.
     const ROUTE: &'static str;
+    /// The declared `response` of the submit.
+    const RESPONSE: __Response;
 }
 
 /// Never implemented: a component handler takes its context and at most a
@@ -579,6 +581,7 @@ where
         ModalHandler::__new_with_responder::<S, S::Defer, _, _, _>(
             name,
             route,
+            S::RESPONSE,
             move |s: S, ctx: ModalSubmitCtx, _: Responder<ModalSubmit, Pending, S::Defer>| {
                 f(s, ctx)
             },
@@ -602,7 +605,7 @@ where
 {
     fn __bind(name: &'static str, f: F) -> ModalHandler {
         let route = <S as noctis_codec::Route>::ID.as_str();
-        ModalHandler::__new_with_responder::<S, D, _, _, _>(name, route, f)
+        ModalHandler::__new_with_responder::<S, D, _, _, _>(name, route, S::RESPONSE, f)
     }
 }
 

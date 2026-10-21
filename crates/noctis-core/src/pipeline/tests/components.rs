@@ -574,6 +574,9 @@ mod responses {
     test_route!(Breaks, "breaks", RouteShape::INLINE, 0);
     test_route!(BioUp, "bio.up", RouteShape::INLINE, 0);
     test_route!(BioRet, "bio.ret", RouteShape::INLINE, 0);
+    test_route!(BioEph, "bio.eph", RouteShape::INLINE, 0);
+    test_route!(BioPub, "bio.pub", RouteShape::INLINE, 0);
+    test_route!(BioMan, "bio.man", RouteShape::INLINE, 0);
 
     /// The ack deadline of these tests.
     const D: Duration = Duration::from_millis(50);
@@ -720,6 +723,7 @@ mod responses {
             >(
                 "ui::BioUp",
                 "bio.up",
+                __Response::Update,
                 |_: BioUp, _: ModalSubmitCtx, r: ModalResponder| async move {
                     Ok(r.update(v2("u")).await?.done())
                 },
@@ -733,11 +737,64 @@ mod responses {
             >(
                 "ui::BioRet",
                 "bio.ret",
+                __Response::Update,
                 |v: BioRet, _: ModalSubmitCtx, _: ModalResponder| async move {
                     sleep_ms(v.item).await;
                     Ok(v2("m"))
                 },
             ))
+            .__add(ModalHandler::__new_with_responder::<
+                BioEph,
+                AutoDefer,
+                _,
+                _,
+                _,
+            >(
+                "ui::BioEph",
+                "bio.eph",
+                __Response::Ephemeral,
+                |v: BioEph, _: ModalSubmitCtx, _: ModalResponder| async move {
+                    sleep_ms(v.item).await;
+                    Ok(v2("m"))
+                },
+            ))
+            .__add(ModalHandler::__new_with_responder::<
+                BioPub,
+                AutoDefer,
+                _,
+                _,
+                _,
+            >(
+                "ui::BioPub",
+                "bio.pub",
+                __Response::Public,
+                |v: BioPub, _: ModalSubmitCtx, _: ModalResponder| async move {
+                    sleep_ms(v.item).await;
+                    Ok(v2("m"))
+                },
+            ))
+            .__add(
+                ModalHandler::__new_with_responder::<BioMan, Manual, _, _, _>(
+                    "ui::BioMan",
+                    "bio.man",
+                    __Response::Update,
+                    |v: BioMan, _: ModalSubmitCtx, r: ModalResponder<Manual>| async move {
+                        match v.item {
+                            0 => Ok(r.reply(v2("r")).await?.done()),
+                            1 => {
+                                sleep_ms(100).await;
+                                drop(r);
+                                Ok(Responded::new())
+                            }
+                            _ => {
+                                let acked = r.defer_reply().await?;
+                                acked.edit_reply(v2("m")).await?;
+                                Ok(acked.done())
+                            }
+                        }
+                    },
+                ),
+            )
     }
 
     /// A running App with [`module`], `D` as the ack deadline, a recording
@@ -984,6 +1041,100 @@ mod responses {
             (CB_REPLY, &json!(4))
         );
         assert_eq!(requests[0].2["data"]["flags"], 32768);
+    }
+
+    /// Story 7.8 rows 19-21: a submit's declared `ephemeral` or `public`
+    /// shapes the auto-defer (type 5, never type 6, with or without a
+    /// source message) and a returned message.
+    #[tokio::test]
+    async fn modal_declared_responses() {
+        let ui = Ui::start().await;
+        let at = |route: &str, item: u64| submit(&format!("0{route}:{}", base62(item)), true);
+        for from_message in [true, false] {
+            let wrap = |json: &Value| {
+                if from_message {
+                    on_message(json, 32768)
+                } else {
+                    inbound(json)
+                }
+            };
+            // Row 19: slow `ephemeral` defers with EPHEMERAL, then edits.
+            ui.run(wrap(&at("bio.eph", 150))).await;
+            let requests = ui.take();
+            assert_eq!(requests.len(), 2, "{requests:?}");
+            assert_eq!(requests[0].2, json!({ "type": 5, "data": { "flags": 64 } }));
+            assert_eq!(
+                (&requests[1].0, requests[1].1.as_str()),
+                (&Method::PATCH, ORIGINAL)
+            );
+            assert_eq!(requests[1].2["flags"], 32768);
+            // Row 20: fast `ephemeral` is one ephemeral type-4 reply.
+            ui.run(wrap(&at("bio.eph", 0))).await;
+            let requests = ui.take();
+            assert_eq!(requests.len(), 1, "{requests:?}");
+            assert_eq!(
+                (requests[0].1.as_str(), &requests[0].2["type"]),
+                (CB_REPLY, &json!(4))
+            );
+            assert_eq!(requests[0].2["data"]["flags"], 32832);
+            // Row 21: slow `public` is type 5 without EPHEMERAL.
+            ui.run(wrap(&at("bio.pub", 150))).await;
+            let requests = ui.take();
+            assert_eq!(requests[0].2, json!({ "type": 5 }));
+            assert_eq!(requests[1].0, Method::PATCH);
+            assert_eq!(requests[1].2["flags"], 32768);
+            ui.run(wrap(&at("bio.pub", 0))).await;
+            let requests = ui.take();
+            assert_eq!(requests[0].2["type"], 4);
+            assert_eq!(requests[0].2["data"]["flags"], 32768);
+        }
+        assert!(ui.sink.seen().is_empty(), "{:?}", ui.sink.seen());
+    }
+
+    /// Story 7.8 rows 22-24: an `auto_defer = false` submit is never
+    /// auto-deferred.
+    #[tokio::test]
+    async fn manual_modal_submits() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let ui = Ui::start().await;
+        let at =
+            |item: u64| on_message(&submit(&format!("0bio.man:{}", base62(item)), true), 32768);
+        // Row 22: it answers itself, one type-4 callback.
+        ui.run(at(0)).await;
+        let requests = ui.take();
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(
+            (requests[0].1.as_str(), &requests[0].2["type"]),
+            (CB_REPLY, &json!(4))
+        );
+        // Row 23: silent past the 3 s deadline: no request, one error log.
+        let missed = [
+            "noctis::dispatch",
+            "did not answer within the 3 s ack deadline",
+        ];
+        let mut late = at(1);
+        late.received_at = Instant::now()
+            .checked_sub(Duration::from_millis(2950))
+            .unwrap();
+        ui.run(late).await;
+        assert!(ui.take().is_empty());
+        let lines = capture.lines_with(&missed);
+        assert_eq!(lines.len(), 1, "{}", capture.text());
+        assert!(lines[0].contains("handler=\"ui::BioMan\""), "{}", lines[0]);
+        // Row 24: it defers itself, then edits the original.
+        ui.run(at(2)).await;
+        let requests = ui.take();
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert_eq!(
+            (&requests[0].0, requests[0].1.as_str(), &requests[0].2),
+            (&Method::POST, CB, &json!({ "type": 5 }))
+        );
+        assert_eq!(
+            (&requests[1].0, requests[1].1.as_str()),
+            (&Method::PATCH, ORIGINAL)
+        );
     }
 
     /// Matrix 49: an error before any ack is the type-4 notice; a panic

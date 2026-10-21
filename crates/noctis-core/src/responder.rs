@@ -1215,8 +1215,8 @@ impl GuardPhase {
 
 /// What one interaction's responders and its pipeline share: the
 /// transport, the state machine and its gate, the original response, the
-/// declared response, the source message, the App's Limits and the
-/// follow-up cap.
+/// declared response, the source message, the App's Limits, the
+/// follow-up cap and whether a modal may be shown at all.
 pub(crate) struct Shared {
     transport: Transport,
     /// `PENDING`, `DEFERRED`, `REPLIED`, `MODAL`, `DEFERRED_UPDATE` or
@@ -1237,6 +1237,9 @@ pub(crate) struct Shared {
     followup_cap: Option<u8>,
     /// The run's [`GuardPhase`]; written only by the guarded handler future.
     guard_phase: AtomicU8,
+    /// `true` for a modal submit: `show_modal` is refused with
+    /// `ModalUnavailable` before any work (INT-04, INT-05).
+    no_modal: bool,
 }
 
 impl fmt::Debug for Shared {
@@ -1247,6 +1250,7 @@ impl fmt::Debug for Shared {
             .field("declared", &self.declared)
             .field("source", &self.source)
             .field("followup_cap", &self.followup_cap)
+            .field("no_modal", &self.no_modal)
             .finish_non_exhaustive()
     }
 }
@@ -1279,6 +1283,30 @@ impl Shared {
         limits: Limits,
         cap: Option<u8>,
     ) -> Arc<Self> {
+        Self::build(transport, declared, source, limits, cap, false)
+    }
+
+    /// As [`declared`](Self::declared), for a modal submit: its
+    /// `show_modal` is `ModalUnavailable` without a request, since a modal
+    /// never answers a modal (INT-04, INT-05).
+    pub(crate) fn declared_submit(
+        transport: Transport,
+        declared: Declared,
+        source: Option<SourceMessage>,
+        limits: Limits,
+        cap: Option<u8>,
+    ) -> Arc<Self> {
+        Self::build(transport, declared, source, limits, cap, true)
+    }
+
+    fn build(
+        transport: Transport,
+        declared: Declared,
+        source: Option<SourceMessage>,
+        limits: Limits,
+        cap: Option<u8>,
+        no_modal: bool,
+    ) -> Arc<Self> {
         let declared_ephemerality = match declared {
             Declared::Reply(e) => e,
             Declared::Update => Ephemerality::Public,
@@ -1297,6 +1325,7 @@ impl Shared {
             followups: AtomicU8::new(0),
             followup_cap: cap,
             guard_phase: AtomicU8::new(GuardPhase::UNGUARDED),
+            no_modal,
         })
     }
 
@@ -1720,7 +1749,7 @@ impl Shared {
     }
 
     async fn show_modal(&self, mut modal: Modal) -> Result<(), ResponderError> {
-        if self.transport.is_message() {
+        if self.no_modal || self.transport.is_message() {
             return Err(ResponderError::ModalUnavailable);
         }
         self.resolve_ids(std::iter::once(modal.custom_id_mut()))

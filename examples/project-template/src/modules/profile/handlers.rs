@@ -147,7 +147,7 @@ impl EditBio {
 impl BioForm {
     /// Modal → re-render: `self` is the decoded Payload plus the submitted values. Save,
     /// then redraw the message the modal was opened from (`response = update`, the
-    /// default for a component-opened modal).
+    /// default); a `/bio`-opened submit has no such message and gets a public reply.
     #[handler]
     async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<V2Message> {
         let guild = guild_of(&ctx)?;

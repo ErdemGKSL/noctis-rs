@@ -134,10 +134,10 @@ kind carries the per-render nonce itself (FR-25): `select` is ``[CID-03] unknown
 whose help lists the codec arguments. Tabs, pages and steps are ordinary Payload
 fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length):
 `response = update | ephemeral | public` and `auto_defer = true | false` work today on
-every component kind (`responder.md` §2b; a bad value is ``[CID-03] `response` takes
-`update`, `ephemeral` or `public` `` / `` `auto_defer` takes `true` or `false` ``, a
-repeated one ``[CID-03] #[button] argument `response` is given twice``); on `#[modal]`
-they arrive with Story 7.8 [planned]. `ttl = ".."` and `one_shot` work today on every
+every component kind and on `#[modal]` (`responder.md` §2b, `modals.md` §3.0; a bad
+value is ``[CID-03] `response` takes `update`, `ephemeral` or `public` `` / ``
+`auto_defer` takes `true` or `false` ``, a repeated one ``[CID-03] #[button] argument
+`response` is given twice``). `ttl = ".."` and `one_shot` work today on every
 by-Ref Route (`by_ref` or `overflow = spill`, components and `#[modal]`; §7); on an
 inline Route each is ``[CID-03] `ttl` needs a by-Ref Route`` (help: add `by_ref` or
 `overflow = spill`). A `ttl` is one or more `<digits><unit>` groups, units `d`, `h`, `m`,

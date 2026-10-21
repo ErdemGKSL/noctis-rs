@@ -322,7 +322,8 @@ list in CI.
       ephemeral | public` and `auto_defer = true | false` (Story 7.2; AD-11) ship on
       the component attributes as `__Component::RESPONSE` and the derive's
       `__Kind::Defer` (`Manual` for `auto_defer = false`), since `response` is a core
-      concept and codec sits below core (`#[modal]` takes them with Story 7.8). The
+      concept and codec sits below core. (Amended 2026-10-21: `#[modal]` takes them
+      too, carried by `__Modal::RESPONSE` and `__Kind::Defer`; Story 7.8.) The
       derive records the Ref-related arguments in an associated `RouteRuntime` const
       that core reads: `ttl = "…"` and `one_shot` (by_ref/spill Routes only; Story
       7.5), `owner = field`, `permissions = …` and `guard = path` (Route
@@ -519,6 +520,15 @@ list in CI.
     `with_components=true`, per-endpoint flag sets, and `ForeignWebhook::send` takes
     only a non-interactive `StaticMessage` (WH-02; renamed from `StaticView` on
     2026-10-20, since Views are plain functions).
+- **Amended (2026-10-21):** `#[modal(..)]` takes `response = update | ephemeral |
+  public` (default `update`) and `auto_defer = true | false` (default `true`), with
+  the component grammar (Story 7.8). The derive carries them as `__Modal::RESPONSE`
+  and `__Kind::Defer` (`Manual` for `auto_defer = false`), `ModalHandler` maps the
+  declared response like a component's, and `ModalResponder<Manual>` is required
+  exactly with `auto_defer = false` (INT-05), on the handler and its hooks. It still
+  has no `show_modal`; a modal submit's responder state also refuses a dynamic
+  `show_modal` with `ModalUnavailable` before any request, so no future erased path
+  can answer a submit with a modal (INT-04).
 
 ### AD-12 — Noctis owns the Components V2 model
 - **Binds:** `noctis-ui`, `noctis-core`; FR-23 to FR-31, FR-63, FR-64; CV2-*,

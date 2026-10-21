@@ -83,8 +83,10 @@ pub enum Pronouns {
 /// (`user`) are the Payload, so the submit knows whose profile message to redraw; each
 /// input field is one top-level component (MOD-02: at most 5), the field name is the
 /// input key, and a built value pre-fills the inputs. Every literal is checked at
-/// `cargo check`. Opened from the "Edit bio" button (redraws it in place) and from
-/// `/bio` (no message to update, so `ctx.update` sends a new message).
+/// `cargo check`. It keeps the default `response = update` (and `auto_defer = true`):
+/// opened from the "Edit bio" button, the returned View redraws that message in place
+/// (type 7); opened from `/bio` there is no message to update, so the returned View is a
+/// new public reply (type 4), `response = update`'s documented fallback.
 ///
 /// Width (`noctis_route_width`): `profile.save: F 1 + route 12 + sep 1 + S 0 + N 0 + body 11 + T 0 = 25 (limit 100)`.
 // localized input texts: [planned, Epic 11]

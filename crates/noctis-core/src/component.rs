@@ -853,8 +853,9 @@ impl fmt::Debug for ComponentHandler {
 ///
 /// Opaque and cheap to clone. `App::build` folds it into the App's Route
 /// map; a modal submit whose `custom_id` names its Route runs it (one
-/// handler per Route id, CID-04). Its declared response is `update`, and it
-/// is auto-deferred.
+/// handler per Route id, CID-04). Its declared response and auto-defer
+/// come from `#[modal(.., response = .., auto_defer = ..)]` (default
+/// `update`, auto-deferred).
 #[derive(Clone)]
 pub struct ModalHandler {
     name: &'static str,
@@ -888,6 +889,7 @@ impl ModalHandler {
         Self::__new_with_responder::<S, AutoDefer, _, _, _>(
             name,
             route,
+            __Response::Update,
             move |value: S, ctx: ModalSubmitCtx, _: Responder<ModalSubmit, Pending, AutoDefer>| {
                 f(value, ctx)
             },
@@ -895,11 +897,13 @@ impl ModalHandler {
     }
 
     /// The handler of the modal struct `S` whose method takes a responder
-    /// of defer mode `D`; what `#[handler]` binds.
+    /// of defer mode `D`, with the declared `response`; what `#[handler]`
+    /// binds.
     #[doc(hidden)]
     pub fn __new_with_responder<S, D, F, Fut, R>(
         name: &'static str,
         route: &'static str,
+        response: __Response,
         f: F,
     ) -> Self
     where
@@ -951,7 +955,7 @@ impl ModalHandler {
         Self {
             name,
             route,
-            response: Declared::Update,
+            response: declared(response),
             signed: S::SHAPE.is_signed(),
             auto_defer: D::AUTO_DEFER,
             one_shot: S::RUNTIME.ref_policy().is_one_shot(),
@@ -1030,8 +1034,8 @@ impl ModalHandler {
         self.route
     }
 
-    /// The declared `response`: `update` until `#[modal]` takes one
-    /// (Story 7.8).
+    /// The declared `response` of `#[modal(.., response = ..)]` (default
+    /// `update`).
     pub(crate) fn response(&self) -> Declared {
         self.response
     }

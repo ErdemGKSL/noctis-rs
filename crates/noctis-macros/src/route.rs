@@ -23,7 +23,7 @@ pub(crate) enum Body {
     Spill,
 }
 
-/// The declared `response` of a component attribute (AD-11).
+/// The declared `response` of a component or `#[modal]` attribute (AD-11).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Response {
     /// `response = update` (the default).
@@ -32,6 +32,17 @@ pub(crate) enum Response {
     Ephemeral,
     /// `response = public`.
     Public,
+}
+
+impl Response {
+    /// The `__Response` variant the derives emit.
+    pub(crate) fn variant(self) -> TokenStream {
+        match self {
+            Self::Update => quote!(Update),
+            Self::Ephemeral => quote!(Ephemeral),
+            Self::Public => quote!(Public),
+        }
+    }
 }
 
 /// The codec and runtime arguments of a valid kind attribute.
@@ -47,9 +58,9 @@ pub(crate) struct RouteArgs {
     pub(crate) select: bool,
     /// `signed`.
     pub(crate) signed: bool,
-    /// `response = ..` (components only; `Update` when omitted).
+    /// `response = ..` (`Update` when omitted).
     pub(crate) response: Response,
-    /// `auto_defer = ..` (components only; `true` when omitted).
+    /// `auto_defer = ..` (`true` when omitted).
     pub(crate) auto_defer: bool,
     /// `ttl = ".."` and `one_shot` (by-Ref Routes only).
     pub(crate) ref_args: RefArgs,
@@ -112,10 +123,6 @@ pub(crate) struct RefArgs {
 const RUNTIME_ARGS: [&str; 1] = ["rate_limit"];
 
 const TTL_HELP: &str = "write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")";
-
-/// The runtime arguments components take now and `#[modal]` takes with
-/// Story 7.8.
-const RESPONSE_ARGS: [&str; 2] = ["response", "auto_defer"];
 
 const ARGS_HELP: &str = "the codec arguments are `by_ref`, `overflow = spill`, `schema = n` and `signed`; the component's look goes in `defaults(..)`";
 
@@ -460,7 +467,7 @@ fn parse_arg(
         ("ttl", value) => parse_ttl(name, value, seen, errors),
         ("overflow", value) => parse_overflow(name, value, segment, kind, seen, errors),
         ("response", value) => parse_response(name, value, seen, errors),
-        ("auto_defer", value) => parse_auto_defer(name, value, seen, errors),
+        ("auto_defer", value) => parse_auto_defer(name, value, a, seen, errors),
         ("owner", value) => parse_owner(name, value, seen, errors),
         ("permissions", value) => {
             match crate::meta::permissions(name.span(), value.unwrap_or_default()) {
@@ -503,11 +510,9 @@ fn parse_defaults(
 }
 
 /// The "not supported yet" error of a runtime argument this release does
-/// not take on `#[attr]` (`response`/`auto_defer` on `#[modal]` until Story
-/// 7.8).
+/// not take on `#[attr]` (only `rate_limit`, Story 13.4).
 fn unsupported_runtime_arg(name: &Ident, key: &str, attr: &str) -> Option<syn::Error> {
-    let modal_response = attr == "modal" && RESPONSE_ARGS.contains(&key);
-    (RUNTIME_ARGS.contains(&key) || modal_response).then(|| {
+    RUNTIME_ARGS.contains(&key).then(|| {
         cid_03(
             name,
             format!("`{key}` is a runtime argument of #[{attr}] that this Noctis release does not support yet"),
@@ -588,10 +593,12 @@ fn parse_guard(
     }
 }
 
-/// `auto_defer = true | false` (a bool literal).
+/// `auto_defer = true | false` (a bool literal); the help names the
+/// `Manual` responder of `#[attr]`'s kind.
 fn parse_auto_defer(
     name: &Ident,
     value: Option<&[TokenTree]>,
+    attr: &str,
     seen: &mut Seen,
     errors: &mut Vec<syn::Error>,
 ) {
@@ -603,10 +610,17 @@ fn parse_auto_defer(
     if let Some(auto_defer) = lit {
         seen.auto_defer = Some(auto_defer);
     } else {
+        let responder = if attr == "modal" {
+            "ModalResponder<Manual>"
+        } else {
+            "ComponentResponder<Manual>"
+        };
         errors.push(cid_03(
             value_tokens(name, value),
             "`auto_defer` takes `true` or `false`",
-            "write `auto_defer = false` for a handler that answers within 3 s itself (it takes `ComponentResponder<Manual>`), or leave it out",
+            format!(
+                "write `auto_defer = false` for a handler that answers within 3 s itself (it takes `{responder}`), or leave it out"
+            ),
         ));
     }
 }
@@ -1249,6 +1263,143 @@ mod tests {
             "{select}"
         );
         assert!(select.contains("type Payload = P ;"), "{select}");
+    }
+
+    const MODAL: AttrKind = AttrKind {
+        attr: "modal",
+        derive: "Modal",
+        select: false,
+    };
+
+    fn parse_modal(input: &DeriveInput) -> Result<RouteArgs, String> {
+        parse_kind_attr(&input.attrs, &input.ident, MODAL)
+            .map(|k| k.args)
+            .map_err(|e| {
+                e.into_iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n---\n")
+            })
+    }
+
+    /// Story 7.8 rows 1-4: `#[modal]` takes `response` and `auto_defer`
+    /// with the component grammar.
+    #[test]
+    fn modal_response_and_auto_defer() {
+        use super::Response;
+        let declared = |input: &DeriveInput| parse_modal(input).map(|a| (a.response, a.auto_defer));
+        assert_eq!(
+            declared(&parse_quote!(
+                #[modal("m", defaults(title = "T"))]
+                struct R;
+            )),
+            Ok((Response::Update, true))
+        );
+        for (input, response) in [
+            (
+                parse_quote!(
+                    #[modal("m", response = update, defaults(title = "T"))]
+                    struct R;
+                ),
+                Response::Update,
+            ),
+            (
+                parse_quote!(
+                    #[modal("m", response = ephemeral, defaults(title = "T"))]
+                    struct R;
+                ),
+                Response::Ephemeral,
+            ),
+            (
+                parse_quote!(
+                    #[modal("m", defaults(title = "T"), response = public)]
+                    struct R;
+                ),
+                Response::Public,
+            ),
+        ] {
+            assert_eq!(declared(&input), Ok((response, true)));
+        }
+        assert_eq!(
+            declared(&parse_quote!(
+                #[modal("m", auto_defer = false, defaults(title = "T"))]
+                struct R;
+            )),
+            Ok((Response::Update, false))
+        );
+        // Any order, around `defaults`, the Guards and `by_ref`.
+        for input in [
+            parse_quote!(
+                #[modal("m", auto_defer = true, response = public, defaults(title = "T"))]
+                struct R;
+            ),
+            parse_quote!(
+                #[modal("m", defaults(title = "T"), owner = user, response = public, auto_defer = true)]
+                struct R;
+            ),
+            parse_quote!(
+                #[modal("m", by_ref, response = public, guard = f, auto_defer = true, defaults(title = "T"))]
+                struct R;
+            ),
+        ] {
+            assert_eq!(declared(&input), Ok((Response::Public, true)));
+        }
+    }
+
+    /// Story 7.8 rows 5-8: the `#[modal]` value, duplicate and
+    /// still-rejected argument errors, with the kind's `Manual` responder in
+    /// the `auto_defer` help.
+    #[test]
+    fn modal_response_and_auto_defer_errors() {
+        const RESPONSE: &str = "[CID-03] `response` takes `update`, `ephemeral` or `public`";
+        const AUTO_DEFER: &str = "[CID-03] `auto_defer` takes `true` or `false`";
+        let rejected: [(&str, &str); 12] = [
+            ("response = edit", RESPONSE),
+            ("response = \"update\"", RESPONSE),
+            ("response", RESPONSE),
+            ("response = Update", RESPONSE),
+            ("auto_defer = 0", AUTO_DEFER),
+            ("auto_defer = \"false\"", AUTO_DEFER),
+            ("auto_defer", AUTO_DEFER),
+            ("auto_defer = no", AUTO_DEFER),
+            (
+                "response = update, response = public",
+                "[CID-03] #[modal] argument `response` is given twice",
+            ),
+            (
+                "auto_defer = true, auto_defer = false",
+                "[CID-03] #[modal] argument `auto_defer` is given twice",
+            ),
+            (
+                "rate_limit(user, 3)",
+                "[CID-03] `rate_limit` is a runtime argument of #[modal] that this Noctis release does not support yet",
+            ),
+            ("response = edit, auto_defer = 1", RESPONSE),
+        ];
+        for (args, expected) in rejected {
+            let input: DeriveInput = syn::parse_str(&format!(
+                "#[modal(\"m\", {args}, defaults(title = \"T\"))] struct R;"
+            ))
+            .unwrap();
+            let error = parse_modal(&input).unwrap_err();
+            assert!(error.starts_with(expected), "{error}");
+            if expected == AUTO_DEFER {
+                assert!(
+                    error.contains("it takes `ModalResponder<Manual>`"),
+                    "{error}"
+                );
+            }
+        }
+        // The help names the kind's responder.
+        let error = parse(&parse_quote!(
+            #[button("a", auto_defer = 1)]
+            struct R;
+        ))
+        .unwrap_err();
+        assert!(
+            error.contains("it takes `ComponentResponder<Manual>`"),
+            "{error}"
+        );
     }
 
     /// Matrix rows 1 and 7: accepted `ttl`/`one_shot`, on components and
