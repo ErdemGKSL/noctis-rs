@@ -2,7 +2,8 @@
 title: 'Story 8.2: Deterministic renders, select freshness and safe text'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '9bb875b6936c4f53935e9e50ce818e4f2fb9f3ac'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
