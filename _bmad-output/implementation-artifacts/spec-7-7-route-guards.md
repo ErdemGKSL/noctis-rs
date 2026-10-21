@@ -2,7 +2,8 @@
 title: 'Story 7.7: Route Guards'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '99256882c847dbd8c452997e5063a4ea61c11fb1'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
