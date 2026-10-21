@@ -4,7 +4,7 @@
 
 use std::fmt;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use futures_util::future::BoxFuture;
 use noctis_rules::Limits;
@@ -291,6 +291,22 @@ impl CommandCtx {
             None => detached_http(),
         }
     }
+
+    /// The App's Limits (`AppBuilder::limits`), what the Responder
+    /// validates against; pass it to render functions that size pages with
+    /// `noctis::ui::Budget`. [`Limits::default`] in the detached test
+    /// seams.
+    pub fn limits(&self) -> &Limits {
+        limits_of(self.0.app.as_deref())
+    }
+}
+
+/// The Limits of contexts without an App.
+pub(crate) static DEFAULT_LIMITS: LazyLock<Limits> = LazyLock::new(Limits::default);
+
+/// The App's Limits, or [`DEFAULT_LIMITS`] without an App.
+pub(crate) fn limits_of(app: Option<&AppShared>) -> &Limits {
+    app.map_or(&*DEFAULT_LIMITS, |app| &app.limits)
 }
 
 /// The client of detached contexts: no token, never used by noctis.

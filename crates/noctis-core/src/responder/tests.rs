@@ -430,6 +430,55 @@ async fn limits_strict_and_lenient() {
     assert_eq!(label, format!("{}…", "a".repeat(79)));
 }
 
+/// FR-24 (Story 8.3, V1-V3): an over-Limit message is `Invalid` naming its
+/// path, Limit and actual value, with no request, in Strict and Lenient
+/// mode; Lenient mode truncates over-long text and never splits it.
+#[tokio::test]
+async fn fr_24_lenient_never_splits() {
+    let assert_cv2_03 = |err: &ResponderError| {
+        let ResponderError::Invalid(UiError::Limits { violations }) = err else {
+            panic!("{err}");
+        };
+        let v = violations
+            .iter()
+            .find(|v| v.rule == RuleId::CV2_03)
+            .unwrap_or_else(|| panic!("{violations:?}"));
+        assert_eq!(v.path, "components");
+        assert_eq!(
+            (&v.limit, &v.actual),
+            (
+                &noctis_rules::Bound::AtMost(40),
+                &noctis_rules::Actual::Count(41)
+            )
+        );
+    };
+
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let err = responder(&shared).reply(texts(41)).await.unwrap_err();
+    assert_cv2_03(&err);
+    assert!(fx.requests().is_empty());
+
+    let mut limits = Limits::default();
+    limits.mode = LimitMode::Lenient;
+    let fx = Fixture::start_with(discord(), limits).await;
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let err = responder(&shared).reply(texts(41)).await.unwrap_err();
+    assert_cv2_03(&err);
+    assert!(fx.requests().is_empty());
+
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let long = V2Message::new(Components::new().push(TextDisplay::new("x".repeat(4500))));
+    let _ = responder(&shared).reply(long).await.unwrap().done();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 1);
+    let components = requests[0].2["data"]["components"].as_array().unwrap();
+    assert_eq!(components.len(), 1, "{components:?}");
+    let content = components[0]["content"].as_str().unwrap();
+    assert_eq!(noctis_rules::len::discord_len(content), 4000);
+    assert!(content.ends_with('…'), "{content}");
+}
+
 /// Matrix 29 and 33: attachments and a bad token send nothing.
 #[tokio::test]
 async fn attachments_and_bad_token() {

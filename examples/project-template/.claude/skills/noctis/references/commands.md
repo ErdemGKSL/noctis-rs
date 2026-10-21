@@ -854,6 +854,7 @@ commands are left out of a guild publish; global commands stay published and ans
 | `state::<T>()` | `Option<State<T>>`: state registered with `AppBuilder::state` |
 | `kv()` | `Kv`: your typed key-value data over the App's namespaced `CacheStore` (`adapters.md` §3) |
 | `http()` | `&Arc<twilight_http::Client>`: the App's one client |
+| `limits()` | `&Limits`: the App's Limits (`AppBuilder::limits`), what the Responder validates against; pass it to render functions that size pages with `Budget` (`views-and-recipes.md` §4) |
 
 Interactions resolve by default (unlocalized) names only (LOC-06): `data.name` and the
 subcommand names, in the scope Discord sends (`data.guild_id` → that guild, else global;
@@ -870,8 +871,9 @@ every other handler context.
 `reply_text(text)`, `update(msg)` (type 7, or `PATCH @original` after the auto-defer;
 `UpdateUnavailable` on a slash-opened modal's submit) and `response_locale()` (User
 Locale first for `response = ephemeral` or an update of an ephemeral message, Guild
-Locale first otherwise, `"en-US"` when neither is known). `AutocompleteCtx` has none
-of them: return `Suggestions<T>`.
+Locale first otherwise, `"en-US"` when neither is known). `ComponentCtx` and
+`ModalSubmitCtx` also have `limits() -> &Limits`, the App's Limits, like `CommandCtx`.
+`AutocompleteCtx` has none of them: return `Suggestions<T>`.
 
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
 `cache()` (Discord resources), `modules()`,

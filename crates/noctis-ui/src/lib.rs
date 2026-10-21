@@ -196,7 +196,9 @@
 //!
 //! [`validate`] checks a built [`V2Message`], [`LegacyMessage`] or
 //! [`Modal`] against `noctis_rules::Limits` before it is sent, and [`cost`]
-//! measures one without changing it. Both lower a message tree into
+//! measures one without changing it; [`Budget`] turns that cost into what
+//! is left of CV2-03 and CV2-04 beside a message's fixed parts and how many
+//! items of one shape still fit (FR-62). Both lower a message tree into
 //! `noctis_rules::component` descriptors (a modal into `noctis_rules::modal`
 //! ones), so counts, paths and violation order match `components!`;
 //! for messages they add CID-02, ATT-05, ATT-06, MSG-01, MSG-04 and MSG-09,
@@ -248,7 +250,7 @@ pub use component::{
 pub use components::Components;
 pub use error::UiError;
 pub use escape::{escape_markdown, escape_mentions};
-pub use limits::{CostReport, LimitWarning, Validate, cost, validate};
+pub use limits::{Budget, CostReport, LimitWarning, Validate, cost, validate};
 pub use literal::{Content, Label, Placeholder};
 pub use message::{
     CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,

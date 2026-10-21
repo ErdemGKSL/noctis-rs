@@ -146,6 +146,10 @@ What each sends, by the interaction's state:
   contexts it follows who sees the response: the User Locale first for `response =
   ephemeral` or when `update`-ing an ephemeral message, the Guild Locale first for a
   public response (or no source message), `en-US` when neither is known.
+- **`limits()`** (`&Limits`) exists on `CommandCtx`, `ComponentCtx` and
+  `ModalSubmitCtx`: the App's Limits (`AppBuilder::limits`), the same ones `respond` and
+  `update` validate against. Pass it to a render function that sizes a page with
+  `Budget` (`views-and-recipes.md` §4).
 
 The doctrine lint (`xtask skill-check`) accepts these three calls in handlers and
 rejects `.reply(`/`.update(`/`.defer_reply(`/`.defer_update(`/`.edit_reply(` on any

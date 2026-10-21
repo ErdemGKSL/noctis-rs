@@ -27,8 +27,8 @@ pub fn render_x(data: &XData, s: &Strings, selected: Option<u32>, page: u16) -> 
 - **Arguments, in this order:** the data the handler loaded (`&XData`), the strings for
   the response's locale (`&Strings`, from `Strings::of(ctx.response_locale())`), then the
   ids that select what to show (selected entity, tab, page, step), taken from the
-  Payload. Add `&Limits` (`ctx.limits()` [planned]) when the function sizes a page with
-  the budget helper.
+  Payload. Add `&Limits` (`ctx.limits()`, the App's Limits) when the function sizes a
+  page with the budget helper.
 - **Pure and deterministic.** All I/O (database, cache, `ctx.render(..)` for images)
   happens in the handler before the call. The same arguments give the same JSON (except
   per-render select nonces), so tests snapshot the function directly (`testing.md`).
@@ -139,7 +139,9 @@ impl OpenTab {
 
 A `page: u16` field, a slice, prev/next Route buttons disabled at the bounds. Size the
 page with the budget helper (§4) against the fixed parts of the message, using a
-worst-case row so page boundaries don't move when names get longer.
+worst-case row so page boundaries don't move when names get longer, and the page line at
+its longest (`page_line(s, u16::MAX - 1, u16::MAX)`) so "Page 12 of 13" never overflows a
+page sized with "Page 1 of 1".
 
 ```rust
 /// Prev/next carry the target page. Its own Route keeps the ids distinct from the tab
@@ -154,8 +156,8 @@ pub fn render_roles(d: &DashData, s: &Strings, page: u16, limits: &Limits) -> V2
     if d.roles.is_empty() {
         return frame(s, vec![TextDisplay::new(s.dashboard.no_roles()).into()]); // empty state
     }
-    let fixed = frame(s, vec![page_line(s, 0, 1).into(), pager(d, s, 0, 1).into()]);
-    let per_page = Budget::of(&fixed, limits)        // [planned, Story 8.3]
+    let fixed = frame(s, vec![page_line(s, u16::MAX - 1, u16::MAX).into(), pager(d, s, 0, 1).into()]);
+    let per_page = Budget::of(&fixed, limits)        // fixed parts at their largest
         .fits(&TextDisplay::new("x".repeat(ROW_MAX_CHARS)))
         .max(1);
     let pages = d.roles.len().div_ceil(per_page);
@@ -514,23 +516,43 @@ impl TicketSend {
 contexts. Register every struct on the Module (`.add::<TicketSetup>().add::<PickSystem>()`
 …) and every string in `locales/en-US.yaml`.
 
-## 4. Budget helpers and cost [planned, Story 8.3]
+## 4. Budget helpers and cost
 
 ```rust
-let report = noctis::ui::cost(&msg, &limits);         // available today: CostReport
+use noctis::ui::{Budget, cost};
+
+let report = cost(&msg, &limits);                     // CostReport
 report.components;                                    // every depth, accessories included
 report.text_chars;                                    // all Text Displays (CV2-04)
 
-let budget = Budget::of(&fixed_parts, &limits);       // what is left beside the fixed parts
-budget.components_left();                             // 40 - cost
-budget.text_left();                                   // 4000 - text
+let budget = Budget::of(&fixed_parts, ctx.limits());  // what is left beside the fixed parts
+budget.components_left();                             // limits.components - cost, saturating at 0
+budget.text_left();                                   // limits.text_total_len - text, saturating at 0
 budget.fits(&sample_row);                             // largest n such that n copies fit both
 budget.fits_prefix(rows.iter());                      // how many rows from the front fit, in order
 ```
 
-- Measure the message with its fixed parts in place (header, tab row, the pager row),
-  then ask how many rows fit. Use a worst-case sample row for stable pages, or
-  `fits_prefix` when rows differ a lot and you page by offset.
+- `Budget::of(&V2Message, &Limits)` only reads the message (no validation, truncation or
+  logging) and uses the configured Limits, never hard-coded 40/4000. Over a budget
+  already, both numbers are 0.
+- `fits(&item)` = `min(components_left / c, text_left / t)` for an item of cost `(c, t)`
+  (`c` components at every depth, `t` Text Display characters by `discord_len`); an axis
+  the item does not use (`t = 0`, a Separator) does not bind. The item is any Container
+  child (`TextDisplay`, `Section`, `ActionRow`, `Separator`, `MediaGallery`, `File`, or a
+  `ContainerComponent`); inside a Container it costs the same, since the Container is a
+  fixed part.
+- `fits_prefix(items)` is greedy and in order: it adds up the costs and stops at the first
+  item that does not fit, even if a later, smaller one would. It pulls at most `k + 1`
+  items, so a lazy iterator over a long list is fine.
+- Budgets only: CV2-03 and CV2-04. Per-field rules (label 80, URLs, CV2-06 row shape) and
+  CID-02 are not counted. `n` copies of one Route button with the same Payload fit the
+  budget but fail CID-02, so real rows differ by Payload.
+- **Measure fixed parts with worst-case variable text**: header, tab row, the pager row
+  and the page line at their largest (`page_line(s, u16::MAX - 1, u16::MAX)`), then ask
+  how many rows fit. Use a worst-case sample row for stable pages, or `fits_prefix` when
+  rows differ a lot and you page by offset.
+- Pass `ctx.limits()` (`&Limits`, what the Responder validates against, set with
+  `AppBuilder::limits`) to the render function; never `Limits::default()` in a handler.
 - Noctis never paginates, splits or truncates a message for you (Lenient mode only
   truncates over-long text, `limits-cheatsheet.md`). Over a Limit is a typed error with
   the path (`[CV2-03] components: limit at most 40, actual 41`).

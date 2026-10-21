@@ -105,13 +105,14 @@ fn roles_page(
         return vec![TextDisplay::new(s.dashboard.no_roles()).into()];
     }
 
-    // Size the page with the budget helper [planned, Story 8.3]: measure the fixed parts
-    // (with a pager row in place) and ask how many worst-case rows still fit. A
-    // worst-case sample keeps page boundaries stable however long the names are.
+    // Size the page with `Budget`: measure the fixed parts (with a pager row in place
+    // and the page line at its longest, so a later "Page 12 of 13" never overflows) and
+    // ask how many worst-case rows still fit. A worst-case sample keeps page boundaries
+    // stable however long the names are.
     let fixed = frame(
         header.clone(),
         tabs.clone(),
-        vec![page_line(s, 0, 1).into(), pager(data, s, 0, 1).into()],
+        vec![page_line(s, u16::MAX - 1, u16::MAX).into(), pager(data, s, 0, 1).into()],
     );
     let per_page = Budget::of(&fixed, limits)
         .fits(&TextDisplay::new("x".repeat(ROLE_ROW_MAX_CHARS)))

@@ -47,8 +47,9 @@ send [planned]) and at `cargo check` by `components!` for literal trees (§14);
 check bare descriptor trees.
 
 A View is a render function that builds this message itself (`views-and-recipes.md`).
-Noctis never adds pagination or extra rows to it: size lists with `Budget`
-[planned, Story 8.3].
+Noctis never adds pagination or extra rows to it: size lists with
+`noctis::ui::Budget` (`Budget::of(&fixed, ctx.limits()).fits(&row)`, §16 and
+`views-and-recipes.md` §4).
 
 Cost cheatsheet: Container 1, Text Display 1, Separator 1, Media Gallery 1 (any items),
 File 1, Section + 1 text + button = 3, Section + 3 texts + thumbnail = 5, Action Row + 5
@@ -880,6 +881,9 @@ let budget: CostReport = cost(&msg, &limits); // never changes or sends
 | `LimitWarning::MissingAlt { path }` | a Thumbnail or gallery item that is not a rendered image has no alt text of its own (`None`, `""` or whitespace); both modes, also from `cost` |
 | `LimitWarning::path()` / `.rule()` | the path; `Some(rule)` for `Truncated`, `None` for `MissingAlt` |
 | `UiError::Limits { violations: Vec<Violation> }` | the failure, never empty; `Display` joins each violation's `Display` with `\n` |
+| `Budget::of(&V2Message, &Limits) -> Budget` | what the message leaves: `components_left()` = `limits.components - cost.components`, `text_left()` = `limits.text_total_len - cost.text_chars`, both saturating at 0; reads only, Strict and Lenient alike (FR-62) |
+| `Budget::fits<C: ContainerChild + Clone>(&self, &C) -> usize` | copies of one Container child that fit: `min(components_left / c, text_left / t)`, an axis of cost 0 unbounded |
+| `Budget::fits_prefix<'a, C, I: IntoIterator<Item = &'a C>>(&self, I) -> usize` | how many items fit in order; stops at the first miss, pulls at most `k + 1`. Budgets only (CV2-03, CV2-04): no per-field rules, no CID-02 |
 
 Warnings display as `truncated to fit: <violation>` and `<path>: image has no alt text`.
 Every warning is returned in the `CostReport` and logged by `validate` with

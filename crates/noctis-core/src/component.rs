@@ -193,6 +193,16 @@ macro_rules! ctx_accessors {
 pub struct ComponentCtx(Arc<CtxInner>);
 
 ctx_accessors!(ComponentCtx);
+
+impl ComponentCtx {
+    /// The App's Limits (`AppBuilder::limits`), what the Responder
+    /// validates against; pass it to render functions that size pages with
+    /// `noctis::ui::Budget`. `Limits::default()` in the detached test
+    /// seams.
+    pub fn limits(&self) -> &Limits {
+        crate::command::limits_of(self.0.app.as_deref())
+    }
+}
 crate::responder::ergonomics::ctx_methods!(ComponentCtx, update = Component);
 
 impl crate::kind::__Extensions for ComponentCtx {
@@ -210,6 +220,16 @@ impl crate::kind::__Extensions for ComponentCtx {
 pub struct ModalSubmitCtx(Arc<CtxInner>);
 
 ctx_accessors!(ModalSubmitCtx);
+
+impl ModalSubmitCtx {
+    /// The App's Limits (`AppBuilder::limits`), what the Responder
+    /// validates against; pass it to render functions that size pages with
+    /// `noctis::ui::Budget`. `Limits::default()` in the detached test
+    /// seams.
+    pub fn limits(&self) -> &Limits {
+        crate::command::limits_of(self.0.app.as_deref())
+    }
+}
 crate::responder::ergonomics::ctx_methods!(ModalSubmitCtx, update = ModalSubmit);
 
 impl crate::kind::__Extensions for ModalSubmitCtx {
@@ -1436,5 +1456,14 @@ mod tests {
         assert_eq!(format!("{__Absent:?}"), "__Absent");
         let hook = __StaleHook::<ComponentCtx>(Arc::new(|_, _, _| unreachable!()));
         assert_eq!(format!("{hook:?}"), "__StaleHook");
+    }
+
+    /// C2: a context without an App reads the default Limits.
+    #[test]
+    fn detached_contexts_have_default_limits() {
+        let default = Limits::default();
+        assert_eq!(crate::CommandCtx::new("ping").limits(), &default);
+        assert_eq!(ComponentCtx::detached().limits(), &default);
+        assert_eq!(ModalSubmitCtx::detached().limits(), &default);
     }
 }

@@ -425,6 +425,7 @@ pub fn noctis::CommandCtx::guild_id(&self) -> core::option::Option<twilight_mode
 pub fn noctis::CommandCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::CommandCtx::kv(&self) -> noctis::Kv
+pub fn noctis::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::CommandCtx::module(&self) -> &'static str
 pub fn noctis::CommandCtx::response_locale(&self) -> &str
 pub fn noctis::CommandCtx::shard(&self) -> u32
@@ -573,6 +574,8 @@ pub fn noctis::ComponentCtx::shard(&self) -> u32
 pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::ComponentCtx
+pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -1190,6 +1193,8 @@ pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -3253,6 +3258,7 @@ pub fn noctis::prelude::CommandCtx::guild_id(&self) -> core::option::Option<twil
 pub fn noctis::prelude::CommandCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::CommandCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::CommandCtx::module(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::response_locale(&self) -> &str
 pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
@@ -3321,6 +3327,8 @@ pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
 pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -3539,6 +3547,8 @@ pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -5191,6 +5201,22 @@ pub fn noctis::ui::AttachmentSet::default() -> Self
 impl core::fmt::Debug for noctis::ui::AttachmentSet
 pub fn noctis::ui::AttachmentSet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::AttachmentSet
+pub struct noctis::ui::Budget
+impl noctis::ui::Budget
+pub fn noctis::ui::Budget::components_left(&self) -> usize
+pub fn noctis::ui::Budget::fits<C: noctis::ui::ContainerChild + core::clone::Clone>(&self, &C) -> usize
+pub fn noctis::ui::Budget::fits_prefix<'a, C, I>(&self, I) -> usize where C: noctis::ui::ContainerChild + core::clone::Clone + 'a, I: core::iter::traits::collect::IntoIterator<Item = &'a C>
+pub fn noctis::ui::Budget::of(&noctis::ui::V2Message, &noctis::rules::Limits) -> Self
+pub fn noctis::ui::Budget::text_left(&self) -> usize
+impl core::clone::Clone for noctis::ui::Budget
+pub fn noctis::ui::Budget::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::Budget
+impl core::cmp::PartialEq for noctis::ui::Budget
+pub fn noctis::ui::Budget::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::Budget
+pub fn noctis::ui::Budget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::ui::Budget
+impl core::marker::StructuralPartialEq for noctis::ui::Budget
 pub struct noctis::ui::Button(_)
 impl core::clone::Clone for noctis::ui::Button
 pub fn noctis::ui::Button::clone(&self) -> Self

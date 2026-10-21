@@ -2133,6 +2133,27 @@ pub mod ui {
     //! - [`LimitWarning::MissingAlt`]: a Thumbnail or gallery item that is not
     //!   a rendered image has no alt text (both modes). Every warning is also
     //!   logged at WARN with target `noctis::ui`.
+    //! - Budgets: [`Budget`]`::of(&fixed, &limits)` reports what the fixed
+    //!   parts of a message leave of CV2-03 ([`Budget::components_left`]) and
+    //!   CV2-04 ([`Budget::text_left`]), saturating at 0;
+    //!   [`Budget::fits`]`(&item)` is how many copies of one Container child
+    //!   fit (`min(components_left / c, text_left / t)`), and
+    //!   [`Budget::fits_prefix`]`(items)` how many of a list fit in order,
+    //!   stopping at the first miss (FR-62). They count only the budgets, not
+    //!   per-field rules or CID-02. Measure variable fixed text at its
+    //!   largest, and pass `ctx.limits()` from a handler.
+    //!
+    //! ```
+    //! use noctis::rules::Limits;
+    //! use noctis::ui::{Budget, Components, Container, Separator, TextDisplay, V2Message};
+    //!
+    //! let fixed = V2Message::new(Components::new().push(
+    //!     Container::new().push(TextDisplay::new("## Roles")).push(Separator::small()),
+    //! ));
+    //! let budget = Budget::of(&fixed, &Limits::default());
+    //! assert_eq!((budget.components_left(), budget.text_left()), (37, 3992));
+    //! assert_eq!(budget.fits(&TextDisplay::new("x".repeat(230))), 17);
+    //! ```
     //!
     //! ```
     //! use noctis::rules::{LimitMode, Limits, RuleId};
@@ -2455,21 +2476,21 @@ pub mod ui {
     //! ```
 
     pub use noctis_ui::{
-        ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Button,
-        ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup, CheckboxOptions,
-        Choices, Components, Container, ContainerChild, ContainerComponent, Content, CostReport,
-        CreateFlags, DownloadError, EditFlags, Emoji, File, FileFetcher, FileUpload, GalleryItems,
-        Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton, Media, MediaGallery, MediaItem,
-        Mentionable, MentionableSelect, Mentions, MessageBody, MessageFormat, Modal,
-        ModalChannelSelect, ModalComponent, ModalForm, ModalInput, ModalLabel,
-        ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalSubmission,
-        ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup, RadioOptions,
-        ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole, ResolvedUser, Rgb,
-        RoleSelect, Roles, RouteButton, RowButtons, RowItem, RowSelect, Section, SectionAccessory,
-        SectionTexts, SelectOption, Separator, Spacing, StringSelect, StringSelectBuilder,
-        StringSelectOptions, SubmitError, SubmittedValue, TextDisplay, TextInput, TextInputStyle,
-        Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate,
-        cost, escape_markdown, escape_mentions, validate,
+        ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Budget,
+        Button, ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup,
+        CheckboxOptions, Choices, Components, Container, ContainerChild, ContainerComponent,
+        Content, CostReport, CreateFlags, DownloadError, EditFlags, Emoji, File, FileFetcher,
+        FileUpload, GalleryItems, Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton,
+        Media, MediaGallery, MediaItem, Mentionable, MentionableSelect, Mentions, MessageBody,
+        MessageFormat, Modal, ModalChannelSelect, ModalComponent, ModalForm, ModalInput,
+        ModalLabel, ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect,
+        ModalSubmission, ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup,
+        RadioOptions, ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole,
+        ResolvedUser, Rgb, RoleSelect, Roles, RouteButton, RowButtons, RowItem, RowSelect, Section,
+        SectionAccessory, SectionTexts, SelectOption, Separator, Spacing, StringSelect,
+        StringSelectBuilder, StringSelectOptions, SubmitError, SubmittedValue, TextDisplay,
+        TextInput, TextInputStyle, Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect,
+        Users, V2Message, Validate, cost, escape_markdown, escape_mentions, validate,
     };
 }
 

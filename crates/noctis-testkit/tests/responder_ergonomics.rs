@@ -144,6 +144,65 @@ impl Note {
     }
 }
 
+/// The Limits the C1 App is built with (Story 8.3).
+fn custom_limits() -> noctis::rules::Limits {
+    let mut limits = noctis::rules::Limits::default();
+    limits.components = 30;
+    limits
+}
+
+/// What a handler answers about `ctx.limits()`.
+fn limits_view(limits: &noctis::rules::Limits) -> V2Message {
+    view(if limits == &custom_limits() {
+        "limits: app"
+    } else {
+        "limits: other"
+    })
+}
+
+/// Answers whether `ctx.limits()` is the App's (C1).
+#[derive(SlashCommand)]
+#[command("limits", description = "Show the Limits")]
+struct LimitsCommand;
+
+impl LimitsCommand {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let msg = limits_view(ctx.limits());
+        ctx.respond(msg).await
+    }
+}
+
+/// Answers whether `ctx.limits()` is the App's (C1).
+#[derive(Button, Debug, Clone, Copy)]
+#[button("limits.button", defaults(style = Primary, label = "Limits"))]
+struct LimitsButton;
+
+impl LimitsButton {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let msg = limits_view(ctx.limits());
+        ctx.update(msg).await
+    }
+}
+
+/// Answers whether `ctx.limits()` is the App's (C1).
+#[derive(Modal, Debug)]
+#[modal("limits.modal", defaults(title = "Limits"))]
+struct LimitsModal {
+    #[text_input("Note")]
+    #[allow(dead_code, reason = "the submitted input is decoded, not read")]
+    note: Option<String>,
+}
+
+impl LimitsModal {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        let msg = limits_view(ctx.limits());
+        ctx.respond(msg).await
+    }
+}
+
 /// Records every report as its error text.
 #[derive(Clone, Default)]
 struct Reports(Arc<Mutex<Vec<String>>>);
@@ -222,7 +281,10 @@ impl Running {
                     .add::<Loud>()
                     .add::<Bump>()
                     .add::<Mixed>()
-                    .add::<Note>(),
+                    .add::<Note>()
+                    .add::<LimitsCommand>()
+                    .add::<LimitsButton>()
+                    .add::<LimitsModal>(),
             );
         configure(&mut builder);
         let app = builder.build().unwrap();
@@ -562,6 +624,57 @@ async fn mixed_already_responded() {
     assert!(
         reports[0].contains("already sent its initial response"),
         "{reports:?}"
+    );
+    running.stop();
+}
+
+/// C1 (Story 8.3): a command, a component and a modal-submit handler on an
+/// App built with `.limits(l)` each read `ctx.limits() == &l`.
+#[tokio::test(flavor = "multi_thread")]
+async fn ctx_limits_are_the_apps() {
+    let running = Running::start_with(|builder| {
+        builder.limits(custom_limits());
+    })
+    .await;
+    running.invoke("limits");
+    let sent = running.exactly(1).await;
+    assert_eq!(
+        body(&sent[0])["data"]["components"][0]["content"],
+        "limits: app"
+    );
+
+    running.dispatch(click(
+        encode::<LimitsButton>(&LimitsButton, &Parts::new())
+            .unwrap()
+            .as_ref(),
+    ));
+    let sent = running.exactly(1).await;
+    assert_eq!(
+        body(&sent[0])["data"]["components"][0]["content"],
+        "limits: app"
+    );
+
+    let modal = serde_json::to_value(LimitsModal::blank()).unwrap();
+    running.dispatch(json!({
+        "id": "100",
+        "application_id": "7",
+        "type": 5,
+        "token": "tok",
+        "version": 1,
+        "authorizing_integration_owners": {},
+        "entitlements": [],
+        "user": user(),
+        "channel": { "id": "55", "type": 0 },
+        "data": {
+            "custom_id": modal["custom_id"],
+            "components": [{ "type": 18, "id": 1, "component":
+                { "type": 4, "id": 2, "custom_id": "note", "value": "n" } }],
+        },
+    }));
+    let sent = running.exactly(1).await;
+    assert_eq!(
+        body(&sent[0])["data"]["components"][0]["content"],
+        "limits: app"
     );
     running.stop();
 }

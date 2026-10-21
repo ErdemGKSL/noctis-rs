@@ -11,9 +11,12 @@
 //! is lowered into `noctis_rules::modal` descriptors and checked by
 //! `validate_modal`, then its input keys by CID-01 and CID-02.
 
+mod budget;
 mod lenient;
 mod lower;
 mod walk;
+
+pub use budget::Budget;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -35,8 +38,8 @@ use self::walk::Visit;
 use crate::modal::ModalTopNode;
 use crate::route::DupKey;
 use crate::{
-    AttachmentOrigin, AttachmentSet, LegacyMessage, Mentions, Modal, Roles, UiError, Users,
-    V2Message,
+    AttachmentOrigin, AttachmentSet, Components, ContainerComponent, LegacyMessage, Mentions,
+    Modal, Roles, TopLevelComponent, UiError, Users, V2Message,
 };
 
 use crate::placement::sealed;
@@ -247,6 +250,18 @@ pub fn validate<M: Validate>(message: &mut M, limits: &Limits) -> Result<CostRep
 /// ```
 pub fn cost<M: Validate>(message: &M, limits: &Limits) -> CostReport {
     message.cost_with(limits)
+}
+
+/// What one Container child costs on its own, as `(components, text_chars)`:
+/// exactly [`cost`] of a message holding only that child at the top level.
+///
+/// `rc::cost` does not read its limits, so the default ones are passed.
+pub(crate) fn child_cost(child: &ContainerComponent) -> (usize, usize) {
+    let body = Components {
+        items: vec![TopLevelComponent::from(child.clone())],
+    };
+    let c = lower::with_v2(&body, |tree| rc::cost(tree, &Limits::default()));
+    (c.components, c.text_len)
 }
 
 impl sealed::Sealed for V2Message {}

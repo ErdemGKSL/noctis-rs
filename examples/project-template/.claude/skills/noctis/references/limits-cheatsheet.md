@@ -232,9 +232,17 @@ Layout widths: `F` 1, route ≤ 24, `:` 1, schema 1, select nonce 2, Ref marker 
 `PayloadEnum` 1, `Option<T>` +1, `BoundedStr<N>` 2N, `String`/`Vec` unbounded. Worst
 by-ref id: 41 (`MAX_REF_ID_LEN`: 24-character route, schema and select nonce).
 
-Page sizing: `Budget::of(&fixed_parts, &limits).fits(&row)` [planned, Story 8.3]
-answers "how many rows of this shape still fit" against CV2-03 (40 components) and
-CV2-04 (4000 characters) together (`views-and-recipes.md` §4).
+Page sizing: `Budget::of(&fixed_parts, ctx.limits()).fits(&row)` answers "how many rows
+of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
+(`limits.text_total_len`, 4000) together (`views-and-recipes.md` §4):
+
+- `components_left = limits.components - cost(fixed).components` and
+  `text_left = limits.text_total_len - cost(fixed).text_chars`, both saturating at 0;
+- `fits(&row) = min(components_left / c, text_left / t)` for a row of cost `(c, t)`
+  (`t = 0` does not bind); `fits_prefix(rows)` adds rows in order and stops at the
+  first that does not fit;
+- budgets only: per-field Limits and CID-02 still apply to every row. Measure the fixed
+  parts with their variable text at its longest (the page line of the last page).
 
 ## Components V2 (messages)
 
