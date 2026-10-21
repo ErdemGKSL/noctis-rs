@@ -52,3 +52,5 @@ These are the maintainer's standing preferences for agent sessions on this repo.
 - Delegate research on unfamiliar frameworks, large-document extraction and independent reviews to subagents, and keep only their conclusions in the main context.
 - Verify crate versions and that a technology still exists against crates.io, docs.rs or the official source before relying on them, never from memory.
 - Never send the maintainer's personal data (such as their email) to external services, including in HTTP headers like `User-Agent`.
+- Every commit names the maintainer as co-author: `Co-Authored-By: Erdem <74366943+ErdemGKSL@users.noreply.github.com>` (`tools/story-loop/cp.sh` adds it).
+- Stories are implemented by the unattended story loop in `tools/story-loop/` (setup and run steps in its `README.md`); commit only finished steps, never WIP.
