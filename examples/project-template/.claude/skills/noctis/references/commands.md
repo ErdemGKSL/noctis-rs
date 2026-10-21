@@ -70,8 +70,10 @@ impl SetupStart {
 `response = ephemeral` makes every response private, the auto-defer included (INT-10,
 `responder.md` §2b and §3); `CommandHandler::ephemerality()` reads it.
 
-[planned] Extractors as further parameters, and `ctx.respond(render_x(..))` as the
-default answer (Story 8.1; `views-and-recipes.md`).
+Answer with `ctx.respond(render_x(..))` (or `ctx.reply_text(key)` for a one-line
+notice; `responder.md` §1b, `views-and-recipes.md`). `CommandCtx` has no `update`
+(E0599, INT-04): a Command has no message to update. [planned] Extractors as further
+parameters.
 
 Register it: `Module::new("setup").add::<SetupStart>()` (the derive also gives
 `SetupStart::descriptor() -> CommandHandler`). `CommandHandler` has `name()`
@@ -732,8 +734,8 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   handler is exactly `(self, ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])`
   (or `ResolvedMessage` for `#[derive(MessageCommand)]`) returning `HandlerResult<R>` like a slash Command (`R` a
   `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
-  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); `ctx.respond(..)`
-  (Story 8.1).
+  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11). Answer with
+  `ctx.respond(..)` like a slash Command.
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
   `Limits::context_menu_name_len`), path `""`, CTX-01 `Between{1,32}` / `Count(n)`;
@@ -847,6 +849,8 @@ commands are left out of a guild publish; global commands stay published and ans
 | `user_locale()` / `guild_locale()` | `Option<&str>`: Discord's `locale` / `guild_locale` |
 | `response_locale()` | `&str`: ephemeral → User, then Guild Locale; public → Guild, then User Locale; else `"en-US"` (`responder.md` §3) |
 | `ephemerality()` | `Ephemerality`: the declared one |
+| `respond(msg)` | `impl Future<Output = HandlerResult<Responded>>`: a new message (type 4), the edit of the loading message after the auto-defer, a follow-up once answered (`responder.md` §1b) |
+| `reply_text(text)` | `ReplyText` (`.public()`, then `.await` → `HandlerResult<Responded>`): a one-Text-Display notice, ephemeral by default |
 | `state::<T>()` | `Option<State<T>>`: state registered with `AppBuilder::state` |
 | `kv()` | `Kv`: your typed key-value data over the App's namespaced `CacheStore` (`adapters.md` §3) |
 | `http()` | `&Arc<twilight_http::Client>`: the App's one client |
@@ -861,6 +865,13 @@ no fallback between them). An unknown name logs `unknown command` on target
 `ctx.kv() -> Kv` (your typed key-value data over the App's namespaced `CacheStore`;
 `adapters.md` §3) exists on `CommandCtx` (context menus too), `AutocompleteCtx` and
 every other handler context.
+
+`ComponentCtx`, `ModalSubmitCtx` and `ExpiredCtx` have `respond(msg)`,
+`reply_text(text)`, `update(msg)` (type 7, or `PATCH @original` after the auto-defer;
+`UpdateUnavailable` on a slash-opened modal's submit) and `response_locale()` (User
+Locale first for `response = ephemeral` or an update of an ephemeral message, Guild
+Locale first otherwise, `"en-US"` when neither is known). `AutocompleteCtx` has none
+of them: return `Suggestions<T>`.
 
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
 `cache()` (Discord resources), `modules()`,

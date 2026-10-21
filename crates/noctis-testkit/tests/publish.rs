@@ -39,14 +39,20 @@ fn guild_path(guild: u64) -> String {
     format!("/applications/7/guilds/{guild}/commands")
 }
 
+/// The ping View: a plain render function.
+fn render_ping() -> noctis::ui::V2Message {
+    noctis::ui::V2Message::new(Components::new().push(noctis::ui::TextDisplay::new("pong")))
+}
+
+/// An option-less Command: a unit struct answering with `ctx.respond`.
 #[derive(SlashCommand)]
 #[command("ping", description = "Pong")]
 struct Ping;
 
 impl Ping {
     #[handler]
-    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
-        unreachable!("never invoked")
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        ctx.respond(render_ping()).await
     }
 }
 
@@ -285,6 +291,18 @@ async fn publish_sends_guild_commands_only_to_their_guilds() {
     assert!(!again.wrote());
     assert_eq!(again.creates(), 0);
     assert!(requests(&http).iter().all(|r| r.starts_with("GET ")));
+}
+
+/// Story 8.1: an option-less unit Command publishes `"options": []`.
+#[tokio::test(flavor = "multi_thread")]
+async fn option_less_command_publishes_empty_options() {
+    let (http, _) = fake().await;
+    let app = app(&http, Module::new("m").add::<Ping>());
+    let _ = app.publish(PublishScope::Global).await.unwrap();
+    let bodies = put_bodies(&http, GLOBAL);
+    assert_eq!(bodies.len(), 1, "{bodies:?}");
+    assert_eq!(names(&bodies[0]), ["ping"]);
+    assert_eq!(bodies[0][0]["options"], json!([]), "{}", bodies[0]);
 }
 
 /// Matrix 7: Discord's server fields and defaults never cause a write.

@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `18a7f07e374675220b548ce2f11ad4bc3cc3947b03ccaf8e8ced798a74e62d31` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `b6dcf4c3ab409bea1c9c2b9c91891e6b3d596441092f488e996d1cbd59533640` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -144,8 +144,10 @@ pub fn module() -> Module {
 }
 ```
 
-`ctx.respond`, `ctx.update` and `ctx.reply_text` are [planned, Story 8.1]; until then a
-Command returns its `V2Message` (`responder.md` §1). With the `i18n` feature the
+Answer with `ctx.respond(msg)` from a Command, `ctx.update(msg)` from a component or
+modal handler, and `ctx.reply_text(key)` for a one-line ephemeral notice; each returns
+`HandlerResult<Responded>` and picks the callback type itself (`responder.md` §1b).
+Returning the `V2Message` still works. With the `i18n` feature the
 description comes from `cmd.dashboard.description` in `locales/en-US.yaml`; without it,
 write `description = "…"` in the attribute. A missing one is a compile error (CMD-04),
 and a literal that differs from the locale file is a compile error too.

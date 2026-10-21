@@ -374,8 +374,14 @@ pub(crate) fn call_context_menu(
     match input.target() {
         Ok(target) => {
             let path = handler.menu_name;
-            let ctx = CommandCtx::detached(path, CommandInput::empty(path), handler.ephemerality);
-            run_detached(|r| handler.call(ctx, target, r), handler.ephemerality)
+            run_detached(
+                |r| {
+                    let input = CommandInput::empty(path);
+                    let ctx = CommandCtx::detached(path, input, handler.ephemerality, &r);
+                    handler.call(ctx, target, r)
+                },
+                handler.ephemerality,
+            )
         }
         Err(error) => failed(HandlerError::new(error)),
     }

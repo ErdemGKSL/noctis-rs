@@ -243,8 +243,9 @@ defaults(..))]`: the same grammar as the component attributes, in any order, aro
 - **No modal answers a modal.** `ModalResponder` (`Manual` or not) has no `show_modal()`
   (E0599, INT-04), and any dynamic attempt to show a modal on a submit is
   `ResponderError::ModalUnavailable` with no request.
-- `ctx.update`/`ctx.respond` are [planned, Story 8.1]; today return the message, or
-  answer through the `ModalResponder`.
+- Answer a submit with `ctx.update(msg)` (redraw the message the modal was opened
+  from) or `ctx.respond(msg)` (a new message); returning the message or the
+  `ModalResponder` still work (`responder.md` §1b).
 
 Decoding works today, from the raw interaction JSON (`&[u8]` of the whole interaction
 object, `"type": 5`):
@@ -307,8 +308,10 @@ submission.unknown();                                        // &[serde_json::Va
 - If the modal was opened from a message component, returning a View **updates that
   message** (type 7; the auto-defer is type 6); from a command, there is no message to
   update: a returned View is a new public message (auto-defer type 5), and
-  `ModalResponder::update`/`defer_update` (and `ctx.update` [planned, Story 8.1]) return
-  `ResponderError::UpdateUnavailable` without a request, so answer with `r.reply(msg)`.
+  `ModalResponder::update`/`defer_update` and `ctx.update` return
+  `ResponderError::UpdateUnavailable` without a request (also after the auto-defer;
+  `ctx.update` never falls back to a new message), so answer with `ctx.respond(msg)`
+  or `r.reply(msg)`.
   The handler takes `(self, ctx: ModalSubmitCtx[, r: ModalResponder])`, or
   `ModalResponder<Manual>` with `#[modal(.., auto_defer = false)]` (§3.0).
   `ModalResponder` has no `show_modal()`: modals can't chain (INT-04, E0599).

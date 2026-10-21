@@ -6,9 +6,9 @@ typestate `Responder`, follow-ups, modals, errors shown to users, token expiry,
 `LegacyMessage`, webhooks. Rules: INT-01..13, WH-01..05, MSG-05, MSG-07, CV2-01/02.
 
 **Default: build the message with your render function and send it with
-`ctx.respond(msg)` or `ctx.update(msg)` (§1b) [planned, Story 8.1]; today a handler
-returns the message (a Command's is a new message, a component's updates the clicked
-message under the default `response = update`).** Write no response-type code. Use the typestate Responder only for
+`ctx.respond(msg)` (a new message) or `ctx.update(msg)` (update the clicked message),
+or a one-line notice with `ctx.reply_text(key)` (§1b).** Returning the message from
+the handler still works and sends the same thing (§1). Write no response-type code. Use the typestate Responder only for
 modals, follow-ups, or replies that need several messages. A View is just a function
 returning a `V2Message` (`views-and-recipes.md`); there is no View trait.
 
@@ -24,7 +24,7 @@ A handler returns `HandlerResult<R>` with `R: IntoResponse<K>` (sealed) for its 
 | `V2Message` or `Components` (`noctis::ui`) | new message (public, or ephemeral if declared) | `response = update` (default): **updates the clicked message in place** (type 7; a slash-opened modal submit has no message, so it gets a new public message); `response = ephemeral \| public`: a new message (type 4) |
 | `LegacyMessage` | plain `content` notice (not for interactive UI, UD-1) | **does not compile** (CV2-01: E0277 `` `LegacyMessage` is not a response of this handler ``, note `[CV2-01] component and modal handlers return a V2Message/Components (or Responded)`): a component's message is never turned back into legacy |
 | `()` | **does not compile** (E0277 `` `()` is not a response of this handler ``, pointing at the return type) | same |
-| `Responded` (from `acked.done()`) | you answered through the Responder; nothing more is sent | same (the auto-defer still fires at the deadline if the handler runs that long without answering) |
+| `Responded` (from `ctx.respond`/`ctx.update`/`ctx.reply_text`, or `acked.done()`) | you answered through the context or the Responder; nothing more is sent | same (the auto-defer still fires at the deadline if the handler runs that long without answering) |
 | `Err(HandlerError)` | error path (§5) | error path |
 
 Any other type is the same E0277 (`` `u8` is not a response of this handler ``, label:
@@ -51,10 +51,11 @@ request.
 A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
 the `Command` (or `Component`) Error Sink (§5).
 
-## 1b. `ctx.respond`, `ctx.update`, `ctx.reply_text` [planned, Story 8.1]
+## 1b. `ctx.respond`, `ctx.update`, `ctx.reply_text`
 
 The handler context answers in one call and picks the callback type, deferral, flags
-and ephemerality itself. Each returns `HandlerResult<Responded>`; return it.
+and ephemerality itself, from the declared `response` and what already happened. Each
+returns `HandlerResult<Responded>`; return it (or `?` it and answer more).
 
 ```rust
 #[derive(SlashCommand)]
@@ -63,35 +64,92 @@ pub struct Dashboard;
 
 impl Dashboard {
     #[handler]
-    async fn handle(self, ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
-        let data = db.dashboard(ctx.guild_id()).await?;
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let data = load(&ctx).await?;
         ctx.respond(render_dashboard(&data, &Strings::of(ctx.response_locale()), DashTab::Overview)).await
     }
 }
 
 impl OpenTab {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, db: State<Db>) -> HandlerResult<Responded> {
-        if !db.owns(ctx.guild_id(), self.guild).await? {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        if !allowed(&ctx, self.guild) {
             return ctx.reply_text(keys::NOT_FOUND).await;          // ephemeral one-liner
         }
-        let data = db.dashboard(Some(self.guild)).await?;
+        let data = load(&ctx).await?;
         ctx.update(render_dashboard(&data, &Strings::of(ctx.response_locale()), self.tab)).await
     }
 }
 ```
 
-| Method | On | Sends |
+| Method | On | Argument |
 | --- | --- | --- |
-| `ctx.respond(msg)` | every interactive context | a new message: the initial response (type 4, declared ephemerality) while unanswered; the edit of the deferred original after a Command's auto-defer; a follow-up (declared visibility) once answered |
-| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx` (not `CommandCtx`: E0599, INT-04) | an edit of the message the component lives on: type 7 while unanswered, `edit_reply` after the type-6 auto-defer. On a submit of a modal opened from a slash command (no message to edit) it returns `ResponderError::UpdateUnavailable` and sends nothing, exactly like the typestate `update`; it never falls back to a new message, so answer such a submit with `ctx.respond(msg)` |
-| `ctx.reply_text(text)` | every interactive context | one Text Display, **ephemeral** unless `.public()`; the initial response, or an ephemeral follow-up once answered or deferred. `text` is a `String`, a `&'static str` or a `MessageKey` (localized) |
+| `ctx.respond(msg)` | `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx` | `impl Into<OutgoingMessage>`: a `V2Message`, `Components` or `LegacyMessage` |
+| `ctx.update(msg)` | `ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx` (**not** `CommandCtx`: E0599, INT-04) | `impl IntoEdit<K>`: a `V2Message` or `Components` (a `LegacyMessage` is E0277, CV2-01) |
+| `ctx.reply_text(text)` | every interactive context | `impl Into<NoticeText>`: a `String`, a `&'static str` or a `MessageKey`; returns a `ReplyText` you `.await` (`.public()` first for everyone) |
 
-All three add `IS_COMPONENTS_V2`, validate against the Limits and ping nobody (MSG-05).
-A second initial response through the ctx methods or a typestate Responder in the same
-handler is `ResponderError::AlreadyResponded`, with no request. The doctrine lint
-(`xtask skill-check`) accepts these three calls in handlers and rejects
-`.reply(`/`.update(`/`.defer_reply(`/`.defer_update(`/`.edit_reply(` on any other receiver.
+What each sends, by the interaction's state:
+
+| State when called | `ctx.respond(msg)` | `ctx.update(msg)` | `ctx.reply_text(text)` |
+| --- | --- | --- | --- |
+| unanswered | type 4, the declared ephemerality (`public` under `response = update`); never type 7 | type 7 on the clicked message (V2 flag, never `EPHEMERAL`) | type 4, **ephemeral** (public with `.public()`) |
+| after a type-5 defer (a Command's auto-defer, `response = ephemeral \| public`, or your own `defer_reply`), loading message not edited yet | `PATCH @original`: completes the loading message, keeping its ephemerality (INT-10, INT-12) | `PATCH @original` (the deferred reply, like the typestate `update`) | same visibility: `PATCH @original`; other visibility: the loading message is deleted, then a follow-up |
+| after a type-6 defer (a component's auto-defer under `update`) | a follow-up, declared visibility; the clicked message is untouched | `PATCH @original` = the clicked message | a follow-up of the chosen visibility |
+| answered already (any reply, update or edit of the original) | another follow-up, declared visibility | `ResponderError::AlreadyResponded`, nothing sent | a follow-up of the chosen visibility |
+| after a modal (`show_modal`) or a Middleware stop | `AlreadyResponded` | `AlreadyResponded` | `AlreadyResponded` |
+| no message to update (a modal opened from a slash command) | type 4 (public under `update`) | `ResponderError::UpdateUnavailable`, nothing sent, even after the auto-defer; it never falls back to a new message | as the rows above |
+
+- Every send runs the Limits validator first (Strict: `ResponderError::Invalid`, no
+  request; Lenient: text truncated with `…`), adds `IS_COMPONENTS_V2` to V2 bodies,
+  mints Refs and the select nonce, and sends `allowed_mentions: {"parse": []}`: a
+  mention in the text pings nobody (MSG-05). Follow-ups count against the 5-follow-up
+  cap of user-installed apps (`FollowupCap`) and fail with `TokenExpired` after 15
+  minutes.
+- **One initial response per handler (INT-03).** Once the handler answered through a
+  context method or a typestate Pending method (`reply`, `defer_reply`, `update`,
+  `defer_update`, `show_modal`, …), a second initial response through either API
+  (`ctx.update`, or any Pending method of a Responder) is
+  `ResponderError::AlreadyResponded` and sends nothing. `ctx.respond` and
+  `ctx.reply_text` are never refused for that: they follow up. The auto-defer alone
+  never counts as your answer.
+- **Keep `response = update` on handlers that call `ctx.update`.** Under `response =
+  ephemeral | public` the auto-defer is type 5 (a new loading message), so an
+  `update` that loses the race edits that loading message, not the clicked one.
+- **A slash-opened modal submit** has no message: answer it with `ctx.respond(msg)`.
+  A modal opened both from a button and from a slash command can try `ctx.update`
+  and fall back on `UpdateUnavailable` (nothing was sent):
+
+  ```rust
+  let card = render_profile(&data, &s, true);
+  match ctx.update(card.clone()).await {
+      Err(err) if matches!(err.as_error().downcast_ref(), Some(ResponderError::UpdateUnavailable)) => {
+          ctx.respond(card).await
+      }
+      answered => answered,
+  }
+  ```
+- **`reply_text` text.** A `MessageKey` renders in the User Locale first for an
+  ephemeral notice and in the Guild Locale first for a public one (`en-US` when
+  neither is known or the code does not parse); a key no catalog has renders
+  `noctis.error.generic` with one `warn` on `noctis::i18n`. The text is sent as is:
+  an empty or blank text is not checked by Noctis (Discord's answer surfaces as
+  `Rejected`), and nothing is escaped (use `escape_markdown` on user text yourself).
+  `NoticeText` is the conversion target, `ReplyText` the awaitable builder (its
+  `Debug` hides the text).
+- **Over the Dispatcher** (a prefix Command): `respond` replies to the invoking
+  message (an ephemeral declared response is `EphemeralUnsupported`), and
+  `reply_text` is always public.
+- **Errors** come back as a `HandlerError` wrapping the `ResponderError`: find it with
+  `err.as_error().downcast_ref::<ResponderError>()`. Propagate them with `?`; the
+  user gets the usual error notice (§5).
+- **`response_locale()`** exists on every interactive context. On component and modal
+  contexts it follows who sees the response: the User Locale first for `response =
+  ephemeral` or when `update`-ing an ephemeral message, the Guild Locale first for a
+  public response (or no source message), `en-US` when neither is known.
+
+The doctrine lint (`xtask skill-check`) accepts these three calls in handlers and
+rejects `.reply(`/`.update(`/`.defer_reply(`/`.defer_update(`/`.edit_reply(` on any
+other receiver.
 
 ## 2. Auto-defer (FR-21, INT-01)
 
@@ -147,7 +205,7 @@ compile time:
   public` or `ephemeral`; under the default `update` it auto-defers as type 5 public, a
   returned message is a new public message (type 4), and both `update(..)` and
   `ctx.update(..)` return `UpdateUnavailable` without sending anything: answer with
-  `reply(msg)` or a returned message.
+  `ctx.respond(msg)`, `reply(msg)` or a returned message.
 
 `response` is independent of `auto_defer`: with `auto_defer = false` it still sets what
 `reply(msg)` and `defer_reply()` use; `reply_as(msg, e)` and `defer_reply_as(e)`

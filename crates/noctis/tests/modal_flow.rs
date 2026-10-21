@@ -5,8 +5,10 @@
 //! verbatim from `examples/project-template/src/modules/profile/{mod.rs,
 //! handlers.rs}`. Only the template-local helpers are stubs: the storage is
 //! `ctx.kv()`, the View is a one-line `render_profile`, `Strings`/`keys` are
-//! minimal, and the planned `Ctx` trait is a local one. Keep the copies in
-//! sync with the template.
+//! minimal, and the planned `Ctx` trait is a local one forwarding to the real
+//! context methods (`response_locale` included, Story 8.1). The handlers
+//! answer through the real `ctx.update`/`ctx.respond` (Story 8.1). Keep the
+//! copies in sync with the template.
 
 #![allow(
     clippy::unwrap_used,
@@ -23,7 +25,7 @@ use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{GuildMarker, UserMarker};
 use noctis::ui::{Components, TextDisplay, V2Message};
-use noctis::{Kv, Runtime};
+use noctis::{Kv, ResponderError, Runtime};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -46,15 +48,11 @@ impl Strings {
     }
 }
 
-/// The planned `Ctx` trait the template's helpers take, with the planned
-/// `response_locale()` of the component and modal contexts.
+/// The planned `Ctx` trait the template's helpers take.
 trait Ctx {
     fn guild_id(&self) -> Option<Id<GuildMarker>>;
     fn kv(&self) -> Kv;
-    fn user_locale(&self) -> Option<&str>;
-    fn response_locale(&self) -> &str {
-        self.user_locale().unwrap_or("en-US")
-    }
+    fn response_locale(&self) -> &str;
 }
 
 macro_rules! ctx {
@@ -66,8 +64,8 @@ macro_rules! ctx {
             fn kv(&self) -> Kv {
                 <$t>::kv(self)
             }
-            fn user_locale(&self) -> Option<&str> {
-                <$t>::user_locale(self)
+            fn response_locale(&self) -> &str {
+                <$t>::response_locale(self)
             }
         }
     )*};
@@ -93,6 +91,8 @@ async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<ProfileD
         .get(&profile_key(guild, user_id))
         .await?
         .unwrap_or_default();
+    // The card's text follows the response's locale (FR-43).
+    let _s = Strings::of(ctx.response_locale());
     Ok(ProfileData { bio: stored.bio })
 }
 
@@ -204,7 +204,7 @@ impl EditBio {
 
 impl BioForm {
     #[handler]
-    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
         let guild = guild_of(&ctx)?;
         let stored = StoredProfile {
             bio: self.bio.filter(|b| !b.trim().is_empty()),
@@ -215,8 +215,20 @@ impl BioForm {
             .await?;
         let data = load(&ctx, self.user).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_profile(&data, &s, true))
+        let card = render_profile(&data, &s, true);
+        match ctx.update(card.clone()).await {
+            Err(err) if is_update_unavailable(&err) => ctx.respond(card).await,
+            answered => answered,
+        }
     }
+}
+
+/// Whether `ctx.update` found no message to update (a modal opened from a slash command).
+fn is_update_unavailable(err: &HandlerError) -> bool {
+    matches!(
+        err.as_error().downcast_ref(),
+        Some(ResponderError::UpdateUnavailable)
+    )
 }
 
 // ---------------------------------------------------------------------------

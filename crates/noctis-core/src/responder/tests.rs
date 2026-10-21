@@ -195,6 +195,12 @@ const CB_REPLY: &str = "/api/v10/interactions/100/tok/callback?with_response=tru
 const ORIGINAL: &str = "/api/v10/webhooks/7/tok/messages/@original";
 const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true";
 
+/// Forgets that the handler answered, so a test can play another handle
+/// (the gate race of the auto-defer) on the same state.
+pub(crate) fn unanswer(shared: &Shared) {
+    shared.handler_answered.store(false, Ordering::Release);
+}
+
 fn responder(shared: &Arc<Shared>) -> CommandResponder {
     Responder::new(Arc::clone(shared))
 }
@@ -710,6 +716,7 @@ async fn detached_transport() {
     acked.delete_reply().await.unwrap();
     assert!(acked.edit_reply(LegacyMessage::new("x")).await.is_err());
     let _ = acked.done();
+    unanswer(&shared);
     let err = responder(&shared).reply(long_label(81)).await.unwrap_err();
     assert!(matches!(err, ResponderError::Invalid(_)), "{err}");
     assert!(format!("{shared:?}").contains("Detached"));
@@ -1025,6 +1032,7 @@ async fn gate_orders_initial_responses() {
         .await
         .unwrap()
         .done();
+    unanswer(&shared);
     let _ = responder(&shared).reply(v2("a")).await.unwrap().done();
     assert!(shared.auto_defer().await);
     let requests = fx.requests();
@@ -1511,4 +1519,5 @@ async fn renamed_calls_wire() {
 }
 
 mod components;
+mod ergonomics;
 mod refs;

@@ -31,7 +31,7 @@ use noctis_codec::{
 };
 use noctis_rules::Limits;
 use noctis_ui::__macro::ModalFromPayload;
-use noctis_ui::{ModalSubmission, SubmitError};
+use noctis_ui::{MessageFormat, ModalSubmission, SubmitError};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
@@ -43,7 +43,7 @@ use crate::kind::__Response;
 use crate::pipeline::component::Rejection;
 use crate::responder::{
     AutoDefer, Component, Declared, DeferMode, Ephemerality, GuardPhase, IntoResponse, ModalSubmit,
-    Pending, Responded, Responder, ResponderKind, Response, Shared, Transport,
+    Pending, Responded, Responder, ResponderKind, Response, Shared, SourceMessage, Transport,
 };
 
 /// The kind of a message component a [`ComponentHandler`] answers.
@@ -109,6 +109,16 @@ macro_rules! ctx_accessors {
                 self.0.guild_locale.as_deref()
             }
 
+            /// The locale the response should use (FR-43): for a handler
+            /// declared `response = ephemeral`, or one updating an
+            /// ephemeral message under `response = update`, the User
+            /// Locale, then the Guild Locale; for a public response (or no
+            /// source message) the Guild Locale, then the User Locale;
+            /// `"en-US"` when neither is known.
+            pub fn response_locale(&self) -> &str {
+                self.0.response_locale()
+            }
+
             /// The Ref the clicked or submitted `custom_id` carried (a
             /// `by_ref` Route, or a spilled `overflow = spill` one); `None`
             /// for an inline id. Return it in a
@@ -134,6 +144,16 @@ macro_rules! ctx_accessors {
             #[allow(dead_code, reason = "`ExpiredCtx` has no detached seam outside the tests")]
             pub(crate) fn detached() -> Self {
                 Self(Arc::new(CtxInner::detached_parts(Ephemerality::Public)))
+            }
+
+            /// A detached context bound to `shared`, whose responses are
+            /// `ephemerality` (the `__testing` seams).
+            #[allow(dead_code, reason = "`ExpiredCtx` has no detached seam")]
+            pub(crate) fn detached_bound(shared: &Arc<Shared>, ephemerality: Ephemerality) -> Self {
+                Self(Arc::new(CtxInner {
+                    shared: Some(Arc::clone(shared)),
+                    ..CtxInner::detached_parts(ephemerality)
+                }))
             }
 
             /// A context over the shared `parts` (the component pipeline,
@@ -172,6 +192,7 @@ macro_rules! ctx_accessors {
 pub struct ComponentCtx(Arc<CtxInner>);
 
 ctx_accessors!(ComponentCtx);
+crate::responder::ergonomics::ctx_methods!(ComponentCtx, update = Component);
 
 impl crate::kind::__Extensions for ComponentCtx {
     fn __extensions(&self) -> &crate::Extensions {
@@ -188,6 +209,7 @@ impl crate::kind::__Extensions for ComponentCtx {
 pub struct ModalSubmitCtx(Arc<CtxInner>);
 
 ctx_accessors!(ModalSubmitCtx);
+crate::responder::ergonomics::ctx_methods!(ModalSubmitCtx, update = ModalSubmit);
 
 impl crate::kind::__Extensions for ModalSubmitCtx {
     fn __extensions(&self) -> &crate::Extensions {
@@ -235,6 +257,7 @@ impl Expired {
 pub struct ExpiredCtx(Arc<CtxInner>);
 
 ctx_accessors!(ExpiredCtx, route = path);
+crate::responder::ergonomics::ctx_methods!(ExpiredCtx, update = Component);
 
 impl ExpiredCtx {
     /// The Route id of the component or modal (`"shop.buy"`).
@@ -1143,9 +1166,27 @@ fn run_detached(
     })
 }
 
-/// A detached shared state declaring `response`.
-fn detached(response: Declared) -> Arc<Shared> {
-    Shared::declared(Transport::Detached, response, None, Limits::default(), None)
+/// The placeholder source message of the detached seams: a public V2
+/// message, so `update` and `ctx.update` succeed there.
+const DETACHED_SOURCE: SourceMessage = SourceMessage {
+    id: Id::new(1),
+    channel_id: Id::new(1),
+    format: MessageFormat::V2,
+    ephemerality: Ephemerality::Public,
+};
+
+/// A detached shared state declaring `response`, on the placeholder
+/// source message, and the ephemerality of its responses.
+fn detached(response: Declared) -> (Arc<Shared>, Ephemerality) {
+    let shared = Shared::declared(
+        Transport::Detached,
+        response,
+        Some(DETACHED_SOURCE),
+        Limits::default(),
+        None,
+    );
+    let ephemerality = shared.response_ephemerality();
+    (shared, ephemerality)
 }
 
 /// Runs `handler` on `value` over a detached context and responder; the
@@ -1154,9 +1195,9 @@ pub(crate) fn call_component<S: Send + 'static>(
     handler: &ComponentHandler,
     value: S,
 ) -> BoxFuture<'static, HandlerResult<Responded>> {
-    let shared = detached(handler.response);
+    let (shared, ephemerality) = detached(handler.response);
     let fut = handler.call(
-        ComponentCtx::detached(),
+        ComponentCtx::detached_bound(&shared, ephemerality),
         Arc::clone(&shared),
         Box::new(value),
     );
@@ -1169,9 +1210,9 @@ pub(crate) fn call_modal<S: Send + 'static>(
     handler: &ModalHandler,
     value: S,
 ) -> BoxFuture<'static, HandlerResult<Responded>> {
-    let shared = detached(handler.response());
+    let (shared, ephemerality) = detached(handler.response());
     let fut = handler.call(
-        ModalSubmitCtx::detached(),
+        ModalSubmitCtx::detached_bound(&shared, ephemerality),
         Arc::clone(&shared),
         Box::new(value),
     );
@@ -1352,7 +1393,7 @@ mod tests {
         );
         assert_eq!(hooked.expired_link(stale, false), ExpiredLink::OnStale);
         assert_eq!(hooked.expired_link(missing, false), ExpiredLink::OnExpired);
-        let shared = detached(Declared::Update);
+        let (shared, _) = detached(Declared::Update);
         let started = hooked.start_hook(
             ExpiredLink::OnStale,
             ComponentCtx::detached(),

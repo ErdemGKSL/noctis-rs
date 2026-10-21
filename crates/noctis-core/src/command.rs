@@ -77,8 +77,24 @@ pub trait CommandPath: Copy + Send + Sync + 'static {
 ///     Ok(Components::new().push(TextDisplay::new(text)))
 /// }
 /// ```
+///
+/// Answer with [`respond`](Self::respond) or
+/// [`reply_text`](Self::reply_text). A Command has no message to update,
+/// so `CommandCtx` has no `update`:
+///
+/// ```compile_fail,E0599
+/// use noctis_core::{CommandCtx, HandlerResult, Responded};
+/// use noctis_ui::{Components, TextDisplay, V2Message};
+///
+/// async fn update(ctx: CommandCtx) -> HandlerResult<Responded> {
+///     let m = V2Message::new(Components::new().push(TextDisplay::new("hi")));
+///     ctx.update(m).await // [INT-04]
+/// }
+/// ```
 #[derive(Clone)]
 pub struct CommandCtx(Arc<CtxInner>);
+
+crate::responder::ergonomics::ctx_methods!(CommandCtx);
 
 /// The parts of a [`CommandCtx`].
 pub(crate) struct CtxInner {
@@ -103,6 +119,10 @@ pub(crate) struct CtxInner {
     /// The member's resolved channel permissions (`member.permissions`);
     /// `None` in DMs and for every Command.
     pub(crate) member_permissions: Option<crate::Permissions>,
+    /// The run's responder state, which `ctx.respond`, `ctx.update` and
+    /// `ctx.reply_text` answer through; `None` only for contexts built by
+    /// hand in crate unit tests (they answer `NoReply`).
+    pub(crate) shared: Option<Arc<Shared>>,
 }
 
 impl CtxInner {
@@ -112,6 +132,20 @@ impl CtxInner {
             Some(run) => run.extensions(),
             None => crate::Extensions::empty(),
         }
+    }
+
+    /// The response locale (FR-43): for an ephemeral response the User
+    /// Locale, then the Guild Locale; for a public one the Guild Locale,
+    /// then the User Locale; `"en-US"` when neither is known.
+    pub(crate) fn response_locale(&self) -> &str {
+        let (first, second) = match self.ephemerality {
+            Ephemerality::Ephemeral => (&self.user_locale, &self.guild_locale),
+            Ephemerality::Public => (&self.guild_locale, &self.user_locale),
+        };
+        first
+            .as_deref()
+            .or(second.as_deref())
+            .unwrap_or(DEFAULT_LOCALE)
     }
 }
 
@@ -133,6 +167,7 @@ impl CtxInner {
             current_ref: None,
             run: None,
             member_permissions: None,
+            shared: None,
         }
     }
 }
@@ -149,23 +184,30 @@ impl CommandCtx {
         Self(Arc::new(parts))
     }
 
-    /// A detached context (the `__testing` seams): no App, shard 0, user 1.
+    /// A detached context (the `__testing` seams) bound to `shared`: no
+    /// App, shard 0, user 1.
     pub(crate) fn detached(
         path: &'static str,
         input: CommandInput,
         ephemerality: Ephemerality,
+        shared: &Arc<Shared>,
     ) -> Self {
         Self::from_parts(CtxInner {
             path,
             input,
+            shared: Some(Arc::clone(shared)),
             ..CtxInner::detached_parts(ephemerality)
         })
     }
 
-    /// A detached context for an invocation of `path` without options.
+    /// An unbound context for an invocation of `path` without options.
     #[cfg(test)]
     pub(crate) fn new(path: &'static str) -> Self {
-        Self::detached(path, CommandInput::empty(path), Ephemerality::Public)
+        Self::from_parts(CtxInner {
+            path,
+            input: CommandInput::empty(path),
+            ..CtxInner::detached_parts(Ephemerality::Public)
+        })
     }
 
     /// The decoded interaction input.
@@ -220,14 +262,7 @@ impl CommandCtx {
     /// Locale, then the User Locale; `"en-US"` when neither is known
     /// (FR-43).
     pub fn response_locale(&self) -> &str {
-        let (first, second) = match self.0.ephemerality {
-            Ephemerality::Ephemeral => (&self.0.user_locale, &self.0.guild_locale),
-            Ephemerality::Public => (&self.0.guild_locale, &self.0.user_locale),
-        };
-        first
-            .as_deref()
-            .or(second.as_deref())
-            .unwrap_or(DEFAULT_LOCALE)
+        self.0.response_locale()
     }
 
     /// The ephemerality the Command declared
@@ -681,8 +716,14 @@ pub(crate) fn call_command(
     handler: &CommandHandler,
     path: &'static str,
 ) -> BoxFuture<'static, HandlerResult<()>> {
-    let ctx = CommandCtx::detached(path, CommandInput::empty(path), handler.ephemerality);
-    run_detached(|r| handler.call(ctx, r), handler.ephemerality)
+    run_detached(
+        |r| {
+            let ctx =
+                CommandCtx::detached(path, CommandInput::empty(path), handler.ephemerality, &r);
+            handler.call(ctx, r)
+        },
+        handler.ephemerality,
+    )
 }
 
 /// Decodes `json` (an interaction object) and runs `handler` for its path
@@ -697,10 +738,13 @@ pub(crate) fn call_command_json(
         Err(error) => return failed(HandlerError::new(error)),
     };
     match handler.paths.iter().find(|p| **p == input.path()) {
-        Some(path) => {
-            let ctx = CommandCtx::detached(path, input, handler.ephemerality);
-            run_detached(|r| handler.call(ctx, r), handler.ephemerality)
-        }
+        Some(path) => run_detached(
+            |r| {
+                let ctx = CommandCtx::detached(path, input, handler.ephemerality, &r);
+                handler.call(ctx, r)
+            },
+            handler.ephemerality,
+        ),
         None => unknown(input.path(), handler.name),
     }
 }

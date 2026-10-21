@@ -516,6 +516,20 @@ list in CI.
     callback type, defer variant and flags from the declared ephemerality and the
     runtime state machine, so the author never selects a response type. The Responder adds `IS_COMPONENTS_V2` to every V2 send and edit,
     finalizes Refs (AD-18) and attachments (AD-22), and runs the runtime validator.
+  - **Amended (2026-10-21, Story 8.1):** every interaction context carries its run's
+    responder state (`CtxInner::shared`), so the context methods and the typestate
+    Responder share one gate. `ctx.respond` is type 4 with the declared ephemerality
+    while unanswered, the edit of an unedited type-5 loading message (INT-12, keeping
+    its ephemerality), and a follow-up with the declared visibility after a type-6
+    defer or once answered. `ctx.update` is type 7, or a `PATCH @original` after
+    either auto-defer (a lost race to a type-5 auto-defer under `ephemeral | public`
+    edits the deferred reply, like the typestate `update`). `ctx.reply_text` edits a
+    matching type-5 loading message, else deletes it and follows up. A
+    `handler_answered` flag (never set by the auto-defer) makes a second initial
+    response through either API (`ctx.update` or any Pending method)
+    `ResponderError::AlreadyResponded` without a request; `ctx.respond` and
+    `ctx.reply_text` follow up instead. Decisions: the three Story 8.1 planning
+    lines of this folder's `.memlog.md`.
   - Webhook sends and edits go through the same serializer: always
     `with_components=true`, per-endpoint flag sets, and `ForeignWebhook::send` takes
     only a non-interactive `StaticMessage` (WH-02; renamed from `StaticView` on

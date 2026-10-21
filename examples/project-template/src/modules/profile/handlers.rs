@@ -2,12 +2,14 @@
 
 //! Commands and handlers. Each struct is the interaction (id + typed data); its
 //! `#[handler]` method loads the data, renders the card, and answers with
-//! `ctx.respond(render_profile(..))` (new message) or by returning the message from a
-//! component or modal handler (it updates the clicked message: `response = update`).
+//! `ctx.respond(render_profile(..))` (a new message) from a Command, or with
+//! `ctx.update(render_profile(..))` from a component or modal handler (it updates the
+//! clicked message in place: `response = update`).
 
 use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::image::RemoteImage;
 use noctis::prelude::*;
+use noctis::ResponderError;
 use noctis::ui::{Components, ResolvedUser, TextDisplay, V2Message, escape_markdown};
 
 use super::view::{ProfileCard, ProfileData, render_profile};
@@ -37,7 +39,7 @@ impl Profile {
         let target = self.user.map_or_else(|| ctx.user_id(), |u| u.user.id);
         let data = load(&ctx, target).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.respond(render_profile(&data, &s, ctx.user_id() == target)).await // [planned, Story 8.1]
+        ctx.respond(render_profile(&data, &s, ctx.user_id() == target)).await
     }
 }
 
@@ -74,12 +76,13 @@ pub struct Badge {
 
 impl Badge {
     #[handler]
-    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Components> {
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
         let Some(name) = BADGES.iter().find(|b| b.eq_ignore_ascii_case(&self.name)) else {
             return Err(HandlerError::user(keys::PROFILE_BADGE_UNKNOWN));
         };
         let s = Strings::of(ctx.response_locale());
-        Ok(Components::new().push(TextDisplay::new(s.profile.badge(escape_markdown(name)))))
+        let text = TextDisplay::new(s.profile.badge(escape_markdown(name)));
+        ctx.respond(V2Message::new(Components::new().push(text))).await
     }
 
     /// Suggests badges matching the raw (possibly partial) `typed` text. Noctis sends the
@@ -121,10 +124,10 @@ impl ShowProfile {
 
 impl RefreshProfile {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let data = load(&ctx, self.user).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_profile(&data, &s, self.editable))
+        ctx.update(render_profile(&data, &s, self.editable)).await
     }
 }
 
@@ -146,10 +149,12 @@ impl EditBio {
 
 impl BioForm {
     /// Modal → re-render: `self` is the decoded Payload plus the submitted values. Save,
-    /// then redraw the message the modal was opened from (`response = update`, the
-    /// default); a `/bio`-opened submit has no such message and gets a public reply.
+    /// then redraw the message the modal was opened from with `ctx.update` (`response =
+    /// update`, the default). A `/bio`-opened submit has no such message: `ctx.update`
+    /// sends nothing and fails with `UpdateUnavailable` (it never falls back to a new
+    /// message), so that submit answers with the card as a new message (`ctx.respond`).
     #[handler]
-    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
         let guild = guild_of(&ctx)?;
         let stored = StoredProfile {
             bio: self.bio.filter(|b| !b.trim().is_empty()),
@@ -158,8 +163,17 @@ impl BioForm {
         ctx.kv().put(&profile_key(guild, self.user), &stored, None).await?;
         let data = load(&ctx, self.user).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_profile(&data, &s, true))
+        let card = render_profile(&data, &s, true);
+        match ctx.update(card.clone()).await {
+            Err(err) if is_update_unavailable(&err) => ctx.respond(card).await,
+            answered => answered,
+        }
     }
+}
+
+/// Whether `ctx.update` found no message to update (a modal opened from a slash command).
+fn is_update_unavailable(err: &HandlerError) -> bool {
+    matches!(err.as_error().downcast_ref(), Some(ResponderError::UpdateUnavailable))
 }
 
 /// Loads the profile and renders the card. Rendering is awaited here, inside the

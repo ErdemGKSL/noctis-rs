@@ -788,6 +788,7 @@ fn start(
                     let ctx = CommandCtx::from_parts(CtxInner {
                         path,
                         input,
+                        shared: Some(Arc::clone(&r)),
                         ..parts
                     });
                     entry.handler.call(ctx, r)
@@ -803,6 +804,7 @@ fn start(
                     let ctx = CommandCtx::from_parts(CtxInner {
                         path,
                         input: CommandInput::empty(path),
+                        shared: Some(Arc::clone(&r)),
                         ..parts
                     });
                     entry.handler.call(ctx, target, r)
@@ -1527,6 +1529,7 @@ impl Dispatcher {
             current_ref: None,
             run: around.run(),
             member_permissions: None,
+            shared: None,
         };
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),
@@ -1547,7 +1550,13 @@ impl Dispatcher {
             restore: None,
         };
         let entry = Arc::clone(entry);
-        let start = move |shared| entry.handler.call(CommandCtx::from_parts(parts), shared);
+        let start = move |shared: Arc<Shared>| {
+            let parts = CtxInner {
+                shared: Some(Arc::clone(&shared)),
+                ..parts
+            };
+            entry.handler.call(CommandCtx::from_parts(parts), shared)
+        };
         execute(&span, None, shared, start, None, report).await;
         Ok(())
     }

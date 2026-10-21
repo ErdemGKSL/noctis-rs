@@ -270,8 +270,8 @@ pub use refs::RefOps;
 pub use responder::{
     Acked, AutoDefer, CallbackResource, CanShowModal, Command, CommandResponder, Component,
     ComponentResponder, DeferMode, Ephemerality, FollowupHandle, IntoEdit, IntoResponse, Manual,
-    ModalResponder, ModalSubmit, OutgoingMessage, Pending, Responded, Responder, ResponderError,
-    ResponderKind, ResponderState, Visibility,
+    ModalResponder, ModalSubmit, NoticeText, OutgoingMessage, Pending, ReplyText, Responded,
+    Responder, ResponderError, ResponderKind, ResponderState, Visibility,
 };
 pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};

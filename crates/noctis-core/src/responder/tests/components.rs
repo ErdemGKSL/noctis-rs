@@ -256,7 +256,9 @@ async fn auto_defer_by_declared_response() {
     assert!(shared.auto_defer().await);
     assert_eq!(shared.state(), DEFERRED_UPDATE);
     let _ = component(&shared).defer_update().await.unwrap().done();
+    unanswer(&shared);
     let _ = component(&shared).defer_reply().await.unwrap().done();
+    unanswer(&shared);
     let _ = component(&shared).update(v2("u")).await.unwrap().done();
     assert_eq!(
         fx.requests(),
@@ -267,6 +269,7 @@ async fn auto_defer_by_declared_response() {
     );
     // A `reply` after type 6 is a public follow-up, never an edit.
     clear(&fx);
+    unanswer(&shared);
     let _ = component(&shared).reply(v2("r")).await.unwrap().done();
     let requests = fx.requests();
     assert_eq!(
@@ -352,6 +355,7 @@ async fn show_modal_after_an_ack() {
     let shared = fx.component(Declared::Update, v2_source());
     let manual: ComponentResponder<Manual> = Responder::new(Arc::clone(&shared));
     let _ = component(&shared).defer_update().await.unwrap().done();
+    unanswer(&shared);
     let err = manual.show_modal(form()).await.unwrap_err();
     assert!(matches!(err, ResponderError::ModalUnavailable), "{err}");
     assert_eq!(fx.requests().len(), 1);

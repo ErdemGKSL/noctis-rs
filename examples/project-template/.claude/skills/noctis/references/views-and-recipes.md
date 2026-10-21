@@ -49,11 +49,15 @@ decode the Payload  →  validate / authorize  →  write to storage  →  ctx.u
 (`self` in #[handler])  (Route Guards + checks)   (port, State<T>)      (or ctx.respond / ctx.reply_text)
 ```
 
-| Call [planned, Story 8.1] | Sends | Use for |
+| Call | Sends | Use for |
 | --- | --- | --- |
 | `ctx.respond(msg).await` | a **new** message: the initial response (declared ephemerality), the edit of the deferred original after an auto-defer, or a follow-up once answered | slash Commands, context menus, a component that opens a separate panel |
-| `ctx.update(msg).await` | an **edit** of the message the component lives on (type 7, or `edit_reply` after the type-6 auto-defer; on a slash-opened modal's submit it returns `UpdateUnavailable` and sends nothing, so use `ctx.respond` there) | every button, select and modal submit that changes the screen (`ComponentCtx`, `ModalSubmitCtx` only) |
-| `ctx.reply_text(text).await` | a one-line V2 notice, **ephemeral** by default (`.public()` opts out); a follow-up once answered | "Pick a channel first.", "Saved.", "Not found." (`String`, `&'static str` or a `MessageKey`) |
+| `ctx.update(msg).await` | an **edit** of the message the component lives on (type 7, or `edit_reply` after the type-6 auto-defer; on a slash-opened modal's submit it returns `UpdateUnavailable` and sends nothing, so use `ctx.respond` there; once the handler answered it is `AlreadyResponded`) | every button, select and modal submit that changes the screen (`ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx`; not `CommandCtx`) |
+| `ctx.reply_text(text).await` | a one-line V2 notice, **ephemeral** by default (`.public()` opts out); a follow-up once answered or after a type-6 defer, the edit of a matching loading message after a type-5 defer | "Pick a channel first.", "Saved.", "Not found." (`String`, `&'static str` or a `MessageKey`) |
+
+Each returns `HandlerResult<Responded>`: end the handler with it, or `return` it early
+(`return ctx.reply_text(keys::SETUP_NEED_CHANNEL).await;`). The full state table is
+`responder.md` §1b.
 
 Each returns `HandlerResult<Responded>`; return it from the handler. Noctis picks the
 callback type, adds `IS_COMPONENTS_V2`, applies the declared ephemerality, defers for you

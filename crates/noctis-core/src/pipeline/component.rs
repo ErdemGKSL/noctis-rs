@@ -673,7 +673,7 @@ pub(crate) async fn run_component_over(
         },
         false,
     );
-    let parts = CtxInner {
+    let mut parts = CtxInner {
         // The Route id: `ExpiredCtx::route` (the component contexts do not
         // read it).
         path: entry.handler.route(),
@@ -693,8 +693,11 @@ pub(crate) async fn run_component_over(
         member_permissions: member.and_then(|m| m.permissions),
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
-    let parts = Arc::new(parts);
     let state = shared_for(transport, target.response());
+    // The response locale follows who sees the response (FR-43).
+    parts.ephemerality = state.response_ephemerality();
+    parts.shared = Some(Arc::clone(&state));
+    let parts = Arc::new(parts);
     let mut report = Report {
         app: &app,
         origin: ErrorOrigin::Component,

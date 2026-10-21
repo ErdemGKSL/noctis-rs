@@ -431,6 +431,9 @@ pub fn noctis::CommandCtx::shard(&self) -> u32
 pub fn noctis::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::CommandCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::CommandCtx
+pub fn noctis::CommandCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::CommandCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::CommandCtx
 pub fn noctis::CommandCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::CommandCtx
@@ -565,10 +568,16 @@ pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ComponentCtx::module(&self) -> &'static str
+pub fn noctis::ComponentCtx::response_locale(&self) -> &str
 pub fn noctis::ComponentCtx::shard(&self) -> u32
 pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::ComponentCtx
+pub fn noctis::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
+impl noctis::ComponentCtx
+pub fn noctis::ComponentCtx::update(&self, impl noctis::IntoEdit<noctis::Component>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::ComponentCtx
 pub fn noctis::ComponentCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ComponentCtx
@@ -779,12 +788,18 @@ pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ExpiredCtx::module(&self) -> &'static str
+pub fn noctis::ExpiredCtx::response_locale(&self) -> &str
 pub fn noctis::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::ExpiredCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
+impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::route(&self) -> &'static str
+impl noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::update(&self, impl noctis::IntoEdit<noctis::Component>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ExpiredCtx
@@ -1170,10 +1185,16 @@ pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
+pub fn noctis::ModalSubmitCtx::response_locale(&self) -> &str
 pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
+impl noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::update(&self, impl noctis::IntoEdit<noctis::ModalSubmit>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ModalSubmitCtx
@@ -1193,6 +1214,19 @@ impl core::clone::Clone for noctis::Module
 pub fn noctis::Module::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Module
 pub fn noctis::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::NoticeText
+pub noctis::NoticeText::Key(noctis::prelude::MessageKey)
+pub noctis::NoticeText::Text(alloc::borrow::Cow<'static, str>)
+impl core::clone::Clone for noctis::NoticeText
+pub fn noctis::NoticeText::clone(&self) -> Self
+impl core::convert::From<&'static str> for noctis::NoticeText
+pub fn noctis::NoticeText::from(&'static str) -> Self
+impl core::convert::From<alloc::string::String> for noctis::NoticeText
+pub fn noctis::NoticeText::from(alloc::string::String) -> Self
+impl core::convert::From<noctis::prelude::MessageKey> for noctis::NoticeText
+pub fn noctis::NoticeText::from(noctis::prelude::MessageKey) -> Self
+impl core::fmt::Debug for noctis::NoticeText
+pub fn noctis::NoticeText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::OptionError
 pub noctis::OptionError::Duplicate
 pub noctis::OptionError::Duplicate::option: alloc::string::String
@@ -1299,6 +1333,15 @@ impl core::fmt::Debug for noctis::RefOps
 pub fn noctis::RefOps::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::RefOps
 pub trait noctis::Register
+pub struct noctis::ReplyText
+impl noctis::ReplyText
+pub fn noctis::ReplyText::public(self) -> Self
+impl core::fmt::Debug for noctis::ReplyText
+pub fn noctis::ReplyText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::future::into_future::IntoFuture for noctis::ReplyText
+pub type noctis::ReplyText::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<noctis::Responded, noctis::HandlerError>> + core::marker::Send)>>
+pub type noctis::ReplyText::Output = core::result::Result<noctis::Responded, noctis::HandlerError>
+pub fn noctis::ReplyText::into_future(self) -> Self::IntoFuture
 #[non_exhaustive] pub enum noctis::ReportKind<'a>
 pub noctis::ReportKind::Cancelled
 pub noctis::ReportKind::Dropped
@@ -1364,6 +1407,7 @@ impl<K: noctis::ResponderKind, S: noctis::ResponderState, D: noctis::DeferMode> 
 pub fn noctis::Responder<K, S, D>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::ResponderError
 pub noctis::ResponderError::AckDeadlineMissed(noctis::AckDeadlineMissed)
+pub noctis::ResponderError::AlreadyResponded
 pub noctis::ResponderError::AttachmentsUnsupported
 pub noctis::ResponderError::Encode
 pub noctis::ResponderError::Encode::reason: alloc::string::String
@@ -3215,6 +3259,9 @@ pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
 pub fn noctis::prelude::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::CommandCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::prelude::CommandCtx
+pub fn noctis::prelude::CommandCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::prelude::CommandCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::CommandCtx
 pub fn noctis::prelude::CommandCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::CommandCtx
@@ -3269,10 +3316,16 @@ pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Optio
 pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
+pub fn noctis::prelude::ComponentCtx::response_locale(&self) -> &str
 pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
 pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::prelude::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
+impl noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::update(&self, impl noctis::IntoEdit<noctis::Component>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::ComponentCtx
@@ -3347,12 +3400,18 @@ pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<
 pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
+pub fn noctis::prelude::ExpiredCtx::response_locale(&self) -> &str
 pub fn noctis::prelude::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::prelude::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::prelude::ExpiredCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
+impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::route(&self) -> &'static str
+impl noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::update(&self, impl noctis::IntoEdit<noctis::Component>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::ExpiredCtx
@@ -3475,10 +3534,16 @@ pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Opt
 pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
+pub fn noctis::prelude::ModalSubmitCtx::response_locale(&self) -> &str
 pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+impl noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
+pub fn noctis::prelude::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
+impl noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::update(&self, impl noctis::IntoEdit<noctis::ModalSubmit>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::ModalSubmitCtx

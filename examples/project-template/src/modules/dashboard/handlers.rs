@@ -3,15 +3,15 @@
 //! Every handler has the same shape, `impl X { #[handler] async fn handle(self, ctx, ..) }`:
 //! `self` is the decoded Payload,
 //! validate and authorize (the Module's `guild_only` Middleware and the Route Guards run
-//! before the handler), write to storage, then
-//! `render_dashboard(..)` with freshly loaded data: the returned message updates the
-//! clicked dashboard in place (`response = update`, the default).
+//! before the handler), write to storage, then answer with
+//! `ctx.update(render_dashboard(..))` on freshly loaded data: it updates the clicked
+//! dashboard in place (`response = update`, the default); the Command answers with
+//! `ctx.respond(..)`.
 
 use std::time::UNIX_EPOCH;
 
 use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
-use noctis::ui::V2Message;
 
 use super::view::{DashData, module_name, render_dashboard};
 use super::{DashGuild, DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
@@ -48,7 +48,7 @@ impl Dashboard {
         };
         let data = load(&ctx, guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        ctx.respond(render_dashboard(&data, &s, tab, 0, ctx.limits())).await // [planned, Story 8.1]
+        ctx.respond(render_dashboard(&data, &s, tab, 0, ctx.limits())).await
     }
 
     /// Suggests modules from the Module registry's stored per-guild state, matched against
@@ -78,28 +78,28 @@ impl Dashboard {
 
 impl OpenTab {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
         let data = load(&ctx, self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_dashboard(&data, &s, self.tab, 0, ctx.limits()))
+        ctx.update(render_dashboard(&data, &s, self.tab, 0, ctx.limits())).await
     }
 }
 
 impl TurnPage {
     /// The page is untrusted client input: `render_dashboard` clamps it to the last page.
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
         let data = load(&ctx, self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_dashboard(&data, &s, DashTab::Roles, self.page, ctx.limits()))
+        ctx.update(render_dashboard(&data, &s, DashTab::Roles, self.page, ctx.limits())).await
     }
 }
 
 impl ToggleModule {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
         ctx.modules()
             .set_enabled(self.module.module_id(), ModuleScope::Guild(self.guild), self.enable)
@@ -107,7 +107,7 @@ impl ToggleModule {
         // Re-render the same tab with the new state, in place.
         let data = load(&ctx, self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits()))
+        ctx.update(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits())).await
     }
 }
 

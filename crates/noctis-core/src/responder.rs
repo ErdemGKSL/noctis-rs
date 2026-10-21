@@ -27,7 +27,12 @@
 //! interaction callback is ever sent (INT-03): when the auto-defer
 //! answered first, a later `reply` becomes an edit of the deferred reply, or
 //! a follow-up after a type-6 defer (the component's message is never
-//! overwritten by a `reply`), and `update` becomes an edit. After 15
+//! overwritten by a `reply`), and `update` becomes an edit. The context
+//! methods (`ctx.respond`, `ctx.update`, `ctx.reply_text`) decide under the
+//! same gate. Once the handler itself took the initial response, through
+//! either API, a second initial response (any Pending method, or
+//! `ctx.update`) is [`ResponderError::AlreadyResponded`] and sends nothing;
+//! the auto-defer alone never counts as the handler's answer. After 15
 //! minutes the interaction token is expired (INT-02): edits and deletes of
 //! public messages fall back to the bot token, everything else is
 //! [`ResponderError::TokenExpired`]. A user-installed app may send at most
@@ -101,6 +106,7 @@
 //! }
 //! ```
 
+pub(crate) mod ergonomics;
 mod transport;
 
 #[cfg(test)]
@@ -108,7 +114,7 @@ pub(crate) mod tests;
 
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use std::collections::HashMap;
@@ -127,6 +133,7 @@ use twilight_model::channel::Message;
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, MessageMarker};
 
+pub use self::ergonomics::{NoticeText, ReplyText};
 pub(crate) use self::transport::{InteractionTarget, MessageTarget, Transport};
 use crate::AckDeadlineMissed;
 use crate::handler::AppShared;
@@ -406,6 +413,16 @@ pub enum ResponderError {
     /// unanswered.
     #[error("there is no message to update: this modal was not opened from a component message")]
     UpdateUnavailable,
+    /// The handler already sent its initial response, through a
+    /// context method (`ctx.respond`, `ctx.update`, `ctx.reply_text`) or a
+    /// typestate [`Responder`], and then attempted a second one: a
+    /// `ctx.update`, or any Pending method of a [`Responder`] (`reply`,
+    /// `defer_reply`, `update`, `defer_update`, `show_modal`, …). Also a
+    /// response after a modal or a Middleware stop. Nothing was sent
+    /// (INT-03). `ctx.respond` and `ctx.reply_text` send a follow-up
+    /// instead once answered.
+    #[error("this handler already sent its initial response; nothing was sent")]
+    AlreadyResponded,
 }
 
 /// What Discord answered to a `…_with_response` callback: the
@@ -1240,6 +1257,10 @@ pub(crate) struct Shared {
     /// `true` for a modal submit: `show_modal` is refused with
     /// `ModalUnavailable` before any work (INT-04, INT-05).
     no_modal: bool,
+    /// Whether the handler itself took the initial response (a context
+    /// method or a typestate Pending method); never set by the auto-defer,
+    /// `finish` or `notice`. Written only under `gate`.
+    handler_answered: AtomicBool,
 }
 
 impl fmt::Debug for Shared {
@@ -1326,6 +1347,7 @@ impl Shared {
             followup_cap: cap,
             guard_phase: AtomicU8::new(GuardPhase::UNGUARDED),
             no_modal,
+            handler_answered: AtomicBool::new(false),
         })
     }
 
@@ -1343,6 +1365,37 @@ impl Shared {
     /// `STOPPED`.
     pub(crate) fn state(&self) -> u8 {
         self.state.load(Ordering::Acquire)
+    }
+
+    /// Who sees the handler's response, for its response locale (FR-43):
+    /// the declared ephemerality, or under `response = update` the source
+    /// message's (`Public` without one).
+    pub(crate) fn response_ephemerality(&self) -> Ephemerality {
+        match (self.declared, self.source) {
+            (Declared::Reply(ephemerality), _) => ephemerality,
+            (Declared::Update, Some(source)) => source.ephemerality,
+            (Declared::Update, None) => Ephemerality::Public,
+        }
+    }
+
+    /// Whether the handler itself took the initial response (INT-03).
+    pub(crate) fn answered(&self) -> bool {
+        self.handler_answered.load(Ordering::Acquire)
+    }
+
+    /// Records that the handler took the initial response; the caller
+    /// holds the gate.
+    fn mark_answered(&self) {
+        self.handler_answered.store(true, Ordering::Release);
+    }
+
+    /// [`ResponderError::AlreadyResponded`] once the handler answered.
+    fn refuse_answered(&self) -> Result<(), ResponderError> {
+        if self.answered() {
+            Err(ResponderError::AlreadyResponded)
+        } else {
+            Ok(())
+        }
     }
 
     /// The ephemerality of `reply` and `defer_reply`: the declared one, or
@@ -1538,23 +1591,25 @@ impl Shared {
         ephemerality: Ephemerality,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
+        self.refuse_answered()?;
         self.prepare(&mut msg).await?;
-        let gate = self.gate.lock().await;
-        match self.state() {
-            PENDING => self.send_reply(&msg, ephemerality, with_response).await,
+        let _gate = self.gate.lock().await;
+        self.refuse_answered()?;
+        let sent = match self.state() {
+            PENDING => self.send_reply(&msg, ephemerality, with_response).await?,
             DEFERRED_UPDATE => {
                 // The original is the clicked message: a reply is a new
                 // message, never an edit of it.
-                drop(gate);
-                self.send_follow_up(msg, ephemerality).await.map(|_| None)
+                self.send_follow_up(msg, ephemerality).await.map(|_| None)?
             }
             _ => {
                 // The auto-defer (or a defer) answered first (INT-03); the
                 // edit decides by the acknowledgement's ephemerality.
-                drop(gate);
-                self.edit_prepared(msg).await.map(|()| None)
+                self.edit_prepared(msg).await.map(|()| None)?
             }
-        }
+        };
+        self.mark_answered();
+        Ok(sent)
     }
 
     /// Sends the type-4 reply of the prepared `msg`; the caller holds the
@@ -1601,15 +1656,20 @@ impl Shared {
         ephemerality: Ephemerality,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
+        self.refuse_answered()?;
         if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
             return Err(ResponderError::EphemeralUnsupported);
         }
         let _gate = self.gate.lock().await;
+        self.refuse_answered()?;
         if self.state() != PENDING {
             tracing::debug!(target: "noctis::responder", "already acknowledged: defer_reply sends nothing");
+            self.mark_answered();
             return Ok(None);
         }
-        self.send_defer(ephemerality, with_response).await
+        let sent = self.send_defer(ephemerality, with_response).await?;
+        self.mark_answered();
+        Ok(sent)
     }
 
     /// Sends the type-5 defer of `ephemerality`; the caller holds the gate
@@ -1651,16 +1711,20 @@ impl Shared {
         mut msg: OutgoingMessage,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
+        self.refuse_answered()?;
         let Some(source) = self.source else {
             return Err(ResponderError::UpdateUnavailable);
         };
         self.prepare(&mut msg).await?;
-        let gate = self.gate.lock().await;
-        if self.state() != PENDING {
-            drop(gate);
-            return self.edit_prepared(msg).await.map(|()| None);
-        }
-        self.send_update(&msg, source, with_response).await
+        let _gate = self.gate.lock().await;
+        self.refuse_answered()?;
+        let sent = if self.state() == PENDING {
+            self.send_update(&msg, source, with_response).await?
+        } else {
+            self.edit_prepared(msg).await.map(|()| None)?
+        };
+        self.mark_answered();
+        Ok(sent)
     }
 
     /// Sends the type-7 update of `source` with the prepared `msg`; the
@@ -1692,15 +1756,20 @@ impl Shared {
         &self,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
+        self.refuse_answered()?;
         let Some(source) = self.source else {
             return Err(ResponderError::UpdateUnavailable);
         };
         let _gate = self.gate.lock().await;
+        self.refuse_answered()?;
         if self.state() != PENDING {
             tracing::debug!(target: "noctis::responder", "already acknowledged: defer_update sends nothing");
+            self.mark_answered();
             return Ok(None);
         }
-        self.send_defer_update(source, with_response).await
+        let sent = self.send_defer_update(source, with_response).await?;
+        self.mark_answered();
+        Ok(sent)
     }
 
     /// Sends the type-6 defer; the caller holds the gate and saw `PENDING`.
@@ -1752,6 +1821,7 @@ impl Shared {
         if self.no_modal || self.transport.is_message() {
             return Err(ResponderError::ModalUnavailable);
         }
+        self.refuse_answered()?;
         self.resolve_ids(std::iter::once(modal.custom_id_mut()))
             .await?;
         let report = noctis_ui::validate(&mut modal, &self.limits)?;
@@ -1762,6 +1832,7 @@ impl Shared {
             reason: e.to_string(),
         })?;
         let _gate = self.gate.lock().await;
+        self.refuse_answered()?;
         if self.state() != PENDING {
             return Err(ResponderError::ModalUnavailable);
         }
@@ -1771,6 +1842,7 @@ impl Shared {
                 .await?;
         }
         self.state.store(MODAL, Ordering::Release);
+        self.mark_answered();
         Ok(())
     }
 
