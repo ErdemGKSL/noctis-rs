@@ -2,7 +2,8 @@
 title: 'Story 7.3: Expired Handler and stale Payload routing'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'e944e542606870746ee8a7ae570dca2a5223cd66'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
