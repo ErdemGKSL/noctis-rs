@@ -2,7 +2,8 @@
 title: 'Story 7.8: Modal Routes and typed submissions end to end'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '2f36aa76d9e8a9bff8a41a87013bcd8aa93c1035'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
