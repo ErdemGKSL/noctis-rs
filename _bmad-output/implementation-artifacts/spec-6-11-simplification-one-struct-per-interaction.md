@@ -2,7 +2,7 @@
 title: 'Story 6.11: Simplification: one struct per interaction'
 type: 'refactor'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '72a45940fa77b8413b4b54a6f8e6a2daecbe03e9'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -14,7 +14,14 @@ context:
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/routes-payloads-refs.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/modals.md'
 warnings: ['oversized', 'multiple-goals']
-deferred: []
+deferred:
+  - summary: >-
+      The xtask doctrine lint never scans `#[autocomplete(field)]` methods, so UD-1/UD-7 checks (for example `tokio::spawn`) skip the handler kind with the hard 2.5 s budget.
+    evidence: |-
+      xtask/src/skill_check/doctrine.rs finds handlers only by the `handler` attribute; before Story 6.11 INTERACTIVE_ATTRS (command, user_command, message_command, handler) also excluded autocomplete, so the gap pre-dates this story and the spec only carried the existing classification over.
+    location: >-
+      xtask/src/skill_check/doctrine.rs
+    severity: low
 ---
 
 <intent-contract>
@@ -288,6 +295,46 @@ The error texts in this table are the required texts. `<S>` stands for the struc
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 36 findings — high 0, medium 2, low 24, false 10, maybe-false 0
+- findings:
+  - `[low]` `[patch]` `Suggestions` doctest `assert!(!Suggestions::<String>::new().len() > 0)` is bitwise NOT on usize and always true — confirmed at crates/noctis-core/src/autocomplete.rs:457; patch: assert `is_empty()`.
+  - `[low]` `[patch]` README showcase calls `ctx.state::<Db>().members(..)` though `state` returns `Option<State<T>>` on CommandCtx/ComponentCtx, and `main` never registers `Db` — confirmed (command.rs:219, component.rs:82; lines added by this diff); patch: handle the `Option` and register `Db` with `.state(..)`.
+  - `[false]` `[reject]` Context accessors disagree (`AutocompleteCtx::guild_id` Result / `state` panics vs `Option` elsewhere) — the spec's Boundaries mandate exactly this split (AutocompleteCtx changes; ComponentCtx/ModalSubmitCtx "mirror CommandCtx's accessors"), so it is the settled design, not a defect.
+  - `[medium]` `[patch]` Template handlers take `meta: State<BotMeta>`, a parameter shape `#[handler]` rejects (misleading "remove the path parameter" / Story 7.2 errors), with no `[planned]` marker; the autocomplete comment says 3 s instead of 2.5 s — confirmed in examples/project-template/src/modules/dashboard/handlers.rs L38/54/79/89/98 against the skill's app-and-sharding.md §9 ("today every #[handler] method takes exactly …"); the story owns syncing the template to the shipped shape; patch: read state via `ctx.state::<BotMeta>()`, fix the deadline text.
+  - `[low]` `[reject]` Withdrawn `#[derive(Route)]` help always shows a Button; bare `#[route]` has no stub — the help says "derive the component kind" with one example; a bare `#[route]` never compiled (it was a helper of the derive); noctis is pre-0.1 so migrations are rare, and per-argument branching is more than a direct correction.
+  - `[low]` `[reject]` Free-fn `#[handler]` help guesses the kind from the first parameter only — real but cosmetic; old menus used `#[user_command]` (own stub), free component handlers never shipped; the fix adds classification branches.
+  - `[low]` `[reject]` Responder detection is syntactic (aliases, renamed imports) — Design Notes chose syntactic classification by last segment; aliases of `CommandResponder` are unusual and a trait-based classifier adds hidden machinery.
+  - `[low]` `[patch]` `Register` "sealed" and public docs teach hidden API — sealing-by-hidden-items is what the spec asked for (that part is not a defect), but the rendered `Module` and `EventHandler` docs show `__add`/hand `Register` impls and the `EventHandler` prose still describes the withdrawn `#[event] async fn` form (handler.rs:1-2, ~L318-334; module.rs:116-133); patch: hide the `__`-calls in the doctests and rewrite the stale prose to the derive form.
+  - `[low]` `[patch]` Matrix 25 "MessageKey label in the user's locale" untested — `labels_are_cut_and_resolved` uses `app: None` and asserts English; no test exercises a translator with a non-English locale; patch: add a unit test with a translator and non-English user locale.
+  - `[false]` `[reject]` Valid suggestions past 25 lost when earlier ones are dropped — the spec orders it: "more than 25 items: the first 25 are kept" (Boundaries, Matrix 24), so this is the specified behaviour.
+  - `[false]` `[reject]` `DefaultEmoji::Custom` id 0 degrades silently — the derive rejects id 0 (defaults.rs parse_emoji `id > 0`) and the type is `#[doc(hidden)]`; no reachable path produces it.
+  - `[false]` `[reject]` Modal derive leaks `__NoctisModalPayload<Name>` and drops field attributes — the type is `#[doc(hidden)]`; two structs of the same name cannot coexist in one scope so the derived names cannot collide either; `#[derive(Payload)]` has no field attributes to drop.
+  - `[low]` `[patch]` Wording leftovers — the Display text and compile_fail doctest are acceptable (a compile_fail proving the method is absent is the INT-06 fact), but the skill's commands.md L606 files a `self` parameter under `[INT-06]` while the macro emits the id-less NO_SELF message (Matrix 21); patch: list the `self` case separately with its real message.
+  - `[low]` `[defer]` Doctrine lint never scans `#[autocomplete]` methods — real, but pre-existing: before this story INTERACTIVE_ATTRS also excluded autocomplete; deferred.
+  - `[low]` `[reject]` `defaults(min_values = 3)` without `max_values` compiles — real, but a compile error would forbid the legitimate per-render `.max_values(..)` override; Discord rejects the bad case loudly.
+  - `[low]` `[reject]` `max_values` above the Choices variant count — options can be replaced per render; a cross-check adds a const guard for a rare case.
+  - `[false]` `[reject]` Zero-variant Choices enum gives an empty select — the Choices derive rejects empty enums (choices.rs:198, "needs at least one variant").
+  - `[false]` `[reject]` `emoji = "abc"` accepted — the spec settles it: `emoji` is `<:name:id>`/`<a:name:id>` "or any other non-empty string (unicode)".
+  - `[low]` `[reject]` CV2-09 path says `row[0].button[0].placeholder` for a select — real cosmetic path naming (parse.rs:232); renaming the segment changes every Route-item path and its blessed fixtures, more than a direct correction for a rare diagnostic.
+  - `[low]` `[reject]` `.options([])` literal passes `components!` — writing a literal empty array is unlikely; the runtime validator rejects it (Matrix 47); the fix adds a guard.
+  - `[low]` `[reject]` `components!` `.min_values(n > 1)` alone not checked against the declared max — the macro cannot see the struct's defaults; same reasoning as the defaults min/max row.
+  - `[low]` `[patch]` Modal `by_ref`/`spill`/`signed` accepted but `from_submission` can never decode them (Ref → Malformed, `NeverVerifies` → Forged) — confirmed (form.rs:74-90, layout.rs:421-426); no dispatch path reaches it before Epic 7; patch: document the limitation on the decode docs and the skill's modals reference.
+  - `[low]` `[reject]` Responder in a `Type::Group` or alias misclassified — grouped with the syntactic-detection row; `Type::Group` only appears from `macro_rules!` `$t:ty`, rare.
+  - `[low]` `[reject]` `#[handler] async unsafe/extern/const fn` gives misleading errors — real deletion, but such handlers are not met in everyday use and the fix adds a guard.
+  - `[low]` `[reject]` A forgotten `#[text_input]` makes a `String` field an unbounded Payload field — the CID-01 error still points at the field; adding a modal-specific note is more than a direct correction.
+  - `[false]` `[reject]` `ChannelSelect::channel_types` now replaces — intended by §7 ("overrides … replace one field each") and documented in the method doc and routes-payloads-refs.md.
+  - `[low]` `[reject]` Old non-attribute forms (`Module::add(descriptor)`, `.button()` outside `components!`, `T::modal(route)`) give bare errors — their inputs come only from withdrawn forms that already fail with the struct-form help; a stub would add public surface.
+  - `[low]` `[patch]` Gap (pre-verified): modal codec arguments never exercised by `decode_modal_payload` tests — patch: add `modal_codec_arguments` in crates/noctis/tests/kinds.rs.
+  - `[low]` `[patch]` `signed`/`by_ref`/`spill` modals always Malformed — grouped with the modal-codec documentation row (same root cause).
+  - `[false]` `[reject]` CID-04 fires at the struct, not `.build()` — the spec's CID-04 Boundary and Design Notes settle the struct-level check, consistent with §7 ("no #[handler] impl, no .build()").
+  - `[low]` `[patch]` Runtime arguments rejected on component attributes — the rejection is spec-settled (Epic 7); but template AGENTS.md lists `response`/`auto_defer` among usable component arguments without a planned marker, which this story's marker removal exposed; patch: mark them planned (Epic 7).
+  - `[false]` `[reject]` Modal pre-fill deferred — epics.md Story 9.4 owns pre-fill and the intent names it; settled.
+  - `[low]` `[patch]` Locale-key defaults deferred — the deferral is settled by Story 9.3, but template AGENTS.md still says "texts are locale keys"; grouped with the template-wording patch.
+  - `[false]` `[reject]` `.default_values(..)` missing — epics.md Story 9.3 and the intent assign it to 9.3; marked planned in skill and template.
+  - `[medium]` `[patch]` Template handler signatures exceed the shipped `#[handler]` shape — grouped with the template-handler row above.
+  - `[low]` `[patch]` Verification grep prints crates/noctis-macros/src/components/parse.rs:759-762 — confirmed by running the grep; the negative-test lines lack the required `// withdrawn form` comment; patch: add it.
+
 ## Design Notes
 
 - **Missing-handler check: an inherent item shadows a blanket-trait fallback** (tested on 1.91 and 1.97 in a scratch crate).
@@ -333,3 +380,15 @@ The error texts in this table are the required texts. `<S>` stands for the struc
 
 **Manual checks:**
 - No CI job change: `.github/workflows-disabled/ci.yml` already runs every gate above.
+
+## Auto Run Result
+
+- **Summary:** One struct per interaction. Components, modals and commands are each a single struct with a derive plus a `#[handler]` (and `#[autocomplete(field)]`) method; `.build()` is inherent, `#[derive(Route)]`/free-fn handlers/`Module::add(descriptor)` are withdrawn with struct-form help. Compile-time CID-04 (missing handler) and autocomplete pairing checks (Matrix 15-18) use the inherent-shadows-blanket-trait pattern. `Register` is sealed via hidden items. Template, skill references, `docs/discord-rules.md` and `xtask/public-api.txt` updated.
+- **Files changed:** noctis-macros (component/modal/command/handler derives, `components!` parse), noctis-core (handler, module, autocomplete `Suggestions`), noctis-ui (modal form decode docs), noctis tests and trybuild UI fixtures, xtask (api snapshot, skill-check doctrine), docs/discord-rules.md, examples/project-template (code, AGENTS.md, noctis skill), README.md, xtask/public-api.txt.
+- **Review findings (36: high 0, medium 2, low 24, false 10):**
+  - Patched (12 entries, medium 2 / low 10): `Suggestions` doctest always-true assert; README showcase `Option` state + `Db` registration; template handlers using `State<BotMeta>` params replaced by `ctx.state::<BotMeta>()` and 2.5 s deadline text (2 medium, grouped); hidden `__`-calls in `Module`/`EventHandler` doctests and stale `#[event]` prose; MessageKey non-English locale label test; commands.md `self`-parameter message; modal `by_ref`/`spill`/`signed` decode limitation documented (2 grouped); `modal_codec_arguments` test; template AGENTS.md `response`/`auto_defer` and locale-key wording marked planned (2 grouped); `// withdrawn form` comments in parse.rs.
+  - Deferred (1): doctrine lint never scans `#[autocomplete]` methods (pre-existing).
+  - Rejected (23): 10 false (spec-settled accessor split, first-25 suggestions, emoji id 0 unreachable, hidden modal payload names, empty Choices rejected, unicode emoji accepted, channel_types replace, CID-04 at struct, pre-fill to 9.4, default_values to 9.3); 13 low rejected as cosmetic/rare or needing more than a direct correction (withdrawn-form help heuristics, syntactic responder detection incl. `Type::Group`, defaults min/max cross-checks, `.options([])` literal, CV2-09 path segment naming, unsafe/extern handlers, forgotten `#[text_input]` note, old non-attribute form stubs).
+- **Follow-up review recommended:** false (first pass patched high 0, medium 2 — but both medium entries are the same grouped template-handler fix, verified by gates; recorded patched counts high 0 / medium 2 / low 10).
+- **Verification:** all local gates green via gates.sh (fmt, clippy -D warnings, tests incl. trybuild, cargo hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91 check). CI paused by maintainer.
+- **Residual risks:** component/modal handlers lack responder parameters until Story 7.2; signed/by_ref/spill modals cannot decode before Epic 7; locale-key defaults, `.default_values`, modal pre-fill pending Stories 9.3/9.4; autocomplete methods unscanned by doctrine lint.

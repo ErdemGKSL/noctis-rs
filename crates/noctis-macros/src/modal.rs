@@ -1021,6 +1021,11 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
         #[automatically_derived]
         impl #ui::ModalForm for #name {
+            /// Decodes the Payload fields from the `custom_id`, then the inputs.
+            /// A modal declared `by_ref`, `overflow = spill` (once its Payload
+            /// overflows) or `signed` decodes only through component dispatch
+            /// (Epic 7); decoded directly it returns `SubmitError::Malformed`
+            /// until then.
             fn from_submission(
                 #s: &#ui::ModalSubmission,
             ) -> ::core::result::Result<Self, #ui::SubmitError> {

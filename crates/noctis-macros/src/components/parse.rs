@@ -756,10 +756,10 @@ mod tests {
         assert!(err(quote!(row[P.build(1)])).starts_with("expected a node"));
         // Story 6.11 Matrix 50: the withdrawn constructors.
         for old in [
-            quote!(buy.button()),
-            quote!(P.button_with(x)),
-            quote!(pick.string_select([o])),
-            quote!(p.channel_select().placeholder("x")),
+            quote!(buy.button()),                        // withdrawn form
+            quote!(P.button_with(x)),                    // withdrawn form
+            quote!(pick.string_select([o])),             // withdrawn form
+            quote!(p.channel_select().placeholder("x")), // withdrawn form
         ] {
             let e = err(quote!(row[#old]));
             assert!(e.contains("= help: write `Route { .. }.build()`"), "{e}");

@@ -333,6 +333,37 @@ fn labels_are_cut_and_resolved() {
     assert_eq!((warnings.dropped, warnings.labels_cut), (1, 2));
 }
 
+/// Story 6.11 Matrix 25: with the App's translator, a `MessageKey` label is
+/// that translator's text in the user's (non-English) locale.
+#[test]
+fn key_label_uses_the_app_translator_in_the_user_locale() {
+    struct Strings;
+    impl Translate for Strings {
+        fn translate(
+            &self,
+            locale: noctis_rules::Locale,
+            key: MessageKey,
+            _: &[(&str, &dyn fmt::Display)],
+        ) -> Option<String> {
+            Some(format!("{locale:?}:{}", key.as_str()))
+        }
+    }
+    // The context's locale (user `tr`), with the App's strings it would carry.
+    let labels = Labels {
+        strings: Some(Arc::new(Strings)),
+        ..ctx().labels()
+    };
+    let mut s = Suggestions::new();
+    s.push("e".to_owned(), noctis_i18n::keys::GUARD_OWNER);
+    let c = collect(s.lower(), &labels, &Limits::default());
+    let expected = format!(
+        "{:?}:{}",
+        noctis_rules::Locale::Tr,
+        noctis_i18n::keys::GUARD_OWNER.as_str()
+    );
+    assert_eq!(names(&c.choices), [expected.as_str()]);
+}
+
 /// Story 6.11 Matrix 26: values Discord would reject are dropped.
 #[test]
 fn bad_values_are_dropped() {

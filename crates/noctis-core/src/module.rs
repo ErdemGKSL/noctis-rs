@@ -119,13 +119,13 @@ pub(crate) enum NodeDecl {
 /// # async fn award_xp_fn(_: EventCtx, _: MessageCreate) -> HandlerResult<()> {
 /// #     Ok(())
 /// # }
-/// // What `#[derive(EventHandler)]` and `#[handler]` generate for `AwardXp`.
+/// // `#[derive(EventHandler)] #[event] struct AwardXp;` with its `#[handler]` method.
 /// struct AwardXp;
-/// impl Register for AwardXp {
-///     fn __register(module: Module) -> Module {
-///         module.__add(EventHandler::__new("bot::AwardXp", false, false, award_xp_fn))
-///     }
-/// }
+/// # impl Register for AwardXp {
+/// #     fn __register(module: Module) -> Module {
+/// #         module.__add(EventHandler::__new("bot::AwardXp", false, false, award_xp_fn))
+/// #     }
+/// # }
 ///
 /// let profile = Module::new("profile")
 ///     .add::<AwardXp>()

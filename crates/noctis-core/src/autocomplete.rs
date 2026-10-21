@@ -454,7 +454,7 @@ impl SuggestionValue for String {
 /// let mut rules: Suggestions<i64> = [(1, "No spam"), (2, "Be kind")].into_iter().collect();
 /// rules.push(3, String::from("Stay on topic"));
 /// assert_eq!(rules.len(), 3);
-/// assert!(!Suggestions::<String>::new().len() > 0);
+/// assert!(Suggestions::<String>::new().is_empty());
 /// ```
 pub struct Suggestions<T: SuggestionValue> {
     items: Vec<(T, SuggestionLabel)>,

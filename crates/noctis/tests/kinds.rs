@@ -12,7 +12,7 @@
 
 use std::sync::Mutex;
 
-use noctis::__private::codec::{Parts, SelectNonce};
+use noctis::__private::codec::{Parts, PayloadKey, Ref, SelectNonce};
 use noctis::__private::core::__testing::{call_component, call_modal, responded};
 use noctis::prelude::*;
 use noctis::rules::{LimitMode, Limits, RuleId};
@@ -120,6 +120,59 @@ impl BioForm {
         SEEN.lock()
             .unwrap()
             .push(format!("bio of {}: {:?}", self.user, self.bio));
+        Ok(responded())
+    }
+}
+
+#[derive(Modal, Debug)]
+#[modal("note.v3", schema = 3, defaults(title = "Note"))]
+struct NoteV3 {
+    user: Id<UserMarker>,
+    #[text_input("Note")]
+    note: Option<String>,
+}
+
+#[derive(Modal, Debug)]
+#[expect(
+    dead_code,
+    reason = "a Ref modal never decodes outside component dispatch, so its fields are never read"
+)]
+#[modal("note.ref", by_ref, defaults(title = "Note"))]
+struct NoteRef {
+    user: Id<UserMarker>,
+    #[text_input("Note")]
+    note: Option<String>,
+}
+
+#[derive(Modal, Debug)]
+#[expect(
+    dead_code,
+    reason = "a signed modal never decodes outside component dispatch, so its fields are never read"
+)]
+#[modal("note.sig", signed, defaults(title = "Note"))]
+struct NoteSigned {
+    user: Id<UserMarker>,
+    #[text_input("Note")]
+    note: Option<String>,
+}
+
+impl NoteV3 {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        Ok(responded())
+    }
+}
+
+impl NoteRef {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        Ok(responded())
+    }
+}
+
+impl NoteSigned {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
         Ok(responded())
     }
 }
@@ -291,6 +344,54 @@ fn modal_build_blank_and_submission() {
         };
         assert!(reason.contains("route `bio`"), "{reason}");
     }
+}
+
+/// Codec arguments on a modal: `schema` round-trips; a Ref or a signed id
+/// does not decode outside component dispatch (Epic 7) and is `Malformed`.
+#[test]
+fn modal_codec_arguments() {
+    let user = Id::new(42);
+    let submission = |custom_id: &str| {
+        format!(
+            r#"{{"type": 5, "data": {{"custom_id": "{custom_id}", "components": [
+                {{"type": 18, "component": {{"type": 4, "custom_id": "note", "value": "hey"}}}}
+            ]}}}}"#
+        )
+    };
+    let malformed = |custom_id: &str| -> String {
+        match NoteRef::from_json(submission(custom_id).as_bytes()) {
+            Err(SubmitError::Malformed { reason }) => reason,
+            other => panic!("{custom_id}: {other:?}"),
+        }
+    };
+
+    let built = json!(NoteV3 { user, note: None }.build());
+    let id = built["custom_id"].as_str().unwrap();
+    let form = NoteV3::from_json(submission(id).as_bytes()).unwrap();
+    assert_eq!((form.user, form.note.as_deref()), (user, Some("hey")));
+
+    let mut modal = NoteRef::blank(user);
+    let id = modal.custom_id_mut();
+    let slot = id.resolve(&Parts::new()).unwrap().expect("a Ref slot");
+    id.finish(&slot, Ref::mint().unwrap()).unwrap();
+    let reason = malformed(id.get().unwrap());
+    assert!(reason.contains("route `note.ref`"), "{reason}");
+    assert!(reason.contains("Ref"), "{reason}");
+
+    let key = PayloadKey::from_bytes([7; 32]);
+    let mut modal = NoteSigned::blank(user);
+    let id = modal.custom_id_mut();
+    assert!(
+        id.resolve(&Parts::new().with_signer(&key))
+            .unwrap()
+            .is_none()
+    );
+    let Err(SubmitError::Malformed { reason }) =
+        NoteSigned::from_json(submission(id.get().unwrap()).as_bytes())
+    else {
+        panic!("a signed modal does not decode directly");
+    };
+    assert!(reason.contains("route `note.sig`"), "{reason}");
 }
 
 /// Matrix 13, 51 and 52: registration stores the descriptors; the seams run

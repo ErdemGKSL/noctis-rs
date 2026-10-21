@@ -603,7 +603,8 @@ The flag and the method pair up, checked at `cargo check`:
 | `autocomplete` on a `Choices` field | `[OPT-10]` compile error (choices or autocomplete) |
 | `autocomplete` on a type other than `String`, `i64`, `f64` (or their `Option`) | `[OPT-11]` compile error |
 | `Suggestions<T>` with `T` other than the field's type without `Option` | `[OPT-11]` compile error |
-| `auto_defer` or `response` on `#[autocomplete]`, or a `self` parameter | `[INT-06]` compile error (autocomplete has no defer) |
+| `auto_defer` or `response` on `#[autocomplete]` | `[INT-06]` compile error (autocomplete has no defer) |
+| a `self` parameter on an `#[autocomplete]` method | compile error "an `#[autocomplete]` method takes no `self`: the options are incomplete, so it gets `filled: Partial<Self>`" |
 
 The method's parameters, always these three, in this order:
 

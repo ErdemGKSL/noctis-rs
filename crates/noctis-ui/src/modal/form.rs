@@ -68,8 +68,12 @@ pub trait ModalForm: Sized {
 ///
 /// # Errors
 ///
-/// [`SubmitError::Malformed`] naming the Route for any decode error, and for
-/// a Payload stored by Ref (resolved by core's dispatch, Epic 7).
+/// [`SubmitError::Malformed`] naming the Route for any decode error. A
+/// modal declared `by_ref`, `overflow = spill` (once its Payload overflows)
+/// or `signed` decodes only through component dispatch (Epic 7), which
+/// resolves the Ref and verifies the tag: decoded directly, its Payload is
+/// stored by Ref or its tag never verifies, so this returns `Malformed`
+/// until then.
 #[doc(hidden)]
 pub fn decode_modal_payload<R>(submission: &ModalSubmission) -> Result<R::Payload, SubmitError>
 where

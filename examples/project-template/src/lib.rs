@@ -22,7 +22,7 @@ use std::time::{Duration, SystemTime};
 use noctis::prelude::*;
 
 /// Read-only facts the dashboard shows. Registered once with `.state(..)` and
-/// extracted in handlers with `State<BotMeta>` (AD-9).
+/// read in handlers with `ctx.state::<BotMeta>()` (AD-9).
 #[derive(Debug, Clone)]
 pub struct BotMeta {
     pub started_at: SystemTime,

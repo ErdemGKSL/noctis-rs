@@ -123,7 +123,8 @@ impl Dashboard {
         let Some(guild) = ctx.guild_id() else {
             return Ok(V2Message::new(Components::new().push(TextDisplay::new("Servers only."))));
         };
-        let members = ctx.state::<Db>().members(guild).await?;
+        let db = ctx.state::<Db>().ok_or_else(missing_db)?;   // registered in `main`
+        let members = db.members(guild).await?;
         Ok(render_dashboard(&members, guild, Tab::Overview, 0))
     }
 }
@@ -132,7 +133,8 @@ impl Dashboard {
 impl OpenTab {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-        let members = ctx.state::<Db>().members(self.guild).await?;
+        let db = ctx.state::<Db>().ok_or_else(missing_db)?;   // registered in `main`
+        let members = db.members(self.guild).await?;
         ctx.update(render_dashboard(&members, self.guild, self.tab, 0)).await   // flags, defer, limits handled
     }
 }
@@ -140,9 +142,14 @@ impl OpenTab {
 impl MembersPage {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-        let members = ctx.state::<Db>().members(self.guild).await?;
+        let db = ctx.state::<Db>().ok_or_else(missing_db)?;   // registered in `main`
+        let members = db.members(self.guild).await?;
         ctx.update(render_dashboard(&members, self.guild, Tab::Members, self.page)).await
     }
+}
+
+fn missing_db() -> HandlerError {
+    HandlerError::new(std::io::Error::other("Db is not registered"))   // a bug: reaches the Error Sink
 }
 
 fn dashboard_module() -> Module {
@@ -154,6 +161,7 @@ async fn main() -> noctis::Result<()> {
     App::builder()
         .token_from_env()
         .module(dashboard_module())
+        .state(Db::connect("postgres://…").await?)               // read with `ctx.state::<Db>()`
         .ref_store(MyRedisRefStore::connect("redis://…").await?) // optional: memory by default
         .build()?          // runs every rule that needs the whole app, before connecting
         .run()

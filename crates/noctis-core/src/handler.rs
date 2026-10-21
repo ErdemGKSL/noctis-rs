@@ -1,5 +1,6 @@
 //! Typed Event Handlers: `HandlerError`, `EventCtx` and the erased
-//! `EventHandler` descriptor `#[event]` expands to (FR-6, AD-7, AD-13).
+//! `EventHandler` descriptor that `#[derive(EventHandler)]` with its
+//! `#[handler]` method expands to (FR-6, AD-7, AD-13).
 
 use std::error::Error;
 use std::fmt;
@@ -311,27 +312,29 @@ impl fmt::Debug for EventCtx {
 type ErasedHandler =
     dyn Fn(EventCtx, Event) -> Option<BoxFuture<'static, HandlerResult<()>>> + Send + Sync;
 
-/// One typed event handler, as `#[event]` builds it; add it to a
-/// [`Module`](crate::Module).
+/// One typed event handler, as `#[derive(EventHandler)]` and its
+/// `#[handler]` method build it; register the struct on a
+/// [`Module`](crate::Module) with `add::<T>()`.
 ///
 /// Opaque and cheap to clone. `Debug` prints the handler path, the event
 /// name and the `ordered`/`droppable` flags.
 ///
-/// Handlers come from `#[event]`: annotating `async fn on_delete` gives a
-/// `fn on_delete()` that returns its `EventHandler`.
-///
 /// ```
 /// # use noctis_core::events::{EventCtx, EventHandler, MessageDelete};
-/// # use noctis_core::{HandlerResult, Module};
+/// # use noctis_core::{HandlerResult, Module, Register};
 /// # async fn on_delete_fn(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
 /// #     Ok(())
 /// # }
-/// # fn on_delete() -> EventHandler {
-/// #     EventHandler::__new("bot::on_delete", false, false, on_delete_fn)
+/// // `#[derive(EventHandler)] #[event] struct AuditDelete;` with a
+/// // `#[handler] async fn handle(self, ctx: EventCtx, event: MessageDelete)`.
+/// struct AuditDelete;
+/// # impl Register for AuditDelete {
+/// #     fn __register(module: Module) -> Module {
+/// #         module.__add(EventHandler::__new("bot::AuditDelete", false, false, on_delete_fn))
+/// #     }
 /// # }
-/// let handler = on_delete();
-/// assert!(format!("{handler:?}").contains("MESSAGE_DELETE"));
-/// let module = Module::new("audit").__add(handler);
+/// let module = Module::new("audit").add::<AuditDelete>();
+/// assert_eq!(module.id(), "audit");
 /// ```
 #[derive(Clone)]
 pub struct EventHandler {
@@ -346,7 +349,8 @@ pub struct EventHandler {
 }
 
 impl EventHandler {
-    /// Builds a handler of `P` named `handler`; what `#[event]` expands to.
+    /// Builds a handler of `P` named `handler`; what the `#[handler]` method
+    /// of a `#[derive(EventHandler)]` struct expands to.
     #[doc(hidden)]
     pub fn __new<P, F, Fut>(handler: &'static str, ordered: bool, droppable: bool, f: F) -> Self
     where

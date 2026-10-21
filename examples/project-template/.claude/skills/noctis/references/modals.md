@@ -228,6 +228,10 @@ submission.unknown();                                        // &[serde_json::Va
   Action-Row-wrapped (type 1); Radio Group, Checkbox Group and Checkbox work although
   twilight-model drops them (FR-64). Unknown components are kept verbatim in `unknown()`,
   never dropped. Decoding never compares `custom_id` with the Route (dispatch is core's).
+- A modal declared `by_ref`, `overflow = spill` (once its Payload overflows) or `signed`
+  decodes only through component dispatch [planned, Epic 7]: `from_submission`/`from_json`
+  return `SubmitError::Malformed` for it until then (its Payload is stored by Ref or its tag
+  cannot be verified without the App).
 - `SubmittedValue` (`#[non_exhaustive]`): `TextInput(String)`, `StringSelect(Vec<String>)`,
   `UserSelect(Vec<Id<UserMarker>>)`, `RoleSelect(Vec<Id<RoleMarker>>)`,
   `MentionableSelect(Vec<Id<GenericMarker>>)`, `ChannelSelect(Vec<Id<ChannelMarker>>)`,

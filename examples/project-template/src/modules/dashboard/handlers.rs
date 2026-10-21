@@ -35,7 +35,8 @@ pub struct Dashboard {
 
 impl Dashboard {
     #[handler]
-    async fn handle(self, ctx: CommandCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;
         let Some(guild) = ctx.guild_id() else {
             return ctx.reply_text(keys::COMMON_GUILD_ONLY).await; // [planned, Story 8.1]
         };
@@ -51,7 +52,7 @@ impl Dashboard {
 
     /// Suggests modules from the Module registry's stored per-guild state, matched against
     /// the raw (possibly partial) `typed` text. Noctis sends the result itself: no
-    /// `respond`, no defer, at most 25 suggestions, within 3 s (`commands.md` §4).
+    /// `respond`, no defer, at most 25 suggestions, within 2.5 s (`commands.md` §4).
     #[autocomplete(module)]
     async fn module(
         ctx: AutocompleteCtx,
@@ -76,7 +77,8 @@ impl Dashboard {
 
 impl OpenTab {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;
         let data = load(&ctx, self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
         ctx.update(render_dashboard(&data, &s, self.tab, 0, ctx.limits())).await // [planned, Story 8.1]
@@ -86,7 +88,8 @@ impl OpenTab {
 impl TurnPage {
     /// The page is untrusted client input: `render_dashboard` clamps it to the last page.
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;
         let data = load(&ctx, self.guild, &meta).await?;
         let s = Strings::of(ctx.response_locale());
         ctx.update(render_dashboard(&data, &s, DashTab::Roles, self.page, ctx.limits())).await
@@ -95,7 +98,8 @@ impl TurnPage {
 
 impl ToggleModule {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let meta = bot_meta(ctx.state::<BotMeta>())?;
         ctx.modules()
             .set_enabled(self.module.module_id(), ModuleScope::Guild(self.guild), self.enable)
             .await?;
@@ -104,6 +108,12 @@ impl ToggleModule {
         let s = Strings::of(ctx.response_locale());
         ctx.update(render_dashboard(&data, &s, DashTab::Modules, 0, ctx.limits())).await
     }
+}
+
+/// `BotMeta` is registered with `.state(..)` in `main`; a missing registration is a bug
+/// (reported to the Error Sink), never a user condition.
+fn bot_meta(meta: Option<State<BotMeta>>) -> HandlerResult<State<BotMeta>> {
+    meta.ok_or_else(|| HandlerError::new(std::io::Error::other("BotMeta state is not registered")))
 }
 
 /// All I/O happens here, before rendering.
