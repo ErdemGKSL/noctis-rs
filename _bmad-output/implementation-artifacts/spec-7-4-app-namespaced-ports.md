@@ -2,7 +2,8 @@
 title: 'Story 7.4: App-namespaced ports'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '33615617482c22369d0d71b66288b2514dba9cc9'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
