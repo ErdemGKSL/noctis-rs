@@ -2,7 +2,7 @@
 title: 'Story 8.3: Budget helpers: cost and "how many items fit"'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'b4f0fc59ec4d845205efe7dcf5c1d482ea72b8a5'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -12,7 +12,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/api-design.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The template's worst-case page-line sizing in the Roles tab (`page_line(s, u16::MAX - 1, u16::MAX)` before `Budget::of(..).fits(..)`) is not verified by any test that runs in a local gate.
+    evidence: |-
+      Verification-gap layer (pre-verified): `examples/project-template` is excluded from the workspace (`Cargo.toml` `exclude`), so `cargo test --workspace` never builds `tests/flows.rs`; `skill-check` only lints its text; the CI `template-build` job only builds and is `continue-on-error` until Story 14.2. `flows.rs` also calls an undefined `roles_named` and checks `text_chars <= 4000` on page 1 only, with 120 roles (about 8 pages, one-digit page line). `pages_300_items_within_limits` passes with or without the worst-case measurement. Settle when the template test harness lands (Story 14.2): seed enough `ROLE_ROW_MAX_CHARS` roles for 10+ pages and assert the text budget on every page.
+    location: >-
+      examples/project-template/src/modules/dashboard/view.rs:112-119; examples/project-template/tests/flows.rs:90-112
+    severity: medium
 ---
 
 <intent-contract>
@@ -207,6 +214,32 @@ Default `Limits` unless stated. `T(s)` = `TextDisplay::new(s)`, `L` = `LinkButto
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 22 findings — high 0, medium 1, low 8, false 13, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `fits_prefix` takes only `&'a C` items, so an owned lazy `.map(..)` does not compile while `views-and-recipes.md` §4 says "a lazy iterator over a long list is fine" — the signature is fixed by the spec, but the skill wording misleads authors into a compile error; patch: reword the skill line to say items are borrowed (`rows.iter()`, `.iter().skip(offset)`), build owned rows first.
+  - `[low]` `[patch]` (blind) `fits`/`fits_prefix` clone each item twice (`item.clone().into_child()` then `child.clone()` inside `child_cost`) — real avoidable clone; patch: `child_cost` takes the `ContainerComponent` by value so the second clone goes (the public `Clone` bound stays, the spec's signature requires it).
+  - `[false]` `[reject]` (blind) `child_cost` passes `Limits::default()` to `rc::cost`, so `fits` could disagree with `validate` if `rc::cost` ever read limits — `noctis-rules/src/component.rs` `cost` does `let _ = limits;`, the spec mandates this, and the Q1/Q2 proptests run under random Limits against `validate`, so any future divergence fails them.
+  - `[false]` `[reject]` (blind) `fits` only takes `ContainerChild` items, top-level items cannot be sized — the intent (epics AC2 "any Container child") and spec Design Notes select this; rustdoc ("how many more Container children fit") and the skill ("The item is any Container child") state it.
+  - `[low]` `[reject]` (blind) `limits()` exists only on Command/Component/ModalSubmit contexts; `EventCtx` has none — the intent asks for none, EventCtx sends through raw `http()` that Noctis does not validate, rarely met, and the fix adds public API surface.
+  - `[low]` `[patch]` (blind) the three `limits()` accessors carry drifting rustdoc (`CommandCtx` links [`Limits::default`], the other two use plain backticks) — moving them into `ctx_accessors!` would also add `ExpiredCtx::limits` (new public surface), so patch only the doc text: make the two `component.rs` doc comments identical to `CommandCtx`'s.
+  - `[false]` `[reject]` (blind) proptests filter with `prop_assume!` and raise `max_global_rejects` to 1,000,000, risking slowness and "too many global rejects" flakes — each reject costs one cheap validate, 256 cases need far fewer than 1,000,000 rejects, and the suite passes; the flake cannot occur at that budget.
+  - `[low]` `[reject]` (blind) no test pins the CID-02 caveat, Lenient end to end through `ctx.limits()`, or dispatches `TurnPage::handle` — the caveat is documented and `fits_ignores_per_field_rules` pins the per-field half, C1 tests `ctx.limits()` through a running App; extra end-to-end tests are more than a direct correction for a negligible gap.
+  - `[low]` `[patch]` (blind) `noctis-ui/src/lib.rs` module doc: after inserting the `Budget` clause, "Both lower a message tree" is ambiguous and wrong for `Budget` — patch: make the sentence name `validate` and `cost`.
+  - `[low]` `[patch]` (blind) `docs/discord-rules.md` CV2-03/CV2-04 rows cite `fr_24_lenient_never_splits` and `limits::budget::tests` without crate paths, unlike the other cited tests — patch: give their paths (`crates/noctis-core/src/responder/tests.rs`, `crates/noctis-ui/src/limits/budget.rs`).
+  - `[false]` `[reject]` (blind) test `render` underflows on an empty role list and `.max(1)` hides a zero budget — the test's role list is a fixed 300; `fits == 0` only when the fixed parts alone exhaust the Limits, and then the over-budget page fails loudly with the FR-24 `Invalid` error (correct behavior; without `.max(1)` the page count divides by zero). The spec's Design Notes prescribe `.max(1)`.
+  - `[false]` `[reject]` (edge) template `.max(1)` forces one row when fixed parts exhaust the budget — same refutation: the Responder rejects that page with a typed CV2-03/CV2-04 error and no request; the proposed "no roles" fallback would hide a real misconfiguration.
+  - `[medium]` `[defer]` (vgap, pre-verified) the template's worst-case page-line sizing is verified by no test that runs (template excluded from the workspace, `flows.rs` non-compiling and checking page 1 text only) — filed disposition defer: the template test harness lands with Story 14.2; recorded in `deferred`.
+  - `[false]` `[reject]` (intent 1) the 300-item test steps pages by mapping `custom_id`s, not by dispatching clicks — the spec settled G2 this way, it decodes real rendered `custom_id`s against `TurnPage { page: k }.build()`, and `ctx.limits()` through dispatch is C1.
+  - `[false]` `[reject]` (intent 2) AC5 "the template's Roles tab uses it" is asserted only by pre-existing code — the AC is satisfied: the Roles tab calls `Budget::of` and `ctx.limits()`, now real API, and `skill-check` passes; the test gap is the deferred vgap entry.
+  - `[false]` `[reject]` (intent 3) `Budget::of` takes only `V2Message`, not a `Components`/`Container` or legacy message — spec Design Notes settle this correctly (Container children exist only in V2; legacy text is MSG-01); wrapping fixed parts in `V2Message::new` is the partly built message.
+  - `[false]` `[reject]` (intent 4) `fits_prefix` accepts only an iterator of references — an iterator of `&ContainerComponent` is "an iterator of differently sized items"; the spec fixes this signature. The misleading skill wording is the patched blind row.
+  - `[low]` `[reject]` (intent 5) the proptest generator omits selects, `File` and Route buttons — CID-02 exclusion is deliberate; select-row cost is pinned by B8, and the budget arithmetic is shape-independent; adding generators is more than a direct correction for a negligible gap.
+  - `[false]` `[reject]` (intent 6) CV2-06 is in the story's Implements line but not tied to `Budget` — CV2-06 is enforced at compile time by `ActionRow::buttons`/`select`; `Budget` counts the valid row shapes (B8, F4, F12), and the spec rightly keeps row shape out of the budget.
+  - `[false]` `[reject]` (intent 7) no public per-component cost (FR-62 consequence 1) — the FR traceability row assigns `cost` to Story 4.3, and any component's cost is `cost(&V2Message::new(Components::new().push(item)), &limits)`, exactly how the spec defines item cost.
+  - `[false]` `[reject]` (intent 8) FR-24 proof covers only `reply` — the spec's V1-V3 settle this; every send path builds its body through the same validation, already covered by `limits_strict_and_lenient` and earlier stories.
+  - `[false]` `[reject]` (intent 9) `ctx.limits()` is public surface the story text does not name — the intent-contract Approach names it, and it is the only way a handler's render function gets "the App's Limits" the AC requires.
+
 ## Design Notes
 
 - **Why only `V2Message`.** Sample items are Container children, which exist only in V2. A legacy message's text budget is `content` (MSG-01), a different Limit.
@@ -235,3 +268,12 @@ let per_page = Budget::of(&fixed, limits).fits(&TextDisplay::new("x".repeat(ROLE
 - `grep -rn "planned, Story 8.3" examples/project-template crates docs` -- no hit
 - `grep -rn "ctx.limits()" examples/project-template | grep planned` -- no hit
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Added `noctis_ui::limits::Budget` (`Budget::of(&V2Message, &Limits)`, `fits(&item)`, `fits_prefix(iter)`) answering how many more Container children fit under CV2-03/CV2-04 using the same `cost` as `validate`; added `ctx.limits()` on Command/Component/ModalSubmit contexts; FR-24 proof that Lenient never splits; template Roles tab paginates with `Budget` sized at worst-case fixed parts.
+- **Files changed:** `crates/noctis-ui/src/limits/budget.rs` (Budget + unit tests), `crates/noctis-ui/src/limits/mod.rs` and `lib.rs` (exports, docs), `crates/noctis-core/src/command.rs`/`component.rs` (`limits()` accessors), `crates/noctis-core/src/responder/tests.rs` (`fr_24_lenient_never_splits`), `crates/noctis/src/lib.rs` (re-exports), `crates/noctis/tests/budget.rs` (proptests vs `validate`, 300-item pagination), `crates/noctis-testkit/tests/responder_ergonomics.rs` (`ctx.limits()` via App), `docs/discord-rules.md` (CV2-03/04 rows), `xtask/public-api.txt` (re-blessed), template skill refs, `AGENTS.md`, `dashboard/view.rs`.
+- **Review findings (22):** high 0, medium 1, low 8, false 13. Patched 5 (all low): skill wording on borrowed items for `fits_prefix`, removed double clone in `child_cost`, unified `limits()` rustdoc, clarified `noctis-ui` module doc, crate paths for cited tests in discord-rules. Deferred 1 (medium): template worst-case page-line sizing untested until the template harness (Story 14.2). Rejected 16 with recorded reasons (e.g. `Limits::default()` in `child_cost` is unused by `rc::cost` and proptests guard divergence; `.max(1)` is spec-prescribed and over-budget pages fail with typed FR-24 error; no `EventCtx::limits` to avoid new surface; CID-02 exclusion from generators deliberate).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 5).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** template Roles-tab pagination is not exercised by a running test until Story 14.2; `Budget` ignores per-field rules (documented CID-02 caveat).

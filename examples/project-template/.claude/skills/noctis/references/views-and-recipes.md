@@ -542,8 +542,9 @@ budget.fits_prefix(rows.iter());                      // how many rows from the 
   `ContainerComponent`); inside a Container it costs the same, since the Container is a
   fixed part.
 - `fits_prefix(items)` is greedy and in order: it adds up the costs and stops at the first
-  item that does not fit, even if a later, smaller one would. It pulls at most `k + 1`
-  items, so a lazy iterator over a long list is fine.
+  item that does not fit, even if a later, smaller one would. It borrows the items
+  (`rows.iter()` or `rows.iter().skip(offset)`) and pulls at most `k + 1` of them, so
+  build owned rows into a `Vec` first; an owned `.map(..)` iterator does not compile.
 - Budgets only: CV2-03 and CV2-04. Per-field rules (label 80, URLs, CV2-06 row shape) and
   CID-02 are not counted. `n` copies of one Route button with the same Payload fit the
   budget but fail CID-02, so real rows differ by Payload.

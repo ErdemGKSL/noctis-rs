@@ -198,7 +198,8 @@
 //! [`Modal`] against `noctis_rules::Limits` before it is sent, and [`cost`]
 //! measures one without changing it; [`Budget`] turns that cost into what
 //! is left of CV2-03 and CV2-04 beside a message's fixed parts and how many
-//! items of one shape still fit (FR-62). Both lower a message tree into
+//! items of one shape still fit (FR-62). [`validate`] and [`cost`] lower a
+//! message tree into
 //! `noctis_rules::component` descriptors (a modal into `noctis_rules::modal`
 //! ones), so counts, paths and violation order match `components!`;
 //! for messages they add CID-02, ATT-05, ATT-06, MSG-01, MSG-04 and MSG-09,

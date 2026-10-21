@@ -256,9 +256,9 @@ pub fn cost<M: Validate>(message: &M, limits: &Limits) -> CostReport {
 /// exactly [`cost`] of a message holding only that child at the top level.
 ///
 /// `rc::cost` does not read its limits, so the default ones are passed.
-pub(crate) fn child_cost(child: &ContainerComponent) -> (usize, usize) {
+pub(crate) fn child_cost(child: ContainerComponent) -> (usize, usize) {
     let body = Components {
-        items: vec![TopLevelComponent::from(child.clone())],
+        items: vec![TopLevelComponent::from(child)],
     };
     let c = lower::with_v2(&body, |tree| rc::cost(tree, &Limits::default()));
     (c.components, c.text_len)

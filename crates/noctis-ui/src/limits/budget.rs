@@ -97,7 +97,7 @@ impl Budget {
     /// ```
     #[must_use]
     pub fn fits<C: ContainerChild + Clone>(&self, item: &C) -> usize {
-        let (c, t) = child_cost(&item.clone().into_child());
+        let (c, t) = child_cost(item.clone().into_child());
         let by_components = self.components_left.checked_div(c).unwrap_or(usize::MAX);
         let by_text = self.text_left.checked_div(t).unwrap_or(usize::MAX);
         by_components.min(by_text)
@@ -125,7 +125,7 @@ impl Budget {
     {
         let (mut components, mut text, mut count) = (0_usize, 0_usize, 0_usize);
         for item in items {
-            let (c, t) = child_cost(&item.clone().into_child());
+            let (c, t) = child_cost(item.clone().into_child());
             components = components.saturating_add(c);
             text = text.saturating_add(t);
             if components > self.components_left || text > self.text_left {

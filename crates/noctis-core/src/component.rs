@@ -197,7 +197,7 @@ ctx_accessors!(ComponentCtx);
 impl ComponentCtx {
     /// The App's Limits (`AppBuilder::limits`), what the Responder
     /// validates against; pass it to render functions that size pages with
-    /// `noctis::ui::Budget`. `Limits::default()` in the detached test
+    /// `noctis::ui::Budget`. [`Limits::default`] in the detached test
     /// seams.
     pub fn limits(&self) -> &Limits {
         crate::command::limits_of(self.0.app.as_deref())
@@ -224,7 +224,7 @@ ctx_accessors!(ModalSubmitCtx);
 impl ModalSubmitCtx {
     /// The App's Limits (`AppBuilder::limits`), what the Responder
     /// validates against; pass it to render functions that size pages with
-    /// `noctis::ui::Budget`. `Limits::default()` in the detached test
+    /// `noctis::ui::Budget`. [`Limits::default`] in the detached test
     /// seams.
     pub fn limits(&self) -> &Limits {
         crate::command::limits_of(self.0.app.as_deref())
