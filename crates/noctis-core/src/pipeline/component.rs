@@ -662,7 +662,10 @@ pub(crate) async fn run_component_over(
     });
     let started = match begun {
         Ok(Ok(Begin::Ready(future))) => Ok(Ok(future)),
-        Ok(Ok(Begin::Ref(r))) => match lookup(&app, r, target.one_shot()).await {
+        Ok(Ok(Begin::Ref(r))) => match lookup(&app, r, target.one_shot())
+            .instrument(span.clone())
+            .await
+        {
             Err(rejection) => Ok(Err(rejection)),
             Ok(record) => {
                 let handle = Arc::clone(&state);

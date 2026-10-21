@@ -259,6 +259,65 @@ async fn exhausted_and_failing_stores_send_nothing() {
     assert_eq!(shared.state(), PENDING);
 }
 
+/// An `InvalidValue` from the store names a placeholder, never the Ref:
+/// neither the error's Display nor its source chain carries the key.
+#[tokio::test]
+async fn a_store_error_never_prints_the_ref() {
+    let refs = TestRefs::new();
+    refs.fail_puts_invalid();
+    let fx = Fixture::start_refs(discord(), Arc::clone(&refs), None).await;
+    let err = update(&fx, row!([button(Stored { item: 1 })]))
+        .await
+        .unwrap_err();
+    let puts = refs.calls_of("put_if_absent");
+    let r = puts[0].key.rsplit(':').next().unwrap().to_owned();
+    assert_eq!(r.len(), 11);
+    let mut chain = vec![err.to_string()];
+    let mut source = std::error::Error::source(&err);
+    while let Some(e) = source {
+        chain.push(e.to_string());
+        source = e.source();
+    }
+    assert_eq!(chain.len(), 2, "{chain:?}");
+    assert_eq!(
+        chain[0],
+        "the Ref could not be stored: invalid value under key `<ref>`: record too large"
+    );
+    for text in &chain {
+        assert!(!text.contains(&r), "{text}");
+        assert!(!text.contains(":ref:"), "{text}");
+    }
+    assert!(fx.requests().is_empty());
+}
+
+/// A Ref minted over the message transport (a Dispatcher reply) is stored
+/// with the App's TTL under the sent id's Ref.
+#[tokio::test]
+async fn message_transport_mints_the_ref() {
+    let refs = TestRefs::new();
+    let fx = Fixture::start_refs(discord(), Arc::clone(&refs), None).await;
+    let shared = fx.message(Ephemerality::Public);
+    shared
+        .finish(row!([button(Stored { item: 1 })]).into())
+        .await
+        .unwrap();
+    let requests = fx.requests();
+    let request = requests.last().expect("a request");
+    assert_eq!(request.1, "/api/v10/channels/5/messages");
+    let id = request.2["components"][0]["components"][0]["custom_id"]
+        .as_str()
+        .expect("an id");
+    assert!(id.starts_with("0stored:~"), "{id}");
+    assert_eq!(
+        refs.calls(),
+        [crate::test_support::RefCall {
+            op: "put_if_absent",
+            key: format!("default:ref:{}", ref_of(id)),
+            ttl: Some(DAY),
+        }]
+    );
+}
+
 /// Matrix 16: a `spill` Route is inline while the value fits (no store
 /// call) and by Ref otherwise (one call).
 #[tokio::test]

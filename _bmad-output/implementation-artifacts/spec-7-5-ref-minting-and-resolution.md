@@ -2,17 +2,24 @@
 title: 'Story 7.5: Ref minting and resolution'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '4a19d24eb8a6afccd26daafa428db5106b1d4fff'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-7-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/routes-payloads-refs.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/responder.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      noctis::codec::RefError::Rng exposes getrandom::error::Error in the public API, and Ref::mint is public only for tests.
+    evidence: |-
+      xtask/public-api.txt lists `pub noctis::codec::RefError::Rng(getrandom::error::Error)`; a getrandom major bump becomes a noctis breaking change. Both RefError::Rng and Ref::mint pre-exist in the published noctis-codec (before Story 7.5); 7.5 only re-exports them through the facade. A fix wraps the source in an opaque error type.
+    location: >-
+      crates/noctis-codec/src/refs.rs
+    severity: low
 ---
 
 <intent-contract>
@@ -244,6 +251,43 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 33 findings — high 0, medium 6, low 17, false 10, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) A `one_shot` by-Ref modal's Ref is taken before its inputs are decoded, so an invalid submission burns it; the skill's one-shot caveat names only handler errors and panics — `run_component_over` calls `lookup` (`take`) before `start_record`, which yields `SubmitInvalid`/`Undecodable`; the spec settles `take` at resolution, so the fix documents the modal case in `routes-payloads-refs.md` §7 and `modals.md` (grouped with edge "one_shot taken then rejection burns record").
+  - `[low]` `[reject]` (blind) Dispatch discards the `PortError` of a failed lookup — real (`Err(_) => Err(Rejection::RefStore)`), but the `reason="ref_store"` warn already marks the store failure; store outages are rare and threading the kind into the single rejection warn adds a field/branch.
+  - `[medium]` `[patch]` (blind) `ResponderError::RefStore` can print the Ref — `PortError::InvalidValue`'s Display is ``invalid value under key `{key}` ``, the memory store returns it from `put_if_absent` for an oversized record with the namespaced key `<app>:ref:<ref>`, and `LogSink` logs the full error chain; the fix redacts the key before wrapping (grouped with edge "ResponderError::RefStore Display leaks the key").
+  - `[false]` `[reject]` (blind) The docs place Ref resolution at stage 2 but the code runs it after arming the auto-defer — the lookup runs before `arm` (local "Stage 5") and before the handler; no AD-23 stage 3-8 exists yet between decode and lookup, so pipeline order matches AD-23 stage 2.
+  - `[low]` `[patch]` (blind) The new async lookup runs outside the interaction span and is not followed by a cancel re-check — the span part is real: every other awaited I/O in the pipeline is `.instrument(span.clone())`, `lookup(..).await` is not; patched with `.instrument(span.clone())` (the cancel part is its own edge row).
+  - `[low]` `[reject]` (blind) The "concurrent clicks" test is not truly concurrent — true for `TestRefs`, but core calls the port's atomic `take`, whose atomicity is the adapter contract; a multi-thread barrier store adds test machinery for a rarely-met gap.
+  - `[low]` `[patch]` (blind) The CID-03 rule row in `docs/discord-rules.md` (L176) still lists `ttl` and `one_shot` as rejected runtime arguments — verified; patched to say they are accepted on by-Ref Routes only.
+  - `[low]` `[reject]` (blind) The TTL range `1 s..=365 d` is defined in the macros, in core and in the docs instead of `noctis-rules` — the two crates validate independent values (Route `ttl`, App `ref_ttl`), so no caller diverges; it is not a Discord-rule limit and moving it adds public `noctis-rules` surface.
+  - `[low]` `[patch]` (blind) `responder.md` says `Encode` covers "two equal ids" — two equal ids are CID-02 `Invalid(UiError)` (asserted by `equal_slots_share_one_ref_per_send`); patched to name the real `Encode` cases.
+  - `[low]` `[defer]` (blind) `noctis::codec::RefError::Rng(getrandom::error::Error)` ties the public API to `getrandom`; `Ref::mint` is public — both pre-exist in the published `noctis-codec` (before 7.5); deferred.
+  - `[low]` `[reject]` (blind) The API snapshot lists each tuple impl under both `IntoEdit` and `IntoResponse` — the duplicate lines are real, but the snapshot is deterministic and the `api-snapshot` gate and API hash still work; cosmetic snapshot noise, fix is xtask placement logic.
+  - `[false]` `[reject]` (blind) The detached seam mints Refs that a bot author's test can then click and never resolve — `run_detached` validates and encodes the returned message but never hands it back (`__testing` returns only the handler result), so no detached id reaches a click.
+  - `[low]` `[reject]` (blind) Re-rendered messages leave their previous non-`one_shot` Refs until TTL — accepted by AD-18's amendment (orphans bounded by TTL); the skill's §7 `RefOps` example already shows deleting `current_ref()`.
+  - `[low]` `[reject]` (blind) Each record is parsed twice per lookup — a short `RefRecord` parse per click; the fix is a refactor of `decode_record`'s error type.
+  - `[false]` `[reject]` (blind) The template's `FinishSetup` lacks `#[on_expired]` though the edited comment points at it — the doc comment says a second click gets the expired notice, which the default chain sends; the `SetupState::expired` comment is accurate (only by-Ref Routes have a missing Ref).
+  - `[low]` `[reject]` (blind) `tools/story-loop/stories.py` regex change is unrelated to 7.5 — commit hygiene of repo tooling, no product defect.
+  - `[low]` `[reject]` (blind) The testkit metrics helper can panic on a second recorder install and asserts `>= 1` — only `components.rs` installs a recorder in that binary (OnceLock, same pattern as `http_edge.rs`/`shutdown.rs`), so no panic; the weak bound is test-only.
+  - `[medium]` `[patch]` (edge) `ResponderError::RefStore` Display/source chain leaks the Ref key — same root cause and fix as the blind `ResponderError::RefStore` row.
+  - `[low]` `[reject]` (edge) A lookup `PortError` is discarded: no kind, no Error Sink report — same root cause as the blind "dispatch discards the PortError" row; rejected with it.
+  - `[low]` `[reject]` (edge) A slow/hanging lookup is not raced against cancel or a timeout, so the auto-defer arms late — AD-23 orders the Ref lookup (stage 2) before the auto-defer (stage 6) by design; only a pathological store triggers it and the fix adds a select/timeout.
+  - `[medium]` `[patch]` (edge) A `one_shot` record taken and then rejected (stale/forged/submit-invalid/undecodable/panic) is consumed without the handler running — grouped with the blind one-shot modal row (stale/forged records should be consumed anyway); patched in the docs.
+  - `[low]` `[reject]` (edge) No cancel re-check after the lookup: on shutdown a `one_shot` Ref may be taken and the run then cancelled — shutdown-only; `run_started` already races the handler against `cancel`, and the same holds for any handler's side effects.
+  - `[false]` `[reject]` (edge) Undecodable/SubmitInvalid/panic count as `hit` — the spec's Design Notes and the AD-18 amendment define `hit` as "a record of this Route and schema, even if its body later fails to decode".
+  - `[false]` `[reject]` (edge) A detached-resolved id can later be sent for real with an unstored Ref — the detached transport's message is never returned to the author, so it cannot be re-sent.
+  - `[false]` `[reject]` (edge) A resolved by-Ref id reused in a second message shares one Ref — every send path takes the message by value and resolves its own copy; an author never gets a resolved message back, so a clone made before sending is unresolved and mints again (Matrix 12).
+  - `[low]` `[reject]` (edge) Cancellation during `refs::apply` after a successful send skips the remaining deletions — shutdown-only; the skipped Refs expire with their TTL, and the fix moves the apply out of the cancellable select.
+  - `[medium]` `[patch]` (vgap) The `take` path of a `one_shot` by-Ref modal submit is never exercised — pre-verified; patched with a `OnceForm` test in `pipeline/tests/refs.rs`.
+  - `[medium]` `[patch]` (vgap) Refs minted on the message transport are never checked to be stored — pre-verified; patched with a `Transport::Message` minting test in `responder/tests/refs.rs`.
+  - `[false]` `[reject]` (intent D1) A stale Ref record runs `#[on_stale]`, contradicting AD-23's "`#[on_stale]` never runs for a Ref" — that parenthetical closes the missing-Ref chain; AD-23's stage 2 rule itself says "schema mismatch is stale", and the spec's table settles the stale chain.
+  - `[false]` `[reject]` (intent D2) `RefOps` only via a handler's return value — AD-18 says "a `RefOps` list on the returned response"; the spec settled the tuple shape.
+  - `[false]` `[reject]` (intent D3) The lookup is not AD-23 stage 2 in pipeline order — no AD-23 stage 3-8 exists yet; the lookup precedes auto-defer and the handler, and the 7.7 Guard order is already logged as a warning.
+  - `[false]` `[reject]` (intent D4) The metric's `app` label and `hit` semantics are wider than the intent — settled deliberately by the AD-18 amendment (`{app,result}`, `hit` definition, store errors uncounted).
+  - `[low]` `[reject]` (intent D5) The inline-Route compile error is proven by trybuild for `#[button]` only — all seven kind attributes share `parse_list`, whose unit tests cover the select and modal cases; extra trybuild fixtures add little.
+
 ## Design Notes
 
 - **`Handled: DeclaredRuntime` (decision).** The policy must reach both the encoder (`noctis-ui`'s erased `CustomId`, which knows `R` only at `.build()`) and dispatch (get vs take). A supertrait on `Handled` is the narrowest bound every buildable Route already satisfies through the derives. The default `RUNTIME` keeps hand-written impls to one line. `Route` (AD-19) is untouched.
@@ -274,3 +318,12 @@ deferred: []
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rn "Story 7.5\|cannot mint yet" crates examples/project-template docs --include=*.rs --include=*.md` -- prints only intentional history references (none in skill or template)
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** By-Ref Routes now mint an unguessable Ref per by-Ref custom_id at send time (one Ref per send for equal slots), store the payload record in the App-namespaced RefStore with a TTL (Route `ttl`, App `ref_ttl`, default 24 h, range 1 s..=365 d), and dispatch resolves it at AD-23 stage 2 (`get`, or atomic `take` for `one_shot`), routing miss to `#[on_expired]`, schema mismatch to `#[on_stale]`, unparsable to forged, store errors to the generic `ref_store` notice; `RefOps` (tuple response) and `ctx.current_ref()` delete Refs; lookup metric `{app,result}`.
+- **Files changed:** `noctis-core` pipeline/component.rs (stage-2 lookup, span-instrumented), responder.rs (minting, `RefOps` apply, redacted `RefStore` error), test_support.rs and pipeline/responder `tests/refs.rs`; `noctis-macros` (`ttl`/`one_shot` parsing, inline-Route errors); `noctis-ui` route.rs (`Handled: DeclaredRuntime`); `noctis` lib.rs re-exports and CID-03 trybuild fixtures; `docs/discord-rules.md` (CID-03 row); project-template skill refs (routes-payloads-refs, responder, modals, troubleshooting, app-and-sharding, components-v2), AGENTS.md, setup module; `xtask/public_api.rs` (tuple impl owner) and re-blessed `public-api.txt`; `tools/story-loop` stories.py/gates.sh.
+- **Review findings:** 33 total (high 0, medium 6, low 17, false 10). Patched 10 entries (medium 6, low 4, high 0): one_shot modal/rejection burns Ref documented (2), `ResponderError::RefStore` key redaction (2), lookup instrumented with span, CID-03 rule row fixed, responder.md `Encode` cases fixed, `OnceForm` one_shot modal `take` test, message-transport minting-stored test. Deferred 1: `RefError::Rng(getrandom::Error)` in public API (pre-existing). Rejected 22: 10 false (stage order, detached seam, stale-chain, RefOps shape, metric labels, etc. per triage log) and 12 low with recorded reasons (PortError kind discarded, non-concurrent click test, TTL range not in noctis-rules, duplicate snapshot lines, re-render orphans bounded by TTL, double record parse, stories.py hygiene, metrics recorder, slow-lookup vs cancel, no cancel re-check after lookup, cancel during `refs::apply`, trybuild covers `#[button]` only).
+- **Follow-up review recommended: true** (first pass, 6 medium patched). Named risk: the `ResponderError::RefStore` key redaction and the new `one_shot` modal `take` path are newly patched and not independently re-reviewed; a missed `PortError` variant could still print a Ref into logs.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, test, cargo hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer (workflows in `.github/workflows-disabled/`, unchanged).
+- **Residual risks:** `one_shot` Refs are consumed before Guards (Story 7.7 must decide); invalid modal submissions burn `one_shot` Refs (documented); orphan Refs from failed sends live until TTL; store-failure kind not surfaced in the warn.

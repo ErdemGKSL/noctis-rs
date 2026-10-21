@@ -1954,12 +1954,22 @@ async fn mint_ref(
         if refs
             .put_if_absent(r.as_str(), slot.record(), Some(ttl))
             .await
-            .map_err(ResponderError::RefStore)?
+            .map_err(|error| ResponderError::RefStore(redact_ref(error)))?
         {
             return Ok(r);
         }
     }
     Err(ResponderError::RefCollision)
+}
+
+/// Replaces the namespaced key an [`PortError::InvalidValue`] carries
+/// (`<app>:ref:<ref>`) with a fixed placeholder, so the error's Display and
+/// source chain never print the Ref.
+fn redact_ref(error: PortError) -> PortError {
+    match error {
+        PortError::InvalidValue { why, .. } => PortError::invalid_value("<ref>", why),
+        other => other,
+    }
 }
 
 /// One select nonce for a send, drawn uniformly in `0..=SelectNonce::MAX`

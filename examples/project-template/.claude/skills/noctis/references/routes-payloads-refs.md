@@ -580,7 +580,9 @@ pub struct ConfirmBan {
   `RefOps::new().delete(r)` ignores a Ref listed twice; `.delete_all(iter)` adds many.
 - **One-shot caveat.** A `one_shot` Ref is consumed when the click is resolved, before the
   handler runs: a handler error or panic after that does not restore it, and the next
-  click gets the Expired notice. Keep `one_shot` for confirmations whose retry is "run the
+  click gets the Expired notice. A `one_shot` by-Ref modal's Ref is likewise taken before
+  its inputs are decoded, so a submission rejected as `submit_invalid` or `undecodable`
+  also consumes it and the retry gets the Expired notice. Keep `one_shot` for confirmations whose retry is "run the
   command again".
 
 ## 8. Expired, stale, unknown, forged

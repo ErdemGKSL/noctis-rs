@@ -419,7 +419,7 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | Variant | When (nothing is sent unless noted) |
 | --- | --- |
 | `Invalid(UiError)` | Limits violation (Strict) or a command's V2 → legacy edit |
-| `Encode { reason }` | a Route `custom_id` cannot be resolved (a `signed` Route without a payload key on a detached responder, or a message that fails its own `custom_id` checks such as two equal ids); `reason` names the Route |
+| `Encode { reason }` | a Route `custom_id` cannot be resolved (a `signed` Route without a payload key on a detached responder, a select nonce or Ref that could not be drawn, or a `custom_id` that fails to encode or finish); `reason` names the Route |
 | `RefStore(PortError)` | the `RefStore` failed while storing a Ref record of the message |
 | `RefCollision` | three freshly minted Refs in a row already existed in the `RefStore` |
 | `AttachmentsUnsupported` | the message has attachments ([planned, Story 9.1]) |

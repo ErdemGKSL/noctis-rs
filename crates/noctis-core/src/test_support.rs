@@ -338,6 +338,9 @@ pub(crate) struct TestRefs {
     put_script: Mutex<std::collections::VecDeque<Option<bool>>>,
     /// Ops that fail with a backend error.
     failing: Mutex<Vec<&'static str>>,
+    /// `put_if_absent` fails with `InvalidValue` naming its key, as the
+    /// memory store does for an oversized record.
+    invalid_puts: std::sync::atomic::AtomicBool,
 }
 
 impl TestRefs {
@@ -348,6 +351,12 @@ impl TestRefs {
     /// The next `put_if_absent` calls answer `answers` (`None`: an error).
     pub(crate) fn script_puts(&self, answers: impl IntoIterator<Item = Option<bool>>) {
         self.put_script.lock().unwrap().extend(answers);
+    }
+
+    /// Every later `put_if_absent` fails with `InvalidValue` under its key.
+    pub(crate) fn fail_puts_invalid(&self) {
+        self.invalid_puts
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Every later `op` fails with a backend error.
@@ -430,6 +439,12 @@ impl noctis_ports::RefStore for TestRefs {
     ) -> RefFuture<'a, bool> {
         Box::pin(async move {
             self.record("put_if_absent", key, ttl)?;
+            if self.invalid_puts.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(noctis_ports::PortError::invalid_value(
+                    key,
+                    "record too large",
+                ));
+            }
             if let Some(answer) = self.put_script.lock().unwrap().pop_front() {
                 return answer.ok_or_else(|| noctis_ports::PortError::backend("scripted failure"));
             }

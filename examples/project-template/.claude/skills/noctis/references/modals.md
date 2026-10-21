@@ -231,7 +231,9 @@ submission.unknown();                                        // &[serde_json::Va
 - A `signed` modal is verified by component dispatch with the App's payload key; a
   `by_ref` or spilled one (once its Payload overflows) decodes only through component
   dispatch, which reads its record from the App's `RefStore`. `from_submission`/`from_json` alone return
-  `SubmitError::Malformed` for them (the Ref or the tag needs the App).
+  `SubmitError::Malformed` for them (the Ref or the tag needs the App). A `one_shot`
+  by-Ref modal's Ref is taken before its inputs are decoded: a submission rejected as
+  `submit_invalid` or `undecodable` consumes it too, and the retry gets the Expired notice.
 - `SubmittedValue` (`#[non_exhaustive]`): `TextInput(String)`, `StringSelect(Vec<String>)`,
   `UserSelect(Vec<Id<UserMarker>>)`, `RoleSelect(Vec<Id<RoleMarker>>)`,
   `MentionableSelect(Vec<Id<GenericMarker>>)`, `ChannelSelect(Vec<Id<ChannelMarker>>)`,

@@ -1,7 +1,18 @@
 #!/bin/bash
 # The local gates from AGENTS.md; prints FAIL:<step> plus the log tail, or ALL-OK. Logs: target/story-loop/gate-<step>.log
+# A step that already passed on the identical working tree (same tracked + untracked, non-ignored content) is skipped,
+# so a run cut off by a caller's timeout resumes where it stopped. Stamps: target/story-loop/gate-<step>.ok
 source "$(dirname "$0")/env.sh"
-run(){ local n=$1; shift; "$@" > "$OUT/gate-$n.log" 2>&1 || { echo "FAIL:$n"; tail -30 "$OUT/gate-$n.log"; exit 1; }; }
+idx=$(mktemp); trap 'rm -f "$idx"' EXIT
+cp .git/index "$idx" 2>/dev/null
+TREE=$(GIT_INDEX_FILE=$idx git add -A >/dev/null 2>&1 && GIT_INDEX_FILE=$idx git write-tree)
+run(){
+  local n=$1; shift
+  [ -n "$TREE" ] && [ "$(cat "$OUT/gate-$n.ok" 2>/dev/null)" = "$TREE" ] && return 0
+  rm -f "$OUT/gate-$n.ok"
+  "$@" > "$OUT/gate-$n.log" 2>&1 || { echo "FAIL:$n"; tail -30 "$OUT/gate-$n.log"; exit 1; }
+  [ -n "$TREE" ] && echo "$TREE" > "$OUT/gate-$n.ok"
+}
 run fmt cargo fmt --all --check
 run clippy cargo clippy --release --workspace --all-targets --all-features -- -D warnings
 run test cargo test --release --workspace --all-features

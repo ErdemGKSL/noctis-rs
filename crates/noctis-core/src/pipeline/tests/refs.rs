@@ -43,6 +43,13 @@ test_route!(FailOps, "t.fail", RouteShape::BY_REF, 0);
 test_route!(PanicOps, "t.panic", RouteShape::BY_REF, 0);
 test_route!(Inline, "t.inline", RouteShape::INLINE, 0);
 test_route!(Form, "t.form", RouteShape::BY_REF, 0);
+test_route!(
+    OnceForm,
+    "t.onceform",
+    RouteShape::BY_REF,
+    0,
+    RouteRuntime::EMPTY.one_shot()
+);
 
 /// The Ref every test record is stored under.
 const REF: &str = "0123456789A";
@@ -81,9 +88,8 @@ fn line(name: &str, item: u64, ctx: &ComponentCtx) -> String {
 
 fn module(log: &Log) -> Module {
     let (l1, l2, l3, l4) = (log.clone(), log.clone(), log.clone(), log.clone());
-    let (stale_log, expired_log, form_log, form_expired) =
-        (log.clone(), log.clone(), log.clone(), log.clone());
-    Module::new("t")
+    let (stale_log, expired_log) = (log.clone(), log.clone());
+    let m = Module::new("t")
         .__add(
             handler::<Stored, _, _, _>("t::Stored", move |s: Stored, ctx, _| {
                 l1.push(line("stored", s.item, &ctx));
@@ -146,28 +152,51 @@ fn module(log: &Log) -> Module {
                 l4.push(line("inline", s.item, &ctx));
                 async { Ok(Responded::new()) }
             },
-        ))
-        .__add(
-            ModalHandler::__new::<Form, _, _>(
-                "t::Form",
-                "t.form",
-                move |f: Form, ctx: ModalSubmitCtx| {
-                    let current = ctx.current_ref().map(|r| r.as_str().to_owned());
-                    form_log.push(format!(
-                        "form:{}:{}",
-                        f.item,
-                        current.as_deref() == Some(REF)
-                    ));
-                    async { Ok(Responded::new()) }
-                },
-            )
-            .__with_on_expired(__ExpiredHook::__new::<AutoDefer, _, _, _>(
-                move |_: ModalSubmitCtx, expired: Expired, _: crate::ModalResponder| {
-                    form_expired.push(format!("form_expired:{expired:?}"));
-                    async { Ok(Responded::new()) }
-                },
-            )),
+        ));
+    with_modals(m, log)
+}
+
+/// Adds the `Form` and `OnceForm` modal handlers to `m`.
+fn with_modals(m: Module, log: &Log) -> Module {
+    let (form_log, form_expired) = (log.clone(), log.clone());
+    let (once_form_log, once_form_expired) = (log.clone(), log.clone());
+    m.__add(
+        ModalHandler::__new::<Form, _, _>(
+            "t::Form",
+            "t.form",
+            move |f: Form, ctx: ModalSubmitCtx| {
+                let current = ctx.current_ref().map(|r| r.as_str().to_owned());
+                form_log.push(format!(
+                    "form:{}:{}",
+                    f.item,
+                    current.as_deref() == Some(REF)
+                ));
+                async { Ok(Responded::new()) }
+            },
         )
+        .__with_on_expired(__ExpiredHook::__new::<AutoDefer, _, _, _>(
+            move |_: ModalSubmitCtx, expired: Expired, _: crate::ModalResponder| {
+                form_expired.push(format!("form_expired:{expired:?}"));
+                async { Ok(Responded::new()) }
+            },
+        )),
+    )
+    .__add(
+        ModalHandler::__new::<OnceForm, _, _>(
+            "t::OnceForm",
+            "t.onceform",
+            move |f: OnceForm, _: ModalSubmitCtx| {
+                once_form_log.push(format!("once_form:{}", f.item));
+                async { Ok(Responded::new()) }
+            },
+        )
+        .__with_on_expired(__ExpiredHook::__new::<AutoDefer, _, _, _>(
+            move |_: ModalSubmitCtx, expired: Expired, _: crate::ModalResponder| {
+                once_form_expired.push(format!("once_form_expired:{expired:?}"));
+                async { Ok(Responded::new()) }
+            },
+        )),
+    )
 }
 
 /// A running App with [`module`] over the scripted store `refs`, a
@@ -458,6 +487,21 @@ async fn ref_modal_submit() {
     fx.run(&submit(&format!("0t.form:~{}", "B".repeat(11)), true))
         .await;
     assert_eq!(fx.lines(), ["form_expired:RefMissing"]);
+}
+
+/// A `one_shot` by-Ref modal takes its Ref: the first submit decodes the
+/// record, the second reaches `#[on_expired]` with `RefMissing`.
+#[tokio::test]
+async fn one_shot_modal_takes_its_ref() {
+    let fx = Fx::start().await;
+    fx.refs.insert(&key("default"), b"0t.onceform:5");
+    let id = format!("0t.onceform:~{REF}");
+    fx.run(&submit(&id, true)).await;
+    assert_eq!(fx.lines(), ["once_form:5"]);
+    fx.run(&submit(&id, true)).await;
+    assert_eq!(fx.lines(), ["once_form_expired:RefMissing"]);
+    assert_eq!(fx.refs.calls_of("take").len(), 2);
+    assert!(fx.refs.calls_of("get").is_empty());
 }
 
 /// Matrix 31 and 34: a returned `(msg, RefOps)` and `(Responded, RefOps)`
