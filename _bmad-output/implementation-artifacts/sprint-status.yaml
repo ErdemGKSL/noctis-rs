@@ -102,7 +102,7 @@ development_status:
   7-3-expired-handler-and-stale-payload-routing: done
   7-4-app-namespaced-ports: done
   7-5-ref-minting-and-resolution: done
-  7-6-middleware-and-typed-extensions: backlog
+  7-6-middleware-and-typed-extensions: in-progress
   7-7-route-guards: backlog
   7-8-modal-routes-and-typed-submissions-end-to-end: backlog
   epic-7-retrospective: optional

@@ -2,7 +2,8 @@
 title: 'Story 7.6: Middleware and typed Extensions'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '2055a1e31c449dd69b4354960b16a18ff8368216'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
