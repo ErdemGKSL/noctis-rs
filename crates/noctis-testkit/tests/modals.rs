@@ -629,7 +629,10 @@ async fn button_opens_modal_and_submit_updates_message() {
 /// two modals (MOD-02's 5-component cap).
 #[tokio::test(flavor = "multi_thread")]
 async fn fr64_inputs_decode_end_to_end() {
+    let capture = capture();
     let running = Running::start().await;
+    let unparsed = || capture.count(&["gateway payload could not be parsed"]);
+    let before = unparsed();
     // Row 27: unicode text, verbatim.
     running.dispatch(submit(
         &survey_id(3),
@@ -653,6 +656,8 @@ async fn fr64_inputs_decode_end_to_end() {
     ));
     assert_eq!(running.wait_seen(2).await[1], "survey 3 None High [] false");
     running.exactly(1).await;
+    // The recovered Checkbox submits log no parse warning.
+    assert_eq!(unparsed(), before);
 
     // Row 26: a user select and a File Upload joined with `resolved`.
     let id = modal_id(Evidence::blank(5));

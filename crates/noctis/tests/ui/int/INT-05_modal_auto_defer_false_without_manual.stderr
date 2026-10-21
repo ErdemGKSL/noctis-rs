@@ -1,4 +1,4 @@
-error[E0277]: [INT-05] `auto_defer = false` is declared, so the handler must take the `Manual` responder (`CommandResponder<Manual>` or `ComponentResponder<Manual>`)
+error[E0277]: [INT-05] `auto_defer = false` is declared, so the handler must take the `Manual` responder (`CommandResponder<Manual>`, `ComponentResponder<Manual>` or `ModalResponder<Manual>`)
   --> tests/ui/int/INT-05_modal_auto_defer_false_without_manual.rs:13:53
    |
 13 |     async fn handle(self, _ctx: ModalSubmitCtx, _r: ModalResponder) -> HandlerResult<Components> {

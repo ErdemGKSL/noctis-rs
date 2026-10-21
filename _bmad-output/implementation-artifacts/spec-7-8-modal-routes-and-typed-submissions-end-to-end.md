@@ -2,7 +2,7 @@
 title: 'Story 7.8: Modal Routes and typed submissions end to end'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '2f36aa76d9e8a9bff8a41a87013bcd8aa93c1035'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -208,6 +208,36 @@ The Usage Skill and the template still mark this flow `[planned, Story 7.8]` (FR
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 26 findings — high 0, medium 4, low 10, false 11, maybe-false 1
+- findings:
+  - `[medium]` `[patch]` (blind) `__ManualTakesManual` INT-05 message names only `CommandResponder<Manual>`/`ComponentResponder<Manual>`, now shown to modal authors — confirmed at `crates/noctis-core/src/kind.rs:888` and in the blessed modal `.stderr` fixtures; fix: add `ModalResponder<Manual>` to the message, re-bless every INT-05 `.stderr` carrying it, update `troubleshooting.md`'s quote.
+  - `[low]` `[reject]` (blind) broken-derive fallback always emits `Defer = AutoDefer`, so a modal with a valid `auto_defer = false` plus another bad argument gets a second `[INT-05]` error — real (`noctis-macros/src/kind.rs:113` passes `false`, the same as for components since 7.2), but it only appears beside an existing derive error and the fix threads parsed args into the fallback (a new parameter).
+  - `[false]` `[reject]` (blind) shard fallback silently accepts type-5 payloads twilight rejects for unrelated reasons — `modal_submit_without_components` replaces only `data.components`, so a flaw anywhere else still fails `serde_json::from_value` and returns `None`, which logs the warning.
+  - `[low]` `[patch]` (blind) shard tests do not pin that a type-5 payload with a flaw outside `data.components` is still dropped with the warning, nor that the recovered path logs none — grouped with the verification-gap finding below; fix: a shard unit test for a type-5 with a non-numeric `id` returning no inbound, plus the gap layer's log assertion.
+  - `[false]` `[reject]` (blind) the twilight `Interaction` downstream has empty `data.components` for Checkbox submits, inconsistent for readers — no public API exposes the twilight interaction or its modal components (`xtask/public-api.txt`), and core decodes only the raw bytes.
+  - `[low]` `[patch]` (blind) `docs/discord-rules.md` INT-01 row still describes `response = ephemeral`/`public` only for components and lists no modal tests — confirmed at L156; fix: add the modal-submit case and `modal_declared_responses`/`modal_auto_defer_follows_response`.
+  - `[low]` `[patch]` (blind) `modal_declared_responses` `public` cases assert no `requests.len()` and the fast case no method/path — confirmed in `pipeline/tests/components.rs` ~L1082-1089; fix: add the same length and method/path assertions as the `ephemeral` cases.
+  - `[low]` `[reject]` (blind) `modal_flow.rs` "verbatim copy" of the template is unenforced and only builds the App — the copy currently matches the template line for line (checked); the tracking-mode approach is the spec's logged decision, dispatch is covered by `noctis-testkit/tests/modals.rs`, and enforcement needs new tooling.
+  - `[low]` `[reject]` (blind) no runtime test that a Manual modal's `#[on_stale]`/`#[on_expired]` hook is not auto-deferred — hooks take `target.auto_defer()` on the same kind-generic path as components (`pipeline/component.rs` ~L758-790); no defect shown, and the fix is new test scaffolding.
+  - `[low]` `[reject]` (blind) e2e guard test lacks an `auto_defer = false` modal; fast ephemeral/public and slash public are unit-tested only — the Guard notice uses its own notice state independent of the auto-defer, and the response matrix is pinned by `modal_declared_responses`; extra e2e cases add no demonstrated coverage of a defect.
+  - `[false]` `[reject]` (blind) unrelated `examples/project-template/Cargo.lock` churn — the changes are the lock re-resolved to the current manifests (`noctis` already depends on `noctis-codec`/`serde`; the template no longer lists `base64 0.23`), produced by the spec's `cargo metadata` verification step.
+  - `[false]` `[reject]` (blind) `ModalHandler::new` hardcodes `Update`/`AutoDefer` — there is no public `ModalHandler::new`; only the `#[doc(hidden)]` `__new`/`__new_with_responder` exist, and the derive path passes `S::RESPONSE`.
+  - `[maybe-false]` `[reject]` (blind) `Running::exactly`'s 150 ms window and process-global log counters could misattribute stray requests — would need a reproducible late duplicate callback or parallel-log interference; if true only `low` (test flakiness), so rejected.
+  - `[medium]` `[patch]` (edge) INT-05 diagnostic omits `ModalResponder<Manual>` — same defect as the first row; shares its patch.
+  - `[low]` `[reject]` (edge) fallback `items(ident, family, false)` yields a spurious second `[INT-05]` — same as the blind fallback row; rejected for the same reason.
+  - `[false]` `[reject]` (edge) silent substitution: readers of twilight's modal `data.components` see an empty list with no trace — no such reader exists in core or the public API; Noctis documents and uses only the raw bytes.
+  - `[low]` `[patch]` (vgap, pre-verified) a recovered Checkbox submit logs no "gateway payload could not be parsed" warning and no test pins it — grouped with the blind shard-test row; fix: in `fr64_inputs_decode_end_to_end`, assert the capture count of that line is unchanged across the Checkbox submits.
+  - `[low]` `[reject]` (vgap other) `noctis_core::__testing::dispatch` parses with twilight directly, so a Checkbox submit is `malformed` there unlike production — real (`lib.rs` ~L462), but no current caller sends such a submit, and the fix needs the gateway fallback exported (new surface).
+  - `[medium]` `[patch]` (vgap other) INT-05 message names the wrong responders for modals — same defect as the first row; shares its patch.
+  - `[false]` `[reject]` (intent D1) template bio flow compiled through a copy, not the template crate — the spec's Design Notes settle tracking mode deliberately (disk limits, planned 8.1 API), and the copy matches the template.
+  - `[false]` `[reject]` (intent D2) default `response = update` on the slash-opened `/bio` submit reads the "only public or ephemeral" rule as a fallback — maintainer decisions §2 makes `update` legal on submits with the type-5/type-4 public fallback; `modals.md` still states `update`/`defer_update` return `UpdateUnavailable` and to answer with `r.reply`.
+  - `[false]` `[reject]` (intent D3) runtime `show_modal` refusal reachable only internally — the spec's Design Notes settle it as a guard for future erased paths; there is no public path today, as intended.
+  - `[medium]` `[patch]` (intent D4) INT-05 modal wording names no `ModalResponder<Manual>` — same defect as the first row; shares its patch (the INT-04 half is false: row 12 and decisions §2 require a plain E0599 by typestate).
+  - `[false]` `[reject]` (intent D5) gateway re-parse lands outside the story's stated layers — the end-to-end FR-64 flow cannot work otherwise (twilight rejects the whole interaction); logged as a memlog decision and the gateway is the layer that parses payloads.
+  - `[false]` `[reject]` (intent D6) no `xtask/public-api.txt` change or hash update — `cargo run --release -p xtask -- api-snapshot` reports ok with hash `18a7f07e…2d31`, equal to the `SKILL.md` `API hash`; the changed items are `#[doc(hidden)]`.
+  - `[false]` `[reject]` (intent D7) no restart between opening and submitting — statelessness follows from the inline Payload codec; the modal flow keeps no per-message state, so no bad outcome occurs.
+
 ## Design Notes
 
 - **Scope is the remaining delta (decision).** Submit dispatch, raw-bytes decoding (`ModalSubmission::from_slice(raw.as_bytes())`), `ModalResponder`, `UpdateUnavailable`, the `show_modal` typestate for Commands and components, guards and Refs already shipped (Stories 6.10, 6.11, 7.1-7.7). 7.8 adds `response`/`auto_defer` on `#[modal]` and the end-to-end proof. Re-implementing any of it is out of scope.
@@ -231,3 +261,24 @@ The Usage Skill and the template still mark this flow `[planned, Story 7.8]` (FR
 - `cargo metadata --format-version 1 --manifest-path examples/project-template/Cargo.toml > /dev/null` -- ok
 - `grep -rn "Story 7.8" crates examples/project-template docs --include=*.rs --include=*.md` -- no hit that says "planned", "arrive" or "until"
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** `#[modal]` gains `response = update|ephemeral|public` and `auto_defer = false` (with `ModalResponder<Manual>`); a runtime `no_modal` guard refuses `show_modal` on submits; the gateway re-parses type-5 payloads twilight rejects (Checkbox submits) so FR-64 works end to end; template `/bio` flow proven by `crates/noctis/tests/modal_flow.rs` (tracking mode) and `noctis-testkit/tests/modals.rs`.
+- **Files changed:** `noctis-macros` (`modal.rs`, `route.rs`, `component.rs`) for the new args and diagnostics; `noctis-core` (`kind.rs`, pipeline, tests) for INT-05 wording and the response matrix; `noctis-gateway/src/shard.rs` for the type-5 fallback; new trybuild fixtures (CID-03, INT-04, INT-05 modal cases); `docs/discord-rules.md`; template code, `AGENTS.md`, and the noctis usage skill (`modals.md`, `responder.md`, `routes-payloads-refs.md`, `troubleshooting.md`, `SKILL.md`).
+- **Review findings:** 26 in total (high 0, medium 4, low 10, false 11, maybe-false 1).
+  - Patched: INT-05 message now names `ModalResponder<Manual>`. Four medium rows reported this one defect, and every INT-05 `.stderr` plus `troubleshooting.md` was re-blessed.
+  - Patched: a shard test checks that a type-5 payload with a flaw outside `components` is still dropped, and that a recovered Checkbox submit logs no warning.
+  - Patched: the `discord-rules.md` INT-01 row now covers modals.
+  - Patched: the `public` cases in `modal_declared_responses` now get the same length, method and path asserts as the `ephemeral` cases.
+  - Deferred: none.
+  - Rejected, low: the fallback derive emits a duplicate INT-05 error. It appears only next to an existing derive error.
+  - Rejected, low: `modal_flow.rs` is copied from the template and nothing enforces the copy. It matches the template now, and enforcing it needs new tooling.
+  - Rejected, low: no runtime test that a Manual modal's hooks skip the auto-defer. They use the same kind-generic path as components.
+  - Rejected, low: there are no extra e2e guard or response cases. The unit matrix already covers them.
+  - Rejected, low: `__testing::dispatch` has no gateway fallback. No caller needs it, and adding it would need new public surface.
+  - Rejected, maybe-false: the 150 ms window in `Running::exactly` could be flaky. No reproduction was found.
+  - Rejected, false: 11 rows (twilight `components` readers, Cargo.lock churn, `ModalHandler::new`, the D1-D3 and D5-D7 intent items). Their reasons are in the triage log.
+- **Follow-up review recommended:** false. This was the first pass. The patched entries were 0 high, 4 medium rows that are one defect with one message-text fix (now re-blessed), and 4 low. No unverified risk remains.
+- **Verification:** all local gates in `tools/story-loop/gates.sh` passed. They cover fmt, clippy `-D warnings`, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot (hash unchanged), skill-check, cargo deny, the MSRV 1.91 check and template `cargo metadata`. CI is paused by the maintainer.
+- **Residual risks:** the template is checked in tracking mode, through a copy, until it can build for real (Story 8.1 or later). Twilight's `Interaction` for Checkbox submits has empty `data.components`, so code must decode from raw bytes. The duplicate INT-05 diagnostic remains on broken derives.

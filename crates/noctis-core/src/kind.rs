@@ -885,7 +885,7 @@ impl __NoResponder for AutoDefer {}
 /// handler takes any, a `Manual` one only a `Manual` responder.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "[INT-05] `auto_defer = false` is declared, so the handler must take the `Manual` responder (`CommandResponder<Manual>` or `ComponentResponder<Manual>`)",
+    message = "[INT-05] `auto_defer = false` is declared, so the handler must take the `Manual` responder (`CommandResponder<Manual>`, `ComponentResponder<Manual>` or `ModalResponder<Manual>`)",
     label = "take the `Manual` responder here"
 )]
 pub trait __ManualTakesManual<R> {}

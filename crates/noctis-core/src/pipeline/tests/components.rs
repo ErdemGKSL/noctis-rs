@@ -1080,12 +1080,20 @@ mod responses {
             // Row 21: slow `public` is type 5 without EPHEMERAL.
             ui.run(wrap(&at("bio.pub", 150))).await;
             let requests = ui.take();
+            assert_eq!(requests.len(), 2, "{requests:?}");
             assert_eq!(requests[0].2, json!({ "type": 5 }));
-            assert_eq!(requests[1].0, Method::PATCH);
+            assert_eq!(
+                (&requests[1].0, requests[1].1.as_str()),
+                (&Method::PATCH, ORIGINAL)
+            );
             assert_eq!(requests[1].2["flags"], 32768);
             ui.run(wrap(&at("bio.pub", 0))).await;
             let requests = ui.take();
-            assert_eq!(requests[0].2["type"], 4);
+            assert_eq!(requests.len(), 1, "{requests:?}");
+            assert_eq!(
+                (requests[0].1.as_str(), &requests[0].2["type"]),
+                (CB_REPLY, &json!(4))
+            );
             assert_eq!(requests[0].2["data"]["flags"], 32768);
         }
         assert!(ui.sink.seen().is_empty(), "{:?}", ui.sink.seen());

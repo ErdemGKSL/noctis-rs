@@ -379,6 +379,20 @@ mod tests {
     }
 
     #[test]
+    fn modal_submit_flaw_outside_components_is_dropped() {
+        // A submit with valid components but a non-numeric `id` fails even
+        // with `data.components` stripped, so it yields no inbound.
+        let mut d = interaction_d();
+        d["type"] = json!(5);
+        d["id"] = json!("not-a-snowflake");
+        d["data"] = json!({ "custom_id": "0m:", "components": [
+            { "type": 18, "id": 1, "component": { "type": 23, "id": 2, "custom_id": "agree", "value": true } }
+        ] });
+        let text = dispatch("INTERACTION_CREATE", &d.to_string());
+        assert!(run(&text, EventTypeFlags::all()).inbound.is_none());
+    }
+
+    #[test]
     fn other_event() {
         let text = dispatch("MESSAGE_DELETE", r#"{"id":"3","channel_id":"2"}"#);
         let out = run(&text, EventTypeFlags::all());
