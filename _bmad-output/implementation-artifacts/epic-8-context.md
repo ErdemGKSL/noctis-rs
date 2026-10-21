@@ -19,7 +19,7 @@ Let a bot author write every screen as a plain render function (`render_x(..) ->
 - No Navbar/Wizard/Paginator widgets, no widget state, no `view` envelope, no automatic re-render and no automatic overflow pagination (those features are withdrawn). Recipes, not features.
 - `ctx.respond` picks initial response (type 4), edit of deferred original, or follow-up automatically; `ctx.update` edits in place (type 7, or `edit_reply` after type-6 auto-defer) and never falls back to a new message; `ctx.reply_text` sends a one-Text-Display notice, ephemeral by default, pinging nobody.
 - `CommandCtx` has no `update` (compile error, INT-04). Modal submits opened from a slash command get `UpdateUnavailable` with no request sent. Second initial response through either API returns `AlreadyResponded` without a request.
-- Renders must be deterministic: same state yields identical JSON except per-render select nonces; a fresh `N` nonce per send makes clients show declared select defaults.
+- Renders must be deterministic: same state yields identical JSON except per-render select nonces. Select freshness is guaranteed: each send's `N` nonce never equals a nonce in the interaction being answered (clicked select, source message selects, scanned without allocating) nor one of the run's last eight sends, so clients show declared select defaults; by-Ref ids still mint a new Ref per send.
 - `escape_markdown` / `escape_mentions` neutralize user text; mentions never ping unless opted in per message.
 - Duplicate Route+Payload components in one message are a CID-02 error naming both paths with a help hint.
 - Over-limit messages are a FR-24 error naming path, Limit and actual value; Noctis never splits/paginates; Lenient mode only truncates text.
