@@ -3,7 +3,6 @@ title: 'Story 8.1: Responder ergonomics: ctx.respond, ctx.update and ctx.reply_t
 type: 'feature'
 created: '2026-10-21'
 status: 'in-progress'
-baseline_revision: '810880385b71d05135d80f65f7c87d0c09d34b7c'
 baseline_revision: 'e1cebc2f36bf3639f0553b373ddb1d3f891abf8e'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -244,6 +243,25 @@ Notation:
 ## Spec Change Log
 
 ## Review Triage Log
+
+### 2026-10-21 — Review pass
+- verdicts: 15 findings — high 4, medium 0, low 0, false 11, maybe-false 0
+- findings:
+  - `[high]` `[patch]` Blind layer: the diff file is 0 bytes, nothing was reviewed — verified: the spec frontmatter carried two `baseline_revision` keys, so `tools/story-loop/diff.sh` passed both hashes as one revision (`fatal: bad revision '8108803…\ne1cebc2…'`) and wrote an empty patch; the change exists only as commit 4300b93. Fix applied by triage: removed the duplicate key (kept `e1cebc2`, the YAML last-wins value and a superset of the change); no code change; a follow-up review pass must re-run every layer on a real diff.
+  - `[high]` `[patch]` Edge layer: input empty, no analysis — same root cause and fix as the row above.
+  - `[high]` `[patch]` Verification-gap layer: diff empty, "not a clean result" — same root cause and fix as the row above.
+  - `[high]` `[patch]` Intent divergence 1: the patch artifact is empty (process) — same root cause and fix as the row above.
+  - `[false]` `[reject]` Intent divergence 2: `ctx.reply_text` after a type-5 defer edits or deletes instead of a plain follow-up — the spec settled this deliberately (Design Notes, rows 27-28): Discord turns the first follow-up after a type-5 defer into an edit of the loading message with the defer's visibility (INT-12), so a plain follow-up would show the wrong visibility; the chosen flow is the shipped `Shared::notice` pattern.
+  - `[false]` `[reject]` Intent divergence 3: `ctx.respond` edits after any type-5 loading message, not only a Command's auto-defer — spec rows 3/4/14 settle it; the same INT-12 conversion applies to every type-5 defer, so the edit is the only correct outcome.
+  - `[false]` `[reject]` Intent divergence 4: `ctx.update` edits the deferred reply after a type-5 auto-defer — spec row 18 and its Design Note settle it, identical to the shipped typestate `update`; `ctx_update` never sends a new message (maintainer decision §2 holds).
+  - `[false]` `[reject]` Intent divergence 5: `AlreadyResponded` narrower than "through either"; `ctx.respond` after a type-6 defer does not mark answered — AC1/AC3 require follow-ups once answered, so refusing them would break the ACs; a follow-up is not an initial response, and a later `ctx.update` after the type-6 auto-defer editing the clicked message is spec row 17, not a second initial response.
+  - `[false]` `[reject]` Intent divergence 6: `AlreadyResponded` after a modal or a stop — spec rows 9/22/30 settle it; in MODAL/STOPPED Discord accepts no further callback, so a no-request refusal is the correct outcome.
+  - `[false]` `[reject]` Intent divergence 7: the gate is now held across late typestate sends — in those branches the state is already non-PENDING, so the auto-defer and notice no-op or wait; `send_follow_up`/`edit_prepared` do not take the gate (no reentrancy); wire shape unchanged; holding the gate is what makes `mark_answered` race-free (INT-03). No bad outcome shown.
+  - `[false]` `[reject]` Intent divergence 8: extra public items (`response_locale`, `NoticeText`, `ReplyText`, `ExpiredCtx::update`) — the spec settles them (Tasks 2-3, row 45) as the shape of the three methods; snapshot, template and skill were updated per AGENTS.md.
+  - `[false]` `[reject]` Intent divergence 9: the option-less command AC is split across two tests — spec Tasks 5-6 settle the split; both observable outcomes (`"options": []` in the PUT and exactly one type-4 V2 callback) are asserted, and publishing and invoking share no state that one test would exercise.
+  - `[false]` `[reject]` Intent divergence 10: template reconciliation is checked by lint, not compilation — the spec's Design Notes settle tracking mode (the template still uses other stories' `[planned]` API; Story 14.2 compiles it); the compiled `BioForm::handle` copy plus `skill-check` is the agreed check.
+  - `[false]` `[reject]` Intent divergence 11: the slash-opened-submit `UpdateUnavailable` path still shows the sink's notice — `ctx.update` sends nothing (asserted); the notice is the error path, which maintainer decision §2 allows.
+  - `[false]` `[reject]` Intent divergence 12: no `_with_response` ctx variants — spec Never list excludes them; §2 requires them only on the typestate methods, which keep them.
 
 ## Design Notes
 
