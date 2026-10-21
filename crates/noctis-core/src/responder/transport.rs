@@ -179,7 +179,8 @@ impl Transport {
                     thread_id: None,
                     token,
                     wait: Some(true),
-                    with_components: Some(true),
+                    // Interaction webhooks never send `with_components` (INT-13).
+                    with_components: None,
                     webhook_id: t.application_id.get(),
                 };
                 let response = send(&t.app, &route, Some(&body), false).await?;
@@ -258,14 +259,14 @@ impl InteractionTarget {
         tokio::time::Instant::now() >= self.received_at + TOKEN_LIFETIME
     }
 
-    /// Sends the initial callback `body` over the hedged edge path and
-    /// records the ack latency; with `with_response`, the message id the
-    /// response names (`resource.message.id`), if any.
+    /// Sends the initial callback `body` over the hedged edge path (no bot
+    /// token, INT-13) and records the ack latency; the response body (with
+    /// `with_response`, the callback resource; empty otherwise).
     pub(crate) async fn callback(
         &self,
         body: &Value,
         with_response: bool,
-    ) -> Result<Option<Id<MessageMarker>>, ResponderError> {
+    ) -> Result<Bytes, ResponderError> {
         let body = serde_json::to_vec(body).map_err(|e| ResponderError::Encode {
             reason: e.to_string(),
         })?;
@@ -280,7 +281,7 @@ impl InteractionTarget {
             Ok(ack) => {
                 metrics::histogram!("noctis_ack_latency_seconds", "app" => Arc::clone(&self.app.app))
                     .record(self.received_at.elapsed().as_secs_f64());
-                Ok(callback_message_id(&ack.body))
+                Ok(ack.body)
             }
             Err(CallbackError::InvalidToken) => Err(ResponderError::InvalidToken),
             Err(CallbackError::DeadlineMissed(missed)) => Err(missed.into()),
@@ -459,7 +460,7 @@ fn posted(body: &[u8]) -> Posted {
 }
 
 /// The `resource.message.id` of a `with_response` callback body.
-fn callback_message_id(body: &[u8]) -> Option<Id<MessageMarker>> {
+pub(crate) fn callback_message_id(body: &[u8]) -> Option<Id<MessageMarker>> {
     let value: Value = serde_json::from_slice(body).ok()?;
     snowflake(value.pointer("/resource/message/id"))
 }

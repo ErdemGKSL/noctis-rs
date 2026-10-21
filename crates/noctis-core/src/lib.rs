@@ -223,8 +223,8 @@ pub use kind::{
     __Bind, __C, __CR, __CX, __CXR, __Component, __ComponentKind, __ComponentParams, __ContextMenu,
     __EventHandler, __EventKind, __EventParams, __Kind, __ManualIsDeclared, __ManualTakesManual,
     __MenuKind, __MenuTarget, __Modal, __ModalKind, __ModalParams, __NoHandler, __NoResponder,
-    __PatternPaths, __SinglePath, __SlashCommand, __SlashKind, __TakesTarget, __Unbound,
-    __assert_no_responder, __assert_responder,
+    __PatternPaths, __Response, __SinglePath, __SlashCommand, __SlashKind, __TakesTarget,
+    __Unbound, __assert_no_responder, __assert_responder,
 };
 pub use menu::{ContextMenuHandler, MenuTargetError};
 pub use metadata::{BaseMeta, CommandMetadata};
@@ -238,9 +238,10 @@ pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
 pub use responder::{
-    Acked, AutoDefer, CanShowModal, Command, CommandResponder, DeferMode, Ephemerality,
-    FollowupHandle, IntoResponse, Manual, OutgoingMessage, Pending, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, Visibility,
+    Acked, AutoDefer, CallbackResource, CanShowModal, Command, CommandResponder, Component,
+    ComponentResponder, DeferMode, Ephemerality, FollowupHandle, IntoEdit, IntoResponse, Manual,
+    ModalResponder, ModalSubmit, OutgoingMessage, Pending, Responded, Responder, ResponderError,
+    ResponderKind, ResponderState, Visibility,
 };
 pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};
@@ -336,8 +337,8 @@ pub mod __testing {
         crate::component::call_modal(handler, value)
     }
 
-    /// A [`Responded`] proof, for component and modal handlers in tests
-    /// until their Responders arrive (Story 7.2).
+    /// A [`Responded`] proof without a response, for handlers in tests
+    /// that answer nothing.
     pub fn responded() -> Responded {
         Responded::new()
     }
@@ -410,6 +411,21 @@ pub mod __testing {
     /// Unparsable JSON is one `warn` (`malformed`); another interaction
     /// type does nothing.
     pub fn dispatch(app: &App, raw: &str) -> impl Future<Output = ()> + Send + use<> {
+        dispatch_over(app, raw, crate::pipeline::component::Wire::Interaction)
+    }
+
+    /// As [`dispatch`], with every response sent nowhere (a detached
+    /// transport): the pipeline, the responder state and the auto-defer
+    /// task run, no request is made.
+    pub fn dispatch_detached(app: &App, raw: &str) -> impl Future<Output = ()> + Send + use<> {
+        dispatch_over(app, raw, crate::pipeline::component::Wire::Detached)
+    }
+
+    fn dispatch_over(
+        app: &App,
+        raw: &str,
+        wire: crate::pipeline::component::Wire,
+    ) -> impl Future<Output = ()> + Send + use<> {
         use noctis_gateway::{Inbound, InboundKind, RawJson};
 
         let registry = std::sync::Arc::clone(app.registry());
@@ -434,11 +450,12 @@ pub mod __testing {
         }
         async move {
             if let Some(inbound) = inbound {
-                crate::pipeline::component::run_component(
+                crate::pipeline::component::run_component_over(
                     registry,
                     shared,
                     inbound,
                     tokio_util::sync::CancellationToken::new(),
+                    wire,
                 )
                 .await;
             }

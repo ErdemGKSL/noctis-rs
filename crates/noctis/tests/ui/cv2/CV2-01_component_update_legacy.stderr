@@ -1,0 +1,227 @@
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:13:30
+   |
+13 |         let acked = r.update(LegacyMessage::new("x")).await?; // [CV2-01]
+   |                       ------ ^^^^^^^^^^^^^^^^^^^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |                       |
+   |                       required by a bound introduced by this call
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+note: required by a bound in `Responder::<noctis::Component, noctis::Pending, D>::update`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn update(
+   |                          ------ required by a bound in this associated function
+   |                 self,
+   |                 msg: impl IntoEdit<$kind>,
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `Responder::<Component, Pending, D>::update`
+...
+   | update_methods!(Component, ModalSubmit);
+   | --------------------------------------- in this macro invocation
+   = note: this error originates in the macro `update_methods` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:13:21
+   |
+13 |         let acked = r.update(LegacyMessage::new("x")).await?; // [CV2-01]
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+note: required by a bound in `Responder::<noctis::Component, noctis::Pending, D>::update`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn update(
+   |                          ------ required by a bound in this associated function
+   |                 self,
+   |                 msg: impl IntoEdit<$kind>,
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `Responder::<Component, Pending, D>::update`
+...
+   | update_methods!(Component, ModalSubmit);
+   | --------------------------------------- in this macro invocation
+   = note: this error originates in the macro `update_methods` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:13:55
+   |
+13 |         let acked = r.update(LegacyMessage::new("x")).await?; // [CV2-01]
+   |                                                       ^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+note: required by a bound in `Responder::<noctis::Component, noctis::Pending, D>::update`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn update(
+   |                          ------ required by a bound in this associated function
+   |                 self,
+   |                 msg: impl IntoEdit<$kind>,
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `Responder::<Component, Pending, D>::update`
+...
+   | update_methods!(Component, ModalSubmit);
+   | --------------------------------------- in this macro invocation
+   = note: this error originates in the macro `update_methods` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:14:26
+   |
+14 |         acked.edit_reply(LegacyMessage::new("y")).await?; // [CV2-01]
+   |               ---------- ^^^^^^^^^^^^^^^^^^^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |               |
+   |               required by a bound introduced by this call
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+note: required by a bound in `Responder::<K, Acked, D>::edit_reply`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn edit_reply(&self, msg: impl IntoEdit<K>) -> Result<(), ResponderError> {
+   |                                              ^^^^^^^^^^^ required by this bound in `Responder::<K, Acked, D>::edit_reply`
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:14:9
+   |
+14 |         acked.edit_reply(LegacyMessage::new("y")).await?; // [CV2-01]
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+note: required by a bound in `Responder::<K, Acked, D>::edit_reply`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn edit_reply(&self, msg: impl IntoEdit<K>) -> Result<(), ResponderError> {
+   |                                              ^^^^^^^^^^^ required by this bound in `Responder::<K, Acked, D>::edit_reply`
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:14:51
+   |
+14 |         acked.edit_reply(LegacyMessage::new("y")).await?; // [CV2-01]
+   |                                                   ^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+note: required by a bound in `Responder::<K, Acked, D>::edit_reply`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn edit_reply(&self, msg: impl IntoEdit<K>) -> Result<(), ResponderError> {
+   |                                              ^^^^^^^^^^^ required by this bound in `Responder::<K, Acked, D>::edit_reply`
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:29:21
+   |
+29 |         Ok(r.update(LegacyMessage::new("x")).await?.done()) // [CV2-01]
+   |              ------ ^^^^^^^^^^^^^^^^^^^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |              |
+   |              required by a bound introduced by this call
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::ModalSubmit>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::ModalSubmit`
+note: required by a bound in `Responder::<noctis::ModalSubmit, noctis::Pending, D>::update`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn update(
+   |                          ------ required by a bound in this associated function
+   |                 self,
+   |                 msg: impl IntoEdit<$kind>,
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `Responder::<ModalSubmit, Pending, D>::update`
+...
+   | update_methods!(Component, ModalSubmit);
+   | --------------------------------------- in this macro invocation
+   = note: this error originates in the macro `update_methods` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:29:12
+   |
+29 |         Ok(r.update(LegacyMessage::new("x")).await?.done()) // [CV2-01]
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::ModalSubmit>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::ModalSubmit`
+note: required by a bound in `Responder::<noctis::ModalSubmit, noctis::Pending, D>::update`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn update(
+   |                          ------ required by a bound in this associated function
+   |                 self,
+   |                 msg: impl IntoEdit<$kind>,
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `Responder::<ModalSubmit, Pending, D>::update`
+...
+   | update_methods!(Component, ModalSubmit);
+   | --------------------------------------- in this macro invocation
+   = note: this error originates in the macro `update_methods` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: [CV2-01] a component's message can't be turned back into a legacy message: send a `V2Message`
+  --> tests/ui/cv2/CV2-01_component_update_legacy.rs:29:46
+   |
+29 |         Ok(r.update(LegacyMessage::new("x")).await?.done()) // [CV2-01]
+   |                                              ^^^^^ a `LegacyMessage` can't edit or update a component's message
+   |
+   = note: build the body with `V2Message`/`Components`; `reply`, `reply_as` and `follow_up` still accept a `LegacyMessage` (they send a new message)
+help: the trait `IntoEdit<noctis::ModalSubmit>` is not implemented for `LegacyMessage`
+      but trait `IntoEdit<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoEdit<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::ModalSubmit`
+note: required by a bound in `Responder::<noctis::ModalSubmit, noctis::Pending, D>::update`
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |             pub async fn update(
+   |                          ------ required by a bound in this associated function
+   |                 self,
+   |                 msg: impl IntoEdit<$kind>,
+   |                           ^^^^^^^^^^^^^^^ required by this bound in `Responder::<ModalSubmit, Pending, D>::update`
+...
+   | update_methods!(Component, ModalSubmit);
+   | --------------------------------------- in this macro invocation
+   = note: this error originates in the macro `update_methods` (in Nightly builds, run with -Z macro-backtrace for more info)

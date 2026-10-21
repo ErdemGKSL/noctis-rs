@@ -7,7 +7,7 @@ error[E0061]: this method takes 1 argument but 2 arguments were supplied
 note: method defined here
   --> $WORKSPACE/crates/noctis-core/src/responder.rs
    |
-   |     pub async fn edit_reply(&self, msg: impl Into<OutgoingMessage>) -> Result<(), ResponderError> {
+   |     pub async fn edit_reply(&self, msg: impl IntoEdit<K>) -> Result<(), ResponderError> {
    |                  ^^^^^^^^^^
 help: remove the extra argument
    |

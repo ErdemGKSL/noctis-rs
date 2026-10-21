@@ -1,0 +1,20 @@
+error: [CID-03] `response` takes `update`, `ephemeral` or `public`
+         = help: write `response = update` (the default: answer by updating the clicked message), `response = ephemeral` or `response = public` (a new message)
+ --> tests/ui/cid/CID-03_component_bad_response.rs:4:26
+  |
+4 | #[button("a", response = edit, defaults(style = Secondary, label = "Go"))]
+  |                          ^^^^
+
+error: [CID-03] `auto_defer` takes `true` or `false`
+         = help: write `auto_defer = false` for a handler that answers within 3 s itself (it takes `ComponentResponder<Manual>`), or leave it out
+  --> tests/ui/cid/CID-03_component_bad_response.rs:15:28
+   |
+15 | #[button("b", auto_defer = 1, defaults(style = Secondary, label = "Go"))]
+   |                            ^
+
+error: [CID-03] #[button] argument `response` is given twice
+         = help: remove the duplicate
+  --> tests/ui/cid/CID-03_component_bad_response.rs:26:34
+   |
+26 | #[button("c", response = public, response = update, defaults(style = Secondary, label = "Go"))]
+   |                                  ^^^^^^^^

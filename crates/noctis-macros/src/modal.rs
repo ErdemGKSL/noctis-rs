@@ -945,6 +945,17 @@ pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
                     })
                 }
             }
+
+            impl #ui::__macro::ModalFromPayload for #ident {
+                fn from_payload(
+                    _: <Self as ::noctis::__private::codec::Route>::Payload,
+                    _: &#ui::ModalSubmission,
+                ) -> ::core::result::Result<Self, #ui::SubmitError> {
+                    ::core::result::Result::Err(#ui::SubmitError::Malformed {
+                        reason: ::std::string::String::new(),
+                    })
+                }
+            }
         }
     })
 }
@@ -1036,14 +1047,25 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         #[automatically_derived]
         impl #ui::ModalForm for #name {
             /// Decodes the Payload fields from the `custom_id`, then the inputs.
-            /// A modal declared `by_ref`, `overflow = spill` (once its Payload
-            /// overflows) or `signed` decodes only through component dispatch
-            /// (Epic 7); decoded directly it returns `SubmitError::Malformed`
-            /// until then.
+            /// A `signed` modal decoded directly returns
+            /// `SubmitError::Malformed`: its tag is verified only through
+            /// component dispatch, which decodes the `custom_id` with the key
+            /// ring and hands the verified Payload to `from_payload`. A
+            /// `by_ref` or spilled Payload is likewise resolved only there.
             fn from_submission(
                 #s: &#ui::ModalSubmission,
             ) -> ::core::result::Result<Self, #ui::SubmitError> {
                 let #p = #ui::__macro::decode_modal_payload::<Self>(#s)?;
+                <Self as #ui::__macro::ModalFromPayload>::from_payload(#p, #s)
+            }
+        }
+
+        #[automatically_derived]
+        impl #ui::__macro::ModalFromPayload for #name {
+            fn from_payload(
+                #p: <Self as ::noctis::__private::codec::Route>::Payload,
+                #s: &#ui::ModalSubmission,
+            ) -> ::core::result::Result<Self, #ui::SubmitError> {
                 ::core::result::Result::Ok(Self {
                     #(#p_idents: #p.#p_idents,)*
                     #(#idents: #decodes,)*
@@ -1071,6 +1093,59 @@ mod tests {
         let input: DeriveInput = syn::parse2(input).unwrap_or_else(|e| panic!("{e}"));
         let (attr, defs, _) = parse(&input).unwrap_or_else(|e| panic!("{e}"));
         (attr, defs)
+    }
+
+    /// Story 7.2 Matrix 53: `response` and `auto_defer` on `#[modal]`
+    /// arrive with Story 7.8.
+    #[test]
+    fn modal_response_args_not_supported_yet() {
+        for arg in [quote!(response = update), quote!(auto_defer = false)] {
+            let out = run(quote! {
+                #[modal("f", #arg, defaults(title = "T"))]
+                struct F {
+                    #[text_input("Bio")]
+                    bio: String,
+                }
+            });
+            assert!(
+                out.contains("is a runtime argument of #[modal] that this Noctis release does not support yet"),
+                "{out}"
+            );
+        }
+    }
+
+    /// The derive implements `ModalFromPayload` (the inputs, from a decoded
+    /// Payload) and its `from_submission` delegates to it; the fallback
+    /// expansion of a broken derive implements it too.
+    #[test]
+    fn modal_from_payload_seam() {
+        let body = quote! {
+            #[modal("f", signed, defaults(title = "T"))]
+            struct F {
+                item: u64,
+                #[text_input("Bio")]
+                bio: String,
+            }
+        };
+        let out = run(body.clone()).replace(' ', "");
+        assert!(
+            out.contains("impl::noctis::__private::ui::__macro::ModalFromPayloadforF"),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "<Selfas::noctis::__private::ui::__macro::ModalFromPayload>::from_payload("
+            ),
+            "{out}"
+        );
+        let broken: DeriveInput = syn::parse2(quote! {
+            #[modal("f", defaults(title = ""))]
+            struct F { item: u64 }
+        })
+        .unwrap();
+        let fallback = expand_or_fallback(&broken).to_string().replace(' ', "");
+        assert!(fallback.contains("ModalFromPayloadforF"), "{fallback}");
+        assert!(fallback.contains("[MOD-01]"), "{fallback}");
     }
 
     #[test]

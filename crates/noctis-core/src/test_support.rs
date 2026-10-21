@@ -251,8 +251,17 @@ macro_rules! test_route {
                 submission: &noctis_ui::ModalSubmission,
             ) -> Result<Self, noctis_ui::SubmitError> {
                 let this = noctis_ui::__macro::decode_modal_payload::<Self>(submission)?;
+                <Self as noctis_ui::__macro::ModalFromPayload>::from_payload(this, submission)
+            }
+        }
+
+        impl noctis_ui::__macro::ModalFromPayload for $name {
+            fn from_payload(
+                payload: Self,
+                submission: &noctis_ui::ModalSubmission,
+            ) -> Result<Self, noctis_ui::SubmitError> {
                 match submission.get("bio") {
-                    Some(noctis_ui::SubmittedValue::TextInput(_)) => Ok(this),
+                    Some(noctis_ui::SubmittedValue::TextInput(_)) => Ok(payload),
                     _ => Err(noctis_ui::SubmitError::Missing { key: "bio".into() }),
                 }
             }
@@ -263,6 +272,18 @@ macro_rules! test_route {
 pub(crate) use test_route;
 
 test_route!(TBuy, "shop.buy", noctis_codec::RouteShape::INLINE, 0);
+test_route!(TSigned, "sig", noctis_codec::RouteShape::INLINE.signed(), 0);
+
+/// A component handler of the `signed` Route [`TSigned`] named `name`
+/// that does nothing.
+pub(crate) fn signed_button(name: &'static str) -> crate::ComponentHandler {
+    crate::ComponentHandler::__new::<TSigned, _, _>(
+        name,
+        "sig",
+        crate::ComponentKind::Button,
+        |_: TSigned, _: crate::ComponentCtx| async { Ok(crate::Responded::new()) },
+    )
+}
 
 /// A component handler of [`TBuy`] named `name` at `route` that does
 /// nothing.

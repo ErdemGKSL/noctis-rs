@@ -162,16 +162,22 @@ fn parse_auto_defer(segment: &[TokenTree]) -> syn::Result<bool> {
 }
 
 /// Whether `ty` is a responder parameter: a path whose last segment is
-/// `CommandResponder` or `Responder`.
+/// `CommandResponder`, `ComponentResponder`, `ModalResponder` or
+/// `Responder`.
 pub(crate) fn is_responder(ty: &Type) -> bool {
     match ty {
         Type::Path(path) => {
             path.qself.is_none()
-                && path
-                    .path
-                    .segments
-                    .last()
-                    .is_some_and(|s| s.ident == "CommandResponder" || s.ident == "Responder")
+                && path.path.segments.last().is_some_and(|s| {
+                    [
+                        "CommandResponder",
+                        "ComponentResponder",
+                        "ModalResponder",
+                        "Responder",
+                    ]
+                    .iter()
+                    .any(|name| s.ident == name)
+                })
         }
         _ => false,
     }

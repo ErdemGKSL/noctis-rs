@@ -59,6 +59,21 @@ impl Pick {
     }
 }
 
+/// A `signed` Route: the probe decodes without keys, so its ids are
+/// `forged` (Story 7.2 Matrix 56).
+#[derive(Button)]
+#[button("sig", signed, defaults(style = Primary, label = "Sig"))]
+struct Sig {
+    item: u64,
+}
+
+impl Sig {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        Ok(responded())
+    }
+}
+
 /// The negative control: a `String` field allocates when decoded.
 #[derive(Button)]
 #[button("neg", overflow = spill, defaults(style = Primary, label = "Neg"))]
@@ -85,14 +100,15 @@ fn splitmix(seed: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// The table of `Buy`, `Pick`, `Named` and `extras` more Routes `r0`, …
-/// (ids leaked before measuring).
+/// The table of `Buy`, `Pick`, `Named`, `Sig` and `extras` more Routes
+/// `r0`, … (ids leaked before measuring).
 fn table(extras: usize) -> RouteTable {
     let module = (0..extras).fold(
         Module::new("shop")
             .add::<Buy>()
             .add::<Pick>()
-            .add::<Named>(),
+            .add::<Named>()
+            .add::<Sig>(),
         |module, i| {
             let id: &'static str = Box::leak(format!("r{i}").into_boxed_str());
             module.__add(ComponentHandler::__new::<Buy, _, _>(
@@ -154,6 +170,8 @@ fn rejected() -> Vec<Probe> {
         ("1shop.buy:147".to_owned(), b, Err("stale")),
         ("0shop.buy:~0123456789A".to_owned(), b, Err("stale")),
         ("0r0:47".to_owned(), b, Err("forged")),
+        ("8sig:47abcdef".to_owned(), b, Err("forged")),
+        ("0sig:47".to_owned(), b, Err("forged")),
         ("0shop.buy:".to_owned(), b, Err("undecodable")),
         ("0shop.buy:47,9".to_owned(), b, Err("undecodable")),
     ]
@@ -196,9 +214,9 @@ fn dispatch_lookup_and_decode_allocate_nothing() {
         Ok("alloc_dispatch::Named"),
     )];
 
-    for extras in [7, 9_997] {
+    for extras in [6, 9_996] {
         let table = table(extras);
-        assert!(format!("{table:?}").contains(&format!("len: {}", extras + 3)));
+        assert!(format!("{table:?}").contains(&format!("len: {}", extras + 4)));
         // Warm up once outside the measured regions.
         let _ = measure(&table, &valid, 1);
         assert_eq!(measure(&table, &valid, 1), (0, 0), "valid, {extras} extras");

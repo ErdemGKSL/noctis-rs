@@ -1,0 +1,31 @@
+error[E0277]: `LegacyMessage` is not a response of this handler
+  --> tests/ui/cv2/CV2-01_component_return_legacy.rs:12:14
+   |
+12 |     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<LegacyMessage> {
+   |              ^^^^^^ return a `V2Message`, `Components`, a `LegacyMessage` (commands only), or the `Responded` from `done()`
+   |
+   = note: [CV2-01] component and modal handlers return a `V2Message`/`Components` (or `Responded`); a `LegacyMessage` is a response of command handlers only
+help: the trait `IntoResponse<noctis::Component>` is not implemented for `LegacyMessage`
+      but trait `IntoResponse<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoResponse<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::Component`
+   = note: required for `noctis::__private::noctis_core::kind::__ComponentKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, Buy, fn(Buy, noctis::ComponentCtx) -> impl Future<Output = Result<LegacyMessage, HandlerError>> {Buy::handle}>`
+
+error[E0277]: `LegacyMessage` is not a response of this handler
+  --> tests/ui/cv2/CV2-01_component_return_legacy.rs:26:14
+   |
+26 |     async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<LegacyMessage> {
+   |              ^^^^^^ return a `V2Message`, `Components`, a `LegacyMessage` (commands only), or the `Responded` from `done()`
+   |
+   = note: [CV2-01] component and modal handlers return a `V2Message`/`Components` (or `Responded`); a `LegacyMessage` is a response of command handlers only
+help: the trait `IntoResponse<noctis::ModalSubmit>` is not implemented for `LegacyMessage`
+      but trait `IntoResponse<noctis::Command>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl IntoResponse<Command> for LegacyMessage {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `noctis::Command`, found `noctis::ModalSubmit`
+   = note: required for `noctis::__private::noctis_core::kind::__ModalKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, BioForm, fn(BioForm, noctis::ModalSubmitCtx) -> impl Future<Output = Result<LegacyMessage, HandlerError>> {BioForm::handle}>`

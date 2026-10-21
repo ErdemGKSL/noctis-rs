@@ -258,7 +258,6 @@ pub use route::{ComponentRoute, CustomId};
 pub mod __macro {
     pub use twilight_model::channel::ChannelType;
 
-    pub use crate::modal::form::decode_modal_payload;
     pub use crate::modal::form::{
         ChannelSelectField, CheckboxField, CheckboxGroupField, FileUploadField,
         MentionableSelectField, RadioGroupField, RoleSelectField, Spec, StringSelectField,
@@ -266,6 +265,7 @@ pub mod __macro {
         checkbox_group, file_upload, mentionable_select, radio_group, role_select, string_select,
         text_display, text_input, user_select,
     };
+    pub use crate::modal::form::{ModalFromPayload, decode_modal_payload};
     pub use crate::placement::{OptionsGiven, RowButtonItem, RowOne};
     pub use crate::route::{
         ButtonDefaults, ChannelSelectDefaults, ComponentRoute, ComponentValue, DefaultEmoji,

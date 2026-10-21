@@ -1440,9 +1440,14 @@ fn cv2_08_warnings_are_logged() {
         row_of(link(rep("a", 81))),
         Section::new([t("a")], Thumbnail::new(image())).into(),
     ]);
+    // With a single registered dispatcher, tracing-core computes a callsite's
+    // interest from the *registering thread's* default, so a parallel test
+    // with no subscriber that first hits the `warn!` callsite while ours is
+    // active (it raises the global max level) caches `Interest::never`. A
+    // second live dispatcher makes interest come from every registered one.
+    let _second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
     let report = tracing::subscriber::with_default(capture.clone(), || {
-        // Parallel tests may register the `warn!` callsites with no subscriber
-        // concurrently with `with_default`, caching `Interest::never`; rebuild it.
+        // Callsites registered before `with_default` keep a stale interest.
         tracing::callsite::rebuild_interest_cache();
         let report = validate(&mut m.clone(), &lenient()).expect("warnings only");
         let _ = cost(&m, &lenient());

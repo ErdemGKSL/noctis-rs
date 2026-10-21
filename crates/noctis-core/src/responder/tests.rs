@@ -51,6 +51,31 @@ impl Fixture {
         Self::start_with(answer, Limits::default()).await
     }
 
+    /// As [`Fixture::start`], with the payload key `key`.
+    pub(crate) async fn start_keyed(answer: Answer, key: noctis_codec::PayloadKey) -> Self {
+        let server = TestServer::start_with(false, answer).await;
+        let app = App::builder()
+            .runtime(&Runtime::for_test())
+            .http_proxy(server.authority())
+            .payload_key(key)
+            .build()
+            .unwrap();
+        Self { server, app }
+    }
+
+    /// As [`Fixture::start`], with a bot token, so channel routes carry
+    /// `authorization: Bot …` while interaction routes must not.
+    pub(crate) async fn start_with_token(answer: Answer) -> Self {
+        let server = TestServer::start_with(false, answer).await;
+        let app = App::builder()
+            .runtime(&Runtime::for_test())
+            .http_proxy(server.authority())
+            .token(crate::Token::new("abc").unwrap())
+            .build()
+            .unwrap();
+        Self { server, app }
+    }
+
     pub(crate) async fn start_with(answer: Answer, limits: Limits) -> Self {
         let server = TestServer::start_with(false, answer).await;
         let app = App::builder()
@@ -82,6 +107,24 @@ impl Fixture {
             channel_id: Some(Id::new(9)),
         });
         Shared::new(transport, ephemerality, self.app.limits().clone())
+    }
+
+    /// An interaction transport of a component or modal handler declaring
+    /// `declared`, on the source message `source`.
+    pub(crate) fn component(
+        &self,
+        declared: Declared,
+        source: Option<SourceMessage>,
+    ) -> Arc<Shared> {
+        let transport = Transport::Interaction(InteractionTarget {
+            app: Arc::clone(self.app.shared()),
+            application_id: Id::new(7),
+            interaction_id: Id::new(100),
+            token: "tok".to_owned(),
+            received_at: Instant::now(),
+            channel_id: Some(Id::new(9)),
+        });
+        Shared::declared(transport, declared, source, self.app.limits().clone(), None)
     }
 
     /// A message transport (channel 5, message 6).
@@ -116,7 +159,7 @@ const CB: &str = "/api/v10/interactions/100/tok/callback";
 /// A type-4 callback asks for the message (`with_response`).
 const CB_REPLY: &str = "/api/v10/interactions/100/tok/callback?with_response=true";
 const ORIGINAL: &str = "/api/v10/webhooks/7/tok/messages/@original";
-const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true&with_components=true";
+const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true";
 
 fn responder(shared: &Arc<Shared>) -> CommandResponder {
     Responder::new(Arc::clone(shared))
@@ -190,7 +233,7 @@ async fn finish_edits_after_an_ack() {
         (
             Method::PATCH,
             ORIGINAL.to_owned(),
-            json!({ "flags": 32768, "components": v2_components("b"), "allowed_mentions": { "parse": [] } })
+            json!({ "flags": 32768, "components": v2_components("b"), "allowed_mentions": { "parse": [] }, "attachments": [] })
         )
     );
 }
@@ -237,7 +280,7 @@ async fn edit_formats() {
         *edit,
         json!({
             "flags": 32768, "content": null, "embeds": [], "poll": null, "sticker_ids": [],
-            "components": v2_components("b"), "allowed_mentions": { "parse": [] }
+            "components": v2_components("b"), "allowed_mentions": { "parse": [] }, "attachments": []
         })
     );
     // Now V2: a legacy edit fails.
@@ -972,7 +1015,7 @@ async fn gate_orders_initial_responses() {
 
 // ---- Story 6.8: `Shared::notice` in every state ----
 
-const FOLLOWUP_PATH: &str = "/api/v10/webhooks/7/tok?wait=true&with_components=true";
+const FOLLOWUP_PATH: &str = "/api/v10/webhooks/7/tok?wait=true";
 
 /// The ephemeral type-4 notice of `text`, without `with_response`.
 fn notice_callback(text: &str) -> (Method, String, Value) {
@@ -1432,3 +1475,5 @@ async fn renamed_calls_wire() {
         ]
     );
 }
+
+mod components;

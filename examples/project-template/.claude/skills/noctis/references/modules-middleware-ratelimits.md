@@ -39,9 +39,9 @@ derives implement).
 
 - `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
   too (in `install`); those trees fold after the ones mounted before `build()`.
-- Commands, context menus, event handlers, components and modals run today
-  (component responses arrive with Story 7.2 [planned], see `routes-payloads-refs.md`
-  §1); `#[hook]` joins later [planned].
+- Commands, context menus, event handlers, components and modals run today, components
+  and modals with their responses (see `routes-payloads-refs.md` §1 and `responder.md`
+  §3b); `#[hook]` joins later [planned].
 - One handler per Route id per App: add each component or modal struct to exactly one
   mounted Module, or `build()` fails with ``[CID-04] Route `…` has two handlers``.
 - `.uses::<R>()` (`#[must_use]`) declares that this Module's Views build components of

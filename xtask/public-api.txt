@@ -69,8 +69,10 @@ pub fn noctis::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
 pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
+pub fn noctis::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
 pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
@@ -233,10 +235,13 @@ pub noctis::BuildViolation::MissingIntent::event: &'static str
 pub noctis::BuildViolation::MissingIntent::handler: &'static str
 pub noctis::BuildViolation::MissingIntent::intent: twilight_model::gateway::intents::Intents
 pub noctis::BuildViolation::MissingIntent::module: &'static str
+pub noctis::BuildViolation::MissingPayloadKey
+pub noctis::BuildViolation::MissingPayloadKey::route: &'static str
 pub noctis::BuildViolation::NoTokioRuntime
 pub noctis::BuildViolation::Plugin
 pub noctis::BuildViolation::Plugin::message: alloc::string::String
 pub noctis::BuildViolation::Plugin::plugin: &'static str
+pub noctis::BuildViolation::PreviousKeyWithoutKey
 pub noctis::BuildViolation::ResourceConflict(noctis::ResourceConflict)
 pub noctis::BuildViolation::UnmountedRoute
 pub noctis::BuildViolation::UnmountedRoute::module: &'static str
@@ -261,6 +266,14 @@ impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
 pub proc macro noctis::#[derive(Button)]
+#[non_exhaustive] pub struct noctis::CallbackResource
+impl noctis::CallbackResource
+pub fn noctis::CallbackResource::kind(&self) -> u8
+pub fn noctis::CallbackResource::message(&self) -> core::option::Option<&twilight_model::channel::message::Message>
+impl core::clone::Clone for noctis::CallbackResource
+pub fn noctis::CallbackResource::clone(&self) -> Self
+impl core::fmt::Debug for noctis::CallbackResource
+pub fn noctis::CallbackResource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::CanShowModal: noctis::DeferMode + noctis::__private::core::responder::sealed::ShowModal
 pub proc macro noctis::#[derive(ChannelSelectMenu)]
 pub enum noctis::Command
@@ -402,6 +415,20 @@ pub const noctis::CommandPath::PATHS: &'static [&'static str]
 pub fn noctis::CommandPath::as_str(self) -> &'static str
 pub fn noctis::CommandPath::from_path(&str) -> core::option::Option<Self>
 pub type noctis::CommandResponder<D> = noctis::Responder<noctis::Command, noctis::Pending, D>
+pub enum noctis::Component
+impl core::clone::Clone for noctis::Component
+pub fn noctis::Component::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Component
+impl core::cmp::PartialEq for noctis::Component
+pub fn noctis::Component::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Component
+pub fn noctis::Component::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::Component
+pub fn noctis::Component::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::Component
+impl core::marker::StructuralPartialEq for noctis::Component
+impl noctis::ResponderKind for noctis::Component
+impl noctis::ResponderKind for noctis::Component
 pub struct noctis::ComponentCtx(_)
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
@@ -443,6 +470,7 @@ impl core::hash::Hash for noctis::ComponentKind
 pub fn noctis::ComponentKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ComponentKind
 impl core::marker::StructuralPartialEq for noctis::ComponentKind
+pub type noctis::ComponentResponder<D> = noctis::Responder<noctis::Component, noctis::Pending, D>
 pub struct noctis::ContextMenuHandler
 impl noctis::ContextMenuHandler
 pub fn noctis::ContextMenuHandler::auto_defer(&self) -> bool
@@ -474,6 +502,9 @@ pub fn noctis::Dispatcher::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fm
 #[non_exhaustive] pub enum noctis::EnvError
 pub noctis::EnvError::InvalidDevGuild
 pub noctis::EnvError::InvalidDevGuild::var: &'static str
+pub noctis::EnvError::InvalidPayloadKey
+pub noctis::EnvError::InvalidPayloadKey::source: noctis::codec::KeyError
+pub noctis::EnvError::InvalidPayloadKey::var: &'static str
 pub noctis::EnvError::InvalidPublisher
 pub noctis::EnvError::InvalidPublisher::var: &'static str
 pub noctis::EnvError::InvalidShardTotal
@@ -753,6 +784,7 @@ impl core::hash::Hash for noctis::InteractionContext
 pub fn noctis::InteractionContext::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::InteractionContext
 impl core::marker::StructuralPartialEq for noctis::InteractionContext
+pub trait noctis::IntoEdit<K: noctis::ResponderKind>: noctis::__private::core::responder::sealed::Edit + core::marker::Send + 'static
 pub trait noctis::IntoResponse<K: noctis::ResponderKind>: noctis::__private::core::responder::sealed::Response + core::marker::Send + 'static
 pub struct noctis::InvalidOption
 impl noctis::InvalidOption
@@ -841,6 +873,21 @@ impl core::clone::Clone for noctis::ModalHandler
 pub fn noctis::ModalHandler::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ModalHandler
 pub fn noctis::ModalHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub type noctis::ModalResponder<D> = noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>
+pub enum noctis::ModalSubmit
+impl core::clone::Clone for noctis::ModalSubmit
+pub fn noctis::ModalSubmit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ModalSubmit
+impl core::cmp::PartialEq for noctis::ModalSubmit
+pub fn noctis::ModalSubmit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ModalSubmit
+pub fn noctis::ModalSubmit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ModalSubmit
+pub fn noctis::ModalSubmit::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ModalSubmit
+impl core::marker::StructuralPartialEq for noctis::ModalSubmit
+impl noctis::ResponderKind for noctis::ModalSubmit
+impl noctis::ResponderKind for noctis::ModalSubmit
 pub struct noctis::ModalSubmitCtx(_)
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
@@ -925,6 +972,7 @@ pub type noctis::Options::Partial: noctis::PartialOptions<Options = Self>
 pub const noctis::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl<'static>]
 pub fn noctis::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::Options::validate(&self, &noctis::CommandCtx) -> core::result::Result<(), noctis::InvalidOption>
+impl noctis::IntoEdit<noctis::Command> for noctis::OutgoingMessage
 #[non_exhaustive] pub enum noctis::OutgoingMessage
 pub noctis::OutgoingMessage::Legacy(noctis::ui::LegacyMessage)
 pub noctis::OutgoingMessage::V2(noctis::ui::V2Message)
@@ -938,6 +986,8 @@ impl core::convert::From<noctis::ui::V2Message> for noctis::OutgoingMessage
 pub fn noctis::OutgoingMessage::from(noctis::ui::V2Message) -> Self
 impl core::fmt::Debug for noctis::OutgoingMessage
 pub fn noctis::OutgoingMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::IntoEdit<noctis::Command> for noctis::OutgoingMessage
+impl noctis::IntoEdit<noctis::Command> for noctis::OutgoingMessage
 pub type noctis::Partial<O> = <O as noctis::Options>::Partial
 pub trait noctis::PartialOptions: core::default::Default + core::marker::Send + 'static
 pub type noctis::PartialOptions::Options: noctis::Options
@@ -988,17 +1038,32 @@ impl<K: noctis::ResponderKind> noctis::IntoResponse<K> for noctis::Responded
 impl<K: noctis::ResponderKind> noctis::IntoResponse<K> for noctis::Responded
 pub struct noctis::Responder<K: noctis::ResponderKind, S: noctis::ResponderState, D: noctis::DeferMode>
 impl<D: noctis::DeferMode> noctis::Responder<noctis::Command, noctis::Pending, D>
-pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::defer_reply(self) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError>
-pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::defer_reply_as(self, noctis::Ephemerality) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError>
-pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::reply(self, impl core::convert::Into<noctis::OutgoingMessage>) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError>
-pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::reply_as(self, impl core::convert::Into<noctis::OutgoingMessage>, noctis::Ephemerality) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError>
 pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::show_modal(self, noctis::ui::Modal) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError> where D: noctis::CanShowModal
+impl<D: noctis::DeferMode> noctis::Responder<noctis::Component, noctis::Pending, D>
+pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::defer_update(self) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::defer_update_with_response(self) -> core::result::Result<(noctis::Responder<noctis::Component, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
+pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::update(self, impl noctis::IntoEdit<noctis::Component>) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::update_with_response(self, impl noctis::IntoEdit<noctis::Component>) -> core::result::Result<(noctis::Responder<noctis::Component, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
+impl<D: noctis::DeferMode> noctis::Responder<noctis::Component, noctis::Pending, D>
+pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::show_modal(self, noctis::ui::Modal) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError> where D: noctis::CanShowModal
+impl<D: noctis::DeferMode> noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>
+pub async fn noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>::defer_update(self) -> core::result::Result<noctis::Responder<noctis::ModalSubmit, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>::defer_update_with_response(self) -> core::result::Result<(noctis::Responder<noctis::ModalSubmit, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
+pub async fn noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>::update(self, impl noctis::IntoEdit<noctis::ModalSubmit>) -> core::result::Result<noctis::Responder<noctis::ModalSubmit, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>::update_with_response(self, impl noctis::IntoEdit<noctis::ModalSubmit>) -> core::result::Result<(noctis::Responder<noctis::ModalSubmit, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
 impl<K: noctis::ResponderKind, D: noctis::DeferMode> noctis::Responder<K, noctis::Acked, D>
 pub async fn noctis::Responder<K, noctis::Acked, D>::delete_reply(&self) -> core::result::Result<(), noctis::ResponderError>
 pub fn noctis::Responder<K, noctis::Acked, D>::done(self) -> noctis::Responded
-pub async fn noctis::Responder<K, noctis::Acked, D>::edit_reply(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> core::result::Result<(), noctis::ResponderError>
+pub async fn noctis::Responder<K, noctis::Acked, D>::edit_reply(&self, impl noctis::IntoEdit<K>) -> core::result::Result<(), noctis::ResponderError>
 pub async fn noctis::Responder<K, noctis::Acked, D>::fetch_reply(&self) -> core::result::Result<twilight_model::channel::message::Message, noctis::ResponderError>
 pub async fn noctis::Responder<K, noctis::Acked, D>::follow_up(&self, impl core::convert::Into<noctis::OutgoingMessage>, noctis::Visibility) -> core::result::Result<noctis::FollowupHandle, noctis::ResponderError>
+impl<K: noctis::ResponderKind, D: noctis::DeferMode> noctis::Responder<K, noctis::Pending, D>
+pub async fn noctis::Responder<K, noctis::Pending, D>::defer_reply(self) -> core::result::Result<noctis::Responder<K, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<K, noctis::Pending, D>::defer_reply_as(self, noctis::Ephemerality) -> core::result::Result<noctis::Responder<K, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<K, noctis::Pending, D>::defer_reply_with_response(self) -> core::result::Result<(noctis::Responder<K, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
+pub async fn noctis::Responder<K, noctis::Pending, D>::reply(self, impl core::convert::Into<noctis::OutgoingMessage>) -> core::result::Result<noctis::Responder<K, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<K, noctis::Pending, D>::reply_as(self, impl core::convert::Into<noctis::OutgoingMessage>, noctis::Ephemerality) -> core::result::Result<noctis::Responder<K, noctis::Acked, D>, noctis::ResponderError>
+pub async fn noctis::Responder<K, noctis::Pending, D>::reply_with_response(self, impl core::convert::Into<noctis::OutgoingMessage>) -> core::result::Result<(noctis::Responder<K, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
 impl<K: noctis::ResponderKind, S: noctis::ResponderState, D: noctis::DeferMode> core::fmt::Debug for noctis::Responder<K, S, D>
 pub fn noctis::Responder<K, S, D>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::ResponderError
@@ -1017,6 +1082,7 @@ pub noctis::ResponderError::Rejected::code: core::option::Option<u32>
 pub noctis::ResponderError::Rejected::status: u16
 pub noctis::ResponderError::TokenExpired
 pub noctis::ResponderError::Transport
+pub noctis::ResponderError::UpdateUnavailable
 impl core::convert::From<noctis::AckDeadlineMissed> for noctis::ResponderError
 pub fn noctis::ResponderError::from(noctis::AckDeadlineMissed) -> Self
 impl core::convert::From<noctis::ui::UiError> for noctis::ResponderError
@@ -1514,11 +1580,49 @@ impl<'w> noctis::codec::FieldWriter<'w>
 pub fn noctis::codec::FieldWriter<'w>::field(&mut self, &impl noctis::codec::Field) -> core::fmt::Result
 impl core::fmt::Debug for noctis::codec::FieldWriter<'_>
 pub fn noctis::codec::FieldWriter<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::codec::KeyError
+pub noctis::codec::KeyError::InvalidChar
+pub noctis::codec::KeyError::InvalidChar::index: usize
+pub noctis::codec::KeyError::Length
+pub noctis::codec::KeyError::Length::len: usize
+impl core::clone::Clone for noctis::codec::KeyError
+pub fn noctis::codec::KeyError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::KeyError
+impl core::cmp::PartialEq for noctis::codec::KeyError
+pub fn noctis::codec::KeyError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::codec::KeyError
+impl core::fmt::Debug for noctis::codec::KeyError
+pub fn noctis::codec::KeyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::KeyError
+pub fn noctis::codec::KeyError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::codec::KeyError
+impl core::marker::StructuralPartialEq for noctis::codec::KeyError
 pub trait noctis::codec::Payload
 pub const noctis::codec::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::codec::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
 pub trait noctis::codec::PayloadDecode<'de>: noctis::codec::Payload + core::marker::Sized
 pub fn noctis::codec::PayloadDecode::decode_fields(&mut noctis::codec::FieldReader<'de>) -> core::result::Result<Self, noctis::codec::CodecError>
+pub struct noctis::codec::PayloadKey(_)
+impl noctis::codec::PayloadKey
+pub const fn noctis::codec::PayloadKey::from_bytes([u8; 32]) -> Self
+pub fn noctis::codec::PayloadKey::from_hex(&str) -> core::result::Result<Self, noctis::codec::KeyError>
+impl core::clone::Clone for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::clone(&self) -> Self
+impl core::fmt::Debug for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::str::traits::FromStr for noctis::codec::PayloadKey
+pub type noctis::codec::PayloadKey::Err = noctis::codec::KeyError
+pub fn noctis::codec::PayloadKey::from_str(&str) -> core::result::Result<Self, Self::Err>
+impl noctis::codec::Sign for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::sign(&self, &str) -> noctis::codec::Tag
+impl noctis::codec::Verify for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::verify(&self, &str, noctis::codec::Tag) -> bool
+impl noctis::codec::Sign for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::sign(&self, &str) -> noctis::codec::Tag
+impl noctis::codec::Verify for noctis::codec::PayloadKey
+pub fn noctis::codec::PayloadKey::verify(&self, &str, noctis::codec::Tag) -> bool
 pub trait noctis::codec::Route
 pub type noctis::codec::Route::Payload: noctis::codec::Payload
 pub const noctis::codec::Route::ID: noctis::codec::RouteId
@@ -1585,6 +1689,27 @@ pub fn noctis::codec::Section::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::codec::Section
 impl core::marker::StructuralPartialEq for noctis::codec::Section
 pub trait noctis::codec::SelectRoute: noctis::codec::Route
+pub trait noctis::codec::Sign
+pub fn noctis::codec::Sign::sign(&self, &str) -> noctis::codec::Tag
+pub struct noctis::codec::Tag(_)
+impl noctis::codec::Tag
+pub fn noctis::codec::Tag::as_str(&self) -> &str
+pub const fn noctis::codec::Tag::from_u64(u64) -> Self
+impl core::clone::Clone for noctis::codec::Tag
+pub fn noctis::codec::Tag::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::Tag
+impl core::cmp::PartialEq for noctis::codec::Tag
+pub fn noctis::codec::Tag::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::codec::Tag
+pub fn noctis::codec::Tag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::Tag
+pub fn noctis::codec::Tag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::codec::Tag
+pub fn noctis::codec::Tag::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::codec::Tag
+impl core::marker::StructuralPartialEq for noctis::codec::Tag
+pub trait noctis::codec::Verify
+pub fn noctis::codec::Verify::verify(&self, &str, noctis::codec::Tag) -> bool
 pub mod noctis::codec::check
 #[non_exhaustive] pub enum noctis::codec::check::CheckError
 pub noctis::codec::check::CheckError::Decode
@@ -2513,8 +2638,10 @@ pub fn noctis::prelude::AppBuilder::limits(&mut self, noctis::rules::Limits) -> 
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::prelude::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
 pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
@@ -2627,6 +2754,7 @@ impl core::clone::Clone for noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub type noctis::prelude::ComponentResponder<D> = noctis::Responder<noctis::Component, noctis::Pending, D>
 pub enum noctis::prelude::Ephemerality
 pub noctis::prelude::Ephemerality::Ephemeral
 pub noctis::prelude::Ephemerality::Public
@@ -2730,6 +2858,7 @@ pub proc macro noctis::prelude::#[derive(Modal)]
 pub trait noctis::prelude::ModalForm: core::marker::Sized
 pub fn noctis::prelude::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
 pub fn noctis::prelude::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> core::result::Result<Self, noctis::ui::SubmitError>
+pub type noctis::prelude::ModalResponder<D> = noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>
 pub struct noctis::prelude::ModalSubmitCtx(_)
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>

@@ -16,7 +16,7 @@ use syn::{DeriveInput, Fields};
 use crate::defaults::{self, DefaultsKind};
 use crate::kind::{Family, scaffolding};
 use crate::payload;
-use crate::route::{AttrKind, parse_kind_attr, route_impls};
+use crate::route::{AttrKind, Response, parse_kind_attr, route_impls};
 
 /// A component derive.
 #[derive(Clone, Copy)]
@@ -95,6 +95,7 @@ pub(crate) fn derive_or_fallback(component: Component, input: &DeriveInput) -> T
             impl #core::__Component for #ident {
                 const ROUTE: &'static ::core::primitive::str = "";
                 const KIND: #core::ComponentKind = #core::ComponentKind::#variant;
+                const RESPONSE: #core::__Response = #core::__Response::Update;
             }
 
             #route
@@ -118,7 +119,12 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
     let id = &attr.args.id;
     let variant = component.variant();
     let build = build_fn(component, &declared);
-    let scaffolding = scaffolding(ident, Family::Component, false);
+    let response = match attr.args.response {
+        Response::Update => quote!(Update),
+        Response::Ephemeral => quote!(Ephemeral),
+        Response::Public => quote!(Public),
+    };
+    let scaffolding = scaffolding(ident, Family::Component, !attr.args.auto_defer);
     Ok(quote! {
         #route
 
@@ -139,6 +145,7 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
         impl #core::__Component for #ident {
             const ROUTE: &'static ::core::primitive::str = #id;
             const KIND: #core::ComponentKind = #core::ComponentKind::#variant;
+            const RESPONSE: #core::__Response = #core::__Response::#response;
         }
 
         impl #ident {
@@ -243,6 +250,73 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("Register for Buy"), "{out}");
+    }
+
+    /// Story 7.2 Matrix 52 and 53: `response` and `auto_defer`.
+    #[test]
+    fn response_and_auto_defer() {
+        let out = run(
+            Component::Button,
+            quote! {
+                #[button("shop.buy", defaults(style = Primary, label = "Buy"))]
+                struct Buy;
+            },
+        );
+        assert!(out.contains("__Response :: Update"), "{out}");
+        assert!(
+            out.contains("type Defer = :: noctis :: __private :: core :: AutoDefer"),
+            "{out}"
+        );
+        let out = run(
+            Component::UserSelect,
+            quote! {
+                #[user_select("pick", response = ephemeral, auto_defer = false, defaults(placeholder = "p"))]
+                struct Pick;
+            },
+        );
+        assert!(out.contains("__Response :: Ephemeral"), "{out}");
+        assert!(
+            out.contains("type Defer = :: noctis :: __private :: core :: Manual"),
+            "{out}"
+        );
+        let out = run(
+            Component::Button,
+            quote! {
+                #[button("b", response = public, auto_defer = true, defaults(style = Primary, label = "B"))]
+                struct B;
+            },
+        );
+        assert!(out.contains("__Response :: Public"), "{out}");
+        assert!(out.contains("AutoDefer"), "{out}");
+        for (arg, start) in [
+            (
+                quote!(response = edit),
+                "[CID-03] `response` takes `update`, `ephemeral` or `public`",
+            ),
+            (quote!(response = "update"), "[CID-03] `response` takes"),
+            (
+                quote!(auto_defer = 1),
+                "[CID-03] `auto_defer` takes `true` or `false`",
+            ),
+            (quote!(auto_defer = yes), "[CID-03] `auto_defer` takes"),
+            (
+                quote!(response = update, response = public),
+                "[CID-03] #[button] argument `response` is given twice",
+            ),
+            (
+                quote!(auto_defer = false, auto_defer = false),
+                "[CID-03] #[button] argument `auto_defer` is given twice",
+            ),
+        ] {
+            let e = run(
+                Component::Button,
+                quote!(
+                    #[button("a", #arg, defaults(style = Primary, label = "a"))]
+                    struct B;
+                ),
+            );
+            assert!(e.starts_with(start), "{start}\n=> {e}");
+        }
     }
 
     #[test]
@@ -364,12 +438,7 @@ mod tests {
             );
             assert!(e.starts_with("[CID-03] unknown #[button] argument"), "{e}");
         }
-        for arg in [
-            quote!(ttl = "1m"),
-            quote!(response = update),
-            quote!(auto_defer = false),
-            quote!(rate_limit(1, 2)),
-        ] {
+        for arg in [quote!(ttl = "1m"), quote!(rate_limit(1, 2))] {
             let e = run(
                 Component::Button,
                 quote!(

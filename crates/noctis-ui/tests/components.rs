@@ -575,6 +575,49 @@ fn signed_routes_resolve() {
     assert!(serde_json::to_string(&body).is_ok());
 }
 
+/// Story 7.2 Matrix 17-19: `resolve_for_send` passes the nonce only to a
+/// select Route and the signer only to a signed Route; a plain id is
+/// already resolved, a Ref Route gives its slot, and a signed Route without
+/// a signer is `MissingSigner`.
+#[test]
+fn resolve_for_send_matrix() {
+    use noctis_codec::Sign;
+
+    let key = PayloadKey::from_bytes([7; 32]);
+    let ring: &dyn Sign = &key;
+    let mut body = Components::new()
+        .push(ActionRow::buttons([button(Buy { item: 1 })]))
+        .push(ActionRow::buttons([button(Signed { n: 1 })]))
+        .push(ActionRow::buttons([button(Stored { n: 1 })]))
+        .push(ActionRow::select(user_select(Pick { page: 1 })));
+    let mut ids = body.custom_ids_mut();
+    let plain = ids.next().expect("plain id");
+    let before = plain.get().map(str::to_owned);
+    assert!(before.is_some());
+    assert_eq!(plain.resolve_for_send(nonce(), Some(ring)), Ok(None));
+    assert_eq!(plain.get().map(str::to_owned), before);
+    let signed = ids.next().expect("signed id");
+    assert_eq!(
+        signed.resolve_for_send(nonce(), None),
+        Err(EncodeError::MissingSigner)
+    );
+    assert_eq!(signed.get(), None);
+    assert_eq!(signed.resolve_for_send(nonce(), Some(ring)), Ok(None));
+    let mut expected = Components::new().push(ActionRow::buttons([button(Signed { n: 1 })]));
+    let reference = expected.custom_ids_mut().next().expect("one id");
+    assert_eq!(reference.resolve(&Parts::new().with_signer(&key)), Ok(None));
+    assert_eq!(signed.get(), reference.get());
+    let stored = ids.next().expect("stored id");
+    let slot = stored
+        .resolve_for_send(nonce(), Some(ring))
+        .expect("encodes");
+    assert!(slot.is_some());
+    assert_eq!(stored.get(), None);
+    let select = ids.next().expect("select id");
+    assert_eq!(select.resolve_for_send(nonce(), None), Ok(None));
+    assert_eq!(select.get(), Some("4pick:011"));
+}
+
 #[test]
 fn section_accessory_ids_resolve() {
     let key = PayloadKey::from_bytes([7; 32]);

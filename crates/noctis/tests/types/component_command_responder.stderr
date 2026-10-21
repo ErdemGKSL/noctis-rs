@@ -1,0 +1,90 @@
+error[E0277]: the parameters of this `#[handler]` method do not fit `Buy`
+ --> tests/types/component_command_responder.rs:9:14
+  |
+9 |     async fn handle(self, _ctx: ComponentCtx, r: CommandResponder) -> HandlerResult<Responded> {
+  |              ^^^^^^ unexpected parameters
+  |
+  = help: the trait `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<Responder<noctis::Command>>, Buy, _>` is not implemented for `noctis::__private::noctis_core::kind::__ComponentKind`
+  = note: commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`
+help: `noctis::__private::noctis_core::kind::__ComponentKind` implements trait `noctis::__private::noctis_core::kind::__Bind<Shape, S, F>`
+ --> $WORKSPACE/crates/noctis-core/src/kind.rs
+  |
+  | /         impl<S, X, F> __Bind<__CX<X>, S, F> for $kind
+  | |         where
+  | |             S: $family + $params,
+  | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<X>, S, F>`
+...
+  | /         impl<S, X, R, F> __Bind<__CXR<X, R>, S, F> for $kind
+  | |         where
+  | |             S: $family + $params,
+  | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CXR<X, R>, S, F>`
+...
+  | / no_extra!(
+  | |     __ComponentKind,
+  | |     __Component,
+  | |     __ComponentParams,
+  | |     ComponentHandler
+  | | );
+  | |_- in this macro invocation
+...
+  | / impl<S, F, Fut, R> __Bind<__C, S, F> for __ComponentKind
+  | | where
+  | |     S: __Component
+  | |         + noctis_codec::Route<Payload = S>
+... |
+  | |     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+  | |     R: IntoResponse<Component>,
+  | |_______________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, S, F>`
+...
+  | / impl<S, D, F, Fut, R> __Bind<__CR<Responder<Component, Pending, D>>, S, F> for __ComponentKind
+  | | where
+  | |     S: __Component
+  | |         + noctis_codec::Route<Payload = S>
+... |
+  | |     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+  | |     R: IntoResponse<Component>,
+  | |_______________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<Responder<noctis::Component, noctis::Pending, D>>, S, F>`
+  = note: this error originates in the macro `no_extra` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the parameters of this `#[handler]` method do not fit `BioForm`
+  --> tests/types/component_command_responder.rs:23:14
+   |
+23 |     async fn handle(self, _ctx: ModalSubmitCtx, r: ComponentResponder) -> HandlerResult<Responded> {
+   |              ^^^^^^ unexpected parameters
+   |
+   = help: the trait `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<Responder<noctis::Component>>, BioForm, _>` is not implemented for `noctis::__private::noctis_core::kind::__ModalKind`
+   = note: commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`
+help: `noctis::__private::noctis_core::kind::__ModalKind` implements trait `noctis::__private::noctis_core::kind::__Bind<Shape, S, F>`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | /         impl<S, X, F> __Bind<__CX<X>, S, F> for $kind
+   | |         where
+   | |             S: $family + $params,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<X>, S, F>`
+...
+   | /         impl<S, X, R, F> __Bind<__CXR<X, R>, S, F> for $kind
+   | |         where
+   | |             S: $family + $params,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CXR<X, R>, S, F>`
+...
+   |   no_extra!(__ModalKind, __Modal, __ModalParams, ModalHandler);
+   |   ------------------------------------------------------------ in this macro invocation
+...
+   | / impl<S, F, Fut, R> __Bind<__C, S, F> for __ModalKind
+   | | where
+   | |     S: __Modal + noctis_ui::__macro::ModalFromPayload + Send + 'static,
+   | |     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
+   | |     F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
+   | |     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+   | |     R: IntoResponse<ModalSubmit>,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, S, F>`
+...
+   | / impl<S, D, F, Fut, R> __Bind<__CR<Responder<ModalSubmit, Pending, D>>, S, F> for __ModalKind
+   | | where
+   | |     S: __Modal + noctis_ui::__macro::ModalFromPayload + Send + 'static,
+   | |     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
+...  |
+   | |     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
+   | |     R: IntoResponse<ModalSubmit>,
+   | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CR<Responder<noctis::ModalSubmit, noctis::Pending, D>>, S, F>`
+   = note: this error originates in the macro `no_extra` (in Nightly builds, run with -Z macro-backtrace for more info)

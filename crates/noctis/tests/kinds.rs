@@ -12,15 +12,16 @@
 
 use std::sync::Mutex;
 
-use noctis::__private::codec::{Parts, PayloadKey, Ref, SelectNonce};
+use noctis::__private::codec::{Parts, PayloadKey, PayloadKeys, PayloadSource, Ref, SelectNonce};
 use noctis::__private::core::__testing::{call_component, call_modal, responded};
+use noctis::__private::ui::__macro::ModalFromPayload;
 use noctis::prelude::*;
 use noctis::rules::{LimitMode, Limits, RuleId};
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::UserMarker;
 use noctis::ui::{
-    ActionRow, ButtonStyle, ChannelSelect, Components, MentionableSelect, Modal, RoleSelect,
-    SelectOption, StringSelect, SubmitError, UiError, UserSelect, V2Message, validate,
+    ActionRow, ButtonStyle, ChannelSelect, Components, MentionableSelect, Modal, ModalSubmission,
+    RoleSelect, SelectOption, StringSelect, SubmitError, UiError, UserSelect, V2Message, validate,
 };
 use noctis::{ComponentKind, ModalHandler};
 use serde_json::Value;
@@ -145,10 +146,6 @@ struct NoteRef {
 }
 
 #[derive(Modal, Debug)]
-#[expect(
-    dead_code,
-    reason = "a signed modal never decodes outside component dispatch, so its fields are never read"
-)]
 #[modal("note.sig", signed, defaults(title = "Note"))]
 struct NoteSigned {
     user: Id<UserMarker>,
@@ -347,7 +344,8 @@ fn modal_build_blank_and_submission() {
 }
 
 /// Codec arguments on a modal: `schema` round-trips; a Ref or a signed id
-/// does not decode outside component dispatch (Epic 7) and is `Malformed`.
+/// does not decode directly and is `Malformed` (Story 7.2 S5); a signed id
+/// decodes through the verified Payload, as component dispatch does it.
 #[test]
 fn modal_codec_arguments() {
     let user = Id::new(42);
@@ -392,6 +390,19 @@ fn modal_codec_arguments() {
         panic!("a signed modal does not decode directly");
     };
     assert!(reason.contains("route `note.sig`"), "{reason}");
+
+    // Story 7.2 S5: dispatch decodes the id once with the key ring and
+    // builds the form from the verified Payload (`ModalFromPayload`).
+    let raw = submission(id.get().unwrap());
+    let parsed = ModalSubmission::from_slice(raw.as_bytes()).unwrap();
+    let decoded = noctis::__private::codec::decode(id.get().unwrap()).unwrap();
+    let Ok(PayloadSource::Inline(payload)) =
+        decoded.verified_payload::<NoteSigned>(&PayloadKeys::new(key))
+    else {
+        panic!("the tag verifies with the key");
+    };
+    let form = <NoteSigned as ModalFromPayload>::from_payload(payload, &parsed).unwrap();
+    assert_eq!((form.user, form.note.as_deref()), (user, Some("hey")));
 }
 
 /// Matrix 13, 51 and 52: registration stores the descriptors; the seams run

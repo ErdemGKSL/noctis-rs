@@ -69,11 +69,12 @@ pub trait ModalForm: Sized {
 /// # Errors
 ///
 /// [`SubmitError::Malformed`] naming the Route for any decode error. A
-/// modal declared `by_ref`, `overflow = spill` (once its Payload overflows)
-/// or `signed` decodes only through component dispatch (Epic 7), which
-/// resolves the Ref and verifies the tag: decoded directly, its Payload is
-/// stored by Ref or its tag never verifies, so this returns `Malformed`
-/// until then.
+/// `signed` modal decoded directly is always `Malformed` (no key is known
+/// here): it decodes with its tag verified only through component dispatch,
+/// which hands the verified Payload to [`ModalFromPayload::from_payload`].
+/// A modal declared `by_ref` or `overflow = spill` (once its Payload
+/// overflows) is likewise `Malformed` here, since its Payload is stored by
+/// Ref and only dispatch resolves it.
 #[doc(hidden)]
 pub fn decode_modal_payload<R>(submission: &ModalSubmission) -> Result<R::Payload, SubmitError>
 where
@@ -90,6 +91,26 @@ where
         )),
         Err(e) => Err(malformed(e.to_string())),
     }
+}
+
+/// Builds a modal form from its already-decoded Payload and the submitted
+/// inputs: what component dispatch calls after it decoded (and, for a
+/// `signed` Route, verified) the `custom_id` once. Implemented by
+/// `#[derive(Modal)]`, whose `from_submission` is
+/// [`decode_modal_payload`] followed by `from_payload`.
+#[doc(hidden)]
+pub trait ModalFromPayload: ModalForm + noctis_codec::Route {
+    /// Decodes only the inputs; never reads the `custom_id` and never
+    /// returns [`SubmitError::Malformed`] for the Payload.
+    ///
+    /// # Errors
+    ///
+    /// A [`SubmitError`] naming the first input that is missing, of another
+    /// type, invalid or unresolved.
+    fn from_payload(
+        payload: Self::Payload,
+        submission: &ModalSubmission,
+    ) -> Result<Self, SubmitError>;
 }
 
 /// A closed set of options for a modal Radio Group, Checkbox Group or String

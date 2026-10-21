@@ -1,16 +1,17 @@
-error[E0277]: [INT-05] this handler takes `CommandResponder<Manual>`, so its attribute must declare `auto_defer = false`
+error[E0277]: [INT-05] this handler takes a `Manual` responder, so its attribute must declare `auto_defer = false`
   --> tests/ui/int/INT-05_manual_without_auto_defer_false.rs:14:48
    |
 14 |     async fn handle(self, _ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-   |                                                ^^^^^^^^^^^^^^^^^^^^^^^^ declare `auto_defer = false` or take `CommandResponder`
+   |                                                ^^^^^^^^^^^^^^^^^^^^^^^^ declare `auto_defer = false` or take the auto-deferred responder
    |
-help: the trait `__ManualIsDeclared<AutoDefer>` is not implemented for `Responder<noctis::Command, noctis::Pending, noctis::Manual>`
-      but trait `__ManualIsDeclared<noctis::Manual>` is implemented for it
+   = help: the trait `noctis::__private::noctis_core::kind::__ManualIsDeclared<AutoDefer>` is not implemented for `Responder<noctis::Command, noctis::Pending, noctis::Manual>`
+help: the following other types implement trait `noctis::__private::noctis_core::kind::__ManualIsDeclared<D>`
   --> $WORKSPACE/crates/noctis-core/src/kind.rs
    |
-   | impl __ManualIsDeclared<Manual> for Responder<Command, Pending, Manual> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = help: for that trait implementation, expected `noctis::Manual`, found `AutoDefer`
+   | impl<K: ResponderKind, D> __ManualIsDeclared<D> for Responder<K, Pending, AutoDefer> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Responder<K>` implements `noctis::__private::noctis_core::kind::__ManualIsDeclared<D>`
+   | impl<K: ResponderKind> __ManualIsDeclared<Manual> for Responder<K, Pending, Manual> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Responder<K, noctis::Pending, noctis::Manual>` implements `noctis::__private::noctis_core::kind::__ManualIsDeclared<noctis::Manual>`
 note: required by a bound in `noctis::__private::noctis_core::kind::__assert_responder`
   --> $WORKSPACE/crates/noctis-core/src/kind.rs
    |
