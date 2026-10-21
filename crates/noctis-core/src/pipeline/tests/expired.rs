@@ -35,12 +35,14 @@ test_route!(Resp, "resp", RouteShape::INLINE, 0);
 test_route!(UserErr, "user.err", RouteShape::INLINE, 0);
 test_route!(Fails, "fails", RouteShape::INLINE, 0);
 test_route!(Panics, "panics", RouteShape::INLINE, 0);
+test_route!(SyncPanics, "sync.panics", RouteShape::INLINE, 0);
 test_route!(Waits, "waits", RouteShape::INLINE, 0);
 test_route!(ZzBuy, "zz.buy", RouteShape::INLINE, 0);
 test_route!(ZzEph, "zz.eph", RouteShape::INLINE, 0);
 test_route!(ZzMan, "zz.man", RouteShape::INLINE, 0);
 test_route!(Bio, "bio", RouteShape::INLINE, 0);
 test_route!(BioHooks, "bioh", RouteShape::INLINE, 0);
+test_route!(BioLate, "biol", RouteShape::INLINE, 0);
 
 /// The ack deadline of these tests.
 const D: Duration = Duration::from_millis(50);
@@ -72,12 +74,12 @@ where
     )
 }
 
-/// An auto-deferred `#[on_stale]` hook that logs `on_stale:<route>`,
+/// An auto-deferred `#[on_stale]` hook that logs `on_stale:<text>`,
 /// sleeps `ms` and returns `text`.
 fn stale_hook(log: &Log, text: &'static str, ms: u64) -> __StaleHook<ComponentCtx> {
     let log = log.clone();
-    __StaleHook::__new::<AutoDefer, _, _, _>(move |ctx: ComponentCtx, _: ComponentResponder| {
-        log.push(format!("on_stale:{}", ctx.module()));
+    __StaleHook::__new::<AutoDefer, _, _, _>(move |_: ComponentCtx, _: ComponentResponder| {
+        log.push(format!("on_stale:{text}"));
         async move {
             sleep_ms(ms).await;
             Ok(v2(text))
@@ -119,6 +121,7 @@ fn form() -> Modal {
 fn module(log: &Log, waiting: &Arc<Notify>) -> Module {
     let started = Arc::clone(waiting);
     let bio_log = log.clone();
+    let late_log = log.clone();
     let upd = __Response::Update;
     Module::new("x")
         .__add(handler::<Buy, AutoDefer>(log, "x::Buy", upd))
@@ -186,6 +189,17 @@ fn module(log: &Log, waiting: &Arc<Notify>) -> Module {
                 .__with_on_stale(failing(|| async { panic!("hook") })),
         )
         .__add(
+            handler::<SyncPanics, AutoDefer>(log, "x::SyncPanics", upd).__with_on_stale(
+                __StaleHook::__new::<AutoDefer, _, _, _>(
+                    |_: ComponentCtx,
+                     _: ComponentResponder|
+                     -> std::future::Ready<HandlerResult<V2Message>> {
+                        panic!("sync hook")
+                    },
+                ),
+            ),
+        )
+        .__add(
             handler::<Waits, AutoDefer>(log, "x::Waits", upd).__with_on_stale(failing(move || {
                 let started = Arc::clone(&started);
                 async move {
@@ -217,6 +231,19 @@ fn module(log: &Log, waiting: &Arc<Notify>) -> Module {
                 move |ctx: ModalSubmitCtx, _: ModalResponder| {
                     bio_log.push(format!("modal_on_stale:{}", ctx.module()));
                     async { Ok(v2("modal-view")) }
+                },
+            )),
+        )
+        .__add(
+            ModalHandler::__new::<BioLate, _, _>(
+                "x::BioLate",
+                "biol",
+                |_: BioLate, _: ModalSubmitCtx| async { Ok(Responded::new()) },
+            )
+            .__with_on_expired(__ExpiredHook::__new::<AutoDefer, _, _, _>(
+                move |_: ModalSubmitCtx, expired: Expired, _: ModalResponder| {
+                    late_log.push(format!("modal_on_expired:{expired:?}"));
+                    async move { Ok(v2(&format!("modal-expired {expired:?}"))) }
                 },
             )),
         )
@@ -497,7 +524,7 @@ async fn hook_precedence() {
     // 9: `on_stale` wins and updates the clicked message.
     assert_eq!(fx.hook_of(press("1fresh:11")).await, "on_stale");
     assert_eq!(fx.take(), [update("stale-view")]);
-    assert_eq!(fx.hooks(), ["on_stale:x"]);
+    assert_eq!(fx.hooks(), ["on_stale:stale-view"]);
     // 10: `on_expired` with `Stale`.
     assert_eq!(fx.hook_of(press("1late:11")).await, "on_expired");
     assert_eq!(fx.take(), [update("expired-view Stale")]);
@@ -649,13 +676,15 @@ async fn expired_hooks_answer_like_handlers() {
     // 25: an error, a panic in a hook, a panic in the App handler.
     fx.run(press("1fails:11")).await;
     fx.run(press("1panics:11")).await;
+    // A hook that panics before returning its future.
+    fx.run(press("1sync.panics:11")).await;
     let fx_app_panic = Fx::start_with(discord(), |b| {
         b.expired_handler(|_: ExpiredCtx, _: Expired| async { Ok(explode()) });
     })
     .await;
     fx_app_panic.run(press("1shop.buy:147")).await;
     let requests = fx.take();
-    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests.len(), 3, "{requests:?}");
     for request in &requests {
         assert_generic_notice(request);
     }
@@ -664,7 +693,7 @@ async fn expired_hooks_answer_like_handlers() {
     assert_generic_notice(&requests[0]);
     let seen = fx.sink.seen();
     let kinds: Vec<_> = seen.iter().map(|s| s.kind.as_str()).collect();
-    assert_eq!(kinds, ["error:boom", "panic:hook"]);
+    assert_eq!(kinds, ["error:boom", "panic:hook", "panic:sync hook"]);
     assert_eq!(
         (
             seen[0].origin,
@@ -673,12 +702,46 @@ async fn expired_hooks_answer_like_handlers() {
         ),
         (ErrorOrigin::Component, Some("x"), Some("x::Fails"))
     );
+    assert_eq!(
+        (seen[2].module.as_deref(), seen[2].handler.as_deref()),
+        (Some("x"), Some("x::SyncPanics"))
+    );
     let seen = fx_app_panic.sink.seen();
     assert_eq!(
         (seen[0].kind.as_str(), seen[0].handler.as_deref()),
         ("panic:app", Some("x::Buy"))
     );
-    assert_eq!(errors(), 3);
+    assert_eq!(errors(), 4);
+    // An App handler that panics before returning its future.
+    let fx_sync_app = Fx::start_with(discord(), |b| {
+        b.expired_handler(
+            |_: ExpiredCtx, _: Expired| -> std::future::Ready<HandlerResult<V2Message>> {
+                panic!("sync app")
+            },
+        );
+    })
+    .await;
+    fx_sync_app.run(press("1shop.buy:147")).await;
+    let requests = fx_sync_app.take();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_generic_notice(&requests[0]);
+    let seen = fx_sync_app.sink.seen();
+    assert_eq!(
+        (
+            seen[0].kind.as_str(),
+            seen[0].module.as_deref(),
+            seen[0].handler.as_deref()
+        ),
+        ("panic:sync app", Some("x"), Some("x::Buy"))
+    );
+    // Each snapshot counts the increments since the previous one.
+    assert_eq!(errors(), 1);
+    // The next click still works on both Apps.
+    fx_sync_app.run(press("1late:11")).await;
+    assert_eq!(fx_sync_app.take(), [update("expired-view Stale")]);
+    fx.run(press("1fresh:11")).await;
+    assert_eq!(fx.take(), [update("stale-view")]);
+    fx.hooks();
 
     // 26: cancelled before and during the hook: no notice.
     let cancel = CancellationToken::new();
@@ -693,7 +756,7 @@ async fn expired_hooks_answer_like_handlers() {
     tokio::join!(run, trigger);
     assert!(fx.take().is_empty());
     let kinds: Vec<_> = fx.sink.seen().into_iter().map(|s| s.kind).collect();
-    assert_eq!(kinds[2..], ["cancelled", "cancelled"]);
+    assert_eq!(kinds[3..], ["cancelled", "cancelled"]);
 }
 
 /// Matrix 27 and 28: the default notice's locale; a failed send is one
@@ -748,7 +811,7 @@ async fn default_expired_notice_locale_and_failure() {
     assert!(fx.sink.seen().is_empty());
 }
 
-/// Matrix 29-31: stale modal submits.
+/// Matrix 29-31: stale modal submits; a modal `#[on_expired]` alone.
 #[tokio::test]
 async fn modal_stale_hooks() {
     let fx = Fx::start().await;
@@ -769,6 +832,10 @@ async fn modal_stale_hooks() {
     // 31: no hooks: the default notice.
     fx.expires(inbound(&submit("1bio:147", true)), "stale")
         .await;
+    // Only `on_expired`: it runs with `Stale` and updates the message.
+    fx.run(on_v2(&submit("1biol:147", true))).await;
+    assert_eq!(fx.take(), [update("modal-expired Stale")]);
+    assert_eq!(fx.hooks(), ["modal_on_expired:Stale"]);
 
     // The App handler of a modal converts with the modal kind.
     let fx = Fx::with_app().await;

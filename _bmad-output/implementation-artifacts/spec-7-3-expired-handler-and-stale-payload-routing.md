@@ -2,10 +2,10 @@
 title: 'Story 7.3: Expired Handler and stale Payload routing'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'e944e542606870746ee8a7ae570dca2a5223cd66'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-7-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -13,7 +13,14 @@ context:
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/routes-payloads-refs.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/responder.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The project template's `SetupState` `#[on_stale]`/`#[on_expired]` hooks are compiled and run by no gate.
+    evidence: |-
+      examples/project-template is excluded from the workspace and still written against the planned API (ctx.respond, response_locale on ComponentCtx); skill-check lints text only and tests/flows.rs never clicks a stale id. Pre-existing: the whole template is uncompiled; close it with the story that puts the template under a build gate, adding a flow test that clicks a stale SetupState id and asserts the step-1 in-place re-render.
+    location: >-
+      examples/project-template/src/modules/setup/handlers.rs:61-84
+    severity: low
 ---
 
 <intent-contract>
@@ -233,6 +240,36 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 26 findings — high 0, medium 2, low 9, false 15, maybe-false 0
+- findings:
+  - `[false]` `[reject]` Tampered ids (T flag on unsigned, signed Route with wrong schema) classified stale, no tag check, debug only — the intent-contract Never list forbids verifying a tag before routing a stale id and Matrix rows 5 and 8 require exactly this; hooks get no Payload, so nothing tampered reaches handler logic.
+  - `[false]` `[reject]` `ExpiredCtx` lacks `response_locale()` despite "accessors of `ComponentCtx`" — `ComponentCtx` has no `response_locale()` either (only `CommandCtx`, command.rs:200), so the doc claim is accurate.
+  - `[false]` `[reject]` Skill §8 uses `ctx.user_locale().unwrap_or("en-US")` while the template uses `ctx.response_locale()` — the spec requires a compiling §8 example and `ComponentCtx::response_locale` does not exist yet; the template file is marked as planned API throughout; for the ephemeral Setup flow the User Locale is what response_locale resolves first.
+  - `[false]` `[reject]` App handler / responder-less hooks may return `Responded`, leaving a deferred interaction unresolved — `Responded::new` is `pub(crate)` (responder.rs:460) and only a responder produces it, so a responder-less handler cannot return one.
+  - `[false]` `[reject]` Hook and App-handler failures reported under the Route's `#[handler]` name — the spec settles this deliberately ("The `Report`'s `handler` is the struct's path"), and the debug line carries `hook`.
+  - `[low]` `[reject]` Core binding impls do not tie a hand-built hook's `D` to the Route's `S::Defer` — only `#[doc(hidden)]` `__StaleHook::__new` can mismatch; the macro emits the INT-05 assertions, so bot authors cannot meet it, and the fix adds trait bounds.
+  - `[low]` `[patch]` Hook-path tests missing (modal `#[on_expired]`, modal Ref → App, ephemeral modal hook, App `Err`) — confirmed `modal_stale_hooks` never runs a modal `#[on_expired]`; patch adds a modal `#[on_expired]` stale case (the other sub-items share the core machinery already tested).
+  - `[low]` `[reject]` Matrix 27 locale cases cannot distinguish locales because `Builtin` is en-US only — true, but the spec row itself records the Builtin fallback, locale resolution is the shared `notice::locale` already covered by 7.2, and proving it needs a test catalog seam.
+  - `[low]` `[reject]` Matrix 26 "cancelled before" returns before stage 4; `kinds[2..]` hard-codes earlier entries — test-only weakness; a cancel between classification and hook start has no seam to inject, and the index is cosmetic.
+  - `[false]` `[reject]` Log reason `ref_unresolved` vs `Expired::RefMissing.as_str()` `ref_missing` — both labels are fixed by the spec (Logging and Public types) and the alloc probe keeps `ref_unresolved`.
+  - `[low]` `[reject]` `#[allow(dead_code)]` inside `ctx_accessors!` also covers the other contexts' `detached`; `#[allow(unused_imports)]` on generated `descriptor()` — lint scope only, no behaviour or user-visible effect; narrowing needs extra macro arms.
+  - `[low]` `[patch]` `stale_hook` doc says it logs `on_stale:<route>` but logs `ctx.module()` (expired.rs:75-86), so tests cannot tell which Route's hook ran — patch logs a per-fixture value and fixes the doc and assertions.
+  - `[false]` `[reject]` New decisions not recorded, spec left `in-progress` — every decision is recorded as a `(decision)` line in the spec's Design Notes, as in prior stories, and the spine amendment is spec-required; status moves at review/finalize.
+  - `[false]` `[reject]` Template `#[on_stale]` and `#[on_expired]` repeat the same body — the spec explicitly requires both hooks to re-render step 1 for `ctx.user_id()`.
+  - `[false]` `[reject]` (edge) Signed Route stale/Ref ids run hooks without tag check — same refutation as the first row: spec Never list and Matrix row 8.
+  - `[false]` `[reject]` (edge) Error Sink and ack-deadline log blame the `#[handler]` method — spec-settled (`entry.handler.name()`).
+  - `[low]` `[reject]` (edge) Default-notice send-failure warn lacks `route`/`shard` — the warn is emitted inside the `noctis.interaction` span, which records `route`; spec lists exactly `reason` and `%error`; negligible operator impact.
+  - `[medium]` `[patch]` (vgap) Start-time panic guard of the Expired Handler chain (second `catch_unwind`, component.rs ~L594) never exercised — pre-verified; patch adds a synchronous-panic App handler and hook case to Matrix 25.
+  - `[low]` `[defer]` (vgap) Template `#[on_stale]`/`#[on_expired]` hooks compiled/run by no gate — pre-existing: the whole template is excluded and uncompiled; deferred to the story that brings the template under a build gate.
+  - `[false]` `[reject]` (vgap other) Stale Setup panel lets any member restart Setup and reach `FinishSetup` — the Setup panel is ephemeral (`SetupStart` `response = ephemeral`, panel updated in place), so only the user who ran `/setup start` with MANAGE_GUILD can see or click it.
+  - `[false]` `[reject]` (intent D1) Stale with no `#[on_stale]` falls to Route `#[on_expired]` — the intent-contract precedence states exactly this chain, and the spine AD-23 amendment is spec-required.
+  - `[false]` `[reject]` (intent D2) Stale ids get `noctis.expired`, `noctis.stale` reserved — the epics AC ties the default handler to `noctis.expired`; the spec keeps `keys::STALE` reserved by decision.
+  - `[false]` `[reject]` (intent D3) Real Ref TTL expiry not reachable — RefStore and TTL are Story 7.5 per the intent-contract Never list.
+  - `[low]` `[patch]` (intent D4) AC3 V2Message for a macro-derived `#[on_expired]` only proven with hand-built hooks — confirmed `Fresh::expired` never runs and `RefHooks::expired` returns `Responded`; patch adds an e2e derived Route with only `#[on_expired]` returning `V2Message`.
+  - `[medium]` `[patch]` (intent D5) Evolution without a schema bump (append non-`Option`, remove field) has no test — confirmed spec Matrix rows 33/34 are untested (only row 32 has `appended_option_field_still_decodes`); patch adds both cases asserting `undecodable` + generic notice.
+  - `[false]` `[reject]` (intent D6) Pre-decode checks win over stale — the intent-contract states this order explicitly and Matrix row 7 requires it.
+
 ## Design Notes
 
 - **Hook signatures (decision).**
@@ -276,3 +313,21 @@ deferred: []
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rn "planned, Story 7.3\|Stories 7.3/7.5\|Story 7.3 routes\|(Story 7.3)" crates examples/project-template docs --include=*.rs --include=*.md` -- prints nothing
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Stale and expired component/modal clicks now route through an Expired Handler chain instead of a generic error. New `#[on_stale]` and `#[on_expired(expired: Expired)]` hook attributes on Routes (Components and Modals), an app-level Expired Handler, and a default `noctis.expired` notice. Precedence: Route `#[on_stale]` -> Route `#[on_expired]` -> App handler -> default notice. Pre-decode checks (malformed/unknown/forged) still win over stale. Ref ids route to the chain as `RefMissing` until Story 7.5 adds the RefStore. Stale clicks log at `debug`.
+- **Files changed:**
+  - `crates/noctis-core/src/pipeline/` (component.rs, tests/expired.rs): stale classification, hook/App/default chain with start-time and run-time panic guards, matrix tests.
+  - `crates/noctis-core` kind/binding traits (`__BindStale`, `__BindExpired`, `__AttachHooks`, `__NoHooks`), `ExpiredCtx`, `Expired` type.
+  - `crates/noctis-macros`: `#[on_stale]`/`#[on_expired]` attributes, INT-05 assertions for hooks, CID-04 hook-without-handler error.
+  - `crates/noctis/src/lib.rs`: re-exports; `crates/noctis/tests/types/*`, `tests/ui/{cid,int}/*`: compile_fail coverage; `tests/memory_flat.rs`: alloc probe.
+  - `crates/noctis-testkit/tests/components.rs`: end-to-end stale/expired cases, golden wire row 9.
+  - `docs/discord-rules.md`, `xtask/public-api.txt` (re-blessed), Usage Skill (`routes-payloads-refs.md` §8 and others, API hash), template `AGENTS.md` and Setup handlers with `#[on_stale]`/`#[on_expired]`.
+- **Review findings (26: high 0, medium 2, low 9, false 15):**
+  - Patched (5; medium 2, low 3, high 0): Expired chain start-time panic guard now tested (Matrix 25); schema evolution without bump (append non-Option, remove field) tested as `undecodable` + generic notice; modal `#[on_expired]` stale case added; `stale_hook` test fixture logs a per-Route value and doc fixed; e2e macro-derived `#[on_expired]`-only Route returning `V2Message`.
+  - Deferred (1): template hooks compiled by no gate (whole template uncompiled; deferred to the story that adds a template build gate).
+  - Rejected (20): tampered ids classified stale without tag check (spec Never list, Matrix 5/8, x2); `ExpiredCtx` lacks `response_locale` (ComponentCtx has none either); skill §8 uses `user_locale` (response_locale not yet on ComponentCtx); responder-less hooks returning `Responded` (`Responded::new` is pub(crate)); failures reported under `#[handler]` name (spec-settled, x2); hand-built hook `D` not tied to `S::Defer` (doc-hidden only, macro asserts); Matrix 27 locale indistinguishable (Builtin en-US only, covered by 7.2); Matrix 26 cancel seam/index (test-only, no seam); `ref_unresolved` vs `ref_missing` labels (both spec-fixed); lint allow scope (no behaviour effect); decisions/status (recorded in Design Notes); duplicate template hook bodies (spec-required); notice warn lacks route/shard (span records route); stale Setup panel restart (panel is ephemeral); stale falls to `#[on_expired]` (intent precedence, AD-23); `noctis.expired` for stale (epics AC); Ref TTL unreachable (Story 7.5); pre-decode checks win (intent order, Matrix 7).
+- **Follow-up review recommended: true** (first pass, 2 medium patched). Named risk: the newly added start-time panic guard and schema-evolution tests were added in the patch pass and have not been independently reviewed; the second `catch_unwind` path in component.rs could still mis-resolve a deferred interaction if a hook panics synchronously after auto-defer.
+- **Verification:** all local gates green via `gates.sh` (fmt, clippy -D warnings, tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** template hooks uncompiled (deferred); locale-specific default notice untestable until a non-en-US catalog exists; Ref ids treated as missing until Story 7.5; `ComponentCtx::response_locale` still absent, so skill §8 uses `user_locale`.

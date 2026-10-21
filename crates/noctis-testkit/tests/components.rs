@@ -3,7 +3,7 @@
 //! `FakeGateway` `INTERACTION_CREATE` click or modal submit reaches the
 //! handler of its Route through the component pipeline, and every response
 //! is asserted on the `FakeDiscordHttp` wire (method, path, query, headers,
-//! body). Story 7.3 Matrix 1, 9, 11, 14, 29 and 32: stale and Ref ids reach
+//! body). Story 7.3 Matrix 1, 9, 10, 11, 14, 29 and 32-34: stale and Ref ids reach
 //! the Expired Handler chain of derived structs.
 
 #![allow(
@@ -410,6 +410,70 @@ impl Evo {
     }
 }
 
+/// A Route that appended a non-`Option` field without a `schema` bump: an
+/// old id is undecodable (FR-60).
+#[derive(Button)]
+#[button("evo.n", defaults(style = Primary, label = "Evo"))]
+struct EvoNonOption {
+    item: u64,
+    qty: u8,
+}
+
+impl EvoNonOption {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("evo.n {} {}", self.item, self.qty));
+        Ok(responded())
+    }
+}
+
+/// A Route that removed a field without a `schema` bump: an old id is
+/// undecodable (FR-60).
+#[derive(Button)]
+#[button("evo.r", defaults(style = Primary, label = "Evo"))]
+struct EvoRemoved {
+    item: u64,
+}
+
+impl EvoRemoved {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("evo.r {}", self.item));
+        Ok(responded())
+    }
+}
+
+/// A Route with only `#[on_expired]`, returning a View.
+#[derive(Button)]
+#[button("late", defaults(style = Primary, label = "Late"))]
+struct Late {
+    page: u16,
+}
+
+impl Late {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("late {}", self.page));
+        Ok(responded())
+    }
+
+    #[on_expired]
+    async fn expired(ctx: ComponentCtx, expired: Expired) -> HandlerResult<V2Message> {
+        ctx.state::<Arc<Seen>>()
+            .unwrap()
+            .push(format!("late on_expired {expired:?}"));
+        Ok(V2Message::new(Components::new().push(TextDisplay::new(
+            format!("expired-view {expired:?}"),
+        ))))
+    }
+}
+
 /// A modal with an `#[on_stale]` method taking the modal context.
 #[derive(Modal, Debug)]
 #[modal("fb", defaults(title = "Feedback"))]
@@ -521,6 +585,9 @@ impl Running {
                     .add::<Fresh>()
                     .add::<RefHooks>()
                     .add::<Evo>()
+                    .add::<EvoNonOption>()
+                    .add::<EvoRemoved>()
+                    .add::<Late>()
                     .add::<Feedback>(),
             )
             .module(Module::new("dash").uses::<Pick>().add::<Pick>());
@@ -1244,6 +1311,61 @@ async fn appended_option_field_still_decodes() {
     let running = Running::start().await;
     running.dispatch(click(100, "0evo:47", 2));
     assert_eq!(running.wait_seen(1).await, ["evo 255 None"]);
+    running.stop();
+}
+
+/// Story 7.3 Matrix 33 and 34: appending a non-`Option` field or removing
+/// a field without a `schema` bump makes old ids undecodable: one warning
+/// and the generic notice; no Expired Handler link runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn evolution_without_a_bump_is_undecodable() {
+    let capture = capture();
+    let running = Running::start_with(|b| {
+        b.payload_key(key_a())
+            .expired_handler(|ctx: ExpiredCtx, _: Expired| async move {
+                ctx.state::<Arc<Seen>>().unwrap().push("app".to_owned());
+                Ok(V2Message::new(
+                    Components::new().push(TextDisplay::new("app")),
+                ))
+            });
+    })
+    .await;
+    for id in ["0evo.n:47", "0evo.r:47,9"] {
+        running.clear();
+        let needles = ["component interaction rejected", "reason=\"undecodable\""];
+        let before = capture.count(&needles);
+        running.dispatch(click_on_message(id));
+        let sent = exactly(&running, 1).await;
+        assert_notice(&sent[0]);
+        assert_ne!(
+            body(&sent[0])["data"]["components"][0]["content"],
+            EXPIRED_TEXT,
+            "{id}"
+        );
+        assert_eq!(capture.count(&needles), before + 1, "{id}");
+    }
+    assert!(running.seen.lines().is_empty());
+    running.stop();
+}
+
+/// Story 7.3 Matrix 10 (AC 3): a derived Route with only `#[on_expired]`
+/// returning a `V2Message` answers a stale click on a V2 message with one
+/// type-7 callback carrying that View.
+#[tokio::test(flavor = "multi_thread")]
+async fn on_expired_view_updates_in_place() {
+    let running = Running::start().await;
+    running.dispatch(click_on_message("1late:11"));
+    let sent = exactly(&running, 1).await;
+    assert_eq!(
+        body(&sent[0]),
+        json!({ "type": 7, "data": {
+            "flags": 32768,
+            "components": [{ "type": 10, "id": 1, "content": "expired-view Stale" }],
+            "allowed_mentions": { "parse": [] },
+            "attachments": [],
+        } })
+    );
+    assert_eq!(running.seen.lines(), ["late on_expired Stale"]);
     running.stop();
 }
 
