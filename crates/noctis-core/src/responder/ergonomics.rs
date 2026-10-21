@@ -449,10 +449,14 @@ macro_rules! ctx_methods {
         $crate::responder::ergonomics::ctx_methods!($ty);
 
         impl $ty {
-            /// Replaces the message the component lives on (or the modal
-            /// was opened from) with `msg`: a type-7 update while
-            /// unanswered, an edit of the original after the auto-defer
-            /// (the clicked message after type 6). The message keeps its
+            /// Updates the message with `msg`. While unanswered it is a
+            /// type-7 update of the message the component lives on (or
+            /// the modal was opened from); after a type-6 auto-defer
+            /// (`response = update`) it edits that clicked message. After
+            /// a type-5 auto-defer (`response = ephemeral|public`) it edits
+            /// the deferred reply and leaves the clicked message
+            /// untouched, so a handler that calls `ctx.update` keeps
+            /// `response = update`. The message keeps its
             /// ephemerality, gets `IS_COMPONENTS_V2` and never `EPHEMERAL`
             /// (INT-10); `msg` is always V2 ([`IntoEdit`](crate::IntoEdit),
             /// CV2-01). It never sends a new message: answer a modal

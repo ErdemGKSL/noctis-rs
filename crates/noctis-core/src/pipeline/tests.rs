@@ -916,6 +916,73 @@ async fn ephemeral_user_menu() {
     assert_eq!(requests[0].2["data"]["flags"], 32832);
 }
 
+/// Story 8.1: a context-menu ctx is bound to its run's responder, in the
+/// pipeline (one type-4 callback) and over the detached menu seam.
+#[tokio::test]
+async fn menu_ctx_respond() {
+    let menu = || {
+        ContextMenuHandler::__new_user(
+            "m::show",
+            "Show",
+            CommandMetadata::new(),
+            |ctx: CommandCtx, _: ResolvedUser, _: CommandResponder| async move {
+                ctx.respond(v2("u")).await
+            },
+        )
+    };
+    let p = Pipeline::start(Module::new("m").__add(menu())).await;
+    let data = json!({
+        "id": "9", "name": "Show", "type": 2, "target_id": "11",
+        "resolved": { "users": { "11": user("11") } }
+    });
+    let json = interaction(data, json!({}));
+    p.run(inbound(&json)).await;
+    let requests = p.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].1, CB_REPLY);
+    assert_eq!(requests[0].2["type"], 4);
+    assert!(p.reports().is_empty(), "{:?}", p.reports());
+    crate::__testing::call_context_menu(&menu(), json.to_string().as_bytes())
+        .await
+        .unwrap();
+}
+
+/// Story 8.1 rows 10 and 31: a Dispatcher ctx is bound to its run's
+/// responder; `respond` replies and `reply_text` then posts.
+#[tokio::test]
+async fn dispatcher_ctx_methods() {
+    let module = Module::new("m").__add(CommandHandler::__new_plain(
+        "m::both",
+        &["both"],
+        "d",
+        |ctx: CommandCtx, _: CommandResponder| async move {
+            let _ = ctx.respond(v2("a")).await?;
+            ctx.reply_text("b").await
+        },
+    ));
+    let p = Pipeline::start(module).await;
+    p.dispatcher()
+        .run_command(CommandInvocation::new(
+            CommandInput::new("both"),
+            Id::new(5),
+            Id::new(6),
+            Id::new(3),
+        ))
+        .await
+        .unwrap();
+    let requests = p.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    for request in &requests {
+        assert_eq!(
+            (&request.0, request.1.as_str()),
+            (&Method::POST, "/api/v10/channels/5/messages")
+        );
+    }
+    assert_eq!(requests[0].2["components"][0]["content"], "a");
+    assert_eq!(requests[1].2["components"][0]["content"], "b");
+    assert!(p.reports().is_empty(), "{:?}", p.reports());
+}
+
 /// `execute` records one duration sample and one `kind="command"` error
 /// for a failing Command.
 #[tokio::test]

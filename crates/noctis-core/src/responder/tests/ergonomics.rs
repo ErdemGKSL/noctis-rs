@@ -986,6 +986,50 @@ async fn detached_seams() {
     );
     let _ = comp(&shared).update(v2("u")).await.unwrap();
     let _ = comp(&shared).reply_text("t").await.unwrap();
+
+    // The component and modal seams bind their ctx to the placeholder
+    // source: `update` and `respond` succeed, an over-limit body is `Invalid`.
+    let component = |name: &'static str, n: usize| {
+        crate::ComponentHandler::__new::<Form, _, _>(
+            name,
+            "form",
+            crate::ComponentKind::Button,
+            move |_: Form, ctx: ComponentCtx| async move {
+                if n > 1 {
+                    return ctx.update(texts(n)).await;
+                }
+                let _ = ctx.update(v2("u")).await?;
+                ctx.respond(v2("r")).await
+            },
+        )
+    };
+    let _ = crate::__testing::call_component(&component("m::c", 1), Form { item: 1 })
+        .await
+        .unwrap();
+    assert_responder_err!(
+        crate::__testing::call_component(&component("m::c41", 41), Form { item: 1 }).await,
+        ResponderError::Invalid(_)
+    );
+    let modal = |name: &'static str, n: usize| {
+        crate::ModalHandler::__new::<Form, _, _>(
+            name,
+            "form",
+            move |_: Form, ctx: ModalSubmitCtx| async move {
+                if n > 1 {
+                    return ctx.update(texts(n)).await;
+                }
+                let _ = ctx.update(v2("u")).await?;
+                ctx.respond(v2("r")).await
+            },
+        )
+    };
+    let _ = crate::__testing::call_modal(&modal("m::m", 1), Form { item: 1 })
+        .await
+        .unwrap();
+    assert_responder_err!(
+        crate::__testing::call_modal(&modal("m::m41", 41), Form { item: 1 }).await,
+        ResponderError::Invalid(_)
+    );
 }
 
 /// Row 44: an unbound context answers `NoReply` without a request.

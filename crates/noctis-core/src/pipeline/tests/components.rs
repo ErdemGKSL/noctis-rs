@@ -1099,6 +1099,81 @@ mod responses {
         assert!(ui.sink.seen().is_empty(), "{:?}", ui.sink.seen());
     }
 
+    /// Story 8.1 row 45: the pipeline hands component and modal contexts
+    /// the declared response's ephemerality, so `ctx.response_locale()`
+    /// is the user's under `ephemeral` (and under `update` on an
+    /// ephemeral source) and the guild's under `public`.
+    #[tokio::test]
+    async fn response_locale_through_the_pipeline() {
+        test_route!(LocEph, "loc.eph", RouteShape::INLINE, 0);
+        test_route!(LocPub, "loc.pub", RouteShape::INLINE, 0);
+        test_route!(LocUpd, "loc.upd", RouteShape::INLINE, 0);
+        test_route!(MLocEph, "mloc.eph", RouteShape::INLINE, 0);
+        test_route!(MLocPub, "mloc.pub", RouteShape::INLINE, 0);
+        test_route!(MLocUpd, "mloc.upd", RouteShape::INLINE, 0);
+        let log = Log::default();
+        macro_rules! both {
+            ($s:ty, $m:ty, $name:literal, $route:literal, $response:expr) => {{
+                let clog = log.clone();
+                let mlog = log.clone();
+                (
+                    handler::<$s, AutoDefer, _, _, _>(
+                        concat!("c:", $name),
+                        $response,
+                        move |_: $s, ctx: ComponentCtx, _: ComponentResponder| {
+                            clog.push(format!("c:{}:{}", $name, ctx.response_locale()));
+                            async { Ok(Responded::new()) }
+                        },
+                    ),
+                    ModalHandler::__new_with_responder::<$m, AutoDefer, _, _, _>(
+                        concat!("m:", $name),
+                        $route,
+                        $response,
+                        move |_: $m, ctx: ModalSubmitCtx, _: ModalResponder| {
+                            mlog.push(format!("m:{}:{}", $name, ctx.response_locale()));
+                            async { Ok(Responded::new()) }
+                        },
+                    ),
+                )
+            }};
+        }
+        let (ce, me) = both!(LocEph, MLocEph, "eph", "mloc.eph", __Response::Ephemeral);
+        let (cp, mp) = both!(LocPub, MLocPub, "pub", "mloc.pub", __Response::Public);
+        let (cu, mu) = both!(LocUpd, MLocUpd, "upd", "mloc.upd", __Response::Update);
+        let module = Module::new("ui")
+            .__add(ce)
+            .__add(me)
+            .__add(cp)
+            .__add(mp)
+            .__add(cu)
+            .__add(mu);
+        let p = Pipeline::start(module).await;
+        let localized = |mut json: Value| {
+            json["locale"] = json!("tr");
+            json["guild_locale"] = json!("de");
+            json
+        };
+        // An ephemeral (EPHEMERAL | IS_COMPONENTS_V2) source message.
+        for route in ["loc.eph", "loc.pub", "loc.upd"] {
+            let click = click(&format!("0{route}:1"), 2);
+            for json in [click, submit(&format!("0m{route}:1"), true)] {
+                run_component(
+                    Arc::clone(p.fx.app.registry()),
+                    Arc::clone(p.fx.app.shared()),
+                    on_message(&localized(json), 32832),
+                    CancellationToken::new(),
+                )
+                .await;
+            }
+        }
+        assert_eq!(
+            log.lines(),
+            [
+                "c:eph:tr", "m:eph:tr", "c:pub:de", "m:pub:de", "c:upd:tr", "m:upd:tr"
+            ]
+        );
+    }
+
     /// Story 7.8 rows 22-24: an `auto_defer = false` submit is never
     /// auto-deferred.
     #[tokio::test]

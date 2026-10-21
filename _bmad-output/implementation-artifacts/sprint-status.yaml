@@ -107,8 +107,8 @@ development_status:
   7-8-modal-routes-and-typed-submissions-end-to-end: done
   epic-7-retrospective: optional
 
-  epic-8: backlog
-  8-1-responder-ergonomics-ctx-respond-ctx-update-and-ctx-reply_te: in-progress
+  epic-8: in-progress
+  8-1-responder-ergonomics-ctx-respond-ctx-update-and-ctx-reply_te: done
   8-2-deterministic-renders-select-freshness-and-safe-text: backlog
   8-3-budget-helpers-cost-and-how-many-items-fit: backlog
   8-4-testing-kit-simulated-interactions-and-message-snapshots: backlog
