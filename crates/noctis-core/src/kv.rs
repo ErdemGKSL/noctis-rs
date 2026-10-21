@@ -16,8 +16,13 @@ use serde::de::DeserializeOwned;
 /// `<app>:cache:<key>` (or `_shared:cache:<key>` for a store passed as
 /// `Shared::new(..)`). Values are postcard with a leading schema byte
 /// ([`schema`](Self::schema), default 0): a value written under another
-/// schema reads as a miss. Counters are 8-byte big-endian `u64`s. The store
-/// is a cache: it may evict.
+/// schema reads as a miss. Counters are 8-byte big-endian `u64`s; keep
+/// counters and typed values under different keys. The store is a cache: it
+/// may evict.
+///
+/// All Modules of an App share the one `<app>:cache:` keyspace, so prefix
+/// each key with the Module name (`profile:..`) to keep two Modules using
+/// the same natural key apart.
 ///
 /// Each method makes exactly one `CacheStore` call. Cheap to clone.
 ///
@@ -137,7 +142,8 @@ impl Kv {
 
     /// Atomically adds `by` to the counter under `key` and returns the new
     /// value (saturating at `u64::MAX`). A missing counter is created with
-    /// `by` and `ttl`; an existing one keeps its expiry.
+    /// `by` and `ttl`; an existing one keeps its expiry. Keep counters and
+    /// typed values under different keys.
     ///
     /// # Errors
     ///
@@ -147,7 +153,9 @@ impl Kv {
         self.store()?.incr_with_ttl(key, by, ttl).await
     }
 
-    /// Reads the counter under `key`: 0 when it is missing.
+    /// Reads the counter under `key`: 0 when it is missing. Keep counters
+    /// and typed values under different keys: a typed value that happens to
+    /// be 8 bytes long reads as a meaningless `u64`.
     ///
     /// # Errors
     ///

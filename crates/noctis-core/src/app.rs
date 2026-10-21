@@ -203,7 +203,7 @@ impl App {
     }
 
     /// The App's id ([`AppBuilder::app_id`] or `NOCTIS_APP_ID`; by default
-    /// the bot's application id in base36, read from the token, else
+    /// the bot user id read from the token, in base36, else
     /// `default`): the `app` label of every span, metric and Error Sink
     /// report, and the namespace of every port key.
     ///
@@ -1437,8 +1437,9 @@ impl AppBuilder {
     /// `<app_id>:<port>:`, so two Apps sharing one Adapter never see each
     /// other's data. [`App::from_env`] reads it from `NOCTIS_APP_ID`.
     ///
-    /// Without one, the id is the bot's application id in base36
-    /// ([`AppId::from_application_id`]), read from the token; when the
+    /// Without one, the id is the bot user id read from the token, in
+    /// base36 ([`AppId::from_application_id`]); that equals the application
+    /// id for most bots, so call this explicitly when it differs. When the
     /// token does not decode, it is `default` and `build()` logs a warning.
     /// An invalid id is a [`BuildViolation::InvalidAppId`]. The last call
     /// wins.
@@ -2172,7 +2173,7 @@ impl fmt::Debug for AppBuilder {
     }
 }
 
-/// The App id when none is set: the token's application id in base36, else
+/// The App id when none is set: the token's bot user id in base36, else
 /// `default` (with a warning when a token was given).
 fn default_app_id(token: Option<&Token>) -> AppId {
     let Some(token) = token else {

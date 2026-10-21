@@ -131,7 +131,7 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
-| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the token's application id in lowercase base36 (≤ 13 chars), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
+| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
@@ -742,8 +742,8 @@ for m in noctis::observe::METRICS {
 }
 ```
 
-`app` is the App id (`app.app_id()`): `.app_id(..)`, `NOCTIS_APP_ID` or the token's
-application id in base36, else `"default"`. Give several Apps in one process distinct
+`app` is the App id (`app.app_id()`): `.app_id(..)`, `NOCTIS_APP_ID` or the bot user
+id read from the token in base36, else `"default"`. Give several Apps in one process distinct
 ids, or they share and overwrite the same `noctis_*` series.
 
 ## 12. Plugins

@@ -100,7 +100,7 @@ development_status:
   7-1-route-handlers-and-o-1-component-dispatch: done
   7-2-component-pipeline-untrusted-input-and-in-place-updates: done
   7-3-expired-handler-and-stale-payload-routing: done
-  7-4-app-namespaced-ports: in-progress
+  7-4-app-namespaced-ports: done
   7-5-ref-minting-and-resolution: backlog
   7-6-middleware-and-typed-extensions: backlog
   7-7-route-guards: backlog

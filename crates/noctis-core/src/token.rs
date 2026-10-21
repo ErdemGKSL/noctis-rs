@@ -62,8 +62,9 @@ impl Token {
         &self.0
     }
 
-    /// The application id the token belongs to: its first `.`-separated
-    /// segment is the bot user id (equal to the application id) in base64.
+    /// The bot user id the token belongs to, as an application id: its
+    /// first `.`-separated segment is the bot user id in base64 (equal to
+    /// the application id for most bots, not for some older applications).
     /// `None` when that segment does not decode to 1-20 ASCII digits of a
     /// non-zero `u64`.
     pub(crate) fn application_id(&self) -> Option<Id<ApplicationMarker>> {

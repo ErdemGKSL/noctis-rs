@@ -2318,6 +2318,23 @@ async fn app_id_from_env() {
     assert_eq!(builder.build().unwrap().app_id().as_str(), "x");
 }
 
+#[cfg(unix)]
+#[test]
+fn from_env_app_id_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err = AppBuilder::from_lookup(lookup_var(
+        "NOCTIS_APP_ID",
+        Some(OsString::from_vec(vec![b'a', 0xff])),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_APP_ID"
+        }
+    );
+}
+
 #[tokio::test]
 async fn ports_are_namespaced() {
     let app = App::builder().app_id("a").build().unwrap();

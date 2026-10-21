@@ -137,7 +137,8 @@ pub struct ErrorReport<'a> {
     pub origin: ErrorOrigin,
     /// What happened.
     pub kind: ReportKind<'a>,
-    /// The App's name (`"default"` for now).
+    /// The App id ([`AppId`](crate::AppId)); `"default"` only when none is
+    /// set or derivable.
     pub app: &'a str,
     /// The shard that received the triggering event or interaction.
     pub shard: Option<u32>,

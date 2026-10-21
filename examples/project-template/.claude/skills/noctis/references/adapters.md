@@ -342,7 +342,9 @@ You never call port traits directly; contexts give typed, namespaced handles.
 `ModalSubmitCtx`, `ExpiredCtx`, `EventCtx` and `AutocompleteCtx` (Middleware's
 `ctx.kv()` is [planned, Story 7.6]). `Kv` (`noctis::Kv`) is a cheap clone over the
 App's namespaced `CacheStore`: every key lands under `<app_id>:cache:<key>`, and each
-method makes exactly one store call.
+method makes exactly one store call. All Modules of an App share that one keyspace, so
+prefix each key with the Module name (`profile:{user}`, `xp:{guild}:{user}`) to keep two
+Modules using the same natural key apart.
 
 ```rust
 let kv = ctx.kv();                                               // CacheStore, namespaced
@@ -366,7 +368,9 @@ let v2 = ctx.kv().schema(2);                                     // schema byte 
 | `schema(n)` | `Kv` | the schema byte (default 0); bump it when a stored type changes incompatibly, and old entries read as misses |
 
 Values are postcard with a leading schema byte (`encode_value`/`decode_value`);
-counters are 8-byte big-endian `u64`s, so `counter` on a typed value is an error. The
+counters are 8-byte big-endian `u64`s. Keep counters and typed values under different
+keys: `counter` errors only when the stored value is not exactly 8 bytes, so a typed
+value that happens to encode to 8 bytes reads as a meaningless `u64`. The
 futures are `Send` for any `T` (the value is encoded before the store call). A
 detached test context (no App) answers every op with `PortError::Unavailable`.
 `PortError` converts into `HandlerError`, so `?` works in handlers.
@@ -463,8 +467,9 @@ called per case, so return a fresh, empty store (for Redis: a fresh key prefix o
 ## 6. Namespacing and sharing (FR-71)
 
 Every App has an `AppId` (`[a-z0-9-]{1,32}`): `.app_id("my-bot")` or
-`NOCTIS_APP_ID`; by default the bot's application id in lowercase base36, read from
-the token (when the token does not decode it is `default`, and `build()` warns). Core
+`NOCTIS_APP_ID`; by default the bot user id read from the token, in lowercase base36
+(equal to the application id for most bots; call `.app_id(..)` explicitly when it
+differs; when the token does not decode it is `default`, and `build()` warns). Core
 wraps each of the seven byte stores in `noctis::ports::Namespaced`, which prefixes
 every key with `<app_id>:<port>:`; the logical key is appended verbatim. The port
 segments are:
@@ -487,7 +492,9 @@ each other's keys.
 Opt one port into cross-App sharing by passing `Shared::new(adapter)`
 (`noctis::ports::Shared`) to its normal setter: its prefix becomes `_shared:<port>:`
 for every App that does the same (typical: `CacheStore` for data both white-label Apps
-read). `_shared` can never equal an App id. Only the seven byte-store setters accept
+read). `_shared` can never equal an App id. `ModuleStateStore::version()` is forwarded
+un-namespaced, so it is store-wide: another App's writes to a shared instance bump it
+and trigger a harmless snapshot refresh. Only the seven byte-store setters accept
 `Shared` (they take the sealed `IntoPort`); `.identify_queue(Shared::new(..))` does not
 compile.
 
@@ -495,7 +502,7 @@ The types (rarely needed in bot code):
 
 | Type | API |
 | --- | --- |
-| `noctis::AppId` | `AppId::new(&str) -> Result<AppId, AppIdError>` (checks empty, then more than 32 chars, then the first char outside `a-z`, `0-9`, `-`; never trims), `AppId::from_application_id(Id<ApplicationMarker>)` (the base36 default), `as_str()`, `Display`, `FromStr`; `Clone`, `Eq`, `Hash` |
+| `noctis::AppId` | `AppId::new(&str) -> Result<AppId, AppIdError>` (checks empty, then more than 32 chars, then the first char outside `a-z`, `0-9`, `-`; never trims), `AppId::from_application_id(Id<ApplicationMarker>)` (the base36 default, fed the token's bot user id), `as_str()`, `Display`, `FromStr`; `Clone`, `Eq`, `Hash` |
 | `noctis::AppIdError` | `#[non_exhaustive]`: `Empty`, `TooLong { len }`, `InvalidChar { index, ch }` (char index); each message names `[a-z0-9-]{1,32}` |
 | `noctis::ports::Namespaced<P>` | `Namespaced::new(&app_id, Arc<dyn Port>)`, `Namespaced::shared(Arc<dyn Port>)`, `prefix() -> &str`; implements its port, forwarding each op once with `prefix + key` |
 | `noctis::ports::NamespacedPort` | sealed; implemented for the seven `dyn Port` types; `NamespacedPort::SEGMENT` is the port segment (`"cache"`, …) |

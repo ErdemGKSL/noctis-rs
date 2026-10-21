@@ -120,14 +120,14 @@
 //! installs the [`Plugin`]s, checks everything and returns an [`App`] or one
 //! [`BuildError`] listing every violation. Unset ports default to bounded
 //! in-memory Adapters. Each App has an [`AppId`] ([`AppBuilder::app_id`] or
-//! `NOCTIS_APP_ID`; by default the bot's application id in base36, read from
-//! the token): it is the `app` label of every span, metric and report, and
+//! `NOCTIS_APP_ID`; by default the bot user id read from the token, in
+//! base36): it is the `app` label of every span, metric and report, and
 //! every byte-store key is prefixed with `<app_id>:<port>:`, so Apps sharing
 //! one Adapter never see each other's data unless it is passed as
 //! [`ports::Shared::new`]. Handlers store bot data through `ctx.kv()`, a
-//! typed [`Kv`] over the App's `CacheStore`. [`App::run`] returns a typed [`StartError`] outside a
-//! multi-thread tokio runtime or without a token, and installs rustls's
-//! `ring` crypto provider when none is set.
+//! typed [`Kv`] over the App's `CacheStore`. [`App::run`] returns a typed
+//! [`StartError`] outside a multi-thread tokio runtime or without a token,
+//! and installs rustls's `ring` crypto provider when none is set.
 //!
 //! ```no_run
 //! use std::time::Duration;

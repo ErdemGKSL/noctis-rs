@@ -2,7 +2,7 @@
 title: 'Story 7.4: App-namespaced ports'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '33615617482c22369d0d71b66288b2514dba9cc9'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -242,6 +242,38 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-20 — Review pass
+- verdicts: 28 findings — high 0, medium 0, low 19, false 9, maybe-false 0
+- findings:
+  - `[low]` `[patch]` Token first segment is the bot user id, which differs from the application id for older applications; docs promise "application id" — patch: reword `token.rs`/`namespace.rs`/`app.rs` rustdoc and skill `adapters.md` §6 / `app-and-sharding.md` to say the default is the bot user id read from the token (equal to the application id for most bots; set `app_id` explicitly when it differs).
+  - `[false]` `[reject]` No migration note for the keyspace/label change — no persistent Adapter exists in the workspace (only `noctis_ports::memory`), nothing reads Ref/Session/ModuleState/RateLimit stores yet (Stories 7.5, Epic 13), and the crate is unreleased; nothing can lose data on upgrade.
+  - `[low]` `[patch]` `ModuleStateStore::version` forwarded un-namespaced, so another App's `put` bumps it — the forwarding is spec-settled; the only harm is a spurious snapshot refresh, which is undocumented — patch: one sentence in the `Namespaced` rustdoc and `adapters.md` §6 that `version()` is store-wide.
+  - `[low]` `[reject]` A self-built `Namespaced` passed to a setter is prefixed twice — requires deliberately hand-wrapping a store; the fix adds impl/guard surface; unlikely in everyday use.
+  - `[low]` `[reject]` `InvalidValue` from `Kv::incr` carries the prefixed key while `Kv::counter` carries the logical key — the spec deliberately keeps the Adapter's key on pass-through (row 22) and the logical key in `counter` (row 27); changing it edits the spec and adds key-stripping logic.
+  - `[low]` `[patch]` `Kv` has no per-Module scoping, so two Modules using the same natural key collide — key layout `<app>:cache:<key>` is spec-settled (rows 23/34) — patch: document a Module key-prefix convention in the `Kv` rustdoc and `adapters.md` §3.
+  - `[low]` `[reject]` Colliding App ids (explicit or `default` fallback) across Apps in one Runtime are not detected — a real bot token always decodes; `app-and-sharding.md` already tells users to give several Apps distinct ids; detection adds new checks.
+  - `[false]` `[reject]` `escape_segment` can never change anything — the spec requires it and its Design Notes record why (AD-14 "Key segments escape `:`"); it is a deliberate guard, not a defect.
+  - `[low]` `[reject]` Compile-fail coverage for `Shared` covers only `identify_queue` — the other three setters keep `impl Port` and `Shared` implementing any port would break `IntoPort` coherence at compile time; extra fixtures guard nothing observable.
+  - `[low]` `[reject]` Span/report `app` label tested only via metrics — spans, metrics and reports all read the same `AppShared.app` set in one place; an extra end-to-end test is more than a direct correction for a low-risk path.
+  - `[low]` `[reject]` `IntoPort` returns a bare `bool` and `Arc<dyn P>` gets wrapped in a second `Arc` — shape is spec-settled (`#[doc(hidden)]` method); the extra indirection is negligible.
+  - `[low]` `[reject]` `decode_base64` is lenient (non-canonical bits, mixed alphabets) — the spec requires both alphabets; a malformed token fails at the gateway anyway; stricter checks add branches.
+  - `[low]` `[reject]` `Kv::get` decode errors carry no key — spec row 25 fixes `Err(PortError::Value(..))` and `PortError` must not change; fix edits the spec.
+  - `[low]` `[patch]` `crates/noctis/src/lib.rs` L128 crate doc line not rewrapped — patch: reflow the paragraph to the surrounding width.
+  - `[low]` `[reject]` (edge) Two Apps without app_id and without decodable token share `default:` — same root cause as the colliding-ids row; rejected with it.
+  - `[low]` `[patch]` (edge) `ModuleStateStore::version` forwarded unprefixed — grouped with the version row above; same doc patch.
+  - `[low]` `[reject]` (edge) Self-built `Namespaced` double prefix — grouped with the double-prefix row above.
+  - `[low]` `[patch]` (edge) `counter`/`incr` on a key holding an 8-byte typed value reads it as a garbage `u64` — `adapters.md` §3 claims "`counter` on a typed value is an error", which is false for 8-byte encodings — patch: correct the sentence and the `Kv::counter` rustdoc to say keep counters and typed values under different keys.
+  - `[low]` `[patch]` (edge) `ErrorReport::app` rustdoc (`sink.rs` L140) still says "`"default"` for now" — patch: say it is the App id (`AppId`).
+  - `[low]` `[patch]` (vgap) `NOCTIS_APP_ID` non-Unicode has no test — pre-verified regression gap — patch: add `from_env_app_id_not_unicode` in `app/tests.rs` asserting `EnvError::NotUnicode { var: "NOCTIS_APP_ID" }`.
+  - `[low]` `[reject]` (vgap other) `Kv` error key inconsistent between `incr` and `counter` — grouped with the `InvalidValue` key row; spec-settled.
+  - `[false]` `[reject]` (intent D1) base36 instead of base62 — the spec deliberately settled it (base62 contradicts the AC's own alphabet) and amended AD-14.
+  - `[false]` `[reject]` (intent D2) only namespace segments escaped — spec settles the logical key verbatim (Never: escaping the logical key).
+  - `[false]` `[reject]` (intent D3) core holds `Namespaced::shared`, not `Shared<P>` — spec Design Note settles it; the observable prefix and setter surface match.
+  - `[false]` `[reject]` (intent D4) four ports isolated at wrapper level only — AC asks for unit tests, which exist; App-level use of those ports belongs to 7.5/Epic 13.
+  - `[false]` `[reject]` (intent D5) Middleware `ctx.kv()` absent — Middleware does not exist until Story 7.6; spec Never excludes it and the skill marks it planned.
+  - `[false]` `[reject]` (intent D6) template code not compiled against new `Kv` — checked: every template call (`get` with annotated `StoredProfile`, `put(&k, &(), ttl)`, `put_if_absent`, `incr`, `counter`) matches the `Kv` signatures in `kv.rs`.
+  - `[false]` `[reject]` (intent D7) scope additions — all are spec-mandated (`NOCTIS_APP_ID`, `App::app_id`, `InvalidAppId`, token decode, `Arc<P>` impls, seven namespaced slots).
+
 ## Design Notes
 
 - **Default id is base36, not base62 (decision).** AD-14 says "base62", but base62 has upper-case digits, which the `[a-z0-9-]` alphabet of the same rule forbids. Lowercase base36 keeps the id compact (≤ 13 chars) and valid. Amend AD-14 and the Conventions row with an `Amended (2026-10-21)` line.
@@ -278,3 +310,12 @@ deferred: []
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rn "planned, Story 7.4\|until \`AppId\`" crates examples/project-template docs --include=*.rs --include=*.md` -- prints nothing
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Every port is App-namespaced: seven byte stores are wrapped in `Namespaced` with prefix `<app>:<port>:`, or `_shared:<port>:` when passed as `Shared<P>` through the sealed `IntoPort` setters. `AppId` (`[a-z0-9-]`) comes from `App::app_id`, `NOCTIS_APP_ID`, or defaults to the base36 bot user id decoded from the token (`default` when undecodable). Typed `ctx.kv()` (`get/put/put_if_absent/incr/counter`, schema byte) added; metrics, spans and error reports carry the real `app` label. AD-14 amended (base36).
+- **Files changed:** `noctis-core` `namespace.rs`/`kv.rs`/`token.rs` (new: wrappers, typed Kv, token decode) plus tests; `app.rs`, `ports.rs`, `error.rs`, `handler.rs`, `command.rs`, `component.rs`, `autocomplete.rs` (AppId wiring, `IntoPort` setters, `InvalidAppId`); `noctis-ports` `store.rs` (`Arc<P>` impls); `noctis-testkit/tests/namespacing.rs`; `noctis/src/lib.rs` re-exports + trybuild `shared_identify_queue`; template skill references, `AGENTS.md`, profile module; `xtask/public-api.txt` re-blessed; ARCHITECTURE-SPINE AD-14 amendment.
+- **Review findings:** 28 total (high 0, medium 0, low 19, false 9). Patched 8 low (5 distinct): bot-user-id wording, store-wide `ModuleStateStore::version` note, Module key-prefix convention for `Kv`, `counter` on 8-byte typed value docs fix, `ErrorReport::app` rustdoc, `NOCTIS_APP_ID` non-Unicode test, lib.rs reflow. Deferred: none. Rejected 20: double prefix of self-built `Namespaced` (unlikely), `incr`/`counter` error-key mismatch (spec-settled), colliding App ids undetected (documented), `Shared` compile-fail only for identify_queue (coherence guards rest), span label test (same source), `IntoPort` shape (spec-settled), lenient base64 (spec), `Kv::get` error lacks key (PortError fixed), migration note (unreleased, no persistent adapter), `escape_segment` no-op (AD-14 guard), intent D1-D7 (spec-settled or out of scope).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 8).
+- **Verification:** all local gates via `gates.sh` green: fmt, clippy -D warnings, test --release (trybuild), cargo hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91. CI paused by maintainer.
+- **Residual risks:** Apps sharing an id (explicit or `default`) in one Runtime collide silently; `ModuleStateStore::version` is store-wide; namespaced Ref/Session/RateLimit stores not exercised end-to-end until Story 7.5 / Epic 13.

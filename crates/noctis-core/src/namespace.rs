@@ -32,9 +32,10 @@ const SHARED_SEGMENT: &str = "_shared";
 /// It is the `app` label of every span, metric and Error Sink report, and
 /// the first segment of every port key (`<app>:<port>:<key>`), so two Apps
 /// sharing one Adapter never see each other's data. Set it with
-/// `AppBuilder::app_id` or `NOCTIS_APP_ID`; by default it is the bot's
-/// application id in base36 ([`AppId::from_application_id`]), read from the
-/// token.
+/// `AppBuilder::app_id` or `NOCTIS_APP_ID`; by default it is the bot user
+/// id read from the token, in base36 ([`AppId::from_application_id`]). That
+/// equals the application id for most bots; call `AppBuilder::app_id`
+/// explicitly when it differs.
 ///
 /// ```
 /// use noctis_core::{AppId, AppIdError};
@@ -208,6 +209,9 @@ pub trait NamespacedPort: sealed::Port + Send + Sync + 'static {
 /// Every op forwards exactly one call to the inner port with the key
 /// `prefix + key`; the logical key is appended verbatim, and values, TTLs,
 /// return values and errors pass through unchanged.
+/// `ModuleStateStore::version` takes no key, so it is store-wide: another
+/// App's writes to a shared instance bump it and trigger a harmless snapshot
+/// refresh.
 ///
 /// ```
 /// use std::sync::Arc;
