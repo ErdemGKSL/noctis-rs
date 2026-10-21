@@ -2108,15 +2108,31 @@ fn from_env_payload_keys() {
 /// needs a current one.
 #[tokio::test]
 async fn cid_06_payload_key_build_violations() {
-    use crate::test_support::signed_button;
+    use crate::test_support::{signed_button, test_route};
+
+    test_route!(
+        TSignedBio,
+        "sig.bio",
+        noctis_codec::RouteShape::INLINE.signed(),
+        0
+    );
 
     let mut builder = App::builder();
-    builder.module(Module::new("shop").__add(signed_button("m::Sig")));
+    builder.module(Module::new("shop").__add(signed_button("m::Sig")).__add(
+        crate::ModalHandler::__new::<TSignedBio, _, _>(
+            "m::SigBio",
+            "sig.bio",
+            |_: TSignedBio, _: crate::ModalSubmitCtx| async { Ok(crate::Responded::new()) },
+        ),
+    ));
     let err = builder.build().unwrap_err();
     assert!(
         matches!(
             err.violations(),
-            [BuildViolation::MissingPayloadKey { route: "sig" }]
+            [
+                BuildViolation::MissingPayloadKey { route: "sig" },
+                BuildViolation::MissingPayloadKey { route: "sig.bio" },
+            ]
         ),
         "{err}"
     );

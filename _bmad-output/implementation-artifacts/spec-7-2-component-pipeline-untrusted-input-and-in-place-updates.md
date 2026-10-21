@@ -2,7 +2,7 @@
 title: 'Story 7.2: Component pipeline, untrusted input and in-place updates'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'bc182c9fa7cdc597660044b61771406df563a3e9'
 review_loop_iteration: 1
 followup_review_recommended: false
@@ -13,7 +13,14 @@ context:
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/responder.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/routes-payloads-refs.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      A command's `edit_reply(LegacyMessage)` on a V2 original is still only a runtime `UiError::V2ToLegacy`, while maintainer decisions §2 says converting V2 back to legacy is a compile error.
+    evidence: |-
+      `IntoEdit<Command>` is implemented for `LegacyMessage` and `OutgoingMessage` (crates/noctis-core/src/responder.rs:565-573), so the command path compiles a legacy edit and rejects it at run time (spec S8, existing test kept). The command original's format is known only at run time, so a compile-time rule there needs format typestate on `Responder<Command, Acked, D>`. The runtime check predates Story 7.2 (Epic 6 command Responder); 7.2 made the component/modal path compile-time only.
+    location: >-
+      crates/noctis-core/src/responder.rs:565 (IntoEdit<Command> impls)
+    severity: medium
 ---
 
 <intent-contract>
@@ -253,6 +260,38 @@ Fixtures: `Buy` = `#[derive(Button)] #[button("shop.buy", defaults(style = Prima
   - `[low]` `[patch]` Intent D7: the INT-02 bot-token fallback request's `authorization: Bot …` header is not asserted (`responder/tests/components.rs` `follow_ups_and_expiry_after_update`), though matrix row 46 requires it — add the header assertion.
   - `[false]` `[reject]` Intent D8: modal `response`/`auto_defer` (7.8), multipart (9.1) and the 2.9 s constant — all consistent with the epics split and the spec.
 
+### 2026-10-21 — Review pass
+- verdicts: 28 findings — high 0, medium 2, low 15, false 11, maybe-false 0
+- findings:
+  - `[low]` `[patch]` Blind: `reply` after a type-6 ack posts a follow-up but drops its handle; the Acked responder's `edit_reply`/`fetch_reply`/`delete_reply` then act on the clicked message, so the "reply" cannot be edited — verified (`Shared::reply` `DEFERRED_UPDATE` arm maps the follow-up to `None`); the behaviour is the spec's decision, but `responder.md` never says the reply is not `@original`. Patch: one skill sentence (use `follow_up` for an editable handle).
+  - `[false]` `[reject]` Blind: `IntoEdit<K>` on the kind-generic `edit_reply` forbids editing a legacy component reply — the spec Design Notes fix exactly that signature (`Responder<K, Acked, D>::edit_reply(&self, msg: impl IntoEdit<K>)`) and `responder.md` L396/L404 state that component/modal edits are V2 only.
+  - `[low]` `[reject]` Blind: the `IntoEdit` `on_unimplemented` text ("[CV2-01] a component's message…") also shows for a command `edit_reply` with an unrelated type (`&str`) — real but developer-only and rare (the skill shows `V2Message` bodies); the exact text is prescribed by the spec Design Notes, so rewording is a spec change, not a direct correction.
+  - `[low]` `[reject]` Blind: the `IntoResponse` CV2-01 note appears on every command return-type error — real but cosmetic; message and note are prescribed verbatim by the contract and Design Notes.
+  - `[low]` `[patch]` Blind: `docs/discord-rules.md` INT-03 row is stale (Pending methods "on `CommandResponder`", "`update` arrives with Epic 7", late `reply` always "becomes `edit_reply`") — verified at L158; the rule catalogue is the enforcement record. Patch: row text.
+  - `[low]` `[patch]` Blind: `docs/discord-rules.md` INT-02 row omits the clicked source message after `update`/`defer_update` and the `fetch_reply` → `GET /channels/{c}/messages/{id}` fallback (S13, S15) — verified at L157. Patch: row text.
+  - `[low]` `[patch]` Blind: Usage Skill flows table (`responder.md` L285-301): `reply(msg)` after a type-6 ack is `—` in the `ephemeral | public` column although an explicit `defer_update()` reaches it (follow-up with the declared ephemerality), and `update(msg)` after any ack does not say that after the type-5 auto-defer `@original` is the deferred reply, not the clicked panel — verified. Patch: two table cells.
+  - `[low]` `[reject]` Blind: no e2e test signs a modal through `show_modal` and submits that id — `show_modal` runs the same `Shared::resolve_ids`/`signer()` (`responder.rs:1615`) that matrix 17 `send_side_signing` verifies; the remaining gap is unlikely to hide a regression; a new e2e test is more than a direct correction.
+  - `[low]` `[reject]` Blind: S17 test is weaker than its row (no failed notice send, absence of `route="shop.buy"` instead of empty-or-absent) — the row says "any notice-send warn", met when none occurs; absent `route="shop.buy"` already shows the unknown Route records no route; strengthening adds fixture plumbing.
+  - `[false]` `[reject]` Blind: `Report.origin` is a partly ignored second source of truth — on the autocomplete path both the field and the hard-coded value are `ErrorOrigin::Autocomplete` (`pipeline.rs:745`, `:1000`); no caller diverges, nothing goes wrong.
+  - `[low]` `[reject]` Blind: `MissingPayloadKey` only sees mounted handlers, a rendered-only `signed` Route builds without a key — the contract says "per mounted `signed` Route"; a rendered Route without a mounted handler is a dead button (`unknown_route` on click) anyway, and its send fails loudly with `Encode`; covering `uses` adds new fold logic.
+  - `[false]` `[reject]` Blind: `CallbackResource::kind()` returns a raw `u8` — the contract fixes `kind(&self) -> u8`.
+  - `[low]` `[reject]` Blind: unrelated `noctis-ui/tests/validate.rs` flake fix bundled without a log line — no user or developer harm; the fix keeps `cargo test` green and the commit carries it.
+  - `[low]` `[reject]` Edge: detached transport cannot sign (`responder.rs:1267-1273`) — carried: internal seams only (`memory_flat`, `kinds.rs`) that render no signed Route; plumbing the ring into `Detached` is more than a direct correction.
+  - `[false]` `[reject]` Edge: after a type-6 auto-defer, `defer_reply()` then `edit_reply(msg)` overwrites the clicked message — spec Boundaries ("`defer_reply` after any ack sends nothing") and maintainer decisions §2 (`edit_reply` acts on the component's message after `defer_update`) define exactly this; the skill table rows 297 and 268 state both.
+  - `[false]` `[reject]` Edge: `update` after a type-5 auto-defer edits the deferred reply, not the clicked message — carried: deliberate (spec Boundaries "After any ack it becomes `edit_reply(msg)`", maintainer decisions §2).
+  - `[low]` `[patch]` Edge: `update` consumes the Pending responder, so after `UpdateUnavailable` the handler cannot `reply` through it, yet `responder.md` L426 says "the interaction stays unanswered, so `reply` still works" — verified (`update(self, ..)` at `responder.rs:794`; the matrix-41 test replies through a second handle on the same `Shared`). The contract's "state unchanged" holds (a returned message still answers type 4; maintainer §2 names `ctx.respond`, Story 8.1, as the recovery), so only the skill text is wrong. Patch: skill line.
+  - `[low]` `[reject]` Edge: `"attachments": []` drops a source message's existing attachments — carried: required by the epics AC and spec; only messages posted outside Noctis are affected until 9.1.
+  - `[medium]` `[patch]` Gap: a mounted `signed` modal without a payload key is never shown to fail the build with `MissingPayloadKey` (pre-verified; disposition patch) — `cid_06_payload_key_build_violations` mounts only a signed button. Patch: mount a signed `ModalHandler` there and assert its route in fold order.
+  - `[false]` `[reject]` Intent D1: wire rows asserted through the in-crate recording `TestServer` instead of `FakeDiscordHttp` — carried: deliberate split; the server records method, path, query, headers and body.
+  - `[medium]` `[defer]` Intent D2: a command's `edit_reply(LegacyMessage)` on a V2 original is still a runtime `V2ToLegacy`, while maintainer §2 says V2 → legacy is a compile error — real; pre-existing command-path behaviour (S8 keeps the existing test), not caused by 7.2; needs format typestate on the command responder. Deferred.
+  - `[false]` `[reject]` Intent D3: `fetch_reply` also falls back to the bot-token channel route after 15 min — maintainer decisions §2 (binding) says "public messages fall back to the bot-token channel routes" without limiting the method; it wins over the epics AC's narrower list.
+  - `[false]` `[reject]` Intent D4: bad tag logged `forged` instead of `unknown_route` — carried: identical handling, only a more precise label.
+  - `[low]` `[reject]` Intent D5: env-driven key verification and "never passed to a port" are not tested end to end — `from_env` calls the same `builder.payload_key`/`previous_payload_key` (`app.rs:1345-1354`) the verification tests use, and the env parsing is unit-tested; `AppShared`'s ring is not reachable from port signatures; an end-to-end env test adds process-env plumbing for a one-line composition.
+  - `[low]` `[reject]` Intent D6: the attachments keep-list never keeps anything — carried (same claim as the Edge attachments row).
+  - `[false]` `[reject]` Intent D7: `reply` after a type-6 auto-defer becomes a follow-up, where discord.js would throw — spec Design Notes decision; maintainer §2 defines `reply` only as the first response and does not settle the post-ack case; neither the epics nor the spine select another reading.
+  - `[false]` `[reject]` Intent D7: a returned message on a slash-opened modal under `update` is a type-4 public message — carried: the "never falls back" rule is about `update`/`ctx.update`; the returned-message fallback is a Design Notes decision matching the AC's auto-defer fallback.
+  - `[false]` `[reject]` Intent D7: the manual late-log fires at the 2.9 s `ACK_DEADLINE` rather than 3 s — carried: consistent with the spec and the existing constant.
+
 ## Design Notes
 
 - **Scope split with 7.8 (decision).** 7.2 ships `ModalResponder` (needed for the story's `UpdateUnavailable` wire row and the modal auto-defer fallback); `response`/`auto_defer` on `#[modal]`, `ModalResponder<Manual>` fixtures and Radio/Checkbox E2E stay in 7.8. Modal handlers here are `Update` + `AutoDefer`.
@@ -320,3 +359,13 @@ Fixtures: `Buy` = `#[derive(Button)] #[button("shop.buy", defaults(style = Prima
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rn "planned, Story 7.2\|planned: Story 7.2\|arrive with Story 7.2\|arrive with Stories 7.2" crates examples/project-template/.claude docs --include=*.rs --include=*.md` -- prints nothing
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Component/modal pipeline for untrusted input: `ComponentResponder`/`ModalResponder` with type 7/6 update flows, `update`/`defer_update`/`_with_response` + `CallbackResource`, `UpdateUnavailable` without a source message, send-side `CustomId` resolution (CSPRNG select nonces, signing of `signed` Routes), payload key ring (`payload_key`/`previous_payload_key`, `NOCTIS_PAYLOAD_KEY` as 64 hex), tag verification on dispatch, CID-06 rejection notices, shared auto-defer arm with `kind="component"` metrics, compile-time CV2-01 via `IntoEdit<K>`, and signed modals decoded through the verified Payload (`ModalFromPayload`).
+- **Files changed (87 since bc182c9):** `crates/noctis-core` (responder, component handlers, pipeline/component, app key ring, tests), `crates/noctis-ui` (modal form `ModalFromPayload` seam), `crates/noctis-macros` (component `response`/`auto_defer`, modal derive), `crates/noctis-codec` (send-side resolve), `crates/noctis-testkit/tests/components.rs` (e2e), trybuild fixtures (CID-03, INT-05, CV2-01), `docs/discord-rules.md`, Usage Skill + project template, spine AD-6, `xtask/public-api.txt`.
+- **Review pass 1:** 31 findings (high 2, medium 4, low 14, false 11); bad_spec loopback (signed modal always rejected, V2->legacy compile error, fetch/delete + span matrix rows) folded into spec amendment and re-derivation; patches: ModalHandler Debug, stage-doc alignment, skill update row, INT-11 component test, INT-02 Bot header assert; rest rejected with recorded reasons (detached seam signing, attachments keep-list, hex key format, etc.).
+- **Review pass 2 (final):** 28 findings (high 0, medium 2, low 15, false 11). Patched (1 medium, 6 low): signed modal `MissingPayloadKey` build test; skill notes (reply after type-6 is not `@original`, flows table cells, `UpdateUnavailable` consumes the responder); discord-rules INT-02/INT-03 rows. Deferred (1 medium): command `edit_reply(LegacyMessage)` on V2 original still runtime `V2ToLegacy` (pre-existing; needs format typestate on command responder). Rejected: 20, each with reason in the triage log.
+- **Follow-up review recommended:** false (this pass patched high 0, medium 1, low 6).
+- **Verification:** all local gates green via gates.sh (fmt, clippy -D warnings, test, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** detached test transport cannot sign; `"attachments": []` drops attachments on messages posted outside Noctis until 9.1; command-path V2->legacy remains runtime (deferred); no e2e signs a modal via `show_modal` then submits it.

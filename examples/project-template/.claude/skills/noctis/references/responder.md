@@ -290,9 +290,9 @@ otherwise).
 | `defer_reply()` (Pending) | `{"type":5}` | `{"type":5}` / `{"type":5,"data":{"flags":64}}` | `{"type":5}` |
 | returned message (Pending) | type 7 | type 4 | type 4, public |
 | auto-defer | `{"type":6}` | type 5 (+ `EPHEMERAL`) | `{"type":5}` |
-| `update(msg)` after any ack | `PATCH …/@original` | `PATCH …/@original` | `UpdateUnavailable`, no request (never falls back) |
+| `update(msg)` after any ack | `PATCH …/@original` | `PATCH …/@original` (the deferred type-5 reply, not the clicked message) | `UpdateUnavailable`, no request (never falls back) |
 | returned message after any ack | `PATCH …/@original` | `PATCH …/@original` | `PATCH …/@original` (the deferred type-5 reply) |
-| `reply(msg)` after a type-6 ack | public follow-up (`POST /webhooks/{app}/{token}?wait=true`) | — | — |
+| `reply(msg)` after a type-6 ack | public follow-up (`POST /webhooks/{app}/{token}?wait=true`) | follow-up with the declared ephemerality (after an explicit `defer_update()`) | — |
 | `reply(msg)` after a type-5 ack | `PATCH …/@original` | `PATCH …/@original` | `PATCH …/@original` |
 | `defer_reply()` / `defer_update()` after any ack | nothing (`debug`) | nothing | nothing |
 | `show_modal(m)` after any ack | `ModalUnavailable`, no request | same | (no `show_modal` on a modal submit) |
@@ -305,6 +305,11 @@ known), so `edit_reply`, `fetch_reply` and `delete_reply` act on it; after 15 mi
 public one still goes through the bot-token channel routes
 (`PATCH`/`GET`/`DELETE /channels/{channel}/messages/{id}`, INT-02); on an ephemeral one
 all three are `TokenExpired` with no request.
+
+A `reply` after a type-6 ack is a follow-up, not `@original`: the returned Acked
+responder's `edit_reply`/`fetch_reply`/`delete_reply` still act on the clicked message,
+so that reply can't be edited through it. To edit or delete it later, send it with
+`follow_up(msg, vis)` instead and keep its `FollowupHandle`.
 
 Component and modal edits are V2 only (CV2-01, compile time): `update`,
 `update_with_response` and `edit_reply` of a `ComponentResponder`/`ModalResponder` take a
@@ -423,7 +428,7 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `TokenExpired` | 15 min after the interaction arrived: a follow-up, or an edit/delete of an ephemeral message or of one whose id is unknown (INT-02) |
 | `FollowupCap` | the 6th follow-up of a user-install-only interaction (INT-11) |
 | `ModalUnavailable` | `show_modal(m)` after another initial response (an auto-defer cannot happen for `auto_defer = false`), or over the `Dispatcher` |
-| `UpdateUnavailable` | `update`/`defer_update` (or their `…_with_response`) on a submit of a modal that a slash command opened: "there is no message to update: this modal was not opened from a component message"; the interaction stays unanswered, so `reply` still works |
+| `UpdateUnavailable` | `update`/`defer_update` (or their `…_with_response`) on a submit of a modal that a slash command opened: "there is no message to update: this modal was not opened from a component message"; no request is sent and the interaction stays unanswered, but `update`/`defer_update` consumed the responder: answer by returning a message (a type-4 public reply), or call `reply` instead of `update` when the submit may come from a slash command |
 
 Runtime guards the types can't express:
 - if the auto-defer already fired, your `reply` becomes `edit_reply` transparently
