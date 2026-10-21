@@ -2,7 +2,8 @@
 title: 'Story 7.5: Ref minting and resolution'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '4a19d24eb8a6afccd26daafa428db5106b1d4fff'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
