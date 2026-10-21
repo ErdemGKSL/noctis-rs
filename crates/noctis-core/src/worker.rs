@@ -416,6 +416,8 @@ pub(crate) async fn run_handler(
         true,
     );
     let mut middleware = None;
+    // No Middleware runs for a start panic: neither chain saw the run.
+    let mut start_panicked = false;
     let outcome = if cancel.is_cancelled() {
         Outcome::Cancelled
     } else {
@@ -460,6 +462,7 @@ pub(crate) async fn run_handler(
             Ok(None) => return,
             Err(panic) => {
                 record_duration(app, started_at);
+                start_panicked = true;
                 Outcome::Panicked(panic)
             }
         }
@@ -478,6 +481,7 @@ pub(crate) async fn run_handler(
         middleware: None,
     };
     let run_outcome = match &outcome {
+        _ if start_panicked => None,
         Outcome::Returned(result) => Some(RunOutcome::of(result)),
         Outcome::Panicked(_) => Some(RunOutcome::Panicked),
         Outcome::Stopped => Some(RunOutcome::Stopped),

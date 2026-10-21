@@ -245,7 +245,6 @@ prelude).
 
 ```rust
 use noctis::prelude::*;                    // Middleware, BeforeCtx, AfterCtx, Flow, Ext, …
-use noctis::{Invocation, RunOutcome};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -297,7 +296,10 @@ impl Boost {                                       // #[derive(Button)] #[button
   (functions or `move` closures carrying configuration; `Send + Sync + 'static`, futures
   `Send`). Register them with `Module::before(m)` and `Module::after(m)` (both
   `#[must_use]`). A Middleware's name, in logs, spans and reports, is its function's
-  path (`my_bot::modules::premium::load_settings`); `.name()` returns it.
+  path (`my_bot::modules::premium::load_settings`); `.name()` returns it. A closure is
+  named after its enclosing function plus `::{{closure}}`, so two closures in one
+  function share a name: use named functions where Middleware must be told apart in
+  logs and reports.
 - **`BeforeMiddleware` builders** (each `#[must_use]`): `.provides::<T>()` declares that it
   inserts `T` (repeats are kept once; the build check below reads it);
   `.events_only()` runs it only for gateway events; `.skip_events()` only for

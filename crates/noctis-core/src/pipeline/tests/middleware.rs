@@ -1,18 +1,19 @@
-//! Middleware Matrix 21-31, 33, 34, 39, 44 and 45: Middleware in the
+//! Middleware Matrix 21-31, 33, 34, 39, 44 and 45 (plus the run metadata
+//! and start panics): Middleware in the
 //! Command, component and event pipelines over a recording upstream.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use twilight_model::gateway::event::EventType;
 
-use super::components::{assert_generic_notice, click};
+use super::components::{assert_generic_notice, click, submit};
 use super::*;
 use crate::kind::__ext;
 use crate::test_support::{TBuy, message_delete};
 use crate::{
     AfterCtx, AfterMiddleware, BeforeCtx, BeforeMiddleware, ComponentCtx, ComponentHandler,
-    ComponentKind, ErrorReport, ErrorSink, Flow, Middleware, ModalSubmitCtx, ReportKind,
-    RunOutcome,
+    ComponentKind, ErrorReport, ErrorSink, Flow, Invocation, Middleware, ModalHandler,
+    ModalSubmitCtx, ReportKind, RunOutcome,
 };
 
 /// The follow-up route (`wait=true`).
@@ -350,6 +351,10 @@ async fn before_failures() {
 /// still run, and the main outcome is unchanged.
 #[tokio::test]
 async fn after_panic_is_reported_alone() {
+    use metrics_util::debugging::DebuggingRecorder;
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _metrics = metrics::set_default_local_recorder(&recorder);
     let log = Log::default();
     let a1 = Middleware::after(|_: AfterCtx| async { panic!("a1 boom") });
     let a1_name = a1.name();
@@ -369,6 +374,20 @@ async fn after_panic_is_reported_alone() {
         }]
     );
     assert_eq!(p.requests().len(), 1);
+    assert_eq!(errors_total(snapshotter.snapshot()), 1);
+}
+
+/// The sum of every `noctis_handler_errors_total` counter in `snapshot`.
+fn errors_total(snapshot: metrics_util::debugging::Snapshot) -> u64 {
+    snapshot
+        .into_vec()
+        .into_iter()
+        .filter(|(k, ..)| k.key().name() == "noctis_handler_errors_total")
+        .map(|(.., v)| match v {
+            metrics_util::debugging::DebugValue::Counter(n) => n,
+            _ => 0,
+        })
+        .sum()
 }
 
 /// Matrix 31: a shutdown during the before chain runs no handler and no
@@ -697,4 +716,257 @@ async fn events_run_middleware_unless_filtered() {
     assert!(log.lines().is_empty(), "{:?}", log.lines());
     assert!(sink.seen().is_empty());
     assert!(p.requests().is_empty());
+}
+
+/// The event `MESSAGE_DELETE` handler entry of `p`.
+fn delete_entry(p: &Pipeline) -> Arc<crate::registry::Entry> {
+    Arc::clone(
+        &p.fx
+            .app
+            .registry()
+            .handlers(EventType::MessageDelete)
+            .unwrap()
+            .concurrent[0],
+    )
+}
+
+/// Matrix 30 (event): an after-Middleware panic is one Event-origin
+/// `Panic` report naming it, and the remaining after-Middleware still run.
+#[tokio::test]
+async fn event_after_panic_is_reported() {
+    let log = Log::default();
+    let a1 = Middleware::after(|_: AfterCtx| async { panic!("a1 boom") });
+    let a1_name = a1.name();
+    let module = Module::new("root")
+        .after(after(&log, "a0"))
+        .after(a1)
+        .module(Module::new("child").after(after(&log, "ca1")).__add(
+            crate::test_support::handler::<
+                twilight_model::gateway::payload::incoming::MessageDelete,
+                _,
+                _,
+            >("m::ev", false, |_, _| async { Ok(()) }),
+        ));
+    let (p, sink) = start(module, |_| {}).await;
+    let app = Arc::clone(p.fx.app.shared());
+    let cancel = CancellationToken::new();
+    crate::worker::run_handler(
+        &delete_entry(&p),
+        0,
+        None,
+        message_delete(1, None),
+        &app,
+        &cancel,
+    )
+    .await;
+    assert_eq!(log.lines(), ["ca1:Completed", "a0:Completed"]);
+    assert_eq!(
+        sink.seen(),
+        [MwSeen {
+            origin: ErrorOrigin::Event,
+            kind: "panic:a1 boom".to_owned(),
+            middleware: Some(a1_name.to_owned()),
+            extensions: Some(vec![]),
+        }]
+    );
+}
+
+/// An after-Middleware counting its calls (and its counter).
+fn counting_after() -> (AfterMiddleware, Arc<AtomicUsize>) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let c = Arc::clone(&calls);
+    let mw = Middleware::after(move |_: AfterCtx| {
+        c.fetch_add(1, Ordering::SeqCst);
+        async {}
+    });
+    (mw, calls)
+}
+
+/// Run semantics 1: a start panic (the handler call itself panics) runs
+/// no after-Middleware, over the Command and the event path; the panic is
+/// still reported.
+#[tokio::test]
+async fn start_panic_runs_no_after() {
+    let (before_mw, before_calls) = counting();
+    let (after_mw, after_calls) = counting_after();
+    let module = Module::new("m")
+        .before(before_mw)
+        .after(after_mw)
+        .__add(CommandHandler::__new_plain(
+            "m::starts",
+            &["starts"],
+            "d",
+            |_: CommandCtx, _: CommandResponder| -> std::future::Ready<HandlerResult<V2Message>> {
+                panic!("at the start")
+            },
+        ))
+        .__add(crate::test_support::handler::<
+            twilight_model::gateway::payload::incoming::MessageDelete,
+            _,
+            _,
+        >(
+            "m::ev",
+            false,
+            |_, _| -> std::future::Ready<HandlerResult<()>> { panic!("at the event start") },
+        ));
+    let (p, sink) = start(module, |_| {}).await;
+    p.run(slash_run("starts")).await;
+    let app = Arc::clone(p.fx.app.shared());
+    let cancel = CancellationToken::new();
+    crate::worker::run_handler(
+        &delete_entry(&p),
+        0,
+        None,
+        message_delete(1, None),
+        &app,
+        &cancel,
+    )
+    .await;
+    assert_eq!(before_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(after_calls.load(Ordering::SeqCst), 0);
+    let kinds: Vec<_> = sink
+        .seen()
+        .into_iter()
+        .map(|s| (s.origin, s.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            (ErrorOrigin::Command, "panic:at the start".to_owned()),
+            (ErrorOrigin::Event, "panic:at the event start".to_owned()),
+        ]
+    );
+}
+
+/// What a recording before-Middleware saw of its run: the invocation,
+/// the guild, channel and user ids, and the shard.
+type Info = (Invocation, Option<u64>, Option<u64>, Option<u64>, u32);
+
+/// A before-Middleware recording [`Info`] and inserting `A(9)` (and the
+/// records).
+fn recording() -> (BeforeMiddleware, Arc<Mutex<Vec<Info>>>) {
+    let infos: Arc<Mutex<Vec<Info>>> = Arc::default();
+    let i = Arc::clone(&infos);
+    let mw = Middleware::before(move |ctx: BeforeCtx| {
+        i.lock().unwrap().push((
+            ctx.invocation(),
+            ctx.guild_id().map(Id::get),
+            ctx.channel_id().map(Id::get),
+            ctx.user_id().map(Id::get),
+            ctx.shard(),
+        ));
+        ctx.insert(A(9));
+        async { Ok(Flow::Continue) }
+    })
+    .provides::<A>();
+    (mw, infos)
+}
+
+/// Sets guild 4 and channel 5 on the interaction `json`.
+fn in_guild(mut json: Value) -> Value {
+    json["guild_id"] = json!("4");
+    json["channel"] = json!({ "id": "5", "type": 0 });
+    json
+}
+
+/// The run metadata a before-Middleware reads, from a guild slash Command,
+/// a click, a modal submit, a user context menu (whose handler reads the
+/// inserted `Ext<A>`) and an event.
+#[tokio::test]
+async fn before_ctx_run_metadata() {
+    let (mw, infos) = recording();
+    let log = Log::default();
+    let menu = {
+        let log = log.clone();
+        ContextMenuHandler::__new_user(
+            "m::show",
+            "Show",
+            CommandMetadata::new(),
+            move |ctx: CommandCtx, _: ResolvedUser, _: CommandResponder| {
+                let log = log.clone();
+                async move {
+                    let a = __ext::<A, _>(&ctx, "m::show")?;
+                    log.push(format!("menu {a:?}"));
+                    Ok(v2("u"))
+                }
+            },
+        )
+    };
+    let module = Module::new("m")
+        .before(mw)
+        .__add(handler(&log, "m::probe", &["probe"]))
+        .__add(menu)
+        .__add(ComponentHandler::__new::<TBuy, _, _>(
+            "m::Buy",
+            "shop.buy",
+            ComponentKind::Button,
+            |_: TBuy, _: ComponentCtx| async { Ok(Responded::new()) },
+        ))
+        .__add(crate::test_support::handler::<
+            twilight_model::gateway::payload::incoming::MessageDelete,
+            _,
+            _,
+        >("m::ev", false, |_, _| async { Ok(()) }));
+    let (p, sink) = start(module, |_| {}).await;
+    p.run(inbound(&in_guild(interaction(
+        slash("probe", json!([])),
+        json!({}),
+    ))))
+    .await;
+    run_component_raw(&p, &in_guild(click("0shop.buy:47", 2))).await;
+    let data = json!({
+        "id": "9", "name": "Show", "type": 2, "target_id": "11",
+        "resolved": { "users": { "11": user("11") } }
+    });
+    p.run(inbound(&in_guild(interaction(data, json!({})))))
+        .await;
+    let app = Arc::clone(p.fx.app.shared());
+    let cancel = CancellationToken::new();
+    crate::worker::run_handler(
+        &delete_entry(&p),
+        3,
+        Some(Id::new(4)),
+        message_delete(1, Some(4)),
+        &app,
+        &cancel,
+    )
+    .await;
+
+    let (modal_mw, modal_infos) = recording();
+    let modal = Module::new("m")
+        .before(modal_mw)
+        .__add(ModalHandler::__new::<TBuy, _, _>(
+            "m::Sub",
+            "shop.buy",
+            |_: TBuy, _: ModalSubmitCtx| async { Ok(Responded::new()) },
+        ));
+    let (mp, modal_sink) = start(modal, |_| {}).await;
+    run_component_raw(&mp, &in_guild(submit("0shop.buy:47", true))).await;
+
+    assert_eq!(log.lines(), ["handler", "menu Ext(A(9))"]);
+    let guild = (Some(4), Some(5), Some(3), 0);
+    let with = |invocation| (invocation, guild.0, guild.1, guild.2, guild.3);
+    assert_eq!(
+        *infos.lock().unwrap(),
+        [
+            with(Invocation::Command { path: "probe" }),
+            with(Invocation::Component { route: "shop.buy" }),
+            with(Invocation::ContextMenu { name: "Show" }),
+            (
+                Invocation::Event {
+                    event_type: "MESSAGE_DELETE"
+                },
+                Some(4),
+                None,
+                None,
+                3
+            ),
+        ]
+    );
+    assert_eq!(
+        *modal_infos.lock().unwrap(),
+        [with(Invocation::Modal { route: "shop.buy" })]
+    );
+    assert!(sink.seen().is_empty(), "{:?}", sink.seen());
+    assert!(modal_sink.seen().is_empty(), "{:?}", modal_sink.seen());
 }

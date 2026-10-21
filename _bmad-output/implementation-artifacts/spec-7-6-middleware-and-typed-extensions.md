@@ -2,10 +2,10 @@
 title: 'Story 7.6: Middleware and typed Extensions'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '2055a1e31c449dd69b4354960b16a18ff8368216'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-7-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -284,6 +284,45 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 35 findings — high 0, medium 3, low 21, false 11, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `Shared::stop_silently` releases the gate while still `PENDING`, so an auto-defer timer waiting on the gate can send a type-5 defer before `run_started` drops the timer, leaving a "thinking…" original — verified in `responder.rs` `stop_silently` and `pipeline.rs` `run_started` (no state change before `drop(timer)`); patch: under the gate, move a `PENDING` state out of `PENDING` so `auto_defer` returns without sending.
+  - `[false]` `[reject]` (blind) `Flow::Stop(None)` on a pending interaction sends no callback — deliberately settled by row 26 and the `Stop(None)` design note; the skill tells authors to deny with `Stop(Some(key))`.
+  - `[low]` `[patch]` (blind) a closure Middleware's name is `…::{{closure}}`, not "its function's path" as the skill says — verified `type_name::<F>()` and skill §5 Shapes bullet; patch: correct the skill sentence (closures are named after the enclosing function plus `::{{closure}}`; use named functions to tell Middleware apart). A `.named()` builder would be new public surface and is not taken.
+  - `[low]` `[reject]` (blind) syntactic `Ext` detection captures a user type named `Ext` and misses type aliases — the spec chose syntactic detection (row 6); a user type named `Ext<T>` next to noctis is unusual, and a real check adds generated guards.
+  - `[low]` `[reject]` (blind) `ext_wrapper`/`__ExtType::of` use `quote!`, so a non-`Send` `Ext<T>` bound error points at the attribute — the error is still emitted; cosmetic span quality, rare.
+  - `[low]` `[reject]` (blind) `BeforeCtx` exposes no locale, roles or permissions — the intent's Never list excludes the locale override (Story 11.3) and Guards (Story 7.7), which own those uses.
+  - `[low]` `[reject]` (blind) `AfterCtx` gives no access to the error or failing Middleware — the Error Sink already receives both (plus `extensions`); adding accessors is new public surface for a covered need.
+  - `[low]` `[patch]` (blind) a handler start panic skips the before chain but still runs the after chain with `Panicked` and empty Extensions — verified: `before_and_handler` returns `Outcome::Panicked` for `Started.future: Err`, `run_outcome()` maps it to `Some(Panicked)`; same in `worker.rs` `Err(panic)` arm; the spec says no Middleware runs for a start panic; patch: skip `run_after`/`around.after` on a start panic, with a test.
+  - `[low]` `[reject]` (blind) a shutdown cancellation during the after chain skips the rest silently — consistent with "no after on a cancellation"; shutdown-only, the cancellation itself is reported.
+  - `[low]` `[reject]` (blind) the component pipeline builds `Around` (one `Arc`) before the stale/expired checks — one allocation on an expired click with a covering chain; negligible, restructuring not worth it.
+  - `[low]` `[reject]` (blind) no Middleware metric; before-Middleware time is in no histogram — the intent's Never list excludes new metrics; the shared error counter is specified (row 27).
+  - `[false]` `[reject]` (blind) `Dispatcher` `Stop(Some(key))` is a public reply — row 35 specifies it and the skill documents it.
+  - `[false]` `[reject]` (blind) `AfterMiddleware` `Debug` prints `provides: []` — the spec requires both values' `Debug` to show name, scope and `provides`.
+  - `[false]` `[reject]` (blind) after-Middleware panic reports are built from a `Cancelled` placeholder kind — every construction overrides `kind` (`run_after`, `worker.rs` `..base`); no reachable wrong report, no named harm.
+  - `[low]` `[patch]` (blind) the skill §5 example imports `Invocation` and never uses it — verified line 248 of `modules-middleware-ratelimits.md`; patch: drop `Invocation` from the import.
+  - `[low]` `[reject]` (blind) test gaps (stop/auto-defer race, after-chain cancellation, closure names, user `Ext`, non-`Send` bound, start panic) — the race and start-panic patches carry their own fix/test; the rest test rejected or cosmetic behaviour.
+  - `[low]` `[patch]` (edge) same stop/auto-defer race as above — grouped with the blind race entry; same patch.
+  - `[low]` `[reject]` (edge) a leaked earlier `BeforeCtx` clone inserting while a later Middleware runs is attributed to the later one — affects only the replace `debug` attribution; guarding needs per-ctx names.
+  - `[low]` `[reject]` (edge) a user type whose last segment is `Ext` is treated as an Extension — same as the blind detection finding; rejected for the same reason.
+  - `[low]` `[reject]` (edge) `&Ext<T>` or an alias is not detected and falls into the path/target slot — a compile error still results; rare authoring mistake, fix adds a dedicated branch.
+  - `[low]` `[patch]` (edge) closures share `{{closure}}` names in reports and spans — grouped with the blind naming entry; same skill correction.
+  - `[low]` `[patch]` (edge) start panic runs after-Middleware no before-Middleware saw — grouped with the blind start-panic entry; same patch.
+  - `[false]` `[reject]` (intent D1) the Expired chain skips after-Middleware despite AD-23 stage 10 — the intent's Never list excludes Middleware on the Expired chain; the spine amendment records it.
+  - `[false]` `[reject]` (intent D2) stage 7 locale override not delivered — the intent's Never list defers `set_locale` to Story 11.3.
+  - `[false]` `[reject]` (intent D3) after-Middleware run on every outcome but cancellation — settled by Run semantics 5 and the independent-lists design note.
+  - `[false]` `[reject]` (intent D4) autocomplete runs no Middleware — settled by the intent's Never list and Run semantics 1.
+  - `[false]` `[reject]` (intent D5) function-value Middleware instead of the §7 struct shape — settled in the Approach and design note; §7 scopes interaction registrations only.
+  - `[false]` `[reject]` (intent D6) the build check guarantees a declaration, not runtime presence — row 39 specifies the runtime `ExtensionMissing` and AC3 says "declares".
+  - `[false]` `[reject]` (intent D7) child wins implemented as last insert wins — matches AC2 since the chain runs parent first; row 37 specifies it.
+  - `[low]` `[patch]` (intent D8) AC1's parent/child order is not asserted on the wire for a slash command — verified: `noctis-testkit/tests/middleware.rs` slash tests use a single Module; patch: add a `FakeGateway` slash Command case under a parent/child Module pair asserting r1 r2 c1 handler ca1 a2 a1 and a stop.
+  - `[medium]` `[patch]` (vgap) `RunInfo` accessors (`invocation`, `guild_id`, `channel_id`, `user_id`, `shard`) never asserted from a real pipeline — pre-verified gap; patch: a recording before-Middleware test for a guild slash Command, a click, a modal submit, a user menu and an event asserting exact values.
+  - `[medium]` `[patch]` (vgap) context-menu and `Dispatcher` runs never execute an `Ext<T>` handler (menus never run Middleware in tests) — pre-verified gap; patch: a user-menu case in `pipeline/tests/middleware.rs` and an `Ext`-taking Command in `dispatcher_runs_middleware`.
+  - `[medium]` `[patch]` (vgap) after-Middleware panic counter and event-path `Panic` report unverified — pre-verified gap; patch: a `DebuggingRecorder` in `after_panic_is_reported_alone` and an event variant with a panicking after-Middleware.
+  - `[low]` `[reject]` (vgap) `noctis_handler_duration_seconds` stage-9 start unpinned — metric precision only; the filing layer itself rated it defer-level.
+  - `[low]` `[reject]` (vgap) `stop_silently` delete-failure `warn` untested — small handled logging path; the filing layer rated it low impact.
+
 ## Design Notes
 
 - **Function Middleware, by value (decision).** Middleware are not interactions (§7 covers interactions only). A value can carry configuration (`move` closures), and the shape matches the skill's planned sketch. An owned `BeforeCtx` with interior mutability avoids the higher-ranked `async fn(&mut Ctx)` bound, which stable Rust cannot type with a `Send` future.
@@ -315,3 +354,12 @@ deferred: []
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rn "Story 7.6" crates examples/project-template --include=*.rs --include=*.md` -- no hit
 - CI: no new gate; `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** Story 7.6 adds Middleware (before/after/stop, by-value function Middleware with Module scoping, `events_only`/`skip_events`) running at AD-23 stages 6, 9 and 10 for commands, menus, components, modals, events and the `Dispatcher`, plus typed Extensions (`BeforeCtx::insert`, `Ext<T>` handler parameters via the macros) with a build check that a provider declares every requested Extension and a runtime `ExtensionMissing` error.
+- **Files changed:** `crates/noctis-core/src/middleware.rs` (+tests) new Middleware/Extensions core; `pipeline.rs`, `pipeline/component.rs`, `worker.rs`, `responder.rs` run the chains and handle stops; `registry.rs`, `module.rs`, `kind.rs`, `command.rs`, `component.rs`, `menu.rs`, `handler.rs`, `error.rs`, `sink.rs`, `observe.rs` wire registration, build check and reports; `crates/noctis-macros/src/handler.rs`, `hook.rs`, `autocomplete.rs` detect `Ext<T>` parameters; `crates/noctis/src/lib.rs` re-exports; tests in `noctis/tests/middleware.rs`, `noctis-testkit/tests/middleware.rs`, `pipeline/tests/middleware.rs`; project template code, `AGENTS.md` and noctis skill references updated; `xtask/public-api.txt` re-blessed.
+- **Review findings:** 35 total (high 0, medium 3, low 21, false 11). Patched: 3 medium (RunInfo accessors asserted from real pipelines; context-menu and Dispatcher `Ext<T>` coverage; after-Middleware panic counter and event-path Panic report) and low patches (stop_silently/auto-defer race fixed under the gate; start panic now skips after-Middleware, with test; closure Middleware naming corrected in the skill; unused `Invocation` import dropped; FakeGateway parent/child slash order test). Deferred: none. Rejected: 11 false (settled by spec rows/Never list: Stop(None), Expired chain, locale override, autocomplete, function shape, build-check semantics, child-wins, Debug provides, placeholder kind, Dispatcher reply, after-on-all-outcomes) and lows rejected as by-design or cosmetic (syntactic `Ext` detection and `&Ext`/aliases, quote! span quality, no locale/roles in BeforeCtx (Stories 11.3/7.7), no error accessor in AfterCtx, shutdown cancellation in after chain, early Around allocation, no new metrics, leaked BeforeCtx attribution, stage-9 histogram precision, stop_silently warn test).
+- **Follow-up review recommended: true** (first pass, 3 medium patched; patched by verdict: high 0, medium 3, low 5). Named risk: the stop_silently/auto-defer race fix changes Responder state under the gate and the start-panic change alters after-chain gating in both `pipeline.rs` and `worker.rs`; these concurrency-sensitive edits were not independently re-reviewed.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** syntactic `Ext` detection can capture a user type named `Ext` or miss aliases; `Stop(None)` on a pending interaction leaves it failing on Discord's side by design; locale override deferred to Story 11.3, Guards to Story 7.7.

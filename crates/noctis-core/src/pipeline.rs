@@ -534,7 +534,7 @@ async fn run_after(
 /// original); an error or a panic first sends the user a localized
 /// ephemeral notice (FR-22, AD-23); then `timer` (the auto-defer) is
 /// aborted and the after-Middleware run (stage 10, not after a
-/// cancellation). A user condition is logged at `debug`; anything else (a
+/// cancellation or a start panic). A user condition is logged at `debug`; anything else (a
 /// failed send of a returned message included) is counted and reported to
 /// the origin's Error Sink (a cancellation without a notice).
 pub(crate) async fn run_started(
@@ -547,6 +547,8 @@ pub(crate) async fn run_started(
 ) {
     let app = report.app;
     let kind = report.origin.as_str();
+    // No Middleware runs for a start panic: neither chain saw the run.
+    let start_panicked = matches!(&started, Some(Started { future: Err(_), .. }));
     let (outcome, at, middleware) =
         before_and_handler(span, cancel, &shared, app, started, report.around.as_ref()).await;
     if let Some(at) = at {
@@ -571,7 +573,7 @@ pub(crate) async fn run_started(
         }
     }
     drop(timer);
-    if let Some(run_outcome) = outcome.run_outcome() {
+    if !start_panicked && let Some(run_outcome) = outcome.run_outcome() {
         run_after(span, cancel, &report, run_outcome).await;
     }
     let report_kind = match &outcome {

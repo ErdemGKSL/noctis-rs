@@ -1098,6 +1098,9 @@ pub(crate) const REPLIED: u8 = 2;
 pub(crate) const MODAL: u8 = 3;
 /// Acknowledged with a type-6 defer: the original is the clicked message.
 pub(crate) const DEFERRED_UPDATE: u8 = 4;
+/// Closed unanswered by a `Flow::Stop(None)`: nothing is sent, and a
+/// pending auto-defer returns without a type-5 defer.
+pub(crate) const STOPPED: u8 = 5;
 
 /// What a handler declared it answers with: a new message of an
 /// ephemerality, or an update of the clicked message (AD-11).
@@ -1202,8 +1205,8 @@ type BotRoute<'a> = (&'a AppShared, Id<ChannelMarker>, Id<MessageMarker>);
 /// follow-up cap.
 pub(crate) struct Shared {
     transport: Transport,
-    /// `PENDING`, `DEFERRED`, `REPLIED`, `MODAL` or `DEFERRED_UPDATE`;
-    /// written only under `gate`, read without it.
+    /// `PENDING`, `DEFERRED`, `REPLIED`, `MODAL`, `DEFERRED_UPDATE` or
+    /// `STOPPED`; written only under `gate`, read without it.
     state: AtomicU8,
     /// Serializes every initial response: the handler's and the
     /// auto-defer's (INT-03).
@@ -1280,7 +1283,8 @@ impl Shared {
         })
     }
 
-    /// `PENDING`, `DEFERRED`, `REPLIED`, `MODAL` or `DEFERRED_UPDATE`.
+    /// `PENDING`, `DEFERRED`, `REPLIED`, `MODAL`, `DEFERRED_UPDATE` or
+    /// `STOPPED`.
     pub(crate) fn state(&self) -> u8 {
         self.state.load(Ordering::Acquire)
     }
@@ -1915,10 +1919,15 @@ impl Shared {
     /// sends nothing, except that a type-5 deferred original ("thinking…")
     /// over an interaction is deleted (a failure is a `warn`).
     pub(crate) async fn stop_silently(&self) {
-        // The gate waits for an in-flight auto-defer.
+        // The gate waits for an in-flight auto-defer; a still-pending
+        // state is closed so a later auto-defer sends nothing.
         let state = {
             let _gate = self.gate.lock().await;
-            self.state()
+            let state = self.state();
+            if state == PENDING {
+                self.state.store(STOPPED, Ordering::Release);
+            }
+            state
         };
         if state == DEFERRED
             && let Transport::Interaction(_) = &self.transport

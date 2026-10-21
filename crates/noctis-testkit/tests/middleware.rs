@@ -1,4 +1,4 @@
-//! Middleware end to end (Matrix 21, 24-26, 32, 35 and 36): a
+//! Middleware end to end (AC1, Matrix 21, 24-26, 32, 35 and 36): a
 //! `FakeGateway` slash command, component click, `MESSAGE_CREATE` or
 //! Dispatcher run goes through the before chain, the handler and the after
 //! chain, and every response is asserted on the `FakeDiscordHttp` wire
@@ -140,6 +140,25 @@ impl Slow {
         see(ctx.state(), "handler slow");
         Ok(LegacyMessage::new("ran"))
     }
+}
+
+/// A Command whose handler reads the run's `Level`.
+#[derive(SlashCommand)]
+#[command("level", description = "Leveled")]
+struct Leveled;
+
+impl Leveled {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, level: Ext<Level>) -> HandlerResult<LegacyMessage> {
+        see(ctx.state(), format!("handler level {}", level.0));
+        Ok(LegacyMessage::new("ran"))
+    }
+}
+
+/// Inserts `Level(7)` without logging.
+async fn provide(ctx: BeforeCtx) -> HandlerResult<Flow> {
+    ctx.insert(Level(7));
+    Ok(Flow::Continue)
 }
 
 /// A button whose handler reads the run's `Level`.
@@ -617,15 +636,82 @@ async fn event_middleware_order_and_extensions() {
     running.run.abort();
 }
 
+/// AC1 over a slash Command: parent-before, child-before, handler,
+/// child-after, parent-after; a parent before-Middleware's stop skips the
+/// child's Middleware and the handler.
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_command_parent_child_order_and_stop() {
+    let running = Running::start(
+        Module::new("root")
+            .before(Middleware::before(r1).provides::<Level>())
+            .before(Middleware::before(r2))
+            .before(Middleware::before(gate))
+            .after(Middleware::after(a1))
+            .after(Middleware::after(a2))
+            .module(
+                Module::new("child")
+                    .before(Middleware::before(c1))
+                    .after(Middleware::after(ca1))
+                    .add::<Leveled>()
+                    .add::<Gated>(),
+            ),
+        |_| {},
+    )
+    .await;
+    running.invoke("level", None);
+    assert_eq!(
+        running.wait_seen(8).await,
+        [
+            "r1",
+            "r2",
+            "gate level",
+            "c1",
+            "handler level 2",
+            "ca1:Completed:2",
+            "a2:Completed:2",
+            "a1:Completed:2"
+        ]
+    );
+    let sent = running.exactly(1).await;
+    assert_eq!(sent[0].route_path(), Some(CALLBACK));
+    assert_eq!(body(&sent[0])["data"]["content"], "ran");
+    running.clear();
+    running.invoke("deny", None);
+    assert_eq!(
+        running.wait_seen(14).await[8..],
+        [
+            "r1",
+            "r2",
+            "gate deny",
+            "ca1:Stopped:1",
+            "a2:Stopped:1",
+            "a1:Stopped:1"
+        ]
+    );
+    let sent = running.exactly(1).await;
+    assert_eq!(
+        body(&sent[0])["data"]["components"][0]["content"],
+        DENIED_TEXT
+    );
+    assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
 /// Matrix 35: a Dispatcher Command runs its Module's Middleware with
 /// `Invocation::Command`; a `Stop(Some(k))` is a public reply notice to
-/// the message.
+/// the message; a Command taking `Ext<T>` sees the inserted value.
 #[tokio::test(flavor = "multi_thread")]
 async fn dispatcher_runs_middleware() {
     let running = Running::start(
         Module::new("m")
             .before(Middleware::before(gate).skip_events())
+            .before(
+                Middleware::before(provide)
+                    .skip_events()
+                    .provides::<Level>(),
+            )
             .add::<Gated>()
+            .add::<Leveled>()
             .add::<Prefix>(),
         |_| {},
     )
@@ -644,9 +730,19 @@ async fn dispatcher_runs_middleware() {
     running.message("!open");
     let sent = running.exactly(2).await;
     assert_eq!(body(&sent[1])["content"], "ran");
+    running.message("!level");
+    let sent = running.exactly(3).await;
+    assert_eq!(sent[2].route_path(), Some(CHANNEL));
+    assert_eq!(body(&sent[2])["content"], "ran");
     assert_eq!(
         running.seen.lines(),
-        ["gate deny", "gate open", "handler open"]
+        [
+            "gate deny",
+            "gate open",
+            "handler open",
+            "gate level",
+            "handler level 7"
+        ]
     );
     running.run.abort();
 }
