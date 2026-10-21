@@ -2,7 +2,8 @@
 title: 'Story 7.1: Route handlers and O(1) component dispatch'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '09e12a548b28dbc440d6009655a68d5258c44a47'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
