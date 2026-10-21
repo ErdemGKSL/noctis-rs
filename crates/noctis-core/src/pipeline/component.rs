@@ -30,7 +30,7 @@ use futures_util::FutureExt;
 use noctis_codec::{DecodeError, Decoded};
 use noctis_gateway::{Inbound, InboundKind};
 use noctis_rules::MessageKey;
-use noctis_ui::ModalSubmission;
+use noctis_ui::{ModalSubmission, SubmitError};
 use tokio_util::sync::CancellationToken;
 use tracing::field::Empty;
 use tracing::{Instrument, Span};
@@ -217,7 +217,12 @@ fn read_input(
         InteractionType::ModalSubmit => Some(
             ModalSubmission::from_slice(raw)
                 .map(|s| Input::Modal(Box::new(s)))
-                .map_err(|_| Rejection::Malformed),
+                .map_err(|e| match e {
+                    SubmitError::Malformed { .. } | SubmitError::NotModalSubmit { .. } => {
+                        Rejection::Malformed
+                    }
+                    _ => Rejection::SubmitInvalid,
+                }),
         ),
         _ => None,
     }

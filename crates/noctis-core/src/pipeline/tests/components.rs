@@ -21,6 +21,7 @@ test_route!(UserErr, "user.err", RouteShape::INLINE, 0);
 test_route!(Panics, "panics", RouteShape::INLINE, 0);
 test_route!(Waits, "waits", RouteShape::INLINE, 0);
 test_route!(Bio, "bio", RouteShape::INLINE, 0);
+test_route!(SyncPanics, "sync.panics", RouteShape::INLINE, 0);
 
 /// Nine `u64` fields: the widest test Payload (a 100-character id).
 struct Wide([u64; 9]);
@@ -123,6 +124,14 @@ fn module(log: &Log, waiting: &Arc<Notify>) -> Module {
             "panics",
             ComponentKind::Button,
             |_: Panics, _: ComponentCtx| async { Ok(explode()) },
+        ))
+        .__add(ComponentHandler::__new::<SyncPanics, _, _>(
+            "m::SyncPanics",
+            "sync.panics",
+            ComponentKind::Button,
+            |_: SyncPanics, _: ComponentCtx| -> std::future::Ready<HandlerResult<Responded>> {
+                panic!("sync")
+            },
         ))
         .__add(ComponentHandler::__new::<Waits, _, _>(
             "m::Waits",
@@ -415,6 +424,23 @@ async fn handler_failures() {
     c.run(inbound(&click("0panics:1", 2))).await;
     assert_eq!(c.sink.seen()[1].kind, "panic:boom");
     c.run(inbound(&click("0shop.buy:1", 2))).await;
+    assert_eq!(
+        c.log.0.lock().unwrap().drain(..).collect::<Vec<_>>(),
+        ["m::Buy:1:shop:3"]
+    );
+
+    // A panic before the handler returns its future (the start-time guard).
+    c.run(inbound(&click("0sync.panics:1", 2))).await;
+    let seen = c.sink.seen();
+    assert_eq!(
+        (
+            seen[2].kind.as_str(),
+            seen[2].module.as_deref(),
+            seen[2].handler.as_deref()
+        ),
+        ("panic:sync", Some("shop"), Some("m::SyncPanics"))
+    );
+    c.run(inbound(&click("0shop.buy:1", 2))).await;
     assert_eq!(c.log.lines(), ["m::Buy:1:shop:3"]);
 
     let cancel = CancellationToken::new();
@@ -424,7 +450,7 @@ async fn handler_failures() {
         cancel.cancel();
     };
     tokio::join!(run, trigger);
-    assert_eq!(c.sink.seen()[2].kind, "cancelled");
+    assert_eq!(c.sink.seen()[3].kind, "cancelled");
     assert!(c.p.requests().is_empty());
 }
 
@@ -448,4 +474,12 @@ async fn modal_submits() {
         .await;
     c.rejects(inbound(&submit("0bio:", true)), "undecodable")
         .await;
+    let mut twice = submit("0bio:47", true);
+    let input = twice["data"]["components"][0].clone();
+    twice["data"]["components"]
+        .as_array_mut()
+        .unwrap()
+        .push(input);
+    c.rejects(inbound(&twice), "submit_invalid").await;
+    c.rejects(inbound(&submit("1bio:147", true)), "stale").await;
 }

@@ -99,11 +99,12 @@ impl Buy {
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let seen = ctx.state::<Arc<Seen>>().unwrap();
         seen.push(format!(
-            "buy {} module={} user={} guild={:?} shard={} locale={:?}/{:?}",
+            "buy {} module={} user={} guild={:?} channel={:?} shard={} locale={:?}/{:?}",
             self.item,
             ctx.module(),
             ctx.user_id(),
             ctx.guild_id().map(Id::get),
+            ctx.channel_id(),
             ctx.shard(),
             ctx.user_locale(),
             ctx.guild_locale(),
@@ -139,7 +140,13 @@ impl BioForm {
     #[handler]
     async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
         let seen = ctx.state::<Arc<Seen>>().unwrap();
-        seen.push(format!("bio of {}: {:?}", self.user, self.bio));
+        seen.push(format!(
+            "bio of {}: {:?} module={} channel={:?}",
+            self.user,
+            self.bio,
+            ctx.module(),
+            ctx.channel_id(),
+        ));
         Ok(responded())
     }
 }
@@ -241,6 +248,7 @@ fn click(id: u64, custom_id: &str, component_type: u8) -> Value {
         "authorizing_integration_owners": {},
         "entitlements": [],
         "guild_id": "9",
+        "channel": { "id": "55", "type": 0 },
         "member": { "user": user(), "roles": [], "joined_at": "2024-01-01T00:00:00.000000+00:00",
                     "deaf": false, "mute": false, "flags": 0, "nick": null,
                     "communication_disabled_until": null, "permissions": "0" },
@@ -261,7 +269,9 @@ async fn clicks_and_submits_reach_their_handlers() {
     let lines = running.wait_seen(1).await;
     assert_eq!(
         lines,
-        ["buy 255 module=shop user=3 guild=Some(9) shard=0 locale=Some(\"tr\")/Some(\"de\")"]
+        [
+            "buy 255 module=shop user=3 guild=Some(9) channel=Some(Id<ChannelMarker>(55)) shard=0 locale=Some(\"tr\")/Some(\"de\")"
+        ]
     );
     running.dispatch(click(101, "4pick:0147", 3));
     running.dispatch(json!({
@@ -273,6 +283,7 @@ async fn clicks_and_submits_reach_their_handlers() {
         "authorizing_integration_owners": {},
         "entitlements": [],
         "user": user(),
+        "channel": { "id": "56", "type": 0 },
         "data": { "custom_id": "0bio:g", "components": [
             { "type": 18, "id": 1, "component": { "type": 4, "id": 2, "custom_id": "bio", "value": "hello" } }
         ] },
@@ -280,7 +291,13 @@ async fn clicks_and_submits_reach_their_handlers() {
     let lines = running.wait_seen(3).await;
     let mut later = lines[1..].to_vec();
     later.sort();
-    assert_eq!(later, ["bio of 42: Some(\"hello\")", "pick 255"]);
+    assert_eq!(
+        later,
+        [
+            "bio of 42: Some(\"hello\") module=shop/forms channel=Some(Id<ChannelMarker>(56))",
+            "pick 255"
+        ]
+    );
     running.dispatch(click(103, "0nope:", 2));
     let deadline = Instant::now() + WAIT;
     while capture.count(&[

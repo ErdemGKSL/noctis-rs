@@ -2,7 +2,7 @@
 title: 'Story 7.1: Route handlers and O(1) component dispatch'
 type: 'feature'
 created: '2026-10-21'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '09e12a548b28dbc440d6009655a68d5258c44a47'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -194,6 +194,36 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 26 findings — high 0, medium 0, low 10, false 16, maybe-false 0
+- findings:
+  - `low` `reject` Blind: a click arriving after the shutdown token fires is reported to the Component sink as `Cancelled` before its struct is decoded, so a rejected id becomes an error report — real only inside the shutdown grace window for an id that would also be rejected; rare, and the fix restructures stage 4.
+  - `false` `reject` Blind: `ComponentHandler::__new`/`ModalHandler::__new` `route` argument can disagree with `S::ID` — both are `#[doc(hidden)]` seams; every derive binds through `__Bind` with `<S as Route>::ID.as_str()` (kind.rs), and the spec keeps the explicit `route` for tests (Matrix 29 deliberately registers extra ids typed as `Buy`).
+  - `false` `reject` Blind: `__Component::ROUTE`/`__Modal::ROUTE` are a dead second source of truth — nothing reads either constant (grep finds only the trait declarations and the macro emissions), so no caller can diverge from `Route::ID`; the spec keeps it.
+  - `false` `reject` Blind: the allocation guard measures a test-only reimplementation with a different Ref check — `probe` calls the shared `resolve` and the per-struct `probe` fn pointer over the same `decode_payload::<S>` as `start`; `payload::<S>()` returns `PayloadSource::Ref` exactly when it succeeds on a Ref body, so the post-decode `RawBody::Ref` check is equivalent; the seam is the spec's Task 4/6 design and Matrix 28 requires no Ref row.
+  - `low` `reject` Blind: modal submits decode the `custom_id` twice and re-parse the JSON, mislabelling second-decode errors — the mislabel cannot happen (the first `payload::<S>()` of the same id already maps stale/forged via `from_decode`), the JSON parse is spec-mandated (`ModalSubmission::from_slice(raw)`), and the remaining cost is negligible per submit.
+  - `low` `reject` Blind: rejections have no metric and no rate limit — the spec mandates exactly one `warn`; Discord rate-limits interaction creation, and the fix adds a new public metric surface.
+  - `false` `reject` Blind: the FR-58 dynamic half became opt-in through `Module::uses` — a deliberate, logged spec decision (Design Notes) forced by maintainer decision §1 (Views are plain functions); the troubleshooting row was replaced by the two spec-required texts.
+  - `false` `reject` Blind: vacuous `_unmounted`/`_never_mounted` bindings in registry tests — `fold` sees only the roots it is given, so folding `a` alone is exactly the "handler only in an unmounted Module" case and its assertion is real; the bindings are decorative, not missing assertions.
+  - `low` `reject` Blind: `Module::uses` shows `noctis::__private::ui::Handled` in its signature and E0277 note — the primary diagnostic is the `[CID-04]` on_unimplemented text and bot agents learn from the Usage Skill; the fix adds a public re-export (new surface).
+  - `low` `reject` Blind: a component type with no `ComponentKind` is labelled `kind_mismatch` — Discord sends `MESSAGE_COMPONENT` only for buttons and selects, so the case is practically unreachable, and the fix adds a new branch or reason.
+  - `false` `reject` Blind: `Registry::len` silently counts Routes — the spec's Code Map requires "`len()` counts routes too".
+  - `false` `reject` Blind: two parallel invocation paths (`call` and `start`) — the spec requires the `Box<dyn Any>` `call` path to stay for `__testing::call_component`/`call_modal`.
+  - `low` `patch` Blind: no coverage for rejected modal bodies (stale/forged) and no assertion of the child-Module context of the modal in `shop/forms` — the modal start maps decode errors on its own path; patch: stale (and forged where a signed modal Route exists) rows in `modal_submits`, and `module=` on the testkit `bio of …` line.
+  - `false` `reject` Blind: `memory_flat` bypasses the worker task tracker — spec Task 7 prescribes `__testing::dispatch` for Matrix 30; the task half (Matrix 31) runs through `FakeGateway` and the worker spawn in `alive_tasks_return_to_baseline`.
+  - `false` `reject` Edge: explicit `route` argument differs from `S::ID` — same as the Blind finding above: hidden seam, derives bind by `Route::ID`, spec keeps the explicit argument.
+  - `low` `patch` Edge: `read_input` maps `SubmitError::Duplicate`/`Invalid` from `ModalSubmission::from_slice` to `malformed` — the spec defines `submit_invalid` as any `SubmitError` other than Malformed; patch: map Malformed/NotModalSubmit to `malformed`, every other `SubmitError` to `submit_invalid`, plus one test row.
+  - `false` `reject` Edge: `check_uses` deduplicates by Module id, so two mounted Modules sharing an id lose one `UnmountedRoute` — the spec deduplicates per (Module id, Route) as every `BuildViolation` identifies Modules by id; the build still fails with the identical text, so nothing is lost.
+  - `low` `reject` Edge: `uses::<R>()` is satisfied by a different struct mounted under R's Route id — needs two structs sharing one Route id with only one mounted, which is unlikely; the fix adds type tracking to `RouteEntry`.
+  - `low` `patch` Vgap: `ctx.channel_id()` is never checked on a dispatched click or submit — patch: `channel` in the testkit click fixture and modal JSON, `channel=` on the `buy …`/`bio of …` lines.
+  - `low` `patch` Vgap: the start-time `catch_unwind` (panic in decode or the sync handler closure) is never exercised — patch: a sync-panicking handler in `handler_failures`, asserting the `panic:sync` sink report and that the next click still runs.
+  - `false` `reject` Intent D1: FR-58 dynamic half is opt-in — settled by the spec's Design Notes decision, consistent with maintainer decision §1 and the amended AD-19.
+  - `false` `reject` Intent D2: zero-allocation proof runs on a test seam — the spec deliberately settled this seam; it shares `resolve` and `decode_payload::<S>` with production (see the Blind finding above).
+  - `false` `reject` Intent D3: new `alloc_dispatch` binary instead of extending Story 2.6's test — spec Task 6 and the CI task settle it; it runs in the same required allocation job.
+  - `false` `reject` Intent D4: NFR-2 tested through a seam without messages — spec Tasks 7 and 9 settle the split (memory via `__testing::dispatch`, tasks via the worker); distinct message ids are irrelevant because dispatch stores nothing keyed by message.
+  - `false` `reject` Intent D5: no template code change — no template Module renders another Module's Route, so no `uses` is needed; the template's handlers already follow one struct per interaction, and the template `AGENTS.md` and skill are updated as the spec requires.
+  - `false` `reject` Intent D6: handlers cannot answer yet — responses are excluded by the intent's own Never list (Story 7.2).
+
 ## Design Notes
 
 - **Why `Module::uses::<R>()` (decision).**
@@ -229,3 +259,15 @@ deferred: []
 - `cargo deny check` -- ok
 - `cargo +1.91 check --release --workspace` -- ok
 - `grep -rnE "does not read (these|it)|until component dispatch|\*\*\[planned\]\*\* dispatcher" crates/noctis-core/src crates/noctis/src examples/project-template/.claude docs` -- prints nothing
+
+## Auto Run Result
+
+- **Summary:** Route handlers (one struct per interaction) are registered into a per-App route table; component clicks and modal submits dispatch via an O(1) `HashMap<&'static str, _>` lookup on the decoded `custom_id` route, with zero allocations beyond the AD-25 budget. Stale, Ref and forged ids are logged as `Rejection` arms for 7.2/7.3/7.5 to replace. New opt-in `Module::uses::<R>()` lets `.build()` reject Routes rendered by a mounted Module but handled only in an unmounted one (FR-58 dynamic half, `[CID-04]`).
+- **Files changed:** `crates/noctis-core/src/{pipeline/component.rs, registry.rs, module.rs, component.rs, error.rs, kind.rs, lib.rs, worker.rs, test_support.rs}` (dispatch pipeline, route table, `uses`, rejection errors, test seams); `crates/noctis-macros/src/{component,kind,modal}.rs` (Route binding); tests: `noctis-core` pipeline/registry tests, `noctis-testkit/tests/components.rs`, `noctis/tests/{alloc_dispatch,memory_flat,kinds}.rs`, trybuild `uses_not_a_route`; `xtask/public-api.txt` re-blessed; template `AGENTS.md` and noctis skill (routes, modules, troubleshooting) updated; `docs/discord-rules.md`, ARCHITECTURE-SPINE (AD-19 amend), CI workflow (alloc job).
+- **Review findings:** 26 total (high 0, medium 0, low 10, false 16).
+  - Patched (4 low): stale/forged modal rows and `module=` assertion; `SubmitError` mapping (Malformed/NotModalSubmit -> `malformed`, others -> `submit_invalid`) plus test; `channel_id` assertions on click/submit; sync-panic handler test for start-time `catch_unwind`.
+  - Deferred: none.
+  - Rejected (6 low): shutdown-window `Cancelled` report (rare, restructure); double modal decode (mislabel impossible, spec-mandated parse); no rejection metric (spec mandates one warn); `Handled` in `uses` signature (would add surface); unknown component type labelled `kind_mismatch` (unreachable); `uses` satisfied by another struct on same Route id (unlikely). 16 false positives rejected per triage log (hidden `__new` seam, unread `ROUTE` consts, spec-settled alloc seam/memory split/opt-in `uses`, etc.).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 4).
+- **Verification:** all local gates green via `gates.sh` (fmt, clippy -D warnings, test, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** rejected ids only logged until 7.2/7.3/7.5; `uses` is opt-in, so a forgotten declaration surfaces at runtime as a rejected click rather than at build; a click in the shutdown grace window may be reported as `Cancelled`.
