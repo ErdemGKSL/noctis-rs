@@ -108,7 +108,7 @@ development_status:
   epic-7-retrospective: optional
 
   epic-8: backlog
-  8-1-responder-ergonomics-ctx-respond-ctx-update-and-ctx-reply_te: backlog
+  8-1-responder-ergonomics-ctx-respond-ctx-update-and-ctx-reply_te: in-progress
   8-2-deterministic-renders-select-freshness-and-safe-text: backlog
   8-3-budget-helpers-cost-and-how-many-items-fit: backlog
   8-4-testing-kit-simulated-interactions-and-message-snapshots: backlog

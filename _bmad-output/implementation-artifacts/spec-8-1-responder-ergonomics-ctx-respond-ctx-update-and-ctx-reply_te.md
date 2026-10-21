@@ -2,7 +2,8 @@
 title: 'Story 8.1: Responder ergonomics: ctx.respond, ctx.update and ctx.reply_text'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '810880385b71d05135d80f65f7c87d0c09d34b7c'
 baseline_revision: 'e1cebc2f36bf3639f0553b373ddb1d3f891abf8e'
 review_loop_iteration: 0
 followup_review_recommended: false
