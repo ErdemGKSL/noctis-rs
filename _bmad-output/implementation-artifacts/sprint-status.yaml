@@ -82,7 +82,7 @@ development_status:
   5-9-warm-deadline-safe-discord-http-edge: done
   epic-5-retrospective: optional
 
-  epic-6: in-progress
+  epic-6: done
   6-1-command-with-compile-time-command-path-and-pattern-validatio: done
   6-2-typed-options-with-derive-options-and-derive-choices: done
   6-3-command-metadata-and-context-menu-commands: done
