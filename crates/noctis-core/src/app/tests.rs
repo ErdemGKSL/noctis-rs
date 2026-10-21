@@ -36,8 +36,6 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
                     | "NOCTIS_SHUTDOWN_GRACE"
                     | "NOCTIS_PUBLISHER"
                     | "NOCTIS_DEV_GUILD"
-                    | "NOCTIS_PAYLOAD_KEY"
-                    | "NOCTIS_PAYLOAD_KEY_PREVIOUS"
             ),
             "unexpected variable {var}"
         );
@@ -668,8 +666,6 @@ fn from_env_reads_token_first() {
             "NOCTIS_SHUTDOWN_GRACE",
             "NOCTIS_PUBLISHER",
             "NOCTIS_DEV_GUILD",
-            "NOCTIS_PAYLOAD_KEY",
-            "NOCTIS_PAYLOAD_KEY_PREVIOUS",
         ]
     );
 }
@@ -2057,109 +2053,4 @@ async fn cli_dry_run_writes_the_report() {
     assert!(text.contains("+ create chat_input `ping`"), "{text}");
     assert!(text.contains("creates: 1 (REG-05"), "{text}");
     assert!(server.seen().iter().all(|s| s.method != hyper::Method::PUT));
-}
-
-// ---- payload keys (Story 7.2 Matrix 13-16) ----
-
-/// Matrix 15: `NOCTIS_PAYLOAD_KEY` and `NOCTIS_PAYLOAD_KEY_PREVIOUS` parse
-/// 64 hex digits (trimmed; empty is unset); a bad value names the variable,
-/// never the value.
-#[test]
-fn from_env_payload_keys() {
-    use noctis_codec::KeyError;
-
-    let hex = "ab".repeat(32);
-    for var in ["NOCTIS_PAYLOAD_KEY", "NOCTIS_PAYLOAD_KEY_PREVIOUS"] {
-        let read = |raw: &str| {
-            AppBuilder::from_lookup(lookup_var(var, Some(raw.into()))).map(|b| {
-                if var == "NOCTIS_PAYLOAD_KEY" {
-                    b.payload_key.is_some()
-                } else {
-                    b.previous_payload_key.is_some()
-                }
-            })
-        };
-        assert_eq!(read(&hex), Ok(true));
-        assert_eq!(read(&hex.to_uppercase()), Ok(true));
-        assert_eq!(read(&format!("  {hex}  ")), Ok(true));
-        assert_eq!(read(""), Ok(false));
-        let g10 = format!("{}g{}", &hex[..10], &hex[11..]);
-        let cases = [
-            ("0".repeat(63), KeyError::Length { len: 63 }),
-            ("0".repeat(65), KeyError::Length { len: 65 }),
-            (
-                format!("0x{}", "0".repeat(62)),
-                KeyError::InvalidChar { index: 1 },
-            ),
-            (g10, KeyError::InvalidChar { index: 10 }),
-        ];
-        for (raw, source) in cases {
-            let err = read(&raw).unwrap_err();
-            assert_eq!(err, EnvError::InvalidPayloadKey { var, source }, "{raw:?}");
-            let text = format!("{err} {err:?} {}", std::error::Error::source(&err).unwrap());
-            assert!(text.contains(var), "{text}");
-            assert!(!text.contains(&raw), "{text}");
-            assert!(!text.contains("000"), "{text}");
-        }
-    }
-}
-
-/// Matrix 13 and 14: a mounted `signed` Route needs a key; a previous key
-/// needs a current one.
-#[tokio::test]
-async fn cid_06_payload_key_build_violations() {
-    use crate::test_support::signed_button;
-
-    let mut builder = App::builder();
-    builder.module(Module::new("shop").__add(signed_button("m::Sig")));
-    let err = builder.build().unwrap_err();
-    assert!(
-        matches!(
-            err.violations(),
-            [BuildViolation::MissingPayloadKey { route: "sig" }]
-        ),
-        "{err}"
-    );
-    assert_eq!(
-        err.violations()[0].to_string(),
-        "[CID-06] Route `sig` is `signed`, but no payload key is configured: set \
-         NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)`"
-    );
-
-    let key = || PayloadKey::from_bytes([0xab; 32]);
-    let mut builder = App::builder();
-    builder.previous_payload_key(key());
-    let err = builder.build().unwrap_err();
-    assert!(
-        matches!(err.violations(), [BuildViolation::PreviousKeyWithoutKey]),
-        "{err}"
-    );
-    assert!(
-        err.violations()[0]
-            .to_string()
-            .starts_with("[CID-06] a previous payload key")
-    );
-
-    let mut builder = App::builder();
-    builder
-        .module(Module::new("shop").__add(signed_button("m::Sig")))
-        .payload_key(key())
-        .previous_payload_key(key());
-    let app = builder.build().unwrap();
-    assert!(app.shared().payload_keys.is_some());
-}
-
-/// Matrix 16: no `Debug` of the builder or the App shows the key.
-#[tokio::test]
-async fn payload_key_is_never_printed() {
-    let key = PayloadKey::from_bytes([0xab; 32]);
-    let mut builder = App::builder();
-    builder.payload_key(key.clone()).previous_payload_key(key);
-    let debug = format!("{builder:?} {builder:#?}");
-    assert!(debug.contains("payload_key: true"), "{debug}");
-    assert!(!debug.contains("abab") && !debug.contains("171"), "{debug}");
-    let app = builder.build().unwrap();
-    let debug = format!("{app:?} {app:#?}");
-    assert!(debug.contains("payload_key: true"), "{debug}");
-    assert!(!debug.contains("abab") && !debug.contains("171"), "{debug}");
 }

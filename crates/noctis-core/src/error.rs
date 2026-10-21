@@ -9,8 +9,6 @@ use twilight_model::gateway::Intents;
 
 use crate::cli::CliError;
 use crate::publish::PublishError;
-use noctis_codec::KeyError;
-
 use crate::{
     GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict, TokenError,
 };
@@ -313,42 +311,6 @@ pub enum BuildViolation {
         /// The Route struct's type path.
         route_type: &'static str,
     },
-    /// A previous payload key is set without a current one (CID-06):
-    /// [`AppBuilder::previous_payload_key`](crate::AppBuilder::previous_payload_key)
-    /// or `NOCTIS_PAYLOAD_KEY_PREVIOUS` only verifies; the current key
-    /// signs.
-    ///
-    /// ```
-    /// use noctis_core::BuildViolation;
-    ///
-    /// assert!(BuildViolation::PreviousKeyWithoutKey.to_string().starts_with("[CID-06]"));
-    /// ```
-    #[error(
-        "[CID-06] a previous payload key is set without a current one: set NOCTIS_PAYLOAD_KEY \
-         (or call `.payload_key(..)`) too"
-    )]
-    PreviousKeyWithoutKey,
-    /// A mounted Route is `signed`, but no payload key is configured
-    /// (CID-06): its ids could neither be signed nor verified.
-    ///
-    /// ```
-    /// use noctis_core::BuildViolation;
-    ///
-    /// let v = BuildViolation::MissingPayloadKey { route: "shop.buy" };
-    /// assert_eq!(
-    ///     v.to_string(),
-    ///     "[CID-06] Route `shop.buy` is `signed`, but no payload key is configured: set \
-    ///      NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)`"
-    /// );
-    /// ```
-    #[error(
-        "[CID-06] Route `{route}` is `signed`, but no payload key is configured: set \
-         NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)`"
-    )]
-    MissingPayloadKey {
-        /// The signed Route's id.
-        route: &'static str,
-    },
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]
     Plugin {
@@ -628,31 +590,5 @@ pub enum EnvError {
     InvalidDevGuild {
         /// The variable's name.
         var: &'static str,
-    },
-    /// The variable is not a payload key (exactly 64 ASCII hex digits).
-    /// Neither the message nor the source shows a key character.
-    ///
-    /// ```
-    /// use noctis_codec::{KeyError, PayloadKey};
-    /// use noctis_core::EnvError;
-    ///
-    /// let err = EnvError::InvalidPayloadKey {
-    ///     var: "NOCTIS_PAYLOAD_KEY",
-    ///     source: "00".parse::<PayloadKey>().unwrap_err(),
-    /// };
-    /// assert!(err.to_string().contains("NOCTIS_PAYLOAD_KEY"));
-    /// assert!(matches!(err, EnvError::InvalidPayloadKey { source: KeyError::Length { len: 2 }, .. }));
-    /// ```
-    #[error(
-        "environment variable `{var}` is not a payload key: set 64 hex digits, such as the \
-         output of `openssl rand -hex 32`"
-    )]
-    InvalidPayloadKey {
-        /// The variable's name.
-        var: &'static str,
-        /// Why the key was rejected (a length or a position, never a
-        /// character).
-        #[source]
-        source: KeyError,
     },
 }

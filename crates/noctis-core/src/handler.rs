@@ -220,10 +220,6 @@ pub(crate) struct AppShared {
     /// The strings every user-facing notice is rendered from (`noctis-i18n`
     /// `Builtin` until Epic 11 merges bot catalogs).
     pub(crate) strings: Arc<dyn Translate>,
-    /// The payload key ring that signs and verifies `signed` Routes
-    /// (`NOCTIS_PAYLOAD_KEY`, AD-5): never logged, never in a span field,
-    /// never handed to a port or adapter (AD-29).
-    pub(crate) payload_keys: Option<Arc<noctis_codec::PayloadKeys>>,
 }
 
 /// The context an event handler receives: the shard, the guild, the

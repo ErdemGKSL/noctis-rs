@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use arrayvec::ArrayString;
 use noctis_codec::{
-    EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref, Route, RouteId, RouteShape,
-    SelectNonce, SelectRoute, Sign, encode_id,
+    EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref, Route, RouteId, SelectRoute,
+    encode_id,
 };
 use twilight_model::channel::ChannelType;
 use twilight_model::id::Id;
@@ -252,7 +252,6 @@ where
 /// A Route value behind a vtable.
 trait ErasedRoute: Send + Sync {
     fn route(&self) -> RouteId;
-    fn shape(&self) -> RouteShape;
     fn encode(&self, parts: &Parts<'_>) -> Result<EncodedId, EncodeError>;
 }
 
@@ -265,10 +264,6 @@ where
 {
     fn route(&self) -> RouteId {
         R::ID
-    }
-
-    fn shape(&self) -> RouteShape {
-        R::SHAPE
     }
 
     fn encode(&self, parts: &Parts<'_>) -> Result<EncodedId, EncodeError> {
@@ -338,37 +333,6 @@ impl CustomId {
             }
             EncodedId::RefSlot(slot) => Ok(Some(slot)),
         }
-    }
-
-    /// Resolves an unresolved id for one send: `nonce` goes only to a
-    /// `select` Route and `signer` only to a `signed` Route (AD-18). An id
-    /// that is already resolved is kept and gives `Ok(None)`.
-    ///
-    /// # Errors
-    ///
-    /// The [`EncodeError`] of [`encode_id`] (a `signed` Route without a
-    /// `signer` is [`EncodeError::MissingSigner`]); the id is left
-    /// unchanged.
-    #[doc(hidden)]
-    pub fn resolve_for_send(
-        &mut self,
-        nonce: SelectNonce,
-        signer: Option<&dyn Sign>,
-    ) -> Result<Option<PendingRef>, EncodeError> {
-        if self.id.is_some() {
-            return Ok(None);
-        }
-        let shape = self.route.shape();
-        let mut parts = Parts::new();
-        if shape.has_select() {
-            parts = parts.with_nonce(nonce);
-        }
-        if shape.is_signed()
-            && let Some(signer) = signer
-        {
-            parts = parts.with_signer(signer);
-        }
-        self.resolve(&parts)
     }
 
     /// Stores the final id of a Ref slot returned by

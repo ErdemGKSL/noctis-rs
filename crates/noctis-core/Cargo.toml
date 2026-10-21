@@ -25,7 +25,6 @@ noctis-rules.workspace = true
 noctis-ui.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 socket2 = { workspace = true, features = ["all"] }
 thiserror.workspace = true

@@ -140,9 +140,8 @@ says ``write `Route { .. }.build()` ``.
   `noctis::codec::SelectRoute`); there is no `select` argument (`#[string_select("id",
   select)]` is CID-03 with help ``every select kind carries the nonce``).
 - A plain Route (no `select` or `signed`) is encoded when you build the
-  component. Ids that need a select nonce or a signature are finalized by the
-  Responder when the message is sent (one fresh nonce per send; the App's payload key
-  signs); Refs follow with Story 7.5 [planned]. You never handle them
+  component. Ids that need a select nonce, a signature or a Ref are
+  finalized by the Responder before sending [planned, Epic 7]; you never handle them
   (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
 
 ## 1. Container: `Container`
@@ -330,7 +329,7 @@ in your render function (`views-and-recipes.md` §3).
 - **Builder:** `MyRoute { .. }.build()` on a `#[derive(Button)]` struct → `RouteButton<MyRoute>`, starting from the struct's `defaults(..)`; `.style(ButtonStyle::
   Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)`,
   `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`. A click reaches the Route's handler
-  with the decoded Payload as `self`. The defaults live on the struct
+  with the decoded Payload as `self` [planned, Epic 7]. The defaults live on the struct
   (`#[button("id", defaults(style = .., label = "…" | emoji = "…", disabled = ..))]`;
   `style` and one of `label`/`emoji` are required); locale-key defaults are [planned:
   Story 9.3]. A literal label can be checked at `cargo check`

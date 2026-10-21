@@ -17,6 +17,8 @@ use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::Path;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use zeroize::Zeroizing;
 
 /// `.env.example`, embedded at compile time.
@@ -62,21 +64,13 @@ pub fn load_or_create_env(path: &Path) -> anyhow::Result<EnvFile> {
     // `contents` (and the key inside it) is zeroized here.
 }
 
-/// Lowercase hex digits.
-const HEX: &[u8; 16] = b"0123456789abcdef";
-
 /// Copies `template`, filling an empty `NOCTIS_PAYLOAD_KEY=` line with 32 random
-/// bytes as 64 lowercase hex digits (the format `PayloadKey::from_hex` reads).
-/// Every intermediate buffer is zeroized on drop.
+/// bytes in base64. Every intermediate buffer is zeroized on drop.
 fn render_env(template: &str) -> anyhow::Result<Zeroizing<String>> {
     let mut raw_key = Zeroizing::new([0u8; 32]);
     getrandom::fill(raw_key.as_mut_slice())
         .map_err(|e| anyhow::anyhow!("OS random source failed: {e}"))?;
-    let mut key = Zeroizing::new(String::with_capacity(64));
-    for byte in raw_key.iter() {
-        key.push(char::from(HEX[usize::from(byte >> 4)]));
-        key.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
+    let key = Zeroizing::new(STANDARD.encode(raw_key.as_slice()));
 
     let mut out = Zeroizing::new(String::with_capacity(template.len() + key.len()));
     for line in template.lines() {
@@ -116,9 +110,7 @@ mod tests {
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "A=1");
         let key = lines[1].strip_prefix("NOCTIS_PAYLOAD_KEY=").unwrap();
-        assert_eq!(key.len(), 64);
-        assert!(key.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
-        assert!(noctis::codec::PayloadKey::from_hex(key).is_ok());
+        assert_eq!(STANDARD.decode(key).unwrap().len(), 32);
         assert_eq!(lines[2], "# NOCTIS_PAYLOAD_KEY=");
         assert_eq!(lines[3], "B=2");
     }

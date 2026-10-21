@@ -11,7 +11,6 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use noctis_codec::{PayloadKey, PayloadKeys};
 use noctis_gateway::{
     CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayOptions,
     LaneConfig, ShardEvent,
@@ -64,11 +63,6 @@ const SHUTDOWN_GRACE_VAR: &str = "NOCTIS_SHUTDOWN_GRACE";
 const PUBLISHER_VAR: &str = "NOCTIS_PUBLISHER";
 /// The environment variable [`App::from_env`] reads the dev guild from.
 const DEV_GUILD_VAR: &str = "NOCTIS_DEV_GUILD";
-/// The environment variable [`App::from_env`] reads the payload key from.
-const PAYLOAD_KEY_VAR: &str = "NOCTIS_PAYLOAD_KEY";
-/// The environment variable [`App::from_env`] reads the previous payload key
-/// (rotation) from.
-const PAYLOAD_KEY_PREVIOUS_VAR: &str = "NOCTIS_PAYLOAD_KEY_PREVIOUS";
 /// The shutdown grace period when `shutdown_grace` is not called.
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// The allowed `shutdown_grace` range.
@@ -164,9 +158,8 @@ impl App {
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
     /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL`,
-    /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHUTDOWN_GRACE`, `NOCTIS_PUBLISHER`,
-    /// `NOCTIS_DEV_GUILD`, `NOCTIS_PAYLOAD_KEY` and then
-    /// `NOCTIS_PAYLOAD_KEY_PREVIOUS`, each trimmed of ASCII whitespace; an empty
+    /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHUTDOWN_GRACE`, `NOCTIS_PUBLISHER` and
+    /// then `NOCTIS_DEV_GUILD`, each trimmed of ASCII whitespace; an empty
     /// value counts as unset. The proxy and the gateway URL are passed to
     /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and
     /// validated by `build()`; the shard total (1-10 ASCII digits) is passed
@@ -174,17 +167,14 @@ impl App {
     /// of whole seconds) is passed to [`AppBuilder::shutdown_grace`], so
     /// 901-9999 fail at `build()`; the publisher switch (`true`, `false`,
     /// `1` or `0`, any ASCII case) is passed to [`AppBuilder::publisher`];
-    /// the dev guild (1-20 ASCII digits, not 0) to [`AppBuilder::dev_guild`];
-    /// the payload keys (64 hex digits each, [`PayloadKey::from_hex`]) to
-    /// [`AppBuilder::payload_key`] and [`AppBuilder::previous_payload_key`].
+    /// the dev guild (1-20 ASCII digits, not 0) to [`AppBuilder::dev_guild`].
     /// Setters called afterwards win.
     ///
     /// # Errors
     ///
     /// [`Error::Env`] when a variable is not Unicode, holds an invalid token,
     /// an invalid shard total, an invalid shutdown grace, an invalid
-    /// publisher switch, an invalid dev guild or an invalid payload key
-    /// ([`EnvError::InvalidPayloadKey`]); the message never shows the
+    /// publisher switch or an invalid dev guild; the message never shows the
     /// value.
     ///
     /// ```no_run
@@ -1155,7 +1145,6 @@ impl fmt::Debug for App {
             .field("error_sinks", &self.shared.sinks)
             .field("limits", &self.shared.limits)
             .field("ack_deadline", &self.shared.ack_deadline)
-            .field("payload_key", &self.shared.payload_keys.is_some())
             .field("publisher", &self.publisher)
             .field("dev_guild", &self.dev_guild)
             .finish_non_exhaustive()
@@ -1219,10 +1208,6 @@ pub struct AppBuilder {
     publisher: bool,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
-    /// The current payload key (never printed).
-    payload_key: Option<PayloadKey>,
-    /// The previous payload key of a rotation (never printed).
-    previous_payload_key: Option<PayloadKey>,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1272,36 +1257,10 @@ impl AppBuilder {
             ack_deadline: DEFAULT_ACK_DEADLINE,
             publisher: false,
             dev_guild: None,
-            payload_key: None,
-            previous_payload_key: None,
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
         }
-    }
-
-    /// The key ring of the configured payload keys (CID-06): a previous key
-    /// without a current one is a [`BuildViolation::PreviousKeyWithoutKey`],
-    /// and without a current key every mounted `signed` Route of `registry`
-    /// is a [`BuildViolation::MissingPayloadKey`], in fold order.
-    fn key_ring(&mut self, registry: &Registry) -> Option<Arc<PayloadKeys>> {
-        let Some(current) = self.payload_key.clone() else {
-            if self.previous_payload_key.is_some() {
-                self.violations.push(BuildViolation::PreviousKeyWithoutKey);
-            }
-            self.violations.extend(
-                registry
-                    .signed_routes()
-                    .iter()
-                    .map(|&route| BuildViolation::MissingPayloadKey { route }),
-            );
-            return None;
-        };
-        let ring = PayloadKeys::new(current);
-        Some(Arc::new(match self.previous_payload_key.clone() {
-            Some(previous) => ring.with_previous(previous),
-            None => ring,
-        }))
     }
 
     /// [`App::from_env`] over `lookup` instead of the process environment.
@@ -1341,17 +1300,6 @@ impl AppBuilder {
             let guild =
                 parse_guild_id(&raw).ok_or(EnvError::InvalidDevGuild { var: DEV_GUILD_VAR })?;
             builder.dev_guild(guild);
-        }
-        for (var, previous) in [(PAYLOAD_KEY_VAR, false), (PAYLOAD_KEY_PREVIOUS_VAR, true)] {
-            if let Some(raw) = read_var(&lookup, var)? {
-                let key = PayloadKey::from_hex(&raw)
-                    .map_err(|source| EnvError::InvalidPayloadKey { var, source })?;
-                if previous {
-                    builder.previous_payload_key(key);
-                } else {
-                    builder.payload_key(key);
-                }
-            }
         }
         Ok(builder)
     }
@@ -1434,46 +1382,6 @@ impl AppBuilder {
     /// ```
     pub fn ack_deadline(&mut self, deadline: Duration) -> &mut Self {
         self.ack_deadline = deadline;
-        self
-    }
-
-    /// Sets the payload key that signs the ids of `signed` Routes and
-    /// verifies them (AD-5, CID-06); [`App::from_env`] reads it from
-    /// `NOCTIS_PAYLOAD_KEY` (64 hex digits, such as the output of
-    /// `openssl rand -hex 32`). A mounted `signed` Route without a key is a
-    /// [`BuildViolation::MissingPayloadKey`]. The key is never logged nor
-    /// handed to a port or adapter. The last call wins.
-    ///
-    /// ```
-    /// use noctis_codec::PayloadKey;
-    ///
-    /// let key = PayloadKey::from_hex(&"ab".repeat(32))?;
-    /// let mut builder = noctis_core::App::builder();
-    /// builder.payload_key(key);
-    /// # Ok::<(), noctis_codec::KeyError>(())
-    /// ```
-    pub fn payload_key(&mut self, key: PayloadKey) -> &mut Self {
-        self.payload_key = Some(key);
-        self
-    }
-
-    /// Sets the previous payload key of a rotation: ids signed with it
-    /// still verify, new ids are signed with the current
-    /// [`payload_key`](Self::payload_key); [`App::from_env`] reads it from
-    /// `NOCTIS_PAYLOAD_KEY_PREVIOUS`. Without a current key it is a
-    /// [`BuildViolation::PreviousKeyWithoutKey`]. The last call wins.
-    ///
-    /// ```
-    /// use noctis_codec::PayloadKey;
-    ///
-    /// let mut builder = noctis_core::App::builder();
-    /// builder
-    ///     .payload_key(PayloadKey::from_hex(&"cd".repeat(32))?)
-    ///     .previous_payload_key(PayloadKey::from_hex(&"ab".repeat(32))?);
-    /// # Ok::<(), noctis_codec::KeyError>(())
-    /// ```
-    pub fn previous_payload_key(&mut self, key: PayloadKey) -> &mut Self {
-        self.previous_payload_key = Some(key);
         self
     }
 
@@ -1909,7 +1817,6 @@ impl AppBuilder {
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
         let registry = Arc::new(registry);
         self.violations.extend(missing);
-        let payload_keys = self.key_ring(&registry);
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }
@@ -1942,7 +1849,6 @@ impl AppBuilder {
                 registry: Arc::clone(&registry),
                 ack_deadline: config.ack_deadline,
                 strings: Arc::new(noctis_i18n::Builtin),
-                payload_keys,
             }),
             http_timeout: config.http_timeout,
             http_proxy,
@@ -2023,8 +1929,6 @@ impl fmt::Debug for AppBuilder {
             .field("ack_deadline", &self.ack_deadline)
             .field("publisher", &self.publisher)
             .field("dev_guild", &self.dev_guild)
-            .field("payload_key", &self.payload_key.is_some())
-            .field("previous_payload_key", &self.previous_payload_key.is_some())
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

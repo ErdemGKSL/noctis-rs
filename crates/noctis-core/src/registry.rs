@@ -62,14 +62,6 @@ impl RouteHandler {
             Self::Modal(h) => h.route(),
         }
     }
-
-    /// Whether the Route is `signed`.
-    fn signed(&self) -> bool {
-        match self {
-            Self::Component(h) => h.signed(),
-            Self::Modal(h) => h.signed(),
-        }
-    }
 }
 
 /// One folded Route registration.
@@ -115,8 +107,6 @@ pub(crate) struct Registry {
     /// Every component and modal handler by Route id (AD-25): one
     /// immutable map, looked up with a borrowed `&str`.
     routes: HashMap<&'static str, Arc<RouteEntry>>,
-    /// The ids of the mounted `signed` Routes, in fold order (CID-06).
-    signed: Vec<&'static str>,
 }
 
 impl Registry {
@@ -211,12 +201,11 @@ impl Registry {
             });
         let (commands, command_violations) = Commands::fold(&folded);
         violations.extend(command_violations);
-        let (routes, signed) = fold_routes(route_entries, &mut violations);
+        let routes = fold_routes(route_entries, &mut violations);
         check_uses(&folded, &routes, &mut violations);
         let registry = Self {
             commands,
             routes,
-            signed,
             entries,
             handlers: by_dispatch
                 .into_iter()
@@ -252,11 +241,6 @@ impl Registry {
         self.routes.get(id)
     }
 
-    /// The ids of the mounted `signed` Routes, in fold order.
-    pub(crate) fn signed_routes(&self) -> &[&'static str] {
-        &self.signed
-    }
-
     /// How many registrations it holds: event handlers and Routes.
     pub(crate) fn len(&self) -> usize {
         self.entries.len() + self.routes.len()
@@ -285,14 +269,12 @@ impl Registry {
 }
 
 /// Keeps the first handler of each Route id in fold order; each later one
-/// is a [`BuildViolation::DuplicateRoute`]. Also returns the kept `signed`
-/// Route ids, in fold order.
+/// is a [`BuildViolation::DuplicateRoute`].
 fn fold_routes(
     entries: Vec<RouteEntry>,
     violations: &mut Vec<BuildViolation>,
-) -> (HashMap<&'static str, Arc<RouteEntry>>, Vec<&'static str>) {
+) -> HashMap<&'static str, Arc<RouteEntry>> {
     let mut routes: HashMap<&'static str, Arc<RouteEntry>> = HashMap::with_capacity(entries.len());
-    let mut signed = Vec::new();
     for entry in entries {
         let route = entry.handler.route();
         if let Some(first) = routes.get(route) {
@@ -304,13 +286,10 @@ fn fold_routes(
                 second_handler: entry.handler.name(),
             });
         } else {
-            if entry.handler.signed() {
-                signed.push(route);
-            }
             routes.insert(route, Arc::new(entry));
         }
     }
-    (routes, signed)
+    routes
 }
 
 /// One [`BuildViolation::UnmountedRoute`] per (Module id, Route) that a

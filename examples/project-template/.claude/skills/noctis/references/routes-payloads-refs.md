@@ -87,30 +87,18 @@ Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
   Payloads) and runs the `#[handler]` on the decoded struct, with `ctx.module()`,
   `ctx.user_id()`, `ctx.guild_id()`, `ctx.shard()` and the locales from the
   interaction. Nothing is stored per message: old components keep working across
-  restarts as long as the Route id and Payload shape are unchanged. The handler answers
-  by returning a message (sent per its declared `response`: an in-place update by
-  default) or through `ComponentResponder` / `ModalResponder` (`responder.md` §3b); the
-  auto-defer fires at the ack deadline. A handler error or panic shows the user the
-  ephemeral notice and goes to the `ErrorOrigin::Component` sink (`HandlerError::user`
-  only logs at `debug`).
-- **Untrusted ids (CID-06).** An id that reaches no handler is one `warn` on
-  `noctis::dispatch` with `reason` = `malformed`, `unknown_route`, `kind_mismatch`,
-  `forged`, `undecodable`, `submit_invalid` or `no_author`, plus one generic ephemeral
-  notice to the user (`noctis.error.generic`); nothing panics and no handler runs.
-  `signed` Routes are verified with the App's payload key ring (`NOCTIS_PAYLOAD_KEY`,
-  plus `NOCTIS_PAYLOAD_KEY_PREVIOUS` during a rotation; `app-and-sharding.md`): a bad or
-  missing tag is `forged`. **[planned]** `by_ref`/spilled ids are `ref_unresolved`
-  (Story 7.5) and stale ids have no stale/expired handler yet (Story 7.3); both are only
-  logged, without a notice. The rest of this file's runtime parts stay **[planned]**
-  where marked.
-
-- **Keys.** `noctis::codec::PayloadKey` is the 32-byte secret (`PayloadKey::from_hex(..)`
-  for the 64-hex-digit `NOCTIS_PAYLOAD_KEY`, `PayloadKey::from_bytes([u8; 32])`; errors
-  are `KeyError`); `Debug`/`Display` are redacted. It implements `Sign`
-  (`key.sign(signed)` → the 6-character `Tag`, also `Tag::from_u64`) and `Verify`
-  (`key.verify(signed, tag)`, constant time). You never call them in a bot: the
-  Responder signs every `signed` Route id it sends and dispatch verifies every click
-  with the current and the previous key.
+  restarts as long as the Route id and Payload shape are unchanged. A handler error or
+  panic goes to the `ErrorOrigin::Component` sink (`HandlerError::user` only logs at
+  `debug`).
+- **Current limits [planned: Stories 7.2-7.7].** Handlers cannot answer yet: no
+  `ctx.update`/responder, no acks and no auto-defer (Story 7.2). An id that reaches no
+  handler is only logged (one `warn` on `noctis::dispatch` with `reason` =
+  `malformed`, `unknown_route`, `kind_mismatch`, `stale`, `forged`, `ref_unresolved`,
+  `undecodable`, `submit_invalid` or `no_author`); the user sees nothing until the
+  generic notice of Story 7.2. Until then `signed` Routes are always rejected
+  (`forged`, no `NOCTIS_PAYLOAD_KEY` yet), `by_ref`/spilled ids are `ref_unresolved`
+  (Story 7.5) and stale ids have no stale/expired handler (Story 7.3). The rest of
+  this file's runtime parts stay **[planned]** where marked.
 
 ### Route id (CID-03)
 
@@ -130,13 +118,8 @@ kind carries the per-render nonce itself (FR-25): `select` is ``[CID-03] unknown
 #[string_select] argument `select` `` with a help saying so.
 (There is no `view` argument: it is ``[CID-03] unknown #[button] argument `view` ``,
 whose help lists the codec arguments. Tabs, pages and steps are ordinary Payload
-fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length):
-`response = update | ephemeral | public` and `auto_defer = true | false` work today on
-every component kind (`responder.md` §2b; a bad value is ``[CID-03] `response` takes
-`update`, `ephemeral` or `public` `` / `` `auto_defer` takes `true` or `false` ``, a
-repeated one ``[CID-03] #[button] argument `response` is given twice``); on `#[modal]`
-they arrive with Story 7.8 [planned]. `ttl`, `one_shot`, `owner`, `permissions`,
-`guard`, `rate_limit(..)` are **[planned]**: Noctis **rejects** them with
+fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length): `response`, `auto_defer`, `ttl`, `one_shot`,
+`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: Noctis **rejects** them with
 ``[CID-03] `ttl` is a runtime argument of #[button] that this Noctis release does not
 support yet`` (attribute name per kind) (a silently ignored guard would be a security hole), and each one is
 accepted from the release that implements it. Anything else is a compile error.
@@ -145,13 +128,13 @@ accepted from the release that implements it. Anything else is a compile error.
 | Argument | Meaning |
 | --- | --- |
 | `"id"` | Route id (required, first) |
-| `response = update \| ephemeral \| public` | how the click is answered: edit in place (default; auto-defer type 6), or a new ephemeral/public message (sub-panels; auto-defer type 5) |
-| `auto_defer = true \| false` | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
+| `response = update \| ephemeral \| public` [planned, Story 7.2] | how the click is answered: edit in place (default; auto-defer type 6), or a new ephemeral/public message (sub-panels; auto-defer type 5) |
+| `auto_defer = true \| false` [planned, Story 7.2] | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
 | `overflow = spill` | inline when the actual value fits, else by Ref |
 | `ttl = "2d"` [planned] | Ref TTL (by_ref/spill only); default `AppBuilder::ref_ttl` (24 h) |
 | `one_shot` [planned] | Ref is deleted on first use (`take`); for confirmations |
-| `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`), signed when the message is sent and verified on every click; a mounted `signed` Route without a key fails `build()` (``[CID-06] Route `x` is `signed`, but no payload key is configured …``); not with `by_ref` |
+| `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`); not with `by_ref` |
 | `schema = n` | Payload schema version 1..=61 (see §6) |
 | `owner = field` [planned] | Route Guard: only the user whose id is in `field` may click |
 | `permissions = A \| B` [planned] | Route Guard: the clicking member needs these permissions |

@@ -387,39 +387,6 @@ mod responder {
     #[button("t.form", defaults(style = Secondary, label = "Go"))]
     struct Form;
 
-    /// A Route stored by Ref: its `custom_id` cannot be resolved until
-    /// Story 7.5 mints Refs.
-    #[derive(::noctis::Button)]
-    #[button("t.stored", by_ref, defaults(style = Secondary, label = "Stored"))]
-    struct Stored {
-        n: u8,
-    }
-
-    impl Stored {
-        #[::noctis::handler]
-        async fn handle(
-            self,
-            _ctx: ::noctis::ComponentCtx,
-        ) -> ::noctis::HandlerResult<::noctis::Responded> {
-            Ok(::noctis::__private::core::__testing::responded())
-        }
-    }
-
-    /// A `signed` Route: no detached responder holds a key to sign it.
-    #[derive(::noctis::Button)]
-    #[button("t.sig", signed, defaults(style = Secondary, label = "Sig"))]
-    struct Sig;
-
-    impl Sig {
-        #[::noctis::handler]
-        async fn handle(
-            self,
-            _ctx: ::noctis::ComponentCtx,
-        ) -> ::noctis::HandlerResult<::noctis::Responded> {
-            Ok(::noctis::__private::core::__testing::responded())
-        }
-    }
-
     impl Form {
         #[::noctis::handler]
         async fn handle(
@@ -468,13 +435,9 @@ mod responder {
     impl Unresolved {
         #[handler]
         async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
-            // A select resolves with the send's nonce (Story 7.2); a Ref
-            // Route does not.
-            Ok(Components::new()
-                .push(ActionRow::select(
-                    Pick.build().options([SelectOption::new("A", "a")]),
-                ))
-                .push(ActionRow::buttons([Stored { n: 1 }.build()])))
+            Ok(Components::new().push(ActionRow::select(
+                Pick.build().options([SelectOption::new("A", "a")]),
+            )))
         }
     }
 
@@ -527,8 +490,7 @@ mod responder {
             .unwrap();
     }
 
-    /// Matrix 30: a Route `custom_id` the send cannot resolve is an encode
-    /// error naming the Route.
+    /// Matrix 30: an unresolved Route `custom_id` is an encode error.
     #[tokio::test]
     async fn unresolved_custom_id() {
         let err = call_command(&Unresolved::descriptor(), "unresolved")
@@ -539,7 +501,7 @@ mod responder {
             .downcast_ref::<ResponderError>()
             .unwrap_or_else(|| panic!("{err}"));
         assert!(
-            matches!(responder, ResponderError::Encode { reason } if reason.contains("`t.stored`")),
+            matches!(responder, ResponderError::Encode { reason } if reason.contains("unresolved")),
             "{responder}"
         );
     }
@@ -624,7 +586,7 @@ mod responder {
             _ctx: CommandCtx,
             r: CommandResponder<Manual>,
         ) -> HandlerResult<Responded> {
-            let modal = noctis::__private::ui::__macro::build_modal::<Sig>(Sig, "Pick")
+            let modal = noctis::__private::ui::__macro::build_modal::<Pick>(Pick, "Pick")
                 .push(TextDisplay::new("x"));
             Ok(r.show_modal(modal).await?.done())
         }

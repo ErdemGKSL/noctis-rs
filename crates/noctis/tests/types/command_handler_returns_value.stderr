@@ -1,4 +1,4 @@
-error[E0277]: `u8` is not a response of this handler
+error[E0277]: `u8` is not a Command response
  --> tests/types/command_handler_returns_value.rs:9:14
   |
 9 |     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<u8> {
@@ -8,16 +8,12 @@ error[E0277]: `u8` is not a response of this handler
 help: the following other types implement trait `IntoResponse<K>`
  --> $WORKSPACE/crates/noctis-core/src/responder.rs
   |
-  |         impl IntoResponse<$kind> for V2Message {
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `V2Message`
+  | impl IntoResponse<Command> for V2Message {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `V2Message`
 ...
-  |         impl IntoResponse<$kind> for Components {
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::ui::Components`
+  | impl IntoResponse<Command> for Components {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `noctis::ui::Components`
 ...
-  |         impl IntoResponse<$kind> for LegacyMessage {
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `LegacyMessage`
-...
-  | message_responses!(Command, Component, ModalSubmit);
-  | --------------------------------------------------- in this macro invocation
+  | impl IntoResponse<Command> for LegacyMessage {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `LegacyMessage`
   = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, Ping, fn(Ping, noctis::CommandCtx) -> impl Future<Output = Result<u8, HandlerError>> {Ping::handle}>`
-  = note: this error originates in the macro `message_responses` (in Nightly builds, run with -Z macro-backtrace for more info)

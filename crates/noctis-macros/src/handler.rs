@@ -7,9 +7,9 @@
 //! binds the method through core's hidden `__Bind` trait of the struct's
 //! kind. The parameters after `self` are classified syntactically: `ctx`,
 //! then an optional path, target or event payload, then an optional
-//! responder (a type whose last segment is `CommandResponder`,
-//! `ComponentResponder`, `ModalResponder` or `Responder`). The INT-05 check
-//! compares the derive's declared defer mode with that responder.
+//! responder (a type whose last segment is `CommandResponder` or
+//! `Responder`). The INT-05 check compares the derive's declared defer mode
+//! with that responder.
 
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote, quote_spanned};
@@ -24,7 +24,7 @@ const BY_VALUE: &str = "a #[handler] method takes `self` by value";
 const ASYNC: &str = "a #[handler] method must be `async`";
 const GENERIC: &str = "a #[handler] method cannot be generic";
 const PARAMS: &str =
-    "a #[handler] method takes `(self, ctx[, path | target | event][, r: <Kind>Responder<..>])`";
+    "a #[handler] method takes `(self, ctx[, path | target | event][, r: CommandResponder<..>])`";
 
 /// The struct form the error of a free function shows, chosen by its
 /// context parameter.
@@ -225,22 +225,6 @@ mod tests {
             ),
         );
         assert!(out.contains("__CR < CommandResponder >"), "{out}");
-        for responder in [
-            quote!(ComponentResponder),
-            quote!(ComponentResponder<Manual>),
-            quote!(ModalResponder),
-        ] {
-            let out = run(
-                quote!(),
-                quote!(
-                    async fn h(self, ctx: ComponentCtx, r: #responder) -> HandlerResult<Responded> {
-                        Ok(r.done())
-                    }
-                ),
-            );
-            assert!(out.contains("__CR <"), "{out}");
-            assert!(out.contains("__assert_responder"), "{out}");
-        }
         let out = run(
             quote!(),
             quote!(

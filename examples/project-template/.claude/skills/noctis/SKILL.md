@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `ad3f30d279ff3a79ded0d8a9f50fca7259c81fce5d5d6224de5bce73782debb5` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `b5824eaa3fe83228af002741f3001f571c8241457a5265aeb736e6edd429fd4e` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -311,7 +311,7 @@ Which handlers may open a modal, and how each one answers, is declared on the st
 | --- | --- | --- | --- |
 | command or button that answers with a message (most) | nothing (`auto_defer = true` by default) | none, or `CommandResponder` / `ComponentResponder` | no: `[INT-05] show_modal needs auto_defer = false on this handler` |
 | command or button that opens a modal | `auto_defer = false` | `CommandResponder<Manual>` / `ComponentResponder<Manual>` (required) | yes, as the first response within 3 s |
-| modal submit | nothing today (`update`, auto-deferred; `#[modal(..)]` takes `auto_defer`/`response` with Story 7.8 [planned]) | none or `ModalResponder` | never |
+| modal submit | `auto_defer`, `response` as needed on `#[modal(..)]` | none, `ModalResponder` or `ModalResponder<Manual>` | never |
 | autocomplete (`#[autocomplete(field)]` method) | neither (`[INT-06]` compile error) | none: `AutocompleteCtx`, return `Suggestions<T>` | never |
 
 Details and the `response = …` argument: `references/responder.md` §2b.

@@ -228,10 +228,10 @@ submission.unknown();                                        // &[serde_json::Va
   Action-Row-wrapped (type 1); Radio Group, Checkbox Group and Checkbox work although
   twilight-model drops them (FR-64). Unknown components are kept verbatim in `unknown()`,
   never dropped. Decoding never compares `custom_id` with the Route (dispatch is core's).
-- A `signed` modal is verified by component dispatch with the App's payload key; a
-  `by_ref` or spilled one (once its Payload overflows) decodes only through component
-  dispatch with Story 7.5 [planned]. `from_submission`/`from_json` alone return
-  `SubmitError::Malformed` for them (the Ref or the tag needs the App).
+- A modal declared `by_ref`, `overflow = spill` (once its Payload overflows) or `signed`
+  decodes only through component dispatch [planned, Epic 7]: `from_submission`/`from_json`
+  return `SubmitError::Malformed` for it until then (its Payload is stored by Ref or its tag
+  cannot be verified without the App).
 - `SubmittedValue` (`#[non_exhaustive]`): `TextInput(String)`, `StringSelect(Vec<String>)`,
   `UserSelect(Vec<Id<UserMarker>>)`, `RoleSelect(Vec<Id<RoleMarker>>)`,
   `MentionableSelect(Vec<Id<GenericMarker>>)`, `ChannelSelect(Vec<Id<ChannelMarker>>)`,
@@ -262,13 +262,10 @@ submission.unknown();                                        // &[serde_json::Va
   Id<GenericMarker>)` (user first, then role); each returns `None` when the id is missing.
 - Submitted values are untrusted (MOD-09): re-validate ranges and authorization.
 - If the modal was opened from a message component, returning a View **updates that
-  message** (type 7; the auto-defer is type 6); from a command, there is no message to
-  update: a returned View is a new public message (auto-defer type 5), and
-  `ModalResponder::update`/`defer_update` (and `ctx.update` [planned, Story 8.1]) return
-  `ResponderError::UpdateUnavailable` without a request, so answer with `r.reply(msg)`.
-  The handler takes `(self, ctx: ModalSubmitCtx[, r: ModalResponder])`.
-  `ModalResponder` has no `show_modal()`: modals can't chain (INT-05, E0599).
-  `response`/`auto_defer` on `#[modal(..)]` arrive with Story 7.8 [planned].
+  message** (type 7); from a command, there is no message to update: `update` and
+  `ctx.update` return `UpdateUnavailable` without a request, so send a new message with
+  `ctx.respond`. `ModalResponder` has no `show_modal()`: modals can't chain (INT-05).
+  [planned, Story 7.8]
 - Per-field validation [planned]: `#[validate(fn)]` → `fn(&T) -> Result<(), MessageKey>`.
 
 ### 3.1 Downloading uploads

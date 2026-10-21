@@ -25,8 +25,8 @@ use crate::metadata::CommandMetadata;
 use crate::module::{Descriptor, Module, sealed};
 use crate::options::Options;
 use crate::responder::{
-    AutoDefer, Command, Component, DeferMode, Ephemerality, IntoResponse, Manual, ModalSubmit,
-    Pending, Responder, ResponderKind,
+    AutoDefer, Command, DeferMode, Ephemerality, IntoResponse, Manual, Pending, Responded,
+    Responder,
 };
 
 /// A kind-derived struct: what `#[handler]` binds through.
@@ -92,7 +92,7 @@ pub struct __CXR<X, R>(PhantomData<(X, R)>);
 #[diagnostic::on_unimplemented(
     message = "the parameters of this `#[handler]` method do not fit `{S}`",
     label = "unexpected parameters",
-    note = "commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])` and modals `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`"
+    note = "commands take `(self, ctx: CommandCtx[, path][, r: CommandResponder<..>])`, context menus `(self, ctx: CommandCtx, target[, r])`, events `(self, ctx: EventCtx, event)`, components `(self, ctx: ComponentCtx)` and modals `(self, ctx: ModalSubmitCtx)`"
 )]
 pub trait __Bind<Shape, S: __Kind, F> {
     /// The descriptor of the method `f`.
@@ -426,20 +426,6 @@ where
 
 // --- Components and modals --------------------------------------------------
 
-/// The declared `response = update | ephemeral | public` of a component
-/// attribute (AD-11).
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum __Response {
-    /// `response = update` (the default): the auto-defer is type 6 and a
-    /// returned message updates the clicked message.
-    Update,
-    /// `response = ephemeral`: a new ephemeral message.
-    Ephemeral,
-    /// `response = public`: a new public message.
-    Public,
-}
-
 /// A `#[derive(Button)]` or select-derived struct.
 #[doc(hidden)]
 pub trait __Component: __Kind<Kind = __ComponentKind, Descriptor = ComponentHandler> {
@@ -447,8 +433,6 @@ pub trait __Component: __Kind<Kind = __ComponentKind, Descriptor = ComponentHand
     const ROUTE: &'static str;
     /// The component kind.
     const KIND: ComponentKind;
-    /// The declared `response`.
-    const RESPONSE: __Response;
 }
 
 /// A `#[derive(Modal)]` struct.
@@ -458,20 +442,18 @@ pub trait __Modal: __Kind<Kind = __ModalKind, Descriptor = ModalHandler> {
     const ROUTE: &'static str;
 }
 
-/// Never implemented: a component handler takes its context and at most a
-/// responder.
+/// Never implemented: a component handler takes only its context.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "component handlers take `(self, ctx: ComponentCtx[, r: ComponentResponder<..>])`",
+    message = "component handlers take `(self, ctx: ComponentCtx)`; responder parameters arrive with Story 7.2",
     label = "an extra parameter"
 )]
 pub trait __ComponentParams {}
 
-/// Never implemented: a modal handler takes its context and at most a
-/// responder.
+/// Never implemented: a modal handler takes only its context.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "modal handlers take `(self, ctx: ModalSubmitCtx[, r: ModalResponder<..>])`",
+    message = "modal handlers take `(self, ctx: ModalSubmitCtx)`; responder parameters arrive with Story 7.2",
     label = "an extra parameter"
 )]
 pub trait __ModalParams {}
@@ -479,6 +461,15 @@ pub trait __ModalParams {}
 macro_rules! no_extra {
     ($kind:ty, $family:ident, $params:ident, $descriptor:ty) => {
         impl<S, X, F> __Bind<__CX<X>, S, F> for $kind
+        where
+            S: $family + $params,
+        {
+            fn __bind(_: &'static str, _: F) -> $descriptor {
+                unreachable!("never implemented")
+            }
+        }
+
+        impl<S, R, F> __Bind<__CR<R>, S, F> for $kind
         where
             S: $family + $params,
         {
@@ -506,7 +497,7 @@ no_extra!(
 );
 no_extra!(__ModalKind, __Modal, __ModalParams, ModalHandler);
 
-impl<S, F, Fut, R> __Bind<__C, S, F> for __ComponentKind
+impl<S, F, Fut> __Bind<__C, S, F> for __ComponentKind
 where
     S: __Component
         + noctis_codec::Route<Payload = S>
@@ -514,77 +505,24 @@ where
         + Send
         + 'static,
     F: Fn(S, ComponentCtx) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-    R: IntoResponse<Component>,
+    Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
 {
     fn __bind(name: &'static str, f: F) -> ComponentHandler {
         let route = <S as noctis_codec::Route>::ID.as_str();
-        ComponentHandler::__new_with_responder::<S, S::Defer, _, _, _>(
-            name,
-            route,
-            S::KIND,
-            S::RESPONSE,
-            move |s: S, ctx: ComponentCtx, _: Responder<Component, Pending, S::Defer>| f(s, ctx),
-        )
+        ComponentHandler::__new::<S, _, _>(name, route, S::KIND, f)
     }
 }
 
-impl<S, D, F, Fut, R> __Bind<__CR<Responder<Component, Pending, D>>, S, F> for __ComponentKind
-where
-    S: __Component
-        + noctis_codec::Route<Payload = S>
-        + for<'de> noctis_codec::PayloadDecode<'de>
-        + Send
-        + 'static,
-    D: DeferMode,
-    F: Fn(S, ComponentCtx, Responder<Component, Pending, D>) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-    R: IntoResponse<Component>,
-{
-    fn __bind(name: &'static str, f: F) -> ComponentHandler {
-        let route = <S as noctis_codec::Route>::ID.as_str();
-        ComponentHandler::__new_with_responder::<S, D, _, _, _>(
-            name,
-            route,
-            S::KIND,
-            S::RESPONSE,
-            f,
-        )
-    }
-}
-
-impl<S, F, Fut, R> __Bind<__C, S, F> for __ModalKind
+impl<S, F, Fut> __Bind<__C, S, F> for __ModalKind
 where
     S: __Modal + noctis_codec::Route + noctis_ui::ModalForm + Send + 'static,
     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
     F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-    R: IntoResponse<ModalSubmit>,
+    Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
 {
     fn __bind(name: &'static str, f: F) -> ModalHandler {
         let route = <S as noctis_codec::Route>::ID.as_str();
-        ModalHandler::__new_with_responder::<S, S::Defer, _, _, _>(
-            name,
-            route,
-            move |s: S, ctx: ModalSubmitCtx, _: Responder<ModalSubmit, Pending, S::Defer>| {
-                f(s, ctx)
-            },
-        )
-    }
-}
-
-impl<S, D, F, Fut, R> __Bind<__CR<Responder<ModalSubmit, Pending, D>>, S, F> for __ModalKind
-where
-    S: __Modal + noctis_codec::Route + noctis_ui::ModalForm + Send + 'static,
-    for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
-    D: DeferMode,
-    F: Fn(S, ModalSubmitCtx, Responder<ModalSubmit, Pending, D>) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = HandlerResult<R>> + Send + 'static,
-    R: IntoResponse<ModalSubmit>,
-{
-    fn __bind(name: &'static str, f: F) -> ModalHandler {
-        let route = <S as noctis_codec::Route>::ID.as_str();
-        ModalHandler::__new_with_responder::<S, D, _, _, _>(name, route, f)
+        ModalHandler::__new::<S, _, _>(name, route, f)
     }
 }
 
@@ -593,7 +531,7 @@ where
 /// The declared defer modes a handler without a responder may have.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "[INT-05] `auto_defer = false` handlers take a `Manual` responder",
+    message = "[INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`",
     label = "declared `auto_defer = false`"
 )]
 pub trait __NoResponder {}
@@ -601,28 +539,28 @@ pub trait __NoResponder {}
 impl __NoResponder for AutoDefer {}
 
 /// `Self` (the declared mode) accepts the responder `R`: an auto-deferred
-/// handler takes any, a `Manual` one only a `Manual` responder.
+/// handler takes any, a `Manual` one only `CommandResponder<Manual>`.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "[INT-05] `auto_defer = false` is declared, so the handler must take the `Manual` responder (`CommandResponder<Manual>` or `ComponentResponder<Manual>`)",
-    label = "take the `Manual` responder here"
+    message = "[INT-05] `auto_defer = false` is declared, so the handler must take `CommandResponder<Manual>`",
+    label = "take `CommandResponder<Manual>` here"
 )]
 pub trait __ManualTakesManual<R> {}
 
 impl<R> __ManualTakesManual<R> for AutoDefer {}
-impl<K: ResponderKind> __ManualTakesManual<Responder<K, Pending, Manual>> for Manual {}
+impl __ManualTakesManual<Responder<Command, Pending, Manual>> for Manual {}
 
 /// The responder `Self` fits the declared mode `D`: a `Manual` responder
 /// needs `auto_defer = false`.
 #[doc(hidden)]
 #[diagnostic::on_unimplemented(
-    message = "[INT-05] this handler takes a `Manual` responder, so its attribute must declare `auto_defer = false`",
-    label = "declare `auto_defer = false` or take the auto-deferred responder"
+    message = "[INT-05] this handler takes `CommandResponder<Manual>`, so its attribute must declare `auto_defer = false`",
+    label = "declare `auto_defer = false` or take `CommandResponder`"
 )]
 pub trait __ManualIsDeclared<D> {}
 
-impl<K: ResponderKind, D> __ManualIsDeclared<D> for Responder<K, Pending, AutoDefer> {}
-impl<K: ResponderKind> __ManualIsDeclared<Manual> for Responder<K, Pending, Manual> {}
+impl<D> __ManualIsDeclared<D> for Responder<Command, Pending, AutoDefer> {}
+impl __ManualIsDeclared<Manual> for Responder<Command, Pending, Manual> {}
 
 /// What `#[handler]` asserts for a method without a responder (INT-05).
 #[doc(hidden)]

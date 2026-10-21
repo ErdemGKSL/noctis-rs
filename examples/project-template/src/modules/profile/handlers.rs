@@ -2,13 +2,12 @@
 
 //! Commands and handlers. Each struct is the interaction (id + typed data); its
 //! `#[handler]` method loads the data, renders the card, and answers with
-//! `ctx.respond(render_profile(..))` (new message) or by returning the message from a
-//! component or modal handler (it updates the clicked message: `response = update`).
+//! `ctx.respond(render_profile(..))` (new message) or `ctx.update(..)` (same message).
 
 use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::image::RemoteImage;
 use noctis::prelude::*;
-use noctis::ui::{Components, ResolvedUser, TextDisplay, V2Message, escape_markdown};
+use noctis::ui::{Components, ResolvedUser, TextDisplay, escape_markdown};
 
 use super::view::{ProfileCard, ProfileData, render_profile};
 use super::{BioForm, EditBio, RefreshProfile, StoredProfile, profile_key, xp_key};
@@ -121,10 +120,10 @@ impl ShowProfile {
 
 impl RefreshProfile {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
         let data = load(&ctx, self.user).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_profile(&data, &s, self.editable))
+        ctx.update(render_profile(&data, &s, self.editable)).await
     }
 }
 
@@ -149,7 +148,7 @@ impl BioForm {
     /// then redraw the message the modal was opened from (`response = update`, the
     /// default for a component-opened modal).
     #[handler]
-    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<V2Message> {
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
         let guild = guild_of(&ctx)?;
         let stored = StoredProfile {
             bio: self.bio.filter(|b| !b.trim().is_empty()),
@@ -158,7 +157,7 @@ impl BioForm {
         ctx.kv().put(&profile_key(guild, self.user), &stored, None).await?;
         let data = load(&ctx, self.user).await?;
         let s = Strings::of(ctx.response_locale());
-        Ok(render_profile(&data, &s, true))
+        ctx.update(render_profile(&data, &s, true)).await
     }
 }
 

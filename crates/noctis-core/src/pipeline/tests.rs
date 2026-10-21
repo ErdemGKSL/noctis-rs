@@ -223,7 +223,7 @@ fn assert_notice(request: &(Method, String, Value), text: &str) {
 fn assert_followup_notice(request: &(Method, String, Value), text: &str) {
     assert_eq!(request.0, Method::POST, "{request:?}");
     assert_eq!(
-        request.1, "/api/v10/webhooks/7/tok?wait=true",
+        request.1, "/api/v10/webhooks/7/tok?wait=true&with_components=true",
         "{request:?}"
     );
     assert_eq!(request.2["flags"], 32832, "{request:?}");
@@ -2161,7 +2161,7 @@ mod notices {
     use noctis_i18n::keys;
 
     /// The follow-up route (`wait=true`).
-    const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true";
+    const FOLLOWUP: &str = "/api/v10/webhooks/7/tok?wait=true&with_components=true";
     const OWNER: &str = "Only the person who started this can use it.";
     const DISABLED: &str = "This feature is disabled here.";
 

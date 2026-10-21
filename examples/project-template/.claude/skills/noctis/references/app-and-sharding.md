@@ -119,8 +119,6 @@ Implemented:
 | `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
 | `.publisher(bool)` | env `NOCTIS_PUBLISHER`, else `false` | a normal run publishes globally once at startup, before any shard connects (never on READY); a failed Publish is one `error` log (target `noctis::publish`) and the App keeps starting; set it on exactly one process; the last call wins; see §3 |
 | `.dev_guild(Id<GuildMarker>)` | env `NOCTIS_DEV_GUILD`, else none | the guild `--publish-guild` without an id publishes to; the last call wins |
-| `.payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY`, else none | the key that signs and verifies `signed` Routes (`noctis::codec::PayloadKey`, 32 bytes: `PayloadKey::from_hex(..)` takes exactly **64 hex digits**, e.g. `openssl rand -hex 32`; `KeyError::Length`/`InvalidChar` otherwise, naming a length or a position, never a character); required when a `signed` Route is mounted (``BuildViolation::MissingPayloadKey``: ``[CID-06] Route `x` is `signed`, but no payload key is configured: set NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)` ``); identical on every process of a Cluster; never logged (`Debug` shows `payload_key: true`); the last call wins |
-| `.previous_payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY_PREVIOUS`, else none | the previous key during a rotation: ids it signed still verify, new ids use the current key; without a current key it is ``BuildViolation::PreviousKeyWithoutKey`` (``[CID-06] a previous payload key is set without a current one: set NOCTIS_PAYLOAD_KEY (or call `.payload_key(..)`) too``); the last call wins |
 | `.ack_deadline(Duration)` | 2000 ms | auto-defer deadline, measured from gateway receipt (queueing counts): 0 ms..=2500 ms, else `BuildViolation::InvalidAckDeadline` (`ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms`); 0 always defers; no environment variable; the last call wins. Read back with `app.ack_deadline()`; see `responder.md` §2 |
 | `.build()` | — | `Result<App, BuildError>` |
 
@@ -129,6 +127,7 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
+| `.payload_key(PayloadKey)` / `.previous_payload_key(..)` [planned, Story 7.2] | env | 32 bytes; required for `signed` Routes; identical across a Cluster |
 | `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
 | `.expired_handler(f)` [planned] | localized ephemeral notice | see `routes-payloads-refs.md` |
@@ -254,8 +253,7 @@ The project template's `src/bootstrap.rs` shows the first-run pattern. Call
 
 - If `.env` exists, it is loaded. Variables already in the environment win.
 - Otherwise `.env` is created from the embedded `.env.example`, with owner-only
-  permissions and a fresh `NOCTIS_PAYLOAD_KEY` (32 random bytes as 64 lowercase hex
-  digits), and the bot exits so the
+  permissions and a fresh 32-byte base64 `NOCTIS_PAYLOAD_KEY`, and the bot exits so the
   owner can set `NOCTIS_TOKEN`.
 
 Memory rules for embedded data:
@@ -272,7 +270,7 @@ Memory rules for embedded data:
 | Variable | Meaning |
 | --- | --- |
 | `NOCTIS_TOKEN` | bot token, read by `App::from_env()`: trimmed of ASCII whitespace; empty (after trim) counts as unset; an optional `Bot ` prefix is stripped. Not Unicode → `EnvError::NotUnicode`; invalid → `EnvError::InvalidToken`. `run()` without a token → `StartError::MissingToken` |
-| `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` | the payload key and the previous key of a rotation, read by `App::from_env()` last (after `NOCTIS_DEV_GUILD`) with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`): exactly **64 hex digits** (upper or lower case, no `0x`; generate with `openssl rand -hex 32`), else `EnvError::InvalidPayloadKey { var, source: KeyError }`, whose text names the variable and never the value; passed to `.payload_key(..)` / `.previous_payload_key(..)` |
+| `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` [planned, Story 7.2] | base64 32-byte integrity keys |
 | `NOCTIS_APP_ID` [planned, Story 7.4] | Adapter namespace |
 | `NOCTIS_DEV_GUILD` | default for `--publish-guild` without an id, read by `App::from_env()` last (after `NOCTIS_PUBLISHER`) with the same rules (trimmed; empty = unset); 1-20 ASCII digits of a non-zero `u64` (leading zeros allowed), else `EnvError::InvalidDevGuild`; passed to `.dev_guild(..)` |
 | `NOCTIS_SHARDS` [planned, Story 12.1] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |

@@ -1,45 +1,35 @@
-//! The component pipeline (Stories 7.1 and 7.2; AD-5, AD-19, AD-23,
-//! AD-25, AD-29; CID-04, CID-06, INT-01, INT-04): a `MESSAGE_COMPONENT` or
-//! `MODAL_SUBMIT` interaction runs the handler of its Route on the decoded
-//! struct, with a responder over the interaction.
+//! The component pipeline (Story 7.1; AD-19, AD-25, CID-04, CID-06): a
+//! `MESSAGE_COMPONENT` or `MODAL_SUBMIT` interaction runs the handler of
+//! its Route on the decoded struct.
 //!
 //! 1. read the `custom_id` (and, for a click, the component type) from the
-//!    interaction; a modal submit is parsed as a [`ModalSubmission`]; the
-//!    source message (`message.id`, `channel_id`, `flags`) is read from the
-//!    raw JSON;
+//!    interaction; a modal submit is parsed as a [`ModalSubmission`];
 //! 2. split it once with [`noctis_codec::decode`] and look its Route up in
 //!    the Registry's Route map with the borrowed id; check the family (a
 //!    click needs a component handler of its component kind, a submit a
 //!    modal handler); decode the struct (a click with no keys, a submit
-//!    with `ModalForm::from_submission`), verifying a `signed` Route's tag
-//!    with the App's payload key ring (current or previous key);
-//! 3. build the [`ComponentCtx`] or [`ModalSubmitCtx`] and the responder
-//!    state with the declared `response`;
-//! 6. arm the auto-defer (shared with Commands): at the ack deadline a
-//!    type-6 callback under `response = update` when a source message
-//!    exists, else type 5 (`EPHEMERAL` only for `response = ephemeral`); an
-//!    `auto_defer = false` handler gets only the 2.9 s error log;
-//! 9. run the handler under `catch_unwind`, raced against the shutdown
-//!    cancel token, and send what it returned per the declared `response`;
-//! 10. an error or a panic sends the localized ephemeral notice, then a
-//!     user condition is logged at `debug`; any other error, a panic, a
-//!     failed send or a cancellation is counted and reported to the
-//!     Component Error Sink.
+//!    with `ModalForm::from_submission`);
+//! 3. build the [`ComponentCtx`] or [`ModalSubmitCtx`];
+//! 4. run the handler under `catch_unwind`, raced against the shutdown
+//!    cancel token, recording `noctis_handler_duration_seconds{kind =
+//!    "component"}`;
+//! 5. a user condition is logged at `debug`; any other error, a panic or a
+//!    cancellation is counted and reported to the Component Error Sink.
 //!
 //! Every input that does not reach a handler is a [`Rejection`]: one
-//! `warn` on target `noctis::dispatch` and, except a stale or Ref id (Stories
-//! 7.3 and 7.5 route those), the CID-06 generic ephemeral notice; no
-//! handler run and no panic. Nothing is stored per message or component:
-//! the one auto-defer task per interaction ends when the handler run ends.
+//! `warn` on target `noctis::dispatch`, no handler run, no request and no
+//! panic. Nothing is stored per message or component: the one task per
+//! interaction ends when the handler ends. Responses, acks and the CID-06
+//! notice arrive with Story 7.2.
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
 
-use noctis_codec::{DecodeError, Decoded, Verify};
+use futures_util::FutureExt;
+use noctis_codec::{DecodeError, Decoded};
 use noctis_gateway::{Inbound, InboundKind};
-use noctis_i18n::keys;
-use noctis_rules::Locale;
+use noctis_rules::MessageKey;
 use noctis_ui::{ModalSubmission, SubmitError};
 use tokio_util::sync::CancellationToken;
 use tracing::field::Empty;
@@ -48,18 +38,16 @@ use twilight_model::application::interaction::{Interaction, InteractionData, Int
 use twilight_model::channel::message::component::ComponentType;
 use twilight_model::id::Id;
 
-use super::{Armed, INTERACTION_CREATE, Report, Started, USER_INSTALL_FOLLOWUPS, arm, run_started};
+use super::{INTERACTION_CREATE, Outcome, report_logged};
 use crate::command::CtxInner;
 use crate::component::{
     ComponentCtx, ComponentHandler, ComponentKind, HandlerFuture, ModalHandler, ModalSubmitCtx,
 };
 use crate::handler::AppShared;
-use crate::notice;
 use crate::registry::{Registry, RouteEntry, RouteHandler};
-use crate::responder::{
-    Declared, Ephemerality, InteractionTarget, Shared, SourceMessage, Transport,
-};
-use crate::sink::ErrorOrigin;
+use crate::responder::Ephemerality;
+use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
+use crate::worker::panic_message;
 
 /// Why a component or modal interaction did not reach a handler; its
 /// [`as_str`](Self::as_str) is the `reason` of the one `warn`.
@@ -75,7 +63,8 @@ pub(crate) enum Rejection {
     /// The id is from another shape or schema of the Route (Story 7.3
     /// routes it).
     Stale,
-    /// A bad or missing integrity tag, or one no key of the ring verifies.
+    /// A bad, missing or unverifiable integrity tag (signed Routes until
+    /// Story 7.2 loads `NOCTIS_PAYLOAD_KEY`).
     Forged,
     /// A Ref body (Story 7.5 resolves it).
     RefUnresolved,
@@ -101,12 +90,6 @@ impl Rejection {
             Self::SubmitInvalid => "submit_invalid",
             Self::NoAuthor => "no_author",
         }
-    }
-
-    /// Whether the rejection answers with the CID-06 notice: every one but
-    /// a stale or Ref id (Stories 7.3 and 7.5 route those).
-    pub(crate) const fn sends_notice(self) -> bool {
-        !matches!(self, Self::Stale | Self::RefUnresolved)
     }
 
     /// The rejection of a phase-2 decode error.
@@ -159,40 +142,12 @@ enum Target<'a> {
 }
 
 impl Target<'_> {
-    fn start(
-        &self,
-        parts: CtxInner,
-        decoded: &Decoded<'_>,
-        shared: Arc<Shared>,
-        keys: Option<&dyn Verify>,
-    ) -> Result<HandlerFuture, Rejection> {
+    fn start(&self, parts: CtxInner, decoded: &Decoded<'_>) -> Result<HandlerFuture, Rejection> {
         match self {
-            Self::Component(handler) => {
-                handler.start(ComponentCtx::from_parts(parts), decoded, shared, keys)
+            Self::Component(handler) => handler.start(ComponentCtx::from_parts(parts), decoded),
+            Self::Modal(handler, submission) => {
+                handler.start(ModalSubmitCtx::from_parts(parts), decoded, submission)
             }
-            Self::Modal(handler, submission) => handler.start(
-                ModalSubmitCtx::from_parts(parts),
-                decoded,
-                submission,
-                shared,
-                keys,
-            ),
-        }
-    }
-
-    /// The handler's declared `response`.
-    fn response(&self) -> Declared {
-        match self {
-            Self::Component(handler) => handler.response(),
-            Self::Modal(handler, _) => handler.response(),
-        }
-    }
-
-    /// Whether the handler is auto-deferred.
-    fn auto_defer(&self) -> bool {
-        match self {
-            Self::Component(handler) => handler.auto_defer(),
-            Self::Modal(handler, _) => handler.auto_defer(),
         }
     }
 }
@@ -229,7 +184,7 @@ pub(crate) fn resolve<'r>(
 }
 
 /// Logs `rejection` (one `warn`, inside `span`).
-fn log_rejection(span: &Span, shard: u32, route: Option<&str>, rejection: Rejection) {
+fn reject(span: &Span, shard: u32, route: Option<&str>, rejection: Rejection) {
     span.in_scope(|| {
         tracing::warn!(
             target: "noctis::dispatch",
@@ -239,39 +194,6 @@ fn log_rejection(span: &Span, shard: u32, route: Option<&str>, rejection: Reject
             "component interaction rejected"
         );
     });
-}
-
-/// What a rejection needs to answer: the span, the shard, the App and the
-/// notice locale.
-struct Rejecter<'a> {
-    span: &'a Span,
-    shard: u32,
-    app: &'a AppShared,
-    locale: Locale,
-}
-
-impl Rejecter<'_> {
-    /// Logs `rejection`, then (except a stale or Ref id) sends the CID-06
-    /// generic ephemeral notice over `shared`; a failed send is one `warn`.
-    async fn reject(&self, route: Option<&str>, rejection: Rejection, shared: &Arc<Shared>) {
-        log_rejection(self.span, self.shard, route, rejection);
-        if !rejection.sends_notice() {
-            return;
-        }
-        let text = self
-            .span
-            .in_scope(|| notice::text(&*self.app.strings, self.locale, keys::ERROR_GENERIC));
-        if let Err(error) = shared.notice(text).instrument(self.span.clone()).await {
-            self.span.in_scope(|| {
-                tracing::warn!(
-                    target: "noctis::dispatch",
-                    reason = rejection.as_str(),
-                    %error,
-                    "could not send the error notice"
-                );
-            });
-        }
-    }
 }
 
 /// Reads the input of a click or a modal submit; `None` for any other
@@ -306,15 +228,6 @@ fn read_input(
     }
 }
 
-/// Where a component run sends its responses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Wire {
-    /// The interaction (every real run).
-    Interaction,
-    /// Nowhere (the `__testing::dispatch_detached` seam).
-    Detached,
-}
-
 /// Runs one `MESSAGE_COMPONENT` or `MODAL_SUBMIT` interaction through the
 /// component pipeline (see the module docs) in span `noctis.interaction`.
 pub(crate) async fn run_component(
@@ -323,23 +236,7 @@ pub(crate) async fn run_component(
     inbound: Inbound,
     cancel: CancellationToken,
 ) {
-    run_component_over(registry, app, inbound, cancel, Wire::Interaction).await;
-}
-
-/// [`run_component`] sending over `wire`.
-#[expect(
-    clippy::too_many_lines,
-    reason = "one linear pass over the stages, each rejection answered where it happens"
-)]
-pub(crate) async fn run_component_over(
-    registry: Arc<Registry>,
-    app: Arc<AppShared>,
-    inbound: Inbound,
-    cancel: CancellationToken,
-    wire: Wire,
-) {
     let shard = inbound.shard.number();
-    let received_at = inbound.received_at;
     let InboundKind::Interaction(interaction, raw) = inbound.kind else {
         return;
     };
@@ -353,63 +250,23 @@ pub(crate) async fn run_component_over(
     );
     let author = interaction.author_id();
     let Interaction {
-        application_id,
-        id: interaction_id,
-        token,
         kind,
         data,
         locale,
         guild_locale,
         guild_id,
         channel,
-        authorizing_integration_owners: owners,
         ..
     } = *interaction;
-    let channel_id = channel.as_ref().map(|c| c.id);
-    let answer = Rejecter {
-        span: &span,
-        shard,
-        app: &app,
-        locale: notice::locale(locale.as_deref(), guild_locale.as_deref()),
-    };
-    let transport = match wire {
-        Wire::Interaction => Transport::Interaction(InteractionTarget {
-            app: Arc::clone(&app),
-            application_id,
-            interaction_id,
-            token,
-            received_at,
-            channel_id,
-        }),
-        Wire::Detached => Transport::Detached,
-    };
-    // A user-install-only interaction may send 5 follow-ups (INT-11).
-    let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
-    let shared_for = |transport, declared| {
-        Shared::declared(
-            transport,
-            declared,
-            SourceMessage::from_interaction(raw.as_bytes()),
-            app.limits.clone(),
-            cap,
-        )
-    };
-    let notice_state = |transport| shared_for(transport, Declared::Reply(Ephemerality::Ephemeral));
     // Stage 1: read the input.
     let input = match read_input(kind, data, raw.as_bytes()) {
         None => return,
         Some(Ok(input)) => input,
-        Some(Err(rejection)) => {
-            return answer
-                .reject(None, rejection, &notice_state(transport))
-                .await;
-        }
+        Some(Err(rejection)) => return reject(&span, shard, None, rejection),
     };
     // Stage 2: look up and decode.
     let Ok(decoded) = noctis_codec::decode(input.custom_id()) else {
-        return answer
-            .reject(None, Rejection::Malformed, &notice_state(transport))
-            .await;
+        return reject(&span, shard, None, Rejection::Malformed);
     };
     let route = decoded.route();
     let family = match &input {
@@ -418,91 +275,143 @@ pub(crate) async fn run_component_over(
     };
     let entry = match resolve(&registry, &decoded, family) {
         Ok(entry) => entry,
-        Err(rejection) => {
-            return answer
-                .reject(Some(route), rejection, &notice_state(transport))
-                .await;
-        }
+        Err(rejection) => return reject(&span, shard, Some(route), rejection),
     };
     let target = match (&entry.handler, &input) {
         (RouteHandler::Component(handler), Input::Component { .. }) => Target::Component(handler),
         (RouteHandler::Modal(handler), Input::Modal(submission)) => {
             Target::Modal(handler, submission)
         }
-        _ => {
-            return answer
-                .reject(
-                    Some(route),
-                    Rejection::UnknownRoute,
-                    &notice_state(transport),
-                )
-                .await;
-        }
+        _ => return reject(&span, shard, Some(route), Rejection::UnknownRoute),
     };
     span.record("module", entry.module);
     span.record("route", route);
     let Some(user_id) = author else {
-        return answer
-            .reject(Some(route), Rejection::NoAuthor, &notice_state(transport))
-            .await;
+        return reject(&span, shard, Some(route), Rejection::NoAuthor);
     };
-    // Stage 3: the context and the responder state.
+    // Stage 3: the context.
     let parts = CtxInner {
         module: entry.module,
         shard,
         guild_id,
-        channel_id,
+        channel_id: channel.as_ref().map(|c| c.id),
         user_id,
         user_locale: locale,
         guild_locale,
         app: Some(Arc::clone(&app)),
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
-    let state = shared_for(transport, target.response());
     let report = Report {
         app: &app,
-        origin: ErrorOrigin::Component,
-        shard: Some(shard),
+        shard,
         guild_id,
         module: entry.module,
         handler: entry.handler.name(),
-        event_type: Some(INTERACTION_CREATE),
-        locale: answer.locale,
     };
-    if cancel.is_cancelled() {
-        return run_started(&span, Some(&cancel), state, None, None, report).await;
-    }
-    // Stage 4 of the struct: decode it (verifying a signed tag) and start
-    // the handler with its responder.
-    let at = Instant::now();
-    let handle = Arc::clone(&state);
-    let started = span.in_scope(|| {
-        std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let keys = app.payload_keys.as_deref().map(|k| k as &dyn Verify);
-            target.start(parts, &decoded, handle, keys)
-        }))
-    });
-    let future = match started {
-        Ok(Err(rejection)) => return answer.reject(Some(route), rejection, &state).await,
-        Ok(Ok(future)) => Ok(future),
-        Err(panic) => Err(panic),
+    // Stage 4: decode the struct and run the handler.
+    let started = if cancel.is_cancelled() {
+        None
+    } else {
+        let started = span.in_scope(|| {
+            std::panic::catch_unwind(AssertUnwindSafe(|| target.start(parts, &decoded)))
+        });
+        match started {
+            Ok(Err(rejection)) => return reject(&span, shard, Some(route), rejection),
+            Ok(Ok(fut)) => Some(Ok(fut)),
+            Err(panic) => Some(Err(panic)),
+        }
     };
-    // Stage 6: the auto-defer.
-    let armed = Armed {
-        handler: report.handler,
-        module: report.module,
-        auto_defer: target.auto_defer(),
+    let outcome = match started {
+        None => Outcome::Cancelled,
+        Some(started) => execute(&span, &cancel, started, &app).await,
     };
-    let timer = arm(&app, &state, &armed, received_at, &span);
-    // Stages 9 and 10.
-    let started = Started { at, future };
-    run_started(
-        &span,
-        Some(&cancel),
-        state,
-        Some(started),
-        Some(timer),
-        report,
+    // Stage 5: report a failure.
+    finish(&span, &report, &outcome);
+}
+
+/// Where a component handler run is reported.
+struct Report<'a> {
+    app: &'a Arc<AppShared>,
+    shard: u32,
+    guild_id: Option<Id<twilight_model::id::marker::GuildMarker>>,
+    module: &'static str,
+    handler: &'static str,
+}
+
+/// Runs the started handler under `catch_unwind`, raced against `cancel`,
+/// and records its duration.
+async fn execute(
+    span: &Span,
+    cancel: &CancellationToken,
+    started: Result<HandlerFuture, Box<dyn std::any::Any + Send>>,
+    app: &AppShared,
+) -> Outcome {
+    let started_at = Instant::now();
+    let outcome = match started {
+        Ok(fut) => {
+            let run = AssertUnwindSafe(async move { fut.await.map(|_| ()) })
+                .catch_unwind()
+                .instrument(span.clone());
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => Outcome::Cancelled,
+                result = run => match result {
+                    Ok(result) => Outcome::Returned(result),
+                    Err(panic) => Outcome::Panicked(panic),
+                },
+            }
+        }
+        Err(panic) => Outcome::Panicked(panic),
+    };
+    metrics::histogram!(
+        "noctis_handler_duration_seconds",
+        "app" => Arc::clone(&app.app),
+        "kind" => ErrorOrigin::Component.as_str()
     )
-    .await;
+    .record(started_at.elapsed().as_secs_f64());
+    outcome
+}
+
+/// Stage 5: logs a user condition at `debug`; counts and reports any other
+/// failure to the Component Error Sink.
+fn finish(span: &Span, report: &Report<'_>, outcome: &Outcome) {
+    let kind = match outcome {
+        Outcome::Returned(Ok(())) => return,
+        Outcome::Returned(Err(error)) if error.is_user() => {
+            span.in_scope(|| {
+                tracing::debug!(
+                    target: "noctis::component",
+                    handler = report.handler,
+                    key = error.user_message().map(MessageKey::as_str),
+                    "user condition"
+                );
+            });
+            return;
+        }
+        Outcome::Returned(Err(error)) => ReportKind::Error(error),
+        Outcome::Panicked(panic) => ReportKind::Panic(panic_message(&**panic)),
+        Outcome::Cancelled => ReportKind::Cancelled,
+    };
+    let app = report.app;
+    metrics::counter!(
+        "noctis_handler_errors_total",
+        "app" => Arc::clone(&app.app),
+        "kind" => ErrorOrigin::Component.as_str()
+    )
+    .increment(1);
+    span.in_scope(|| {
+        report_logged(
+            app,
+            ErrorReport {
+                origin: ErrorOrigin::Component,
+                kind,
+                app: &app.app,
+                shard: Some(report.shard),
+                guild_id: report.guild_id,
+                module: Some(report.module),
+                handler: Some(report.handler),
+                event_type: Some(INTERACTION_CREATE),
+            },
+        );
+    });
 }
