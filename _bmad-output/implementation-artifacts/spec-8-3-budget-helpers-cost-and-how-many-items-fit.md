@@ -2,7 +2,8 @@
 title: 'Story 8.3: Budget helpers: cost and "how many items fit"'
 type: 'feature'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'b4f0fc59ec4d845205efe7dcf5c1d482ea72b8a5'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
