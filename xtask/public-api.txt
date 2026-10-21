@@ -21,6 +21,35 @@ pub fn noctis::Acked::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Re
 impl core::marker::Copy for noctis::Acked
 impl noctis::ResponderState for noctis::Acked
 impl noctis::ResponderState for noctis::Acked
+pub struct noctis::AfterCtx
+impl noctis::AfterCtx
+pub fn noctis::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::AfterCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::AfterCtx::handler(&self) -> &'static str
+pub fn noctis::AfterCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::AfterCtx::invocation(&self) -> noctis::Invocation
+pub fn noctis::AfterCtx::kv(&self) -> noctis::Kv
+pub fn noctis::AfterCtx::module(&self) -> &'static str
+pub fn noctis::AfterCtx::shard(&self) -> u32
+pub fn noctis::AfterCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::AfterCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+impl noctis::AfterCtx
+pub fn noctis::AfterCtx::extensions(&self) -> &noctis::Extensions
+pub fn noctis::AfterCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
+pub fn noctis::AfterCtx::outcome(&self) -> noctis::RunOutcome
+impl core::clone::Clone for noctis::AfterCtx
+pub fn noctis::AfterCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::AfterCtx
+pub fn noctis::AfterCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::AfterMiddleware
+impl noctis::AfterMiddleware
+pub fn noctis::AfterMiddleware::events_only(self) -> Self
+pub fn noctis::AfterMiddleware::name(&self) -> &'static str
+pub fn noctis::AfterMiddleware::skip_events(self) -> Self
+impl core::clone::Clone for noctis::AfterMiddleware
+pub fn noctis::AfterMiddleware::clone(&self) -> Self
+impl core::fmt::Debug for noctis::AfterMiddleware
+pub fn noctis::AfterMiddleware::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::App
 impl noctis::App
 pub fn noctis::App::ack_deadline(&self) -> core::time::Duration
@@ -226,6 +255,36 @@ impl core::fmt::Debug for noctis::BaseMeta
 pub fn noctis::BaseMeta::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::BaseMeta
 impl core::marker::StructuralPartialEq for noctis::BaseMeta
+pub struct noctis::BeforeCtx
+impl noctis::BeforeCtx
+pub fn noctis::BeforeCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::BeforeCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::BeforeCtx::handler(&self) -> &'static str
+pub fn noctis::BeforeCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::BeforeCtx::invocation(&self) -> noctis::Invocation
+pub fn noctis::BeforeCtx::kv(&self) -> noctis::Kv
+pub fn noctis::BeforeCtx::module(&self) -> &'static str
+pub fn noctis::BeforeCtx::shard(&self) -> u32
+pub fn noctis::BeforeCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::BeforeCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+impl noctis::BeforeCtx
+pub fn noctis::BeforeCtx::contains<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> bool
+pub fn noctis::BeforeCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
+pub fn noctis::BeforeCtx::insert<T: core::marker::Send + core::marker::Sync + 'static>(&self, T)
+impl core::clone::Clone for noctis::BeforeCtx
+pub fn noctis::BeforeCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::BeforeCtx
+pub fn noctis::BeforeCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::BeforeMiddleware
+impl noctis::BeforeMiddleware
+pub fn noctis::BeforeMiddleware::events_only(self) -> Self
+pub fn noctis::BeforeMiddleware::name(&self) -> &'static str
+pub fn noctis::BeforeMiddleware::provides<T: core::marker::Send + core::marker::Sync + 'static>(self) -> Self
+pub fn noctis::BeforeMiddleware::skip_events(self) -> Self
+impl core::clone::Clone for noctis::BeforeMiddleware
+pub fn noctis::BeforeMiddleware::clone(&self) -> Self
+impl core::fmt::Debug for noctis::BeforeMiddleware
+pub fn noctis::BeforeMiddleware::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::BuildError
 impl noctis::BuildError
 pub fn noctis::BuildError::into_violations(self) -> alloc::vec::Vec<noctis::BuildViolation>
@@ -278,6 +337,10 @@ pub noctis::BuildViolation::InvalidRefTtl::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidShardTotal
 pub noctis::BuildViolation::InvalidShutdownGrace
 pub noctis::BuildViolation::InvalidShutdownGrace::actual: core::time::Duration
+pub noctis::BuildViolation::MissingExtension
+pub noctis::BuildViolation::MissingExtension::extension: &'static str
+pub noctis::BuildViolation::MissingExtension::handler: &'static str
+pub noctis::BuildViolation::MissingExtension::module: &'static str
 pub noctis::BuildViolation::MissingIntent
 pub noctis::BuildViolation::MissingIntent::event: &'static str
 pub noctis::BuildViolation::MissingIntent::handler: &'static str
@@ -657,9 +720,11 @@ impl core::marker::StructuralPartialEq for noctis::ErrorOrigin
 #[non_exhaustive] pub struct noctis::ErrorReport<'a>
 pub noctis::ErrorReport::app: &'a str
 pub noctis::ErrorReport::event_type: core::option::Option<&'a str>
+pub noctis::ErrorReport::extensions: core::option::Option<&'a noctis::Extensions>
 pub noctis::ErrorReport::guild_id: core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub noctis::ErrorReport::handler: core::option::Option<&'a str>
 pub noctis::ErrorReport::kind: noctis::ReportKind<'a>
+pub noctis::ErrorReport::middleware: core::option::Option<&'a str>
 pub noctis::ErrorReport::module: core::option::Option<&'a str>
 pub noctis::ErrorReport::origin: noctis::ErrorOrigin
 pub noctis::ErrorReport::shard: core::option::Option<u32>
@@ -707,6 +772,54 @@ impl core::clone::Clone for noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::Ext<T>(_)
+impl<T> noctis::Ext<T>
+pub fn noctis::Ext<T>::into_arc(self) -> alloc::rcs::arc::Arc<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for noctis::Ext<T>
+pub fn noctis::Ext<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> core::clone::Clone for noctis::Ext<T>
+pub fn noctis::Ext<T>::clone(&self) -> Self
+impl<T> core::convert::AsRef<T> for noctis::Ext<T>
+pub fn noctis::Ext<T>::as_ref(&self) -> &T
+impl<T> core::ops::deref::Deref for noctis::Ext<T>
+pub type noctis::Ext<T>::Target = T
+pub fn noctis::Ext<T>::deref(&self) -> &T
+#[non_exhaustive] pub struct noctis::ExtensionMissing
+impl noctis::ExtensionMissing
+pub fn noctis::ExtensionMissing::extension(&self) -> &'static str
+pub fn noctis::ExtensionMissing::handler(&self) -> &'static str
+impl core::clone::Clone for noctis::ExtensionMissing
+pub fn noctis::ExtensionMissing::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ExtensionMissing
+impl core::cmp::PartialEq for noctis::ExtensionMissing
+pub fn noctis::ExtensionMissing::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::ExtensionMissing
+impl core::fmt::Debug for noctis::ExtensionMissing
+pub fn noctis::ExtensionMissing::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ExtensionMissing
+pub fn noctis::ExtensionMissing::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ExtensionMissing
+pub struct noctis::Extensions
+impl noctis::Extensions
+pub fn noctis::Extensions::contains<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> bool
+pub fn noctis::Extensions::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<&T>
+pub fn noctis::Extensions::is_empty(&self) -> bool
+pub fn noctis::Extensions::len(&self) -> usize
+pub fn noctis::Extensions::type_names(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'static str> + '_
+impl core::fmt::Debug for noctis::Extensions
+pub fn noctis::Extensions::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum noctis::Flow
+pub noctis::Flow::Continue
+pub noctis::Flow::Stop(core::option::Option<noctis::prelude::MessageKey>)
+impl core::clone::Clone for noctis::Flow
+pub fn noctis::Flow::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Flow
+impl core::cmp::PartialEq for noctis::Flow
+pub fn noctis::Flow::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Flow
+pub fn noctis::Flow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::Flow
+impl core::marker::StructuralPartialEq for noctis::Flow
 pub struct noctis::Focused
 impl noctis::Focused
 pub fn noctis::Focused::as_integer(&self) -> core::option::Option<i64>
@@ -894,6 +1007,26 @@ impl core::fmt::Debug for noctis::InvalidOption
 pub fn noctis::InvalidOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::InvalidOption
 pub fn noctis::InvalidOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::Invocation
+pub noctis::Invocation::Command
+pub noctis::Invocation::Command::path: &'static str
+pub noctis::Invocation::Component
+pub noctis::Invocation::Component::route: &'static str
+pub noctis::Invocation::ContextMenu
+pub noctis::Invocation::ContextMenu::name: &'static str
+pub noctis::Invocation::Event
+pub noctis::Invocation::Event::event_type: &'static str
+pub noctis::Invocation::Modal
+pub noctis::Invocation::Modal::route: &'static str
+impl core::clone::Clone for noctis::Invocation
+pub fn noctis::Invocation::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Invocation
+impl core::cmp::PartialEq for noctis::Invocation
+pub fn noctis::Invocation::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Invocation
+pub fn noctis::Invocation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::Invocation
+impl core::marker::StructuralPartialEq for noctis::Invocation
 pub struct noctis::Kv
 impl noctis::Kv
 pub async fn noctis::Kv::counter(&self, &str) -> core::result::Result<u64, noctis::ports::PortError>
@@ -975,6 +1108,19 @@ impl core::fmt::Display for noctis::MenuTargetError
 pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::MenuTargetError
 pub proc macro noctis::#[derive(MessageCommand)]
+pub enum noctis::Middleware
+impl noctis::Middleware
+pub fn noctis::Middleware::after<F, Fut>(F) -> noctis::AfterMiddleware where F: core::ops::function::Fn(noctis::AfterCtx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = ()> + core::marker::Send + 'static
+pub fn noctis::Middleware::before<F, Fut>(F) -> noctis::BeforeMiddleware where F: core::ops::function::Fn(noctis::BeforeCtx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<noctis::Flow>> + core::marker::Send + 'static
+impl core::clone::Clone for noctis::Middleware
+pub fn noctis::Middleware::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Middleware
+impl core::cmp::PartialEq for noctis::Middleware
+pub fn noctis::Middleware::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Middleware
+pub fn noctis::Middleware::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::Middleware
+impl core::marker::StructuralPartialEq for noctis::Middleware
 pub struct noctis::ModalHandler
 impl noctis::ModalHandler
 pub fn noctis::ModalHandler::name(&self) -> &'static str
@@ -1017,7 +1163,9 @@ pub fn noctis::ModalSubmitCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core
 pub struct noctis::Module
 impl noctis::Module
 pub fn noctis::Module::add<T: noctis::Register>(self) -> Self
+pub fn noctis::Module::after(self, noctis::AfterMiddleware) -> Self
 pub fn noctis::Module::base(self, &'static str, noctis::BaseMeta) -> Self
+pub fn noctis::Module::before(self, noctis::BeforeMiddleware) -> Self
 pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
 pub fn noctis::Module::module(self, noctis::Module) -> Self
@@ -1244,6 +1392,23 @@ impl core::fmt::Display for noctis::RunError
 pub fn noctis::RunError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::RunError
 impl core::marker::StructuralPartialEq for noctis::RunError
+#[non_exhaustive] pub enum noctis::RunOutcome
+pub noctis::RunOutcome::Completed
+pub noctis::RunOutcome::Failed
+pub noctis::RunOutcome::Panicked
+pub noctis::RunOutcome::Stopped
+pub noctis::RunOutcome::UserError
+impl noctis::RunOutcome
+pub const fn noctis::RunOutcome::is_completed(self) -> bool
+impl core::clone::Clone for noctis::RunOutcome
+pub fn noctis::RunOutcome::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RunOutcome
+impl core::cmp::PartialEq for noctis::RunOutcome
+pub fn noctis::RunOutcome::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RunOutcome
+pub fn noctis::RunOutcome::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::RunOutcome
+impl core::marker::StructuralPartialEq for noctis::RunOutcome
 pub struct noctis::Runtime(_)
 impl noctis::Runtime
 pub fn noctis::Runtime::for_test() -> Self
@@ -2864,6 +3029,26 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
 pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
 pub mod noctis::prelude
+pub struct noctis::prelude::AfterCtx
+impl noctis::prelude::AfterCtx
+pub fn noctis::prelude::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::AfterCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::AfterCtx::handler(&self) -> &'static str
+pub fn noctis::prelude::AfterCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::AfterCtx::invocation(&self) -> noctis::Invocation
+pub fn noctis::prelude::AfterCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::AfterCtx::module(&self) -> &'static str
+pub fn noctis::prelude::AfterCtx::shard(&self) -> u32
+pub fn noctis::prelude::AfterCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::AfterCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+impl noctis::prelude::AfterCtx
+pub fn noctis::prelude::AfterCtx::extensions(&self) -> &noctis::Extensions
+pub fn noctis::prelude::AfterCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
+pub fn noctis::prelude::AfterCtx::outcome(&self) -> noctis::RunOutcome
+impl core::clone::Clone for noctis::prelude::AfterCtx
+pub fn noctis::prelude::AfterCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::AfterCtx
+pub fn noctis::prelude::AfterCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::App
 impl noctis::prelude::App
 pub fn noctis::prelude::App::ack_deadline(&self) -> core::time::Duration
@@ -2951,6 +3136,26 @@ pub fn noctis::prelude::AutocompleteCtx::user_id(&self) -> twilight_model::id::I
 pub fn noctis::prelude::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
 impl core::fmt::Debug for noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::prelude::BeforeCtx
+impl noctis::prelude::BeforeCtx
+pub fn noctis::prelude::BeforeCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::BeforeCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::BeforeCtx::handler(&self) -> &'static str
+pub fn noctis::prelude::BeforeCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::BeforeCtx::invocation(&self) -> noctis::Invocation
+pub fn noctis::prelude::BeforeCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::BeforeCtx::module(&self) -> &'static str
+pub fn noctis::prelude::BeforeCtx::shard(&self) -> u32
+pub fn noctis::prelude::BeforeCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::BeforeCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+impl noctis::prelude::BeforeCtx
+pub fn noctis::prelude::BeforeCtx::contains<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> bool
+pub fn noctis::prelude::BeforeCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
+pub fn noctis::prelude::BeforeCtx::insert<T: core::marker::Send + core::marker::Sync + 'static>(&self, T)
+impl core::clone::Clone for noctis::prelude::BeforeCtx
+pub fn noctis::prelude::BeforeCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::BeforeCtx
+pub fn noctis::prelude::BeforeCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Button)]
 pub proc macro noctis::prelude::#[derive(ChannelSelectMenu)]
 pub proc macro noctis::prelude::#[derive(Choices)]
@@ -3116,6 +3321,30 @@ impl core::clone::Clone for noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::prelude::Ext<T>(_)
+impl<T> noctis::prelude::Ext<T>
+pub fn noctis::prelude::Ext<T>::into_arc(self) -> alloc::rcs::arc::Arc<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for noctis::prelude::Ext<T>
+pub fn noctis::prelude::Ext<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T> core::clone::Clone for noctis::prelude::Ext<T>
+pub fn noctis::prelude::Ext<T>::clone(&self) -> Self
+impl<T> core::convert::AsRef<T> for noctis::prelude::Ext<T>
+pub fn noctis::prelude::Ext<T>::as_ref(&self) -> &T
+impl<T> core::ops::deref::Deref for noctis::prelude::Ext<T>
+pub type noctis::prelude::Ext<T>::Target = T
+pub fn noctis::prelude::Ext<T>::deref(&self) -> &T
+pub enum noctis::prelude::Flow
+pub noctis::prelude::Flow::Continue
+pub noctis::prelude::Flow::Stop(core::option::Option<noctis::prelude::MessageKey>)
+impl core::clone::Clone for noctis::prelude::Flow
+pub fn noctis::prelude::Flow::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::Flow
+impl core::cmp::PartialEq for noctis::prelude::Flow
+pub fn noctis::prelude::Flow::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::Flow
+pub fn noctis::prelude::Flow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::prelude::Flow
+impl core::marker::StructuralPartialEq for noctis::prelude::Flow
 pub struct noctis::prelude::HandlerError
 impl noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
@@ -3183,6 +3412,19 @@ impl core::hash::Hash for noctis::prelude::MessageKey
 pub fn noctis::prelude::MessageKey::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::prelude::MessageKey
 impl core::marker::StructuralPartialEq for noctis::prelude::MessageKey
+pub enum noctis::prelude::Middleware
+impl noctis::prelude::Middleware
+pub fn noctis::prelude::Middleware::after<F, Fut>(F) -> noctis::AfterMiddleware where F: core::ops::function::Fn(noctis::AfterCtx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = ()> + core::marker::Send + 'static
+pub fn noctis::prelude::Middleware::before<F, Fut>(F) -> noctis::BeforeMiddleware where F: core::ops::function::Fn(noctis::BeforeCtx) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<noctis::Flow>> + core::marker::Send + 'static
+impl core::clone::Clone for noctis::prelude::Middleware
+pub fn noctis::prelude::Middleware::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::Middleware
+impl core::cmp::PartialEq for noctis::prelude::Middleware
+pub fn noctis::prelude::Middleware::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::Middleware
+pub fn noctis::prelude::Middleware::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::prelude::Middleware
+impl core::marker::StructuralPartialEq for noctis::prelude::Middleware
 pub proc macro noctis::prelude::#[derive(Modal)]
 pub trait noctis::prelude::ModalForm: core::marker::Sized
 pub fn noctis::prelude::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
@@ -3207,7 +3449,9 @@ pub fn noctis::prelude::ModalSubmitCtx::fmt(&self, &mut core::fmt::Formatter<'_>
 pub struct noctis::prelude::Module
 impl noctis::prelude::Module
 pub fn noctis::prelude::Module::add<T: noctis::Register>(self) -> Self
+pub fn noctis::prelude::Module::after(self, noctis::AfterMiddleware) -> Self
 pub fn noctis::prelude::Module::base(self, &'static str, noctis::BaseMeta) -> Self
+pub fn noctis::prelude::Module::before(self, noctis::BeforeMiddleware) -> Self
 pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
 pub fn noctis::prelude::Module::module(self, noctis::prelude::Module) -> Self

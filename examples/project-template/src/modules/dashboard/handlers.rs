@@ -2,7 +2,8 @@
 
 //! Every handler has the same shape, `impl X { #[handler] async fn handle(self, ctx, ..) }`:
 //! `self` is the decoded Payload,
-//! validate and authorize (Route Guards run before the handler), write to storage, then
+//! validate and authorize (the Module's `guild_only` Middleware and the Route Guards run
+//! before the handler), write to storage, then
 //! `render_dashboard(..)` with freshly loaded data: the returned message updates the
 //! clicked dashboard in place (`response = update`, the default).
 
@@ -13,9 +14,9 @@ use noctis::prelude::*;
 use noctis::ui::V2Message;
 
 use super::view::{DashData, module_name, render_dashboard};
-use super::{DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
+use super::{DashGuild, DashTab, ModuleKey, OpenTab, ToggleModule, TurnPage};
 use crate::BotMeta;
-use crate::strings::{Strings, keys};
+use crate::strings::Strings;
 
 /// Entry point (UD-3): one optional lookup option; opens on the Overview tab, or on the
 /// Modules tab when a module is picked. Public by default (`response = public`), so the
@@ -37,11 +38,9 @@ pub struct Dashboard {
 
 impl Dashboard {
     #[handler]
-    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+    async fn handle(self, ctx: CommandCtx, guild: Ext<DashGuild>) -> HandlerResult<Responded> {
         let meta = bot_meta(ctx.state::<BotMeta>())?;
-        let Some(guild) = ctx.guild_id() else {
-            return Err(HandlerError::user(keys::COMMON_GUILD_ONLY)); // [planned, Story 8.1]
-        };
+        let guild = guild.0; // the `guild_only` Middleware stopped DMs already
         // Autocomplete does not constrain the value: only a known module id switches tabs.
         let tab = match self.module.as_deref().and_then(ModuleKey::from_id) {
             Some(_) => DashTab::Modules,

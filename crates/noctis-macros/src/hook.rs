@@ -22,6 +22,9 @@ use syn::{FnArg, Ident, ImplItemFn, Type};
 
 use crate::command::is_responder;
 
+const NO_EXT: &str =
+    "`#[on_stale]`/`#[on_expired]` hooks run no Middleware, so they take no `Ext<T>`";
+
 /// Which hook attribute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Hook {
@@ -89,6 +92,9 @@ fn shape(method: &ImplItemFn, hook: Hook) -> syn::Result<(TokenStream, TokenStre
             #core::__assert_responder::<Self, #r>();
         }
     };
+    if let Some(ext) = typed.iter().find(|ty| crate::handler::is_ext(ty)) {
+        return Err(syn::Error::new_spanned(ext, NO_EXT));
+    }
     let count = || {
         let span = if typed.is_empty() {
             sig.ident.span()
@@ -337,5 +343,23 @@ mod tests {
         assert!(out.contains("compile_error"), "{out}");
         assert!(out.contains("fn f (ctx : ComponentCtx)"), "{out}");
         assert!(!out.contains("__noctis_on_stale"), "{out}");
+    }
+
+    /// Middleware Matrix 10: hooks take no `Ext<T>`.
+    #[test]
+    fn hooks_take_no_ext() {
+        for (hook, src) in [
+            (Hook::Stale, "async fn f(ctx: ComponentCtx, a: Ext<A>) {}"),
+            (
+                Hook::Expired,
+                "async fn f(ctx: ComponentCtx, e: Expired, a: Option<Ext<A>>) {}",
+            ),
+            (
+                Hook::Expired,
+                "async fn f(ctx: ComponentCtx, e: Expired, a: noctis::Ext<A, B>) {}",
+            ),
+        ] {
+            assert_eq!(run(hook, quote!(), src), NO_EXT, "{src}");
+        }
     }
 }

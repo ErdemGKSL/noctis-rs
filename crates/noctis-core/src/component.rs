@@ -165,6 +165,12 @@ pub struct ComponentCtx(Arc<CtxInner>);
 
 ctx_accessors!(ComponentCtx);
 
+impl crate::kind::__Extensions for ComponentCtx {
+    fn __extensions(&self) -> &crate::Extensions {
+        self.0.extensions()
+    }
+}
+
 /// The context a modal's `#[handler]` method receives; the same accessors
 /// as [`ComponentCtx`]. The struct value itself (`self`) is the decoded
 /// Payload plus the submitted inputs.
@@ -174,6 +180,12 @@ ctx_accessors!(ComponentCtx);
 pub struct ModalSubmitCtx(Arc<CtxInner>);
 
 ctx_accessors!(ModalSubmitCtx);
+
+impl crate::kind::__Extensions for ModalSubmitCtx {
+    fn __extensions(&self) -> &crate::Extensions {
+        self.0.extensions()
+    }
+}
 
 /// Why a component or modal interaction went to the Expired Handler chain
 /// instead of its handler (FR-18, FR-60).
@@ -531,6 +543,8 @@ pub struct ComponentHandler {
     probe: fn(&Decoded<'_>) -> Result<(), DecodeError>,
     on_stale: Option<Arc<HookFn<ComponentCtx>>>,
     on_expired: Option<Arc<HookFn<ComponentCtx>>>,
+    /// The Extension types its `Ext<T>` parameters require.
+    requires: &'static [crate::kind::__ExtType],
 }
 
 impl ComponentHandler {
@@ -617,6 +631,7 @@ impl ComponentHandler {
             probe: probe::<S>,
             on_stale: None,
             on_expired: None,
+            requires: &[],
         }
     }
 
@@ -634,6 +649,18 @@ impl ComponentHandler {
     pub fn __with_on_expired(mut self, hook: __ExpiredHook<ComponentCtx>) -> Self {
         self.on_expired = Some(hook.0);
         self
+    }
+
+    /// Sets the Extension types the handler requires; what
+    /// `__RequireExtensions` calls.
+    pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {
+        Self { requires, ..self }
+    }
+
+    /// The Extension types its `Ext<T>` parameters require, in parameter
+    /// order.
+    pub(crate) fn requires(&self) -> &'static [crate::kind::__ExtType] {
+        self.requires
     }
 
     /// The link of the Expired Handler chain that answers `expired`.
@@ -778,6 +805,8 @@ pub struct ModalHandler {
     start_record: Arc<ModalRecordStart>,
     on_stale: Option<Arc<HookFn<ModalSubmitCtx>>>,
     on_expired: Option<Arc<HookFn<ModalSubmitCtx>>>,
+    /// The Extension types its `Ext<T>` parameters require.
+    requires: &'static [crate::kind::__ExtType],
 }
 
 impl ModalHandler {
@@ -863,6 +892,7 @@ impl ModalHandler {
             start_record: Arc::new(start_record),
             on_stale: None,
             on_expired: None,
+            requires: &[],
         }
     }
 
@@ -880,6 +910,18 @@ impl ModalHandler {
     pub fn __with_on_expired(mut self, hook: __ExpiredHook<ModalSubmitCtx>) -> Self {
         self.on_expired = Some(hook.0);
         self
+    }
+
+    /// Sets the Extension types the handler requires; what
+    /// `__RequireExtensions` calls.
+    pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {
+        Self { requires, ..self }
+    }
+
+    /// The Extension types its `Ext<T>` parameters require, in parameter
+    /// order.
+    pub(crate) fn requires(&self) -> &'static [crate::kind::__ExtType] {
+        self.requires
     }
 
     /// The link of the Expired Handler chain that answers `expired`.

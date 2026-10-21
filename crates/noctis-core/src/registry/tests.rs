@@ -870,3 +870,186 @@ mod routes {
         assert!(format!("{:?}", roots[0]).contains("uses: [\"shop.buy\"]"));
     }
 }
+
+// --- Middleware chains and `MissingExtension` --------------------------------
+
+mod extensions {
+    use super::*;
+    use crate::kind::__ExtType;
+    use crate::test_support::{button, command, modal, user_menu};
+    use crate::{BeforeCtx, CommandMetadata, Flow, HandlerResult, Middleware};
+
+    struct A;
+    struct B;
+
+    const NEEDS_A: &[__ExtType] = &[__ExtType::of::<A>()];
+    const NEEDS_B: &[__ExtType] = &[__ExtType::of::<B>()];
+    const NEEDS_A_TWICE_B: &[__ExtType] = &[
+        __ExtType::of::<A>(),
+        __ExtType::of::<A>(),
+        __ExtType::of::<B>(),
+    ];
+
+    async fn provide(_: BeforeCtx) -> HandlerResult<Flow> {
+        Ok(Flow::Continue)
+    }
+
+    fn provides_a() -> crate::BeforeMiddleware {
+        Middleware::before(provide).provides::<A>()
+    }
+
+    fn fold(roots: &[Module]) -> Vec<BuildViolation> {
+        Registry::fold(roots, Intents::empty()).1
+    }
+
+    fn missing(module: &'static str, handler: &'static str, ty: &'static str) -> BuildViolation {
+        BuildViolation::MissingExtension {
+            module,
+            handler,
+            extension: ty,
+        }
+    }
+
+    fn a() -> &'static str {
+        std::any::type_name::<A>()
+    }
+
+    fn b() -> &'static str {
+        std::any::type_name::<B>()
+    }
+
+    /// A Command handler `name` at `/name` requiring `requires`.
+    fn cmd(name: &'static str, requires: &'static [__ExtType]) -> crate::CommandHandler {
+        let path = crate::test_support::leak_paths(name.rsplit("::").next().unwrap_or(name));
+        command(name, path, "d").__with_requires(requires)
+    }
+
+    /// Matrix 14, 15 and 18: an own, an ancestor's and no provider for an
+    /// optional Extension all build.
+    #[test]
+    fn provided_on_the_path() {
+        let own = Module::new("m")
+            .before(provides_a())
+            .__add(cmd("bot::own", NEEDS_A));
+        assert_eq!(fold(&[own]), []);
+        let grandchild =
+            Module::new("g").__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
+        let tree = Module::new("root")
+            .before(provides_a())
+            .module(Module::new("c").module(grandchild));
+        assert_eq!(fold(&[tree]), []);
+        let optional = Module::new("m").__add(cmd("bot::opt", &[]));
+        assert_eq!(fold(&[optional]), []);
+    }
+
+    /// Matrix 16: a provider only in a child or a sibling does not count.
+    #[test]
+    fn child_or_sibling_provider_is_missing() {
+        let tree = Module::new("m")
+            .__add(cmd("bot::h", NEEDS_A))
+            .module(Module::new("m/child").before(provides_a()));
+        let sibling = Module::new("s").before(provides_a());
+        assert_eq!(fold(&[tree, sibling]), [missing("m", "bot::h", a())]);
+    }
+
+    /// Matrix 17: the scope counts.
+    #[test]
+    fn scope_mismatch() {
+        let only_events = Module::new("e")
+            .before(Middleware::before(provide).provides::<A>().events_only())
+            .__add(cmd("bot::cmd", NEEDS_A))
+            .__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
+        let skip_events = Module::new("s")
+            .before(Middleware::before(provide).provides::<A>().skip_events())
+            .__add(noop::<MessageCreate>("bot::ev2").__with_requires(NEEDS_A))
+            .__add(cmd("bot::cmd2", NEEDS_A));
+        assert_eq!(
+            fold(&[only_events, skip_events]),
+            [missing("e", "bot::cmd", a()), missing("s", "bot::ev2", a())]
+        );
+    }
+
+    /// Matrix 19: every violation, in fold order and kind order, one per
+    /// (handler, type); the exact text once.
+    #[test]
+    fn many_in_fold_order() {
+        let module = Module::new("m")
+            .__add(modal("bot::Modal", "m.modal").__with_requires(NEEDS_B))
+            .__add(button("bot::Button", "m.button").__with_requires(NEEDS_A))
+            .__add(user_menu("bot::Menu", "Show", CommandMetadata::new()).__with_requires(NEEDS_B))
+            .__add(cmd("bot::cmd", NEEDS_A_TWICE_B))
+            .__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A))
+            .module(Module::new("m/c").__add(cmd("bot::child", NEEDS_B)));
+        let violations = fold(&[module]);
+        assert_eq!(
+            violations,
+            [
+                missing("m", "bot::ev", a()),
+                missing("m", "bot::cmd", a()),
+                missing("m", "bot::cmd", b()),
+                missing("m", "bot::Menu", b()),
+                missing("m", "bot::Button", a()),
+                missing("m", "bot::Modal", b()),
+                missing("m/c", "bot::child", b()),
+            ]
+        );
+        assert_eq!(
+            violations[0].to_string(),
+            format!(
+                "handler `bot::ev` (Module `m`) takes `Ext<{0}>`, but no before-Middleware on \
+                 its Module path provides it: add `.before(Middleware::before(f).provides::<{0}>())` \
+                 to Module `m` or an ancestor, or take `Option<Ext<{0}>>`",
+                a()
+            )
+        );
+    }
+
+    /// Matrix 20: one Module mounted under a providing root and a bare one
+    /// fails on the bare path only.
+    #[test]
+    fn two_mounts() {
+        let shared =
+            Module::new("shared").__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
+        let provided = Module::new("p").before(provides_a()).module(shared.clone());
+        let bare = Module::new("b").module(shared);
+        assert_eq!(fold(&[provided, bare]), [missing("shared", "bot::ev", a())]);
+    }
+
+    /// Matrix 21's chain: parent before child, registration order; the
+    /// entries share their Module's chain.
+    #[test]
+    fn chains_fold_parent_first() {
+        async fn r1(_: BeforeCtx) -> HandlerResult<Flow> {
+            Ok(Flow::Continue)
+        }
+        async fn r2(_: BeforeCtx) -> HandlerResult<Flow> {
+            Ok(Flow::Continue)
+        }
+        async fn c1(_: BeforeCtx) -> HandlerResult<Flow> {
+            Ok(Flow::Continue)
+        }
+        let tree = Module::new("root")
+            .before(Middleware::before(r1))
+            .before(Middleware::before(r2))
+            .__add(noop::<MessageCreate>("bot::root"))
+            .module(
+                Module::new("child")
+                    .before(Middleware::before(c1))
+                    .__add(noop::<MessageCreate>("bot::child")),
+            );
+        assert!(format!("{tree:?}").contains("before: [\""));
+        let (registry, violations) = Registry::fold(&[tree], Intents::empty());
+        assert_eq!(violations, []);
+        let names = |entry: &Entry| -> Vec<&str> {
+            entry
+                .chain
+                .before
+                .iter()
+                .map(|m| m.name().rsplit("::").next().unwrap_or_default())
+                .collect()
+        };
+        let entries = registry.entries();
+        assert_eq!(names(&entries[0]), ["r1", "r2"]);
+        assert_eq!(names(&entries[1]), ["r1", "r2", "c1"]);
+    }
+}

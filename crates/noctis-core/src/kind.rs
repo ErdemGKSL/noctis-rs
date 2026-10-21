@@ -9,6 +9,8 @@
 //! [`__Bind::__bind`] of the kind marker with the method itself, so a
 //! parameter of the wrong type fails with the expected type in the error.
 
+use std::any::TypeId;
+use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
 
@@ -20,9 +22,10 @@ use crate::component::{
     ModalHandler, ModalSubmitCtx,
 };
 use crate::events::{EventCtx, EventHandler, EventPayload};
-use crate::handler::HandlerResult;
+use crate::handler::{HandlerError, HandlerResult};
 use crate::menu::ContextMenuHandler;
 use crate::metadata::CommandMetadata;
+use crate::middleware::{Ext, ExtensionMissing, Extensions};
 use crate::module::{Descriptor, Module, sealed};
 use crate::options::Options;
 use crate::responder::{
@@ -946,3 +949,98 @@ impl sealed::Sealed for __Unbound {
 }
 
 impl Descriptor for __Unbound {}
+
+// --- Extensions (`Ext<T>` parameters) -----------------------------------------
+
+/// One Extension type a `#[handler]` method requires (an `Ext<T>`
+/// parameter): its `TypeId` and type name, as functions so the list is a
+/// `const`.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct __ExtType {
+    id: fn() -> TypeId,
+    name: fn() -> &'static str,
+}
+
+impl __ExtType {
+    /// The Extension type `T`.
+    pub const fn of<T: Send + Sync + 'static>() -> Self {
+        Self {
+            id: TypeId::of::<T>,
+            name: std::any::type_name::<T>,
+        }
+    }
+
+    /// Its `TypeId`.
+    pub(crate) fn id(&self) -> TypeId {
+        (self.id)()
+    }
+
+    /// Its type name.
+    pub(crate) fn name(&self) -> &'static str {
+        (self.name)()
+    }
+}
+
+impl fmt::Debug for __ExtType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("__ExtType").field(&self.name()).finish()
+    }
+}
+
+/// Sets the Extension types a descriptor's handler requires; what
+/// `#[handler]` wraps a descriptor in when the method takes `Ext<T>`.
+#[doc(hidden)]
+pub trait __RequireExtensions: Sized {
+    /// The descriptor requiring `types`.
+    #[must_use]
+    fn __require_extensions(self, types: &'static [__ExtType]) -> Self;
+}
+
+macro_rules! require_extensions {
+    ($($descriptor:ty),*) => {$(
+        impl __RequireExtensions for $descriptor {
+            fn __require_extensions(self, types: &'static [__ExtType]) -> Self {
+                self.__with_requires(types)
+            }
+        }
+    )*};
+}
+
+require_extensions!(
+    CommandHandler,
+    ContextMenuHandler,
+    EventHandler,
+    ComponentHandler,
+    ModalHandler
+);
+
+/// A handler context that carries its run's frozen Extensions.
+#[doc(hidden)]
+pub trait __Extensions {
+    /// The frozen Extensions (an empty map while no chain froze one).
+    fn __extensions(&self) -> &Extensions;
+}
+
+/// The `Ext<T>` parameter of the handler `handler`: an
+/// [`ExtensionMissing`] error when no Middleware inserted `T`.
+#[doc(hidden)]
+pub fn __ext<T, C>(ctx: &C, handler: &'static str) -> HandlerResult<Ext<T>>
+where
+    T: Send + Sync + 'static,
+    C: __Extensions,
+{
+    ctx.__extensions()
+        .ext::<T>()
+        .ok_or_else(|| HandlerError::new(ExtensionMissing::of::<T>(handler)))
+}
+
+/// The `Option<Ext<T>>` parameter of a handler.
+#[doc(hidden)]
+pub fn __ext_opt<T, C>(ctx: &C) -> Option<Ext<T>>
+where
+    T: Send + Sync + 'static,
+    C: __Extensions,
+{
+    ctx.__extensions().ext::<T>()
+}

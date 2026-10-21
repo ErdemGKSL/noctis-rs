@@ -180,6 +180,7 @@ mod kv;
 mod lifecycle;
 mod menu;
 mod metadata;
+mod middleware;
 mod module;
 mod namespace;
 mod notice;
@@ -239,9 +240,15 @@ pub use kind::{
     __PatternPaths, __Response, __SinglePath, __SlashCommand, __SlashKind, __TakesTarget,
     __Unbound, __assert_no_responder, __assert_responder,
 };
+#[doc(hidden)]
+pub use kind::{__ExtType, __Extensions, __RequireExtensions, __ext, __ext_opt};
 pub use kv::Kv;
 pub use menu::{ContextMenuHandler, MenuTargetError};
 pub use metadata::{BaseMeta, CommandMetadata};
+pub use middleware::{
+    AfterCtx, AfterMiddleware, BeforeCtx, BeforeMiddleware, Ext, ExtensionMissing, Extensions,
+    Flow, Invocation, Middleware, RunOutcome,
+};
 #[doc(hidden)]
 pub use module::Descriptor;
 pub use module::{Module, Register};

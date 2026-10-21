@@ -23,6 +23,7 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::events::EventCtx;
 use crate::handler::{AppShared, HandlerResult};
+use crate::middleware::{Around, Before, Invocation, RunInfo, RunOutcome};
 use crate::pipeline::component::run_component;
 use crate::pipeline::{run_autocomplete, run_interaction};
 use crate::registry::{Entry, Handlers, Registry};
@@ -361,19 +362,27 @@ fn take_event(event: &mut Option<Event>, last: bool) -> Option<Event> {
 
 /// How one handler run ended.
 enum Outcome {
-    /// The handler returned.
+    /// The handler (or a before-Middleware) returned.
     Returned(HandlerResult<()>),
-    /// The handler panicked.
+    /// The handler (or a before-Middleware) panicked.
     Panicked(Box<dyn Any + Send>),
+    /// A before-Middleware stopped the run.
+    Stopped,
     /// The cancel token fired first (or before the handler started).
     Cancelled,
 }
 
-/// Runs one handler in span `noctis.event`, catching its panic and racing
-/// the cancel token (cancel first); records its duration when it started,
-/// and reports an error, a panic or a cancellation to the `Event` sink.
-/// Every run ends in exactly one outcome.
-async fn run_handler(
+/// Runs one handler in span `noctis.event`: its before-Middleware, then the
+/// handler, then its after-Middleware, catching panics and racing the
+/// cancel token (cancel first); records the handler's duration when it
+/// ran, and reports an error, a panic or a cancellation to the `Event`
+/// sink. Every run ends in exactly one outcome; a filtered event runs no
+/// Middleware.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one linear pass over the stages of an event handler run"
+)]
+pub(crate) async fn run_handler(
     entry: &Entry,
     shard: u32,
     guild_id: Option<Id<GuildMarker>>,
@@ -392,63 +401,135 @@ async fn run_handler(
         handler = handler.name(),
         event_type,
     );
-    let kind = ErrorOrigin::Event.as_str();
+    let around = Around::new(
+        &entry.chain,
+        || RunInfo {
+            invocation: Invocation::Event { event_type },
+            module: entry.module,
+            handler: handler.name(),
+            shard,
+            guild_id,
+            channel_id: None,
+            user_id: None,
+            app: Some(Arc::clone(app)),
+        },
+        true,
+    );
+    let mut middleware = None;
     let outcome = if cancel.is_cancelled() {
         Outcome::Cancelled
     } else {
-        let ctx = EventCtx::new(shard, guild_id, entry.module, Arc::clone(app));
+        let ctx = EventCtx::new(shard, guild_id, entry.module, Arc::clone(app), around.run());
         let started_at = Instant::now();
         let started = span
             .in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event))));
-        let outcome = match started {
-            Ok(Some(fut)) => {
-                let run = AssertUnwindSafe(fut)
-                    .catch_unwind()
-                    .instrument(span.clone());
-                tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => Outcome::Cancelled,
-                    result = run => match result {
-                        Ok(result) => Outcome::Returned(result),
-                        Err(panic) => Outcome::Panicked(panic),
-                    },
+        match started {
+            Ok(Some(fut)) => match around.before(&span, Some(cancel)).await {
+                Before::Continue => {
+                    let started_at = if around.has_before() {
+                        Instant::now()
+                    } else {
+                        started_at
+                    };
+                    let run = AssertUnwindSafe(fut)
+                        .catch_unwind()
+                        .instrument(span.clone());
+                    let outcome = tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => Outcome::Cancelled,
+                        result = run => match result {
+                            Ok(result) => Outcome::Returned(result),
+                            Err(panic) => Outcome::Panicked(panic),
+                        },
+                    };
+                    record_duration(app, started_at);
+                    outcome
                 }
-            }
+                // An event sends nothing on a stop, whatever its key.
+                Before::Stop(..) => Outcome::Stopped,
+                Before::Failed(error, name) => {
+                    middleware = Some(name);
+                    Outcome::Returned(Err(error))
+                }
+                Before::Panicked(panic, name) => {
+                    middleware = Some(name);
+                    Outcome::Panicked(panic)
+                }
+                Before::Cancelled => Outcome::Cancelled,
+            },
             Ok(None) => return,
-            Err(panic) => Outcome::Panicked(panic),
-        };
-        metrics::histogram!(
-            "noctis_handler_duration_seconds",
-            "app" => Arc::clone(&app.app),
-            "kind" => kind
-        )
-        .record(started_at.elapsed().as_secs_f64());
-        outcome
+            Err(panic) => {
+                record_duration(app, started_at);
+                Outcome::Panicked(panic)
+            }
+        }
     };
+    around.freeze();
+    let base = ErrorReport {
+        origin: ErrorOrigin::Event,
+        kind: ReportKind::Cancelled,
+        app: &app.app,
+        shard: Some(shard),
+        guild_id,
+        module: Some(entry.module),
+        handler: Some(handler.name()),
+        event_type: Some(event_type),
+        extensions: Some(around.extensions()),
+        middleware: None,
+    };
+    let run_outcome = match &outcome {
+        Outcome::Returned(result) => Some(RunOutcome::of(result)),
+        Outcome::Panicked(_) => Some(RunOutcome::Panicked),
+        Outcome::Stopped => Some(RunOutcome::Stopped),
+        Outcome::Cancelled => None,
+    };
+    if let Some(run_outcome) = run_outcome {
+        let panicked = |name: &'static str, panic: &str| {
+            count_error(app);
+            app.sinks.report(ErrorReport {
+                kind: ReportKind::Panic(panic),
+                middleware: Some(name),
+                ..base
+            });
+        };
+        around
+            .after(&span, Some(cancel), run_outcome, panicked)
+            .await;
+    }
     let report_kind = match &outcome {
-        Outcome::Returned(Ok(())) => return,
+        Outcome::Returned(Ok(())) | Outcome::Stopped => return,
         Outcome::Returned(Err(error)) => ReportKind::Error(error),
         Outcome::Panicked(panic) => ReportKind::Panic(panic_message(&**panic)),
         Outcome::Cancelled => ReportKind::Cancelled,
     };
+    count_error(app);
+    span.in_scope(|| {
+        app.sinks.report(ErrorReport {
+            kind: report_kind,
+            middleware,
+            ..base
+        });
+    });
+}
+
+/// Records an event handler's duration since `started_at`.
+fn record_duration(app: &AppShared, started_at: Instant) {
+    metrics::histogram!(
+        "noctis_handler_duration_seconds",
+        "app" => Arc::clone(&app.app),
+        "kind" => ErrorOrigin::Event.as_str()
+    )
+    .record(started_at.elapsed().as_secs_f64());
+}
+
+/// Counts one event handler failure.
+fn count_error(app: &AppShared) {
     metrics::counter!(
         "noctis_handler_errors_total",
         "app" => Arc::clone(&app.app),
-        "kind" => kind
+        "kind" => ErrorOrigin::Event.as_str()
     )
     .increment(1);
-    span.in_scope(|| {
-        app.sinks.report(ErrorReport {
-            origin: ErrorOrigin::Event,
-            kind: report_kind,
-            app: &app.app,
-            shard: Some(shard),
-            guild_id,
-            module: Some(entry.module),
-            handler: Some(handler.name()),
-            event_type: Some(event_type),
-        });
-    });
 }
 
 /// A panic payload's message: `&str` or `String`, else a placeholder.

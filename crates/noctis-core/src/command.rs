@@ -97,6 +97,19 @@ pub(crate) struct CtxInner {
     /// The Ref the clicked or submitted `custom_id` carried; `None` for an
     /// inline id and for every Command (a Command has no Ref).
     pub(crate) current_ref: Option<noctis_codec::Ref>,
+    /// The run whose frozen Extensions the handler's `Ext<T>` parameters
+    /// read; `None` without Middleware (and in the detached seams).
+    pub(crate) run: Option<Arc<crate::middleware::Run>>,
+}
+
+impl CtxInner {
+    /// The run's frozen Extensions, or the empty map.
+    pub(crate) fn extensions(&self) -> &crate::Extensions {
+        match &self.run {
+            Some(run) => run.extensions(),
+            None => crate::Extensions::empty(),
+        }
+    }
 }
 
 impl CtxInner {
@@ -115,6 +128,7 @@ impl CtxInner {
             ephemerality,
             app: None,
             current_ref: None,
+            run: None,
         }
     }
 }
@@ -256,6 +270,12 @@ pub(crate) fn detached_http() -> &'static Arc<twilight_http::Client> {
     })
 }
 
+impl crate::kind::__Extensions for CommandCtx {
+    fn __extensions(&self) -> &crate::Extensions {
+        self.0.extensions()
+    }
+}
+
 impl fmt::Debug for CommandCtx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CommandCtx")
@@ -331,6 +351,8 @@ pub struct CommandHandler {
     call: Arc<ErasedCommand>,
     /// The autocomplete handler linked to an option, by option name.
     autocomplete: fn(&str) -> Option<__AutocompleteMethod>,
+    /// The Extension types its `Ext<T>` parameters require.
+    requires: &'static [crate::kind::__ExtType],
 }
 
 impl CommandHandler {
@@ -353,6 +375,7 @@ impl CommandHandler {
             auto_defer: D::AUTO_DEFER,
             call,
             autocomplete: |_| None,
+            requires: &[],
         }
     }
 
@@ -556,6 +579,18 @@ impl CommandHandler {
             ephemerality,
             ..self
         }
+    }
+
+    /// Sets the Extension types the handler requires; what
+    /// `__RequireExtensions` calls.
+    pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {
+        Self { requires, ..self }
+    }
+
+    /// The Extension types its `Ext<T>` parameters require, in parameter
+    /// order.
+    pub(crate) fn requires(&self) -> &'static [crate::kind::__ExtType] {
+        self.requires
     }
 
     /// The autocomplete handler linked to the option `option` of the

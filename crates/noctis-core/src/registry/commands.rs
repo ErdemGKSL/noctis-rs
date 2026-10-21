@@ -18,6 +18,7 @@ use crate::BuildViolation;
 use crate::command::CommandHandler;
 use crate::menu::ContextMenuHandler;
 use crate::metadata::CommandMetadata;
+use crate::middleware::Chain;
 use crate::module::{Module, NodeDecl};
 
 /// One folded chat-input handler.
@@ -29,10 +30,12 @@ pub(crate) struct CommandEntry {
         not(test),
         expect(
             dead_code,
-            reason = "Middleware (Story 7.6) walks it; tests read it now"
+            reason = "the Module path, kept for diagnostics; Middleware chains are folded beside it and tests read it"
         )
     )]
     pub(crate) ancestors: Arc<[&'static str]>,
+    /// The Middleware chain of that Module.
+    pub(crate) chain: Chain,
     pub(crate) handler: CommandHandler,
 }
 
@@ -45,10 +48,12 @@ pub(crate) struct MenuEntry {
         not(test),
         expect(
             dead_code,
-            reason = "Middleware (Story 7.6) walks it; tests read it now"
+            reason = "the Module path, kept for diagnostics; Middleware chains are folded beside it and tests read it"
         )
     )]
     pub(crate) ancestors: Arc<[&'static str]>,
+    /// The Middleware chain of that Module.
+    pub(crate) chain: Chain,
     pub(crate) handler: ContextMenuHandler,
 }
 
@@ -110,6 +115,8 @@ pub(crate) struct Commands {
 pub(super) struct Folded<'m> {
     pub(super) module: &'m Module,
     pub(super) ancestors: Arc<[&'static str]>,
+    /// The Module's Middleware chain.
+    pub(super) chain: Chain,
 }
 
 /// A description fallback: the node, its scope and where the description
@@ -273,6 +280,7 @@ fn lower(modules: &[Folded<'_>], limits: &Limits) -> Lowered {
             let entry = Arc::new(CommandEntry {
                 module,
                 ancestors: Arc::clone(&folded.ancestors),
+                chain: folded.chain.clone(),
                 handler: handler.clone(),
             });
             let options = handler.options();
@@ -293,6 +301,7 @@ fn lower(modules: &[Folded<'_>], limits: &Limits) -> Lowered {
             let entry = Arc::new(MenuEntry {
                 module,
                 ancestors: Arc::clone(&folded.ancestors),
+                chain: folded.chain.clone(),
                 handler: handler.clone(),
             });
             for scope in handler.metadata().scopes() {

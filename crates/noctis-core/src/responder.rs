@@ -1911,6 +1911,28 @@ impl Shared {
         }
     }
 
+    /// Ends a run a before-Middleware stopped with `Flow::Stop(None)`: it
+    /// sends nothing, except that a type-5 deferred original ("thinking…")
+    /// over an interaction is deleted (a failure is a `warn`).
+    pub(crate) async fn stop_silently(&self) {
+        // The gate waits for an in-flight auto-defer.
+        let state = {
+            let _gate = self.gate.lock().await;
+            self.state()
+        };
+        if state == DEFERRED
+            && let Transport::Interaction(_) = &self.transport
+            && matches!(self.original().shape, Shape::Deferred)
+            && let Err(error) = self.delete_reply().await
+        {
+            tracing::warn!(
+                target: "noctis::dispatch",
+                %error,
+                "could not delete the deferred original after a Middleware stop"
+            );
+        }
+    }
+
     async fn delete_reply(&self) -> Result<(), ResponderError> {
         let original = self.original();
         if let Some((app, channel, id)) = self.expired_route(

@@ -339,8 +339,8 @@ public fields, except `Size`, which validates.
 
 You never call port traits directly; contexts give typed, namespaced handles.
 `ctx.kv() -> Kv` exists on `CommandCtx` (context menus too), `ComponentCtx`,
-`ModalSubmitCtx`, `ExpiredCtx`, `EventCtx` and `AutocompleteCtx` (Middleware's
-`ctx.kv()` is [planned, Story 7.6]). `Kv` (`noctis::Kv`) is a cheap clone over the
+`ModalSubmitCtx`, `ExpiredCtx`, `EventCtx`, `AutocompleteCtx` and the Middleware
+contexts `BeforeCtx` and `AfterCtx`. `Kv` (`noctis::Kv`) is a cheap clone over the
 App's namespaced `CacheStore`: every key lands under `<app_id>:cache:<key>`, and each
 method makes exactly one store call. All Modules of an App share that one keyspace, so
 prefix each key with the Module name (`profile:{user}`, `xp:{guild}:{user}`) to keep two

@@ -150,6 +150,14 @@ pub struct ErrorReport<'a> {
     pub handler: Option<&'a str>,
     /// The Discord event name, e.g. `"MESSAGE_DELETE"`.
     pub event_type: Option<&'a str>,
+    /// The run's frozen [`Extensions`](crate::Extensions): `Some` (possibly
+    /// empty) for every Command, context-menu, `Dispatcher`, component,
+    /// modal or event handler run (stopped and failed ones included), `None`
+    /// for overflow drops, autocomplete and Expired Handler chain runs.
+    pub extensions: Option<&'a crate::Extensions>,
+    /// The Middleware that failed or panicked, when one did (its name, the
+    /// type name of its function).
+    pub middleware: Option<&'a str>,
 }
 
 /// Receives the [`ErrorReport`]s of one or more [`ErrorOrigin`]s.
@@ -202,7 +210,8 @@ impl<S: ErrorSink + ?Sized> ErrorSink for Arc<S> {
 /// The target is `noctis::<origin>` (e.g. `noctis::event`). Fields: `app`,
 /// and `shard`, `guild_id`, `module`, `handler` and `event_type` when
 /// known, plus `error` (the error and its `source()` chain joined with
-/// `": "`, at most 16 links) or `panic`. Messages: `"<origin> handler
+/// `": "`, at most 16 links) or `panic`, and `middleware` when a
+/// Middleware failed (never an Extension value). Messages: `"<origin> handler
 /// failed"`, `"<origin> handler panicked"`, `"<origin> handler cancelled
 /// at shutdown"` and `"event overflow is full; event dropped"`.
 ///
@@ -245,6 +254,7 @@ macro_rules! log_report {
         let module = $report.module;
         let handler = $report.handler;
         let event_type = $report.event_type;
+        let middleware = $report.middleware;
         match $report.kind {
             ReportKind::Error(error) => tracing::error!(
                 target: $target,
@@ -254,6 +264,7 @@ macro_rules! log_report {
                 module,
                 handler,
                 event_type,
+                middleware,
                 error = %Chain(error.as_error()),
                 concat!($origin, " handler failed")
             ),
@@ -265,6 +276,7 @@ macro_rules! log_report {
                 module,
                 handler,
                 event_type,
+                middleware,
                 panic,
                 concat!($origin, " handler panicked")
             ),
@@ -276,6 +288,7 @@ macro_rules! log_report {
                 module,
                 handler,
                 event_type,
+                middleware,
                 concat!($origin, " handler cancelled at shutdown")
             ),
             ReportKind::Dropped => tracing::error!(
@@ -373,6 +386,8 @@ impl noctis_gateway::DropObserver for EventDropObserver {
             module: None,
             handler: None,
             event_type: event.kind().name(),
+            extensions: None,
+            middleware: None,
         });
     }
 }

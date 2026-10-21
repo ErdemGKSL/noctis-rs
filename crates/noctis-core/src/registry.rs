@@ -15,6 +15,8 @@ use twilight_model::gateway::event::EventType;
 use crate::BuildViolation;
 use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
+use crate::kind::__ExtType;
+use crate::middleware::Chain;
 use crate::module::Module;
 
 use self::commands::{Commands, Folded};
@@ -33,10 +35,12 @@ pub(crate) struct Entry {
         not(test),
         expect(
             dead_code,
-            reason = "Middleware (Story 7.6) walks it; tests read it now"
+            reason = "the Module path, kept for diagnostics; Middleware chains are folded beside it and tests read it"
         )
     )]
     pub(crate) ancestors: Arc<[&'static str]>,
+    /// The Middleware chain of that Module.
+    pub(crate) chain: Chain,
     pub(crate) handler: EventHandler,
 }
 
@@ -81,10 +85,12 @@ pub(crate) struct RouteEntry {
         not(test),
         expect(
             dead_code,
-            reason = "Middleware (Story 7.6) walks it; tests read it now"
+            reason = "the Module path, kept for diagnostics; Middleware chains are folded beside it and tests read it"
         )
     )]
     pub(crate) ancestors: Arc<[&'static str]>,
+    /// The Middleware chain of that Module.
+    pub(crate) chain: Chain,
     pub(crate) handler: RouteHandler,
 }
 
@@ -128,25 +134,30 @@ impl Registry {
     /// every Module's commands (`validate_merge` order), then one
     /// [`BuildViolation::DuplicateRoute`] per extra handler of a Route id
     /// and one [`BuildViolation::UnmountedRoute`] per (Module, Route) a
-    /// Module `uses` without a mounted handler, each in fold order.
+    /// Module `uses` without a mounted handler, each in fold order, then
+    /// one [`BuildViolation::MissingExtension`] per (handler, `Ext<T>`)
+    /// that no before-Middleware on the handler's Module path provides.
     pub(crate) fn fold(roots: &[Module], requested: Intents) -> (Self, Vec<BuildViolation>) {
         let mut entries = Vec::new();
         let mut folded = Vec::new();
         let mut route_entries = Vec::new();
-        let mut stack: Vec<(&Module, Arc<[&'static str]>)> = roots
+        let mut stack: Vec<(&Module, Arc<[&'static str]>, Chain)> = roots
             .iter()
             .rev()
-            .map(|root| (root, Arc::from([])))
+            .map(|root| (root, Arc::from([]), Chain::default()))
             .collect();
-        while let Some((module, ancestors)) = stack.pop() {
+        while let Some((module, ancestors, parent_chain)) = stack.pop() {
+            let chain = parent_chain.extend(module.before_middleware(), module.after_middleware());
             folded.push(Folded {
                 module,
                 ancestors: Arc::clone(&ancestors),
+                chain: chain.clone(),
             });
             entries.extend(module.handlers().iter().map(|handler| {
                 Arc::new(Entry {
                     module: module.id(),
                     ancestors: Arc::clone(&ancestors),
+                    chain: chain.clone(),
                     handler: handler.clone(),
                 })
             }));
@@ -159,6 +170,7 @@ impl Registry {
             route_entries.extend(handlers.map(|handler| RouteEntry {
                 module: module.id(),
                 ancestors: Arc::clone(&ancestors),
+                chain: chain.clone(),
                 handler,
             }));
             if !module.children().is_empty() {
@@ -169,7 +181,7 @@ impl Registry {
                         .children()
                         .iter()
                         .rev()
-                        .map(|child| (child, Arc::clone(&path))),
+                        .map(|child| (child, Arc::clone(&path), chain.clone())),
                 );
             }
         }
@@ -213,6 +225,7 @@ impl Registry {
         violations.extend(command_violations);
         let (routes, signed) = fold_routes(route_entries, &mut violations);
         check_uses(&folded, &routes, &mut violations);
+        check_extensions(&folded, &mut violations);
         let registry = Self {
             commands,
             routes,
@@ -329,6 +342,59 @@ fn check_uses(
                     route: used.route,
                     route_type: used.route_type,
                 });
+            }
+        }
+    }
+}
+
+/// One [`BuildViolation::MissingExtension`] per handler and required
+/// Extension type that no before-Middleware on the handler's chain
+/// provides for the handler's kind. Modules in fold order; within one,
+/// event handlers, commands, menus, components and modals, each in `add`
+/// order; a handler's types in parameter order, each at most once.
+fn check_extensions(folded: &[Folded<'_>], violations: &mut Vec<BuildViolation>) {
+    for f in folded {
+        let module = f.module;
+        let handlers = module
+            .handlers()
+            .iter()
+            .map(|h| (h.name(), h.requires(), true))
+            .chain(
+                module
+                    .commands()
+                    .iter()
+                    .map(|h| (h.name(), h.requires(), false)),
+            )
+            .chain(
+                module
+                    .menus()
+                    .iter()
+                    .map(|h| (h.name(), h.requires(), false)),
+            )
+            .chain(
+                module
+                    .components()
+                    .iter()
+                    .map(|h| (h.name(), h.requires(), false)),
+            )
+            .chain(
+                module
+                    .modals()
+                    .iter()
+                    .map(|h| (h.name(), h.requires(), false)),
+            );
+        for (handler, requires, event) in handlers {
+            for (index, required) in requires.iter().enumerate() {
+                let id = required.id();
+                let repeated = requires[..index].iter().any(|r: &__ExtType| r.id() == id);
+                let provided = f.chain.before.iter().any(|m| m.provides_for(id, event));
+                if !repeated && !provided {
+                    violations.push(BuildViolation::MissingExtension {
+                        module: module.id(),
+                        handler,
+                        extension: required.name(),
+                    });
+                }
             }
         }
     }

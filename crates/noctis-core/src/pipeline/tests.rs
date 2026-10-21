@@ -835,7 +835,7 @@ async fn event_handler_dispatches() {
         }))
         .unwrap(),
     );
-    let ctx = EventCtx::new(0, None, "m", Arc::clone(p.fx.app.shared()));
+    let ctx = EventCtx::new(0, None, "m", Arc::clone(p.fx.app.shared()), None);
     handler
         .call(ctx, Event::MessageCreate(Box::new(message)))
         .unwrap()
@@ -1752,7 +1752,7 @@ mod autocomplete {
         }
     }
 
-    fn config() -> CommandHandler {
+    pub(super) fn config() -> CommandHandler {
         CommandHandler::__new_plain_with_options(
             "m::config",
             &["config set prefix"],
@@ -1776,7 +1776,7 @@ mod autocomplete {
         (p, sink)
     }
 
-    async fn run(p: &Pipeline, inbound: Inbound) {
+    pub(super) async fn run(p: &Pipeline, inbound: Inbound) {
         run_with(p, inbound, CancellationToken::new()).await;
     }
 
@@ -1807,7 +1807,7 @@ mod autocomplete {
         interaction(data, json!({ "type": 4 }))
     }
 
-    fn ac(focused: &str, text: &str) -> Inbound {
+    pub(super) fn ac(focused: &str, text: &str) -> Inbound {
         inbound(&ac_json(focused, text))
     }
 
@@ -2853,4 +2853,5 @@ async fn int_05_manual_menu() {
 
 mod components;
 mod expired;
+mod middleware;
 mod refs;

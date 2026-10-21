@@ -981,6 +981,21 @@ list in CI.
     fails when a handler extracts `Ext<T>` that no before-Middleware on every
     ancestor path provides, and `Option<Ext<T>>` opts out. Extensions reach
     after-Middleware and Error Sinks and are never written to a port.
+- **Amended (2026-10-21):** Middleware are function values registered on a Module,
+  `Module::before(Middleware::before(f))` (an `async fn(BeforeCtx) ->
+  HandlerResult<Flow>`) and `Module::after(Middleware::after(f))` (an `async
+  fn(AfterCtx)`), in independent before and after lists; `.provides::<T>()` declares
+  an Extension, `.events_only()` / `.skip_events()` scope a Middleware (the scope also
+  counts in the build check). Handlers take `Ext<T>` / `Option<Ext<T>>` parameters
+  after `ctx`. `Flow::Stop(Some(key))` shows the key's ephemeral notice (a public
+  reply over the `Dispatcher`, nothing for events); `Flow::Stop(None)` sends nothing
+  and deletes a type-5 deferred original. A before-Middleware error or panic is
+  handled like the handler's, its report naming the Middleware. After-Middleware run
+  for every outcome except a shutdown cancellation, each Module's in reverse
+  registration order, the child's first; an after-Middleware panic is its own `Panic`
+  report. No Middleware runs for autocomplete, the Expired Handler chain or a
+  rejection. The `LocaleResolver`-style locale override from Middleware is deferred to
+  Story 11.3 (Story 7.6).
 
 ### AD-24 — Resource scoping, plugins and the one Discord HTTP client
 - **Binds:** `noctis-core`, `noctis-gateway`, `noctis-image`, `noctis-prefix`,

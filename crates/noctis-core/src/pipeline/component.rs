@@ -39,12 +39,14 @@
 //!    exists, else type 5 (`EPHEMERAL` only for `response = ephemeral`); an
 //!    `auto_defer = false` handler or hook gets only the 2.9 s error log.
 //!    The App's `expired_handler` is always auto-deferred.
-//! 6. **Run and answer:** run the handler (or hook) under `catch_unwind`, raced
+//! 6. **Run and answer:** run the Module path's before-Middleware (not for
+//!    the Expired Handler chain), then the handler (or hook) under `catch_unwind`, raced
 //!    against the shutdown cancel token, and send what it returned per the
 //!    declared `response`; an error or a panic sends the localized
 //!    ephemeral notice, then a user condition is logged at `debug`; any
 //!    other error, a panic, a failed send or a cancellation is counted and
-//!    reported to the Component Error Sink.
+//!    reported to the Component Error Sink, after the after-Middleware ran
+//!    (as in the Command pipeline's stages 7 and 10).
 //!
 //! Every other input that does not reach a handler is a [`Rejection`]: one
 //! `warn` on target `noctis::dispatch` and the CID-06 generic ephemeral
@@ -77,6 +79,7 @@ use crate::component::{
     HandlerFuture, ModalHandler, ModalSubmitCtx,
 };
 use crate::handler::AppShared;
+use crate::middleware::{Around, Invocation, RunInfo};
 use crate::notice;
 use crate::registry::{Registry, RouteEntry, RouteHandler};
 use crate::responder::{
@@ -616,6 +619,28 @@ pub(crate) async fn run_component_over(
             .await;
     };
     // Stage 3: build the context and the responder state.
+    let invocation = match &target {
+        Target::Component(_) => Invocation::Component {
+            route: entry.handler.route(),
+        },
+        Target::Modal(..) => Invocation::Modal {
+            route: entry.handler.route(),
+        },
+    };
+    let around = Around::new(
+        &entry.chain,
+        || RunInfo {
+            invocation,
+            module: entry.module,
+            handler: entry.handler.name(),
+            shard,
+            guild_id,
+            channel_id,
+            user_id: Some(user_id),
+            app: Some(Arc::clone(&app)),
+        },
+        false,
+    );
     let parts = CtxInner {
         // The Route id: `ExpiredCtx::route` (the component contexts do not
         // read it).
@@ -632,11 +657,12 @@ pub(crate) async fn run_component_over(
             RawBody::Ref(r) => Some(r),
             RawBody::Inline(_) => None,
         },
+        run: around.run(),
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
     let parts = Arc::new(parts);
     let state = shared_for(transport, target.response());
-    let report = Report {
+    let mut report = Report {
         app: &app,
         origin: ErrorOrigin::Component,
         shard: Some(shard),
@@ -645,6 +671,7 @@ pub(crate) async fn run_component_over(
         handler: entry.handler.name(),
         event_type: Some(INTERACTION_CREATE),
         locale: answer.locale,
+        around: Some(around),
     };
     if cancel.is_cancelled() {
         return run_started(&span, Some(&cancel), state, None, None, report).await;
@@ -694,6 +721,8 @@ pub(crate) async fn run_component_over(
             };
             let link = target.expired_link(expired, &app);
             answer.log_expired(route, rejection, link);
+            // The Expired Handler chain runs no Middleware.
+            report.around = None;
             let handle = Arc::clone(&state);
             let started = span.in_scope(|| {
                 std::panic::catch_unwind(AssertUnwindSafe(|| {

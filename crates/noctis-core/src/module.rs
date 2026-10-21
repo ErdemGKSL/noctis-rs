@@ -7,6 +7,7 @@ use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
 use crate::menu::ContextMenuHandler;
 use crate::metadata::BaseMeta;
+use crate::middleware::{AfterMiddleware, BeforeMiddleware};
 
 pub(crate) mod sealed {
     use crate::Module;
@@ -142,6 +143,8 @@ pub struct Module {
     modals: Vec<ModalHandler>,
     uses: Vec<UsedRoute>,
     nodes: Vec<NodeDecl>,
+    before: Vec<BeforeMiddleware>,
+    after: Vec<AfterMiddleware>,
     children: Vec<Module>,
 }
 
@@ -171,6 +174,8 @@ impl Module {
             modals: Vec::new(),
             uses: Vec::new(),
             nodes: Vec::new(),
+            before: Vec::new(),
+            after: Vec::new(),
             children: Vec::new(),
         }
     }
@@ -300,6 +305,53 @@ impl Module {
         self
     }
 
+    /// Registers the before-Middleware `m` (FR-20, AD-23 stage 7).
+    ///
+    /// It runs before every handler of this Module and its descendants
+    /// that its scope covers: the root Module's Middleware first, then each
+    /// Module's in call order. It may insert typed Extensions (declare them
+    /// with [`provides`](BeforeMiddleware::provides) so a handler can take
+    /// `Ext<T>`) and stop the run with [`Flow::Stop`](crate::Flow::Stop).
+    ///
+    /// ```
+    /// use noctis_core::{BeforeCtx, Flow, HandlerResult, Middleware, Module};
+    ///
+    /// async fn guild_only(ctx: BeforeCtx) -> HandlerResult<Flow> {
+    ///     Ok(if ctx.guild_id().is_some() { Flow::Continue } else { Flow::Stop(None) })
+    /// }
+    ///
+    /// let module = Module::new("mod").before(Middleware::before(guild_only).skip_events());
+    /// assert!(format!("{module:?}").contains("guild_only"));
+    /// ```
+    #[must_use = "Module::before returns the Module with the Middleware added"]
+    pub fn before(mut self, m: BeforeMiddleware) -> Self {
+        self.before.push(m);
+        self
+    }
+
+    /// Registers the after-Middleware `m` (FR-20, AD-23 stage 10).
+    ///
+    /// It runs after every handler run of this Module and its descendants
+    /// that its scope covers, whatever the outcome (not after a shutdown
+    /// cancellation), in reverse chain order: this Module's last-registered
+    /// first, the root's first-registered last.
+    ///
+    /// ```
+    /// use noctis_core::{AfterCtx, Middleware, Module};
+    ///
+    /// async fn audit(ctx: AfterCtx) {
+    ///     tracing::info!(outcome = ?ctx.outcome(), "ran");
+    /// }
+    ///
+    /// let module = Module::new("mod").after(Middleware::after(audit));
+    /// assert!(format!("{module:?}").contains("audit"));
+    /// ```
+    #[must_use = "Module::after returns the Module with the Middleware added"]
+    pub fn after(mut self, m: AfterMiddleware) -> Self {
+        self.after.push(m);
+        self
+    }
+
     /// The Module's id.
     pub fn id(&self) -> &'static str {
         self.id
@@ -340,6 +392,16 @@ impl Module {
         &self.nodes
     }
 
+    /// Its before-Middleware, in call order.
+    pub(crate) fn before_middleware(&self) -> &[BeforeMiddleware] {
+        &self.before
+    }
+
+    /// Its after-Middleware, in call order.
+    pub(crate) fn after_middleware(&self) -> &[AfterMiddleware] {
+        &self.after
+    }
+
     /// Its children, in `module` order.
     pub(crate) fn children(&self) -> &[Module] {
         &self.children
@@ -362,6 +424,8 @@ impl fmt::Debug for Module {
             .collect();
         let modals: Vec<&str> = self.modals.iter().map(ModalHandler::route).collect();
         let uses: Vec<&str> = self.uses.iter().map(|u| u.route).collect();
+        let before: Vec<&str> = self.before.iter().map(BeforeMiddleware::name).collect();
+        let after: Vec<&str> = self.after.iter().map(AfterMiddleware::name).collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
@@ -371,6 +435,8 @@ impl fmt::Debug for Module {
             .field("modals", &modals)
             .field("uses", &uses)
             .field("nodes", &self.nodes)
+            .field("before", &before)
+            .field("after", &after)
             .field("children", &self.children)
             .finish()
     }

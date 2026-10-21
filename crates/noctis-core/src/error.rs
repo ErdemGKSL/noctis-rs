@@ -326,6 +326,42 @@ pub enum BuildViolation {
         /// The Route struct's type path.
         route_type: &'static str,
     },
+    /// A handler takes `Ext<T>`, but no before-Middleware on its Module
+    /// path (its Module or an ancestor) declares
+    /// [`provides::<T>()`](crate::BeforeMiddleware::provides) with a scope
+    /// covering the handler's kind (FR-20, AD-9). Take `Option<Ext<T>>` to
+    /// accept a run without `T`.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::MissingExtension {
+    ///     module: "shop",
+    ///     handler: "bot::Buy",
+    ///     extension: "bot::Settings",
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "handler `bot::Buy` (Module `shop`) takes `Ext<bot::Settings>`, but no \
+    ///      before-Middleware on its Module path provides it: add \
+    ///      `.before(Middleware::before(f).provides::<bot::Settings>())` to Module `shop` or an \
+    ///      ancestor, or take `Option<Ext<bot::Settings>>`"
+    /// );
+    /// ```
+    #[error(
+        "handler `{handler}` (Module `{module}`) takes `Ext<{extension}>`, but no \
+         before-Middleware on its Module path provides it: add \
+         `.before(Middleware::before(f).provides::<{extension}>())` to Module `{module}` or an \
+         ancestor, or take `Option<Ext<{extension}>>`"
+    )]
+    MissingExtension {
+        /// The id of the handler's Module.
+        module: &'static str,
+        /// The handler's path (`module_path!()::Struct`).
+        handler: &'static str,
+        /// The required Extension's type name.
+        extension: &'static str,
+    },
     /// A previous payload key is set without a current one (CID-06):
     /// [`AppBuilder::previous_payload_key`](crate::AppBuilder::previous_payload_key)
     /// or `NOCTIS_PAYLOAD_KEY_PREVIOUS` only verifies; the current key

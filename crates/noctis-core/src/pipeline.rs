@@ -15,12 +15,22 @@
 //!    handler answered first; an `auto_defer = false` handler gets none, only an
 //!    error log when it has not answered by the 2.9 s ack deadline
 //!    (INT-05). The task is aborted when the handler run ends;
-//! 7. *before-Middleware: absent until Story 7.6;*
+//! 7. run the before-Middleware of the handler's Module path (parent's
+//!    first, each Module's in registration order) under `catch_unwind`,
+//!    raced against the cancel token, in a `noctis.middleware` span: each
+//!    may insert typed Extensions; a `Flow::Stop` skips the rest and the
+//!    handler (its key's ephemeral notice, or nothing for `Stop(None)`,
+//!    which deletes a type-5 deferred original); an error or a panic is
+//!    handled like the handler's, naming the Middleware. The Extensions are
+//!    then frozen;
 //! 8. *Guards: absent until Story 7.7;*
 //! 9. run the handler under `catch_unwind`, raced against the shutdown
 //!    cancel token, and send what it returned;
-//! 10. send a localized ephemeral notice, then route the failure to the
-//!     Command Error Sink (after-Middleware arrives with Story 7.6): an
+//! 10. run the after-Middleware (child's first, each Module's in reverse
+//!     registration order) for every outcome but a cancellation, after the
+//!     notice and before the report; an after-Middleware panic is its own
+//!     `Panic` report. Send a localized ephemeral notice, then route the
+//!     failure to the Command Error Sink: an
 //!     error or a panic first shows the user one notice (its
 //!     `HandlerError` key, `noctis.validation.failed` for options, else
 //!     `noctis.error.generic`) while the auto-defer gate still orders it;
@@ -97,6 +107,7 @@ use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
 use crate::edge::callback::ACK_DEADLINE;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::menu::MenuInput;
+use crate::middleware::{Around, Before, Chain, Invocation, RunInfo, RunOutcome};
 use crate::notice;
 use crate::options::CommandInput;
 use crate::registry::Registry;
@@ -148,6 +159,49 @@ impl Resolved {
         match self {
             Self::Command { entry, .. } => entry.handler.ephemerality(),
             Self::Menu(entry) => entry.handler.ephemerality(),
+        }
+    }
+
+    /// The Middleware chain of the handler's Module.
+    fn chain(&self) -> &Chain {
+        match self {
+            Self::Command { entry, .. } => &entry.chain,
+            Self::Menu(entry) => &entry.chain,
+        }
+    }
+
+    /// The stage 7/10 Middleware run of the handler for an interaction.
+    fn around(
+        &self,
+        app: &Arc<AppShared>,
+        shard: u32,
+        guild_id: Option<Id<GuildMarker>>,
+        channel_id: Option<Id<ChannelMarker>>,
+        user_id: Id<UserMarker>,
+    ) -> Around {
+        Around::new(
+            self.chain(),
+            || RunInfo {
+                invocation: self.invocation(),
+                module: self.module(),
+                handler: self.handler(),
+                shard,
+                guild_id,
+                channel_id,
+                user_id: Some(user_id),
+                app: Some(Arc::clone(app)),
+            },
+            false,
+        )
+    }
+
+    /// What the run answers.
+    fn invocation(&self) -> Invocation {
+        match self {
+            Self::Command { path, .. } => Invocation::Command { path },
+            Self::Menu(entry) => Invocation::ContextMenu {
+                name: entry.handler.menu_name(),
+            },
         }
     }
 
@@ -294,13 +348,31 @@ pub(crate) struct Report<'a> {
     pub(crate) event_type: Option<&'static str>,
     /// The locale of the user-facing notice (User, then Guild Locale).
     pub(crate) locale: Locale,
+    /// The handler run's Middleware; `None` for the Expired Handler chain
+    /// and autocomplete (no Middleware, no Extensions in the report).
+    pub(crate) around: Option<Around>,
 }
 
 /// How one handler run ended.
 pub(crate) enum Outcome {
     Returned(HandlerResult<()>),
     Panicked(Box<dyn Any + Send>),
+    /// A before-Middleware stopped the run, with this notice.
+    Stopped(Option<MessageKey>),
     Cancelled,
+}
+
+impl Outcome {
+    /// The after-Middleware's view of the outcome; `None` for a
+    /// cancellation (no after-Middleware runs).
+    fn run_outcome(&self) -> Option<RunOutcome> {
+        match self {
+            Self::Returned(result) => Some(RunOutcome::of(result)),
+            Self::Panicked(_) => Some(RunOutcome::Panicked),
+            Self::Stopped(_) => Some(RunOutcome::Stopped),
+            Self::Cancelled => None,
+        }
+    }
 }
 
 /// A handler start: when it began, and its future or the panic of the
@@ -350,15 +422,121 @@ async fn answer(
     Ok(())
 }
 
-/// Stages 9 and 10 of a started handler (`None`: cancelled before the
-/// start): sends what it returned (a returned message is the reply or
-/// `update` while Pending, else an edit of the original, INT-12), races the
-/// whole run against `cancel` and records the duration (handler plus the
-/// send). An error or a panic first sends the user a localized ephemeral
-/// notice (FR-22, AD-23), then `timer` (the auto-defer) is aborted; a user
-/// condition is logged at `debug`, anything else (a failed send of a
-/// returned message included) is counted and reported to the origin's
-/// Error Sink (a cancellation without a notice).
+/// Runs the handler future `fut` (stage 9): sends what it returned, under
+/// `catch_unwind`, raced against `cancel`.
+async fn run_handler(
+    span: &Span,
+    cancel: Option<&CancellationToken>,
+    shared: &Arc<Shared>,
+    app: &AppShared,
+    fut: HandlerFuture,
+) -> Outcome {
+    let run = AssertUnwindSafe(answer(fut, Arc::clone(shared), Arc::clone(&app.refs)))
+        .catch_unwind()
+        .instrument(span.clone());
+    let result = match cancel {
+        Some(cancel) => tokio::select! {
+            biased;
+            () = cancel.cancelled() => None,
+            result = run => Some(result),
+        },
+        None => Some(run.await),
+    };
+    match result {
+        None => Outcome::Cancelled,
+        Some(Ok(result)) => Outcome::Returned(result),
+        Some(Err(panic)) => Outcome::Panicked(panic),
+    }
+}
+
+/// Stages 7 to 9 of a started handler: the before-Middleware, then the
+/// handler unless one stopped, failed or panicked. Returns the outcome,
+/// when the handler's duration started (`None`: it did not run), and the
+/// failing Middleware.
+async fn before_and_handler(
+    span: &Span,
+    cancel: Option<&CancellationToken>,
+    shared: &Arc<Shared>,
+    app: &AppShared,
+    started: Option<Started>,
+    around: Option<&Around>,
+) -> (Outcome, Option<Instant>, Option<&'static str>) {
+    let (at, fut) = match started {
+        None => return (Outcome::Cancelled, None, None),
+        Some(Started {
+            at,
+            future: Err(panic),
+        }) => return (Outcome::Panicked(panic), Some(at), None),
+        Some(Started {
+            at,
+            future: Ok(fut),
+        }) => (at, fut),
+    };
+    let ran = around.is_some_and(Around::has_before);
+    let before = match around {
+        Some(around) if ran => around.before(span, cancel).await,
+        _ => Before::Continue,
+    };
+    match before {
+        Before::Continue => {
+            // Stage 8 (Guards) lands with Story 7.7. The handler's duration
+            // starts at stage 9.
+            let at = if ran { Instant::now() } else { at };
+            let outcome = run_handler(span, cancel, shared, app, fut).await;
+            (outcome, Some(at), None)
+        }
+        Before::Stop(key) => (Outcome::Stopped(key), None, None),
+        Before::Failed(error, name) => (Outcome::Returned(Err(error)), None, Some(name)),
+        Before::Panicked(panic, name) => (Outcome::Panicked(panic), None, Some(name)),
+        Before::Cancelled => (Outcome::Cancelled, None, None),
+    }
+}
+
+/// Stage 10's after-Middleware of `report`'s run, if it has any: a panic
+/// is its own `Panic` report naming the Middleware, plus one
+/// `noctis_handler_errors_total`.
+async fn run_after(
+    span: &Span,
+    cancel: Option<&CancellationToken>,
+    report: &Report<'_>,
+    outcome: RunOutcome,
+) {
+    let Some(around) = &report.around else {
+        return;
+    };
+    let app = report.app;
+    let panicked = |name: &'static str, panic: &str| {
+        metrics::counter!(
+            "noctis_handler_errors_total",
+            "app" => Arc::clone(&app.app),
+            "kind" => report.origin.as_str()
+        )
+        .increment(1);
+        report_logged(
+            app,
+            ErrorReport {
+                kind: ReportKind::Panic(panic),
+                middleware: Some(name),
+                ..report.error_report(ReportKind::Cancelled)
+            },
+        );
+    };
+    around.after(span, cancel, outcome, panicked).await;
+}
+
+/// Stages 7 to 10 of a started handler (`None`: cancelled before the
+/// start): runs the before-Middleware (stage 7; a stop, error or panic
+/// skips the handler), freezes the Extensions, then sends what the handler
+/// returned (a returned message is the reply or `update` while Pending,
+/// else an edit of the original, INT-12), races the whole run against
+/// `cancel` and records the handler's duration (handler plus the send). A
+/// stop shows its notice (or, without one, deletes a type-5 deferred
+/// original); an error or a panic first sends the user a localized
+/// ephemeral notice (FR-22, AD-23); then `timer` (the auto-defer) is
+/// aborted and the after-Middleware run (stage 10, not after a
+/// cancellation). A user condition is logged at `debug`; anything else (a
+/// failed send of a returned message included) is counted and reported to
+/// the origin's Error Sink (a cancellation without a notice).
 pub(crate) async fn run_started(
     span: &Span,
     cancel: Option<&CancellationToken>,
@@ -369,49 +547,35 @@ pub(crate) async fn run_started(
 ) {
     let app = report.app;
     let kind = report.origin.as_str();
-    let outcome = if let Some(Started {
-        at: started_at,
-        future,
-    }) = started
-    {
-        let outcome = match future {
-            Ok(fut) => {
-                let run = AssertUnwindSafe(answer(fut, Arc::clone(&shared), Arc::clone(&app.refs)))
-                    .catch_unwind()
-                    .instrument(span.clone());
-                let result = match cancel {
-                    Some(cancel) => tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => None,
-                        result = run => Some(result),
-                    },
-                    None => Some(run.await),
-                };
-                match result {
-                    None => Outcome::Cancelled,
-                    Some(Ok(result)) => Outcome::Returned(result),
-                    Some(Err(panic)) => Outcome::Panicked(panic),
-                }
-            }
-            Err(panic) => Outcome::Panicked(panic),
-        };
+    let (outcome, at, middleware) =
+        before_and_handler(span, cancel, &shared, app, started, report.around.as_ref()).await;
+    if let Some(at) = at {
         metrics::histogram!(
             "noctis_handler_duration_seconds",
             "app" => Arc::clone(&app.app),
             "kind" => kind
         )
-        .record(started_at.elapsed().as_secs_f64());
-        outcome
-    } else {
-        Outcome::Cancelled
-    };
+        .record(at.elapsed().as_secs_f64());
+    }
+    if let Some(around) = &report.around {
+        around.freeze();
+    }
     // Sent before the auto-defer is dropped: the gate orders the two.
-    if let Some(key) = notice_key(&outcome) {
-        send_notice(span, &shared, &report, key).await;
+    match &outcome {
+        Outcome::Stopped(Some(key)) => send_notice(span, &shared, &report, *key).await,
+        Outcome::Stopped(None) => shared.stop_silently().instrument(span.clone()).await,
+        outcome => {
+            if let Some(key) = notice_key(outcome) {
+                send_notice(span, &shared, &report, key).await;
+            }
+        }
     }
     drop(timer);
+    if let Some(run_outcome) = outcome.run_outcome() {
+        run_after(span, cancel, &report, run_outcome).await;
+    }
     let report_kind = match &outcome {
-        Outcome::Returned(Ok(())) => return,
+        Outcome::Returned(Ok(())) | Outcome::Stopped(_) => return,
         Outcome::Returned(Err(error)) if error.is_user() => {
             let key = error.user_message().map(MessageKey::as_str);
             span.in_scope(|| {
@@ -419,6 +583,7 @@ pub(crate) async fn run_started(
                     tracing::debug!(
                         target: "noctis::component",
                         handler = report.handler,
+                        middleware,
                         key,
                         "user condition"
                     );
@@ -426,6 +591,7 @@ pub(crate) async fn run_started(
                     tracing::debug!(
                         target: "noctis::command",
                         handler = report.handler,
+                        middleware,
                         key,
                         "user condition"
                     );
@@ -447,17 +613,32 @@ pub(crate) async fn run_started(
         report_logged(
             app,
             ErrorReport {
-                origin: report.origin,
-                kind: report_kind,
-                app: &app.app,
-                shard: report.shard,
-                guild_id: report.guild_id,
-                module: Some(report.module),
-                handler: Some(report.handler),
-                event_type: report.event_type,
+                middleware,
+                ..report.error_report(report_kind)
             },
         );
     });
+}
+
+impl<'a> Report<'a> {
+    /// The report of `kind` for this run.
+    fn error_report<'r>(&'r self, kind: ReportKind<'r>) -> ErrorReport<'r>
+    where
+        'a: 'r,
+    {
+        ErrorReport {
+            origin: self.origin,
+            kind,
+            app: &self.app.app,
+            shard: self.shard,
+            guild_id: self.guild_id,
+            module: Some(self.module),
+            handler: Some(self.handler),
+            event_type: self.event_type,
+            extensions: self.around.as_ref().map(Around::extensions),
+            middleware: None,
+        }
+    }
 }
 
 /// The notice key of a failed run: an error's key (see
@@ -467,7 +648,7 @@ fn notice_key(outcome: &Outcome) -> Option<MessageKey> {
     match outcome {
         Outcome::Returned(Err(error)) => Some(notice::key_for(error)),
         Outcome::Panicked(_) => Some(keys::ERROR_GENERIC),
-        Outcome::Returned(Ok(())) | Outcome::Cancelled => None,
+        Outcome::Returned(Ok(())) | Outcome::Stopped(_) | Outcome::Cancelled => None,
     }
 }
 
@@ -604,6 +785,7 @@ pub(crate) async fn run_interaction(
     let ephemerality = resolved.ephemerality();
     let channel_id = channel.as_ref().map(|c| c.id);
     let notice_locale = notice::locale(locale.as_deref(), guild_locale.as_deref());
+    let around = resolved.around(&app, shard, guild_id, channel_id, user_id);
     let parts = CtxInner {
         module: resolved.module(),
         shard,
@@ -613,6 +795,7 @@ pub(crate) async fn run_interaction(
         user_locale: locale,
         guild_locale,
         app: Some(Arc::clone(&app)),
+        run: around.run(),
         ..CtxInner::detached_parts(ephemerality)
     };
     // Stage 5 (rate limits) lands with Story 13.4.
@@ -634,7 +817,8 @@ pub(crate) async fn run_interaction(
         auto_defer: resolved.auto_defer(),
     };
     let timer = arm(&app, &state, &armed, received_at, &span);
-    // Stages 7 (before-Middleware, Story 7.6) and 8 (Guards, Story 7.7).
+    // Stages 7 (before-Middleware) and 8 (Guards, Story 7.7) run in
+    // `run_started`, once the handler future exists.
     let report = Report {
         app: &app,
         origin: ErrorOrigin::Command,
@@ -644,6 +828,7 @@ pub(crate) async fn run_interaction(
         handler: resolved.handler(),
         event_type: Some(INTERACTION_CREATE),
         locale: notice_locale,
+        around: Some(around),
     };
     let start = start(&resolved, raw.as_bytes(), parts);
     execute(&span, Some(&cancel), state, start, Some(timer), report).await;
@@ -763,6 +948,8 @@ pub(crate) async fn run_autocomplete(
         event_type: Some(INTERACTION_CREATE),
         // Autocomplete sends no notice.
         locale: Locale::EnUs,
+        // Autocomplete runs no Middleware.
+        around: None,
     };
     let found = match find_autocomplete(&span, shard, resolved, raw.as_bytes(), author) {
         Ok(found) => found,
@@ -1018,6 +1205,8 @@ fn report_autocomplete(span: &Span, report: &Report<'_>, kind: ReportKind<'_>) {
                 module: Some(report.module),
                 handler: Some(report.handler),
                 event_type: report.event_type,
+                extensions: None,
+                middleware: None,
             },
         );
     });
@@ -1218,6 +1407,20 @@ impl Dispatcher {
         };
         let ephemerality = entry.handler.ephemerality();
         let notice_locale = notice::locale(locale.as_deref(), None);
+        let around = Around::new(
+            &entry.chain,
+            || RunInfo {
+                invocation: Invocation::Command { path },
+                module: entry.module,
+                handler: entry.handler.name(),
+                shard,
+                guild_id,
+                channel_id: Some(channel_id),
+                user_id: Some(user_id),
+                app: Some(Arc::clone(&self.app)),
+            },
+            false,
+        );
         let parts = CtxInner {
             path,
             input,
@@ -1231,6 +1434,7 @@ impl Dispatcher {
             ephemerality,
             app: Some(Arc::clone(&self.app)),
             current_ref: None,
+            run: around.run(),
         };
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),
@@ -1247,6 +1451,7 @@ impl Dispatcher {
             handler: entry.handler.name(),
             event_type: None,
             locale: notice_locale,
+            around: Some(around),
         };
         let entry = Arc::clone(entry);
         let start = move |shared| entry.handler.call(CommandCtx::from_parts(parts), shared);

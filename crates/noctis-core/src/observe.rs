@@ -15,7 +15,9 @@
 //! interaction (`module` and `path`, the Command Path or menu name, are
 //! recorded once the Command resolves),
 //! `noctis.dispatch{app, guild_id, module, path}` around each
-//! `Dispatcher::run_command`, and
+//! `Dispatcher::run_command`,
+//! `noctis.middleware{app, middleware, phase}` around each Middleware call
+//! (`phase` is `before` or `after`), and
 //! `noctis.http{app, kind, method, attempt, reused, status_class}` around
 //! each upstream attempt of the Discord HTTP edge (`kind` is `forward`,
 //! `callback` or `warmup`). No span field or label carries a path, a token,

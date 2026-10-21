@@ -47,6 +47,8 @@ fn report(origin: ErrorOrigin, kind: ReportKind<'_>) -> ErrorReport<'_> {
         module: Some("audit"),
         handler: Some("bot::h"),
         event_type: Some("MESSAGE_DELETE"),
+        extensions: None,
+        middleware: None,
     }
 }
 
@@ -321,6 +323,8 @@ fn log_sink_dropped() {
             module: None,
             handler: None,
             event_type: Some("GUILD_CREATE"),
+            extensions: None,
+            middleware: None,
         });
     });
     let lines = capture.lines_with(&["event overflow is full; event dropped"]);
@@ -456,4 +460,44 @@ fn log_sink_cancelled() {
             assert!(!line.contains(absent), "{absent} in {line}");
         }
     }
+}
+
+/// Middleware Matrix 43: `LogSink` logs the failing Middleware and never an
+/// Extension value.
+#[test]
+fn log_sink_names_the_middleware_never_extensions() {
+    #[derive(Debug)]
+    #[expect(dead_code, reason = "only its Debug must never be logged")]
+    struct Secret {
+        secret: &'static str,
+    }
+    let extensions = crate::Extensions::of(Secret { secret: "hunter2" });
+    let error = HandlerError::new(fmt::Error);
+    let capture = logged(|| {
+        LogSink.report(ErrorReport {
+            extensions: Some(&extensions),
+            middleware: Some("bot::load"),
+            ..report(ErrorOrigin::Command, ReportKind::Error(&error))
+        });
+        LogSink.report(report(ErrorOrigin::Command, ReportKind::Panic("boom")));
+    });
+    let text = capture.text();
+    assert_eq!(
+        capture
+            .lines_with(&["command handler failed", "middleware=\"bot::load\""])
+            .len(),
+        1,
+        "{text}"
+    );
+    assert_eq!(
+        capture
+            .lines_with(&["command handler panicked", "middleware="])
+            .len(),
+        0,
+        "{text}"
+    );
+    assert!(
+        !text.contains("hunter2") && !text.contains("Secret"),
+        "{text}"
+    );
 }

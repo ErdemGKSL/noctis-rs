@@ -21,7 +21,8 @@ pub fn module() -> Module {
         .uses::<ToggleModule>()            // a Route its Views render, handled by another Module
         .template::<ProfileCard>()         // image Templates [planned]
         .locales(profile_strings::catalog())   // Module-scoped strings [planned]
-        .before(Middleware::before(load_settings).provides::<GuildSettings>())   // [planned, Story 7.6]
+        .before(Middleware::before(load_settings).provides::<GuildSettings>())   // Middleware (§5)
+        .after(Middleware::after(audit))
         .module(sub_module())              // nesting
         .flags(["profiles"])               // Boot Flags [planned]
 }
@@ -31,7 +32,8 @@ builder.module(profile::module()).module(ops::module());
 ```
 
 Implemented: `Module::new(id)`, `.add::<X>()`, `.uses::<R>()`, `.module(child)`,
-`.base(name, BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
+`.base(name, BaseMeta)`, `.group(path, description)`, `.before(BeforeMiddleware)`,
+`.after(AfterMiddleware)` (§5), `.id()`, `Clone`, `Debug`, and
 `AppBuilder::module(Module)`. `.add::<X>()` registers a struct by type: any struct with a
 kind derive (`SlashCommand`, `UserCommand`, `MessageCommand`, `EventHandler`, `Button`,
 the select kinds, `Modal`) and a `#[handler]` method (the `noctis::Register` trait the
@@ -137,14 +139,14 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
 ```
 
 - **Signature:** a `#[derive(EventHandler)]` unit struct with `#[event]` and exactly one
-  `#[handler] async fn handle(self, ctx: EventCtx, event: <payload>) ->
-  HandlerResult<()>` method (any visibility, doc comments and `_` patterns allowed);
+  `#[handler] async fn handle(self, ctx: EventCtx, event: <payload>[, Ext<T> |
+  Option<Ext<T>> …]) -> HandlerResult<()>` method (Extensions from Middleware, §5) (any visibility, doc comments and `_` patterns allowed);
   `X::descriptor()` is its `EventHandler`. Arguments: `ordered`, `droppable`, in any
   order, each at most once (`#[event(ordered, droppable)]`). The handler's name in logs
   and errors is `module_path!()::Struct` (e.g. `my_bot::modules::profile::AwardXp`).
 - **Errors** (at `cargo check`): `` `#[derive(EventHandler)]` needs a unit struct ``,
   the `#[handler]` errors (`commands.md` §1: `self` by value, `async`, no generics,
-  `` a #[handler] method takes `(self, ctx[, path | target | event][, r: CommandResponder<..>])` ``),
+  `` a #[handler] method takes `(self, ctx[, path | target | event][, Ext<T> | Option<Ext<T>> …][, r: <Kind>Responder<..>])` ``),
   ``unknown `#[event]` argument `x`: expected `ordered` or `droppable``, ``duplicate
   `#[event]` argument `x``; a free `#[event] async fn` is a compile error whose help
   shows the struct form. A payload
@@ -235,47 +237,157 @@ Developer Portal; close code 4014 at connect is `StartError::DisallowedIntents`.
 
 ## 5. Middleware and Extensions (FR-20)
 
-```rust
-#[derive(Clone)]
-pub struct GuildSettings { pub premium: bool }
+Middleware are async functions registered on a Module, by value. A **before-Middleware**
+runs before the handler (pipeline stage 7) and may insert typed **Extensions** or stop
+the run; an **after-Middleware** runs after it (stage 10) and sees the outcome. Every
+type is in `noctis` (`BeforeCtx`, `AfterCtx`, `Ext`, `Flow` and `Middleware` also in the
+prelude).
 
-async fn load_settings(ctx: &mut BeforeCtx<'_>) -> HandlerResult<Flow> {
-    let Some(guild) = ctx.guild_id() else { return Ok(Flow::Continue) };
-    let settings = ctx.kv().get(&format!("settings:{guild}")).await?.unwrap_or(GuildSettings { premium: false });
-    ctx.insert(settings);                       // typed Extension
+```rust
+use noctis::prelude::*;                    // Middleware, BeforeCtx, AfterCtx, Flow, Ext, …
+use noctis::{Invocation, RunOutcome};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct GuildSettings { pub premium: bool }     // Send + Sync + 'static; nothing else needed
+
+/// Loads the guild's settings once per run, for every handler below this Module.
+async fn load_settings(ctx: BeforeCtx) -> HandlerResult<Flow> {
+    let Some(guild) = ctx.guild_id() else {
+        return Ok(Flow::Stop(Some(MessageKey::new("common.guild_only"))));  // ephemeral notice
+    };
+    let settings: GuildSettings = ctx.kv().get(&format!("settings:{guild}")).await?.unwrap_or_default();
+    ctx.insert(settings);                          // a typed Extension
     Ok(Flow::Continue)
 }
 
-async fn premium_only(ctx: &mut BeforeCtx<'_>) -> HandlerResult<Flow> {
-    match ctx.get::<GuildSettings>() {
+async fn premium_only(ctx: BeforeCtx) -> HandlerResult<Flow> {
+    match ctx.get::<GuildSettings>() {             // Option<Ext<GuildSettings>>
         Some(s) if s.premium => Ok(Flow::Continue),
-        _ => Ok(Flow::Stop(Some(keys::PREMIUM_REQUIRED))),   // localized ephemeral notice
+        _ => Ok(Flow::Stop(Some(MessageKey::new("premium.required")))),
     }
 }
 
-async fn audit(ctx: &AfterCtx<'_>, outcome: &Outcome) { tracing::info!(ok = outcome.is_ok(), "done"); }
+async fn audit(ctx: AfterCtx) {
+    if !ctx.outcome().is_completed() {             // RunOutcome::Stopped, UserError, Failed, Panicked
+        tracing::info!(handler = ctx.handler(), outcome = ?ctx.outcome(), "run did not complete");
+    }
+}
 
-Module::new("premium")
-    .before(Middleware::before(load_settings).provides::<GuildSettings>())
-    .before(Middleware::before(premium_only))
-    .after(Middleware::after(audit));
+pub fn module() -> Module {
+    Module::new("premium")
+        .before(Middleware::before(load_settings).skip_events().provides::<GuildSettings>())
+        .before(Middleware::before(premium_only).skip_events())
+        .after(Middleware::after(audit))
+        .add::<Boost>()
+}
 
-impl MyRoute {
+impl Boost {                                       // #[derive(Button)] #[button("premium.boost", ..)]
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, settings: Ext<GuildSettings>) -> HandlerResult<Responded> { … }
+    async fn handle(self, ctx: ComponentCtx, settings: Ext<GuildSettings>) -> HandlerResult<Responded> {
+        let premium: bool = settings.premium;     // Ext<T>: Deref<Target = T>
+        …
+    }
 }
 ```
 
-- Order: parent Module before child, then registration order; after-Middleware in
-  reverse. Before-Middleware runs **before** Route Guards, then the handler (pipeline
-  stages 7 → 8 → 9).
-- `Flow::Stop(Option<MessageKey>)` stops processing (optionally with a notice).
-- `ctx.set_locale(locale)` overrides the resolved locale.
-- Inserting an Extension type that already exists replaces it (the child Module wins).
-- `Ext<T>` that no before-Middleware on every path `provides::<T>()` is a `BuildError`;
-  use `Option<Ext<T>>` to opt out.
-- Extensions never reach a port; they live for one interaction.
-- Events run Middleware too (no Guards, no Responder) [planned, Story 7.6].
+- **Shapes.** `Middleware::before(f)` takes `f: Fn(BeforeCtx) -> impl Future<Output =
+  HandlerResult<Flow>>` and returns a `BeforeMiddleware`; `Middleware::after(f)` takes
+  `f: Fn(AfterCtx) -> impl Future<Output = ()>` and returns an `AfterMiddleware`
+  (functions or `move` closures carrying configuration; `Send + Sync + 'static`, futures
+  `Send`). Register them with `Module::before(m)` and `Module::after(m)` (both
+  `#[must_use]`). A Middleware's name, in logs, spans and reports, is its function's
+  path (`my_bot::modules::premium::load_settings`); `.name()` returns it.
+- **`BeforeMiddleware` builders** (each `#[must_use]`): `.provides::<T>()` declares that it
+  inserts `T` (repeats are kept once; the build check below reads it);
+  `.events_only()` runs it only for gateway events; `.skip_events()` only for
+  interactions and `Dispatcher` Commands (the default runs it for both; the last call
+  wins). `AfterMiddleware` has `.events_only()`, `.skip_events()` and `.name()`. Scope an
+  auth or I/O Middleware with `skip_events()`, or it runs on every `MESSAGE_CREATE`.
+- **Order.** A handler runs the Middleware of its Module **path**: the root Module's
+  first, then each child's, down to the Module it was added to; within one Module, in
+  registration order. After-Middleware run in reverse: the own Module's last-registered
+  first, the root's first-registered last. A sibling's or child's Middleware never runs:
+
+  ```text
+  root .before(r1).before(r2) .after(a1).after(a2)
+   └─ child .before(c1) .after(ca1) .add::<H>()
+  r1 → r2 → c1 → H → ca1 → a2 → a1
+  ```
+
+  Before-Middleware run after the auto-defer is armed (stage 6), before Route Guards
+  (stage 8) and the handler (stage 9): a slow Middleware is deferred like a slow
+  handler.
+- **`Flow`**: `Continue` runs the next Middleware, then the handler. `Stop(Some(key))`
+  skips the rest and the handler and shows `key`'s localized ephemeral notice (after an
+  auto-defer: the deferred original is deleted, then an ephemeral follow-up; under
+  `response = update` only the follow-up; over the `Dispatcher` a public reply to the
+  message). `Stop(None)` sends nothing (a type-5 deferred original is deleted); a
+  pending interaction then shows Discord's "interaction failed", so deny with
+  `Stop(Some(key))`. A stop is one `debug` on target `noctis::middleware` (`middleware`,
+  `handler`, "stopped"). Events send nothing on a stop.
+- **Errors.** A before-Middleware `Err` or panic is caught and handled like the
+  handler's: the handler does not run, the user gets the notice (the error's key, else
+  `noctis.error.generic`), a `HandlerError::user(key)` is a `debug`, anything else is
+  counted and reported with `ErrorReport.middleware = Some(name)` (§6).
+- **After-Middleware run for every outcome** except a shutdown cancellation: completed,
+  stopped, user error, failed or panicked (`ctx.outcome()`), after the notice and before
+  the Error Sink. An after-Middleware panic is caught and reported on its own
+  (`ReportKind::Panic`, `middleware: Some(name)`, the same origin's sink, one
+  `noctis_handler_errors_total`); the remaining after-Middleware still run and the run's
+  own outcome is reported unchanged.
+- **`BeforeCtx`** (owned, cheap `Clone`): `insert(value)`, `get::<T>() ->
+  Option<Ext<T>>`, `contains::<T>()`, and the read accessors `invocation() ->
+  Invocation`, `module()`, `handler()`, `shard()`, `guild_id()`, `channel_id()` and
+  `user_id()` (`None` for events), `state::<T>() -> Option<State<T>>`, `kv() -> Kv`,
+  `http()`. It does not see the event payload or the options. **`AfterCtx`**: the same
+  accessors plus `outcome() -> RunOutcome`, `extensions() -> &Extensions`, `get::<T>()`.
+- **`Invocation`** (`#[non_exhaustive]`, `Copy`): `Command { path }` (slash or
+  `Dispatcher`), `ContextMenu { name }`, `Component { route }`, `Modal { route }`, `Event
+  { event_type }` (`"MESSAGE_CREATE"`). **`RunOutcome`** (`#[non_exhaustive]`, `Copy`):
+  `Completed`, `Stopped`, `UserError`, `Failed`, `Panicked`; `is_completed()`.
+- **Extensions** are one run's type map (`T: Send + Sync + 'static`). Inserting a type
+  that exists replaces it, so a child Module's value wins, with one `debug` on target
+  `noctis::middleware` ("extension replaced", naming both Middleware, never the value).
+  The map freezes when the before chain ends: an insert from a clone kept in a spawned
+  task is ignored with a `debug`. **`Extensions`** (read-only): `get::<T>() ->
+  Option<&T>`, `contains::<T>()`, `len()`, `is_empty()`, `type_names()`; its `Debug`
+  lists type names, never values.
+- **Handler parameters.** Any `#[handler]` (command, context menu, component, modal,
+  event) may take `Ext<T>` or `Option<Ext<T>>` parameters anywhere after `ctx`, among
+  the path / target / event and before the responder: `(self, ctx: CommandCtx, path:
+  ConfigPath, s: Ext<GuildSettings>, u: Option<Ext<Caller>>, r: CommandResponder)`.
+  `Ext<T>` derefs to `T`; `as_ref()`, `clone()` (shares the value) and `into_arc() ->
+  Arc<T>`. Errors at `cargo check`: `` `Ext` takes one type: `Ext<T>` `` (`Ext`, `Ext<A,
+  B>`, `Ext<'a, A>`), `` the first parameter after `self` is the context (`ctx: …Ctx`);
+  put `Ext<T>` after it ``, and `` a #[handler] method takes `(self, ctx[, path | target |
+  event][, Ext<T> | Option<Ext<T>> …][, r: <Kind>Responder<..>])` ``.
+- **Build check.** `build()` fails with `BuildViolation::MissingExtension { module,
+  handler, extension }`, listed with every other violation, for each handler taking
+  `Ext<T>` when no before-Middleware on its Module path declares `provides::<T>()` with
+  a scope covering the handler (`events_only` does not cover a Command, `skip_events`
+  not an event): ``handler `{handler}` (Module `{module}`) takes `Ext<{T}>`, but no
+  before-Middleware on its Module path provides it: add
+  `.before(Middleware::before(f).provides::<{T}>())` to Module `{module}` or an ancestor,
+  or take `Option<Ext<{T}>>` ``. `Option<Ext<T>>` needs no provider.
+- **At run time** a required `Ext<T>` that was declared but not inserted (the provider
+  returned `Continue` without `insert`) is `ExtensionMissing` (`extension()`,
+  `handler()`): ``handler `{handler}` takes `Ext<{T}>`, but no Middleware inserted it in
+  this run``; the handler does not run, the user gets the generic notice and the sink
+  the error. `Option<Ext<T>>` is then `None`.
+- **Where nothing runs.** Autocomplete, the Expired Handler chain (`#[on_stale]`,
+  `#[on_expired]`, the App's `expired_handler`), rejected clicks (malformed or unknown
+  Route) and the detached test seams run no Middleware; hooks and `#[autocomplete]`
+  methods cannot take `Ext<T>` (`` `#[on_stale]`/`#[on_expired]` hooks run no Middleware,
+  so they take no `Ext<T>` ``, `` autocomplete runs no Middleware, so it takes no
+  `Ext<T>` ``). A filtered event handler runs no Middleware either.
+- **Events** run their Module path's Middleware too (no Guards, no Responder): `Ext<T>`
+  after the event, `(self, ctx: EventCtx, msg: MessageCreate, s: Ext<T>)`.
+- **Extensions never reach a port**: they are not serialized or stored, and live for one
+  run. Each Middleware call is in span `noctis.middleware{app, middleware, phase}`
+  (`phase` = `before` | `after`).
+- Overriding the resolved locale from a Middleware (`ctx.set_locale(..)`) is
+  [planned, Story 11.3].
 
 ## 6. Error Sinks (FR-22)
 
@@ -321,8 +433,11 @@ builder
   `kind: ReportKind`, `app: &str` (`"default"` for now), `shard: Option<u32>`,
   `guild_id: Option<Id<GuildMarker>>`, `module: Option<&str>`, `handler: Option<&str>`
   (handler, command or Route path), `event_type: Option<&str>` (Discord name, e.g.
-  `MESSAGE_DELETE`). It never carries a payload or token. Copy what you need out of it;
-  it borrows.
+  `MESSAGE_DELETE`), `extensions: Option<&Extensions>` (the run's Extensions, §5: `Some`,
+  possibly empty, for every handler run, stopped or failed ones included; `None` for
+  overflow drops, autocomplete and the Expired Handler chain) and `middleware:
+  Option<&str>` (the failing Middleware's name, when a Middleware failed or panicked).
+  It never carries a payload or token. Copy what you need out of it; it borrows.
 - **`ReportKind<'_>`** (`#[non_exhaustive]`): `Error(&HandlerError)`, `Panic(&str)`,
   `Dropped` (a non-droppable event dropped because the overflow was full; `module` and
   `handler` are `None`), `Cancelled` (the handler was still running, or still queued,
@@ -336,7 +451,8 @@ builder
 - **`.error_sink(origin, impl ErrorSink)`**: the last call per origin wins; plugins may
   call it in `install`; `build()` resets the builder to `LogSink` everywhere.
 - **`LogSink`** (the default, `Copy`): target `noctis::<origin>`, fields `app` plus
-  `shard`, `guild_id`, `module`, `handler`, `event_type` when known, and `error` (source
+  `shard`, `guild_id`, `module`, `handler`, `event_type`, `middleware` when known (never
+  an Extension value), and `error` (source
   chain, at most 16 links) or `panic`. Messages `"<origin> handler failed"`,
   `"<origin> handler panicked"`, `"<origin> handler cancelled at shutdown"` (no `error`
   or `panic` field), `"event overflow is full; event dropped"`.

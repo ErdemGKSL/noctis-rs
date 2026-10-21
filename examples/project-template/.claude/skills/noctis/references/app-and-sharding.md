@@ -619,17 +619,17 @@ impl MyRoute {
 }
 ```
 
-Event handlers take exactly `(self, ctx: EventCtx, event: <payload>)`; read state with
-`ctx.state::<T>()` (`Option<State<T>>`). Today every `#[handler]` method takes exactly
-`(self, ctx[, path | target | event][, r: <Responder>])`; extractor parameters are
-[planned].
+Every `#[handler]` method takes `(self, ctx[, path | target | event][, Ext<T> |
+Option<Ext<T>> …][, r: <Responder>])`: `Ext<T>` / `Option<Ext<T>>` parameters carry the
+typed Extensions a before-Middleware inserted (`modules-middleware-ratelimits.md` §5),
+and an `Ext<T>` no Middleware on the handler's Module path provides is a
+`BuildViolation::MissingExtension`. Read state with `ctx.state::<T>()`
+(`Option<State<T>>`); Middleware read it with `ctx.state::<T>()` too.
 
-[planned] Parameter order with extractors: `self` (the decoded Payload / options / form),
-context, then path / target, then extractors in any
-order: `State<T>` (registered with `.state(T)`, `Deref<Target = T>`), `Ext<T>` /
-`Option<Ext<T>>` (from Middleware), a Responder alias. Missing `State<T>` or an
-`Ext<T>` no Middleware provides is a `BuildError`. Mutable state: put interior
-mutability inside `T` (`tokio::sync::RwLock`, atomics) or, better, use a port.
+[planned] `State<T>` handler parameters (registered with `.state(T)`, `Deref<Target =
+T>`) in any order after the path / target, a missing `State<T>` being a `BuildError`.
+Mutable state: put interior mutability inside `T` (`tokio::sync::RwLock`, atomics) or,
+better, use a port.
 
 ## 10. The process `Runtime` and multiple Apps
 

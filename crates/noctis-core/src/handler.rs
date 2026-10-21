@@ -258,6 +258,9 @@ struct CtxInner {
     module: &'static str,
     app: Arc<AppShared>,
     dispatcher: Dispatcher,
+    /// The run whose frozen Extensions the handler's `Ext<T>` parameters
+    /// read; `None` without Middleware.
+    run: Option<Arc<crate::middleware::Run>>,
 }
 
 impl EventCtx {
@@ -266,6 +269,7 @@ impl EventCtx {
         guild_id: Option<Id<GuildMarker>>,
         module: &'static str,
         app: Arc<AppShared>,
+        run: Option<Arc<crate::middleware::Run>>,
     ) -> Self {
         let dispatcher = Dispatcher::new(Arc::clone(&app));
         Self(Arc::new(CtxInner {
@@ -274,6 +278,7 @@ impl EventCtx {
             module,
             app,
             dispatcher,
+            run,
         }))
     }
 
@@ -312,6 +317,15 @@ impl EventCtx {
     /// (a cheap clone).
     pub fn kv(&self) -> crate::Kv {
         crate::Kv::of(Some(&self.0.app))
+    }
+}
+
+impl crate::kind::__Extensions for EventCtx {
+    fn __extensions(&self) -> &crate::Extensions {
+        match &self.0.run {
+            Some(run) => run.extensions(),
+            None => crate::Extensions::empty(),
+        }
     }
 }
 
@@ -364,6 +378,8 @@ pub struct EventHandler {
     ordered: bool,
     droppable: bool,
     call: Arc<ErasedHandler>,
+    /// The Extension types its `Ext<T>` parameters require.
+    requires: &'static [crate::kind::__ExtType],
 }
 
 impl EventHandler {
@@ -391,7 +407,20 @@ impl EventHandler {
             ordered,
             droppable,
             call: Arc::new(call),
+            requires: &[],
         }
+    }
+
+    /// Sets the Extension types the handler requires; what
+    /// `__RequireExtensions` calls.
+    pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {
+        Self { requires, ..self }
+    }
+
+    /// The Extension types its `Ext<T>` parameters require, in parameter
+    /// order.
+    pub(crate) fn requires(&self) -> &'static [crate::kind::__ExtType] {
+        self.requires
     }
 
     /// The handler's path (`module_path!()::name`).

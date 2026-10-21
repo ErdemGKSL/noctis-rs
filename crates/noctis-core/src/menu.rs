@@ -107,6 +107,8 @@ pub struct ContextMenuHandler {
     ephemerality: Ephemerality,
     auto_defer: bool,
     call: Arc<ErasedMenu>,
+    /// The Extension types its `Ext<T>` parameters require.
+    requires: &'static [crate::kind::__ExtType],
 }
 
 impl ContextMenuHandler {
@@ -138,6 +140,7 @@ impl ContextMenuHandler {
             ephemerality: Ephemerality::Public,
             auto_defer: D::AUTO_DEFER,
             call: Arc::new(call),
+            requires: &[],
         }
     }
 
@@ -169,6 +172,7 @@ impl ContextMenuHandler {
             ephemerality: Ephemerality::Public,
             auto_defer: D::AUTO_DEFER,
             call: Arc::new(call),
+            requires: &[],
         }
     }
 
@@ -215,6 +219,18 @@ impl ContextMenuHandler {
             ephemerality,
             ..self
         }
+    }
+
+    /// Sets the Extension types the handler requires; what
+    /// `__RequireExtensions` calls.
+    pub(crate) fn __with_requires(self, requires: &'static [crate::kind::__ExtType]) -> Self {
+        Self { requires, ..self }
+    }
+
+    /// The Extension types its `Ext<T>` parameters require, in parameter
+    /// order.
+    pub(crate) fn requires(&self) -> &'static [crate::kind::__ExtType] {
+        self.requires
     }
 
     /// Starts the handler with its decoded `target`.

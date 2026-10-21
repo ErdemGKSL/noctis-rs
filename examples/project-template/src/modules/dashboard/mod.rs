@@ -14,12 +14,35 @@ pub mod view;
 use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
 
+use crate::strings::keys;
+
 pub fn module() -> Module {
     Module::new("dashboard")
+        // Runs before every dashboard interaction (not events): outside a server it
+        // stops with the `common.guild_only` notice, else hands the guild to the handlers
+        // as `Ext<DashGuild>` (the build checks that a handler's `Ext<T>` is provided).
+        .before(Middleware::before(guild_only).skip_events().provides::<DashGuild>())
         .add::<handlers::Dashboard>()
         .add::<OpenTab>()
         .add::<TurnPage>()
         .add::<ToggleModule>()
+}
+
+/// The guild a dashboard interaction runs in: a typed Extension that [`guild_only`]
+/// inserts and handlers take as `Ext<DashGuild>`.
+#[derive(Debug, Clone, Copy)]
+pub struct DashGuild(pub Id<GuildMarker>);
+
+/// Before-Middleware: the dashboard only works inside a server. Outside one it stops the
+/// run with the localized ephemeral `common.guild_only` notice (no handler runs).
+async fn guild_only(ctx: BeforeCtx) -> HandlerResult<Flow> {
+    match ctx.guild_id() {
+        Some(guild) => {
+            ctx.insert(DashGuild(guild));
+            Ok(Flow::Continue)
+        }
+        None => Ok(Flow::Stop(Some(keys::COMMON_GUILD_ONLY))),
+    }
 }
 
 // ---------------------------------------------------------------------------------------

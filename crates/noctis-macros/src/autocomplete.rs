@@ -28,6 +28,7 @@ const GENERIC: &str = "an `#[autocomplete]` method cannot be generic";
 const ONE_FIELD: &str = "`#[autocomplete(field)]` names exactly one field";
 const OTHER_ARGS: &str = "`#[autocomplete(field)]` takes no other arguments";
 const INT_06: &str = "[INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`";
+const NO_EXT: &str = "autocomplete runs no Middleware, so it takes no `Ext<T>`";
 
 /// The error of a bare `#[autocomplete]`.
 fn bare(method: &str) -> String {
@@ -111,6 +112,9 @@ fn check(method: &ImplItemFn) -> syn::Result<()> {
             FnArg::Receiver(_) => None,
         })
         .collect();
+    if let Some(ext) = typed.iter().find(|ty| crate::handler::is_ext(ty)) {
+        return Err(syn::Error::new_spanned(ext, NO_EXT));
+    }
     match typed.as_slice() {
         [ctx, typed, filled]
             if last_is(ctx, "AutocompleteCtx") && is_str_ref(typed) && !is_str_ref(filled) =>
@@ -285,5 +289,12 @@ mod tests {
         ] {
             assert_eq!(run(quote!(rule), src), SIGNATURE, "{src}");
         }
+    }
+
+    /// Middleware Matrix 10: autocomplete takes no `Ext<T>`.
+    #[test]
+    fn autocomplete_takes_no_ext() {
+        let src = "async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>, a: Ext<A>) -> HandlerResult<Suggestions<i64>> { todo!() }";
+        assert_eq!(run(quote!(rule), src), NO_EXT);
     }
 }

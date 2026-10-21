@@ -35,7 +35,9 @@ path: <Struct>Path[, r: CommandResponder])` (§2), with the responder as in `res
 no arguments (`` `#[handler]` takes no arguments; put routing arguments on the kind
 attribute ``); `self` is taken by value (`` a #[handler] method takes `self` by value ``),
 the method is `async` and not generic, and any other parameter list is `` a #[handler]
-method takes `(self, ctx[, path | target | event][, r: CommandResponder<..>])` ``. A
+method takes `(self, ctx[, path | target | event][, Ext<T> | Option<Ext<T>> …][, r: <Kind>Responder<..>])` ``
+(`Ext<T>` / `Option<Ext<T>>` parameters may sit anywhere after `ctx` and before the
+responder: `modules-middleware-ratelimits.md` §5). A
 missing path parameter is E0277 `` this command's Pattern has a group: take `path:
 ConfigPath` after `ctx` ``, an extra one `` this command has a single path: remove the
 path parameter ``. A struct without a `#[handler]` method fails with `` `X` has no
