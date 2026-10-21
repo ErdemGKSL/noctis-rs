@@ -87,6 +87,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.intents()` (the requested intents plus the ones your event handlers derive),
 `app.shutdown_grace()` (`Duration`, default 10 s),
 `app.http_config()` (`HttpConfig`, §5),
+`app.app_id()` (`&AppId`: `as_str()`, `Display`; §1 `.app_id`),
 `app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`), `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`), `app.is_publisher()`,
 `app.dev_guild()` (`Option<Id<GuildMarker>>`) and `app.publish(scope)` (§3).
@@ -130,7 +131,7 @@ Planned (signatures may change):
 | Method | Default | Notes |
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
-| `.app_id("my-bot")` [planned, Story 7.4] | application id in base62 | `[a-z0-9-]{1,32}`, same on every process of a Cluster; namespaces Adapter keys |
+| `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the token's application id in lowercase base36 (≤ 13 chars), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
 | `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
@@ -272,8 +273,8 @@ Memory rules for embedded data:
 | Variable | Meaning |
 | --- | --- |
 | `NOCTIS_TOKEN` | bot token, read by `App::from_env()`: trimmed of ASCII whitespace; empty (after trim) counts as unset; an optional `Bot ` prefix is stripped. Not Unicode → `EnvError::NotUnicode`; invalid → `EnvError::InvalidToken`. `run()` without a token → `StartError::MissingToken` |
-| `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` | the payload key and the previous key of a rotation, read by `App::from_env()` last (after `NOCTIS_DEV_GUILD`) with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`): exactly **64 hex digits** (upper or lower case, no `0x`; generate with `openssl rand -hex 32`), else `EnvError::InvalidPayloadKey { var, source: KeyError }`, whose text names the variable and never the value; passed to `.payload_key(..)` / `.previous_payload_key(..)` |
-| `NOCTIS_APP_ID` [planned, Story 7.4] | Adapter namespace |
+| `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` | the payload key and the previous key of a rotation, read by `App::from_env()` after `NOCTIS_DEV_GUILD` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`): exactly **64 hex digits** (upper or lower case, no `0x`; generate with `openssl rand -hex 32`), else `EnvError::InvalidPayloadKey { var, source: KeyError }`, whose text names the variable and never the value; passed to `.payload_key(..)` / `.previous_payload_key(..)` |
+| `NOCTIS_APP_ID` | the App id, read by `App::from_env()` last (after `NOCTIS_PAYLOAD_KEY_PREVIOUS`) with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`) and passed raw to `.app_id(..)`, so an invalid id (`PROD`) fails at `build()` with `BuildViolation::InvalidAppId`; a later `.app_id(..)` wins |
 | `NOCTIS_DEV_GUILD` | default for `--publish-guild` without an id, read by `App::from_env()` last (after `NOCTIS_PUBLISHER`) with the same rules (trimmed; empty = unset); 1-20 ASCII digits of a non-zero `u64` (leading zeros allowed), else `EnvError::InvalidDevGuild`; passed to `.dev_guild(..)` |
 | `NOCTIS_SHARDS` [planned, Story 12.1] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
 | `NOCTIS_SHARD_TOTAL` | fixed shard total, read by `App::from_env()` after `NOCTIS_GATEWAY_URL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-10 ASCII digits that fit a `u32`, and leading zeros are allowed (`"007"` = 7). Anything else (`-1`, `+5`, `1e3`, `1_000`, over `4294967295`) → `EnvError::InvalidShardTotal`. It is then passed to `.shard_total(..)`, so `0` fails at `build()` |
@@ -678,7 +679,7 @@ runtime.run([main, white]).await?;                            // [planned]
 - The same Module tree can be mounted on several Apps. Restrict a command to some Apps
   with `#[command("…", apps = ["main"])]` [planned].
 - Apps share Adapters only where you opt in (`.cache_store(Shared::new(store))`);
-  otherwise keys are namespaced per App (FR-71) [planned].
+  otherwise keys are namespaced per App (FR-71): give each App its own `.app_id(..)`.
 
 ## 11. Observability
 
@@ -741,9 +742,9 @@ for m in noctis::observe::METRICS {
 }
 ```
 
-`app` is `"default"` until `.app_id(..)` [planned, Story 7.4] sets it. Until then,
-several Apps in one process (`Runtime::run`) share and overwrite the same `noctis_*`
-series.
+`app` is the App id (`app.app_id()`): `.app_id(..)`, `NOCTIS_APP_ID` or the token's
+application id in base36, else `"default"`. Give several Apps in one process distinct
+ids, or they share and overwrite the same `noctis_*` series.
 
 ## 12. Plugins
 

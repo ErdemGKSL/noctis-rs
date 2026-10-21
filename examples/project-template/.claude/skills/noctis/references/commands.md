@@ -613,7 +613,7 @@ The method's parameters, always these three, in this order:
   (registered with `.state(..)`; an unregistered type panics with its name, which sends
   an empty list), plus `command_path()`, `module()`, `shard()`, `channel_id()`,
   `user_id()`, `user_locale()`, `guild_locale()`, `focused()` (the `Focused` option:
-  `name()`, `kind()`, `value()`, `as_integer()`, `as_number()`) and `http()`. No
+  `name()`, `kind()`, `value()`, `as_integer()`, `as_number()`), `kv()` and `http()`. No
   `respond`, no `defer`, no Responder (INT-04, INT-06).
 - `typed: &str`: the raw focused input. Discord sends it as a string even for INTEGER and
   NUMBER options, and it may be partial (`""`, `"-"`, `"1"`). Parse it yourself
@@ -846,6 +846,7 @@ commands are left out of a guild publish; global commands stay published and ans
 | `response_locale()` | `&str`: ephemeral → User, then Guild Locale; public → Guild, then User Locale; else `"en-US"` (`responder.md` §3) |
 | `ephemerality()` | `Ephemerality`: the declared one |
 | `state::<T>()` | `Option<State<T>>`: state registered with `AppBuilder::state` |
+| `kv()` | `Kv`: your typed key-value data over the App's namespaced `CacheStore` (`adapters.md` §3) |
 | `http()` | `&Arc<twilight_http::Client>`: the App's one client |
 
 Interactions resolve by default (unlocalized) names only (LOC-06): `data.name` and the
@@ -855,7 +856,11 @@ no fallback between them). An unknown name logs `unknown command` on target
 `path`. Calling a handler directly from bot tests is [planned]; never use
 `noctis::__private`.
 
+`ctx.kv() -> Kv` (your typed key-value data over the App's namespaced `CacheStore`;
+`adapters.md` §3) exists on `CommandCtx` (context menus too), `AutocompleteCtx` and
+every other handler context.
+
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
-`kv()` (your key-value data), `cache()` (Discord resources), `modules()`,
+`cache()` (Discord resources), `modules()`,
 `rate_limits()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
 Command-only: `attachment_size_limit()`.

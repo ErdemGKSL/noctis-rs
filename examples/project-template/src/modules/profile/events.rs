@@ -26,7 +26,7 @@ impl AwardXp {
         if msg.author.bot {
             return Ok(());
         }
-        let kv = ctx.kv(); // [planned, Epic 7]
+        let kv = ctx.kv();
         let cooldown = format!("xpcd:{guild}:{}", msg.author.id);
         if kv.put_if_absent(&cooldown, &(), Some(Duration::from_secs(60))).await? {
             kv.incr(&xp_key(guild, msg.author.id), 1, None).await?;

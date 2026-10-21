@@ -1,0 +1,30 @@
+error[E0277]: the trait bound `Shared<MemoryIdentifyQueue>: IdentifyQueue` is not satisfied
+ --> tests/types/shared_identify_queue.rs:8:28
+  |
+8 |     builder.identify_queue(Shared::new(MemoryIdentifyQueue::default()));
+  |             -------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `IdentifyQueue` is not implemented for `Shared<MemoryIdentifyQueue>`
+  |             |
+  |             required by a bound introduced by this call
+  |
+help: the trait `IdentifyQueue` is implemented for `MemoryIdentifyQueue`
+ --> $WORKSPACE/crates/noctis-ports/src/memory/identify.rs
+  |
+  | impl IdentifyQueue for MemoryIdentifyQueue {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `AppBuilder::identify_queue`
+ --> $WORKSPACE/crates/noctis-core/src/app.rs
+  |
+  |               pub fn $method(&mut self, port: impl $port) -> &mut Self {
+  |                                                    ^^^^^ required by this bound in `AppBuilder::identify_queue`
+...
+  | /     port_setters! {
+  | |         namespaced {
+  | |             ref_store(RefStore) = "MemoryRefStore", "MemoryRefStore::new()";
+  | |             session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()";
+... |
+  | |             identify_queue(IdentifyQueue) = "MemoryIdentifyQueue", "MemoryIdentifyQueue::default()";
+  | |             -------------- required by a bound in this associated function
+... |
+  | |     }
+  | |_____- in this macro invocation
+  = note: this error originates in the macro `port_setters` (in Nightly builds, run with -Z macro-backtrace for more info)

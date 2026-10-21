@@ -3,6 +3,9 @@
 use std::fmt;
 use std::str::FromStr;
 
+use twilight_model::id::Id;
+use twilight_model::id::marker::ApplicationMarker;
+
 /// A Discord bot token.
 ///
 /// [`Token::new`] strips one leading `"Bot "` and then requires at least one
@@ -58,6 +61,52 @@ impl Token {
     pub(crate) fn expose(&self) -> &str {
         &self.0
     }
+
+    /// The application id the token belongs to: its first `.`-separated
+    /// segment is the bot user id (equal to the application id) in base64.
+    /// `None` when that segment does not decode to 1-20 ASCII digits of a
+    /// non-zero `u64`.
+    pub(crate) fn application_id(&self) -> Option<Id<ApplicationMarker>> {
+        let segment = self.0.split('.').next()?;
+        let decoded = decode_base64(segment)?;
+        if !(1..=20).contains(&decoded.len()) || !decoded.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        let digits = std::str::from_utf8(&decoded).ok()?;
+        Id::new_checked(digits.parse().ok()?)
+    }
+}
+
+/// Decodes base64 in the standard (`+/`) or URL-safe (`-_`) alphabet, with
+/// or without `=` padding; `None` for any other input.
+fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    let body = input
+        .strip_suffix("==")
+        .or_else(|| input.strip_suffix('='))
+        .unwrap_or(input);
+    if body.len() % 4 == 1 || (body.len() != input.len() && !input.len().is_multiple_of(4)) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(body.len() * 3 / 4);
+    let (mut acc, mut bits) = (0_u32, 0_u32);
+    for byte in body.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => return None,
+        };
+        acc = (acc << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(u8::try_from((acc >> bits) & 0xff).ok()?);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 impl FromStr for Token {
@@ -163,6 +212,58 @@ mod tests {
         }
         let long = "a".repeat(10_000);
         assert_eq!(Token::new(long.clone()).unwrap().expose(), long);
+    }
+
+    /// `1234567890123456789` in base64, unpadded.
+    const ID_SEGMENT: &str = "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ";
+
+    #[test]
+    fn application_id_from_token() {
+        let want = Some(Id::new(1_234_567_890_123_456_789));
+        for raw in [
+            format!("{ID_SEGMENT}.x.y"),
+            format!("{ID_SEGMENT}==.x.y"),
+            format!("Bot {ID_SEGMENT}.x.y"),
+            ID_SEGMENT.to_owned(),
+        ] {
+            assert_eq!(
+                Token::new(raw.clone()).unwrap().application_id(),
+                want,
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn base64_alphabets() {
+        assert_eq!(
+            decode_base64("-_-_").unwrap(),
+            decode_base64("+/+/").unwrap()
+        );
+        assert_eq!(decode_base64("+/+/").unwrap(), [0xfb, 0xff, 0xbf]);
+        assert_eq!(decode_base64("YQ").unwrap(), b"a");
+        assert_eq!(decode_base64("YQ==").unwrap(), b"a");
+        assert_eq!(decode_base64("YWI=").unwrap(), b"ab");
+        assert_eq!(decode_base64("").unwrap(), b"");
+        assert!(decode_base64("Y").is_none());
+        assert!(decode_base64("Y*Q").is_none());
+        assert!(decode_base64("YQ=").is_none());
+    }
+
+    #[test]
+    fn undecodable_application_ids() {
+        // "abc", "0", 21 digits, u64::MAX + 1.
+        for raw in [
+            "fake-token",
+            "abc.def",
+            "YWJj.x.y",
+            "MA.x.y",
+            "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAx.x.y",
+            "MTg0NDY3NDQwNzM3MDk1NTE2MTY.x.y",
+            ".x.y",
+        ] {
+            assert_eq!(Token::new(raw).unwrap().application_id(), None, "{raw}");
+        }
     }
 
     #[test]

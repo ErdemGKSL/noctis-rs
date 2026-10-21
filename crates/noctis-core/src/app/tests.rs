@@ -10,7 +10,7 @@ use noctis_ports::{
 
 use super::*;
 use crate::ports::PortSlot;
-use crate::{HttpConfigError, Resource};
+use crate::{AppIdError, HttpConfigError, Resource, Shared};
 
 const SECRET: &str = "SECRET123";
 
@@ -38,6 +38,7 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
                     | "NOCTIS_DEV_GUILD"
                     | "NOCTIS_PAYLOAD_KEY"
                     | "NOCTIS_PAYLOAD_KEY_PREVIOUS"
+                    | "NOCTIS_APP_ID"
             ),
             "unexpected variable {var}"
         );
@@ -670,6 +671,7 @@ fn from_env_reads_token_first() {
             "NOCTIS_DEV_GUILD",
             "NOCTIS_PAYLOAD_KEY",
             "NOCTIS_PAYLOAD_KEY_PREVIOUS",
+            "NOCTIS_APP_ID",
         ]
     );
 }
@@ -2178,4 +2180,262 @@ async fn payload_key_is_never_printed() {
     let debug = format!("{app:?} {app:#?}");
     assert!(debug.contains("payload_key: true"), "{debug}");
     assert!(!debug.contains("abab") && !debug.contains("171"), "{debug}");
+}
+
+// ---- App ids and namespaced ports (Story 7.4) ----
+
+/// A real-format token of application `1234567890123456789`.
+const ID_TOKEN: &str = "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ.x.y";
+
+/// Builds `builder` and returns the App plus the `noctis::app` warnings.
+fn build_logged(builder: &mut AppBuilder) -> (Result<App, BuildError>, Vec<String>) {
+    let capture = crate::test_support::Capture::default();
+    let result = {
+        let _logs = tracing::subscriber::set_default(capture.subscriber());
+        builder.build()
+    };
+    (result, capture.lines_with(&["WARN", "noctis::app"]))
+}
+
+#[tokio::test]
+async fn app_id_default_from_token() {
+    for raw in [
+        ID_TOKEN.to_owned(),
+        "MTIzNDU2Nzg5MDEyMzQ1Njc4OQ==.x.y".to_owned(),
+        format!("Bot {ID_TOKEN}"),
+    ] {
+        let (app, warnings) = build_logged(App::builder().token(Token::new(raw.clone()).unwrap()));
+        let app = app.unwrap();
+        assert_eq!(app.app_id().as_str(), "9do1sj396nf9", "{raw}");
+        assert_eq!(app.app_label(), "9do1sj396nf9");
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+}
+
+#[tokio::test]
+async fn app_id_undecodable_token_warns() {
+    for raw in [
+        "fake-token",
+        "abc.def",
+        "YWJj.x.y",
+        "MA.x.y",
+        "MTExMTExMTExMTExMTExMTExMTEx.x.y",
+        "MTg0NDY3NDQwNzM3MDk1NTE2MTY.x.y",
+    ] {
+        let (app, warnings) = build_logged(App::builder().token(Token::new(raw).unwrap()));
+        assert_eq!(app.unwrap().app_id().as_str(), "default", "{raw}");
+        assert_eq!(warnings.len(), 1, "{raw}: {warnings:?}");
+        assert!(
+            warnings[0].contains(
+                "could not derive the App id from the bot token; call AppBuilder::app_id"
+            )
+        );
+        assert!(!warnings[0].contains(raw), "{raw}");
+    }
+}
+
+#[tokio::test]
+async fn app_id_without_token() {
+    let (app, warnings) = build_logged(&mut App::builder());
+    let app = app.unwrap();
+    assert_eq!(app.app_id().as_str(), "default");
+    assert_eq!(app.app_label(), "default");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(format!("{app:?}").contains(r#"app_id: AppId("default")"#));
+}
+
+#[tokio::test]
+async fn app_id_explicit_wins() {
+    let (app, warnings) = build_logged(
+        App::builder()
+            .token(Token::new(ID_TOKEN).unwrap())
+            .app_id("my-bot"),
+    );
+    assert_eq!(app.unwrap().app_id().as_str(), "my-bot");
+    assert!(warnings.is_empty());
+    let mut builder = App::builder();
+    builder.app_id("a").app_id("b");
+    assert!(format!("{builder:?}").contains(r#"app_id: Some("b")"#));
+    assert_eq!(builder.build().unwrap().app_id().as_str(), "b");
+}
+
+#[tokio::test]
+async fn app_id_invalid_is_a_violation() {
+    for (raw, reason) in [
+        ("Bad", AppIdError::InvalidChar { index: 0, ch: 'B' }),
+        ("", AppIdError::Empty),
+    ] {
+        let err = App::builder()
+            .app_id(raw)
+            .ack_deadline(Duration::from_secs(3))
+            .build()
+            .unwrap_err();
+        let violations = err.violations();
+        assert!(
+            violations.contains(&BuildViolation::InvalidAppId {
+                reason: reason.clone()
+            }),
+            "{violations:?}"
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|v| matches!(v, BuildViolation::InvalidAckDeadline { .. })),
+            "{violations:?}"
+        );
+    }
+    let message = BuildViolation::InvalidAppId {
+        reason: AppIdError::InvalidChar { index: 0, ch: 'B' },
+    }
+    .to_string();
+    assert!(
+        message.starts_with("invalid App id: App id has `B` at index 0"),
+        "{message}"
+    );
+}
+
+#[tokio::test]
+async fn app_id_from_env() {
+    let builder =
+        AppBuilder::from_lookup(lookup_var("NOCTIS_APP_ID", Some(" prod-1 ".into()))).unwrap();
+    assert_eq!(builder.app_id.as_deref(), Some("prod-1"));
+    let mut builder =
+        AppBuilder::from_lookup(lookup_var("NOCTIS_APP_ID", Some("".into()))).unwrap();
+    assert!(builder.app_id.is_none());
+    assert_eq!(builder.build().unwrap().app_id().as_str(), "default");
+    let mut builder =
+        AppBuilder::from_lookup(lookup_var("NOCTIS_APP_ID", Some("PROD".into()))).unwrap();
+    let err = builder.build().unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::InvalidAppId {
+            reason: AppIdError::InvalidChar { index: 0, ch: 'P' }
+        }]
+    );
+    let mut builder =
+        AppBuilder::from_lookup(lookup_var("NOCTIS_APP_ID", Some("PROD".into()))).unwrap();
+    builder.app_id("x");
+    assert_eq!(builder.build().unwrap().app_id().as_str(), "x");
+}
+
+#[tokio::test]
+async fn ports_are_namespaced() {
+    let app = App::builder().app_id("a").build().unwrap();
+    let ports = app.ports();
+    assert_eq!(ports.ref_store.prefix(), "a:ref:");
+    assert_eq!(ports.session_store.prefix(), "a:session:");
+    assert_eq!(ports.module_state_store.prefix(), "a:module_state:");
+    assert_eq!(ports.rate_limit_store.prefix(), "a:rate_limit:");
+    assert_eq!(ports.cache_store.prefix(), "a:cache:");
+    assert_eq!(ports.render_cache.prefix(), "a:render_cache:");
+    assert_eq!(ports.asset_store.prefix(), "a:asset:");
+}
+
+#[tokio::test]
+async fn arc_store_across_apps() {
+    use noctis_ports::memory::MemoryCacheStore;
+
+    let store = Arc::new(MemoryCacheStore::new());
+    let a = App::builder()
+        .app_id("a")
+        .cache_store(Arc::clone(&store))
+        .build()
+        .unwrap();
+    let erased: Arc<dyn CacheStore> = store.clone();
+    let b = App::builder()
+        .app_id("b")
+        .cache_store(erased)
+        .build()
+        .unwrap();
+    a.shared()
+        .kv
+        .put("k", Bytes::from_static(b"1"), None)
+        .await
+        .unwrap();
+    b.shared()
+        .kv
+        .put("k", Bytes::from_static(b"2"), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.get("a:cache:k").await.unwrap(),
+        Some(Bytes::from_static(b"1"))
+    );
+    assert_eq!(
+        store.get("b:cache:k").await.unwrap(),
+        Some(Bytes::from_static(b"2"))
+    );
+    assert!(!a.ports().is_default(PortSlot::CacheStore));
+}
+
+#[tokio::test]
+async fn shared_store_across_apps() {
+    use noctis_ports::memory::MemoryCacheStore;
+
+    let store = Arc::new(MemoryCacheStore::new());
+    let a = App::builder()
+        .app_id("a")
+        .cache_store(Shared::new(Arc::clone(&store)))
+        .build()
+        .unwrap();
+    let b = App::builder()
+        .app_id("b")
+        .cache_store(Shared::new(Arc::clone(&store)))
+        .build()
+        .unwrap();
+    let c = App::builder()
+        .app_id("c")
+        .cache_store(Arc::clone(&store))
+        .build()
+        .unwrap();
+    assert_eq!(a.ports().cache_store.prefix(), "_shared:cache:");
+    a.shared()
+        .kv
+        .put("k", Bytes::from_static(b"1"), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        b.shared().kv.get("k").await.unwrap(),
+        Some(Bytes::from_static(b"1"))
+    );
+    assert_eq!(c.shared().kv.get("k").await.unwrap(), None);
+    assert_eq!(
+        store.get("_shared:cache:k").await.unwrap(),
+        Some(Bytes::from_static(b"1"))
+    );
+}
+
+#[test]
+fn app_label_is_the_metric_label() {
+    use metrics_util::debugging::DebuggingRecorder;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let app = runtime.block_on(async { App::builder().app_id("bot-a").build().unwrap() });
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    {
+        let _metrics = metrics::set_default_local_recorder(&recorder);
+        ShardStatus {
+            app: Arc::clone(&app.shared().app),
+            total: 1,
+        }
+        .init();
+    }
+    let labels: Vec<String> = snapshotter
+        .snapshot()
+        .into_vec()
+        .into_iter()
+        .flat_map(|(key, ..)| {
+            key.key()
+                .labels()
+                .filter(|l| l.key() == "app")
+                .map(|l| l.value().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(!labels.is_empty());
+    assert!(labels.iter().all(|l| l == "bot-a"), "{labels:?}");
 }

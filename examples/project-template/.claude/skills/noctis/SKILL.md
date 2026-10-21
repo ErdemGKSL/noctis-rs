@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `db3607593313ea808308205e93551c08f66bdcf41971c0c40d0f18f917f156ca` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `3596cd05b0265d1b7bc92f250c848e77d973362cb9c008dbd3e3d5d31aab7ca6` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -70,7 +70,8 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
   Payloads; the recipes in `references/views-and-recipes.md` show each pattern with
   complete code. Budget helpers tell you how many rows fit on a page.
 - **Handlers are stateless.** No collectors, no per-message closures, no timers. State
-  lives in Payloads/Refs, in ports (`ctx.kv()` for your key-value data), or in
+  lives in Payloads/Refs, in ports (`ctx.kv()`, a typed `Kv` over the App's
+  namespaced `CacheStore`, for your key-value data), or in
   `State<T>`. Cached Discord resources are read with `ctx.cache()`.
 - **Adapters (ports)** are traits for anything that stores data, each with a bounded
   in-memory default; swap in Redis/SQL without touching handlers.
@@ -442,7 +443,7 @@ Read only what the task touches.
 | `references/views-and-recipes.md` | write a render function and the update flow; recipes with complete code for tabs, pagination, step flows and settings screens; budget helpers; attachments, mentions, select freshness; UI quality rulebook; schwi-style best practices and pitfalls |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |
-| `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing, `ctx.kv()` and `ctx.cache()` |
+| `references/adapters.md` | the in-memory defaults (`noctis::ports::memory`: limits, usage, `MemoryDiscordCache`), swap or implement a port (RefStore, CacheStore, DiscordCache, …), conformance tests, namespacing (`app_id`, `Shared::new`), `ctx.kv()` (`Kv`) and `ctx.cache()` |
 | `references/i18n.md` | locale files, typed strings, command localization, locale resolution |
 | `references/modules-middleware-ratelimits.md` | Modules, Boot Flags, enable/disable, Middleware and Extensions, Error Sinks, rate limits, events |
 | `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |

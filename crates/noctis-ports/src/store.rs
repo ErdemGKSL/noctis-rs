@@ -148,3 +148,87 @@ pub trait AssetStore: Send + Sync + 'static {
     op!(get);
     op!(put);
 }
+
+/// Forwards one op of the shared vocabulary to `**self`.
+macro_rules! forward {
+    (get) => {
+        fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>> {
+            (**self).get(key)
+        }
+    };
+    (put) => {
+        fn put<'a>(
+            &'a self,
+            key: &'a str,
+            value: Bytes,
+            ttl: Option<Duration>,
+        ) -> BoxFuture<'a, Result<(), PortError>> {
+            (**self).put(key, value, ttl)
+        }
+    };
+    (put_if_absent) => {
+        fn put_if_absent<'a>(
+            &'a self,
+            key: &'a str,
+            value: Bytes,
+            ttl: Option<Duration>,
+        ) -> BoxFuture<'a, Result<bool, PortError>> {
+            (**self).put_if_absent(key, value, ttl)
+        }
+    };
+    (take) => {
+        fn take<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>> {
+            (**self).take(key)
+        }
+    };
+    (delete) => {
+        fn delete<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<(), PortError>> {
+            (**self).delete(key)
+        }
+    };
+    (touch) => {
+        fn touch<'a>(
+            &'a self,
+            key: &'a str,
+            ttl: Duration,
+        ) -> BoxFuture<'a, Result<bool, PortError>> {
+            (**self).touch(key, ttl)
+        }
+    };
+    (incr_with_ttl) => {
+        fn incr_with_ttl<'a>(
+            &'a self,
+            key: &'a str,
+            by: u64,
+            ttl: Option<Duration>,
+        ) -> BoxFuture<'a, Result<u64, PortError>> {
+            (**self).incr_with_ttl(key, by, ttl)
+        }
+    };
+    (version) => {
+        fn version(&self) -> BoxFuture<'_, Result<u64, PortError>> {
+            (**self).version()
+        }
+    };
+}
+
+/// Implements each port for `Arc<P>`, forwarding every op, so one instance
+/// can be handed to several Apps with `Arc::clone`.
+macro_rules! arc_passthrough {
+    ($($port:ident: $($op:ident),+;)*) => {$(
+        /// Forwards every op to the shared instance.
+        impl<P: $port + ?Sized> $port for std::sync::Arc<P> {
+            $(forward!($op);)+
+        }
+    )*};
+}
+
+arc_passthrough! {
+    RefStore: put_if_absent, get, take, delete, touch;
+    SessionStore: get, put, delete;
+    ModuleStateStore: get, put, version;
+    RateLimitStore: incr_with_ttl, get, put;
+    CacheStore: get, put, put_if_absent, delete, incr_with_ttl;
+    RenderCache: get, put;
+    AssetStore: get, put;
+}

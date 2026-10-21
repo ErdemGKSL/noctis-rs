@@ -61,8 +61,8 @@ const TARGET_DIR: &str = "target/public-api";
 /// all), with their snapshot spelling: the `#[handler]` marker that component
 /// constructors require (FR-58), the sealed supertraits of the placement
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
-/// supertraits of `EventPayload`, `Descriptor`, the Responder traits and
-/// `SuggestionValue`.
+/// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
+/// `SuggestionValue`, `NamespacedPort` and `IntoPort`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
@@ -88,6 +88,11 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_core::autocomplete::sealed",
         "noctis::__private::core::autocomplete::sealed",
+    ),
+    // The sealed supertraits of `NamespacedPort` and `IntoPort` (AD-14).
+    (
+        "noctis_core::namespace::sealed",
+        "noctis::__private::core::namespace::sealed",
     ),
 ];
 

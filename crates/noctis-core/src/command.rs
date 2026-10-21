@@ -220,6 +220,12 @@ impl CommandCtx {
         self.0.app.as_ref()?.states.get::<T>()
     }
 
+    /// The App's typed key-value handle over its namespaced `CacheStore`
+    /// (a cheap clone).
+    pub fn kv(&self) -> crate::Kv {
+        crate::Kv::of(self.0.app.as_ref())
+    }
+
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns);
     /// an unconfigured client in the detached test seams.
     pub fn http(&self) -> &Arc<twilight_http::Client> {

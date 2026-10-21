@@ -194,8 +194,9 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
   Option<Id<GuildMarker>>`, `module() -> &'static str` (the Module the handler was
   added to), `state::<T>() -> Option<State<T>>`, `http() -> &Arc<Client>` (the App's
   one client), `dispatcher() -> &Dispatcher` (runs a registered Command and replies to
-  a message, e.g. a prefix command; `responder.md` §4.1). No Responder. Planned:
-  `guild_locale()`, `kv()`, `cache()`,
+  a message, e.g. a prefix command; `responder.md` §4.1), `kv() -> Kv` (your typed
+  key-value data, namespaced per App; `adapters.md` §3). No Responder. Planned:
+  `guild_locale()`, `cache()`,
   `modules()` [planned].
 - **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
   'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the

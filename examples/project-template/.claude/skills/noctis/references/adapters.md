@@ -283,8 +283,9 @@ changes incompatibly; old entries then read as misses.
 
 ### 2.6 Rules every Adapter follows
 
-- **Keys are opaque and stored verbatim.** Core's `Namespaced` wrapper [planned]
-  already prefixed them with `<app>:<port>:`; never add your own prefix.
+- **Keys are opaque and stored verbatim.** Core's `Namespaced` wrapper already
+  prefixed them with `<app>:<port>:` (or `_shared:<port>:`); never add your own
+  prefix.
 - **Values are opaque `Bytes`** (`noctis::bytes::Bytes`). Counters are 8-byte
   big-endian `u64`.
 - `put_if_absent` and `take` must have **exactly one winner** under concurrency;
@@ -334,19 +335,45 @@ pub trait Renderer: Send + Sync + 'static {
 The render enums are closed (exhaustive `match` is fine); the render structs have
 public fields, except `Size`, which validates.
 
-## 3. Using ports from handlers [planned]
+## 3. Using ports from handlers
 
-You never call port traits directly; contexts give typed, namespaced handles:
+You never call port traits directly; contexts give typed, namespaced handles.
+`ctx.kv() -> Kv` exists on `CommandCtx` (context menus too), `ComponentCtx`,
+`ModalSubmitCtx`, `ExpiredCtx`, `EventCtx` and `AutocompleteCtx` (Middleware's
+`ctx.kv()` is [planned, Story 7.6]). `Kv` (`noctis::Kv`) is a cheap clone over the
+App's namespaced `CacheStore`: every key lands under `<app_id>:cache:<key>`, and each
+method makes exactly one store call.
 
 ```rust
 let kv = ctx.kv();                                               // CacheStore, namespaced
 let cfg: Option<GuildConfig> = kv.get(&config_key(guild)).await?;   // T: DeserializeOwned
-kv.put(&config_key(guild), &cfg, None).await?;                   // T: Serialize
+kv.put(&config_key(guild), &cfg, None).await?;                   // T: Serialize + ?Sized
 let first = kv.put_if_absent(&cooldown, &(), Some(Duration::from_secs(60))).await?;
-let n: u64 = kv.incr(&xp_key(guild, user), 1, None).await?;
+let n: u64 = kv.incr(&xp_key(guild, user), 1, None).await?;      // creates `by` with the TTL
 let n: u64 = kv.counter(&xp_key(guild, user)).await?;            // 0 when missing
-kv.delete(&key).await?;
+kv.delete(&key).await?;                                          // missing is not an error
+let v2 = ctx.kv().schema(2);                                     // schema byte for typed ops
+```
 
+| Method | Returns | Notes |
+| --- | --- | --- |
+| `get::<T>(key)` | `Result<Option<T>, PortError>` | missing key or another schema byte = `Ok(None)`; empty, malformed or trailing bytes = `Err(PortError::Value(..))` |
+| `put(key, &value, ttl)` | `Result<(), PortError>` | overwrites and resets the TTL; a value that does not serialize is `PortError::Value(ValueError::Serialize)` and makes no store call |
+| `put_if_absent(key, &value, ttl)` | `Result<bool, PortError>` | `true` only for the one caller that inserted |
+| `incr(key, by, ttl)` | `Result<u64, PortError>` | atomic, saturates at `u64::MAX`; the TTL applies only on create |
+| `counter(key)` | `Result<u64, PortError>` | 0 when missing; a value that is not exactly 8 bytes is `PortError::InvalidValue` |
+| `delete(key)` | `Result<(), PortError>` | |
+| `schema(n)` | `Kv` | the schema byte (default 0); bump it when a stored type changes incompatibly, and old entries read as misses |
+
+Values are postcard with a leading schema byte (`encode_value`/`decode_value`);
+counters are 8-byte big-endian `u64`s, so `counter` on a typed value is an error. The
+futures are `Send` for any `T` (the value is encoded before the store call). A
+detached test context (no App) answers every op with `PortError::Unavailable`.
+`PortError` converts into `HandlerError`, so `?` works in handlers.
+
+[planned]:
+
+```rust
 let guild = ctx.cache().guild(guild_id).await?;                  // DiscordCache, owned value
 
 ctx.modules().set_enabled("profile", ModuleScope::Guild(guild), false).await?;  // ModuleStateStore
@@ -433,11 +460,53 @@ They test TTL, overwrite, delete, missing keys, concurrent callers (exactly one
 `take`/`put_if_absent` winner, no lost increments) and App namespacing. The factory is
 called per case, so return a fresh, empty store (for Redis: a fresh key prefix or DB).
 
-## 6. Namespacing and sharing (FR-71) [planned]
+## 6. Namespacing and sharing (FR-71)
 
-Two Apps sharing one Adapter instance never see each other's keys (`<app>:<port>:`).
-Opt one port into cross-App sharing with `Shared::new(adapter)` → prefix
-`_shared:<port>:` (typical: `CacheStore` for data both white-label Apps read).
+Every App has an `AppId` (`[a-z0-9-]{1,32}`): `.app_id("my-bot")` or
+`NOCTIS_APP_ID`; by default the bot's application id in lowercase base36, read from
+the token (when the token does not decode it is `default`, and `build()` warns). Core
+wraps each of the seven byte stores in `noctis::ports::Namespaced`, which prefixes
+every key with `<app_id>:<port>:`; the logical key is appended verbatim. The port
+segments are:
+
+| Port | Prefix |
+| --- | --- |
+| `RefStore` | `<app>:ref:` |
+| `SessionStore` | `<app>:session:` |
+| `ModuleStateStore` | `<app>:module_state:` |
+| `RateLimitStore` | `<app>:rate_limit:` |
+| `CacheStore` | `<app>:cache:` |
+| `RenderCache` | `<app>:render_cache:` |
+| `AssetStore` | `<app>:asset:` |
+
+`IdentifyQueue`, `LocaleSource`, `GuildAccessList` and `DiscordCache` are never
+namespaced. So two Apps handed one Adapter instance (every byte store is implemented
+for `Arc<P>`, so `.cache_store(Arc::clone(&store))` on both builders works) never see
+each other's keys.
+
+Opt one port into cross-App sharing by passing `Shared::new(adapter)`
+(`noctis::ports::Shared`) to its normal setter: its prefix becomes `_shared:<port>:`
+for every App that does the same (typical: `CacheStore` for data both white-label Apps
+read). `_shared` can never equal an App id. Only the seven byte-store setters accept
+`Shared` (they take the sealed `IntoPort`); `.identify_queue(Shared::new(..))` does not
+compile.
+
+The types (rarely needed in bot code):
+
+| Type | API |
+| --- | --- |
+| `noctis::AppId` | `AppId::new(&str) -> Result<AppId, AppIdError>` (checks empty, then more than 32 chars, then the first char outside `a-z`, `0-9`, `-`; never trims), `AppId::from_application_id(Id<ApplicationMarker>)` (the base36 default), `as_str()`, `Display`, `FromStr`; `Clone`, `Eq`, `Hash` |
+| `noctis::AppIdError` | `#[non_exhaustive]`: `Empty`, `TooLong { len }`, `InvalidChar { index, ch }` (char index); each message names `[a-z0-9-]{1,32}` |
+| `noctis::ports::Namespaced<P>` | `Namespaced::new(&app_id, Arc<dyn Port>)`, `Namespaced::shared(Arc<dyn Port>)`, `prefix() -> &str`; implements its port, forwarding each op once with `prefix + key` |
+| `noctis::ports::NamespacedPort` | sealed; implemented for the seven `dyn Port` types; `NamespacedPort::SEGMENT` is the port segment (`"cache"`, …) |
+| `noctis::ports::Shared<P>` | `Shared::new(port)`, `Shared::into_inner(self) -> P`; implements no port |
+| `noctis::ports::IntoPort<dyn Port>` | sealed; what the seven byte-store setters take: any implementation of the port, or `Shared<impl Port>` |
+
+```rust
+let store = Arc::new(MyRedisCache::new(pool));
+builder.app_id("bot-a").cache_store(Shared::new(Arc::clone(&store)));   // _shared:cache:
+builder.ref_store(Arc::clone(&refs));                                  // bot-a:ref:
+```
 
 ## 7. Clusters
 

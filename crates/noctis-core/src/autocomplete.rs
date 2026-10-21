@@ -318,6 +318,12 @@ impl AutocompleteCtx {
         }
     }
 
+    /// The App's typed key-value handle over its namespaced `CacheStore`
+    /// (a cheap clone).
+    pub fn kv(&self) -> crate::Kv {
+        crate::Kv::of(self.parts.app.as_ref())
+    }
+
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns).
     pub fn http(&self) -> &Arc<twilight_http::Client> {
         match &self.parts.app {

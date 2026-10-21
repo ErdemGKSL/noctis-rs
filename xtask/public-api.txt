@@ -24,6 +24,7 @@ impl noctis::ResponderState for noctis::Acked
 pub struct noctis::App
 impl noctis::App
 pub fn noctis::App::ack_deadline(&self) -> core::time::Duration
+pub fn noctis::App::app_id(&self) -> &noctis::AppId
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
@@ -49,9 +50,10 @@ pub fn noctis::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Resu
 pub struct noctis::AppBuilder
 impl noctis::AppBuilder
 pub fn noctis::AppBuilder::ack_deadline(&mut self, core::time::Duration) -> &mut Self
-pub fn noctis::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore) -> &mut Self
+pub fn noctis::AppBuilder::app_id(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
+pub fn noctis::AppBuilder::asset_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::AssetStore>) -> &mut Self
 pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
-pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
+pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::CacheStore>) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
@@ -69,25 +71,63 @@ pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::
 pub fn noctis::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
 pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
-pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
+pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore>) -> &mut Self
 pub fn noctis::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
 pub fn noctis::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
-pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
-pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
-pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::RenderCache) -> &mut Self
+pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
+pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
+pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
 pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
 pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
-pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::SessionStore) -> &mut Self
+pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::SessionStore>) -> &mut Self
 pub fn noctis::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::AppBuilder::shutdown_grace(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
 pub fn noctis::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::AppBuilder
 pub fn noctis::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::AppId(_)
+impl noctis::AppId
+pub fn noctis::AppId::as_str(&self) -> &str
+pub fn noctis::AppId::from_application_id(twilight_model::id::Id<twilight_model::id::marker::ApplicationMarker>) -> Self
+pub fn noctis::AppId::new(&str) -> core::result::Result<Self, noctis::AppIdError>
+impl core::clone::Clone for noctis::AppId
+pub fn noctis::AppId::clone(&self) -> Self
+impl core::cmp::Eq for noctis::AppId
+impl core::cmp::PartialEq for noctis::AppId
+pub fn noctis::AppId::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::AppId
+pub fn noctis::AppId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::AppId
+pub fn noctis::AppId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::AppId
+pub fn noctis::AppId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for noctis::AppId
+impl core::str::traits::FromStr for noctis::AppId
+pub type noctis::AppId::Err = noctis::AppIdError
+pub fn noctis::AppId::from_str(&str) -> core::result::Result<Self, Self::Err>
+#[non_exhaustive] pub enum noctis::AppIdError
+pub noctis::AppIdError::Empty
+pub noctis::AppIdError::InvalidChar
+pub noctis::AppIdError::InvalidChar::ch: char
+pub noctis::AppIdError::InvalidChar::index: usize
+pub noctis::AppIdError::TooLong
+pub noctis::AppIdError::TooLong::len: usize
+impl core::clone::Clone for noctis::AppIdError
+pub fn noctis::AppIdError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::AppIdError
+impl core::cmp::PartialEq for noctis::AppIdError
+pub fn noctis::AppIdError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::AppIdError
+impl core::fmt::Debug for noctis::AppIdError
+pub fn noctis::AppIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::AppIdError
+pub fn noctis::AppIdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::AppIdError
 pub enum noctis::AutoDefer
 impl core::clone::Clone for noctis::AutoDefer
 pub fn noctis::AutoDefer::clone(&self) -> Self
@@ -122,6 +162,7 @@ pub fn noctis::AutocompleteCtx::focused(&self) -> &noctis::Focused
 pub fn noctis::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
 pub fn noctis::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::AutocompleteCtx::kv(&self) -> noctis::Kv
 pub fn noctis::AutocompleteCtx::module(&self) -> &'static str
 pub fn noctis::AutocompleteCtx::shard(&self) -> u32
 pub fn noctis::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> noctis::State<T>
@@ -215,6 +256,8 @@ pub noctis::BuildViolation::HttpEdge
 pub noctis::BuildViolation::HttpEdge::kind: core::io::error::ErrorKind
 pub noctis::BuildViolation::InvalidAckDeadline
 pub noctis::BuildViolation::InvalidAckDeadline::actual: core::time::Duration
+pub noctis::BuildViolation::InvalidAppId
+pub noctis::BuildViolation::InvalidAppId::reason: noctis::AppIdError
 pub noctis::BuildViolation::InvalidEventLane
 pub noctis::BuildViolation::InvalidEventLane::capacity: usize
 pub noctis::BuildViolation::InvalidEventLane::overflow: usize
@@ -299,6 +342,7 @@ pub fn noctis::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::CommandCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::CommandCtx::module(&self) -> &'static str
 pub fn noctis::CommandCtx::response_locale(&self) -> &str
 pub fn noctis::CommandCtx::shard(&self) -> u32
@@ -435,6 +479,7 @@ impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ComponentCtx::module(&self) -> &'static str
 pub fn noctis::ComponentCtx::shard(&self) -> u32
 pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -644,6 +689,7 @@ impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ExpiredCtx::module(&self) -> &'static str
 pub fn noctis::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -830,6 +876,19 @@ impl core::fmt::Debug for noctis::InvalidOption
 pub fn noctis::InvalidOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::InvalidOption
 pub fn noctis::InvalidOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::Kv
+impl noctis::Kv
+pub async fn noctis::Kv::counter(&self, &str) -> core::result::Result<u64, noctis::ports::PortError>
+pub async fn noctis::Kv::delete(&self, &str) -> core::result::Result<(), noctis::ports::PortError>
+pub async fn noctis::Kv::get<T: serde_core::de::DeserializeOwned>(&self, &str) -> core::result::Result<core::option::Option<T>, noctis::ports::PortError>
+pub async fn noctis::Kv::incr(&self, &str, u64, core::option::Option<core::time::Duration>) -> core::result::Result<u64, noctis::ports::PortError>
+pub fn noctis::Kv::put<'a, T: serde_core::ser::Serialize + ?core::marker::Sized>(&'a self, &'a str, &T, core::option::Option<core::time::Duration>) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::ports::PortError>> + core::marker::Send + 'a
+pub fn noctis::Kv::put_if_absent<'a, T: serde_core::ser::Serialize + ?core::marker::Sized>(&'a self, &'a str, &T, core::option::Option<core::time::Duration>) -> impl core::future::future::Future<Output = core::result::Result<bool, noctis::ports::PortError>> + core::marker::Send + 'a
+pub fn noctis::Kv::schema(self, u8) -> Self
+impl core::clone::Clone for noctis::Kv
+pub fn noctis::Kv::clone(&self) -> Self
+impl core::fmt::Debug for noctis::Kv
+pub fn noctis::Kv::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::LogSink
 impl core::clone::Clone for noctis::LogSink
 pub fn noctis::LogSink::clone(&self) -> Self
@@ -926,6 +985,7 @@ impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
 pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -1799,6 +1859,7 @@ impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
 pub fn noctis::events::EventCtx::shard(&self) -> u32
 pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -1811,6 +1872,7 @@ impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
 pub fn noctis::events::EventCtx::shard(&self) -> u32
 pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -2076,6 +2138,9 @@ impl core::marker::StructuralPartialEq for noctis::ports::AnimationSpec
 pub trait noctis::ports::AssetStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::AssetStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::AssetStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl<P: noctis::ports::AssetStore + ?core::marker::Sized> noctis::ports::AssetStore for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub type noctis::ports::BoxFuture<'a, T> = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = T> + core::marker::Send + 'a)>>
 pub trait noctis::ports::CacheStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::CacheStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
@@ -2083,6 +2148,12 @@ pub fn noctis::ports::CacheStore::get<'a>(&'a self, &'a str) -> noctis::ports::B
 pub fn noctis::ports::CacheStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
 pub fn noctis::ports::CacheStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::CacheStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+impl<P: noctis::ports::CacheStore + ?core::marker::Sized> noctis::ports::CacheStore for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
 pub trait noctis::ports::DiscordCache: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::DiscordCache::channel(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::Channel>, noctis::ports::PortError>>
 pub fn noctis::ports::DiscordCache::channel_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>, noctis::ports::PortError>>
@@ -2156,6 +2227,14 @@ pub trait noctis::ports::GuildAccessList: core::marker::Send + core::marker::Syn
 pub fn noctis::ports::GuildAccessList::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
 pub trait noctis::ports::IdentifyQueue: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::IdentifyQueue::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
+pub trait noctis::ports::IntoPort<P: ?core::marker::Sized>: noctis::__private::core::namespace::sealed::PortInput<P>
+impl<T: noctis::ports::AssetStore> noctis::ports::IntoPort<dyn noctis::ports::AssetStore> for T
+impl<T: noctis::ports::CacheStore> noctis::ports::IntoPort<dyn noctis::ports::CacheStore> for T
+impl<T: noctis::ports::ModuleStateStore> noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore> for T
+impl<T: noctis::ports::RateLimitStore> noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore> for T
+impl<T: noctis::ports::RefStore> noctis::ports::IntoPort<dyn noctis::ports::RefStore> for T
+impl<T: noctis::ports::RenderCache> noctis::ports::IntoPort<dyn noctis::ports::RenderCache> for T
+impl<T: noctis::ports::SessionStore> noctis::ports::IntoPort<dyn noctis::ports::SessionStore> for T
 pub struct noctis::ports::Lease
 impl noctis::ports::Lease
 pub const fn noctis::ports::Lease::bucket(&self) -> u32
@@ -2172,6 +2251,56 @@ pub trait noctis::ports::ModuleStateStore: core::marker::Send + core::marker::Sy
 pub fn noctis::ports::ModuleStateStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::ModuleStateStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::ModuleStateStore::version(&self) -> noctis::ports::BoxFuture<'_, core::result::Result<u64, noctis::ports::PortError>>
+impl<P: noctis::ports::ModuleStateStore + ?core::marker::Sized> noctis::ports::ModuleStateStore for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::version(&self) -> noctis::ports::BoxFuture<'_, core::result::Result<u64, noctis::ports::PortError>>
+pub struct noctis::ports::Namespaced<P: ?core::marker::Sized + noctis::ports::NamespacedPort>
+impl<P: ?core::marker::Sized + noctis::ports::NamespacedPort> noctis::ports::Namespaced<P>
+pub fn noctis::ports::Namespaced<P>::new(&noctis::AppId, alloc::rcs::arc::Arc<P>) -> Self
+pub fn noctis::ports::Namespaced<P>::prefix(&self) -> &str
+pub fn noctis::ports::Namespaced<P>::shared(alloc::rcs::arc::Arc<P>) -> Self
+impl noctis::ports::AssetStore for noctis::ports::Namespaced<dyn noctis::ports::AssetStore>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::AssetStore>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::AssetStore>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::CacheStore for noctis::ports::Namespaced<dyn noctis::ports::CacheStore>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::CacheStore>::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::CacheStore>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::CacheStore>::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::CacheStore>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::CacheStore>::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+impl noctis::ports::ModuleStateStore for noctis::ports::Namespaced<dyn noctis::ports::ModuleStateStore>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::ModuleStateStore>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::ModuleStateStore>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::ModuleStateStore>::version(&self) -> noctis::ports::BoxFuture<'_, core::result::Result<u64, noctis::ports::PortError>>
+impl noctis::ports::RateLimitStore for noctis::ports::Namespaced<dyn noctis::ports::RateLimitStore>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RateLimitStore>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RateLimitStore>::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RateLimitStore>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::RefStore for noctis::ports::Namespaced<dyn noctis::ports::RefStore>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RefStore>::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RefStore>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RefStore>::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RefStore>::take<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RefStore>::touch<'a>(&'a self, &'a str, core::time::Duration) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+impl noctis::ports::RenderCache for noctis::ports::Namespaced<dyn noctis::ports::RenderCache>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RenderCache>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::RenderCache>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl noctis::ports::SessionStore for noctis::ports::Namespaced<dyn noctis::ports::SessionStore>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::SessionStore>::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::SessionStore>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn noctis::ports::Namespaced<dyn noctis::ports::SessionStore>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl<P: ?core::marker::Sized + noctis::ports::NamespacedPort> core::fmt::Debug for noctis::ports::Namespaced<P>
+pub fn noctis::ports::Namespaced<P>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::ports::NamespacedPort: noctis::__private::core::namespace::sealed::Port + core::marker::Send + core::marker::Sync + 'static
+pub const noctis::ports::NamespacedPort::SEGMENT: &'static str
+impl noctis::ports::NamespacedPort for dyn noctis::ports::AssetStore
+impl noctis::ports::NamespacedPort for dyn noctis::ports::CacheStore
+impl noctis::ports::NamespacedPort for dyn noctis::ports::ModuleStateStore
+impl noctis::ports::NamespacedPort for dyn noctis::ports::RateLimitStore
+impl noctis::ports::NamespacedPort for dyn noctis::ports::RefStore
+impl noctis::ports::NamespacedPort for dyn noctis::ports::RenderCache
+impl noctis::ports::NamespacedPort for dyn noctis::ports::SessionStore
 impl core::convert::From<noctis::ports::AnimatedFormat> for noctis::ports::OutputFormat
 pub fn noctis::ports::OutputFormat::from(noctis::ports::AnimatedFormat) -> Self
 impl core::convert::From<noctis::ports::Format> for noctis::ports::OutputFormat
@@ -2225,15 +2354,28 @@ pub trait noctis::ports::RateLimitStore: core::marker::Send + core::marker::Sync
 pub fn noctis::ports::RateLimitStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::RateLimitStore::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
 pub fn noctis::ports::RateLimitStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl<P: noctis::ports::RateLimitStore + ?core::marker::Sized> noctis::ports::RateLimitStore for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::incr_with_ttl<'a>(&'a self, &'a str, u64, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<u64, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub trait noctis::ports::RefStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::RefStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::RefStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::RefStore::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
 pub fn noctis::ports::RefStore::take<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::RefStore::touch<'a>(&'a self, &'a str, core::time::Duration) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+impl<P: noctis::ports::RefStore + ?core::marker::Sized> noctis::ports::RefStore for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put_if_absent<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::take<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::touch<'a>(&'a self, &'a str, core::time::Duration) -> noctis::ports::BoxFuture<'a, core::result::Result<bool, noctis::ports::PortError>>
 pub trait noctis::ports::RenderCache: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::RenderCache::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::RenderCache::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl<P: noctis::ports::RenderCache + ?core::marker::Sized> noctis::ports::RenderCache for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 #[non_exhaustive] pub enum noctis::ports::RenderError
 pub noctis::ports::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
 pub noctis::ports::RenderError::QueueFull
@@ -2288,6 +2430,32 @@ pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync +
 pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::SessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn noctis::ports::SessionStore::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+impl<P: noctis::ports::SessionStore + ?core::marker::Sized> noctis::ports::SessionStore for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub struct noctis::ports::Shared<P>(_)
+impl<P> noctis::ports::Shared<P>
+pub fn noctis::ports::Shared<P>::into_inner(self) -> P
+pub fn noctis::ports::Shared<P>::new(P) -> Self
+impl<P: core::clone::Clone> core::clone::Clone for noctis::ports::Shared<P>
+pub fn noctis::ports::Shared<P>::clone(&self) -> Self
+impl<P: core::fmt::Debug> core::fmt::Debug for noctis::ports::Shared<P>
+pub fn noctis::ports::Shared<P>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T: noctis::ports::AssetStore> noctis::ports::IntoPort<dyn noctis::ports::AssetStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::CacheStore> noctis::ports::IntoPort<dyn noctis::ports::CacheStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::ModuleStateStore> noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::RateLimitStore> noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::RefStore> noctis::ports::IntoPort<dyn noctis::ports::RefStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::RenderCache> noctis::ports::IntoPort<dyn noctis::ports::RenderCache> for noctis::ports::Shared<T>
+impl<T: noctis::ports::SessionStore> noctis::ports::IntoPort<dyn noctis::ports::SessionStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::AssetStore> noctis::ports::IntoPort<dyn noctis::ports::AssetStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::CacheStore> noctis::ports::IntoPort<dyn noctis::ports::CacheStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::ModuleStateStore> noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::RateLimitStore> noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::RefStore> noctis::ports::IntoPort<dyn noctis::ports::RefStore> for noctis::ports::Shared<T>
+impl<T: noctis::ports::RenderCache> noctis::ports::IntoPort<dyn noctis::ports::RenderCache> for noctis::ports::Shared<T>
+impl<T: noctis::ports::SessionStore> noctis::ports::IntoPort<dyn noctis::ports::SessionStore> for noctis::ports::Shared<T>
 pub struct noctis::ports::Size
 impl noctis::ports::Size
 pub const fn noctis::ports::Size::height(self) -> u32
@@ -2628,6 +2796,7 @@ pub mod noctis::prelude
 pub struct noctis::prelude::App
 impl noctis::prelude::App
 pub fn noctis::prelude::App::ack_deadline(&self) -> core::time::Duration
+pub fn noctis::prelude::App::app_id(&self) -> &noctis::AppId
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
@@ -2653,9 +2822,10 @@ pub fn noctis::prelude::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::
 pub struct noctis::prelude::AppBuilder
 impl noctis::prelude::AppBuilder
 pub fn noctis::prelude::AppBuilder::ack_deadline(&mut self, core::time::Duration) -> &mut Self
-pub fn noctis::prelude::AppBuilder::asset_store(&mut self, impl noctis::ports::AssetStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::app_id(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::asset_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::AssetStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
-pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::CacheStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::CacheStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
@@ -2673,19 +2843,19 @@ pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::
 pub fn noctis::prelude::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
-pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::ModuleStateStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
 pub fn noctis::prelude::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
-pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::RateLimitStore) -> &mut Self
-pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::RefStore) -> &mut Self
-pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::RenderCache) -> &mut Self
+pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::prelude::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
-pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports::SessionStore) -> &mut Self
+pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::SessionStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shutdown_grace(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
@@ -2700,6 +2870,7 @@ pub fn noctis::prelude::AutocompleteCtx::focused(&self) -> &noctis::Focused
 pub fn noctis::prelude::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
 pub fn noctis::prelude::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::AutocompleteCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::AutocompleteCtx::module(&self) -> &'static str
 pub fn noctis::prelude::AutocompleteCtx::shard(&self) -> u32
 pub fn noctis::prelude::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> noctis::State<T>
@@ -2725,6 +2896,7 @@ pub fn noctis::prelude::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::prelude::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::CommandCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
+pub fn noctis::prelude::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::CommandCtx::module(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::response_locale(&self) -> &str
 pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
@@ -2781,6 +2953,7 @@ impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
 pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -2856,6 +3029,7 @@ impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::prelude::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -2932,6 +3106,7 @@ impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>

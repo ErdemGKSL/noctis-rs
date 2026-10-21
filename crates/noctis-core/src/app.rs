@@ -35,6 +35,7 @@ use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
 use crate::lifecycle::{Lifecycle, LifecycleEvent};
 use crate::module::Module;
+use crate::namespace::{AppId, IntoPort, fallback_app_id};
 use crate::observe::{describe_metrics, set_shard_status};
 use crate::plugin::PluginEntry;
 use crate::ports::{PortOverrides, PortSlot, Ports};
@@ -70,6 +71,8 @@ const PAYLOAD_KEY_VAR: &str = "NOCTIS_PAYLOAD_KEY";
 /// The environment variable [`App::from_env`] reads the previous payload key
 /// (rotation) from.
 const PAYLOAD_KEY_PREVIOUS_VAR: &str = "NOCTIS_PAYLOAD_KEY_PREVIOUS";
+/// The environment variable [`App::from_env`] reads the App id from.
+const APP_ID_VAR: &str = "NOCTIS_APP_ID";
 /// The shutdown grace period when `shutdown_grace` is not called.
 const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// The allowed `shutdown_grace` range.
@@ -118,6 +121,8 @@ const HANDLER_CONCURRENCY_RANGE: RangeInclusive<usize> = 1..=65_536;
 pub struct App {
     runtime: Runtime,
     token: Option<Token>,
+    /// The App id: the `app` label and the port namespace.
+    id: AppId,
     /// The HTTP client and the state, shared with every `EventCtx`.
     shared: Arc<AppShared>,
     http_timeout: Duration,
@@ -166,8 +171,8 @@ impl App {
     ///
     /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL`,
     /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHUTDOWN_GRACE`, `NOCTIS_PUBLISHER`,
-    /// `NOCTIS_DEV_GUILD`, `NOCTIS_PAYLOAD_KEY` and then
-    /// `NOCTIS_PAYLOAD_KEY_PREVIOUS`, each trimmed of ASCII whitespace; an empty
+    /// `NOCTIS_DEV_GUILD`, `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS`
+    /// and then `NOCTIS_APP_ID`, each trimmed of ASCII whitespace; an empty
     /// value counts as unset. The proxy and the gateway URL are passed to
     /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and
     /// validated by `build()`; the shard total (1-10 ASCII digits) is passed
@@ -177,7 +182,8 @@ impl App {
     /// `1` or `0`, any ASCII case) is passed to [`AppBuilder::publisher`];
     /// the dev guild (1-20 ASCII digits, not 0) to [`AppBuilder::dev_guild`];
     /// the payload keys (64 hex digits each, [`PayloadKey::from_hex`]) to
-    /// [`AppBuilder::payload_key`] and [`AppBuilder::previous_payload_key`].
+    /// [`AppBuilder::payload_key`] and [`AppBuilder::previous_payload_key`];
+    /// the App id, raw, to [`AppBuilder::app_id`], validated by `build()`.
     /// Setters called afterwards win.
     ///
     /// # Errors
@@ -194,6 +200,22 @@ impl App {
     /// ```
     pub fn from_env() -> Result<AppBuilder, Error> {
         Ok(AppBuilder::from_lookup(|var| std::env::var_os(var))?)
+    }
+
+    /// The App's id ([`AppBuilder::app_id`] or `NOCTIS_APP_ID`; by default
+    /// the bot's application id in base36, read from the token, else
+    /// `default`): the `app` label of every span, metric and Error Sink
+    /// report, and the namespace of every port key.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().app_id("my-bot").build().unwrap();
+    /// assert_eq!(app.app_id().as_str(), "my-bot");
+    /// assert_eq!(noctis_core::App::builder().build().unwrap().app_id().as_str(), "default");
+    /// # }
+    /// ```
+    pub fn app_id(&self) -> &AppId {
+        &self.id
     }
 
     /// The Runtime this App is attached to.
@@ -1139,6 +1161,7 @@ impl fmt::Debug for App {
         f.debug_struct("App")
             .field("runtime", &self.runtime)
             .field("token", &self.token)
+            .field("app_id", &self.id)
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy)
             .field("http_config", &self.http_config)
@@ -1189,6 +1212,8 @@ impl fmt::Debug for App {
 pub struct AppBuilder {
     runtime: Runtime,
     token: Option<Token>,
+    /// The raw, unvalidated App id; `build` checks it.
+    app_id: Option<String>,
     intents: Intents,
     http_timeout: Duration,
     /// The raw, unvalidated proxy; `build` normalizes it.
@@ -1233,23 +1258,51 @@ pub struct AppBuilder {
     violations: Vec<BuildViolation>,
 }
 
-/// Generates the port setters, each with its rustdoc and doctest.
+/// Generates the port setters, each with its rustdoc and doctest: the
+/// byte-store setters take [`IntoPort`] (a port or a `Shared` one), the
+/// plain ones `impl Port`.
 macro_rules! port_setters {
-    ($($method:ident($port:ident) = $import:literal, $example:literal;)*) => {$(
-        #[doc = concat!(
-            "Sets the [`", stringify!($port), "`] port (default: `", $example, "`); ",
-            "the last call wins.\n\n",
-            "```\n",
-            "use noctis_ports::memory::", $import, ";\n\n",
-            "let mut builder = noctis_core::App::builder();\n",
-            "builder.", stringify!($method), "(", $example, ");\n",
-            "```",
-        )]
-        pub fn $method(&mut self, port: impl $port) -> &mut Self {
-            self.ports.$method = Some(Arc::new(port));
-            self
-        }
-    )*};
+    (
+        namespaced { $($ns_method:ident($ns_port:ident) = $ns_import:literal, $ns_example:literal;)* }
+        plain { $($method:ident($port:ident) = $import:literal, $example:literal;)* }
+    ) => {
+        $(
+            #[doc = concat!(
+                "Sets the [`", stringify!($ns_port), "`] port (default: `", $ns_example, "`); ",
+                "the last call wins.\n\n",
+                "Its keys are prefixed with the App's namespace, `<app_id>:<port>:`. ",
+                "Pass `Shared::new(adapter)` to share the entries with every other App ",
+                "that does the same: the prefix is then `_shared:<port>:`. One instance can ",
+                "be handed to several Apps as an `Arc` (`Arc::clone(&store)`).\n\n",
+                "```\n",
+                "use noctis_core::Shared;\n",
+                "use noctis_ports::memory::", $ns_import, ";\n\n",
+                "let mut builder = noctis_core::App::builder();\n",
+                "builder.", stringify!($ns_method), "(", $ns_example, ");\n",
+                "builder.", stringify!($ns_method), "(Shared::new(", $ns_example, "));\n",
+                "```",
+            )]
+            pub fn $ns_method(&mut self, port: impl IntoPort<dyn $ns_port>) -> &mut Self {
+                self.ports.$ns_method = Some(port.into_port());
+                self
+            }
+        )*
+        $(
+            #[doc = concat!(
+                "Sets the [`", stringify!($port), "`] port (default: `", $example, "`); ",
+                "the last call wins.\n\n",
+                "```\n",
+                "use noctis_ports::memory::", $import, ";\n\n",
+                "let mut builder = noctis_core::App::builder();\n",
+                "builder.", stringify!($method), "(", $example, ");\n",
+                "```",
+            )]
+            pub fn $method(&mut self, port: impl $port) -> &mut Self {
+                self.ports.$method = Some(Arc::new(port));
+                self
+            }
+        )*
+    };
 }
 
 impl AppBuilder {
@@ -1257,6 +1310,7 @@ impl AppBuilder {
         Self {
             runtime,
             token: None,
+            app_id: None,
             intents: Intents::GUILDS,
             http_timeout: DEFAULT_HTTP_TIMEOUT,
             http_proxy: None,
@@ -1357,6 +1411,9 @@ impl AppBuilder {
                 }
             }
         }
+        if let Some(raw) = read_var(&lookup, APP_ID_VAR)? {
+            builder.app_id(raw);
+        }
         Ok(builder)
     }
 
@@ -1371,6 +1428,29 @@ impl AppBuilder {
     /// ```
     pub fn token(&mut self, token: Token) -> &mut Self {
         self.token = Some(token);
+        self
+    }
+
+    /// Sets the App id: 1-32 characters of `a-z`, `0-9` and `-`
+    /// ([`AppId`]). It is the `app` label of every span, metric and Error
+    /// Sink report, and every byte-store port key is prefixed with
+    /// `<app_id>:<port>:`, so two Apps sharing one Adapter never see each
+    /// other's data. [`App::from_env`] reads it from `NOCTIS_APP_ID`.
+    ///
+    /// Without one, the id is the bot's application id in base36
+    /// ([`AppId::from_application_id`]), read from the token; when the
+    /// token does not decode, it is `default` and `build()` logs a warning.
+    /// An invalid id is a [`BuildViolation::InvalidAppId`]. The last call
+    /// wins.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().app_id("my-bot").build().unwrap();
+    /// assert_eq!(app.app_id().as_str(), "my-bot");
+    /// # }
+    /// ```
+    pub fn app_id(&mut self, id: impl Into<String>) -> &mut Self {
+        self.app_id = Some(id.into());
         self
     }
 
@@ -1840,18 +1920,22 @@ impl AppBuilder {
     }
 
     port_setters! {
-        ref_store(RefStore) = "MemoryRefStore", "MemoryRefStore::new()";
-        session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()";
-        identify_queue(IdentifyQueue) = "MemoryIdentifyQueue", "MemoryIdentifyQueue::default()";
-        module_state_store(ModuleStateStore) = "MemoryModuleStateStore", "MemoryModuleStateStore::new()";
-        rate_limit_store(RateLimitStore) = "MemoryRateLimitStore", "MemoryRateLimitStore::new()";
-        cache_store(CacheStore) = "MemoryCacheStore", "MemoryCacheStore::new()";
-        render_cache(RenderCache) = "MemoryRenderCache", "MemoryRenderCache::new()";
-        asset_store(AssetStore) = "MemoryAssetStore", "MemoryAssetStore::new()";
-        locale_source(LocaleSource) = "NoLocaleOverlay", "NoLocaleOverlay";
-        guild_access(GuildAccessList) = "AllowAllGuilds", "AllowAllGuilds";
-        discord_cache_backend(DiscordCache) = "{DiscordCacheResources, MemoryDiscordCache}",
-            "MemoryDiscordCache::new(DiscordCacheResources::empty())";
+        namespaced {
+            ref_store(RefStore) = "MemoryRefStore", "MemoryRefStore::new()";
+            session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()";
+            module_state_store(ModuleStateStore) = "MemoryModuleStateStore", "MemoryModuleStateStore::new()";
+            rate_limit_store(RateLimitStore) = "MemoryRateLimitStore", "MemoryRateLimitStore::new()";
+            cache_store(CacheStore) = "MemoryCacheStore", "MemoryCacheStore::new()";
+            render_cache(RenderCache) = "MemoryRenderCache", "MemoryRenderCache::new()";
+            asset_store(AssetStore) = "MemoryAssetStore", "MemoryAssetStore::new()";
+        }
+        plain {
+            identify_queue(IdentifyQueue) = "MemoryIdentifyQueue", "MemoryIdentifyQueue::default()";
+            locale_source(LocaleSource) = "NoLocaleOverlay", "NoLocaleOverlay";
+            guild_access(GuildAccessList) = "AllowAllGuilds", "AllowAllGuilds";
+            discord_cache_backend(DiscordCache) = "{DiscordCacheResources, MemoryDiscordCache}",
+                "MemoryDiscordCache::new(DiscordCacheResources::empty())";
+        }
     }
 
     /// Installs the plugins, runs the App-build checks and builds the App.
@@ -1859,7 +1943,8 @@ impl AppBuilder {
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
     /// timeout, the HTTP proxy, the gateway URL, the shard total, the event
-    /// lane, handler concurrency, the shutdown grace and the [`HttpConfig`],
+    /// lane, handler concurrency, the shutdown grace, the ack deadline, the
+    /// [`app_id`](Self::app_id) and the [`HttpConfig`],
     /// binds the Discord HTTP edge's loopback listener, folds the mounted
     /// Modules into the Registry (deriving the gateway filter and intents, GW-05,
     /// and merging every Module's Commands and context menus: the command
@@ -1867,7 +1952,8 @@ impl AppBuilder {
     /// group takes a handler's description with a warning), the rustls
     /// crypto provider (installing `ring`'s when none is set) and the tokio
     /// runtime (any flavor). The edge then starts serving on the current
-    /// runtime. The builder is left empty, attached to the same Runtime.
+    /// runtime, and every byte-store port is namespaced under the App id.
+    /// The builder is left empty, attached to the same Runtime.
     ///
     /// # Errors
     ///
@@ -1944,6 +2030,15 @@ impl AppBuilder {
                 actual: self.ack_deadline,
             });
         }
+        let explicit_app_id = match self.app_id.as_deref().map(AppId::new) {
+            None => None,
+            Some(Ok(id)) => Some(id),
+            Some(Err(reason)) => {
+                self.violations
+                    .push(BuildViolation::InvalidAppId { reason });
+                None
+            }
+        };
         let edge_listener = self.check_http();
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
         let registry = Arc::new(registry);
@@ -1963,16 +2058,20 @@ impl AppBuilder {
         ) else {
             return Err(BuildError::new(config.violations));
         };
-        let app: Arc<str> = Arc::from("default");
+        let app_id = explicit_app_id.unwrap_or_else(|| default_app_id(config.token.as_ref()));
+        let app: Arc<str> = Arc::from(app_id.as_str());
         let upstream = Upstream::for_proxy(http_proxy.as_deref(), config.http_config.upstream_h2c);
         let edge = Edge::start((listener, edge_addr), upstream, config.http_config, &app);
         let http = http_client(&config, &edge, http_proxy.is_some());
+        let ports = Ports::resolve(config.ports, &app_id);
+        let kv: Arc<dyn CacheStore> = ports.cache_store.clone();
         Ok(App {
             runtime: config.runtime,
             token: config.token,
+            id: app_id,
             shared: Arc::new(AppShared {
-                // "default" until `AppId` exists (Story 7.4).
                 app,
+                kv,
                 sinks: config.error_sinks,
                 http: Arc::new(http),
                 states: config.states,
@@ -1990,7 +2089,7 @@ impl AppBuilder {
             gateway_url,
             shard_total,
             intents: config.intents | registry.intents(),
-            ports: Ports::resolve(config.ports),
+            ports,
             renderer: config.renderer,
             registry,
             event_capacity,
@@ -2045,6 +2144,7 @@ impl fmt::Debug for AppBuilder {
         f.debug_struct("AppBuilder")
             .field("runtime", &self.runtime)
             .field("token", &self.token)
+            .field("app_id", &self.app_id)
             .field("intents", &self.intents)
             .field("http_timeout", &self.http_timeout)
             .field("http_proxy", &self.http_proxy.is_some())
@@ -2070,6 +2170,22 @@ impl fmt::Debug for AppBuilder {
             .field("violations", &self.violations)
             .finish()
     }
+}
+
+/// The App id when none is set: the token's application id in base36, else
+/// `default` (with a warning when a token was given).
+fn default_app_id(token: Option<&Token>) -> AppId {
+    let Some(token) = token else {
+        return fallback_app_id();
+    };
+    if let Some(id) = token.application_id() {
+        return AppId::from_application_id(id);
+    }
+    tracing::warn!(
+        target: "noctis::app",
+        "could not derive the App id from the bot token; call AppBuilder::app_id"
+    );
+    fallback_app_id()
 }
 
 /// The App's one twilight client: every request goes to the loopback

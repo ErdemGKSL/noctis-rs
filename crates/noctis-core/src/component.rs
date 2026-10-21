@@ -101,6 +101,12 @@ macro_rules! ctx_accessors {
                 self.0.app.as_ref()?.states.get::<T>()
             }
 
+            /// The App's typed key-value handle over its namespaced
+            /// `CacheStore` (a cheap clone).
+            pub fn kv(&self) -> crate::Kv {
+                crate::Kv::of(self.0.app.as_ref())
+            }
+
             /// A detached context (the `__testing` seams): no App, shard 0,
             /// user 1.
             #[allow(dead_code, reason = "`ExpiredCtx` has no detached seam outside the tests")]

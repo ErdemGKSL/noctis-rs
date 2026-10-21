@@ -556,7 +556,7 @@ pub struct ConfirmBan {
 - **App-wide:** `.expired_handler(f)` on the `AppBuilder`, with
   `f: async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<R>`. `ExpiredCtx`
   has the `ComponentCtx` accessors (`module`, `shard`, `guild_id`, `channel_id`,
-  `user_id`, `user_locale`, `guild_locale`, `state::<T>()`) plus `route()`, the Route
+  `user_id`, `user_locale`, `guild_locale`, `state::<T>()`, `kv()`) plus `route()`, the Route
   id. It takes no responder and is always auto-deferred, even on an
   `auto_defer = false` Route. The last call wins.
 

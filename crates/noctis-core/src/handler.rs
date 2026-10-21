@@ -201,9 +201,10 @@ impl fmt::Debug for HandlerError {
 /// HTTP client, the typed state, the Error Sinks, the Limits and the
 /// Registry.
 pub(crate) struct AppShared {
-    /// The `app` span field, metric label and report field (`"default"`
-    /// until `AppId`, Story 7.4).
+    /// The `app` span field, metric label and report field: the `AppId`.
     pub(crate) app: Arc<str>,
+    /// The App's namespaced `CacheStore`, behind every `ctx.kv()`.
+    pub(crate) kv: Arc<dyn noctis_ports::CacheStore>,
     pub(crate) sinks: ErrorSinks,
     pub(crate) http: Arc<twilight_http::Client>,
     pub(crate) states: StateMap,
@@ -300,6 +301,12 @@ impl EventCtx {
     /// outside an interaction, such as a prefix command.
     pub fn dispatcher(&self) -> &Dispatcher {
         &self.0.dispatcher
+    }
+
+    /// The App's typed key-value handle over its namespaced `CacheStore`
+    /// (a cheap clone).
+    pub fn kv(&self) -> crate::Kv {
+        crate::Kv::of(Some(&self.0.app))
     }
 }
 

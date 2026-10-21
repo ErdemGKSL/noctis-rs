@@ -12,7 +12,8 @@ use crate::publish::PublishError;
 use noctis_codec::KeyError;
 
 use crate::{
-    GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict, TokenError,
+    AppIdError, GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict,
+    TokenError,
 };
 
 /// Every error `App::from_env`, `build` and `run` return.
@@ -189,6 +190,12 @@ pub enum BuildViolation {
     InvalidGatewayUrl {
         /// Why the gateway URL was rejected.
         reason: GatewayUrlError,
+    },
+    /// `app_id` is not 1-32 characters of `a-z`, `0-9` and `-`.
+    #[error("invalid App id: {reason}")]
+    InvalidAppId {
+        /// Why the App id was rejected.
+        reason: AppIdError,
     },
     /// `shard_total(0)`: a fixed shard total must be at least 1.
     #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]

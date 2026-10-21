@@ -119,7 +119,13 @@
 //! whose setters take and return `&mut AppBuilder`; [`AppBuilder::build`]
 //! installs the [`Plugin`]s, checks everything and returns an [`App`] or one
 //! [`BuildError`] listing every violation. Unset ports default to bounded
-//! in-memory Adapters. [`App::run`] returns a typed [`StartError`] outside a
+//! in-memory Adapters. Each App has an [`AppId`] ([`AppBuilder::app_id`] or
+//! `NOCTIS_APP_ID`; by default the bot's application id in base36, read from
+//! the token): it is the `app` label of every span, metric and report, and
+//! every byte-store key is prefixed with `<app_id>:<port>:`, so Apps sharing
+//! one Adapter never see each other's data unless it is passed as
+//! [`ports::Shared::new`]. Handlers store bot data through `ctx.kv()`, a
+//! typed [`Kv`] over the App's `CacheStore`. [`App::run`] returns a typed [`StartError`] outside a
 //! multi-thread tokio runtime or without a token, and installs rustls's
 //! `ring` crypto provider when none is set.
 //!
@@ -555,20 +561,21 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, Acked, App, AppBuilder, AutoDefer, AutocompleteChoice, AutocompleteCtx,
-    AutocompleteError, AutocompleteValue, BaseMeta, BuildError, BuildViolation, CallbackResource,
-    CanShowModal, Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation,
-    CommandMetadata, CommandOption, CommandPath, CommandResponder, Component, ComponentCtx,
-    ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler, DeferMode,
-    DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
-    Expired, ExpiredCtx, Focused, FollowupHandle, GatewayUrlError, HandlerError, HandlerResult,
-    HttpConfig, HttpConfigError, HttpProxyError, IntegrationType, InteractionContext, IntoEdit,
-    IntoResponse, InvalidOption, LogSink, Manual, MenuKind, MenuTargetError, ModalHandler,
-    ModalResponder, ModalSubmit, ModalSubmitCtx, Module, OptionError, OptionValue, Options,
-    OutgoingMessage, Partial, PartialOptions, Pending, Permissions, Plugin, Register, ReportKind,
-    Resource, ResourceConflict, Responded, Responder, ResponderError, ResponderKind,
-    ResponderState, RunError, Runtime, StartError, State, SuggestionLabel, SuggestionValue,
-    Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
+    AckDeadlineMissed, Acked, App, AppBuilder, AppId, AppIdError, AutoDefer, AutocompleteChoice,
+    AutocompleteCtx, AutocompleteError, AutocompleteValue, BaseMeta, BuildError, BuildViolation,
+    CallbackResource, CanShowModal, Command, CommandCtx, CommandHandler, CommandInput,
+    CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder, Component,
+    ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler,
+    DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport,
+    ErrorSink, Expired, ExpiredCtx, Focused, FollowupHandle, GatewayUrlError, HandlerError,
+    HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
+    InteractionContext, IntoEdit, IntoResponse, InvalidOption, Kv, LogSink, Manual, MenuKind,
+    MenuTargetError, ModalHandler, ModalResponder, ModalSubmit, ModalSubmitCtx, Module,
+    OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending,
+    Permissions, Plugin, Register, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State,
+    SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError, UnknownCommandPath,
+    Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -1696,10 +1703,19 @@ pub mod ports {
     //!   [`OutputFormat`], [`RenderOutput`], [`EncodeSettings`],
     //!   [`RenderError`] and the [`Renderer`] port.
     //! - [`memory`]: the bounded in-memory default of every port.
+    //! - [`Namespaced`]: core's wrapper around each byte store, prefixing
+    //!   every key with `<app_id>:<port>:` (port segments `ref`, `session`,
+    //!   `module_state`, `rate_limit`, `cache`, `render_cache`, `asset`);
+    //!   [`NamespacedPort`] is the sealed trait of the seven `dyn Port` types.
+    //! - [`Shared`]: pass `Shared::new(adapter)` to a byte-store setter to
+    //!   share its entries between Apps under `_shared:<port>:`; [`IntoPort`]
+    //!   is the sealed trait those setters take.
     //!
     //! Every port is `Send + Sync + 'static` and dyn-compatible, so the App
-    //! holds it as `Arc<dyn Port>`. Keys are opaque and stored verbatim, and no
-    //! method ever receives a secret.
+    //! holds it as `Arc<dyn Port>`; every byte store is also implemented for
+    //! `Arc<P>`, so one instance can be handed to several Apps with
+    //! `Arc::clone`. Adapters store keys verbatim and never prefix them, and
+    //! no method ever receives a secret.
     //!
     //! ```
     //! use std::sync::Arc;
@@ -1721,6 +1737,8 @@ pub mod ports {
         RenderCache, RenderError, RenderJob, RenderOutput, Renderer, SessionStore, Size, Template,
         TemplateDescriptor, ValueError, decode_template, decode_value, encode_value,
     };
+
+    pub use noctis_core::{IntoPort, Namespaced, NamespacedPort, Shared};
 
     pub mod memory {
         //! The bounded in-memory defaults: what an App runs on when you swap

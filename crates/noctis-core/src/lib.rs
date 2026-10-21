@@ -176,10 +176,12 @@ pub mod events;
 mod gateway_url;
 mod handler;
 mod kind;
+mod kv;
 mod lifecycle;
 mod menu;
 mod metadata;
 mod module;
+mod namespace;
 mod notice;
 pub mod observe;
 mod options;
@@ -236,11 +238,13 @@ pub use kind::{
     __PatternPaths, __Response, __SinglePath, __SlashCommand, __SlashKind, __TakesTarget,
     __Unbound, __assert_no_responder, __assert_responder,
 };
+pub use kv::Kv;
 pub use menu::{ContextMenuHandler, MenuTargetError};
 pub use metadata::{BaseMeta, CommandMetadata};
 #[doc(hidden)]
 pub use module::Descriptor;
 pub use module::{Module, Register};
+pub use namespace::{AppId, AppIdError, IntoPort, Namespaced, NamespacedPort, Shared};
 #[doc(hidden)]
 pub use options::__options;
 pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, OptionValue, Options};

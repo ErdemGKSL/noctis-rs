@@ -43,8 +43,13 @@
 //! No port method takes a bot credential, a payload key or any other secret
 //! (NFR-6): adapters only ever see opaque keys and values.
 //!
-//! Adapters store keys verbatim and never prefix them; core's wrappers add the
-//! `<app>:<port>:` namespace.
+//! Adapters store keys verbatim and never prefix them: core wraps every byte
+//! store in `noctis::ports::Namespaced`, which adds the `<app>:<port>:`
+//! namespace, or `_shared:<port>:` for a port passed as
+//! `noctis::ports::Shared::new(adapter)`.
+//!
+//! Every byte-store port is also implemented for `Arc<P>`, forwarding each
+//! op, so one instance can be handed to several Apps with `Arc::clone`.
 //!
 //! # Typed values
 //!

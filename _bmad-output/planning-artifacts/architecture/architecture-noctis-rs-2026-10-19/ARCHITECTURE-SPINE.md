@@ -587,6 +587,20 @@ list in CI.
   - Typed values are postcard with a leading schema byte; a schema mismatch reads as
     a miss. Ref records use the codec encoding (AD-5).
   - Adapters receive only keys and serialized bytes, never secrets.
+- **Amended (2026-10-21):** the default `AppId` is the application id in lowercase
+  base36 (`0-9a-z`, at most 13 characters), not base62, because base62's upper-case
+  digits are outside the `[a-z0-9-]` alphabet. Core reads it at `build()` from the
+  bot token's first segment (base64 of the bot user id, which equals the application
+  id); without a decodable token the id is `default`, with one warning when a token
+  was given. `Namespaced<P>` wraps the seven byte stores (`ref`, `session`,
+  `module_state`, `rate_limit`, `cache`, `render_cache`, `asset`), defaults included;
+  `IdentifyQueue`, `LocaleSource`, `GuildAccessList` and `DiscordCache` are never
+  wrapped. Sharing is opt-in by type: `Shared::new(adapter)` passed to the normal
+  setter (which takes the sealed `IntoPort`) resolves to `Namespaced::shared` with
+  the prefix `_shared:<port>:`; `Shared<P>` itself implements no port. Only the two
+  namespace segments are escaped (`%` → `%25`, `:` → `%3A`); the logical key is the
+  verbatim last segment. Every byte store is also implemented for `Arc<P>`, so one
+  instance can be handed to several Apps (Story 7.4).
 
 ### AD-15 — Rendering pipeline
 - **Binds:** `noctis-image`, `noctis-macros`, `xtask`; FR-32 to FR-37, FR-66 to
@@ -1212,7 +1226,7 @@ list in CI.
 | Crate naming | `noctis-<area>`, lib name `noctis_<area>`; facade feature names equal the area (`image`, `prefix`, `i18n`, `testkit`), plus `image-gif`, `image-emoji` and `default-font` |
 | Route ids | `[a-z0-9._-]{1,24}` ASCII, set by the kind attribute (`#[button("id", ..)]`, …), stable across releases; ids starting with `_` are reserved; renaming one breaks live components |
 | Module ids | path-like `a/b/c`, unique per App |
-| App ids | `[a-z0-9-]{1,32}`, identical across a Cluster |
+| App ids | `[a-z0-9-]{1,32}`, identical across a Cluster; default: the application id in lowercase base36 (Amended 2026-10-21, AD-14) |
 | Rule ids | `<AREA>-<nn>` as assigned in `docs/discord-rules.md`, shared by code, error messages, docs and tests; new rules take the next number; ids are never reused |
 | Text length | `noctis_rules::len::discord_len` for user text; framework-encoded strings are ASCII |
 | Compile errors | `[<RULE-ID>] <what is wrong>`, `= note:` lines with the derivation, a `= help:` line with a concrete fix, span on the offending token |

@@ -556,3 +556,17 @@ fn trivial_defaults() {
     let defaults: (NoLocaleOverlay, AllowAllGuilds) = Default::default();
     assert_eq!(defaults, (NoLocaleOverlay, AllowAllGuilds));
 }
+
+/// Every byte store is implemented for `Arc<P>`: one instance behind
+/// `dyn CacheStore`, twice wrapped, still sees the same entries.
+#[test]
+fn arc_of_a_store_is_a_store() {
+    let inner = Arc::new(MemoryCacheStore::new());
+    let erased: Arc<dyn CacheStore> = Arc::new(Arc::clone(&inner));
+    now(erased.put("k", b("v"), None)).unwrap();
+    assert_eq!(now(inner.get("k")).unwrap(), Some(b("v")));
+    let dyn_arc: Arc<dyn CacheStore> = Arc::new(MemoryCacheStore::new());
+    let twice: Arc<dyn CacheStore> = Arc::new(Arc::clone(&dyn_arc));
+    assert_eq!(now(twice.incr_with_ttl("n", 2, None)).unwrap(), 2);
+    assert_eq!(now(dyn_arc.incr_with_ttl("n", 1, None)).unwrap(), 3);
+}
