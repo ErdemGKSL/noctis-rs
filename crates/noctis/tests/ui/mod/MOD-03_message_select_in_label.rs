@@ -1,11 +1,17 @@
 use noctis::prelude::*;
 use noctis::ui::{ModalLabel, SelectOption};
 
-#[derive(Route)]
-#[route("t.pick", select)]
+#[derive(StringSelectMenu)]
+#[string_select("t.pick", defaults(placeholder = "Pick"))]
 struct Pick;
-impl noctis::__private::ui::Handled for Pick {}
+
+impl Pick {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+}
 
 fn main() {
-    let _ = ModalLabel::new("L", Pick.string_select([SelectOption::new("a", "a")]));
+    let _ = ModalLabel::new("L", Pick.build().options([SelectOption::new("a", "a")]));
 }

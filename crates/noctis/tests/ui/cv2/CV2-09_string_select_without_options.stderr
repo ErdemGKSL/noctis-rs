@@ -1,0 +1,23 @@
+error[E0277]: [CV2-09] this String Select has no options: call `.options(..)` or declare `defaults(options = …)`
+  --> tests/ui/cv2/CV2-09_string_select_without_options.rs:15:13
+   |
+15 |     let _ = components! { row [ TicketSystem.build() ] };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a String Select of `TicketSystem` without options
+   |
+help: the trait `noctis::__private::noctis_ui::placement::OptionsGiven` is not implemented for `TicketSystem`
+  --> tests/ui/cv2/CV2-09_string_select_without_options.rs:5:1
+   |
+ 5 | struct TicketSystem;
+   | ^^^^^^^^^^^^^^^^^^^
+help: the trait `noctis::__private::noctis_ui::placement::RowOne` is implemented for `StringSelectBuilder<R>`
+  --> $WORKSPACE/crates/noctis-ui/src/placement.rs
+   |
+   | impl<R: OptionsGiven> RowOne for StringSelectBuilder<R> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `StringSelectBuilder<TicketSystem>` to implement `noctis::__private::noctis_ui::placement::RowOne`
+note: required by a bound in `noctis::__private::noctis_ui::__macro::row_one`
+  --> $WORKSPACE/crates/noctis-ui/src/lib.rs
+   |
+   |     pub fn row_one<C: RowOne>(component: C) -> ActionRow {
+   |                       ^^^^^^ required by this bound in `row_one`
+   = note: this error originates in the macro `components` (in Nightly builds, run with -Z macro-backtrace for more info)

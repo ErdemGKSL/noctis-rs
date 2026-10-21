@@ -4,10 +4,11 @@
 //! string/char literals are literals and never match). An ident's **words**
 //! drop `r#`, split at `_` and camel-case boundaries, and are lowercased.
 //!
-//! An **interactive handler** is a `fn` item whose attributes include one
-//! whose path ends in `command`, `user_command`, `message_command` or
-//! `handler`; an **event handler** one ending in `event`. A handler's scope is
-//! its signature and body. Handlers inside modules and impls are found too.
+//! A **handler** is a `fn` item (a method of a kind-derived struct) whose
+//! attributes include one whose path ends in `handler`. It is an **event
+//! handler** when its parameters include `EventCtx`, else an **interactive
+//! handler**. A handler's scope is its signature and body. Handlers inside
+//! modules and impls are found too.
 //!
 //! - UD-1, anywhere: an ident with the word `embed`/`embeds`. In an
 //!   interactive handler: `LegacyMessage`; in its body, a `.content(` call or a
@@ -79,7 +80,8 @@ const RESPONDERS: &[&str] = &[
     "ComponentResponder",
     "ModalResponder",
 ];
-const INTERACTIVE_ATTRS: &[&str] = &["command", "user_command", "message_command", "handler"];
+/// The attribute that marks a handler method.
+const HANDLER_ATTR: &str = "handler";
 
 /// One finding: 1-based line and message.
 type Finding = (usize, String);
@@ -273,16 +275,7 @@ fn handlers(tts: &[TokenTree], out: &mut Vec<Finding>) {
             i += 1;
             continue;
         }
-        let kind = if attrs
-            .iter()
-            .any(|a| INTERACTIVE_ATTRS.contains(&a.as_str()))
-        {
-            Some(Handler::Interactive)
-        } else if attrs.iter().any(|a| a == "event") {
-            Some(Handler::Event)
-        } else {
-            None
-        };
+        let is_handler = attrs.iter().any(|a| a == HANDLER_ATTR);
         attrs.clear();
         // Skip visibility and qualifiers up to `fn`.
         let mut j = i;
@@ -298,10 +291,10 @@ fn handlers(tts: &[TokenTree], out: &mut Vec<Finding>) {
             j += 1;
         }
         let is_fn = matches!(tts.get(j), Some(TokenTree::Ident(id)) if id == "fn");
-        let (Some(kind), true) = (kind, is_fn) else {
+        if !(is_handler && is_fn) {
             i = j.max(i + 1);
             continue;
-        };
+        }
         let mut params = None;
         let mut body = None;
         let mut end = j + 1;
@@ -321,6 +314,15 @@ fn handlers(tts: &[TokenTree], out: &mut Vec<Finding>) {
             }
             end += 1;
         }
+        let event = params.as_deref().is_some_and(|p| {
+            p.iter()
+                .any(|tt| matches!(tt, TokenTree::Ident(id) if id == "EventCtx"))
+        });
+        let kind = if event {
+            Handler::Event
+        } else {
+            Handler::Interactive
+        };
         check_handler(
             kind,
             &tts[j..end.min(tts.len())],
@@ -480,15 +482,15 @@ mod tests {
     #[test]
     fn d4_d5_legacy_message() {
         flags(
-            "#[handler]\nasync fn h(ctx: Ctx) -> LegacyMessage { todo() }",
+            "impl X {\n#[handler]\nasync fn h(self, ctx: ComponentCtx) -> LegacyMessage { todo() }\n}",
             UD1_LEGACY,
         );
         flags(
-            "#[command(\"x\")]\nasync fn h() { let m: LegacyMessage = x(); }",
+            "#[derive(SlashCommand)]\n#[command(\"x\")]\nstruct X;\nimpl X {\n#[handler]\nasync fn h(self, ctx: CommandCtx) { let m: LegacyMessage = x(); }\n}",
             UD1_LEGACY,
         );
         clean(
-            "#[event]\nasync fn h() -> LegacyMessage { x() }\nfn plain() -> LegacyMessage { x() }",
+            "impl E {\n#[handler]\nasync fn h(self, ctx: EventCtx, e: MessageCreate) -> LegacyMessage { x() }\n}\nfn plain() -> LegacyMessage { x() }\n#[command(\"x\")]\nfn not_a_handler() -> LegacyMessage { x() }",
         );
     }
 
@@ -538,7 +540,7 @@ mod tests {
         // The handler context's methods pick the response type (FR-61).
         clean("#[handler]\nasync fn h(ctx: ComponentCtx) { ctx.update(render(x)).await }");
         clean(
-            "#[command(\"x\")]\nasync fn h(ctx: CommandCtx) { ctx.respond(m).await; ctx.reply_text(k).await }",
+            "impl X {\n#[handler]\nasync fn h(self, ctx: CommandCtx) { ctx.respond(m).await; ctx.reply_text(k).await }\n}",
         );
         flags(
             "#[handler]\nasync fn h() { my_ctx.update(x).await }",
@@ -562,11 +564,11 @@ mod tests {
             "impl EditBio {\n#[handler]\nasync fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }\n}",
         );
         clean(
-            "#[command(\"feedback\", auto_defer = false)]\nasync fn feedback(ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }",
+            "impl Feedback {\n#[handler]\nasync fn handle(self, ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> { Ok(r.show_modal(m).await?.done()) }\n}",
         );
         // The withdrawn marker is not `Manual`.
         flags(
-            "#[command(\"feedback\")]\nasync fn feedback(ctx: CommandCtx, r: CommandResponder<OpensModal>) {}",
+            "impl Feedback {\n#[handler]\nasync fn handle(self, ctx: CommandCtx, r: CommandResponder<OpensModal>) {}\n}",
             "[UD-3] take a Responder only to open a modal (CommandResponder<Manual>)",
         );
     }
@@ -604,7 +606,7 @@ mod tests {
             UD7_SPAWN,
         );
         flags(
-            "#[event]\nasync fn h() { tokio::task::spawn_local(f()); }",
+            "impl E {\n#[handler]\nasync fn h(self, ctx: EventCtx, e: MessageCreate) { tokio::task::spawn_local(f()); }\n}",
             UD7_SPAWN,
         );
         clean("fn main() { tokio::spawn(run()); }");

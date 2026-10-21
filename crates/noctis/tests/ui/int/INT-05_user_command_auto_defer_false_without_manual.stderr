@@ -1,17 +1,21 @@
 error[E0277]: [INT-05] `auto_defer = false` is declared, so the handler must take `CommandResponder<Manual>`
- --> tests/ui/int/INT-05_user_command_auto_defer_false_without_manual.rs:8:8
-  |
-8 |     r: CommandResponder,
-  |        ^^^^^^^^^^^^^^^^ take `CommandResponder<Manual>` here
-  |
-  = help: the trait `noctis::__private::noctis_core::responder::__DeclaresManual` is not implemented for `Responder<noctis::Command>`
-help: the trait `noctis::__private::noctis_core::responder::__DeclaresManual` is implemented for `Responder<noctis::Command, noctis::Pending, Manual>`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  | impl __DeclaresManual for Responder<Command, Pending, Manual> {}
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `noctis::__private::noctis_core::responder::__assert_manual`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  | pub fn __assert_manual<T: __DeclaresManual>() {}
-  |                           ^^^^^^^^^^^^^^^^ required by this bound in `__assert_manual`
+  --> tests/ui/int/INT-05_user_command_auto_defer_false_without_manual.rs:12:8
+   |
+12 |     r: CommandResponder,) -> HandlerResult<Responded> {
+   |        ^^^^^^^^^^^^^^^^ take `CommandResponder<Manual>` here
+   |
+help: the trait `__ManualTakesManual<Responder<noctis::Command, noctis::Pending, AutoDefer>>` is not implemented for `Manual`
+      but trait `__ManualTakesManual<Responder<noctis::Command, noctis::Pending, Manual>>` is implemented for it
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | impl __ManualTakesManual<Responder<Command, Pending, Manual>> for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `Manual`, found `AutoDefer`
+note: required by a bound in `noctis::__private::noctis_core::kind::__assert_responder`
+  --> $WORKSPACE/crates/noctis-core/src/kind.rs
+   |
+   | pub fn __assert_responder<S, R>()
+   |        ------------------ required by a bound in this function
+...
+   |     S::Defer: __ManualTakesManual<R>,
+   |               ^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `__assert_responder`

@@ -7,7 +7,8 @@
 use crate::component::{
     AccessoryNode, ActionRow, Button, ChannelSelect, Container, ContainerComponent, File,
     LinkButton, MediaGallery, MentionableSelect, PremiumButton, RoleSelect, RouteButton, Section,
-    SelectNode, Separator, StringSelect, TextDisplay, Thumbnail, TopLevelComponent, UserSelect,
+    SelectNode, Separator, StringSelect, StringSelectBuilder, TextDisplay, Thumbnail,
+    TopLevelComponent, UserSelect,
 };
 use crate::modal::{
     Checkbox, CheckboxGroup, FileUpload, ModalChannelSelect, ModalComponent, ModalInputNode,
@@ -50,6 +51,11 @@ pub(crate) mod sealed {
     /// Conversion behind [`RowSelect`](super::RowSelect).
     pub trait IntoSelect: Sealed {
         fn into_select(self) -> SelectNode;
+    }
+
+    /// Conversion behind [`RowOne`](super::RowOne).
+    pub trait IntoRowOne: Sealed {
+        fn into_row(self) -> crate::component::ActionRow;
     }
 
     /// Conversion behind [`ModalTopLevel`](super::ModalTopLevel).
@@ -121,6 +127,34 @@ pub trait RowItem: sealed::IntoRowButton {}
     note = "buttons go in ActionRow::buttons([..])"
 )]
 pub trait RowSelect: sealed::IntoSelect {}
+
+/// A component that fills a one-item Action Row: any button or any message
+/// select; what a one-item `row [ .. ]` of `components!` takes.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[CV2-06] `{Self}` cannot go in an Action Row",
+    label = "not a button or a select",
+    note = "an Action Row holds 1 to 5 buttons or one select"
+)]
+pub trait RowOne: sealed::IntoRowOne {}
+
+/// A button in a `row [ .. ]` of 2 to 5 items in `components!`.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[CV2-06] a select fills its Action Row alone: `{Self}` is not a button",
+    label = "not a button",
+    note = "a row of 2 to 5 items holds only buttons; put the select in a `row [ .. ]` of its own"
+)]
+pub trait RowButtonItem: sealed::IntoRowButton {}
+
+/// Never implemented: a [`StringSelectBuilder`] of `R` still needs its
+/// options before it is placed (CV2-09).
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[CV2-09] this String Select has no options: call `.options(..)` or declare `defaults(options = …)`",
+    label = "a String Select of `{Self}` without options"
+)]
+pub trait OptionsGiven {}
 
 /// A component that may sit at the top level of a modal: a
 /// [`ModalLabel`] or a [`TextDisplay`].
@@ -200,6 +234,13 @@ macro_rules! button {
             }
         }
         impl RowItem for $ty {}
+        impl RowButtonItem for $ty {}
+        impl sealed::IntoRowOne for $ty {
+            fn into_row(self) -> ActionRow {
+                ActionRow::buttons([self])
+            }
+        }
+        impl RowOne for $ty {}
     )*};
 }
 
@@ -211,6 +252,12 @@ macro_rules! select {
             }
         }
         impl RowSelect for $ty {}
+        impl sealed::IntoRowOne for $ty {
+            fn into_row(self) -> ActionRow {
+                ActionRow::select(self)
+            }
+        }
+        impl RowOne for $ty {}
     )*};
 }
 
@@ -337,6 +384,27 @@ impl<R> sealed::IntoRowButton for RouteButton<R> {
     }
 }
 impl<R> RowItem for RouteButton<R> {}
+impl<R> RowButtonItem for RouteButton<R> {}
+impl<R> sealed::IntoRowOne for RouteButton<R> {
+    fn into_row(self) -> ActionRow {
+        ActionRow::buttons([self])
+    }
+}
+impl<R> RowOne for RouteButton<R> {}
+
+impl<R> sealed::Sealed for StringSelectBuilder<R> {}
+impl<R: OptionsGiven> sealed::IntoSelect for StringSelectBuilder<R> {
+    fn into_select(self) -> SelectNode {
+        SelectNode::String(self.into_empty())
+    }
+}
+impl<R: OptionsGiven> RowSelect for StringSelectBuilder<R> {}
+impl<R: OptionsGiven> sealed::IntoRowOne for StringSelectBuilder<R> {
+    fn into_row(self) -> ActionRow {
+        ActionRow::select(self.into_empty())
+    }
+}
+impl<R: OptionsGiven> RowOne for StringSelectBuilder<R> {}
 
 impl sealed::IntoAccessory for Thumbnail {
     fn into_accessory(self) -> AccessoryNode {

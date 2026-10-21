@@ -1,8 +1,8 @@
 error[E0277]: `u8` is not a Command response
- --> tests/types/command_handler_returns_value.rs:4:36
+ --> tests/types/command_handler_returns_value.rs:9:14
   |
-4 | async fn ping(_ctx: CommandCtx) -> HandlerResult<u8> {
-  |                                    ^^^^^^^^^^^^^ return a `V2Message`, `Components`, a `LegacyMessage`, or the `Responded` from `done()`
+9 |     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<u8> {
+  |              ^^^^^^ return a `V2Message`, `Components`, a `LegacyMessage`, or the `Responded` from `done()`
   |
   = help: the trait `IntoResponse<noctis::Command>` is not implemented for `u8`
 help: the following other types implement trait `IntoResponse<K>`
@@ -16,11 +16,4 @@ help: the following other types implement trait `IntoResponse<K>`
 ...
   | impl IntoResponse<Command> for LegacyMessage {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `LegacyMessage`
-note: required by a bound in `CommandHandler::__new_plain`
- --> $WORKSPACE/crates/noctis-core/src/command.rs
-  |
-  |     pub fn __new_plain<D, F, Fut, R>(
-  |            ----------- required by a bound in this associated function
-...
-  |         R: IntoResponse<Command>,
-  |            ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `CommandHandler::__new_plain`
+  = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, Ping, fn(Ping, noctis::CommandCtx) -> impl Future<Output = Result<u8, HandlerError>> {Ping::handle}>`

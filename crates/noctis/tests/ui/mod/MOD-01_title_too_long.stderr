@@ -1,5 +1,5 @@
 error: [MOD-01] title: limit between 1 and 45, actual 46
- --> tests/ui/mod/MOD-01_title_too_long.rs:9:31
+ --> tests/ui/mod/MOD-01_title_too_long.rs:4:36
   |
-9 | #[modal(route = Form, title = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+4 | #[modal("t.form", defaults(title = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))]
+  |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

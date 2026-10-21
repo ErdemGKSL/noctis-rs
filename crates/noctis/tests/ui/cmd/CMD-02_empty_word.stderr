@@ -1,7 +1,7 @@
 error: [CMD-02] config  set: limit between 1 and 32, actual 0
          = note: empty word at byte 7
          = help: separate words with exactly one ASCII space
- --> tests/ui/cmd/CMD-02_empty_word.rs:3:11
+ --> tests/ui/cmd/CMD-02_empty_word.rs:4:11
   |
-3 | #[command("config  set", description = "d")]
+4 | #[command("config  set", description = "d")]
   |           ^^^^^^^^^^^^^

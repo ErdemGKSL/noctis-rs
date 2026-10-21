@@ -1,0 +1,6 @@
+error: `#[modal(route = …, title = "…")]` is withdrawn: a modal struct is its own Route, with its id first and its title in `defaults(..)`
+         = help: #[derive(Modal)] #[modal("bio", defaults(title = "Bio"))] struct BioForm { user: Id<UserMarker>, #[text_input("Bio")] bio: String } impl BioForm { #[handler] async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> { .. } }
+ --> tests/types/withdrawn_modal_route.rs:4:1
+  |
+4 | #[modal(route = Save, title = "Bio")] // withdrawn form
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

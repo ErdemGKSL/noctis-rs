@@ -1,0 +1,5 @@
+error: [INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`
+  --> tests/ui/int/INT-06_autocomplete_response.rs:16:20
+   |
+16 |     #[autocomplete(query, response = ephemeral)] // [INT-06]
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^

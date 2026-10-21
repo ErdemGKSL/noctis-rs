@@ -15,15 +15,77 @@ use noctis_codec::{
     EncodeError, Field, FieldWriter, Parts, Payload, PayloadKey, Ref, Route, RouteId, RouteShape,
     SelectNonce, SelectRoute,
 };
+use noctis_ui::__macro::{
+    ButtonDefaults, ChannelSelectDefaults, ComponentValue, SelectDefaults, build_button,
+    build_channel_select, build_mentionable_select, build_role_select, build_string_select_builder,
+    build_user_select,
+};
 use noctis_ui::{
-    ActionRow, Attachment, AttachmentOrigin, AttachmentSet, Button, ButtonStyle, Components,
-    Container, ContainerComponent, Emoji, File, Handled, LinkButton, Media, MediaGallery,
-    MediaItem, PremiumButton, Rgb, RouteComponents, Section, SelectOption, Separator, Spacing,
-    TextDisplay, Thumbnail, TopLevelComponent, UiError,
+    ActionRow, Attachment, AttachmentOrigin, AttachmentSet, Button, ButtonStyle, ChannelSelect,
+    Components, Container, ContainerComponent, Emoji, File, Handled, LinkButton, Media,
+    MediaGallery, MediaItem, MentionableSelect, PremiumButton, Rgb, RoleSelect, RouteButton,
+    Section, SelectOption, Separator, Spacing, StringSelect, TextDisplay, Thumbnail,
+    TopLevelComponent, UiError, UserSelect,
 };
 use serde_json::{Value, json};
 use twilight_model::channel::ChannelType;
 use twilight_model::id::Id;
+
+/// Select defaults that send nothing (as before Story 6.11's derives).
+const NO_DEFAULTS: SelectDefaults = SelectDefaults {
+    placeholder: None,
+    min_values: None,
+    max_values: None,
+    disabled: false,
+};
+
+/// What `#[derive(Button)]`'s `.build()` expands to, with no declared
+/// label, emoji or style beyond Secondary.
+fn button<R: ComponentValue>(route: R) -> RouteButton<R> {
+    build_button(
+        route,
+        &ButtonDefaults {
+            style: ButtonStyle::Secondary,
+            label: None,
+            emoji: None,
+            disabled: false,
+        },
+    )
+}
+
+/// A String Select of `route` with `options` and no declared defaults.
+fn string_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    options: impl IntoIterator<Item = SelectOption>,
+) -> StringSelect {
+    build_string_select_builder(route, &NO_DEFAULTS).options(options)
+}
+
+/// A User Select of `route` with no declared defaults.
+fn user_select<R: ComponentValue + SelectRoute>(route: R) -> UserSelect {
+    build_user_select(route, &NO_DEFAULTS)
+}
+
+/// A Role Select of `route` with no declared defaults.
+fn role_select<R: ComponentValue + SelectRoute>(route: R) -> RoleSelect {
+    build_role_select(route, &NO_DEFAULTS)
+}
+
+/// A Mentionable Select of `route` with no declared defaults.
+fn mentionable_select<R: ComponentValue + SelectRoute>(route: R) -> MentionableSelect {
+    build_mentionable_select(route, &NO_DEFAULTS)
+}
+
+/// A Channel Select of `route` with no declared defaults.
+fn channel_select<R: ComponentValue + SelectRoute>(route: R) -> ChannelSelect {
+    build_channel_select(
+        route,
+        &ChannelSelectDefaults {
+            select: NO_DEFAULTS,
+            channel_types: &[],
+        },
+    )
+}
 
 /// A hand-written handled Route whose Payload is itself.
 macro_rules! route {
@@ -147,11 +209,10 @@ fn rgb_bounds() {
 
 #[test]
 fn route_button() {
-    insta::assert_json_snapshot!("route_button_default", buy().button());
+    insta::assert_json_snapshot!("route_button_default", button(buy()));
     insta::assert_json_snapshot!(
         "route_button_full",
-        buy()
-            .button()
+        button(buy())
             .style(ButtonStyle::Danger)
             .label("Buy")
             .emoji(Emoji::unicode("🛒"))
@@ -163,7 +224,7 @@ fn route_button() {
         (ButtonStyle::Success, 3),
         (ButtonStyle::Danger, 4),
     ] {
-        assert_eq!(to_json(&buy().button().style(style))["style"], json!(code));
+        assert_eq!(to_json(&button(buy()).style(style))["style"], json!(code));
     }
     assert_eq!(ButtonStyle::default(), ButtonStyle::Secondary);
 }
@@ -200,13 +261,13 @@ fn premium_button() {
 
 #[test]
 fn action_row() {
-    let b1 = buy().button().label("1");
-    let b2 = Buy { item: 1 }.button().label("2");
+    let b1 = button(buy()).label("1");
+    let b2 = button(Buy { item: 1 }).label("2");
     insta::assert_json_snapshot!("action_row_buttons", ActionRow::buttons([b1, b2]));
     insta::assert_json_snapshot!(
         "action_row_mixed",
         ActionRow::buttons([
-            Button::from(buy().button()),
+            Button::from(button(buy())),
             Button::from(LinkButton::new("https://x.y")),
         ])
     );
@@ -229,7 +290,7 @@ fn action_row() {
 
 #[test]
 fn action_row_select() {
-    let mut body = Components::new().push(ActionRow::select(Pick { page: 0 }.role_select()));
+    let mut body = Components::new().push(ActionRow::select(role_select(Pick { page: 0 })));
     resolve_selects(&mut body);
     insta::assert_json_snapshot!("action_row_select", body);
 }
@@ -247,7 +308,7 @@ fn section() {
     );
     let text = || [TextDisplay::new("a")];
     let accessories = [
-        to_json(&Section::new(text(), buy().button())),
+        to_json(&Section::new(text(), button(buy()))),
         to_json(&Section::new(text(), LinkButton::new("https://x.y"))),
         to_json(&Section::new(text(), PremiumButton::new(Id::new(7)))),
         to_json(&Section::new(
@@ -256,7 +317,7 @@ fn section() {
         )),
     ];
     let expected = [
-        to_json(&buy().button()),
+        to_json(&button(buy())),
         to_json(&LinkButton::new("https://x.y")),
         to_json(&PremiumButton::new(Id::new(7))),
         to_json(&LinkButton::new("https://x.y")),
@@ -319,21 +380,23 @@ fn media_from_attachment() {
 // Selects.
 
 #[test]
-fn string_select() {
-    let select = Pick { page: 0 }
-        .string_select([SelectOption::new("A", "a")
+fn string_select_options() {
+    let select = string_select(
+        Pick { page: 0 },
+        [SelectOption::new("A", "a")
             .description("d")
             .emoji(Emoji::unicode("🅰"))
-            .default(true)])
-        .placeholder("p")
-        .min_values(1)
-        .max_values(2)
-        .disabled(true);
+            .default(true)],
+    )
+    .placeholder("p")
+    .min_values(1)
+    .max_values(2)
+    .disabled(true);
     let mut body = Components::new().push(ActionRow::select(select));
     resolve_selects(&mut body);
     insta::assert_json_snapshot!("string_select", body);
 
-    let mut empty = Components::new().push(ActionRow::select(Pick { page: 0 }.string_select([])));
+    let mut empty = Components::new().push(ActionRow::select(string_select(Pick { page: 0 }, [])));
     resolve_selects(&mut empty);
     assert_eq!(
         to_json(&empty)[0]["components"][0],
@@ -345,26 +408,23 @@ fn string_select() {
 fn auto_populated_selects() {
     let mut body = Components::new()
         .push(ActionRow::select(
-            Pick { page: 0 }.user_select().default_users([Id::new(1)]),
+            user_select(Pick { page: 0 }).default_users([Id::new(1)]),
         ))
         .push(ActionRow::select(
-            Pick { page: 1 }.role_select().default_roles([Id::new(2)]),
+            role_select(Pick { page: 1 }).default_roles([Id::new(2)]),
         ))
         .push(ActionRow::select(
-            Pick { page: 2 }
-                .mentionable_select()
+            mentionable_select(Pick { page: 2 })
                 .default_roles([Id::new(4)])
                 .default_users([Id::new(3)]),
         ))
         .push(ActionRow::select(
-            Pick { page: 3 }
-                .channel_select()
+            channel_select(Pick { page: 3 })
                 .default_channels([Id::new(5)])
                 .channel_types([ChannelType::GuildText, ChannelType::GuildVoice]),
         ))
         .push(ActionRow::select(
-            Pick { page: 4 }
-                .channel_select()
+            channel_select(Pick { page: 4 })
                 .default_channels(None)
                 .channel_types([]),
         ));
@@ -386,9 +446,9 @@ fn cv2_14_ids_are_preorder() {
     let body = Components::new()
         .push(Container::new().push(Section::new(
             [TextDisplay::new("a"), TextDisplay::new("b")],
-            buy().button(),
+            button(buy()),
         )))
-        .push(ActionRow::buttons([Buy { item: 1 }.button()]));
+        .push(ActionRow::buttons([button(Buy { item: 1 })]));
     insta::assert_json_snapshot!("components_ids", body);
     let json = to_json(&body);
     let section = &json[0]["components"][0];
@@ -410,9 +470,10 @@ fn cv2_14_ids_are_preorder() {
 fn cv2_14_gallery_items_and_options_have_no_id() {
     let mut body = Components::new()
         .push(MediaGallery::new([MediaItem::new(Media::url("u"))]))
-        .push(ActionRow::select(
-            Pick { page: 0 }.string_select([SelectOption::new("A", "a")]),
-        ));
+        .push(ActionRow::select(string_select(
+            Pick { page: 0 },
+            [SelectOption::new("A", "a")],
+        )));
     resolve_selects(&mut body);
     let json = to_json(&body);
     assert_eq!(json[0]["items"][0], json!({"media": {"url": "u"}}));
@@ -437,7 +498,7 @@ fn opaque_components() {
     let children: Vec<ContainerComponent> = vec![
         TextDisplay::new("a").into(),
         Separator::new().into(),
-        ActionRow::buttons([buy().button()]).into(),
+        ActionRow::buttons([button(buy())]).into(),
     ];
     let container = children.into_iter().fold(Container::new(), Container::push);
     let top: Vec<TopLevelComponent> = vec![
@@ -459,7 +520,7 @@ fn opaque_components() {
 
 #[test]
 fn plain_route_is_eager() {
-    let mut body = Components::new().push(ActionRow::buttons([buy().button()]));
+    let mut body = Components::new().push(ActionRow::buttons([button(buy())]));
     let ids: Vec<_> = body.custom_ids_mut().collect();
     assert_eq!(ids.len(), 1);
     assert_eq!(ids[0].get(), Some("0shop.buy:47"));
@@ -471,19 +532,19 @@ fn unresolved_routes_fail_to_serialize() {
     let bodies = [
         (
             "signed",
-            Components::new().push(ActionRow::buttons([Signed { n: 1 }.button()])),
+            Components::new().push(ActionRow::buttons([button(Signed { n: 1 })])),
         ),
         (
             "tagged",
-            Components::new().push(ActionRow::buttons([Tagged { n: 1 }.button()])),
+            Components::new().push(ActionRow::buttons([button(Tagged { n: 1 })])),
         ),
         (
             "stored",
-            Components::new().push(ActionRow::buttons([Stored { n: 1 }.button()])),
+            Components::new().push(ActionRow::buttons([button(Stored { n: 1 })])),
         ),
         (
             "pick",
-            Components::new().push(ActionRow::select(Pick { page: 1 }.user_select())),
+            Components::new().push(ActionRow::select(user_select(Pick { page: 1 }))),
         ),
     ];
     for (route, mut body) in bodies {
@@ -499,8 +560,8 @@ fn unresolved_routes_fail_to_serialize() {
 fn signed_routes_resolve() {
     let key = PayloadKey::from_bytes([7; 32]);
     let mut body = Components::new()
-        .push(ActionRow::buttons([Signed { n: 1 }.button()]))
-        .push(ActionRow::buttons([Tagged { n: 1 }.button()]));
+        .push(ActionRow::buttons([button(Signed { n: 1 })]))
+        .push(ActionRow::buttons([button(Tagged { n: 1 })]));
     let mut ids = body.custom_ids_mut();
     let signed = ids.next().expect("signed id");
     assert_eq!(
@@ -520,11 +581,11 @@ fn section_accessory_ids_resolve() {
     let mut body = Components::new()
         .push(Container::new().push(Section::new(
             [TextDisplay::new("a")],
-            Signed { n: 1 }.button(),
+            button(Signed { n: 1 }),
         )))
         .push(Section::new(
             [TextDisplay::new("b")],
-            Tagged { n: 1 }.button(),
+            button(Tagged { n: 1 }),
         ));
     let ids: Vec<_> = body.custom_ids_mut().collect();
     assert_eq!(
@@ -539,19 +600,17 @@ fn section_accessory_ids_resolve() {
 
 #[test]
 fn spill_route() {
-    let mut fits = Components::new().push(ActionRow::buttons([Spilled {
+    let mut fits = Components::new().push(ActionRow::buttons([button(Spilled {
         text: "short".to_owned(),
-    }
-    .button()]));
+    })]));
     assert_eq!(
         fits.custom_ids_mut().next().and_then(|id| id.get()),
         Some("0spilled:short")
     );
 
-    let mut long = Components::new().push(ActionRow::buttons([Spilled {
+    let mut long = Components::new().push(ActionRow::buttons([button(Spilled {
         text: "x".repeat(200),
-    }
-    .button()]));
+    })]));
     let id = long.custom_ids_mut().next().expect("one id");
     assert_eq!(id.get(), None);
     let slot = id.resolve(&Parts::new()).expect("encodes").expect("a slot");
@@ -560,7 +619,7 @@ fn spill_route() {
 
 #[test]
 fn resolve_with_wrong_parts_keeps_state() {
-    let mut body = Components::new().push(ActionRow::select(Pick { page: 1 }.user_select()));
+    let mut body = Components::new().push(ActionRow::select(user_select(Pick { page: 1 })));
     let id = body.custom_ids_mut().next().expect("one id");
     assert_eq!(id.resolve(&Parts::new()), Err(EncodeError::MissingNonce));
     assert_eq!(id.get(), None);
@@ -571,11 +630,10 @@ fn resolve_with_wrong_parts_keeps_state() {
 #[test]
 fn finish_a_slot() {
     let mut body = Components::new()
-        .push(ActionRow::buttons([Stored { n: 1 }.button()]))
-        .push(ActionRow::buttons([Spilled {
+        .push(ActionRow::buttons([button(Stored { n: 1 })]))
+        .push(ActionRow::buttons([button(Spilled {
             text: "x".repeat(200),
-        }
-        .button()]));
+        })]));
     let mut ids = body.custom_ids_mut();
     let stored = ids.next().expect("stored id");
     let spilled = ids.next().expect("spilled id");
@@ -707,9 +765,9 @@ const _: () = {
     assert_send_sync::<Section>();
     assert_send_sync::<ActionRow>();
     assert_send_sync::<Button>();
-    assert_send_sync::<noctis_ui::RouteButton<Buy>>();
-    assert_send_sync::<noctis_ui::StringSelect>();
-    assert_send_sync::<noctis_ui::ChannelSelect>();
+    assert_send_sync::<RouteButton<Buy>>();
+    assert_send_sync::<StringSelect>();
+    assert_send_sync::<ChannelSelect>();
     assert_send_sync::<AttachmentSet>();
     assert_send_sync::<noctis_ui::AttachmentRef>();
     assert_send_sync::<UiError>();

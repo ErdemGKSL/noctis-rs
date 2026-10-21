@@ -5,6 +5,7 @@ use noctis::Permissions;
 use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 
+#[derive(SlashCommand)]
 #[command(
     "every",
     description = "d",
@@ -60,26 +61,41 @@ use noctis::twilight::model::id::Id;
         | PIN_MESSAGES
         | BYPASS_SLOWMODE
 )]
-async fn meta_01_every_permission(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Meta01EveryPermission;
+
+impl Meta01EveryPermission {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("scoped", description = "d", guilds = [42], permissions = MANAGE_GUILD, nsfw = true)]
-async fn meta_03_guild_without_contexts(
-    _ctx: CommandCtx,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Meta03GuildWithoutContexts;
+
+impl Meta03GuildWithoutContexts {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("max", description = "d", guilds = [18446744073709551615])]
-async fn meta_03_u64_max_guild(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Meta03U64MaxGuild;
+
+impl Meta03U64MaxGuild {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
 #[test]
 fn meta_01_every_permission_is_all() {
     assert_eq!(
-        meta_01_every_permission()
+        Meta01EveryPermission::descriptor()
             .metadata()
             .default_member_permissions,
         Some(Permissions::all())
@@ -88,9 +104,9 @@ fn meta_01_every_permission_is_all() {
 
 #[test]
 fn meta_03_guild_scoped_metadata() {
-    let handler = meta_03_guild_without_contexts();
+    let handler = Meta03GuildWithoutContexts::descriptor();
     assert_eq!(handler.metadata().guilds, [Id::new(42)]);
     assert_eq!(handler.metadata().nsfw, Some(true));
-    let handler = meta_03_u64_max_guild();
+    let handler = Meta03U64MaxGuild::descriptor();
     assert_eq!(handler.metadata().guilds, [Id::new(u64::MAX)]);
 }

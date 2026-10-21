@@ -129,8 +129,8 @@
 //! # Derive support
 //!
 //! A [`Payload`] declares its worst-case body width,
-//! [`Payload::MAX_ENCODED_LEN`]. The `noctis` derives (`#[derive(Route)]`,
-//! `#[derive(Payload)]`, `#[derive(PayloadEnum)]`) use a few hidden items of
+//! [`Payload::MAX_ENCODED_LEN`]. The `noctis` derives (the component and modal kind
+//! derives, `#[derive(Payload)]`, `#[derive(PayloadEnum)]`) use a few hidden items of
 //! this crate through `::noctis::__private::codec`: `sum_fields` adds field
 //! widths, `route_width` and `RouteWidth` compute a Route's worst-case id
 //! section by section, and `assert_fits` fails const evaluation, naming the

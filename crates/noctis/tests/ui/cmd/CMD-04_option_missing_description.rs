@@ -1,6 +1,7 @@
 use noctis::prelude::*;
 
-#[derive(Options)]
+#[derive(SlashCommand)]
+#[command("o", description = "d")]
 struct O {
     /// Doc comments are rustdoc only.
     days: i64,

@@ -20,35 +20,127 @@ use noctis::ui::{
 use serde_json::Value;
 use twilight_model::id::Id;
 
-#[derive(Route)]
-#[route("t.press")]
+#[derive(::noctis::Button)]
+#[button("t.press", defaults(style = Secondary, label = "Go"))]
 struct Press {
     n: u8,
 }
-impl ::noctis::__private::ui::Handled for Press {}
 
-#[derive(Route)]
-#[route("t.pick", select)]
+impl Press {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::StringSelectMenu)]
+#[string_select("t.pick", defaults(placeholder = "Pick"))]
 struct Pick;
-impl ::noctis::__private::ui::Handled for Pick {}
+
+impl Pick {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::UserSelectMenu)]
+#[user_select("t.who", defaults(placeholder = "Pick"))]
+struct Who;
+
+impl Who {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::RoleSelectMenu)]
+#[role_select("t.roles", defaults(placeholder = "Pick"))]
+struct Roles;
+
+impl Roles {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::MentionableSelectMenu)]
+#[mentionable_select("t.ments", defaults(placeholder = "Pick"))]
+struct Ments;
+
+impl Ments {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::ChannelSelectMenu)]
+#[channel_select("t.chans", defaults(placeholder = "Pick"))]
+struct Chans;
+
+impl Chans {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 /// A select Route the CID-02 check does not compare (a call, lowercase).
 fn pick() -> Pick {
     Pick
 }
 
-#[derive(Route)]
-#[route("t.pair")]
+#[derive(::noctis::Button)]
+#[button("t.pair", defaults(style = Secondary, label = "Go"))]
 struct Pair {
     a: u8,
     b: u8,
 }
-impl ::noctis::__private::ui::Handled for Pair {}
 
-#[derive(Route)]
-#[route("t.refresh")]
+impl Pair {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button)]
+#[button("t.refresh", defaults(style = Secondary, label = "Go"))]
 struct Refresh;
-impl ::noctis::__private::ui::Handled for Refresh {}
+
+impl Refresh {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 fn json(c: &Components) -> Value {
     serde_json::to_value(c).expect("components serialize")
@@ -84,7 +176,7 @@ const WHITE: Rgb = rgb!(0xFFFFFF);
 
 #[test]
 fn cv2_08_label_in_const_and_builders() {
-    let route = Press { n: 1 }.button().label(SAVE);
+    let route = Press { n: 1 }.build().label(SAVE);
     let link = LinkButton::new("https://x.y").label(SAVE);
     let row = ActionRow::buttons([route]);
     let json = serde_json::to_value(&row).expect("serialize");
@@ -93,7 +185,7 @@ fn cv2_08_label_in_const_and_builders() {
         serde_json::to_value(&link).expect("serialize")["label"],
         "Save"
     );
-    let select = Pick.user_select().placeholder(PICK);
+    let select = Who.build().placeholder(PICK);
     let body = Components::new().push(ActionRow::select(select));
     assert_eq!(
         json_with_unresolved(&body)[0]["components"][0]["placeholder"],
@@ -136,10 +228,10 @@ fn golden_tree_equals_builders() {
         container(accent = rgb!(0x5865_F2)) [
             text("### Settings"),
             separator(spacing = large),
-            section [ text("Logs"), text(name); accessory = Press { n: 1 }.button("Change") ],
+            section [ text("Logs"), text(name); accessory = Press { n: 1 }.build().label("Change") ],
             gallery [ item("https://x.y/a.png", alt = "A") ],
-            row [ Press { n: 2 }.button("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
-            row [ Pick.user_select().placeholder("Who").max_values(3) ],
+            row [ Press { n: 2 }.build().label("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
+            row [ Who.build().placeholder("Who").max_values(3) ],
             ..extra,
         ],
         {footer},
@@ -154,7 +246,7 @@ fn golden_tree_equals_builders() {
                 .push(Separator::large())
                 .push(Section::new(
                     [TextDisplay::new("Logs"), TextDisplay::new(name)],
-                    Press { n: 1 }.button().label("Change"),
+                    Press { n: 1 }.build().label("Change"),
                 ))
                 .push(MediaGallery::new([MediaItem::new(Media::url(
                     "https://x.y/a.png",
@@ -163,14 +255,14 @@ fn golden_tree_equals_builders() {
                 .push(ActionRow::buttons([
                     noctis::ui::Button::from(
                         Press { n: 2 }
-                            .button()
+                            .build()
                             .label("Save")
                             .style(ButtonStyle::Primary),
                     ),
                     noctis::ui::Button::from(LinkButton::new("https://x.y").label("Docs")),
                 ]))
                 .push(ActionRow::select(
-                    Pick.user_select().placeholder("Who").max_values(3),
+                    Who.build().placeholder("Who").max_values(3),
                 ))
                 .push(TextDisplay::new("x"))
                 .push(TextDisplay::new("y")),
@@ -275,9 +367,9 @@ fn media_and_file_forms() {
 #[test]
 fn row_buttons_and_holes() {
     let sku = Id::new(7);
-    let b = Press { n: 9 }.button();
+    let b = Press { n: 9 }.build();
     let c = components! {
-        row [ Press { n: 1 }.button(), link(url = "https://x.y", label = "Docs"), premium(sku), {b} ],
+        row [ Press { n: 1 }.build(), link(url = "https://x.y", label = "Docs"), premium(sku), {b} ],
     };
     let j = json(&c);
     let styles: Vec<_> = j[0]["components"]
@@ -295,13 +387,13 @@ fn button_args_and_setters() {
     let name = String::from("Named");
     let c = components! {
         row [
-            Press { n: 1 }.button(),
-            Press { n: 2 }.button("Save"),
-            Press { n: 3 }.button(label!("Label")),
-            Press { n: 4 }.button(name),
-            Press { n: 5 }.button("Go").style(ButtonStyle::Danger),
+            Press { n: 1 }.build(),
+            Press { n: 2 }.build().label("Save"),
+            Press { n: 3 }.build().label(label!("Label")),
+            Press { n: 4 }.build().label(name),
+            Press { n: 5 }.build().label("Go").style(ButtonStyle::Danger),
         ],
-        row [ Press { n: 6 }.button().label("x").disabled(true) ],
+        row [ Press { n: 6 }.build().label("x").disabled(true) ],
     };
     let j = json(&c);
     let labels: Vec<_> = j[0]["components"]
@@ -313,7 +405,7 @@ fn button_args_and_setters() {
     assert_eq!(
         labels,
         [
-            Value::Null,
+            Value::from("Go"),
             "Save".into(),
             "Label".into(),
             "Named".into(),
@@ -329,12 +421,12 @@ fn button_args_and_setters() {
 fn select_forms() {
     let options = vec![SelectOption::new("b", "b")];
     let c = components! {
-        row [ Pick.string_select([SelectOption::new("a", "a")]) ],
-        row [ pick().string_select(options) ],
-        row [ pick().user_select().placeholder("Pick").min_values(1).max_values(3) ],
-        row [ pick().role_select() ],
-        row [ pick().mentionable_select() ],
-        row [ pick().channel_select() ],
+        row [ Pick.build().options([SelectOption::new("a", "a")]) ],
+        row [ pick().build().options(options) ],
+        row [ Who.build().placeholder("Pick").min_values(1).max_values(3) ],
+        row [ Roles.build() ],
+        row [ Ments.build() ],
+        row [ Chans.build() ],
     };
     assert_eq!(c.len(), 6);
     let j = json_with_unresolved(&c);
@@ -348,7 +440,7 @@ fn select_forms() {
 fn holes_and_spreads() {
     let top = TextDisplay::new("top");
     let inner = TextDisplay::new("inner");
-    let acc = Press { n: 1 }.button().label("Acc");
+    let acc = Press { n: 1 }.build().label("Acc");
     let tops: Vec<TopLevelComponent> = vec![TextDisplay::new("s1").into(), Separator::new().into()];
     let children = vec![TextDisplay::new("c1")];
     let c = components! {
@@ -383,7 +475,7 @@ fn evaluation_order() {
         container(accent = { note("accent"); rgb!(0x000001) }) [
             text(note("b")),
             ..item("spread"),
-            section [ text(note("c")), text(note("d")); accessory = Press { n: 1 }.button(note("e")) ],
+            section [ text(note("c")), text(note("d")); accessory = Press { n: 1 }.build().label(note("e")) ],
         ],
         text(note("f")),
     };
@@ -441,14 +533,14 @@ fn cv2_03_exactly_forty_components() {
 #[test]
 fn cv2_03_eight_rows_of_four() {
     let c = components! {
-        row [ Press { n: 1 }.button(), Press { n: 2 }.button(), Press { n: 3 }.button(), Press { n: 4 }.button() ],
-        row [ Press { n: 5 }.button(), Press { n: 6 }.button(), Press { n: 7 }.button(), Press { n: 8 }.button() ],
-        row [ Press { n: 9 }.button(), Press { n: 10 }.button(), Press { n: 11 }.button(), Press { n: 12 }.button() ],
-        row [ Press { n: 13 }.button(), Press { n: 14 }.button(), Press { n: 15 }.button(), Press { n: 16 }.button() ],
-        row [ Press { n: 17 }.button(), Press { n: 18 }.button(), Press { n: 19 }.button(), Press { n: 20 }.button() ],
-        row [ Press { n: 21 }.button(), Press { n: 22 }.button(), Press { n: 23 }.button(), Press { n: 24 }.button() ],
-        row [ Press { n: 25 }.button(), Press { n: 26 }.button(), Press { n: 27 }.button(), Press { n: 28 }.button() ],
-        row [ Press { n: 29 }.button(), Press { n: 30 }.button(), Press { n: 31 }.button(), Press { n: 32 }.button() ],
+        row [ Press { n: 1 }.build(), Press { n: 2 }.build(), Press { n: 3 }.build(), Press { n: 4 }.build() ],
+        row [ Press { n: 5 }.build(), Press { n: 6 }.build(), Press { n: 7 }.build(), Press { n: 8 }.build() ],
+        row [ Press { n: 9 }.build(), Press { n: 10 }.build(), Press { n: 11 }.build(), Press { n: 12 }.build() ],
+        row [ Press { n: 13 }.build(), Press { n: 14 }.build(), Press { n: 15 }.build(), Press { n: 16 }.build() ],
+        row [ Press { n: 17 }.build(), Press { n: 18 }.build(), Press { n: 19 }.build(), Press { n: 20 }.build() ],
+        row [ Press { n: 21 }.build(), Press { n: 22 }.build(), Press { n: 23 }.build(), Press { n: 24 }.build() ],
+        row [ Press { n: 25 }.build(), Press { n: 26 }.build(), Press { n: 27 }.build(), Press { n: 28 }.build() ],
+        row [ Press { n: 29 }.build(), Press { n: 30 }.build(), Press { n: 31 }.build(), Press { n: 32 }.build() ],
     };
     assert_eq!(valid(c), 40);
 }
@@ -507,12 +599,12 @@ fn cid_02_not_compared() {
     let base = Pair { a: 4, b: 4 };
     let route_var = Refresh;
     let c = components! {
-        row [ Press { n: 1 }.button(), Press { n: 2 }.button() ],
-        row [ Press { n }.button(), Press { n }.button() ],
-        row [ Press { n: x }.button(), Press { n: x }.button() ],
-        row [ Pair { a: 5, ..base }.button() ],
-        row [ route_var.button() ],
-        row [ Press { n: 7 }.button(), Press { n: 7u8 }.button() ],
+        row [ Press { n: 1 }.build(), Press { n: 2 }.build() ],
+        row [ Press { n }.build(), Press { n }.build() ],
+        row [ Press { n: x }.build(), Press { n: x }.build() ],
+        row [ Pair { a: 5, ..base }.build() ],
+        row [ route_var.build() ],
+        row [ Press { n: 7 }.build(), Press { n: 7u8 }.build() ],
     };
     // The runtime validator catches the real duplicates.
     let mut msg = V2Message::new(c);

@@ -26,37 +26,66 @@ mod cmds {
     use super::RECEIVED;
 
     /// Pings.
+    #[derive(SlashCommand)]
     #[command("ping", description = "Check that the bot answers")]
-    pub async fn ping(ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        assert_eq!(ctx.command_path(), "ping");
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    pub struct Ping;
+
+    impl Ping {
+        #[handler]
+        async fn handle(self, ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            assert_eq!(ctx.command_path(), "ping");
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
     /// Starts the setup.
+    #[derive(SlashCommand)]
     #[command("setup start", description = "Start the setup")]
-    pub(crate) async fn setup_start(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    pub(crate) struct SetupStart;
+
+    impl SetupStart {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
     /// Configures the bot.
+    #[derive(SlashCommand)]
     #[command("config (set|get) (prefix|welcome)", description = "Configure")]
-    pub async fn config(
-        ctx: CommandCtx,
-        path: ConfigPath,
-    ) -> HandlerResult<noctis::ui::LegacyMessage> {
-        assert_eq!(ctx.command_path(), path.as_str());
-        RECEIVED.lock().unwrap().push(path);
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    pub struct Config;
+
+    impl Config {
+        #[handler]
+        async fn handle(
+            self,
+            ctx: CommandCtx,
+            path: ConfigPath,
+        ) -> HandlerResult<noctis::ui::LegacyMessage> {
+            assert_eq!(ctx.command_path(), path.as_str());
+            RECEIVED.lock().unwrap().push(path);
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
     /// An optional leading group.
+    #[derive(SlashCommand)]
     #[command("(a|b)? c", description = "d")]
-    pub async fn opt(_ctx: CommandCtx, _path: OptPath) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    pub struct Opt;
+
+    impl Opt {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            _path: OptPath,
+        ) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 }
 
-use cmds::{ConfigPath, OptPath, config, opt, ping, setup_start};
+use cmds::{Config, ConfigPath, Opt, OptPath, Ping, SetupStart};
 
 fn kind(handler: &CommandHandler) -> Option<PathKind> {
     PathKind::of(handler.paths()[0])
@@ -65,13 +94,13 @@ fn kind(handler: &CommandHandler) -> Option<PathKind> {
 /// Matrix 1 and 2.
 #[test]
 fn plain_paths() {
-    let handler = ping();
+    let handler = Ping::descriptor();
     assert_eq!(handler.paths(), ["ping"]);
     assert_eq!(handler.pattern(), "ping");
     assert_eq!(handler.description(), "Check that the bot answers");
-    assert_eq!(handler.name(), format!("{}::cmds::ping", module_path!()));
+    assert_eq!(handler.name(), format!("{}::cmds::Ping", module_path!()));
     assert_eq!(kind(&handler), Some(PathKind::Command));
-    let handler = setup_start();
+    let handler = SetupStart::descriptor();
     assert_eq!(handler.paths(), ["setup start"]);
     assert_eq!(kind(&handler), Some(PathKind::Subcommand));
 }
@@ -90,18 +119,20 @@ fn pattern_enum() {
     );
     assert_eq!(ConfigPath::SetPrefix.as_str(), "config set prefix");
     let expanded = expand("config (set|get) (prefix|welcome)", &Limits::default()).unwrap();
-    assert_eq!(config().paths(), expanded.as_slice());
+    assert_eq!(Config::descriptor().paths(), expanded.as_slice());
     assert_eq!(ConfigPath::PATHS, expanded.as_slice());
     let strs: Vec<_> = ConfigPath::ALL.iter().map(|p| p.as_str()).collect();
     assert_eq!(strs, expanded);
-    assert_eq!(config().description(), "Configure");
-    assert_eq!(kind(&config()), Some(PathKind::GroupSubcommand));
+    assert_eq!(Config::descriptor().description(), "Configure");
+    assert_eq!(kind(&Config::descriptor()), Some(PathKind::GroupSubcommand));
 }
 
 /// Matrix 5: the handler receives the invoked variant.
 #[tokio::test]
 async fn handler_gets_the_variant() {
-    call_command(&config(), "config get welcome").await.unwrap();
+    call_command(&Config::descriptor(), "config get welcome")
+        .await
+        .unwrap();
     assert!(RECEIVED.lock().unwrap().contains(&ConfigPath::GetWelcome));
 }
 
@@ -119,13 +150,13 @@ fn unknown(result: HandlerResult<()>) -> String {
 async fn unknown_path() {
     let here = module_path!();
     assert_eq!(
-        unknown(call_command(&config(), "config nope").await),
-        format!("`config nope` is not a path of the Command `{here}::cmds::config`")
+        unknown(call_command(&Config::descriptor(), "config nope").await),
+        format!("`config nope` is not a path of the Command `{here}::cmds::Config`")
     );
-    let err = call_command(&ping(), "pong").await;
+    let err = call_command(&Ping::descriptor(), "pong").await;
     assert_eq!(
         unknown(err),
-        format!("`pong` is not a path of the Command `{here}::cmds::ping`")
+        format!("`pong` is not a path of the Command `{here}::cmds::Ping`")
     );
 }
 
@@ -148,19 +179,19 @@ fn from_path() {
 /// Matrix 8: all groups absent is legal and named `Bare`.
 #[test]
 fn optional_group() {
-    assert_eq!(opt().paths(), ["a c", "b c", "c"]);
+    assert_eq!(Opt::descriptor().paths(), ["a c", "b c", "c"]);
     assert_eq!(OptPath::ALL, [OptPath::A, OptPath::B, OptPath::Bare]);
 }
 
 /// Matrix 49: `Module::add` takes commands.
 #[test]
 fn module_add() {
-    let module = Module::new("cfg").add(config()).add(ping());
+    let module = Module::new("cfg").add::<Config>().add::<Ping>();
     let debug = format!("{module:?}");
     let here = module_path!();
     assert!(
         debug.contains(&format!(
-            "commands: [\"{here}::cmds::config\", \"{here}::cmds::ping\"]"
+            "commands: [\"{here}::cmds::Config\", \"{here}::cmds::Ping\"]"
         )),
         "{debug}"
     );
@@ -174,6 +205,7 @@ mod metadata {
     use noctis::twilight::model::id::Id;
     use noctis::{CommandMetadata, IntegrationType, InteractionContext, Permissions};
 
+    #[derive(SlashCommand)]
     #[command(
         "ac",
         description = "d",
@@ -181,15 +213,27 @@ mod metadata {
         contexts = [Guild],
         nsfw = true
     )]
-    async fn ac(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    struct Ac;
+
+    impl Ac {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command("admin", description = "d", permissions = ADMINISTRATOR)]
-    async fn admin(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    struct Admin;
+
+    impl Admin {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command(
         "where",
         description = "d",
@@ -197,32 +241,56 @@ mod metadata {
         integration_types = [UserInstall, GuildInstall],
         nsfw = false
     )]
-    async fn r#where(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    struct Where;
+
+    impl Where {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command("dev", description = "d", guilds = [123456789012345678, 42u64])]
-    async fn dev(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    struct Dev;
+
+    impl Dev {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command("config (set|get)", description = "d", permissions = Permissions::MANAGE_GUILD)]
-    async fn config(
-        _ctx: CommandCtx,
-        _path: ConfigPath,
-    ) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    struct Config;
+
+    impl Config {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            _path: ConfigPath,
+        ) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command("plain", description = "d")]
-    async fn plain(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    struct Plain;
+
+    impl Plain {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
     /// Matrix 1: the acceptance example.
     #[test]
     fn meta_01_acceptance_example() {
-        let handler = ac();
+        let handler = Ac::descriptor();
         let meta = handler.metadata();
         assert_eq!(
             meta.default_member_permissions,
@@ -237,9 +305,9 @@ mod metadata {
     /// Matrix 2 and 3.
     #[test]
     fn meta_01_unset_and_single() {
-        assert_eq!(plain().metadata(), &CommandMetadata::new());
+        assert_eq!(Plain::descriptor().metadata(), &CommandMetadata::new());
         assert_eq!(
-            admin()
+            Admin::descriptor()
                 .metadata()
                 .default_member_permissions
                 .map(|p| p.bits()),
@@ -250,7 +318,7 @@ mod metadata {
     /// Matrix 12 and 15: lists keep their order.
     #[test]
     fn meta_03_lists_in_declared_order() {
-        let handler = r#where();
+        let handler = Where::descriptor();
         let meta = handler.metadata();
         assert_eq!(
             meta.contexts,
@@ -272,7 +340,7 @@ mod metadata {
     /// Matrix 17: guild scope.
     #[test]
     fn meta_03_guilds() {
-        let handler = dev();
+        let handler = Dev::descriptor();
         let meta = handler.metadata();
         assert_eq!(meta.guilds, [Id::new(123_456_789_012_345_678), Id::new(42)]);
         assert!(meta.is_guild_scoped());
@@ -284,7 +352,7 @@ mod metadata {
     /// Matrix 28: metadata on a pattern applies to the handler.
     #[test]
     fn meta_02_pattern_metadata() {
-        let handler = config();
+        let handler = Config::descriptor();
         assert_eq!(handler.paths(), ["config set", "config get"]);
         assert_eq!(
             handler.metadata().default_member_permissions,
@@ -301,50 +369,93 @@ mod responder {
     use noctis::prelude::*;
     use noctis::ui::{ActionRow, Components, ResolvedUser, SelectOption, TextDisplay};
 
-    #[derive(Route)]
-    #[route("t.pick", select)]
+    #[derive(::noctis::StringSelectMenu)]
+    #[string_select("t.pick", defaults(placeholder = "Pick"))]
     struct Pick;
-    impl ::noctis::__private::ui::Handled for Pick {}
 
-    #[derive(Route)]
-    #[route("t.form")]
+    impl Pick {
+        #[::noctis::handler]
+        async fn handle(
+            self,
+            _ctx: ::noctis::ComponentCtx,
+        ) -> ::noctis::HandlerResult<::noctis::Responded> {
+            Ok(::noctis::__private::core::__testing::responded())
+        }
+    }
+
+    #[derive(::noctis::Button)]
+    #[button("t.form", defaults(style = Secondary, label = "Go"))]
     struct Form;
-    impl ::noctis::__private::ui::Handled for Form {}
+
+    impl Form {
+        #[::noctis::handler]
+        async fn handle(
+            self,
+            _ctx: ::noctis::ComponentCtx,
+        ) -> ::noctis::HandlerResult<::noctis::Responded> {
+            Ok(::noctis::__private::core::__testing::responded())
+        }
+    }
 
     fn text(t: &str) -> Components {
         Components::new().push(TextDisplay::new(t.to_owned()))
     }
 
+    #[derive(SlashCommand)]
     #[command("answer", description = "d", response = ephemeral)]
-    async fn answer(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-        assert_eq!(ctx.ephemerality(), Ephemerality::Ephemeral);
-        let acked = r.defer_reply().await?;
-        acked.edit_reply(text("done")).await?;
-        let handle = acked.follow_up(text("log"), Visibility::Public).await?;
-        handle.edit(text("log 2")).await?;
-        Ok(acked.done())
+    struct Answer;
+
+    impl Answer {
+        #[handler]
+        async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+            assert_eq!(ctx.ephemerality(), Ephemerality::Ephemeral);
+            let acked = r.defer_reply().await?;
+            acked.edit_reply(text("done")).await?;
+            let handle = acked.follow_up(text("log"), Visibility::Public).await?;
+            handle.edit(text("log 2")).await?;
+            Ok(acked.done())
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command("public", description = "d", response = public)]
-    async fn public(_ctx: CommandCtx) -> HandlerResult<Components> {
-        Ok(text("hi"))
+    struct Public;
+
+    impl Public {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+            Ok(text("hi"))
+        }
     }
 
+    #[derive(SlashCommand)]
     #[command("unresolved", description = "d")]
-    async fn unresolved(_ctx: CommandCtx) -> HandlerResult<Components> {
-        Ok(Components::new().push(ActionRow::select(
-            Pick.string_select([SelectOption::new("A", "a")]),
-        )))
+    struct Unresolved;
+
+    impl Unresolved {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+            Ok(Components::new().push(ActionRow::select(
+                Pick.build().options([SelectOption::new("A", "a")]),
+            )))
+        }
     }
 
+    #[derive(UserCommand)]
     #[user_command("Wave", response = ephemeral)]
-    async fn wave(
-        _ctx: CommandCtx,
-        target: ResolvedUser,
-        r: CommandResponder,
-    ) -> HandlerResult<Responded> {
-        let text = format!("hi <@{}>", target.user.id);
-        Ok(r.reply(text_owned(text)).await?.done())
+    struct Wave;
+
+    impl Wave {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            target: ResolvedUser,
+            r: CommandResponder,
+        ) -> HandlerResult<Responded> {
+            let text = format!("hi <@{}>", target.user.id);
+            Ok(r.reply(text_owned(text)).await?.done())
+        }
     }
 
     fn text_owned(t: String) -> Components {
@@ -354,16 +465,16 @@ mod responder {
     /// Matrix 41: the declared ephemerality.
     #[test]
     fn ephemeral_argument() {
-        assert_eq!(answer().ephemerality(), Ephemerality::Ephemeral);
-        assert_eq!(public().ephemerality(), Ephemerality::Public);
-        assert_eq!(wave().ephemerality(), Ephemerality::Ephemeral);
+        assert_eq!(Answer::descriptor().ephemerality(), Ephemerality::Ephemeral);
+        assert_eq!(Public::descriptor().ephemerality(), Ephemerality::Public);
+        assert_eq!(Wave::descriptor().ephemerality(), Ephemerality::Ephemeral);
     }
 
     /// Matrix 52: the seams run responder handlers detached.
     #[tokio::test]
     async fn seams_run_responder_handlers() {
-        call_command(&answer(), "answer").await.unwrap();
-        call_command(&public(), "public").await.unwrap();
+        call_command(&Answer::descriptor(), "answer").await.unwrap();
+        call_command(&Public::descriptor(), "public").await.unwrap();
         let json = serde_json::json!({
             "type": 2,
             "data": {
@@ -374,7 +485,7 @@ mod responder {
                 } } }
             }
         });
-        call_context_menu(&wave(), json.to_string().as_bytes())
+        call_context_menu(&Wave::descriptor(), json.to_string().as_bytes())
             .await
             .unwrap();
     }
@@ -382,7 +493,9 @@ mod responder {
     /// Matrix 30: an unresolved Route `custom_id` is an encode error.
     #[tokio::test]
     async fn unresolved_custom_id() {
-        let err = call_command(&unresolved(), "unresolved").await.unwrap_err();
+        let err = call_command(&Unresolved::descriptor(), "unresolved")
+            .await
+            .unwrap_err();
         let responder = err
             .as_error()
             .downcast_ref::<ResponderError>()
@@ -395,57 +508,102 @@ mod responder {
 
     /// Story 6.10 boundary pass (INT-05): an `auto_defer = false` handler
     /// compiles with `CommandResponder<Manual>`.
+    #[derive(SlashCommand)]
     #[command("feedback", description = "d", auto_defer = false)]
-    async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-        let modal = Form.modal("Feedback").push(TextDisplay::new("Thanks!"));
-        Ok(r.show_modal(modal).await?.done())
+    struct Feedback;
+
+    impl Feedback {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            r: CommandResponder<Manual>,
+        ) -> HandlerResult<Responded> {
+            let modal = noctis::__private::ui::__macro::build_modal::<Form>(Form, "Feedback")
+                .push(TextDisplay::new("Thanks!"));
+            Ok(r.show_modal(modal).await?.done())
+        }
     }
 
     /// Story 6.10 boundary pass: `auto_defer = true` with a plain
     /// `CommandResponder`.
+    #[derive(SlashCommand)]
     #[command("explicit", description = "d", auto_defer = true)]
-    async fn explicit(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-        Ok(r.reply(text("hi")).await?.done())
+    struct Explicit;
+
+    impl Explicit {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+            Ok(r.reply(text("hi")).await?.done())
+        }
     }
 
     /// Story 6.10 boundary pass: a context menu declared `auto_defer = false`
     /// and `response = ephemeral`.
+    #[derive(UserCommand)]
     #[user_command("Report", response = ephemeral, auto_defer = false)]
-    async fn report(
-        _ctx: CommandCtx,
-        _target: ResolvedUser,
-        r: CommandResponder<Manual>,
-    ) -> HandlerResult<Responded> {
-        Ok(r.defer_reply().await?.done())
+    struct Report;
+
+    impl Report {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            _target: ResolvedUser,
+            r: CommandResponder<Manual>,
+        ) -> HandlerResult<Responded> {
+            Ok(r.defer_reply().await?.done())
+        }
     }
 
     /// Story 6.6 Matrix 19: a 46-character title (Strict).
+    #[derive(SlashCommand)]
     #[command("long", description = "d", auto_defer = false)]
-    async fn long(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-        let modal = Form.modal("a".repeat(46)).push(TextDisplay::new("x"));
-        Ok(r.show_modal(modal).await?.done())
+    struct Long;
+
+    impl Long {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            r: CommandResponder<Manual>,
+        ) -> HandlerResult<Responded> {
+            let modal = noctis::__private::ui::__macro::build_modal::<Form>(Form, "a".repeat(46))
+                .push(TextDisplay::new("x"));
+            Ok(r.show_modal(modal).await?.done())
+        }
     }
 
     /// Story 6.6 Matrix 20: an unresolved Route id.
+    #[derive(SlashCommand)]
     #[command("unresolved_modal", description = "d", auto_defer = false)]
-    async fn unresolved_modal(
-        _ctx: CommandCtx,
-        r: CommandResponder<Manual>,
-    ) -> HandlerResult<Responded> {
-        let modal = Pick.modal("Pick").push(TextDisplay::new("x"));
-        Ok(r.show_modal(modal).await?.done())
+    struct UnresolvedModal;
+
+    impl UnresolvedModal {
+        #[handler]
+        async fn handle(
+            self,
+            _ctx: CommandCtx,
+            r: CommandResponder<Manual>,
+        ) -> HandlerResult<Responded> {
+            let modal = noctis::__private::ui::__macro::build_modal::<Pick>(Pick, "Pick")
+                .push(TextDisplay::new("x"));
+            Ok(r.show_modal(modal).await?.done())
+        }
     }
 
     /// Story 6.6 Matrix 17, 19 and 20 over the detached seam.
     #[tokio::test]
     async fn manual_handlers() {
-        assert!(!feedback().auto_defer());
-        assert!(public().auto_defer());
-        assert!(answer().auto_defer());
-        assert!(explicit().auto_defer());
-        assert!(!report().auto_defer());
-        assert_eq!(report().ephemerality(), Ephemerality::Ephemeral);
-        call_command(&feedback(), "feedback").await.unwrap();
+        assert!(!Feedback::descriptor().auto_defer());
+        assert!(Public::descriptor().auto_defer());
+        assert!(Answer::descriptor().auto_defer());
+        assert!(Explicit::descriptor().auto_defer());
+        assert!(!Report::descriptor().auto_defer());
+        assert_eq!(Report::descriptor().ephemerality(), Ephemerality::Ephemeral);
+        call_command(&Feedback::descriptor(), "feedback")
+            .await
+            .unwrap();
         let responder_error = |err: &HandlerError| {
             format!(
                 "{:?}",
@@ -454,9 +612,9 @@ mod responder {
                     .unwrap_or_else(|| panic!("{err}"))
             )
         };
-        let err = call_command(&long(), "long").await.unwrap_err();
+        let err = call_command(&Long::descriptor(), "long").await.unwrap_err();
         assert!(responder_error(&err).starts_with("Invalid(Limits"), "{err}");
-        let err = call_command(&unresolved_modal(), "unresolved_modal")
+        let err = call_command(&UnresolvedModal::descriptor(), "unresolved_modal")
             .await
             .unwrap_err();
         assert!(responder_error(&err).starts_with("Encode"), "{err}");

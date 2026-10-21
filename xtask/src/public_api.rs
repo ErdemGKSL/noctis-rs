@@ -436,7 +436,10 @@ mod tests {
     #[test]
     fn l7_proc_macros() {
         for (text, name) in [
-            ("pub proc macro noctis::prelude::#[derive(Route)]", "Route"),
+            (
+                "pub proc macro noctis::prelude::#[derive(Button)]",
+                "Button",
+            ),
             ("pub proc macro noctis::prelude::#[handler]", "handler"),
             ("pub proc macro noctis::prelude::command!", "command"),
         ] {
@@ -447,13 +450,13 @@ mod tests {
             assert!(line.is_item());
         }
         assert_eq!(
-            proc_macro_spellings("noctis_macros::Route"),
+            proc_macro_spellings("noctis_macros::Button"),
             Some([
-                "noctis_macros::#[derive(Route)]".to_owned(),
-                "noctis_macros::#[Route]".to_owned()
+                "noctis_macros::#[derive(Button)]".to_owned(),
+                "noctis_macros::#[Button]".to_owned()
             ])
         );
-        assert_eq!(proc_macro_spellings("Route"), None);
+        assert_eq!(proc_macro_spellings("Button"), None);
     }
 
     #[test]

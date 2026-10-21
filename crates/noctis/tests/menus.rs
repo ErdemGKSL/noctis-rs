@@ -34,35 +34,50 @@ mod menus {
     pub static QUOTED: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 
     /// Shows a profile.
+    #[derive(UserCommand)]
     #[user_command("Show profile")]
-    pub(crate) async fn show(
-        ctx: CommandCtx,
-        target: ResolvedUser,
-    ) -> HandlerResult<noctis::ui::LegacyMessage> {
-        SHOWN.lock().unwrap().push((
-            ctx.command_path().to_owned(),
-            target.user.id.get(),
-            target.member.is_some(),
-        ));
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    pub(crate) struct Show;
+
+    impl Show {
+        #[handler]
+        async fn handle(
+            self,
+            ctx: CommandCtx,
+            target: ResolvedUser,
+        ) -> HandlerResult<noctis::ui::LegacyMessage> {
+            SHOWN.lock().unwrap().push((
+                ctx.command_path().to_owned(),
+                target.user.id.get(),
+                target.member.is_some(),
+            ));
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 
     /// Quotes a message.
+    #[derive(MessageCommand)]
     #[message_command("Quote")]
-    pub async fn quote(
-        ctx: CommandCtx,
-        target: ResolvedMessage,
-    ) -> HandlerResult<noctis::ui::LegacyMessage> {
-        QUOTED
-            .lock()
-            .unwrap()
-            .push((ctx.command_path().to_owned(), target.message.id.get()));
-        Ok(noctis::ui::LegacyMessage::new("ok"))
+    pub struct Quote;
+
+    impl Quote {
+        #[handler]
+        async fn handle(
+            self,
+            ctx: CommandCtx,
+            target: ResolvedMessage,
+        ) -> HandlerResult<noctis::ui::LegacyMessage> {
+            QUOTED
+                .lock()
+                .unwrap()
+                .push((ctx.command_path().to_owned(), target.message.id.get()));
+            Ok(noctis::ui::LegacyMessage::new("ok"))
+        }
     }
 }
 
-use menus::{QUOTED, SHOWN, quote, show};
+use menus::{QUOTED, Quote, SHOWN, Show};
 
+#[derive(UserCommand)]
 #[user_command(
     "Moderate",
     permissions = KICK_MEMBERS,
@@ -70,27 +85,50 @@ use menus::{QUOTED, SHOWN, quote, show};
     integration_types = [GuildInstall],
     nsfw = false
 )]
-async fn moderate(
-    _ctx: CommandCtx,
-    _target: ResolvedUser,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Moderate;
+
+impl Moderate {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _target: ResolvedUser,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
 static UNICODE: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
+#[derive(UserCommand)]
 #[user_command("Profili göster 🚀")]
-async fn unicode(
-    _ctx: CommandCtx,
-    target: ResolvedUser,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    UNICODE.lock().unwrap().push(target.user.id.get());
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Unicode;
+
+impl Unicode {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        target: ResolvedUser,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        UNICODE.lock().unwrap().push(target.user.id.get());
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(UserCommand)]
 #[user_command("Fail")]
-async fn fail(_ctx: CommandCtx, _target: ResolvedUser) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Err(HandlerError::new(std::fmt::Error))
+struct Fail;
+
+impl Fail {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _target: ResolvedUser,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Err(HandlerError::new(std::fmt::Error))
+    }
 }
 
 fn user(id: &str) -> Value {
@@ -145,13 +183,13 @@ fn shown(id: u64) -> Option<(String, u64, bool)> {
 /// Matrix 29 and 30: the descriptors.
 #[test]
 fn ctx_03_descriptors() {
-    let handler = show();
+    let handler = Show::descriptor();
     assert_eq!(handler.kind(), MenuKind::User);
     assert_eq!(handler.menu_name(), "Show profile");
-    assert!(handler.name().ends_with("::show"), "{}", handler.name());
+    assert!(handler.name().ends_with("::Show"), "{}", handler.name());
     assert_eq!(handler.metadata(), &CommandMetadata::new());
-    assert_eq!(quote().kind(), MenuKind::Message);
-    let module = Module::new("profile").add(show()).add(quote());
+    assert_eq!(Quote::descriptor().kind(), MenuKind::Message);
+    let module = Module::new("profile").add::<Show>().add::<Quote>();
     assert!(
         format!("{module:?}").contains("menus: [\"Show profile\", \"Quote\"]"),
         "{module:?}"
@@ -161,7 +199,7 @@ fn ctx_03_descriptors() {
 /// Matrix 36: metadata on a context menu.
 #[test]
 fn meta_01_menu_metadata() {
-    let handler = moderate();
+    let handler = Moderate::descriptor();
     let meta = handler.metadata();
     assert_eq!(
         meta.default_member_permissions,
@@ -181,7 +219,7 @@ fn meta_01_menu_metadata() {
 async fn ctx_03_user_target() {
     let resolved = json!({ "users": { "21": user("21") }, "members": { "21": member() } });
     run(
-        &show(),
+        &Show::descriptor(),
         &interaction(2, "Show profile", &json!("21"), Some(resolved)),
     )
     .await
@@ -190,7 +228,7 @@ async fn ctx_03_user_target() {
 
     let resolved = json!({ "users": { "22": user("22") } });
     run(
-        &show(),
+        &Show::descriptor(),
         &interaction(2, "Show profile", &json!("22"), Some(resolved)),
     )
     .await
@@ -203,7 +241,7 @@ async fn ctx_03_user_target() {
 async fn ctx_03_message_target() {
     let resolved = json!({ "messages": { "31": message("31") } });
     run(
-        &quote(),
+        &Quote::descriptor(),
         &interaction(3, "Quote", &json!("31"), Some(resolved)),
     )
     .await
@@ -219,7 +257,7 @@ async fn target_unresolved() {
         interaction(2, "Show profile", &json!("99"), Some(resolved)),
         interaction(2, "Show profile", &json!("99"), None),
     ] {
-        let err = menu_error(run(&show(), &json).await);
+        let err = menu_error(run(&Show::descriptor(), &json).await);
         assert_eq!(err, MenuTargetError::Unresolved { id: 99 });
         assert_eq!(err.to_string(), "target 99 is not in the resolved data");
     }
@@ -229,7 +267,13 @@ async fn target_unresolved() {
 /// Matrix 49: the wrong kind.
 #[tokio::test]
 async fn ctx_03_wrong_kind() {
-    let err = menu_error(run(&show(), &interaction(3, "Show profile", &json!("1"), None)).await);
+    let err = menu_error(
+        run(
+            &Show::descriptor(),
+            &interaction(3, "Show profile", &json!("1"), None),
+        )
+        .await,
+    );
     assert_eq!(
         err,
         MenuTargetError::WrongKind {
@@ -241,7 +285,13 @@ async fn ctx_03_wrong_kind() {
         err.to_string(),
         "expected a USER command, got a MESSAGE command"
     );
-    let err = menu_error(run(&quote(), &interaction(2, "Quote", &json!("1"), None)).await);
+    let err = menu_error(
+        run(
+            &Quote::descriptor(),
+            &interaction(2, "Quote", &json!("1"), None),
+        )
+        .await,
+    );
     assert_eq!(
         err,
         MenuTargetError::WrongKind {
@@ -272,7 +322,7 @@ async fn ctx_03_not_a_context_menu() {
             2,
         ),
     ] {
-        let err = menu_error(run(&show(), json.to_string().as_bytes()).await);
+        let err = menu_error(run(&Show::descriptor(), json.to_string().as_bytes()).await);
         assert_eq!(
             err,
             MenuTargetError::NotContextMenu {
@@ -294,9 +344,12 @@ async fn ctx_03_not_a_context_menu() {
 /// Matrix 51: the name must match byte for byte.
 #[tokio::test]
 async fn name_mismatch() {
-    let err = run(&show(), &interaction(2, "Show Profile", &json!("1"), None))
-        .await
-        .unwrap_err();
+    let err = run(
+        &Show::descriptor(),
+        &interaction(2, "Show Profile", &json!("1"), None),
+    )
+    .await
+    .unwrap_err();
     let unknown = err
         .as_error()
         .downcast_ref::<UnknownCommandPath>()
@@ -304,7 +357,7 @@ async fn name_mismatch() {
     assert_eq!(
         unknown.to_string(),
         format!(
-            "`Show Profile` is not a path of the Command `{}::menus::show`",
+            "`Show Profile` is not a path of the Command `{}::menus::Show`",
             module_path!()
         )
     );
@@ -315,7 +368,7 @@ async fn name_mismatch() {
 async fn unicode_name() {
     let resolved = json!({ "users": { "41": user("41") } });
     run(
-        &unicode(),
+        &Unicode::descriptor(),
         &interaction(2, "Profili göster 🚀", &json!("41"), Some(resolved)),
     )
     .await
@@ -364,7 +417,7 @@ async fn malformed() {
             "bad `resolved` data: ",
         ),
     ] {
-        let err = menu_error(run(&show(), &json).await);
+        let err = menu_error(run(&Show::descriptor(), &json).await);
         let MenuTargetError::Malformed { reason: got } = &err else {
             panic!("{err}");
         };
@@ -381,7 +434,7 @@ async fn malformed() {
 async fn numeric_target_id() {
     let resolved = json!({ "users": { "51": user("51") } });
     run(
-        &show(),
+        &Show::descriptor(),
         &interaction(2, "Show profile", &json!(51), Some(resolved)),
     )
     .await
@@ -394,7 +447,7 @@ async fn numeric_target_id() {
 async fn handler_error_passes_through() {
     let resolved = json!({ "users": { "1": user("1") } });
     let err = run(
-        &fail(),
+        &Fail::descriptor(),
         &interaction(2, "Fail", &json!("1"), Some(resolved)),
     )
     .await

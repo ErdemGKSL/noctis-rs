@@ -1,5 +1,5 @@
-//! Story 6.7 Matrix 3-14 and 25-27: decoding, `respond` and the choice
-//! filter.
+//! Story 6.7 Matrix 3-14 and 25-27: decoding and the choice filter;
+//! Story 6.11 Matrix 24-27: `Suggestions` and their lowering.
 
 use noctis_rules::LimitMode;
 use noctis_ui::ResolvedChannel;
@@ -37,29 +37,32 @@ fn focused(kind: u64, value: &Value) -> Focused {
     parse(&leaves).unwrap().1
 }
 
-/// A detached context keeping at most `max` choices.
-fn ctx(max: usize) -> (AutocompleteCtx, Slot) {
-    let slot = Slot::default();
-    let parts = AutocompleteParts {
+/// A detached context.
+fn ctx() -> AutocompleteCtx {
+    AutocompleteCtx::new(AutocompleteParts {
         path: "config set prefix",
         module: "m",
         shard: 0,
         guild_id: None,
         channel_id: None,
         user_id: Id::new(1),
-        user_locale: None,
+        user_locale: Some("tr".to_owned()),
         guild_locale: None,
         focused: focused(3, &json!("")),
         app: None,
-        max_choices: max,
-    };
-    (AutocompleteCtx::new(parts, Arc::clone(&slot)), slot)
+    })
 }
 
-fn collected(choices: Vec<AutocompleteChoice>) -> Collected {
-    let (ctx, slot) = ctx(25);
-    let _ = ctx.respond(choices);
-    slot.lock().unwrap().take().unwrap()
+/// What a method's choices collect to without label lowering: the first
+/// 25 and how many there were.
+fn collected(mut choices: Vec<AutocompleteChoice>) -> Collected {
+    let returned = choices.len();
+    choices.truncate(25);
+    Collected {
+        choices,
+        returned,
+        labels_cut: 0,
+    }
 }
 
 fn strings(n: usize) -> Vec<AutocompleteChoice> {
@@ -287,14 +290,100 @@ fn boolean_focus_sends_nothing() {
     assert!(warnings.not_choosable);
 }
 
-/// `respond` keeps the first `max` and counts the rest; `Debug` names the
-/// path but no text.
+/// Story 6.11 Matrix 24: 0, 25 and 26 suggestions collect to 0, 25 and
+/// the first 25.
 #[test]
-fn respond_keeps_the_first_choices() {
-    let (ctx, slot) = ctx(2);
+fn suggestions_collect_the_first_25() {
+    let labels = ctx().labels();
+    let limits = Limits::default();
+    for (n, kept) in [(0, 0), (25, 25), (26, 25)] {
+        let s: Suggestions<i64> = (0_i64..).take(n).map(|i| (i, format!("c{i}"))).collect();
+        assert_eq!((s.len(), s.is_empty()), (n, n == 0));
+        let c = collect(s.lower(), &labels, &limits);
+        assert_eq!((c.choices.len(), c.returned), (kept, n));
+        let (sent, warnings) = filter_choices(c, OptionType::Integer, &limits);
+        assert_eq!(sent.len(), kept);
+        assert_eq!(warnings.truncated, (n == 26).then_some((26, 25)));
+    }
+}
+
+/// Story 6.11 Matrix 25: labels are cut to 100 units with `…`, a
+/// `MessageKey` renders in the user's locale, falling back to `en-US` (Builtin without an App).
+#[test]
+fn labels_are_cut_and_resolved() {
+    let labels = ctx().labels();
+    let limits = Limits::default();
+    let mut s = Suggestions::new();
+    s.push("a".to_owned(), "x".repeat(100));
+    s.push("b".to_owned(), "x".repeat(101));
+    s.push("c".to_owned(), "😀".repeat(51));
+    s.push("d".to_owned(), "");
+    s.push("e".to_owned(), noctis_i18n::keys::GUARD_OWNER);
+    let c = collect(s.lower(), &labels, &limits);
+    assert_eq!(c.labels_cut, 2);
+    let names = names(&c.choices);
+    assert_eq!(names[0].len(), 100);
+    assert_eq!(noctis_rules::len::discord_len(names[1]), 100);
+    assert!(names[1].ends_with('…'));
+    assert!(noctis_rules::len::discord_len(names[2]) <= 100);
+    assert!(names[2].ends_with('…'));
+    assert_eq!(names[4], "Only the person who started this can use it.");
+    let (sent, warnings) = filter_choices(c, OptionType::String, &limits);
+    assert_eq!(sent.len(), 4, "the empty label is dropped");
+    assert_eq!((warnings.dropped, warnings.labels_cut), (1, 2));
+}
+
+/// Story 6.11 Matrix 26: values Discord would reject are dropped.
+#[test]
+fn bad_values_are_dropped() {
+    let labels = ctx().labels();
+    let limits = Limits::default();
+    let max = (1_i64 << 53) - 1;
+    let ints: Suggestions<i64> = [max, -max, max + 1, -max - 1]
+        .into_iter()
+        .map(|v| (v, "n"))
+        .collect();
+    let (sent, warnings) = filter_choices(
+        collect(ints.lower(), &labels, &limits),
+        OptionType::Integer,
+        &limits,
+    );
+    assert_eq!(sent.len(), 2);
+    assert_eq!(warnings.dropped, 2);
+    let floats: Suggestions<f64> = [1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY]
+        .into_iter()
+        .map(|v| (v, "n"))
+        .collect();
+    let (sent, warnings) = filter_choices(
+        collect(floats.lower(), &labels, &limits),
+        OptionType::Number,
+        &limits,
+    );
+    assert_eq!(sent.len(), 1);
+    assert_eq!(warnings.dropped, 3);
+    let strings: Suggestions<String> = ["v".repeat(100), "v".repeat(101)]
+        .into_iter()
+        .map(|v| (v, "n"))
+        .collect();
+    let (sent, warnings) = filter_choices(
+        collect(strings.lower(), &labels, &limits),
+        OptionType::String,
+        &limits,
+    );
+    assert_eq!(sent.len(), 1);
+    assert_eq!(warnings.dropped, 1);
+}
+
+/// Story 6.11 Matrix 28: `guild_id()` outside a guild is an error, and an
+/// unregistered state panics naming its type; `Debug` names the path.
+#[test]
+fn ctx_guild_and_state() {
+    let ctx = ctx();
     assert!(format!("{ctx:?}").contains("config set prefix"));
-    let _ = ctx.respond(strings(5));
-    let collected = slot.lock().unwrap().take().unwrap();
-    assert_eq!(names(&collected.choices), ["c0", "c1"]);
-    assert_eq!(collected.returned, 5);
+    let err = ctx.guild_id().unwrap_err();
+    assert!(err.to_string().contains("not in a guild"), "{err}");
+    let panic =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ctx.state::<u8>())).unwrap_err();
+    let message = panic.downcast_ref::<String>().cloned().unwrap_or_default();
+    assert!(message.contains("`u8`"), "{message}");
 }

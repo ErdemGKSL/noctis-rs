@@ -1,13 +1,18 @@
-//! Proc macros: `command!`, user/message commands, the `Route`/`Payload`/`Options`/`Choices`/`Modal` derives, `components!`, `view!`/`tw!` and `i18n!`.
+//! Proc macros: the kind derives (`SlashCommand`, `UserCommand`,
+//! `MessageCommand`, `EventHandler`, `Button`, the five select derives,
+//! `Modal`), the `#[handler]` and `#[autocomplete(field)]` method attributes,
+//! the `Payload`/`PayloadEnum`/`Choices` derives, `components!` and the
+//! literal macros.
 //!
 //! This crate is internal; use `noctis` instead. Its API is not stable and may
 //! change in any release.
 //!
-//! Implemented so far: the `Route`, `Payload` and `PayloadEnum` derives, the
-//! literal macros `label!`, `placeholder!`, `content!` and `rgb!`,
-//! `components!`, the `Modal`, `Choices` and `Options` derives, and the
-//! `#[event]`, `#[command]`, `#[user_command]`, `#[message_command]` and
-//! `#[autocomplete]` attributes.
+//! Every interaction is one struct (maintainer decisions §7): a kind derive
+//! names the kind, its one kind attribute carries the id and the routing
+//! arguments (and, for components and modals, the mandatory `defaults(..)`),
+//! and `impl X { #[handler] async fn handle(self, ctx, ..) }` is the handler.
+//! The withdrawn free-function attributes and the `Options`/`Route` derives
+//! are stubs that fail with the struct form (`withdrawn`).
 //!
 //! Generated code names runtime items only through
 //! `::noctis::__private::{codec, ui, core, rules, model}` and std items through `::core`/`::std`
@@ -21,8 +26,12 @@ mod autocomplete;
 mod choices;
 mod command;
 mod common;
+mod component;
 mod components;
+mod defaults;
 mod event;
+mod handler;
+mod kind;
 mod literal;
 mod menu;
 mod meta;
@@ -31,18 +40,7 @@ mod options;
 mod payload;
 mod payload_enum;
 mod route;
-
-/// Derives `Route` and `Payload` for a struct and proves at compile time
-/// that every `custom_id` of the Route fits 100 characters (CID-01).
-///
-/// Takes one `#[route("id", args…)]` attribute; see `noctis::prelude::Route`.
-#[proc_macro_derive(Route, attributes(route))]
-pub fn derive_route(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    route::expand(&input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
+mod withdrawn;
 
 /// Derives `Payload` and `PayloadDecode` for a struct, for a hand-written
 /// `Route`.
@@ -64,12 +62,12 @@ pub fn derive_payload_enum(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Derives `ModalForm` for a struct with named fields: one field per
-/// top-level modal component, every literal text and count checked at
-/// expansion (MOD-01, MOD-02, MOD-04..07, CV2-04, CV2-09, CID-01).
-///
-/// Takes `#[modal(route = Route, title = "…")]` and one component attribute
-/// per field; see `noctis::prelude::Modal`.
+/// Derives a modal from a struct: `#[modal("id", <codec args>,
+/// defaults(title = "…"))]`; fields without an input attribute are the
+/// Payload (in the `custom_id`, CID-01), every other field is one input with
+/// its literal texts and counts checked at expansion (MOD-01, MOD-02,
+/// MOD-04..07, CV2-04, CV2-09). Generates `build`, `blank`, `ModalForm` and
+/// the kind scaffolding; see `noctis::prelude::Modal`.
 #[proc_macro_derive(
     Modal,
     attributes(
@@ -89,21 +87,7 @@ pub fn derive_payload_enum(input: TokenStream) -> TokenStream {
 )]
 pub fn derive_modal(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    modal::expand(&input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
-
-/// Derives `Options` for a struct with named fields: each field one
-/// chat-input command option, its `#[option(..)]` literals checked at
-/// expansion with `noctis_rules::command::validate_options` (CMD-01..04,
-/// CMD-06, CMD-13, OPT-01, OPT-03..11, OPT-13); see `noctis::Options`.
-#[proc_macro_derive(Options, attributes(option))]
-pub fn derive_options(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    options::expand(&input)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+    modal::expand_or_fallback(&input).into()
 }
 
 /// Derives `Choices` and `CommandOption` (a STRING option with choices) for
@@ -162,61 +146,116 @@ pub fn components(input: TokenStream) -> TokenStream {
     components::components(input.into()).into()
 }
 
-/// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
-/// into `fn name() -> EventHandler`, a descriptor for `Module::add`.
-///
-/// Takes `ordered` (run before the concurrent handlers, in per-guild order)
-/// and `droppable` (the event may be dropped under load), in any order.
-#[proc_macro_attribute]
-pub fn event(args: TokenStream, item: TokenStream) -> TokenStream {
-    event::expand(args.into(), item.into())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// `#[derive(SlashCommand)]`: a slash Command struct whose named fields are
+/// its options. Takes `#[command("path or pattern", description = "…", ..)]`
+/// (CMD-01..05, CMD-10..13, CMD-15, CMD-16, META-01..03) and
+/// `#[option(..)]` per field (OPT-*); a Pattern with a group generates
+/// `<Struct>Path`. See `noctis::prelude::SlashCommand`.
+#[proc_macro_derive(SlashCommand, attributes(command, option))]
+pub fn derive_slash_command(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    command::derive(&input).into()
 }
 
-/// Checks a Command Path or Pattern at expansion (CMD-01..05, CMD-10..13,
-/// CMD-15, CMD-16) and turns `async fn name(ctx: CommandCtx[, path:
-/// <Fn>Path]) -> HandlerResult<()>` into `fn name() -> CommandHandler`, a
-/// descriptor for `Module::add`.
-///
-/// Takes the path or pattern literal first, then `description = "…"`,
-/// `max_expansions = n` and the metadata arguments `permissions`,
-/// `contexts`, `integration_types`, `nsfw` and `guilds` (META-01..03,
-/// CMD-07); a pattern with a group also generates the `<Fn>Path` enum. See
-/// `noctis::command`.
-#[proc_macro_attribute]
-pub fn command(args: TokenStream, item: TokenStream) -> TokenStream {
-    command::expand(args.into(), item.into())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// `#[derive(UserCommand)]` on a unit struct with `#[user_command("Name",
+/// ..)]` (CTX-01..03); its handler takes `target: ResolvedUser`.
+#[proc_macro_derive(UserCommand, attributes(user_command))]
+pub fn derive_user_command(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    menu::derive_or_fallback(menu::Menu::User, &input).into()
 }
 
-/// Checks a `USER` context-menu name at expansion (CTX-01) and turns
-/// `async fn name(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()>`
-/// into `fn name() -> ContextMenuHandler`, a descriptor for `Module::add`.
-///
-/// Takes the menu name literal first, then the metadata arguments. See
-/// `noctis::user_command`.
-#[proc_macro_attribute]
-pub fn user_command(args: TokenStream, item: TokenStream) -> TokenStream {
-    menu::expand(menu::Menu::User, args.into(), item.into())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// `#[derive(MessageCommand)]` on a unit struct with
+/// `#[message_command("Name", ..)]`; its handler takes `target:
+/// ResolvedMessage`.
+#[proc_macro_derive(MessageCommand, attributes(message_command))]
+pub fn derive_message_command(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    menu::derive_or_fallback(menu::Menu::Message, &input).into()
 }
 
-/// Like [`user_command`] for a `MESSAGE` context-menu command, whose handler
-/// takes `target: ResolvedMessage`. See `noctis::message_command`.
-#[proc_macro_attribute]
-pub fn message_command(args: TokenStream, item: TokenStream) -> TokenStream {
-    menu::expand(menu::Menu::Message, args.into(), item.into())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+/// `#[derive(EventHandler)]` on a unit struct, with an optional
+/// `#[event(ordered, droppable)]`.
+#[proc_macro_derive(EventHandler, attributes(event))]
+pub fn derive_event_handler(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    event::derive_or_fallback(&input).into()
 }
 
-/// `#[autocomplete]`: an autocomplete handler descriptor; see `noctis`.
+macro_rules! component_derives {
+    ($($name:ident, $attr:ident, $fn:ident, $variant:ident, $doc:literal;)*) => {$(
+        #[doc = $doc]
+        #[proc_macro_derive($name, attributes($attr))]
+        pub fn $fn(input: TokenStream) -> TokenStream {
+            let input = parse_macro_input!(input as DeriveInput);
+            component::derive_or_fallback(component::Component::$variant, &input).into()
+        }
+    )*};
+}
+
+component_derives! {
+    Button, button, derive_button, Button,
+        "`#[derive(Button)]` with `#[button(\"id\", <codec args>, defaults(style = .., label = ..))]`: an interactive button Route (CID-01, CID-03, CID-04, CV2-08).";
+    StringSelectMenu, string_select, derive_string_select, StringSelect,
+        "`#[derive(StringSelectMenu)]` with `#[string_select(\"id\", defaults(placeholder = .., options = ..))]` (CV2-09).";
+    UserSelectMenu, user_select, derive_user_select, UserSelect,
+        "`#[derive(UserSelectMenu)]` with `#[user_select(\"id\", defaults(placeholder = ..))]` (CV2-09).";
+    RoleSelectMenu, role_select, derive_role_select, RoleSelect,
+        "`#[derive(RoleSelectMenu)]` with `#[role_select(\"id\", defaults(placeholder = ..))]` (CV2-09).";
+    MentionableSelectMenu, mentionable_select, derive_mentionable_select, MentionableSelect,
+        "`#[derive(MentionableSelectMenu)]` with `#[mentionable_select(\"id\", defaults(placeholder = ..))]` (CV2-09).";
+    ChannelSelectMenu, channel_select, derive_channel_select, ChannelSelect,
+        "`#[derive(ChannelSelectMenu)]` with `#[channel_select(\"id\", defaults(placeholder = .., channel_types = [..]))]` (CV2-09).";
+}
+
+/// `#[handler]`: the one `async` method (receiver `self` by value) of a
+/// kind-derived struct that handles its interaction; emits the public
+/// `fn descriptor()` beside it.
+#[proc_macro_attribute]
+pub fn handler(args: TokenStream, item: TokenStream) -> TokenStream {
+    handler::expand_or_fallback(args.into(), item.into()).into()
+}
+
+/// `#[autocomplete(field)]`: the suggestion method of the option `field`
+/// flagged `#[option(.., autocomplete)]` (OPT-11, INT-06).
 #[proc_macro_attribute]
 pub fn autocomplete(args: TokenStream, item: TokenStream) -> TokenStream {
-    autocomplete::expand(args.into(), item.into())
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+    autocomplete::expand_or_fallback(args.into(), item.into()).into()
+}
+
+/// Withdrawn: `#[command]` on a free function. Fails with the
+/// `#[derive(SlashCommand)]` form.
+#[proc_macro_attribute]
+pub fn command(_: TokenStream, item: TokenStream) -> TokenStream {
+    withdrawn::attribute(withdrawn::Attr::Command, &item.into()).into()
+}
+
+/// Withdrawn: `#[user_command]` on a free function.
+#[proc_macro_attribute]
+pub fn user_command(_: TokenStream, item: TokenStream) -> TokenStream {
+    withdrawn::attribute(withdrawn::Attr::UserCommand, &item.into()).into()
+}
+
+/// Withdrawn: `#[message_command]` on a free function.
+#[proc_macro_attribute]
+pub fn message_command(_: TokenStream, item: TokenStream) -> TokenStream {
+    withdrawn::attribute(withdrawn::Attr::MessageCommand, &item.into()).into()
+}
+
+/// Withdrawn: `#[event]` on a free function.
+#[proc_macro_attribute]
+pub fn event(_: TokenStream, item: TokenStream) -> TokenStream {
+    withdrawn::attribute(withdrawn::Attr::Event, &item.into()).into()
+}
+
+/// The withdrawn `#[derive(Options)]`.
+#[proc_macro_derive(Options, attributes(option))]
+pub fn derive_options(input: TokenStream) -> TokenStream {
+    withdrawn::derive(withdrawn::Derive::Options, &input.into()).into()
+}
+
+/// The withdrawn `#[derive(Route)]`.
+#[proc_macro_derive(Route, attributes(route))]
+pub fn derive_route(input: TokenStream) -> TokenStream {
+    withdrawn::derive(withdrawn::Derive::Route, &input.into()).into()
 }

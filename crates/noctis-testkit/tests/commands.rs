@@ -39,69 +39,128 @@ fn text(t: &str) -> Components {
     Components::new().push(TextDisplay::new(t.to_owned()))
 }
 
+#[derive(SlashCommand)]
 #[command("ping", description = "Check that the bot answers")]
-async fn ping(_ctx: CommandCtx) -> HandlerResult<Components> {
-    Ok(text("pong"))
+struct Ping;
+
+impl Ping {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        Ok(text("pong"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("secret", description = "A private answer", response = ephemeral)]
-async fn secret(_ctx: CommandCtx) -> HandlerResult<Components> {
-    Ok(text("psst"))
+struct Secret;
+
+impl Secret {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        Ok(text("psst"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("twice", description = "Reply, then return a message")]
-async fn twice(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
-    let _ = r.reply(text("first")).await?.done();
-    Ok(text("second"))
+struct Twice;
+
+impl Twice {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
+        let _ = r.reply(text("first")).await?.done();
+        Ok(text("second"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("slow", description = "Defer, then return a message")]
-async fn slow(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
-    let _ = r.defer_reply_as(Ephemerality::Ephemeral).await?.done();
-    Ok(text("later"))
+struct Slow;
+
+impl Slow {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Components> {
+        let _ = r.defer_reply_as(Ephemerality::Ephemeral).await?.done();
+        Ok(text("later"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("log", description = "Defer, then a public follow-up")]
-async fn log(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-    let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;
-    let handle = acked.follow_up(text("logged"), Visibility::Public).await?;
-    assert_eq!(handle.message_id().get(), 55);
-    Ok(acked.done())
+struct Log;
+
+impl Log {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        let acked = r.defer_reply_as(Ephemerality::Ephemeral).await?;
+        let handle = acked.follow_up(text("logged"), Visibility::Public).await?;
+        assert_eq!(handle.message_id().get(), 55);
+        Ok(acked.done())
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("lazy", description = "Answer after the auto-defer")]
-async fn lazy(_ctx: CommandCtx) -> HandlerResult<Components> {
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    Ok(text("later"))
+struct Lazy;
+
+impl Lazy {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        Ok(text("later"))
+    }
 }
 
-#[derive(Route)]
-#[route("t.feedback")]
+#[derive(::noctis::Button)]
+#[button("t.feedback", defaults(style = Secondary, label = "Go"))]
 struct SendFeedback;
 
-impl noctis::__private::ui::Handled for SendFeedback {}
-
-#[command("feedback", description = "Open the feedback form", auto_defer = false)]
-async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-    let modal = SendFeedback
-        .modal("Feedback")
-        .push(TextDisplay::new("Thanks!"));
-    Ok(r.show_modal(modal).await?.done())
+impl SendFeedback {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
 }
 
-#[event]
-async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    if let Some(path) = msg.content.strip_prefix('!') {
-        let invocation = CommandInvocation::new(
-            CommandInput::new(path),
-            msg.channel_id,
-            msg.id,
-            msg.author.id,
-        )
-        .guild_id(msg.guild_id);
-        ctx.dispatcher().run_command(invocation).await?;
+#[derive(SlashCommand)]
+#[command("feedback", description = "Open the feedback form", auto_defer = false)]
+struct Feedback;
+
+impl Feedback {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        r: CommandResponder<Manual>,
+    ) -> HandlerResult<Responded> {
+        let modal =
+            noctis::__private::ui::__macro::build_modal::<SendFeedback>(SendFeedback, "Feedback")
+                .push(TextDisplay::new("Thanks!"));
+        Ok(r.show_modal(modal).await?.done())
     }
-    Ok(())
+}
+
+#[derive(EventHandler)]
+struct Prefix;
+
+impl Prefix {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+        if let Some(path) = msg.content.strip_prefix('!') {
+            let invocation = CommandInvocation::new(
+                CommandInput::new(path),
+                msg.channel_id,
+                msg.id,
+                msg.author.id,
+            )
+            .guild_id(msg.guild_id);
+            ctx.dispatcher().run_command(invocation).await?;
+        }
+        Ok(())
+    }
 }
 
 /// Records every Command report as `<handler>:<kind>`.
@@ -281,7 +340,7 @@ fn body(request: &RecordedRequest) -> Value {
 /// declared ephemerality.
 #[tokio::test(flavor = "multi_thread")]
 async fn returned_message_is_the_reply() {
-    let running = Running::start(Module::new("m").add(ping()).add(secret())).await;
+    let running = Running::start(Module::new("m").add::<Ping>().add::<Secret>()).await;
     running.invoke("ping");
     let sent = running.wait_sent(1).await;
     assert_eq!(sent[0].method, Method::POST);
@@ -301,7 +360,7 @@ async fn returned_message_is_the_reply() {
 /// defer then a returned message edits it with the V2 flag.
 #[tokio::test(flavor = "multi_thread")]
 async fn acknowledged_then_returned_edits_the_original() {
-    let running = Running::start(Module::new("m").add(twice()).add(slow())).await;
+    let running = Running::start(Module::new("m").add::<Twice>().add::<Slow>()).await;
     running.invoke("twice");
     let sent = running.wait_sent(2).await;
     assert_eq!(body(&sent[0])["type"], 4);
@@ -324,7 +383,7 @@ async fn acknowledged_then_returned_edits_the_original() {
 /// follow-up.
 #[tokio::test(flavor = "multi_thread")]
 async fn defer_then_follow_up() {
-    let running = Running::start(Module::new("m").add(log())).await;
+    let running = Running::start(Module::new("m").add::<Log>()).await;
     running.invoke("log");
     let sent = running.wait_sent(2).await;
     assert_eq!(
@@ -346,7 +405,13 @@ async fn defer_then_follow_up() {
 /// nothing; a declared ephemeral Command cannot answer there.
 #[tokio::test(flavor = "multi_thread")]
 async fn dispatcher_replies_to_the_message() {
-    let running = Running::start(Module::new("m").add(ping()).add(secret()).add(prefix())).await;
+    let running = Running::start(
+        Module::new("m")
+            .add::<Ping>()
+            .add::<Secret>()
+            .add::<Prefix>(),
+    )
+    .await;
     let message = |content: &str| {
         json!({
             "id": "6", "channel_id": "5", "author": user(), "content": content,
@@ -367,7 +432,7 @@ async fn dispatcher_replies_to_the_message() {
     );
     assert_eq!(running.gw.dispatch("MESSAGE_CREATE", message("!secret")), 1);
     let reports = running.wait_report().await;
-    assert!(reports[0].contains("secret"), "{reports:?}");
+    assert!(reports[0].contains("Secret"), "{reports:?}");
     assert!(reports[0].contains("cannot be ephemeral"), "{reports:?}");
     // Story 6.8: the failure is a public notice replying to the message.
     let sent = running.sent();
@@ -382,7 +447,7 @@ async fn dispatcher_replies_to_the_message() {
 /// original; no type-4 callback.
 #[tokio::test(flavor = "multi_thread")]
 async fn auto_defer_then_returned_message_edits_the_original() {
-    let running = Running::start_with(Module::new("m").add(lazy()), |b| {
+    let running = Running::start_with(Module::new("m").add::<Lazy>(), |b| {
         b.ack_deadline(Duration::from_millis(50));
     })
     .await;
@@ -412,12 +477,12 @@ async fn auto_defer_then_returned_message_edits_the_original() {
 /// `ModalUnavailable`.
 #[tokio::test(flavor = "multi_thread")]
 async fn modal_opens_as_the_first_response() {
-    let module = Module::new("m").add(feedback()).add(prefix());
+    let module = Module::new("m").add::<Feedback>().add::<Prefix>();
     let running = Running::start_with(module, |b| {
         b.ack_deadline(Duration::ZERO);
     })
     .await;
-    assert!(!feedback().auto_defer());
+    assert!(!Feedback::descriptor().auto_defer());
     running.invoke("feedback");
     let sent = running.wait_sent(1).await;
     assert_eq!(sent.len(), 1, "{sent:?}");
@@ -449,60 +514,66 @@ async fn modal_opens_as_the_first_response() {
 
 // ---- Story 6.7: autocomplete ----
 
-#[derive(Options)]
-#[expect(dead_code, reason = "only autocomplete reads it")]
-struct PrefixOptions {
-    #[option(description = "The prefix", autocomplete = prefix_suggest)]
-    value: String,
-    #[option(description = "How many")]
-    limit: i64,
-    #[option(description = "Many suggestions", autocomplete = many)]
-    many: Option<String>,
-    #[option(description = "A failing suggestion", autocomplete = failing)]
-    failing: Option<String>,
-}
-
 /// What `prefix_suggest` saw: the focused option and `partial.limit`.
 static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-#[autocomplete]
-async fn prefix_suggest(
-    ctx: AutocompleteCtx,
-    partial: Partial<PrefixOptions>,
-) -> HandlerResult<Responded> {
-    let focused = ctx.focused();
-    SEEN.lock().unwrap().push(format!(
-        "{}:{}:{}:{:?}",
-        ctx.command_path(),
-        focused.name(),
-        focused.value(),
-        partial.limit
-    ));
-    let typed = focused.value().to_owned();
-    Ok(ctx.respond(
-        ["!", "?", "."]
-            .into_iter()
-            .map(|p| AutocompleteChoice::new(format!("{typed}{p}"), p)),
-    ))
-}
-
-#[autocomplete]
-async fn many(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-    Ok(ctx.respond((0..30).map(|i| AutocompleteChoice::new(format!("c{i}"), format!("v{i}")))))
-}
-
-#[autocomplete]
-async fn failing(_ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-    Err(HandlerError::new(std::io::Error::other("lookup failed")))
-}
-
+#[derive(SlashCommand)]
 #[command("config (set|get) prefix", description = "Prefix settings")]
-async fn config(
-    _ctx: CommandCtx,
-    _path: ConfigPath,
-    _options: PrefixOptions,
-) -> HandlerResult<Components> {
-    Ok(text("ok"))
+#[expect(dead_code, reason = "only autocomplete reads it")]
+struct Config {
+    #[option(description = "The prefix", autocomplete)]
+    value: String,
+    #[option(description = "How many")]
+    limit: i64,
+    #[option(description = "Many suggestions", autocomplete)]
+    many: Option<String>,
+    #[option(description = "A failing suggestion", autocomplete)]
+    failing: Option<String>,
+}
+
+impl Config {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, _path: ConfigPath) -> HandlerResult<Components> {
+        Ok(text("ok"))
+    }
+
+    #[autocomplete(value)]
+    async fn prefix_suggest(
+        ctx: AutocompleteCtx,
+        typed: &str,
+        filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        SEEN.lock().unwrap().push(format!(
+            "{}:{}:{typed}:{:?}",
+            ctx.command_path(),
+            ctx.focused().name(),
+            filled.limit
+        ));
+        Ok(["!", "?", "."]
+            .into_iter()
+            .map(|p| (p.to_owned(), format!("{typed}{p}")))
+            .collect())
+    }
+
+    #[autocomplete(many)]
+    async fn many(
+        _ctx: AutocompleteCtx,
+        _typed: &str,
+        _filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        Ok((0..30)
+            .map(|i| (format!("v{i}"), format!("c{i}")))
+            .collect())
+    }
+
+    #[autocomplete(failing)]
+    async fn failing(
+        _ctx: AutocompleteCtx,
+        _typed: &str,
+        _filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        Err(HandlerError::new(std::io::Error::other("lookup failed")))
+    }
 }
 
 /// Dispatches an autocomplete interaction of `config set prefix` focusing
@@ -534,7 +605,7 @@ fn autocomplete_interaction(running: &Running, focused: &str, typed: &str) {
 async fn start_autocomplete() -> (Running, Reports) {
     let reports = Reports::default();
     let sink = reports.clone();
-    let running = Running::start_with(Module::new("m").add(config()), move |b| {
+    let running = Running::start_with(Module::new("m").add::<Config>(), move |b| {
         b.error_sink(ErrorOrigin::Autocomplete, sink);
     })
     .await;
@@ -610,21 +681,39 @@ async fn autocomplete_error_sends_empty_choices() {
 
 const VALIDATION: &str = "That input isn't valid. Check it and try again.";
 
+#[derive(SlashCommand)]
 #[command("broken", description = "Always fails")]
-async fn broken(_ctx: CommandCtx) -> HandlerResult<Components> {
-    Err(HandlerError::new(std::io::Error::other("database down")))
+struct Broken;
+
+impl Broken {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        Err(HandlerError::new(std::io::Error::other("database down")))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("explode", description = "Always panics")]
-async fn explode(_ctx: CommandCtx) -> HandlerResult<Components> {
-    tokio::task::yield_now().await;
-    panic!("kaboom")
+struct Explode;
+
+impl Explode {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        tokio::task::yield_now().await;
+        panic!("kaboom")
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("sluggish", description = "Fails after the auto-defer")]
-async fn sluggish(_ctx: CommandCtx) -> HandlerResult<Components> {
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    Err(HandlerError::new(std::io::Error::other("too slow")))
+struct Sluggish;
+
+impl Sluggish {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        Err(HandlerError::new(std::io::Error::other("too slow")))
+    }
 }
 
 static CHECKED_RAN: Mutex<Vec<i64>> = Mutex::new(Vec::new());
@@ -638,16 +727,19 @@ fn positive(days: &i64, _ctx: &CommandCtx) -> Result<(), MessageKey> {
     }
 }
 
-#[derive(Options)]
-struct DaysOptions {
+#[derive(SlashCommand)]
+#[command("purge", description = "Validated options")]
+struct Purge {
     #[option(description = "How many days", validate = positive)]
     days: i64,
 }
 
-#[command("purge", description = "Validated options")]
-async fn purge(_ctx: CommandCtx, options: DaysOptions) -> HandlerResult<Components> {
-    CHECKED_RAN.lock().unwrap().push(options.days);
-    Ok(text("purged"))
+impl Purge {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        CHECKED_RAN.lock().unwrap().push(self.days);
+        Ok(text("purged"))
+    }
 }
 
 /// Asserts `request` is the ephemeral type-4 notice of `text`.
@@ -666,12 +758,12 @@ fn assert_notice(request: &RecordedRequest, text: &str) {
 /// The Errors AC: an `Err` is one ephemeral generic notice, then a report.
 #[tokio::test(flavor = "multi_thread")]
 async fn handler_error_is_an_ephemeral_notice() {
-    let running = Running::start(Module::new("m").add(broken())).await;
+    let running = Running::start(Module::new("m").add::<Broken>()).await;
     running.invoke("broken");
     let sent = running.wait_sent(1).await;
     assert_notice(&sent[0], GENERIC);
     let reports = running.wait_report().await;
-    assert_eq!(reports, ["commands::broken:database down"]);
+    assert_eq!(reports, ["commands::Broken:database down"]);
     assert_eq!(running.sent().len(), 1);
     running.run.abort();
 }
@@ -680,13 +772,13 @@ async fn handler_error_is_an_ephemeral_notice() {
 /// panic, and the next interaction on the shard is answered.
 #[tokio::test(flavor = "multi_thread")]
 async fn panic_is_a_notice_and_the_shard_keeps_running() {
-    let running = Running::start(Module::new("m").add(explode()).add(ping())).await;
+    let running = Running::start(Module::new("m").add::<Explode>().add::<Ping>()).await;
     running.invoke("explode");
     let sent = running.wait_sent(1).await;
     assert_notice(&sent[0], GENERIC);
     let reports = running.wait_report().await;
     assert!(
-        reports[0].starts_with("commands::explode:Panic"),
+        reports[0].starts_with("commands::Explode:Panic"),
         "{reports:?}"
     );
     assert!(reports[0].contains("kaboom"), "{reports:?}");
@@ -700,7 +792,7 @@ async fn panic_is_a_notice_and_the_shard_keeps_running() {
 /// then an ephemeral follow-up.
 #[tokio::test(flavor = "multi_thread")]
 async fn error_after_auto_defer_deletes_then_follows_up() {
-    let running = Running::start_with(Module::new("m").add(sluggish()), |b| {
+    let running = Running::start_with(Module::new("m").add::<Sluggish>(), |b| {
         b.ack_deadline(Duration::from_millis(100));
     })
     .await;
@@ -713,7 +805,7 @@ async fn error_after_auto_defer_deletes_then_follows_up() {
     assert_eq!(sent[2].route_path(), Some(FOLLOWUP));
     assert_eq!(body(&sent[2])["flags"], 32832);
     assert_eq!(body(&sent[2])["components"][0]["content"], GENERIC);
-    assert_eq!(running.wait_report().await, ["commands::sluggish:too slow"]);
+    assert_eq!(running.wait_report().await, ["commands::Sluggish:too slow"]);
     running.run.abort();
 }
 
@@ -721,7 +813,7 @@ async fn error_after_auto_defer_deletes_then_follows_up() {
 /// notice, and no sink report is made.
 #[tokio::test(flavor = "multi_thread")]
 async fn validator_failure_is_a_notice_without_a_report() {
-    let running = Running::start(Module::new("m").add(purge())).await;
+    let running = Running::start(Module::new("m").add::<Purge>()).await;
     running.invoke_with("purge", &json!([{ "name": "days", "type": 4, "value": 0 }]));
     let sent = running.wait_sent(1).await;
     assert_notice(&sent[0], VALIDATION);
@@ -733,38 +825,57 @@ async fn validator_failure_is_a_notice_without_a_report() {
     running.run.abort();
 }
 
+#[derive(SlashCommand)]
 #[command(
     "survey",
     description = "Opens a modal, then fails",
     auto_defer = false
 )]
-async fn survey(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-    let modal = SendFeedback.modal("Survey").push(TextDisplay::new("Hi"));
-    let _ = r.show_modal(modal).await?.done();
-    Err(HandlerError::new(std::io::Error::other("after modal")))
+struct Survey;
+
+impl Survey {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        r: CommandResponder<Manual>,
+    ) -> HandlerResult<Responded> {
+        let modal =
+            noctis::__private::ui::__macro::build_modal::<SendFeedback>(SendFeedback, "Survey")
+                .push(TextDisplay::new("Hi"));
+        let _ = r.show_modal(modal).await?.done();
+        Err(HandlerError::new(std::io::Error::other("after modal")))
+    }
 }
 
 /// Story 6.8 Matrix 14: after a modal no notice is sent; the error is
 /// still reported.
 #[tokio::test(flavor = "multi_thread")]
 async fn no_notice_after_a_modal() {
-    let running = Running::start(Module::new("m").add(survey())).await;
+    let running = Running::start(Module::new("m").add::<Survey>()).await;
     running.invoke("survey");
     let reports = running.wait_report().await;
-    assert_eq!(reports, ["commands::survey:after modal"]);
+    assert_eq!(reports, ["commands::Survey:after modal"]);
     let sent = running.sent();
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert_eq!(body(&sent[0])["type"], 9);
     running.run.abort();
 }
 
+#[derive(UserCommand)]
 #[user_command("Report", response = ephemeral, auto_defer = false)]
-async fn report_user(
-    _ctx: CommandCtx,
-    _target: noctis::ui::ResolvedUser,
-    r: CommandResponder<Manual>,
-) -> HandlerResult<Responded> {
-    Ok(r.defer_reply().await?.done())
+struct ReportUser;
+
+impl ReportUser {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _target: noctis::ui::ResolvedUser,
+        r: CommandResponder<Manual>,
+    ) -> HandlerResult<Responded> {
+        Ok(r.defer_reply().await?.done())
+    }
 }
 
 /// Story 6.10 AC 3: a `response = ephemeral, auto_defer = false` user
@@ -772,7 +883,7 @@ async fn report_user(
 /// and no auto-defer runs (even with a 0 ms deadline).
 #[tokio::test(flavor = "multi_thread")]
 async fn manual_user_command_defers_ephemerally() {
-    let running = Running::start_with(Module::new("m").add(report_user()), |b| {
+    let running = Running::start_with(Module::new("m").add::<ReportUser>(), |b| {
         b.ack_deadline(Duration::ZERO);
     })
     .await;
@@ -802,5 +913,88 @@ async fn manual_user_command_defers_ephemerally() {
     let sent = running.sent();
     assert_eq!(sent.len(), 1, "{sent:?}");
     assert!(running.reports.0.lock().unwrap().is_empty());
+    running.run.abort();
+}
+
+// ---- Story 6.11: one struct per interaction ----
+
+/// What `Warn`'s handler decoded: `(user id, rule)`.
+static WARNED: Mutex<Vec<(u64, i64)>> = Mutex::new(Vec::new());
+
+#[derive(SlashCommand)]
+#[command("warn", description = "d", response = ephemeral)]
+struct Warn {
+    #[option(description = "u")]
+    user: noctis::ui::ResolvedUser,
+    #[option(description = "r", autocomplete)]
+    rule: i64,
+}
+
+impl Warn {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        WARNED
+            .lock()
+            .unwrap()
+            .push((self.user.user.id.get(), self.rule));
+        Ok(text("warned"))
+    }
+
+    #[autocomplete(rule)]
+    async fn rule(
+        _ctx: AutocompleteCtx,
+        typed: &str,
+        _filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<i64>> {
+        let base: i64 = typed.parse().unwrap_or(0);
+        Ok([(base + 1, "next"), (base + 2, "after")]
+            .into_iter()
+            .collect())
+    }
+}
+
+/// Story 6.11 AC "Slash command end to end": the handler runs with the
+/// decoded `self`, and an autocomplete interaction for `rule` gets exactly
+/// one type-8 callback with integer values.
+#[tokio::test(flavor = "multi_thread")]
+async fn slash_command_struct_end_to_end() {
+    let running = Running::start(Module::new("m").add::<Warn>()).await;
+    let d = json!({
+        "id": "100", "application_id": "7", "type": 2, "token": "tok", "version": 1,
+        "authorizing_integration_owners": {}, "entitlements": [], "user": user(),
+        "data": {
+            "id": "9", "name": "warn", "type": 1,
+            "options": [
+                { "type": 6, "name": "user", "value": "3" },
+                { "type": 4, "name": "rule", "value": 12 }
+            ],
+            "resolved": { "users": { "3": user() } }
+        },
+    });
+    assert_eq!(running.gw.dispatch("INTERACTION_CREATE", d), 1);
+    let sent = running.wait_sent(1).await;
+    assert_eq!(body(&sent[0])["type"], 4);
+    assert_eq!(body(&sent[0])["data"]["flags"], 32768 | 64);
+    assert!(WARNED.lock().unwrap().contains(&(3, 12)));
+
+    let d = json!({
+        "id": "100", "application_id": "7", "type": 4, "token": "tok", "version": 1,
+        "authorizing_integration_owners": {}, "entitlements": [], "user": user(),
+        "data": {
+            "id": "9", "name": "warn", "type": 1,
+            "options": [{ "type": 4, "name": "rule", "value": "4", "focused": true }]
+        },
+    });
+    assert_eq!(running.gw.dispatch("INTERACTION_CREATE", d), 1);
+    let sent = running.wait_sent(2).await;
+    assert_eq!(
+        body(&sent[1]),
+        json!({ "type": 8, "data": { "choices": [
+            { "name": "next", "value": 5 },
+            { "name": "after", "value": 6 },
+        ]}})
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(running.sent().len(), 2);
     running.run.abort();
 }

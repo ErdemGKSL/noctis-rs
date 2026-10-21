@@ -1,0 +1,6 @@
+error: free-function `#[command]` handlers are withdrawn: one struct per interaction, with a `#[handler]` method
+         = help: #[derive(SlashCommand)] #[command("ping", ..)] struct Ping; impl Ping { #[handler] async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { .. } }
+ --> tests/types/withdrawn_command.rs:4:10
+  |
+4 | async fn ping(_ctx: CommandCtx) -> HandlerResult<Responded> {
+  |          ^^^^

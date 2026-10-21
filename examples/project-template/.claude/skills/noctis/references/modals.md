@@ -9,7 +9,7 @@ FR-63, FR-64.
 
 ## 1. Anatomy: `#[derive(Modal)]`
 
-A modal is one struct, like every interaction [planned: Story 6.11]: `#[derive(Modal)]`
+A modal is one struct, like every interaction: `#[derive(Modal)]`
 with `#[modal("id", <routing args>, defaults(title = …))]`. Fields **without** an input
 attribute are its Payload (encoded in the modal's `custom_id`, length-proven like any
 component, MOD-08); fields **with** one are the inputs. Its handler is a method on it
@@ -47,19 +47,19 @@ let modal: noctis::ui::Modal = ReportForm::blank(7).build();         // Payload 
 let form: ReportForm = ReportForm::from_json(raw_interaction_bytes)?; // ModalForm::from_json
 ```
 
-`X { .. }.build()` builds from a whole value and pre-fills every input with its field;
+`X { .. }.build()` builds from a whole value; pre-filling every input with its field is
+[planned: Story 9.4], so today it builds the same modal as `X::blank(..)`.
 `X::blank(<payload fields in order>)` builds with empty inputs, for forms whose required
 inputs (`String`, a `Choices` enum, `bool`) have no "empty" value.
 
 - `#[modal("id", .., defaults(title = "…"))]` is required: the id is the modal's own
   (it needs a `#[handler]` method, else `[CID-04]`), `defaults(..)` must give `title`
-  (a missing block or key is a compile error naming it), and an unknown key is an error.
-  This release spells it `#[modal(route = R, title = "…")]` with a separate submit
-  `#[derive(Route)]` struct `R` and opens it with `ReportForm::modal(R { .. })`.
+  (a missing block or key is a compile error naming it: ``#[modal]` needs
+  `defaults(title = "…")` ``), and an unknown key is an error. The withdrawn
+  `#[modal(route = R, title = "…")]` form is a compile error whose help shows this one.
 - **One input field = one top-level component**, in declaration order; 1–5 inputs (MOD-02),
   counted at `cargo check`. Each input field carries **exactly one** component attribute
-  (a field with none is a Payload field; this release: `[MOD-02] field … is not a modal
-  component`), two are `[MOD-03] … has two component
+  (a field with none is a Payload field), two are `[MOD-03] … has two component
   attributes`. A tuple/unit struct, an enum or generics are `[MOD-02]` errors.
 - The **field name is the input key** (its `custom_id`, `r#` stripped: `r#type` → `"type"`;
   1–100 characters, CID-01). The modal's own `custom_id` is the Route's.
@@ -153,10 +153,6 @@ impl Bio {
 }
 ```
 
-This release spells the opener `r.show_modal(BioForm::modal(SaveBio { .. }))` on a free
-`#[command(.., auto_defer = false)]` function taking `r: CommandResponder<Manual>`; Story
-6.11 replaces the `BioForm::modal(..)` opener with `.build()`.
-
 **A button that opens a modal must be `auto_defer = false`** [planned, Story 7.8]:
 
 ```rust
@@ -175,8 +171,8 @@ impl EditBio {
 }
 ```
 
-Per-render overrides on a built modal: `.title(..)` and `.value(field, ..)` (one input's
-initial value); anything not overridden comes from `defaults(..)` and the value.
+Per-render overrides on a built modal, `.title(..)` and `.value(field, ..)` (one input's
+initial value), are [planned: Story 9.3]; today the title comes from `defaults(..)`.
 
 The `Manual` responder is required exactly when `auto_defer = false` is declared (an
 `[INT-05]` compile error otherwise), `show_modal` on an auto-defer responder fails with
@@ -429,7 +425,7 @@ and counts toward the 5. In a derived modal it is a `#[text_display("…")]` fie
 ## 4b. Building a modal at runtime: `Modal`
 
 `Modal` is the callback `data` of a modal (type 9). It is built only from a modal struct
-value (`form.build()`; this release: from a Route value), so its `custom_id` is that
+value (`form.build()` or `Form::blank(..)`), so its `custom_id` is that
 struct's encoding (MOD-08) and the submission goes to its handler. There is no
 `Modal::new`, no string id and no `Default`; a struct without a `#[handler]` fails with
 `[CID-04]`.
@@ -442,8 +438,19 @@ use noctis::ui::{
     TextInputStyle, validate,
 };
 
-let mut modal = Report { id: 7 }.modal("Report a user")      // RouteComponents::modal (this release; Story 6.11 folds it into .build())
-    .push(TextDisplay::new("Tell us what happened."))
+#[derive(Modal)]
+#[modal("mod.report", defaults(title = "Report a user"))]
+struct Report {
+    id: u64,                                                   // Payload
+    #[text_display("Tell us what happened.")]
+    _intro: (),
+}
+impl Report {
+    #[handler]
+    async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> { … }
+}
+
+let mut modal = Report::blank(7)                               // the derived part; push the rest
     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))
     .push(ModalLabel::new("Evidence", FileUpload::new("files").required(false).min_values(0).max_values(3)))

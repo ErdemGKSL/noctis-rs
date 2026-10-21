@@ -1,5 +1,5 @@
 error: [INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`
- --> tests/ui/int/INT-06_autocomplete_auto_defer.rs:3:16
-  |
-3 | #[autocomplete(auto_defer = false)] // [INT-06]
-  |                ^^^^^^^^^^^^^^^^^^
+  --> tests/ui/int/INT-06_autocomplete_auto_defer.rs:16:20
+   |
+16 |     #[autocomplete(query, auto_defer = false)] // [INT-06]
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^

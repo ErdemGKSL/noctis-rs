@@ -1,12 +1,18 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("t.press")]
+#[derive(Button)]
+#[button("t.press", defaults(style = Secondary, label = "Go"))]
 struct Press {
     n: u8,
 }
-impl noctis::__private::ui::Handled for Press {}
+
+impl Press {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+}
 
 fn main() {
-    let _ = components! { row [ Press { n: 1 }.button(), Press { n: 1 }.button("x") ] };
+    let _ = components! { row [ Press { n: 1 }.build(), Press { n: 1 }.build().label("x") ] };
 }

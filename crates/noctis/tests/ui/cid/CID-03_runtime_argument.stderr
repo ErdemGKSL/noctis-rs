@@ -1,6 +1,6 @@
-error: [CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not support yet
+error: [CID-03] `ttl` is a runtime argument of #[button] that this Noctis release does not support yet
          = help: remove it for now; runtime arguments arrive with their release
- --> tests/ui/cid/CID-03_runtime_argument.rs:4:14
+ --> tests/ui/cid/CID-03_runtime_argument.rs:4:15
   |
-4 | #[route("a", ttl = "1m")]
-  |              ^^^
+4 | #[button("a", ttl = "1m", defaults(style = Secondary, label = "Go"))]
+  |               ^^^

@@ -1,7 +1,7 @@
 error[E0277]: [MOD-07] a Checkbox Group takes 1 to 10 options
-  --> tests/ui/mod/MOD-07_checkbox_group_eleven_choices.rs:38:11
+  --> tests/ui/mod/MOD-07_checkbox_group_eleven_choices.rs:33:11
    |
-38 |     pick: Vec<Eleven>,
+33 |     pick: Vec<Eleven>,
    |           ^^^^^^^^^^^ not 1 to 10 options
    |
    = help: the trait `CheckboxOptions` is not implemented for `Arity<11>`

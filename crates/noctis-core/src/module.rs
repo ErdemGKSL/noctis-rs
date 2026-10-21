@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::command::CommandHandler;
+use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
 use crate::menu::ContextMenuHandler;
 use crate::metadata::BaseMeta;
@@ -17,25 +18,11 @@ pub(crate) mod sealed {
     }
 }
 
-/// Something [`Module::add`] accepts: an `#[event]` handler, a
-/// `#[command]` descriptor or a `#[user_command]` / `#[message_command]`
-/// descriptor today; Routes and hooks join later. Sealed.
-///
-/// Event handlers come from `#[event]`: annotating `async fn on_user` gives
-/// a `fn on_user()` that returns the handler.
-///
-/// ```
-/// # use noctis_core::events::{EventCtx, EventHandler, UserUpdate};
-/// # use noctis_core::{Descriptor, HandlerResult};
-/// # async fn on_user_fn(_: EventCtx, _: UserUpdate) -> HandlerResult<()> {
-/// #     Ok(())
-/// # }
-/// # fn on_user() -> EventHandler {
-/// #     EventHandler::__new("bot::on_user", false, false, on_user_fn)
-/// # }
-/// fn is_descriptor(_: impl Descriptor) {}
-/// is_descriptor(on_user());
-/// ```
+/// A descriptor a Module stores: an [`EventHandler`], a
+/// [`CommandHandler`], a [`ContextMenuHandler`], a
+/// [`ComponentHandler`] or a [`ModalHandler`]. Sealed; what
+/// [`Register`] impls push with [`Module::__add`].
+#[doc(hidden)]
 pub trait Descriptor: sealed::Sealed {}
 
 impl sealed::Sealed for EventHandler {
@@ -62,6 +49,38 @@ impl sealed::Sealed for ContextMenuHandler {
 
 impl Descriptor for ContextMenuHandler {}
 
+impl sealed::Sealed for ComponentHandler {
+    fn register(self, module: &mut Module) {
+        module.components.push(self);
+    }
+}
+
+impl Descriptor for ComponentHandler {}
+
+impl sealed::Sealed for ModalHandler {
+    fn register(self, module: &mut Module) {
+        module.modals.push(self);
+    }
+}
+
+impl Descriptor for ModalHandler {}
+
+/// An interaction struct [`Module::add::<T>()`](Module::add) registers: a
+/// struct with a kind derive (`SlashCommand`, `UserCommand`,
+/// `MessageCommand`, `EventHandler`, `Button`, a select kind or `Modal`)
+/// and a `#[handler]` method. Its only item is hidden, so only the derives
+/// implement it.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a Noctis interaction: derive SlashCommand, UserCommand, MessageCommand, EventHandler, Button, a select kind or Modal and add a #[handler] method",
+    label = "not a Noctis interaction",
+    note = "`Module::add::<T>()` registers one struct per interaction"
+)]
+pub trait Register {
+    /// Appends the struct's descriptor to `module`.
+    #[doc(hidden)]
+    fn __register(module: Module) -> Module;
+}
+
 /// A description (and base metadata) a Module declares for a command node
 /// with [`Module::base`] or [`Module::group`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,10 +104,9 @@ pub(crate) enum NodeDecl {
 /// `module` order. The same tree can be mounted on several Apps (it is
 /// `Clone`). Ids are not validated yet.
 ///
-/// Event handlers come from `#[event]`: annotating `async fn award_xp`
-/// gives a `fn award_xp()` that returns the handler to [`add`](Self::add).
-/// Slash Commands come from `#[command]` the same way, context-menu
-/// commands from `#[user_command]` and `#[message_command]`.
+/// Every interaction is one struct with a kind derive and a `#[handler]`
+/// method (`#[derive(SlashCommand)]`, `#[derive(EventHandler)]`,
+/// `#[derive(Button)]`, …); [`add::<T>()`](Self::add) registers it.
 ///
 /// Commands of every mounted Module merge at `build()`: Modules sharing a
 /// base word build one base command, and [`base`](Self::base) /
@@ -97,15 +115,20 @@ pub(crate) enum NodeDecl {
 ///
 /// ```
 /// # use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
-/// # use noctis_core::{HandlerResult, Module};
+/// # use noctis_core::{HandlerResult, Module, Register};
 /// # async fn award_xp_fn(_: EventCtx, _: MessageCreate) -> HandlerResult<()> {
 /// #     Ok(())
 /// # }
-/// # fn award_xp() -> EventHandler {
-/// #     EventHandler::__new("bot::award_xp", false, false, award_xp_fn)
-/// # }
+/// // What `#[derive(EventHandler)]` and `#[handler]` generate for `AwardXp`.
+/// struct AwardXp;
+/// impl Register for AwardXp {
+///     fn __register(module: Module) -> Module {
+///         module.__add(EventHandler::__new("bot::AwardXp", false, false, award_xp_fn))
+///     }
+/// }
+///
 /// let profile = Module::new("profile")
-///     .add(award_xp())
+///     .add::<AwardXp>()
 ///     .module(Module::new("profile/badges"));
 /// assert_eq!(profile.id(), "profile");
 /// ```
@@ -115,6 +138,8 @@ pub struct Module {
     handlers: Vec<EventHandler>,
     commands: Vec<CommandHandler>,
     menus: Vec<ContextMenuHandler>,
+    components: Vec<ComponentHandler>,
+    modals: Vec<ModalHandler>,
     nodes: Vec<NodeDecl>,
     children: Vec<Module>,
 }
@@ -131,19 +156,27 @@ impl Module {
             handlers: Vec::new(),
             commands: Vec::new(),
             menus: Vec::new(),
+            components: Vec::new(),
+            modals: Vec::new(),
             nodes: Vec::new(),
             children: Vec::new(),
         }
     }
 
-    /// Adds a registration: an `#[event]` handler, a `#[command]`
-    /// descriptor or a context-menu descriptor. Adding the same descriptor twice registers it twice.
+    /// Registers the interaction struct `T`: its kind derive and
+    /// `#[handler]` method give the descriptor (a slash Command with its
+    /// `#[autocomplete(field)]` methods, a context menu, an event handler, a
+    /// component or a modal). Adding the same struct twice registers it
+    /// twice.
     #[must_use = "Module::add returns the Module with the registration added"]
-    #[expect(
-        clippy::should_implement_trait,
-        reason = "`Module::add` is the registration verb of the public API (AD-7), not `+`"
-    )]
-    pub fn add(mut self, descriptor: impl Descriptor) -> Self {
+    pub fn add<T: Register>(self) -> Self {
+        T::__register(self)
+    }
+
+    /// Appends `descriptor`; what the derives' [`Register`] impls call.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __add(mut self, descriptor: impl Descriptor) -> Self {
         descriptor.register(&mut self);
         self
     }
@@ -236,6 +269,18 @@ impl Module {
         &self.menus
     }
 
+    /// Its own component handlers, in `add` order (read by Story 7.1).
+    #[expect(dead_code, reason = "component dispatch is Story 7.1")]
+    pub(crate) fn components(&self) -> &[ComponentHandler] {
+        &self.components
+    }
+
+    /// Its own modal handlers, in `add` order (read by Story 7.1).
+    #[expect(dead_code, reason = "modal dispatch is Story 7.1")]
+    pub(crate) fn modals(&self) -> &[ModalHandler] {
+        &self.modals
+    }
+
     /// Its `base`/`group` declarations, in call order.
     pub(crate) fn nodes(&self) -> &[NodeDecl] {
         &self.nodes
@@ -256,11 +301,19 @@ impl fmt::Debug for Module {
             .iter()
             .map(ContextMenuHandler::menu_name)
             .collect();
+        let components: Vec<&str> = self
+            .components
+            .iter()
+            .map(ComponentHandler::route)
+            .collect();
+        let modals: Vec<&str> = self.modals.iter().map(ModalHandler::route).collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
             .field("commands", &commands)
             .field("menus", &menus)
+            .field("components", &components)
+            .field("modals", &modals)
             .field("nodes", &self.nodes)
             .field("children", &self.children)
             .finish()

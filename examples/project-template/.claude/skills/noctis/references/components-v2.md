@@ -5,8 +5,8 @@ with its limit and rule id, its cost, and the Noctis builder. Modal-only compone
 are in `modals.md`. All limits live in `Limits` (see `limits-cheatsheet.md`); placement
 is enforced by types, so illegal nesting does not compile (CV2-05).
 
-Everything here is in `noctis::ui` (`use noctis::ui::*;` or name the items), plus
-`RouteComponents` in the prelude. Every builder takes text as `impl Into<Cow<'static,
+Everything here is in `noctis::ui` (`use noctis::ui::*;` or name the items); the kind
+derives that give `.build()` are in the prelude. Every builder takes text as `impl Into<Cow<'static,
 str>>` (a `&'static str` or a `String`), setters are by value and chainable, and every
 type is `Debug + Clone + Send + Sync` and serializes straight to Discord JSON with unset
 fields and `false` flags left out. Items marked **[planned]** do not exist yet.
@@ -120,27 +120,25 @@ let items: Vec<ContainerComponent> = vec![TextDisplay::new("a").into(), Separato
 let container = items.into_iter().fold(Container::new(), Container::push);
 ```
 
-### Components from Routes: `.build()` (and today's `RouteComponents`)
+### Components from Routes: `.build()`
 
 Buttons and selects that send an interaction are built only from a Route value (AD-19);
-there is no string `custom_id` constructor. **Converged form [planned: Story 6.11]:** the
-struct's derive names its kind (`#[derive(Button)]`, `#[derive(StringSelectMenu)]`,
-`#[derive(UserSelectMenu)]`, `#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]`,
+there is no string `custom_id` constructor. The struct's derive names its kind
+(`#[derive(Button)]`, `#[derive(StringSelectMenu)]`, `#[derive(UserSelectMenu)]`,
+`#[derive(RoleSelectMenu)]`, `#[derive(MentionableSelectMenu)]`,
 `#[derive(ChannelSelectMenu)]`) with mandatory `defaults(..)`, and `X { .. }.build()`
 returns that component with the defaults applied; the setters below are per-render
-overrides (`routes-payloads-refs.md` §1 and §9). **This release:** `RouteComponents` (in the prelude, also
-`noctis::ui::RouteComponents`) adds `.button()`, `.string_select(options)`,
-`.user_select()`, `.role_select()`, `.mentionable_select()` and `.channel_select()` to
-every `#[derive(Route)]` struct.
+overrides (`routes-payloads-refs.md` §1 and §9). The withdrawn per-kind constructor methods are compile errors whose help
+says ``write `Route { .. }.build()` ``.
 
-- The Route needs a handler. `#[handler]` [planned, Epic 7] marks its Route as handled;
-  building a component for a Route without one fails with
-  ``[CID-04] Route `X` has no handler, so no component can be built for it``
-  (`note: the #[handler] macro implements Handled; add a handler for X to a mounted
-  Module`). Never implement that marker by hand.
-- Selects need a Route declared `select` (this release: `#[route("id", select)]`; from
-  Story 6.11 every select kind carries it; it implements
-  `noctis::codec::SelectRoute`): otherwise ``route `X` is not declared `select` ``.
+- The struct needs a `#[handler]` method (`impl X { #[handler] async fn handle(self,
+  ctx: ComponentCtx) -> HandlerResult<Responded> }`); without one the derive fails with
+  E0080 ``[CID-04] `X` has no #[handler] method, so no component can be built for it``.
+  Running the handler on a click needs Epic 7 [planned]. Never implement the hidden
+  `Handled`/`ComponentRoute` traits by hand.
+- Every select kind carries the per-render nonce (FR-25; it implements
+  `noctis::codec::SelectRoute`); there is no `select` argument (`#[string_select("id",
+  select)]` is CID-03 with help ``every select kind carries the nonce``).
 - A plain Route (no `select` or `signed`) is encoded when you build the
   component. Ids that need a select nonce, a signature or a Ref are
   finalized by the Responder before sending [planned, Epic 7]; you never handle them
@@ -328,12 +326,13 @@ in your render function (`views-and-recipes.md` §3).
 - **Where:** Action Row (`RowItem`) or Section accessory (`SectionAccessory`).
 - **Limits:** styles 1–4; label ≤ 80 (CV2-08); `custom_id` ≤ 100, proven by the Route
   derive (CID-01).
-- **Builder:** `MyRoute { .. }.build()` on a `#[derive(Button)]` struct (this release:
-  `.button()`) → `RouteButton<MyRoute>`, starting from the struct's `defaults(..)`; `.style(ButtonStyle::
+- **Builder:** `MyRoute { .. }.build()` on a `#[derive(Button)]` struct → `RouteButton<MyRoute>`, starting from the struct's `defaults(..)`; `.style(ButtonStyle::
   Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)`,
   `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`. A click reaches the Route's handler
-  with the decoded Payload as `self`. The defaults live on the struct (`#[button("id",
-  defaults(style = .., label = ..))]`, `ComponentRoute`) [planned, Story 9.3]. A literal label can be checked at `cargo check`
+  with the decoded Payload as `self` [planned, Epic 7]. The defaults live on the struct
+  (`#[button("id", defaults(style = .., label = "…" | emoji = "…", disabled = ..))]`;
+  `style` and one of `label`/`emoji` are required); locale-key defaults are [planned:
+  Story 9.3]. A literal label can be checked at `cargo check`
   with `label!("Save")` (a `Label`, also usable in a `const`); runtime text (localized
   labels included) is passed as is or checked with `Label::try_new(text, &limits)`.
 
@@ -359,9 +358,8 @@ ToggleModule { guild, module, enable: !enabled }
 
 ## 10. Select menus (types 3, 5, 6, 7, 8) — message variants
 
-Every select carries the per-render nonce (FR-25; this release: the Route must declare
-`select`). A select sits alone in its row: `ActionRow::select(route.build())` (this
-release: `route.string_select(options)` etc.). The shared fields below are `defaults(..)`
+Every select carries the per-render nonce (FR-25). A select sits alone in its row:
+`ActionRow::select(route.build())`. `defaults(..)` needs `placeholder`. The shared fields below are `defaults(..)`
 keys on the struct and per-render overrides.
 
 Shared fields of all five:
@@ -388,11 +386,17 @@ Shared fields of all five:
 - **Where:** alone in an Action Row (`RowSelect`).
 - **Limits:** ≤ 25 options; option label/value/description ≤ 100; `default` count
   within [min, max] (CV2-09). Zero options build (the validator checks them).
-- **Builder:** `route.build()` on a `#[derive(StringSelectMenu)]` struct, with options from
-  `defaults(options = SomeChoicesEnum)` or `.options(..)` per render (required by the
-  typestate when the defaults have none); this release: `route.string_select([SelectOption;
-  N])` (any `IntoIterator<Item = SelectOption>`, so a `Vec` works); `SelectOption::new(label, value).description(..)
-  .emoji(..).default(true)`. JSON type 3. `try_string_select` [planned].
+- **Builder:** `route.build()` on a `#[derive(StringSelectMenu)]` struct. With
+  `defaults(options = SomeChoicesEnum)` it returns a `StringSelect` holding the enum's
+  options (`.options(..)` replaces them per render). Without it, it returns a
+  `StringSelectBuilder<X>` that must get `.options(..)` (any `IntoIterator<Item =
+  SelectOption>`, so a `Vec` works) before it is placed: placing it without options is
+  E0277 ``[CV2-09] this String Select has no options: call `.options(..)` or declare
+  `defaults(options = …)` ``. `StringSelectBuilder` has `.placeholder(..)`,
+  `.min_values(n)`, `.max_values(n)`, `.disabled(bool)` and `.options(..) ->
+  StringSelect`. `SelectOption::new(label, value).description(..).emoji(..).default(true)`.
+  Options given empty at runtime fail the validator with `[CV2-09]` in every limit mode.
+  JSON type 3. `try_string_select` [planned].
 
 ```rust
 #[derive(StringSelectMenu, Debug, Clone, Copy)]
@@ -405,37 +409,47 @@ Size { item }.build().options([
 ])
 ```
 
+### 10a2. String Select without options yet: `StringSelectBuilder`
+
+- **Where:** nowhere until it has options: `.options(..)` turns it into a `StringSelect`
+  for an Action Row; placing it as is is E0277 `[CV2-09] this String Select has no
+  options` (the `OptionsGiven` bound).
+- **Limits:** as String Select once given options; setters keep the typestate.
+- **Builder:** `X.build()` on a `#[derive(StringSelectMenu)]` struct whose `defaults(..)`
+  have no `options`; `.placeholder(..)`, `.min_values(n)`, `.max_values(n)`,
+  `.disabled(bool)`, then `.options(iter) -> StringSelect`.
+
 ### 10b. User Select: `UserSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** shared fields; `default_values` count within [min, max] (CV2-09).
-- **Builder:** `route.build()` on a `#[derive(UserSelectMenu)]` struct (this release
-  `route.user_select()`), `.default_values(ids)` (this release `.default_users(ids)`) (any `IntoIterator<Item =
-  Id<UserMarker>>`, so an `Option` works; appends). JSON type 5.
+- **Builder:** `route.build()` on a `#[derive(UserSelectMenu)]` struct, `.default_users(ids)`
+  (any `IntoIterator<Item = Id<UserMarker>>`, so an `Option` works; appends). JSON type 5.
+  `.default_values(ids)` on every select kind is [planned: Story 9.3].
 
 ### 10c. Role Select: `RoleSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** as User Select.
-- **Builder:** `route.build()` on a `#[derive(RoleSelectMenu)]` struct (this release
-  `route.role_select()`), `.default_values(ids)` (this release `.default_roles(ids)`). JSON type 6.
+- **Builder:** `route.build()` on a `#[derive(RoleSelectMenu)]` struct, `.default_roles(ids)`.
+  JSON type 6.
 
 ### 10d. Mentionable Select: `MentionableSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** as User Select.
-- **Builder:** `route.build()` on a `#[derive(MentionableSelectMenu)]` struct (this
-  release `route.mentionable_select()`), `.default_users(ids)`, `.default_roles(ids)`
+- **Builder:** `route.build()` on a `#[derive(MentionableSelectMenu)]` struct,
+  `.default_users(ids)`, `.default_roles(ids)`
   (appended in call order). JSON type 7.
 
 ### 10e. Channel Select: `ChannelSelect`
 
 - **Where:** alone in an Action Row.
 - **Limits:** as User Select.
-- **Builder:** `route.build()` on a `#[derive(ChannelSelectMenu)]` struct (this release
-  `route.channel_select()`), `.default_values(ids)` (this release `.default_channels(ids)`),
-  `.channel_types([ChannelType::GuildText])` (twilight's `ChannelType`; none = every
-  type). JSON type 8.
+- **Builder:** `route.build()` on a `#[derive(ChannelSelectMenu)]` struct,
+  `.default_channels(ids)`, `.channel_types([ChannelType::GuildText])` (twilight's
+  `ChannelType`; none = every type; also a `defaults(channel_types = [GuildText, ..])`
+  key). JSON type 8.
 
 ## 11. Raw escape hatch (FR-31) [planned]
 
@@ -600,21 +614,17 @@ file      := file "(" attachment_ref ")"
 separator := separator [ "(" [spacing = small | large] [, divider = expr] ")" ]   (both optional, any order, each once)
 row       := row "[" (button | {hole}),* "]" | row "[" select "]"
 button    := route.build() [.setter(..)]* | link(url = "…", label = "…") | premium(sku)
-             (this release: route.button() | route.button(label) [.setter(..)]*)
 select    := route.build() [.setter(..)]*
-             (this release: route.string_select(options) | route.user_select() | route.role_select()
-             | route.mentionable_select() | route.channel_select()   [.setter(..)]*)
 hole      := "{" expr "}"                       one already-built component (block statements allowed)
 spread    := ".." expr                          IntoIterator of components; top level or container only
 ```
 
 - `media` is a string literal (an `https` URL, becomes `Media::url(..)`) or any
   expression convertible into `Media` (an `AttachmentRef`, a `Media`).
-- A Route component is any expression whose method chain contains `.build()` (this
-  release: `.button(..)` or `.<kind>_select(..)`); its kind comes from the struct's
+- A Route component is any expression whose method chain contains `.build()`; its kind comes from the struct's
   derive: the receiver is the Route value and the calls after it
   (`.style(..)`, `.label(..)`, `.placeholder(..)`, `.max_values(..)`, `.disabled(..)`,
-  `.emoji(..)`, …) are re-applied in order. `.button(label)` is `.button().label(label)`.
+  `.emoji(..)`, …) are re-applied in order.
 - `link` needs literal `url` and `label`, in that order. `button_with` arrives with
   Story 9.3 [planned]. Spreads in a `row`, `section` or `gallery` are a syntax error:
   build a dynamic row with `ActionRow::try_buttons` and pass it as a `{hole}`.

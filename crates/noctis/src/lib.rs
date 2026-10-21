@@ -6,34 +6,38 @@
 //! # Modules
 //!
 //! - The crate root: [`App`], [`AppBuilder`], [`Token`], [`State`],
-//!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`event`](macro@event),
-//!   [`command`](macro@command), [`CommandHandler`], [`CommandCtx`],
-//!   [`CommandPath`], [`UnknownCommandPath`], [`CommandMetadata`]
+//!   [`Runtime`], [`Plugin`], [`Resource`], [`Module`], [`Register`], the
+//!   kind derives ([`SlashCommand`](macro@SlashCommand),
+//!   [`UserCommand`](macro@UserCommand),
+//!   [`MessageCommand`](macro@MessageCommand),
+//!   [`EventHandler`](macro@EventHandler), [`Button`](macro@Button), the
+//!   select derives and [`Modal`](macro@Modal)), the [`handler`](macro@handler)
+//!   and [`autocomplete`](macro@autocomplete) method attributes,
+//!   [`CommandHandler`], [`CommandCtx`], [`CommandPath`],
+//!   [`UnknownCommandPath`], [`CommandMetadata`]
 //!   ([`Permissions`], [`InteractionContext`], [`IntegrationType`]),
-//!   [`user_command`](macro@user_command),
-//!   [`message_command`](macro@message_command), [`ContextMenuHandler`],
-//!   [`MenuKind`], [`MenuTargetError`], [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
+//!   [`ContextMenuHandler`], [`MenuKind`], [`MenuTargetError`],
+//!   [`ComponentCtx`], [`ModalSubmitCtx`], [`ComponentHandler`],
+//!   [`ModalHandler`], [`ComponentKind`], [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
 //!   edge's tuning) and the errors ([`Error`], [`BuildError`],
 //!   [`BuildViolation`], [`StartError`], [`RunError`], [`EnvError`],
 //!   [`TokenError`], [`ResourceConflict`], [`HttpConfigError`],
 //!   [`AckDeadlineMissed`]).
-//! - [`events`]: the gateway event payloads `#[event]` handlers take, and
-//!   [`events::EventCtx`].
+//! - [`events`]: the gateway event payloads `#[derive(EventHandler)]`
+//!   handlers take, and [`events::EventCtx`].
 //! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
 //!   and [`twilight::model`].
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
-//! - [`prelude`]: `use noctis::prelude::*;` brings the [`Route`](prelude::Route),
-//!   [`Payload`](prelude::Payload) and [`PayloadEnum`](prelude::PayloadEnum)
-//!   derives, the `Route` and `Payload` traits,
-//!   [`RouteComponents`](prelude::RouteComponents), [`Rgb`](ui::Rgb) and the
-//!   macros [`components!`], [`label!`], [`placeholder!`], [`content!`] and
-//!   [`rgb!`], and the [`event`](macro@event), [`command`](macro@command),
-//!   [`user_command`](macro@user_command) and
-//!   [`message_command`](macro@message_command) attributes with
-//!   [`CommandCtx`] into scope.
+//! - [`prelude`]: `use noctis::prelude::*;` brings every kind derive,
+//!   [`handler`](macro@handler), [`autocomplete`](macro@autocomplete), the
+//!   [`Payload`](macro@Payload), [`PayloadEnum`](macro@PayloadEnum) and
+//!   [`Choices`](macro@Choices) derives, the `Route` and `Payload` traits,
+//!   [`Rgb`](ui::Rgb), the contexts and responders, and the macros
+//!   [`components!`], [`label!`], [`placeholder!`], [`content!`] and
+//!   [`rgb!`] into scope.
 //! - [`ui`]: the Components V2 message model: one type per component,
-//!   placement checked by the compiler, components built from Routes, and
-//!   attachments.
+//!   placement checked by the compiler, components built from kind-derived
+//!   structs, and attachments.
 //! - [`codec`]: Payload field encodings ([`codec::Field`],
 //!   [`codec::BoundedStr`]), the checks custom fields are tested with, and the
 //!   traits the derives implement.
@@ -42,12 +46,29 @@
 //! - [`bytes`]: [`Bytes`](bytes::Bytes), the value type every byte-store port
 //!   takes and returns.
 //!
-//! # Routes
+//! # One struct per interaction
 //!
-//! `#[derive(Route)]` turns a struct into a Route: a typed `custom_id` whose
-//! fields are its Payload. The derive proves at compile time that every id
-//! fits Discord's 100 characters (CID-01), and a struct that could exceed it
-//! fails `cargo check` with the route id and the worst case.
+//! Every interaction is one struct (AD-6, AD-26). A kind derive names the
+//! kind; its one attribute carries the id and the routing arguments (and,
+//! for components and modals, the mandatory `defaults(..)`); the handler is
+//! the struct's `#[handler]` method, taking `self`; and
+//! [`Module::add::<T>()`](Module::add) registers it. A struct without a
+//! `#[handler]` method does not compile (`[CID-04]` for components and
+//! modals).
+//!
+//! | Derive | Attribute | `#[handler]` parameters |
+//! | --- | --- | --- |
+//! | [`SlashCommand`](macro@SlashCommand) | `#[command("path", description = "…", ..)]` | `(self, ctx: CommandCtx[, path: <Struct>Path][, r: CommandResponder<..>])` |
+//! | [`UserCommand`](macro@UserCommand) / [`MessageCommand`](macro@MessageCommand) | `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]` | `(self, ctx: CommandCtx, target: ResolvedUser \| ResolvedMessage[, r])` |
+//! | [`EventHandler`](macro@EventHandler) | optional `#[event(ordered, droppable)]` | `(self, ctx: EventCtx, event: <payload>)` |
+//! | [`Button`](macro@Button), the select derives | `#[button("id", <codec args>, defaults(..))]`, … | `(self, ctx: ComponentCtx)` |
+//! | [`Modal`](macro@Modal) | `#[modal("id", <codec args>, defaults(title = "…"))]` | `(self, ctx: ModalSubmitCtx)` |
+//!
+//! A component struct is a Route: its fields are the Payload of its
+//! `custom_id`, and the derive proves at compile time that every id fits
+//! Discord's 100 characters (CID-01). `X { .. }.build()` builds the
+//! component from the declared `defaults(..)`; the setters override one
+//! field each.
 //!
 //! ```
 //! use noctis::codec::RouteShape;
@@ -57,36 +78,33 @@
 //! pub struct ItemMarker;
 //!
 //! /// `shop.buy: F 1 + route 8 + sep 1 + S 0 + N 0 + body 14 + T 0 = 24 (limit 100)`
-//! #[derive(Route, Debug, PartialEq)]
-//! #[route("shop.buy")]
+//! #[derive(Button, Debug, PartialEq)]
+//! #[button("shop.buy", defaults(style = Primary, label = "Buy"))]
 //! struct BuyButton {
 //!     item: Id<ItemMarker>,
 //!     qty: u8,
 //! }
 //!
+//! impl BuyButton {
+//!     #[handler]
+//!     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+//!         # unimplemented!()
+//!         // Answering components arrives with Epic 7.
+//!     }
+//! }
+//!
 //! assert_eq!(BuyButton::ID.as_str(), "shop.buy");
 //! assert_eq!(BuyButton::SHAPE, RouteShape::INLINE);
 //! assert_eq!(<BuyButton as Payload>::MAX_ENCODED_LEN, Some(14));
-//!
-//! /// A unit enum is a one-character field.
-//! #[derive(PayloadEnum, Debug, Clone, Copy, PartialEq)]
-//! enum Size {
-//!     Small,
-//!     Large,
-//! }
-//!
-//! #[derive(Route)]
-//! #[route("shop.size", schema = 1, select)]
-//! struct SizePicker {
-//!     size: Size,
-//! }
-//! assert_eq!(SizePicker::SCHEMA, 1);
+//! let button = BuyButton { item: Id::new(7), qty: 1 }.build().label("Buy one");
+//! let _ = button;
+//! let _shop = Module::new("shop").add::<BuyButton>();
 //! ```
 //!
-//! `#[route("id", args…)]` takes the route id (1 to 24 characters of
-//! `[a-z0-9._-]`, not starting with `_`) and, in any order, the codec
-//! arguments `by_ref`, `overflow = spill`, `schema = n` (1..=61), `select`
-//! and `signed`. Each derived Route also gets a
+//! The kind attribute takes the id (1 to 24 characters of `[a-z0-9._-]`,
+//! not starting with `_`) and, in any order, the codec arguments `by_ref`,
+//! `overflow = spill`, `schema = n` (1..=61) and `signed`; every select kind
+//! carries the select nonce. Each component struct also gets a
 //! `__noctis_route_width_<Name>` test that prints its width breakdown
 //! (`cargo test -- --nocapture noctis_route_width`).
 //!
@@ -214,9 +232,10 @@
 //! # Modules and events
 //!
 //! A [`Module`] groups registrations under a path-like id and nests other
-//! Modules; [`AppBuilder::module`] mounts a tree. `#[event]` turns an
-//! `async fn(ctx: EventCtx, event: <payload>) -> HandlerResult<()>` into a
-//! descriptor for [`Module::add`]; the payload types are in [`events`].
+//! Modules; [`AppBuilder::module`] mounts a tree.
+//! `#[derive(EventHandler)]` on a unit struct, with a `#[handler]` method
+//! taking `(self, ctx: EventCtx, event: <payload>)`, is an event handler
+//! [`Module::add`] registers; the payload types are in [`events`].
 //! `build()` folds every tree once, parent before child, and derives the
 //! gateway filter (only interactions and handled event types are
 //! deserialized) and the intents (a missing privileged intent is
@@ -235,26 +254,37 @@
 //!
 //! struct Xp(std::sync::atomic::AtomicU64);
 //!
-//! #[event]
-//! async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-//!     if let Some(xp) = ctx.state::<Xp>() {
-//!         xp.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+//! #[derive(EventHandler)]
+//! struct AwardXp;
+//!
+//! impl AwardXp {
+//!     #[handler]
+//!     async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+//!         if let Some(xp) = ctx.state::<Xp>() {
+//!             xp.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+//!         }
+//!         let _ = msg.author.id;
+//!         Ok(())
 //!     }
-//!     let _ = msg.author.id;
-//!     Ok(())
 //! }
 //!
 //! /// Runs before the concurrent handlers, in per-guild order.
+//! #[derive(EventHandler)]
 //! #[event(ordered)]
-//! async fn audit_join(ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> {
-//!     let _ = (ctx.module(), ev.user.id);
-//!     Ok(())
+//! struct AuditJoin;
+//!
+//! impl AuditJoin {
+//!     #[handler]
+//!     async fn handle(self, ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> {
+//!         let _ = (ctx.module(), ev.user.id);
+//!         Ok(())
+//!     }
 //! }
 //!
 //! fn module() -> Module {
 //!     Module::new("profile")
-//!         .add(award_xp())
-//!         .module(Module::new("profile/audit").add(audit_join()))
+//!         .add::<AwardXp>()
+//!         .module(Module::new("profile/audit").add::<AuditJoin>())
 //! }
 //!
 //! #[tokio::main]
@@ -273,7 +303,7 @@
 //! `build()` also merges the slash Commands of every mounted Module: handlers
 //! whose paths share a base word become one base command, in each scope
 //! (global, or each guild of `guilds = [..]`) separately. The merged set is
-//! checked once with the same rules as `#[command]` (tree shape, sizes,
+//! checked once with the same rules as `#[derive(SlashCommand)]` (tree shape, sizes,
 //! counts, metadata agreement, duplicate paths and context-menu names); each
 //! broken rule is one [`BuildViolation::Command`] whose notes name the
 //! Modules and the scope. [`Module::base`] declares a base command's
@@ -288,25 +318,37 @@
 //! use noctis::ui::{Components, TextDisplay};
 //! use noctis::{BaseMeta, Permissions};
 //!
+//! #[derive(SlashCommand)]
 //! #[command("config set", description = "Change a setting")]
-//! async fn config_set(_ctx: CommandCtx) -> HandlerResult<Components> {
-//!     Ok(Components::new().push(TextDisplay::new("Saved.")))
+//! struct ConfigSet;
+//!
+//! impl ConfigSet {
+//!     #[handler]
+//!     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+//!         Ok(Components::new().push(TextDisplay::new("Saved.")))
+//!     }
 //! }
 //!
+//! #[derive(SlashCommand)]
 //! #[command("config get prefix", description = "Show the prefix")]
-//! async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<Components> {
-//!     Ok(Components::new().push(TextDisplay::new("Prefix: `!`")))
+//! struct ConfigGetPrefix;
+//!
+//! impl ConfigGetPrefix {
+//!     #[handler]
+//!     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+//!         Ok(Components::new().push(TextDisplay::new("Prefix: `!`")))
+//!     }
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")] async fn main() {
-//! let settings = Module::new("settings").add(config_set()).base(
+//! let settings = Module::new("settings").add::<ConfigSet>().base(
 //!     "config",
 //!     BaseMeta::new()
 //!         .description("Configure the bot")
 //!         .default_member_permissions(Permissions::MANAGE_GUILD),
 //! );
 //! let prefix = Module::new("prefix")
-//!     .add(config_get_prefix())
+//!     .add::<ConfigGetPrefix>()
 //!     .group("config get", "Read a setting");
 //! // One `/config` with `set` and `get prefix`, MANAGE_GUILD for both.
 //! assert!(App::builder().module(settings).module(prefix).build().is_ok());
@@ -336,25 +378,36 @@
 //! use noctis::ui::{Components, TextDisplay};
 //! use noctis::{CommandInput, CommandInvocation};
 //!
+//! #[derive(SlashCommand)]
 //! #[command("ping", description = "Check that the bot answers")]
-//! async fn ping(ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-//!     let acked = r.defer_reply().await?;
-//!     let text = format!("Pong ({})", ctx.response_locale());
-//!     acked.edit_reply(Components::new().push(TextDisplay::new(text))).await?;
-//!     Ok(acked.done())
-//! }
+//! struct Ping;
 //!
-//! #[event]
-//! async fn prefix(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-//!     if msg.content == "!ping" {
-//!         let invocation = CommandInvocation::new(CommandInput::new("ping"), msg.channel_id, msg.id, msg.author.id)
-//!             .guild_id(msg.guild_id);
-//!         ctx.dispatcher().run_command(invocation).await?;
+//! impl Ping {
+//!     #[handler]
+//!     async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+//!         let acked = r.defer_reply().await?;
+//!         let text = format!("Pong ({})", ctx.response_locale());
+//!         acked.edit_reply(Components::new().push(TextDisplay::new(text))).await?;
+//!         Ok(acked.done())
 //!     }
-//!     Ok(())
 //! }
 //!
-//! let _module = Module::new("ping").add(ping()).add(prefix());
+//! #[derive(EventHandler)]
+//! struct Prefix;
+//!
+//! impl Prefix {
+//!     #[handler]
+//!     async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+//!         if msg.content == "!ping" {
+//!             let invocation = CommandInvocation::new(CommandInput::new("ping"), msg.channel_id, msg.id, msg.author.id)
+//!                 .guild_id(msg.guild_id);
+//!             ctx.dispatcher().run_command(invocation).await?;
+//!         }
+//!         Ok(())
+//!     }
+//! }
+//!
+//! let _module = Module::new("ping").add::<Ping>().add::<Prefix>();
 //! ```
 //!
 //! # Errors shown to users
@@ -383,17 +436,23 @@
 //! const GUILD_ONLY: MessageKey = MessageKey::new("common.guild_only");
 //! const SAVE_FAILED: MessageKey = MessageKey::new("shop.save_failed");
 //!
+//! #[derive(SlashCommand)]
 //! #[command("buy", description = "Buy an item")]
-//! async fn buy(ctx: CommandCtx) -> HandlerResult<Components> {
-//!     // A known condition: the notice only, logged at debug.
-//!     let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(GUILD_ONLY))?;
-//!     // A real error with a friendly message: notice, log and Error Sink.
-//!     std::fs::metadata("/nonexistent")
-//!         .map_err(|e| HandlerError::new(e).with_message(SAVE_FAILED))?;
-//!     Ok(Components::new().push(TextDisplay::new(format!("Bought in {guild}"))))
+//! struct Buy;
+//!
+//! impl Buy {
+//!     #[handler]
+//!     async fn handle(self, ctx: CommandCtx) -> HandlerResult<Components> {
+//!         // A known condition: the notice only, logged at debug.
+//!         let guild = ctx.guild_id().ok_or_else(|| HandlerError::user(GUILD_ONLY))?;
+//!         // A real error with a friendly message: notice, log and Error Sink.
+//!         std::fs::metadata("/nonexistent")
+//!             .map_err(|e| HandlerError::new(e).with_message(SAVE_FAILED))?;
+//!         Ok(Components::new().push(TextDisplay::new(format!("Bought in {guild}"))))
+//!     }
 //! }
 //!
-//! let _module = Module::new("shop").add(buy());
+//! let _module = Module::new("shop").add::<Buy>();
 //! ```
 //!
 //! # Observability and Error Sinks
@@ -455,29 +514,174 @@
 
 pub use noctis_core::{
     AckDeadlineMissed, Acked, App, AppBuilder, AutoDefer, AutocompleteChoice, AutocompleteCtx,
-    AutocompleteError, AutocompleteHandler, AutocompleteValue, BaseMeta, BuildError,
-    BuildViolation, CanShowModal, Command, CommandCtx, CommandHandler, CommandInput,
-    CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder,
-    ContextMenuHandler, DeferMode, Descriptor, DispatchError, Dispatcher, EnvError, Ephemerality,
-    Error, ErrorOrigin, ErrorReport, ErrorSink, Focused, FollowupHandle, GatewayUrlError,
-    HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
+    AutocompleteError, AutocompleteValue, BaseMeta, BuildError, BuildViolation, CanShowModal,
+    Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation, CommandMetadata,
+    CommandOption, CommandPath, CommandResponder, ComponentCtx, ComponentHandler, ComponentKind,
+    ContextMenuHandler, DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error,
+    ErrorOrigin, ErrorReport, ErrorSink, Focused, FollowupHandle, GatewayUrlError, HandlerError,
+    HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
     InteractionContext, IntoResponse, InvalidOption, LogSink, Manual, MenuKind, MenuTargetError,
-    Module, OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending,
-    Permissions, Plugin, ReportKind, Resource, ResourceConflict, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State, Token,
+    ModalHandler, ModalSubmitCtx, Module, OptionError, OptionValue, Options, OutgoingMessage,
+    Partial, PartialOptions, Pending, Permissions, Plugin, Register, ReportKind, Resource,
+    ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
+    RunError, Runtime, StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token,
     TokenError, UnknownCommandPath, Visibility,
 };
 
-/// Derives [`Options`](trait@Options) for a struct with named fields: each
-/// field is one option of a slash Command, in declaration order (never
-/// reordered), and every literal is checked at compile time.
+/// Derives a slash Command from a struct: the struct's named fields are its
+/// options (a unit struct has none), `#[command("path or pattern", ..)]`
+/// declares it, and its `#[handler]` method answers it. The Command Path or
+/// Pattern and every option literal are checked at compile time;
+/// [`Module::add::<T>()`](Module::add) registers it.
 ///
-/// A `#[command]` handler takes the struct as its last parameter. On each
-/// invocation the interaction's options are decoded into it (a missing,
-/// mistyped or out-of-range value is an [`OptionError`], never a panic),
-/// then each field's validator runs (a failure is an [`InvalidOption`]
-/// carrying its [`MessageKey`](crate::rules::MessageKey)), and only then the
-/// handler. Unknown incoming options are ignored.
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, TextDisplay};
+///
+/// /// Rustdoc only: never the Command's description.
+/// #[derive(SlashCommand)]
+/// #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
+/// struct Config;
+///
+/// impl Config {
+///     #[handler]
+///     async fn handle(self, ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
+///         let text = match path {
+///             ConfigPath::SetPrefix | ConfigPath::SetWelcome => "Saved.",
+///             ConfigPath::GetPrefix | ConfigPath::GetWelcome => "Current value: `!`",
+///         };
+///         assert_eq!(ctx.command_path(), path.as_str());
+///         Ok(Components::new().push(TextDisplay::new(text)))
+///     }
+/// }
+///
+/// #[derive(SlashCommand)]
+/// #[command("ping", description = "Check that the bot answers", response = ephemeral)]
+/// struct Ping;
+///
+/// impl Ping {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+///         let acked = r.reply(Components::new().push(TextDisplay::new("Pong!"))).await?;
+///         acked.follow_up(Components::new().push(TextDisplay::new("Still here.")), Visibility::Public).await?;
+///         Ok(acked.done())
+///     }
+/// }
+///
+/// assert_eq!(ConfigPath::ALL[0].as_str(), "config set prefix");
+/// assert_eq!(Config::descriptor().paths(), ["config set prefix", "config set welcome", "config get prefix", "config get welcome"]);
+/// assert_eq!(Ping::descriptor().ephemerality(), Ephemerality::Ephemeral);
+/// let _module = Module::new("settings").add::<Config>().add::<Ping>();
+/// ```
+///
+/// The first argument of `#[command(..)]` is a string literal: a Command
+/// Path of 1 to 3 words separated by single ASCII spaces (1 word a command,
+/// 2 a subcommand, 3 a subcommand in a group; see
+/// [`rules::command::PathKind`]), or a Command Pattern with groups `(a|b)`
+/// and optional groups `(a|b)?`, expanded left to right by
+/// [`rules::command::expand`]. Then, in any order, each at most once:
+///
+/// - `description = "…"`: the description, 1 to 100 characters, required.
+///   Doc comments stay rustdoc and never become it.
+/// - `max_expansions = n`: the pattern's expansion cap (default 25).
+/// - `response = public | ephemeral` (default `public`): who sees the
+///   Command's reply; [`CommandHandler::ephemerality`] reads it. The
+///   auto-defer, `reply`, `defer_reply` and a returned message use it;
+///   `reply_as` and `defer_reply_as` take one explicitly, `follow_up` takes
+///   its own [`Visibility`], and no edit changes it once the reply is sent
+///   (INT-10). `response = update` is an `[INT-04]` compile error: only
+///   components update their message.
+/// - `auto_defer = true | false` (default `true`): with `false` no
+///   auto-defer is armed, so the handler answers within 3 s itself (a
+///   missed deadline is logged), and `show_modal` becomes available. The
+///   `#[handler]` method must then take `r: CommandResponder<`[`Manual`]`>`;
+///   [`CommandHandler::auto_defer`] reads it. A mismatch is a compile error
+///   citing `[INT-05]`: `auto_defer = false` without that responder, that
+///   responder without `auto_defer = false`, or `auto_defer = false`
+///   without any responder parameter.
+/// - the metadata arguments (see "Metadata" below).
+///
+/// Every check of [`rules::command::validate_pattern_spacing`],
+/// [`rules::command::expand`] and [`rules::command::validate_tree`] runs at
+/// expansion; each violation is a compile error naming its rule id, all of
+/// them at once.
+///
+/// # The `#[handler]` method
+///
+/// `(self, ctx: CommandCtx[, path: <Struct>Path][, r: CommandResponder<..>])`.
+/// A Path (no group) takes no `path`. A Pattern with a group generates `enum
+/// <Struct>Path` (with the struct's visibility); the handler takes it after
+/// `ctx` (a missing or extra `path` is a compile error naming it). Its
+/// variants concatenate the chosen alternatives in `UpperCamelCase` (words
+/// split on `-` and `_`; `Bare` when every group is absent; `_` before a
+/// leading digit; `Self_` for `Self`); two equal names are a compile error.
+/// The enum has `ALL` (expansion order), `as_str()` and implements
+/// [`CommandPath`]. `self` holds the decoded options: they are decoded
+/// before the handler runs (a missing, mistyped or out-of-range value is an
+/// [`OptionError`], never a panic), then each field's validator runs (a
+/// failure is an [`InvalidOption`] carrying its
+/// [`MessageKey`](crate::rules::MessageKey)), and only then the handler.
+/// Unknown incoming options are ignored. [`CommandHandler::options`] lists
+/// the declarations.
+///
+/// The method returns `HandlerResult<R>` with `R:` [`IntoResponse`]: a
+/// [`V2Message`](crate::ui::V2Message), [`Components`](crate::ui::Components)
+/// or [`LegacyMessage`](crate::ui::LegacyMessage) is sent as the reply
+/// (callback type 4) or, after `defer_reply`/`reply`, as an edit of the reply
+/// (INT-12); the [`Responded`] from `done()` means the handler answered
+/// itself. `HandlerResult<()>` does not compile: a Command must answer.
+/// Every V2 message gets `IS_COMPONENTS_V2` and passes the Limits validator
+/// ([`AppBuilder::limits`]) before any request. An `Err` or a panic sends
+/// the user a localized ephemeral notice, then goes to the `Command`
+/// [`ErrorSink`] (see the crate docs, "Errors shown to users").
+///
+/// A handler that has not answered [`AppBuilder::ack_deadline`] after the
+/// interaction arrived (default 2000 ms, 0-2500 ms) is acknowledged by the
+/// auto-defer: one type-5 callback carrying only the declared `EPHEMERAL`
+/// flag (INT-01), unless it is declared `auto_defer = false`. Its later
+/// `reply` or returned message then edits the reply, so at most one
+/// callback is ever sent (INT-03). After 15 minutes the interaction token
+/// is expired: edits and deletes of public messages use the bot token,
+/// everything else is [`ResponderError::TokenExpired`] (INT-02). A
+/// user-install-only interaction sends at most 5 follow-ups
+/// ([`ResponderError::FollowupCap`], INT-11). The [`Dispatcher`] has no
+/// auto-defer.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::Modal;
+///
+/// # fn feedback_form() -> Modal { unimplemented!() }
+/// #[derive(SlashCommand)]
+/// #[command("feedback", description = "Send feedback", auto_defer = false)]
+/// struct Feedback;
+///
+/// impl Feedback {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
+///         Ok(r.show_modal(feedback_form()).await?.done())
+///     }
+/// }
+///
+/// assert!(!Feedback::descriptor().auto_defer());
+/// ```
+///
+/// ```compile_fail,E0277
+/// use noctis::prelude::*;
+///
+/// #[derive(SlashCommand)]
+/// #[command("ping", description = "d")]
+/// struct Ping;
+///
+/// impl Ping {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<()> { // not a Command response
+///         Ok(())
+///     }
+/// }
+/// ```
+///
+/// # Options
 ///
 /// ```
 /// use noctis::prelude::*;
@@ -495,8 +699,9 @@ pub use noctis_core::{
 ///     if *days > 0 { Ok(()) } else { Err(MessageKey::new("warn.days.positive")) }
 /// }
 ///
-/// #[derive(Options)]
-/// struct WarnOptions {
+/// #[derive(SlashCommand)]
+/// #[command("warn", description = "Warn a member")]
+/// struct Warn {
 ///     /// Rustdoc only: never the option's description.
 ///     #[option(description = "Who to warn")]
 ///     member: ResolvedUser,
@@ -508,19 +713,21 @@ pub use noctis_core::{
 ///     reason: Option<String>,
 /// }
 ///
-/// #[command("warn", description = "Warn a member")]
-/// async fn warn(_ctx: CommandCtx, options: WarnOptions) -> HandlerResult<LegacyMessage> {
-///     let _ = (options.member.user.id, options.severity, options.days, options.reason);
-///     Ok(LegacyMessage::new("Warned."))
+/// impl Warn {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<LegacyMessage> {
+///         let _ = (self.member.user.id, self.severity, self.days, self.reason);
+///         Ok(LegacyMessage::new("Warned."))
+///     }
 /// }
 ///
-/// assert_eq!(warn().options().len(), 4);
-/// assert_eq!(WarnOptions::OPTIONS[2].name, "days");
-/// assert!(!WarnOptions::OPTIONS[2].required);
+/// assert_eq!(Warn::descriptor().options().len(), 4);
+/// assert_eq!(Warn::OPTIONS[2].name, "days");
+/// assert!(!Warn::OPTIONS[2].required);
 /// ```
 ///
 /// Field attribute `#[option(..)]`, arguments in any order, each at most
-/// once:
+/// once (fields are options in declaration order, never reordered):
 ///
 /// | Argument | Takes | Option types |
 /// | --- | --- | --- |
@@ -530,7 +737,7 @@ pub use noctis_core::{
 /// | `min_length = n`, `max_length = n` | unsuffixed integer, 0..=6000 and 1..=6000 (OPT-06) | STRING |
 /// | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (OPT-07) | CHANNEL |
 /// | `file_types = ["image", ".pdf"]` | `image`, `video`, `audio` or `.ext`, at most 10 (OPT-13) | ATTACHMENT |
-/// | `autocomplete = path` | an [`autocomplete`](macro@autocomplete) handler for this struct (E0277 otherwise); sets the autocomplete flag and links the handler (OPT-10, OPT-11) | STRING, INTEGER, NUMBER |
+/// | `autocomplete` | a bare flag: the struct's [`autocomplete`](macro@autocomplete) method for this field answers it (OPT-10, OPT-11) | STRING, INTEGER, NUMBER |
 /// | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>`, called only for present values | all |
 ///
 /// Field types ([`CommandOption`]; any other is an `[OPT-02]` compile
@@ -555,82 +762,149 @@ pub use noctis_core::{
 /// [`CommandOption::KIND`]: they fail as `error[E0080]: evaluation
 /// panicked: [RULE-ID] …` (OPT-03..08, OPT-10, OPT-11, OPT-13 misuse).
 ///
-/// The derive also generates `<Name>Partial` ([`Partial<Name>`](Partial)):
-/// the same fields, each an `Option`, which autocomplete handlers get
-/// (OPT-12).
+/// The derive also generates `<Struct>Partial` ([`Partial<Struct>`](Partial)):
+/// the same fields, each an `Option`, which the struct's autocomplete
+/// methods get (OPT-12).
 ///
 /// A missing description does not compile:
 ///
 /// ```compile_fail
 /// use noctis::prelude::*;
 ///
-/// #[derive(Options)]
-/// struct O {
+/// #[derive(SlashCommand)]
+/// #[command("days", description = "d")]
+/// struct Days {
 ///     days: i64, // [CMD-04]
 /// }
 /// ```
-pub use noctis_macros::Options;
+///
+/// # Metadata
+///
+/// These arguments set the Command's [`CommandMetadata`], read with
+/// [`CommandHandler::metadata`]. An argument left out stays unset (`None`,
+/// or no guilds) and is omitted when the Command is published, so Discord
+/// applies its default. They belong to the **base** command of every path
+/// the struct declares (META-02): a per-path form such as
+/// `permissions(set = …)` is a `[META-02]` compile error, and Commands
+/// sharing a base, in any Module, must agree, unset included, unless a
+/// [`Module::base`] declaration sets the field (checked at App build,
+/// [`BuildViolation::Command`]).
+///
+/// | Argument | Takes | Rules |
+/// | --- | --- | --- |
+/// | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions`: [`Permissions`] names joined by `\|` (a path's last segment counts, `Permissions::MANAGE_GUILD` works); the names are [`rules::command::PERMISSIONS`] (twilight's, so `USE_SLASH_COMMANDS`); an unknown name or other syntax fails. For admin-only use `ADMINISTRATOR` | META-01 |
+/// | `contexts = [Guild, BotDm, PrivateChannel]` | [`InteractionContext`] names, at least one, no duplicates, declared order | META-03 |
+/// | `integration_types = [GuildInstall, UserInstall]` | [`IntegrationType`] names, same shape | META-03, META-04 |
+/// | `nsfw = true` | `true` or `false` | CMD-07 |
+/// | `guilds = [123456789012345678]` | guild id integer literals (non-zero, distinct): the Command is published only to these guilds, and `contexts` / `integration_types` are then a `[META-03]` error | META-03 |
+///
+/// `dm_permission` does not exist (`[META-05]`; use `contexts = [Guild]`).
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::LegacyMessage;
+/// use noctis::{InteractionContext, Permissions};
+///
+/// #[derive(SlashCommand)]
+/// #[command("ban", description = "Ban a member", permissions = BAN_MEMBERS | MANAGE_GUILD, contexts = [Guild], nsfw = false)]
+/// struct Ban;
+///
+/// impl Ban {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<LegacyMessage> {
+///         Ok(LegacyMessage::new("Banned."))
+///     }
+/// }
+///
+/// let handler = Ban::descriptor();
+/// let meta = handler.metadata();
+/// assert_eq!(meta.default_member_permissions, Some(Permissions::BAN_MEMBERS | Permissions::MANAGE_GUILD));
+/// assert_eq!(meta.contexts, Some(&[InteractionContext::Guild][..]));
+/// assert_eq!(meta.integration_types, None);
+/// assert_eq!(meta.nsfw, Some(false));
+/// ```
+pub use noctis_macros::SlashCommand;
 
-/// Turns `async fn name(ctx: AutocompleteCtx[, partial: Partial<O>]) ->
-/// HandlerResult<Responded>` into `fn name() -> AutocompleteHandler<O>`,
-/// which `#[option(autocomplete = name)]` links to an option of the options
-/// struct `O` (FR-10). It is not added to a [`Module`]; the option's
-/// Command is.
+/// Marks the suggestion method of the option `field` of a
+/// [`SlashCommand`](macro@SlashCommand) struct, which carries
+/// `#[option(.., autocomplete)]` (FR-10, maintainer decisions §8):
+/// `#[autocomplete(field)] async fn <any>(ctx: AutocompleteCtx, typed: &str,
+/// filled: Partial<Self>) -> HandlerResult<Suggestions<T>>`, with `T` the
+/// field's type without `Option` (`i64`, `f64` or `String`).
 ///
-/// The handler answers with [`AutocompleteCtx::respond`], its only
-/// response (INT-06): synchronous, no `.await`, no defer, no Responder.
-/// [`AutocompleteCtx::focused`] is the option being typed in (its raw
-/// text, unvalidated), and [`Partial<O>`](Partial) holds the other options
-/// as `Option`s (OPT-12; Discord may omit any of them, and validators do not
-/// run). Without the `partial` parameter the handler fits any options
-/// struct.
+/// The method has no `self` (the options are incomplete). `typed` is the
+/// focused option's raw text, as typed so far (a JSON number arrives as its
+/// text, `""` when absent): parse it yourself. `filled` holds every other
+/// option as an `Option` (OPT-12: untrusted, partially filled, validators do
+/// not run). [`Module::add::<T>()`](Module::add) registers the methods with
+/// the Command.
 ///
-/// More than 25 choices are truncated to the first 25 with a warning
-/// (INT-07); a choice Discord would reject is dropped with a warning. When
-/// the handler errors, panics or has not returned 2.5 s after the
-/// interaction arrived ([`AutocompleteError::DeadlineMissed`]), Discord gets
-/// an empty list and the error goes to the Autocomplete Error Sink
-/// ([`ErrorOrigin::Autocomplete`]).
+/// Noctis sends the [`Suggestions`] (callback type 8): more than 25 are cut
+/// to the first 25 with a warning (INT-07); a label over 100 characters is
+/// cut with `…` and a warning; an empty label or a value Discord would
+/// reject (a `String` over 100 characters, an `i64` outside ±2^53, a
+/// non-finite `f64`) is dropped with a warning. A
+/// [`MessageKey`](crate::rules::MessageKey) label is
+/// rendered in the user's locale. When the method errors, panics or has not
+/// returned 2.5 s after the interaction arrived
+/// ([`AutocompleteError::DeadlineMissed`]), Discord gets an empty list and
+/// the error goes to the Autocomplete Error Sink
+/// ([`ErrorOrigin::Autocomplete`]). There is no defer: `auto_defer` or
+/// `response` here is an `[INT-06]` compile error.
 ///
 /// ```
 /// use noctis::prelude::*;
 /// use noctis::ui::LegacyMessage;
 ///
-/// #[derive(Options)]
-/// struct PrefixOptions {
-///     #[option(description = "The new prefix", autocomplete = prefix_suggest)]
+/// #[derive(SlashCommand)]
+/// #[command("config set prefix", description = "Set the prefix")]
+/// struct SetPrefix {
+///     #[option(description = "The new prefix", autocomplete)]
 ///     value: String,
 ///     #[option(description = "How many suggestions")]
 ///     limit: Option<i64>,
 /// }
 ///
-/// #[autocomplete]
-/// async fn prefix_suggest(ctx: AutocompleteCtx, partial: Partial<PrefixOptions>) -> HandlerResult<Responded> {
-///     let typed = ctx.focused().value().to_owned();
-///     let limit = usize::try_from(partial.limit.unwrap_or(5)).unwrap_or(0);
-///     Ok(ctx.respond(
-///         ["!", "?", "."]
+/// impl SetPrefix {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<LegacyMessage> {
+///         Ok(LegacyMessage::new(format!("Prefix set to {}", self.value)))
+///     }
+///
+///     #[autocomplete(value)]
+///     async fn value(_ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<String>> {
+///         let limit = usize::try_from(filled.limit.unwrap_or(5)).unwrap_or(0);
+///         Ok(["!", "?", "."]
 ///             .into_iter()
-///             .filter(|p| p.starts_with(&typed))
+///             .filter(|p| p.starts_with(typed))
 ///             .take(limit)
-///             .map(|p| AutocompleteChoice::new(p, p)),
-///     ))
+///             .map(|p| (p.to_owned(), p))
+///             .collect())
+///     }
 /// }
 ///
-/// /// Fits any options struct.
-/// #[autocomplete]
-/// async fn nothing(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-///     Ok(ctx.respond(Vec::new()))
+/// let _module = Module::new("config").add::<SetPrefix>();
+/// ```
+///
+/// A flagged option without its method does not compile (`[OPT-11]`):
+///
+/// ```compile_fail
+/// use noctis::prelude::*;
+/// use noctis::ui::LegacyMessage;
+///
+/// #[derive(SlashCommand)]
+/// #[command("find", description = "d")]
+/// struct Find {
+///     #[option(description = "d", autocomplete)]
+///     query: String,
 /// }
 ///
-/// #[command("config set prefix", description = "Set the prefix")]
-/// async fn set_prefix(_ctx: CommandCtx, options: PrefixOptions) -> HandlerResult<LegacyMessage> {
-///     Ok(LegacyMessage::new(format!("Prefix set to {}", options.value)))
+/// impl Find {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<LegacyMessage> {
+///         Ok(LegacyMessage::new("found"))
+///     }
 /// }
-///
-/// assert!(prefix_suggest().name().ends_with("::prefix_suggest"));
-/// let _ = nothing::<PrefixOptions>();
-/// let _module = Module::new("config").add(set_prefix()); // no `.add(prefix_suggest())`
 /// ```
 ///
 /// A `Partial` field is always an `Option`:
@@ -638,7 +912,8 @@ pub use noctis_macros::Options;
 /// ```compile_fail,E0308
 /// use noctis::prelude::*;
 ///
-/// #[derive(Options)]
+/// #[derive(SlashCommand)]
+/// #[command("o", description = "d")]
 /// struct O {
 ///     #[option(description = "d")]
 ///     limit: i64,
@@ -649,22 +924,227 @@ pub use noctis_macros::Options;
 ///     let _ = limit;
 /// }
 /// ```
+pub use noctis_macros::autocomplete;
+
+/// Marks the one `async` method of a kind-derived struct that handles its
+/// interaction (AD-6, AD-26). It takes no arguments; the routing arguments
+/// live on the kind attribute. The method takes `self` (or `mut self`) by
+/// value and is not generic; any name works. Beside it the macro emits the
+/// public `fn descriptor()`, the descriptor
+/// [`Module::add::<T>()`](Module::add) registers. Its parameters after
+/// `self` depend on the kind (see the crate docs, "One struct per
+/// interaction"); a wrong parameter is a type error naming the expected
+/// ones. A kind-derived struct without a `#[handler]` method does not
+/// compile (`[CID-04]` for components and modals), and two `#[handler]`
+/// methods are a duplicate-definition error.
 ///
-/// `autocomplete = path` must name an `#[autocomplete]` handler for the
-/// struct:
-///
-/// ```compile_fail,E0277
+/// ```compile_fail
 /// use noctis::prelude::*;
 ///
-/// fn plain() {}
+/// #[derive(Button)]
+/// #[button("shop.buy", defaults(style = Primary, label = "Buy"))]
+/// struct Buy { item: u64 } // [CID-04]: no #[handler] method
 ///
-/// #[derive(Options)]
-/// struct O {
-///     #[option(description = "d", autocomplete = plain)]
-///     query: String,
-/// }
+/// let _ = Buy { item: 1 }.build();
 /// ```
-pub use noctis_macros::autocomplete;
+pub use noctis_macros::handler;
+
+/// Derives a `USER` context-menu command from a unit struct:
+/// `#[user_command("Name", ..)]` declares it and the `#[handler]` method
+/// `(self, ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder<..>])`
+/// answers it.
+///
+/// The first argument is the menu name, a string literal of 1 to 32
+/// characters (UTF-16 counted; mixed case, spaces, apostrophes and emoji are
+/// fine, CTX-01). Then the metadata arguments of
+/// [`SlashCommand`](macro@SlashCommand) (`permissions`, `contexts`,
+/// `integration_types`, `nsfw`, `guilds`), `response` and `auto_defer` (with
+/// `auto_defer = false` the handler takes `CommandResponder<Manual>`, and
+/// [`ContextMenuHandler::auto_defer`] reads it). A context-menu command has
+/// no description and no options (`[CTX-02]` otherwise, including a struct
+/// with fields); its type comes from the derive (CTX-03). It answers like a
+/// slash Command: `R` is an [`IntoResponse`] value, and an optional
+/// [`CommandResponder`] comes after the target.
+///
+/// The target is the right-clicked user,
+/// [`ResolvedUser`](crate::ui::ResolvedUser) (`member` is `None` when the
+/// target is not a member of the guild, including outside a guild);
+/// [`MessageCommand`](macro@MessageCommand) gives a
+/// [`ResolvedMessage`](crate::ui::ResolvedMessage). `ctx.command_path()` is
+/// the menu name. An interaction without its target in the resolved data
+/// fails with a [`MenuTargetError`] and the handler does not run.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, LegacyMessage, ResolvedMessage, ResolvedUser, TextDisplay};
+/// use noctis::{CommandMetadata, MenuKind};
+///
+/// #[derive(UserCommand)]
+/// #[user_command("Show profile", contexts = [Guild], response = ephemeral)]
+/// struct ShowProfile;
+///
+/// impl ShowProfile {
+///     #[handler]
+///     async fn handle(self, ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
+///         assert_eq!(ctx.command_path(), "Show profile");
+///         Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
+///     }
+/// }
+///
+/// #[derive(MessageCommand)]
+/// #[message_command("Quote")]
+/// struct Quote;
+///
+/// impl Quote {
+///     #[handler]
+///     async fn handle(self, _ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
+///         Ok(r.reply(LegacyMessage::new(format!("> {}", target.message.content))).await?.done())
+///     }
+/// }
+///
+/// assert_eq!(ShowProfile::descriptor().kind(), MenuKind::User);
+/// assert_eq!(ShowProfile::descriptor().ephemerality(), Ephemerality::Ephemeral);
+/// assert_eq!(Quote::descriptor().menu_name(), "Quote");
+/// assert_eq!(Quote::descriptor().metadata(), &CommandMetadata::new());
+/// let _module = Module::new("profile").add::<ShowProfile>().add::<Quote>();
+/// ```
+pub use noctis_macros::UserCommand;
+
+/// Derives a `MESSAGE` context-menu command from a unit struct: like
+/// [`UserCommand`](macro@UserCommand) with `#[message_command("Name", ..)]`
+/// and `target: ResolvedMessage`
+/// ([`ResolvedMessage`](crate::ui::ResolvedMessage)).
+pub use noctis_macros::MessageCommand;
+
+/// Derives a typed gateway event handler from a unit struct, whose
+/// `#[handler]` method takes `(self, ctx: EventCtx, event: <payload>) ->
+/// HandlerResult<()>`. See [`events`] and
+/// [Modules and events](crate#modules-and-events).
+///
+/// The optional `#[event(..)]` takes, in any order, each at most once:
+///
+/// - `ordered`: the handler runs before the concurrent handlers of the
+///   event, one event at a time per guild. Ordered handlers share 64
+///   sub-queues keyed by a hash of the guild id (guildless events use
+///   sub-queue 0). A hung ordered handler blocks its whole sub-queue, and
+///   the events queued behind it keep their worker permits, so it can
+///   eventually hold every `handler_concurrency` permit and stop all event
+///   handling. noctis adds no timeout: bound slow work in ordered handlers
+///   yourself, for example with `tokio::time::timeout`.
+/// - `droppable`: the event may be dropped when the event lane is full, if
+///   every handler of its type is droppable. `TYPING_START` and
+///   `PRESENCE_UPDATE` are always droppable, whatever the flag says.
+pub use noctis_macros::EventHandler;
+
+/// Derives an interactive button (styles 1-4) from a struct: the struct is
+/// a Route whose fields are the Payload of its `custom_id`, and its
+/// `#[handler]` method `(self, ctx: ComponentCtx) -> HandlerResult<Responded>`
+/// handles the click (dispatch arrives with Epic 7).
+///
+/// `#[button("id", <codec args>, defaults(..))]`: the Route id (CID-03), the
+/// codec arguments `by_ref`, `overflow = spill`, `schema = n`, `signed`, and
+/// the mandatory `defaults(..)` with `style` (`Primary`, `Secondary`,
+/// `Success` or `Danger`) and `label` (at most 80 characters, CV2-08) or
+/// `emoji` (`"<:name:id>"`, `"<a:name:id>"` or a Unicode emoji), and
+/// optionally `disabled = true`. Values are literals, checked at compile
+/// time; omitted keys are not sent. Link and Premium buttons have no handler:
+/// they stay plain builders ([`LinkButton`](crate::ui::LinkButton),
+/// [`PremiumButton`](crate::ui::PremiumButton)). The runtime arguments
+/// `ttl`, `one_shot`, `owner`, `permissions`, `guard`, `rate_limit`,
+/// `response` and `auto_defer` arrive with Epic 7 and are a `[CID-03]`
+/// compile error until then.
+///
+/// `X { .. }.build()` returns a [`RouteButton<X>`](crate::ui::RouteButton)
+/// from the defaults; its setters (`label`, `emoji`, `style`, `disabled`)
+/// override one field each.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{ButtonStyle, Components};
+///
+/// #[derive(Button)]
+/// #[button("shop.buy", defaults(style = Primary, label = "Buy", emoji = "🛒"))]
+/// struct Buy {
+///     item: u64,
+/// }
+///
+/// impl Buy {
+///     #[handler]
+///     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+///         # unimplemented!()
+///     }
+/// }
+///
+/// let view: Components = components! {
+///     row [ Buy { item: 1 }.build(), Buy { item: 2 }.build().label("Buy two").style(ButtonStyle::Success) ],
+/// };
+/// assert_eq!(view.len(), 1);
+/// let _shop = Module::new("shop").add::<Buy>();
+/// ```
+pub use noctis_macros::Button;
+
+/// Derives a String Select from a struct (the struct is its Route, which
+/// always carries the select nonce): `#[string_select("id", <codec args>,
+/// defaults(placeholder = "…", ..))]`, and a `#[handler]` method `(self,
+/// ctx: ComponentCtx)`.
+///
+/// `defaults(..)` takes `placeholder` (required, at most 150 characters),
+/// `min_values` (0..=25), `max_values` (1..=25), `disabled` and `options =
+/// <a #[derive(Choices)] enum>` (at most 25 variants, CV2-09). Omitted keys
+/// are not sent: Discord's `min_values = 1` and `max_values = 1` apply.
+///
+/// With `options`, `X { .. }.build()` returns a
+/// [`StringSelect`](crate::ui::StringSelect) with the enum's options.
+/// Without, it returns a [`StringSelectBuilder<X>`](crate::ui::StringSelectBuilder),
+/// which can be placed only after `.options(iter)` (a `[CV2-09]` compile
+/// error otherwise). Setters: `placeholder`, `min_values`, `max_values`,
+/// `disabled`, `options`.
+///
+/// ```
+/// use noctis::prelude::*;
+/// use noctis::ui::{Components, SelectOption};
+///
+/// #[derive(StringSelectMenu)]
+/// #[string_select("ticket.kind", defaults(placeholder = "Pick a topic"))]
+/// struct TicketKind;
+///
+/// impl TicketKind {
+///     #[handler]
+///     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+///         # unimplemented!()
+///     }
+/// }
+///
+/// let view: Components = components! {
+///     row [ TicketKind.build().options([SelectOption::new("Billing", "billing")]) ],
+/// };
+/// assert_eq!(view.len(), 1);
+/// ```
+pub use noctis_macros::StringSelectMenu;
+
+/// Derives a User Select (`#[user_select("id", defaults(placeholder = "…",
+/// ..))]`): like [`StringSelectMenu`](macro@StringSelectMenu) without
+/// `options`; `.build()` returns a [`UserSelect`](crate::ui::UserSelect).
+pub use noctis_macros::UserSelectMenu;
+
+/// Derives a Role Select (`#[role_select("id", defaults(placeholder = "…",
+/// ..))]`); `.build()` returns a [`RoleSelect`](crate::ui::RoleSelect).
+pub use noctis_macros::RoleSelectMenu;
+
+/// Derives a Mentionable Select (`#[mentionable_select("id",
+/// defaults(placeholder = "…", ..))]`); `.build()` returns a
+/// [`MentionableSelect`](crate::ui::MentionableSelect).
+pub use noctis_macros::MentionableSelectMenu;
+
+/// Derives a Channel Select (`#[channel_select("id", defaults(placeholder =
+/// "…", channel_types = [GuildText, ..], ..))]`, with twilight
+/// `ChannelType` variant names); `.build()` returns a
+/// [`ChannelSelect`](crate::ui::ChannelSelect).
+pub use noctis_macros::ChannelSelectMenu;
+
+/// Withdrawn forms: each fails with a `= help:` showing the struct form.
+#[doc(hidden)]
+pub use noctis_macros::{Options, Route, command, event, message_command, user_command};
 
 pub mod cli {
     //! The built-in command line: `--publish`, `--publish-guild [<id>]`,
@@ -743,249 +1223,10 @@ pub mod observe {
     pub use noctis_core::observe::{METRICS, MetricInfo, MetricType, describe_metrics};
 }
 
-/// Declares a slash Command: checks its Command Path or Pattern at compile
-/// time and turns the `async fn` into `fn name() -> CommandHandler`, which
-/// [`Module::add`] takes.
-///
-/// ```
-/// use noctis::prelude::*;
-/// use noctis::ui::{Components, TextDisplay};
-///
-/// /// Rustdoc only: never the Command's description.
-/// #[command("config (set|get) (prefix|welcome)", description = "Configure the bot")]
-/// async fn config(ctx: CommandCtx, path: ConfigPath) -> HandlerResult<Components> {
-///     let text = match path {
-///         ConfigPath::SetPrefix | ConfigPath::SetWelcome => "Saved.",
-///         ConfigPath::GetPrefix | ConfigPath::GetWelcome => "Current value: `!`",
-///     };
-///     assert_eq!(ctx.command_path(), path.as_str());
-///     Ok(Components::new().push(TextDisplay::new(text)))
-/// }
-///
-/// #[command("ping", description = "Check that the bot answers", response = ephemeral)]
-/// async fn ping(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-///     let acked = r.reply(Components::new().push(TextDisplay::new("Pong!"))).await?;
-///     acked.follow_up(Components::new().push(TextDisplay::new("Still here.")), Visibility::Public).await?;
-///     Ok(acked.done())
-/// }
-///
-/// assert_eq!(ConfigPath::ALL[0].as_str(), "config set prefix");
-/// assert_eq!(config().paths(), ["config set prefix", "config set welcome", "config get prefix", "config get welcome"]);
-/// assert_eq!(ping().ephemerality(), Ephemerality::Ephemeral);
-/// let _module = Module::new("settings").add(config()).add(ping());
-/// ```
-///
-/// The first argument is a string literal: a Command Path of 1 to 3 words
-/// separated by single ASCII spaces (1 word a command, 2 a subcommand, 3 a
-/// subcommand in a group; see [`rules::command::PathKind`]), or a Command
-/// Pattern with groups `(a|b)` and optional groups `(a|b)?`, expanded left to
-/// right by [`rules::command::expand`]. Then, in any order, each at most
-/// once:
-///
-/// - `description = "…"`: the description, 1 to 100 characters, required.
-///   Doc comments stay rustdoc and never become it.
-/// - `max_expansions = n`: the pattern's expansion cap (default 25).
-/// - `response = public | ephemeral` (default `public`): who sees the
-///   Command's reply; [`CommandHandler::ephemerality`] reads it. The
-///   auto-defer, `reply`, `defer_reply` and a returned message use it;
-///   `reply_as` and `defer_reply_as` take one explicitly, `follow_up` takes
-///   its own [`Visibility`], and no edit changes it once the reply is sent
-///   (INT-10). `response = update` is an `[INT-04]` compile error: only
-///   components update their message.
-/// - `auto_defer = true | false` (default `true`): with `false` no
-///   auto-defer is armed, so the handler answers within 3 s itself (a
-///   missed deadline is logged), and `show_modal` becomes available. The
-///   handler must then take `r: CommandResponder<`[`Manual`]`>`;
-///   [`CommandHandler::auto_defer`] reads it. A mismatch is a compile error
-///   citing `[INT-05]`: `auto_defer = false` without that responder, that
-///   responder without `auto_defer = false`, or `auto_defer = false`
-///   without any responder parameter.
-///
-/// Every check of [`rules::command::validate_pattern_spacing`],
-/// [`rules::command::expand`] and [`rules::command::validate_tree`] runs at
-/// expansion; each violation is a compile error naming its rule id, all of
-/// them at once.
-///
-/// A path (no group) takes `(ctx: CommandCtx)`. A pattern with a group
-/// generates `enum <Fn>Path` (the fn name in `UpperCamelCase` plus `Path`,
-/// with the fn's visibility) and takes `(ctx: CommandCtx, path: <Fn>Path)`.
-/// Either form may take a trailing options struct, `options: O` with `O:
-/// Options` (see [`derive(Options)`](derive@Options)); the struct is decoded
-/// and validated before the handler runs, and
-/// [`CommandHandler::options`] lists its declarations.
-/// Its variants concatenate the chosen alternatives in `UpperCamelCase`
-/// (words split on `-` and `_`; `Bare` when every group is absent; `_` before
-/// a leading digit; `Self_` for `Self`); two equal names are a compile error.
-/// The enum has `ALL` (expansion order), `as_str()` and implements
-/// [`CommandPath`].
-///
-/// # Answering
-///
-/// A handler may take a [`CommandResponder`] right after `ctx` (and the
-/// path), before the options: `(ctx[, path][, r: CommandResponder][,
-/// options])`; any other order is a compile error listing these forms. It
-/// returns `HandlerResult<R>` with `R:` [`IntoResponse`]: a
-/// [`V2Message`](crate::ui::V2Message), [`Components`](crate::ui::Components)
-/// or [`LegacyMessage`](crate::ui::LegacyMessage) is sent as the reply
-/// (callback type 4) or, after `defer_reply`/`reply`, as an edit of the reply
-/// (INT-12); the [`Responded`] from `done()` means the handler answered
-/// itself. `HandlerResult<()>` does not compile: a Command must answer.
-/// Every V2 message gets `IS_COMPONENTS_V2` and passes the Limits validator
-/// ([`AppBuilder::limits`]) before any request. An `Err` or a panic sends
-/// the user a localized ephemeral notice, then goes to the `Command`
-/// [`ErrorSink`] (see the crate docs, "Errors shown to users").
-///
-/// A handler that has not answered [`AppBuilder::ack_deadline`] after the
-/// interaction arrived (default 2000 ms, 0-2500 ms) is acknowledged by the
-/// auto-defer: one type-5 callback carrying only the declared `EPHEMERAL`
-/// flag (INT-01), unless it is declared `auto_defer = false`. Its later
-/// `reply` or returned message then edits the reply, so at most one
-/// callback is ever sent (INT-03). After 15
-/// minutes the interaction token is expired: edits and deletes of public
-/// messages use the bot token, everything else is
-/// [`ResponderError::TokenExpired`] (INT-02). A user-install-only
-/// interaction sends at most 5 follow-ups ([`ResponderError::FollowupCap`],
-/// INT-11). The [`Dispatcher`] has no auto-defer.
-///
-/// ```
-/// use noctis::prelude::*;
-/// use noctis::ui::Modal;
-///
-/// # fn feedback_form() -> Modal { unimplemented!() }
-/// #[command("feedback", description = "Send feedback", auto_defer = false)]
-/// async fn feedback(_ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-///     Ok(r.show_modal(feedback_form()).await?.done())
-/// }
-///
-/// assert!(!feedback().auto_defer());
-/// ```
-///
-/// ```compile_fail,E0277
-/// use noctis::prelude::*;
-///
-/// #[command("ping", description = "d")]
-/// async fn ping(_ctx: CommandCtx) -> HandlerResult<()> { // not a Command response
-///     Ok(())
-/// }
-/// ```
-///
-/// # Metadata
-///
-/// These arguments set the Command's [`CommandMetadata`], read with
-/// [`CommandHandler::metadata`]. An argument left out stays unset (`None`,
-/// or no guilds) and is omitted when the Command is published, so Discord
-/// applies its default. They belong to the **base** command of every path
-/// the handler declares (META-02): a per-path form such as
-/// `permissions(set = …)` is a `[META-02]` compile error, and handlers
-/// sharing a base, in any Module, must agree, unset included, unless a
-/// [`Module::base`] declaration sets the field (checked at App build,
-/// [`BuildViolation::Command`]).
-///
-/// | Argument | Takes | Rules |
-/// | --- | --- | --- |
-/// | `permissions = MANAGE_GUILD \| BAN_MEMBERS` | `default_member_permissions`: [`Permissions`] names joined by `\|` (a path's last segment counts, `Permissions::MANAGE_GUILD` works); the names are [`rules::command::PERMISSIONS`] (twilight's, so `USE_SLASH_COMMANDS`); an unknown name or other syntax fails. For admin-only use `ADMINISTRATOR` | META-01 |
-/// | `contexts = [Guild, BotDm, PrivateChannel]` | [`InteractionContext`] names, at least one, no duplicates, declared order | META-03 |
-/// | `integration_types = [GuildInstall, UserInstall]` | [`IntegrationType`] names, same shape | META-03, META-04 |
-/// | `nsfw = true` | `true` or `false` | CMD-07 |
-/// | `guilds = [123456789012345678]` | guild id integer literals (non-zero, distinct): the Command is published only to these guilds, and `contexts` / `integration_types` are then a `[META-03]` error | META-03 |
-///
-/// `dm_permission` does not exist (`[META-05]`; use `contexts = [Guild]`).
-///
-/// ```
-/// use noctis::prelude::*;
-/// use noctis::ui::LegacyMessage;
-/// use noctis::{InteractionContext, Permissions};
-///
-/// #[command("ban", description = "Ban a member", permissions = BAN_MEMBERS | MANAGE_GUILD, contexts = [Guild], nsfw = false)]
-/// async fn ban(_ctx: CommandCtx) -> HandlerResult<LegacyMessage> {
-///     Ok(LegacyMessage::new("Banned."))
-/// }
-///
-/// let handler = ban();
-/// let meta = handler.metadata();
-/// assert_eq!(meta.default_member_permissions, Some(Permissions::BAN_MEMBERS | Permissions::MANAGE_GUILD));
-/// assert_eq!(meta.contexts, Some(&[InteractionContext::Guild][..]));
-/// assert_eq!(meta.integration_types, None);
-/// assert_eq!(meta.nsfw, Some(false));
-/// ```
-pub use noctis_macros::command;
-
-/// Declares a `USER` context-menu command: checks its name at compile time
-/// and turns `async fn name(ctx: CommandCtx, target: ResolvedUser[, r:
-/// CommandResponder]) -> HandlerResult<R>` into `fn name() ->
-/// ContextMenuHandler`, which
-/// [`Module::add`] takes.
-///
-/// The first argument is the menu name, a string literal of 1 to 32
-/// characters (UTF-16 counted; mixed case, spaces, apostrophes and emoji are
-/// fine, CTX-01). Then the metadata arguments of [`command`](macro@command)
-/// (`permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`),
-/// `response` and `auto_defer` (with `auto_defer = false` the handler takes
-/// `CommandResponder<Manual>`, and [`ContextMenuHandler::auto_defer`] reads
-/// it). A context-menu command has no description and no options
-/// (`[CTX-02]` otherwise); its type comes from the macro (CTX-03). It
-/// answers like a [`command`](macro@command): `R` is an [`IntoResponse`]
-/// value, and an optional [`CommandResponder`] comes after the target.
-///
-/// The handler's target is the right-clicked user,
-/// [`ResolvedUser`](crate::ui::ResolvedUser) (`member` is `None` when the
-/// target is not a member of the guild, including outside a
-/// guild); [`message_command`](macro@message_command) gives a
-/// [`ResolvedMessage`](crate::ui::ResolvedMessage). `ctx.command_path()` is
-/// the menu name. An interaction without its target in the resolved data
-/// fails with a [`MenuTargetError`] and the handler does not run.
-///
-/// ```
-/// use noctis::prelude::*;
-/// use noctis::ui::{Components, LegacyMessage, ResolvedMessage, ResolvedUser, TextDisplay};
-/// use noctis::{CommandMetadata, MenuKind};
-///
-/// #[user_command("Show profile", contexts = [Guild], response = ephemeral)]
-/// async fn show_profile(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Components> {
-///     assert_eq!(ctx.command_path(), "Show profile");
-///     Ok(Components::new().push(TextDisplay::new(format!("<@{}>", target.user.id))))
-/// }
-///
-/// #[message_command("Quote")]
-/// async fn quote(_ctx: CommandCtx, target: ResolvedMessage, r: CommandResponder) -> HandlerResult<Responded> {
-///     Ok(r.reply(LegacyMessage::new(format!("> {}", target.message.content))).await?.done())
-/// }
-///
-/// assert_eq!(show_profile().kind(), MenuKind::User);
-/// assert_eq!(show_profile().ephemerality(), Ephemerality::Ephemeral);
-/// assert_eq!(quote().menu_name(), "Quote");
-/// assert_eq!(quote().metadata(), &CommandMetadata::new());
-/// let _module = Module::new("profile").add(show_profile()).add(quote());
-/// ```
-pub use noctis_macros::user_command;
-
-/// Declares a `MESSAGE` context-menu command: like
-/// [`user_command`](macro@user_command), with `target:
-/// ResolvedMessage` ([`ResolvedMessage`](crate::ui::ResolvedMessage)).
-pub use noctis_macros::message_command;
-
-/// Turns `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`
-/// into `fn name() -> EventHandler`, which [`Module::add`] takes. See
-/// [`events`] and [Modules and events](crate#modules-and-events).
-///
-/// Arguments, in any order, each at most once:
-///
-/// - `ordered`: the handler runs before the concurrent handlers of the
-///   event, one event at a time per guild. Ordered handlers share 64
-///   sub-queues keyed by a hash of the guild id (guildless events use
-///   sub-queue 0). A hung ordered handler blocks its whole sub-queue, and
-///   the events queued behind it keep their worker permits, so it can
-///   eventually hold every `handler_concurrency` permit and stop all event
-///   handling. noctis adds no timeout: bound slow work in ordered handlers
-///   yourself, for example with `tokio::time::timeout`.
-/// - `droppable`: the event may be dropped when the event lane is full, if
-///   every handler of its type is droppable. `TYPING_START` and
-///   `PRESENCE_UPDATE` are always droppable, whatever the flag says.
-pub use noctis_macros::event;
-
 pub mod events {
-    //! Gateway event payloads for `#[event]` handlers, the [`EventCtx`]
-    //! they receive and the [`EventHandler`] descriptor `#[event]` builds.
+    //! Gateway event payloads for `#[derive(EventHandler)]` handlers, the
+    //! [`EventCtx`] they receive and the [`EventHandler`] descriptor their
+    //! `descriptor()` returns.
     //!
     //! Each payload type derives the gateway intent it needs; the table
     //! lists them. Non-privileged intents are added to the App
@@ -1030,13 +1271,18 @@ pub mod events {
     //! use noctis::events::{EventCtx, MessageCreate};
     //! use noctis::prelude::*;
     //!
-    //! #[event]
-    //! async fn award_xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    //!     let _ = (ctx.guild_id(), msg.author.id);
-    //!     Ok(())
+    //! #[derive(EventHandler)]
+    //! struct AwardXp;
+    //!
+    //! impl AwardXp {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+    //!         let _ = (ctx.guild_id(), msg.author.id);
+    //!         Ok(())
+    //!     }
     //! }
     //!
-    //! let module = Module::new("profile").add(award_xp());
+    //! let module = Module::new("profile").add::<AwardXp>();
     //! ```
     //!
     //! A type that is not a payload does not compile:
@@ -1045,22 +1291,33 @@ pub mod events {
     //! use noctis::events::EventCtx;
     //! use noctis::prelude::*;
     //!
-    //! #[event]
-    //! async fn h(ctx: EventCtx, text: String) -> HandlerResult<()> {
-    //!     Ok(())
+    //! #[derive(EventHandler)]
+    //! struct H;
+    //!
+    //! impl H {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: EventCtx, ev: String) -> HandlerResult<()> {
+    //!         Ok(())
+    //!     }
     //! }
     //! ```
     //!
-    //! Interactions are handled by commands and Routes, never by `#[event]`:
+    //! Interactions are handled by commands and components, never by an
+    //! event handler:
     //!
     //! ```compile_fail
     //! use noctis::events::EventCtx;
     //! use noctis::prelude::*;
     //! use noctis::twilight::model::gateway::payload::incoming::InteractionCreate;
     //!
-    //! #[event]
-    //! async fn h(ctx: EventCtx, i: InteractionCreate) -> HandlerResult<()> {
-    //!     Ok(())
+    //! #[derive(EventHandler)]
+    //! struct H;
+    //!
+    //! impl H {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: EventCtx, ev: InteractionCreate) -> HandlerResult<()> {
+    //!         Ok(())
+    //!     }
     //! }
     //! ```
     //!
@@ -1070,9 +1327,14 @@ pub mod events {
     //! use noctis::events::MessageCreate;
     //! use noctis::prelude::*;
     //!
-    //! #[event]
-    //! async fn h(ctx: u8, msg: MessageCreate) -> HandlerResult<()> {
-    //!     Ok(())
+    //! #[derive(EventHandler)]
+    //! struct H;
+    //!
+    //! impl H {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: u8, ev: MessageCreate) -> HandlerResult<()> {
+    //!         Ok(())
+    //!     }
     //! }
     //! ```
     //!
@@ -1082,8 +1344,15 @@ pub mod events {
     //! use noctis::events::{EventCtx, MessageCreate};
     //! use noctis::prelude::*;
     //!
-    //! #[event]
-    //! async fn h(ctx: EventCtx, msg: MessageCreate) {}
+    //! #[derive(EventHandler)]
+    //! struct H;
+    //!
+    //! impl H {
+    //!     #[handler]
+    //!     async fn handle(self, ctx: EventCtx, ev: MessageCreate)  {
+    //!         
+    //!     }
+    //! }
     //! ```
 
     pub use noctis_core::events::{
@@ -1156,9 +1425,10 @@ pub mod codec {
     //!   [`check::assert_worst_case`] for the tests of custom fields.
     //! - [`Route`], [`RouteId`], [`RouteShape`] and [`BodyKind`]: a Route's
     //!   id, codec shape (inline, by Ref or spill, with an optional select
-    //!   nonce and integrity tag), schema and Payload; usually derived
-    //!   with `#[derive(Route)]` from the [`prelude`](crate::prelude).
-    //! - [`SelectRoute`]: a Route declared `select` (`#[route("…", select)]`
+    //!   nonce and integrity tag), schema and Payload; implemented by the
+    //!   component and modal derives of the [`prelude`](crate::prelude)
+    //!   (`#[derive(Button)]`, the select derives, `#[derive(Modal)]`).
+    //! - [`SelectRoute`]: a Route with a select nonce (every select derive
     //!   implements it), the only kind a message select is built from.
     //! - [`Payload`] and [`PayloadDecode`]: an ordered field list, its
     //!   worst-case width [`Payload::MAX_ENCODED_LEN`], written through
@@ -1325,54 +1595,65 @@ pub mod ports {
 }
 
 pub mod prelude {
-    //! The derives and the traits they implement: `use noctis::prelude::*;`.
+    //! The derives, the method attributes and the traits they implement:
+    //! `use noctis::prelude::*;`.
     //!
-    //! - [`Route`]: the trait and `#[derive(Route)]`, which also derives the
-    //!   Payload and proves the 100-character bound at compile time.
-    //! - [`Payload`]: the trait and `#[derive(Payload)]`, for the Payload of a
-    //!   hand-written `Route`.
-    //! - [`PayloadEnum`]: `#[derive(PayloadEnum)]` on a unit enum of at most 62
-    //!   variants, a one-character [`Field`](crate::codec::Field).
-    //! - [`RouteComponents`]: `.button()`, `.string_select(..)`,
-    //!   `.user_select()`, `.role_select()`, `.mentionable_select()`,
-    //!   `.channel_select()` and `.modal(title)` on a Route value (see
-    //!   [`ui`](crate::ui)).
+    //! - The kind derives, one struct per interaction:
+    //!   [`SlashCommand`](macro@SlashCommand) (with `#[command]` and
+    //!   `#[option]`), [`UserCommand`](macro@UserCommand),
+    //!   [`MessageCommand`](macro@MessageCommand),
+    //!   [`EventHandler`](macro@EventHandler) (with `#[event]`),
+    //!   [`Button`](macro@Button), [`StringSelectMenu`](macro@StringSelectMenu),
+    //!   [`UserSelectMenu`](macro@UserSelectMenu),
+    //!   [`RoleSelectMenu`](macro@RoleSelectMenu),
+    //!   [`MentionableSelectMenu`](macro@MentionableSelectMenu),
+    //!   [`ChannelSelectMenu`](macro@ChannelSelectMenu) and
+    //!   [`Modal`](macro@Modal) (implementing [`ModalForm`], see
+    //!   [`ui`](crate::ui#modal-forms)); [`handler`](macro@handler) marks the
+    //!   method that handles the interaction and
+    //!   [`autocomplete`](macro@autocomplete) an option's suggestion method.
+    //! - [`Module`] (registration with `Module::add::<T>()`), [`App`],
+    //!   [`AppBuilder`] and [`State`]: building an App and reading its typed
+    //!   state.
+    //! - The contexts [`CommandCtx`], [`EventCtx`], [`AutocompleteCtx`],
+    //!   [`ComponentCtx`] and [`ModalSubmitCtx`]; [`HandlerError`] and
+    //!   [`HandlerResult`].
+    //! - [`CommandResponder`], [`Manual`], [`Responded`], [`IntoResponse`],
+    //!   [`Ephemerality`] and [`Visibility`]: how Commands answer.
+    //! - [`Options`](trait@Options) (what `SlashCommand` implements),
+    //!   [`CommandOption`] (the option field types), [`MessageKey`] (what
+    //!   option validators return), [`Partial`] and [`Suggestions`]
+    //!   (autocomplete).
+    //! - [`Route`] and [`Payload`]: the traits a component struct implements;
+    //!   `#[derive(Payload)]` for a hand-written Route's Payload and
+    //!   [`PayloadEnum`]: `#[derive(PayloadEnum)]` on a unit enum of at most
+    //!   62 variants, a one-character [`Field`](crate::codec::Field).
+    //! - [`Choices`]: the trait and `#[derive(Choices)]` on a unit enum, an
+    //!   option set.
     //! - [`Rgb`] and the macros [`components!`], [`label!`],
     //!   [`placeholder!`], [`content!`] and [`rgb!`].
-    //! - [`Modal`](macro@Modal): `#[derive(Modal)]` on a form struct,
-    //!   implementing [`ModalForm`] (see [`ui`](crate::ui#modal-forms)).
-    //! - [`Choices`]: the trait and `#[derive(Choices)]` on a unit enum, a
-    //!   modal option set.
-    //! - [`App`], [`AppBuilder`] and [`State`]: building an App and reading
-    //!   its typed state.
-    //! - [`event`](macro@event), [`Module`], [`EventCtx`], [`HandlerError`]
-    //!   and [`HandlerResult`]: typed gateway Event Handlers grouped in
-    //!   Modules.
-    //! - [`command`](macro@command) and [`CommandCtx`]: slash Commands;
-    //!   [`user_command`](macro@user_command) and
-    //!   [`message_command`](macro@message_command): context-menu commands;
-    //!   [`CommandResponder`], [`Manual`], [`Responded`],
-    //!   [`IntoResponse`], [`Ephemerality`] and [`Visibility`]: how they
-    //!   answer.
-    //! - [`Options`](trait@Options): the trait and `#[derive(Options)]`,
-    //!   a Command's typed options; [`CommandOption`] (the field types) and
-    //!   [`MessageKey`] (what option validators return).
-    //! - [`autocomplete`](macro@autocomplete), [`AutocompleteCtx`],
-    //!   [`AutocompleteChoice`] and [`Partial`]: autocomplete handlers.
     //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
-        App, AppBuilder, AutocompleteChoice, AutocompleteCtx, CommandCtx, CommandOption,
-        CommandResponder, Ephemerality, ErrorOrigin, ErrorSink, HandlerError, HandlerResult,
-        IntoResponse, Manual, Module, Options, Partial, Responded, State, Visibility,
+        App, AppBuilder, AutocompleteCtx, CommandCtx, CommandOption, CommandResponder,
+        ComponentCtx, Ephemerality, ErrorOrigin, ErrorSink, HandlerError, HandlerResult,
+        IntoResponse, Manual, ModalSubmitCtx, Module, Options, Partial, Responded, State,
+        Suggestions, Visibility,
     };
-    pub use noctis_macros::{Choices, Modal, Options, Payload, PayloadEnum, Route};
-    pub use noctis_macros::{autocomplete, command, event, message_command, user_command};
+    pub use noctis_macros::{
+        Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,
+        Modal, Payload, PayloadEnum, RoleSelectMenu, SlashCommand, StringSelectMenu, UserCommand,
+        UserSelectMenu,
+    };
+    /// Withdrawn forms: each fails with a `= help:` showing the struct form.
+    #[doc(hidden)]
+    pub use noctis_macros::{Options, Route, command, event, message_command, user_command};
+    pub use noctis_macros::{autocomplete, handler};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_rules::MessageKey;
-    pub use noctis_ui::{Choices, ModalForm, Rgb, RouteComponents};
+    pub use noctis_ui::{Choices, ModalForm, Rgb};
 }
 
 /// Paths the derive macros expand to; not public API.
@@ -1495,20 +1776,26 @@ pub mod ui {
     //! file      := file "(" attachment_ref ")"
     //! separator := separator [ "(" [spacing = small | large] [, divider = expr] ")" ]  // both optional, any order
     //! row       := row "[" (button | {hole}),* "]" | row "[" select "]"
-    //! button    := route.button( [label] ) .setter(..)* | link(url = "..", label = "..") | premium(sku)
-    //! select    := route.string_select(options) .setter(..)* | route.user_select() .setter(..)* | ..
+    //! button    := value.build() .setter(..)* | link(url = "..", label = "..") | premium(sku)
+    //! select    := value.build() .setter(..)*
     //! ```
+    //!
+    //! `value.build()` is a component built from a kind-derived struct value
+    //! (`Buy { item: 1 }.build()`); its kind is the type's, so placement is
+    //! checked by trait bounds: a one-item row takes a button or a select, a
+    //! row of 2 to 5 only buttons (`[CV2-06]`), an accessory only a button
+    //! (`[CV2-07]`).
     //!
     //! It expands into the builders above (so the placement traits still
     //! apply to `{hole}`s and `..spread`s) and fails `cargo check` with the
     //! rule id, spanned on the offending node or literal, when the literal
     //! tree breaks CV2-03 (40 components; a hole counts 1, a spread 0),
     //! CV2-04 (4000 literal text characters; non-literal text counts 0),
-    //! CV2-05, CV2-06, CV2-07, CV2-08 (literal labels and link URLs), CV2-09
-    //! (literal placeholders, `min_values`, `max_values` and array-literal
-    //! options), CV2-10, CV2-11, CV2-13 (literal accents, Separator spacing),
-    //! CV2-17 (literal media URLs) or CID-02 (two components of the same
-    //! literal Route value). The runtime [`validate`] still checks the built
+    //! CV2-05, CV2-06, CV2-07, CV2-08 (literal `.label(..)`s and link URLs),
+    //! CV2-09 (literal `.placeholder(..)`, `.min_values(..)`,
+    //! `.max_values(..)` and array-literal `.options([..])`), CV2-10, CV2-11,
+    //! CV2-13 (literal accents, Separator spacing), CV2-17 (literal media
+    //! URLs) or CID-02 (two components built from the same literal value). The runtime [`validate`] still checks the built
     //! message before sending.
     //!
     //! ```
@@ -1516,12 +1803,18 @@ pub mod ui {
     //! use noctis::rules::Limits;
     //! use noctis::ui::{ButtonStyle, TextDisplay, V2Message, validate};
     //!
-    //! #[derive(Route)]
-    //! #[route("t.press")]
+    //! #[derive(Button)]
+    //! #[button("t.press", defaults(style = Secondary, label = "Press"))]
     //! struct Press {
     //!     n: u8,
     //! }
-    //! # impl noctis::__private::ui::Handled for Press {}
+    //!
+    //! impl Press {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+    //!         # unimplemented!()
+    //!     }
+    //! }
     //!
     //! let name = String::from("noctis");
     //! let footer = TextDisplay::new("-# footer");
@@ -1529,8 +1822,8 @@ pub mod ui {
     //!     container(accent = rgb!(0x5865_F2)) [
     //!         text("### Settings"),
     //!         separator(spacing = large),
-    //!         section [ text("Logs"), text(name); accessory = Press { n: 1 }.button("Change") ],
-    //!         row [ Press { n: 2 }.button("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
+    //!         section [ text("Logs"), text(name); accessory = Press { n: 1 }.build().label("Change") ],
+    //!         row [ Press { n: 2 }.build().label("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
     //!     ],
     //!     {footer},
     //! };
@@ -1613,8 +1906,8 @@ pub mod ui {
     //! # Modals
     //!
     //! - [`Modal`]: interaction callback `data` (type 9), built only from a
-    //!   Route value with `.modal(title)` ([`RouteComponents::modal`]), so its
-    //!   `custom_id` is the Route's encoding (MOD-08); push 1 to 5
+    //!   `#[derive(Modal)]` struct (`X { .. }.build()` or `X::blank(..)`), so
+    //!   its `custom_id` is the struct's Route encoding (MOD-08); push 1 to 5
     //!   [`ModalLabel`]s or [`TextDisplay`]s ([`ModalTopLevel`], MOD-02).
     //!   [`ModalComponent`] holds either, for lists built at runtime.
     //! - [`ModalLabel`] (type 18): Discord's Label component, with text, an
@@ -1636,53 +1929,65 @@ pub mod ui {
     //! ```
     //! use noctis::prelude::*;
     //! use noctis::rules::Limits;
-    //! use noctis::ui::{
-    //!     Checkbox, FileUpload, ModalLabel, ModalOption, RadioGroup, TextDisplay, TextInput,
-    //!     TextInputStyle, validate,
-    //! };
+    //! use noctis::ui::{ModalLabel, ResolvedAttachment, TextDisplay, TextInput, TextInputStyle, validate};
     //!
-    //! #[derive(Route)]
-    //! #[route("mod.report")]
+    //! #[derive(Choices, Clone, Copy, PartialEq, Eq, Debug)]
+    //! enum Severity {
+    //!     #[choice("Low", value = "l")]
+    //!     Low,
+    //!     #[choice("High", value = "h")]
+    //!     High,
+    //! }
+    //!
+    //! #[derive(Modal)]
+    //! #[modal("mod.report", defaults(title = "Report a user"))]
     //! struct Report {
     //!     id: u64,
+    //!     #[text_display("Tell us what happened.")]
+    //!     _intro: (),
+    //!     #[text_input("Reason", style = paragraph, max_length = 500)]
+    //!     reason: String,
+    //!     #[radio_group("Severity")]
+    //!     severity: Severity,
+    //!     #[file_upload("Evidence", min_values = 0, max_values = 3)]
+    //!     files: Vec<ResolvedAttachment>,
+    //!     #[checkbox("I agree")]
+    //!     agree: bool,
     //! }
-    //! # impl noctis::__private::ui::Handled for Report {}
     //!
-    //! let mut modal = Report { id: 7 }
-    //!     .modal("Report a user")
-    //!     .push(TextDisplay::new("Tell us what happened."))
-    //!     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
-    //!     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))
-    //!     .push(ModalLabel::new("Evidence", FileUpload::new("files").required(false).min_values(0).max_values(3)))
-    //!     .push(ModalLabel::new("I agree", Checkbox::new("ok")));
+    //! impl Report {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+    //!         # unimplemented!()
+    //!     }
+    //! }
+    //!
+    //! let mut modal = Report::blank(7);
     //! assert_eq!(validate(&mut modal, &Limits::default()).unwrap().components, 9);
     //! let json = serde_json::to_value(&modal).unwrap();
+    //! assert_eq!(json["custom_id"], "0mod.report:7");
     //! assert_eq!(json["components"][1]["component"]["type"], 4);
-    //! ```
-    //!
-    //! ```compile_fail,E0277
-    //! use noctis::prelude::*;
-    //! use noctis::ui::LinkButton;
-    //!
-    //! #[derive(Route)]
-    //! #[route("mod.form")]
-    //! struct Form;
-    //! # impl noctis::__private::ui::Handled for Form {}
-    //!
-    //! let _ = Form.modal("T").push(LinkButton::new("https://x.y")); // [MOD-03]
+    //! # let _ = (ModalLabel::new("x", TextInput::new("x", TextInputStyle::Short)), TextDisplay::new("x"));
     //! ```
     //!
     //! # Modal forms
     //!
     //! `#[derive(Modal)]` (in the [`prelude`](crate::prelude)) declares a
-    //! modal as a struct and implements [`ModalForm`]: `T::modal(route)`
-    //! builds the [`Modal`] and `T::from_json(bytes)` decodes the raw
-    //! modal-submit interaction JSON. `#[modal(route = R, title = "…")]`
-    //! names the submit Route and the literal title. One field is one
-    //! top-level component, in declaration order; its name is the input key
-    //! (`custom_id`, `r#` stripped) and it carries exactly one attribute whose
-    //! first literal is the Label text (every Label attribute also takes
-    //! `description = "…"`):
+    //! modal as a struct that is its own Route: `#[modal("id", <codec args>,
+    //! defaults(title = "…"))]` takes the id, the codec arguments of a
+    //! component struct and the mandatory literal title (1 to 45 characters,
+    //! MOD-01). Fields without an input attribute are the Payload, encoded in
+    //! the `custom_id` and length-proven like a component's (CID-01). Every
+    //! other field is one top-level component, in declaration order; its
+    //! name is the input key (`custom_id`, `r#` stripped) and it carries
+    //! exactly one attribute whose first literal is the Label text (every
+    //! Label attribute also takes `description = "…"`). `X { .. }.build()`
+    //! and the generated `X::blank(<Payload fields in order>)` build the
+    //! [`Modal`] with empty inputs; `X::from_json(bytes)` ([`ModalForm`])
+    //! decodes the raw modal-submit interaction JSON, Payload included. A
+    //! `#[handler]` method `(self, ctx: ModalSubmitCtx) ->
+    //! HandlerResult<Responded>` handles the submission (dispatch arrives
+    //! with Epic 7).
     //!
     //! | Attribute | Arguments | Field types |
     //! | --- | --- | --- |
@@ -1725,8 +2030,9 @@ pub mod ui {
     //!   and channels and uploads to their attachments, and keeps unknown
     //!   components as `serde_json::Value`s ([`ModalSubmission::unknown`]).
     //!   Every missing, ill-typed or out-of-bounds value is a [`SubmitError`]
-    //!   (`[MOD-09]`), never a panic. The `custom_id` is not checked against
-    //!   the Route.
+    //!   (`[MOD-09]`), never a panic. The Payload is decoded from the
+    //!   `custom_id` with the struct's Route: a `custom_id` of another Route
+    //!   or a malformed one is [`SubmitError::Malformed`].
     //! - A [`ResolvedAttachment`]'s URL is ephemeral: download it promptly with
     //!   [`ResolvedAttachment::download`] through a [`FileFetcher`], which
     //!   checks the CDN host, `Limits::attachment_bytes` and the length
@@ -1735,13 +2041,6 @@ pub mod ui {
     //! ```
     //! use noctis::prelude::*;
     //! use noctis::ui::{ResolvedAttachment, SubmitError};
-    //!
-    //! #[derive(Route)]
-    //! #[route("mod.report")]
-    //! struct Report {
-    //!     id: u64,
-    //! }
-    //! # impl noctis::__private::ui::Handled for Report {}
     //!
     //! #[derive(Choices, Clone, Copy, PartialEq, Eq, Debug)]
     //! enum Severity {
@@ -1752,8 +2051,9 @@ pub mod ui {
     //! }
     //!
     //! #[derive(Modal, Debug)]
-    //! #[modal(route = Report, title = "Report a user")]
+    //! #[modal("mod.report", defaults(title = "Report a user"))]
     //! struct ReportForm {
+    //!     id: u64,
     //!     #[text_display("Tell us what happened.")]
     //!     _intro: (),
     //!     #[text_input("Reason", style = paragraph, max_length = 500)]
@@ -1766,7 +2066,14 @@ pub mod ui {
     //!     agree: bool,
     //! }
     //!
-    //! let modal = ReportForm::modal(Report { id: 7 });
+    //! impl ReportForm {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+    //!         # unimplemented!()
+    //!     }
+    //! }
+    //!
+    //! let modal = ReportForm::blank(7);
     //! assert_eq!(modal.len(), 5);
     //!
     //! let bytes = br#"{"type": 5, "data": {"custom_id": "0mod.report:7", "components": [
@@ -1777,6 +2084,7 @@ pub mod ui {
     //!     {"type": 18, "component": {"type": 23, "custom_id": "agree", "value": true}}
     //! ]}}"#;
     //! let form = ReportForm::from_json(bytes)?;
+    //! assert_eq!(form.id, 7);
     //! assert_eq!((form.reason.as_str(), form.severity, form.agree), ("spam", Severity::High, true));
     //! assert!(form.files.is_empty());
     //! # Ok::<(), SubmitError>(())
@@ -1787,30 +2095,28 @@ pub mod ui {
     //! ```compile_fail,E0277
     //! use noctis::prelude::*;
     //!
-    //! #[derive(Route)]
-    //! #[route("mod.form")]
-    //! struct Form;
-    //! # impl noctis::__private::ui::Handled for Form {}
-    //!
     //! #[derive(Modal)]
-    //! #[modal(route = Form, title = "T")]
+    //! #[modal("mod.form", defaults(title = "T"))]
     //! struct F {
     //!     #[checkbox("Agree")]
     //!     agree: String, // a Checkbox is `bool`
     //! }
+    //!
+    //! impl F {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+    //!         # unimplemented!()
+    //!     }
+    //! }
     //! ```
     //!
-    //! So does a Route without a handler (`[CID-04]`):
+    //! So does a modal without a `#[handler]` method (`[CID-04]`):
     //!
-    //! ```compile_fail,E0277
+    //! ```compile_fail
     //! use noctis::prelude::*;
     //!
-    //! #[derive(Route)]
-    //! #[route("mod.form")]
-    //! struct Form;
-    //!
     //! #[derive(Modal)]
-    //! #[modal(route = Form, title = "T")]
+    //! #[modal("mod.form", defaults(title = "T"))]
     //! struct F {
     //!     #[checkbox("Agree")]
     //!     agree: bool,
@@ -1830,16 +2136,24 @@ pub mod ui {
     //! | [`RouteButton`], [`LinkButton`], [`PremiumButton`], [`Button`] | no | no | yes | 1-5 ([`RowItem`]) |
     //! | the five selects | no | no | no | alone ([`RowSelect`]) |
     //!
-    //! # Components from Routes
+    //! A [`StringSelectBuilder`] (a String Select whose struct declares no
+    //! options) is placed nowhere until `.options(..)` makes it a
+    //! [`StringSelect`] (`[CV2-09]`).
     //!
-    //! [`RouteComponents`] (also in the [`prelude`](crate::prelude)) builds
-    //! buttons, selects and modals from a Route value; there is no string
-    //! `custom_id`.
-    //! The Route needs a handler (`#[handler]`), or the call fails with
-    //! `[CID-04]`; a select also needs a Route declared `select`
-    //! ([`SelectRoute`](crate::codec::SelectRoute)). `custom_id`s that need a
-    //! select nonce, signature or Ref are finalized by the Responder before
-    //! sending.
+    //! # Components from kind-derived structs
+    //!
+    //! Interactive components are built only from a kind-derived struct
+    //! value: `X { .. }.build()` of a [`Button`](macro@crate::Button) or a
+    //! select derive returns the component with the struct's declared
+    //! `defaults(..)` and the value as its Payload; there is no string
+    //! `custom_id`. Each setter overrides one field: `label`, `emoji`,
+    //! `style` and `disabled` on a [`RouteButton`]; `placeholder`,
+    //! `min_values`, `max_values`, `disabled`, `options` (String Select),
+    //! `default_users` / `default_roles` / `default_channels` and
+    //! `channel_types` on the selects. A struct without a `#[handler]`
+    //! method does not compile (`[CID-04]`). `custom_id`s that need a select
+    //! nonce, signature or Ref are finalized by the Responder before sending;
+    //! serializing one before is an error naming the Route.
     //!
     //! ```
     //! use noctis::prelude::*;
@@ -1848,22 +2162,29 @@ pub mod ui {
     //!     TextDisplay,
     //! };
     //!
-    //! #[derive(Route)]
-    //! #[route("shop.buy")]
+    //! #[derive(Button)]
+    //! #[button("shop.buy", defaults(style = Primary, label = "Buy"))]
     //! struct Buy {
     //!     item: u64,
     //! }
-    //! # impl noctis::__private::ui::Handled for Buy {}
+    //!
+    //! impl Buy {
+    //!     #[handler]
+    //!     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+    //!         # unimplemented!()
+    //!     }
+    //! }
     //!
     //! let body = Components::new().push(
     //!     Container::new()
     //!         .accent(Rgb::new(0x58, 0x65, 0xF2))
-    //!         .push(Section::new([TextDisplay::new("**Sword** · 255 g")], Buy { item: 255 }.button().label("Buy")))
+    //!         .push(Section::new([TextDisplay::new("**Sword** · 255 g")], Buy { item: 255 }.build()))
     //!         .push(Separator::small())
     //!         .push(ActionRow::buttons([LinkButton::new("https://example.com").label("Docs")])),
     //! );
     //! let json = serde_json::to_value(&body).unwrap();
     //! assert_eq!(json[0]["components"][0]["accessory"]["custom_id"], "0shop.buy:47");
+    //! assert_eq!(json[0]["components"][0]["accessory"]["style"], 1);
     //! # let _ = ButtonStyle::Primary;
     //! ```
     //!
@@ -1890,8 +2211,8 @@ pub mod ui {
         ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalSubmission,
         ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup, RadioOptions,
         ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole, ResolvedUser, Rgb,
-        RoleSelect, Roles, RouteButton, RouteComponents, RowButtons, RowItem, RowSelect, Section,
-        SectionAccessory, SectionTexts, SelectOption, Separator, Spacing, StringSelect,
+        RoleSelect, Roles, RouteButton, RowButtons, RowItem, RowSelect, Section, SectionAccessory,
+        SectionTexts, SelectOption, Separator, Spacing, StringSelect, StringSelectBuilder,
         StringSelectOptions, SubmitError, SubmittedValue, TextDisplay, TextInput, TextInputStyle,
         Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate,
         cost, validate,
@@ -1916,8 +2237,8 @@ pub mod rules {
     //!   rules ([`command::validate_options`], [`command::measure_options`]), the
     //!   context-menu name rule ([`command::validate_context_menu_name`]) and the
     //!   command metadata rules ([`command::validate_meta`]) and the autocomplete
-    //!   response rules ([`command::validate_autocomplete`]) that `#[command]`,
-    //!   `derive(Options)` and `App::build` call.
+    //!   response rules ([`command::validate_autocomplete`]) that
+    //!   `derive(SlashCommand)` and `App::build` call.
     //! - [`component`]: Components V2 trees and legacy Action Rows
     //!   ([`component::validate_components`],
     //!   [`component::validate_legacy_components`], [`component::cost`]) and

@@ -1,4 +1,5 @@
-//! `#[derive(Route)]`, `#[derive(Payload)]` and `#[derive(PayloadEnum)]`:
+//! The Route half of the component derives, `#[derive(Payload)]` and
+//! `#[derive(PayloadEnum)]`:
 //! generated impls, widths and round trips (CID-01, CID-03, FR-16, AD-6).
 
 use noctis::__private::codec::{
@@ -11,58 +12,171 @@ use twilight_model::id::Id;
 
 struct ItemMarker;
 
-#[derive(Route, Debug, PartialEq)]
-#[route("shop.buy")]
+#[derive(::noctis::Button, Debug, PartialEq)]
+#[button("shop.buy", defaults(style = Secondary, label = "Go"))]
 struct BuyButton {
     item: Id<ItemMarker>,
     qty: u8,
 }
 
-#[derive(Route, Debug, PartialEq)]
-#[route("ping")]
+impl BuyButton {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button, Debug, PartialEq)]
+#[button("ping", defaults(style = Secondary, label = "Go"))]
 struct Ping;
 
-#[derive(Route, Debug, PartialEq)]
-#[route("t")]
-struct T2(u8, bool);
+impl Ping {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
-#[derive(Route)]
-#[route("a", select)]
+#[derive(::noctis::Button, Debug, PartialEq)]
+#[button("t", defaults(style = Secondary, label = "Go"))]
+struct T2 {
+    a: u8,
+    b: bool,
+}
+
+impl T2 {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::StringSelectMenu)]
+#[string_select("a", defaults(placeholder = "Pick"))]
 struct SelectR;
 
-#[derive(Route)]
-#[route("a", signed)]
+impl SelectR {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button)]
+#[button("a", signed, defaults(style = Secondary, label = "Go"))]
 struct SignedR;
 
-#[derive(Route)]
-#[route("a", schema = 3)]
+impl SignedR {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button)]
+#[button("a", schema = 3, defaults(style = Secondary, label = "Go"))]
 struct SchemaR;
 
-#[derive(Route)]
-#[route("a", signed, schema = 61, select, overflow = spill)]
+impl SchemaR {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::StringSelectMenu)]
+#[string_select("a", signed, schema = 61, overflow = spill, defaults(placeholder = "Pick"))]
 struct AllArgs;
 
-#[derive(Route)]
-#[route("wizard.step", by_ref)]
+impl AllArgs {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button)]
+#[button("wizard.step", by_ref, defaults(style = Secondary, label = "Go"))]
 struct Wizard {
     s: String,
 }
 
-#[derive(Route, Debug, PartialEq)]
-#[route("s", overflow = spill)]
+impl Wizard {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button, Debug, PartialEq)]
+#[button("s", overflow = spill, defaults(style = Secondary, label = "Go"))]
 struct SpillS {
     s: String,
 }
 
-#[derive(Route)]
-#[route("ss", overflow = spill, signed)]
+impl SpillS {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button)]
+#[button("ss", overflow = spill, signed, defaults(style = Secondary, label = "Go"))]
 struct SpillSigned {
     n: u8,
 }
 
-#[derive(Route)]
-#[route("shop\x2Ebuy", schema = 1u8)]
+impl SpillSigned {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::Button)]
+#[button("shop\x2Ebuy", schema = 1u8, defaults(style = Secondary, label = "Go"))]
 struct Escaped;
+
+impl Escaped {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 #[derive(PayloadEnum, Debug, Clone, Copy, PartialEq, Eq)]
 enum K {
@@ -123,11 +237,11 @@ fn cid_01_buy_button() {
     assert_eq!(decode_route::<Ping>(&id), Ok(PayloadSource::Inline(Ping)));
 
     assert_eq!(T2::MAX_ENCODED_LEN, Some(4));
-    let id = encode::<T2>(&T2(7, true), &Parts::new()).unwrap();
+    let id = encode::<T2>(&T2 { a: 7, b: true }, &Parts::new()).unwrap();
     assert_eq!(id.as_str(), "0t:7,1");
     assert_eq!(
         decode_route::<T2>(&id),
-        Ok(PayloadSource::Inline(T2(7, true)))
+        Ok(PayloadSource::Inline(T2 { a: 7, b: true }))
     );
 }
 
@@ -230,10 +344,20 @@ fn payload_enum_matrix() {
     reason = "the function-local Route's width test cannot run"
 )]
 fn function_local_route_compiles_clean() {
-    #[derive(Route, Debug, PartialEq)]
-    #[route("local")]
+    #[derive(::noctis::Button, Debug, PartialEq)]
+    #[button("local", defaults(style = Secondary, label = "Go"))]
     struct Local {
         n: u8,
+    }
+
+    impl Local {
+        #[::noctis::handler]
+        async fn handle(
+            self,
+            _ctx: ::noctis::ComponentCtx,
+        ) -> ::noctis::HandlerResult<::noctis::Responded> {
+            Ok(::noctis::__private::core::__testing::responded())
+        }
     }
     assert_eq!(Local::ID.as_str(), "local");
     assert_eq!(Local { n: 1 }.n, 1);
@@ -256,8 +380,8 @@ fn derive_payload_standalone() {
     );
 }
 
-#[derive(Route, Debug, Clone, PartialEq)]
-#[route("prop.round-trip")]
+#[derive(::noctis::Button, Debug, Clone, PartialEq)]
+#[button("prop.round-trip", defaults(style = Secondary, label = "Go"))]
 struct Mixed {
     a: u8,
     b: i64,
@@ -265,6 +389,16 @@ struct Mixed {
     d: BoundedStr<4>,
     e: bool,
     k: K,
+}
+
+impl Mixed {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
 }
 
 fn k_strategy() -> impl Strategy<Value = K> {

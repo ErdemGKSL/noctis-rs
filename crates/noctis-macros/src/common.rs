@@ -47,3 +47,56 @@ pub(crate) fn option(value: Option<impl ToTokens>) -> TokenStream {
         |v| quote!(::core::option::Option::Some(#v)),
     )
 }
+
+/// The 64-bit FNV-1a hash of `text`: the key of an autocomplete field
+/// (`__AutocompleteField<{ fnv1a64("field") }>`), shared by the derive and
+/// `#[autocomplete(field)]`.
+pub(crate) fn fnv1a64(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+/// The name of `ident` without a raw-identifier prefix.
+pub(crate) fn plain(ident: &syn::Ident) -> String {
+    use syn::ext::IdentExt;
+    ident.unraw().to_string()
+}
+
+/// The named fields of a kind-derived struct (empty for a unit struct);
+/// an enum, union, tuple struct or generic struct is an error naming the
+/// derive (`<derive> needs a struct with named fields or a unit struct`).
+pub(crate) fn kind_fields<'a>(
+    input: &'a syn::DeriveInput,
+    derive: &str,
+) -> syn::Result<Vec<&'a syn::Field>> {
+    let message =
+        format!("`#[derive({derive})]` needs a struct with named fields or a unit struct");
+    let fields = match &input.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(named) => named.named.iter().collect(),
+            syn::Fields::Unit => Vec::new(),
+            syn::Fields::Unnamed(unnamed) => {
+                return Err(syn::Error::new_spanned(unnamed, message));
+            }
+        },
+        syn::Data::Enum(data) => return Err(syn::Error::new_spanned(data.enum_token, message)),
+        syn::Data::Union(data) => return Err(syn::Error::new_spanned(data.union_token, message)),
+    };
+    if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(&input.generics, message));
+    }
+    Ok(fields)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fnv1a64_matches_reference_values() {
+        assert_eq!(fnv1a64(""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a64("a"), 0xaf63_dc4c_8601_ec8c);
+        assert_ne!(fnv1a64("rule"), fnv1a64("rüle"));
+    }
+}

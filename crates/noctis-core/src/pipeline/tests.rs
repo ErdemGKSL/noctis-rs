@@ -245,7 +245,7 @@ async fn global_slash_replies() {
             Ok(v2("pong"))
         },
     );
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
     tracing::callsite::rebuild_interest_cache();
     p.run(inbound(&interaction(slash("ping", json!([])), json!({}))))
@@ -271,7 +271,7 @@ async fn global_slash_replies() {
 async fn declared_ephemeral() {
     let log = Log::default();
     let handler = logging(&log, "m::ping", &["ping"]).__with_ephemerality(Ephemerality::Ephemeral);
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     p.run(inbound(&interaction(slash("ping", json!([])), json!({}))))
         .await;
     assert_eq!(p.requests()[0].2["data"]["flags"], 32832);
@@ -282,7 +282,7 @@ async fn declared_ephemeral() {
 async fn three_word_path() {
     let log = Log::default();
     let handler = logging(&log, "m::config", &["config set prefix"]);
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     let options = json!([{ "type": 2, "name": "set", "options": [{ "type": 1, "name": "prefix", "options": [] }] }]);
     p.run(inbound(&interaction(slash("config", options), json!({}))))
         .await;
@@ -300,8 +300,8 @@ async fn scopes_and_unknown_paths() {
     tracing::callsite::rebuild_interest_cache();
     let log = Log::default();
     let module = Module::new("m")
-        .add(logging(&log, "m::ping", &["ping"]))
-        .add(
+        .__add(logging(&log, "m::ping", &["ping"]))
+        .__add(
             logging(&log, "m::gping", &["gping"])
                 .__with_metadata(CommandMetadata::new().guilds(&GUILDS)),
         );
@@ -359,13 +359,13 @@ async fn loc_06_dispatch_resolves_default_names() {
         }
     };
     let module = Module::new("m")
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::p",
             &["public"],
             "d",
             record(&log, "public"),
         ))
-        .add(
+        .__add(
             CommandHandler::__new_plain("m::e", &["private"], "d", record(&log, "private"))
                 .__with_ephemerality(Ephemerality::Ephemeral),
         );
@@ -404,8 +404,8 @@ async fn unicode_names_and_menus() {
     let user_log = log.clone();
     let message_log = log.clone();
     let module = Module::new("m")
-        .add(logging(&log, "m::ayarlar", &["ayarlar"]))
-        .add(ContextMenuHandler::__new_user(
+        .__add(logging(&log, "m::ayarlar", &["ayarlar"]))
+        .__add(ContextMenuHandler::__new_user(
             "m::show",
             "Profil göster",
             CommandMetadata::new(),
@@ -414,7 +414,7 @@ async fn unicode_names_and_menus() {
                 async { Ok(v2("u")) }
             },
         ))
-        .add(ContextMenuHandler::__new_message(
+        .__add(ContextMenuHandler::__new_message(
             "m::quote",
             "Profil göster",
             CommandMetadata::new(),
@@ -477,7 +477,7 @@ async fn malformed_and_authorless() {
     // Parallel tests may cache `Interest::never` for a callsite; rebuild it.
     tracing::callsite::rebuild_interest_cache();
     let log = Log::default();
-    let p = Pipeline::start(Module::new("m").add(logging(&log, "m::warn", &["warn"]))).await;
+    let p = Pipeline::start(Module::new("m").__add(logging(&log, "m::warn", &["warn"]))).await;
     let parsed = interaction(slash("warn", json!([])), json!({}));
     let mut raw = parsed.clone();
     raw["data"]["options"] =
@@ -514,7 +514,7 @@ async fn malformed_and_authorless() {
 async fn errors_and_panics_reach_the_sink() {
     let log = Log::default();
     let module = Module::new("m")
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::fail",
             &["fail"],
             "d",
@@ -522,7 +522,7 @@ async fn errors_and_panics_reach_the_sink() {
                 Err::<V2Message, _>(HandlerError::new(std::io::Error::other("boom")))
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::sync",
             &["sync"],
             "d",
@@ -530,7 +530,7 @@ async fn errors_and_panics_reach_the_sink() {
                 panic!("sync boom")
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::inner",
             &["inner"],
             "d",
@@ -539,7 +539,7 @@ async fn errors_and_panics_reach_the_sink() {
                 Ok(boom())
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::big",
             &["big"],
             "d",
@@ -549,7 +549,7 @@ async fn errors_and_panics_reach_the_sink() {
                 ])))
             },
         ))
-        .add(logging(&log, "m::ok", &["ok"]));
+        .__add(logging(&log, "m::ok", &["ok"]));
     let p = Pipeline::start(module).await;
     for name in ["fail", "sync", "inner", "big", "ok"] {
         p.run(inbound(&interaction(
@@ -609,7 +609,7 @@ async fn cancel_mid_handler() {
             }
         },
     );
-    let p = Arc::new(Pipeline::start(Module::new("m").add(handler)).await);
+    let p = Arc::new(Pipeline::start(Module::new("m").__add(handler)).await);
     let cancel = CancellationToken::new();
     let run = tokio::spawn({
         let p = Arc::clone(&p);
@@ -645,7 +645,7 @@ async fn int_12_returned_message_after_defer_edits_original() {
             Ok(v2("done"))
         },
     );
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     p.run(inbound(&interaction(slash("slow", json!([])), json!({}))))
         .await;
     let requests = p.requests();
@@ -666,7 +666,7 @@ async fn int_12_returned_message_after_defer_edits_original() {
 #[tokio::test]
 async fn reply_then_returned_message() {
     let module = Module::new("m")
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::two",
             &["two"],
             "d",
@@ -675,7 +675,7 @@ async fn reply_then_returned_message() {
                 Ok(v2("b"))
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::one",
             &["one"],
             "d",
@@ -712,12 +712,12 @@ async fn dispatcher_runs_commands() {
     let log = Log::default();
     let days_log = log.clone();
     let module = Module::new("m")
-        .add(logging(&log, "m::ping", &["ping"]))
-        .add(
+        .__add(logging(&log, "m::ping", &["ping"]))
+        .__add(
             logging(&log, "m::gping", &["ping"])
                 .__with_metadata(CommandMetadata::new().guilds(&GUILDS)),
         )
-        .add(CommandHandler::__new_plain_with_options(
+        .__add(CommandHandler::__new_plain_with_options(
             "m::warn",
             &["warn"],
             "d",
@@ -808,7 +808,7 @@ async fn dispatcher_runs_commands() {
 #[tokio::test]
 async fn event_handler_dispatches() {
     let log = Log::default();
-    let p = Pipeline::start(Module::new("m").add(logging(&log, "m::ping", &["ping"]))).await;
+    let p = Pipeline::start(Module::new("m").__add(logging(&log, "m::ping", &["ping"]))).await;
     let handler = EventHandler::__new(
         "m::prefix",
         false,
@@ -862,7 +862,7 @@ async fn pipeline_ctx_contents() {
             },
         )
     };
-    let p = Pipeline::start_with(Module::new("profile/xp").add(handler), |b| {
+    let p = Pipeline::start_with(Module::new("profile/xp").__add(handler), |b| {
         b.state(7_u32);
     })
     .await;
@@ -899,7 +899,7 @@ async fn ephemeral_user_menu() {
         )
         .__with_ephemerality(Ephemerality::Ephemeral)
     };
-    let p = Pipeline::start(Module::new("m").add(menu)).await;
+    let p = Pipeline::start(Module::new("m").__add(menu)).await;
     let data = json!({
         "id": "9", "name": "Show", "type": 2, "target_id": "11",
         "resolved": { "users": { "11": user("11") } }
@@ -934,7 +934,7 @@ async fn command_metrics() {
             Err::<V2Message, _>(HandlerError::new(std::io::Error::other("boom")))
         },
     );
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     p.run(inbound(&interaction(slash("fail", json!([])), json!({}))))
         .await;
     assert_eq!(p.reports().len(), 1);
@@ -1037,12 +1037,12 @@ async fn int_01_auto_defer_at_deadline() {
     let metrics = Metrics::new();
     let _metrics = metrics::set_default_local_recorder(&metrics.recorder);
     let module = Module::new("m")
-        .add(sleeper("m::slow", &["slow"], Duration::from_millis(300)))
-        .add(
+        .__add(sleeper("m::slow", &["slow"], Duration::from_millis(300)))
+        .__add(
             sleeper("m::hidden", &["hidden"], Duration::from_millis(300))
                 .__with_ephemerality(Ephemerality::Ephemeral),
         )
-        .add(ContextMenuHandler::__new_user(
+        .__add(ContextMenuHandler::__new_user(
             "m::show",
             "Show",
             CommandMetadata::new(),
@@ -1099,7 +1099,7 @@ async fn int_01_auto_defer_at_deadline() {
     );
 
     // Matrix 10: the deadline already passed while queued (default 2 s).
-    let p = Pipeline::start(Module::new("m").add(sleeper(
+    let p = Pipeline::start(Module::new("m").__add(sleeper(
         "m::slow",
         &["slow"],
         Duration::from_millis(300),
@@ -1133,7 +1133,7 @@ async fn int_02_fallback_uses_the_interaction_channel() {
             base(seen)
         }
     });
-    let module = Module::new("m").add(CommandHandler::__new_plain(
+    let module = Module::new("m").__add(CommandHandler::__new_plain(
         "m::later",
         &["later"],
         "d",
@@ -1166,7 +1166,7 @@ async fn int_01_handler_answers_first() {
     let metrics = Metrics::new();
     let _metrics = metrics::set_default_local_recorder(&metrics.recorder);
     let module = Module::new("m")
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::fast",
             &["fast"],
             "d",
@@ -1175,7 +1175,7 @@ async fn int_01_handler_answers_first() {
                 Ok::<_, HandlerError>(r.reply(v2("fast")).await?.done())
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::early",
             &["early"],
             "d",
@@ -1185,7 +1185,7 @@ async fn int_01_handler_answers_first() {
                 Ok(v2("done"))
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::after",
             &["after"],
             "d",
@@ -1234,7 +1234,7 @@ async fn int_01_handler_answers_first() {
 #[tokio::test]
 async fn int_03_late_reply_becomes_edit_reply() {
     let module = Module::new("m")
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::late",
             &["late"],
             "d",
@@ -1243,7 +1243,7 @@ async fn int_03_late_reply_becomes_edit_reply() {
                 Ok::<_, HandlerError>(r.reply(v2("late")).await?.done())
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::legacy",
             &["legacy"],
             "d",
@@ -1284,7 +1284,7 @@ async fn int_03_late_reply_becomes_edit_reply() {
             Ok::<_, HandlerError>(r.reply(v2("now")).await?.done())
         },
     );
-    let p = Pipeline::start_with(Module::new("m").add(race), |b| {
+    let p = Pipeline::start_with(Module::new("m").__add(race), |b| {
         b.ack_deadline(Duration::ZERO);
     })
     .await;
@@ -1326,7 +1326,7 @@ async fn returned_message_five_seconds_late_edits_original() {
         )
     };
     let p = Arc::new(
-        Pipeline::start_with(Module::new("m").add(handler), |b| {
+        Pipeline::start_with(Module::new("m").__add(handler), |b| {
             b.ack_deadline(Duration::from_millis(50));
         })
         .await,
@@ -1382,7 +1382,7 @@ async fn auto_defer_failure_is_logged() {
             Ok::<_, HandlerError>(r.reply(v2("late")).await?.done())
         },
     );
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     p.run(inbound_ago(
         &interaction(slash("slow", json!([])), json!({})),
         Duration::from_millis(3500),
@@ -1409,7 +1409,7 @@ async fn timer_stops_with_the_handler() {
     let started = Arc::new(Notify::new());
     let entered = Arc::clone(&started);
     let module = Module::new("m")
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::fail",
             &["fail"],
             "d",
@@ -1418,7 +1418,7 @@ async fn timer_stops_with_the_handler() {
                 Err::<V2Message, _>(HandlerError::new(std::io::Error::other("boom")))
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::inner",
             &["inner"],
             "d",
@@ -1427,7 +1427,7 @@ async fn timer_stops_with_the_handler() {
                 Ok(boom())
             },
         ))
-        .add(CommandHandler::__new_plain(
+        .__add(CommandHandler::__new_plain(
             "m::stuck",
             &["stuck"],
             "d",
@@ -1481,7 +1481,7 @@ async fn timer_stops_with_the_handler() {
 #[tokio::test]
 async fn dispatcher_has_no_auto_defer() {
     let p = Pipeline::start_with(
-        Module::new("m").add(sleeper("m::slow", &["slow"], Duration::from_millis(100))),
+        Module::new("m").__add(sleeper("m::slow", &["slow"], Duration::from_millis(100))),
         |b| {
             b.ack_deadline(Duration::ZERO);
         },
@@ -1521,7 +1521,7 @@ async fn int_05_manual_never_auto_defers() {
     );
     assert!(!handler.auto_defer());
     assert!(sleeper("m::x", &["x"], Duration::ZERO).auto_defer());
-    let p = Pipeline::start_with(Module::new("forms").add(handler), |b| {
+    let p = Pipeline::start_with(Module::new("forms").__add(handler), |b| {
         b.ack_deadline(Duration::ZERO);
     })
     .await;
@@ -1598,7 +1598,7 @@ async fn int_11_sixth_followup_capped() {
             },
         )
     };
-    let p = Pipeline::start(Module::new("m").add(handler)).await;
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
     for owners in [
         json!({ "1": "3" }),
         json!({ "0": "4", "1": "3" }),
@@ -1639,9 +1639,9 @@ mod autocomplete {
     use hyper::StatusCode;
 
     use super::*;
-    use crate::autocomplete::PartialOptions;
+    use crate::autocomplete::{__AutocompleteField, __AutocompleteMethod, PartialOptions};
     use crate::options::__options::partial;
-    use crate::{AutocompleteChoice, AutocompleteCtx, AutocompleteHandler};
+    use crate::{__autocomplete_method, AutocompleteCtx, Suggestions};
 
     /// What the `value` handler saw: focused text and `partial.limit`.
     static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -1665,22 +1665,29 @@ mod autocomplete {
     }
 
     /// The options of `config set prefix`; each focused option name picks
-    /// a handler behaviour.
+    /// a method behaviour.
     struct AcOptions;
 
-    fn plain<F, Fut>(name: &'static str, f: F) -> AutocompleteHandler<AcOptions>
-    where
-        F: Fn(AutocompleteCtx) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
-    {
-        AutocompleteHandler::__new_plain(name, f)
+    /// Every test method suggests `String`s for the field hashed `1`.
+    impl __AutocompleteField<1> for AcOptions {
+        type Value = String;
     }
 
-    fn panics_at_call(_: AutocompleteCtx) -> std::future::Ready<HandlerResult<Responded>> {
+    type AcAnswer = HandlerResult<Suggestions<String>>;
+
+    fn method<F, Fut>(name: &'static str, f: F) -> __AutocompleteMethod
+    where
+        F: Fn(AutocompleteCtx, String, AcPartial) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = AcAnswer> + Send + 'static,
+    {
+        __autocomplete_method::<AcOptions, 1, _, _, _>(name, f)
+    }
+
+    fn panics_at_call(_: AutocompleteCtx, _: String, _: AcPartial) -> std::future::Ready<AcAnswer> {
         panic!("at call")
     }
 
-    async fn panics_inside(_: AutocompleteCtx) -> HandlerResult<Responded> {
+    async fn panics_inside(_: AutocompleteCtx, _: String, _: AcPartial) -> AcAnswer {
         panic!("inside")
     }
 
@@ -1697,39 +1704,49 @@ mod autocomplete {
             Ok(Self)
         }
 
-        fn autocomplete(option: &str) -> Option<AutocompleteHandler<Self>> {
+        fn __autocomplete(option: &str) -> Option<__AutocompleteMethod> {
             Some(match option {
-                "value" => AutocompleteHandler::__new(
-                    "m::value",
-                    |ctx: AutocompleteCtx, p: AcPartial| async move {
-                        SEEN.lock().unwrap().push(format!(
-                            "{}:{:?}",
-                            ctx.focused().value(),
-                            p.limit
-                        ));
-                        Ok(ctx.respond(["a", "b", "c"].map(|v| AutocompleteChoice::new(v, v))))
-                    },
-                ),
-                "many" => plain("m::many", |ctx| async move {
-                    Ok(ctx.respond(
-                        (0..30).map(|i| AutocompleteChoice::new(format!("c{i}"), i.to_string())),
-                    ))
+                "value" => method("m::value", |_, typed, p| async move {
+                    SEEN.lock().unwrap().push(format!("{typed}:{:?}", p.limit));
+                    Ok(["a", "b", "c"]
+                        .map(|v| (v.to_owned(), v))
+                        .into_iter()
+                        .collect())
                 }),
-                "err" => plain("m::err", |_| async {
+                "many" => method("m::many", |_, _, _| async move {
+                    Ok((0..30).map(|i| (i.to_string(), format!("c{i}"))).collect())
+                }),
+                "labels" => method("m::labels", |_, _, _| async move {
+                    let mut s = Suggestions::new();
+                    s.push("k".to_owned(), keys::GUARD_OWNER);
+                    s.push("long".to_owned(), "a".repeat(101));
+                    s.push("empty".to_owned(), "");
+                    s.push("v".repeat(101), "too long a value");
+                    Ok(s)
+                }),
+                "err" => method("m::err", |_, _, _| async {
                     Err(HandlerError::new(std::io::Error::other("boom")))
                 }),
-                "panic_call" => plain("m::panic_call", panics_at_call),
-                "panic_inside" => plain("m::panic_inside", panics_inside),
-                "slow" => plain("m::slow", |ctx| async move {
-                    tokio::time::sleep(Duration::from_mins(1)).await;
-                    Ok(ctx.respond(Vec::new()))
+                "guild" => method("m::guild", |ctx, _, _| async move {
+                    let guild = ctx.guild_id()?;
+                    Ok([(guild.to_string(), "g")].into_iter().collect())
                 }),
-                "slow_deadline" => plain("m::slow_deadline", |ctx| async move {
+                "state" => method("m::state", |ctx, _, _| async move {
+                    let _ = ctx.state::<std::net::Ipv4Addr>();
+                    Ok(Suggestions::new())
+                }),
+                "panic_call" => method("m::panic_call", panics_at_call),
+                "panic_inside" => method("m::panic_inside", panics_inside),
+                "slow" => method("m::slow", |_, _, _| async move {
+                    tokio::time::sleep(Duration::from_mins(1)).await;
+                    Ok(Suggestions::new())
+                }),
+                "slow_deadline" => method("m::slow_deadline", |_, _, _| async move {
                     SLOW_DEADLINE_STARTED.store(true, Ordering::SeqCst);
                     tokio::time::sleep(Duration::from_mins(1)).await;
-                    Ok(ctx.respond(Vec::new()))
+                    Ok(Suggestions::new())
                 }),
-                "smuggle" => plain("m::smuggle", |_| async { Ok(Responded::new()) }),
+                "empty" => method("m::empty", |_, _, _| async { Ok(Suggestions::new()) }),
                 _ => return None,
             })
         }
@@ -1749,8 +1766,8 @@ mod autocomplete {
         let sink = Arc::new(Recording::default());
         let module =
             Module::new("m")
-                .add(config())
-                .add(logging(&Log::default(), "m::ping", &["ping"]));
+                .__add(config())
+                .__add(logging(&Log::default(), "m::ping", &["ping"]));
         let ac_sink = Arc::clone(&sink);
         let p = Pipeline::start_answering(module, answer, move |b| {
             b.error_sink(ErrorOrigin::Autocomplete, ac_sink);
@@ -1975,13 +1992,66 @@ mod autocomplete {
         assert!(seen[0].kind.contains("cancel"), "{}", seen[0].kind);
     }
 
-    /// Matrix 20: a `Responded` without `respond` sends an empty list.
+    /// Story 6.11 Matrix 24: no suggestions send an empty list, without a
+    /// report.
     #[tokio::test]
-    async fn smuggled_responded_sends_nothing() {
+    async fn empty_suggestions_send_an_empty_list() {
         let (p, sink) = start(discord()).await;
-        run(&p, ac("smuggle", "x")).await;
+        run(&p, ac("empty", "x")).await;
         assert!(choices(&p).is_empty());
         assert!(sink.seen().is_empty());
+    }
+
+    /// Story 6.11 Matrix 25 and 26: a `MessageKey` label renders in the
+    /// user's locale, a long label is cut with a warning, an empty label
+    /// and a too-long value are dropped with one warning.
+    #[tokio::test]
+    async fn labels_are_lowered() {
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
+        let (p, sink) = start(discord()).await;
+        run(&p, ac("labels", "x")).await;
+        let sent = choices(&p);
+        assert_eq!(sent.len(), 2, "{sent:?}");
+        assert_eq!(
+            sent[0],
+            json!({ "name": "Only the person who started this can use it.", "value": "k" })
+        );
+        let cut = sent[1]["name"].as_str().unwrap();
+        assert_eq!(noctis_rules::len::discord_len(cut), 100);
+        assert!(cut.ends_with('…'), "{cut}");
+        assert!(sink.seen().is_empty());
+        assert_eq!(
+            capture
+                .lines_with(&["noctis::autocomplete", "OPT-09", "cut=1"])
+                .len(),
+            1,
+            "{}",
+            capture.text()
+        );
+        assert_eq!(
+            capture
+                .lines_with(&["noctis::autocomplete", "dropped=2"])
+                .len(),
+            1,
+            "{}",
+            capture.text()
+        );
+    }
+
+    /// Story 6.11 Matrix 28: `guild_id()?` in a DM and an unregistered
+    /// state answer an empty list and reach the sink.
+    #[tokio::test]
+    async fn guild_and_state_failures() {
+        for (option, text) in [("guild", "not in a guild"), ("state", "ip_addr::Ipv4Addr")] {
+            let (p, sink) = start(discord()).await;
+            run(&p, ac(option, "x")).await;
+            assert!(choices(&p).is_empty(), "{option}");
+            let seen = sink.seen();
+            assert_eq!(seen.len(), 1, "{option}");
+            assert!(seen[0].kind.contains(text), "{option}: {}", seen[0].kind);
+        }
     }
 
     /// Matrix 21 and 22: a rejected callback is reported once, never
@@ -2060,7 +2130,7 @@ mod autocomplete {
         let lines = capture.lines_with(&["ERROR", "noctis::autocomplete", "boom"]);
         assert_eq!(lines.len(), 1, "{}", capture.text());
 
-        let default = Pipeline::start_default_sink(Module::new("m").add(config())).await;
+        let default = Pipeline::start_default_sink(Module::new("m").__add(config())).await;
         run(&default, ac("err", "x")).await;
         let lines = capture.lines_with(&["ERROR", "noctis::autocomplete", "boom"]);
         assert_eq!(lines.len(), 2, "{}", capture.text());
@@ -2143,17 +2213,17 @@ mod notices {
         let snapshotter = recorder.snapshotter();
         let _metrics = metrics::set_default_local_recorder(&recorder);
         let module = Module::new("m")
-            .add(failing("m::plain", &["plain"], || io("boom")))
-            .add(failing("m::keyed", &["keyed"], || {
+            .__add(failing("m::plain", &["plain"], || io("boom")))
+            .__add(failing("m::keyed", &["keyed"], || {
                 io("db down").with_message(keys::GUARD_OWNER)
             }))
-            .add(failing("m::user", &["user"], || {
+            .__add(failing("m::user", &["user"], || {
                 HandlerError::user(keys::DISABLED_HERE)
             }))
-            .add(failing("m::bot", &["bot"], || {
+            .__add(failing("m::bot", &["bot"], || {
                 HandlerError::user(MessageKey::new("shop.missing"))
             }))
-            .add(failing("m::rekeyed", &["rekeyed"], || {
+            .__add(failing("m::rekeyed", &["rekeyed"], || {
                 HandlerError::user(keys::DISABLED_HERE).with_message(keys::GUARD_OWNER)
             }));
         let p = Pipeline::start(module).await;
@@ -2233,7 +2303,7 @@ mod notices {
         tracing::callsite::rebuild_interest_cache();
         let log = Log::default();
         let ran = log.clone();
-        let module = Module::new("m").add(CommandHandler::__new_plain_with_options(
+        let module = Module::new("m").__add(CommandHandler::__new_plain_with_options(
             "m::check",
             &["check"],
             "d",
@@ -2300,7 +2370,7 @@ mod notices {
             )
         };
         let p = Arc::new(
-            Pipeline::start_with(Module::new("m").add(handler), |b| {
+            Pipeline::start_with(Module::new("m").__add(handler), |b| {
                 b.ack_deadline(Duration::from_millis(20));
             })
             .await,
@@ -2339,7 +2409,7 @@ mod notices {
     #[tokio::test]
     async fn notice_after_explicit_acks() {
         let module = Module::new("m")
-            .add(CommandHandler::__new_plain(
+            .__add(CommandHandler::__new_plain(
                 "m::deferred",
                 &["deferred"],
                 "d",
@@ -2348,7 +2418,7 @@ mod notices {
                     Err::<V2Message, _>(io("x"))
                 },
             ))
-            .add(CommandHandler::__new_plain(
+            .__add(CommandHandler::__new_plain(
                 "m::replied",
                 &["replied"],
                 "d",
@@ -2357,7 +2427,7 @@ mod notices {
                     Err::<V2Message, _>(io("x"))
                 },
             ))
-            .add(CommandHandler::__new_plain(
+            .__add(CommandHandler::__new_plain(
                 "m::filled",
                 &["filled"],
                 "d",
@@ -2430,8 +2500,8 @@ mod notices {
             }
         });
         let module = Module::new("m")
-            .add(failing("m::fail", &["fail"], || io("boom")))
-            .add(CommandHandler::__new_plain(
+            .__add(failing("m::fail", &["fail"], || io("boom")))
+            .__add(CommandHandler::__new_plain(
                 "m::deferred",
                 &["deferred"],
                 "d",
@@ -2481,7 +2551,7 @@ mod notices {
         let _guard = tracing::subscriber::set_default(capture.subscriber());
         tracing::callsite::rebuild_interest_cache();
         let module = Module::new("m")
-            .add(CommandHandler::__new_plain(
+            .__add(CommandHandler::__new_plain(
                 "m::many",
                 &["many"],
                 "d",
@@ -2494,7 +2564,7 @@ mod notices {
                     Err::<V2Message, _>(io("after five"))
                 },
             ))
-            .add(CommandHandler::__new_plain(
+            .__add(CommandHandler::__new_plain(
                 "m::old",
                 &["old"],
                 "d",
@@ -2531,7 +2601,7 @@ mod notices {
     /// Matrix 18: no notice for a cancellation.
     #[tokio::test]
     async fn no_notice_for_a_cancellation() {
-        let p = Pipeline::start(Module::new("m").add(failing("m::f", &["f"], || io("x")))).await;
+        let p = Pipeline::start(Module::new("m").__add(failing("m::f", &["f"], || io("x")))).await;
         let cancel = CancellationToken::new();
         cancel.cancel();
         p.run_with(run_slash("f"), cancel).await;
@@ -2544,8 +2614,8 @@ mod notices {
     #[tokio::test]
     async fn dispatcher_notices_are_public() {
         let module = Module::new("m")
-            .add(failing("m::fail", &["fail"], || io("boom")))
-            .add(CommandHandler::__new_plain(
+            .__add(failing("m::fail", &["fail"], || io("boom")))
+            .__add(CommandHandler::__new_plain(
                 "m::replied",
                 &["replied"],
                 "d",
@@ -2588,7 +2658,7 @@ mod notices {
     /// Matrix 21 (LOC-04): every locale renders the en-US text today.
     #[tokio::test]
     async fn locales_fall_back_to_en_us() {
-        let p = Pipeline::start(Module::new("m").add(failing("m::f", &["f"], || io("x")))).await;
+        let p = Pipeline::start(Module::new("m").__add(failing("m::f", &["f"], || io("x")))).await;
         for extra in [
             json!({ "locale": "tr", "guild_locale": "de", "guild_id": "4" }),
             json!({ "locale": "xx-YY" }),
@@ -2613,8 +2683,8 @@ mod notices {
         tracing::callsite::rebuild_interest_cache();
         let custom = Pipeline::start(
             Module::new("m")
-                .add(failing("m::f", &["f"], || io("boom")))
-                .add(panicking("m::p", &["p"], "custom kaboom")),
+                .__add(failing("m::f", &["f"], || io("boom")))
+                .__add(panicking("m::p", &["p"], "custom kaboom")),
         )
         .await;
         custom.run(run_slash("f")).await;
@@ -2633,8 +2703,8 @@ mod notices {
 
         let default = Pipeline::start_default_sink(
             Module::new("m")
-                .add(failing("m::g", &["g"], || io("bang")))
-                .add(panicking("m::q", &["q"], "default kaboom")),
+                .__add(failing("m::g", &["g"], || io("bang")))
+                .__add(panicking("m::q", &["q"], "default kaboom")),
         )
         .await;
         default.run(run_slash("g")).await;
@@ -2696,10 +2766,12 @@ async fn int_05_manual_uses_the_declared_response() {
         )
     };
     let module = Module::new("m")
-        .add(reply("m::pub_reply", &["pub_reply"]))
-        .add(reply("m::eph_reply", &["eph_reply"]).__with_ephemerality(Ephemerality::Ephemeral))
-        .add(deferred("m::pub_defer", &["pub_defer"]))
-        .add(deferred("m::eph_defer", &["eph_defer"]).__with_ephemerality(Ephemerality::Ephemeral));
+        .__add(reply("m::pub_reply", &["pub_reply"]))
+        .__add(reply("m::eph_reply", &["eph_reply"]).__with_ephemerality(Ephemerality::Ephemeral))
+        .__add(deferred("m::pub_defer", &["pub_defer"]))
+        .__add(
+            deferred("m::eph_defer", &["eph_defer"]).__with_ephemerality(Ephemerality::Ephemeral),
+        );
     let p = Pipeline::start_with(module, |b| {
         b.ack_deadline(Duration::ZERO);
     })
@@ -2759,7 +2831,7 @@ async fn int_05_manual_menu() {
     .__with_ephemerality(Ephemerality::Ephemeral);
     assert!(!menu.auto_defer());
     assert_eq!(menu.ephemerality(), Ephemerality::Ephemeral);
-    let p = Pipeline::start_with(Module::new("m").add(menu), |b| {
+    let p = Pipeline::start_with(Module::new("m").__add(menu), |b| {
         b.ack_deadline(Duration::ZERO);
     })
     .await;

@@ -1,0 +1,6 @@
+error: `#[derive(Route)]` and `#[route]` are withdrawn: derive the component kind, whose attribute carries the id, the codec arguments and `defaults(..)`
+         = help: #[derive(Button)] #[button("shop.buy", defaults(style = Primary, label = "Buy"))] struct Buy { item: u64 } impl Buy { #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> { .. } }
+ --> tests/types/withdrawn_route.rs:5:8
+  |
+5 | struct Buy {
+  |        ^^^

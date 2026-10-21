@@ -331,7 +331,7 @@ type ErasedHandler =
 /// # }
 /// let handler = on_delete();
 /// assert!(format!("{handler:?}").contains("MESSAGE_DELETE"));
-/// let module = Module::new("audit").add(handler);
+/// let module = Module::new("audit").__add(handler);
 /// ```
 #[derive(Clone)]
 pub struct EventHandler {

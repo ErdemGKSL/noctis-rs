@@ -1,6 +1,6 @@
 ---
 source: crates/noctis-ui/tests/components.rs
-expression: "ActionRow::buttons([Button::from(buy().button()),\nButton::from(LinkButton::new(\"https://x.y\")),])"
+expression: "ActionRow::buttons([Button::from(button(buy())),\nButton::from(LinkButton::new(\"https://x.y\")),])"
 ---
 {
   "type": 1,

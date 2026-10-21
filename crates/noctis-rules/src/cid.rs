@@ -1,5 +1,5 @@
 //! `custom_id` route grammar and codec caps (CID-01, CID-03), shared by the
-//! codec and the `#[derive(Route)]` macro so neither copies a constant (AD-3).
+//! codec and the kind derive macros so neither copies a constant (AD-3).
 //!
 //! ```
 //! use noctis_rules::RuleId;

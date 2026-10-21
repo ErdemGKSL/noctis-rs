@@ -1,5 +1,5 @@
 //! Option boundary passes (CMD-02, CMD-04, CMD-13, OPT-03, OPT-04, OPT-06,
-//! OPT-08, OPT-09, OPT-13): `#[derive(Options)]` and `#[derive(Choices)]`
+//! OPT-08, OPT-09, OPT-11, OPT-13): `#[derive(SlashCommand)]` options and `#[derive(Choices)]`
 //! literals exactly at a limit compile.
 
 use noctis::CommandOption;
@@ -7,7 +7,8 @@ use noctis::prelude::*;
 use noctis::rules::command::{NumericValue, OptionType};
 use noctis::ui::ResolvedAttachment;
 
-#[derive(Options)]
+#[derive(::noctis::SlashCommand)]
+#[command("twentyfive", description = "d")]
 #[expect(dead_code, reason = "only the declarations are read")]
 struct TwentyFive {
     #[option(description = "d")]
@@ -62,12 +63,23 @@ struct TwentyFive {
     o24: i64,
 }
 
+impl TwentyFive {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::CommandCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 #[test]
 fn cmd_13_25_options() {
     assert_eq!(TwentyFive::OPTIONS.len(), 25);
 }
 
-#[derive(Options)]
+#[derive(::noctis::SlashCommand)]
+#[command("texts", description = "d")]
 #[expect(dead_code, reason = "only the declarations are read")]
 struct Texts {
     #[option(description = "d")]
@@ -82,6 +94,16 @@ struct Texts {
     emoji: i64,
 }
 
+impl Texts {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::CommandCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 #[test]
 fn cmd_02_cmd_04_name_32_and_description_100() {
     let o = Texts::OPTIONS;
@@ -90,7 +112,8 @@ fn cmd_02_cmd_04_name_32_and_description_100() {
     assert_eq!(o[2].description.default.chars().count(), 50);
 }
 
-#[derive(Options)]
+#[derive(::noctis::SlashCommand)]
+#[command("bounds", description = "d")]
 #[expect(dead_code, reason = "only the declarations are read")]
 struct Bounds {
     #[option(description = "d", min_value = -9007199254740991, max_value = 9007199254740991)]
@@ -99,6 +122,16 @@ struct Bounds {
     number: f64,
     #[option(description = "d", min_length = 0, max_length = 6000)]
     text: String,
+}
+
+impl Bounds {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::CommandCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
 }
 
 #[test]
@@ -191,13 +224,24 @@ enum Long {
     B,
 }
 
-#[derive(Options)]
+#[derive(::noctis::SlashCommand)]
+#[command("withchoices", description = "d")]
 #[expect(dead_code, reason = "only the declarations are read")]
 struct WithChoices {
     #[option(description = "d")]
     many: Many,
     #[option(description = "d")]
     long: Option<Long>,
+}
+
+impl WithChoices {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::CommandCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
 }
 
 #[test]
@@ -211,7 +255,8 @@ fn opt_09_choice_name_and_value_100() {
     assert_eq!(WithChoices::OPTIONS[1].choices.len(), 2);
 }
 
-#[derive(Options)]
+#[derive(::noctis::SlashCommand)]
+#[command("files", description = "d")]
 #[expect(dead_code, reason = "only the declarations are read")]
 struct Files {
     #[option(
@@ -221,7 +266,79 @@ struct Files {
     file: ResolvedAttachment,
 }
 
+impl Files {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::CommandCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 #[test]
 fn opt_13_10_entries() {
     assert_eq!(Files::OPTIONS[0].file_types.len(), 10);
+}
+
+/// Story 6.11 Matrix 23: an `autocomplete` flag paired with its method on
+/// every suggestion type, `Option` included.
+#[derive(SlashCommand)]
+#[command("suggest", description = "d")]
+#[expect(dead_code, reason = "only the declarations are read")]
+struct Suggested {
+    #[option(description = "d", autocomplete)]
+    int: i64,
+    #[option(description = "d", autocomplete)]
+    number: f64,
+    #[option(description = "d", autocomplete)]
+    text: String,
+    #[option(description = "d", autocomplete)]
+    maybe: Option<String>,
+}
+
+impl Suggested {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Responded> {
+        Ok(noctis::__private::core::__testing::responded())
+    }
+
+    #[autocomplete(int)]
+    async fn int(_: AutocompleteCtx, _: &str, _: Partial<Self>) -> HandlerResult<Suggestions<i64>> {
+        Ok([(1, "one")].into_iter().collect())
+    }
+
+    #[autocomplete(number)]
+    async fn number(
+        _: AutocompleteCtx,
+        _: &str,
+        _: Partial<Self>,
+    ) -> HandlerResult<Suggestions<f64>> {
+        Ok(Suggestions::new())
+    }
+
+    #[autocomplete(text)]
+    async fn text(
+        _: AutocompleteCtx,
+        typed: &str,
+        _: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        Ok([(typed.to_owned(), typed.to_owned())].into_iter().collect())
+    }
+
+    #[autocomplete(maybe)]
+    async fn maybe(
+        _: AutocompleteCtx,
+        _: &str,
+        filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        let _ = filled.int;
+        Ok(Suggestions::new())
+    }
+}
+
+#[test]
+fn opt_11_autocomplete_on_every_suggestion_type() {
+    assert!(Suggested::OPTIONS.iter().all(|o| o.autocomplete));
+    let _ = Module::new("m").add::<Suggested>();
 }

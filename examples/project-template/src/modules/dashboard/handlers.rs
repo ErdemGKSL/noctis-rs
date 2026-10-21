@@ -1,7 +1,7 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
 
-//! Every handler has the same shape, `impl X { #[handler] async fn handle(self, ctx, ..) }`
-//! ([planned: Story 6.11]): `self` is the decoded Payload,
+//! Every handler has the same shape, `impl X { #[handler] async fn handle(self, ctx, ..) }`:
+//! `self` is the decoded Payload,
 //! validate and authorize (Route Guards run before the handler), write to storage, then
 //! `ctx.update(render_dashboard(..))` with freshly loaded data.
 
@@ -27,8 +27,8 @@ use crate::strings::{Strings, keys};
 )]
 pub struct Dashboard {
     /// The literal equals `cmd.dashboard.opt.module.description` in `locales/en-US.yaml`.
-    /// `autocomplete` pairs with the `#[autocomplete(module)]` method below
-    /// ([planned, Stories 6.7 and 6.11]; one without the other is an `[OPT-11]` error).
+    /// `autocomplete` pairs with the `#[autocomplete(module)]` method below (one without
+    /// the other is an `[OPT-11]` error).
     #[option(description = "Jump to a module's settings", autocomplete)]
     pub module: Option<String>,
 }

@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: [OPT-03] a.min_value: limit between -9007199254740991 and 9007199254740991, actual `-9007199254740992`
- --> tests/ui/opt/OPT-03_integer_bound_out_of_range.rs:5:5
+ --> tests/ui/opt/OPT-03_integer_bound_out_of_range.rs:6:5
   |
-5 |     #[option(description = "d", min_value = -9007199254740992)]
+6 |     #[option(description = "d", min_value = -9007199254740992)]
   |     ^ evaluation of `_` failed here

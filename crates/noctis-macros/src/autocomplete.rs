@@ -1,25 +1,43 @@
-//! `#[autocomplete]`: turns `async fn name(ctx: AutocompleteCtx[, partial:
-//! Partial<O>]) -> HandlerResult<Responded>` into `fn name() ->
-//! AutocompleteHandler<O>` (FR-10, AD-11; INT-06, OPT-12).
+//! `#[autocomplete(field)]`: the suggestion method of the option `field` of
+//! a `#[derive(SlashCommand)]` struct (FR-10, AD-11; OPT-11, OPT-12,
+//! INT-06; maintainer decisions §8).
 //!
-//! With a `partial` parameter the descriptor's options type is
-//! `<P as PartialOptions>::Options`; without one the descriptor is generic
-//! over any options struct, inferred where `#[option(autocomplete = path)]`
-//! links it.
+//! The method stays as written: `async fn <any>(ctx: AutocompleteCtx,
+//! typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>`.
+//! Beside it, in the same `impl`, the macro emits the hidden
+//! `__NOCTIS_AC_<field>` const (the derive's OPT-11 check reads it) and the
+//! hidden `__noctis_ac_<field>()` binding, which core's
+//! `__autocomplete_method` bounds by `Self: __AutocompleteField<{hash}>`
+//! (the field exists and is flagged) and by `__SuggestionsFor<Value>` (the
+//! return type matches the field's type). The macro writes the wrapper
+//! closure itself, so no higher-ranked bound over the borrowed `&str` is
+//! needed.
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, ReturnType, Type};
+use syn::{FnArg, Ident, ImplItemFn, Type};
 
-use crate::command::check_shape;
+use crate::command::{arg_name, segments};
+use crate::common::{fnv1a64, plain};
 
-const ATTR: &str = "#[autocomplete]";
-const SIGNATURE: &str =
-    "`#[autocomplete]` handlers take `(ctx: AutocompleteCtx[, partial: Partial<Options>])`";
+const SIGNATURE: &str = "an `#[autocomplete]` method takes `(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>)`";
+const NO_SELF: &str = "an `#[autocomplete]` method takes no `self`: the options are incomplete, so it gets `filled: Partial<Self>`";
+const ASYNC: &str = "an `#[autocomplete]` method must be `async`";
+const GENERIC: &str = "an `#[autocomplete]` method cannot be generic";
+const ONE_FIELD: &str = "`#[autocomplete(field)]` names exactly one field";
+const OTHER_ARGS: &str = "`#[autocomplete(field)]` takes no other arguments";
+const INT_06: &str = "[INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`";
 
-/// Whether `ty`'s last path segment is `AutocompleteCtx`.
-fn is_ctx(ty: &Type) -> bool {
+/// The error of a bare `#[autocomplete]`.
+fn bare(method: &str) -> String {
+    format!(
+        "`#[autocomplete]` needs the field it suggests for: `#[autocomplete(field)]`\n  = help: #[derive(SlashCommand)] struct Warn {{ #[option(description = \"…\", autocomplete)] rule: i64 }} impl Warn {{ #[autocomplete(rule)] async fn {method}(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> {{ .. }} }}"
+    )
+}
+
+/// Whether `ty`'s last path segment is `name` without arguments.
+fn last_is(ty: &Type, name: &str) -> bool {
     match ty {
         Type::Path(path) => {
             path.qself.is_none()
@@ -27,95 +45,171 @@ fn is_ctx(ty: &Type) -> bool {
                     .path
                     .segments
                     .last()
-                    .is_some_and(|s| s.ident == "AutocompleteCtx" && s.arguments.is_none())
+                    .is_some_and(|s| s.ident == name && s.arguments.is_none())
         }
+        Type::Group(g) => last_is(&g.elem, name),
         _ => false,
     }
 }
 
-/// `(ctx: AutocompleteCtx[, partial: P])`: the partial type, if taken.
-fn check_params(item: &ItemFn) -> syn::Result<Option<&Type>> {
-    let sig = &item.sig;
-    if let Some(receiver) = sig.receiver() {
-        return Err(syn::Error::new_spanned(receiver, SIGNATURE));
+/// Whether `ty` is `&str`.
+fn is_str_ref(ty: &Type) -> bool {
+    match ty {
+        Type::Reference(r) => r.mutability.is_none() && last_is(&r.elem, "str"),
+        Type::Group(g) => is_str_ref(&g.elem),
+        _ => false,
     }
-    let typed: Vec<&syn::PatType> = sig
+}
+
+/// Parses the attribute arguments: exactly one field identifier.
+fn parse_field(args: TokenStream, method: &Ident) -> syn::Result<Ident> {
+    if args.is_empty() {
+        return Err(syn::Error::new(Span::call_site(), bare(&plain(method))));
+    }
+    let segments = segments(args.clone());
+    let deferral = segments.iter().enumerate().any(|(i, segment)| {
+        arg_name(segment).is_some_and(|n| n == "auto_defer" || n == "response")
+            && (i > 0 || segment.len() > 1)
+    });
+    if deferral {
+        return Err(syn::Error::new_spanned(args, INT_06));
+    }
+    let field = match segments.first().map(Vec::as_slice) {
+        Some([TokenTree::Ident(ident)]) => syn::parse2::<Ident>(ident.to_token_stream())?,
+        _ => return Err(syn::Error::new_spanned(args, ONE_FIELD)),
+    };
+    let rest: TokenStream = segments
+        .iter()
+        .skip(1)
+        .flat_map(|s| s.iter().cloned())
+        .collect();
+    match segments.get(1).map(Vec::as_slice) {
+        None => Ok(field),
+        // A second bare identifier reads as a second field.
+        Some([TokenTree::Ident(_)]) => Err(syn::Error::new_spanned(rest, ONE_FIELD)),
+        Some(_) => Err(syn::Error::new_spanned(rest, OTHER_ARGS)),
+    }
+}
+
+/// Checks the method's shape.
+fn check(method: &ImplItemFn) -> syn::Result<()> {
+    let sig = &method.sig;
+    if let Some(receiver) = sig.receiver() {
+        return Err(syn::Error::new_spanned(receiver, NO_SELF));
+    }
+    if sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(sig.fn_token, ASYNC));
+    }
+    if !sig.generics.params.is_empty() || sig.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(&sig.generics, GENERIC));
+    }
+    let typed: Vec<&Type> = sig
         .inputs
         .iter()
         .filter_map(|a| match a {
-            FnArg::Typed(t) => Some(t),
+            FnArg::Typed(t) => Some(&*t.ty),
             FnArg::Receiver(_) => None,
         })
         .collect();
     match typed.as_slice() {
-        [ctx] | [ctx, _] if !is_ctx(&ctx.ty) => Err(syn::Error::new_spanned(&ctx.ty, SIGNATURE)),
-        [_] => Ok(None),
-        [_, partial] => Ok(Some(&*partial.ty)),
+        [ctx, typed, filled]
+            if last_is(ctx, "AutocompleteCtx") && is_str_ref(typed) && !is_str_ref(filled) =>
+        {
+            Ok(())
+        }
         [] => Err(syn::Error::new(sig.ident.span(), SIGNATURE)),
         _ => Err(syn::Error::new(sig.inputs.span(), SIGNATURE)),
     }
 }
 
-/// Expands `#[autocomplete] item`.
-pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    if !args.is_empty() {
-        let deferral = crate::command::segments(args.clone())
-            .iter()
-            .filter_map(|segment| crate::command::arg_name(segment))
-            .any(|name| name == "auto_defer" || name == "response");
-        let message = if deferral {
-            "[INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`"
-        } else {
-            "`#[autocomplete]` takes no arguments"
-        };
-        return Err(syn::Error::new_spanned(args, message));
-    }
-    let item: ItemFn = syn::parse2(item)?;
-    check_shape(&item, ATTR)?;
-    let partial = check_params(&item)?;
+/// The hidden const and binding names of `field`.
+pub(crate) fn names(field: &str, span: Span) -> (Ident, Ident) {
+    (
+        Ident::new(&format!("__NOCTIS_AC_{field}"), span),
+        Ident::new(&format!("__noctis_ac_{field}"), span),
+    )
+}
 
-    let ItemFn {
-        attrs,
-        vis,
-        sig,
-        block,
-        ..
-    } = &item;
-    let name = &sig.ident;
-    let fn_name = name.to_string();
-    let fn_name = fn_name.strip_prefix("r#").unwrap_or(&fn_name).to_owned();
-    let mut inner = sig.clone();
-    inner.ident = Ident::new("__noctis_autocomplete", name.span());
-    let inner = inner.into_token_stream();
-    let output_span = match &sig.output {
-        ReturnType::Default => sig.ident.span(),
-        ReturnType::Type(_, ty) => ty.span(),
-    };
+/// Expands `#[autocomplete(field)] item`. On an error, the method stays,
+/// with the error and, when the field is named, placeholder items so the
+/// derive's OPT-11 check adds no second error.
+pub(crate) fn expand_or_fallback(args: TokenStream, item: TokenStream) -> TokenStream {
+    match expand(args.clone(), item.clone()) {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            let error = e.into_compile_error();
+            let Ok(method) = syn::parse2::<ImplItemFn>(item) else {
+                return error;
+            };
+            let field = match segments(args).first().map(Vec::as_slice) {
+                Some([TokenTree::Ident(ident)]) => Some(plain(&syn::parse_quote!(#ident))),
+                _ => None,
+            };
+            let Some(field) = field else {
+                return quote!(#error #method);
+            };
+            let (flag, binding) = names(&field, Span::call_site());
+            let core = quote!(::noctis::__private::core);
+            quote! {
+                #error
+                #method
+
+                #[doc(hidden)]
+                #[allow(non_upper_case_globals)]
+                pub const #flag: ::core::primitive::bool = true;
+
+                #[doc(hidden)]
+                #[allow(non_snake_case)]
+                pub fn #binding() -> #core::__AutocompleteMethod {
+                    #core::__AutocompleteMethod::__missing(#field)
+                }
+            }
+        }
+    }
+}
+
+/// Expands `#[autocomplete(field)] item`.
+pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let mut method: ImplItemFn = syn::parse2(item)?;
+    let field = parse_field(args, &method.sig.ident)?;
+    check(&method)?;
+    let field_name = plain(&field);
+    let hash = fnv1a64(&field_name);
+    let (flag, binding) = names(&field_name, field.span());
+    let name = method.sig.ident.clone();
+    let label = plain(&name);
     let core = quote!(::noctis::__private::core);
-    let handler = Ident::new("__noctis_autocomplete", output_span);
-    let label = quote!(::core::concat!(::core::module_path!(), "::", #fn_name));
-    let (generics, options, call) = if let Some(partial) = partial {
-        let options = quote!(<#partial as #core::PartialOptions>::Options);
-        let constructor = Ident::new("__new", output_span);
-        let call = quote_spanned! {output_span=>
-            #core::AutocompleteHandler::#constructor::<#partial, _, _>(#label, #handler)
-        };
-        (TokenStream::new(), options, call)
-    } else {
-        let o = Ident::new("__NoctisOptions", Span::call_site());
-        let constructor = Ident::new("__new_plain", output_span);
-        let call = quote_spanned! {output_span=>
-            #core::AutocompleteHandler::#constructor::<_, _>(#label, #handler)
-        };
-        (quote!(<#o: #core::Options>), o.into_token_stream(), call)
+    let (ctx, typed, filled) = (
+        Ident::new("__noctis_ctx", Span::mixed_site()),
+        Ident::new("__noctis_typed", Span::mixed_site()),
+        Ident::new("__noctis_filled", Span::mixed_site()),
+    );
+    let output = match &method.sig.output {
+        syn::ReturnType::Default => method.sig.ident.span(),
+        syn::ReturnType::Type(_, ty) => ty.span(),
     };
+    let bind = quote_spanned! {output=>
+        #core::__autocomplete_method::<Self, #hash, _, _, _>(
+            ::core::concat!(::core::module_path!(), "::", #label),
+            move |#ctx, #typed: ::std::string::String, #filled| async move {
+                Self::#name(#ctx, &#typed, #filled).await
+            },
+        )
+    };
+    method
+        .attrs
+        .push(syn::parse_quote!(#[allow(clippy::unused_async)]));
     Ok(quote! {
-        #(#attrs)*
-        #vis fn #name #generics() -> #core::AutocompleteHandler<#options> {
-            // A handler needs no `.await` to be `async` (the macro requires it).
-            #[allow(clippy::unused_async)]
-            #inner #block
-            #call
+        #method
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        pub const #flag: ::core::primitive::bool = true;
+
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        pub fn #binding() -> #core::__AutocompleteMethod {
+            #bind
         }
     })
 }
@@ -124,90 +218,72 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
 mod tests {
     use super::*;
 
-    const TYPED: &str = "async fn suggest(ctx: AutocompleteCtx, partial: Partial<O>) -> HandlerResult<Responded> { Ok(ctx.respond(Vec::new())) }";
-    const PLAIN: &str = "async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> { Ok(ctx.respond(Vec::new())) }";
+    const METHOD: &str = "async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> { todo!() }";
 
-    fn error(args: TokenStream, src: &str) -> String {
-        expand(args, src.parse().unwrap()).unwrap_err().to_string()
-    }
-
-    /// Matrix 28 and the typed form.
-    #[test]
-    fn expands_both_forms() {
-        let out = expand(
-            TokenStream::new(),
-            format!("/// docs\npub(crate) {TYPED}").parse().unwrap(),
-        )
-        .unwrap()
-        .to_string();
-        assert!(out.contains("pub (crate) fn suggest () -> :: noctis :: __private :: core :: AutocompleteHandler < < Partial < O > as :: noctis :: __private :: core :: PartialOptions > :: Options >"), "{out}");
-        assert!(out.contains("# [doc = \" docs\"]"), "{out}");
-        assert!(out.contains("# [allow (clippy :: unused_async)]"), "{out}");
-        assert!(
-            out.contains(
-                "async fn __noctis_autocomplete (ctx : AutocompleteCtx , partial : Partial < O >)"
-            ),
-            "{out}"
-        );
-        assert!(out.contains("AutocompleteHandler :: __new :: < Partial < O > , _ , _ > (:: core :: concat ! (:: core :: module_path ! () , \"::\" , \"suggest\") , __noctis_autocomplete)"), "{out}");
-        let out = expand(TokenStream::new(), PLAIN.parse().unwrap())
-            .unwrap()
-            .to_string();
-        assert!(out.contains("fn suggest < __NoctisOptions : :: noctis :: __private :: core :: Options > () -> :: noctis :: __private :: core :: AutocompleteHandler < __NoctisOptions >"), "{out}");
-        assert!(
-            out.contains("AutocompleteHandler :: __new_plain :: < _ , _ >"),
-            "{out}"
-        );
-        let out = expand(
-            TokenStream::new(),
-            "async fn r#type(ctx: noctis::AutocompleteCtx) -> HandlerResult<Responded> { todo!() }"
-                .parse()
-                .unwrap(),
-        )
-        .unwrap()
-        .to_string();
-        assert!(out.contains("\"type\""), "{out}");
-    }
-
-    /// Matrix 31: every signature message.
-    #[test]
-    fn rejects_bad_signatures() {
-        assert_eq!(
-            error(quote!(ephemeral), PLAIN),
-            "`#[autocomplete]` takes no arguments"
-        );
-        assert_eq!(
-            error(quote!(foo), PLAIN),
-            "`#[autocomplete]` takes no arguments"
-        );
-        for args in [quote!(auto_defer = false), quote!(response = ephemeral)] {
-            assert_eq!(
-                error(args, PLAIN),
-                "[INT-06] autocomplete cannot be deferred: `#[autocomplete]` takes no `auto_defer` or `response`"
-            );
+    fn run(args: TokenStream, src: &str) -> String {
+        match expand(args, src.parse().unwrap()) {
+            Ok(t) => t.to_string(),
+            Err(e) => e.to_string(),
         }
+    }
+
+    #[test]
+    fn expands() {
+        let out = run(quote!(rule), METHOD);
+        assert!(
+            out.contains("pub const __NOCTIS_AC_rule : :: core :: primitive :: bool = true"),
+            "{out}"
+        );
+        assert!(out.contains("pub fn __noctis_ac_rule ()"), "{out}");
+        let hash = fnv1a64("rule").to_string();
+        assert!(
+            out.contains(&format!("< Self , {hash}u64 , _ , _ , _ >")),
+            "{out}"
+        );
+        assert!(out.contains("Self :: rule ("), "{out}");
+        assert!(out.contains("# [allow (clippy :: unused_async)]"), "{out}");
+        // Matrix 54: non-ASCII field names.
+        let out = run(quote!(rüle), METHOD);
+        assert!(out.contains("__NOCTIS_AC_rüle"), "{out}");
+        let out = run(quote!(r#type), METHOD);
+        assert!(out.contains("__noctis_ac_type"), "{out}");
+    }
+
+    /// Story 6.11 Matrix 20 and 21.
+    #[test]
+    fn rejects() {
+        assert!(run(quote!(), METHOD).starts_with("`#[autocomplete]` needs the field"));
+        assert!(run(quote!(), METHOD).contains("= help: #[derive(SlashCommand)]"));
+        assert_eq!(run(quote!(a, b), METHOD), ONE_FIELD);
+        assert_eq!(run(quote!("rule"), METHOD), ONE_FIELD);
+        assert_eq!(run(quote!(rule, foo = 1), METHOD), OTHER_ARGS);
+        assert_eq!(run(quote!(rule, auto_defer = false), METHOD), INT_06);
+        assert_eq!(run(quote!(rule, response = ephemeral), METHOD), INT_06);
         assert_eq!(
-            error(
-                TokenStream::new(),
-                "fn f(ctx: AutocompleteCtx) -> HandlerResult<Responded> { todo!() }"
+            run(
+                quote!(rule),
+                "async fn f(&self, ctx: AutocompleteCtx, t: &str, p: P) {}"
             ),
-            "`#[autocomplete]` needs an `async fn`"
+            NO_SELF
         );
         assert_eq!(
-            error(
-                TokenStream::new(),
-                "async fn f<T>(ctx: AutocompleteCtx) -> HandlerResult<Responded> { todo!() }"
+            run(quote!(rule), "fn f(ctx: AutocompleteCtx, t: &str, p: P) {}"),
+            ASYNC
+        );
+        assert_eq!(
+            run(
+                quote!(rule),
+                "async fn f<T>(ctx: AutocompleteCtx, t: &str, p: P) {}"
             ),
-            "`#[autocomplete]` handlers cannot be generic"
+            GENERIC
         );
         for src in [
-            "async fn f(&self, ctx: AutocompleteCtx) -> HandlerResult<Responded> { todo!() }",
-            "async fn f() -> HandlerResult<Responded> { todo!() }",
-            "async fn f(ctx: AutocompleteCtx, a: Partial<O>, b: u8) -> HandlerResult<Responded> { todo!() }",
-            "async fn f(ctx: CommandCtx) -> HandlerResult<Responded> { todo!() }",
-            "async fn f(p: Partial<O>, ctx: AutocompleteCtx) -> HandlerResult<Responded> { todo!() }",
+            "async fn f(ctx: AutocompleteCtx) {}",
+            "async fn f(t: &str, ctx: AutocompleteCtx, p: P) {}",
+            "async fn f() {}",
+            "async fn f(ctx: AutocompleteCtx, t: String, p: P) {}",
         ] {
-            assert_eq!(error(TokenStream::new(), src), SIGNATURE, "{src}");
+            assert_eq!(run(quote!(rule), src), SIGNATURE, "{src}");
         }
     }
 }

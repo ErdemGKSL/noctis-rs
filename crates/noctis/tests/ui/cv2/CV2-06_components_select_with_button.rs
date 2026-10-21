@@ -1,17 +1,29 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("t.press")]
+#[derive(Button)]
+#[button("t.press", defaults(style = Secondary, label = "Go"))]
 struct Press {
     n: u8,
 }
-impl noctis::__private::ui::Handled for Press {}
 
-#[derive(Route)]
-#[route("t.pick", select)]
+impl Press {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+}
+
+#[derive(StringSelectMenu)]
+#[string_select("t.pick", defaults(placeholder = "Pick"))]
 struct Pick;
-impl noctis::__private::ui::Handled for Pick {}
+
+impl Pick {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+}
 
 fn main() {
-    let _ = components! { row [ Pick.user_select(), Press { n: 1 }.button() ] };
+    let _ = components! { row [ Pick.build(), Press { n: 1 }.build() ] };
 }

@@ -1,5 +1,5 @@
 error: [CTX-01] limit between 1 and 32, actual 0
- --> tests/ui/ctx/CTX-01_message_command_empty_name.rs:3:19
+ --> tests/ui/ctx/CTX-01_message_command_empty_name.rs:4:19
   |
-3 | #[message_command("")]
+4 | #[message_command("")]
   |                   ^^

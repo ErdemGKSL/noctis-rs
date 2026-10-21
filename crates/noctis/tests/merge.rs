@@ -15,76 +15,152 @@ use noctis::rules::{RuleId, Violation};
 use noctis::ui::ResolvedUser;
 use noctis::{BaseMeta, BuildError, BuildViolation, Permissions, Runtime};
 
+#[derive(SlashCommand)]
 #[command("config set", description = "Set a value")]
-async fn config_set(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ConfigSet;
+
+impl ConfigSet {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config get prefix", description = "Show the prefix")]
-async fn config_get_prefix(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ConfigGetPrefix;
+
+impl ConfigGetPrefix {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config get", description = "Read a value")]
-async fn config_get(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ConfigGet;
+
+impl ConfigGet {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config set", description = "Set a value", guilds = [42])]
-async fn guild_config_set(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct GuildConfigSet;
+
+impl GuildConfigSet {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config set", description = "Set a value", permissions = MANAGE_GUILD)]
-async fn managed_config_set(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ManagedConfigSet;
+
+impl ManagedConfigSet {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config get", description = "Read a value", permissions = ADMINISTRATOR)]
-async fn admin_config_get(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct AdminConfigGet;
+
+impl AdminConfigGet {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config", description = "Configure")]
-async fn config(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Config;
+
+impl Config {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("config (set|get)", description = "Set a value")]
-async fn config_any(
-    _ctx: CommandCtx,
-    _path: ConfigAnyPath,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ConfigAny;
+
+impl ConfigAny {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _path: ConfigAnyPath,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("show profile", description = "Show a profile")]
-async fn show_profile(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ShowProfile;
+
+impl ShowProfile {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(UserCommand)]
 #[user_command("Show profile")]
-async fn show_user(
-    _ctx: CommandCtx,
-    _target: ResolvedUser,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ShowUser;
+
+impl ShowUser {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _target: ResolvedUser,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(UserCommand)]
 #[user_command("Show profile")]
-async fn show_user_again(
-    _ctx: CommandCtx,
-    _target: ResolvedUser,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ShowUserAgain;
+
+impl ShowUserAgain {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _target: ResolvedUser,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(MessageCommand)]
 #[message_command("Show profile")]
-async fn show_message(
-    _ctx: CommandCtx,
-    _target: noctis::ui::ResolvedMessage,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct ShowMessage;
+
+impl ShowMessage {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _target: noctis::ui::ResolvedMessage,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
 fn build(modules: impl IntoIterator<Item = Module>) -> Result<App, BuildError> {
@@ -122,16 +198,16 @@ fn name(f: &str) -> String {
 #[tokio::test]
 async fn reg_04_merge_across_modules() {
     let tree = tree([
-        Module::new("a").add(config_set()),
-        Module::new("b").add(config_get_prefix()),
+        Module::new("a").add::<ConfigSet>(),
+        Module::new("b").add::<ConfigGetPrefix>(),
     ]);
     assert_eq!(
         tree,
         format!(
             "global\n  /config \"Set a value\"\n    set \"Set a value\" -> {} (a)\n    \
              get \"Show the prefix\"\n      prefix \"Show the prefix\" -> {} (b)",
-            name("config_set"),
-            name("config_get_prefix")
+            name("ConfigSet"),
+            name("ConfigGetPrefix")
         )
     );
 }
@@ -140,7 +216,7 @@ async fn reg_04_merge_across_modules() {
 #[tokio::test]
 async fn cmd_04_explicit_base_description() {
     let tree = tree([
-        Module::new("a").add(config_set()),
+        Module::new("a").add::<ConfigSet>(),
         Module::new("b").base("config", BaseMeta::new().description("Configure")),
     ]);
     assert!(
@@ -153,16 +229,16 @@ async fn cmd_04_explicit_base_description() {
 #[tokio::test]
 async fn reg_02_guild_scope_is_separate() {
     let tree = tree([
-        Module::new("a").add(guild_config_set()),
-        Module::new("b").add(config_get()),
+        Module::new("a").add::<GuildConfigSet>(),
+        Module::new("b").add::<ConfigGet>(),
     ]);
     assert_eq!(
         tree,
         format!(
             "guild 42\n  /config \"Set a value\"\n    set \"Set a value\" -> {} (a)\n\
              global\n  /config \"Read a value\"\n    get \"Read a value\" -> {} (b)",
-            name("guild_config_set"),
-            name("config_get")
+            name("GuildConfigSet"),
+            name("ConfigGet")
         )
     );
 }
@@ -171,14 +247,14 @@ async fn reg_02_guild_scope_is_separate() {
 #[tokio::test]
 async fn meta_01_base_meta_resolution() {
     let tree = tree([
-        Module::new("a").add(managed_config_set()),
+        Module::new("a").add::<ManagedConfigSet>(),
         Module::new("b").base(
             "config",
             BaseMeta::new()
                 .default_member_permissions(Permissions::MANAGE_GUILD)
                 .nsfw(false),
         ),
-        Module::new("c").add(config_get()),
+        Module::new("c").add::<ConfigGet>(),
     ]);
     assert!(
         tree.starts_with("global\n  /config \"Set a value\" permissions=32 nsfw=false\n"),
@@ -190,9 +266,9 @@ async fn meta_01_base_meta_resolution() {
 #[tokio::test]
 async fn reg_03_menu_types_and_chat_input() {
     let tree = tree([
-        Module::new("a").add(show_user()),
-        Module::new("b").add(show_message()),
-        Module::new("c").add(show_profile()),
+        Module::new("a").add::<ShowUser>(),
+        Module::new("b").add::<ShowMessage>(),
+        Module::new("c").add::<ShowProfile>(),
     ]);
     assert!(tree.contains("  user \"Show profile\" -> "), "{tree}");
     assert!(tree.contains("  message \"Show profile\" -> "), "{tree}");
@@ -203,8 +279,8 @@ async fn reg_03_menu_types_and_chat_input() {
 #[tokio::test]
 async fn meta_01_permissions_conflict() {
     let errs = failing([
-        Module::new("a").add(managed_config_set()),
-        Module::new("b").add(admin_config_get()),
+        Module::new("a").add::<ManagedConfigSet>(),
+        Module::new("b").add::<AdminConfigGet>(),
     ]);
     assert_eq!(errs.len(), 1);
     assert_eq!(
@@ -220,8 +296,8 @@ async fn meta_01_permissions_conflict() {
         ]
     );
     let message = build([
-        Module::new("a").add(managed_config_set()),
-        Module::new("b").add(admin_config_get()),
+        Module::new("a").add::<ManagedConfigSet>(),
+        Module::new("b").add::<AdminConfigGet>(),
     ])
     .unwrap_err()
     .to_string();
@@ -232,8 +308,8 @@ async fn meta_01_permissions_conflict() {
 #[tokio::test]
 async fn cmd_12_invokable_base_across_modules() {
     let errs = failing([
-        Module::new("a").add(config()),
-        Module::new("b").add(config_set()),
+        Module::new("a").add::<Config>(),
+        Module::new("b").add::<ConfigSet>(),
     ]);
     assert_eq!(errs.len(), 1);
     assert_eq!(
@@ -254,8 +330,8 @@ async fn cmd_12_invokable_base_across_modules() {
 #[tokio::test]
 async fn reg_04_duplicate_path() {
     let errs = failing([
-        Module::new("a").add(config_set()),
-        Module::new("b").add(config_any()),
+        Module::new("a").add::<ConfigSet>(),
+        Module::new("b").add::<ConfigAny>(),
     ]);
     assert_eq!(errs.len(), 1);
     assert_eq!(
@@ -272,8 +348,8 @@ async fn reg_04_duplicate_path() {
 #[tokio::test]
 async fn reg_03_same_user_command() {
     let errs = failing([
-        Module::new("a").add(show_user()),
-        Module::new("b").add(show_user_again()),
+        Module::new("a").add::<ShowUser>(),
+        Module::new("b").add::<ShowUserAgain>(),
     ]);
     assert_eq!(errs.len(), 1);
     assert_eq!(

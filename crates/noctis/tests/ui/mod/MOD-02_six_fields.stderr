@@ -1,5 +1,5 @@
 error: [MOD-02] components: limit between 1 and 5, actual 6
-  --> tests/ui/mod/MOD-02_six_fields.rs:22:5
+  --> tests/ui/mod/MOD-02_six_fields.rs:17:5
    |
-22 |     f: bool,
+17 |     f: bool,
    |     ^

@@ -182,7 +182,7 @@ Anti-patterns:
 - Never pick ephemerality per call to work around a missing declaration: declare
   `response = ephemeral`; use `reply_as`/`defer_reply_as` only for the rare mixed case.
 
-This release ships `auto_defer` and `response` on `#[command]`, `#[user_command]` and
+`auto_defer` and `response` ship on `#[command]`, `#[user_command]` and
 `#[message_command]` (component and modal handlers arrive with Epic 7).
 `CommandHandler::auto_defer()` and `ContextMenuHandler::auto_defer()` read the flag,
 `ephemerality()` the declared `response`. Argument errors: `response = update` on a
@@ -263,11 +263,10 @@ The type is `Responder<K, S = Pending, D = AutoDefer>`: `K` is the handler kind
 (`Pending` or `Acked`, sealed `ResponderState`) and `D` the sealed `DeferMode`:
 `AutoDefer` (default) or `Manual` (§2b). Only `Manual` implements the sealed
 `CanShowModal`. Take it
-as a handler parameter through its alias, right after `ctx` (and the path), before the
-options: `(ctx[, path][, r: CommandResponder][, options])`, or `(ctx, target[, r:
-CommandResponder])` on a context menu. Any other order, or two responders, is a compile
-error listing these forms. [planned: Story 6.11] the options become `self`, so the
-method is `handle(self, ctx[, path][, r])` / `handle(self, ctx, target[, r])`. A handler that returns a message takes none (and if it takes
+as the last handler parameter through its alias, after `ctx` (and the path or target):
+`handle(self, ctx[, path][, r: CommandResponder])`, or `handle(self, ctx, target[, r:
+CommandResponder])` on a context menu; the options are `self`. Any other order, or two
+responders, is a compile error listing these forms. A handler that returns a message takes none (and if it takes
 one but never uses it, nothing is sent from it).
 
 | Alias | Pending methods | Kind |
@@ -279,9 +278,8 @@ one but never uses it, nothing is sent from it).
 | `ModalResponder` / `ModalResponder<Manual>` [planned, Epic 7] | `reply(msg)`, `update(msg)`, `defer_update()`, `defer_reply()` — **never** `show_modal` | modal submit |
 
 Autocomplete has no Responder and no response method: the `#[autocomplete(field)]`
-method returns `HandlerResult<Suggestions<T>>` and Noctis sends it (`commands.md` §4)
-[planned, Story 6.11]. This release (Story 6.7): `AutocompleteCtx` offers only the
-synchronous `ctx.respond(choices) -> Responded` (no `.await`).
+method returns `HandlerResult<Suggestions<T>>` and Noctis sends it (`commands.md` §4).
+`AutocompleteCtx` has no `respond`, `defer` or `reply`.
 
 Every Pending method consumes the responder and returns `Responder<K, Acked, D>`:
 

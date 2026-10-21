@@ -24,8 +24,11 @@
 //!
 //! # Modules and events
 //!
-//! A [`Module`] groups typed event handlers ([`EventHandler`], written with
-//! `#[event]` in `noctis`) and nests other Modules;
+//! A [`Module`] groups registrations and nests other Modules; every
+//! interaction is one struct with a kind derive and a `#[handler]` method in
+//! `noctis`, registered by type with [`Module::add::<T>()`](Module::add)
+//! ([`Register`]). Typed event handlers ([`EventHandler`]) come from
+//! `#[derive(EventHandler)]`;
 //! [`AppBuilder::module`] mounts a tree. `build()` folds every tree once,
 //! parent before child, into an immutable Registry: the gateway then parses
 //! only interactions and the handled event types, and the handlers'
@@ -39,9 +42,10 @@
 //!
 //! # Commands
 //!
-//! A [`CommandHandler`] (written with `#[command]` in `noctis`) is one slash
-//! Command handler for a Command Path or Pattern, whose paths the macro
-//! checked at compile time; [`Module::add`] takes it like an event handler.
+//! A [`CommandHandler`] (a `#[derive(SlashCommand)]` struct in `noctis`)
+//! is one slash Command handler for a Command Path or Pattern, whose paths
+//! the derive checked at compile time; [`Module::add`] registers it like an
+//! event handler.
 //! A pattern with a group gives the handler a [`CommandPath`] enum naming
 //! the invoked path; an invocation with a path the handler does not declare
 //! fails with [`UnknownCommandPath`]. The handler receives a [`CommandCtx`].
@@ -73,23 +77,25 @@
 //!
 //! # Command metadata and context menus
 //!
-//! A [`CommandHandler`] carries the [`CommandMetadata`] its `#[command]`
-//! declared (`default_member_permissions` as [`Permissions`], `contexts` as
+//! A [`CommandHandler`] carries the [`CommandMetadata`] its
+//! `#[command("…", ..)]` attribute declared (`default_member_permissions` as [`Permissions`], `contexts` as
 //! [`InteractionContext`]s, `integration_types` as [`IntegrationType`]s,
 //! `nsfw`, and the guilds of a guild-scoped command); unset fields stay
-//! `None`. A [`ContextMenuHandler`] (written with `#[user_command]` or
-//! `#[message_command]` in `noctis`) is one `USER` or `MESSAGE` command
+//! `None`. A [`ContextMenuHandler`] (a `#[derive(UserCommand)]` or
+//! `#[derive(MessageCommand)]` struct in `noctis`) is one `USER` or `MESSAGE` command
 //! ([`MenuKind`]): a call decodes the interaction's target from its resolved
 //! data into a `ResolvedUser` or `ResolvedMessage`, or fails with a
 //! [`MenuTargetError`] without running the handler.
 //!
 //! # Options
 //!
-//! A handler may take an options struct as its last parameter: a type
-//! implementing [`Options`] (written with `#[derive(Options)]` in `noctis`),
-//! whose fields implement [`CommandOption`]. A call decodes the
-//! interaction into a [`CommandInput`], builds the struct from its leaf
-//! options, runs the field validators, and only then runs the handler. A
+//! A slash Command struct's named fields are its options: it implements
+//! [`Options`] (`#[derive(SlashCommand)]` in `noctis`), and each field
+//! implements [`CommandOption`]. A call decodes the interaction into a
+//! [`CommandInput`], builds the struct from its leaf options, runs the field
+//! validators, and only then runs the `#[handler]` method on it. An option
+//! flagged `autocomplete` is answered by the struct's `#[autocomplete(field)]`
+//! method, which returns [`Suggestions`]. A
 //! missing, mistyped or out-of-range value is an [`OptionError`] and a
 //! failed validator an [`InvalidOption`] carrying its `MessageKey`; neither
 //! panics, and the handler does not run.
@@ -163,11 +169,13 @@ mod authority;
 mod autocomplete;
 pub mod cli;
 mod command;
+mod component;
 mod edge;
 mod error;
 pub mod events;
 mod gateway_url;
 mod handler;
+mod kind;
 mod lifecycle;
 mod menu;
 mod metadata;
@@ -194,12 +202,15 @@ mod worker;
 
 pub use app::{App, AppBuilder};
 #[doc(hidden)]
-pub use autocomplete::{__AutocompleteFor, __AutocompleteOutput, __autocomplete_for};
 pub use autocomplete::{
-    AutocompleteChoice, AutocompleteCtx, AutocompleteError, AutocompleteHandler, AutocompleteValue,
-    Focused, Partial, PartialOptions,
+    __AutocompleteField, __AutocompleteMethod, __SuggestionsFor, __autocomplete_method,
+};
+pub use autocomplete::{
+    AutocompleteChoice, AutocompleteCtx, AutocompleteError, AutocompleteValue, Focused, Partial,
+    PartialOptions, SuggestionLabel, SuggestionValue, Suggestions,
 };
 pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
+pub use component::{ComponentCtx, ComponentHandler, ComponentKind, ModalHandler, ModalSubmitCtx};
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
     AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, RunError, StartError,
@@ -207,17 +218,25 @@ pub use error::{
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
 pub use handler::{HandlerError, HandlerResult};
+#[doc(hidden)]
+pub use kind::{
+    __Bind, __C, __CR, __CX, __CXR, __Component, __ComponentKind, __ComponentParams, __ContextMenu,
+    __EventHandler, __EventKind, __EventParams, __Kind, __ManualIsDeclared, __ManualTakesManual,
+    __MenuKind, __MenuTarget, __Modal, __ModalKind, __ModalParams, __NoHandler, __NoResponder,
+    __PatternPaths, __SinglePath, __SlashCommand, __SlashKind, __TakesTarget, __Unbound,
+    __assert_no_responder, __assert_responder,
+};
 pub use menu::{ContextMenuHandler, MenuTargetError};
 pub use metadata::{BaseMeta, CommandMetadata};
-pub use module::{Descriptor, Module};
+#[doc(hidden)]
+pub use module::Descriptor;
+pub use module::{Module, Register};
 #[doc(hidden)]
 pub use options::__options;
 pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, OptionValue, Options};
 pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
-#[doc(hidden)]
-pub use responder::{__DeclaresAutoDefer, __DeclaresManual, __assert_auto_defer, __assert_manual};
 pub use responder::{
     Acked, AutoDefer, CanShowModal, Command, CommandResponder, DeferMode, Ephemerality,
     FollowupHandle, IntoResponse, Manual, OutgoingMessage, Pending, Responded, Responder,
@@ -241,7 +260,10 @@ pub mod __testing {
 
     use futures_util::future::BoxFuture;
 
-    use crate::{App, CommandHandler, ContextMenuHandler, HandlerResult};
+    use crate::{
+        App, CommandHandler, ComponentHandler, ContextMenuHandler, HandlerResult, ModalHandler,
+        Responded,
+    };
 
     /// The merged command Registry of `app`, one line per scope, base,
     /// child and context menu (format in Story 6.4's spec); `""` when it has
@@ -271,11 +293,11 @@ pub mod __testing {
     }
 
     /// Decodes `json` (an autocomplete interaction) and runs the
-    /// autocomplete handler `handler` links to its focused option over a
-    /// detached context: an `OptionError` for bad JSON, an
+    /// `#[autocomplete(field)]` method `handler` binds to its focused option
+    /// over a detached context: an `OptionError` for bad JSON, an
     /// `UnknownCommandPath` for a path the handler does not declare,
-    /// `Ok(None)` when no handler is linked, else the choices it kept
-    /// (unfiltered; empty when it never responded).
+    /// `Ok(None)` when no method is bound, else the choices the pipeline
+    /// would send (lowered and filtered; `MessageKey` labels in `en-US`).
     pub fn call_autocomplete(
         handler: &CommandHandler,
         json: &[u8],
@@ -292,5 +314,29 @@ pub mod __testing {
         json: &[u8],
     ) -> BoxFuture<'static, HandlerResult<()>> {
         crate::menu::call_context_menu(handler, json)
+    }
+
+    /// Runs the component `handler` on `value` (its struct) over a detached
+    /// context: an error when `value` is not the handler's struct type.
+    pub fn call_component<S: Send + 'static>(
+        handler: &ComponentHandler,
+        value: S,
+    ) -> BoxFuture<'static, HandlerResult<Responded>> {
+        crate::component::call_component(handler, value)
+    }
+
+    /// Runs the modal `handler` on `value` (its struct) over a detached
+    /// context: an error when `value` is not the handler's struct type.
+    pub fn call_modal<S: Send + 'static>(
+        handler: &ModalHandler,
+        value: S,
+    ) -> BoxFuture<'static, HandlerResult<Responded>> {
+        crate::component::call_modal(handler, value)
+    }
+
+    /// A [`Responded`] proof, for component and modal handlers in tests
+    /// until their Responders arrive (Story 7.2).
+    pub fn responded() -> Responded {
+        Responded::new()
     }
 }

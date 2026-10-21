@@ -1,0 +1,6 @@
+error: `#[derive(Options)]` is withdrawn: a slash Command struct's named fields are its options
+         = help: #[derive(SlashCommand)] #[command("ban", description = "…")] struct Ban { #[option(description = "Who")] user: ResolvedUser } impl Ban { #[handler] async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { .. } }
+ --> tests/types/withdrawn_options.rs:4:8
+  |
+4 | struct WarnOptions {
+  |        ^^^^^^^^^^^

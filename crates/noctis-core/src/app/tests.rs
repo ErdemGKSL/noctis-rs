@@ -2035,7 +2035,7 @@ async fn cli_dry_run_writes_the_report() {
         .runtime(&Runtime::for_test())
         .token(token())
         .http_proxy(server.authority())
-        .module(Module::new("m").add(command("m::ping", &["ping"], "Pong")));
+        .module(Module::new("m").__add(command("m::ping", &["ping"], "Pong")));
     let app = builder.build().unwrap();
 
     let mut out = Vec::new();

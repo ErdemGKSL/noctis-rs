@@ -1,6 +1,6 @@
 error[E0080]: evaluation panicked: [OPT-08] a.choices: limit at most 25, actual `more than 25`
                 = note: `Big` has more variants than a command option takes
-  --> tests/ui/opt/OPT-08_26_choices.rs:61:5
+  --> tests/ui/opt/OPT-08_26_choices.rs:62:5
    |
-61 |     #[option(description = "d")]
+62 |     #[option(description = "d")]
    |     ^ evaluation of `_` failed here

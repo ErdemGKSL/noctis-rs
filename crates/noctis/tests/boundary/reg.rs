@@ -37,9 +37,9 @@ fn split_with(
     for i in 0..count {
         let h = handler(path(i), "d").__with_metadata(metadata);
         if i < split {
-            a = a.add(h);
+            a = a.__add(h);
         } else {
-            b = b.add(h);
+            b = b.__add(h);
         }
     }
     vec![a, b]
@@ -61,7 +61,7 @@ async fn reg_01_100_global_commands() {
     builds(split(100, 50, |i| format!("c{i}")));
     // A merged base counts once.
     let mut modules = split(100, 50, |i| format!("c{i} x"));
-    modules.push(Module::new("c").add(handler("c0 y".to_owned(), "d")));
+    modules.push(Module::new("c").__add(handler("c0 y".to_owned(), "d")));
     builds(modules);
 }
 
@@ -82,13 +82,13 @@ async fn reg_01_15_user_15_message() {
     let (mut a, mut b) = (Module::new("a"), Module::new("b"));
     for i in 0..15 {
         let name = leak(format!("Menu {i}"));
-        a = a.add(ContextMenuHandler::__new_user(
+        a = a.__add(ContextMenuHandler::__new_user(
             "reg::u",
             name,
             CommandMetadata::new(),
             user,
         ));
-        b = b.add(ContextMenuHandler::__new_message(
+        b = b.__add(ContextMenuHandler::__new_message(
             "reg::m",
             name,
             CommandMetadata::new(),
@@ -131,7 +131,7 @@ async fn cmd_05_8000_merged() {
         for s in 0..subs {
             *module = module
                 .clone()
-                .add(handler(format!("x g{group} s{s:02}"), d100));
+                .__add(handler(format!("x g{group} s{s:02}"), d100));
         }
         *module = module.clone().group(path, d100);
     }

@@ -19,11 +19,19 @@ use twilight_model::application::interaction::modal::{
     ModalInteractionComponent, ModalInteractionData,
 };
 
-#[derive(Route)]
-#[route("t.modal")]
+#[derive(::noctis::Button)]
+#[button("t.modal", defaults(style = Secondary, label = "Go"))]
 struct Submit;
 
-impl ::noctis::__private::ui::Handled for Submit {}
+impl Submit {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 #[derive(Choices, Debug, Clone, Copy, PartialEq, Eq)]
 enum Colour {
@@ -55,7 +63,7 @@ enum Topic {
 
 /// Text Display, Text Input, String Select, Radio Group, Checkbox Group.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Tell us")]
+#[modal("t.modal", defaults(title = "Tell us"))]
 struct TextForm {
     #[text_display("Fill this in.")]
     _intro: (),
@@ -69,9 +77,19 @@ struct TextForm {
     topics: Vec<Topic>,
 }
 
+impl TextForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 /// User, Role, Mentionable and Channel Selects.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Pick people")]
+#[modal("t.modal", defaults(title = "Pick people"))]
 struct EntityForm {
     #[user_select("Users", max_values = 3)]
     users: Vec<ResolvedUser>,
@@ -83,9 +101,19 @@ struct EntityForm {
     channel: Option<ResolvedChannel>,
 }
 
+impl EntityForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 /// File Uploads, Checkbox, Text Input and a multi String Select.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Upload")]
+#[modal("t.modal", defaults(title = "Upload"))]
 struct UploadForm {
     #[file_upload("Evidence", max_values = 3, file_types = ["image", ".pdf"])]
     evidence: Vec<ResolvedAttachment>,
@@ -99,17 +127,37 @@ struct UploadForm {
     colours: Vec<Colour>,
 }
 
+impl UploadForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 /// One required Text Input.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Legacy")]
+#[modal("t.modal", defaults(title = "Legacy"))]
 struct LegacyForm {
     #[text_input("Reason")]
     reason: String,
 }
 
+impl LegacyForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 /// Every field optional.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Optional")]
+#[modal("t.modal", defaults(title = "Optional"))]
 struct OptionalForm {
     #[text_input("Note")]
     note: Option<String>,
@@ -123,9 +171,19 @@ struct OptionalForm {
     topics: Vec<Topic>,
 }
 
+impl OptionalForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 /// The same inputs, every field required.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Required")]
+#[modal("t.modal", defaults(title = "Required"))]
 struct RequiredForm {
     #[text_input("Note")]
     note: String,
@@ -139,12 +197,32 @@ struct RequiredForm {
     topics: Vec<Topic>,
 }
 
+impl RequiredForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 /// A File Upload `Vec` without `max_values`: Discord's default of 10.
 #[derive(Modal, Debug)]
-#[modal(route = Submit, title = "Files")]
+#[modal("t.modal", defaults(title = "Files"))]
 struct FilesForm {
     #[file_upload("Files")]
     files: Vec<ResolvedAttachment>,
+}
+
+impl FilesForm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
 }
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -177,10 +255,10 @@ fn modal_json(modal: noctis::ui::Modal) -> Value {
 #[test]
 fn mod_02_derived_modals_snapshot() {
     let forms = json!({
-        "text": modal_json(TextForm::modal(Submit)),
-        "entity": modal_json(EntityForm::modal(Submit)),
-        "upload": modal_json(UploadForm::modal(Submit)),
-        "optional": modal_json(OptionalForm::modal(Submit)),
+        "text": modal_json(TextForm::blank()),
+        "entity": modal_json(EntityForm::blank()),
+        "upload": modal_json(UploadForm::blank()),
+        "optional": modal_json(OptionalForm::blank()),
     });
     assert_eq!(
         forms["text"]["components"].as_array().map(Vec::len),
@@ -574,7 +652,7 @@ fn mod_09_per_component_resolved_joins() {
 
 #[test]
 fn mod_07_checkbox_group_min_values_zero() {
-    let json = modal_json(OptionalForm::modal(Submit));
+    let json = modal_json(OptionalForm::blank());
     let group = &json["components"][4]["component"];
     assert_eq!(group["min_values"], 0);
     assert_eq!(group["required"], false);
@@ -587,7 +665,7 @@ fn mod_07_checkbox_group_min_values_zero() {
 
 #[test]
 fn cid_01_raw_ident_key_and_field_order() {
-    let json = modal_json(UploadForm::modal(Submit));
+    let json = modal_json(UploadForm::blank());
     let keys: Vec<&str> = json["components"]
         .as_array()
         .unwrap()
@@ -600,7 +678,7 @@ fn cid_01_raw_ident_key_and_field_order() {
 
 #[test]
 fn mod_09_file_upload_default_max_values_is_ten() {
-    let built = modal_json(FilesForm::modal(Submit));
+    let built = modal_json(FilesForm::blank());
     assert_eq!(built["components"][0]["component"]["max_values"], 10);
 
     let files = |n: u64| {

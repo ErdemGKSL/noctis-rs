@@ -12,7 +12,8 @@ pub(crate) use layout::{AccessoryNode, ChildNode, RowNode, TopNode};
 pub use layout::{ActionRow, Container, ContainerComponent, Rgb, Section, TopLevelComponent};
 pub use media::{File, Media, MediaGallery, MediaItem, Thumbnail};
 pub use select::{
-    ChannelSelect, MentionableSelect, RoleSelect, SelectOption, StringSelect, UserSelect,
+    ChannelSelect, MentionableSelect, RoleSelect, SelectOption, StringSelect, StringSelectBuilder,
+    UserSelect,
 };
 pub(crate) use select::{DefaultValue, SelectNode, SelectTail, channel_types_entry, select_map};
 pub use text::{Separator, Spacing, TextDisplay};

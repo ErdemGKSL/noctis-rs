@@ -16,14 +16,76 @@ use noctis_codec::{
 };
 use noctis_rules::len::discord_len;
 use noctis_rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
+use noctis_ui::__macro::{
+    ButtonDefaults, ChannelSelectDefaults, ComponentValue, SelectDefaults, build_button,
+    build_channel_select, build_mentionable_select, build_role_select, build_string_select_builder,
+    build_user_select,
+};
 use noctis_ui::{
-    ActionRow, Attachment, AttachmentSet, Button, Components, Container, CostReport, CreateFlags,
-    File, Handled, LegacyMessage, LimitWarning, LinkButton, Media, MediaGallery, MediaItem,
-    Mentions, PremiumButton, Rgb, Roles, RouteButton, RouteComponents, Section, SelectOption,
-    TextDisplay, Thumbnail, TopLevelComponent, UiError, Users, V2Message, cost, validate,
+    ActionRow, Attachment, AttachmentSet, Button, ButtonStyle, ChannelSelect, Components,
+    Container, CostReport, CreateFlags, File, Handled, LegacyMessage, LimitWarning, LinkButton,
+    Media, MediaGallery, MediaItem, MentionableSelect, Mentions, PremiumButton, Rgb, RoleSelect,
+    Roles, RouteButton, Section, SelectOption, StringSelect, TextDisplay, Thumbnail,
+    TopLevelComponent, UiError, UserSelect, Users, V2Message, cost, validate,
 };
 use serde_json::Value;
 use twilight_model::id::Id;
+
+/// Select defaults that send nothing (as before Story 6.11's derives).
+const NO_DEFAULTS: SelectDefaults = SelectDefaults {
+    placeholder: None,
+    min_values: None,
+    max_values: None,
+    disabled: false,
+};
+
+/// What `#[derive(Button)]`'s `.build()` expands to, with no declared
+/// label, emoji or style beyond Secondary.
+fn button<R: ComponentValue>(route: R) -> RouteButton<R> {
+    build_button(
+        route,
+        &ButtonDefaults {
+            style: ButtonStyle::Secondary,
+            label: None,
+            emoji: None,
+            disabled: false,
+        },
+    )
+}
+
+/// A String Select of `route` with `options` and no declared defaults.
+fn string_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    options: impl IntoIterator<Item = SelectOption>,
+) -> StringSelect {
+    build_string_select_builder(route, &NO_DEFAULTS).options(options)
+}
+
+/// A User Select of `route` with no declared defaults.
+fn user_select<R: ComponentValue + SelectRoute>(route: R) -> UserSelect {
+    build_user_select(route, &NO_DEFAULTS)
+}
+
+/// A Role Select of `route` with no declared defaults.
+fn role_select<R: ComponentValue + SelectRoute>(route: R) -> RoleSelect {
+    build_role_select(route, &NO_DEFAULTS)
+}
+
+/// A Mentionable Select of `route` with no declared defaults.
+fn mentionable_select<R: ComponentValue + SelectRoute>(route: R) -> MentionableSelect {
+    build_mentionable_select(route, &NO_DEFAULTS)
+}
+
+/// A Channel Select of `route` with no declared defaults.
+fn channel_select<R: ComponentValue + SelectRoute>(route: R) -> ChannelSelect {
+    build_channel_select(
+        route,
+        &ChannelSelectDefaults {
+            select: NO_DEFAULTS,
+            channel_types: &[],
+        },
+    )
+}
 
 /// A hand-written handled Route whose Payload is itself.
 macro_rules! route {
@@ -65,7 +127,7 @@ route!(
 
 /// `B(n)`: a Route button with payload `n`.
 fn b(n: u64) -> RouteButton<Buy> {
-    Buy { item: n }.button()
+    button(Buy { item: n })
 }
 
 fn pick() -> Pick {
@@ -426,11 +488,11 @@ fn cv2_08_premium_button() {
 fn cv2_09_placeholder() {
     let opt = || SelectOption::new("a", "a");
     passes(msg([select_row(
-        pick().string_select([opt()]).placeholder(rep("a", 150)),
+        string_select(pick(), [opt()]).placeholder(rep("a", 150)),
     )]));
     fails_with(
         msg([select_row(
-            pick().string_select([opt()]).placeholder(rep("a", 151)),
+            string_select(pick(), [opt()]).placeholder(rep("a", 151)),
         )]),
         &[at_most(
             RuleId::CV2_09,
@@ -446,20 +508,20 @@ fn cv2_09_options_count() {
     let options = |n: usize| (0..n).map(|i| SelectOption::new(format!("{i}"), format!("{i}")));
     let path = "row[0].select[0].options";
     fails_with(
-        msg([select_row(pick().string_select(options(0)))]),
+        msg([select_row(string_select(pick(), options(0)))]),
         &[between(RuleId::CV2_09, path, 1, 25, 0)],
     );
     fails_with(
-        msg([select_row(pick().string_select(options(26)))]),
+        msg([select_row(string_select(pick(), options(26)))]),
         &[between(RuleId::CV2_09, path, 1, 25, 26)],
     );
-    passes(msg([select_row(pick().string_select(options(1)))]));
-    passes(msg([select_row(pick().string_select(options(25)))]));
+    passes(msg([select_row(string_select(pick(), options(1)))]));
+    passes(msg([select_row(string_select(pick(), options(25)))]));
 }
 
 #[test]
 fn cv2_09_option_fields() {
-    let one = |o: SelectOption| msg([select_row(pick().string_select([o]))]);
+    let one = |o: SelectOption| msg([select_row(string_select(pick(), [o]))]);
     let p = "row[0].select[0].options[0]";
     fails_with(
         one(SelectOption::new("", "a")),
@@ -491,7 +553,7 @@ fn cv2_09_option_fields() {
 fn cv2_09_min_max_values() {
     let p = "row[0].select[0]";
     fails_with(
-        msg([select_row(pick().user_select().min_values(26))]),
+        msg([select_row(user_select(pick()).min_values(26))]),
         &[between(
             RuleId::CV2_09,
             &format!("{p}.min_values"),
@@ -501,7 +563,7 @@ fn cv2_09_min_max_values() {
         )],
     );
     fails_with(
-        msg([select_row(pick().user_select().max_values(0))]),
+        msg([select_row(user_select(pick()).max_values(0))]),
         &[between(
             RuleId::CV2_09,
             &format!("{p}.max_values"),
@@ -511,7 +573,7 @@ fn cv2_09_min_max_values() {
         )],
     );
     fails_with(
-        msg([select_row(pick().user_select().max_values(26))]),
+        msg([select_row(user_select(pick()).max_values(26))]),
         &[between(
             RuleId::CV2_09,
             &format!("{p}.max_values"),
@@ -521,7 +583,7 @@ fn cv2_09_min_max_values() {
         )],
     );
     fails_with(
-        msg([select_row(pick().user_select().min_values(3).max_values(2))]),
+        msg([select_row(user_select(pick()).min_values(3).max_values(2))]),
         &[v(
             RuleId::CV2_09,
             p,
@@ -536,24 +598,25 @@ fn cv2_09_default_values() {
     let path = "row[0].select[0].default_values";
     fails_with(
         msg([select_row(
-            pick()
-                .user_select()
+            user_select(pick())
                 .max_values(2)
                 .default_users([Id::new(1), Id::new(2), Id::new(3)]),
         )]),
         &[between(RuleId::CV2_09, path, 1, 2, 3)],
     );
     passes(msg([select_row(
-        pick()
-            .user_select()
+        user_select(pick())
             .max_values(2)
             .default_users([Id::new(1), Id::new(2)]),
     )]));
     fails_with(
-        msg([select_row(pick().string_select([
-            SelectOption::new("a", "a").default(true),
-            SelectOption::new("b", "b").default(true),
-        ]))]),
+        msg([select_row(string_select(
+            pick(),
+            [
+                SelectOption::new("a", "a").default(true),
+                SelectOption::new("b", "b").default(true),
+            ],
+        ))]),
         &[between(RuleId::CV2_09, path, 1, 1, 2)],
     );
 }
@@ -653,10 +716,13 @@ fn kitchen_sink() -> V2Message {
                 Button::from(PremiumButton::new(Id::new(7))),
             ]))
             .into(),
-        select_row(Pick { page: 1 }.string_select([SelectOption::new("a", "a")])),
-        select_row(Pick { page: 2 }.role_select()),
-        select_row(Pick { page: 3 }.mentionable_select()),
-        select_row(Pick { page: 4 }.channel_select()),
+        select_row(string_select(
+            Pick { page: 1 },
+            [SelectOption::new("a", "a")],
+        )),
+        select_row(role_select(Pick { page: 2 })),
+        select_row(mentionable_select(Pick { page: 3 })),
+        select_row(channel_select(Pick { page: 4 })),
         t("z").into(),
     ])
     .attachments(set)
@@ -723,8 +789,8 @@ fn cid_02_triple() {
 #[test]
 fn cid_02_duplicate_select() {
     let m = resolve(msg([
-        select_row(pick().user_select()),
-        select_row(pick().user_select()),
+        select_row(user_select(pick())),
+        select_row(user_select(pick())),
     ]));
     let id = json(&m)["components"][0]["components"][0]["custom_id"]
         .as_str()
@@ -751,8 +817,8 @@ fn cid_02_distinct_ids_pass() {
 fn cid_02_unresolved_ids_are_skipped() {
     let opt = || SelectOption::new("a", "a");
     let m = msg([
-        select_row(pick().string_select([opt()])),
-        select_row(pick().string_select([opt()])),
+        select_row(string_select(pick(), [opt()])),
+        select_row(string_select(pick(), [opt()])),
     ]);
     passes(m.clone());
     assert!(serde_json::to_value(m.create_body(CreateFlags::empty())).is_err());
@@ -1002,11 +1068,11 @@ fn over_long() -> V2Message {
     resolve(
         msg([
             select_row(
-                pick()
-                    .string_select([
-                        SelectOption::new(rep("l", 101), "v").description(rep("d", 101))
-                    ])
-                    .placeholder(rep("p", 151)),
+                string_select(
+                    pick(),
+                    [SelectOption::new(rep("l", 101), "v").description(rep("d", 101))],
+                )
+                .placeholder(rep("p", 151)),
             ),
             MediaGallery::new([MediaItem::new(image()).alt(rep("g", 1025))]).into(),
             Section::new([t("s")], Thumbnail::new(image()).alt(rep("t", 1025))).into(),
@@ -1217,9 +1283,10 @@ fn cv2_03_lenient_structural_still_fails() {
         || msg([row_of(LinkButton::new(rep("h", 513)))]),
         || msg([MediaGallery::new([MediaItem::new(Media::url(rep("h", 2049))).alt("x")]).into()]),
         || {
-            msg([select_row(
-                pick().string_select([SelectOption::new("a", rep("v", 101))]),
-            )])
+            msg([select_row(string_select(
+                pick(),
+                [SelectOption::new("a", rep("v", 101))],
+            ))])
         },
     ];
     for case in cases {
@@ -1442,7 +1509,7 @@ fn cv2_08_cost_never_mutates() {
 
 #[test]
 fn cid_02_cost_with_unresolved_ids() {
-    let mut m = msg([select_row(pick().user_select())]);
+    let mut m = msg([select_row(user_select(pick()))]);
     assert_eq!(cost(&m, &strict()).components, 2);
     assert_eq!(validate(&mut m, &strict()).map(|r| r.components), Ok(2));
 }

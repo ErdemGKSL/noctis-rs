@@ -1,5 +1,6 @@
-//! `#[autocomplete]` and the `<Name>Partial` of `#[derive(Options)]`, end to
-//! end through the JSON test seam (Story 6.7, Matrix 2, 3, 28).
+//! `#[autocomplete(field)]` methods and the `<Struct>Partial` of
+//! `#[derive(SlashCommand)]`, end to end through the JSON test seam
+//! (Story 6.7, Matrix 2, 3; Story 6.11, Matrix 14, 26, 27).
 
 #![allow(
     clippy::unwrap_used,
@@ -15,7 +16,7 @@ use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::ChannelMarker;
 use noctis::ui::{LegacyMessage, ResolvedChannel};
-use noctis::{AutocompleteHandler, AutocompleteValue, CommandHandler, UnknownCommandPath};
+use noctis::{AutocompleteValue, CommandHandler, UnknownCommandPath};
 use serde_json::{Value, json};
 
 #[derive(Choices, Clone, Copy, Debug, PartialEq)]
@@ -24,14 +25,20 @@ enum Mode {
     Fast,
 }
 
-#[derive(Options)]
+/// What the `value` method saw.
+static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+#[derive(SlashCommand)]
+#[command("config (set|get) prefix", description = "Prefix settings")]
 #[expect(dead_code, reason = "only the partial form is read")]
-struct PrefixOptions {
-    #[option(description = "The prefix", autocomplete = prefix_suggest)]
+struct Config {
+    #[option(description = "The prefix", autocomplete)]
     value: String,
-    #[option(description = "How many")]
+    #[option(description = "How many", autocomplete)]
     limit: i64,
-    #[option(description = "Where", autocomplete = anything)]
+    #[option(description = "A ratio", autocomplete)]
+    ratio: Option<f64>,
+    #[option(description = "Where", autocomplete)]
     query: Option<String>,
     #[option(description = "Channel")]
     channel: Option<ResolvedChannel>,
@@ -41,52 +48,76 @@ struct PrefixOptions {
     mode: Option<Mode>,
 }
 
-/// What `prefix_suggest` saw.
-static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+impl Config {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, _path: ConfigPath) -> HandlerResult<LegacyMessage> {
+        Ok(LegacyMessage::new("ok"))
+    }
 
-#[autocomplete]
-async fn prefix_suggest(
-    ctx: AutocompleteCtx,
-    partial: Partial<PrefixOptions>,
-) -> HandlerResult<Responded> {
-    // Every field is an `Option<T>` of the field's option type.
-    let PrefixOptionsPartial {
-        value,
-        limit,
-        query,
-        channel,
-        raw,
-        mode,
-    } = partial;
-    let _: (Option<String>, Option<i64>, Option<String>) = (value.clone(), limit, query);
-    let _: (Option<Id<ChannelMarker>>, Option<Mode>) = (raw, mode);
-    SEEN.lock().unwrap().push(format!(
-        "{}|{}|{value:?}|{limit:?}|{:?}|{mode:?}",
-        ctx.command_path(),
-        ctx.focused().name(),
-        channel.map(|c| c.channel.id.get()),
-    ));
-    let typed = ctx.focused().value().to_owned();
-    Ok(ctx.respond(
-        ["!", "?", "."]
+    #[autocomplete(value)]
+    async fn suggest_value(
+        ctx: AutocompleteCtx,
+        typed: &str,
+        filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        // Every field is an `Option<T>` of the field's option type.
+        let ConfigPartial {
+            value,
+            limit,
+            ratio,
+            query,
+            channel,
+            raw,
+            mode,
+        } = filled;
+        let _: (Option<String>, Option<i64>, Option<f64>, Option<String>) =
+            (value.clone(), limit, ratio, query);
+        let _: (Option<Id<ChannelMarker>>, Option<Mode>) = (raw, mode);
+        SEEN.lock().unwrap().push(format!(
+            "{}|{}|{typed}|{value:?}|{limit:?}|{:?}|{mode:?}",
+            ctx.command_path(),
+            ctx.focused().name(),
+            channel.map(|c| c.channel.id.get()),
+        ));
+        Ok(["!", "?", "."]
             .into_iter()
-            .map(|p| AutocompleteChoice::new(format!("{typed}{p}"), p)),
-    ))
-}
+            .map(|p| (p.to_owned(), format!("{typed}{p}")))
+            .collect())
+    }
 
-/// Matrix 28: a plain handler fits any options struct.
-#[autocomplete]
-async fn anything(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-    Ok(ctx.respond([AutocompleteChoice::new("any", 1_i64)]))
-}
+    /// Story 6.11 Matrix 14 and 27: an INTEGER option's typed text and
+    /// integer values.
+    #[autocomplete(limit)]
+    async fn suggest_limit(
+        _ctx: AutocompleteCtx,
+        typed: &str,
+        _filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<i64>> {
+        let mut out = Suggestions::new();
+        out.push(7, format!("typed `{typed}`"));
+        Ok(out)
+    }
 
-#[command("config (set|get) prefix", description = "Prefix settings")]
-async fn config(
-    _ctx: CommandCtx,
-    _path: ConfigPath,
-    _options: PrefixOptions,
-) -> HandlerResult<LegacyMessage> {
-    Ok(LegacyMessage::new("ok"))
+    #[autocomplete(ratio)]
+    async fn suggest_ratio(
+        _ctx: AutocompleteCtx,
+        _typed: &str,
+        _filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<f64>> {
+        Ok([(1.5, "one and a half"), (f64::NAN, "dropped")]
+            .into_iter()
+            .collect())
+    }
+
+    #[autocomplete(query)]
+    async fn suggest_query(
+        ctx: AutocompleteCtx,
+        _typed: &str,
+        _filled: Partial<Self>,
+    ) -> HandlerResult<Suggestions<String>> {
+        let guild = ctx.guild_id()?;
+        Ok([(guild.to_string(), "guild")].into_iter().collect())
+    }
 }
 
 /// An autocomplete interaction for `config <sub> prefix` with `leaves`.
@@ -108,18 +139,33 @@ fn interaction(sub: &str, leaves: &Value) -> Vec<u8> {
     .into_bytes()
 }
 
-async fn suggest(handler: &CommandHandler, sub: &str, leaves: &Value) -> Option<Vec<String>> {
+async fn choices(
+    handler: &CommandHandler,
+    sub: &str,
+    leaves: &Value,
+) -> Option<Vec<(String, AutocompleteValue)>> {
     call_autocomplete(handler, &interaction(sub, leaves))
         .await
         .unwrap()
-        .map(|choices| choices.iter().map(|c| c.name().to_owned()).collect())
+        .map(|choices| {
+            choices
+                .iter()
+                .map(|c| (c.name().to_owned(), c.value().clone()))
+                .collect()
+        })
+}
+
+async fn names(handler: &CommandHandler, sub: &str, leaves: &Value) -> Option<Vec<String>> {
+    choices(handler, sub, leaves)
+        .await
+        .map(|c| c.into_iter().map(|(name, _)| name).collect())
 }
 
 /// Matrix 2 and 3: the 3-word path, the focused text and the lenient
 /// partial input.
 #[tokio::test]
-async fn opt_12_partial_options_reach_the_handler() {
-    let handler = config();
+async fn opt_12_partial_options_reach_the_method() {
+    let handler = Config::descriptor();
     let leaves = json!([
         { "type": 3, "name": "value", "value": "pr", "focused": true },
         { "type": 7, "name": "channel", "value": "5" },
@@ -127,40 +173,72 @@ async fn opt_12_partial_options_reach_the_handler() {
         { "type": 3, "name": "mode", "value": "Slow" },
         { "type": 3, "name": "unknown", "value": "x" },
     ]);
-    let names = suggest(&handler, "set", &leaves).await.unwrap();
-    assert_eq!(names, ["pr!", "pr?", "pr."]);
+    let got = names(&handler, "set", &leaves).await.unwrap();
+    assert_eq!(got, ["pr!", "pr?", "pr."]);
     let seen = SEEN.lock().unwrap().clone();
     assert!(
-        seen.contains(&"config set prefix|value|Some(\"pr\")|None|Some(5)|None".to_owned()),
+        seen.contains(&"config set prefix|value|pr|Some(\"pr\")|None|Some(5)|None".to_owned()),
         "{seen:?}"
     );
-    // A channel missing from the resolved data is `None`.
+    // A channel missing from the resolved data is `None`; a mistyped option
+    // is `None` too (Story 6.11 Matrix 27).
     let leaves = json!([
         { "type": 3, "name": "value", "value": "x", "focused": true },
         { "type": 7, "name": "channel", "value": "6" },
+        { "type": 4, "name": "limit", "value": "many" },
         { "type": 3, "name": "mode", "value": "Fast" },
     ]);
-    suggest(&handler, "get", &leaves).await.unwrap();
+    names(&handler, "get", &leaves).await.unwrap();
     let seen = SEEN.lock().unwrap().clone();
     assert!(
-        seen.contains(&"config get prefix|value|Some(\"x\")|None|None|Some(Fast)".to_owned()),
+        seen.contains(&"config get prefix|value|x|Some(\"x\")|None|None|Some(Fast)".to_owned()),
         "{seen:?}"
     );
 }
 
-/// Matrix 28 and 24: the plain handler runs; an option without a handler
-/// is `None`.
+/// Story 6.11 Matrix 14 and 27: typed text verbatim, a JSON number as its
+/// text, `""` when absent; integer and float values.
 #[tokio::test]
-async fn plain_handlers_and_unlinked_options() {
-    let handler = config();
+async fn typed_text_and_value_types() {
+    let handler = Config::descriptor();
+    for (value, typed) in [(json!("-"), "-"), (json!(12), "12"), (Value::Null, "")] {
+        let mut leaf = json!({ "type": 4, "name": "limit", "focused": true });
+        if !value.is_null() {
+            leaf["value"] = value;
+        }
+        let got = choices(&handler, "set", &json!([leaf])).await.unwrap();
+        assert_eq!(
+            got,
+            [(format!("typed `{typed}`"), AutocompleteValue::Integer(7))]
+        );
+    }
+    let leaves = json!([{ "type": 10, "name": "ratio", "value": "", "focused": true }]);
+    let got = choices(&handler, "set", &leaves).await.unwrap();
+    assert_eq!(
+        got,
+        [("one and a half".to_owned(), AutocompleteValue::Number(1.5))],
+        "the NaN suggestion is dropped (Matrix 26)"
+    );
+}
+
+/// Story 6.11 Matrix 28: `ctx.guild_id()?` outside a guild is an error.
+#[tokio::test]
+async fn guild_id_outside_a_guild_is_an_error() {
+    let handler = Config::descriptor();
     let leaves = json!([{ "type": 3, "name": "query", "value": "", "focused": true }]);
-    let choices = call_autocomplete(&handler, &interaction("set", &leaves))
+    let err = call_autocomplete(&handler, &interaction("set", &leaves))
         .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(choices[0].value(), &AutocompleteValue::Integer(1));
-    let leaves = json!([{ "type": 4, "name": "limit", "value": "1", "focused": true }]);
-    assert_eq!(suggest(&handler, "set", &leaves).await, None);
+        .unwrap_err();
+    assert!(err.to_string().contains("not in a guild"), "{err}");
+}
+
+/// Matrix 24: an option without a method is `None`; an unknown path is an
+/// error.
+#[tokio::test]
+async fn unflagged_options_and_unknown_paths() {
+    let handler = Config::descriptor();
+    let leaves = json!([{ "type": 3, "name": "mode", "value": "", "focused": true }]);
+    assert_eq!(names(&handler, "set", &leaves).await, None);
     let other = json!({
         "type": 4,
         "data": { "name": "ping", "type": 1, "options": [
@@ -173,19 +251,12 @@ async fn plain_handlers_and_unlinked_options() {
     assert!(error.as_error().is::<UnknownCommandPath>());
 }
 
-/// The derive links each `autocomplete = path` field by option name.
+/// The derive declares each flagged field as autocomplete, and registers
+/// the methods with the Command.
 #[test]
-fn options_link_their_handlers() {
-    let linked: Option<AutocompleteHandler<PrefixOptions>> = PrefixOptions::autocomplete("value");
-    assert!(linked.unwrap().name().ends_with("::prefix_suggest"));
-    assert!(
-        PrefixOptions::autocomplete("query")
-            .unwrap()
-            .name()
-            .ends_with("::anything")
-    );
-    assert!(PrefixOptions::autocomplete("limit").is_none());
-    assert!(format!("{:?}", prefix_suggest()).contains("prefix_suggest"));
-    assert!(PrefixOptions::OPTIONS[0].autocomplete);
-    let _: AutocompleteHandler<PrefixOptions> = anything();
+fn flagged_options_are_declared() {
+    assert!(Config::OPTIONS[0].autocomplete);
+    assert!(Config::OPTIONS[1].autocomplete);
+    assert!(!Config::OPTIONS[4].autocomplete);
+    let _ = Module::new("config").add::<Config>();
 }

@@ -29,24 +29,24 @@ pub fn module() -> Module {
 builder.module(profile::module()).module(ops::module());
 ```
 
-Implemented: `Module::new(id)`, `.add(descriptor)`, `.module(child)`, `.base(name,
+Implemented: `Module::new(id)`, `.add::<X>()`, `.module(child)`, `.base(name,
 BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
-`AppBuilder::module(Module)`. [planned: Story 6.11] `.add::<X>()` registers a struct by
-type and replaces `.add(x())`, which takes the descriptor function a free-function macro
-generates in this release.
+`AppBuilder::module(Module)`. `.add::<X>()` registers a struct by type: any struct with a
+kind derive (`SlashCommand`, `UserCommand`, `MessageCommand`, `EventHandler`, `Button`,
+the select kinds, `Modal`) and a `#[handler]` method (the `noctis::Register` trait the
+derives implement).
 
 - `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
   too (in `install`); those trees fold after the ones mounted before `build()`.
-- `.add(x())` takes any `Descriptor` (a sealed trait). Today that is the
-  `EventHandler` an `#[event]` function returns and the `#[command]`, `#[user_command]`
-  and `#[message_command]` descriptors; `#[handler]` and `#[hook]` descriptors join in
-  later stories [planned]. `#[autocomplete]` handlers are **not** added to a Module: an
-  `#[option(autocomplete = …)]` field links them to their Command (`commands.md` §4).
+- Commands, context menus and event handlers run today; component and modal structs
+  are stored with the Module and dispatched from Epic 7 [planned]; `#[hook]` joins
+  later [planned]. `#[autocomplete(field)]` methods are **not** added separately:
+  `.add::<X>()` on the command registers them (`commands.md` §4).
 - Registration is data: nothing runs when you add or nest, and the call order of `.add`
   and `.module` does not matter. `build()` folds every mounted tree **once**, pre-order:
   a Module's own registrations in `.add` order, then each child in `.module` order
   (parent before child). Each registration records its Module id and the ancestor path.
-  Adding the same descriptor twice registers (and runs) it twice.
+  Adding the same struct twice registers (and runs) it twice.
 - `.base(name, BaseMeta)` declares a base command's description and metadata,
   `.group(path, description)` a subcommand group's description (`noctis::BaseMeta`; both
   `#[must_use]`, kept in call order). Any Module may declare them for commands other
@@ -84,9 +84,7 @@ answer a localized ephemeral "disabled here" (`noctis.disabled_here`). Hook:
 
 ## 4. Gateway Event Handlers (FR-6)
 
-An event handler is a unit struct, like every handler [planned: Story 6.11; this release:
-a free `#[event] async fn award_xp(ctx: EventCtx, msg: MessageCreate)` added with
-`.add(award_xp())`, and the signature rules and errors below are that release's]:
+An event handler is a unit struct, like every handler:
 
 ```rust
 use noctis::events::{EventCtx, MemberAdd, MessageCreate, ReactionAdd};
@@ -128,16 +126,18 @@ impl OnReaction {
 Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
 ```
 
-- **Signature:** exactly `async fn name(ctx: EventCtx, event: <payload>) -> HandlerResult<()>`,
-  a plain `async fn` (no `const`/`unsafe`/`extern`, no `self`, no generics or `where`),
-  any visibility, doc comments and `_` patterns allowed. `#[event]` turns it into
-  `fn name() -> EventHandler` for `.add(..)`. Arguments: `ordered`, `droppable`, in any
+- **Signature:** a `#[derive(EventHandler)]` unit struct with `#[event]` and exactly one
+  `#[handler] async fn handle(self, ctx: EventCtx, event: <payload>) ->
+  HandlerResult<()>` method (any visibility, doc comments and `_` patterns allowed);
+  `X::descriptor()` is its `EventHandler`. Arguments: `ordered`, `droppable`, in any
   order, each at most once (`#[event(ordered, droppable)]`). The handler's name in logs
-  and errors is `module_path!()::name` (e.g. `my_bot::modules::profile::award_xp`).
-- **Errors** (at `cargo check`): ``#[event]` needs an `async fn``, ``#[event]` handlers
-  take `(ctx: EventCtx, event: <payload>)``, ``#[event]` handlers cannot be generic``,
-  ``#[event]` handlers must be a plain `async fn``, ``unknown `#[event]` argument `x`:
-  expected `ordered` or `droppable``, ``duplicate `#[event]` argument `x``. A payload
+  and errors is `module_path!()::Struct` (e.g. `my_bot::modules::profile::AwardXp`).
+- **Errors** (at `cargo check`): `` `#[derive(EventHandler)]` needs a unit struct ``,
+  the `#[handler]` errors (`commands.md` §1: `self` by value, `async`, no generics,
+  `` a #[handler] method takes `(self, ctx[, path | target | event][, r: CommandResponder<..>])` ``),
+  ``unknown `#[event]` argument `x`: expected `ordered` or `droppable``, ``duplicate
+  `#[event]` argument `x``; a free `#[event] async fn` is a compile error whose help
+  shows the struct form. A payload
   type outside `noctis::events` (or `InteractionCreate`) is
   "`T` is not a gateway event payload" (trait `EventPayload`, sealed).
 - **Payloads:** `noctis::events` re-exports twilight's payload types (table below).

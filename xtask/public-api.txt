@@ -116,13 +116,12 @@ impl noctis::AutocompleteCtx
 pub fn noctis::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::AutocompleteCtx::command_path(&self) -> &'static str
 pub fn noctis::AutocompleteCtx::focused(&self) -> &noctis::Focused
-pub fn noctis::AutocompleteCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
 pub fn noctis::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::AutocompleteCtx::module(&self) -> &'static str
-pub fn noctis::AutocompleteCtx::respond(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::AutocompleteChoice>) -> noctis::Responded
 pub fn noctis::AutocompleteCtx::shard(&self) -> u32
-pub fn noctis::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> noctis::State<T>
 pub fn noctis::AutocompleteCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
 impl core::fmt::Debug for noctis::AutocompleteCtx
@@ -130,6 +129,7 @@ pub fn noctis::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> cor
 #[non_exhaustive] pub enum noctis::AutocompleteError
 pub noctis::AutocompleteError::DeadlineMissed
 pub noctis::AutocompleteError::DeadlineMissed::deadline: core::time::Duration
+pub noctis::AutocompleteError::NotInGuild
 impl core::clone::Clone for noctis::AutocompleteError
 pub fn noctis::AutocompleteError::clone(&self) -> Self
 impl core::error::Error for noctis::AutocompleteError
@@ -137,13 +137,6 @@ impl core::fmt::Debug for noctis::AutocompleteError
 pub fn noctis::AutocompleteError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::AutocompleteError
 pub fn noctis::AutocompleteError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::AutocompleteHandler<O>
-impl<O> noctis::AutocompleteHandler<O>
-pub fn noctis::AutocompleteHandler<O>::name(&self) -> &'static str
-impl<O> core::clone::Clone for noctis::AutocompleteHandler<O>
-pub fn noctis::AutocompleteHandler<O>::clone(&self) -> Self
-impl<O> core::fmt::Debug for noctis::AutocompleteHandler<O>
-pub fn noctis::AutocompleteHandler<O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::AutocompleteValue
 pub noctis::AutocompleteValue::Integer(i64)
 pub noctis::AutocompleteValue::Number(f64)
@@ -257,7 +250,9 @@ pub fn noctis::BuildViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core
 impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
+pub proc macro noctis::#[derive(Button)]
 pub trait noctis::CanShowModal: noctis::DeferMode + noctis::__private::core::responder::sealed::ShowModal
+pub proc macro noctis::#[derive(ChannelSelectMenu)]
 pub enum noctis::Command
 impl core::clone::Clone for noctis::Command
 pub fn noctis::Command::clone(&self) -> Self
@@ -304,8 +299,6 @@ impl core::clone::Clone for noctis::CommandHandler
 pub fn noctis::CommandHandler::clone(&self) -> Self
 impl core::fmt::Debug for noctis::CommandHandler
 pub fn noctis::CommandHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl noctis::Descriptor for noctis::CommandHandler
-impl noctis::Descriptor for noctis::CommandHandler
 pub struct noctis::CommandInput
 impl noctis::CommandInput
 pub fn noctis::CommandInput::from_json(&[u8]) -> core::result::Result<Self, noctis::OptionError>
@@ -399,6 +392,47 @@ pub const noctis::CommandPath::PATHS: &'static [&'static str]
 pub fn noctis::CommandPath::as_str(self) -> &'static str
 pub fn noctis::CommandPath::from_path(&str) -> core::option::Option<Self>
 pub type noctis::CommandResponder<D> = noctis::Responder<noctis::Command, noctis::Pending, D>
+pub struct noctis::ComponentCtx(_)
+impl noctis::ComponentCtx
+pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ComponentCtx::module(&self) -> &'static str
+pub fn noctis::ComponentCtx::shard(&self) -> u32
+pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+impl core::clone::Clone for noctis::ComponentCtx
+pub fn noctis::ComponentCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ComponentCtx
+pub fn noctis::ComponentCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::ComponentHandler
+impl noctis::ComponentHandler
+pub fn noctis::ComponentHandler::kind(&self) -> noctis::ComponentKind
+pub fn noctis::ComponentHandler::name(&self) -> &'static str
+pub fn noctis::ComponentHandler::route(&self) -> &'static str
+impl core::clone::Clone for noctis::ComponentHandler
+pub fn noctis::ComponentHandler::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ComponentHandler
+pub fn noctis::ComponentHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::ComponentKind
+pub noctis::ComponentKind::Button
+pub noctis::ComponentKind::ChannelSelect
+pub noctis::ComponentKind::MentionableSelect
+pub noctis::ComponentKind::RoleSelect
+pub noctis::ComponentKind::StringSelect
+pub noctis::ComponentKind::UserSelect
+impl core::clone::Clone for noctis::ComponentKind
+pub fn noctis::ComponentKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ComponentKind
+impl core::cmp::PartialEq for noctis::ComponentKind
+pub fn noctis::ComponentKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ComponentKind
+pub fn noctis::ComponentKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ComponentKind
+pub fn noctis::ComponentKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ComponentKind
+impl core::marker::StructuralPartialEq for noctis::ComponentKind
 pub struct noctis::ContextMenuHandler
 impl noctis::ContextMenuHandler
 pub fn noctis::ContextMenuHandler::auto_defer(&self) -> bool
@@ -411,10 +445,7 @@ impl core::clone::Clone for noctis::ContextMenuHandler
 pub fn noctis::ContextMenuHandler::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ContextMenuHandler
 pub fn noctis::ContextMenuHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl noctis::Descriptor for noctis::ContextMenuHandler
-impl noctis::Descriptor for noctis::ContextMenuHandler
 pub trait noctis::DeferMode: noctis::__private::core::responder::sealed::Defer + core::marker::Send + core::marker::Sync + 'static
-pub trait noctis::Descriptor: noctis::__private::core::module::sealed::Sealed
 #[non_exhaustive] pub enum noctis::DispatchError
 pub noctis::DispatchError::UnknownCommand
 pub noctis::DispatchError::UnknownCommand::path: alloc::boxed::Box<str>
@@ -549,6 +580,7 @@ pub trait noctis::ErrorSink: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ErrorSink::report(&self, noctis::ErrorReport<'_>)
 impl<S: noctis::ErrorSink + ?core::marker::Sized> noctis::ErrorSink for alloc::rcs::arc::Arc<S>
 pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
+pub proc macro noctis::#[derive(EventHandler)]
 pub struct noctis::Focused
 impl noctis::Focused
 pub fn noctis::Focused::as_integer(&self) -> core::option::Option<i64>
@@ -751,6 +783,7 @@ impl noctis::CanShowModal for noctis::Manual
 impl noctis::DeferMode for noctis::Manual
 impl noctis::CanShowModal for noctis::Manual
 impl noctis::DeferMode for noctis::Manual
+pub proc macro noctis::#[derive(MentionableSelectMenu)]
 pub enum noctis::MenuKind
 pub noctis::MenuKind::Message
 pub noctis::MenuKind::User
@@ -789,9 +822,32 @@ pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> cor
 impl core::fmt::Display for noctis::MenuTargetError
 pub fn noctis::MenuTargetError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::MenuTargetError
+pub proc macro noctis::#[derive(MessageCommand)]
+pub struct noctis::ModalHandler
+impl noctis::ModalHandler
+pub fn noctis::ModalHandler::name(&self) -> &'static str
+pub fn noctis::ModalHandler::route(&self) -> &'static str
+impl core::clone::Clone for noctis::ModalHandler
+pub fn noctis::ModalHandler::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ModalHandler
+pub fn noctis::ModalHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::ModalSubmitCtx(_)
+impl noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
+pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
+pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+impl core::clone::Clone for noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::Module
 impl noctis::Module
-pub fn noctis::Module::add(self, impl noctis::Descriptor) -> Self
+pub fn noctis::Module::add<T: noctis::Register>(self) -> Self
 pub fn noctis::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
@@ -856,10 +912,8 @@ impl core::marker::StructuralPartialEq for noctis::OptionValue
 pub trait noctis::Options: core::marker::Sized + core::marker::Send + 'static
 pub type noctis::Options::Partial: noctis::PartialOptions<Options = Self>
 pub const noctis::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl<'static>]
-pub fn noctis::Options::autocomplete(&str) -> core::option::Option<noctis::AutocompleteHandler<Self>>
 pub fn noctis::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::Options::validate(&self, &noctis::CommandCtx) -> core::result::Result<(), noctis::InvalidOption>
-pub proc macro noctis::#[derive(Options)]
 #[non_exhaustive] pub enum noctis::OutgoingMessage
 pub noctis::OutgoingMessage::Legacy(noctis::ui::LegacyMessage)
 pub noctis::OutgoingMessage::V2(noctis::ui::V2Message)
@@ -887,6 +941,7 @@ impl noctis::ResponderState for noctis::Pending
 pub use noctis::Permissions
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
+pub trait noctis::Register
 #[non_exhaustive] pub enum noctis::ReportKind<'a>
 pub noctis::ReportKind::Cancelled
 pub noctis::ReportKind::Dropped
@@ -965,6 +1020,7 @@ impl core::convert::From<noctis::AckDeadlineMissed> for noctis::ResponderError
 pub fn noctis::ResponderError::from(noctis::AckDeadlineMissed) -> Self
 pub trait noctis::ResponderKind: noctis::__private::core::responder::sealed::Kind + core::marker::Send + core::marker::Sync + 'static
 pub trait noctis::ResponderState: noctis::__private::core::responder::sealed::State + core::marker::Send + core::marker::Sync + 'static
+pub proc macro noctis::#[derive(RoleSelectMenu)]
 #[non_exhaustive] pub enum noctis::RunError
 pub noctis::RunError::AllShardsEnded
 impl core::clone::Clone for noctis::RunError
@@ -992,6 +1048,7 @@ impl core::cmp::PartialEq for noctis::Runtime
 pub fn noctis::Runtime::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::Runtime
 pub fn noctis::Runtime::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub proc macro noctis::#[derive(SlashCommand)]
 #[non_exhaustive] pub enum noctis::StartError
 pub noctis::StartError::CryptoProvider
 pub noctis::StartError::DisallowedIntents
@@ -1039,6 +1096,42 @@ pub fn noctis::State<T>::clone(&self) -> Self
 impl<T> core::ops::deref::Deref for noctis::State<T>
 pub type noctis::State<T>::Target = T
 pub fn noctis::State<T>::deref(&self) -> &T
+pub proc macro noctis::#[derive(StringSelectMenu)]
+pub struct noctis::SuggestionLabel(_)
+impl core::clone::Clone for noctis::SuggestionLabel
+pub fn noctis::SuggestionLabel::clone(&self) -> Self
+impl core::cmp::Eq for noctis::SuggestionLabel
+impl core::cmp::PartialEq for noctis::SuggestionLabel
+pub fn noctis::SuggestionLabel::eq(&self, &Self) -> bool
+impl core::convert::From<&str> for noctis::SuggestionLabel
+pub fn noctis::SuggestionLabel::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for noctis::SuggestionLabel
+pub fn noctis::SuggestionLabel::from(alloc::string::String) -> Self
+impl core::convert::From<noctis::prelude::MessageKey> for noctis::SuggestionLabel
+pub fn noctis::SuggestionLabel::from(noctis::prelude::MessageKey) -> Self
+impl core::fmt::Debug for noctis::SuggestionLabel
+pub fn noctis::SuggestionLabel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::SuggestionLabel
+pub trait noctis::SuggestionValue: noctis::__private::core::autocomplete::sealed::Value + core::marker::Send + 'static
+impl noctis::SuggestionValue for alloc::string::String
+impl noctis::SuggestionValue for f64
+impl noctis::SuggestionValue for i64
+pub struct noctis::Suggestions<T: noctis::SuggestionValue>
+impl<T: noctis::SuggestionValue> noctis::Suggestions<T>
+pub fn noctis::Suggestions<T>::is_empty(&self) -> bool
+pub fn noctis::Suggestions<T>::len(&self) -> usize
+pub fn noctis::Suggestions<T>::new() -> Self
+pub fn noctis::Suggestions<T>::push(&mut self, T, impl core::convert::Into<noctis::SuggestionLabel>)
+impl<T: noctis::SuggestionValue + core::clone::Clone> core::clone::Clone for noctis::Suggestions<T>
+pub fn noctis::Suggestions<T>::clone(&self) -> Self
+impl<T: noctis::SuggestionValue + core::fmt::Debug> core::fmt::Debug for noctis::Suggestions<T>
+pub fn noctis::Suggestions<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T: noctis::SuggestionValue, L: core::convert::Into<noctis::SuggestionLabel>> core::iter::traits::collect::Extend<(T, L)> for noctis::Suggestions<T>
+pub fn noctis::Suggestions<T>::extend<I: core::iter::traits::collect::IntoIterator<Item = (T, L)>>(&mut self, I)
+impl<T: noctis::SuggestionValue, L: core::convert::Into<noctis::SuggestionLabel>> core::iter::traits::collect::FromIterator<(T, L)> for noctis::Suggestions<T>
+pub fn noctis::Suggestions<T>::from_iter<I: core::iter::traits::collect::IntoIterator<Item = (T, L)>>(I) -> Self
+impl<T: noctis::SuggestionValue> core::default::Default for noctis::Suggestions<T>
+pub fn noctis::Suggestions<T>::default() -> Self
 pub struct noctis::Token(_)
 impl noctis::Token
 pub fn noctis::Token::new(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, noctis::TokenError>
@@ -1075,17 +1168,16 @@ impl core::fmt::Debug for noctis::UnknownCommandPath
 pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::UnknownCommandPath
 pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub proc macro noctis::#[derive(UserCommand)]
+pub proc macro noctis::#[derive(UserSelectMenu)]
 pub type noctis::Visibility = noctis::Ephemerality
 pub proc macro noctis::#[autocomplete]
-pub proc macro noctis::#[command]
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
-pub proc macro noctis::#[event]
+pub proc macro noctis::#[handler]
 pub proc macro noctis::label!()
-pub proc macro noctis::#[message_command]
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
-pub proc macro noctis::#[user_command]
 pub mod noctis::bytes
 pub use noctis::bytes::Bytes
 pub mod noctis::cli
@@ -1559,14 +1651,11 @@ impl core::clone::Clone for noctis::events::EventHandler
 pub fn noctis::events::EventHandler::clone(&self) -> Self
 impl core::fmt::Debug for noctis::events::EventHandler
 pub fn noctis::events::EventHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl noctis::Descriptor for noctis::events::EventHandler
 pub struct noctis::events::EventHandler
 impl core::clone::Clone for noctis::events::EventHandler
 pub fn noctis::events::EventHandler::clone(&self) -> Self
 impl core::fmt::Debug for noctis::events::EventHandler
 pub fn noctis::events::EventHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl noctis::Descriptor for noctis::events::EventHandler
-impl noctis::Descriptor for noctis::events::EventHandler
 pub trait noctis::events::EventPayload: noctis::__private::core::events::sealed::Sealed + core::marker::Send + 'static
 impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_action_execution::AutoModerationActionExecution
 impl noctis::events::EventPayload for twilight_model::gateway::payload::incoming::auto_moderation_rule_create::AutoModerationRuleCreate
@@ -2429,34 +2518,23 @@ pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::
 pub fn noctis::prelude::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::prelude::AppBuilder
 pub fn noctis::prelude::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct noctis::prelude::AutocompleteChoice
-impl noctis::prelude::AutocompleteChoice
-pub fn noctis::prelude::AutocompleteChoice::name(&self) -> &str
-pub fn noctis::prelude::AutocompleteChoice::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<noctis::AutocompleteValue>) -> Self
-pub fn noctis::prelude::AutocompleteChoice::value(&self) -> &noctis::AutocompleteValue
-impl core::clone::Clone for noctis::prelude::AutocompleteChoice
-pub fn noctis::prelude::AutocompleteChoice::clone(&self) -> Self
-impl core::cmp::PartialEq for noctis::prelude::AutocompleteChoice
-pub fn noctis::prelude::AutocompleteChoice::eq(&self, &Self) -> bool
-impl core::fmt::Debug for noctis::prelude::AutocompleteChoice
-pub fn noctis::prelude::AutocompleteChoice::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for noctis::prelude::AutocompleteChoice
 pub struct noctis::prelude::AutocompleteCtx
 impl noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::AutocompleteCtx::command_path(&self) -> &'static str
 pub fn noctis::prelude::AutocompleteCtx::focused(&self) -> &noctis::Focused
-pub fn noctis::prelude::AutocompleteCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
 pub fn noctis::prelude::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::AutocompleteCtx::module(&self) -> &'static str
-pub fn noctis::prelude::AutocompleteCtx::respond(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::AutocompleteChoice>) -> noctis::Responded
 pub fn noctis::prelude::AutocompleteCtx::shard(&self) -> u32
-pub fn noctis::prelude::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> noctis::State<T>
 pub fn noctis::prelude::AutocompleteCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
 impl core::fmt::Debug for noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub proc macro noctis::prelude::#[derive(Button)]
+pub proc macro noctis::prelude::#[derive(ChannelSelectMenu)]
 pub proc macro noctis::prelude::#[derive(Choices)]
 pub trait noctis::prelude::Choices: core::marker::Sized + 'static
 pub type noctis::prelude::Choices::Count
@@ -2524,6 +2602,20 @@ pub const twilight_model::id::Id<twilight_model::id::marker::UserMarker>::CHOICE
 pub const twilight_model::id::Id<twilight_model::id::marker::UserMarker>::KIND: noctis::rules::command::OptionType
 pub fn twilight_model::id::Id<twilight_model::id::marker::UserMarker>::decode(&noctis::OptionValue, &noctis::CommandInput, &str) -> core::result::Result<Self, noctis::OptionError>
 pub type noctis::prelude::CommandResponder<D> = noctis::Responder<noctis::Command, noctis::Pending, D>
+pub struct noctis::prelude::ComponentCtx(_)
+impl noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
+pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
+pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+impl core::clone::Clone for noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum noctis::prelude::Ephemerality
 pub noctis::prelude::Ephemerality::Ephemeral
 pub noctis::prelude::Ephemerality::Public
@@ -2567,6 +2659,7 @@ pub fn noctis::prelude::ErrorSink::report(&self, noctis::ErrorReport<'_>)
 impl<S: noctis::prelude::ErrorSink + ?core::marker::Sized> noctis::prelude::ErrorSink for alloc::rcs::arc::Arc<S>
 pub fn alloc::rcs::arc::Arc<S>::report(&self, noctis::ErrorReport<'_>)
 pub struct noctis::prelude::EventCtx(_)
+pub proc macro noctis::prelude::#[derive(EventHandler)]
 pub struct noctis::prelude::HandlerError
 impl noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::as_error(&self) -> &(dyn core::error::Error + core::marker::Send + core::marker::Sync + 'static)
@@ -2598,6 +2691,8 @@ impl noctis::CanShowModal for noctis::prelude::Manual
 impl noctis::DeferMode for noctis::prelude::Manual
 impl noctis::CanShowModal for noctis::prelude::Manual
 impl noctis::DeferMode for noctis::prelude::Manual
+pub proc macro noctis::prelude::#[derive(MentionableSelectMenu)]
+pub proc macro noctis::prelude::#[derive(MessageCommand)]
 pub struct noctis::prelude::MessageKey(_)
 impl noctis::prelude::MessageKey
 pub const fn noctis::prelude::MessageKey::as_str(self) -> &'static str
@@ -2622,13 +2717,25 @@ impl core::marker::Copy for noctis::prelude::MessageKey
 impl core::marker::StructuralPartialEq for noctis::prelude::MessageKey
 pub proc macro noctis::prelude::#[derive(Modal)]
 pub trait noctis::prelude::ModalForm: core::marker::Sized
-pub type noctis::prelude::ModalForm::Route: noctis::codec::Route<Payload = Self::Route> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::prelude::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
 pub fn noctis::prelude::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> core::result::Result<Self, noctis::ui::SubmitError>
-pub fn noctis::prelude::ModalForm::modal(Self::Route) -> noctis::ui::Modal
+pub struct noctis::prelude::ModalSubmitCtx(_)
+impl noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
+pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
+pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+impl core::clone::Clone for noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::Module
 impl noctis::prelude::Module
-pub fn noctis::prelude::Module::add(self, impl noctis::Descriptor) -> Self
+pub fn noctis::prelude::Module::add<T: noctis::Register>(self) -> Self
 pub fn noctis::prelude::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
@@ -2641,10 +2748,8 @@ pub fn noctis::prelude::Module::fmt(&self, &mut core::fmt::Formatter<'_>) -> cor
 pub trait noctis::prelude::Options: core::marker::Sized + core::marker::Send + 'static
 pub type noctis::prelude::Options::Partial: noctis::PartialOptions<Options = Self>
 pub const noctis::prelude::Options::OPTIONS: &'static [noctis::rules::command::OptionDecl<'static>]
-pub fn noctis::prelude::Options::autocomplete(&str) -> core::option::Option<noctis::AutocompleteHandler<Self>>
 pub fn noctis::prelude::Options::from_input(&noctis::CommandInput) -> core::result::Result<Self, noctis::OptionError>
 pub fn noctis::prelude::Options::validate(&self, &noctis::CommandCtx) -> core::result::Result<(), noctis::InvalidOption>
-pub proc macro noctis::prelude::#[derive(Options)]
 pub type noctis::prelude::Partial<O> = <O as noctis::Options>::Partial
 pub trait noctis::prelude::Payload
 pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
@@ -2674,28 +2779,13 @@ impl core::hash::Hash for noctis::prelude::Rgb
 pub fn noctis::prelude::Rgb::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::prelude::Rgb
 impl core::marker::StructuralPartialEq for noctis::prelude::Rgb
+pub proc macro noctis::prelude::#[derive(RoleSelectMenu)]
 pub trait noctis::prelude::Route
 pub type noctis::prelude::Route::Payload: noctis::codec::Payload
 pub const noctis::prelude::Route::ID: noctis::codec::RouteId
 pub const noctis::prelude::Route::SCHEMA: u8
 pub const noctis::prelude::Route::SHAPE: noctis::codec::RouteShape
-pub proc macro noctis::prelude::#[derive(Route)]
-pub trait noctis::prelude::RouteComponents: noctis::codec::Route + core::marker::Sized
-pub fn noctis::prelude::RouteComponents::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::prelude::RouteComponents::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::prelude::RouteComponents::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::prelude::RouteComponents::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::prelude::RouteComponents::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::prelude::RouteComponents::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::prelude::RouteComponents::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-impl<R: noctis::codec::Route> noctis::prelude::RouteComponents for R
-pub fn R::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn R::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn R::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
+pub proc macro noctis::prelude::#[derive(SlashCommand)]
 pub struct noctis::prelude::State<T>(_)
 impl<T: core::fmt::Debug> core::fmt::Debug for noctis::prelude::State<T>
 pub fn noctis::prelude::State<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -2704,17 +2794,33 @@ pub fn noctis::prelude::State<T>::clone(&self) -> Self
 impl<T> core::ops::deref::Deref for noctis::prelude::State<T>
 pub type noctis::prelude::State<T>::Target = T
 pub fn noctis::prelude::State<T>::deref(&self) -> &T
+pub proc macro noctis::prelude::#[derive(StringSelectMenu)]
+pub struct noctis::prelude::Suggestions<T: noctis::SuggestionValue>
+impl<T: noctis::SuggestionValue> noctis::prelude::Suggestions<T>
+pub fn noctis::prelude::Suggestions<T>::is_empty(&self) -> bool
+pub fn noctis::prelude::Suggestions<T>::len(&self) -> usize
+pub fn noctis::prelude::Suggestions<T>::new() -> Self
+pub fn noctis::prelude::Suggestions<T>::push(&mut self, T, impl core::convert::Into<noctis::SuggestionLabel>)
+impl<T: noctis::SuggestionValue + core::clone::Clone> core::clone::Clone for noctis::prelude::Suggestions<T>
+pub fn noctis::prelude::Suggestions<T>::clone(&self) -> Self
+impl<T: noctis::SuggestionValue + core::fmt::Debug> core::fmt::Debug for noctis::prelude::Suggestions<T>
+pub fn noctis::prelude::Suggestions<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T: noctis::SuggestionValue, L: core::convert::Into<noctis::SuggestionLabel>> core::iter::traits::collect::Extend<(T, L)> for noctis::prelude::Suggestions<T>
+pub fn noctis::prelude::Suggestions<T>::extend<I: core::iter::traits::collect::IntoIterator<Item = (T, L)>>(&mut self, I)
+impl<T: noctis::SuggestionValue, L: core::convert::Into<noctis::SuggestionLabel>> core::iter::traits::collect::FromIterator<(T, L)> for noctis::prelude::Suggestions<T>
+pub fn noctis::prelude::Suggestions<T>::from_iter<I: core::iter::traits::collect::IntoIterator<Item = (T, L)>>(I) -> Self
+impl<T: noctis::SuggestionValue> core::default::Default for noctis::prelude::Suggestions<T>
+pub fn noctis::prelude::Suggestions<T>::default() -> Self
+pub proc macro noctis::prelude::#[derive(UserCommand)]
+pub proc macro noctis::prelude::#[derive(UserSelectMenu)]
 pub type noctis::prelude::Visibility = noctis::Ephemerality
 pub proc macro noctis::prelude::#[autocomplete]
-pub proc macro noctis::prelude::#[command]
 pub proc macro noctis::prelude::components!()
 pub proc macro noctis::prelude::content!()
-pub proc macro noctis::prelude::#[event]
+pub proc macro noctis::prelude::#[handler]
 pub proc macro noctis::prelude::label!()
-pub proc macro noctis::prelude::#[message_command]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
-pub proc macro noctis::prelude::#[user_command]
 pub mod noctis::publish
 pub struct noctis::publish::Publish<'a>
 impl<'a> noctis::publish::Publish<'a>
@@ -4846,10 +4952,8 @@ impl core::convert::From<noctis::ui::TextDisplay> for noctis::ui::ModalComponent
 pub fn noctis::ui::ModalComponent::from(noctis::ui::TextDisplay) -> Self
 impl noctis::ui::ModalTopLevel for noctis::ui::ModalComponent
 pub trait noctis::ui::ModalForm: core::marker::Sized
-pub type noctis::ui::ModalForm::Route: noctis::codec::Route<Payload = Self::Route> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ui::ModalForm::from_json(&[u8]) -> core::result::Result<Self, noctis::ui::SubmitError>
 pub fn noctis::ui::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> core::result::Result<Self, noctis::ui::SubmitError>
-pub fn noctis::ui::ModalForm::modal(Self::Route) -> noctis::ui::Modal
 pub trait noctis::ui::ModalInput: noctis::__private::ui::sealed::IntoModalInput
 pub struct noctis::ui::ModalLabel
 impl noctis::ui::ModalLabel
@@ -5145,22 +5249,6 @@ impl<R> serde_core::ser::Serialize for noctis::ui::RouteButton<R>
 pub fn noctis::ui::RouteButton<R>::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl<R> noctis::ui::RowItem for noctis::ui::RouteButton<R>
 impl<R> noctis::ui::SectionAccessory for noctis::ui::RouteButton<R>
-pub trait noctis::ui::RouteComponents: noctis::codec::Route + core::marker::Sized
-pub fn noctis::ui::RouteComponents::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ui::RouteComponents::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ui::RouteComponents::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ui::RouteComponents::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ui::RouteComponents::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ui::RouteComponents::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ui::RouteComponents::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-impl<R: noctis::codec::Route> noctis::ui::RouteComponents for R
-pub fn R::button(self) -> noctis::ui::RouteButton<Self> where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn R::channel_select(self) -> noctis::ui::ChannelSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::mentionable_select(self) -> noctis::ui::MentionableSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::modal(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> noctis::ui::Modal where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + core::marker::Send + core::marker::Sync + 'static
-pub fn R::role_select(self) -> noctis::ui::RoleSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::string_select(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
-pub fn R::user_select(self) -> noctis::ui::UserSelect where Self: noctis::codec::Route<Payload = Self> + noctis::__private::ui::Handled + noctis::codec::SelectRoute + core::marker::Send + core::marker::Sync + 'static
 pub trait noctis::ui::RowButtons: noctis::__private::ui::sealed::Sealed
 pub trait noctis::ui::RowItem: noctis::__private::ui::sealed::IntoRowButton
 pub trait noctis::ui::RowSelect: noctis::__private::ui::sealed::IntoSelect
@@ -5244,6 +5332,8 @@ pub fn noctis::ui::StringSelect::disabled(self, bool) -> Self
 pub fn noctis::ui::StringSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::StringSelect::min_values(self, u8) -> Self
 pub fn noctis::ui::StringSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl noctis::ui::StringSelect
+pub fn noctis::ui::StringSelect::options(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> Self
 impl core::clone::Clone for noctis::ui::StringSelect
 pub fn noctis::ui::StringSelect::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::StringSelect
@@ -5252,6 +5342,19 @@ impl noctis::ui::RowSelect for noctis::ui::StringSelect
 impl serde_core::ser::Serialize for noctis::ui::StringSelect
 pub fn noctis::ui::StringSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::StringSelect
+pub struct noctis::ui::StringSelectBuilder<R>
+impl<R> noctis::ui::StringSelectBuilder<R>
+pub fn noctis::ui::StringSelectBuilder<R>::disabled(self, bool) -> Self
+pub fn noctis::ui::StringSelectBuilder<R>::max_values(self, u8) -> Self
+pub fn noctis::ui::StringSelectBuilder<R>::min_values(self, u8) -> Self
+pub fn noctis::ui::StringSelectBuilder<R>::options(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect
+pub fn noctis::ui::StringSelectBuilder<R>::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl<R: OptionsGiven> noctis::ui::RowSelect for noctis::ui::StringSelectBuilder<R>
+impl<R> core::clone::Clone for noctis::ui::StringSelectBuilder<R>
+pub fn noctis::ui::StringSelectBuilder<R>::clone(&self) -> Self
+impl<R> core::fmt::Debug for noctis::ui::StringSelectBuilder<R>
+pub fn noctis::ui::StringSelectBuilder<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<R: OptionsGiven> noctis::ui::RowSelect for noctis::ui::StringSelectBuilder<R>
 pub trait noctis::ui::StringSelectOptions: noctis::__private::ui::sealed::Sealed
 #[non_exhaustive] pub enum noctis::ui::SubmitError
 pub noctis::ui::SubmitError::Duplicate

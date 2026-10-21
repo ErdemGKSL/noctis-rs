@@ -1,76 +1,76 @@
 error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
- --> tests/ui/int/INT-04_command_modal.rs:5:10
-  |
-5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
-  |          ^^^^^^^^^^ this handler auto-defers
-  |
-  = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+  --> tests/ui/int/INT-04_command_modal.rs:10:14
+   |
+10 |         Ok(r.show_modal(()).await?.done()) // [INT-04]
+   |              ^^^^^^^^^^ this handler auto-defers
+   |
+   = help: the trait `CanShowModal` is not implemented for `AutoDefer`
 help: the trait `CanShowModal` is implemented for `Manual`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  | impl CanShowModal for Manual {}
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl CanShowModal for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  |     pub async fn show_modal(
-  |                  ---------- required by a bound in this associated function
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn show_modal(
+   |                  ---------- required by a bound in this associated function
 ...
-  |         D: CanShowModal,
-  |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+   |         D: CanShowModal,
+   |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
 
 error[E0308]: mismatched types
- --> tests/ui/int/INT-04_command_modal.rs:5:21
-  |
-5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
-  |          ---------- ^^ expected `Modal`, found `()`
-  |          |
-  |          arguments to this method are incorrect
-  |
+  --> tests/ui/int/INT-04_command_modal.rs:10:25
+   |
+10 |         Ok(r.show_modal(()).await?.done()) // [INT-04]
+   |              ---------- ^^ expected `Modal`, found `()`
+   |              |
+   |              arguments to this method are incorrect
+   |
 note: method defined here
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  |     pub async fn show_modal(
-  |                  ^^^^^^^^^^
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn show_modal(
+   |                  ^^^^^^^^^^
 
 error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
- --> tests/ui/int/INT-04_command_modal.rs:5:8
-  |
-5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
-  |        ^^^^^^^^^^^^^^^^ this handler auto-defers
-  |
-  = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+  --> tests/ui/int/INT-04_command_modal.rs:10:12
+   |
+10 |         Ok(r.show_modal(()).await?.done()) // [INT-04]
+   |            ^^^^^^^^^^^^^^^^ this handler auto-defers
+   |
+   = help: the trait `CanShowModal` is not implemented for `AutoDefer`
 help: the trait `CanShowModal` is implemented for `Manual`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  | impl CanShowModal for Manual {}
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl CanShowModal for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  |     pub async fn show_modal(
-  |                  ---------- required by a bound in this associated function
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn show_modal(
+   |                  ---------- required by a bound in this associated function
 ...
-  |         D: CanShowModal,
-  |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+   |         D: CanShowModal,
+   |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
 
 error[E0277]: [INT-05] show_modal needs auto_defer = false on this handler
- --> tests/ui/int/INT-04_command_modal.rs:5:25
-  |
-5 |     Ok(r.show_modal(()).await?.done()) // [INT-04]
-  |                         ^^^^^ this handler auto-defers
-  |
-  = help: the trait `CanShowModal` is not implemented for `AutoDefer`
+  --> tests/ui/int/INT-04_command_modal.rs:10:29
+   |
+10 |         Ok(r.show_modal(()).await?.done()) // [INT-04]
+   |                             ^^^^^ this handler auto-defers
+   |
+   = help: the trait `CanShowModal` is not implemented for `AutoDefer`
 help: the trait `CanShowModal` is implemented for `Manual`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  | impl CanShowModal for Manual {}
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   | impl CanShowModal for Manual {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 note: required by a bound in `Responder::<noctis::Command, noctis::Pending, D>::show_modal`
- --> $WORKSPACE/crates/noctis-core/src/responder.rs
-  |
-  |     pub async fn show_modal(
-  |                  ---------- required by a bound in this associated function
+  --> $WORKSPACE/crates/noctis-core/src/responder.rs
+   |
+   |     pub async fn show_modal(
+   |                  ---------- required by a bound in this associated function
 ...
-  |         D: CanShowModal,
-  |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`
+   |         D: CanShowModal,
+   |            ^^^^^^^^^^^^ required by this bound in `Responder::<Command, Pending, D>::show_modal`

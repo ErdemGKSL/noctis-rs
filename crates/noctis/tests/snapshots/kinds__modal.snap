@@ -1,0 +1,21 @@
+---
+source: crates/noctis/tests/kinds.rs
+expression: built
+---
+{
+  "components": [
+    {
+      "component": {
+        "custom_id": "bio",
+        "max_length": 300,
+        "required": false,
+        "style": 2,
+        "type": 4
+      },
+      "label": "Bio",
+      "type": 18
+    }
+  ],
+  "custom_id": "0bio:g",
+  "title": "Bio"
+}

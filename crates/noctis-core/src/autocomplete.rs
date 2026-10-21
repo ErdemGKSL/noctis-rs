@@ -1,36 +1,38 @@
-//! Autocomplete (FR-10, AD-11; INT-06, INT-07, OPT-12): the
-//! [`AutocompleteCtx`] handlers receive, the [`Focused`] option, the
-//! [`AutocompleteChoice`]s they answer with, the typed
-//! [`Partial<O>`](Partial) of the other options and the
-//! [`AutocompleteHandler`] descriptor `#[autocomplete]` expands to.
+//! Autocomplete (FR-10, AD-11; INT-06, INT-07, OPT-11, OPT-12): the
+//! [`AutocompleteCtx`] suggestion methods receive, the [`Focused`] option,
+//! the [`Suggestions`] they return, the typed [`Partial<O>`](Partial) of the
+//! other options and the hidden binding `#[autocomplete(field)]` expands to.
 //!
-//! An autocomplete handler answers with exactly one response,
-//! [`AutocompleteCtx::respond`]; there is no defer and no Responder
-//! (INT-06). The pipeline sends the one type-8 callback: more than 25
-//! choices are truncated with a warning (INT-07), invalid kept choices are
-//! dropped with a warning, and an error, a panic or a missed 2.5 s deadline
-//! answers an empty list and goes to the Autocomplete Error Sink.
+//! A suggestion method answers with its return value; there is no defer
+//! and no Responder (INT-06). The pipeline lowers the [`Suggestions`] to the
+//! one type-8 callback: more than 25 are truncated with a warning (INT-07),
+//! a `MessageKey` label is resolved in the user's locale, a label over 100
+//! characters is cut with `…` and a warning, an empty label or a value
+//! Discord would reject is dropped with a warning, and an error, a panic or
+//! a missed 2.5 s deadline answers an empty list and goes to the
+//! Autocomplete Error Sink.
 
 use std::fmt;
 use std::future::Future;
+#[cfg(test)]
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::future::BoxFuture;
+use noctis_i18n::Builtin;
 use noctis_rules::command::{Choice, ChoiceValue, OptionType, validate_autocomplete};
-use noctis_rules::{Limits, RuleId};
+use noctis_rules::{Limits, MessageKey, RuleId, Translate};
 use serde_json::{Map, Value, json};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::State;
-use crate::handler::{AppShared, HandlerResult};
+use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::options::{
     CommandInput, OptionError, OptionValue, Options, decode_interaction, decode_value, option_name,
     option_type,
 };
-use crate::responder::Responded;
 
 /// How long an autocomplete handler may run, measured from when the
 /// interaction arrived; then the pipeline answers an empty list. Discord
@@ -41,11 +43,11 @@ pub(crate) const AUTOCOMPLETE_DEADLINE: Duration = Duration::from_millis(2500);
 /// typed so far.
 ///
 /// ```
-/// # use noctis_core::{AutocompleteCtx, AutocompleteChoice, HandlerResult, Responded};
-/// async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
+/// # use noctis_core::{AutocompleteCtx, HandlerResult, Suggestions};
+/// fn suggest(ctx: &AutocompleteCtx) -> HandlerResult<Suggestions<String>> {
 ///     let typed = ctx.focused().value().to_owned();
 ///     let limit = ctx.focused().as_integer().unwrap_or(0);
-///     Ok(ctx.respond([AutocompleteChoice::new(format!("{typed} ({limit})"), typed)]))
+///     Ok([(typed.clone(), format!("{typed} ({limit})"))].into_iter().collect())
 /// }
 /// ```
 #[derive(Debug, Clone)]
@@ -86,7 +88,8 @@ impl Focused {
 }
 
 /// The value of an [`AutocompleteChoice`]: a STRING, INTEGER or NUMBER
-/// value, matching the focused option's type.
+/// value, matching the focused option's type; what a [`SuggestionValue`]
+/// lowers to.
 ///
 /// ```
 /// use noctis_core::AutocompleteValue;
@@ -147,8 +150,9 @@ impl AutocompleteValue {
     }
 }
 
-/// One autocomplete suggestion: the name shown (1 to 100 characters) and
-/// the value the option takes when it is picked.
+/// One autocomplete choice as sent: the name shown (1 to 100 characters)
+/// and the value the option takes when it is picked; what one of the
+/// [`Suggestions`] lowers to.
 ///
 /// ```
 /// use noctis_core::{AutocompleteChoice, AutocompleteValue};
@@ -183,17 +187,6 @@ impl AutocompleteChoice {
     }
 }
 
-/// What a handler's [`respond`](AutocompleteCtx::respond) kept: the first
-/// `autocomplete_choices` choices and how many it was given.
-#[derive(Debug, Default)]
-pub(crate) struct Collected {
-    pub(crate) choices: Vec<AutocompleteChoice>,
-    pub(crate) returned: usize,
-}
-
-/// Where `respond` stores its choices for the pipeline.
-pub(crate) type Slot = Arc<Mutex<Option<Collected>>>;
-
 /// The parts of an [`AutocompleteCtx`].
 pub(crate) struct AutocompleteParts {
     pub(crate) path: &'static str,
@@ -205,40 +198,50 @@ pub(crate) struct AutocompleteParts {
     pub(crate) user_locale: Option<String>,
     pub(crate) guild_locale: Option<String>,
     pub(crate) focused: Focused,
-    /// `None` in unit tests.
+    /// `None` in unit tests and the detached seam.
     pub(crate) app: Option<Arc<AppShared>>,
-    pub(crate) max_choices: usize,
 }
 
-/// The context an autocomplete handler receives: the Command Path, the
-/// Module, the shard, the guild, channel and user, the locales, the
-/// [`Focused`] option, the App's typed state and its HTTP client.
+/// The context an `#[autocomplete(field)]` method receives: the Command
+/// Path, the Module, the shard, the guild, channel and user, the locales,
+/// the [`Focused`] option, the App's typed state and its HTTP client.
 ///
-/// Its only response is [`respond`](Self::respond) (INT-06): there is no
-/// defer and no Responder.
+/// There is no defer and no Responder (INT-06): the method returns its
+/// [`Suggestions`] and Noctis sends them.
 ///
 /// ```compile_fail
-/// use noctis_core::{AutocompleteCtx, HandlerResult, Responded};
+/// use noctis_core::{AutocompleteCtx, HandlerResult, Suggestions};
 ///
-/// async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-///     ctx.defer(); // [INT-06]
-///     Ok(ctx.respond(Vec::new()))
+/// async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Suggestions<String>> {
+///     ctx.defer_reply(); // [INT-06]
+///     Ok(Suggestions::new())
 /// }
 /// ```
 pub struct AutocompleteCtx {
     parts: AutocompleteParts,
-    slot: Slot,
 }
 
 impl AutocompleteCtx {
-    /// A context of `parts` storing into `slot`.
-    pub(crate) fn new(parts: AutocompleteParts, slot: Slot) -> Self {
-        Self { parts, slot }
+    /// A context of `parts`.
+    pub(crate) fn new(parts: AutocompleteParts) -> Self {
+        Self { parts }
     }
 
     /// The App's name (the `app` metric label), when there is an App.
     pub(crate) fn app_name(&self) -> Option<Arc<str>> {
         self.parts.app.as_ref().map(|app| Arc::clone(&app.app))
+    }
+
+    /// How labels given as a `MessageKey` render: the App's strings in the
+    /// user's locale (then the guild's, then `en-US`).
+    pub(crate) fn labels(&self) -> Labels {
+        Labels {
+            strings: self.parts.app.as_ref().map(|app| Arc::clone(&app.strings)),
+            locale: crate::notice::locale(
+                self.parts.user_locale.as_deref(),
+                self.parts.guild_locale.as_deref(),
+            ),
+        }
     }
 
     /// The Command Path whose option is autocompleted, words joined by one
@@ -257,9 +260,16 @@ impl AutocompleteCtx {
         self.parts.shard
     }
 
-    /// The guild the Command is typed in, if any.
-    pub fn guild_id(&self) -> Option<Id<GuildMarker>> {
-        self.parts.guild_id
+    /// The guild the Command is typed in.
+    ///
+    /// # Errors
+    ///
+    /// [`AutocompleteError::NotInGuild`] in a DM or a group DM, so
+    /// `ctx.guild_id()?` answers an empty list there.
+    pub fn guild_id(&self) -> Result<Id<GuildMarker>, HandlerError> {
+        self.parts
+            .guild_id
+            .ok_or_else(|| HandlerError::new(AutocompleteError::NotInGuild))
     }
 
     /// The channel the Command is typed in, if Discord sent it.
@@ -287,9 +297,25 @@ impl AutocompleteCtx {
         &self.parts.focused
     }
 
-    /// The state registered for `T` with `AppBuilder::state`, if any.
-    pub fn state<T: Send + Sync + 'static>(&self) -> Option<State<T>> {
-        self.parts.app.as_ref()?.states.get::<T>()
+    /// The state registered for `T` with `AppBuilder::state`.
+    ///
+    /// # Panics
+    ///
+    /// When no `T` is registered (or outside an App); the pipeline catches
+    /// the panic like any handler panic and answers an empty list.
+    pub fn state<T: Send + Sync + 'static>(&self) -> State<T> {
+        match self
+            .parts
+            .app
+            .as_ref()
+            .and_then(|app| app.states.get::<T>())
+        {
+            Some(state) => state,
+            None => panic!(
+                "no state of type `{}` is registered with `AppBuilder::state`",
+                std::any::type_name::<T>()
+            ),
+        }
     }
 
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns).
@@ -298,37 +324,6 @@ impl AutocompleteCtx {
             Some(app) => &app.http,
             None => crate::command::detached_http(),
         }
-    }
-
-    /// Answers with `choices`, synchronously; the pipeline sends them as the
-    /// one type-8 callback once the handler returns `Ok`.
-    ///
-    /// Only the first 25 (`limits.autocomplete_choices`) are kept, in order;
-    /// the rest are dropped with a warning on target `noctis::autocomplete`
-    /// in every limit mode (INT-07). A kept choice Discord would reject (a
-    /// name outside 1..=100 characters, a STRING value over 100, a value of
-    /// another type, a number out of range) is dropped with a warning.
-    pub fn respond(self, choices: impl IntoIterator<Item = AutocompleteChoice>) -> Responded {
-        let max = self.parts.max_choices;
-        let mut kept = Vec::new();
-        let mut returned = 0_usize;
-        for choice in choices {
-            returned += 1;
-            if kept.len() < max {
-                kept.push(choice);
-            }
-        }
-        let collected = Collected {
-            choices: kept,
-            returned,
-        };
-        // A poisoned slot only follows a panic elsewhere; keep the answer.
-        let mut slot = self
-            .slot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *slot = Some(collected);
-        Responded::new()
     }
 }
 
@@ -349,6 +344,346 @@ impl fmt::Debug for AutocompleteCtx {
     }
 }
 
+/// How `MessageKey` labels render for one interaction.
+pub(crate) struct Labels {
+    strings: Option<Arc<dyn Translate>>,
+    locale: noctis_rules::Locale,
+}
+
+impl Labels {
+    /// The text of `label`.
+    fn text(&self, label: SuggestionLabel) -> String {
+        match label.0 {
+            LabelKind::Text(text) => text,
+            LabelKind::Key(key) => match &self.strings {
+                Some(strings) => crate::notice::text(&**strings, self.locale, key),
+                None => crate::notice::text(&Builtin, self.locale, key),
+            },
+        }
+    }
+}
+
+/// The label of one suggestion: text, or a [`MessageKey`] resolved in the
+/// user's locale (LOC-04).
+///
+/// ```
+/// use noctis_core::SuggestionLabel;
+/// use noctis_rules::MessageKey;
+///
+/// let _: SuggestionLabel = "Red".into();
+/// let _: SuggestionLabel = String::from("Blue").into();
+/// let _: SuggestionLabel = MessageKey::new("colour.green").into();
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuggestionLabel(LabelKind);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LabelKind {
+    Text(String),
+    Key(MessageKey),
+}
+
+impl From<String> for SuggestionLabel {
+    fn from(text: String) -> Self {
+        Self(LabelKind::Text(text))
+    }
+}
+
+impl From<&str> for SuggestionLabel {
+    fn from(text: &str) -> Self {
+        Self(LabelKind::Text(text.to_owned()))
+    }
+}
+
+impl From<MessageKey> for SuggestionLabel {
+    fn from(key: MessageKey) -> Self {
+        Self(LabelKind::Key(key))
+    }
+}
+
+mod sealed {
+    pub trait Value {}
+    impl Value for i64 {}
+    impl Value for f64 {}
+    impl Value for String {}
+}
+
+/// The value type of [`Suggestions`]: `i64` (INTEGER), `f64` (NUMBER) or
+/// `String` (STRING), the autocomplete field's type without `Option`.
+/// Sealed.
+#[diagnostic::on_unimplemented(
+    message = "[OPT-11] autocomplete suggestions are `i64`, `f64` or `String`",
+    label = "not `i64`, `f64` or `String`",
+    note = "autocomplete applies only to STRING, INTEGER and NUMBER options"
+)]
+pub trait SuggestionValue: sealed::Value + Send + 'static {
+    /// The wire value.
+    #[doc(hidden)]
+    fn __into_value(self) -> AutocompleteValue;
+}
+
+impl SuggestionValue for i64 {
+    fn __into_value(self) -> AutocompleteValue {
+        AutocompleteValue::Integer(self)
+    }
+}
+
+impl SuggestionValue for f64 {
+    fn __into_value(self) -> AutocompleteValue {
+        AutocompleteValue::Number(self)
+    }
+}
+
+impl SuggestionValue for String {
+    fn __into_value(self) -> AutocompleteValue {
+        AutocompleteValue::String(self)
+    }
+}
+
+/// What an `#[autocomplete(field)]` method returns: values of the field's
+/// type, each with the label the user sees, in order.
+///
+/// Noctis sends the first 25 (INT-07, with a warning), cuts a label over
+/// 100 characters with `…` (with a warning) and drops an empty label or a
+/// value Discord would reject (a `String` over 100 characters, an `i64`
+/// outside ±2^53, a non-finite `f64`), with one warning per response.
+///
+/// ```
+/// use noctis_core::Suggestions;
+///
+/// let mut rules: Suggestions<i64> = [(1, "No spam"), (2, "Be kind")].into_iter().collect();
+/// rules.push(3, String::from("Stay on topic"));
+/// assert_eq!(rules.len(), 3);
+/// assert!(!Suggestions::<String>::new().len() > 0);
+/// ```
+pub struct Suggestions<T: SuggestionValue> {
+    items: Vec<(T, SuggestionLabel)>,
+}
+
+impl<T: SuggestionValue> Suggestions<T> {
+    /// No suggestions.
+    pub fn new() -> Self {
+        Self { items: Vec::new() }
+    }
+
+    /// Appends `value`, shown as `label`.
+    pub fn push(&mut self, value: T, label: impl Into<SuggestionLabel>) {
+        self.items.push((value, label.into()));
+    }
+
+    /// How many suggestions there are.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Whether there is none.
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    /// The wire values and labels.
+    fn lower(self) -> Raw {
+        self.items
+            .into_iter()
+            .map(|(value, label)| (value.__into_value(), label))
+            .collect()
+    }
+}
+
+impl<T: SuggestionValue> Default for Suggestions<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: SuggestionValue + Clone> Clone for Suggestions<T> {
+    fn clone(&self) -> Self {
+        Self {
+            items: self.items.clone(),
+        }
+    }
+}
+
+impl<T: SuggestionValue + fmt::Debug> fmt::Debug for Suggestions<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(&self.items).finish()
+    }
+}
+
+impl<T: SuggestionValue, L: Into<SuggestionLabel>> FromIterator<(T, L)> for Suggestions<T> {
+    fn from_iter<I: IntoIterator<Item = (T, L)>>(iter: I) -> Self {
+        Self {
+            items: iter
+                .into_iter()
+                .map(|(value, label)| (value, label.into()))
+                .collect(),
+        }
+    }
+}
+
+impl<T: SuggestionValue, L: Into<SuggestionLabel>> Extend<(T, L)> for Suggestions<T> {
+    fn extend<I: IntoIterator<Item = (T, L)>>(&mut self, iter: I) {
+        self.items
+            .extend(iter.into_iter().map(|(value, label)| (value, label.into())));
+    }
+}
+
+/// What a suggestion method returned, before lowering.
+pub(crate) type Raw = Vec<(AutocompleteValue, SuggestionLabel)>;
+
+/// A method's return value as the suggestions of an option whose values are
+/// `V`: only `HandlerResult<Suggestions<V>>` (OPT-11).
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[OPT-11] the `#[autocomplete]` method of a `{V}` option returns `Suggestions<{V}>`",
+    label = "this method's return type",
+    note = "return `HandlerResult<Suggestions<{V}>>`: `{V}` is the field's type without `Option`"
+)]
+pub trait __SuggestionsFor<V>: Send + 'static {
+    /// The wire values and labels.
+    #[doc(hidden)]
+    fn __lower(self) -> HandlerResult<Raw>;
+}
+
+impl<V: SuggestionValue> __SuggestionsFor<V> for HandlerResult<Suggestions<V>> {
+    fn __lower(self) -> HandlerResult<Raw> {
+        self.map(Suggestions::lower)
+    }
+}
+
+/// An option field flagged `autocomplete` of a `#[derive(SlashCommand)]`
+/// struct, keyed by the FNV-1a hash of the field's name; `Value` is the
+/// field's type without `Option`. Implemented by the derive.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "[OPT-11] `{Self}` has no option flagged `autocomplete` for this method",
+    label = "no flagged option of this name",
+    note = "`#[autocomplete(field)]` names a field of `{Self}` that carries `#[option(.., autocomplete)]`"
+)]
+pub trait __AutocompleteField<const FIELD: u64>: Options {
+    /// The field's type without `Option`.
+    type Value;
+}
+
+/// A started suggestion method.
+type AutocompleteFuture = BoxFuture<'static, HandlerResult<Raw>>;
+
+/// The erased method call: decodes its partial input, then runs.
+type ErasedCall = dyn Fn(AutocompleteCtx, &CommandInput) -> AutocompleteFuture + Send + Sync;
+
+/// One `#[autocomplete(field)]` method with its command type erased; what a
+/// `CommandHandler` looks up per focused option.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct __AutocompleteMethod {
+    name: &'static str,
+    call: Arc<ErasedCall>,
+}
+
+impl __AutocompleteMethod {
+    /// The method's path (`module_path!()::Struct::method`).
+    pub(crate) fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// Starts the method for `ctx` over `input`.
+    pub(crate) fn call(&self, ctx: AutocompleteCtx, input: &CommandInput) -> AutocompleteFuture {
+        (self.call)(ctx, input)
+    }
+
+    /// The stand-in of a method that does not exist; the derive's
+    /// missing-method check fails compilation before it can be used.
+    #[doc(hidden)]
+    pub fn __missing(name: &'static str) -> Self {
+        let call = |_: AutocompleteCtx, _: &CommandInput| -> AutocompleteFuture {
+            Box::pin(std::future::ready(Ok(Vec::new())))
+        };
+        Self {
+            name,
+            call: Arc::new(call),
+        }
+    }
+}
+
+impl fmt::Debug for __AutocompleteMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("AutocompleteMethod")
+            .field(&self.name)
+            .finish()
+    }
+}
+
+/// Binds the suggestion method `f` of the field hashed `FIELD` of the
+/// command `S`; what `#[autocomplete(field)]` expands to. `f` gets the
+/// typed text and the partial options.
+#[doc(hidden)]
+pub fn __autocomplete_method<S, const FIELD: u64, F, Fut, R>(
+    name: &'static str,
+    f: F,
+) -> __AutocompleteMethod
+where
+    S: __AutocompleteField<FIELD>,
+    F: Fn(AutocompleteCtx, String, Partial<S>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = R> + Send + 'static,
+    R: __SuggestionsFor<<S as __AutocompleteField<FIELD>>::Value>,
+{
+    let call = move |ctx: AutocompleteCtx, input: &CommandInput| -> AutocompleteFuture {
+        let typed = ctx.focused().value().to_owned();
+        let filled = <Partial<S> as PartialOptions>::__from_input(input);
+        let fut = f(ctx, typed, filled);
+        Box::pin(async move { fut.await.__lower() })
+    };
+    __AutocompleteMethod {
+        name,
+        call: Arc::new(call),
+    }
+}
+
+/// The erased method of the option `option` of `O`, if one is bound.
+pub(crate) fn erased_for<O: Options>(option: &str) -> Option<__AutocompleteMethod> {
+    O::__autocomplete(option)
+}
+
+/// What a method's suggestions lowered to: the first
+/// `limits.autocomplete_choices` choices with their labels resolved and cut
+/// to 100, how many were returned and how many labels were cut.
+#[derive(Debug, Default)]
+pub(crate) struct Collected {
+    pub(crate) choices: Vec<AutocompleteChoice>,
+    pub(crate) returned: usize,
+    pub(crate) labels_cut: usize,
+}
+
+/// Lowers `raw`: keeps the first `max`, renders each label with `labels`
+/// and cuts it to `limits.choice_name_len` (`noctis_rules::len::truncate`).
+pub(crate) fn collect(raw: Raw, labels: &Labels, limits: &Limits) -> Collected {
+    let returned = raw.len();
+    let mut labels_cut = 0;
+    let choices = raw
+        .into_iter()
+        .take(limits.autocomplete_choices)
+        .map(|(value, label)| {
+            let text = labels.text(label);
+            let name = match noctis_rules::len::truncate(&text, NAME_LEN) {
+                std::borrow::Cow::Borrowed(_) => text,
+                std::borrow::Cow::Owned(cut) => {
+                    labels_cut += 1;
+                    cut
+                }
+            };
+            AutocompleteChoice { name, value }
+        })
+        .collect();
+    Collected {
+        choices,
+        returned,
+        labels_cut,
+    }
+}
+
+/// The longest choice name Discord takes (OPT-09).
+const NAME_LEN: usize = 100;
+
 /// Why an autocomplete handler produced no choices, besides its own error.
 ///
 /// ```
@@ -368,10 +703,15 @@ pub enum AutocompleteError {
         /// The deadline, measured from when the interaction arrived.
         deadline: Duration,
     },
+    /// [`AutocompleteCtx::guild_id`] outside a guild; the user gets an
+    /// empty list.
+    #[error("the autocomplete interaction is not in a guild")]
+    NotInGuild,
 }
 
-/// The options of `Options` as `Option`s, what an autocomplete handler gets
-/// (OPT-12); `#[derive(Options)]` generates it as `<Name>Partial`.
+/// The options of `Options` as `Option`s, what an autocomplete method gets
+/// as `filled` (OPT-12); `#[derive(SlashCommand)]` generates it as
+/// `<Struct>Partial`.
 ///
 /// Decoding never fails: a missing, mistyped, unresolved or unknown-choice
 /// value is `None`, and validators never run.
@@ -405,7 +745,8 @@ impl<O: Options> PartialOptions for NoPartial<O> {
 }
 
 /// The partial form of the options struct `O`: every field an `Option`
-/// (OPT-12). Name it in an autocomplete handler as `partial: Partial<O>`.
+/// (OPT-12). An `#[autocomplete(field)]` method takes it as
+/// `filled: Partial<Self>`.
 ///
 /// ```compile_fail
 /// use noctis_core::{CommandInput, Options, Partial, PartialOptions};
@@ -428,161 +769,6 @@ impl<O: Options> PartialOptions for NoPartial<O> {
 /// }
 /// ```
 pub type Partial<O> = <O as Options>::Partial;
-
-/// A started autocomplete handler.
-type AutocompleteFuture = BoxFuture<'static, HandlerResult<Responded>>;
-
-/// The erased handler call: decodes its partial input, then runs.
-type ErasedCall = dyn Fn(AutocompleteCtx, &CommandInput) -> AutocompleteFuture + Send + Sync;
-
-/// An [`AutocompleteHandler`] with its options type erased; what a
-/// `CommandHandler` looks up per focused option.
-#[derive(Clone)]
-pub(crate) struct ErasedAutocomplete {
-    name: &'static str,
-    call: Arc<ErasedCall>,
-}
-
-impl ErasedAutocomplete {
-    /// The handler's path (`module_path!()::name`).
-    pub(crate) fn name(&self) -> &'static str {
-        self.name
-    }
-
-    /// Starts the handler for `ctx` over `input`.
-    pub(crate) fn call(&self, ctx: AutocompleteCtx, input: &CommandInput) -> AutocompleteFuture {
-        (self.call)(ctx, input)
-    }
-}
-
-/// The erased handler of the option `option` of `O`, if one is linked;
-/// what a `CommandHandler` with options stores.
-pub(crate) fn erased_for<O: Options>(option: &str) -> Option<ErasedAutocomplete> {
-    O::autocomplete(option).map(|h| h.erased)
-}
-
-/// One autocomplete handler for an option of the options struct `O`, as
-/// `#[autocomplete]` builds it; link it with
-/// `#[option(autocomplete = path)]` (no Module registration).
-///
-/// Annotating `async fn suggest` with `#[autocomplete]` gives a
-/// `fn suggest()` that returns its `AutocompleteHandler`. Cheap to clone;
-/// `Debug` prints the name.
-pub struct AutocompleteHandler<O> {
-    erased: ErasedAutocomplete,
-    _options: PhantomData<fn() -> O>,
-}
-
-impl<O> Clone for AutocompleteHandler<O> {
-    fn clone(&self) -> Self {
-        Self {
-            erased: self.erased.clone(),
-            _options: PhantomData,
-        }
-    }
-}
-
-impl<O> fmt::Debug for AutocompleteHandler<O> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("AutocompleteHandler")
-            .field(&self.erased.name)
-            .finish()
-    }
-}
-
-impl<O> AutocompleteHandler<O> {
-    /// The handler's path (`module_path!()::name`).
-    pub fn name(&self) -> &'static str {
-        self.erased.name
-    }
-
-    fn from_call(name: &'static str, call: Arc<ErasedCall>) -> Self {
-        Self {
-            erased: ErasedAutocomplete { name, call },
-            _options: PhantomData,
-        }
-    }
-}
-
-impl<O: Options> AutocompleteHandler<O> {
-    /// A handler taking the partial options `P` of `O`; what
-    /// `#[autocomplete]` expands to for `(ctx, partial: Partial<O>)`.
-    #[doc(hidden)]
-    pub fn __new<P, F, Fut>(name: &'static str, f: F) -> Self
-    where
-        P: PartialOptions<Options = O>,
-        F: Fn(AutocompleteCtx, P) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
-    {
-        let call = move |ctx: AutocompleteCtx, input: &CommandInput| -> AutocompleteFuture {
-            let partial = P::__from_input(input);
-            Box::pin(f(ctx, partial))
-        };
-        Self::from_call(name, Arc::new(call))
-    }
-
-    /// A handler taking only the context, usable for any options struct
-    /// `O`; what `#[autocomplete]` expands to for `(ctx)`.
-    #[doc(hidden)]
-    pub fn __new_plain<F, Fut>(name: &'static str, f: F) -> Self
-    where
-        F: Fn(AutocompleteCtx) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
-    {
-        let call = move |ctx: AutocompleteCtx, _: &CommandInput| -> AutocompleteFuture {
-            Box::pin(f(ctx))
-        };
-        Self::from_call(name, Arc::new(call))
-    }
-}
-
-/// A descriptor `fn() -> AutocompleteHandler<O>`: what
-/// `#[option(autocomplete = path)]` accepts.
-#[doc(hidden)]
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` is not an `#[autocomplete]` handler for `{O}`",
-    label = "not an `#[autocomplete]` handler for `{O}`",
-    note = "annotate an `async fn(ctx: AutocompleteCtx[, partial: Partial<{O}>]) -> HandlerResult<Responded>` with `#[autocomplete]`"
-)]
-pub trait __AutocompleteFor<O> {
-    /// Builds the handler.
-    fn __handler(self) -> AutocompleteHandler<O>;
-}
-
-/// What an `#[autocomplete]` descriptor returns for `O`.
-#[doc(hidden)]
-#[diagnostic::on_unimplemented(
-    message = "`autocomplete = …` is not an `#[autocomplete]` handler for `{O}`",
-    label = "its descriptor returns `{Self}`, not `AutocompleteHandler<{O}>`",
-    note = "annotate an `async fn(ctx: AutocompleteCtx[, partial: Partial<{O}>]) -> HandlerResult<Responded>` with `#[autocomplete]`"
-)]
-pub trait __AutocompleteOutput<O> {
-    /// The handler.
-    fn __into_handler(self) -> AutocompleteHandler<O>;
-}
-
-impl<O> __AutocompleteOutput<O> for AutocompleteHandler<O> {
-    fn __into_handler(self) -> AutocompleteHandler<O> {
-        self
-    }
-}
-
-impl<O, F, R> __AutocompleteFor<O> for F
-where
-    F: FnOnce() -> R,
-    R: __AutocompleteOutput<O>,
-{
-    fn __handler(self) -> AutocompleteHandler<O> {
-        self().__into_handler()
-    }
-}
-
-/// The handler of the descriptor `f` for `O`; what `#[derive(Options)]`
-/// expands `autocomplete = path` to.
-#[doc(hidden)]
-pub fn __autocomplete_for<O: Options, F: __AutocompleteFor<O>>(f: F) -> AutocompleteHandler<O> {
-    f.__handler()
-}
 
 /// The decoded data of an autocomplete interaction.
 pub(crate) struct AutocompleteInput;
@@ -686,7 +872,7 @@ fn focused_value(focused: &Focused) -> Option<OptionValue> {
     }
 }
 
-/// What filtering a handler's choices found, logged by the pipeline.
+/// What filtering a method's suggestions found, logged by the pipeline.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Warnings {
     /// `(returned, sent)` when more than the limit were returned (INT-07).
@@ -697,6 +883,8 @@ pub(crate) struct Warnings {
     pub(crate) rules: Vec<RuleId>,
     /// The focused option's type takes no autocomplete (OPT-11).
     pub(crate) not_choosable: bool,
+    /// How many labels were cut to 100 characters with `…` (OPT-09).
+    pub(crate) labels_cut: usize,
 }
 
 impl Warnings {
@@ -722,7 +910,9 @@ pub(crate) fn filter_choices(
     let Collected {
         mut choices,
         returned,
+        labels_cut,
     } = collected;
+    warnings.labels_cut = labels_cut;
     let max = limits.autocomplete_choices;
     choices.truncate(max);
     let returned = returned.max(choices.len());
@@ -772,16 +962,16 @@ pub(crate) fn callback_body(choices: &[AutocompleteChoice]) -> Value {
     json!({ "type": 8, "data": { "choices": choices } })
 }
 
-/// Decodes `json` (an autocomplete interaction) and runs the handler
-/// `handler` links to its focused option over a detached context; the test
-/// seam for `#[autocomplete]` (see `crate::__testing`).
+/// Decodes `json` (an autocomplete interaction) and runs the method
+/// `handler` binds to its focused option over a detached context; the test
+/// seam for `#[autocomplete(field)]` (see `crate::__testing`).
 pub(crate) fn call_autocomplete(
     handler: &crate::CommandHandler,
     json: &[u8],
 ) -> BoxFuture<'static, HandlerResult<Option<Vec<AutocompleteChoice>>>> {
     let (input, focused) = match AutocompleteInput::from_json(json) {
         Ok(parsed) => parsed,
-        Err(error) => return crate::command::failed(crate::HandlerError::new(error)),
+        Err(error) => return crate::command::failed(HandlerError::new(error)),
     };
     let Some(path) = handler.paths().iter().find(|p| **p == input.path()) else {
         return crate::command::unknown(input.path(), handler.name());
@@ -789,7 +979,7 @@ pub(crate) fn call_autocomplete(
     let Some(erased) = handler.autocomplete_for(focused.name()) else {
         return Box::pin(std::future::ready(Ok(None)));
     };
-    let slot = Slot::default();
+    let kind = focused.kind();
     let parts = AutocompleteParts {
         path,
         module: "",
@@ -801,16 +991,15 @@ pub(crate) fn call_autocomplete(
         guild_locale: None,
         focused,
         app: None,
-        max_choices: Limits::default().autocomplete_choices,
     };
-    let fut = erased.call(AutocompleteCtx::new(parts, Arc::clone(&slot)), &input);
+    let ctx = AutocompleteCtx::new(parts);
+    let labels = ctx.labels();
+    let fut = erased.call(ctx, &input);
     Box::pin(async move {
-        let _responded = fut.await?;
-        let collected = slot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        Ok(Some(collected.map(|c| c.choices).unwrap_or_default()))
+        let raw = fut.await?;
+        let limits = Limits::default();
+        let (choices, _) = filter_choices(collect(raw, &labels, &limits), kind, &limits);
+        Ok(Some(choices))
     })
 }
 

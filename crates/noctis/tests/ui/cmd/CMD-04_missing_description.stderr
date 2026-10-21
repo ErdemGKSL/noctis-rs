@@ -1,7 +1,7 @@
 error: [CMD-04] ping: limit between 1 and 100, actual 0
          = note: missing description
          = help: add `description = "…"` with 1 to 100 characters (doc comments are rustdoc only)
- --> tests/ui/cmd/CMD-04_missing_description.rs:4:11
+ --> tests/ui/cmd/CMD-04_missing_description.rs:5:11
   |
-4 | #[command("ping")]
+5 | #[command("ping")]
   |           ^^^^^^

@@ -49,12 +49,12 @@ fn perms(p: Permissions) -> CommandMetadata {
 #[tokio::test]
 async fn meta_01_permissions_conflict_across_modules() {
     let errs = failing([
-        Module::new("a").add(command_with(
+        Module::new("a").__add(command_with(
             "a::set",
             &["config set"],
             perms(Permissions::MANAGE_GUILD),
         )),
-        Module::new("b").add(command_with(
+        Module::new("b").__add(command_with(
             "b::get",
             &["config get"],
             perms(Permissions::ADMINISTRATOR),
@@ -76,12 +76,12 @@ async fn meta_01_permissions_conflict_across_modules() {
 #[tokio::test]
 async fn meta_01_set_versus_unset_without_base_declaration() {
     let errs = failing([
-        Module::new("a").add(command_with(
+        Module::new("a").__add(command_with(
             "a::set",
             &["config set"],
             perms(Permissions::MANAGE_GUILD),
         )),
-        Module::new("b").add(command("b::get", &["config get"], "d")),
+        Module::new("b").__add(command("b::get", &["config get"], "d")),
     ]);
     assert_eq!(rules(&errs), [RuleId::META_01]);
     assert_eq!(errs[0].notes[1], "`config get` leaves it unset (from `b`)");
@@ -92,14 +92,14 @@ async fn meta_01_set_versus_unset_without_base_declaration() {
 async fn meta_02_contexts_and_integration_types_conflict() {
     use InteractionContext::{BotDm, Guild};
     let errs = failing([
-        Module::new("a").add(command_with(
+        Module::new("a").__add(command_with(
             "a::set",
             &["config set"],
             CommandMetadata::new()
                 .contexts(&[Guild])
                 .integration_types(&[IntegrationType::GuildInstall]),
         )),
-        Module::new("b").add(command_with(
+        Module::new("b").__add(command_with(
             "b::get",
             &["config get"],
             CommandMetadata::new()
@@ -119,12 +119,12 @@ async fn meta_02_contexts_and_integration_types_conflict() {
 #[tokio::test]
 async fn cmd_07_nsfw_conflict() {
     let errs = failing([
-        Module::new("a").add(command_with(
+        Module::new("a").__add(command_with(
             "a::set",
             &["config set"],
             CommandMetadata::new().nsfw(true),
         )),
-        Module::new("b").add(command_with(
+        Module::new("b").__add(command_with(
             "b::get",
             &["config get"],
             CommandMetadata::new().nsfw(false),
@@ -139,7 +139,7 @@ async fn cmd_07_nsfw_conflict() {
 async fn cmd_07_explicit_base_versus_handler() {
     let errs = failing([
         Module::new("a").base("config", BaseMeta::new().nsfw(true)),
-        Module::new("b").add(command_with(
+        Module::new("b").__add(command_with(
             "b::set",
             &["config set"],
             CommandMetadata::new().nsfw(false),
@@ -161,7 +161,7 @@ async fn cmd_07_explicit_base_versus_handler() {
 async fn reg_04_two_explicit_bases_differ() {
     let errs = failing([
         Module::new("a")
-            .add(command("a::set", &["config set"], "d"))
+            .__add(command("a::set", &["config set"], "d"))
             .base("config", BaseMeta::new().description("A")),
         Module::new("b").base("config", BaseMeta::new().description("B")),
     ]);
@@ -178,7 +178,7 @@ async fn reg_04_two_explicit_bases_differ() {
 async fn reg_04_group_descriptions_differ() {
     let errs = failing([
         Module::new("a")
-            .add(command("a::prefix", &["config set prefix"], "d"))
+            .__add(command("a::prefix", &["config set prefix"], "d"))
             .group("config set", "X"),
         Module::new("b").group("config set", "Y"),
     ]);
@@ -190,7 +190,7 @@ async fn reg_04_group_descriptions_differ() {
 #[tokio::test]
 async fn meta_02_base_meta_below_the_base() {
     let errs = failing([Module::new("a")
-        .add(command("a::prefix", &["config set prefix"], "d"))
+        .__add(command("a::prefix", &["config set prefix"], "d"))
         .base("config set", BaseMeta::new().nsfw(true))]);
     assert_eq!(rules(&errs), [RuleId::META_02]);
     assert_eq!(errs[0].path, "config set");
@@ -215,8 +215,8 @@ async fn reg_04_orphan_base_declaration() {
 #[tokio::test]
 async fn cmd_12_invokable_base_across_modules() {
     let errs = failing([
-        Module::new("a").add(command("a::config", &["config"], "d")),
-        Module::new("b").add(command("b::set", &["config set"], "d")),
+        Module::new("a").__add(command("a::config", &["config"], "d")),
+        Module::new("b").__add(command("b::set", &["config set"], "d")),
     ]);
     assert_eq!(rules(&errs), [RuleId::CMD_12]);
     assert_eq!(errs[0].path, "config");
@@ -234,8 +234,8 @@ async fn cmd_12_invokable_base_across_modules() {
 #[tokio::test]
 async fn cmd_11_subcommand_and_group_across_modules() {
     let errs = failing([
-        Module::new("a").add(command("a::set", &["config set"], "d")),
-        Module::new("b").add(command("b::prefix", &["config set prefix"], "d")),
+        Module::new("a").__add(command("a::set", &["config set"], "d")),
+        Module::new("b").__add(command("b::prefix", &["config set prefix"], "d")),
     ]);
     assert_eq!(rules(&errs), [RuleId::CMD_11]);
     assert_eq!(errs[0].path, "config set");
@@ -253,8 +253,8 @@ async fn cmd_11_subcommand_and_group_across_modules() {
 #[tokio::test]
 async fn reg_04_duplicate_path_across_modules() {
     let errs = failing([
-        Module::new("a").add(command("a::set", &["config set"], "d")),
-        Module::new("b").add(command("b::config", &["config set", "config get"], "d")),
+        Module::new("a").__add(command("a::set", &["config set"], "d")),
+        Module::new("b").__add(command("b::config", &["config set", "config get"], "d")),
     ]);
     assert_eq!(rules(&errs), [RuleId::REG_04]);
     assert_eq!(errs[0].path, "config set");
@@ -272,7 +272,7 @@ async fn reg_04_duplicate_path_across_modules() {
 #[tokio::test]
 async fn reg_04_same_descriptor_twice() {
     let ping = command("a::ping", &["ping"], "d");
-    let errs = failing([Module::new("a").add(ping.clone()).add(ping)]);
+    let errs = failing([Module::new("a").__add(ping.clone()).__add(ping)]);
     assert_eq!(rules(&errs), [RuleId::REG_04]);
     assert_eq!(
         errs[0].notes,
@@ -284,8 +284,8 @@ async fn reg_04_same_descriptor_twice() {
 #[tokio::test]
 async fn reg_03_same_user_command_across_modules() {
     let errs = failing([
-        Module::new("a").add(user_menu("a::show", "Show profile", CommandMetadata::new())),
-        Module::new("b").add(user_menu("b::show", "Show profile", CommandMetadata::new())),
+        Module::new("a").__add(user_menu("a::show", "Show profile", CommandMetadata::new())),
+        Module::new("b").__add(user_menu("b::show", "Show profile", CommandMetadata::new())),
     ]);
     assert_eq!(rules(&errs), [RuleId::REG_03]);
     assert_eq!(errs[0].path, "Show profile");
@@ -300,13 +300,13 @@ async fn reg_03_same_user_command_across_modules() {
 async fn reg_03_byte_equality_and_scopes() {
     const GUILD_1: &[Id<GuildMarker>] = &[Id::new(1)];
     build([
-        Module::new("a").add(user_menu("a::show", "Show profile", CommandMetadata::new())),
-        Module::new("b").add(user_menu("b::show", "Show Profile", CommandMetadata::new())),
+        Module::new("a").__add(user_menu("a::show", "Show profile", CommandMetadata::new())),
+        Module::new("b").__add(user_menu("b::show", "Show Profile", CommandMetadata::new())),
     ])
     .unwrap();
     build([
-        Module::new("a").add(user_menu("a::show", "Show profile", CommandMetadata::new())),
-        Module::new("b").add(user_menu(
+        Module::new("a").__add(user_menu("a::show", "Show profile", CommandMetadata::new())),
+        Module::new("b").__add(user_menu(
             "b::show",
             "Show profile",
             CommandMetadata::new().guilds(GUILD_1),
@@ -320,7 +320,7 @@ async fn reg_03_byte_equality_and_scopes() {
 async fn meta_03_base_meta_on_a_guild_base() {
     const GUILD_42: &[Id<GuildMarker>] = &[Id::new(42)];
     let errs = failing([
-        Module::new("a").add(command_with(
+        Module::new("a").__add(command_with(
             "a::set",
             &["config set"],
             CommandMetadata::new().guilds(GUILD_42),
@@ -342,23 +342,23 @@ async fn reg_04_every_violation_at_once() {
     builder
         .runtime(&Runtime::for_test())
         .http_timeout(std::time::Duration::ZERO)
-        .module(Module::new("a").add(command_with(
+        .module(Module::new("a").__add(command_with(
             "a::set",
             &["perm set"],
             perms(Permissions::MANAGE_GUILD),
         )))
-        .module(Module::new("b").add(command_with(
+        .module(Module::new("b").__add(command_with(
             "b::get",
             &["perm get"],
             perms(Permissions::ADMINISTRATOR),
         )))
-        .module(Module::new("c").add(command("c::inv", &["inv"], "d")))
-        .module(Module::new("d").add(command("d::sub", &["inv sub"], "d")))
-        .module(Module::new("e").add(command("e::dup", &["dup x"], "d")))
-        .module(Module::new("f").add(command("f::dup", &["dup x"], "d")))
-        .module(Module::new("g").add(user_menu("g::show", "Show", CommandMetadata::new())))
-        .module(Module::new("h").add(user_menu("h::show", "Show", CommandMetadata::new())))
-        .module(Module::new("i").add(noop::<MemberAdd>("i::greet")));
+        .module(Module::new("c").__add(command("c::inv", &["inv"], "d")))
+        .module(Module::new("d").__add(command("d::sub", &["inv sub"], "d")))
+        .module(Module::new("e").__add(command("e::dup", &["dup x"], "d")))
+        .module(Module::new("f").__add(command("f::dup", &["dup x"], "d")))
+        .module(Module::new("g").__add(user_menu("g::show", "Show", CommandMetadata::new())))
+        .module(Module::new("h").__add(user_menu("h::show", "Show", CommandMetadata::new())))
+        .module(Module::new("i").__add(noop::<MemberAdd>("i::greet")));
     let violations = builder.build().unwrap_err().into_violations();
     assert!(
         matches!(violations[0], BuildViolation::InvalidHttpTimeout { .. }),
@@ -398,7 +398,7 @@ async fn reg_04_every_violation_at_once() {
 async fn cmd_04_module_description_lengths() {
     fn with_base(description: &'static str) -> [Module; 2] {
         [
-            Module::new("a").add(command("a::set", &["config set"], "d")),
+            Module::new("a").__add(command("a::set", &["config set"], "d")),
             Module::new("b").base("config", BaseMeta::new().description(description)),
         ]
     }
@@ -428,7 +428,7 @@ async fn cmd_04_module_description_lengths() {
 #[tokio::test]
 async fn cmd_10_group_path_too_deep() {
     let errs = failing([Module::new("a")
-        .add(command("a::c", &["a b c"], "d"))
+        .__add(command("a::c", &["a b c"], "d"))
         .group("a b c d", "d")]);
     assert_eq!(rules(&errs), [RuleId::CMD_10]);
     assert_eq!(errs[0].notes, ["declared by `a`", "scope: global"]);
@@ -447,9 +447,9 @@ fn split_modules(
     for i in 0..count {
         let handler = command("m::h", leak_paths(&path(i)), "d").__with_metadata(metadata);
         if i < split {
-            a = a.add(handler);
+            a = a.__add(handler);
         } else {
-            b = b.add(handler);
+            b = b.__add(handler);
         }
     }
     [a, b]
@@ -486,9 +486,9 @@ fn sized_tree(base: Option<usize>) -> [Module; 2] {
         for s in 0..subs {
             let handler = command("m::h", leak_paths(&format!("x g{group} s{s:02}")), d100);
             if group < 2 {
-                a = a.add(handler);
+                a = a.__add(handler);
             } else {
-                b = b.add(handler);
+                b = b.__add(handler);
             }
         }
         let path = leak(format!("x g{group}"));
@@ -532,7 +532,7 @@ async fn reg_01_chat_input_count() {
     let meta = CommandMetadata::new();
     build(split_modules(100, 50, |i| format!("c{i}"), meta)).unwrap();
     let [a, b] = split_modules(100, 50, |i| format!("c{i} x"), meta);
-    let extra = Module::new("c").add(command("c::y", &["c0 y"], "d"));
+    let extra = Module::new("c").__add(command("c::y", &["c0 y"], "d"));
     build([a, b, extra]).unwrap();
     let errs = failing(split_modules(101, 50, |i| format!("c{i}"), meta));
     assert_eq!(rules(&errs), [RuleId::REG_01]);
@@ -545,8 +545,8 @@ fn menus(kind: &str, count: usize, metadata: CommandMetadata) -> Module {
     (0..count).fold(Module::new("a"), |module, i| {
         let name = leak(format!("M{i}"));
         match kind {
-            "user" => module.add(user_menu("a::u", name, metadata)),
-            _ => module.add(message_menu("a::m", name, metadata)),
+            "user" => module.__add(user_menu("a::u", name, metadata)),
+            _ => module.__add(message_menu("a::m", name, metadata)),
         }
     })
 }
@@ -630,11 +630,11 @@ fn optioned_tree<O: crate::options::Options>() -> [Module; 2] {
     [
         Module::new("a")
             .base("x", BaseMeta::new().description("d"))
-            .add(leaf::<O>(&["x s0"]))
-            .add(leaf::<O>(&["x s1"])),
+            .__add(leaf::<O>(&["x s0"]))
+            .__add(leaf::<O>(&["x s1"])),
         Module::new("b")
-            .add(leaf::<O>(&["x s2"]))
-            .add(leaf::<O>(&["x s3"])),
+            .__add(leaf::<O>(&["x s2"]))
+            .__add(leaf::<O>(&["x s3"])),
     ]
 }
 

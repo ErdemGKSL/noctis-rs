@@ -2,6 +2,7 @@
 //! Channel (8) (CV2-09).
 
 use std::borrow::Cow;
+use std::marker::PhantomData;
 
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
@@ -10,7 +11,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, RoleMarker, UserMarker};
 
 use super::Emoji;
-use crate::route::CustomId;
+use crate::route::{CustomId, SelectDefaults};
 use crate::wire::{Ids, Wire, flag, head, opt, serialize_via_wire};
 
 /// One option of a [`StringSelect`].
@@ -101,6 +102,14 @@ impl Common {
             max_values: None,
             disabled: false,
         }
+    }
+
+    /// The declared defaults of a kind derive.
+    fn apply(&mut self, d: &SelectDefaults) {
+        self.placeholder = d.placeholder.map(Cow::Borrowed);
+        self.min_values = d.min_values;
+        self.max_values = d.max_values;
+        self.disabled = d.disabled;
     }
 }
 
@@ -194,6 +203,12 @@ fn wire_select<S: Serializer>(
 macro_rules! common_setters {
     ($($ty:ident),*) => {$(
         impl $ty {
+            /// Applies the `defaults(..)` of a kind derive.
+            pub(crate) fn with_defaults(mut self, defaults: &SelectDefaults) -> Self {
+                self.common.apply(defaults);
+                self
+            }
+
             /// The text shown while nothing is selected.
             #[must_use]
             pub fn placeholder(mut self, placeholder: impl Into<Cow<'static, str>>) -> Self {
@@ -226,7 +241,9 @@ macro_rules! common_setters {
 }
 
 /// A String Select (type 3): pick from fixed options; built with
-/// [`RouteComponents::string_select`](crate::RouteComponents::string_select).
+/// `R { .. }.build()` from a `#[derive(StringSelectMenu)]` struct that
+/// declares `defaults(options = <Choices type>)`, or from the
+/// [`StringSelectBuilder`] such a struct without declared options builds.
 ///
 /// Placement: alone in an Action Row ([`ActionRow::select`](crate::ActionRow::select)).
 #[derive(Debug, Clone)]
@@ -242,10 +259,108 @@ impl StringSelect {
             options,
         }
     }
+
+    /// Replaces the options (the declared ones included); more than 25
+    /// fail the runtime validator (CV2-09).
+    #[must_use]
+    pub fn options(mut self, options: impl IntoIterator<Item = SelectOption>) -> Self {
+        self.options = options.into_iter().collect();
+        self
+    }
 }
 
-/// A User Select (type 5); built with
-/// [`RouteComponents::user_select`](crate::RouteComponents::user_select).
+/// A String Select whose struct declares no `defaults(options = ..)`: what
+/// `R { .. }.build()` returns for it. It is not a component until
+/// [`options`](Self::options) gives it its options, so it cannot be placed
+/// or sent (CV2-09).
+///
+/// ```compile_fail,E0277
+/// # use core::fmt;
+/// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape, SelectRoute};
+/// use noctis_ui::ActionRow;
+/// use noctis_ui::__macro::{SelectDefaults, build_string_select_builder};
+///
+/// struct Pick;
+/// # impl Payload for Pick {
+/// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
+/// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
+/// # }
+/// # impl Route for Pick {
+/// #     const ID: RouteId = RouteId::new("pick");
+/// #     const SHAPE: RouteShape = RouteShape::INLINE.select();
+/// #     const SCHEMA: u8 = 0;
+/// #     type Payload = Self;
+/// # }
+/// # impl SelectRoute for Pick {}
+/// # impl noctis_ui::Handled for Pick {}
+/// let defaults = SelectDefaults { placeholder: Some("Pick"), min_values: None, max_values: None, disabled: false };
+/// let _ = ActionRow::select(build_string_select_builder(Pick, &defaults)); // [CV2-09]
+/// ```
+pub struct StringSelectBuilder<R> {
+    select: StringSelect,
+    route: PhantomData<fn() -> R>,
+}
+
+impl<R> StringSelectBuilder<R> {
+    pub(crate) fn new(select: StringSelect) -> Self {
+        Self {
+            select,
+            route: PhantomData,
+        }
+    }
+
+    /// The options; makes the builder a [`StringSelect`].
+    pub fn options(self, options: impl IntoIterator<Item = SelectOption>) -> StringSelect {
+        self.select.options(options)
+    }
+
+    /// The text shown while nothing is selected.
+    #[must_use]
+    pub fn placeholder(self, placeholder: impl Into<Cow<'static, str>>) -> Self {
+        Self::new(self.select.placeholder(placeholder))
+    }
+
+    /// The fewest values a user must pick (Discord's default is 1).
+    #[must_use]
+    pub fn min_values(self, min: u8) -> Self {
+        Self::new(self.select.min_values(min))
+    }
+
+    /// The most values a user may pick (Discord's default is 1).
+    #[must_use]
+    pub fn max_values(self, max: u8) -> Self {
+        Self::new(self.select.max_values(max))
+    }
+
+    /// Whether the select is greyed out.
+    #[must_use]
+    pub fn disabled(self, disabled: bool) -> Self {
+        Self::new(self.select.disabled(disabled))
+    }
+
+    /// The select once given no options; what the placement impls of the
+    /// unreachable `OptionsGiven` bound fall back to.
+    pub(crate) fn into_empty(self) -> StringSelect {
+        self.select
+    }
+}
+
+impl<R> Clone for StringSelectBuilder<R> {
+    fn clone(&self) -> Self {
+        Self::new(self.select.clone())
+    }
+}
+
+impl<R> core::fmt::Debug for StringSelectBuilder<R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("StringSelectBuilder")
+            .field(&self.select)
+            .finish()
+    }
+}
+
+/// A User Select (type 5); built with `R { .. }.build()` from a
+/// `#[derive(UserSelectMenu)]` struct.
 ///
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
@@ -271,8 +386,8 @@ impl UserSelect {
     }
 }
 
-/// A Role Select (type 6); built with
-/// [`RouteComponents::role_select`](crate::RouteComponents::role_select).
+/// A Role Select (type 6); built with `R { .. }.build()` from a
+/// `#[derive(RoleSelectMenu)]` struct.
 ///
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
@@ -299,7 +414,7 @@ impl RoleSelect {
 }
 
 /// A Mentionable Select (type 7): users and roles; built with
-/// [`RouteComponents::mentionable_select`](crate::RouteComponents::mentionable_select).
+/// `R { .. }.build()` from a `#[derive(MentionableSelectMenu)]` struct.
 ///
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
@@ -335,8 +450,8 @@ impl MentionableSelect {
     }
 }
 
-/// A Channel Select (type 8); built with
-/// [`RouteComponents::channel_select`](crate::RouteComponents::channel_select).
+/// A Channel Select (type 8); built with `R { .. }.build()` from a
+/// `#[derive(ChannelSelectMenu)]` struct.
 ///
 /// Placement: alone in an Action Row.
 #[derive(Debug, Clone)]
@@ -366,10 +481,11 @@ impl ChannelSelect {
         self
     }
 
-    /// Appends channel types the select offers; none means every type.
+    /// The channel types the select offers, replacing the declared ones;
+    /// none means every type.
     #[must_use]
     pub fn channel_types(mut self, types: impl IntoIterator<Item = ChannelType>) -> Self {
-        self.channel_types.extend(types);
+        self.channel_types = types.into_iter().collect();
         self
     }
 }

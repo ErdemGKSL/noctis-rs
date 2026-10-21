@@ -1,19 +1,16 @@
-//! `#[user_command]` and `#[message_command]`: check a context-menu name at
-//! expansion with `noctis_rules::command::validate_context_menu_name` and turn
-//! an `async fn(ctx: CommandCtx, target: ResolvedUser | ResolvedMessage)`
-//! into a descriptor function returning a `ContextMenuHandler` (FR-12, AD-26;
-//! CTX-01, CTX-02, CTX-03).
+//! `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` with their
+//! `#[user_command("Name", ..)]` / `#[message_command("Name", ..)]`
+//! attribute: check a context-menu name at expansion with
+//! `noctis_rules::command::validate_context_menu_name` and declare the unit
+//! struct's menu for `#[handler]` (FR-12, AD-26; CTX-01, CTX-02, CTX-03).
 
 use noctis_rules::Limits;
 use noctis_rules::command::validate_context_menu_name;
 use proc_macro2::{Span, TokenStream, TokenTree};
-use quote::{ToTokens, quote, quote_spanned};
-use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, LitStr, ReturnType, Type};
+use quote::quote;
+use syn::{Data, DeriveInput, Fields, Ident, LitStr};
 
-use crate::command::{
-    HandlerArgs, arg_name, check_shape, defer_check, is_responder, segments, span_of, withdrawn,
-};
+use crate::command::{HandlerArgs, arg_name, segments, span_of, withdrawn};
 use crate::common::combine;
 use crate::meta::{self, MetaArgs};
 
@@ -46,19 +43,11 @@ impl Menu {
         }
     }
 
-    fn constructor(self) -> &'static str {
+    fn derive(self) -> &'static str {
         match self {
-            Self::User => "__new_user",
-            Self::Message => "__new_message",
+            Self::User => "UserCommand",
+            Self::Message => "MessageCommand",
         }
-    }
-
-    fn signature(self) -> String {
-        format!(
-            "`{}` handlers take `(ctx: CommandCtx, target: {}[, r: CommandResponder])`",
-            self.attr(),
-            self.target()
-        )
     }
 }
 
@@ -76,13 +65,19 @@ struct Args {
     meta: MetaArgs,
 }
 
-fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
+/// The error of a menu attribute without its name.
+fn missing(menu: Menu) -> String {
     let attr = menu.attr();
-    let missing = format!(
+    format!(
         "`{attr}` needs the menu name as its first argument: `{}(\"{}\")]`",
         attr.trim_end_matches(']'),
         menu.example()
-    );
+    )
+}
+
+fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
+    let attr = menu.attr();
+    let missing = missing(menu);
     let not_literal = format!("`{attr}` needs its menu name as a string literal");
     let mut iter = segments(args).into_iter();
     let first = iter.next().unwrap_or_default();
@@ -159,117 +154,85 @@ fn check_name(args: &Args) -> syn::Result<()> {
     combine(errors)
 }
 
-/// `(ctx, target: <Target>[, r: CommandResponder])`; any other parameter
-/// is a CTX-02 option. The responder's type, when it is taken.
-fn check_params(menu: Menu, item: &ItemFn) -> syn::Result<Option<Type>> {
-    let sig = &item.sig;
-    let message = menu.signature();
-    if let Some(receiver) = sig.receiver() {
-        return Err(syn::Error::new_spanned(receiver, message));
-    }
-    let typed: Vec<&syn::PatType> = sig
-        .inputs
-        .iter()
-        .filter_map(|a| match a {
-            FnArg::Typed(t) => Some(t),
-            FnArg::Receiver(_) => None,
-        })
-        .collect();
-    let Some(target) = typed.get(1) else {
-        let span = if sig.inputs.is_empty() {
-            sig.ident.span()
-        } else {
-            sig.inputs.span()
-        };
-        return Err(syn::Error::new(span, message));
-    };
-    let ok = match &*target.ty {
-        Type::Path(path) => {
-            path.qself.is_none()
-                && path
-                    .path
-                    .segments
-                    .last()
-                    .is_some_and(|s| s.ident == menu.target() && s.arguments.is_none())
+/// Expands the derive; on an error, the error and the placeholder impls
+/// (`kind::fallback`).
+pub(crate) fn derive_or_fallback(menu: Menu, input: &DeriveInput) -> TokenStream {
+    let result = derive(menu, input);
+    crate::kind::or_fallback(input, crate::kind::Family::Menu, result, || {
+        let core = quote!(::noctis::__private::core);
+        let ident = &input.ident;
+        let target = Ident::new(menu.target(), Span::call_site());
+        quote! {
+            impl #core::__ContextMenu for #ident {
+                type Target = ::noctis::__private::ui::#target;
+                const MENU_NAME: &'static ::core::primitive::str = "";
+                const METADATA: #core::CommandMetadata = #core::CommandMetadata::new();
+                const EPHEMERALITY: #core::Ephemerality = #core::Ephemerality::Public;
+
+                fn __new() -> Self {
+                    ::core::unreachable!("the derive failed to compile")
+                }
+            }
         }
-        _ => false,
-    };
-    if !ok {
-        return Err(syn::Error::new_spanned(&target.ty, message));
-    }
-    match typed.as_slice() {
-        [_, _] => Ok(None),
-        [_, _, r] if is_responder(&r.ty) => Ok(Some((*r.ty).clone())),
-        _ => Err(syn::Error::new(
-            sig.inputs.span(),
-            format!("[CTX-02] context-menu commands take no options: {message}"),
-        )),
-    }
+    })
 }
 
-/// Expands `#[user_command(args)] item` or `#[message_command(args)] item`.
-pub(crate) fn expand(menu: Menu, args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let args = parse_args(menu, args)?;
-    let item: ItemFn = syn::parse2(item)?;
-    check_shape(&item, menu.attr())?;
+/// Expands `#[derive(UserCommand)]` or `#[derive(MessageCommand)]`.
+pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream> {
+    let fields = crate::common::kind_fields(input, menu.derive())?;
+    let ident = &input.ident;
+    if !fields.is_empty()
+        || !matches!(&input.data, Data::Struct(d) if matches!(d.fields, Fields::Unit))
+    {
+        return Err(syn::Error::new_spanned(
+            ident,
+            format!(
+                "[CTX-02] context-menu commands have no options: make `{}` a unit struct",
+                crate::common::plain(ident)
+            ),
+        ));
+    }
+    let attr = menu.attr();
+    let name = attr.trim_start_matches("#[").trim_end_matches(']');
+    let (_, tokens) = crate::command::kind_attr(
+        &input.attrs,
+        name,
+        ident,
+        &format!(
+            "`#[derive({})]` needs `{}(\"{}\")]`",
+            menu.derive(),
+            attr.trim_end_matches(']'),
+            menu.example()
+        ),
+        &missing(menu),
+    )?;
+    let args = parse_args(menu, tokens)?;
     check_name(&args)?;
-    let responder_ty = check_params(menu, &item)?;
-    let (assertion, mode) = defer_check(&item, responder_ty.as_ref(), args.handler.manual)?;
-    let responder = responder_ty.is_some();
-
-    let ItemFn {
-        attrs,
-        vis,
-        sig,
-        block,
-        ..
-    } = &item;
-    let name = &sig.ident;
-    let fn_name = name.to_string();
-    let fn_name = fn_name.strip_prefix("r#").unwrap_or(&fn_name).to_owned();
-    let mut inner = sig.clone();
-    inner.ident = Ident::new("__noctis_menu", name.span());
-    let inner = inner.into_token_stream();
-    let output_span = match &sig.output {
-        ReturnType::Default => sig.ident.span(),
-        ReturnType::Type(_, ty) => ty.span(),
-    };
-    let constructor = Ident::new(menu.constructor(), output_span);
-    let new = quote_spanned! {output_span=>
-        ::noctis::__private::core::ContextMenuHandler::#constructor::<#mode, _, _, _>
-    };
+    let core = quote!(::noctis::__private::core);
+    let target = Ident::new(menu.target(), Span::call_site());
     let menu_name = args.name.value();
     let metadata = if args.meta.is_empty() {
-        quote!(::noctis::__private::core::CommandMetadata::new())
+        quote!(#core::CommandMetadata::new())
     } else {
         args.meta.tokens()
     };
-    let id = |name: &str| Ident::new(name, output_span);
-    let (ctx, target, handler) = (
-        id("__noctis_ctx"),
-        id("__noctis_target"),
-        id("__noctis_menu"),
-    );
-    let adapter = if responder {
-        // Every parameter is passed through: the handler itself fits.
-        quote_spanned! {output_span=> #handler }
-    } else {
-        let skip = id("_");
-        quote_spanned! {output_span=> |#ctx, #target, #skip| #handler(#ctx, #target) }
-    };
-    let call = quote_spanned! {output_span=>
-        #new(::core::concat!(::core::module_path!(), "::", #fn_name), #menu_name, #metadata, #adapter)
-    };
-    let ephemeral = args.handler.ephemerality_call();
+    let ephemerality = args.handler.ephemerality();
+    let scaffolding =
+        crate::kind::scaffolding(ident, crate::kind::Family::Menu, args.handler.manual);
     Ok(quote! {
-        #(#attrs)*
-        #vis fn #name() -> ::noctis::__private::core::ContextMenuHandler {
-            // A handler needs no `.await` to be `async` (the macro requires it).
-            #[allow(clippy::unused_async)]
-            #inner #block
-            #assertion
-            #call #ephemeral
+        #[automatically_derived]
+        impl #core::__ContextMenu for #ident {
+            type Target = ::noctis::__private::ui::#target;
+            const MENU_NAME: &'static ::core::primitive::str = #menu_name;
+            const METADATA: #core::CommandMetadata = #metadata;
+            const EPHEMERALITY: #core::Ephemerality = #ephemerality;
+
+            fn __new() -> Self {
+                Self
+            }
         }
+
+        #scaffolding
     })
 }
 
@@ -281,10 +244,77 @@ mod tests {
         "async fn show(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> { Ok(()) }";
     const QUOTE: &str =
         "async fn quote(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> { Ok(()) }";
-    const USER_SIG: &str = "`#[user_command]` handlers take `(ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])`";
 
     fn item(src: &str) -> TokenStream {
         src.parse().unwrap()
+    }
+
+    /// The menu derive with `args` on a unit struct (the old cases name a
+    /// handler `item`, which only picks the kind).
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the test cases hand over `quote!` values"
+    )]
+    fn expand(menu: Menu, args: TokenStream, _item: TokenStream) -> syn::Result<TokenStream> {
+        let input: DeriveInput = match menu {
+            Menu::User => syn::parse_quote!(
+                #[user_command(#args)]
+                struct S;
+            ),
+            Menu::Message => syn::parse_quote!(
+                #[message_command(#args)]
+                struct S;
+            ),
+        };
+        derive(menu, &input)
+    }
+
+    /// Story 6.11 Matrix 6 and 11.
+    #[test]
+    fn expands_both_kinds() {
+        let out = expand(
+            Menu::User,
+            quote!("Report", response = ephemeral, auto_defer = false),
+            item(SHOW),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            out.contains("type Target = :: noctis :: __private :: ui :: ResolvedUser"),
+            "{out}"
+        );
+        assert!(
+            out.contains("const MENU_NAME : & 'static :: core :: primitive :: str = \"Report\""),
+            "{out}"
+        );
+        assert!(out.contains("Ephemerality :: Ephemeral"), "{out}");
+        assert!(
+            out.contains("type Defer = :: noctis :: __private :: core :: Manual"),
+            "{out}"
+        );
+        assert!(out.contains("__MenuKind"), "{out}");
+        let out = expand(Menu::Message, quote!("Quote"), item(QUOTE))
+            .unwrap()
+            .to_string();
+        assert!(out.contains("ResolvedMessage"), "{out}");
+        assert!(out.contains("Ephemerality :: Public"), "{out}");
+        let fields: DeriveInput = syn::parse_quote!(
+            #[user_command("X")]
+            struct Report {
+                a: u8,
+            }
+        );
+        assert_eq!(
+            derive(Menu::User, &fields).unwrap_err().to_string(),
+            "[CTX-02] context-menu commands have no options: make `Report` a unit struct"
+        );
+        let none: DeriveInput = syn::parse_quote!(
+            struct Report;
+        );
+        assert_eq!(
+            derive(Menu::Message, &none).unwrap_err().to_string(),
+            "`#[derive(MessageCommand)]` needs `#[message_command(\"Quote\")]`"
+        );
     }
 
     fn error(menu: Menu, args: TokenStream, src: &str) -> String {
@@ -297,35 +327,6 @@ mod tests {
             .into_iter()
             .map(|e| e.to_string())
             .collect()
-    }
-
-    /// Matrix 29, 30 and 44.
-    #[test]
-    fn expands_both_kinds() {
-        let out = expand(
-            Menu::User,
-            quote!("Show profile"),
-            item(&format!("/// docs\n#[cfg(test)]\npub(crate) {SHOW}")),
-        )
-        .unwrap()
-        .to_string();
-        assert!(
-            out.contains(
-                "pub (crate) fn show () -> :: noctis :: __private :: core :: ContextMenuHandler"
-            ),
-            "{out}"
-        );
-        assert!(out.contains("# [doc = \" docs\"]"), "{out}");
-        assert!(out.contains("# [cfg (test)]"), "{out}");
-        assert!(out.contains("ContextMenuHandler :: __new_user"), "{out}");
-        assert!(
-            out.contains("\"Show profile\" , :: noctis :: __private :: core :: CommandMetadata :: new () , | __noctis_ctx , __noctis_target , _ | __noctis_menu (__noctis_ctx , __noctis_target))"),
-            "{out}"
-        );
-        let out = expand(Menu::Message, quote!(r"Quote"), item(QUOTE))
-            .unwrap()
-            .to_string();
-        assert!(out.contains("__new_message"), "{out}");
     }
 
     /// Matrix 36: metadata on menus.
@@ -432,182 +433,6 @@ mod tests {
         assert_eq!(
             error(Menu::Message, quote!(), QUOTE),
             "`#[message_command]` needs the menu name as its first argument: `#[message_command(\"Quote\")]`"
-        );
-    }
-
-    /// Story 6.5 Matrix 41, 42 and 44, Story 6.10 Matrix 14-18: `response`,
-    /// `auto_defer` and the responder.
-    #[test]
-    fn response_and_responder() {
-        let src = "async fn show(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder) -> HandlerResult<Responded> { todo!() }";
-        let out = expand(Menu::User, quote!("Show", response = ephemeral), item(src))
-            .unwrap()
-            .to_string()
-            .replace(' ', "");
-        assert!(
-            out.contains("ContextMenuHandler::__new_user::<_,_,_,_>"),
-            "{out}"
-        );
-        assert!(
-            out.contains("__assert_auto_defer::<CommandResponder>();"),
-            "{out}"
-        );
-        assert!(
-            out.contains("CommandMetadata::new(),__noctis_menu)"),
-            "{out}"
-        );
-        assert!(
-            out.ends_with(
-                ".__with_ephemerality(::noctis::__private::core::Ephemerality::Ephemeral)}"
-            ),
-            "{out}"
-        );
-        let manual = "async fn report(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder<Manual>) -> HandlerResult<Responded> { todo!() }";
-        let out = expand(
-            Menu::User,
-            quote!("Report", response = ephemeral, auto_defer = false),
-            item(manual),
-        )
-        .unwrap()
-        .to_string()
-        .replace(' ', "");
-        assert!(
-            out.contains("__assert_manual::<CommandResponder<Manual>>();"),
-            "{out}"
-        );
-        let out = expand(Menu::User, quote!("Show"), item(SHOW))
-            .unwrap()
-            .to_string()
-            .replace(' ', "");
-        assert!(
-            out.contains("__new_user::<::noctis::__private::core::AutoDefer,_,_,_>"),
-            "{out}"
-        );
-        assert_eq!(
-            error(Menu::User, quote!("X", auto_defer = false), SHOW),
-            "[INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`"
-        );
-        assert_eq!(
-            error(Menu::User, quote!("X", ephemeral), SHOW),
-            "unknown `#[user_command]` argument `ephemeral`: write `response = ephemeral`"
-        );
-        for menu in [Menu::User, Menu::Message] {
-            let src = if matches!(menu, Menu::User) {
-                SHOW
-            } else {
-                QUOTE
-            };
-            assert_eq!(
-                error(menu, quote!("X", opens_modal), src),
-                format!(
-                    "unknown `{}` argument `opens_modal`: write `auto_defer = false` and take `CommandResponder<Manual>`",
-                    menu.attr()
-                )
-            );
-        }
-        assert_eq!(
-            error(Menu::User, quote!("X", response = update), SHOW),
-            "[INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral`"
-        );
-        assert_eq!(
-            error(Menu::User, quote!("X", auto_defer = 1), SHOW),
-            "`auto_defer` takes `true` or `false`"
-        );
-        assert_eq!(
-            error(
-                Menu::Message,
-                quote!("X", response = public, response = public),
-                QUOTE
-            ),
-            "duplicate `#[message_command]` argument `response`"
-        );
-    }
-
-    /// Matrix 39, 41 and 42: signatures.
-    #[test]
-    fn signature_errors() {
-        let msg_sig = "`#[message_command]` handlers take `(ctx: CommandCtx, target: ResolvedMessage[, r: CommandResponder])`";
-        for (menu, src, expected) in [
-            (
-                Menu::User,
-                "async fn f(ctx: CommandCtx, target: ResolvedUser, opts: O) -> HandlerResult<()> { Ok(()) }",
-                format!("[CTX-02] context-menu commands take no options: {USER_SIG}"),
-            ),
-            (
-                Menu::User,
-                "async fn f(ctx: CommandCtx, target: ResolvedUser, r: CommandResponder, o: O) -> HandlerResult<()> { Ok(()) }",
-                format!("[CTX-02] context-menu commands take no options: {USER_SIG}"),
-            ),
-            (
-                Menu::User,
-                "async fn f(ctx: CommandCtx, r: CommandResponder, target: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                USER_SIG.to_owned(),
-            ),
-            (
-                Menu::User,
-                "async fn f() -> HandlerResult<()> { Ok(()) }",
-                USER_SIG.to_owned(),
-            ),
-            (
-                Menu::User,
-                "async fn f(ctx: CommandCtx) -> HandlerResult<()> { Ok(()) }",
-                USER_SIG.to_owned(),
-            ),
-            (
-                Menu::User,
-                "async fn f(&self, t: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                USER_SIG.to_owned(),
-            ),
-            (
-                Menu::User,
-                "async fn f(ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<()> { Ok(()) }",
-                USER_SIG.to_owned(),
-            ),
-            (
-                Menu::User,
-                "async fn f(ctx: CommandCtx, target: Id<UserMarker>) -> HandlerResult<()> { Ok(()) }",
-                USER_SIG.to_owned(),
-            ),
-            (
-                Menu::Message,
-                "async fn f(ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                msg_sig.to_owned(),
-            ),
-            (
-                Menu::User,
-                "fn f(ctx: CommandCtx, t: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                "`#[user_command]` needs an `async fn`".to_owned(),
-            ),
-            (
-                Menu::Message,
-                "const async fn f(ctx: CommandCtx, t: ResolvedMessage) -> HandlerResult<()> { Ok(()) }",
-                "`#[message_command]` handlers must be a plain `async fn`".to_owned(),
-            ),
-            (
-                Menu::User,
-                "async unsafe fn f(ctx: CommandCtx, t: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                "`#[user_command]` handlers must be a plain `async fn`".to_owned(),
-            ),
-            (
-                Menu::User,
-                "async extern \"C\" fn f(ctx: CommandCtx, t: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                "`#[user_command]` handlers must be a plain `async fn`".to_owned(),
-            ),
-            (
-                Menu::User,
-                "async fn f<T>(ctx: CommandCtx, t: ResolvedUser) -> HandlerResult<()> { Ok(()) }",
-                "`#[user_command]` handlers cannot be generic".to_owned(),
-            ),
-        ] {
-            assert_eq!(error(menu, quote!("X"), src), expected, "{src}");
-        }
-        assert!(
-            expand(
-                Menu::User,
-                quote!("X"),
-                item("async fn f(c: CommandCtx, t: noctis::ui::ResolvedUser) -> HandlerResult<()> { Ok(()) }")
-            )
-            .is_ok()
         );
     }
 }

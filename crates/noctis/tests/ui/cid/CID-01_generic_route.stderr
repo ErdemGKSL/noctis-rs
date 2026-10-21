@@ -1,6 +1,0 @@
-error: [CID-01] a Route cannot be generic
-         = help: remove the type, lifetime and const parameters and the `where` clause; its width must be known at compile time
- --> tests/ui/cid/CID-01_generic_route.rs:5:15
-  |
-5 | struct Generic<T> {
-  |               ^^^

@@ -1,7 +1,7 @@
 # Routes, Payloads and Refs
 
 Covers: the component kind derives (`#[derive(Button)]`, the select derives,
-`#[derive(Modal)]`; this release `#[derive(Route)]`), `defaults(..)` and `.build()`,
+`#[derive(Modal)]`), `defaults(..)` and `.build()`,
 `#[derive(Payload)]`, `#[derive(PayloadEnum)]`, the codec
 traits (`Route`, `Payload`, `PayloadDecode`), Payload field types, `#[handler]`, the `custom_id` wire
 format and its compile-time length proof, `by_ref` and `overflow = spill`, Ref TTL and
@@ -10,7 +10,7 @@ Rules: CID-01..07, FR-15..19, FR-58..60. Never build a `custom_id` yourself.
 
 ## 1. Declaring a component (a Route)
 
-One struct = its id + its typed data + its handler [planned: Story 6.11]. The derive
+One struct = its id + its typed data + its handler. The derive
 names the component kind; a Route is any such struct.
 
 ```rust
@@ -43,7 +43,7 @@ Module::new("dashboard").add::<ToggleModule>()
 | Derive | Attribute | Builds | Required in `defaults(..)` | Optional keys (default) |
 | --- | --- | --- | --- | --- |
 | `Button` | `#[button("id", ..)]` | `RouteButton<Self>` | `style`, and `label` or `emoji` | the other of `label`/`emoji`, `disabled` (`false`) |
-| `StringSelectMenu` | `#[string_select("id", ..)]` | `StringSelect` | `placeholder` | `options = SomeChoicesEnum`, `min_values` (1), `max_values` (1), `disabled` (`false`) |
+| `StringSelectMenu` | `#[string_select("id", ..)]` | `StringSelect` with `options`, else a `StringSelectBuilder<Self>` that needs `.options(..)` | `placeholder` | `options = SomeChoicesEnum`, `min_values` (1), `max_values` (1), `disabled` (`false`) |
 | `UserSelectMenu` / `RoleSelectMenu` / `MentionableSelectMenu` | `#[user_select(..)]` / `#[role_select(..)]` / `#[mentionable_select(..)]` | `UserSelect` / `RoleSelect` / `MentionableSelect` | `placeholder` | `min_values` (1), `max_values` (1), `disabled` (`false`) |
 | `ChannelSelectMenu` | `#[channel_select("id", ..)]` | `ChannelSelect` | `placeholder` | the above plus `channel_types = [GuildText, …]` |
 | `Modal` | `#[modal("id", ..)]` | `Modal` (`modals.md`) | `title` | — |
@@ -51,29 +51,29 @@ Module::new("dashboard").add::<ToggleModule>()
 A missing `defaults(..)` block or required key is a compile error naming the kind's
 required keys; an unknown key is a compile error; literal values are checked against
 Discord's limits (CV2-08, CV2-09, MOD-01). Text values are locale keys with the `i18n`
-feature (checked against the default-locale file) and literal text without it. Link and
+feature (checked against the default-locale file) and literal text without it
+[planned: Story 9.3]; today every text value is a literal, shown as written. Link and
 Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
 
 - The struct's fields **are** the Payload. The handler receives the decoded value as
   `self`; a free `async fn` with `#[handler]` does not compile.
+- `X::descriptor()` is the stored `noctis::ComponentHandler` (`name()`, `route()`,
+  `kind() -> ComponentKind`: `Button`, `StringSelect`, `UserSelect`, `RoleSelect`,
+  `MentionableSelect`, `ChannelSelect`) or, for a modal, `noctis::ModalHandler` (`name()`,
+  `route()`); `.add::<X>()` stores it with the Module.
 - Exactly one handler per component id (CID-04, App build). The `#[handler]` method
-  marks the struct as handled; components can only be built from handled structs, so
-  `.build()` on one with no handler does not compile (``[CID-04] Route `X` has no
-  handler``, FR-58). Remember `.add::<ToggleModule>()` on the Module, or App build fails
+  marks the struct as handled; a kind-derived struct without one does not compile
+  (E0080 ``[CID-04] `X` has no #[handler] method, so no component can be built for it``,
+  FR-58). Remember `.add::<ToggleModule>()` on the Module, or App build fails
   ("Route has no mounted handler").
-- **This release** spells all of this `#[derive(Route)] #[route("dash.mod", ..)]` with a
-  free `#[handler] async fn toggle_module(ctx: ComponentCtx, t: ToggleModule)` and
-  `.add(toggle_module())`; the grammar and errors below are the shipped `#[route]` ones,
-  which carry over unchanged to the kind attributes (minus `select`).
-- Generic Routes are rejected (`[CID-01] a Route cannot be generic`), and so are enums
-  and unions: a Route is a struct with named fields, tuple fields or none
-  (`struct Ping;`).
-- `#[derive(Route)]` implements the `Route` trait (`ID`, `SHAPE`, `SCHEMA`,
+- Generic structs are rejected (`` `#[derive(Button)]` needs a struct with named fields
+  or a unit struct ``), and so are tuple structs, enums and unions.
+- The kind derive implements the `Route` trait (`ID`, `SHAPE`, `SCHEMA`,
   `type Payload = Self`) and the `Payload`/`PayloadDecode` traits for the struct, and
-  proves the length bound at compile time (§5). Today the codec traits and these
-  derives exist; the component builders (§9, `components-v2.md`) encode a Route's
-  `custom_id`; decoding happens in the **[planned]** dispatcher, and `#[handler]` and
-  the rest of this file's runtime parts are **[planned]** too.
+  proves the length bound at compile time (§5). `.build()` (§9, `components-v2.md`)
+  encodes a Route's `custom_id`; decoding a click and running the handler happen in the
+  **[planned]** dispatcher (Epic 7), and the rest of this file's runtime parts are
+  **[planned]** too.
 
 ### Route id (CID-03)
 
@@ -81,29 +81,28 @@ Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
 live component using it.** Ids starting with `_` are reserved. Use short dotted ids
 (`setup.ch`, `dash.mod`) to leave room for the Payload.
 
-### Arguments after the id (`#[button(..)]`, `#[string_select(..)]`, …; this release `#[route(...)]`)
+### Arguments after the id (`#[button(..)]`, `#[string_select(..)]`, …)
 
-Grammar: exactly one kind attribute (this release: `#[route("id", args…)]`). The first element is the id as a
+Grammar: exactly one kind attribute (`#[button("id", args…)]`, …). The first element is the id as a
 string literal (`"shop.buy"`, `r"shop.buy"`); the arguments follow in any order,
 separated by commas, and a trailing comma is fine.
 
 Codec arguments (they change the `custom_id` and count toward the length proof):
-`by_ref`, `overflow = spill`, `signed`, `schema = n`, and (this release only) `select`:
-from Story 6.11 every select kind carries the nonce and the bare `select` is withdrawn.
-These work today.
-(There is no `view` argument: it is ``[CID-03] unknown #[route] argument `view` ``,
-whose help lists the five codec arguments. Tabs, pages and steps are ordinary Payload
+`by_ref`, `overflow = spill`, `signed` and `schema = n`. These work today. Every select
+kind carries the per-render nonce itself (FR-25): `select` is ``[CID-03] unknown
+#[string_select] argument `select` `` with a help saying so.
+(There is no `view` argument: it is ``[CID-03] unknown #[button] argument `view` ``,
+whose help lists the codec arguments. Tabs, pages and steps are ordinary Payload
 fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length): `response`, `auto_defer`, `ttl`, `one_shot`,
-`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: this release **rejects** them with
-``[CID-03] `ttl` is a runtime argument of #[route] that this Noctis release does not
-support yet`` (a silently ignored guard would be a security hole), and each one is
+`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: Noctis **rejects** them with
+``[CID-03] `ttl` is a runtime argument of #[button] that this Noctis release does not
+support yet`` (attribute name per kind) (a silently ignored guard would be a security hole), and each one is
 accepted from the release that implements it. Anything else is a compile error.
 `#[handler]` itself takes no arguments: every setting is here.
 
 | Argument | Meaning |
 | --- | --- |
 | `"id"` | Route id (required, first) |
-| `select` (this release) | used on select menus: adds a 2-char per-render nonce so clients show the server's defaults after a re-render (FR-25); implied by every select kind from Story 6.11 |
 | `response = update \| ephemeral \| public` [planned, Story 7.2] | how the click is answered: edit in place (default; auto-defer type 6), or a new ephemeral/public message (sub-panels; auto-defer type 5) |
 | `auto_defer = true \| false` [planned, Story 7.2] | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
@@ -129,16 +128,18 @@ The derive turns the declaration into `Route::SHAPE`: `RouteShape::INLINE`,
 `RouteShape::BY_REF` or `RouteShape::SPILL`, then `.select()` and `.signed()` when
 declared; `Route::SCHEMA` is `n`, or 0 without `schema`.
 
-#### `#[route]` errors (CID-03)
+#### Kind attribute errors (CID-03)
 
-Each is a compile error spanned on the offending token, `[CID-03] …` plus a `help:` line:
+Each is a compile error spanned on the offending token, `[CID-03] …` plus a `help:` line
+(shown here for `#[button]`; the other kinds name their own attribute):
 
-- a missing `#[route]`, a second `#[route]`, `#[route]` or `#[route = "a"]` without a
-  list, `#[route()]` without an id, an id that is not a string literal (`a`, `b"a"`);
+- a missing attribute (``[CID-03] #[derive(Button)] needs a #[button("id", defaults(..))]
+  attribute``), a second one, `#[button]` or `#[button = "a"]` without a list,
+  `#[button()]` without an id, an id that is not a string literal (`a`, `b"a"`);
 - an id outside the grammar: wrong characters (`"Shop"`, `"a:b"`, `"é"`), empty or over
   24 characters, or starting with `_` (all applicable problems are reported);
 - an unknown argument (`colour`, named in the error), a runtime argument (above), an
-  argument given twice (`select, select`), a value on a flag (`select = true`, `by_ref()`);
+  argument given twice (`signed, signed`), a value on a flag (`signed = true`, `by_ref()`);
 - `overflow` without `= spill` (`overflow = error`, `overflow = inline`, bare
   `overflow`);
 - `schema` that is not an integer literal 1..=61 (`schema = 0` says "leave it out for
@@ -148,13 +149,13 @@ Each is a compile error spanned on the offending token, `[CID-03] …` plus a `h
 Accepted spellings include `r"a"`, `"shop\x2Ebuy"` (the value counts: `shop.buy`) and
 `schema = 61u8`.
 
-### Methods in the struct's `impl` [planned]
+### Methods in the struct's `impl`
 
 | Method attribute | Meaning |
 | --- | --- |
 | `#[handler] async fn handle(self, ctx, ..)` | the handler (exactly one; takes no arguments) |
-| `#[on_expired] async fn …(ctx, expired: Expired)` | this component's Expired Handler (no `self`: the Payload is gone) [Story 7.3] |
-| `#[on_stale] async fn …(ctx)` | this component's Stale Payload handler (no `self`) [Story 7.3] |
+| `#[on_expired] async fn …(ctx, expired: Expired)` | this component's Expired Handler (no `self`: the Payload is gone) [planned, Story 7.3] |
+| `#[on_stale] async fn …(ctx)` | this component's Stale Payload handler (no `self`) [planned, Story 7.3] |
 
 ## 2. Field types and widths (AD-6)
 
@@ -301,10 +302,10 @@ proptest! {
 ## 3. The codec traits and `#[derive(Payload)]`
 
 All in `noctis::codec`; `use noctis::prelude::*;` brings the `Route` and `Payload`
-traits and the `Route`, `Payload` and `PayloadEnum` derives.
+traits and the `Payload` and `PayloadEnum` derives.
 
 - `trait Route { const ID: RouteId; const SHAPE: RouteShape; const SCHEMA: u8; type Payload: Payload; }`
-  — what `#[derive(Route)]` implements.
+  — what the kind derives implement.
 - `RouteId`: `RouteId::new("shop.buy")` is a `const fn` (a bad literal in a `const`
   does not compile), `as_str()`, `is_reserved()` (starts with `_`), `Display`.
 - `RouteShape`: `INLINE`, `BY_REF`, `SPILL`, the `const` builders `select()` and
@@ -328,9 +329,9 @@ traits and the `Route`, `Payload` and `PayloadEnum` derives.
   `Nonce`, `Tag`.
 
 `#[derive(Payload)]` implements `Payload` and `PayloadDecode` for a struct, exactly as
-`#[derive(Route)]` does, for the Payload of a hand-written `Route`. It is not a field
-type, and deriving both `Route` and `Payload` on one struct is a conflicting-impl error
-(`Route` already includes it).
+the kind derives do, for the Payload of a hand-written `Route`. It is not a field
+type, and deriving both a kind (`Button`, …) and `Payload` on one struct is a
+conflicting-impl error (the kind derive already includes it).
 
 ```rust
 use noctis::codec::{Route, RouteId, RouteShape};
@@ -348,8 +349,8 @@ impl Route for PickRoute {
 }
 ```
 
-A hand-written `Route` gets no compile-time length proof (only `#[derive(Route)]` emits
-it), so an overlong id fails only at encode time; prefer `#[derive(Route)]`.
+A hand-written `Route` gets no compile-time length proof (only the kind derives emit
+it), so an overlong id fails only at encode time; prefer a kind derive.
 
 ## 4. The `custom_id` format (normative, AD-5)
 
@@ -411,7 +412,7 @@ So `by_ref` and `spill` Routes always fit. An inline Route with a `String` field
 
 ```text
 error[E0080]: evaluation panicked: [CID-01] route `report.reason` has unbounded fields
-                = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to #[route]
+                = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to the kind attribute
 ```
 
 An inline Route one character over:
@@ -488,7 +489,7 @@ impl SetupState {
 }
 ```
 
-## 9. Building components: `.build()` [planned: Story 6.11, defaults Story 9.3]
+## 9. Building components: `.build()`
 
 ```rust
 ToggleModule { guild, module, enable }.build()      // the declared kind, from `defaults(..)`
@@ -497,33 +498,20 @@ ToggleModule { guild, module, enable }.build()      // the declared kind, from `
     .disabled(false);
 
 TicketSystem.build()                                // a string select whose defaults have no `options`:
-    .options(systems.iter().map(|t| SelectOption::new(&t.name, t.id.to_string())))  // required before use (typestate)
-    .default_values([current]);
+    .options(systems.iter().map(|t| SelectOption::new(&t.name, t.id.to_string())));  // required before use (typestate)
 ```
 
 Overrides: `.label(..)`, `.emoji(..)`, `.style(..)`, `.disabled(..)`, `.placeholder(..)`,
-`.options(..)`, `.default_values(..)`, `.min_values(..)`, `.max_values(..)`; for modals
-`.title(..)` and `.value(field, ..)`. Anything not overridden comes from the defaults;
-the result is validated against the Limits (Strict or Lenient) when sent. `.build()`
-requires a handler (`[CID-04]`); on a struct without a declared kind it is a compile
-error whose help lists the kind derives.
-
-**This release** builds with the `RouteComponents` methods instead (prelude;
-`components-v2.md` §0), each requiring a handler (`[CID-04]`) and the selects a Route
-declared `select`:
-
-```rust
-route.button()                 -> RouteButton<R> // .label .style .emoji .disabled
-route.string_select(options)   -> StringSelect  // requires `select` on the Route (SelectRoute)
-route.user_select()            -> UserSelect
-route.role_select()            -> RoleSelect
-route.mentionable_select()     -> MentionableSelect
-route.channel_select()         -> ChannelSelect
-FormType::modal(route)         -> FormTypeModal // modals.md
-```
+`.options(..)`, `.min_values(..)`, `.max_values(..)`, `.channel_types(..)`, and the
+per-kind `.default_users(..)` / `.default_roles(..)` / `.default_channels(..)`.
+`.default_values(..)` on every select kind and the modal `.title(..)` / `.value(field, ..)`
+overrides are [planned: Story 9.3]. Anything not overridden comes from the defaults;
+the result is validated against the Limits (Strict or Lenient) when sent. A kind-derived
+struct needs a `#[handler]` method (`[CID-04]`); on a struct without a declared kind,
+`.build()` is a compile error whose help lists the kind derives.
 
 Selected values: `ctx.values()` → `.strings()`, `.users()`, `.roles()`, `.channels()`,
-`.mentionables()`; resolved entities: `ctx.resolved()`.
+`.mentionables()`; resolved entities: `ctx.resolved()` [planned, Epic 7].
 
 ## 10. Interaction pipeline (fixed order)
 

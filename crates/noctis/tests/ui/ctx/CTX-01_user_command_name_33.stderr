@@ -1,5 +1,5 @@
 error: [CTX-01] limit between 1 and 32, actual 33
- --> tests/ui/ctx/CTX-01_user_command_name_33.rs:3:16
+ --> tests/ui/ctx/CTX-01_user_command_name_33.rs:4:16
   |
-3 | #[user_command("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+4 | #[user_command("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

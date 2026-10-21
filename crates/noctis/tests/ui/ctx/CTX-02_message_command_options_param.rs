@@ -1,14 +1,9 @@
 use noctis::prelude::*;
 
-#[derive(Options)]
-struct O {
-    #[option(description = "d")]
-    reason: Option<String>,
-}
-
+#[derive(MessageCommand)]
 #[message_command("Report")]
-async fn report(_ctx: CommandCtx, _target: noctis::ui::ResolvedMessage, _o: O) -> HandlerResult<noctis::ui::LegacyMessage> { // [CTX-02]
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Report {
+    reason: Option<String>, // [CTX-02]
 }
 
 fn main() {}

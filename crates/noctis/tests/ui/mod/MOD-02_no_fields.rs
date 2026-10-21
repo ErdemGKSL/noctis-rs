@@ -1,12 +1,14 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("t.form")]
-struct Form;
-impl noctis::__private::ui::Handled for Form {}
-
 #[derive(Modal)]
-#[modal(route = Form, title = "Empty")]
+#[modal("t.form", defaults(title = "Empty"))]
 struct F {}
+
+impl F {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+}
 
 fn main() {}

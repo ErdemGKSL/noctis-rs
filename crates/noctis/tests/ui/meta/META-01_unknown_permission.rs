@@ -1,8 +1,14 @@
 use noctis::prelude::*;
 
+#[derive(SlashCommand)]
 #[command("config", description = "d", permissions = MANAGE_SERVER)]
-async fn config(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Config;
+
+impl Config {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
 fn main() {}

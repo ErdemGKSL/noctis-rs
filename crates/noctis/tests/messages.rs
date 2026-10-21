@@ -7,24 +7,31 @@
     reason = "test helpers panic with a message naming the broken invariant"
 )]
 
-use noctis::prelude::*;
 use noctis::ui::{
     ActionRow, Components, Container, CreateFlags, EditFlags, LegacyMessage, LinkButton,
     MessageFormat, TextDisplay, UiError, V2Message,
 };
 use serde_json::json;
 
-#[derive(Route)]
-#[route("m.ok")]
+#[derive(::noctis::Button)]
+#[button("m.ok", defaults(style = Secondary, label = "Go"))]
 struct Confirm;
 
-impl ::noctis::__private::ui::Handled for Confirm {}
+impl Confirm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 fn body() -> Components {
     Components::new().push(
         Container::new()
             .push(TextDisplay::new("Done"))
-            .push(ActionRow::buttons([Confirm.button().label("OK")])),
+            .push(ActionRow::buttons([Confirm.build().label("OK")])),
     )
 }
 

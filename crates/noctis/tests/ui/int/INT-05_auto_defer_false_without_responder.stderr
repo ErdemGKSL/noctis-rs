@@ -1,5 +1,20 @@
-error: [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`
- --> tests/ui/int/INT-05_auto_defer_false_without_responder.rs:4:1
+error[E0277]: [INT-05] `auto_defer = false` handlers take `r: CommandResponder<Manual>`
+ --> tests/ui/int/INT-05_auto_defer_false_without_responder.rs:9:14
   |
-4 | async fn feedback(_ctx: CommandCtx) -> HandlerResult<noctis::ui::Components> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+9 |     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::Components> {
+  |              ^^^^^^ declared `auto_defer = false`
+  |
+  = help: the trait `noctis::__private::noctis_core::kind::__NoResponder` is not implemented for `Manual`
+help: the trait `noctis::__private::noctis_core::kind::__NoResponder` is implemented for `AutoDefer`
+ --> $WORKSPACE/crates/noctis-core/src/kind.rs
+  |
+  | impl __NoResponder for AutoDefer {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `noctis::__private::noctis_core::kind::__assert_no_responder`
+ --> $WORKSPACE/crates/noctis-core/src/kind.rs
+  |
+  | pub fn __assert_no_responder<S>()
+  |        --------------------- required by a bound in this function
+...
+  |     S::Defer: __NoResponder,
+  |               ^^^^^^^^^^^^^ required by this bound in `__assert_no_responder`

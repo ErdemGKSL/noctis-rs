@@ -30,7 +30,7 @@ const KEYWORDS: &[&str] = &[
     "premium",
 ];
 
-const EXPECTED_NODE: &str = "expected a node: `container`, `section`, `text`, `thumbnail`, `gallery`, `file`, `separator`, `row`, `link`, `premium`, a Route component (`route.button(..)` or `route.<kind>_select(..)`), a `{hole}` or a `..spread`";
+const EXPECTED_NODE: &str = "expected a node: `container`, `section`, `text`, `thumbnail`, `gallery`, `file`, `separator`, `row`, `link`, `premium`, a Route component (`Route { .. }.build()` plus setters), a `{hole}` or a `..spread`";
 
 /// The first and last span of some tokens, so an error covers all of them.
 #[derive(Clone, Copy)]
@@ -143,54 +143,32 @@ pub(crate) struct MediaArgs {
     pub(crate) alt: Option<Arg>,
 }
 
-/// What a Route component is built with.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RouteKind {
-    Button,
-    StringSelect,
-    UserSelect,
-    RoleSelect,
-    MentionableSelect,
-    ChannelSelect,
-}
-
-impl RouteKind {
-    fn of(method: &str) -> Option<Self> {
-        Some(match method {
-            "button" => Self::Button,
-            "string_select" => Self::StringSelect,
-            "user_select" => Self::UserSelect,
-            "role_select" => Self::RoleSelect,
-            "mentionable_select" => Self::MentionableSelect,
-            "channel_select" => Self::ChannelSelect,
-            _ => return None,
-        })
-    }
-
-    pub(crate) fn is_select(self) -> bool {
-        self != Self::Button
-    }
-}
-
-/// A method call after the Route constructor, re-applied in order.
+/// A method call after `.build()`, re-applied in order.
 pub(crate) struct Setter {
     pub(crate) method: Ident,
     pub(crate) turbofish: Option<AngleBracketedGenericArguments>,
     pub(crate) args: Punctuated<Expr, Token![,]>,
 }
 
-/// `route.button(..)` or `route.<kind>_select(..)` plus setters.
+/// `<expr>.build()` plus override setters: a component built from a
+/// kind-derived struct value. Its kind (button or select) is the type's;
+/// placement is checked by trait bounds.
 pub(crate) struct RouteNode {
     pub(crate) receiver: Expr,
-    pub(crate) method: Ident,
-    pub(crate) kind: RouteKind,
-    /// The constructor's arguments: the label of `.button(label)`, the
-    /// options of `.string_select(options)`.
-    pub(crate) arg: Option<Arg>,
+    pub(crate) build: Ident,
     pub(crate) setters: Vec<Setter>,
-    /// Literal labels (`.button("..")`, `.label("..")`) or placeholders, in
-    /// order.
-    pub(crate) texts: Vec<Lit>,
+    /// Literal `.label("..")` texts, in order.
+    pub(crate) labels: Vec<Lit>,
+}
+
+impl RouteNode {
+    /// The literal single arguments of the setters named `name`.
+    pub(crate) fn literal_args<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Expr> + 'a {
+        self.setters
+            .iter()
+            .filter(move |s| s.method == name && s.args.len() == 1)
+            .filter_map(|s| s.args.first())
+    }
 }
 
 /// The value of `separator(spacing = ..)`.
@@ -251,7 +229,6 @@ impl Kind {
             Self::File(_) => "file",
             Self::Separator { .. } => "separator",
             Self::Row(_) => "row",
-            Self::Route(r) if r.kind.is_select() => "select",
             Self::Link { .. } | Self::Premium(_) | Self::Route(_) => "button",
             Self::Hole(_) => "hole",
             Self::Spread(_) => "spread",
@@ -311,7 +288,7 @@ fn peek_keyword(input: ParseStream<'_>) -> Option<Ident> {
     }
     let ends = fork.is_empty() || fork.peek(Token![,]) || fork.peek(Token![;]);
     if fork.peek(token::Paren) || fork.peek(token::Bracket) {
-        // `row[0].button()` or `text(x).button()`: a Route receiver, not a node.
+        // `row[0].build()` or `text(x).build()`: a Route receiver, not a node.
         let _: TokenTree = fork.parse().ok()?;
         if fork.peek(Token![.]) && !fork.peek(Token![..]) {
             return None;
@@ -643,25 +620,49 @@ fn section_body(content: ParseStream<'_>, ids: &Cell<usize>) -> syn::Result<(Vec
     Ok((texts, accessory))
 }
 
-/// Splits a Route component expression into receiver, constructor and
+/// The constructors `.build()` replaced.
+const WITHDRAWN: [&str; 7] = [
+    "button",
+    "button_with",
+    "string_select",
+    "user_select",
+    "role_select",
+    "mentionable_select",
+    "channel_select",
+];
+
+/// Splits a Route component expression into receiver, `.build()` and
 /// setters.
 fn route(expr: Expr) -> syn::Result<RouteNode> {
     let whole = Sp::of(&expr);
-    let mut setters = Vec::new();
+    let mut setters: Vec<Setter> = Vec::new();
     let mut cur = expr;
     loop {
         match cur {
             Expr::MethodCall(mc) => {
                 let method = mc.method.to_string();
-                if method == "button_with" {
+                if WITHDRAWN.contains(&method.as_str()) {
                     return Err(syn::Error::new(
                         mc.method.span(),
-                        "`button_with` is not available yet (planned, Story 9.3); use `.button(label)`",
+                        format!(
+                            "`.{method}(..)` is withdrawn: components are built from their kind-derived struct\n  = help: write `Route {{ .. }}.build()`"
+                        ),
                     ));
                 }
-                if let Some(kind) = RouteKind::of(&method) {
+                if method == "build" && mc.args.is_empty() && mc.turbofish.is_none() {
                     setters.reverse();
-                    return route_node(*mc.receiver, mc.method, kind, mc.args, setters);
+                    let labels = setters
+                        .iter()
+                        .filter(|s| s.method == "label" && s.args.len() == 1)
+                        .filter_map(|s| s.args.first().and_then(lit_str))
+                        .map(|l| Lit::new(l.clone()))
+                        .collect();
+                    return Ok(RouteNode {
+                        receiver: *mc.receiver,
+                        build: mc.method,
+                        setters,
+                        labels,
+                    });
                 }
                 setters.push(Setter {
                     method: mc.method,
@@ -671,70 +672,9 @@ fn route(expr: Expr) -> syn::Result<RouteNode> {
                 cur = *mc.receiver;
             }
             Expr::Group(g) => cur = *g.expr,
-            Expr::Call(call) if is_button_with(&call.func) => {
-                return Err(syn::Error::new_spanned(
-                    &call.func,
-                    "`button_with` is not available yet (planned, Story 9.3); use `.button(label)`",
-                ));
-            }
             _ => return Err(syn::Error::new_spanned(whole, EXPECTED_NODE)),
         }
     }
-}
-
-fn is_button_with(func: &Expr) -> bool {
-    matches!(func, Expr::Path(p) if p.path.is_ident("button_with"))
-}
-
-fn route_node(
-    receiver: Expr,
-    method: Ident,
-    kind: RouteKind,
-    args: Punctuated<Expr, Token![,]>,
-    setters: Vec<Setter>,
-) -> syn::Result<RouteNode> {
-    let n = args.len();
-    let ok = match kind {
-        RouteKind::Button => n <= 1,
-        RouteKind::StringSelect => n == 1,
-        _ => n == 0,
-    };
-    if !ok {
-        let what = match kind {
-            RouteKind::Button => "`.button(..)` takes no argument or one label",
-            RouteKind::StringSelect => "`.string_select(..)` takes one argument: the options",
-            _ => "a user, role, mentionable or channel select takes no argument",
-        };
-        return Err(syn::Error::new(method.span(), what));
-    }
-    let arg = args.into_iter().next().map(Arg::new);
-    let setter_name = if kind.is_select() {
-        "placeholder"
-    } else {
-        "label"
-    };
-    let mut texts = Vec::new();
-    if kind == RouteKind::Button
-        && let Some(Arg::Lit(l)) = &arg
-    {
-        texts.push(Lit::new(l.lit.clone()));
-    }
-    for s in &setters {
-        if s.method == setter_name
-            && s.args.len() == 1
-            && let Some(lit) = s.args.first().and_then(lit_str)
-        {
-            texts.push(Lit::new(lit.clone()));
-        }
-    }
-    Ok(RouteNode {
-        receiver,
-        method,
-        kind,
-        arg,
-        setters,
-        texts,
-    })
 }
 
 #[cfg(test)]
@@ -757,10 +697,10 @@ mod tests {
                 text("### Settings"),
                 separator(spacing = large),
                 separator,
-                section [ text("Logs"), text(name); accessory = Press { n: 1 }.button("Change") ],
+                section [ text("Logs"), text(name); accessory = Press { n: 1 }.build().label("Change") ],
                 gallery [ item("https://x.y/a.png", alt = "A") ],
-                row [ Press { n: 2 }.button("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
-                row [ Pick.user_select().placeholder("Who").max_values(3) ],
+                row [ Press { n: 2 }.build().label("Save").style(ButtonStyle::Primary), link(url = "https://x.y", label = "Docs") ],
+                row [ Pick.build().placeholder("Who").max_values(3) ],
                 ..extra,
             ],
             {footer},
@@ -794,8 +734,8 @@ mod tests {
             panic!("route");
         };
         assert_eq!(r.receiver.to_token_stream().to_string(), "Press { n : 2 }");
-        assert_eq!(r.setters.len(), 1);
-        assert_eq!(r.texts.len(), 1);
+        assert_eq!(r.setters.len(), 2);
+        assert_eq!(r.labels.len(), 1);
     }
 
     #[test]
@@ -807,20 +747,29 @@ mod tests {
         assert!(err(quote!(row[link(label = "x")])).starts_with("link needs"));
         assert!(err(quote!(row[link(url = u, label = "x")])).starts_with("link needs"));
         assert!(
-            err(quote!(section [ text("a") accessory = x.button() ]))
+            err(quote!(section [ text("a") accessory = x.build() ]))
                 .starts_with("expected `,` or `;`")
         );
-        assert!(err(quote!(row[P.button_with(x)])).contains("Story 9.3"));
         assert!(err(quote!(row[..buttons])).starts_with("spreads go only"));
-        assert!(err(quote!(row[P.button("a", "b")])).contains("takes no argument or one label"));
         assert!(err(quote!(separator(spacing = large, spacing = small))).starts_with("duplicate"));
-        assert_eq!(err(quote!(routes[0].button())), "ok");
+        assert_eq!(err(quote!(routes[0].build())), "ok");
+        assert!(err(quote!(row[P.build(1)])).starts_with("expected a node"));
+        // Story 6.11 Matrix 50: the withdrawn constructors.
+        for old in [
+            quote!(buy.button()),
+            quote!(P.button_with(x)),
+            quote!(pick.string_select([o])),
+            quote!(p.channel_select().placeholder("x")),
+        ] {
+            let e = err(quote!(row[#old]));
+            assert!(e.contains("= help: write `Route { .. }.build()`"), "{e}");
+        }
     }
 
     #[test]
     fn keyword_named_receivers() {
         let nodes = parse(quote! {
-            row [ row[0].button(), text(x).button("a"), section(1).string_select([o]) ],
+            row [ row[0].build(), text(x).build().label("a"), section(1).build().options([o]) ],
         })
         .unwrap_or_else(|e| panic!("{e}"));
         let Kind::Row(items) = &nodes[0].kind else {

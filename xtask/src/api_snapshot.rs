@@ -61,7 +61,8 @@ const TARGET_DIR: &str = "target/public-api";
 /// all), with their snapshot spelling: the `#[handler]` marker that component
 /// constructors require (FR-58), the sealed supertraits of the placement
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
-/// supertraits of `EventPayload`, `Descriptor` and the Responder traits.
+/// supertraits of `EventPayload`, `Descriptor`, the Responder traits and
+/// `SuggestionValue`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
@@ -82,6 +83,11 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_core::responder::sealed",
         "noctis::__private::core::responder::sealed",
+    ),
+    // The sealed supertrait of `SuggestionValue` (`String`, `i64`, `f64`).
+    (
+        "noctis_core::autocomplete::sealed",
+        "noctis::__private::core::autocomplete::sealed",
     ),
 ];
 
@@ -747,20 +753,20 @@ pub fn noctis_rules::LimitsExt::x(&noctis_rules::Limits)";
 
     #[test]
     fn a13_proc_macro_beside_trait() {
-        // A derive and the trait it implements share `noctis::prelude::Route`.
+        // A derive and the trait it implements share `noctis::prelude::Button`.
         let facade = api(
-            "pub mod noctis\npub mod noctis::prelude\npub use noctis::prelude::Route\npub use noctis::prelude::Route",
+            "pub mod noctis\npub mod noctis::prelude\npub use noctis::prelude::Button\npub use noctis::prelude::Button",
             vec![
-                reexport("noctis::prelude::Route", "noctis_macros::Route"),
-                reexport("noctis::prelude::Route", "noctis_rules::Route"),
+                reexport("noctis::prelude::Button", "noctis_macros::Button"),
+                reexport("noctis::prelude::Button", "noctis_rules::Button"),
             ],
         );
         let macros = api(
-            "pub mod noctis_macros\npub proc macro noctis_macros::#[derive(Route)]",
+            "pub mod noctis_macros\npub proc macro noctis_macros::#[derive(Button)]",
             vec![],
         );
         let rules = api(
-            "pub mod noctis_rules\npub trait noctis_rules::Route\npub const noctis_rules::Route::ID: u8",
+            "pub mod noctis_rules\npub trait noctis_rules::Button\npub const noctis_rules::Button::ID: u8",
             vec![],
         );
         let mut all = crates(facade, rules);
@@ -771,9 +777,9 @@ pub fn noctis_rules::LimitsExt::x(&noctis_rules::Limits)";
             [
                 "pub mod noctis",
                 "pub mod noctis::prelude",
-                "pub proc macro noctis::prelude::#[derive(Route)]",
-                "pub trait noctis::prelude::Route",
-                "pub const noctis::prelude::Route::ID: u8",
+                "pub proc macro noctis::prelude::#[derive(Button)]",
+                "pub trait noctis::prelude::Button",
+                "pub const noctis::prelude::Button::ID: u8",
             ]
         );
         assert_eq!(

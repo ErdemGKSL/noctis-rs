@@ -1,0 +1,6 @@
+error: free-function `#[event]` handlers are withdrawn: one struct per interaction, with a `#[handler]` method
+         = help: #[derive(EventHandler)] #[event(ordered)] struct AwardXp; impl AwardXp { #[handler] async fn handle(self, ctx: EventCtx, event: MessageCreate) -> HandlerResult<()> { .. } }
+ --> tests/types/withdrawn_event.rs:5:10
+  |
+5 | async fn award_xp(_ctx: EventCtx, _msg: MessageCreate) -> HandlerResult<()> {
+  |          ^^^^^^^^

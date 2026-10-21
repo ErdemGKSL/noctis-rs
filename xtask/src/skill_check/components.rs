@@ -36,6 +36,7 @@ pub(super) const BUILDERS: &[&str] = &[
     "LinkButton",
     "PremiumButton",
     "StringSelect",
+    "StringSelectBuilder",
     "UserSelect",
     "RoleSelect",
     "MentionableSelect",
@@ -234,7 +235,7 @@ mod tests {
         );
         assert!(hs[1].body.contains("**Where:**"));
         assert!(!hs[1].body.contains('y'));
-        assert_eq!(heading_level("#[derive(Route)]"), None);
+        assert_eq!(heading_level("#[derive(Button)]"), None);
         assert_eq!(heading_level("####### seven"), None);
         assert_eq!(heading_level("###"), Some(3));
     }

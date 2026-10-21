@@ -1,15 +1,17 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("t.form")]
-struct Form;
-impl noctis::__private::ui::Handled for Form {}
-
 #[derive(Modal)]
-#[modal(route = Form, title = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+#[modal("t.form", defaults(title = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))]
 struct F {
     #[checkbox("Agree")]
     agree: bool,
+}
+
+impl F {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
 }
 
 fn main() {}

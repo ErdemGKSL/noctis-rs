@@ -5,28 +5,63 @@ use noctis::__private::codec::{
     BoundedStr, EncodedId, Field, FieldDecode, MAX_REF_ID_LEN, Parts, PayloadKey, PayloadSource,
     SelectNonce, decode_route, decode_route_verified, encode, encode_id, finish, route_width,
 };
-use noctis::prelude::{PayloadEnum, Route};
+use noctis::prelude::PayloadEnum;
 use noctis::rules::Limits;
 use noctis::ui::{V2Message, validate};
 
-#[derive(Route, Debug, PartialEq)]
-#[route("a")]
+#[derive(::noctis::Button, Debug, PartialEq)]
+#[button("a", defaults(style = Secondary, label = "Go"))]
 struct Exact {
     t: BoundedStr<47>,
     n: u8,
 }
 
-#[derive(Route, Debug, PartialEq)]
-#[route("r", schema = 61, select, signed)]
+impl Exact {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::StringSelectMenu, Debug, PartialEq)]
+#[string_select("r", schema = 61, signed, defaults(placeholder = "Pick"))]
 struct ExactAll {
     t: BoundedStr<42>,
     n: u16,
 }
 
-#[derive(Route, Debug, PartialEq)]
-#[route("abcdefghijklmnopqrstuvwx", by_ref, select, schema = 61)]
+impl ExactAll {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+#[derive(::noctis::StringSelectMenu, Debug, PartialEq)]
+#[string_select(
+    "abcdefghijklmnopqrstuvwx",
+    by_ref,
+    schema = 61,
+    defaults(placeholder = "Pick")
+)]
 struct LongRef {
     s: String,
+}
+
+impl LongRef {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
 }
 
 #[test]
@@ -97,19 +132,27 @@ fn payload_enum_62_variants() {
     assert_eq!(Wide::decode("0"), Ok(Wide::V0));
 }
 
-#[derive(Route)]
-#[route("b.cid")]
+#[derive(::noctis::Button)]
+#[button("b.cid", defaults(style = Secondary, label = "Go"))]
 struct Press {
     n: u8,
 }
 
-impl ::noctis::__private::ui::Handled for Press {}
+impl Press {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 #[test]
 fn cid_02_components_distinct_literal_payloads() {
     let body = noctis::components! {
-        row [ Press { n: 1 }.button(), Press { n: 2 }.button() ],
-        section [ text("a"); accessory = Press { n: 3 }.button() ],
+        row [ Press { n: 1 }.build(), Press { n: 2 }.build() ],
+        section [ text("a"); accessory = Press { n: 3 }.build() ],
     };
     let mut msg = V2Message::new(body);
     validate(&mut msg, &Limits::default()).expect("distinct custom_ids");

@@ -1,6 +1,7 @@
 use noctis::prelude::*;
 
-#[derive(Options)]
+#[derive(SlashCommand)]
+#[command("o", description = "d")]
 struct O {
     #[option(description = "d")]
     a: i64,

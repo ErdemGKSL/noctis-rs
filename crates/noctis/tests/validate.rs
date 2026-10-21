@@ -7,20 +7,27 @@
     reason = "test helpers panic with a message naming the broken invariant"
 )]
 
-use noctis::prelude::*;
 use noctis::rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
 use noctis::ui::{
     ActionRow, Components, Container, CostReport, CreateFlags, LimitWarning, Section, TextDisplay,
     UiError, V2Message, cost, validate,
 };
 
-#[derive(Route)]
-#[route("v.buy")]
+#[derive(::noctis::Button)]
+#[button("v.buy", defaults(style = Secondary, label = "Go"))]
 struct Buy {
     item: u64,
 }
 
-impl ::noctis::__private::ui::Handled for Buy {}
+impl Buy {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 fn violations(r: Result<CostReport, UiError>) -> Vec<Violation> {
     match r {
@@ -38,7 +45,7 @@ fn cv2_08_path_precise_error() {
                 .push(TextDisplay::new("b"))
                 .push(Section::new(
                     [TextDisplay::new("c")],
-                    Buy { item: 1 }.button().label("a".repeat(81)),
+                    Buy { item: 1 }.build().label("a".repeat(81)),
                 )),
         ),
     );
@@ -55,8 +62,8 @@ fn cv2_08_path_precise_error() {
 #[test]
 fn cid_02_duplicate_custom_id() {
     let mut msg = V2Message::new(Components::new().push(ActionRow::buttons([
-        Buy { item: 1 }.button(),
-        Buy { item: 1 }.button(),
+        Buy { item: 1 }.build(),
+        Buy { item: 1 }.build(),
     ])));
     let errs = violations(validate(&mut msg, &Limits::default()));
     assert_eq!(errs.len(), 1);
@@ -75,7 +82,7 @@ fn cv2_08_lenient_truncates() {
     let mut limits = Limits::default();
     limits.mode = LimitMode::Lenient;
     let mut msg = V2Message::new(Components::new().push(ActionRow::buttons([
-        Buy { item: 1 }.button().label("a".repeat(81)),
+        Buy { item: 1 }.build().label("a".repeat(81)),
     ])));
     let report = validate(&mut msg, &limits).expect("truncated to fit");
     assert_eq!(

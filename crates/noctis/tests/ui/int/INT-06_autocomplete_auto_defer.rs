@@ -1,8 +1,22 @@
 use noctis::prelude::*;
 
-#[autocomplete(auto_defer = false)] // [INT-06]
-async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-    Ok(ctx.respond(Vec::new()))
+#[derive(SlashCommand)]
+#[command("find", description = "d")]
+struct Find {
+    #[option(description = "d", autocomplete)]
+    query: String,
+}
+
+impl Find {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+
+    #[autocomplete(query, auto_defer = false)] // [INT-06]
+    async fn query(_ctx: AutocompleteCtx, _typed: &str, _filled: Partial<Self>) -> HandlerResult<Suggestions<String>> {
+        Ok(Suggestions::new())
+    }
 }
 
 fn main() {}

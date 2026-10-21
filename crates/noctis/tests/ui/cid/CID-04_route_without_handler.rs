@@ -1,11 +1,11 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("shop.buy")]
+#[derive(Button)]
+#[button("shop.buy", defaults(style = Primary, label = "Buy"))]
 struct Buy {
     item: u64,
 }
 
 fn main() {
-    let _ = Buy { item: 1 }.button();
+    let _ = Buy { item: 1 }.build();
 }

@@ -1,0 +1,24 @@
+error: `#[handler]` marks a method of a kind-derived struct, and a #[handler] method takes `self` by value; free-function handlers are withdrawn
+         = help: #[derive(Button)] #[button("shop.buy", defaults(style = Primary, label = "Buy"))] struct Buy { item: u64 } impl Buy { #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> { .. } }
+ --> tests/types/handler_on_free_fn.rs:5:10
+  |
+5 | async fn handle(_ctx: ComponentCtx) -> HandlerResult<Responded> {
+  |          ^^^^^^
+
+error: a #[handler] method takes `self` by value
+  --> tests/types/handler_on_free_fn.rs:15:21
+   |
+15 |     async fn handle(&self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+   |                     ^^^^^
+
+error: a #[handler] method must be `async`
+  --> tests/types/handler_on_free_fn.rs:26:5
+   |
+26 |     fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+   |     ^^
+
+error: `#[handler]` takes no arguments; put routing arguments on the kind attribute
+  --> tests/types/handler_on_free_fn.rs:36:15
+   |
+36 |     #[handler(response = update)]
+   |               ^^^^^^^^^^^^^^^^^

@@ -1,5 +1,7 @@
-//! `#[derive(Options)]`: a struct with named fields as a chat-input
-//! command's typed options (FR-10, FR-77, AD-3, AD-4, AD-16).
+//! The options half of `#[derive(SlashCommand)]`: the struct's named fields
+//! as a chat-input command's typed options (FR-10, FR-77, AD-3, AD-4,
+//! AD-16), and the pairing of each `autocomplete` flag with its
+//! `#[autocomplete(field)]` method (OPT-11, maintainer decisions §8).
 //!
 //! Each field's `#[option(..)]` literals are lowered into one
 //! `noctis_rules::command::OptionDecl` per possible option type and checked
@@ -25,11 +27,14 @@ use syn::ext::IdentExt;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, ExprPath, Field, Fields, GenericArgument, Ident,
-    Lit, LitStr, Meta, PathArguments, Token, Type, UnOp,
+    Attribute, DeriveInput, Expr, ExprLit, ExprPath, Field, GenericArgument, Ident, Lit, LitStr,
+    Meta, PathArguments, Token, Type, UnOp,
 };
 
 use crate::common::combine;
+
+/// The error of the withdrawn `autocomplete = path` form.
+const AUTOCOMPLETE_FLAG: &str = "`autocomplete` is a bare flag: write `#[option(.., autocomplete)]` and add `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>`\n  = help: #[derive(SlashCommand)] #[command(\"warn\", description = \"…\")] struct Warn { #[option(description = \"…\", autocomplete)] rule: i64 } impl Warn { #[autocomplete(rule)] async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> { .. } }";
 
 const ARGS: &str = "expected `description`, `rename`, `min_value`, `max_value`, `min_length`, `max_length`, `channel_types`, `autocomplete`, `file_types` or `validate`";
 
@@ -77,7 +82,8 @@ struct Args {
     min_length: Option<usize>,
     max_length: Option<usize>,
     channel_types: Option<Vec<u8>>,
-    autocomplete: Option<ExprPath>,
+    /// The bare `autocomplete` flag.
+    autocomplete: Option<Span>,
     file_types: Option<Vec<String>>,
     validate: Option<ExprPath>,
 }
@@ -335,6 +341,15 @@ fn parse_args(attr: &Attribute) -> syn::Result<Args> {
             ));
         }
         seen.push(name.clone());
+        if name == "autocomplete" {
+            match &meta {
+                Meta::Path(path) => {
+                    args.autocomplete = Some(path.span());
+                    continue;
+                }
+                _ => return Err(syn::Error::new_spanned(&meta, AUTOCOMPLETE_FLAG)),
+            }
+        }
         let Meta::NameValue(nv) = &meta else {
             return Err(syn::Error::new_spanned(
                 &meta,
@@ -350,7 +365,6 @@ fn parse_args(attr: &Attribute) -> syn::Result<Args> {
             "min_length" => args.min_length = Some(length_lit(&name, expr)?),
             "max_length" => args.max_length = Some(length_lit(&name, expr)?),
             "channel_types" => args.channel_types = Some(channel_types_lit(expr)?),
-            "autocomplete" => args.autocomplete = Some(path_arg(&name, expr)?),
             "file_types" => args.file_types = Some(file_types_lit(expr)?),
             _ => args.validate = Some(path_arg(&name, expr)?),
         }
@@ -371,7 +385,7 @@ fn parse_field(field: &Field) -> syn::Result<OptField<'_>> {
     let Some(ident) = field.ident.as_ref() else {
         return Err(syn::Error::new_spanned(
             field,
-            "`derive(Options)` takes a struct with named fields",
+            "`#[derive(SlashCommand)]` needs a struct with named fields or a unit struct",
         ));
     };
     let (ty, required) = match option_inner(&field.ty) {
@@ -638,22 +652,16 @@ fn validator_tokens(field: &OptField<'_>) -> Option<TokenStream> {
     })
 }
 
-/// Expands `#[derive(Options)]`.
-pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
+/// The options half of `#[derive(SlashCommand)]` over the struct's named
+/// `fields` (none for a unit struct): the checks, the `Options` impl, the
+/// `<Struct>Partial` struct and the autocomplete pairing.
+///
+/// # Errors
+///
+/// The expansion errors with the type-dependent `const` checks, as tokens to
+/// emit instead of the derive's other items (which would only add noise).
+pub(crate) fn expand(input: &DeriveInput, fields: &[&Field]) -> Result<TokenStream, TokenStream> {
     let name = &input.ident;
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(named) => &named.named,
-            _ => return Err(not_named(name)),
-        },
-        _ => return Err(not_named(name)),
-    };
-    if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(
-            &input.generics,
-            "an Options struct cannot be generic",
-        ));
-    }
     let mut errors = Vec::new();
     let mut parsed = Vec::new();
     let mut all_parsed = true;
@@ -678,7 +686,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let checks = const_checks(&parsed, &consts);
     if let Err(e) = combine(errors) {
         let e = e.into_compile_error();
-        return Ok(quote!(#e #checks));
+        return Err(quote!(#e #checks));
     }
 
     let core = quote!(::noctis::__private::core);
@@ -697,11 +705,15 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let validators = parsed.iter().filter_map(validator_tokens);
     let partial = partial_tokens(input, &parsed);
     let partial_name = partial_ident(name);
-    let autocomplete = autocomplete_tokens(&parsed);
+    let (table, pairing) = autocomplete_tokens(name, &parsed);
+    // `Self {}` also builds a unit struct.
+    let build = quote!(Self { #(#inits),* });
     Ok(quote! {
         #checks
 
         #partial
+
+        #pairing
 
         #[automatically_derived]
         impl #core::Options for #name {
@@ -715,7 +727,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 input: &#core::CommandInput,
             ) -> ::core::result::Result<Self, #core::OptionError> {
                 let _ = input;
-                ::core::result::Result::Ok(Self { #(#inits),* })
+                ::core::result::Result::Ok(#build)
             }
 
             fn validate(
@@ -727,7 +739,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 ::core::result::Result::Ok(())
             }
 
-            #autocomplete
+            #table
         }
     })
 }
@@ -745,7 +757,7 @@ fn partial_tokens(input: &DeriveInput, fields: &[OptField<'_>]) -> TokenStream {
     let vis = &input.vis;
     let partial = partial_ident(name);
     let doc = format!(
-        " Every option of [`{}`] as an `Option` (OPT-12); what autocomplete handlers get.",
+        " Every option of [`{}`] as an `Option` (OPT-12); what its `#[autocomplete(field)]` methods get as `filled`.",
         name.unraw()
     );
     let decls = fields.iter().map(|f| {
@@ -784,43 +796,99 @@ fn partial_tokens(input: &DeriveInput, fields: &[OptField<'_>]) -> TokenStream {
     }
 }
 
-/// `Options::autocomplete`, linking each `autocomplete = path` field to its
-/// handler; nothing when no field has one.
-fn autocomplete_tokens(fields: &[OptField<'_>]) -> TokenStream {
+/// The OPT-11 text of a flagged field without a method.
+fn missing_method(option: &str, field: &str, name: &str) -> String {
+    format!(
+        "[OPT-11] option `{option}` is flagged `autocomplete`, but `{name}` has no `#[autocomplete({field})]` method\n  = help: add `#[autocomplete({field})] async fn {field}(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` to an `impl {name}` block, or remove the flag"
+    )
+}
+
+/// The `Options::__autocomplete` method table (nothing when no field is
+/// flagged) and the pairing items: per flagged field, the fallback const and
+/// binding of a hidden per-struct trait (an `#[autocomplete(field)]` method's
+/// inherent items shadow them), the OPT-11 check reading the const, and the
+/// `__AutocompleteField<{hash}>` impl naming the field's type.
+fn autocomplete_tokens(name: &Ident, fields: &[OptField<'_>]) -> (TokenStream, TokenStream) {
     let core = quote!(::noctis::__private::core);
-    let arms: Vec<TokenStream> = fields
+    let flagged: Vec<&OptField<'_>> = fields
         .iter()
-        .filter_map(|f| {
-            let path = f.args.autocomplete.as_ref()?;
-            let option = &f.name;
-            let handler = quote_spanned! {path.span()=>
-                #core::__autocomplete_for::<Self, _>(#path)
-            };
-            Some(quote!(#option => ::core::option::Option::Some(#handler),))
-        })
+        .filter(|f| f.args.autocomplete.is_some())
         .collect();
-    if arms.is_empty() {
-        return TokenStream::new();
+    if flagged.is_empty() {
+        return (TokenStream::new(), TokenStream::new());
     }
-    quote! {
-        fn autocomplete(
-            option: &str,
-        ) -> ::core::option::Option<#core::AutocompleteHandler<Self>> {
+    let struct_name = name.unraw().to_string();
+    let fallback = Ident::new(&format!("__NoctisAutocomplete{struct_name}"), name.span());
+    let mut arms = Vec::new();
+    let mut items = Vec::new();
+    let mut checks = Vec::new();
+    let mut impls = Vec::new();
+    for f in flagged {
+        let field = f.ident.unraw().to_string();
+        let (flag, binding) = crate::autocomplete::names(&field, f.ident.span());
+        let option = &f.name;
+        arms.push(quote!(#option => ::core::option::Option::Some(<Self>::#binding()),));
+        items.push(quote! {
+            #[allow(non_upper_case_globals)]
+            const #flag: ::core::primitive::bool = false;
+            #[allow(non_snake_case)]
+            fn #binding() -> #core::__AutocompleteMethod {
+                #core::__AutocompleteMethod::__missing(#field)
+            }
+        });
+        let text = panic_lit(&missing_method(option, &field, &struct_name));
+        let span = f.args.autocomplete.unwrap_or_else(|| f.ident.span());
+        checks.push(quote_spanned! {span=>
+            const _: () = if !<#name>::#flag {
+                ::core::panic!(#text)
+            };
+        });
+        let hash = crate::common::fnv1a64(&field);
+        let ty = f.ty;
+        impls.push(quote! {
+            #[automatically_derived]
+            impl #core::__AutocompleteField<#hash> for #name {
+                type Value = #ty;
+            }
+        });
+    }
+    let table = quote! {
+        fn __autocomplete(
+            option: &::core::primitive::str,
+        ) -> ::core::option::Option<#core::__AutocompleteMethod> {
             match option {
                 #(#arms)*
                 _ => ::core::option::Option::None,
             }
         }
-    }
-}
+    };
+    let pairing = quote! {
+        #[doc(hidden)]
+        #[allow(non_camel_case_types)]
+        trait #fallback {
+            #(#items)*
+        }
 
-fn not_named(name: &Ident) -> syn::Error {
-    syn::Error::new_spanned(name, "`derive(Options)` takes a struct with named fields")
+        impl #fallback for #name {}
+
+        #(#checks)*
+
+        #(#impls)*
+    };
+    (table, pairing)
 }
 
 #[cfg(test)]
 mod tests {
+    use syn::{Data, Fields};
+
     use super::*;
+
+    /// The options half over a checked struct, like the derive.
+    fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
+        let fields = crate::common::kind_fields(input, "SlashCommand")?;
+        Ok(super::expand(input, &fields).unwrap_or_else(|errors| errors))
+    }
 
     fn run(input: TokenStream) -> String {
         let input: DeriveInput = syn::parse2(input).unwrap_or_else(|e| panic!("{e}"));
@@ -948,9 +1016,6 @@ mod tests {
                 struct T(i64);
             ),
             quote!(
-                struct U;
-            ),
-            quote!(
                 enum E {
                     A,
                 }
@@ -961,7 +1026,9 @@ mod tests {
                 }
             ),
         ] {
-            assert!(run(input).contains("`derive(Options)` takes a struct with named fields"));
+            assert!(run(input).contains(
+                "`#[derive(SlashCommand)]` needs a struct with named fields or a unit struct"
+            ));
         }
         for input in [
             quote!(
@@ -983,7 +1050,9 @@ mod tests {
                 }
             ),
         ] {
-            assert!(run(input).contains("an Options struct cannot be generic"));
+            assert!(run(input).contains(
+                "`#[derive(SlashCommand)]` needs a struct with named fields or a unit struct"
+            ));
         }
     }
 
@@ -1303,7 +1372,7 @@ mod tests {
         );
         let texts = const_texts(quote! {
             struct S {
-                #[option(description = "d", channel_types = [GuildText, ChannelType::GuildVoice], autocomplete = f)]
+                #[option(description = "d", channel_types = [GuildText, ChannelType::GuildVoice], autocomplete)]
                 a: String,
             }
         });
@@ -1329,7 +1398,7 @@ mod tests {
     fn const_items_are_generated() {
         let out = run(quote! {
             struct S {
-                #[option(description = "d", min_length = 1, autocomplete = suggest)]
+                #[option(description = "d", min_length = 1, autocomplete)]
                 a: i64,
             }
         });
@@ -1345,7 +1414,9 @@ mod tests {
             "{out}"
         );
         assert!(
-            out.contains("\"a\" => :: core :: option :: Option :: Some (:: noctis :: __private :: core :: __autocomplete_for :: < Self , _ > (suggest)) ,"),
+            out.contains(
+                "\"a\" => :: core :: option :: Option :: Some (< Self > :: __noctis_ac_a ()) ,"
+            ),
             "{out}"
         );
         assert!(out.contains("type Partial = SPartial ;"), "{out}");
@@ -1369,7 +1440,7 @@ mod tests {
         assert!(out.contains("impl :: noctis :: __private :: core :: PartialOptions for PrefixPartial { type Options = Prefix ;"), "{out}");
         assert!(out.contains("limit : :: noctis :: __private :: core :: __options :: partial :: < i64 > (input , \"max\")"), "{out}");
         assert!(out.contains("type Partial = PrefixPartial ;"), "{out}");
-        assert!(!out.contains("fn autocomplete"), "{out}");
+        assert!(!out.contains("fn __autocomplete"), "{out}");
     }
 
     #[test]
@@ -1387,5 +1458,54 @@ mod tests {
     #[test]
     fn panic_text_escapes_braces() {
         assert_eq!(panic_lit("a {b}").to_string(), "\"a {{b}}\"");
+    }
+
+    /// Story 6.11 Matrix 14, 15 and 22: the bare flag, its pairing items,
+    /// and the withdrawn `autocomplete = path`.
+    #[test]
+    fn autocomplete_pairing() {
+        let out = run(quote! {
+            struct Warn {
+                #[option(description = "d", autocomplete)]
+                rule: i64,
+                #[option(description = "d", autocomplete, rename = "why")]
+                reason: Option<String>,
+            }
+        });
+        assert!(out.contains("trait __NoctisAutocompleteWarn"), "{out}");
+        assert!(
+            out.contains("const __NOCTIS_AC_rule : :: core :: primitive :: bool = false"),
+            "{out}"
+        );
+        assert!(
+            out.contains("__AutocompleteMethod :: __missing (\"rule\")"),
+            "{out}"
+        );
+        assert!(out.contains("if ! < Warn > :: __NOCTIS_AC_rule"), "{out}");
+        assert!(out.contains("[OPT-11] option `rule` is flagged `autocomplete`, but `Warn` has no `#[autocomplete(rule)]` method"), "{out}");
+        let hash = crate::common::fnv1a64("reason");
+        assert!(
+            out.contains(&format!(
+                "__AutocompleteField < {hash}u64 > for Warn {{ type Value = String ; }}"
+            )),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "\"why\" => :: core :: option :: Option :: Some (< Self > :: __noctis_ac_reason ())"
+            ),
+            "{out}"
+        );
+        let err = run(quote! {
+            struct Warn {
+                #[option(description = "d", autocomplete = withdrawn_path)]
+                rule: i64,
+            }
+        });
+        assert!(
+            err.contains("`autocomplete` is a bare flag: write `#[option(.., autocomplete)]`"),
+            "{err}"
+        );
+        assert!(err.contains("= help: #[derive(SlashCommand)]"), "{err}");
     }
 }

@@ -1,5 +1,5 @@
 //! `#[derive(Payload)]`: `Payload` and `PayloadDecode` for a struct, also
-//! the Payload half of `#[derive(Route)]`.
+//! the Payload half of the component and modal kind derives.
 
 use noctis_rules::RuleId;
 use proc_macro2::TokenStream;

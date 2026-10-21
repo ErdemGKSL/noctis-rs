@@ -1,0 +1,54 @@
+error[E0277]: this command's Pattern has a group: take `path: ConfigPath` after `ctx`
+  --> tests/types/command_path_param.rs:10:14
+   |
+10 |     async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Responded> {
+   |              ^^^^^^ the path parameter is missing
+   |
+help: the trait `noctis::__private::noctis_core::kind::__SinglePath` is not implemented for `Config`
+  --> tests/types/command_path_param.rs:6:1
+   |
+ 6 | struct Config;
+   | ^^^^^^^^^^^^^
+   = note: `#[derive(SlashCommand)]` generates `ConfigPath` for a Pattern with a group
+help: the trait `noctis::__private::noctis_core::kind::__SinglePath` is implemented for `Ping`
+  --> tests/types/command_path_param.rs:15:10
+   |
+15 | #[derive(SlashCommand)]
+   |          ^^^^^^^^^^^^
+   = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, Config, _>`
+   = note: this error originates in the derive macro `SlashCommand` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: this command has a single path: remove the path parameter
+  --> tests/types/command_path_param.rs:21:14
+   |
+21 |     async fn handle(self, _ctx: CommandCtx, _path: ConfigPath) -> HandlerResult<Responded> {
+   |              ^^^^^^ no path parameter for a single Command Path
+   |
+help: the trait `noctis::__private::noctis_core::kind::__PatternPaths` is not implemented for `Ping`
+  --> tests/types/command_path_param.rs:17:1
+   |
+17 | struct Ping;
+   | ^^^^^^^^^^^
+help: the following other types implement trait `noctis::__private::noctis_core::kind::__PatternPaths`
+  --> tests/types/command_path_param.rs:4:10
+   |
+ 4 | #[derive(SlashCommand)]
+   |          ^^^^^^^^^^^^ `Config`
+...
+26 | #[derive(SlashCommand)]
+   |          ^^^^^^^^^^^^ `Other`
+   = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<ConfigPath>, Ping, _>`
+   = note: this error originates in the derive macro `SlashCommand` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0271]: type mismatch resolving `<Other as __PatternPaths>::Path == ConfigPath`
+  --> tests/types/command_path_param.rs:32:14
+   |
+32 |     async fn handle(self, _ctx: CommandCtx, _path: ConfigPath) -> HandlerResult<Responded> {
+   |              ^^^^^^ type mismatch resolving `<Other as __PatternPaths>::Path == ConfigPath`
+   |
+note: expected this to be `ConfigPath`
+  --> tests/types/command_path_param.rs:28:8
+   |
+28 | struct Other;
+   |        ^^^^^
+   = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__CX<ConfigPath>, Other, _>`

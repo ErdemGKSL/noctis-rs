@@ -1,5 +1,5 @@
-//! Support items for the `noctis` derives (`#[derive(Route)]`,
-//! `#[derive(Payload)]`, `#[derive(PayloadEnum)]`): the compile-time length
+//! Support items for the `noctis` derives (the component and modal kind
+//! derives, `#[derive(Payload)]`, `#[derive(PayloadEnum)]`): the compile-time length
 //! proof (CID-01), `PayloadEnum` digits and the Route runtime declaration.
 //!
 //! Every item is `#[doc(hidden)]`: macro output names them through
@@ -251,7 +251,7 @@ impl Msg {
 }
 
 /// Fails const evaluation when Route `R` can produce an id longer than 100
-/// characters (CID-01); `#[derive(Route)]` emits
+/// characters (CID-01); the kind derives emit
 /// `const _: () = assert_fits::<R>();`.
 ///
 /// # Panics
@@ -269,7 +269,7 @@ pub const fn assert_fits<R: Route>() {
     msg.push(width.route.as_str());
     match width.total() {
         None => {
-            msg.push("` has unbounded fields\n  = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to #[route]");
+            msg.push("` has unbounded fields\n  = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to the kind attribute");
         }
         Some(total) => {
             msg.push("` can exceed 100 characters: worst case ");
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "[CID-01] route `report.reason` has unbounded fields\n  = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to #[route]"
+        expected = "[CID-01] route `report.reason` has unbounded fields\n  = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to the kind attribute"
     )]
     fn cid_01_assert_fits_panics_unbounded() {
         assert_fits::<Report>();

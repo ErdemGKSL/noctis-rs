@@ -12,14 +12,20 @@ use core::fmt;
 use noctis_codec::{FieldWriter, Parts, Payload, Route, RouteId, RouteShape, SelectNonce};
 use noctis_rules::len::discord_len;
 use noctis_rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
+use noctis_ui::__macro::{ComponentValue, build_modal};
 use noctis_ui::{
     Checkbox, CheckboxGroup, CostReport, FileUpload, Handled, LimitWarning, Modal,
     ModalChannelSelect, ModalInput, ModalLabel, ModalMentionableSelect, ModalOption,
-    ModalRoleSelect, ModalStringSelect, ModalUserSelect, RadioGroup, RouteComponents, SelectOption,
-    TextDisplay, TextInput, TextInputStyle, UiError, cost, validate,
+    ModalRoleSelect, ModalStringSelect, ModalUserSelect, RadioGroup, SelectOption, TextDisplay,
+    TextInput, TextInputStyle, UiError, cost, validate,
 };
 use serde_json::Value;
 use twilight_model::id::Id;
+
+/// What `#[derive(Modal)]`'s `.build()` expands to, before the inputs.
+fn modal<R: ComponentValue>(route: R, title: impl Into<std::borrow::Cow<'static, str>>) -> Modal {
+    build_modal::<R>(route, title)
+}
 
 /// A hand-written handled Route without fields whose Payload is itself.
 macro_rules! route {
@@ -71,12 +77,12 @@ fn label(input: impl ModalInput) -> ModalLabel {
 
 /// A modal titled "T" with one Label "L" around `input`.
 fn one(input: impl ModalInput) -> Modal {
-    Save.modal("T").push(label(input))
+    modal(Save, "T").push(label(input))
 }
 
 /// `n` Labels, each a Text Input keyed `k<i>`.
 fn labels(n: usize) -> Modal {
-    (0..n).fold(Save.modal("T"), |m, i| {
+    (0..n).fold(modal(Save, "T"), |m, i| {
         m.push(label(short(format!("k{i}"))))
     })
 }
@@ -153,7 +159,7 @@ fn objects(value: &Value, out: &mut Vec<serde_json::Map<String, Value>>) {
 const REPORT: &str = "Tell us what happened.";
 
 fn full() -> Modal {
-    Save.modal("Report")
+    modal(Save, "Report")
         .push(TextDisplay::new(REPORT))
         .push(
             ModalLabel::new(
@@ -213,7 +219,7 @@ fn mod_02_six_top_level() {
 
 #[test]
 fn mod_02_empty_modal() {
-    let errs = fails_at(Save.modal("T"), RuleId::MOD_02, "components");
+    let errs = fails_at(modal(Save, "T"), RuleId::MOD_02, "components");
     assert_eq!(errs[0].actual, Actual::Count(0));
 }
 
@@ -221,7 +227,7 @@ fn mod_02_empty_modal() {
 
 #[test]
 fn mod_01_title_bounds() {
-    let titled = |t: String| Save.modal(t).push(label(short("k")));
+    let titled = |t: String| modal(Save, t).push(label(short("k")));
     passes(titled(a(45)));
     fails_at(titled(a(46)), RuleId::MOD_01, "title");
     fails_at(titled(String::new()), RuleId::MOD_01, "title");
@@ -229,7 +235,7 @@ fn mod_01_title_bounds() {
 
 #[test]
 fn mod_01_title_unicode() {
-    let titled = |t: String| Save.modal(t).push(label(short("k")));
+    let titled = |t: String| modal(Save, t).push(label(short("k")));
     passes(titled("é".repeat(45)));
     let errs = fails_at(titled("😀".repeat(23)), RuleId::MOD_01, "title");
     assert_eq!(errs[0].actual, Actual::Count(46));
@@ -239,7 +245,7 @@ fn mod_01_title_unicode() {
 
 #[test]
 fn mod_04_label_text_bounds() {
-    let with = |t: String| Save.modal("T").push(ModalLabel::new(t, short("k")));
+    let with = |t: String| modal(Save, "T").push(ModalLabel::new(t, short("k")));
     passes(with(a(45)));
     fails_at(with(a(46)), RuleId::MOD_04, "label[0].label");
     fails_at(with(String::new()), RuleId::MOD_04, "label[0].label");
@@ -247,7 +253,7 @@ fn mod_04_label_text_bounds() {
 
 #[test]
 fn mod_04_label_description_bounds() {
-    let with = |d: String| Save.modal("T").push(label(short("k")).description(d));
+    let with = |d: String| modal(Save, "T").push(label(short("k")).description(d));
     passes(with(a(100)));
     fails_at(with(a(101)), RuleId::MOD_04, "label[0].description");
     passes(with(String::new()));
@@ -481,7 +487,7 @@ fn cv2_09_modal_select_default_values() {
     fails_at(one(channels()), RuleId::CV2_09, path);
     passes(one(channels().max_values(3)));
     passes(
-        Save.modal("T")
+        modal(Save, "T")
             .push(label(ModalRoleSelect::new("r")))
             .push(label(ModalMentionableSelect::new("m"))),
     );
@@ -504,8 +510,7 @@ fn cid_01_key_length() {
 
 #[test]
 fn cid_02_duplicate_keys() {
-    let m = Save
-        .modal("T")
+    let m = modal(Save, "T")
         .push(label(short("a")))
         .push(label(Checkbox::new("a")));
     let errs = errs(m);
@@ -519,8 +524,7 @@ fn cid_02_duplicate_keys() {
 
 #[test]
 fn cid_02_duplicate_select_keys() {
-    let m = Save
-        .modal("T")
+    let m = modal(Save, "T")
         .push(label(short("a")))
         .push(label(ModalStringSelect::new("a", select_opts(1))))
         .push(label(ModalUserSelect::new("a")));
@@ -535,8 +539,7 @@ fn cid_02_duplicate_select_keys() {
 
 #[test]
 fn cid_02_keys_after_text_display() {
-    let m = Save
-        .modal("T")
+    let m = modal(Save, "T")
         .push(TextDisplay::new("intro"))
         .push(label(short("a")))
         .push(label(Checkbox::new("a")));
@@ -552,12 +555,12 @@ fn cid_02_keys_after_text_display() {
 #[test]
 fn cv2_04_modal_text_display_total() {
     passes(
-        Save.modal("T")
+        modal(Save, "T")
             .push(TextDisplay::new(a(2000)))
             .push(TextDisplay::new(a(2000))),
     );
     let errs = fails_at(
-        Save.modal("T")
+        modal(Save, "T")
             .push(TextDisplay::new(a(2000)))
             .push(TextDisplay::new(a(2001))),
         RuleId::CV2_04,
@@ -569,8 +572,7 @@ fn cv2_04_modal_text_display_total() {
 
 #[test]
 fn cv2_04_modal_lenient_truncates_text_displays() {
-    let mut m = Save
-        .modal("T")
+    let mut m = modal(Save, "T")
         .push(TextDisplay::new(a(3000)))
         .push(label(short("k")))
         .push(TextDisplay::new(a(3000)));
@@ -603,7 +605,7 @@ fn mod_07_checkbox_json() {
 
 #[test]
 fn mod_01_lenient_truncates() {
-    let mut m = Save.modal(a(50)).push(ModalLabel::new(
+    let mut m = modal(Save, a(50)).push(ModalLabel::new(
         a(50),
         RadioGroup::new(
             "r",
@@ -648,8 +650,7 @@ fn mod_01_lenient_truncates() {
 
 #[test]
 fn mod_04_lenient_truncates_every_site() {
-    let mut m = Save
-        .modal("T")
+    let mut m = modal(Save, "T")
         .push(ModalLabel::new("L", short("t").placeholder(a(101))).description(a(101)))
         .push(label(
             ModalStringSelect::new("s", [SelectOption::new(a(101), "v").description(a(101))])
@@ -700,8 +701,7 @@ fn mod_04_lenient_truncates_every_site() {
 
 #[test]
 fn mod_04_lenient_path_after_text_display() {
-    let mut m = Save
-        .modal("T")
+    let mut m = modal(Save, "T")
         .push(TextDisplay::new("intro"))
         .push(ModalLabel::new(a(50), short("k")));
     let report = validate(&mut m, &lenient()).expect("lenient fits");
@@ -716,7 +716,7 @@ fn mod_04_lenient_path_after_text_display() {
 #[test]
 fn mod_02_lenient_structural_still_fails() {
     let l = lenient();
-    let errs = errs_with(Save.modal("").push(label(short("k"))), &l);
+    let errs = errs_with(modal(Save, "").push(label(short("k"))), &l);
     assert_eq!(rules(&errs), [RuleId::MOD_01]);
     let errs = errs_with(labels(6), &l);
     assert_eq!(rules(&errs), [RuleId::MOD_02]);
@@ -726,8 +726,7 @@ fn mod_02_lenient_structural_still_fails() {
 
 #[test]
 fn mod_01_violation_order() {
-    let m = Save
-        .modal(a(46))
+    let m = modal(Save, a(46))
         .push(label(short("")))
         .push(label(short("a")))
         .push(label(short("a")))
@@ -753,7 +752,7 @@ fn mod_01_violation_order() {
 
 #[test]
 fn mod_08_unresolved_modal_id() {
-    let mut m = Picked.modal("T").push(label(short("k")));
+    let mut m = modal(Picked, "T").push(label(short("k")));
     let err = serde_json::to_value(&m).expect_err("unresolved");
     assert!(err.to_string().contains("form.pick"), "{err}");
     let nonce = SelectNonce::new(1).expect("in range");
@@ -787,7 +786,7 @@ fn mod_02_cost() {
 
 #[test]
 fn mod_01_strict_never_mutates() {
-    let mut m = Save.modal(a(50)).push(label(short("k")));
+    let mut m = modal(Save, a(50)).push(label(short("k")));
     assert!(validate(&mut m, &strict()).is_err());
     assert_eq!(m.title(), a(50));
 }

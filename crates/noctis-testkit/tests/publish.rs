@@ -39,34 +39,70 @@ fn guild_path(guild: u64) -> String {
     format!("/applications/7/guilds/{guild}/commands")
 }
 
+#[derive(SlashCommand)]
 #[command("ping", description = "Pong")]
-async fn ping(_ctx: CommandCtx) -> HandlerResult<Components> {
-    unreachable!("never invoked")
+struct Ping;
+
+impl Ping {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        unreachable!("never invoked")
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("cfg", description = "Configure")]
-async fn cfg(_ctx: CommandCtx) -> HandlerResult<Components> {
-    unreachable!("never invoked")
+struct Cfg;
+
+impl Cfg {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        unreachable!("never invoked")
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("ping", description = "Pong", contexts = [Guild])]
-async fn ping_in_guilds(_ctx: CommandCtx) -> HandlerResult<Components> {
-    unreachable!("never invoked")
+struct PingInGuilds;
+
+impl PingInGuilds {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        unreachable!("never invoked")
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("admin", description = "Admin tools", guilds = [42])]
-async fn admin(_ctx: CommandCtx) -> HandlerResult<Components> {
-    unreachable!("never invoked")
+struct Admin;
+
+impl Admin {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        unreachable!("never invoked")
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("ping", description = "Guild pong", guilds = [42])]
-async fn guild_ping(_ctx: CommandCtx) -> HandlerResult<Components> {
-    unreachable!("never invoked")
+struct GuildPing;
+
+impl GuildPing {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        unreachable!("never invoked")
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("me", description = "Mine", integration_types = [UserInstall])]
-async fn me(_ctx: CommandCtx) -> HandlerResult<Components> {
-    unreachable!("never invoked")
+struct Me;
+
+impl Me {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+        unreachable!("never invoked")
+    }
 }
 
 // ---- capture ----
@@ -227,7 +263,7 @@ fn names(body: &Value) -> Vec<&str> {
 #[tokio::test(flavor = "multi_thread")]
 async fn publish_sends_guild_commands_only_to_their_guilds() {
     let (http, _) = fake().await;
-    let app = app(&http, Module::new("m").add(ping()).add(admin()));
+    let app = app(&http, Module::new("m").add::<Ping>().add::<Admin>());
     let report = app.publish(PublishScope::Global).await.unwrap();
     assert_eq!(
         requests(&http),
@@ -265,7 +301,7 @@ async fn publish_skips_equal_remote() {
             "description_localizations": null, "name_localizations": null,
         }]),
     );
-    let app = app(&http, Module::new("m").add(ping()));
+    let app = app(&http, Module::new("m").add::<Ping>());
     let report = app.publish(PublishScope::Global).await.unwrap();
     assert_eq!(
         requests(&http),
@@ -296,7 +332,7 @@ async fn publish_writes_the_diff_once() {
             launch,
         ]),
     );
-    let app = app(&http, Module::new("m").add(ping()).add(cfg()));
+    let app = app(&http, Module::new("m").add::<Ping>().add::<Cfg>());
     let report = app.publish(PublishScope::Global).await.unwrap();
     let target = &report.targets()[0];
     assert_eq!(
@@ -322,7 +358,7 @@ async fn publish_writes_the_diff_once() {
 #[tokio::test(flavor = "multi_thread")]
 async fn reg_05_dry_run_reports_creates() {
     let (http, _) = fake().await;
-    let app = app(&http, Module::new("m").add(ping()).add(cfg()));
+    let app = app(&http, Module::new("m").add::<Ping>().add::<Cfg>());
     let report = app
         .publish(PublishScope::Global)
         .dry_run(true)
@@ -339,7 +375,7 @@ async fn reg_05_dry_run_reports_creates() {
     );
 
     http.clear_requests();
-    let app = self::app(&http, Module::new("m").add(ping()));
+    let app = self::app(&http, Module::new("m").add::<Ping>());
     app.run_with_args(["--publish", "--dry-run"]).await.unwrap();
     assert_eq!(
         requests(&http),
@@ -351,7 +387,7 @@ async fn reg_05_dry_run_reports_creates() {
 #[tokio::test(flavor = "multi_thread")]
 async fn publish_guild_mirrors_global_commands() {
     let (http, _) = fake().await;
-    let app = app(&http, Module::new("m").add(ping_in_guilds()).add(admin()));
+    let app = app(&http, Module::new("m").add::<PingInGuilds>().add::<Admin>());
     app.run_with_args(["--publish-guild", "42"]).await.unwrap();
     assert_eq!(
         requests(&http),
@@ -375,7 +411,7 @@ async fn publish_guild_mirrors_global_commands() {
 #[tokio::test(flavor = "multi_thread")]
 async fn publish_guild_reports_name_clash() {
     let (http, _) = fake().await;
-    let app = app(&http, Module::new("m").add(ping()).add(guild_ping()));
+    let app = app(&http, Module::new("m").add::<Ping>().add::<GuildPing>());
     let error = app
         .publish(PublishScope::Guild(Id::new(42)))
         .await
@@ -392,7 +428,7 @@ async fn publish_guild_reports_name_clash() {
 #[tokio::test(flavor = "multi_thread")]
 async fn meta_04_blocks_publish_before_put() {
     let (http, _) = fake().await;
-    let app = app(&http, Module::new("m").add(me()));
+    let app = app(&http, Module::new("m").add::<Me>());
     for dry_run in [false, true] {
         let error = app
             .publish(PublishScope::Global)
@@ -413,7 +449,7 @@ async fn meta_04_blocks_publish_before_put() {
     // No `integration_types_config` at all: only guild install.
     let http = FakeDiscordHttp::start().await.unwrap();
     serve(&http, &json!({"id": "7"}), &Remote::default(), &[]);
-    let app = self::app(&http, Module::new("m").add(me()));
+    let app = self::app(&http, Module::new("m").add::<Me>());
     assert!(matches!(
         app.publish(PublishScope::Global).await,
         Err(PublishError::IntegrationTypeNotEnabled { .. })
@@ -423,7 +459,7 @@ async fn meta_04_blocks_publish_before_put() {
     let http = FakeDiscordHttp::start().await.unwrap();
     let both = json!({"id": "7", "integration_types_config": {"0": {}, "1": {}}});
     serve(&http, &both, &Remote::default(), &[]);
-    let app = self::app(&http, Module::new("m").add(me()));
+    let app = self::app(&http, Module::new("m").add::<Me>());
     assert!(app.publish(PublishScope::Global).await.unwrap().wrote());
 }
 
@@ -438,7 +474,7 @@ async fn publish_clear_deletes() {
             {"type": 3, "name": "B"},
         ]),
     );
-    let app = app(&http, Module::new("m").add(ping()));
+    let app = app(&http, Module::new("m").add::<Ping>());
     let report = app.publish(PublishScope::Global).clear(true).await.unwrap();
     assert_eq!(
         report.targets()[0].diff(),
@@ -454,7 +490,7 @@ async fn publish_clear_deletes() {
     );
 
     http.clear_requests();
-    let app = self::app(&http, Module::new("m").add(ping()));
+    let app = self::app(&http, Module::new("m").add::<Ping>());
     remote
         .0
         .lock()
@@ -478,7 +514,7 @@ async fn publish_http_errors() {
             &json!({"message": "401", "code": 0}),
         ),
     );
-    let app = app(&http, Module::new("m").add(ping()));
+    let app = app(&http, Module::new("m").add::<Ping>());
     assert!(matches!(
         app.publish(PublishScope::Global).await,
         Err(PublishError::Rejected { status: 401, ref route, .. }) if route == "GET /applications/@me"
@@ -493,7 +529,7 @@ async fn publish_http_errors() {
             &json!({"message": "boom"}),
         ),
     );
-    let app = self::app(&http, Module::new("m").add(ping()));
+    let app = self::app(&http, Module::new("m").add::<Ping>());
     assert!(matches!(
         app.publish(PublishScope::Global).await,
         Err(PublishError::Rejected {
@@ -512,7 +548,7 @@ async fn publish_http_errors() {
             &json!({"message": "Invalid Form Body", "code": 50035}),
         ),
     );
-    let app = self::app(&http, Module::new("m").add(ping()).add(admin()));
+    let app = self::app(&http, Module::new("m").add::<Ping>().add::<Admin>());
     let error = app.run_with_args(["--publish"]).await.unwrap_err();
     assert!(matches!(
         error,
@@ -526,7 +562,7 @@ async fn publish_http_errors() {
     assert!(!requests(&http).iter().any(|r| r.contains("/guilds/")));
 
     let (http, _) = fake().await;
-    let app = self::app(&http, Module::new("m").add(ping()));
+    let app = self::app(&http, Module::new("m").add::<Ping>());
     drop(http);
     assert!(matches!(
         app.publish(PublishScope::Global).await,
@@ -543,7 +579,7 @@ async fn publish_rejects_bad_bodies() {
         GLOBAL,
         FakeResponse::json(StatusCode::OK, &json!({})),
     );
-    let app = app(&http, Module::new("m").add(ping()));
+    let app = app(&http, Module::new("m").add::<Ping>());
     assert!(matches!(
         app.publish(PublishScope::Global).await,
         Err(PublishError::InvalidResponse { .. })
@@ -555,7 +591,7 @@ async fn publish_rejects_bad_bodies() {
         GLOBAL,
         FakeResponse::new(StatusCode::OK, "nope"),
     );
-    let app = self::app(&http, Module::new("m").add(ping()));
+    let app = self::app(&http, Module::new("m").add::<Ping>());
     assert!(matches!(
         app.publish(PublishScope::Global).await,
         Err(PublishError::InvalidResponse { .. })
@@ -567,7 +603,7 @@ async fn publish_rejects_bad_bodies() {
         APP,
         FakeResponse::json(StatusCode::OK, &json!({"name": "bot"})),
     );
-    let app = self::app(&http, Module::new("m").add(ping()));
+    let app = self::app(&http, Module::new("m").add::<Ping>());
     assert!(matches!(
         app.publish(PublishScope::Global).await,
         Err(PublishError::InvalidResponse { ref route, .. }) if route == "GET /applications/@me"
@@ -582,7 +618,7 @@ async fn cli_errors_send_nothing() {
     builder
         .runtime(&Runtime::for_test())
         .http_proxy(http.url())
-        .module(Module::new("m").add(ping()));
+        .module(Module::new("m").add::<Ping>());
     let app = builder.build().unwrap();
     assert!(matches!(
         app.run_with_args(["--publish"]).await,
@@ -612,7 +648,7 @@ async fn cli_errors_send_nothing() {
             },
         ),
     ] {
-        let app = self::app(&http, Module::new("m").add(ping()));
+        let app = self::app(&http, Module::new("m").add::<Ping>());
         match app.run_with_args(args).await {
             Err(noctis::Error::Cli(error)) => assert_eq!(error, expected),
             other => panic!("{other:?}"),
@@ -625,14 +661,14 @@ async fn cli_errors_send_nothing() {
 #[tokio::test(flavor = "multi_thread")]
 async fn publish_guild_uses_the_dev_guild() {
     let (http, _) = fake().await;
-    let app = app(&http, Module::new("m").add(ping()));
+    let app = app(&http, Module::new("m").add::<Ping>());
     assert!(matches!(
         app.run_with_args(["--publish-guild"]).await,
         Err(noctis::Error::Cli(CliError::MissingDevGuild))
     ));
     assert!(requests(&http).is_empty());
 
-    let app = app_with(&http, Module::new("m").add(ping()), |b| {
+    let app = app_with(&http, Module::new("m").add::<Ping>(), |b| {
         b.dev_guild(Id::new(9));
     });
     app.run_with_args(["--publish-guild", "--dry-run"])
@@ -645,7 +681,7 @@ async fn publish_guild_uses_the_dev_guild() {
 
     // An explicit id wins over the configured dev guild.
     http.clear_requests();
-    let app = app_with(&http, Module::new("m").add(ping()), |b| {
+    let app = app_with(&http, Module::new("m").add::<Ping>(), |b| {
         b.dev_guild(Id::new(9));
     });
     app.run_with_args(["--publish-guild", "42", "--dry-run"])
@@ -675,7 +711,7 @@ async fn start_run(
     tokio::task::JoinHandle<Result<(), noctis::Error>>,
 ) {
     let gw = FakeGateway::start().await.unwrap();
-    let app = app_with(http, Module::new("m").add(ping()), |b| {
+    let app = app_with(http, Module::new("m").add::<Ping>(), |b| {
         b.gateway_url(gw.url());
         configure(b);
     });
@@ -739,7 +775,7 @@ async fn publish_runs_in_its_span() {
     let capture = capture();
     let http = FakeDiscordHttp::start().await.unwrap();
     serve(&http, &application(), &Remote::default(), &[77]);
-    let app = app(&http, Module::new("m").add(cfg()));
+    let app = app(&http, Module::new("m").add::<Cfg>());
     app.publish(PublishScope::Guild(Id::new(77)))
         .dry_run(true)
         .await

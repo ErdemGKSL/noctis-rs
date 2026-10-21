@@ -1,6 +1,6 @@
 error: [CID-03] route id: limit between 1 and 24, actual 25
          = help: use 1 to 24 characters of `[a-z0-9._-]`, such as `shop.buy`
- --> tests/ui/cid/CID-03_route_id_too_long.rs:4:9
+ --> tests/ui/cid/CID-03_route_id_too_long.rs:4:10
   |
-4 | #[route("abcdefghijklmnopqrstuvwxy")]
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+4 | #[button("abcdefghijklmnopqrstuvwxy", defaults(style = Secondary, label = "Go"))]
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^

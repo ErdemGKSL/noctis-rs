@@ -3,7 +3,7 @@
 //!
 //! `derive(Modal)` and the runtime validator describe a modal as a [`Modal`]
 //! and call these functions. The descriptors carry no `custom_id`: the
-//! modal's own is a Route's (MOD-08, checked as CID-01 by `derive(Route)`),
+//! modal's own is a Route's (MOD-08, checked as CID-01 by `derive(Modal)`),
 //! and each input's key is checked by [`validate_input_custom_id`] (CID-01).
 //!
 //! # Paths

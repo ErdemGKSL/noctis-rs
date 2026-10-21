@@ -1,6 +1,6 @@
 error: [CMD-05] b: limit at most 8000, actual 8577
          = note: longest variant per field
- --> tests/ui/cmd/CMD-05_budget_over_8000.rs:3:11
+ --> tests/ui/cmd/CMD-05_budget_over_8000.rs:4:11
   |
-3 | ...nd("b (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|aaaaaaaa...bbbbbbbb14|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb15)",
+4 | ...nd("b (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|aaaaaaaa...bbbbbbbb14|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb15)",
   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

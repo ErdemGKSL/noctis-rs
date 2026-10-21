@@ -1,11 +1,17 @@
 use noctis::prelude::*;
 use noctis::ui::LinkButton;
 
-#[derive(Route)]
-#[route("t.form")]
+#[derive(Button)]
+#[button("t.form", defaults(style = Secondary, label = "Go"))]
 struct Form;
-impl noctis::__private::ui::Handled for Form {}
+
+impl Form {
+    #[handler]
+    async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
+}
 
 fn main() {
-    let _ = Form.modal("Form").push(LinkButton::new("https://x.y"));
+    let _ = noctis::__private::ui::__macro::build_modal::<Form>(Form, "Form").push(LinkButton::new("https://x.y"));
 }

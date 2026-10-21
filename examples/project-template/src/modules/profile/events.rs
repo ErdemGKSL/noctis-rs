@@ -13,8 +13,6 @@ use super::xp_key;
 /// derives the GUILD_MESSAGES intent: `build()` adds it to the App (not privileged, so
 /// no `.intents(..)` call; message content and DMs are not requested) and the gateway
 /// starts parsing MESSAGE_CREATE. Concurrent (not `ordered`), never droppable.
-/// [planned: Story 6.11] a unit struct with `#[derive(EventHandler)]` (shipped as a free
-/// `#[event]` function).
 #[derive(EventHandler, Debug)]
 #[event]
 pub struct AwardXp;

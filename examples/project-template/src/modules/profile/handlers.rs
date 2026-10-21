@@ -1,7 +1,4 @@
 // NOTE: written against the planned Noctis API (architecture spine); updated as crates land.
-// [planned: Story 6.11] one struct per interaction (kind derives, `impl X { #[handler] }`,
-// `.build()`); the shipped release spells these as free-function `#[command]`/`#[handler]`
-// items, `derive(Options)` and `derive(Route)`.
 
 //! Commands and handlers. Each struct is the interaction (id + typed data); its
 //! `#[handler]` method loads the data, renders the card, and answers with
@@ -65,9 +62,7 @@ const BADGES: &[&str] = &["Early supporter", "Helper", "Night owl", "Artist", "B
 
 /// `/badge <name>`: `name` is suggested while typing by the paired
 /// `#[autocomplete(name)]` method. The command re-checks the value, because Discord
-/// sends whatever the user typed (OPT-12). [planned, Story 6.11]; this release links a
-/// free `#[autocomplete] fn` with `#[option(autocomplete = badge_suggest)]` on a
-/// `derive(Options)` struct and answers with `ctx.respond(choices)` (`commands.md` §4b).
+/// sends whatever the user typed (OPT-12).
 #[derive(SlashCommand, Debug)]
 #[command("badge", description = "Show a badge", contexts = [Guild])]
 pub struct Badge {

@@ -1,0 +1,65 @@
+error: unknown `defaults` key `colour` for `#[button]`: expected `style`, `label`, `emoji` or `disabled`
+ --> tests/types/defaults_unknown_key.rs:6:41
+  |
+6 | #[button("a", defaults(style = Primary, colour = Red))]
+  |                                         ^^^^^^
+
+error: unknown `defaults` key `options` for `#[user_select]`: expected `placeholder`, `min_values`, `max_values` or `disabled`
+  --> tests/types/defaults_unknown_key.rs:10:48
+   |
+10 | #[user_select("b", defaults(placeholder = "p", options = Kinds))]
+   |                                                ^^^^^^^
+
+error: unknown `defaults` key `channel_types` for `#[role_select]`: expected `placeholder`, `min_values`, `max_values` or `disabled`
+  --> tests/types/defaults_unknown_key.rs:14:48
+   |
+14 | #[role_select("c", defaults(placeholder = "p", channel_types = [GuildText]))]
+   |                                                ^^^^^^^^^^^^^
+
+error: unknown `defaults` key `label` for `#[string_select]`: expected `placeholder`, `min_values`, `max_values`, `disabled` or `options`
+  --> tests/types/defaults_unknown_key.rs:18:50
+   |
+18 | #[string_select("d", defaults(placeholder = "p", label = "L"))]
+   |                                                  ^^^^^
+
+error: duplicate `defaults` key `label`
+  --> tests/types/defaults_unknown_key.rs:22:54
+   |
+22 | #[button("e", defaults(style = Primary, label = "a", label = "b"))]
+   |                                                      ^^^^^
+
+error: `defaults` values are literals: `label` takes a string literal
+  --> tests/types/defaults_unknown_key.rs:28:49
+   |
+28 | #[button("f", defaults(style = Primary, label = LABEL))]
+   |                                                 ^^^^^
+
+error: `disabled` takes `true` or `false`
+  --> tests/types/defaults_unknown_key.rs:32:59
+   |
+32 | #[user_select("g", defaults(placeholder = "p", disabled = "yes"))]
+   |                                                           ^^^^^
+
+error: Link and Premium buttons have no handler: build them with `LinkButton::new(url)` / `PremiumButton`
+  --> tests/types/defaults_unknown_key.rs:36:32
+   |
+36 | #[button("h", defaults(style = Link, label = "Docs"))]
+   |                                ^^^^
+
+error: `style` takes `Primary`, `Secondary`, `Success` or `Danger`
+  --> tests/types/defaults_unknown_key.rs:40:32
+   |
+40 | #[button("i", defaults(style = Blurple, label = "B"))]
+   |                                ^^^^^^^
+
+error: custom emoji literals are `<:name:id>` or `<a:name:id>`
+  --> tests/types/defaults_unknown_key.rs:44:49
+   |
+44 | #[button("j", defaults(style = Primary, emoji = "<:x:abc>"))]
+   |                                                 ^^^^^^^^^^
+
+error: unknown channel type `Bogus`; expected one of GuildText, Private, GuildVoice, Group, GuildCategory, GuildAnnouncement, AnnouncementThread, PublicThread, PrivateThread, GuildStageVoice, GuildDirectory, GuildForum, GuildMedia
+  --> tests/types/defaults_unknown_key.rs:48:68
+   |
+48 | #[channel_select("k", defaults(placeholder = "p", channel_types = [Bogus]))]
+   |                                                                    ^^^^^

@@ -1,10 +1,10 @@
-//! `#[event]`: turns an `async fn(ctx: EventCtx, event: <payload>)` into a
-//! descriptor function returning an `EventHandler` (FR-6, AD-7).
+//! `#[derive(EventHandler)]` on a unit struct, with its optional
+//! `#[event(ordered, droppable)]`: declares a typed gateway event handler
+//! for `#[handler]` (FR-6, AD-7).
 
 use proc_macro2::{Span, TokenStream, TokenTree};
-use quote::{ToTokens, quote, quote_spanned};
-use syn::spanned::Spanned;
-use syn::{FnArg, Ident, ItemFn, ReturnType, Safety};
+use quote::quote;
+use syn::{Data, DeriveInput, Fields, Meta};
 
 /// The flags `#[event(..)]` takes.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -12,9 +12,6 @@ struct Args {
     ordered: bool,
     droppable: bool,
 }
-
-const PARAMS: &str = "`#[event]` handlers take `(ctx: EventCtx, event: <payload>)`";
-const PLAIN: &str = "`#[event]` handlers must be a plain `async fn`";
 
 /// Parses `ordered`, `droppable` (any order, each at most once).
 fn parse_args(args: TokenStream) -> syn::Result<Args> {
@@ -68,96 +65,71 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
     Ok(parsed)
 }
 
-/// Checks the signature: a plain `async fn` with two typed parameters.
-fn check(item: &ItemFn) -> syn::Result<()> {
-    let sig = &item.sig;
-    if let Some(constness) = &sig.constness {
-        return Err(syn::Error::new_spanned(constness, PLAIN));
-    }
-    if let Safety::Unsafe(unsafety) = &sig.safety {
-        return Err(syn::Error::new_spanned(unsafety, PLAIN));
-    }
-    if let Safety::Safe(safety) = &sig.safety {
-        return Err(syn::Error::new_spanned(safety, PLAIN));
-    }
-    if let Some(abi) = &sig.abi {
-        return Err(syn::Error::new_spanned(abi, PLAIN));
-    }
-    if item.modifiers.require_empty().is_err() {
-        return Err(syn::Error::new(sig.fn_token.span(), PLAIN));
-    }
-    if sig.asyncness.is_none() {
-        return Err(syn::Error::new_spanned(
-            sig.fn_token,
-            "`#[event]` needs an `async fn`",
-        ));
-    }
-    if !sig.generics.params.is_empty() || sig.generics.where_clause.is_some() {
-        return Err(syn::Error::new_spanned(
-            &sig.generics,
-            "`#[event]` handlers cannot be generic",
-        ));
-    }
-    if let Some(variadic) = &sig.variadic {
-        return Err(syn::Error::new_spanned(variadic, PLAIN));
-    }
-    if let Some(receiver) = sig.receiver() {
-        return Err(syn::Error::new_spanned(receiver, PARAMS));
-    }
-    if sig.inputs.len() != 2 || !sig.inputs.iter().all(|a| matches!(a, FnArg::Typed(_))) {
-        let span = if sig.inputs.is_empty() {
-            sig.ident.span()
-        } else {
-            sig.inputs.span()
-        };
-        return Err(syn::Error::new(span, PARAMS));
-    }
-    Ok(())
-}
+const UNIT: &str = "`#[derive(EventHandler)]` needs a unit struct";
 
-/// The handler's name without a raw-identifier prefix.
-fn plain_name(ident: &Ident) -> String {
-    let name = ident.to_string();
-    name.strip_prefix("r#")
-        .map_or_else(|| name.clone(), str::to_owned)
-}
+/// Expands the derive; on an error, the error and the placeholder impls
+/// (`kind::fallback`).
+pub(crate) fn derive_or_fallback(input: &DeriveInput) -> TokenStream {
+    let result = derive(input);
+    crate::kind::or_fallback(input, crate::kind::Family::Event, result, || {
+        let ident = &input.ident;
+        quote! {
+            impl ::noctis::__private::core::__EventHandler for #ident {
+                const ORDERED: ::core::primitive::bool = false;
+                const DROPPABLE: ::core::primitive::bool = false;
 
-/// Expands `#[event(args)] item`.
-pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
-    let args = parse_args(args)?;
-    let item: ItemFn = syn::parse2(item)?;
-    check(&item)?;
-    let ItemFn {
-        attrs,
-        vis,
-        sig,
-        block,
-        ..
-    } = item;
-    let name = sig.ident.clone();
-    let path = plain_name(&name);
-    let mut inner = sig.clone();
-    inner.ident = Ident::new("__noctis_event", name.span());
-    let output_span = match &sig.output {
-        ReturnType::Default => sig.ident.span(),
-        ReturnType::Type(_, ty) => ty.span(),
-    };
-    let (ordered, droppable) = (args.ordered, args.droppable);
-    let new = quote_spanned! {output_span=>
-        ::noctis::__private::core::EventHandler::__new
-    };
-    let inner = inner.into_token_stream();
-    Ok(quote! {
-        #(#attrs)*
-        #vis fn #name() -> ::noctis::__private::core::EventHandler {
-            #inner #block
-            #new(
-                ::core::concat!(::core::module_path!(), "::", #path),
-                #ordered,
-                #droppable,
-                __noctis_event,
-            )
+                fn __new() -> Self {
+                    ::core::unreachable!("the derive failed to compile")
+                }
+            }
         }
+    })
+}
+
+/// Expands `#[derive(EventHandler)]` with its optional `#[event(..)]`.
+pub(crate) fn derive(input: &DeriveInput) -> syn::Result<TokenStream> {
+    crate::common::kind_fields(input, "EventHandler")?;
+    let ident = &input.ident;
+    if !matches!(&input.data, Data::Struct(d) if matches!(d.fields, Fields::Unit)) {
+        return Err(syn::Error::new_spanned(ident, UNIT));
+    }
+    let mut attrs = input.attrs.iter().filter(|a| a.path().is_ident("event"));
+    let args = match attrs.next() {
+        None => Args::default(),
+        Some(attr) => {
+            if let Some(second) = attrs.next() {
+                return Err(syn::Error::new_spanned(
+                    second,
+                    "a struct takes one #[event(..)] attribute",
+                ));
+            }
+            match &attr.meta {
+                Meta::Path(_) => Args::default(),
+                Meta::List(list) => parse_args(list.tokens.clone())?,
+                Meta::NameValue(_) => {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "`#[event]` takes `ordered` and `droppable`: `#[event(ordered)]`",
+                    ));
+                }
+            }
+        }
+    };
+    let core = quote!(::noctis::__private::core);
+    let (ordered, droppable) = (args.ordered, args.droppable);
+    let scaffolding = crate::kind::scaffolding(ident, crate::kind::Family::Event, false);
+    Ok(quote! {
+        #[automatically_derived]
+        impl #core::__EventHandler for #ident {
+            const ORDERED: ::core::primitive::bool = #ordered;
+            const DROPPABLE: ::core::primitive::bool = #droppable;
+
+            fn __new() -> Self {
+                Self
+            }
+        }
+
+        #scaffolding
     })
 }
 
@@ -165,34 +137,46 @@ pub(crate) fn expand(args: TokenStream, item: TokenStream) -> syn::Result<TokenS
 mod tests {
     use super::*;
 
-    fn error(args: TokenStream, item: TokenStream) -> String {
-        expand(args, item).unwrap_err().to_string()
+    fn run(src: TokenStream) -> String {
+        let input: DeriveInput = syn::parse2(src).unwrap();
+        match derive(&input) {
+            Ok(t) => t.to_string(),
+            Err(e) => e.to_string(),
+        }
     }
 
-    const FN: &str = "async fn h(ctx: EventCtx, e: MessageCreate) -> HandlerResult<()> { Ok(()) }";
-
-    fn item(src: &str) -> TokenStream {
-        src.parse().unwrap()
-    }
-
+    /// Story 6.11 Matrix 12.
     #[test]
     fn expands() {
-        let out = expand(
-            quote!(ordered, droppable),
-            item(&format!("/// docs\npub {FN}")),
-        )
-        .unwrap()
-        .to_string();
+        let out = run(quote!(
+            #[event(ordered)]
+            pub struct AwardXp;
+        ));
         assert!(
-            out.contains("pub fn h () -> :: noctis :: __private :: core :: EventHandler"),
+            out.contains("const ORDERED : :: core :: primitive :: bool = true"),
             "{out}"
         );
-        assert!(out.contains("async fn __noctis_event"), "{out}");
         assert!(
-            out.contains("\"h\") , true , true , __noctis_event"),
+            out.contains("const DROPPABLE : :: core :: primitive :: bool = false"),
             "{out}"
         );
-        assert!(out.contains("doc"), "{out}");
+        assert!(out.contains("__EventKind"), "{out}");
+        assert!(out.contains("Register for AwardXp"), "{out}");
+        let out = run(quote!(
+            struct Plain;
+        ));
+        assert!(
+            out.contains("const ORDERED : :: core :: primitive :: bool = false"),
+            "{out}"
+        );
+        let out = run(quote!(
+            #[event]
+            struct Plain;
+        ));
+        assert!(
+            out.contains("const DROPPABLE : :: core :: primitive :: bool = false"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -210,101 +194,55 @@ mod tests {
         }
     }
 
-    /// Matrix 43: every rejected form names its fix.
+    /// Story 6.11 Matrix 6 and 12: every rejected form names its fix.
     #[test]
     fn errors() {
-        let cases: [(TokenStream, &str, &str); 14] = [
+        for (src, expected) in [
             (
-                quote!(),
-                "fn h(ctx: EventCtx, e: MessageCreate) -> HandlerResult<()> { Ok(()) }",
-                "`#[event]` needs an `async fn`",
+                quote!(
+                    struct S {
+                        a: u8,
+                    }
+                ),
+                UNIT,
             ),
             (
-                quote!(),
-                "async fn h() -> HandlerResult<()> { Ok(()) }",
-                PARAMS,
+                quote!(
+                    struct S {}
+                ),
+                UNIT,
             ),
             (
-                quote!(),
-                "async fn h(ctx: EventCtx) -> HandlerResult<()> { Ok(()) }",
-                PARAMS,
+                quote!(
+                    enum E {
+                        A,
+                    }
+                ),
+                "`#[derive(EventHandler)]` needs a struct with named fields or a unit struct",
             ),
             (
-                quote!(),
-                "async fn h(ctx: EventCtx, e: MessageCreate, x: u8) -> HandlerResult<()> { Ok(()) }",
-                PARAMS,
-            ),
-            (
-                quote!(),
-                "async fn h(&self, e: MessageCreate) -> HandlerResult<()> { Ok(()) }",
-                PARAMS,
-            ),
-            (
-                quote!(),
-                "async fn h<T>(ctx: EventCtx, e: T) -> HandlerResult<()> { Ok(()) }",
-                "`#[event]` handlers cannot be generic",
-            ),
-            (
-                quote!(),
-                "async fn h(ctx: EventCtx, e: MessageCreate) -> HandlerResult<()> where u8: Copy { Ok(()) }",
-                "`#[event]` handlers cannot be generic",
-            ),
-            (
-                quote!(),
-                "const async fn h(ctx: EventCtx, e: MessageCreate) -> HandlerResult<()> { Ok(()) }",
-                PLAIN,
-            ),
-            (
-                quote!(),
-                "async unsafe fn h(ctx: EventCtx, e: MessageCreate) -> HandlerResult<()> { Ok(()) }",
-                PLAIN,
-            ),
-            (
-                quote!(),
-                "async extern \"C\" fn h(ctx: EventCtx, e: MessageCreate) -> HandlerResult<()> { Ok(()) }",
-                PLAIN,
-            ),
-            (
-                quote!(x),
-                FN,
+                quote!(
+                    #[event(x)]
+                    struct S;
+                ),
                 "unknown `#[event]` argument `x`: expected `ordered` or `droppable`",
             ),
             (
-                quote!(ordered, ordered),
-                FN,
+                quote!(
+                    #[event(ordered, ordered)]
+                    struct S;
+                ),
                 "duplicate `#[event]` argument `ordered`",
             ),
             (
-                quote!(ordered = true),
-                FN,
+                quote!(
+                    #[event(ordered = true)]
+                    struct S;
+                ),
                 "unknown `#[event]` argument `ordered = true`: expected `ordered` or `droppable`",
             ),
-            (
-                quote!(ordered, droppable, droppable),
-                FN,
-                "duplicate `#[event]` argument `droppable`",
-            ),
-        ];
-        for (args, src, expected) in cases {
-            assert_eq!(error(args, item(src)), expected, "{src}");
+        ] {
+            assert_eq!(run(src.clone()), expected, "{src}");
         }
-    }
-
-    #[test]
-    fn raw_and_unicode_names() {
-        let out = expand(
-            quote!(),
-            item("async fn r#type(c: EventCtx, e: UserUpdate) -> HandlerResult<()> { Ok(()) }"),
-        )
-        .unwrap()
-        .to_string();
-        assert!(out.contains("\"type\""), "{out}");
-        let out = expand(
-            quote!(),
-            item("async fn grüß(c: EventCtx, e: UserUpdate) -> HandlerResult<()> { Ok(()) }"),
-        )
-        .unwrap()
-        .to_string();
-        assert!(out.contains("\"grüß\""), "{out}");
     }
 }

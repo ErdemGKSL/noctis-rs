@@ -1,5 +1,7 @@
-//! Components built from Route values: [`Handled`], [`RouteComponents`] and
-//! the hidden [`CustomId`] they carry (AD-18, AD-19, FR-58).
+//! Components built from Route values: [`Handled`], [`ComponentRoute`]
+//! with its declared defaults, the hidden build functions the kind derives
+//! call, and the hidden [`CustomId`] they carry (AD-18, AD-19, FR-58,
+//! FR-59).
 
 use core::fmt;
 use std::borrow::Cow;
@@ -10,187 +12,242 @@ use noctis_codec::{
     EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref, Route, RouteId, SelectRoute,
     encode_id,
 };
+use twilight_model::channel::ChannelType;
+use twilight_model::id::Id;
 
 use crate::component::{
-    ChannelSelect, MentionableSelect, RoleSelect, RouteButton, SelectOption, StringSelect,
-    UserSelect,
+    ButtonStyle, ChannelSelect, Emoji, MentionableSelect, RoleSelect, RouteButton, SelectOption,
+    StringSelect, StringSelectBuilder, UserSelect,
 };
+use crate::modal::Choices;
 use crate::{Modal, UiError};
 
 /// A Route that has a handler.
 ///
-/// Only the `#[handler]` macro implements it, through
-/// `::noctis::__private::ui::Handled`; it is not public API. Every
-/// [`RouteComponents`] constructor requires it, so a component for a Route
-/// without a handler does not compile (`[CID-04]`, FR-58).
+/// The kind derives of `noctis` (`#[derive(Button)]`, the select derives,
+/// `#[derive(Modal)]`) implement it; a kind-derived struct without a
+/// `#[handler]` method does not compile (`[CID-04]`, FR-58). It is not
+/// public API.
 #[diagnostic::on_unimplemented(
     message = "[CID-04] Route `{Self}` has no handler, so no component can be built for it",
     label = "no `#[handler]` for this Route",
-    note = "the `#[handler]` macro implements `Handled`; add a handler for `{Self}` to a mounted Module"
+    note = "derive a component kind (`#[derive(Button)]`, a select kind or `#[derive(Modal)]`) and add `impl {Self} {{ #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> }}`"
 )]
 pub trait Handled: Route {}
 
-/// Builds message components and modals from a Route value; in the
-/// prelude.
+/// A component or modal Route declared by a kind derive, with the defaults
+/// of its `defaults(..)` block (AD-19, FR-59).
 ///
-/// The value is the component's Payload, so its `custom_id` is always the
-/// Route's encoding and never a hand-written string (AD-19). Every method
-/// needs the Route to have a handler ([`Handled`], `[CID-04]`); the selects
-/// also need a Route declared `select` ([`SelectRoute`]).
-///
-/// ```
-/// # use core::fmt;
-/// # use noctis_codec::{Field, FieldWriter, Payload, Route, RouteId, RouteShape};
-/// use noctis_ui::{ButtonStyle, RouteComponents};
-///
-/// struct Buy { item: u64 }
-/// # impl Payload for Buy {
-/// #     const MAX_ENCODED_LEN: Option<usize> = <u64 as Field>::MAX_LEN;
-/// #     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result { out.field(&self.item) }
-/// # }
-/// # impl Route for Buy {
-/// #     const ID: RouteId = RouteId::new("shop.buy");
-/// #     const SHAPE: RouteShape = RouteShape::INLINE;
-/// #     const SCHEMA: u8 = 0;
-/// #     type Payload = Self;
-/// # }
-/// # impl noctis_ui::Handled for Buy {}
-///
-/// let button = Buy { item: 255 }.button().style(ButtonStyle::Primary).label("Buy");
-/// let json = serde_json::to_value(&button).unwrap();
-/// assert_eq!(json["custom_id"], "0shop.buy:47");
-/// ```
-///
-/// A select needs a Route declared `select`:
-///
-/// ```compile_fail,E0277
-/// # use core::fmt;
-/// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
-/// use noctis_ui::RouteComponents;
-///
-/// struct Pick;
-/// # impl Payload for Pick {
-/// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
-/// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
-/// # }
-/// # impl Route for Pick {
-/// #     const ID: RouteId = RouteId::new("pick");
-/// #     const SHAPE: RouteShape = RouteShape::INLINE;
-/// #     const SCHEMA: u8 = 0;
-/// #     type Payload = Self;
-/// # }
-/// # impl noctis_ui::Handled for Pick {}
-///
-/// let _ = Pick.string_select([]); // `Pick` is not declared `select`
-/// ```
-pub trait RouteComponents: Route + Sized {
-    /// An interactive button (styles 1-4) whose `custom_id` encodes `self`;
-    /// Secondary by default.
-    fn button(self) -> RouteButton<Self>
-    where
-        Self: Route<Payload = Self> + Handled + Send + Sync + 'static,
-    {
-        RouteButton::from_id(CustomId::new(self))
-    }
+/// `X { .. }.build()` builds the component from [`DEFAULTS`](Self::DEFAULTS)
+/// and the struct value as its Payload; the component's setters override one
+/// field each. Implemented only by the kind derives; not public API.
+#[doc(hidden)]
+pub trait ComponentRoute: Handled + Send + Sync + 'static {
+    /// The defaults type of the kind: [`ButtonDefaults`],
+    /// [`SelectDefaults`], [`StringSelectDefaults`],
+    /// [`ChannelSelectDefaults`] or [`ModalDefaults`].
+    type Defaults: 'static;
 
-    /// A String Select (type 3) with `options`.
-    fn string_select(self, options: impl IntoIterator<Item = SelectOption>) -> StringSelect
-    where
-        Self: Route<Payload = Self> + Handled + SelectRoute + Send + Sync + 'static,
-    {
-        StringSelect::from_id(CustomId::new(self), options.into_iter().collect())
-    }
+    /// The declared defaults.
+    const DEFAULTS: Self::Defaults;
+}
 
-    /// A User Select (type 5).
-    fn user_select(self) -> UserSelect
-    where
-        Self: Route<Payload = Self> + Handled + SelectRoute + Send + Sync + 'static,
-    {
-        UserSelect::from_id(CustomId::new(self))
-    }
+/// The emoji of a Button's `defaults(emoji = "…")`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefaultEmoji {
+    /// A Unicode emoji.
+    Unicode(&'static str),
+    /// A custom emoji, `<:name:id>` or `<a:name:id>`.
+    Custom {
+        /// The emoji id (never 0).
+        id: u64,
+        /// The emoji name.
+        name: &'static str,
+        /// `<a:…>`.
+        animated: bool,
+    },
+}
 
-    /// A Role Select (type 6).
-    fn role_select(self) -> RoleSelect
-    where
-        Self: Route<Payload = Self> + Handled + SelectRoute + Send + Sync + 'static,
-    {
-        RoleSelect::from_id(CustomId::new(self))
-    }
-
-    /// A Mentionable Select (type 7).
-    fn mentionable_select(self) -> MentionableSelect
-    where
-        Self: Route<Payload = Self> + Handled + SelectRoute + Send + Sync + 'static,
-    {
-        MentionableSelect::from_id(CustomId::new(self))
-    }
-
-    /// A Channel Select (type 8).
-    fn channel_select(self) -> ChannelSelect
-    where
-        Self: Route<Payload = Self> + Handled + SelectRoute + Send + Sync + 'static,
-    {
-        ChannelSelect::from_id(CustomId::new(self))
-    }
-
-    /// A [`Modal`] titled `title` whose `custom_id` encodes `self` (MOD-08):
-    /// the submission goes to this Route's handler. Push its Labels and
-    /// Text Displays with [`Modal::push`].
-    ///
-    /// ```
-    /// # use core::fmt;
-    /// # use noctis_codec::{Field, FieldWriter, Payload, Route, RouteId, RouteShape};
-    /// use noctis_ui::{Checkbox, ModalLabel, RouteComponents};
-    ///
-    /// struct Report { id: u64 }
-    /// # impl Payload for Report {
-    /// #     const MAX_ENCODED_LEN: Option<usize> = <u64 as Field>::MAX_LEN;
-    /// #     fn encode_fields(&self, out: &mut FieldWriter<'_>) -> fmt::Result { out.field(&self.id) }
-    /// # }
-    /// # impl Route for Report {
-    /// #     const ID: RouteId = RouteId::new("mod.report");
-    /// #     const SHAPE: RouteShape = RouteShape::INLINE;
-    /// #     const SCHEMA: u8 = 0;
-    /// #     type Payload = Self;
-    /// # }
-    /// # impl noctis_ui::Handled for Report {}
-    ///
-    /// let modal = Report { id: 7 }.modal("Report a user").push(ModalLabel::new("I agree", Checkbox::new("ok")));
-    /// let json = serde_json::to_value(&modal).unwrap();
-    /// assert_eq!(json["custom_id"], "0mod.report:7");
-    /// assert_eq!(json["title"], "Report a user");
-    /// ```
-    ///
-    /// A Route without a handler cannot open a modal:
-    ///
-    /// ```compile_fail,E0277
-    /// # use core::fmt;
-    /// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
-    /// use noctis_ui::RouteComponents;
-    ///
-    /// struct Orphan;
-    /// # impl Payload for Orphan {
-    /// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
-    /// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
-    /// # }
-    /// # impl Route for Orphan {
-    /// #     const ID: RouteId = RouteId::new("orphan");
-    /// #     const SHAPE: RouteShape = RouteShape::INLINE;
-    /// #     const SCHEMA: u8 = 0;
-    /// #     type Payload = Self;
-    /// # }
-    ///
-    /// let _ = Orphan.modal("Title"); // [CID-04]
-    /// ```
-    fn modal(self, title: impl Into<Cow<'static, str>>) -> Modal
-    where
-        Self: Route<Payload = Self> + Handled + Send + Sync + 'static,
-    {
-        Modal::from_id(CustomId::new(self), title.into())
+impl DefaultEmoji {
+    fn emoji(self) -> Emoji {
+        match self {
+            Self::Unicode(e) => Emoji::unicode(e),
+            Self::Custom { id, name, animated } => match Id::new_checked(id) {
+                Some(id) => Emoji::custom(id, name, animated),
+                // The derive rejects id 0; keep the name rather than panic.
+                None => Emoji::unicode(name),
+            },
+        }
     }
 }
 
-impl<R: Route> RouteComponents for R {}
+/// The `defaults(..)` of `#[button]`; omitted keys are not sent.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ButtonDefaults {
+    /// `style` (required).
+    pub style: ButtonStyle,
+    /// `label`.
+    pub label: Option<&'static str>,
+    /// `emoji`.
+    pub emoji: Option<DefaultEmoji>,
+    /// `disabled` (`false` when omitted).
+    pub disabled: bool,
+}
+
+/// The `defaults(..)` every select kind shares; omitted counts are not sent
+/// (Discord's `min_values = 1`, `max_values = 1` apply).
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectDefaults {
+    /// `placeholder` (required by the derives).
+    pub placeholder: Option<&'static str>,
+    /// `min_values`.
+    pub min_values: Option<u8>,
+    /// `max_values`.
+    pub max_values: Option<u8>,
+    /// `disabled` (`false` when omitted).
+    pub disabled: bool,
+}
+
+/// The `defaults(..)` of `#[string_select]`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct StringSelectDefaults {
+    /// The shared select defaults.
+    pub select: SelectDefaults,
+    /// `options = <Choices type>`: its options, or `None` when the options
+    /// come with each render.
+    pub options: Option<fn() -> Vec<SelectOption>>,
+}
+
+/// The `defaults(..)` of `#[channel_select]`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelSelectDefaults {
+    /// The shared select defaults.
+    pub select: SelectDefaults,
+    /// `channel_types = [..]`; empty means every type.
+    pub channel_types: &'static [ChannelType],
+}
+
+/// The `defaults(..)` of `#[modal]`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModalDefaults {
+    /// `title` (required).
+    pub title: &'static str,
+}
+
+/// The select options of the [`Choices`] enum `C`, in declaration order;
+/// what `defaults(options = C)` stores.
+#[doc(hidden)]
+pub fn choices_options<C: Choices>() -> Vec<SelectOption> {
+    C::ALL
+        .iter()
+        .map(|c| {
+            let option = SelectOption::new(c.label(), c.value());
+            match c.description() {
+                Some(d) => option.description(d),
+                None => option,
+            }
+        })
+        .collect()
+}
+
+/// The bounds of a component Route value: a Route that is its own
+/// Payload, with a handler.
+#[doc(hidden)]
+pub trait ComponentValue: Route<Payload = Self> + Handled + Send + Sync + 'static {}
+
+impl<R: Route<Payload = R> + Handled + Send + Sync + 'static> ComponentValue for R {}
+
+/// `Button { .. }.build()`: the button of `route` with `defaults`.
+#[doc(hidden)]
+pub fn build_button<R: ComponentValue>(route: R, defaults: &ButtonDefaults) -> RouteButton<R> {
+    let mut button = RouteButton::from_id(CustomId::new::<R>(route))
+        .style(defaults.style)
+        .disabled(defaults.disabled);
+    if let Some(label) = defaults.label {
+        button = button.label(label);
+    }
+    if let Some(emoji) = defaults.emoji {
+        button = button.emoji(emoji.emoji());
+    }
+    button
+}
+
+/// `StringSelectMenu { .. }.build()` with `defaults(options = ..)`.
+#[doc(hidden)]
+pub fn build_string_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    defaults: &StringSelectDefaults,
+) -> StringSelect {
+    let options = defaults.options.map(|f| f()).unwrap_or_default();
+    StringSelect::from_id(CustomId::new::<R>(route), options).with_defaults(&defaults.select)
+}
+
+/// `StringSelectMenu { .. }.build()` without `defaults(options = ..)`: the
+/// options come with `.options(..)`.
+#[doc(hidden)]
+pub fn build_string_select_builder<R: ComponentValue + SelectRoute>(
+    route: R,
+    defaults: &SelectDefaults,
+) -> StringSelectBuilder<R> {
+    StringSelectBuilder::new(
+        StringSelect::from_id(CustomId::new::<R>(route), Vec::new()).with_defaults(defaults),
+    )
+}
+
+/// `UserSelectMenu { .. }.build()`.
+#[doc(hidden)]
+pub fn build_user_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    defaults: &SelectDefaults,
+) -> UserSelect {
+    UserSelect::from_id(CustomId::new::<R>(route)).with_defaults(defaults)
+}
+
+/// `RoleSelectMenu { .. }.build()`.
+#[doc(hidden)]
+pub fn build_role_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    defaults: &SelectDefaults,
+) -> RoleSelect {
+    RoleSelect::from_id(CustomId::new::<R>(route)).with_defaults(defaults)
+}
+
+/// `MentionableSelectMenu { .. }.build()`.
+#[doc(hidden)]
+pub fn build_mentionable_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    defaults: &SelectDefaults,
+) -> MentionableSelect {
+    MentionableSelect::from_id(CustomId::new::<R>(route)).with_defaults(defaults)
+}
+
+/// `ChannelSelectMenu { .. }.build()`.
+#[doc(hidden)]
+pub fn build_channel_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    defaults: &ChannelSelectDefaults,
+) -> ChannelSelect {
+    ChannelSelect::from_id(CustomId::new::<R>(route))
+        .with_defaults(&defaults.select)
+        .channel_types(defaults.channel_types.iter().copied())
+}
+
+/// The empty [`Modal`] titled `title` of the modal Route `R` whose Payload
+/// is `payload`; the derive pushes the inputs.
+#[doc(hidden)]
+pub fn build_modal<R>(payload: R::Payload, title: impl Into<Cow<'static, str>>) -> Modal
+where
+    R: Handled + Send + Sync + 'static,
+    R::Payload: Send + Sync + 'static,
+{
+    Modal::from_id(CustomId::new::<R>(payload), title.into())
+}
 
 /// A Route value behind a vtable.
 trait ErasedRoute: Send + Sync {
@@ -198,11 +255,12 @@ trait ErasedRoute: Send + Sync {
     fn encode(&self, parts: &Parts<'_>) -> Result<EncodedId, EncodeError>;
 }
 
-struct Erased<R>(R);
+struct Erased<R: Route>(R::Payload);
 
 impl<R> ErasedRoute for Erased<R>
 where
-    R: Route<Payload = R> + Send + Sync,
+    R: Route + Send + Sync,
+    R::Payload: Send + Sync,
 {
     fn route(&self) -> RouteId {
         R::ID
@@ -229,13 +287,14 @@ pub struct CustomId {
 }
 
 impl CustomId {
-    pub(crate) fn new<R>(route: R) -> Self
+    pub(crate) fn new<R>(payload: R::Payload) -> Self
     where
-        R: Route<Payload = R> + Send + Sync + 'static,
+        R: Route + Send + Sync + 'static,
+        R::Payload: Send + Sync + 'static,
     {
         let shape = R::SHAPE;
         let mut this = Self {
-            route: Arc::new(Erased(route)),
+            route: Arc::new(Erased::<R>(payload)),
             id: None,
         };
         if !shape.has_select() && !shape.is_signed() {

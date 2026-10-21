@@ -301,17 +301,22 @@ impl ErrorSink for Recording {
 struct Gate(tokio::sync::Semaphore);
 
 /// Message `MESSAGE_BASE + 1` fails, `+ 2` panics, others block on the gate.
-#[event]
-async fn mixed(ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
-    match ev.id.get() - MESSAGE_BASE {
-        1 => Err(HandlerError::new(io::Error::other("disk full"))),
-        2 => panic!("boom"),
-        _ => {
-            if let Some(gate) = ctx.state::<Gate>() {
-                // Held until the test opens the gate; never closed.
-                let _permit = gate.0.acquire().await;
+#[derive(EventHandler)]
+struct Mixed;
+
+impl Mixed {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
+        match ev.id.get() - MESSAGE_BASE {
+            1 => Err(HandlerError::new(io::Error::other("disk full"))),
+            2 => panic!("boom"),
+            _ => {
+                if let Some(gate) = ctx.state::<Gate>() {
+                    // Held until the test opens the gate; never closed.
+                    let _permit = gate.0.acquire().await;
+                }
+                Ok(())
             }
-            Ok(())
         }
     }
 }
@@ -480,7 +485,7 @@ async fn overflow_drop_reaches_sink() {
         b.event_lane(1, 0)
             .handler_concurrency(1)
             .error_sink(ErrorOrigin::Event, Arc::clone(&sink))
-            .module(Module::new("flood").add(mixed()));
+            .module(Module::new("flood").add::<Mixed>());
     })
     .await;
     for n in 3..=40 {
@@ -555,7 +560,7 @@ async fn recorded_set_matches_catalog() {
         b.event_lane(1, 0)
             .handler_concurrency(1)
             .error_sink(ErrorOrigin::Event, Arc::clone(&sink))
-            .module(Module::new("audit").add(mixed()));
+            .module(Module::new("audit").add::<Mixed>());
     })
     .await;
     let described = history.described();

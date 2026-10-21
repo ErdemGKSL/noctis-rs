@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `76a29b7cd8e86f7cecadc18b9b29ed48f41a896ce48f65d0bbb15cd83379e0b7` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `687a2fe0c45d89425e46085a88297a6939158c9d83e98a1094f98e785ac1f841` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -44,8 +44,7 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
 - **One struct per interaction** (tescord's `pack.button` / `pack.slashCommand`): the
   derive names the kind, the struct holds the id and the typed data, and the handler is
   always a method on it, `impl X { #[handler] async fn handle(self, ctx: …) }`
-  (`#[handler]` takes no arguments; there are no free-function handlers). **[planned:
-  Story 6.11]**: this release still uses free functions; see §8 for today's names.
+  (`#[handler]` takes no arguments; there are no free-function handlers).
 - **Module** groups features (tescord's Pack) and registers each struct by type:
   `Module::new("profile").add::<Profile>().add::<EditBio>()`.
 - **Command** = a `#[derive(SlashCommand)]` struct whose fields are its options (a unit
@@ -415,7 +414,7 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 | `Tescord` root, `Pack` | `App`, `Module` (`Module::new("a/b")`, nested with `.module(..)`) |
 | `pack.slashCommand({ name: "a (b\|c)", handle })` | `#[derive(SlashCommand)] #[command("a (b\|c)")] struct A;` + `impl A { #[handler] async fn handle(self, ctx, path: APath) }` |
 | `options: { user: { type: "User" } }` | fields of the command struct: `struct Ban { #[option(..)] user: ResolvedUser }` |
-| `autoComplete` | `#[option(.., autocomplete)]` + an `#[autocomplete(field)] async fn x(ctx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` method on the command struct; Noctis sends the result [planned, Story 6.11]; this release: `#[option(autocomplete = fn)]` + an `#[autocomplete]` fn returning `Ok(ctx.respond(choices))` (sync, no Module registration; `commands.md` §4b) |
+| `autoComplete` | `#[option(.., autocomplete)]` + an `#[autocomplete(field)] async fn x(ctx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` method on the command struct; Noctis sends the result (`commands.md` §4) |
 | `pack.button({ id, options, handle })` + `buildComponent({ id, data, overrides })` | `#[derive(Button)] #[button("id", defaults(..))] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` + `X { .. }.build().label(..)` |
 | `pack.stringSelect` / `userSelect` / … / `modal` | `#[derive(StringSelectMenu)]`, `UserSelectMenu`, `RoleSelectMenu`, `MentionableSelectMenu`, `ChannelSelectMenu`, `Modal` |
 | `pack.event({ name, handle })` | `#[derive(EventHandler)] #[event] struct X;` + `impl X { #[handler] async fn handle(self, ctx, event: MessageCreate) }` |
@@ -449,25 +448,3 @@ Read only what the task touches.
 | `references/testing.md` | test commands, clicks, Views, snapshots, Templates, Adapters, memory |
 | `references/limits-cheatsheet.md` | look up any numeric limit or rule id |
 | `references/troubleshooting.md` | decode a compile error, BuildError or runtime error, or debug "interaction failed" |
-
-## 8. Shipped names until Story 6.11
-
-This skill teaches the converged API. The current release still ships the older
-free-function authoring surface without aliases; Story 6.11 converts it to one
-struct per interaction. The Responder names (`reply`, `reply_as`, `defer_reply`,
-`defer_reply_as`, `show_modal`, `edit_reply`, `fetch_reply`, `follow_up`,
-`delete_reply`), `response = public | ephemeral` and `auto_defer = false` +
-`CommandResponder<Manual>` already ship as taught. Until Story 6.11 write:
-
-| Converged (taught above) | This release |
-| --- | --- |
-| `#[derive(SlashCommand)] #[command("p", ..)] struct X {..}` + `impl X { #[handler] async fn handle(self, ctx) }` | `#[derive(Options)] struct XOptions {..}` + a free `#[command("p", ..)] async fn x(ctx: CommandCtx, opts: XOptions)` |
-| `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit struct + `#[handler]` method | a free `#[user_command(..)]` / `#[message_command(..)]` `async fn(ctx, target)` |
-| `#[derive(EventHandler)] #[event] struct X;` + `#[handler]` method | a free `#[event] async fn x(ctx: EventCtx, event: ..)` |
-| `#[derive(Button)] #[button("id", .., defaults(..))]` and the select kinds | `#[derive(Route)] #[route("id", ..)]` (selects add the bare `select` argument) |
-| `X { .. }.build()` | `X { .. }.button()`, `.string_select(options)`, `.user_select()`, `.role_select()`, `.mentionable_select()`, `.channel_select()` (`RouteComponents`) |
-| `#[derive(Modal)] #[modal("id", defaults(title = ..))]` with Payload fields | `#[modal(route = R, title = "…")]` with a separate `#[derive(Route)]` submit Route, opened with `BioForm::modal(R { .. })` |
-| `Module::add::<X>()` | `Module::add(x())` (the descriptor function the macro generates) |
-| `#[option(.., autocomplete)]` + `#[autocomplete(field)]` method returning `Suggestions<T>` | `#[option(autocomplete = path)]` naming a free `#[autocomplete] async fn(ctx: AutocompleteCtx[, partial: Partial<XOptions>]) -> HandlerResult<Responded>` (an `AutocompleteHandler<O>` descriptor, never `Module::add`ed) that answers `Ok(ctx.respond(choices))` with `AutocompleteChoice`s (`commands.md` §4b) |
-
-Component, modal-submit and event handlers that need Epic 7 are [planned] either way.

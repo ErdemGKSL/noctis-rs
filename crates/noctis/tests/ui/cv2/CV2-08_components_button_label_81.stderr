@@ -1,5 +1,5 @@
 error: [CV2-08] row[0].button[0].label: limit at most 80, actual 81
-  --> tests/ui/cv2/CV2-08_components_button_label_81.rs:11:55
+  --> tests/ui/cv2/CV2-08_components_button_label_81.rs:17:62
    |
-11 | ... Press { n: 1 }.button("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") ] };
+17 | ...{ n: 1 }.build().label("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") ] };
    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

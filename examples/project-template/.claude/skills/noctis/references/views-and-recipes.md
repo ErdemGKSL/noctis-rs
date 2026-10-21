@@ -484,7 +484,7 @@ async fn redraw(ctx: &impl Ctx, db: &Db, selected: Option<u32>) -> HandlerResult
     ctx.update(render_ticket_setup(&data, &Strings::of(ctx.response_locale()), selected)).await
 }
 
-// ---- autocomplete backed by storage, capped at 25 [planned, Stories 6.7/6.11] ---------
+// ---- autocomplete backed by storage, capped at 25 ---------
 #[derive(SlashCommand, Debug)]
 #[command("ticket send", description = "Send a ticket panel")]
 pub struct TicketSend {
@@ -494,7 +494,7 @@ pub struct TicketSend {
 
 impl TicketSend {
     #[handler]
-    async fn handle(self, ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> { … }
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> { … }
 
     /// `typed` is the raw text (a string even for this `i64` option); Noctis sends the result.
     #[autocomplete(system)]
@@ -508,9 +508,7 @@ impl TicketSend {
 
 `redraw` is called with a `&impl Ctx`; `update` is available on component and modal
 contexts. Register every struct on the Module (`.add::<TicketSetup>().add::<PickSystem>()`
-…) and every string in `locales/en-US.yaml`. [planned: Story 6.11] for the struct form;
-this release writes the same recipe with free functions, `#[derive(Route)]` and
-`.button()`/`.string_select(..)` (SKILL.md §8).
+…) and every string in `locales/en-US.yaml`.
 
 ## 4. Budget helpers and cost [planned, Story 8.3]
 

@@ -1,0 +1,6 @@
+error: `autocomplete` is a bare flag: write `#[option(.., autocomplete)]` and add `#[autocomplete(field)] async fn …(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>`
+         = help: #[derive(SlashCommand)] #[command("warn", description = "…")] struct Warn { #[option(description = "…", autocomplete)] rule: i64 } impl Warn { #[autocomplete(rule)] async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<i64>> { .. } }
+ --> tests/types/withdrawn_autocomplete_path.rs:6:33
+  |
+6 |     #[option(description = "d", autocomplete = suggest)] // withdrawn form
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^

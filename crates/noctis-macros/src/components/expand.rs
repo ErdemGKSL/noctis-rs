@@ -75,25 +75,13 @@ fn with_alt(ty: &TokenStream, m: &MediaArgs) -> TokenStream {
 }
 
 fn route(r: &RouteNode) -> TokenStream {
-    let ui = ui();
     let RouteNode {
         receiver,
-        method,
-        arg,
+        build,
         setters,
-        kind,
         ..
     } = r;
-    let mut out = if kind.is_select() {
-        let options = arg.iter();
-        quote!(#ui::RouteComponents::#method(#receiver #(, #options)*))
-    } else {
-        let base = quote!(#ui::RouteComponents::#method(#receiver));
-        match arg {
-            Some(label) => quote!(#base.label(#label)),
-            None => base,
-        }
-    };
+    let mut out = quote!(#receiver.#build());
     for s in setters {
         let (m, t, a) = (&s.method, &s.turbofish, &s.args);
         out = quote!(#out.#m #t (#a));
@@ -142,16 +130,16 @@ fn node(n: &Node) -> TokenStream {
                 None => base,
             }
         }
-        Kind::Row(items) => match items.as_slice() {
-            [only] if matches!(&only.kind, Kind::Route(r) if r.kind.is_select()) => {
-                let select = node(only);
-                quote!(#ui::ActionRow::select(#select))
-            }
-            _ => {
+        Kind::Row(items) => {
+            // One item: any button or select (`RowOne`); 2-5: buttons only.
+            if let [only] = items.as_slice() {
+                let item = node(only);
+                quote!(#ui::__macro::row_one(#item))
+            } else {
                 let buttons = items.iter().map(node);
                 quote!(#ui::ActionRow::buttons([#(#ui::__macro::row_button(#buttons)),*]))
             }
-        },
+        }
         Kind::Link { url, label } => {
             let (url, label) = (&url.lit, &label.lit);
             quote!(#ui::LinkButton::label(#ui::LinkButton::new(#url), #label))

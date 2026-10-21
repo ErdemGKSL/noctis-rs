@@ -727,8 +727,8 @@ mod tests {
         let h = h.__with_ephemerality(Ephemerality::Ephemeral);
         assert_eq!(h.ephemerality(), Ephemerality::Ephemeral);
         let module = crate::Module::new("m")
-            .add(h)
-            .add(user_handler("Show profile"));
+            .__add(h)
+            .__add(user_handler("Show profile"));
         assert_eq!(module.menus().len(), 2);
         assert!(format!("{module:?}").contains("menus: [\"Quote\", \"Show profile\"]"));
     }

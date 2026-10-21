@@ -1,7 +1,7 @@
 error[E0277]: [CV2-09] a String Select takes 1 to 25 options
-  --> tests/ui/cv2/CV2-09_derive_string_select_26_choices.rs:68:11
+  --> tests/ui/cv2/CV2-09_derive_string_select_26_choices.rs:63:11
    |
-68 |     pick: TwentySix,
+63 |     pick: TwentySix,
    |           ^^^^^^^^^ not 1 to 25 options
    |
    = help: the trait `StringSelectOptions` is not implemented for `Arity<26>`

@@ -241,7 +241,7 @@ async fn recorded_set_core() {
         .runtime(&Runtime::for_test())
         .event_lane(1, 0)
         .error_sink(ErrorOrigin::Event, Arc::clone(&recording))
-        .module(Module::new("m").add(mixed))
+        .module(Module::new("m").__add(mixed))
         .build()
         .unwrap();
     let (sender, receiver) = noctis_gateway::lanes(app.lane_config());

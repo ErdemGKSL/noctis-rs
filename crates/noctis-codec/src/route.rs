@@ -6,7 +6,7 @@ use core::fmt;
 use crate::{CodecError, Field, FieldDecode};
 
 /// Longest route id, in characters, and whether a byte may appear in one
-/// (`[a-z0-9._-]`); shared with `#[derive(Route)]` through `noctis-rules`.
+/// (`[a-z0-9._-]`); shared with the kind derives through `noctis-rules`.
 pub(crate) use noctis_rules::cid::{
     ROUTE_ID_MAX_LEN as MAX_ROUTE_LEN, is_route_id_byte as is_route_byte,
 };
@@ -171,7 +171,8 @@ impl RouteShape {
 
 /// A Route: a route id, a codec shape, a schema version and a Payload type.
 ///
-/// `noctis` derives this with `#[derive(Route)]`, which also proves at
+/// `noctis` derives this with its component and modal kind derives
+/// (`#[derive(Button)]`, …), which also prove at
 /// compile time that every id fits 100 characters; a hand implementation
 /// looks like this:
 ///
@@ -235,7 +236,8 @@ pub trait Route {
 /// A Route declared `select`: its `custom_id`s carry a per-render select
 /// nonce, so a message select can be built from it.
 ///
-/// `#[derive(Route)]` implements it for `#[route("…", select)]`; a
+/// Every select kind derive (`#[derive(StringSelectMenu)]`, …) implements
+/// it; a
 /// hand-written Route whose [`Route::SHAPE`] has a select nonce
 /// ([`RouteShape::select`]) implements it by hand:
 ///
@@ -257,7 +259,7 @@ pub trait Route {
 /// ```
 #[diagnostic::on_unimplemented(
     message = "route `{Self}` is not declared `select`",
-    note = "declare it with #[route(\"…\", select)]: a message select carries a per-render nonce"
+    note = "derive a select kind (`#[derive(StringSelectMenu)]`, `#[derive(UserSelectMenu)]`, …): a message select carries a per-render nonce"
 )]
 pub trait SelectRoute: Route {}
 

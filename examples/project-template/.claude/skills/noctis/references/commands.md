@@ -1,21 +1,16 @@
 # Commands
 
-Covers: `#[command]` paths and patterns, options (`derive(Options)`, `derive(Choices)`),
+Covers: `#[derive(SlashCommand)]` paths and patterns, options (struct fields, `derive(Choices)`),
 autocomplete, context menus, command metadata, merging across Modules, Publish.
 Rules: CMD-01..15, OPT-01..14, CTX-01..03, META-01..05, REG-01..06, LOC-01..06.
 Doctrine: commands are **entry points** that open Views (UD-3).
 
-> **Converged form [planned: Stories 6.10 and 6.11].** A command is a struct: `#[derive(SlashCommand)]`
-> (fields = options, unit struct when none) with `#[command("path", ..)]`, and its handler
-> is `impl X { #[handler] async fn handle(self, ctx: CommandCtx[, path: XPath][, r]) }`;
-> context menus are `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit structs;
-> the Module registers them with `.add::<X>()`. `response = public | ephemeral` and
-> `auto_defer = true | false` are command arguments. The examples below use that form.
-> **This release** still takes free functions: `#[command("path", ..)] async fn x(ctx:
-> CommandCtx[, path][, r][, opts: XOptions])` with `#[derive(Options)] struct XOptions`
-> and `Module::add(x())`; `response` and `auto_defer` already ship as taught. The
-> parameter-order and argument errors quoted below are this release's; Story 6.11
-> rewrites them for the struct form (SKILL.md §8 maps every name).
+> A command is a struct: `#[derive(SlashCommand)]` (fields = options, unit struct when
+> none) with `#[command("path", ..)]`, and its handler is `impl X { #[handler] async fn
+> handle(self, ctx: CommandCtx[, path: XPath][, r]) }`; context menus are
+> `#[derive(UserCommand)]` / `#[derive(MessageCommand)]` unit structs; the Module
+> registers them with `.add::<X>()`. `response = public | ephemeral` and
+> `auto_defer = true | false` are command arguments.
 
 ## 1. Command Paths
 
@@ -33,13 +28,19 @@ tells the kind: `Command` (1 word), `Subcommand` (2), `GroupSubcommand` (3), `No
 `.words()` gives 1/2/3. Subcommand and group nodes come only from paths: nothing sets
 `required` on them (OPT-14).
 
-The handler forms: a path takes `(ctx: CommandCtx[, r: CommandResponder][, options:
-O])`, a pattern with a group takes `(ctx: CommandCtx, path: <Fn>Path[, r:
-CommandResponder][, options: O])` (§2), with `O` a `#[derive(Options)]` struct (§3) and
-the responder as in `responder.md` §4, in exactly this order. Any other parameter list is
-a compile error (`` `#[command("ping")]` handlers take `(ctx: CommandCtx[, r:
-CommandResponder][, options: O])` with `O: Options`, in this order ``); a non-Options type
-as the last parameter is E0277 `` `String` is not an options struct ``. The handler
+The handler is the struct's one `#[handler]` method. A path takes `(self, ctx:
+CommandCtx[, r: CommandResponder])`, a pattern with a group takes `(self, ctx: CommandCtx,
+path: <Struct>Path[, r: CommandResponder])` (§2), with the responder as in `responder.md`
+§4, in exactly this order; the options are the fields of `self` (§3). `#[handler]` takes
+no arguments (`` `#[handler]` takes no arguments; put routing arguments on the kind
+attribute ``); `self` is taken by value (`` a #[handler] method takes `self` by value ``),
+the method is `async` and not generic, and any other parameter list is `` a #[handler]
+method takes `(self, ctx[, path | target | event][, r: CommandResponder<..>])` ``. A
+missing path parameter is E0277 `` this command's Pattern has a group: take `path:
+ConfigPath` after `ctx` ``, an extra one `` this command has a single path: remove the
+path parameter ``. A struct without a `#[handler]` method fails with `` `X` has no
+#[handler] method, so it cannot be registered ``; a free `async fn` with `#[handler]`
+is a compile error whose help shows the struct form. The handler
 returns `HandlerResult<R>` with `R` a `V2Message`, `Components`, a `LegacyMessage` or the
 `Responded` from `acked.done()` (`responder.md` §1): a returned message is the reply
 (or, after `defer`/`reply`, an edit of the original). `HandlerResult<()>` is E0277 `` `()`
@@ -65,17 +66,16 @@ impl SetupStart {
 ```
 
 `response = ephemeral` makes every response private, the auto-defer included (INT-10,
-`responder.md` §2b and §3); `CommandHandler::ephemerality()` reads it. This release
-spells it as the bare flag `ephemeral`.
+`responder.md` §2b and §3); `CommandHandler::ephemerality()` reads it.
 
 [planned] Extractors as further parameters, and `ctx.respond(render_x(..))` as the
 default answer (Story 8.1; `views-and-recipes.md`).
 
-Register it: `Module::new("setup").add(setup_start())` (the macro turns the fn into a
-descriptor constructor `fn setup_start() -> CommandHandler`; call it with `()`).
-`CommandHandler` has `name()` (`module_path::fn`), `pattern()` (the literal),
-`description()`, `paths()` (every Command Path, expansion order) and `options()` (the
-options struct's `OPTIONS`, empty without one).
+Register it: `Module::new("setup").add::<SetupStart>()` (the derive also gives
+`SetupStart::descriptor() -> CommandHandler`). `CommandHandler` has `name()`
+(`module_path::Struct`), `pattern()` (the literal), `description()`, `paths()` (every
+Command Path, expansion order) and `options()` (the struct's `OPTIONS`, empty for a unit
+struct).
 
 Compile-time checks on the literal (each error names its rule):
 
@@ -138,7 +138,7 @@ impl Ban {
     async fn handle(self, ctx: CommandCtx) -> HandlerResult<LegacyMessage> { Ok(LegacyMessage::new("Banned.")) }
 }
 
-let handler = Ban::descriptor(); // [planned: Story 6.11]; this release: `ban()` from a free fn
+let handler = Ban::descriptor(); // the CommandHandler `.add::<Ban>()` registers
 assert_eq!(handler.metadata().default_member_permissions, Some(noctis::Permissions::BAN_MEMBERS));
 assert_eq!(handler.metadata().nsfw, None); // unset, omitted on Publish
 ```
@@ -158,7 +158,7 @@ use noctis::{BaseMeta, Permissions};
 
 pub fn module() -> Module {
     Module::new("config")
-        .add(config_set())                 // "config set prefix", "config set welcome"
+        .add::<ConfigSet>()                // "config set prefix", "config set welcome"
         .base(
             "config",
             BaseMeta::new()
@@ -217,11 +217,11 @@ impl Config {
 ```
 
 A pattern with at least one group generates the path enum `<Struct>Path` next to the
-struct (this release: `<Fn>Path` next to the fn); a plain path generates none.
+struct; a plain path generates none.
 
-- Name: the fn name (`r#` stripped) split on `_`, each part's first letter uppercased,
-  plus `Path`: `config` → `ConfigPath`, `set_prefix` → `SetPrefixPath`, `r#type` →
-  `TypePath`. Same visibility and `#[cfg]` as the fn; every item is documented.
+- Name: the struct name (`r#` stripped) plus `Path`: `Config` → `ConfigPath`,
+  `SetPrefix` → `SetPrefixPath`. Same visibility and `#[cfg]` as the struct; every item
+  is documented.
 - Variants: the chosen alternatives of each expansion, in order, each word split on `-`
   and `_` and UpperCamelCased, concatenated (`set-prefix` → `SetPrefix`, `a_b` → `AB`,
   `ğüncelle` → `Ğüncelle`, `ßa` → `SSa`). An expansion whose optional groups are all
@@ -349,8 +349,7 @@ Each `Violation` prints ``[CMD-11] config set: limit …, actual `set` ``, then 
 ## 3. Options
 
 A command's options are the fields of its `#[derive(SlashCommand)]` struct, read through
-`self` (this release: a separate `#[derive(Options)]` struct taken as the handler's last
-parameter). Each field is one option, in declaration order (never reordered).
+`self`. Each field is one option, in declaration order (never reordered).
 
 ```rust
 use noctis::prelude::*; // SlashCommand, Options (trait), Choices, CommandOption, MessageKey
@@ -402,7 +401,7 @@ field; unknown names list the valid ones (`min`/`max` say `` use `min_value` ``)
 | `min_length = n`, `max_length = n` | unsuffixed integer; `min_length` 0–6000, `max_length` 1–6000, min ≤ max | STRING (`String`) | OPT-06 |
 | `channel_types = [GuildText, …]` | twilight `ChannelType` variant names (`GuildText`, `Private`, `GuildVoice`, `Group`, `GuildCategory`, `GuildAnnouncement`, `AnnouncementThread`, `PublicThread`, `PrivateThread`, `GuildStageVoice`, `GuildDirectory`, `GuildForum`, `GuildMedia`; a path's last segment counts, `ChannelType::GuildText` works); at least one | CHANNEL | OPT-07 |
 | `file_types = ["image", ".pdf"]` | string literals: `image`, `video`, `audio` or `.` + ASCII letters/digits; ≤ 10 | ATTACHMENT | OPT-13 |
-| `autocomplete` | [planned: Story 6.11] a bare flag, paired with the struct's `#[autocomplete(field)]` method returning `Suggestions<T>` (§4); one without the other is an OPT-11 compile error. This release (Story 6.7): `autocomplete = path` names an `#[autocomplete]` fn for this options struct (§4b); it sets the flag and links the handler (no Module registration), and anything else is E0277 `` `autocomplete = …` is not an `#[autocomplete]` handler for `O` `` | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
+| `autocomplete` | a bare flag, paired with the struct's `#[autocomplete(field)]` method returning `Suggestions<T>` (§4); one without the other is an OPT-11 compile error. The withdrawn `autocomplete = path` form is a compile error whose help shows the flag and the method | STRING, INTEGER, NUMBER; not with a Choices type | OPT-10, OPT-11 |
 | `validate = path` | `fn(&T, &CommandCtx) -> Result<(), MessageKey>` (`T` = the field type without `Option`; E0308 on another signature); sync, called only when the value is present, in field order, after the whole struct decoded | all | — |
 
 ### Field types (`CommandOption`, OPT-02)
@@ -485,7 +484,7 @@ literal.
 
 ### Rule functions (options)
 
-`derive(Options)` and dynamically declared options share these functions in
+`derive(SlashCommand)` and dynamically declared options share these functions in
 `noctis::rules::command`. Check a dynamic options array with `validate_options`, then
 feed its size into the tree check:
 
@@ -568,7 +567,7 @@ fails OPT-08. Command choices are STRING only: integer/number choices are [plann
 
 ## 4. Autocomplete
 
-[planned, Story 6.11] Mark the option with the bare `autocomplete` flag and add
+Mark the option with the bare `autocomplete` flag and add
 the paired `#[autocomplete(field)]` method to the command struct's `impl`. The method
 returns the suggestions; Noctis sends them. You never call `respond` in autocomplete.
 
@@ -609,106 +608,42 @@ The flag and the method pair up, checked at `cargo check`:
 The method's parameters, always these three, in this order:
 
 - `ctx: AutocompleteCtx`: `guild_id()` returns `Result<Id<GuildMarker>, HandlerError>` (an
-  error outside a guild, so `?` answers an empty list), `state::<T>()` returns `State<T>`
-  (registered with `.state(..)`), plus `user_locale()`, `cache()`, `modules()` and
-  `limits()`. No
+  error, `AutocompleteError::NotInGuild`, outside a guild, so `?` answers an empty list), `state::<T>()` returns `State<T>`
+  (registered with `.state(..)`; an unregistered type panics with its name, which sends
+  an empty list), plus `command_path()`, `module()`, `shard()`, `channel_id()`,
+  `user_id()`, `user_locale()`, `guild_locale()`, `focused()` (the `Focused` option:
+  `name()`, `kind()`, `value()`, `as_integer()`, `as_number()`) and `http()`. No
   `respond`, no `defer`, no Responder (INT-04, INT-06).
 - `typed: &str`: the raw focused input. Discord sends it as a string even for INTEGER and
   NUMBER options, and it may be partial (`""`, `"-"`, `"1"`). Parse it yourself
   (`typed.parse::<i64>().ok()`), never unwrap.
-- `filled: Partial<Self>`: every other option as `Option<_>`, untrusted and partially
+- `filled: Partial<Self>`: the `<Struct>Partial` the derive generates (it implements
+  `PartialOptions`), every option as `Option<_>`, untrusted and partially
   filled; Discord may omit even required options (OPT-12). Use it to narrow the search
   (`filled.user`), and re-validate the final values in `handle`: autocomplete values
   are not constrained to your suggestions.
 
 The return value, `HandlerResult<Suggestions<T>>`:
 
-- `Suggestions<T>` collects from `(T, label)` pairs; the label is a `String`, a `&str` or
-  a `MessageKey` (resolved in the user's locale): `.map(|r| (r.id, r.name)).collect()`.
+- `Suggestions<T>` collects from `(T, label)` pairs (or `Suggestions::new()` +
+  `.push(value, label)`, `len()`, `is_empty()`); `T: SuggestionValue` (sealed: `String`,
+  `i64`, `f64`); the label is a `SuggestionLabel` from a `String`, a `&str` or a
+  `MessageKey` (resolved in the user's locale): `.map(|r| (r.id, r.name)).collect()`.
 - More than 25 suggestions: the first 25 are sent and a warning is logged (INT-07, in
   every mode). Cap the query at 25 instead.
 - A label over 100 characters is cut to 100 with `…` and a warning. A value Discord would
   reject (a `String` over 100 characters, an INTEGER outside ±2^53, a non-finite NUMBER)
   is dropped with a warning.
-- An error, a panic or more than 3 s sends an empty list and routes the error to the
+- An empty label is dropped with a warning.
+- An error, a panic or more than 2.5 s from receipt (`AutocompleteError::DeadlineMissed`) sends an empty list and routes the error to the
   Autocomplete Error Sink. Keep the work to one bounded query; there is no defer.
 - Registering the command (`.add::<Warn>()`) registers its autocomplete methods too.
 
-### 4b. This release (Story 6.7): the shipped autocomplete shape
-
-Until Story 6.11 converts it to the form above, autocomplete is a free function linked
-from the options struct. Sending already follows the rules above (25 cap with a warning,
-empty list and the Autocomplete Error Sink on failure), except that an over-long choice
-name is dropped rather than truncated and the budget is 2.5 s from receipt.
-
-```rust
-use noctis::prelude::*; // autocomplete, AutocompleteCtx, AutocompleteChoice, Partial
-
-#[derive(Options)]
-pub struct PrefixOptions {
-    #[option(description = "The new prefix", autocomplete = prefix_suggest)]
-    pub value: String,
-    #[option(description = "How many suggestions")]
-    pub limit: Option<i64>,
-}
-
-#[autocomplete]
-async fn prefix_suggest(ctx: AutocompleteCtx, partial: Partial<PrefixOptions>) -> HandlerResult<Responded> {
-    let typed = ctx.focused().value().to_owned();          // raw text typed so far
-    let limit = usize::try_from(partial.limit.unwrap_or(5)).unwrap_or(0); // every field is Option
-    Ok(ctx.respond(                                         // sync: no `.await`
-        ["!", "?", "."]
-            .into_iter()
-            .filter(|p| p.starts_with(&typed))
-            .take(limit)
-            .map(|p| AutocompleteChoice::new(p, p)),        // (name, value)
-    ))
-}
-
-#[command("config (set|get) prefix", description = "Prefix settings")]
-async fn config(ctx: CommandCtx, path: ConfigPath, opts: PrefixOptions) -> HandlerResult<Components> { … }
-
-let module = Module::new("config").add(config()); // no `.add(prefix_suggest())`
-```
-
-- `#[autocomplete]` turns `async fn name(ctx: AutocompleteCtx[, partial: Partial<O>]) ->
-  HandlerResult<Responded>` into `fn name() -> AutocompleteHandler<O>`; link it with
-  `#[option(autocomplete = name)]` on a field of `O`. It is **not** added to a Module:
-  the Command carries it. Without `partial` the handler fits any options struct
-  (`name::<O>()`). Other signatures fail: `` `#[autocomplete]` needs an `async fn` ``,
-  `` … cannot be generic ``, `` `#[autocomplete]` handlers take `(ctx: AutocompleteCtx[,
-  partial: Partial<Options>])` ``, `` `#[autocomplete]` takes no arguments ``; any return
-  type other than `HandlerResult<Responded>` is E0271 at the return type.
-- `AutocompleteCtx` has exactly one response, `respond(self, choices) -> Responded`:
-  synchronous, infallible, consuming the ctx (INT-04, INT-06). There is no `defer`, no
-  `reply` and no Responder (`ctx.defer()` is E0599). Accessors: `command_path()`,
-  `module()`, `shard()`, `guild_id()`, `channel_id()`, `user_id()`, `user_locale()`,
-  `guild_locale()`, `focused()`, `state::<T>()`, `http()`.
-- `ctx.focused()` is the `Focused` option being typed in: `name()`, `kind()` (`OptionType`),
-  `value()` (the raw text, exactly as sent; unvalidated, so an INTEGER option may hold
-  `"-"`), `as_integer() -> Option<i64>`, `as_number() -> Option<f64>` (finite only).
-- `Partial<O>` is the `<Name>Partial` struct `#[derive(Options)]` generates (here
-  `PrefixOptionsPartial`, which implements `PartialOptions` and is `Options::Partial`):
-  every field is `Option<T>`, because Discord may omit any
-  option, required ones included (OPT-12; `let n: i64 = partial.limit` is E0308).
-  Decoding never fails: a missing, mistyped, unresolved or unknown-choice value is
-  `None`, and `validate = path` validators do not run. Re-validate in the Command handler:
-  the final value need not be one of your suggestions.
-- `AutocompleteChoice::new(name, value)`: `name` 1–100 characters, `value` an
-  `AutocompleteValue` from `&str`/`String` (STRING), `i64` (INTEGER or NUMBER) or `f64`
-  (NUMBER), matching the option's type.
-- Noctis sends the first 25 choices; more is truncated with one warning on target
-  `noctis::autocomplete` (`handler`, `returned`, `sent`), in every limit mode (INT-07).
-  Each kept choice Discord would reject (OPT-09 name or value length, wrong value type,
-  OPT-03 / OPT-04 number range) is dropped, with one `noctis::autocomplete` warning
-  naming the count and the rule ids; the rest are still sent.
-- The handler has **2.5 s** from when the interaction arrived (fixed). On an error, a
-  panic, the deadline (`AutocompleteError::DeadlineMissed`) or shutdown, Noctis answers
-  an empty list and routes the failure to the Autocomplete Error Sink
-  (`ErrorOrigin::Autocomplete`); the user sees no error. An unknown Command or an option
-  without a linked handler also gets an empty list, with a `noctis::dispatch` warning.
-- Exactly one type-8 callback goes out per autocomplete interaction; Noctis sends it,
-  never your code.
+Exactly one type-8 callback goes out per autocomplete interaction; Noctis sends it, never
+your code. Each sent suggestion is an `AutocompleteChoice` (`name()`, `value() ->
+&AutocompleteValue`: `String`, `Integer(i64)` or `Number(f64)`), which the testing seams
+return. An unknown Command or an option without an autocomplete method gets an empty
+list, with a `noctis::dispatch` warning.
 
 Rule function: `noctis::rules::command::validate_autocomplete(&choices, OptionType::String,
 &limits) -> Vec<Violation>` checks a choice list the way Noctis checks returned
@@ -740,7 +675,7 @@ choices.truncate(limits.autocomplete_choices);
 ## 5. Context-menu commands
 
 ```rust
-use noctis::prelude::*; // user_command, message_command
+use noctis::prelude::*; // UserCommand, MessageCommand, handler
 use noctis::ui::{Components, ResolvedMessage, ResolvedUser, TextDisplay};
 
 #[derive(UserCommand)]
@@ -774,8 +709,7 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
 ```
 
 - The derive builds a `noctis::ContextMenuHandler` descriptor for `Module::add::<X>()`
-  (this release: the macro turns a free fn into `fn show_profile() ->
-  noctis::ContextMenuHandler` for `Module::add`). `ContextMenuHandler` has `name()` (`module_path::fn`), `menu_name()`,
+  (`X::descriptor()`). `ContextMenuHandler` has `name()` (`module_path::Struct`), `menu_name()`,
   `kind() -> noctis::MenuKind` (`User` / `Message`, from the macro: CTX-03; `.value()` 2 / 3,
   `.name()` `"USER"` / `"MESSAGE"`), `metadata() -> &CommandMetadata`,
   `ephemerality() -> Ephemerality` and `auto_defer() -> bool`.
@@ -790,10 +724,10 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
 - Name 1–32 chars, UTF-16 counted, mixed case, spaces, apostrophes and emoji allowed
   (CTX-01: `` [CTX-01] limit between 1 and 32, actual 33 `` on the literal; reported together
   with a META-03 error). No description and no options (CTX-02): `description = "…"` is
-  `` [CTX-02] context-menu commands have no description ``, an extra parameter is
-  `` [CTX-02] context-menu commands take no options: … ``. The handler is exactly
-  `(ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])` (or `ResolvedMessage`
-  for `#[message_command]`) returning `HandlerResult<R>` like a slash Command (`R` a
+  `` [CTX-02] context-menu commands have no description ``, a struct with fields is
+  `` [CTX-02] context-menu commands have no options: make `Report` a unit struct ``. The
+  handler is exactly `(self, ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])`
+  (or `ResolvedMessage` for `#[derive(MessageCommand)]`) returning `HandlerResult<R>` like a slash Command (`R` a
   `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
   Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11); `ctx.respond(..)`
   (Story 8.1).

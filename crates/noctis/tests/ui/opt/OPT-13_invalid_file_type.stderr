@@ -1,5 +1,5 @@
 error: [OPT-13] a.file_types[0]: limit `image`, `video`, `audio` or a dot-prefixed extension, actual `pdf`
- --> tests/ui/opt/OPT-13_invalid_file_type.rs:7:5
+ --> tests/ui/opt/OPT-13_invalid_file_type.rs:8:5
   |
-7 |     #[option(description = "d", file_types = ["pdf"])]
+8 |     #[option(description = "d", file_types = ["pdf"])]
   |     ^

@@ -11,51 +11,95 @@ use noctis::prelude::*;
 use noctis::twilight::model::gateway::Intents;
 use noctis::{BuildViolation, Runtime};
 
-#[event]
-async fn plain(_ctx: EventCtx, _msg: MessageCreate) -> HandlerResult<()> {
-    Ok(())
+#[derive(EventHandler)]
+struct Plain;
+
+impl Plain {
+    #[handler]
+    async fn handle(self, _ctx: EventCtx, _msg: MessageCreate) -> HandlerResult<()> {
+        Ok(())
+    }
 }
 
+#[derive(EventHandler)]
 #[event(ordered)]
-async fn only_ordered(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
-    Ok(())
+struct OnlyOrdered;
+
+impl OnlyOrdered {
+    #[handler]
+    async fn handle(self, _: EventCtx, _: MessageDelete) -> HandlerResult<()> {
+        Ok(())
+    }
 }
 
+#[derive(EventHandler)]
 #[event(droppable)]
-async fn only_droppable(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
-    Ok(())
+struct OnlyDroppable;
+
+impl OnlyDroppable {
+    #[handler]
+    async fn handle(self, _: EventCtx, _: MessageDelete) -> HandlerResult<()> {
+        Ok(())
+    }
 }
 
+#[derive(EventHandler)]
 #[event(ordered, droppable)]
-async fn both(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
-    Ok(())
+struct Both;
+
+impl Both {
+    #[handler]
+    async fn handle(self, _: EventCtx, _: MessageDelete) -> HandlerResult<()> {
+        Ok(())
+    }
 }
 
+#[derive(EventHandler)]
 #[event(droppable, ordered)]
-async fn both_reversed(_: EventCtx, _: MessageDelete) -> HandlerResult<()> {
-    Ok(())
+struct BothReversed;
+
+impl BothReversed {
+    #[handler]
+    async fn handle(self, _: EventCtx, _: MessageDelete) -> HandlerResult<()> {
+        Ok(())
+    }
 }
 
 mod nested {
     use super::*;
 
     /// A documented, public handler.
-    #[event]
-    pub async fn documented(ctx: EventCtx, ev: UserUpdate) -> HandlerResult<()> {
-        let _ = (ctx.shard(), ev.id);
+    #[derive(EventHandler)]
+    pub struct Documented;
+
+    impl Documented {
+        #[handler]
+        async fn handle(self, ctx: EventCtx, ev: UserUpdate) -> HandlerResult<()> {
+            let _ = (ctx.shard(), ev.id);
+            Ok(())
+        }
+    }
+}
+
+#[derive(EventHandler)]
+struct Grüße;
+
+impl Grüße {
+    #[handler]
+    async fn handle(self, _: EventCtx, _: UserUpdate) -> HandlerResult<()> {
         Ok(())
     }
 }
 
-#[event]
-async fn grüße(_: EventCtx, _: UserUpdate) -> HandlerResult<()> {
-    Ok(())
-}
+#[derive(EventHandler)]
+struct Greet;
 
-#[event]
-async fn greet(ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> {
-    let _ = (ctx.guild_id(), ev.user.id);
-    Ok(())
+impl Greet {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MemberAdd) -> HandlerResult<()> {
+        let _ = (ctx.guild_id(), ev.user.id);
+        Ok(())
+    }
 }
 
 fn expect(handler: &EventHandler, path: &str, event: &str, ordered: bool, droppable: bool) {
@@ -72,50 +116,50 @@ fn expect(handler: &EventHandler, path: &str, event: &str, ordered: bool, droppa
 fn macro_forms() {
     let here = module_path!();
     expect(
-        &plain(),
-        &format!("{here}::plain"),
+        &Plain::descriptor(),
+        &format!("{here}::Plain"),
         "MESSAGE_CREATE",
         false,
         false,
     );
     expect(
-        &only_ordered(),
-        &format!("{here}::only_ordered"),
+        &OnlyOrdered::descriptor(),
+        &format!("{here}::OnlyOrdered"),
         "MESSAGE_DELETE",
         true,
         false,
     );
     expect(
-        &only_droppable(),
-        &format!("{here}::only_droppable"),
+        &OnlyDroppable::descriptor(),
+        &format!("{here}::OnlyDroppable"),
         "MESSAGE_DELETE",
         false,
         true,
     );
     expect(
-        &both(),
-        &format!("{here}::both"),
+        &Both::descriptor(),
+        &format!("{here}::Both"),
         "MESSAGE_DELETE",
         true,
         true,
     );
     expect(
-        &both_reversed(),
-        &format!("{here}::both_reversed"),
+        &BothReversed::descriptor(),
+        &format!("{here}::BothReversed"),
         "MESSAGE_DELETE",
         true,
         true,
     );
     expect(
-        &nested::documented(),
-        &format!("{here}::nested::documented"),
+        &nested::Documented::descriptor(),
+        &format!("{here}::nested::Documented"),
         "USER_UPDATE",
         false,
         false,
     );
     expect(
-        &grüße(),
-        &format!("{here}::grüße"),
+        &Grüße::descriptor(),
+        &format!("{here}::Grüße"),
         "USER_UPDATE",
         false,
         false,
@@ -127,7 +171,7 @@ fn macro_forms() {
 async fn one_handler_derives_intent() {
     let app = App::builder()
         .runtime(&Runtime::for_test())
-        .module(Module::new("profile").add(plain()))
+        .module(Module::new("profile").add::<Plain>())
         .build()
         .unwrap();
     assert_eq!(app.intents(), Intents::GUILDS | Intents::GUILD_MESSAGES);
@@ -138,10 +182,10 @@ async fn one_handler_derives_intent() {
 async fn gw_05_missing_privileged_intent() {
     let err = App::builder()
         .runtime(&Runtime::for_test())
-        .module(Module::new("welcome").add(greet()))
+        .module(Module::new("welcome").add::<Greet>())
         .build()
         .unwrap_err();
-    let path = format!("{}::greet", module_path!());
+    let path = format!("{}::Greet", module_path!());
     match err.violations() {
         [
             BuildViolation::MissingIntent {
@@ -166,8 +210,8 @@ async fn gw_05_missing_privileged_intent() {
         .intents(Intents::GUILD_MEMBERS)
         .module(
             Module::new("welcome")
-                .add(greet())
-                .add(nested::documented()),
+                .add::<Greet>()
+                .add::<nested::Documented>(),
         )
         .build()
         .unwrap();

@@ -114,21 +114,26 @@ impl Probe {
 }
 
 /// Holds `held`, waits for the gate, then calls `GET /users/@me`.
-#[event]
-async fn blocked(ctx: EventCtx, _ev: MessageDelete) -> HandlerResult<()> {
-    let Some(probe) = ctx.state::<Arc<Probe>>() else {
-        return Ok(());
-    };
-    let _held = probe.held.acquire().await;
-    probe.push("start");
-    // Held until the test opens the gate; never closed.
-    let _permit = probe.gate.acquire().await;
-    match ctx.http().current_user().await {
-        Ok(response) if response.status().is_success() => probe.push("http-ok"),
-        _ => probe.push("http-failed"),
+#[derive(EventHandler)]
+struct Blocked;
+
+impl Blocked {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, _ev: MessageDelete) -> HandlerResult<()> {
+        let Some(probe) = ctx.state::<Arc<Probe>>() else {
+            return Ok(());
+        };
+        let _held = probe.held.acquire().await;
+        probe.push("start");
+        // Held until the test opens the gate; never closed.
+        let _permit = probe.gate.acquire().await;
+        match ctx.http().current_user().await {
+            Ok(response) if response.status().is_success() => probe.push("http-ok"),
+            _ => probe.push("http-failed"),
+        }
+        probe.push("end");
+        Ok(())
     }
-    probe.push("end");
-    Ok(())
 }
 
 /// Records the kind of every report.
@@ -201,7 +206,7 @@ impl Running {
             .gateway_url(gw.url())
             .state(Arc::clone(&probe))
             .error_sink(ErrorOrigin::Event, Arc::clone(&sink))
-            .module(Module::new("ops").add(blocked()));
+            .module(Module::new("ops").add::<Blocked>());
         configure(&mut builder);
         let app = builder.build().unwrap();
         let (stop, stopped) = oneshot::channel::<()>();

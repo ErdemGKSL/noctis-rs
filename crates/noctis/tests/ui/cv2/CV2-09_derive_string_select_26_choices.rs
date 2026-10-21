@@ -1,10 +1,5 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("t.form")]
-struct Form;
-impl noctis::__private::ui::Handled for Form {}
-
 #[derive(Choices, Clone, Copy)]
 enum TwentySix {
     #[choice("V1")]
@@ -62,10 +57,17 @@ enum TwentySix {
 }
 
 #[derive(Modal)]
-#[modal(route = Form, title = "T")]
+#[modal("t.form", defaults(title = "T"))]
 struct F {
     #[string_select("Pick")]
     pick: TwentySix,
+}
+
+impl F {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
 }
 
 fn main() {}

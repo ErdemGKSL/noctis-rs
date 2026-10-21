@@ -1,7 +1,7 @@
 error[E0277]: [MOD-07] a Radio Group takes 2 to 10 options
-  --> tests/ui/mod/MOD-07_radio_one_choice.rs:18:11
+  --> tests/ui/mod/MOD-07_radio_one_choice.rs:13:11
    |
-18 |     pick: One,
+13 |     pick: One,
    |           ^^^ not 2 to 10 options
    |
    = help: the trait `RadioOptions` is not implemented for `Arity<1>`

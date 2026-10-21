@@ -35,20 +35,22 @@ use crate::wire::{Ids, Wire, WiredSeq, head, opt, serialize_via_wire};
 type Text = Cow<'static, str>;
 
 /// A modal (the `data` of interaction callback type 9): a title and 1-5
-/// top-level components, built only from a Route value with
-/// [`RouteComponents::modal`](crate::RouteComponents::modal).
+/// top-level components, built only from a `#[derive(Modal)]` struct
+/// (`X { .. }.build()` or `X::blank(..)`).
 ///
-/// Its `custom_id` is the Route's encoding (MOD-08); the submission is
-/// dispatched to that Route's handler. The top level takes a [`ModalLabel`]
-/// or a [`TextDisplay`] ([`ModalTopLevel`], MOD-02, MOD-03). It serializes as
-/// `{"custom_id", "title", "components"}` with no numeric ids and never an
-/// Action Row; a `custom_id` still unresolved is a serde error.
-/// [`validate`](crate::validate) and [`cost`](crate::cost) take a modal.
+/// Its `custom_id` is the struct's Route encoding (MOD-08); the submission
+/// is dispatched to that struct's handler. The top level takes a
+/// [`ModalLabel`] or a [`TextDisplay`] ([`ModalTopLevel`], MOD-02, MOD-03).
+/// It serializes as `{"custom_id", "title", "components"}` with no numeric
+/// ids and never an Action Row; a `custom_id` still unresolved is a serde
+/// error. [`validate`](crate::validate) and [`cost`](crate::cost) take a
+/// modal.
 ///
 /// ```
 /// # use core::fmt;
 /// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
-/// use noctis_ui::{ModalLabel, RouteComponents, TextDisplay, TextInput, TextInputStyle};
+/// use noctis_ui::{ModalLabel, TextDisplay, TextInput, TextInputStyle};
+/// use noctis_ui::__macro::build_modal;
 ///
 /// struct Save;
 /// # impl Payload for Save {
@@ -63,8 +65,8 @@ type Text = Cow<'static, str>;
 /// # }
 /// # impl noctis_ui::Handled for Save {}
 ///
-/// let modal = Save
-///     .modal("Feedback")
+/// // What `#[derive(Modal)]`'s `Save.build()` expands to.
+/// let modal = build_modal::<Save>(Save, "Feedback")
 ///     .push(TextDisplay::new("Thanks!"))
 ///     .push(ModalLabel::new("Text", TextInput::new("text", TextInputStyle::Short)));
 /// assert_eq!((modal.title(), modal.len()), ("Feedback", 2));

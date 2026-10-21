@@ -1,8 +1,14 @@
 use noctis::prelude::*;
 
+#[derive(SlashCommand)]
 #[command("ping", description = "d")]
-async fn ping(_ctx: CommandCtx) -> HandlerResult<u8> {
-    Ok(1)
+struct Ping;
+
+impl Ping {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<u8> {
+        Ok(1)
+    }
 }
 
 fn main() {}

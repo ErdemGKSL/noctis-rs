@@ -1,7 +1,7 @@
 error: [CMD-01] it's: limit letters, numbers, `-`, `_`, `ʼ`, Devanagari or Thai only, actual `it\'s`
          = note: first invalid character `'` (U+0027)
          = help: use `ʼ` (U+02BC) instead of `'`
- --> tests/ui/cmd/CMD-01_ascii_apostrophe.rs:3:11
+ --> tests/ui/cmd/CMD-01_ascii_apostrophe.rs:4:11
   |
-3 | #[command("it's", description = "d")]
+4 | #[command("it's", description = "d")]
   |           ^^^^^^

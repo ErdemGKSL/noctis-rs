@@ -1,5 +1,5 @@
 //! Typed chat-input command options: the [`CommandOption`] trait of option
-//! field types, the [`Options`] trait `#[derive(Options)]` implements, the
+//! field types, the [`Options`] trait `#[derive(SlashCommand)]` implements, the
 //! decoded [`CommandInput`] of an interaction and the typed errors
 //! [`OptionError`] and [`InvalidOption`] (FR-10, FR-77, AD-4, AD-26).
 //!
@@ -18,10 +18,10 @@ use twilight_model::id::marker::{
     AttachmentMarker, ChannelMarker, GenericMarker, RoleMarker, UserMarker,
 };
 
-use crate::autocomplete::{AutocompleteHandler, PartialOptions};
+use crate::autocomplete::{__AutocompleteMethod, PartialOptions};
 use crate::command::CommandCtx;
 
-/// A field type of a `#[derive(Options)]` struct: its Discord option type
+/// A field type of a `#[derive(SlashCommand)]` struct: its Discord option type
 /// (OPT-02), its predefined choices and how it decodes from an
 /// [`OptionValue`].
 ///
@@ -64,23 +64,23 @@ pub trait CommandOption: Sized + Send + Sync + 'static {
     -> Result<Self, OptionError>;
 }
 
-/// A typed options struct, implemented by `#[derive(Options)]`.
+/// The typed options of a slash Command: the named fields of a
+/// `#[derive(SlashCommand)]` struct, which implements it.
 ///
-/// A `#[command]` handler takes it as its last parameter: the struct is
-/// decoded from the interaction, then every validator runs, and only then
-/// does the handler run.
+/// The struct is decoded from the interaction, then every validator runs,
+/// and only then does its `#[handler]` method run on it.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not an options struct",
-    label = "not an options struct",
-    note = "derive it with `#[derive(Options)]`"
+    message = "`{Self}` is not a slash Command's options",
+    label = "not a `#[derive(SlashCommand)]` struct",
+    note = "derive it with `#[derive(SlashCommand)]`"
 )]
 pub trait Options: Sized + Send + 'static {
     /// The option declarations, in field order.
     const OPTIONS: &'static [OptionDecl<'static>];
 
-    /// The same fields, each an `Option`: what autocomplete handlers get as
-    /// [`Partial<Self>`](crate::Partial) (OPT-12). `#[derive(Options)]`
-    /// generates it as `<Name>Partial`.
+    /// The same fields, each an `Option`: what autocomplete methods get as
+    /// [`Partial<Self>`](crate::Partial) (OPT-12).
+    /// `#[derive(SlashCommand)]` generates it as `<Struct>Partial`.
     type Partial: PartialOptions<Options = Self>;
 
     /// Decodes the struct from an interaction's leaf options.
@@ -101,9 +101,11 @@ pub trait Options: Sized + Send + 'static {
         Ok(())
     }
 
-    /// The autocomplete handler linked to the option `option` with
-    /// `#[option(autocomplete = path)]`, if any.
-    fn autocomplete(option: &str) -> Option<AutocompleteHandler<Self>> {
+    /// The `#[autocomplete(field)]` method bound to the option `option`
+    /// (flagged `#[option(.., autocomplete)]`), if any; the method table
+    /// `#[derive(SlashCommand)]` generates.
+    #[doc(hidden)]
+    fn __autocomplete(option: &str) -> Option<__AutocompleteMethod> {
         let _ = option;
         None
     }
@@ -260,7 +262,7 @@ pub struct InvalidOption {
 }
 
 impl InvalidOption {
-    /// The failure of the option `option`; what `#[derive(Options)]` builds.
+    /// The failure of the option `option`; what `#[derive(SlashCommand)]` builds.
     #[doc(hidden)]
     pub fn __new(option: &'static str, key: MessageKey) -> Self {
         Self { option, key }
@@ -692,7 +694,7 @@ resolved_option! {
     ResolvedAttachment => Attachment, Attachment;
 }
 
-/// Helpers `#[derive(Options)]` and `#[derive(Choices)]` expand to; not
+/// Helpers `#[derive(SlashCommand)]` and `#[derive(Choices)]` expand to; not
 /// public API.
 #[doc(hidden)]
 pub mod __options {

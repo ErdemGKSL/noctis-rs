@@ -1,6 +1,6 @@
-error: [CID-03] unknown #[route] argument `colour`
-         = help: the codec arguments are `by_ref`, `overflow = spill`, `schema = n`, `select` and `signed`
- --> tests/ui/cid/CID-03_unknown_argument.rs:4:14
+error: [CID-03] unknown #[button] argument `colour`
+         = help: the codec arguments are `by_ref`, `overflow = spill`, `schema = n` and `signed`; the component's look goes in `defaults(..)`
+ --> tests/ui/cid/CID-03_unknown_argument.rs:4:15
   |
-4 | #[route("a", colour)]
-  |              ^^^^^^
+4 | #[button("a", colour, defaults(style = Secondary, label = "Go"))]
+  |               ^^^^^^

@@ -1,5 +1,29 @@
-error: [CV2-06] row[0]: limit exactly one select, alone in its row, actual 2
-  --> tests/ui/cv2/CV2-06_components_select_with_button.rs:16:27
+error[E0277]: [CV2-06] a select fills its Action Row alone: `StringSelectBuilder<Pick>` is not a button
+  --> tests/ui/cv2/CV2-06_components_select_with_button.rs:28:13
    |
-16 |     let _ = components! { row [ Pick.user_select(), Press { n: 1 }.button() ] };
-   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+28 |     let _ = components! { row [ Pick.build(), Press { n: 1 }.build() ] };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not a button
+   |
+   = help: the trait `noctis::__private::noctis_ui::placement::RowButtonItem` is not implemented for `StringSelectBuilder<Pick>`
+   = note: a row of 2 to 5 items holds only buttons; put the select in a `row [ .. ]` of its own
+help: the following other types implement trait `noctis::__private::noctis_ui::placement::RowButtonItem`
+  --> $WORKSPACE/crates/noctis-ui/src/placement.rs
+   |
+   |         impl RowButtonItem for $ty {}
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |         |
+   |         `LinkButton`
+   |         `PremiumButton`
+   |         `noctis::ui::Button`
+...
+   | button!(LinkButton, PremiumButton, Button);
+   | ------------------------------------------ in this macro invocation
+...
+   | impl<R> RowButtonItem for RouteButton<R> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RouteButton<R>`
+note: required by a bound in `noctis::__private::noctis_ui::__macro::row_button`
+  --> $WORKSPACE/crates/noctis-ui/src/lib.rs
+   |
+   |     pub fn row_button<B: RowButtonItem>(button: B) -> Button {
+   |                          ^^^^^^^^^^^^^ required by this bound in `row_button`
+   = note: this error originates in the macro `components` which comes from the expansion of the macro `button` (in Nightly builds, run with -Z macro-backtrace for more info)

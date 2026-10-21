@@ -56,10 +56,18 @@ enum Big {
     V25,
 }
 
-#[derive(Options)]
+#[derive(SlashCommand)]
+#[command("o", description = "d")]
 struct O {
     #[option(description = "d")]
     a: Big,
+}
+
+impl O {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
 }
 
 fn main() {}

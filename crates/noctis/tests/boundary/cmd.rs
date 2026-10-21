@@ -4,81 +4,137 @@
 use noctis::prelude::*;
 use noctis::rules::command::PathKind;
 
+#[derive(SlashCommand)]
 #[command("settings logs channel", description = "d")]
-async fn cmd_10_three_words(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd10ThreeWords;
+
+impl Cmd10ThreeWords {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", description = "d")]
-async fn cmd_02_word_32(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd02Word32;
+
+impl Cmd02Word32 {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("ğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğ", description = "d")]
-async fn cmd_02_unicode_word_32(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd02UnicodeWord32;
+
+impl Cmd02UnicodeWord32 {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command(
     "desc",
     description = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )]
-async fn cmd_04_description_100(_ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd04Description100;
+
+impl Cmd04Description100 {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command(
     "emoji",
     description = "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
 )]
-async fn cmd_04_description_utf16_100(
-    _ctx: CommandCtx,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd04DescriptionUtf16100;
+
+impl Cmd04DescriptionUtf16100 {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command(
     "b (a1|a2|a3|a4|a5|a6|a7|a8|a9|a10|a11|a12|a13|a14|a15|a16|a17|a18|a19|a20|a21|a22|a23|a24|a25)",
     description = "d"
 )]
-async fn cmd_13_children_25(
-    _ctx: CommandCtx,
-    _path: Cmd13Children25Path,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd13Children25;
+
+impl Cmd13Children25 {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _path: Cmd13Children25Path,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("(a|b) (c|d)", description = "d")]
-async fn cmd_14_two_bases(
-    _ctx: CommandCtx,
-    _path: Cmd14TwoBasesPath,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd14TwoBases;
+
+impl Cmd14TwoBases {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _path: Cmd14TwoBasesPath,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command("mod (ban|kick)", description = "d")]
-async fn cmd_14_subcommands(
-    _ctx: CommandCtx,
-    _path: Cmd14SubcommandsPath,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd14Subcommands;
+
+impl Cmd14Subcommands {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _path: Cmd14SubcommandsPath,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
+#[derive(SlashCommand)]
 #[command(
     "(a|b) (c1|c2|c3|c4|c5|c6|c7|c8|c9|c10|c11|c12|c13)",
     description = "d",
     max_expansions = 26
 )]
-async fn cmd_15_raised_cap(
-    _ctx: CommandCtx,
-    _path: Cmd15RaisedCapPath,
-) -> HandlerResult<noctis::ui::LegacyMessage> {
-    Ok(noctis::ui::LegacyMessage::new("ok"))
+struct Cmd15RaisedCap;
+
+impl Cmd15RaisedCap {
+    #[handler]
+    async fn handle(
+        self,
+        _ctx: CommandCtx,
+        _path: Cmd15RaisedCapPath,
+    ) -> HandlerResult<noctis::ui::LegacyMessage> {
+        Ok(noctis::ui::LegacyMessage::new("ok"))
+    }
 }
 
 #[test]
 fn cmd_10_three_words_is_a_group_subcommand() {
-    let handler = cmd_10_three_words();
+    let handler = Cmd10ThreeWords::descriptor();
     assert_eq!(handler.paths(), ["settings logs channel"]);
     assert_eq!(
         PathKind::of(handler.paths()[0]),
@@ -89,20 +145,23 @@ fn cmd_10_three_words_is_a_group_subcommand() {
 #[test]
 fn cmd_02_words_of_32_compile() {
     assert_eq!(
-        cmd_02_word_32().paths(),
+        Cmd02Word32::descriptor().paths(),
         ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
     );
     assert_eq!(
-        cmd_02_unicode_word_32().paths(),
+        Cmd02UnicodeWord32::descriptor().paths(),
         ["ğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğğ"]
     );
 }
 
 #[test]
 fn cmd_04_descriptions_of_100_compile() {
-    assert_eq!(cmd_04_description_100().description().len(), 100);
+    assert_eq!(Cmd04Description100::descriptor().description().len(), 100);
     assert_eq!(
-        cmd_04_description_utf16_100().description().chars().count(),
+        Cmd04DescriptionUtf16100::descriptor()
+            .description()
+            .chars()
+            .count(),
         50
     );
 }
@@ -110,7 +169,7 @@ fn cmd_04_descriptions_of_100_compile() {
 #[test]
 fn cmd_13_children_25_compile() {
     use Cmd13Children25Path as P;
-    assert_eq!(cmd_13_children_25().paths().len(), 25);
+    assert_eq!(Cmd13Children25::descriptor().paths().len(), 25);
     assert_eq!(
         P::ALL,
         [
@@ -145,15 +204,21 @@ fn cmd_13_children_25_compile() {
 
 #[test]
 fn cmd_14_bases_and_subcommands_compile() {
-    assert_eq!(cmd_14_two_bases().paths(), ["a c", "a d", "b c", "b d"]);
+    assert_eq!(
+        Cmd14TwoBases::descriptor().paths(),
+        ["a c", "a d", "b c", "b d"]
+    );
     assert_eq!(Cmd14TwoBasesPath::ALL.len(), 4);
-    assert_eq!(cmd_14_subcommands().paths(), ["mod ban", "mod kick"]);
+    assert_eq!(
+        Cmd14Subcommands::descriptor().paths(),
+        ["mod ban", "mod kick"]
+    );
     assert_eq!(Cmd14SubcommandsPath::Kick.as_str(), "mod kick");
 }
 
 #[test]
 fn cmd_15_raised_cap_compiles() {
-    assert_eq!(cmd_15_raised_cap().paths().len(), 26);
+    assert_eq!(Cmd15RaisedCap::descriptor().paths().len(), 26);
     assert_eq!(Cmd15RaisedCapPath::ALL.len(), 26);
     assert_eq!(Cmd15RaisedCapPath::BC13.as_str(), "b c13");
 }

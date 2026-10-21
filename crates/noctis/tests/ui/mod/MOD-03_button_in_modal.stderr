@@ -1,10 +1,10 @@
 error[E0277]: [MOD-03] `LinkButton` cannot be a top-level modal component
-  --> tests/ui/mod/MOD-03_button_in_modal.rs:10:37
+  --> tests/ui/mod/MOD-03_button_in_modal.rs:16:84
    |
-10 |     let _ = Form.modal("Form").push(LinkButton::new("https://x.y"));
-   |                                ---- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not allowed at the top level of a modal
-   |                                |
-   |                                required by a bound introduced by this call
+16 |     let _ = noctis::__private::ui::__macro::build_modal::<Form>(Form, "Form").push(LinkButton::new("https://x.y"));
+   |                                                                               ---- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not allowed at the top level of a modal
+   |                                                                               |
+   |                                                                               required by a bound introduced by this call
    |
    = help: the trait `ModalTopLevel` is not implemented for `LinkButton`
    = note: a modal's top level takes a ModalLabel or a TextDisplay (MOD-02: 1 to 5)

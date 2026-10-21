@@ -12,13 +12,30 @@ use core::fmt;
 use noctis_codec::{
     FieldWriter, Parts, Payload, Route, RouteId, RouteShape, SelectNonce, SelectRoute,
 };
+use noctis_ui::__macro::{ComponentValue, SelectDefaults, build_string_select_builder};
 use noctis_ui::{
     ActionRow, Attachment, AttachmentSet, CallbackFlags, Components, CreateFlags, EditFlags,
-    Handled, LegacyMessage, LinkButton, Mentions, MessageBody, MessageFormat, Roles,
-    RouteComponents, SelectOption, TextDisplay, UiError, Users, V2Message,
+    Handled, LegacyMessage, LinkButton, Mentions, MessageBody, MessageFormat, Roles, SelectOption,
+    StringSelect, TextDisplay, UiError, Users, V2Message,
 };
 use serde_json::{Value, json};
 use twilight_model::id::Id;
+
+/// Select defaults that send nothing (as before Story 6.11's derives).
+const NO_DEFAULTS: SelectDefaults = SelectDefaults {
+    placeholder: None,
+    min_values: None,
+    max_values: None,
+    disabled: false,
+};
+
+/// A String Select of `route` with `options` and no declared defaults.
+fn string_select<R: ComponentValue + SelectRoute>(
+    route: R,
+    options: impl IntoIterator<Item = SelectOption>,
+) -> StringSelect {
+    build_string_select_builder(route, &NO_DEFAULTS).options(options)
+}
 
 /// A handled `select` Route with no field: its id waits for a nonce.
 #[derive(Debug, Clone)]
@@ -63,7 +80,7 @@ fn to_json(body: &MessageBody<'_>) -> Value {
 }
 
 fn pick_row() -> ActionRow {
-    ActionRow::select(Pick.string_select([SelectOption::new("A", "a")]))
+    ActionRow::select(string_select(Pick, [SelectOption::new("A", "a")]))
 }
 
 const fn assert_send_sync<T: Send + Sync>() {}

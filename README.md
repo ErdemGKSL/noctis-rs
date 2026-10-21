@@ -85,51 +85,68 @@ use noctis::prelude::*;
 #[derive(PayloadEnum, Clone, Copy, PartialEq, Eq)]
 enum Tab { Overview, Members }
 
-/// Typed state carried inside each button's custom_id.
-/// Its maximum encoded length is proven at compile time.
-#[derive(Route, Clone, Copy)]
-#[route("dash.tab")]
+/// One struct per interaction: the derive names the kind, the fields are the
+/// typed state carried inside the custom_id (its maximum length is proven at
+/// compile time), and the handler is a method.
+#[derive(Button, Clone, Copy)]
+#[button("dash.tab", defaults(style = Secondary, label = "Tab"))]
 struct OpenTab { guild: Id<GuildMarker>, tab: Tab }
 
-#[derive(Route, Clone, Copy)]
-#[route("dash.page")]
+#[derive(Button, Clone, Copy)]
+#[button("dash.page", defaults(style = Secondary, emoji = "▶️"))]
 struct MembersPage { guild: Id<GuildMarker>, page: u16 }
 
 /// The View: a plain function. The command and every click call it.
 fn render_dashboard(members: &[Member], guild: Id<GuildMarker>, tab: Tab, page: u16) -> V2Message {
     let tabs = ActionRow::buttons([Tab::Overview, Tab::Members].map(|t| {
-        OpenTab { guild, tab: t }.button().label(t.label()).disabled(t == tab)
+        OpenTab { guild, tab: t }.build().label(t.label()).disabled(t == tab)
     }));
     let c = Container::new().push(tabs);
     let c = match tab {
         Tab::Overview => c.push(TextDisplay::new(format!("**{}** members", members.len()))),
         Tab::Members => c.push(TextDisplay::new(page_text(members, page))).push(ActionRow::buttons([
-            MembersPage { guild, page: page.saturating_sub(1) }.button().label("◀").disabled(page == 0),
-            MembersPage { guild, page: page + 1 }.button().label("▶").disabled(is_last(members, page)),
+            MembersPage { guild, page: page.saturating_sub(1) }.build().label("◀").disabled(page == 0),
+            MembersPage { guild, page: page + 1 }.build().label("▶").disabled(is_last(members, page)),
         ])),
     };
     V2Message::new(Components::new().push(c))   // limits are validated before sending
 }
 
 /// `/dashboard`: no options, opens the dashboard.
+#[derive(SlashCommand)]
 #[command("dashboard", description = "Open the server dashboard")]
-async fn dashboard(ctx: CommandCtx, db: State<Db>) -> HandlerResult<Responded> {
-    let Some(guild) = ctx.guild_id() else { return ctx.reply_text("Servers only.").await };
-    let members = db.members(guild).await?;
-    ctx.respond(render_dashboard(&members, guild, Tab::Overview, 0)).await
+struct Dashboard;
+
+impl Dashboard {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<V2Message> {
+        let Some(guild) = ctx.guild_id() else {
+            return Ok(V2Message::new(Components::new().push(TextDisplay::new("Servers only."))));
+        };
+        let members = ctx.state::<Db>().members(guild).await?;
+        Ok(render_dashboard(&members, guild, Tab::Overview, 0))
+    }
 }
 
 /// One handler for every tab button, on every message, on every shard.
-#[handler]
-async fn open_tab(ctx: ComponentCtx, to: OpenTab, db: State<Db>) -> HandlerResult<Responded> {
-    let members = db.members(to.guild).await?;
-    ctx.update(render_dashboard(&members, to.guild, to.tab, 0)).await   // flags, defer, limits handled
+impl OpenTab {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let members = ctx.state::<Db>().members(self.guild).await?;
+        ctx.update(render_dashboard(&members, self.guild, self.tab, 0)).await   // flags, defer, limits handled
+    }
 }
 
-#[handler]
-async fn members_page(ctx: ComponentCtx, to: MembersPage, db: State<Db>) -> HandlerResult<Responded> {
-    let members = db.members(to.guild).await?;
-    ctx.update(render_dashboard(&members, to.guild, Tab::Members, to.page)).await
+impl MembersPage {
+    #[handler]
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let members = ctx.state::<Db>().members(self.guild).await?;
+        ctx.update(render_dashboard(&members, self.guild, Tab::Members, self.page)).await
+    }
+}
+
+fn dashboard_module() -> Module {
+    Module::new("dashboard").add::<Dashboard>().add::<OpenTab>().add::<MembersPage>()
 }
 
 #[tokio::main]
@@ -147,7 +164,8 @@ async fn main() -> noctis::Result<()> {
 This doesn't compile, on purpose:
 
 ```rust
-#[command("config (set|get) (prefix|welcome)?")]
+#[derive(SlashCommand)]
+#[command("config (set|get) (prefix|welcome)?", description = "Settings")]
 //        ^ error[CMD-11]: "config set" would be both a subcommand and a subcommand group
 ```
 

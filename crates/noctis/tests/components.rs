@@ -1,4 +1,5 @@
-//! Components built through the facade: derived Routes made handled, a
+//! Components built through the facade: kind-derived structs built with
+//! `.build()`, a
 //! Container/Section/row tree from `noctis::ui` and `noctis::prelude`, and a
 //! select `custom_id` resolved through the hidden hooks (FR-23, FR-58,
 //! AD-18).
@@ -10,28 +11,43 @@
 
 use noctis::__private::codec::{Parts, SelectNonce};
 use noctis::codec::SelectRoute;
-use noctis::prelude::*;
 use noctis::ui::{
     ActionRow, ButtonStyle, Components, Container, Rgb, Section, SelectOption, Separator,
     TextDisplay,
 };
 use serde_json::json;
 
-#[derive(Route)]
-#[route("shop.buy")]
+#[derive(::noctis::Button)]
+#[button("shop.buy", defaults(style = Secondary, label = "Go"))]
 struct Buy {
     item: u64,
 }
 
-impl ::noctis::__private::ui::Handled for Buy {}
+impl Buy {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
-#[derive(Route)]
-#[route("shop.size", select)]
+#[derive(::noctis::StringSelectMenu)]
+#[string_select("shop.size", defaults(placeholder = "Pick"))]
 struct Size {
     item: u64,
 }
 
-impl ::noctis::__private::ui::Handled for Size {}
+impl Size {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 const fn assert_select<R: SelectRoute>() {}
 const _: () = assert_select::<Size>();
@@ -45,18 +61,19 @@ fn derived_routes_build_a_tree() {
                 .push(Section::new(
                     [TextDisplay::new("**Sword**")],
                     Buy { item: 255 }
-                        .button()
+                        .build()
                         .style(ButtonStyle::Primary)
                         .label("Buy"),
                 ))
                 .push(Separator::small())
                 .push(ActionRow::select(
                     Size { item: 255 }
-                        .string_select([SelectOption::new("Small", "s").default(true)])
+                        .build()
+                        .options([SelectOption::new("Small", "s").default(true)])
                         .placeholder("Size"),
                 )),
         )
-        .push(ActionRow::buttons([Buy { item: 1 }.button()]));
+        .push(ActionRow::buttons([Buy { item: 1 }.build()]));
 
     // The select id waits for the per-render nonce.
     assert!(serde_json::to_string(&body).is_err());
@@ -104,7 +121,7 @@ fn derived_routes_build_a_tree() {
             {
                 "type": 1,
                 "id": 8,
-                "components": [{"type": 2, "id": 9, "style": 2, "custom_id": "0shop.buy:1"}]
+                "components": [{"type": 2, "id": 9, "style": 2, "label": "Go", "custom_id": "0shop.buy:1"}]
             }
         ])
     );

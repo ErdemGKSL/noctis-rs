@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: [CID-01] route `report.reason` has unbounded fields
-                = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to #[route]
+                = help: bound them (`BoundedStr<N>`), or add `by_ref` or `overflow = spill` to the kind attribute
    --> tests/ui/cid/CID-01_unbounded_string.rs:5:8
     |
   5 | struct Report {

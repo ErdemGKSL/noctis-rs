@@ -63,7 +63,7 @@ async fn empty_module() {
 #[tokio::test]
 async fn one_handler() {
     let app = builder()
-        .module(Module::new("m").add(noop::<MessageCreate>("h")))
+        .module(Module::new("m").__add(noop::<MessageCreate>("h")))
         .build()
         .unwrap();
     assert_eq!(app.intents(), Intents::GUILDS | Intents::GUILD_MESSAGES);
@@ -76,13 +76,13 @@ async fn one_handler() {
 /// Matrix 4: pre-order fold with ancestor paths.
 #[tokio::test]
 async fn fold_order_and_ancestors() {
-    let g = Module::new("g").add(noop::<MessageDelete>("h4"));
+    let g = Module::new("g").__add(noop::<MessageDelete>("h4"));
     let c = Module::new("c")
-        .add(noop::<MessageDelete>("h2"))
-        .add(noop::<MessageCreate>("h3"))
+        .__add(noop::<MessageDelete>("h2"))
+        .__add(noop::<MessageCreate>("h3"))
         .module(g);
-    let p = Module::new("p").add(noop::<UserUpdate>("h1")).module(c);
-    let r = Module::new("r").add(noop::<MessageDelete>("h5"));
+    let p = Module::new("p").__add(noop::<UserUpdate>("h1")).module(c);
+    let r = Module::new("r").__add(noop::<MessageDelete>("h5"));
     let app = builder().module(p).module(r).build().unwrap();
     let registry = app.registry();
     assert_eq!(names(registry), ["h1", "h2", "h3", "h4", "h5"]);
@@ -110,8 +110,10 @@ async fn fold_order_and_ancestors() {
 /// Matrix 5: `module` before `add` still folds the parent first.
 #[tokio::test]
 async fn call_order_irrelevant() {
-    let c = Module::new("c").add(noop::<MessageDelete>("h2"));
-    let p = Module::new("p").module(c).add(noop::<MessageDelete>("h1"));
+    let c = Module::new("c").__add(noop::<MessageDelete>("h2"));
+    let p = Module::new("p")
+        .module(c)
+        .__add(noop::<MessageDelete>("h1"));
     let app = builder().module(p).build().unwrap();
     assert_eq!(names(app.registry()), ["h1", "h2"]);
 }
@@ -121,7 +123,7 @@ async fn call_order_irrelevant() {
 async fn same_descriptor_twice() {
     let h = noop::<MessageDelete>("h");
     let app = builder()
-        .module(Module::new("m").add(h.clone()).add(h))
+        .module(Module::new("m").__add(h.clone()).__add(h))
         .build()
         .unwrap();
     assert_eq!(names(app.registry()), ["h", "h"]);
@@ -131,8 +133,8 @@ async fn same_descriptor_twice() {
 #[tokio::test]
 async fn tree_on_two_apps() {
     let tree = Module::new("m")
-        .add(noop::<MessageDelete>("h"))
-        .module(Module::new("m/c").add(noop::<MessageCreate>("h2")));
+        .__add(noop::<MessageDelete>("h"))
+        .module(Module::new("m/c").__add(noop::<MessageCreate>("h2")));
     let a = builder().module(tree.clone()).build().unwrap();
     let b = builder().module(tree).build().unwrap();
     assert_eq!(names(a.registry()), ["h", "h2"]);
@@ -145,7 +147,7 @@ async fn tree_on_two_apps() {
 async fn ids_unvalidated() {
     for id in ["", "A B", "ü/🙂"] {
         let app = builder()
-            .module(Module::new(id).add(noop::<MessageDelete>("h")))
+            .module(Module::new(id).__add(noop::<MessageDelete>("h")))
             .build()
             .unwrap();
         assert_eq!(app.registry().entries()[0].module, id);
@@ -156,7 +158,7 @@ struct Mounts;
 
 impl Plugin for Mounts {
     fn install(&self, app: &mut AppBuilder) {
-        app.module(Module::new("x").add(noop::<MessageDelete>("hx")));
+        app.module(Module::new("x").__add(noop::<MessageDelete>("hx")));
     }
 }
 
@@ -165,7 +167,7 @@ impl Plugin for Mounts {
 async fn plugin_mounts() {
     let app = builder()
         .plugin(Mounts)
-        .module(Module::new("a").add(noop::<MessageDelete>("ha")))
+        .module(Module::new("a").__add(noop::<MessageDelete>("ha")))
         .build()
         .unwrap();
     assert_eq!(names(app.registry()), ["ha", "hx"]);
@@ -175,7 +177,7 @@ async fn plugin_mounts() {
 #[tokio::test]
 async fn builder_reset() {
     let mut b = builder();
-    b.module(Module::new("m").add(noop::<MessageDelete>("h")))
+    b.module(Module::new("m").__add(noop::<MessageDelete>("h")))
         .event_lane(1, 0)
         .handler_concurrency(3);
     let first = b.build().unwrap();
@@ -194,7 +196,7 @@ async fn builder_reset() {
 #[tokio::test]
 async fn gw_05_missing_members_intent() {
     let err = builder()
-        .module(Module::new("welcome").add(noop::<MemberAdd>("bot::greet")))
+        .module(Module::new("welcome").__add(noop::<MemberAdd>("bot::greet")))
         .build()
         .unwrap_err();
     assert_eq!(
@@ -221,7 +223,7 @@ async fn gw_05_missing_members_intent() {
 async fn gw_05_satisfied() {
     let app = builder()
         .intents(Intents::GUILD_MEMBERS)
-        .module(Module::new("welcome").add(noop::<MemberAdd>("greet")))
+        .module(Module::new("welcome").__add(noop::<MemberAdd>("greet")))
         .build()
         .unwrap();
     assert_eq!(app.intents(), Intents::GUILDS | Intents::GUILD_MEMBERS);
@@ -231,7 +233,7 @@ async fn gw_05_satisfied() {
 #[tokio::test]
 async fn gw_05_presence() {
     let err = builder()
-        .module(Module::new("m").add(noop::<PresenceUpdate>("p")))
+        .module(Module::new("m").__add(noop::<PresenceUpdate>("p")))
         .build()
         .unwrap_err();
     let [BuildViolation::MissingIntent { intent, event, .. }] = violations(&err)[..] else {
@@ -248,8 +250,8 @@ async fn gw_05_several() {
     let err = builder()
         .module(
             Module::new("m")
-                .add(noop::<MemberAdd>("add"))
-                .add(noop::<MemberRemove>("remove")),
+                .__add(noop::<MemberAdd>("add"))
+                .__add(noop::<MemberRemove>("remove")),
         )
         .build()
         .unwrap_err();
@@ -269,7 +271,7 @@ async fn gw_05_several() {
 async fn gw_05_mixed_violations() {
     let err = builder()
         .http_timeout(Duration::ZERO)
-        .module(Module::new("m").add(noop::<MemberAdd>("add")))
+        .module(Module::new("m").__add(noop::<MemberAdd>("add")))
         .build()
         .unwrap_err();
     assert_eq!(err.violations().len(), 2);
@@ -299,7 +301,7 @@ async fn full_payload_table() {
                     b.intents(intent);
                 }
                 let app = b
-                    .module(Module::new("m").add(noop::<$ty>(stringify!($ty))))
+                    .module(Module::new("m").__add(noop::<$ty>(stringify!($ty))))
                     .build()
                     .unwrap();
                 assert_eq!(app.intents(), Intents::GUILDS | intent, stringify!($ty));
@@ -311,7 +313,7 @@ async fn full_payload_table() {
                 assert!(<$ty as sealed::Sealed>::KIND.name().is_some());
                 if privileged {
                     let err = builder()
-                        .module(Module::new("m").add(noop::<$ty>("h")))
+                        .module(Module::new("m").__add(noop::<$ty>("h")))
                         .build()
                         .unwrap_err();
                     assert_eq!(err.violations().len(), 1, stringify!($ty));
@@ -404,7 +406,7 @@ async fn full_payload_table() {
 #[tokio::test]
 async fn no_content_intent() {
     let app = builder()
-        .module(Module::new("m").add(noop::<MessageCreate>("h")))
+        .module(Module::new("m").__add(noop::<MessageCreate>("h")))
         .build()
         .unwrap();
     assert!(!app.intents().contains(Intents::MESSAGE_CONTENT));
@@ -416,7 +418,7 @@ async fn no_content_intent() {
 async fn explicit_extra_intent() {
     let app = builder()
         .intents(Intents::DIRECT_MESSAGES)
-        .module(Module::new("m").add(noop::<MessageCreate>("h")))
+        .module(Module::new("m").__add(noop::<MessageCreate>("h")))
         .build()
         .unwrap();
     assert_eq!(
@@ -429,7 +431,7 @@ async fn explicit_extra_intent() {
 #[tokio::test]
 async fn unavailable_guild_parses_guild_delete() {
     let app = builder()
-        .module(Module::new("m").add(noop::<UnavailableGuild>("h")))
+        .module(Module::new("m").__add(noop::<UnavailableGuild>("h")))
         .build()
         .unwrap();
     assert!(
@@ -444,7 +446,7 @@ async fn unavailable_guild_parses_guild_delete() {
 #[tokio::test]
 async fn unavailable_guild_keyed_on_guild_delete() {
     let app = builder()
-        .module(Module::new("m").add(noop::<UnavailableGuild>("u")))
+        .module(Module::new("m").__add(noop::<UnavailableGuild>("u")))
         .build()
         .unwrap();
     let registry = app.registry();
@@ -456,9 +458,9 @@ async fn unavailable_guild_keyed_on_guild_delete() {
     let app = builder()
         .module(
             Module::new("m")
-                .add(noop::<GuildDelete>("g1"))
-                .add(noop::<UnavailableGuild>("u"))
-                .add(noop::<GuildDelete>("g2")),
+                .__add(noop::<GuildDelete>("g1"))
+                .__add(noop::<UnavailableGuild>("u"))
+                .__add(noop::<GuildDelete>("g2")),
         )
         .build()
         .unwrap();
@@ -476,8 +478,8 @@ async fn droppable_unavailable_guild() {
     let app = builder()
         .module(
             Module::new("m")
-                .add(noop_with::<UnavailableGuild>("u", false, true))
-                .add(noop_with::<GuildDelete>("g", false, false)),
+                .__add(noop_with::<UnavailableGuild>("u", false, true))
+                .__add(noop_with::<GuildDelete>("g", false, false)),
         )
         .build()
         .unwrap();
@@ -486,7 +488,7 @@ async fn droppable_unavailable_guild() {
     assert!(!droppable.contains(EventTypeFlags::UNAVAILABLE_GUILD));
 
     let app = builder()
-        .module(Module::new("m").add(noop_with::<UnavailableGuild>("u", false, true)))
+        .module(Module::new("m").__add(noop_with::<UnavailableGuild>("u", false, true)))
         .build()
         .unwrap();
     let droppable = app.lane_config().droppable;
@@ -505,7 +507,7 @@ fn every_parsed_type_has_a_slot() {
                 count += 1;
                 let parse = <$ty as crate::events::sealed::Sealed>::PARSE;
                 let (registry, _) = Registry::fold(
-                    &[Module::new("m").add(noop::<$ty>(stringify!($ty)))],
+                    &[Module::new("m").__add(noop::<$ty>(stringify!($ty)))],
                     Intents::all(),
                 );
                 let slots: Vec<EventType> = TABLE
@@ -595,7 +597,7 @@ fn every_parsed_type_has_a_slot() {
 #[tokio::test]
 async fn droppable_all() {
     let app = builder()
-        .module(Module::new("m").add(noop_with::<MessageDelete>("h", false, true)))
+        .module(Module::new("m").__add(noop_with::<MessageDelete>("h", false, true)))
         .build()
         .unwrap();
     assert_eq!(
@@ -610,8 +612,8 @@ async fn droppable_mixed() {
     let app = builder()
         .module(
             Module::new("m")
-                .add(noop_with::<MessageDelete>("a", false, true))
-                .add(noop_with::<MessageDelete>("b", true, false)),
+                .__add(noop_with::<MessageDelete>("a", false, true))
+                .__add(noop_with::<MessageDelete>("b", true, false)),
         )
         .build()
         .unwrap();
@@ -630,8 +632,8 @@ async fn droppable_defaults_stay() {
         .intents(Intents::GUILD_PRESENCES)
         .module(
             Module::new("m")
-                .add(noop::<PresenceUpdate>("p"))
-                .add(noop::<TypingStart>("t")),
+                .__add(noop::<PresenceUpdate>("p"))
+                .__add(noop::<TypingStart>("t")),
         )
         .build()
         .unwrap();
@@ -688,7 +690,7 @@ async fn handler_concurrency_bounds() {
 /// Debug output names handlers and Modules, never payloads.
 #[tokio::test]
 async fn debug_output() {
-    let module = Module::new("m").add(noop_with::<MessageDelete>("bot::h", true, false));
+    let module = Module::new("m").__add(noop_with::<MessageDelete>("bot::h", true, false));
     let text = format!("{module:?}");
     assert!(text.contains("bot::h") && text.contains("\"m\""), "{text}");
     let handler = format!("{:?}", noop_with::<MessageDelete>("bot::h", true, false));

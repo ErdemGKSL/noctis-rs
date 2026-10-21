@@ -780,8 +780,8 @@ list in CI.
     buttons have no Route and stay plain builders (`LinkButton::new(url)`). (Amended
     2026-10-20: the per-kind `.button()`/`.string_select(..)`/… constructors are
     folded into `.build()`; Story 6.11 converts the shipped ones.)
-  - `.build()` requires `R: Handled`, which only the `#[handler]` method macro
-    implements (compile-time half of FR-58, CID-04). `noctis-core` binds handlers by `R::ID`
+  - `.build()` requires `R: Handled`; a kind-derived struct without a
+    `#[handler]` method does not compile (CID-04; compile-time half of FR-58). `noctis-core` binds handlers by `R::ID`
     in their own descriptor; `App::build` fails when a Route referenced by a mounted
     Module's descriptors has no mounted handler (dynamic half).
 

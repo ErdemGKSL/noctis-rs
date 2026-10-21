@@ -6,15 +6,18 @@ enum Severity {
     Low,
 }
 
-#[autocomplete]
-async fn suggest(ctx: AutocompleteCtx) -> HandlerResult<Responded> {
-    Ok(ctx.respond(Vec::new()))
+#[derive(SlashCommand)]
+#[command("o", description = "d")]
+struct O {
+    #[option(description = "d", autocomplete)]
+    a: Severity,
 }
 
-#[derive(Options)]
-struct O {
-    #[option(description = "d", autocomplete = suggest)]
-    a: Severity,
+impl O {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
 }
 
 fn main() {}

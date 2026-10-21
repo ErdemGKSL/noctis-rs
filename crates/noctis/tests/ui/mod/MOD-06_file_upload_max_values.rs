@@ -1,15 +1,17 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
-#[route("t.form")]
-struct Form;
-impl noctis::__private::ui::Handled for Form {}
-
 #[derive(Modal)]
-#[modal(route = Form, title = "T")]
+#[modal("t.form", defaults(title = "T"))]
 struct F {
     #[file_upload("Files", max_values = 11)]
     files: Vec<noctis::ui::ResolvedAttachment>,
+}
+
+impl F {
+    #[handler]
+    async fn handle(self, _ctx: ModalSubmitCtx) -> HandlerResult<Responded> {
+        unimplemented!()
+    }
 }
 
 fn main() {}

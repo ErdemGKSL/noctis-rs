@@ -37,12 +37,14 @@
 //!
 //! An `APPLICATION_COMMAND_AUTOCOMPLETE` interaction (INT-06, INT-07,
 //! OPT-12) resolves its Command like stage 1, decodes the partial options
-//! leniently and finds the focused option's handler through the Command's
-//! options struct. The handler runs under `catch_unwind`, a deadline of
-//! `received_at + 2.5 s` and the shutdown token; it never runs once the
-//! deadline has passed. Its choices are truncated to 25 and invalid kept
-//! choices dropped, each with a warning on target `noctis::autocomplete`,
-//! and exactly one type-8 callback is sent. Any failure sends an empty list
+//! leniently and finds the focused option's `#[autocomplete(field)]`
+//! method through the Command's struct. The method runs under
+//! `catch_unwind`, a deadline of `received_at + 2.5 s` and the shutdown
+//! token; it never runs once the deadline has passed. Its suggestions are
+//! truncated to 25, their `MessageKey` labels rendered in the user's locale,
+//! labels over 100 characters cut and invalid kept suggestions dropped, each
+//! with a warning on target `noctis::autocomplete`, and exactly one type-8
+//! callback is sent. Any failure sends an empty list
 //! and goes to the Autocomplete Error Sink; an unknown Command or an option
 //! without a handler sends an empty list with a warning only. The
 //! [`Dispatcher`] has no autocomplete.
@@ -70,8 +72,9 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 
 use crate::autocomplete::{
-    AUTOCOMPLETE_DEADLINE, AutocompleteCtx, AutocompleteError, AutocompleteInput,
-    AutocompleteParts, ErasedAutocomplete, Slot, Warnings, callback_body, filter_choices,
+    __AutocompleteMethod, AUTOCOMPLETE_DEADLINE, AutocompleteCtx, AutocompleteError,
+    AutocompleteInput, AutocompleteParts, Labels, Raw, Warnings, callback_body, collect,
+    filter_choices,
 };
 use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
 use crate::edge::callback::ACK_DEADLINE;
@@ -82,8 +85,8 @@ use crate::options::CommandInput;
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
 use crate::responder::{
-    Ephemerality, InteractionTarget, MessageTarget, PENDING, Responded, ResponderError, Response,
-    Shared, Transport,
+    Ephemerality, InteractionTarget, MessageTarget, PENDING, ResponderError, Response, Shared,
+    Transport,
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ErrorSink as _, LogSink, ReportKind};
 use crate::worker::panic_message;
@@ -556,9 +559,8 @@ pub(crate) async fn run_interaction(
 
 /// How an autocomplete handler run ended.
 enum AutocompleteOutcome {
-    /// It ran and returned; a missing `respond` shows up later as the
-    /// empty slot in `kept_choices`.
-    Answered(HandlerResult<Responded>),
+    /// It ran and returned its suggestions or an error.
+    Answered(HandlerResult<Raw>),
     Panicked(Box<dyn Any + Send>),
     Cancelled,
     DeadlineMissed,
@@ -594,6 +596,14 @@ fn log_warnings(warnings: &Warnings, handler: &'static str) {
             dropped = warnings.dropped,
             rules = %warnings.rule_list(),
             "invalid autocomplete choices dropped"
+        );
+    }
+    if warnings.labels_cut > 0 {
+        tracing::warn!(
+            target: "noctis::autocomplete",
+            handler,
+            cut = warnings.labels_cut,
+            "[OPT-09] autocomplete labels over 100 characters cut with `…`"
         );
     }
     if warnings.not_choosable {
@@ -679,26 +689,23 @@ pub(crate) async fn run_autocomplete(
     };
     let report = report_for(found.entry.module, found.handler.name());
     let kind = found.focused.kind();
-    let slot = Slot::default();
-    let ctx = AutocompleteCtx::new(
-        AutocompleteParts {
-            path: found.path,
-            module: found.entry.module,
-            shard,
-            guild_id,
-            channel_id,
-            user_id: found.user_id,
-            user_locale: locale,
-            guild_locale,
-            focused: found.focused,
-            app: Some(Arc::clone(&app)),
-            max_choices: app.limits.autocomplete_choices,
-        },
-        Arc::clone(&slot),
-    );
-    let outcome =
+    let ctx = AutocompleteCtx::new(AutocompleteParts {
+        path: found.path,
+        module: found.entry.module,
+        shard,
+        guild_id,
+        channel_id,
+        user_id: found.user_id,
+        user_locale: locale,
+        guild_locale,
+        focused: found.focused,
+        app: Some(Arc::clone(&app)),
+    });
+    let labels = ctx.labels();
+    let mut outcome =
         run_autocomplete_handler(&span, &cancel, deadline, &found.handler, ctx, &found.input).await;
-    let choices = kept_choices(&span, &outcome, &slot, kind, &app.limits, report.handler);
+    let raw = take_raw(&mut outcome);
+    let choices = kept_choices(&span, raw, &labels, kind, &app.limits, report.handler);
     let sent = send_choices(&target, &choices)
         .instrument(span.clone())
         .await;
@@ -711,7 +718,7 @@ struct Found {
     path: &'static str,
     input: CommandInput,
     focused: crate::Focused,
-    handler: ErasedAutocomplete,
+    handler: __AutocompleteMethod,
     user_id: Id<UserMarker>,
 }
 
@@ -768,27 +775,29 @@ fn find_autocomplete(
     })
 }
 
-/// The choices to send after `outcome`: what `respond` stored, filtered
-/// (warnings logged for `handler`), or none after a failure or without a
-/// `respond`.
+/// The suggestions of a successful run, taken out of `outcome` (which
+/// keeps the error, panic or deadline for reporting).
+fn take_raw(outcome: &mut AutocompleteOutcome) -> Option<Raw> {
+    match outcome {
+        AutocompleteOutcome::Answered(Ok(raw)) => Some(std::mem::take(raw)),
+        _ => None,
+    }
+}
+
+/// The choices to send after a run: its suggestions lowered and filtered
+/// (warnings logged for `handler`), or none after a failure.
 fn kept_choices(
     span: &Span,
-    outcome: &AutocompleteOutcome,
-    slot: &Slot,
+    raw: Option<Raw>,
+    labels: &Labels,
     kind: noctis_rules::command::OptionType,
     limits: &noctis_rules::Limits,
     handler: &'static str,
 ) -> Vec<crate::AutocompleteChoice> {
-    if !matches!(outcome, AutocompleteOutcome::Answered(Ok(_))) {
-        return Vec::new();
-    }
-    let collected = slot
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take();
-    let Some(collected) = collected else {
+    let Some(raw) = raw else {
         return Vec::new();
     };
+    let collected = collect(raw, labels, limits);
     let (choices, warnings) = filter_choices(collected, kind, limits);
     span.in_scope(|| log_warnings(&warnings, handler));
     choices
@@ -801,7 +810,7 @@ async fn run_autocomplete_handler(
     span: &Span,
     cancel: &CancellationToken,
     deadline: tokio::time::Instant,
-    handler: &ErasedAutocomplete,
+    handler: &__AutocompleteMethod,
     ctx: AutocompleteCtx,
     input: &CommandInput,
 ) -> AutocompleteOutcome {

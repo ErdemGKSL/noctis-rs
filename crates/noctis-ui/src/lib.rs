@@ -26,15 +26,21 @@
 //! | [`RouteButton`], [`LinkButton`], [`PremiumButton`], [`Button`] | no | no | yes | 1-5 ([`RowItem`]) |
 //! | [`StringSelect`], [`UserSelect`], [`RoleSelect`], [`MentionableSelect`], [`ChannelSelect`] | no | no | no | alone ([`RowSelect`]) |
 //!
+//! A [`StringSelectBuilder`] (a String Select whose struct declares no
+//! options) is placed nowhere until `.options(..)` makes it a
+//! [`StringSelect`] (CV2-09).
+//!
 //! [`ContainerComponent`] and [`TopLevelComponent`] hold any component of
 //! their level, for lists built at runtime.
 //!
 //! # `custom_id`s
 //!
-//! Interactive components are built only from a Route value through
-//! [`RouteComponents`], which requires the Route to have a handler
-//! ([`Handled`], `[CID-04]`) and, for selects, to be declared `select`.
-//! There is no string `custom_id` constructor (AD-19). A Route without a
+//! Interactive components are built only from a Route value: the kind
+//! derives of `noctis` (`#[derive(Button)]`, the select derives,
+//! `#[derive(Modal)]`) emit an inherent `X { .. }.build()` that builds the
+//! component from the struct's declared `defaults(..)` and the struct value
+//! as its Payload; a struct without a `#[handler]` method does not compile
+//! (`[CID-04]`). There is no string `custom_id` constructor (AD-19). A Route without a
 //! select nonce or integrity tag is encoded at once; the others are
 //! resolved by core's Responder before sending (AD-18), and serializing one
 //! still unresolved is an error.
@@ -128,12 +134,12 @@
 //!
 //! # Modals
 //!
-//! A [`Modal`] is built only from a Route value with
-//! [`RouteComponents::modal`], so its `custom_id` is the Route's encoding
-//! (MOD-08) and there is no other constructor. Its top level takes a
-//! [`ModalLabel`] or a [`TextDisplay`] ([`ModalTopLevel`], MOD-02); a
-//! [`ModalLabel`] wraps one input ([`ModalInput`]): [`TextInput`] (with
-//! [`TextInputStyle`]), [`ModalStringSelect`], [`ModalUserSelect`],
+//! A [`Modal`] is built only from a `#[derive(Modal)]` struct
+//! (`X { .. }.build()` or `X::blank(..)`), so its `custom_id` is the
+//! struct's Route encoding (MOD-08) and there is no other constructor. Its
+//! top level takes a [`ModalLabel`] or a [`TextDisplay`] ([`ModalTopLevel`],
+//! MOD-02); a [`ModalLabel`] wraps one input ([`ModalInput`]): [`TextInput`]
+//! (with [`TextInputStyle`]), [`ModalStringSelect`], [`ModalUserSelect`],
 //! [`ModalRoleSelect`], [`ModalMentionableSelect`], [`ModalChannelSelect`],
 //! [`FileUpload`], [`RadioGroup`] and [`CheckboxGroup`] (of [`ModalOption`]s)
 //! or [`Checkbox`]. Any other message component fails `cargo check` with
@@ -143,42 +149,9 @@
 //! (`{"custom_id", "title", "components"}`) with no numeric ids and no Action
 //! Rows. [`validate`] and [`cost`] take a modal too.
 //!
-//! ```
-//! # use core::fmt;
-//! # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
-//! use noctis_rules::Limits;
-//! use noctis_ui::{
-//!     Checkbox, ModalLabel, ModalOption, RadioGroup, RouteComponents, TextDisplay, TextInput,
-//!     TextInputStyle, validate,
-//! };
-//!
-//! struct Report;
-//! # impl Payload for Report {
-//! #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
-//! #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
-//! # }
-//! # impl Route for Report {
-//! #     const ID: RouteId = RouteId::new("mod.report");
-//! #     const SHAPE: RouteShape = RouteShape::INLINE;
-//! #     const SCHEMA: u8 = 0;
-//! #     type Payload = Self;
-//! # }
-//! # impl noctis_ui::Handled for Report {}
-//!
-//! let mut modal = Report
-//!     .modal("Report a user")
-//!     .push(TextDisplay::new("Tell us what happened."))
-//!     .push(ModalLabel::new("Reason", TextInput::new("reason", TextInputStyle::Paragraph).max_length(500)))
-//!     .push(ModalLabel::new("Severity", RadioGroup::new("sev", [ModalOption::new("Low", "l"), ModalOption::new("High", "h")])))
-//!     .push(ModalLabel::new("I agree", Checkbox::new("ok")));
-//! assert_eq!(validate(&mut modal, &Limits::default())?.components, 7);
-//! # Ok::<(), noctis_ui::UiError>(())
-//! ```
-//!
-//! [`ModalForm`] is a modal declared as a struct (implemented by
-//! `#[derive(Modal)]` in `noctis`): `T::modal(route)` builds the [`Modal`]
-//! and `T::from_json(bytes)` decodes the raw modal-submit interaction JSON
-//! through [`ModalSubmission`], which reads Label- and Action-Row-wrapped
+//! [`ModalForm`] (implemented by `#[derive(Modal)]` in `noctis`) decodes a
+//! submission: `T::from_json(bytes)` reads the raw modal-submit interaction
+//! JSON through [`ModalSubmission`], which reads Label- and Action-Row-wrapped
 //! inputs itself (twilight-model drops Radio Groups, Checkbox Groups and
 //! Checkboxes), joins selects and uploads to the resolved
 //! [`ResolvedUser`]s, [`ResolvedRole`]s, [`ResolvedChannel`]s,
@@ -254,8 +227,8 @@ pub use attachment::{Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet}
 pub use component::{
     ActionRow, Button, ButtonStyle, ChannelSelect, Container, ContainerComponent, Emoji, File,
     LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, PremiumButton, Rgb, RoleSelect,
-    RouteButton, Section, SelectOption, Separator, Spacing, StringSelect, TextDisplay, Thumbnail,
-    TopLevelComponent, UserSelect,
+    RouteButton, Section, SelectOption, Separator, Spacing, StringSelect, StringSelectBuilder,
+    TextDisplay, Thumbnail, TopLevelComponent, UserSelect,
 };
 pub use components::Components;
 pub use error::UiError;
@@ -275,9 +248,9 @@ pub use modal::{
 pub use placement::{
     ContainerChild, ModalInput, ModalTopLevel, RowItem, RowSelect, SectionAccessory, TopLevel,
 };
+pub use route::Handled;
 #[doc(hidden)]
-pub use route::CustomId;
-pub use route::{Handled, RouteComponents};
+pub use route::{ComponentRoute, CustomId};
 
 /// Helpers the `components!`, `derive(Modal)` and `derive(Choices)`
 /// expansions call; not public API.
@@ -285,6 +258,7 @@ pub use route::{Handled, RouteComponents};
 pub mod __macro {
     pub use twilight_model::channel::ChannelType;
 
+    pub use crate::modal::form::decode_modal_payload;
     pub use crate::modal::form::{
         ChannelSelectField, CheckboxField, CheckboxGroupField, FileUploadField,
         MentionableSelectField, RadioGroupField, RoleSelectField, Spec, StringSelectField,
@@ -292,11 +266,23 @@ pub mod __macro {
         checkbox_group, file_upload, mentionable_select, radio_group, role_select, string_select,
         text_display, text_input, user_select,
     };
-    use crate::{Button, RowItem};
+    pub use crate::placement::{OptionsGiven, RowButtonItem, RowOne};
+    pub use crate::route::{
+        ButtonDefaults, ChannelSelectDefaults, ComponentRoute, ComponentValue, DefaultEmoji,
+        ModalDefaults, SelectDefaults, StringSelectDefaults, build_button, build_channel_select,
+        build_mentionable_select, build_modal, build_role_select, build_string_select,
+        build_string_select_builder, build_user_select, choices_options,
+    };
+    use crate::{ActionRow, Button};
 
     /// Converts any Action Row button into a [`Button`], so a `row [..]` of
-    /// mixed kinds is one array.
-    pub fn row_button<B: RowItem>(button: B) -> Button {
+    /// 2 to 5 mixed kinds is one array; a select is `[CV2-06]`.
+    pub fn row_button<B: RowButtonItem>(button: B) -> Button {
         button.into_row_button()
+    }
+
+    /// The Action Row of a one-item `row [..]`: any button or select.
+    pub fn row_one<C: RowOne>(component: C) -> ActionRow {
+        component.into_row()
     }
 }

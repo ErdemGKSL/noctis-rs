@@ -1,5 +1,5 @@
 error: [CMD-10] a b c d: limit at most 3, actual 4
- --> tests/ui/cmd/CMD-10_four_words.rs:3:11
+ --> tests/ui/cmd/CMD-10_four_words.rs:4:11
   |
-3 | #[command("a b c d", description = "d")]
+4 | #[command("a b c d", description = "d")]
   |           ^^^^^^^^^

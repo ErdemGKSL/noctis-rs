@@ -13,7 +13,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::State;
-use crate::autocomplete::{ErasedAutocomplete, erased_for};
+use crate::autocomplete::{__AutocompleteMethod, erased_for};
 use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, Options};
@@ -320,7 +320,7 @@ pub struct CommandHandler {
     auto_defer: bool,
     call: Arc<ErasedCommand>,
     /// The autocomplete handler linked to an option, by option name.
-    autocomplete: fn(&str) -> Option<ErasedAutocomplete>,
+    autocomplete: fn(&str) -> Option<__AutocompleteMethod>,
 }
 
 impl CommandHandler {
@@ -550,7 +550,7 @@ impl CommandHandler {
 
     /// The autocomplete handler linked to the option `option` of the
     /// handler's options struct, if any.
-    pub(crate) fn autocomplete_for(&self, option: &str) -> Option<ErasedAutocomplete> {
+    pub(crate) fn autocomplete_for(&self, option: &str) -> Option<__AutocompleteMethod> {
         (self.autocomplete)(option)
     }
 
@@ -760,10 +760,10 @@ pub(crate) mod tests {
     #[test]
     fn module_add_collects_commands() {
         let module = crate::Module::new("cfg")
-            .add(CommandHandler::__new::<TestPath, _, _, _, _>(
+            .__add(CommandHandler::__new::<TestPath, _, _, _, _>(
                 "m::t", "t (a|b)", "d", typed,
             ))
-            .add(CommandHandler::__new_plain(
+            .__add(CommandHandler::__new_plain(
                 "m::ping",
                 &["ping"],
                 "d",

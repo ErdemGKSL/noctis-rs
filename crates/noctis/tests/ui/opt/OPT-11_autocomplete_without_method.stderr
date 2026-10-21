@@ -1,0 +1,6 @@
+error[E0080]: evaluation panicked: [OPT-11] option `rule` is flagged `autocomplete`, but `Warn` has no `#[autocomplete(rule)]` method
+                = help: add `#[autocomplete(rule)] async fn rule(ctx: AutocompleteCtx, typed: &str, filled: Partial<Self>) -> HandlerResult<Suggestions<T>>` to an `impl Warn` block, or remove the flag
+ --> tests/ui/opt/OPT-11_autocomplete_without_method.rs:6:33
+  |
+6 |     #[option(description = "d", autocomplete)]
+  |                                 ^^^^^^^^^^^^ evaluation of `_` failed here

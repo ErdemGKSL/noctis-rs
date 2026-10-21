@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: [OPT-05] a: limit min_value ≤ max_value, actual `10 > 5`
- --> tests/ui/opt/OPT-05_min_over_max.rs:5:5
+ --> tests/ui/opt/OPT-05_min_over_max.rs:6:5
   |
-5 |     #[option(description = "d", min_value = 10, max_value = 5)]
+6 |     #[option(description = "d", min_value = 10, max_value = 5)]
   |     ^ evaluation of `_` failed here

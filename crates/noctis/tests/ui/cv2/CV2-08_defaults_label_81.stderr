@@ -1,0 +1,5 @@
+error: [CV2-08] defaults.label: limit at most 80, actual 81
+ --> tests/ui/cv2/CV2-08_defaults_label_81.rs:4:49
+  |
+4 | #[button("a", defaults(style = Primary, label = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))]
+  |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

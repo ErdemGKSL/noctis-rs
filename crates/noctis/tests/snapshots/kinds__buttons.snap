@@ -1,0 +1,35 @@
+---
+source: crates/noctis/tests/kinds.rs
+expression: "[json!(Next.build()), json!(Both.build()), json!(Animated.build()),]"
+---
+[
+  {
+    "custom_id": "0shop.next:",
+    "emoji": {
+      "name": "➡️"
+    },
+    "style": 2,
+    "type": 2
+  },
+  {
+    "custom_id": "0shop.both:",
+    "disabled": true,
+    "emoji": {
+      "id": "123",
+      "name": "pt"
+    },
+    "label": "Go",
+    "style": 3,
+    "type": 2
+  },
+  {
+    "custom_id": "0shop.anim:",
+    "emoji": {
+      "animated": true,
+      "id": "123",
+      "name": "pt"
+    },
+    "style": 4,
+    "type": 2
+  }
+]

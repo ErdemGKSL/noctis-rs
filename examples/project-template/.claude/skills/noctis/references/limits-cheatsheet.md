@@ -269,7 +269,7 @@ CV2-04 (4000 characters) together (`views-and-recipes.md` §4).
 | MOD-05 | Text Input min 0–4000, max 1–4000, value ≤ 4000, placeholder ≤ 100 | C / R |
 | MOD-06 | File Upload min 0–10 (0 only when not required), max 1–10, `file_types` ≤ 10 | C / R |
 | MOD-07 | Radio 2–10 options; Checkbox Group 1–10, min 0–10, max 1–10; Checkbox not required (`Checkbox` has no `required`); option label/value 1–100, description ≤ 100 (`derive(Choices)` texts at `cargo check`; counts via `RadioOptions` / `CheckboxOptions` on `Choices::Count`) | C / R |
-| MOD-08 | modal `custom_id` 1–100 (a Route's, via `RouteComponents::modal`); input keys 1–100 (CID-01, runtime) | C / R |
+| MOD-08 | modal `custom_id` 1–100 (the modal struct's, via `#[derive(Modal)]` and `.build()`); input keys 1–100 (CID-01, runtime) | C / R |
 | MOD-09 | submitted values untrusted (`ModalForm::from_json` → typed `SubmitError`, never a panic); upload URLs ephemeral (`ResolvedAttachment::download`: CDN host, `attachment_bytes`, length → `DownloadError`) | R |
 
 ## Messages, attachments, webhooks

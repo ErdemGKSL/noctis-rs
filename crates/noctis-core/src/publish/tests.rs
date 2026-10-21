@@ -70,7 +70,7 @@ impl Options for Opts {
 /// Matrix 1.
 #[tokio::test]
 async fn json_option_less_command() {
-    let app = app(vec![Module::new("m").add(command(
+    let app = app(vec![Module::new("m").__add(command(
         "m::ping",
         &["ping"],
         "Pong",
@@ -89,7 +89,7 @@ async fn json_metadata_as_declared() {
         .contexts(&[InteractionContext::Guild])
         .integration_types(&[IntegrationType::GuildInstall])
         .nsfw(false);
-    let app = app(vec![Module::new("m").add(command_with(
+    let app = app(vec![Module::new("m").__add(command_with(
         "m::cfg",
         &["cfg"],
         meta,
@@ -111,9 +111,9 @@ async fn json_tree() {
         Module::new("m")
             .base("config", BaseMeta::new().description("Configure"))
             .group("config set", "Set things")
-            .add(command("m::a", &["config set prefix"], "Set the prefix"))
-            .add(command("m::b", &["config get"], "Get"))
-            .add(command("m::c", &["config show"], "Show")),
+            .__add(command("m::a", &["config set prefix"], "Set the prefix"))
+            .__add(command("m::b", &["config get"], "Get"))
+            .__add(command("m::c", &["config show"], "Show")),
     ]);
     assert_eq!(
         local_of(&app, Scope::Global),
@@ -139,7 +139,7 @@ async fn json_option_fields() {
         "Options",
         |_: crate::CommandCtx, _: crate::CommandResponder, _: Opts| async { Ok(msg()) },
     );
-    let app = app(vec![Module::new("m").add(handler)]);
+    let app = app(vec![Module::new("m").__add(handler)]);
     let local = local_of(&app, Scope::Global);
     assert_eq!(
         local[0]["options"],
@@ -169,8 +169,8 @@ async fn json_option_fields() {
 async fn json_menus() {
     let app = app(vec![
         Module::new("m")
-            .add(user_menu("m::u", "Report", CommandMetadata::new()))
-            .add(message_menu(
+            .__add(user_menu("m::u", "Report", CommandMetadata::new()))
+            .__add(message_menu(
                 "m::q",
                 "Quote",
                 CommandMetadata::new().nsfw(true),
@@ -387,8 +387,8 @@ async fn targets_split_guild_scoped_commands() {
     const GUILDS: &[Id<GuildMarker>] = &[Id::new(42)];
     let app = app(vec![
         Module::new("m")
-            .add(command("m::ping", &["ping"], "Pong"))
-            .add(command_with(
+            .__add(command("m::ping", &["ping"], "Pong"))
+            .__add(command_with(
                 "m::admin",
                 &["admin"],
                 CommandMetadata::new().guilds(GUILDS),
@@ -423,8 +423,8 @@ async fn targets_dev_mirror() {
         .integration_types(&[IntegrationType::GuildInstall]);
     let app = app(vec![
         Module::new("m")
-            .add(command_with("m::ping", &["ping"], meta))
-            .add(command_with(
+            .__add(command_with("m::ping", &["ping"], meta))
+            .__add(command_with(
                 "m::admin",
                 &["admin"],
                 CommandMetadata::new().guilds(GUILDS),

@@ -1,5 +1,5 @@
 error[E0080]: evaluation panicked: [OPT-05] a.min_value: limit min_value / max_value only on INTEGER or NUMBER options, actual `STRING`
- --> tests/ui/opt/OPT-05_bounds_on_string.rs:5:5
+ --> tests/ui/opt/OPT-05_bounds_on_string.rs:6:5
   |
-5 |     #[option(description = "d", min_value = 1)]
+6 |     #[option(description = "d", min_value = 1)]
   |     ^ evaluation of `_` failed here

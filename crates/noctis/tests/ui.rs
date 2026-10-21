@@ -9,7 +9,7 @@
 //! one. `cargo run --release -p xtask -- rules-catalog` checks the layout.
 //!
 //! `tests/types/<slug>.rs` holds `compile_fail` cases of the typed API that
-//! no Discord rule governs (for example a non-payload `#[event]` parameter);
+//! no Discord rule governs (for example a non-payload event handler parameter);
 //! `rules-catalog` does not read it, and it runs with the featureless suite.
 //!
 //! The featureless suite runs only when no optional facade feature is on,

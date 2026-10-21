@@ -2,7 +2,8 @@ use noctis::prelude::*;
 
 use noctis::ui::ResolvedAttachment;
 
-#[derive(Options)]
+#[derive(SlashCommand)]
+#[command("o", description = "d")]
 struct O {
     #[option(description = "d", file_types = ["pdf"])]
     a: ResolvedAttachment,

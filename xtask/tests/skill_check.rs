@@ -407,12 +407,12 @@ fn c7_entry_in_modals() {
 
 const BAD: &str = r#"use twilight::Embed;
 
-#[command("x")]
-async fn cmd(ctx: CommandCtx, r: CommandResponder) -> LegacyMessage {
+#[derive(SlashCommand)] #[command("x")] struct Cmd; impl Cmd { #[handler]
+async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> LegacyMessage {
     r.defer_reply().await;
     tokio::spawn(async {});
     Reply { content: "hi" }
-}
+} }
 
 fn plain() -> InteractionResponseType {
     let c = ComponentCollector::new();
@@ -420,10 +420,10 @@ fn plain() -> InteractionResponseType {
     app.on_click(|e| e);
 }
 
-mod nested {
+mod nested { impl H {
     #[handler]
-    async fn h(ctx: ComponentCtx) { reply().content("x") }
-}
+    async fn h(self, ctx: ComponentCtx) { reply().content("x") }
+} }
 "#;
 
 #[test]

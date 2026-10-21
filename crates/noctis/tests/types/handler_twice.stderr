@@ -1,0 +1,21 @@
+error[E0592]: duplicate definitions with name `__NOCTIS_HAS_HANDLER`
+  --> tests/types/handler_twice.rs:14:5
+   |
+ 9 |     #[handler]
+   |     ---------- other definition for `__NOCTIS_HAS_HANDLER`
+...
+14 |     #[handler]
+   |     ^^^^^^^^^^ duplicate definitions for `__NOCTIS_HAS_HANDLER`
+   |
+   = note: this error originates in the attribute macro `handler` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0592]: duplicate definitions with name `descriptor`
+  --> tests/types/handler_twice.rs:14:5
+   |
+ 9 |     #[handler]
+   |     ---------- other definition for `descriptor`
+...
+14 |     #[handler]
+   |     ^^^^^^^^^^ duplicate definitions for `descriptor`
+   |
+   = note: this error originates in the attribute macro `handler` (in Nightly builds, run with -Z macro-backtrace for more info)

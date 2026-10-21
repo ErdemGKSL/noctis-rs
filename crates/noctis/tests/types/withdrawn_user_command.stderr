@@ -1,0 +1,13 @@
+error: free-function `#[user_command]` handlers are withdrawn: one struct per interaction, with a `#[handler]` method
+         = help: #[derive(UserCommand)] #[user_command("Report", ..)] struct Report; impl Report { #[handler] async fn handle(self, ctx: CommandCtx, target: ResolvedUser) -> HandlerResult<Responded> { .. } }
+ --> tests/types/withdrawn_user_command.rs:4:10
+  |
+4 | async fn report(_ctx: CommandCtx, _target: noctis::ui::ResolvedUser) -> HandlerResult<Responded> {
+  |          ^^^^^^
+
+error: free-function `#[message_command]` handlers are withdrawn: one struct per interaction, with a `#[handler]` method
+         = help: #[derive(MessageCommand)] #[message_command("Quote", ..)] struct Quote; impl Quote { #[handler] async fn handle(self, ctx: CommandCtx, target: ResolvedMessage) -> HandlerResult<Responded> { .. } }
+ --> tests/types/withdrawn_user_command.rs:9:10
+  |
+9 | async fn quote(_ctx: CommandCtx, _target: noctis::ui::ResolvedMessage) -> HandlerResult<Responded> {
+  |          ^^^^^

@@ -162,37 +162,6 @@ pub enum Command {}
 impl sealed::Kind for Command {}
 impl ResponderKind for Command {}
 
-/// Implemented only by `CommandResponder<Manual>`: what a handler declared
-/// `auto_defer = false` asserts about its responder parameter (INT-05).
-#[doc(hidden)]
-#[diagnostic::on_unimplemented(
-    message = "[INT-05] `auto_defer = false` is declared, so the handler must take `CommandResponder<Manual>`",
-    label = "take `CommandResponder<Manual>` here"
-)]
-pub trait __DeclaresManual {}
-
-impl __DeclaresManual for Responder<Command, Pending, Manual> {}
-
-/// Implemented only by `CommandResponder<AutoDefer>`: what an auto-deferred
-/// handler asserts about its responder parameter (INT-05).
-#[doc(hidden)]
-#[diagnostic::on_unimplemented(
-    message = "[INT-05] this handler takes `CommandResponder<Manual>`, so its attribute must declare `auto_defer = false`",
-    label = "declare `auto_defer = false` or take `CommandResponder`"
-)]
-pub trait __DeclaresAutoDefer {}
-
-impl __DeclaresAutoDefer for Responder<Command, Pending, AutoDefer> {}
-
-/// The assertion the Command macros emit for `auto_defer = false` (INT-05).
-#[doc(hidden)]
-pub fn __assert_manual<T: __DeclaresManual>() {}
-
-/// The assertion the Command macros emit for an auto-deferred handler
-/// (INT-05).
-#[doc(hidden)]
-pub fn __assert_auto_defer<T: __DeclaresAutoDefer>() {}
-
 /// The state of a [`Responder`] that has not answered yet: it offers the
 /// initial responses.
 #[derive(Clone, Copy, Debug)]

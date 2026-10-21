@@ -1,7 +1,7 @@
 error[E0277]: [OPT-02] `u8` is not a command option type
- --> tests/ui/opt/OPT-02_unsupported_type.rs:6:8
+ --> tests/ui/opt/OPT-02_unsupported_type.rs:7:8
   |
-6 |     a: u8,
+7 |     a: u8,
   |        ^^ not a command option type
   |
   = help: the trait `noctis::CommandOption` is not implemented for `u8`
@@ -26,9 +26,9 @@ help: the following other types implement trait `noctis::CommandOption`
   = note: this error originates in the macro `plain_option` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [OPT-02] `u8` is not a command option type
- --> tests/ui/opt/OPT-02_unsupported_type.rs:6:8
+ --> tests/ui/opt/OPT-02_unsupported_type.rs:7:8
   |
-6 |     a: u8,
+7 |     a: u8,
   |        ^^ not a command option type
   |
   = help: the trait `noctis::CommandOption` is not implemented for `u8`
@@ -58,9 +58,9 @@ note: required by a bound in `noctis::__private::noctis_core::options::__options
   = note: this error originates in the macro `plain_option` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [OPT-02] `u8` is not a command option type
- --> tests/ui/opt/OPT-02_unsupported_type.rs:6:8
+ --> tests/ui/opt/OPT-02_unsupported_type.rs:7:8
   |
-6 |     a: u8,
+7 |     a: u8,
   |        ^^ not a command option type
   |
   = help: the trait `noctis::CommandOption` is not implemented for `u8`

@@ -1,5 +1,9 @@
-//! `#[derive(Modal)]`: a struct as a modal form. One field is one top-level
-//! component; every literal text and count is checked at expansion by
+//! `#[derive(Modal)]` with `#[modal("id", <codec args>, defaults(title =
+//! "…"))]`: a struct as a modal and its own Route (AD-6, AD-19, FR-29,
+//! FR-58). Fields without an input attribute are the Payload, encoded in
+//! the `custom_id` and length-proven like a component Route (CID-01);
+//! every field with an input attribute is one top-level component. Every
+//! literal text and count of the inputs is checked at expansion by
 //! lowering the form into `noctis_rules::modal` descriptors and running
 //! `validate_modal`, then CID-01 per input key and CV2-04 on the Text
 //! Displays (MOD-01, MOD-02, MOD-04..07, CV2-09). Choices-backed option sets
@@ -13,22 +17,19 @@ use noctis_rules::len::discord_len;
 use noctis_rules::modal::{self as rm, validate_input_custom_id, validate_modal};
 use noctis_rules::{Actual, Bound, Limits, RuleId, Violation};
 use proc_macro2::{Literal, Span, TokenStream};
-use quote::{ToTokens, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{
-    Attribute, Data, DeriveInput, Expr, Fields, Ident, Lit, LitInt, LitStr, Path, Token, Type,
-};
+use syn::{Attribute, Data, DeriveInput, Expr, Fields, Ident, Lit, LitInt, LitStr, Token, Type};
 
 use crate::common::{combine, error, option};
+use crate::defaults::{Defaults, DefaultsKind};
+use crate::route::{AttrKind, RouteArgs, parse_kind_attr, route_impls};
 
 /// The help of a localized or non-literal text.
 const LOCALIZED: &str = "localized modal text is [planned, Epic 11]; use a literal";
-
-/// The help naming the field attributes.
-const KINDS_HELP: &str = "give each field one of #[text_input], #[string_select], #[user_select], #[role_select], #[mentionable_select], #[channel_select], #[file_upload], #[radio_group], #[checkbox_group], #[checkbox] or #[text_display]";
 
 /// The options a Radio Group lowers to: the largest legal count.
 static RADIO_SENTINEL: [rm::ModalOption<'static>; 10] = [rm::ModalOption::new("x", "x"); 10];
@@ -219,71 +220,56 @@ fn localized(tokens: impl ToTokens, rule: RuleId, what: &str) -> syn::Error {
     )
 }
 
-/// The `#[modal(route = …, title = "…")]` attribute.
+/// The parsed `#[modal(..)]` attribute.
 struct ModalAttr {
-    route: Path,
+    args: RouteArgs,
     title: LitStr,
 }
 
+/// The help every withdrawn `#[modal(route = ..)]` form shows.
+const STRUCT_FORM: &str = "#[derive(Modal)] #[modal(\"bio\", defaults(title = \"Bio\"))] struct BioForm { user: Id<UserMarker>, #[text_input(\"Bio\")] bio: String } impl BioForm { #[handler] async fn handle(self, ctx: ModalSubmitCtx) -> HandlerResult<Responded> { .. } }";
+
+const MODAL_KIND: AttrKind = AttrKind {
+    attr: "modal",
+    derive: "Modal",
+    select: false,
+};
+
 fn parse_modal_attr(input: &DeriveInput) -> syn::Result<ModalAttr> {
-    let mut attrs = input.attrs.iter().filter(|a| a.path().is_ident("modal"));
-    let Some(attr) = attrs.next() else {
-        return Err(syn::Error::new_spanned(
-            &input.ident,
-            "derive(Modal) needs #[modal(route = RouteType, title = \"Title\")]",
-        ));
-    };
-    if let Some(second) = attrs.next() {
-        return Err(syn::Error::new_spanned(
-            second,
-            "a modal takes one #[modal(..)] attribute",
-        ));
-    }
-    let mut route = None;
-    let mut title = None;
-    let mut errors = Vec::new();
-    for arg in parse_args(attr)? {
-        match arg {
-            RawArg::Named(name, expr) if name == "route" => match expr {
-                Expr::Path(p) if p.qself.is_none() => route = Some(p.path),
-                other => errors.push(syn::Error::new_spanned(
-                    other,
-                    "`route` takes the path of a Route type",
-                )),
-            },
-            RawArg::Named(name, expr) if name == "title" => {
-                match text_arg(&expr, RuleId::MOD_01, "the modal title") {
-                    Ok(t) => title = Some(t),
-                    Err(e) => errors.push(e),
-                }
+    for attr in input.attrs.iter().filter(|a| a.path().is_ident("modal")) {
+        if let syn::Meta::List(list) = &attr.meta {
+            let withdrawn = crate::command::segments(list.tokens.clone())
+                .iter()
+                .any(|segment| {
+                    matches!(
+                        segment.as_slice(),
+                        [proc_macro2::TokenTree::Ident(name), proc_macro2::TokenTree::Punct(eq), ..]
+                            if (name == "route" || name == "title") && eq.as_char() == '='
+                    )
+                });
+            if withdrawn {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    format!(
+                        "`#[modal(route = …, title = \"…\")]` is withdrawn: a modal struct is its own Route, with its id first and its title in `defaults(..)`\n  = help: {STRUCT_FORM}"
+                    ),
+                ));
             }
-            RawArg::Named(name, _) | RawArg::Call(name) if name == "title" || name == "key" => {
-                errors.push(localized(&name, RuleId::MOD_01, "the modal title"));
-            }
-            RawArg::Named(name, _) | RawArg::Call(name) => errors.push(syn::Error::new_spanned(
-                &name,
-                format!("unknown #[modal] argument `{name}`; expected `route` or `title`"),
-            )),
-            RawArg::Positional(expr) => errors.push(syn::Error::new_spanned(
-                expr,
-                "#[modal] takes `route = RouteType, title = \"Title\"`",
-            )),
         }
     }
-    combine(errors)?;
-    let Some(route) = route else {
+    let attr = parse_kind_attr(&input.attrs, &input.ident, MODAL_KIND)?;
+    let Defaults::Modal { title } =
+        crate::defaults::parse(DefaultsKind::Modal, attr.defaults.as_ref(), &attr.attr)?
+    else {
         return Err(syn::Error::new_spanned(
-            attr,
-            "#[modal] needs `route = RouteType`, the Route the submission goes to",
+            &attr.attr,
+            DefaultsKind::Modal.needs(),
         ));
     };
-    let Some(title) = title else {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "#[modal] needs `title = \"Title\"`",
-        ));
-    };
-    Ok(ModalAttr { route, title })
+    Ok(ModalAttr {
+        args: attr.args,
+        title,
+    })
 }
 
 /// A parsed field.
@@ -507,10 +493,16 @@ fn apply_arg(def: &mut FieldDef, kind: Kind, name: &Ident, expr: &Expr) -> syn::
     }
 }
 
-/// The struct and its fields, or every error found.
-fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>)> {
+/// A Payload field: in the `custom_id`, not an input.
+struct PayloadField {
+    ident: Ident,
+    ty: Type,
+}
+
+/// The struct, its inputs and its Payload fields, or every error found.
+fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>, Vec<PayloadField>)> {
     let name = &input.ident;
-    let shape_help = "a modal form is a struct with named fields, one per top-level component";
+    let shape_help = "a modal is a struct with named fields: the Payload fields, then one field per top-level component";
     let fields = match &input.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(f) => &f.named,
@@ -518,7 +510,7 @@ fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>)> {
                 return Err(error(
                     name,
                     RuleId::MOD_02,
-                    "derive(Modal) takes a struct with named fields",
+                    "`#[derive(Modal)]` needs a struct with named fields",
                     shape_help,
                 ));
             }
@@ -527,7 +519,7 @@ fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>)> {
             return Err(error(
                 name,
                 RuleId::MOD_02,
-                "derive(Modal) takes a struct with named fields",
+                "`#[derive(Modal)]` needs a struct with named fields",
                 shape_help,
             ));
         }
@@ -543,6 +535,7 @@ fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>)> {
     }
     let attr = parse_modal_attr(input);
     let mut defs = Vec::new();
+    let mut payload = Vec::new();
     for field in fields {
         let Some(ident) = &field.ident else {
             continue;
@@ -552,12 +545,10 @@ fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>)> {
             .iter()
             .filter_map(|a| Kind::of(a).map(|k| (a, k)));
         let Some((attr, kind)) = kinds.next() else {
-            errors.push(error(
-                ident,
-                RuleId::MOD_02,
-                format!("field `{ident}` is not a modal component"),
-                KINDS_HELP,
-            ));
+            payload.push(PayloadField {
+                ident: ident.clone(),
+                ty: field.ty.clone(),
+            });
             continue;
         };
         if let Some((second, _)) = kinds.next() {
@@ -582,7 +573,7 @@ fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>)> {
     };
     combine(errors)?;
     match attr {
-        Some(attr) => Ok((attr, defs)),
+        Some(attr) => Ok((attr, defs, payload)),
         None => Err(syn::Error::new_spanned(name, "missing #[modal]")),
     }
 }
@@ -930,39 +921,118 @@ fn decode(def: &FieldDef, s: &Ident) -> TokenStream {
     quote_spanned!(sp=> <#ty as #ui::__macro::#field_trait>::decode(#s, #key, &#spec)?)
 }
 
+/// Expands the derive; on an error, the error and the placeholder impls
+/// (`kind::fallback`).
+pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
+    let result = expand(input);
+    crate::kind::or_fallback(input, crate::kind::Family::Modal, result, || {
+        let ident = &input.ident;
+        quote! {
+            impl ::noctis::__private::core::__Modal for #ident {
+                const ROUTE: &'static ::core::primitive::str = "";
+            }
+        }
+    })
+}
+
 /// Expands `#[derive(Modal)]`.
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let (attr, defs) = parse(input)?;
+    let (attr, defs, payload) = parse(input)?;
     let name = &input.ident;
     combine(check(name, &attr, &defs))?;
 
     let ui = ui();
-    let route = &attr.route;
+    let core = quote!(::noctis::__private::core);
+    let vis = &input.vis;
+    let payload_ident = format_ident!("__NoctisModalPayload{}", name.unraw());
+    let p_idents: Vec<&Ident> = payload.iter().map(|p| &p.ident).collect();
+    let p_types: Vec<&Type> = payload.iter().map(|p| &p.ty).collect();
+    let payload_input: DeriveInput = syn::parse_quote! {
+        struct #payload_ident { #(#p_idents: #p_types),* }
+    };
+    let payload_impls = crate::payload::impls(
+        &payload_input,
+        match &payload_input.data {
+            Data::Struct(s) => &s.fields,
+            _ => unreachable!("parsed as a struct"),
+        },
+    );
+    let route = route_impls(name, &attr.args, &quote!(#payload_ident));
     let title = &attr.title;
-    let route_var = Ident::new("__noctis_route", Span::mixed_site());
+    let id = &attr.args.id;
     let m = Ident::new("__noctis_modal", Span::mixed_site());
     let s = Ident::new("__noctis_submission", Span::mixed_site());
+    let p = Ident::new("__noctis_payload", Span::mixed_site());
     let components = defs.iter().map(component);
     let idents = defs.iter().map(|d| &d.ident);
     let decodes = defs.iter().map(|d| decode(d, &s));
+    let blank_doc = format!(
+        " The modal with empty inputs, for these Payload fields (`{name}`'s fields without an input attribute, in order)."
+    );
+    let scaffolding = crate::kind::scaffolding(name, crate::kind::Family::Modal, false);
     Ok(quote! {
-        impl #ui::ModalForm for #name {
-            type Route = #route;
+        #[doc(hidden)]
+        #[allow(non_camel_case_types, dead_code)]
+        #vis struct #payload_ident { #(#p_idents: #p_types),* }
 
-            fn modal(#route_var: Self::Route) -> #ui::Modal {
-                let #m = #ui::RouteComponents::modal(#route_var, #title);
+        #payload_impls
+
+        #route
+
+        #[automatically_derived]
+        impl #ui::Handled for #name {}
+
+        #[automatically_derived]
+        impl #ui::ComponentRoute for #name {
+            type Defaults = #ui::__macro::ModalDefaults;
+            const DEFAULTS: Self::Defaults = #ui::__macro::ModalDefaults { title: #title };
+        }
+
+        #[automatically_derived]
+        impl #core::__Modal for #name {
+            const ROUTE: &'static ::core::primitive::str = #id;
+        }
+
+        impl #name {
+            /// The modal of this value: its declared title, its Payload
+            /// fields in the `custom_id`, empty inputs (pre-fill arrives
+            /// with Story 9.4).
+            #[must_use]
+            pub fn build(self) -> #ui::Modal {
+                let Self { #(#p_idents,)* .. } = self;
+                Self::__noctis_modal(#payload_ident { #(#p_idents),* })
+            }
+
+            #[doc = #blank_doc]
+            #[must_use]
+            pub fn blank(#(#p_idents: #p_types),*) -> #ui::Modal {
+                Self::__noctis_modal(#payload_ident { #(#p_idents),* })
+            }
+
+            fn __noctis_modal(#p: #payload_ident) -> #ui::Modal {
+                let #m = #ui::__macro::build_modal::<Self>(
+                    #p,
+                    <Self as #ui::ComponentRoute>::DEFAULTS.title,
+                );
                 #(let #m = #ui::Modal::push(#m, #components);)*
                 #m
             }
+        }
 
+        #[automatically_derived]
+        impl #ui::ModalForm for #name {
             fn from_submission(
                 #s: &#ui::ModalSubmission,
             ) -> ::core::result::Result<Self, #ui::SubmitError> {
+                let #p = #ui::__macro::decode_modal_payload::<Self>(#s)?;
                 ::core::result::Result::Ok(Self {
+                    #(#p_idents: #p.#p_idents,)*
                     #(#idents: #decodes,)*
                 })
             }
         }
+
+        #scaffolding
     })
 }
 
@@ -980,13 +1050,14 @@ mod tests {
 
     fn defs(input: TokenStream) -> (ModalAttr, Vec<FieldDef>) {
         let input: DeriveInput = syn::parse2(input).unwrap_or_else(|e| panic!("{e}"));
-        parse(&input).unwrap_or_else(|e| panic!("{e}"))
+        let (attr, defs, _) = parse(&input).unwrap_or_else(|e| panic!("{e}"));
+        (attr, defs)
     }
 
     #[test]
     fn attribute_parser_reads_every_argument() {
         let (attr, defs) = defs(quote! {
-            #[modal(route = a::Save, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[text_input("Bio", description = "d", style = paragraph, min_length = 2, max_length = 30, placeholder = "p")]
                 r#type: Option<String>,
@@ -998,7 +1069,7 @@ mod tests {
                 _intro: (),
             }
         });
-        assert_eq!(attr.route.segments.len(), 2);
+        assert_eq!(attr.args.id, "f");
         assert_eq!(attr.title.value(), "T");
         let bio = &defs[0];
         assert_eq!((bio.key.as_str(), bio.kind), ("type", Kind::TextInput));
@@ -1040,7 +1111,7 @@ mod tests {
         assert_eq!(spans.key_of("nothing"), None);
         let _ = spans.of("nothing");
         let (attr, defs) = defs(quote! {
-            #[modal(route = Save, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[file_upload("F", file_types = ["image", "exe"])]
                 files: Vec<ResolvedAttachment>,
@@ -1071,34 +1142,36 @@ mod tests {
                 ok: bool,
             }
         );
-        assert!(run(quote!(#[modal(route = R, title = #ok)] #body)).contains("impl"));
+        assert!(run(quote!(#[modal("f", defaults(title = #ok))] #body)).contains("impl"));
         let over = "a".repeat(46);
         assert!(
-            run(quote!(#[modal(route = R, title = #over)] #body))
+            run(quote!(#[modal("f", defaults(title = #over))] #body))
                 .contains("[MOD-01] title: limit between 1 and 45, actual 46")
         );
-        assert!(run(quote!(#[modal(route = R, title = "")] #body)).contains("[MOD-01] title"));
+        assert!(run(quote!(#[modal("f", defaults(title = ""))] #body)).contains("[MOD-01] title"));
         let emoji = "😀".repeat(23);
-        assert!(run(quote!(#[modal(route = R, title = #emoji)] #body)).contains("actual 46"));
-        for bad in [
-            quote!(#[modal(route = R, title(key = "k"))]),
-            quote!(#[modal(route = R, key = "k")]),
-            quote!(#[modal(route = R, title = TITLE)]),
+        assert!(run(quote!(#[modal("f", defaults(title = #emoji))] #body)).contains("actual 46"));
+        let out = run(quote!(#[modal("f", defaults(title = TITLE))] #body));
+        assert!(
+            out.contains("`defaults` values are literals: `title` takes a string literal"),
+            "{out}"
+        );
+        assert!(run(quote!(#[modal("f")] #body)).contains("`#[modal]` needs `defaults(title ="));
+        // Story 6.11 Matrix 53: the withdrawn form.
+        for withdrawn in [
+            quote!(#[modal(route = R, title = "T")]),
+            quote!(#[modal(title = "T")]),
         ] {
-            let out = run(quote!(#bad #body));
-            assert!(
-                out.contains("[MOD-01] the modal title must be a string literal"),
-                "{out}"
-            );
-            assert!(out.contains("[planned, Epic 11]"), "{out}");
+            let out = run(quote!(#withdrawn #body));
+            assert!(out.contains("is withdrawn"), "{out}");
+            assert!(out.contains("= help: #[derive(Modal)]"), "{out}");
         }
-        assert!(run(quote!(#[modal(title = "T")] #body)).contains("needs `route = RouteType`"));
     }
 
     #[test]
     fn mod_02_struct_shape_and_attributes() {
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {}
         ));
         assert!(
@@ -1107,14 +1180,14 @@ mod tests {
         );
         assert!(
             run(quote!(
-                #[modal(route = R, title = "T")]
+                #[modal("f", defaults(title = "T"))]
                 struct F(u8);
             ))
             .contains("[MOD-02]")
         );
         assert!(
             run(quote!(
-                #[modal(route = R, title = "T")]
+                #[modal("f", defaults(title = "T"))]
                 enum F {
                     A,
                 }
@@ -1123,7 +1196,7 @@ mod tests {
         );
         assert!(
             run(quote!(
-                #[modal(route = R, title = "T")]
+                #[modal("f", defaults(title = "T"))]
                 struct F<T> {
                     #[checkbox("x")]
                     a: T,
@@ -1131,18 +1204,19 @@ mod tests {
             ))
             .contains("[MOD-02] a modal form cannot be generic")
         );
+        // A field without an input attribute is Payload: no input counts.
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 a: bool,
             }
         ));
         assert!(
-            out.contains("[MOD-02] field `a` is not a modal component"),
+            out.contains("[MOD-02] components: limit between 1 and 5, actual 0"),
             "{out}"
         );
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[checkbox("x")]
                 #[checkbox("y")]
@@ -1154,7 +1228,7 @@ mod tests {
             "{out}"
         );
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[radio_group("x", min_values = 1)]
                 a: C,
@@ -1165,7 +1239,7 @@ mod tests {
             "{out}"
         );
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[string_select("x", min_values = 1)]
                 a: C,
@@ -1182,7 +1256,7 @@ mod tests {
     fn mod_04_label_and_cid_01_key() {
         let over = "a".repeat(46);
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[checkbox(#over)]
                 a: bool,
@@ -1194,7 +1268,7 @@ mod tests {
         );
         let d = "a".repeat(101);
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[checkbox("x", description = #d)]
                 a: bool,
@@ -1202,7 +1276,7 @@ mod tests {
         ));
         assert!(out.contains("[MOD-04] label[0].description"), "{out}");
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[checkbox(key = "k")]
                 a: bool,
@@ -1213,8 +1287,9 @@ mod tests {
             "{out}"
         );
         let long = Ident::new(&"k".repeat(101), Span::call_site());
-        let out =
-            run(quote!(#[modal(route = R, title = "T")] struct F { #[checkbox("x")] #long: bool }));
+        let out = run(
+            quote!(#[modal("f", defaults(title = "T"))] struct F { #[checkbox("x")] #long: bool }),
+        );
         assert!(
             out.contains(
                 "[CID-01] label[0].checkbox.custom_id: limit between 1 and 100, actual 101"
@@ -1226,7 +1301,7 @@ mod tests {
     #[test]
     fn mod_05_to_07_and_cv2_checks() {
         let f = |attr: TokenStream, ty: TokenStream| {
-            run(quote!(#[modal(route = R, title = "T")] struct F { #attr a: #ty }))
+            run(quote!(#[modal("f", defaults(title = "T"))] struct F { #attr a: #ty }))
         };
         assert!(
             f(
@@ -1280,7 +1355,7 @@ mod tests {
         );
         let t = "a".repeat(4001);
         let out = run(quote!(
-            #[modal(route = R, title = "T")]
+            #[modal("f", defaults(title = "T"))]
             struct F {
                 #[text_display(#t)]
                 a: (),

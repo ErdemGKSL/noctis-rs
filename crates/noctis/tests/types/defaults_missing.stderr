@@ -1,0 +1,35 @@
+error: `#[button]` needs `defaults(..)` with `style` and `label` or `emoji`
+ --> tests/types/defaults_missing.rs:6:1
+  |
+6 | #[button("a")]
+  | ^^^^^^^^^^^^^^
+
+error: `#[button]` needs `defaults(..)` with `style` and `label` or `emoji`
+  --> tests/types/defaults_missing.rs:10:15
+   |
+10 | #[button("b", defaults())]
+   |               ^^^^^^^^
+
+error: `#[button]` needs `defaults(..)` with `style` and `label` or `emoji`
+  --> tests/types/defaults_missing.rs:14:15
+   |
+14 | #[button("c", defaults(label = "C"))]
+   |               ^^^^^^^^
+
+error: `#[button]` needs `defaults(..)` with `style` and `label` or `emoji`
+  --> tests/types/defaults_missing.rs:18:15
+   |
+18 | #[button("d", defaults(style = Primary))]
+   |               ^^^^^^^^
+
+error: `#[user_select]` needs `defaults(..)` with `placeholder`
+  --> tests/types/defaults_missing.rs:22:20
+   |
+22 | #[user_select("e", defaults(min_values = 1))]
+   |                    ^^^^^^^^
+
+error: `#[modal]` needs `defaults(title = "…")`
+  --> tests/types/defaults_missing.rs:26:1
+   |
+26 | #[modal("f")]
+   | ^^^^^^^^^^^^^

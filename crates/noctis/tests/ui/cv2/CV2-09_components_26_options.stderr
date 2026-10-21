@@ -1,5 +1,5 @@
-error: [CV2-09] row[0].select[0].options: limit between 1 and 25, actual 26
- --> tests/ui/cv2/CV2-09_components_26_options.rs:9:52
-  |
-9 | ...ct([noctis::ui::SelectOption::new("0", "0"), noc...), noctis::ui::SelectOption::new("25", "25")]) ] };
-  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: [CV2-09] row[0].button[0].options: limit at most 25, actual 26
+  --> tests/ui/cv2/CV2-09_components_26_options.rs:15:54
+   |
+15 | ...ns([noctis::ui::SelectOption::new("0", "0"), noc...), noctis::ui::SelectOption::new("25", "25")]) ] };
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

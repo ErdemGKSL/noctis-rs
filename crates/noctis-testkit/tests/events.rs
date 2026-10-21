@@ -101,63 +101,100 @@ impl Probe {
     }
 }
 
-#[event]
-async fn on_delete(ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("delete:{}", ev.id));
+#[derive(EventHandler)]
+struct OnDelete;
+
+impl OnDelete {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("delete:{}", ev.id));
+        }
+        Ok(())
     }
-    Ok(())
 }
 
-#[event]
-async fn on_create(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("create:{}", msg.id));
+#[derive(EventHandler)]
+struct OnCreate;
+
+impl OnCreate {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("create:{}", msg.id));
+        }
+        Ok(())
     }
-    Ok(())
 }
 
+#[derive(EventHandler)]
 #[event(ordered)]
-async fn ordered_delete(ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("ordered:{}", ev.id));
+struct OrderedDelete;
+
+impl OrderedDelete {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("ordered:{}", ev.id));
+        }
+        assert!(ev.id.get() != 1, "ordered handler boom");
+        Ok(())
     }
-    assert!(ev.id.get() != 1, "ordered handler boom");
-    Ok(())
 }
 
-#[event]
-async fn concurrent_delete(ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("concurrent:{}", ev.id));
+#[derive(EventHandler)]
+struct ConcurrentDelete;
+
+impl ConcurrentDelete {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("concurrent:{}", ev.id));
+        }
+        Ok(())
     }
-    Ok(())
 }
 
-#[event]
-async fn on_outage(ctx: EventCtx, ev: UnavailableGuild) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("outage:{}", ev.id));
+#[derive(EventHandler)]
+struct OnOutage;
+
+impl OnOutage {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: UnavailableGuild) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("outage:{}", ev.id));
+        }
+        Ok(())
     }
-    Ok(())
 }
 
-#[event]
-async fn on_guild_delete(ctx: EventCtx, ev: GuildDelete) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("guild_delete:{}", ev.id));
+#[derive(EventHandler)]
+struct OnGuildDelete;
+
+impl OnGuildDelete {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: GuildDelete) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("guild_delete:{}", ev.id));
+        }
+        Ok(())
     }
-    Ok(())
 }
 
+#[derive(EventHandler)]
 #[event(droppable)]
-async fn blocked_delete(ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
-    if let Some(probe) = ctx.state::<Arc<Probe>>() {
-        probe.push(format!("blocked:{}", ev.id));
-        // Held until the test closes; the semaphore is never closed.
-        let _permit = probe.gate.acquire().await;
+struct BlockedDelete;
+
+impl BlockedDelete {
+    #[handler]
+    async fn handle(self, ctx: EventCtx, ev: MessageDelete) -> HandlerResult<()> {
+        if let Some(probe) = ctx.state::<Arc<Probe>>() {
+            probe.push(format!("blocked:{}", ev.id));
+            // Held until the test closes; the semaphore is never closed.
+            let _permit = probe.gate.acquire().await;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 /// A running App on one shard against both fakes.
@@ -242,7 +279,7 @@ async fn only_handled_events_are_parsed() {
     let capture = capture();
     let before = capture.count(PARSE_WARNING);
 
-    let running = Running::start(Module::new("filter").add(on_delete())).await;
+    let running = Running::start(Module::new("filter").add::<OnDelete>()).await;
     assert_eq!(
         running
             .gw
@@ -257,7 +294,7 @@ async fn only_handled_events_are_parsed() {
 
     // Control: with a MESSAGE_CREATE handler the same payload is parsed and
     // fails.
-    let running = Running::start(Module::new("filter").add(on_delete()).add(on_create())).await;
+    let running = Running::start(Module::new("filter").add::<OnDelete>().add::<OnCreate>()).await;
     assert_eq!(
         running
             .gw
@@ -274,7 +311,7 @@ async fn only_handled_events_are_parsed() {
 #[tokio::test(flavor = "multi_thread")]
 async fn identify_carries_derived_intents() {
     capture();
-    let running = Running::start(Module::new("xp").add(on_create())).await;
+    let running = Running::start(Module::new("xp").add::<OnCreate>()).await;
     let identify = running
         .gw
         .frames()
@@ -293,8 +330,8 @@ async fn ordered_concurrent_and_panic() {
     let capture = capture();
     let running = Running::start(
         Module::new("audit")
-            .add(concurrent_delete())
-            .add(ordered_delete()),
+            .add::<ConcurrentDelete>()
+            .add::<OrderedDelete>(),
     )
     .await;
     running.delete(1);
@@ -323,8 +360,8 @@ async fn unavailable_guild_e2e() {
     capture();
     let running = Running::start(
         Module::new("guilds")
-            .add(on_outage())
-            .add(on_guild_delete()),
+            .add::<OnOutage>()
+            .add::<OnGuildDelete>(),
     )
     .await;
     let sent = running
@@ -352,7 +389,7 @@ async fn unavailable_guild_e2e() {
 async fn run_uses_the_builder_lane_config() {
     let capture = capture();
     let before = capture.count("event lane is full");
-    let running = Running::start_with(Module::new("flood").add(blocked_delete()), |b| {
+    let running = Running::start_with(Module::new("flood").add::<BlockedDelete>(), |b| {
         b.event_lane(1, 0).handler_concurrency(1);
     })
     .await;

@@ -1,6 +1,6 @@
 error: [CMD-16] a (b: limit unclosed group, actual `(`
          = note: at byte 2
- --> tests/ui/cmd/CMD-16_unclosed_group.rs:3:11
+ --> tests/ui/cmd/CMD-16_unclosed_group.rs:4:11
   |
-3 | #[command("a (b", description = "d")]
+4 | #[command("a (b", description = "d")]
   |           ^^^^^^

@@ -52,8 +52,8 @@ fn assert_warnings(got: &[String], expected: &[String]) {
 /// Matrix 1: a base split over two Modules merges.
 #[test]
 fn reg_04_merge_across_modules() {
-    let a = Module::new("a").add(command("a::set", &["config set"], "Set a value"));
-    let b = Module::new("b").add(command(
+    let a = Module::new("a").__add(command("a::set", &["config set"], "Set a value"));
+    let b = Module::new("b").__add(command(
         "b::prefix",
         &["config get prefix"],
         "Show the prefix",
@@ -79,7 +79,7 @@ fn reg_04_merge_across_modules() {
 /// Matrix 2: one pattern in one Module.
 #[test]
 fn reg_04_same_module_pattern() {
-    let a = Module::new("a").add(command("a::config", &["config set", "config get"], "d"));
+    let a = Module::new("a").__add(command("a::config", &["config set", "config get"], "d"));
     let (tree, warnings) = ok(&[a]);
     assert_eq!(
         tree,
@@ -94,7 +94,7 @@ fn reg_04_same_module_pattern() {
 /// Matrix 3: an explicit base description from another Module.
 #[test]
 fn cmd_04_explicit_base_description() {
-    let a = Module::new("a").add(command("a::set", &["config set"], "d"));
+    let a = Module::new("a").__add(command("a::set", &["config set"], "d"));
     let b = Module::new("b").base("config", BaseMeta::new().description("Configure"));
     let (tree, warnings) = ok(&[a, b]);
     assert!(
@@ -108,7 +108,7 @@ fn cmd_04_explicit_base_description() {
 #[test]
 fn cmd_04_explicit_group_description() {
     let a = Module::new("a")
-        .add(command("a::prefix", &["config set prefix"], "d"))
+        .__add(command("a::prefix", &["config set prefix"], "d"))
         .group("config set", "Set values");
     let (tree, warnings) = ok(&[a]);
     assert!(tree.contains("    set \"Set values\"\n"), "{tree}");
@@ -123,7 +123,7 @@ fn cmd_04_explicit_group_description() {
 fn reg_04_same_explicit_value_twice() {
     let c = BaseMeta::new().description("C");
     let a = Module::new("a")
-        .add(command("a::set", &["config set"], "d"))
+        .__add(command("a::set", &["config set"], "d"))
         .base("config", c);
     let b = Module::new("b").base("config", c);
     let (tree, warnings) = ok(&[a, b]);
@@ -134,7 +134,7 @@ fn reg_04_same_explicit_value_twice() {
 /// Matrix 6: no commands, an empty tree.
 #[test]
 fn reg_01_no_commands() {
-    let a = Module::new("a").add(noop::<MessageCreate>("h"));
+    let a = Module::new("a").__add(noop::<MessageCreate>("h"));
     assert_eq!(ok(&[a]), (String::new(), Vec::new()));
     assert_eq!(ok(&[]), (String::new(), Vec::new()));
 }
@@ -142,8 +142,8 @@ fn reg_01_no_commands() {
 /// Matrix 7: plain 1-word commands keep their own descriptions.
 #[test]
 fn cmd_04_plain_bases() {
-    let a = Module::new("a").add(command("a::ping", &["ping"], "Ping"));
-    let b = Module::new("b").add(command("b::pong", &["pong"], "Pong"));
+    let a = Module::new("a").__add(command("a::ping", &["ping"], "Ping"));
+    let b = Module::new("b").__add(command("b::pong", &["pong"], "Pong"));
     let (tree, warnings) = ok(&[a, b]);
     assert_eq!(
         tree,
@@ -155,8 +155,8 @@ fn cmd_04_plain_bases() {
 /// Matrix 8: the smallest Module id wins, not the mount order.
 #[test]
 fn cmd_04_fallback_uses_the_smallest_module_id() {
-    let zeta = Module::new("zeta").add(command("zeta::a", &["cfg a"], "From zeta"));
-    let alpha = Module::new("alpha").add(command("alpha::z", &["cfg z"], "From alpha"));
+    let zeta = Module::new("zeta").__add(command("zeta::a", &["cfg a"], "From zeta"));
+    let alpha = Module::new("alpha").__add(command("alpha::z", &["cfg z"], "From alpha"));
     let (tree, warnings) = ok(&[zeta, alpha]);
     assert!(tree.starts_with("global\n  /cfg \"From alpha\""), "{tree}");
     assert_warnings(
@@ -168,10 +168,10 @@ fn cmd_04_fallback_uses_the_smallest_module_id() {
 /// Matrix 9: the fallback inside a group.
 #[test]
 fn cmd_04_fallback_in_a_group() {
-    let b = Module::new("b").add(command("b::s2", &["x g s2"], "S2"));
+    let b = Module::new("b").__add(command("b::s2", &["x g s2"], "S2"));
     let a = Module::new("a")
-        .add(command("a::s1", &["x g s1"], "S1"))
-        .add(command("a::h", &["x h"], "H"));
+        .__add(command("a::s1", &["x g s1"], "S1"))
+        .__add(command("a::h", &["x h"], "H"));
     let (tree, warnings) = ok(&[b, a]);
     assert!(
         tree.starts_with("global\n  /x \"S1\"\n    g \"S1\"\n"),
@@ -190,8 +190,8 @@ fn cmd_04_fallback_in_a_group() {
 #[test]
 fn cmd_03_unicode_words() {
     let a = Module::new("a")
-        .add(command("a::dil", &["ayarlar dil"], "Dil"))
-        .add(command("a::gengo", &["設定 言語"], "言語"));
+        .__add(command("a::dil", &["ayarlar dil"], "Dil"))
+        .__add(command("a::gengo", &["設定 言語"], "言語"));
     let (tree, _) = ok(&[a]);
     assert_eq!(
         tree,
@@ -205,12 +205,12 @@ const GUILD_42: &[Id<GuildMarker>] = &[Id::new(42)];
 /// Matrix 11: scopes never merge.
 #[test]
 fn reg_02_guild_scope_is_separate() {
-    let a = Module::new("a").add(command_with(
+    let a = Module::new("a").__add(command_with(
         "a::set",
         &["config set"],
         CommandMetadata::new().guilds(GUILD_42),
     ));
-    let b = Module::new("b").add(command("b::get", &["config get"], "d"));
+    let b = Module::new("b").__add(command("b::get", &["config get"], "d"));
     let (tree, warnings) = ok(&[a, b]);
     assert_eq!(
         tree,
@@ -230,7 +230,7 @@ fn reg_02_guild_scope_is_separate() {
 #[test]
 fn reg_02_two_guilds() {
     const GUILDS: &[Id<GuildMarker>] = &[Id::new(1), Id::new(2)];
-    let a = Module::new("a").add(command_with(
+    let a = Module::new("a").__add(command_with(
         "a::ping",
         &["ping"],
         CommandMetadata::new().guilds(GUILDS),
@@ -251,7 +251,7 @@ fn reg_02_two_guilds() {
 /// Matrix 13: base metadata from an explicit declaration; unset inherits.
 #[test]
 fn meta_01_base_meta_resolution() {
-    let a = Module::new("a").add(command_with(
+    let a = Module::new("a").__add(command_with(
         "a::set",
         &["config set"],
         CommandMetadata::new().default_member_permissions(Permissions::MANAGE_GUILD),
@@ -262,7 +262,7 @@ fn meta_01_base_meta_resolution() {
             .default_member_permissions(Permissions::MANAGE_GUILD)
             .nsfw(false),
     );
-    let c = Module::new("c").add(command("c::get", &["config get"], "d"));
+    let c = Module::new("c").__add(command("c::get", &["config get"], "d"));
     let (tree, _) = ok(&[a, b, c]);
     assert!(
         tree.starts_with("global\n  /config \"d\" permissions=32 nsfw=false\n"),
@@ -274,14 +274,14 @@ fn meta_01_base_meta_resolution() {
 #[test]
 fn meta_02_agreeing_contexts() {
     use InteractionContext::{BotDm, Guild};
-    let a = Module::new("a").add(command_with(
+    let a = Module::new("a").__add(command_with(
         "a::set",
         &["config set"],
         CommandMetadata::new()
             .contexts(&[Guild, BotDm])
             .integration_types(&[IntegrationType::GuildInstall]),
     ));
-    let b = Module::new("b").add(command_with(
+    let b = Module::new("b").__add(command_with(
         "b::get",
         &["config get"],
         CommandMetadata::new()
@@ -300,13 +300,13 @@ fn meta_02_agreeing_contexts() {
 /// Matrix 15: menu types never clash, chat-input is separate.
 #[test]
 fn reg_03_menu_types_and_chat_input() {
-    let a = Module::new("a").add(user_menu("a::show", "Show profile", CommandMetadata::new()));
-    let b = Module::new("b").add(message_menu(
+    let a = Module::new("a").__add(user_menu("a::show", "Show profile", CommandMetadata::new()));
+    let b = Module::new("b").__add(message_menu(
         "b::show",
         "Show profile",
         CommandMetadata::new().nsfw(true),
     ));
-    let c = Module::new("c").add(command("c::show", &["show profile"], "Show"));
+    let c = Module::new("c").__add(command("c::show", &["show profile"], "Show"));
     let (registry, violations) = Registry::fold(&[a, b, c], Intents::empty());
     assert_eq!(violations, []);
     assert_eq!(
@@ -329,7 +329,7 @@ fn reg_03_menu_types_and_chat_input() {
 #[test]
 fn reg_02_menu_in_guild() {
     const GUILD_7: &[Id<GuildMarker>] = &[Id::new(7)];
-    let a = Module::new("a").add(user_menu(
+    let a = Module::new("a").__add(user_menu(
         "a::show",
         "Show",
         CommandMetadata::new().guilds(GUILD_7),
@@ -342,8 +342,8 @@ fn reg_02_menu_in_guild() {
 #[test]
 fn reg_04_entries_carry_ancestors() {
     let child = Module::new("p/c")
-        .add(command("c::ping", &["ping"], "d"))
-        .add(user_menu("c::show", "Show", CommandMetadata::new()));
+        .__add(command("c::ping", &["ping"], "d"))
+        .__add(user_menu("c::show", "Show", CommandMetadata::new()));
     let root = Module::new("p").module(child);
     let (registry, violations) = Registry::fold(&[root], Intents::empty());
     assert_eq!(violations, []);
@@ -359,9 +359,9 @@ fn reg_04_entries_carry_ancestors() {
 #[test]
 fn cmd_12_failure_logs_no_warning_and_registers_nothing() {
     let a = Module::new("a")
-        .add(command("a::config", &["config"], "d"))
-        .add(command("a::set", &["config set"], "d"))
-        .add(command("a::x", &["x y"], "d"));
+        .__add(command("a::config", &["config"], "d"))
+        .__add(command("a::set", &["config set"], "d"))
+        .__add(command("a::x", &["x y"], "d"));
     let (tree, warnings, violations) = fold(&[a]);
     assert_eq!(tree, "");
     assert_eq!(warnings, Vec::<String>::new());
@@ -373,10 +373,10 @@ fn cmd_12_failure_logs_no_warning_and_registers_nothing() {
 /// The word-prefix match stops at a word boundary: `cfgx b` is not below `cfg`.
 #[test]
 fn cmd_04_fallback_respects_word_boundaries() {
-    let a = Module::new("a").add(command("a::b", &["cfgx b"], "X").__with_metadata(
+    let a = Module::new("a").__add(command("a::b", &["cfgx b"], "X").__with_metadata(
         CommandMetadata::new().default_member_permissions(Permissions::ADMINISTRATOR),
     ));
-    let b = Module::new("b").add(command("b::a", &["cfg a"], "Y"));
+    let b = Module::new("b").__add(command("b::a", &["cfg a"], "Y"));
     let (tree, warnings) = ok(&[a, b]);
     let cfg = tree
         .lines()
@@ -395,8 +395,8 @@ fn cmd_04_fallback_respects_word_boundaries() {
 #[test]
 fn meta_01_base_meta_in_two_scopes() {
     let a = Module::new("a")
-        .add(command("a::set", &["config set"], "d"))
-        .add(command_with(
+        .__add(command("a::set", &["config set"], "d"))
+        .__add(command_with(
             "a::get",
             &["config get"],
             CommandMetadata::new().guilds(GUILD_42),

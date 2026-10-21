@@ -1,20 +1,6 @@
-error[E0277]: [CID-04] Route `Buy` has no handler, so no component can be built for it
-  --> tests/ui/cid/CID-04_route_without_handler.rs:10:29
-   |
-10 |     let _ = Buy { item: 1 }.button();
-   |                             ^^^^^^ no `#[handler]` for this Route
-   |
-help: the trait `noctis::__private::noctis_ui::route::Handled` is not implemented for `Buy`
-  --> tests/ui/cid/CID-04_route_without_handler.rs:5:1
-   |
- 5 | struct Buy {
-   | ^^^^^^^^^^
-   = note: the `#[handler]` macro implements `Handled`; add a handler for `Buy` to a mounted Module
-note: required by a bound in `button`
-  --> $WORKSPACE/crates/noctis-ui/src/route.rs
-   |
-   |     fn button(self) -> RouteButton<Self>
-   |        ------ required by a bound in this associated function
-   |     where
-   |         Self: Route<Payload = Self> + Handled + Send + Sync + 'static,
-   |                                       ^^^^^^^ required by this bound in `RouteComponents::button`
+error[E0080]: evaluation panicked: [CID-04] `Buy` has no #[handler] method, so no component can be built for it
+                = help: add impl Buy { #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> }
+ --> tests/ui/cid/CID-04_route_without_handler.rs:5:8
+  |
+5 | struct Buy {
+  |        ^^^ evaluation of `_` failed here

@@ -609,17 +609,19 @@ must outlive a handler; put it behind a port.
 ```rust
 impl MyRoute {
     #[handler]
-    async fn handle(self, ctx: ComponentCtx, meta: State<BotMeta>, premium: Ext<Premium>)
-        -> HandlerResult<Responded>
+    async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
+        let meta = ctx.state::<BotMeta>();          // today: read state from the context
+        …
+    }
 }
 ```
 
-Event handlers take exactly `(self, ctx: EventCtx, event: <payload>)` (this release:
-`(ctx: EventCtx, event: <payload>)` on a free `#[event]` fn); read state with
-`ctx.state::<T>()` (`Option<State<T>>`). Extractor parameters on `#[event]` handlers
+Event handlers take exactly `(self, ctx: EventCtx, event: <payload>)`; read state with
+`ctx.state::<T>()` (`Option<State<T>>`). Today every `#[handler]` method takes exactly
+`(self, ctx[, path | target | event][, r: <Responder>])`; extractor parameters are
 [planned].
 
-Parameter order: `self` (the decoded Payload / options / form; [planned: Story 6.11]),
+[planned] Parameter order with extractors: `self` (the decoded Payload / options / form),
 context, then path / target, then extractors in any
 order: `State<T>` (registered with `.state(T)`, `Deref<Target = T>`), `Ext<T>` /
 `Option<Ext<T>>` (from Middleware), a Responder alias. Missing `State<T>` or an

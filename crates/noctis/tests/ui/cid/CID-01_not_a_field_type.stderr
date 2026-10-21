@@ -19,8 +19,8 @@ error[E0277]: [CID-01] `f32` is not a Payload field type
 error[E0277]: [CID-01] `f32` is not a Payload field type
  --> tests/ui/cid/CID-01_not_a_field_type.rs:3:10
   |
-3 | #[derive(Route)]
-  |          ^^^^^ not a Payload field
+3 | #[derive(Button)]
+  |          ^^^^^^ not a Payload field
   |
   = help: the trait `noctis::codec::Field` is not implemented for `f32`
   = note: implement `Field` and `FieldDecode` from `noctis::codec`, or derive `PayloadEnum` on a unit enum
@@ -38,13 +38,13 @@ note: required by a bound in `FieldWriter::<'w>::field`
   |
   |     pub fn field(&mut self, value: &impl Field) -> fmt::Result {
   |                                          ^^^^^ required by this bound in `FieldWriter::<'w>::field`
-  = note: this error originates in the derive macro `Route` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the derive macro `Button` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: [CID-01] `f32` is not a Payload field type
  --> tests/ui/cid/CID-01_not_a_field_type.rs:3:10
   |
-3 | #[derive(Route)]
-  |          ^^^^^ not a Payload field
+3 | #[derive(Button)]
+  |          ^^^^^^ not a Payload field
   |
   = help: the trait `FieldDecode<'_>` is not implemented for `f32`
   = note: implement `Field` and `FieldDecode` from `noctis::codec`, or derive `PayloadEnum` on a unit enum
@@ -62,4 +62,4 @@ note: required by a bound in `FieldReader::<'de>::field`
   |
   |     pub fn field<F: FieldDecode<'de>>(&mut self) -> Result<F, CodecError> {
   |                     ^^^^^^^^^^^^^^^^ required by this bound in `FieldReader::<'de>::field`
-  = note: this error originates in the derive macro `Route` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the derive macro `Button` (in Nightly builds, run with -Z macro-backtrace for more info)

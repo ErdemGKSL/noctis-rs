@@ -187,9 +187,9 @@ async fn concurrent_handlers_both_run() {
     let h = Harness::start(
         App::builder().module(
             Module::new("m")
-                .add(logging("h1", false, &log))
-                .add(twice.clone())
-                .add(twice),
+                .__add(logging("h1", false, &log))
+                .__add(twice.clone())
+                .__add(twice),
         ),
     );
     h.push(message_delete(7, Some(GA)));
@@ -225,7 +225,7 @@ async fn ordered_runs_first() {
             }
         })
     };
-    let h = Harness::start(App::builder().module(Module::new("m").add(c).add(o)));
+    let h = Harness::start(App::builder().module(Module::new("m").__add(c).__add(o)));
     h.push(message_delete(1, Some(GA)));
     until("c", || log.count("c-start") == 1).await;
     assert_eq!(log.lines(), ["o-start", "o-end", "c-start"]);
@@ -261,7 +261,7 @@ async fn per_guild_order() {
     let log = Log::default();
     let gate = Arc::new(Notify::new());
     let h = Harness::start(
-        App::builder().module(Module::new("m").add(ordered_logger(&log, &gate, None))),
+        App::builder().module(Module::new("m").__add(ordered_logger(&log, &gate, None))),
     );
     h.push(message_delete(1, Some(GA)));
     h.push(message_delete(2, Some(GA)));
@@ -275,7 +275,7 @@ async fn per_guild_order() {
 async fn guild_isolation() {
     let log = Log::default();
     let gate = Arc::new(Notify::new());
-    let h = Harness::start(App::builder().module(Module::new("m").add(ordered_logger(
+    let h = Harness::start(App::builder().module(Module::new("m").__add(ordered_logger(
         &log,
         &gate,
         Some(GA),
@@ -309,7 +309,7 @@ async fn no_guild_is_sequential() {
             }
         })
     };
-    let h = Harness::start(App::builder().module(Module::new("m").add(o)));
+    let h = Harness::start(App::builder().module(Module::new("m").__add(o)));
     assert_eq!(subqueue(user_update(1).guild_id()), 0);
     h.push(user_update(1));
     h.push(user_update(2));
@@ -339,8 +339,8 @@ async fn ordered_sequence() {
     let h = Harness::start(
         App::builder().module(
             Module::new("m")
-                .add(step("o1", true))
-                .add(step("o2", false)),
+                .__add(step("o1", true))
+                .__add(step("o2", false)),
         ),
     );
     h.push(message_delete(1, None));
@@ -383,7 +383,7 @@ async fn concurrency_bound() {
     let harness = Harness::start(
         App::builder()
             .handler_concurrency(2)
-            .module(Module::new("m").add(h)),
+            .module(Module::new("m").__add(h)),
     );
     for n in 1..=5 {
         harness.push(message_delete(n, Some(n)));
@@ -422,7 +422,7 @@ async fn interaction_bypasses_permits() {
     let h = Harness::start(
         App::builder()
             .handler_concurrency(1)
-            .module(Module::new("m").add(blocker)),
+            .module(Module::new("m").__add(blocker)),
     );
     h.push(message_delete(1, Some(GA)));
     until("M1 started", || log.count("start:1") == 1).await;
@@ -498,7 +498,7 @@ async fn command_interaction_bypasses_permits() {
         App::builder()
             .handler_concurrency(1)
             .http_proxy(server.authority())
-            .module(Module::new("m").add(blocker).add(command)),
+            .module(Module::new("m").__add(blocker).__add(command)),
     );
     h.push(message_delete(1, Some(GA)));
     until("M1 started", || log.count("start:1") == 1).await;
@@ -524,8 +524,8 @@ async fn handler_error_is_logged() {
     let h = Harness::start(
         App::builder().module(
             Module::new("audit")
-                .add(failing)
-                .add(logging("ok", false, &log)),
+                .__add(failing)
+                .__add(logging("ok", false, &log)),
         ),
     );
     h.push(message_delete(3, Some(GA)));
@@ -572,7 +572,7 @@ async fn panics_are_logged() {
             }
         })
     };
-    let h = Harness::start(App::builder().module(Module::new("m").add(panicking)));
+    let h = Harness::start(App::builder().module(Module::new("m").__add(panicking)));
     for n in 1..=4 {
         h.push(message_delete(n, Some(GA)));
     }
@@ -608,9 +608,9 @@ async fn ordered_panic() {
     let h = Harness::start(
         App::builder().module(
             Module::new("m")
-                .add(o)
-                .add(logging("c", false, &log))
-                .add(logging("o2", true, &log)),
+                .__add(o)
+                .__add(logging("c", false, &log))
+                .__add(logging("o2", true, &log)),
         ),
     );
     h.push(message_delete(1, Some(GA)));
@@ -633,7 +633,7 @@ async fn no_handler_releases_permit() {
     let h = Harness::start(
         App::builder()
             .handler_concurrency(1)
-            .module(Module::new("m").add(logging("h", false, &log))),
+            .module(Module::new("m").__add(logging("h", false, &log))),
     );
     h.push(Event::GatewayHeartbeatAck);
     h.push(user_update(1));
@@ -685,13 +685,14 @@ async fn event_ctx_contents() {
             }
         })
     };
-    let h = Harness::start(
-        App::builder().state(7_u32).module(
-            Module::new("profile/xp")
-                .add(probe)
-                .add(noop::<MessageDelete>("x")),
-        ),
-    );
+    let h =
+        Harness::start(
+            App::builder().state(7_u32).module(
+                Module::new("profile/xp")
+                    .__add(probe)
+                    .__add(noop::<MessageDelete>("x")),
+            ),
+        );
     h.push_on(
         ShardId::new(2, 4),
         InboundKind::Event(Box::new(message_create(GA))),
@@ -760,7 +761,7 @@ async fn guild_delete_reaches_unavailable_guild_handlers() {
             }
         })
     };
-    let h = Harness::start(App::builder().module(Module::new("m").add(outage).add(deleted)));
+    let h = Harness::start(App::builder().module(Module::new("m").__add(outage).__add(deleted)));
     h.push(guild_delete(Some(true)));
     until("outage", || {
         log.count("outage:1") == 1 && log.count("deleted:1:Some(true)") == 1
@@ -793,8 +794,8 @@ async fn ordered_sync_panic_is_caught() {
     let h = Harness::start(
         App::builder().module(
             Module::new("m")
-                .add(sync_panic)
-                .add(logging("after", true, &log)),
+                .__add(sync_panic)
+                .__add(logging("after", true, &log)),
         ),
     );
     h.push(message_delete(1, Some(GA)));
@@ -849,8 +850,8 @@ mod observability {
         let h = sink_app(
             &recording,
             Module::new("audit")
-                .add(failing())
-                .add(logging("ok", false, &log)),
+                .__add(failing())
+                .__add(logging("ok", false, &log)),
         );
         on_shard_3(&h, message_delete(3, Some(GA)));
         until("report", || recording.seen().len() == 1).await;
@@ -899,7 +900,7 @@ mod observability {
                 },
             )
         };
-        let h = sink_app(&recording, Module::new("m").add(panicking));
+        let h = sink_app(&recording, Module::new("m").__add(panicking));
         for n in 1..=5 {
             h.push(message_delete(n, Some(GA)));
         }
@@ -928,7 +929,7 @@ mod observability {
         let fails = handler("bot::user", false, |_, _: UserUpdate| async {
             Err(HandlerError::new(std::io::Error::other("nope")))
         });
-        let h = sink_app(&recording, Module::new("m").add(fails.clone()));
+        let h = sink_app(&recording, Module::new("m").__add(fails.clone()));
         h.push(user_update(5));
         until("report", || recording.seen().len() == 1).await;
         assert_eq!(recording.seen()[0].guild_id, None);
@@ -938,7 +939,7 @@ mod observability {
         );
         h.close().await;
 
-        let h = Harness::start(App::builder().module(Module::new("m").add(fails)));
+        let h = Harness::start(App::builder().module(Module::new("m").__add(fails)));
         h.push(user_update(5));
         until("log", || {
             !capture.lines_with(&["event handler failed"]).is_empty()
@@ -974,7 +975,7 @@ mod observability {
                 }
             })
         };
-        let h = sink_app(&recording, Module::new("m").add(mixed.clone()));
+        let h = sink_app(&recording, Module::new("m").__add(mixed.clone()));
         h.push(message_delete(3, Some(GA)));
         // The duration is recorded in the same poll that ran the handler.
         until("ok run", || log.count("ok:3") == 1).await;
@@ -998,7 +999,7 @@ mod observability {
 
         let h = sink_app(
             &recording,
-            Module::new("m").add(handler(
+            Module::new("m").__add(handler(
                 "bot::mixed",
                 false,
                 |_, e: MessageDelete| async move {
@@ -1066,8 +1067,8 @@ mod observability {
                 .error_sink(ErrorOrigin::Event, Arc::clone(&sink))
                 .module(
                     Module::new("audit")
-                        .add(failing())
-                        .add(logging("ok", false, &log)),
+                        .__add(failing())
+                        .__add(logging("ok", false, &log)),
                 ),
         );
         h.push(message_delete(1, Some(GA)));
@@ -1106,7 +1107,7 @@ mod observability {
     async fn event_span_fields() {
         let capture = Capture::default();
         let _guard = tracing::subscriber::set_default(span_subscriber(&capture));
-        let h = Harness::start(App::builder().module(Module::new("audit").add(failing())));
+        let h = Harness::start(App::builder().module(Module::new("audit").__add(failing())));
         on_shard_3(&h, message_delete(3, Some(GA)));
         until("failure", || {
             !capture.lines_with(&["event handler failed"]).is_empty()
@@ -1134,7 +1135,7 @@ mod observability {
             tracing::info!("inside after");
             Ok(())
         });
-        let h = Harness::start(App::builder().module(Module::new("audit").add(inside)));
+        let h = Harness::start(App::builder().module(Module::new("audit").__add(inside)));
         on_shard_3(&h, message_delete(3, Some(GA)));
         until("both lines", || {
             capture.lines_with(&["inside after"]).len() == 1
@@ -1373,8 +1374,9 @@ mod shutdown {
     /// Matrix 16: an empty drain returns at once and tracks nothing.
     #[tokio::test]
     async fn empty_drain() {
-        let mut run =
-            Running::start(App::builder().module(Module::new("m").add(noop::<MessageDelete>("h"))));
+        let mut run = Running::start(
+            App::builder().module(Module::new("m").__add(noop::<MessageDelete>("h"))),
+        );
         let started = Instant::now();
         run.wind_down(Duration::from_secs(5)).await;
         assert!(started.elapsed() < Duration::from_secs(1));
@@ -1399,7 +1401,7 @@ mod shutdown {
                 }
             })
         };
-        let mut run = Running::start(App::builder().module(Module::new("m").add(slow)));
+        let mut run = Running::start(App::builder().module(Module::new("m").__add(slow)));
         for id in 1..=3 {
             run.push(message_delete(id, Some(GA)));
         }
@@ -1419,7 +1421,7 @@ mod shutdown {
         let log = Log::default();
         let gate = Arc::new(Semaphore::new(0));
         let mut run = Running::start(
-            App::builder().module(Module::new("ops").add(gated("bot::b", false, &log, &gate))),
+            App::builder().module(Module::new("ops").__add(gated("bot::b", false, &log, &gate))),
         );
         run.sender.push(Inbound {
             shard: ShardId::new(0, 1),
@@ -1489,7 +1491,7 @@ mod shutdown {
         builder
             .runtime(&Runtime::for_test())
             .error_sink(ErrorOrigin::Command, Arc::clone(&recording))
-            .module(Module::new("m").add(command));
+            .module(Module::new("m").__add(command));
         let mut run = Running::start_with(&mut builder, recording);
         run.sender.push(Inbound {
             shard: ShardId::ONE,
@@ -1515,7 +1517,7 @@ mod shutdown {
         let log = Log::default();
         let gate = Arc::new(Semaphore::new(0));
         let mut run = Running::start(
-            App::builder().module(Module::new("ops").add(gated("bot::b", true, &log, &gate))),
+            App::builder().module(Module::new("ops").__add(gated("bot::b", true, &log, &gate))),
         );
         run.push(message_delete(1, Some(GA)));
         run.push(message_delete(2, Some(GA)));
@@ -1534,8 +1536,8 @@ mod shutdown {
         let mut run = Running::start(
             App::builder().module(
                 Module::new("ops")
-                    .add(logging("o", true, &log))
-                    .add(gated("bot::c", false, &log, &gate)),
+                    .__add(logging("o", true, &log))
+                    .__add(gated("bot::c", false, &log, &gate)),
             ),
         );
         run.push(message_delete(1, Some(GA)));
@@ -1556,8 +1558,8 @@ mod shutdown {
         let mut run = Running::start(
             App::builder().module(
                 Module::new("ops")
-                    .add(gated("bot::blocked", false, &log, &gate))
-                    .add(logging("fast", false, &log)),
+                    .__add(gated("bot::blocked", false, &log, &gate))
+                    .__add(logging("fast", false, &log)),
             ),
         );
         run.push(message_delete(1, Some(GA)));
@@ -1590,7 +1592,7 @@ mod shutdown {
                 }
             })
         };
-        let mut run = Running::start(App::builder().module(Module::new("m").add(racing)));
+        let mut run = Running::start(App::builder().module(Module::new("m").__add(racing)));
         for id in 1..=200 {
             run.push(message_delete(id, Some(GA)));
         }
@@ -1610,8 +1612,9 @@ mod shutdown {
         let capture = Capture::default();
         let _guard = tracing::subscriber::set_default(capture.subscriber());
         let log = Log::default();
-        let mut run =
-            Running::start(App::builder().module(Module::new("m").add(logging("h", false, &log))));
+        let mut run = Running::start(
+            App::builder().module(Module::new("m").__add(logging("h", false, &log))),
+        );
         run.push(message_delete(1, Some(GA)));
         run.push(message_delete(2, Some(GA)));
         run.push_interaction();
@@ -1634,7 +1637,7 @@ mod shutdown {
         let mut run = Running::start(
             App::builder()
                 .handler_concurrency(1)
-                .module(Module::new("ops").add(gated("bot::b", false, &log, &gate))),
+                .module(Module::new("ops").__add(gated("bot::b", false, &log, &gate))),
         );
         run.push(message_delete(1, Some(GA)));
         until("B started", || log.count("start:1") == 1).await;
@@ -1672,7 +1675,7 @@ mod shutdown {
                 }
             })
         };
-        let mut run = Running::start(App::builder().module(Module::new("m").add(failing)));
+        let mut run = Running::start(App::builder().module(Module::new("m").__add(failing)));
         run.push(message_delete(1, Some(GA)));
         run.push(message_delete(2, Some(GA)));
         tokio::task::yield_now().await;
@@ -1711,7 +1714,7 @@ mod shutdown {
         builder
             .runtime(&Runtime::for_test())
             .error_sink(ErrorOrigin::Event, Panicking)
-            .module(Module::new("ops").add(gated("bot::b", false, &log, &gate)));
+            .module(Module::new("ops").__add(gated("bot::b", false, &log, &gate)));
         let mut run = Running::start_with(&mut builder, Arc::new(Recording::default()));
         run.push(message_delete(1, Some(GA)));
         until("B started", || log.count("start:1") == 1).await;
@@ -1738,7 +1741,7 @@ mod shutdown {
                 }
             })
         };
-        let mut run = Running::start(App::builder().module(Module::new("m").add(stuck)));
+        let mut run = Running::start(App::builder().module(Module::new("m").__add(stuck)));
         run.push(message_delete(1, Some(GA)));
         until("stuck started", || log.count("start") == 1).await;
         let started = Instant::now();
@@ -1758,7 +1761,7 @@ mod shutdown {
         let log = Log::default();
         let gate = Arc::new(Semaphore::new(0));
         let run = Running::start(
-            App::builder().module(Module::new("ops").add(gated("bot::b", false, &log, &gate))),
+            App::builder().module(Module::new("ops").__add(gated("bot::b", false, &log, &gate))),
         );
         run.push(message_delete(1, Some(GA)));
         until("B started", || log.count("start:1") == 1).await;

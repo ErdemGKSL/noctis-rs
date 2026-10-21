@@ -5,9 +5,15 @@ fn form() -> Modal {
     unimplemented!()
 }
 
+#[derive(SlashCommand)]
 #[command("feedback", description = "d")]
-async fn feedback(_ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
-    Ok(r.show_modal(form()).await?.done())
+struct Feedback;
+
+impl Feedback {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        Ok(r.show_modal(form()).await?.done())
+    }
 }
 
 fn main() {}

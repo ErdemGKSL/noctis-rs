@@ -1,0 +1,114 @@
+---
+source: crates/noctis/tests/kinds.rs
+expression: "[resolved(row(strings)), resolved(row(ticket)), resolved(row(users)),\nresolved(row(roles)), resolved(row(anyone)), resolved(row(channels)),]"
+---
+[
+  [
+    {
+      "components": [
+        {
+          "custom_id": "4pick.colour:01",
+          "id": 2,
+          "options": [
+            {
+              "description": "Warm",
+              "label": "Red",
+              "value": "r"
+            },
+            {
+              "label": "Blue",
+              "value": "b"
+            }
+          ],
+          "placeholder": "Colour",
+          "type": 3
+        }
+      ],
+      "id": 1,
+      "type": 1
+    }
+  ],
+  [
+    {
+      "components": [
+        {
+          "custom_id": "4ticket.kind:01",
+          "id": 2,
+          "max_values": 25,
+          "min_values": 0,
+          "options": [
+            {
+              "label": "Billing",
+              "value": "billing"
+            }
+          ],
+          "placeholder": "Pick",
+          "type": 3
+        }
+      ],
+      "id": 1,
+      "type": 1
+    }
+  ],
+  [
+    {
+      "components": [
+        {
+          "custom_id": "4pick.who:01",
+          "id": 2,
+          "placeholder": "Pick",
+          "type": 5
+        }
+      ],
+      "id": 1,
+      "type": 1
+    }
+  ],
+  [
+    {
+      "components": [
+        {
+          "custom_id": "4pick.role:01",
+          "disabled": true,
+          "id": 2,
+          "placeholder": "Role",
+          "type": 6
+        }
+      ],
+      "id": 1,
+      "type": 1
+    }
+  ],
+  [
+    {
+      "components": [
+        {
+          "custom_id": "4pick.any:01",
+          "id": 2,
+          "placeholder": "Anyone",
+          "type": 7
+        }
+      ],
+      "id": 1,
+      "type": 1
+    }
+  ],
+  [
+    {
+      "components": [
+        {
+          "channel_types": [
+            0,
+            2
+          ],
+          "custom_id": "4pick.chan:01",
+          "id": 2,
+          "placeholder": "Channel",
+          "type": 8
+        }
+      ],
+      "id": 1,
+      "type": 1
+    }
+  ]
+]

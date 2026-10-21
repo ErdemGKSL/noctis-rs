@@ -1,6 +1,6 @@
 use noctis::prelude::*;
 
-#[derive(Route)]
+#[derive(Button)]
 struct NoAttribute;
 
 fn main() {}

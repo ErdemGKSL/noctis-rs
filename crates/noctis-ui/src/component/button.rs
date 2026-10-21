@@ -106,7 +106,9 @@ pub(crate) struct RouteButtonData {
 }
 
 /// An interactive button (styles 1-4) whose click reaches the handler of
-/// Route `R`; built with [`RouteComponents::button`](crate::RouteComponents::button).
+/// Route `R`; built with `R { .. }.build()` from a `#[derive(Button)]`
+/// struct, whose `defaults(..)` set the style, label, emoji and `disabled`.
+/// The setters override one field each.
 ///
 /// Placement: an Action Row or a Section accessory.
 pub struct RouteButton<R> {
@@ -133,7 +135,7 @@ impl<R> RouteButton<R> {
         self
     }
 
-    /// The style (default Secondary).
+    /// The style (replaces the declared default).
     #[must_use]
     pub fn style(self, style: ButtonStyle) -> Self {
         self.map(|d| d.style = style)

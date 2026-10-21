@@ -1,5 +1,5 @@
 error: [CTX-02] context-menu commands have no description
- --> tests/ui/ctx/CTX-02_user_command_description.rs:3:32
+ --> tests/ui/ctx/CTX-02_user_command_description.rs:4:32
   |
-3 | #[user_command("Show profile", description = "Shows a profile")] // [CTX-02]
+4 | #[user_command("Show profile", description = "Shows a profile")] // [CTX-02]
   |                                ^^^^^^^^^^^

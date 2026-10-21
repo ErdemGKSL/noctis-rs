@@ -9,11 +9,19 @@ use noctis::ui::{
     TextInputStyle, validate,
 };
 
-#[derive(Route)]
-#[route("b.form")]
+#[derive(::noctis::Button)]
+#[button("b.form", defaults(style = Secondary, label = "Go"))]
 struct Form;
 
-impl ::noctis::__private::ui::Handled for Form {}
+impl Form {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
 
 fn a(n: usize) -> String {
     "a".repeat(n)
@@ -24,7 +32,7 @@ fn short(key: impl Into<String>) -> TextInput {
 }
 
 fn one(input: impl ModalInput) -> Modal {
-    Form.modal("T").push(ModalLabel::new("L", input))
+    noctis::__private::ui::__macro::build_modal::<Form>(Form, "T").push(ModalLabel::new("L", input))
 }
 
 fn opts(n: usize) -> Vec<ModalOption> {
@@ -42,21 +50,25 @@ fn passes(mut modal: Modal) -> usize {
 
 #[test]
 fn mod_02_exactly_five_top_level() {
-    let modal = (0..5).fold(Form.modal("T"), |m, i| {
-        m.push(ModalLabel::new("L", short(format!("k{i}"))))
-    });
+    let modal = (0..5).fold(
+        noctis::__private::ui::__macro::build_modal::<Form>(Form, "T"),
+        |m, i| m.push(ModalLabel::new("L", short(format!("k{i}")))),
+    );
     assert_eq!(passes(modal), 10);
 }
 
 #[test]
 fn mod_01_title_45() {
-    passes(Form.modal(a(45)).push(ModalLabel::new("L", short("k"))));
+    passes(
+        noctis::__private::ui::__macro::build_modal::<Form>(Form, a(45))
+            .push(ModalLabel::new("L", short("k"))),
+    );
 }
 
 #[test]
 fn mod_04_label_45_description_100() {
     let label = ModalLabel::new(a(45), short("k")).description(a(100));
-    passes(Form.modal("T").push(label));
+    passes(noctis::__private::ui::__macro::build_modal::<Form>(Form, "T").push(label));
 }
 
 #[test]
@@ -209,7 +221,10 @@ enum Long {
 
 #[derive(Modal)]
 #[allow(dead_code, reason = "boundary passes only build the modal")]
-#[modal(route = Form, title = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+#[modal(
+    "b.form",
+    defaults(title = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+)]
 struct FiveFields {
     #[text_display(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -231,9 +246,19 @@ struct FiveFields {
     ten: Ten,
 }
 
+impl FiveFields {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 #[derive(Modal)]
 #[allow(dead_code, reason = "boundary passes only build the modal")]
-#[modal(route = Form, title = "T")]
+#[modal("b.form", defaults(title = "T"))]
 struct Groups {
     #[checkbox_group("One")]
     one: Vec<One>,
@@ -252,19 +277,29 @@ struct Groups {
         bool,
 }
 
+impl Groups {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
 #[test]
 fn mod_02_derive_five_fields_at_every_limit() {
-    assert_eq!(passes(FiveFields::modal(Form)), 9);
+    assert_eq!(passes(FiveFields::blank()), 9);
 }
 
 #[test]
 fn mod_01_derive_title_45_and_mod_04_label_45() {
-    assert_eq!(FiveFields::modal(Form).title().chars().count(), 45);
+    assert_eq!(FiveFields::blank().title().chars().count(), 45);
 }
 
 #[test]
 fn mod_05_derive_text_input_bounds_and_mod_06_file_upload() {
-    let json = serde_json::to_value(FiveFields::modal(Form)).unwrap();
+    let json = serde_json::to_value(FiveFields::blank()).unwrap();
     assert_eq!(json["components"][1]["component"]["max_length"], 4000);
     assert_eq!(
         json["components"][2]["component"]["file_types"]
@@ -276,8 +311,8 @@ fn mod_05_derive_text_input_bounds_and_mod_06_file_upload() {
 
 #[test]
 fn mod_07_derive_radio_2_10_checkbox_1_10_and_choice_text_100() {
-    passes(Groups::modal(Form));
-    let json = serde_json::to_value(Groups::modal(Form)).unwrap();
+    passes(Groups::blank());
+    let json = serde_json::to_value(Groups::blank()).unwrap();
     assert_eq!(
         json["components"][0]["component"]["options"]
             .as_array()
@@ -300,7 +335,7 @@ fn mod_07_derive_radio_2_10_checkbox_1_10_and_choice_text_100() {
 
 #[test]
 fn cv2_09_derive_string_select_25_options_placeholder_150() {
-    let json = serde_json::to_value(Groups::modal(Form)).unwrap();
+    let json = serde_json::to_value(Groups::blank()).unwrap();
     assert_eq!(
         json["components"][2]["component"]["options"]
             .as_array()
@@ -311,7 +346,7 @@ fn cv2_09_derive_string_select_25_options_placeholder_150() {
 
 #[test]
 fn cid_01_derive_key_100() {
-    let json = serde_json::to_value(Groups::modal(Form)).unwrap();
+    let json = serde_json::to_value(Groups::blank()).unwrap();
     assert_eq!(
         json["components"][4]["component"]["custom_id"]
             .as_str()

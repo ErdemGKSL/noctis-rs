@@ -2,7 +2,6 @@
 //! [`Choices`] (implemented by `#[derive(Choices)]`), plus the hidden per-kind
 //! field traits and builders the derive expands to (FR-29, FR-64, MOD-09).
 
-use noctis_codec::Route;
 use noctis_rules::Limits;
 use noctis_rules::len::discord_len;
 use twilight_model::channel::ChannelType;
@@ -12,47 +11,23 @@ use super::resolved::{
 };
 use super::submit::{ModalSubmission, SubmitError, SubmittedValue};
 use super::{
-    Checkbox, CheckboxGroup, FileUpload, Modal, ModalChannelSelect, ModalMentionableSelect,
-    ModalOption, ModalRoleSelect, ModalStringSelect, ModalUserSelect, RadioGroup, TextInput,
-    TextInputStyle,
+    Checkbox, CheckboxGroup, FileUpload, ModalChannelSelect, ModalMentionableSelect, ModalOption,
+    ModalRoleSelect, ModalStringSelect, ModalUserSelect, RadioGroup, TextInput, TextInputStyle,
 };
-use crate::route::Handled;
 use crate::{CheckboxOptions, RadioOptions, SelectOption, StringSelectOptions, TextDisplay};
 
-/// A modal declared as a struct: one field per top-level component, built
-/// from a Route value and decoded from the submission. Implemented by
-/// `#[derive(Modal)]` (`noctis::prelude::Modal`), which checks every literal
-/// text and count at `cargo check`.
-///
-/// Decoding never compares the submission's `custom_id` with
-/// [`Self::Route`]: dispatch is core's. It is available as
-/// [`ModalSubmission::custom_id`].
+/// A modal declared as a struct: the Payload fields travel in the
+/// `custom_id`, the input fields are decoded from the submission.
+/// Implemented by `#[derive(Modal)]` (`noctis::prelude::Modal`), which checks
+/// every literal text and count at `cargo check` and also generates the
+/// inherent `X { .. }.build()` and `X::blank(..)` that build the modal.
 ///
 /// ```
-/// # use core::fmt;
-/// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
-/// use noctis_ui::{Modal, ModalForm, ModalLabel, ModalSubmission, RouteComponents, SubmitError, SubmittedValue, TextInput, TextInputStyle};
-///
-/// struct Save;
-/// # impl Payload for Save {
-/// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
-/// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> fmt::Result { Ok(()) }
-/// # }
-/// # impl Route for Save {
-/// #     const ID: RouteId = RouteId::new("form.save");
-/// #     const SHAPE: RouteShape = RouteShape::INLINE;
-/// #     const SCHEMA: u8 = 0;
-/// #     type Payload = Self;
-/// # }
-/// # impl noctis_ui::Handled for Save {}
+/// use noctis_ui::{ModalForm, ModalSubmission, SubmitError, SubmittedValue};
 ///
 /// struct Bio(String);
 ///
 /// impl ModalForm for Bio {
-///     type Route = Save;
-///     fn modal(route: Save) -> Modal {
-///         route.modal("Bio").push(ModalLabel::new("Bio", TextInput::new("bio", TextInputStyle::Short)))
-///     }
 ///     fn from_submission(s: &ModalSubmission) -> Result<Self, SubmitError> {
 ///         match s.get("bio") {
 ///             Some(SubmittedValue::TextInput(t)) => Ok(Self(t.clone())),
@@ -64,23 +39,17 @@ use crate::{CheckboxOptions, RadioOptions, SelectOption, StringSelectOptions, Te
 /// let json = br#"{"type":5,"data":{"custom_id":"0form.save:","components":[
 ///     {"type":18,"component":{"type":4,"custom_id":"bio","value":"hi"}}]}}"#;
 /// assert_eq!(Bio::from_json(json)?.0, "hi");
-/// assert_eq!(Bio::modal(Save).len(), 1);
 /// # Ok::<(), SubmitError>(())
 /// ```
 pub trait ModalForm: Sized {
-    /// The Route the modal's submission is dispatched to.
-    type Route: Route<Payload = Self::Route> + Handled + Send + Sync + 'static;
-
-    /// The modal, built with
-    /// [`RouteComponents::modal`](crate::RouteComponents::modal).
-    fn modal(route: Self::Route) -> Modal;
-
-    /// Decodes the form from a parsed submission.
+    /// Decodes the form from a parsed submission: the derive decodes the
+    /// Payload fields from [`ModalSubmission::custom_id`] (any decode error
+    /// is [`SubmitError::Malformed`]), then the inputs.
     ///
     /// # Errors
     ///
     /// A [`SubmitError`] naming the first field that is missing, of
-    /// another type, invalid or unresolved.
+    /// another type, invalid or unresolved, or a malformed `custom_id`.
     fn from_submission(submission: &ModalSubmission) -> Result<Self, SubmitError>;
 
     /// Decodes the form from the raw interaction JSON.
@@ -91,6 +60,31 @@ pub trait ModalForm: Sized {
     /// [`Self::from_submission`]; never a panic.
     fn from_json(bytes: &[u8]) -> Result<Self, SubmitError> {
         Self::from_submission(&ModalSubmission::from_slice(bytes)?)
+    }
+}
+
+/// Decodes the Payload of the modal Route `R` from the submission's
+/// `custom_id`; what the `from_submission` of `#[derive(Modal)]` calls first.
+///
+/// # Errors
+///
+/// [`SubmitError::Malformed`] naming the Route for any decode error, and for
+/// a Payload stored by Ref (resolved by core's dispatch, Epic 7).
+#[doc(hidden)]
+pub fn decode_modal_payload<R>(submission: &ModalSubmission) -> Result<R::Payload, SubmitError>
+where
+    R: noctis_codec::Route,
+    R::Payload: for<'a> noctis_codec::PayloadDecode<'a>,
+{
+    let malformed = |reason: String| SubmitError::Malformed {
+        reason: format!("custom_id of route `{}`: {reason}", R::ID),
+    };
+    match noctis_codec::decode_route::<R>(submission.custom_id()) {
+        Ok(noctis_codec::PayloadSource::Inline(payload)) => Ok(payload),
+        Ok(noctis_codec::PayloadSource::Ref(_)) => Err(malformed(
+            "the Payload is stored by Ref; core resolves it before decoding".to_owned(),
+        )),
+        Err(e) => Err(malformed(e.to_string())),
     }
 }
 
@@ -116,6 +110,11 @@ pub trait ModalForm: Sized {
 ///
 /// assert_eq!(Size::from_value("l"), Some(Size::L));
 /// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a Choices enum",
+    label = "not a Choices enum",
+    note = "derive it with `#[derive(Choices)]` on a unit enum"
+)]
 pub trait Choices: Sized + 'static {
     /// The type-level count; always `Arity<N>` with `N` the variant count.
     type Count;

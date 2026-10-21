@@ -1,8 +1,8 @@
 error[E0277]: [MOD-03] `noctis::ui::StringSelect` cannot be a modal Label input
-  --> tests/ui/mod/MOD-03_message_select_in_label.rs:10:34
+  --> tests/ui/mod/MOD-03_message_select_in_label.rs:16:34
    |
-10 |     let _ = ModalLabel::new("L", Pick.string_select([SelectOption::new("a", "a")]));
-   |             ---------------      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not a modal input
+16 |     let _ = ModalLabel::new("L", Pick.build().options([SelectOption::new("a", "a")]));
+   |             ---------------      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not a modal input
    |             |
    |             required by a bound introduced by this call
    |

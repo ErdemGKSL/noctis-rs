@@ -1,5 +1,5 @@
 error: [INT-04] a Command cannot `update` its message: write `response = public` or `response = ephemeral`
- --> tests/ui/int/INT-04_command_response_update.rs:3:49
+ --> tests/ui/int/INT-04_command_response_update.rs:4:49
   |
-3 | #[command("ping", description = "d", response = update)] // [INT-04]
+4 | #[command("ping", description = "d", response = update)] // [INT-04]
   |                                                 ^^^^^^

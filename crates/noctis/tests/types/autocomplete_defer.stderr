@@ -1,5 +1,5 @@
-error[E0599]: no method named `defer` found for struct `noctis::AutocompleteCtx` in the current scope
- --> tests/types/autocomplete_defer.rs:5:9
-  |
-5 |     ctx.defer();
-  |         ^^^^^ method not found in `noctis::AutocompleteCtx`
+error[E0599]: no method named `defer_reply` found for struct `noctis::AutocompleteCtx` in the current scope
+  --> tests/types/autocomplete_defer.rs:18:13
+   |
+18 |         ctx.defer_reply(); // autocomplete has no defer (INT-06)
+   |             ^^^^^^^^^^^ method not found in `noctis::AutocompleteCtx`

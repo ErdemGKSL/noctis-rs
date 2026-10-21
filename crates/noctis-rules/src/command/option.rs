@@ -272,7 +272,7 @@ impl<'a> Choice<'a> {
     }
 }
 
-/// One chat-input command option, as `derive(Options)` or dynamic code declares
+/// One chat-input command option, as `derive(SlashCommand)` or dynamic code declares
 /// it.
 ///
 /// Empty `channel_types`, `choices` and `file_types` mean "not set".

@@ -6,7 +6,7 @@
 //! deepest nesting level up, each level in its own stack frame (the pattern of
 //! `noctis-ui`'s `limits/lower.rs`, with a recursion over the depth because a
 //! literal tree may nest misplaced Containers and Rows arbitrarily). Leaves
-//! (Section texts, gallery media, String Select options) borrow only the
+//! (Section texts, gallery media) borrow only the
 //! AST and are built first.
 //!
 //! A separate walk over the AST, indexed exactly like the descriptors
@@ -23,9 +23,7 @@ use noctis_rules::{Actual, Bound, Limits, RuleId, Violation};
 use quote::ToTokens;
 use syn::Expr;
 
-use super::parse::{
-    Arg, Kind, Lit, MediaArgs, Node, RouteKind, RouteNode, Sp, SpacingArg, lit_int,
-};
+use super::parse::{Arg, Kind, Lit, MediaArgs, Node, RouteNode, Sp, SpacingArg, lit_int};
 use crate::literal::check_accent;
 
 /// The URL a non-literal media lowers to: always valid.
@@ -68,9 +66,6 @@ enum Place {
     /// A Media Gallery.
     Gallery,
 }
-
-/// A `noctis-rules` check of one literal.
-type TextCheck = fn(&str, &Limits) -> Vec<Violation>;
 
 /// What the AST walk records.
 #[derive(Default)]
@@ -194,7 +189,8 @@ impl<'a> Facts<'a> {
                     Kind::Link { .. } | Kind::Premium(_) | Kind::Hole(_) => {
                         self.button(accessory, &acc_path);
                     }
-                    Kind::Route(r) if !r.kind.is_select() => self.button(accessory, &acc_path),
+                    // A select here is the `SectionAccessory` bound's CV2-07.
+                    Kind::Route(_) => self.button(accessory, &acc_path),
                     other => self.own.push((
                         accessory.sp,
                         Violation::new(
@@ -250,28 +246,81 @@ impl<'a> Facts<'a> {
     }
 
     fn route(&mut self, r: &'a RouteNode, path: &str) {
-        let (field, check): (&str, TextCheck) = if r.kind.is_select() {
-            ("placeholder", validate_select_placeholder)
-        } else {
-            ("label", validate_button_label)
-        };
-        // The last literal goes into the descriptor; the others are checked
-        // here.
-        if let Some((last, rest)) = r.texts.split_last() {
-            self.paths.insert(join(path, field), Sp::of(&last.lit));
+        let limits = Limits::default();
+        // The last literal label goes into the descriptor (a button); the
+        // others are checked here.
+        if let Some((last, rest)) = r.labels.split_last() {
+            self.paths.insert(join(path, "label"), Sp::of(&last.lit));
             for lit in rest {
-                for v in check(&lit.value, &Limits::default()) {
+                for v in validate_button_label(&lit.value, &limits) {
                     self.own.push((Sp::of(&lit.lit), v));
                 }
             }
         }
-        if r.kind == RouteKind::StringSelect
-            && let Some(arg) = &r.arg
-        {
-            self.paths.insert(join(path, "options"), Sp::of(arg));
+        for arg in r.literal_args("placeholder") {
+            if let Some(lit) = super::parse::lit_str(arg) {
+                for mut v in validate_select_placeholder(&lit.value(), &limits) {
+                    v.path = join(path, "placeholder");
+                    self.own.push((Sp::of(lit), v));
+                }
+            }
         }
-        for (name, value) in select_counts(r) {
-            self.paths.insert(join(path, name), Sp::of(value));
+        for arg in r.literal_args("options") {
+            if let Expr::Array(a) = arg
+                && a.elems.len() > limits.select_options
+            {
+                self.own.push((
+                    Sp::of(arg),
+                    Violation::new(
+                        RuleId::CV2_09,
+                        join(path, "options"),
+                        Bound::AtMost(limits.select_options),
+                        Actual::Count(a.elems.len()),
+                    ),
+                ));
+            }
+        }
+        // A later call overrides an earlier one, so only the last call of
+        // each count is checked, and only when it is a literal.
+        let mut counts: Vec<(usize, &Expr)> = Vec::new();
+        for (name, min) in [("min_values", 0), ("max_values", 1)] {
+            let Some(arg) = r.literal_args(name).last() else {
+                continue;
+            };
+            let Some(n) = lit_int(arg).and_then(|i| i.base10_parse::<usize>().ok()) else {
+                continue;
+            };
+            counts.push((n, arg));
+            if n < min || n > limits.select_values {
+                self.own.push((
+                    Sp::of(arg),
+                    Violation::new(
+                        RuleId::CV2_09,
+                        join(path, name),
+                        Bound::Between {
+                            min,
+                            max: limits.select_values,
+                        },
+                        Actual::Count(n),
+                    ),
+                ));
+            }
+        }
+        if let [(min, arg), (max, _)] = counts.as_slice()
+            && r.literal_args("min_values")
+                .last()
+                .is_some_and(|a| std::ptr::eq(a, *arg))
+            && min > max
+        {
+            self.own.push((
+                Sp::of(*arg),
+                Violation::new(
+                    RuleId::CV2_09,
+                    join(path, "min_values"),
+                    Bound::Describe("at most `max_values`"),
+                    Actual::Text(format!("{min} > {max}")),
+                ),
+            ));
         }
         if let Some(key) = cid_key(&r.receiver) {
             self.routes
@@ -381,32 +430,6 @@ pub(crate) fn crossing(weights: impl Iterator<Item = usize>, limit: usize) -> Op
     None
 }
 
-/// The literal `min_values` / `max_values` setters of a select (the last of
-/// each).
-fn select_counts(r: &RouteNode) -> Vec<(&'static str, &Expr)> {
-    let mut out: Vec<(&'static str, &Expr)> = Vec::new();
-    if !r.kind.is_select() {
-        return out;
-    }
-    for s in &r.setters {
-        let name = match s.method.to_string().as_str() {
-            "min_values" => "min_values",
-            "max_values" => "max_values",
-            _ => continue,
-        };
-        // A later call overrides an earlier one, so a non-literal call
-        // drops the literal it replaces and leaves the bound to the runtime.
-        out.retain(|(n, _)| *n != name);
-        if s.args.len() == 1
-            && let Some(arg) = s.args.first()
-            && lit_int(arg).is_some()
-        {
-            out.push((name, arg));
-        }
-    }
-    out
-}
-
 /// The CID-02 key of a receiver whose `custom_id` is fixed by its tokens, or
 /// `None` when it is left to the runtime validator.
 pub(crate) fn cid_key(receiver: &Expr) -> Option<String> {
@@ -439,7 +462,8 @@ pub(crate) fn cid_key(receiver: &Expr) -> Option<String> {
             matches!(&*c.func, Expr::Path(p) if p.qself.is_none() && upper_path(&p.path))
                 && c.args.iter().all(literal)
         }
-        Expr::Path(p) => p.qself.is_none() && upper_path(&p.path),
+        // A unit struct, or the same binding used twice.
+        Expr::Path(p) => p.qself.is_none() && (upper_path(&p.path) || p.path.get_ident().is_some()),
         _ => false,
     };
     qualifies.then(|| receiver.to_token_stream().to_string())
@@ -450,7 +474,6 @@ pub(crate) fn cid_key(receiver: &Expr) -> Option<String> {
 struct Leaves<'a> {
     texts: HashMap<usize, Vec<&'a str>>,
     media: HashMap<usize, Vec<rc::Media<'a>>>,
-    options: HashMap<usize, Vec<rc::SelectOption<'a>>>,
 }
 
 fn lower_media(m: &MediaArgs) -> rc::Media<'_> {
@@ -493,16 +516,6 @@ impl<'a> Leaves<'a> {
                     })
                     .collect();
                 self.media.insert(node.id, lowered);
-            }
-            Kind::Route(r) if r.kind == RouteKind::StringSelect => {
-                if let Some(Arg::Expr(Expr::Array(a))) = &r.arg {
-                    let options = a
-                        .elems
-                        .iter()
-                        .map(|_| rc::SelectOption::new("x", "x"))
-                        .collect();
-                    self.options.insert(node.id, options);
-                }
             }
             _ => {}
         }
@@ -595,9 +608,6 @@ fn lower_node<'a: 's, 's>(
         }
         Kind::File(_) => rc::Component::File(FILE_SENTINEL),
         Kind::Separator { .. } => rc::Component::Separator(rc::Separator::new()),
-        Kind::Route(r) if r.kind.is_select() => {
-            rc::Component::Select(lower_select(node, r, leaves))
-        }
         Kind::Link { .. } | Kind::Premium(_) | Kind::Route(_) => {
             lower_button(node).map_or(rc::Component::Opaque(1), rc::Component::Button)
         }
@@ -616,44 +626,15 @@ fn lower_button(node: &Node) -> Option<rc::Button<'_>> {
             Some(rc::Button::new(rc::ButtonStyle::Link(&url.value)).label(&label.value))
         }
         Kind::Premium(_) => Some(rc::Button::new(rc::ButtonStyle::Premium)),
-        Kind::Route(r) if !r.kind.is_select() => {
+        Kind::Route(r) => {
             let b = rc::Button::new(rc::ButtonStyle::Secondary);
-            Some(match r.texts.last() {
+            Some(match r.labels.last() {
                 Some(l) => b.label(&l.value),
                 None => b,
             })
         }
         _ => None,
     }
-}
-
-fn lower_select<'a>(node: &'a Node, r: &'a RouteNode, leaves: &'a Leaves<'a>) -> rc::Select<'a> {
-    let kind = match r.kind {
-        RouteKind::StringSelect => match leaves.options.get(&node.id) {
-            Some(options) => rc::SelectKind::String(options),
-            // Options known only at runtime are not counted.
-            None => rc::SelectKind::User,
-        },
-        RouteKind::RoleSelect => rc::SelectKind::Role,
-        RouteKind::MentionableSelect => rc::SelectKind::Mentionable,
-        RouteKind::ChannelSelect => rc::SelectKind::Channel,
-        RouteKind::UserSelect | RouteKind::Button => rc::SelectKind::User,
-    };
-    let mut select = rc::Select::new(kind);
-    if let Some(p) = r.texts.last() {
-        select = select.placeholder(&p.value);
-    }
-    for (name, value) in select_counts(r) {
-        let Some(n) = lit_int(value).and_then(|i| i.base10_parse::<usize>().ok()) else {
-            continue;
-        };
-        select = if name == "min_values" {
-            select.min_values(n)
-        } else {
-            select.max_values(n)
-        };
-    }
-    select
 }
 
 #[cfg(test)]
@@ -678,7 +659,7 @@ mod tests {
     #[test]
     fn cv2_03_count_matches_rules() {
         let nodes = tree(quote! {
-            container [ text("a"), section [ text("b"), text(x); accessory = thumbnail(m) ], row [ {b}, P.button() ], ..more ],
+            container [ text("a"), section [ text("b"), text(x); accessory = thumbnail(m) ], row [ {b}, P.build() ], ..more ],
             {hole},
             gallery [ item(m), item(n) ],
         });
@@ -730,18 +711,18 @@ mod tests {
             container [ container [] ],
             thumbnail(m),
             item(m),
-            section [ row [ P.button() ]; accessory = text("x") ],
+            section [ row [ P.build() ]; accessory = text("x") ],
             container(accent = 0x1000000) [],
             separator(spacing = medium),
-            row [ P.button("a").label("b") ],
-            row [ Q.string_select([o, o]).min_values(3).max_values(2) ],
+            row [ P.build().label("a").label("b") ],
+            row [ Q.build().options([o, o]).min_values(3).max_values(2) ],
         });
         let ids: Vec<_> = msgs.iter().map(|m| &m[..8]).collect();
         assert_eq!(
             ids,
             [
-                "[CV2-06]", "[CV2-05]", "[CV2-05]", "[CV2-09]", "[CV2-05]", "[CV2-07]", "[CV2-07]",
-                "[CV2-13]", "[CV2-13]"
+                "[CV2-06]", "[CV2-05]", "[CV2-05]", "[CV2-05]", "[CV2-07]", "[CV2-07]", "[CV2-13]",
+                "[CV2-13]", "[CV2-09]"
             ],
             "{msgs:#?}"
         );
@@ -751,16 +732,16 @@ mod tests {
     fn select_matrix_cases() {
         let long = "p".repeat(151);
         let msgs = messages(quote! {
-            row [ Q.string_select([o]).placeholder(#long) ],
+            row [ Q.build().options([o]).placeholder(#long) ],
         });
         assert_eq!(msgs.len(), 1, "{msgs:#?}");
         assert!(
-            msgs[0].starts_with("[CV2-09] row[0].select[0].placeholder"),
+            msgs[0].starts_with("[CV2-09] row[0].button[0].placeholder"),
             "{msgs:#?}"
         );
 
         let msgs = messages(quote! {
-            row [ Q.string_select([o, o, o]).min_values(3).max_values(2) ],
+            row [ Q.build().options([o, o, o]).min_values(3).max_values(2) ],
         });
         assert_eq!(msgs.len(), 1, "{msgs:#?}");
         assert!(msgs[0].starts_with("[CV2-"), "{msgs:#?}");
@@ -774,8 +755,8 @@ mod tests {
     #[test]
     fn select_counts_follow_the_last_call() {
         let msgs = messages(quote! {
-            row [ Q.string_select([o, o]).min_values(3).min_values(n).max_values(2) ],
-            row [ R.string_select([o, o]).max_values(0).max_values(m) ],
+            row [ Q.build().options([o, o]).min_values(3).min_values(n).max_values(2) ],
+            row [ R.build().options([o, o]).max_values(0).max_values(m) ],
         });
         assert!(msgs.is_empty(), "{msgs:#?}");
     }
@@ -793,6 +774,7 @@ mod tests {
         );
         assert_eq!(key(parse_quote!(Page(1))).as_deref(), Some("Page (1)"));
         assert_eq!(key(parse_quote!(Refresh)).as_deref(), Some("Refresh"));
+        assert_eq!(key(parse_quote!(route_var)).as_deref(), Some("route_var"));
         assert_eq!(
             key(parse_quote!(crate::Refresh)).as_deref(),
             Some("crate :: Refresh")
@@ -801,7 +783,6 @@ mod tests {
             parse_quote!(Press { n }),
             parse_quote!(Press { n: x }),
             parse_quote!(Press { n: 1, ..base }),
-            parse_quote!(route_var),
             parse_quote!(page(1)),
             parse_quote!(Page(x)),
             parse_quote!(Wrap::<u8>),
@@ -813,8 +794,8 @@ mod tests {
     #[test]
     fn cid_02_duplicates() {
         let msgs = messages(quote! {
-            row [ Press { n: 1 }.button(), Press { n: 1 }.button("x"), Press { n: 1 }.button() ],
-            row [ Press { n: 2 }.button(), Press { n }.button(), Press { n }.button() ],
+            row [ Press { n: 1 }.build(), Press { n: 1 }.build().label("x"), Press { n: 1 }.build() ],
+            row [ Press { n: 2 }.build(), Press { n }.build(), Press { n }.build() ],
         });
         assert_eq!(msgs.len(), 3, "{msgs:#?}");
         assert!(msgs[0].starts_with(
@@ -830,12 +811,12 @@ mod tests {
     #[test]
     fn cid_02_duplicates_across_places() {
         let msgs = messages(quote! {
-            section [ text("a"); accessory = Acc.button("x") ],
-            container [ row [ Acc.button() ] ],
-            row [ U.button(), U.button() ],
-            row [ Page(1).button(), Page(1).button() ],
-            row [ Same.button() ],
-            row [ Same.string_select([o]) ],
+            section [ text("a"); accessory = Acc.build().label("x") ],
+            container [ row [ Acc.build() ] ],
+            row [ U.build(), U.build() ],
+            row [ Page(1).build(), Page(1).build() ],
+            row [ Same.build() ],
+            row [ Same.build().options([o]) ],
         });
         let dups: Vec<_> = msgs
             .iter()
