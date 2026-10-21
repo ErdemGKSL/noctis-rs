@@ -1199,6 +1199,20 @@ struct Original {
 /// the message.
 type BotRoute<'a> = (&'a AppShared, Id<ChannelMarker>, Id<MessageMarker>);
 
+/// The Guard phase of a run (AD-23 stage 8), stored on [`Shared`]: whether
+/// a guarded Route's handler body ever started.
+pub(crate) struct GuardPhase;
+
+impl GuardPhase {
+    /// The initial phase; it stays for an unguarded Route and when stage 7
+    /// stopped the run.
+    pub(crate) const UNGUARDED: u8 = 0;
+    /// The Route's Guards are running; the handler body has not started.
+    pub(crate) const GUARDING: u8 = 1;
+    /// The Guards allowed the run and the handler body started.
+    pub(crate) const BODY: u8 = 2;
+}
+
 /// What one interaction's responders and its pipeline share: the
 /// transport, the state machine and its gate, the original response, the
 /// declared response, the source message, the App's Limits and the
@@ -1221,6 +1235,8 @@ pub(crate) struct Shared {
     followups: AtomicU8,
     /// `Some(5)` for a user-install-only interaction.
     followup_cap: Option<u8>,
+    /// The run's [`GuardPhase`]; written only by the guarded handler future.
+    guard_phase: AtomicU8,
 }
 
 impl fmt::Debug for Shared {
@@ -1280,7 +1296,18 @@ impl Shared {
             limits,
             followups: AtomicU8::new(0),
             followup_cap: cap,
+            guard_phase: AtomicU8::new(GuardPhase::UNGUARDED),
         })
+    }
+
+    /// Records the run's [`GuardPhase`].
+    pub(crate) fn set_guard_phase(&self, phase: u8) {
+        self.guard_phase.store(phase, Ordering::Release);
+    }
+
+    /// The run's [`GuardPhase`].
+    pub(crate) fn guard_phase(&self) -> u8 {
+        self.guard_phase.load(Ordering::Acquire)
     }
 
     /// `PENDING`, `DEFERRED`, `REPLIED`, `MODAL`, `DEFERRED_UPDATE` or

@@ -180,6 +180,9 @@ pub enum RunOutcome {
     Failed,
     /// The handler or a before-Middleware panicked.
     Panicked,
+    /// A Route Guard (`owner`, `permissions` or `guard = path`) refused the
+    /// interaction: its notice was sent and the handler did not run.
+    Denied,
 }
 
 impl RunOutcome {

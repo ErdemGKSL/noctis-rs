@@ -14,6 +14,7 @@ use quote::quote;
 use syn::{DeriveInput, Fields};
 
 use crate::defaults::{self, DefaultsKind};
+use crate::guard::{GuardCtx, check_owner, guards_impl};
 use crate::kind::{Family, scaffolding};
 use crate::payload;
 use crate::route::{AttrKind, Response, parse_kind_attr, route_impls};
@@ -98,6 +99,8 @@ pub(crate) fn derive_or_fallback(component: Component, input: &DeriveInput) -> T
                 const RESPONSE: #core::__Response = #core::__Response::Update;
             }
 
+            impl #core::__Guards<#core::ComponentCtx> for #ident {}
+
             #route
         }
     })
@@ -105,10 +108,13 @@ pub(crate) fn derive_or_fallback(component: Component, input: &DeriveInput) -> T
 
 /// Expands a component derive.
 pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<TokenStream> {
-    crate::common::kind_fields(input, component.derive())?;
+    let fields = crate::common::kind_fields(input, component.derive())?;
     let ident = &input.ident;
     let kind = component.defaults_kind();
     let attr = parse_kind_attr(&input.attrs, ident, component.attr_kind())?;
+    let names: Vec<&syn::Ident> = fields.iter().filter_map(|f| f.ident.as_ref()).collect();
+    check_owner(&attr.args.guards, ident, &names, &[])?;
+    let guards = guards_impl(ident, &attr.args.guards, GuardCtx::Component);
     let declared = defaults::parse(kind, attr.defaults.as_ref(), &attr.attr)?;
     let ui = quote!(::noctis::__private::ui);
     let core = quote!(::noctis::__private::core);
@@ -147,6 +153,8 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
             const KIND: #core::ComponentKind = #core::ComponentKind::#variant;
             const RESPONSE: #core::__Response = #core::__Response::#response;
         }
+
+        #guards
 
         impl #ident {
             #build
@@ -438,16 +446,42 @@ mod tests {
             );
             assert!(e.starts_with("[CID-03] unknown #[button] argument"), "{e}");
         }
-        for arg in [quote!(owner = user), quote!(rate_limit(1, 2))] {
-            let e = run(
-                Component::Button,
-                quote!(
-                    #[button("a", #arg, defaults(style = Primary, label = "a"))]
-                    struct B;
-                ),
-            );
-            assert!(e.contains("is a runtime argument of #[button] that this Noctis release does not support yet"), "{e}");
-        }
+        let e = run(
+            Component::Button,
+            quote!(
+                #[button("a", rate_limit(1, 2), defaults(style = Primary, label = "a"))]
+                struct B;
+            ),
+        );
+        assert!(e.contains("`rate_limit` is a runtime argument of #[button] that this Noctis release does not support yet"), "{e}");
+        // Route Guard Matrix 8: `owner` names a field.
+        let e = run(
+            Component::Button,
+            quote!(
+                #[button("a", owner = user, defaults(style = Primary, label = "a"))]
+                struct B;
+            ),
+        );
+        assert!(
+            e.starts_with("[CID-03] `owner = user` names no field of `B`; it has no fields"),
+            "{e}"
+        );
+        let e = run(
+            Component::Button,
+            quote!(
+                #[button("a", owner = usr, defaults(style = Primary, label = "a"))]
+                struct B {
+                    user: u64,
+                    page: u8,
+                }
+            ),
+        );
+        assert!(
+            e.starts_with(
+                "[CID-03] `owner = usr` names no field of `B`; its fields are: user, page"
+            ),
+            "{e}"
+        );
         let e = run(
             Component::Button,
             quote!(

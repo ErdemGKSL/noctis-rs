@@ -1,0 +1,6 @@
+error: [CID-03] `owner` must name a Payload field; `bio` is a modal input
+         = help: name a field without an input attribute, of type `Id<UserMarker>`: submitted text is client input
+ --> tests/ui/cid/CID-03_owner_modal_input.rs:6:24
+  |
+6 | #[modal("bio", owner = bio, defaults(title = "Bio"))]
+  |                        ^^^

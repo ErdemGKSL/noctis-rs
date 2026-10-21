@@ -516,6 +516,7 @@ where
         + noctis_codec::Route<Payload = S>
         + noctis_codec::DeclaredRuntime
         + for<'de> noctis_codec::PayloadDecode<'de>
+        + crate::guard::__Guards<ComponentCtx>
         + Send
         + 'static,
     F: Fn(S, ComponentCtx) -> Fut + Send + Sync + 'static,
@@ -540,6 +541,7 @@ where
         + noctis_codec::Route<Payload = S>
         + noctis_codec::DeclaredRuntime
         + for<'de> noctis_codec::PayloadDecode<'de>
+        + crate::guard::__Guards<ComponentCtx>
         + Send
         + 'static,
     D: DeferMode,
@@ -564,6 +566,7 @@ where
     S: __Modal
         + noctis_ui::__macro::ModalFromPayload
         + noctis_codec::DeclaredRuntime
+        + crate::guard::__Guards<ModalSubmitCtx>
         + Send
         + 'static,
     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
@@ -588,6 +591,7 @@ where
     S: __Modal
         + noctis_ui::__macro::ModalFromPayload
         + noctis_codec::DeclaredRuntime
+        + crate::guard::__Guards<ModalSubmitCtx>
         + Send
         + 'static,
     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,

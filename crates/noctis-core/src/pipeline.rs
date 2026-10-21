@@ -23,7 +23,10 @@
 //!    which deletes a type-5 deferred original); an error or a panic is
 //!    handled like the handler's, naming the Middleware. The Extensions are
 //!    then frozen;
-//! 8. *Guards: absent until Story 7.7;*
+//! 8. Route Guards: none for Commands; components and modals run their
+//!    Route's guards (`owner`, `permissions`, `guard = path`, in that
+//!    order) after the before-Middleware, and a denial sends its localized
+//!    ephemeral notice instead of running the handler (`component`);
 //! 9. run the handler under `catch_unwind`, raced against the shutdown
 //!    cancel token, and send what it returned;
 //! 10. run the after-Middleware (child's first, each Module's in reverse
@@ -71,7 +74,7 @@
 //! `expired_handler`, default `noctis.expired` notice) like a handler; any
 //! other input that reaches no handler is one `warn` with a `reason` label
 //! and the generic ephemeral notice. The handler then runs through the
-//! same stages 6, 9 and 10 as a Command: the auto-defer follows its
+//! same stages 6 to 10 as a Command, with its Route Guards at stage 8: the auto-defer follows its
 //! declared `response` (type 6 for `update` on a message, else type 5), a
 //! returned message is sent per that response, and failures send the
 //! notice and go to the Component Error Sink.
@@ -105,6 +108,7 @@ use crate::autocomplete::{
 };
 use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
 use crate::edge::callback::ACK_DEADLINE;
+use crate::guard::GuardDenied;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
 use crate::menu::MenuInput;
 use crate::middleware::{Around, Before, Chain, Invocation, RunInfo, RunOutcome};
@@ -113,7 +117,7 @@ use crate::options::CommandInput;
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
 use crate::responder::{
-    Ephemerality, InteractionTarget, MessageTarget, PENDING, ResponderError, Response,
+    Ephemerality, GuardPhase, InteractionTarget, MessageTarget, PENDING, ResponderError, Response,
     ResponseValue, Shared, Transport,
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ErrorSink as _, LogSink, ReportKind};
@@ -351,6 +355,37 @@ pub(crate) struct Report<'a> {
     /// The handler run's Middleware; `None` for the Expired Handler chain
     /// and autocomplete (no Middleware, no Extensions in the report).
     pub(crate) around: Option<Around>,
+    /// The record of a `one_shot` Ref taken at stage 2, put back when the
+    /// Guard phase ends without the handler body starting; `None`
+    /// everywhere else.
+    pub(crate) restore: Option<Restore>,
+}
+
+/// A `one_shot` Ref's taken record and the TTL to put it back with.
+pub(crate) struct Restore {
+    pub(crate) r: noctis_codec::Ref,
+    pub(crate) record: bytes::Bytes,
+    pub(crate) ttl: std::time::Duration,
+}
+
+/// Puts the taken record of `restore` back under its Ref after the Guard
+/// phase ended without the handler body (`put_if_absent`); a failure is one
+/// `warn` without the Ref.
+async fn restore_ref(app: &AppShared, restore: &Restore) {
+    let put = app
+        .refs
+        .put_if_absent(
+            restore.r.as_str(),
+            restore.record.clone(),
+            Some(restore.ttl),
+        )
+        .await;
+    if !matches!(put, Ok(true)) {
+        tracing::warn!(
+            target: "noctis::refs",
+            "could not restore the one-shot Ref after a Guard denial"
+        );
+    }
 }
 
 /// How one handler run ended.
@@ -359,6 +394,12 @@ pub(crate) enum Outcome {
     Panicked(Box<dyn Any + Send>),
     /// A before-Middleware stopped the run, with this notice.
     Stopped(Option<MessageKey>),
+    /// A Route Guard of `route` refused the run with this notice.
+    Denied {
+        route: &'static str,
+        guard: &'static str,
+        key: MessageKey,
+    },
     Cancelled,
 }
 
@@ -370,6 +411,7 @@ impl Outcome {
             Self::Returned(result) => Some(RunOutcome::of(result)),
             Self::Panicked(_) => Some(RunOutcome::Panicked),
             Self::Stopped(_) => Some(RunOutcome::Stopped),
+            Self::Denied { .. } => Some(RunOutcome::Denied),
             Self::Cancelled => None,
         }
     }
@@ -479,11 +521,28 @@ async fn before_and_handler(
     };
     match before {
         Before::Continue => {
-            // Stage 8 (Guards) lands with Story 7.7. The handler's duration
-            // starts at stage 9.
+            // Stage 8 (a guarded Route's Guards) runs at the start of `fut`;
+            // a denial is its `GuardDenied` error. The handler's duration
+            // starts at stage 9: an outcome that ended in the Guard phase
+            // (deny, Guard error, panic or cancel) records none.
             let at = if ran { Instant::now() } else { at };
             let outcome = run_handler(span, cancel, shared, app, fut).await;
-            (outcome, Some(at), None)
+            let at = (shared.guard_phase() != GuardPhase::GUARDING).then_some(at);
+            match outcome {
+                Outcome::Returned(Err(error)) => match GuardDenied::of(&error) {
+                    Some(d) => (
+                        Outcome::Denied {
+                            route: d.route,
+                            guard: d.guard,
+                            key: d.key,
+                        },
+                        None,
+                        None,
+                    ),
+                    None => (Outcome::Returned(Err(error)), at, None),
+                },
+                outcome => (outcome, at, None),
+            }
         }
         Before::Stop(key) => (Outcome::Stopped(key), None, None),
         Before::Failed(error, name) => (Outcome::Returned(Err(error)), None, Some(name)),
@@ -534,7 +593,12 @@ async fn run_after(
 /// original); an error or a panic first sends the user a localized
 /// ephemeral notice (FR-22, AD-23); then `timer` (the auto-defer) is
 /// aborted and the after-Middleware run (stage 10, not after a
-/// cancellation or a start panic). A user condition is logged at `debug`; anything else (a
+/// cancellation or a start panic). A Guard denial (stage 8) is one `debug`
+/// on `noctis::guard`, shows its notice and runs the after-Middleware with
+/// `RunOutcome::Denied`, with no duration, counter or report. Whenever the
+/// Guard phase ended without the handler body starting (a denial, a Guard
+/// error or panic, a cancel during the Guards), a taken `one_shot` record
+/// is put back first. A user condition is logged at `debug`; anything else (a
 /// failed send of a returned message included) is counted and reported to
 /// the origin's Error Sink (a cancellation without a notice).
 pub(crate) async fn run_started(
@@ -562,9 +626,29 @@ pub(crate) async fn run_started(
     if let Some(around) = &report.around {
         around.freeze();
     }
+    // The handler body never started: the taken `one_shot` record goes
+    // back before the notice, whatever ended the Guard phase.
+    if shared.guard_phase() == GuardPhase::GUARDING
+        && let Some(restore) = &report.restore
+    {
+        restore_ref(app, restore).instrument(span.clone()).await;
+    }
     // Sent before the auto-defer is dropped: the gate orders the two.
     match &outcome {
         Outcome::Stopped(Some(key)) => send_notice(span, &shared, &report, *key).await,
+        Outcome::Denied { route, guard, key } => {
+            span.in_scope(|| {
+                tracing::debug!(
+                    target: "noctis::guard",
+                    route,
+                    handler = report.handler,
+                    guard,
+                    key = key.as_str(),
+                    "denied"
+                );
+            });
+            send_notice(span, &shared, &report, *key).await;
+        }
         Outcome::Stopped(None) => shared.stop_silently().instrument(span.clone()).await,
         outcome => {
             if let Some(key) = notice_key(outcome) {
@@ -577,7 +661,7 @@ pub(crate) async fn run_started(
         run_after(span, cancel, &report, run_outcome).await;
     }
     let report_kind = match &outcome {
-        Outcome::Returned(Ok(())) | Outcome::Stopped(_) => return,
+        Outcome::Returned(Ok(())) | Outcome::Stopped(_) | Outcome::Denied { .. } => return,
         Outcome::Returned(Err(error)) if error.is_user() => {
             let key = error.user_message().map(MessageKey::as_str);
             span.in_scope(|| {
@@ -650,7 +734,10 @@ fn notice_key(outcome: &Outcome) -> Option<MessageKey> {
     match outcome {
         Outcome::Returned(Err(error)) => Some(notice::key_for(error)),
         Outcome::Panicked(_) => Some(keys::ERROR_GENERIC),
-        Outcome::Returned(Ok(())) | Outcome::Stopped(_) | Outcome::Cancelled => None,
+        Outcome::Returned(Ok(()))
+        | Outcome::Stopped(_)
+        | Outcome::Denied { .. }
+        | Outcome::Cancelled => None,
     }
 }
 
@@ -819,8 +906,8 @@ pub(crate) async fn run_interaction(
         auto_defer: resolved.auto_defer(),
     };
     let timer = arm(&app, &state, &armed, received_at, &span);
-    // Stages 7 (before-Middleware) and 8 (Guards, Story 7.7) run in
-    // `run_started`, once the handler future exists.
+    // Stage 7 (before-Middleware) runs in `run_started`, once the handler
+    // future exists; Commands have no stage 8 (Guards).
     let report = Report {
         app: &app,
         origin: ErrorOrigin::Command,
@@ -831,6 +918,7 @@ pub(crate) async fn run_interaction(
         event_type: Some(INTERACTION_CREATE),
         locale: notice_locale,
         around: Some(around),
+        restore: None,
     };
     let start = start(&resolved, raw.as_bytes(), parts);
     execute(&span, Some(&cancel), state, start, Some(timer), report).await;
@@ -952,6 +1040,7 @@ pub(crate) async fn run_autocomplete(
         locale: Locale::EnUs,
         // Autocomplete runs no Middleware.
         around: None,
+        restore: None,
     };
     let found = match find_autocomplete(&span, shard, resolved, raw.as_bytes(), author) {
         Ok(found) => found,
@@ -1437,6 +1526,7 @@ impl Dispatcher {
             app: Some(Arc::clone(&self.app)),
             current_ref: None,
             run: around.run(),
+            member_permissions: None,
         };
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),
@@ -1454,6 +1544,7 @@ impl Dispatcher {
             event_type: None,
             locale: notice_locale,
             around: Some(around),
+            restore: None,
         };
         let entry = Arc::clone(entry);
         let start = move |shared| entry.handler.call(CommandCtx::from_parts(parts), shared);

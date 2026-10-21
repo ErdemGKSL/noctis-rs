@@ -803,8 +803,12 @@ list in CI.
   was taken at stage 2 puts the exact record back under the same Ref
   (`put_if_absent`, with the Route's `ttl`, else `AppBuilder::ref_ttl`) before the
   notice, so no other user can burn a confirmation; `take` stays atomic, and the
-  owner may see "expired" in the short window before the restore. A failed or
-  refused restore is one `warn` on `noctis::refs`, without the Ref (Story 7.7).
+  owner may see "expired" in the short window before the restore. The same
+  restore runs whenever the Guard phase ends without the handler body starting:
+  a Guard `Err`, a Guard panic, or a shutdown cancel while the Guards run (each
+  still reported like a handler failure, with no duration sample); once the body
+  started, nothing is restored. A failed or refused restore is one `warn` on
+  `noctis::refs`, without the Ref (Story 7.7).
 
 ### AD-19 — Route identity lives in `noctis-codec`
 - **Binds:** `noctis-codec`, `noctis-ui`, `noctis-core`, `noctis-macros`; FR-15,
