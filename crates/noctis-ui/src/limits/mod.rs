@@ -5,7 +5,7 @@
 //! call `validate_components` / `validate_legacy_components` / `cost`, so
 //! counts, paths and violation order match `components!` exactly. On top of
 //! that they check what the descriptors do not carry: duplicate `custom_id`s
-//! (CID-02), `attachment://` references (ATT-05), attachment alt text
+//! (CID-02, unresolved ones compared by Route and Payload), `attachment://` references (ATT-05), attachment alt text
 //! (ATT-06), legacy `content` (MSG-01), empty bodies (MSG-09) and mention id
 //! counts (MSG-04). A modal is lowered into `noctis_rules::modal`
 //! descriptors and checked by `validate_modal`, then its input keys by CID-01
@@ -33,6 +33,7 @@ use noctis_rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
 
 use self::walk::Visit;
 use crate::modal::ModalTopNode;
+use crate::route::DupKey;
 use crate::{
     AttachmentOrigin, AttachmentSet, LegacyMessage, Mentions, Modal, Roles, UiError, Users,
     V2Message,
@@ -168,8 +169,10 @@ impl fmt::Display for LimitWarning {
 /// The violations come in this order: the `noctis_rules::component` result
 /// in its own order, then CID-02, ATT-05, ATT-06, MSG-01 (legacy), MSG-09
 /// and MSG-04. Each names its path, such as
-/// `container[0].section[2].accessory.label`. Unresolved `custom_id`s are
-/// not compared. Every warning is returned in the [`CostReport`] and logged
+/// `container[0].section[2].accessory.label`. CID-02 compares unresolved
+/// `custom_id`s (select, signed and by-Ref Routes) by Route and Payload, so a
+/// duplicate fails before and after the Responder resolves it; its help
+/// suggests a Payload field that tells the components apart. Every warning is returned in the [`CostReport`] and logged
 /// with `tracing::warn!` (target `noctis::ui`, fields `rule` and `path`),
 /// also when the message then fails.
 ///
@@ -438,28 +441,42 @@ fn finish(report: CostReport, violations: Vec<Violation>) -> Result<CostReport, 
     }
 }
 
-/// CID-02: every resolved `custom_id` once; each later use is a violation
-/// noting the first.
+/// The CID-02 help; `noctis-macros` repeats it for `components!`.
+const HELP: &str = "give the components a Payload field that tells them apart, for example the target page of a prev/next pair (`Page { page: 2 }` and `Page { page: 4 }`)";
+
+/// CID-02: every `custom_id` once, resolved or not (unresolved ids compare
+/// by Route and Payload, see `CustomId::duplicate_key`); each later use is
+/// a violation noting the first.
 fn check_custom_ids(sites: &[Visit<'_>], out: &mut Vec<Violation>) {
-    let mut first: HashMap<&str, String> = HashMap::new();
+    let mut first: HashMap<DupKey, String> = HashMap::new();
     for visit in sites {
-        let Some(id) = visit.site.custom_id().and_then(|id| id.get()) else {
+        let Some(id) = visit.site.custom_id() else {
+            continue;
+        };
+        let Some(key) = id.duplicate_key() else {
             continue;
         };
         let path = format!("{}.custom_id", visit.path);
-        match first.entry(id) {
+        match first.entry(key) {
             Entry::Vacant(e) => {
                 e.insert(path);
             }
-            Entry::Occupied(e) => out.push(
-                Violation::new(
-                    RuleId::CID_02,
-                    path,
-                    Bound::Describe("a custom_id unique within the message"),
-                    Actual::Text(id.to_owned()),
-                )
-                .with_note(format!("first used at {}", e.get())),
-            ),
+            Entry::Occupied(e) => {
+                let actual = id.get().map_or_else(
+                    || format!("route `{}`: equal Payload", id.route()),
+                    str::to_owned,
+                );
+                out.push(
+                    Violation::new(
+                        RuleId::CID_02,
+                        path,
+                        Bound::Describe("a custom_id unique within the message"),
+                        Actual::Text(actual),
+                    )
+                    .with_note(format!("first used at {}", e.get()))
+                    .with_help(HELP),
+                );
+            }
         }
     }
 }

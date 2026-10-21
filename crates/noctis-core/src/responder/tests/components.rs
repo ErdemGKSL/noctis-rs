@@ -29,6 +29,7 @@ fn source(format: MessageFormat, ephemerality: Ephemerality) -> Option<SourceMes
         channel_id: Id::new(55),
         format,
         ephemerality,
+        nonces: NonceSet::EMPTY,
     })
 }
 
@@ -713,8 +714,178 @@ fn source_message_from_raw_json() {
         source(MessageFormat::Legacy, Ephemerality::Public)
     );
     assert_eq!(read(json!({ "id": "x", "channel_id": "55" })), None);
+    // The select nonces of the whole interaction are collected.
+    let raw = json!({
+        "type": 3,
+        "data": { "custom_id": "0form:1" },
+        "message": { "id": "77", "channel_id": "55", "components": [
+            { "type": 1, "components": [{ "type": 5, "custom_id": "4pick:cd1" }] },
+        ] },
+    });
+    let found = SourceMessage::from_interaction(raw.to_string().as_bytes()).unwrap();
+    let nonces: Vec<String> = found.nonces.iter().map(|n| n.to_string()).collect();
+    assert_eq!(nonces, ["cd"]);
     assert_eq!(SourceMessage::from_interaction(b"{\"type\":5}"), None);
     assert_eq!(SourceMessage::from_interaction(b"not json"), None);
+}
+
+/// A message of one User Select of `Pick { item }`.
+fn select_msg(item: u64) -> V2Message {
+    V2Message::new(
+        Components::new().push(ActionRow::select(build_user_select(Pick { item }, &PICK))),
+    )
+}
+
+/// The nonce of every select id (`4pick:<nonce><item>`) anywhere in `body`.
+fn select_nonces(body: &Value) -> Vec<String> {
+    fn walk(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(id) = map.get("custom_id").and_then(Value::as_str)
+                    && let Some(rest) = id.strip_prefix("4pick:")
+                {
+                    out.push(rest[..2].to_owned());
+                }
+                map.values().for_each(|v| walk(v, out));
+            }
+            Value::Array(items) => items.iter().for_each(|v| walk(v, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(body, &mut out);
+    out
+}
+
+/// The component message 77 as read from a raw select click whose ids carry
+/// nonce `ab` (in `data` and in the message's select).
+fn source_with_nonce_ab() -> Option<SourceMessage> {
+    let raw = json!({
+        "type": 3,
+        "data": { "custom_id": "4pick:ab1", "component_type": 5, "values": ["1"] },
+        "message": {
+            "id": "77", "channel_id": "55", "flags": 32768,
+            "components": [{ "type": 1, "components": [{ "type": 5, "custom_id": "4pick:ab1" }] }],
+        },
+    });
+    let source = SourceMessage::from_interaction(raw.to_string().as_bytes());
+    assert_eq!(
+        source.map(|s| s.nonces.iter().map(|n| n.to_string()).collect::<Vec<_>>()),
+        Some(vec!["ab".to_owned()])
+    );
+    source
+}
+
+/// FR-25 (R1, R4): `update` never reuses the nonce the clicked message
+/// carries, as type 7 and as `PATCH @original` after the auto-defer.
+#[tokio::test]
+async fn fr_25_update_avoids_the_source_nonce() {
+    let fx = Fixture::start(discord()).await;
+    for _ in 0..64 {
+        clear(&fx);
+        let shared = fx.component(Declared::Update, source_with_nonce_ab());
+        let _ = component(&shared)
+            .update(select_msg(1))
+            .await
+            .unwrap()
+            .done();
+        let requests = fx.requests();
+        assert_eq!(requests[0].2["type"], 7);
+        let nonces = select_nonces(&requests[0].2);
+        assert_eq!(nonces.len(), 1);
+        assert_ne!(nonces[0], "ab");
+
+        clear(&fx);
+        let shared = fx.component(Declared::Update, source_with_nonce_ab());
+        assert!(shared.auto_defer().await);
+        let _ = component(&shared)
+            .update(select_msg(1))
+            .await
+            .unwrap()
+            .done();
+        let requests = fx.requests();
+        assert_eq!(
+            (requests[1].0.clone(), requests[1].1.as_str()),
+            (Method::PATCH, ORIGINAL)
+        );
+        let nonces = select_nonces(&requests[1].2);
+        assert_eq!(nonces.len(), 1);
+        assert_ne!(nonces[0], "ab");
+    }
+}
+
+/// FR-25 (R3): every send of one run draws a nonce no earlier send drew.
+#[tokio::test]
+async fn fr_25_each_send_of_a_run_gets_a_new_nonce() {
+    let fx = Fixture::start(discord()).await;
+    for _ in 0..16 {
+        clear(&fx);
+        let shared = fx.component(Declared::Update, source_with_nonce_ab());
+        let acked = component(&shared).update(select_msg(1)).await.unwrap();
+        acked.edit_reply(select_msg(1)).await.unwrap();
+        let _ = acked
+            .follow_up(select_msg(1), Visibility::Public)
+            .await
+            .unwrap();
+        let _ = acked.done();
+        let mut seen: Vec<String> = fx
+            .requests()
+            .iter()
+            .flat_map(|(_, _, body)| select_nonces(body))
+            .collect();
+        assert_eq!(seen.len(), 3);
+        seen.push("ab".to_owned());
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), 4, "{seen:?}");
+    }
+}
+
+/// FR-25 (R5): a message without selects draws no nonce.
+#[tokio::test]
+async fn fr_25_no_select_no_nonce() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.component(Declared::Update, source_with_nonce_ab());
+    let before = *shared.nonces.lock().unwrap();
+    let msg =
+        V2Message::new(Components::new().push(ActionRow::buttons([button(Form { item: 1 })])));
+    let _ = component(&shared).update(msg).await.unwrap().done();
+    assert_eq!(*shared.nonces.lock().unwrap(), before);
+    assert!(select_nonces(&fx.requests()[0].2).is_empty());
+}
+
+/// C7: two equal select Routes resolve to one id (one nonce per send), so
+/// the send is CID-02 `Invalid` with the resolved id and sends nothing.
+#[tokio::test]
+async fn cid_02_duplicate_after_resolution_sends_nothing() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.component(Declared::Update, v2_source());
+    let msg = V2Message::new(
+        Components::new()
+            .push(ActionRow::select(build_user_select(
+                Pick { item: 1 },
+                &PICK,
+            )))
+            .push(ActionRow::select(build_user_select(
+                Pick { item: 1 },
+                &PICK,
+            ))),
+    );
+    let err = component(&shared).update(msg).await.unwrap_err();
+    let ResponderError::Invalid(UiError::Limits { violations }) = &err else {
+        panic!("expected Invalid, got {err}");
+    };
+    assert_eq!(violations.len(), 1, "{violations:?}");
+    let x = &violations[0];
+    assert_eq!(x.rule, RuleId::CID_02);
+    assert_eq!(x.path, "row[1].select[0].custom_id");
+    assert!(
+        matches!(&x.actual, noctis_rules::Actual::Text(id) if id.starts_with("4pick:")),
+        "{:?}",
+        x.actual
+    );
+    assert!(x.help.is_some());
+    assert!(fx.requests().is_empty());
 }
 
 /// A request the bot token authorizes: `authorization: Bot …`.

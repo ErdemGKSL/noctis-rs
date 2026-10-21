@@ -216,6 +216,11 @@ list in CI.
 - **Amended (2026-10-20):** the View envelope `E` and the `view` Route shape are
   withdrawn with AD-20 (maintainer decision: no UI widgets). Tab, page and step ids
   are ordinary Payload fields. Story 6.10 removes the shipped `E` code.
+- **Amended (2026-10-21):** select freshness is guaranteed, not probabilistic (Story
+  8.2). `N` is drawn per send and never equals a nonce of the interaction being answered
+  (the clicked select's id and the source message's selects, scanned from the raw
+  interaction without allocating) or an earlier send of the same run (FR-25). The layout,
+  the nonce width and Ref minting are unchanged; by-Ref ids still get a new Ref per send.
 - **Prevents:**
   - length miscounts from non-ASCII characters;
   - two encoders producing incompatible ids;

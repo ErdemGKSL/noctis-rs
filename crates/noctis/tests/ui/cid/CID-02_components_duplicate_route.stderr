@@ -1,5 +1,5 @@
 error: [CID-02] duplicate custom_id: `Press { n : 1 }` is already used at row[0].button[0]
-         = help: give each component its own Route value (a different payload or Route)
+         = help: give the components a Payload field that tells them apart, for example the target page of a prev/next pair (`Page { page: 2 }` and `Page { page: 4 }`)
   --> tests/ui/cid/CID-02_components_duplicate_route.rs:17:57
    |
 17 |     let _ = components! { row [ Press { n: 1 }.build(), Press { n: 1 }.build().label("x") ] };

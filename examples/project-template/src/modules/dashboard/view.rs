@@ -40,7 +40,7 @@ pub fn render_dashboard(
 ) -> V2Message {
     let header = TextDisplay::new(format!(
         "## {}\n-# {}",
-        s.dashboard.title(escape_markdown(&data.guild_name)), // escape helper: [planned, Story 8.2]
+        s.dashboard.title(escape_markdown(&data.guild_name)),
         s.dashboard.subtitle(data.version),
     ));
 

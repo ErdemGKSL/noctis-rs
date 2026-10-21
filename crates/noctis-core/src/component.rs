@@ -43,7 +43,8 @@ use crate::kind::__Response;
 use crate::pipeline::component::Rejection;
 use crate::responder::{
     AutoDefer, Component, Declared, DeferMode, Ephemerality, GuardPhase, IntoResponse, ModalSubmit,
-    Pending, Responded, Responder, ResponderKind, Response, Shared, SourceMessage, Transport,
+    NonceSet, Pending, Responded, Responder, ResponderKind, Response, Shared, SourceMessage,
+    Transport,
 };
 
 /// The kind of a message component a [`ComponentHandler`] answers.
@@ -1173,6 +1174,7 @@ const DETACHED_SOURCE: SourceMessage = SourceMessage {
     channel_id: Id::new(1),
     format: MessageFormat::V2,
     ephemerality: Ephemerality::Public,
+    nonces: NonceSet::EMPTY,
 };
 
 /// A detached shared state declaring `response`, on the placeholder

@@ -1937,6 +1937,20 @@ pub mod ui {
     //!   edit of a V2 message back into a legacy one
     //!   ([`UiError::V2ToLegacy`]), or a message or value over its Limits
     //!   ([`UiError::Limits`]).
+    //! - User text: [`escape_markdown`] (backslash-escapes `\ * _ ~` `` ` ``
+    //!   `| [ ]` everywhere, and `# > - +` and a numbered list's `.` at a line
+    //!   start) and [`escape_mentions`] (a U+200B after `@` before
+    //!   `everyone`/`here`, and after `<` before `@ # /`). Noctis never
+    //!   escapes on its own; call them on names, reasons and bios before they
+    //!   go into a [`TextDisplay`], once each, in either order. A message
+    //!   pings nobody unless [`V2Message::mentions`] opts in.
+    //!
+    //! ```
+    //! use noctis::ui::{escape_markdown, escape_mentions};
+    //!
+    //! let name = escape_mentions(&escape_markdown("**Ana** @everyone"));
+    //! assert_eq!(name, "\\*\\*Ana\\*\\* @\u{200B}everyone");
+    //! ```
     //!
     //! # Arity
     //!
@@ -2455,7 +2469,7 @@ pub mod ui {
         SectionTexts, SelectOption, Separator, Spacing, StringSelect, StringSelectBuilder,
         StringSelectOptions, SubmitError, SubmittedValue, TextDisplay, TextInput, TextInputStyle,
         Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect, Users, V2Message, Validate,
-        cost, validate,
+        cost, escape_markdown, escape_mentions, validate,
     };
 }
 

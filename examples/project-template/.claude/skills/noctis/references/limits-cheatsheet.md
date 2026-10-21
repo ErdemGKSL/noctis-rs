@@ -280,7 +280,7 @@ CV2-04 (4000 characters) together (`views-and-recipes.md` §4).
 | MSG-02 | embeds (legacy only): ≤ 10; title 256, description 4096, 25 fields, 6000 total | C / R |
 | MSG-03 | allowed mentions: `parse` xor explicit ids per type | C |
 | MSG-04 | ≤ 100 user ids, ≤ 100 role ids | R |
-| MSG-05 | Views default to `parse: []` | C |
+| MSG-05 | Views default to `parse: []`; escape user text with `escape_markdown` / `escape_mentions` | C |
 | MSG-06 | nonce ≤ 25; ≤ 3 stickers | R |
 | MSG-07 | flags per endpoint | C |
 | MSG-08 | edits replace components; attachments list rebuilt | R |

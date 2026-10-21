@@ -26,6 +26,10 @@ use syn::Expr;
 use super::parse::{Arg, Kind, Lit, MediaArgs, Node, RouteNode, Sp, SpacingArg, lit_int};
 use crate::literal::check_accent;
 
+/// The CID-02 help; `noctis-ui`'s runtime validator repeats it, and both
+/// tests pin it.
+const CID_02_HELP: &str = "give the components a Payload field that tells them apart, for example the target page of a prev/next pair (`Page { page: 2 }` and `Page { page: 4 }`)";
+
 /// The URL a non-literal media lowers to: always valid.
 const MEDIA_SENTINEL: &str = "https://x";
 /// The URL a `file(..)` lowers to: always valid.
@@ -406,7 +410,7 @@ impl<'a> Facts<'a> {
                     sp,
                     RuleId::CID_02,
                     format!("duplicate custom_id: `{key}` is already used at {first_path}"),
-                    "give each component its own Route value (a different payload or Route)",
+                    CID_02_HELP,
                 ));
             }
             errors.push(syn::Error::new_spanned(
@@ -801,6 +805,7 @@ mod tests {
         assert!(msgs[0].starts_with(
             "[CID-02] duplicate custom_id: `Press { n : 1 }` is already used at row[0].button[0]"
         ));
+        assert!(msgs[0].contains(CID_02_HELP), "{msgs:#?}");
         assert!(msgs[1].starts_with("[CID-02] duplicate custom_id"));
         assert_eq!(
             msgs[2],

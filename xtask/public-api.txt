@@ -6413,4 +6413,6 @@ impl noctis::ui::Validate for noctis::ui::V2Message
 impl noctis::ui::Validate for noctis::ui::V2Message
 pub trait noctis::ui::Validate: noctis::__private::ui::sealed::Check
 pub fn noctis::ui::cost<M: noctis::ui::Validate>(&M, &noctis::rules::Limits) -> noctis::ui::CostReport
+pub fn noctis::ui::escape_markdown(&str) -> alloc::string::String
+pub fn noctis::ui::escape_mentions(&str) -> alloc::string::String
 pub fn noctis::ui::validate<M: noctis::ui::Validate>(&mut M, &noctis::rules::Limits) -> core::result::Result<noctis::ui::CostReport, noctis::ui::UiError>

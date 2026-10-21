@@ -548,15 +548,24 @@ budget.fits_prefix(rows.iter());                      // how many rows from the 
   text is required for rendered images in strict mode.
 - **Mentions**: messages ping nobody by default (`parse: []`, MSG-05) even though
   `<@id>` renders. Opt in per message with `.mentions(Mentions::none().users(Users::Only(ids)))`.
-- **User text**: pass names, reasons and bios through `escape_markdown` /
-  `escape_mentions` [planned, Story 8.2] before putting them in a Text Display.
-- **Select freshness**: declare `select` on every select Route. Noctis draws a new
-  nonce on each send, so after `ctx.update(..)` the client shows the defaults your render
-  function declared (`default_channels`, `.default(true)`), not the user's previous
-  local selection.
+- **User text**: pass names, reasons and bios through `noctis::ui::escape_markdown`
+  (Markdown: `\ * _ ~` `` ` `` `| [ ]` anywhere, `# > - +` and `1.` at a line start) and,
+  where mentions must not render, `escape_mentions` (a U+200B after `@` before
+  `everyone`/`here` and after `<` before `@ # /`) before putting them in a Text Display:
+  `escape_mentions(&escape_markdown(bio))`. Nothing is escaped automatically; escape
+  once (the helpers are not idempotent), in either order (they commute).
+- **Select freshness**: every select kind carries a nonce, and Noctis draws a new one
+  on each send that never equals a nonce of the interaction being answered (the clicked
+  select, the message's selects) or of an earlier send of the same handler run. After
+  `ctx.update(..)` the client therefore shows the defaults your render function declared
+  (`default_users`, `.default(true)`), not the user's previous local selection: always
+  set them to the current value. Equal state renders equal JSON except these nonces
+  (and the Refs of `by_ref` Routes, new per send), so snapshot tests mask the nonce.
 - **Unique ids** (CID-02): two components with the same Route and Payload in one
-  message are an error. Give buttons that share a Route different Payloads (prev and
-  next target different pages; per-row buttons carry the row id).
+  message are an error, selects and signed or by-Ref Routes included, with the help
+  ``give the components a Payload field that tells them apart, …``. Give buttons that
+  share a Route different Payloads (prev and next target different pages; per-row
+  buttons carry the row id).
 
 ## 6. UI quality rulebook
 
@@ -631,7 +640,7 @@ are how every Noctis bot should be written.
 | `data[0] as number`, `as any` on overrides | untyped data; a stale or forged id becomes a wrong value silently | typed Payload decode; a bad id is a typed error routed to the Expired/stale handler |
 | copy-pasted rate-limit code in handlers | inconsistent and easy to forget | `rate_limit(..)` on `#[command]` or the component's kind attribute (`modules-middleware-ratelimits.md`) |
 | `flags: Ephemeral | IsComponentsV2` repeated in every handler, `deferUpdate` + `editReply` by hand | forgotten flags are 400s; a slow handler fails | `ctx.update(..)` / `ctx.respond(..)` set flags, ephemerality and deferral |
-| `Math.random()` in select data to force fresh defaults | ad-hoc, wastes custom-id space | `select` Routes get a per-render nonce |
+| `Math.random()` in select data to force fresh defaults | ad-hoc, wastes custom-id space | every select gets a fresh per-send nonce |
 | next page disabled when `rows.length < 25` | one empty page too many when the last page is exactly full | query `per_page + 1` rows |
 
 ## 8. Decision table: which pattern?

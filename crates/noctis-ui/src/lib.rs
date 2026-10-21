@@ -178,6 +178,20 @@
 //! # Ok::<(), noctis_ui::SubmitError>(())
 //! ```
 //!
+//! # User text
+//!
+//! [`escape_markdown`] and [`escape_mentions`] neutralize user-controlled
+//! text before it goes into a Text Display; nothing is escaped
+//! automatically. They only insert characters and commute, and a message
+//! pings nobody unless its `allowed_mentions` opt in.
+//!
+//! ```
+//! use noctis_ui::{escape_markdown, escape_mentions};
+//!
+//! let bio = escape_mentions(&escape_markdown("**hi** <@1>"));
+//! assert_eq!(bio, "\\*\\*hi\\*\\* <\u{200B}@1>");
+//! ```
+//!
 //! # Limits
 //!
 //! [`validate`] checks a built [`V2Message`], [`LegacyMessage`] or
@@ -211,6 +225,7 @@ mod attachment;
 mod component;
 mod components;
 mod error;
+mod escape;
 mod limits;
 mod literal;
 mod message;
@@ -232,6 +247,7 @@ pub use component::{
 };
 pub use components::Components;
 pub use error::UiError;
+pub use escape::{escape_markdown, escape_mentions};
 pub use limits::{CostReport, LimitWarning, Validate, cost, validate};
 pub use literal::{Content, Label, Placeholder};
 pub use message::{

@@ -21,6 +21,7 @@ tokio-websockets = { workspace = true, features = ["server", "sha1_smol"] }
 
 [dev-dependencies]
 bytes.workspace = true
+insta = { workspace = true, features = ["json"] }
 metrics.workspace = true
 metrics-util = { workspace = true, features = ["debugging"] }
 noctis.workspace = true

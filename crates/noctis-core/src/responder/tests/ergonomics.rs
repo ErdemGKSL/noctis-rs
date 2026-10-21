@@ -69,6 +69,7 @@ fn source(format: MessageFormat, ephemerality: Ephemerality) -> Option<SourceMes
         channel_id: Id::new(55),
         format,
         ephemerality,
+        nonces: NonceSet::EMPTY,
     })
 }
 

@@ -1,0 +1,88 @@
+---
+source: crates/noctis-testkit/tests/select_freshness.rs
+expression: "bodies[0]"
+---
+{
+  "data": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "components": [
+      {
+        "components": [
+          {
+            "content": "## \\*\\*Ana\\*\\* \\_the\\_ \\[admin\\](https://e.com)\nOwner <@1>, admins <@&2>, @everyone",
+            "id": 2,
+            "type": 10
+          },
+          {
+            "components": [
+              {
+                "custom_id": "4panel.mode:NN",
+                "id": 4,
+                "options": [
+                  {
+                    "label": "Fast",
+                    "value": "fast"
+                  },
+                  {
+                    "default": true,
+                    "label": "Safe",
+                    "value": "safe"
+                  }
+                ],
+                "placeholder": "Pick",
+                "type": 3
+              }
+            ],
+            "id": 3,
+            "type": 1
+          },
+          {
+            "components": [
+              {
+                "custom_id": "4panel.who:NN",
+                "default_values": [
+                  {
+                    "id": "1",
+                    "type": "user"
+                  }
+                ],
+                "id": 6,
+                "placeholder": "Who",
+                "type": 5
+              }
+            ],
+            "id": 5,
+            "type": 1
+          },
+          {
+            "components": [
+              {
+                "custom_id": "0panel.page:0",
+                "disabled": true,
+                "id": 8,
+                "label": "Prev",
+                "style": 2,
+                "type": 2
+              },
+              {
+                "custom_id": "0panel.page:2",
+                "id": 9,
+                "label": "Next",
+                "style": 2,
+                "type": 2
+              }
+            ],
+            "id": 7,
+            "type": 1
+          }
+        ],
+        "id": 1,
+        "type": 17
+      }
+    ],
+    "flags": 32768
+  },
+  "type": 4
+}

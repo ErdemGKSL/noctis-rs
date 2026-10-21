@@ -141,9 +141,10 @@ says ``write `Route { .. }.build()` ``.
   select)]` is CID-03 with help ``every select kind carries the nonce``).
 - A plain Route (no `select` or `signed`) is encoded when you build the
   component. Ids that need a select nonce or a signature are finalized by the
-  Responder when the message is sent (one fresh nonce per send; the App's payload key
-  signs; every `by_ref`/spilled Route gets a Ref stored in the App's `RefStore`). You
-  never handle them
+  Responder when the message is sent (one fresh nonce per send, never equal to a nonce of
+  the interaction being answered or of an earlier send of the same handler run; the App's
+  payload key signs; every `by_ref`/spilled Route gets a Ref stored in the App's
+  `RefStore`, a new one per send). You never handle them
   (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
 
 ## 1. Container: `Container`
@@ -178,7 +179,13 @@ Use one Container per View, an accent colour per state (neutral / success / dang
   Content is Markdown: `#`/`##`/`###`, `-#` subtext, lists, code, mentions,
   `<t:unix:R>` timestamps. Literal texts are measured by `components!` (§14).
 - Mentions inside Text Display **would ping**; Views send `parse: []` by default.
-  Escape user text with `noctis::ui::escape_markdown` / `escape_mentions` [planned].
+  Escape user text yourself (nothing is escaped automatically):
+  `noctis::ui::escape_markdown(&s)` backslash-escapes `\ * _ ~` `` ` `` `| [ ]`
+  everywhere and `# > - +` (and a numbered list's `.`) at a line start, so the text
+  renders as typed; `escape_mentions(&s)` puts a zero-width space (U+200B) after `@`
+  before `everyone`/`here` and after `<` before `@ # /`, so no mention renders. Both
+  are `fn(&str) -> String`, only insert characters, commute (use either order) and are
+  not idempotent: escape once. Escaped text counts toward CV2-04 at its escaped length.
 - Merge adjacent static text into one Text Display: saves components, not chars.
 
 ## 3. Section: `Section`
@@ -374,8 +381,11 @@ Shared fields of all five:
 | `disabled` | `.disabled(bool)` | messages only | CV2-09 |
 
 - **Cost:** 2 (row + select). Options don't count.
-- After every re-render, selects show the render function's defaults (nonce, FR-25); always set
-  `default`/`default_*` to the current value (visible active state).
+- After every re-render, selects show the render function's defaults (nonce, FR-25): each send
+  draws a nonce that differs from every nonce in the clicked interaction (the select's own id
+  and the message's selects) and from the handler's earlier sends, so the client never keeps
+  the user's old local selection. Always set `default`/`default_*` to the current value
+  (visible active state).
 - Empty list: render a disabled select with one explanatory option, or an empty-state
   Text Display, never nothing.
 - More than 25 items: page them (25 options per page with prev/next, `views-and-recipes.md` §3.2).
@@ -674,8 +684,9 @@ receivers with identical tokens (button or select) fail with
 ``[CID-02] duplicate custom_id: `Press { n : 1 }` is already used at row[0].button[0]``
 on the second and ``[CID-02] first use of the duplicate custom_id …`` on the first.
 `Press { n }`, `Press { n: x }`, variables and `1` vs `1u8` are not compared.
-A `by_ref` Route written twice with equal literal values is rejected too, although its
-runtime Refs differ; build one of them in a `{hole}` or give them distinct values.
+A `by_ref` Route written twice with equal literal values is rejected too (at runtime equal
+slots share one Ref, so they would collide); give them distinct values. The error's
+`= help:` line reads ``give the components a Payload field that tells them apart, for example the target page of a prev/next pair (`Page { page: 2 }` and `Page { page: 4 }`)``.
 
 **Runtime backstop.** Holes, spreads, non-literal text, labels and options are a static
 lower bound only: `noctis::ui::validate` (§16) checks the actual tree before sending.
@@ -881,7 +892,7 @@ paths, counts and order match `components!` and §15 exactly. Then:
 
 | Rule | Check | Path |
 | --- | --- | --- |
-| CID-02 | two resolved `custom_id`s are equal (`Describe("a custom_id unique within the message")`, `Text(id)`, note `first used at <path>`); unresolved ids are skipped | `P.custom_id`, P the later button or select, e.g. `row[0].button[1].custom_id`, `section[0].accessory.custom_id` |
+| CID-02 | two components with the same Route and Payload (`Describe("a custom_id unique within the message")`, `Text(id)` for a resolved id or ``Text("route `<id>`: equal Payload")`` for an unresolved select, signed or by-Ref one, note `first used at <path>`, help ``give the components a Payload field that tells them apart, for example the target page of a prev/next pair (`Page { page: 2 }` and `Page { page: 4 }`)``); the Responder re-checks after resolving, so the verdict is the same before and after sending | `P.custom_id`, P the later button or select, e.g. `row[0].button[1].custom_id`, `section[0].accessory.custom_id` |
 | ATT-05 | an `attachment://` URL (File, Thumbnail, gallery item) names no file of the message's `AttachmentSet` (`Describe("attachment://<name> of a file in this message")`, `Text(url)`); `attachment://` alone fails too; `https://…` and `ATTACHMENT://…` are not references | `file[0].url`, `section[0].accessory.url`, `gallery[0].item[0].url` |
 | ATT-06 | an `Attachment::alt` over 1024 (note ``file `<name>` ``) | `attachments[k].description`, k in `AttachmentSet::iter()` (name) order |
 | MSG-01 | legacy content over 2000 | `content` |

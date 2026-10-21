@@ -76,6 +76,7 @@ fn source() -> SourceMessage {
         channel_id: Id::new(55),
         format: MessageFormat::V2,
         ephemerality: Ephemerality::Public,
+        nonces: NonceSet::EMPTY,
     }
 }
 

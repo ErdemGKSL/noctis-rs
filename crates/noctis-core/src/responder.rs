@@ -107,6 +107,7 @@
 //! ```
 
 pub(crate) mod ergonomics;
+mod nonce;
 mod transport;
 
 #[cfg(test)]
@@ -134,6 +135,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, MessageMarker};
 
 pub use self::ergonomics::{NoticeText, ReplyText};
+pub(crate) use self::nonce::NonceSet;
 pub(crate) use self::transport::{InteractionTarget, MessageTarget, Transport};
 use crate::AckDeadlineMissed;
 use crate::handler::AppShared;
@@ -1137,6 +1139,10 @@ pub(crate) struct SourceMessage {
     pub(crate) channel_id: Id<ChannelMarker>,
     pub(crate) format: MessageFormat,
     pub(crate) ephemerality: Ephemerality,
+    /// The select nonces of every Noctis `custom_id` in the raw interaction
+    /// (its `data` and this message's components), which a send must not
+    /// reuse (FR-25).
+    pub(crate) nonces: NonceSet,
 }
 
 /// The `message` fields of a raw interaction that the Responder reads; the
@@ -1182,6 +1188,7 @@ impl SourceMessage {
             } else {
                 Ephemerality::Ephemeral
             },
+            nonces: nonce::nonces_in(raw),
         })
     }
 }
@@ -1254,6 +1261,10 @@ pub(crate) struct Shared {
     followup_cap: Option<u8>,
     /// The run's [`GuardPhase`]; written only by the guarded handler future.
     guard_phase: AtomicU8,
+    /// The select nonces no send of this run may draw: those of the
+    /// interaction, then every nonce already drawn (FR-25). Never locked
+    /// across an `.await`.
+    nonces: Mutex<NonceSet>,
     /// `true` for a modal submit: `show_modal` is refused with
     /// `ModalUnavailable` before any work (INT-04, INT-05).
     no_modal: bool,
@@ -1346,6 +1357,7 @@ impl Shared {
             followups: AtomicU8::new(0),
             followup_cap: cap,
             guard_phase: AtomicU8::new(GuardPhase::UNGUARDED),
+            nonces: Mutex::new(source.map_or(NonceSet::EMPTY, |s| s.nonces)),
             no_modal,
             handler_answered: AtomicBool::new(false),
         })
@@ -1449,8 +1461,18 @@ impl Shared {
         Some((&app.refs, app.ref_ttl))
     }
 
+    /// One select nonce for a send, outside the run's avoid-set, which it
+    /// then joins (FR-25).
+    fn draw_nonce(&self) -> Result<SelectNonce, ResponderError> {
+        let mut avoid = self.nonces.lock().unwrap_or_else(PoisonError::into_inner);
+        let nonce = nonce::draw_nonce(&avoid, nonce::fill_os)?;
+        avoid.insert(nonce);
+        Ok(nonce)
+    }
+
     /// Resolves every unresolved Route `custom_id` for this send: one
-    /// select nonce for the whole message, the signer only for `signed`
+    /// select nonce for the whole message (never one the interaction
+    /// carries or an earlier send of the run drew), the signer only for `signed`
     /// Routes, and a minted Ref for every Ref slot (AD-18). Equal slots
     /// share one Ref; each distinct one is stored in the App's `RefStore`
     /// before anything is sent. An already-resolved id is kept.
@@ -1470,7 +1492,7 @@ impl Shared {
             }
             let nonce = match nonce {
                 Some(nonce) => nonce,
-                None => *nonce.insert(draw_nonce()?),
+                None => *nonce.insert(self.draw_nonce()?),
             };
             match id.resolve_for_send(nonce, signer) {
                 Ok(None) => {}
@@ -2128,27 +2150,6 @@ fn redact_ref(error: PortError) -> PortError {
     match error {
         PortError::InvalidValue { why, .. } => PortError::invalid_value("<ref>", why),
         other => other,
-    }
-}
-
-/// One select nonce for a send, drawn uniformly in `0..=SelectNonce::MAX`
-/// from the OS CSPRNG (rejection sampling over two bytes).
-fn draw_nonce() -> Result<SelectNonce, ResponderError> {
-    let span = u32::from(SelectNonce::MAX) + 1;
-    // The largest multiple of `span` that fits in 16 bits.
-    let limit = (u32::from(u16::MAX) + 1) / span * span;
-    loop {
-        let mut bytes = [0_u8; 2];
-        getrandom::fill(&mut bytes).map_err(|error| ResponderError::Encode {
-            reason: format!("no select nonce could be drawn: {error}"),
-        })?;
-        let value = u32::from(u16::from_le_bytes(bytes));
-        if value < limit
-            && let Ok(n) = u16::try_from(value % span)
-            && let Some(nonce) = SelectNonce::new(n)
-        {
-            return Ok(nonce);
-        }
     }
 }
 

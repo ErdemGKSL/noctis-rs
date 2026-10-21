@@ -7,8 +7,8 @@ use noctis::id::marker::UserMarker;
 use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
 use noctis::prelude::*;
 use noctis::ui::{
-    ActionRow, Attachment, AttachmentSet, Button, Components, Container,
-    MediaGallery, MediaItem, Separator, TextDisplay, V2Message, escape_markdown,
+    ActionRow, Attachment, AttachmentSet, Button, Components, Container, MediaGallery, MediaItem,
+    Separator, TextDisplay, V2Message, escape_markdown, escape_mentions,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,18 +27,19 @@ pub struct ProfileData {
 
 /// Renders the profile message. `editable` adds the "Edit bio" button for the owner.
 pub fn render_profile(p: &ProfileData, s: &Strings, editable: bool) -> V2Message {
-    let name = escape_markdown(&p.name); // [planned, Story 8.2]
+    let name = escape_markdown(&p.name);
 
     // The attachment set is the only way to reference a file, so a typo in a file name
     // can't happen; alt text is required in strict mode (FR-30).
     let mut files = AttachmentSet::new();
     let card = files.add(p.card.clone());
 
-    // Designed empty state instead of a missing block.
-    let bio = p
-        .bio
-        .as_deref()
-        .map_or_else(|| format!("-# {}", s.profile.no_bio()), escape_markdown);
+    // Designed empty state instead of a missing block. A bio is free text: neutralize
+    // its Markdown and its mentions (escape once each, in either order).
+    let bio = p.bio.as_deref().map_or_else(
+        || format!("-# {}", s.profile.no_bio()),
+        |b| escape_mentions(&escape_markdown(b)),
+    );
 
     // A row takes a fixed-size array: one branch per shape; mixed kinds convert to `Button`.
     // `.build()` uses each Route's declared defaults (label, style); no overrides needed.

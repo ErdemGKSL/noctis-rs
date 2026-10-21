@@ -10,7 +10,7 @@ use std::sync::Arc;
 use arrayvec::ArrayString;
 use noctis_codec::{
     BodyKind, DeclaredRuntime, EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref,
-    RefPolicy, Route, RouteId, RouteShape, SelectNonce, SelectRoute, Sign, encode_id,
+    RefPolicy, Route, RouteId, RouteShape, SelectNonce, SelectRoute, Sign, Tag, encode_id,
 };
 use twilight_model::channel::ChannelType;
 use twilight_model::id::Id;
@@ -383,6 +383,33 @@ impl CustomId {
         self.resolve(&parts)
     }
 
+    /// The key CID-02 compares to find two components with the same Route
+    /// and Payload, resolved or not.
+    ///
+    /// A resolved id is its own key. An unresolved one is encoded the way
+    /// [`resolve_for_send`](Self::resolve_for_send) would, with a
+    /// placeholder nonce and signer: one send shares one nonce, equal Ref
+    /// slots share one Ref and tags are deterministic, so two values that
+    /// collide here also collide once sent. `None` when encoding fails (the
+    /// Responder reports that error at send time).
+    pub(crate) fn duplicate_key(&self) -> Option<DupKey> {
+        if let Some(id) = self.id {
+            return Some(DupKey::Resolved(id));
+        }
+        let shape = self.route.shape();
+        let mut parts = Parts::new();
+        if shape.has_select() {
+            parts = parts.with_nonce(SelectNonce::new(0)?);
+        }
+        if shape.is_signed() {
+            parts = parts.with_signer(&PlaceholderSign);
+        }
+        match self.route.encode(&parts).ok()? {
+            EncodedId::Inline(id) => Some(DupKey::Inline(id)),
+            EncodedId::RefSlot(slot) => Some(DupKey::Slot(slot)),
+        }
+    }
+
     /// Stores the final id of a Ref slot returned by
     /// [`resolve`](Self::resolve).
     ///
@@ -400,6 +427,28 @@ impl CustomId {
         }
         self.id = Some(noctis_codec::finish(slot, r));
         Ok(())
+    }
+}
+
+/// What CID-02 compares: a resolved id, or an unresolved one encoded with
+/// placeholder parts (see [`CustomId::duplicate_key`]).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum DupKey {
+    /// An id already resolved.
+    Resolved(ArrayString<MAX_ID_LEN>),
+    /// An unresolved id encoded inline with the placeholder parts.
+    Inline(ArrayString<MAX_ID_LEN>),
+    /// An unresolved by-Ref id: its Ref slot.
+    Slot(PendingRef),
+}
+
+/// A signer that tags every id with zero, so equal signed Route values
+/// compare equal without an App key.
+struct PlaceholderSign;
+
+impl Sign for PlaceholderSign {
+    fn sign(&self, _signed: &str) -> Tag {
+        Tag::from_u64(0)
     }
 }
 

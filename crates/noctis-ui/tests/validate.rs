@@ -124,6 +124,13 @@ route!(
     SelectRoute
 );
 
+route!(Page { page: u16 } = "page", RouteShape::INLINE);
+route!(Card { id: u64 } = "card", RouteShape::BY_REF);
+route!(Vote { n: u8 } = "vote", RouteShape::INLINE.signed());
+
+/// The CID-02 help (`noctis-macros` pins the same literal).
+const HELP: &str = "give the components a Payload field that tells them apart, for example the target page of a prev/next pair (`Page { page: 2 }` and `Page { page: 4 }`)";
+
 // Helpers.
 
 /// `B(n)`: a Route button with payload `n`.
@@ -751,7 +758,8 @@ fn cid_02_duplicate_in_row() {
             Bound::Describe("a custom_id unique within the message"),
             Actual::Text(id),
         )
-        .with_note("first used at row[0].button[0].custom_id")]
+        .with_note("first used at row[0].button[0].custom_id")
+        .with_help(HELP)]
     );
 }
 
@@ -784,6 +792,7 @@ fn cid_02_triple() {
     for x in &errs {
         assert_eq!(x.rule, RuleId::CID_02);
         assert_eq!(x.notes, ["first used at row[0].button[0].custom_id"]);
+        assert_eq!(x.help.as_deref(), Some(HELP));
     }
 }
 
@@ -805,7 +814,8 @@ fn cid_02_duplicate_select() {
             Bound::Describe("a custom_id unique within the message"),
             Actual::Text(id),
         )
-        .with_note("first used at row[0].select[0].custom_id")]
+        .with_note("first used at row[0].select[0].custom_id")
+        .with_help(HELP)]
     );
 }
 
@@ -815,14 +825,80 @@ fn cid_02_distinct_ids_pass() {
 }
 
 #[test]
-fn cid_02_unresolved_ids_are_skipped() {
+fn cid_02_unresolved_duplicates_are_reported() {
     let opt = || SelectOption::new("a", "a");
     let m = msg([
         select_row(string_select(pick(), [opt()])),
         select_row(string_select(pick(), [opt()])),
     ]);
-    passes(m.clone());
-    assert!(serde_json::to_value(m.create_body(CreateFlags::empty())).is_err());
+    assert!(
+        serde_json::to_value(m.create_body(CreateFlags::empty())).is_err(),
+        "still unresolved"
+    );
+    assert_eq!(
+        errs_v2(m, &strict()),
+        [v(
+            RuleId::CID_02,
+            "row[1].select[0].custom_id",
+            Bound::Describe("a custom_id unique within the message"),
+            Actual::Text("route `pick`: equal Payload".to_owned()),
+        )
+        .with_note("first used at row[0].select[0].custom_id")
+        .with_help(HELP)]
+    );
+}
+
+#[test]
+fn cid_02_unresolved_distinct_payloads_pass() {
+    passes(msg([
+        select_row(user_select(Pick { page: 1 })),
+        select_row(user_select(Pick { page: 2 })),
+    ]));
+}
+
+#[test]
+fn cid_02_by_ref_duplicates() {
+    let card = |id| button(Card { id });
+    passes(msg([ActionRow::buttons([card(1), card(2)]).into()]));
+    let errs = errs_v2(
+        msg([ActionRow::buttons([card(1), card(1)]).into()]),
+        &strict(),
+    );
+    assert_eq!(errs.len(), 1);
+    assert_eq!(errs[0].rule, RuleId::CID_02);
+    assert_eq!(errs[0].path, "row[0].button[1].custom_id");
+    assert_eq!(
+        errs[0].actual,
+        Actual::Text("route `card`: equal Payload".to_owned())
+    );
+}
+
+#[test]
+fn cid_02_signed_duplicates_without_a_key() {
+    let vote = |n| button(Vote { n });
+    passes(msg([ActionRow::buttons([vote(1), vote(2)]).into()]));
+    let errs = errs_v2(
+        msg([ActionRow::buttons([vote(1), vote(1)]).into()]),
+        &strict(),
+    );
+    assert_eq!(errs.len(), 1);
+    assert_eq!(errs[0].path, "row[0].button[1].custom_id");
+    assert_eq!(errs[0].notes, ["first used at row[0].button[0].custom_id"]);
+    assert_eq!(errs[0].help.as_deref(), Some(HELP));
+}
+
+#[test]
+fn cid_02_help_suggests_a_distinguishing_field() {
+    let page = |page| button(Page { page });
+    let errs = errs_v2(
+        msg([ActionRow::buttons([page(1), page(1)]).into()]),
+        &strict(),
+    );
+    assert_eq!(errs.len(), 1);
+    assert_eq!(errs[0].notes, ["first used at row[0].button[0].custom_id"]);
+    let shown = errs[0].to_string();
+    assert!(shown.ends_with(&format!("\n  = help: {HELP}")), "{shown}");
+    passes(msg([ActionRow::buttons([page(2), page(4)]).into()]));
 }
 
 fn collect_ids(value: &Value, out: &mut Vec<u64>) {
