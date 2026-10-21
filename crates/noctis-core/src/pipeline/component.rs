@@ -40,7 +40,15 @@
 //!    `auto_defer = false` handler or hook gets only the 2.9 s error log.
 //!    The App's `expired_handler` is always auto-deferred.
 //! 6. **Run and answer:** run the Module path's before-Middleware (not for
-//!    the Expired Handler chain), then the handler (or hook) under `catch_unwind`, raced
+//!    the Expired Handler chain), then the Route Guards (AD-23 stage 8;
+//!    `owner`, `permissions`, then a custom `guard = path`, the first
+//!    denial winning; never for the Expired Handler chain or the detached
+//!    seams): a denial is one `debug` on `noctis::guard`, puts a taken
+//!    `one_shot` record back under its Ref (`put_if_absent` with the Route's
+//!    `ttl`, else the App's `ref_ttl`), sends the localized `noctis.guard.*`
+//!    (or custom) ephemeral notice and runs the after-Middleware with
+//!    `RunOutcome::Denied`, with no duration, counter or report. Then the
+//!    handler (or hook) runs under `catch_unwind`, raced
 //!    against the shutdown cancel token, and send what it returned per the
 //!    declared `response`; an error or a panic sends the localized
 //!    ephemeral notice, then a user condition is logged at `debug`; any
@@ -72,7 +80,9 @@ use twilight_model::application::interaction::{Interaction, InteractionData, Int
 use twilight_model::channel::message::component::ComponentType;
 use twilight_model::id::Id;
 
-use super::{Armed, INTERACTION_CREATE, Report, Started, USER_INSTALL_FOLLOWUPS, arm, run_started};
+use super::{
+    Armed, INTERACTION_CREATE, Report, Restore, Started, USER_INSTALL_FOLLOWUPS, arm, run_started,
+};
 use crate::command::CtxInner;
 use crate::component::{
     Begin, ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ExpiredLink,
@@ -241,6 +251,14 @@ impl Target<'_> {
         match self {
             Self::Component(handler) => handler.one_shot(),
             Self::Modal(handler, _) => handler.one_shot(),
+        }
+    }
+
+    /// The Route's declared Ref `ttl`, if any.
+    fn ref_ttl(&self) -> Option<std::time::Duration> {
+        match self {
+            Self::Component(handler) => handler.ref_ttl(),
+            Self::Modal(handler, _) => handler.ref_ttl(),
         }
     }
 
@@ -534,6 +552,7 @@ pub(crate) async fn run_component_over(
         guild_locale,
         guild_id,
         channel,
+        member,
         authorizing_integration_owners: owners,
         ..
     } = *interaction;
@@ -658,6 +677,7 @@ pub(crate) async fn run_component_over(
             RawBody::Inline(_) => None,
         },
         run: around.run(),
+        member_permissions: member.and_then(|m| m.permissions),
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
     let parts = Arc::new(parts);
@@ -672,6 +692,7 @@ pub(crate) async fn run_component_over(
         event_type: Some(INTERACTION_CREATE),
         locale: answer.locale,
         around: Some(around),
+        restore: None,
     };
     if cancel.is_cancelled() {
         return run_started(&span, Some(&cancel), state, None, None, report).await;
@@ -701,6 +722,14 @@ pub(crate) async fn run_component_over(
                         target.start_record(Arc::clone(&parts), &record, handle)
                     }))
                 });
+                // A taken `one_shot` record goes back if a Guard denies.
+                if target.one_shot() {
+                    report.restore = Some(Restore {
+                        r,
+                        ttl: target.ref_ttl().unwrap_or(app.ref_ttl),
+                        record,
+                    });
+                }
                 let label = match &started {
                     Ok(result) => lookup_label(result.as_ref().map(drop).map_err(|r| *r)),
                     Err(_) => "hit",

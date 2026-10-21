@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `4d3592744363ba950819053c560cfca87e4d3fdea11e1e17390c87a504fd1463` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `18a7f07e374675220b548ce2f11ad4bc3cc3947b03ccaf8e8ced798a74e62d31` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -156,7 +156,7 @@ and a literal that differs from the locale file is a compile error too.
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "dash.mod",                                      // id ≤ 24 chars [a-z0-9._-]
-    permissions = MANAGE_GUILD,                      // Route Guard [planned]
+    permissions = MANAGE_GUILD,                      // Route Guard (owner / permissions / guard)
     defaults(style = Success, label = "common.enable"),   // mandatory; texts are locale keys
 )]
 pub struct ToggleModule { pub guild: Id<GuildMarker>, pub module: ModuleKey, pub enable: bool }

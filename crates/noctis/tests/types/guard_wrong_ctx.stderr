@@ -1,0 +1,25 @@
+error[E0308]: mismatched types
+  --> tests/types/guard_wrong_ctx.rs:16:29
+   |
+16 | #[button("a", guard = auth::modal_ctx, defaults(style = Secondary, label = "Go"))]
+   |                       ------^^^^^^^^^
+   |                       |     |
+   |                       |     expected `&ModalSubmitCtx`, found `&ComponentCtx`
+   |                       arguments to this function are incorrect
+   |
+   = note: expected reference `&noctis::ModalSubmitCtx`
+              found reference `&'a noctis::ComponentCtx`
+note: function defined here
+  --> tests/types/guard_wrong_ctx.rs:6:18
+   |
+ 6 |     pub async fn modal_ctx(_ctx: &ModalSubmitCtx, _this: &super::Wrong) -> HandlerResult<Access> {
+   |                  ^^^^^^^^^ ---------------------
+
+error[E0308]: mismatched types
+  --> tests/types/guard_wrong_ctx.rs:27:23
+   |
+27 | #[button("b", guard = auth::old_shape, defaults(style = Secondary, label = "Go"))]
+   |                       ^^^^^^^^^^^^^^^ expected `Result<Access, HandlerError>`, found `Result<(), MessageKey>`
+   |
+   = note: expected enum `Result<noctis::Access, HandlerError>`
+              found enum `Result<(), noctis::prelude::MessageKey>`

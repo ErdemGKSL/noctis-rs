@@ -47,6 +47,7 @@ impl PayloadDecode<'_> for Wide {
 }
 
 impl noctis_codec::DeclaredRuntime for Wide {}
+impl crate::__Guards<ComponentCtx> for Wide {}
 
 impl noctis_codec::Route for Wide {
     const ID: noctis_codec::RouteId = noctis_codec::RouteId::new("w");
@@ -60,6 +61,7 @@ fn logging<S>(log: &Log, name: &'static str, kind: ComponentKind) -> ComponentHa
 where
     S: noctis_codec::Route<Payload = S>
         + noctis_codec::DeclaredRuntime
+        + crate::__Guards<ComponentCtx>
         + for<'de> PayloadDecode<'de>
         + Send
         + 'static
@@ -586,6 +588,7 @@ mod responses {
     where
         S: noctis_codec::Route<Payload = S>
             + noctis_codec::DeclaredRuntime
+            + crate::__Guards<ComponentCtx>
             + for<'de> PayloadDecode<'de>
             + Send
             + 'static,
@@ -1141,6 +1144,7 @@ mod amendments {
     }
 
     impl noctis_codec::DeclaredRuntime for SigBio {}
+    impl crate::__Guards<ModalSubmitCtx> for SigBio {}
 
     impl noctis_codec::Route for SigBio {
         const ID: noctis_codec::RouteId = noctis_codec::RouteId::new("sigbio");

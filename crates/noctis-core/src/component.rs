@@ -22,6 +22,7 @@ use std::any::Any;
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 use noctis_codec::{
@@ -36,6 +37,7 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::State;
 use crate::command::CtxInner;
+use crate::guard::{__Guards, GuardDenied};
 use crate::handler::{HandlerError, HandlerResult};
 use crate::kind::__Response;
 use crate::pipeline::component::Rejection;
@@ -89,6 +91,12 @@ macro_rules! ctx_accessors {
             /// The user who clicked or submitted.
             pub fn user_id(&self) -> Id<UserMarker> {
                 self.0.user_id
+            }
+
+            /// The member's permissions in the channel, including
+            /// overwrites, as Discord resolved them; `None` in DMs.
+            pub fn member_permissions(&self) -> Option<crate::Permissions> {
+                self.0.member_permissions
             }
 
             /// The user's client locale (`locale`), such as `"tr"`.
@@ -333,6 +341,34 @@ where
     decode_payload::<S>(decoded, None).map(|_| ())
 }
 
+/// Wraps the typed start `typed` of `S` on `route` with its Guards (AD-23
+/// stage 8): when `S` declares one, the future first runs them and, on a
+/// denial, returns the [`GuardDenied`] user condition without starting the
+/// handler. An unguarded `S` gets `typed`'s future as is.
+fn guarded<S, C, F>(
+    route: &'static str,
+    typed: Arc<F>,
+) -> impl Fn(S, C, Arc<Shared>) -> HandlerFuture + Send + Sync + 'static
+where
+    S: __Guards<C> + Send + 'static,
+    C: Send + 'static,
+    F: Fn(S, C, Arc<Shared>) -> HandlerFuture + Send + Sync + 'static,
+{
+    move |value: S, ctx: C, shared: Arc<Shared>| -> HandlerFuture {
+        if !S::GUARDED {
+            return typed(value, ctx, shared);
+        }
+        let typed = Arc::clone(&typed);
+        Box::pin(async move {
+            let check = value.__guard(&ctx);
+            if let Some(denial) = check.await? {
+                return Err(GuardDenied::error(route, denial));
+            }
+            typed(value, ctx, shared).await
+        })
+    }
+}
+
 /// The erased call: the struct value arrives type-erased and is checked
 /// against the handler's struct type; the handler builds its own responder
 /// over the shared state.
@@ -537,6 +573,8 @@ pub struct ComponentHandler {
     auto_defer: bool,
     signed: bool,
     one_shot: bool,
+    /// The Route's declared `ttl`, if any.
+    ref_ttl: Option<Duration>,
     call: Arc<ErasedCall<ComponentCtx>>,
     start: Arc<ComponentStart>,
     start_record: Arc<ComponentRecordStart>,
@@ -559,7 +597,12 @@ impl ComponentHandler {
         f: F,
     ) -> Self
     where
-        S: Route<Payload = S> + DeclaredRuntime + for<'de> PayloadDecode<'de> + Send + 'static,
+        S: Route<Payload = S>
+            + DeclaredRuntime
+            + for<'de> PayloadDecode<'de>
+            + __Guards<ComponentCtx>
+            + Send
+            + 'static,
         F: Fn(S, ComponentCtx) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
     {
@@ -586,7 +629,12 @@ impl ComponentHandler {
         f: F,
     ) -> Self
     where
-        S: Route<Payload = S> + DeclaredRuntime + for<'de> PayloadDecode<'de> + Send + 'static,
+        S: Route<Payload = S>
+            + DeclaredRuntime
+            + for<'de> PayloadDecode<'de>
+            + __Guards<ComponentCtx>
+            + Send
+            + 'static,
         D: DeferMode,
         F: Fn(S, ComponentCtx, Responder<Component, Pending, D>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
@@ -597,7 +645,10 @@ impl ComponentHandler {
                 boxed::<Component, R, _>(f(value, ctx, Responder::new(shared)))
             },
         );
-        let starter = Arc::clone(&typed);
+        // Only the pipeline starters run the Guards; `call` (the detached
+        // seams) does not.
+        let guarded = Arc::new(guarded::<S, ComponentCtx, _>(route, Arc::clone(&typed)));
+        let starter = Arc::clone(&guarded);
         let start = move |ctx: ComponentCtx,
                           decoded: &Decoded<'_>,
                           shared: Arc<Shared>,
@@ -609,7 +660,7 @@ impl ComponentHandler {
                 Err(error) => Err(Rejection::from_decode(&error)),
             }
         };
-        let starter = Arc::clone(&typed);
+        let starter = guarded;
         let start_record = move |ctx: ComponentCtx,
                                  record: &[u8],
                                  shared: Arc<Shared>|
@@ -625,6 +676,7 @@ impl ComponentHandler {
             auto_defer: D::AUTO_DEFER,
             signed: S::SHAPE.is_signed(),
             one_shot: S::RUNTIME.ref_policy().is_one_shot(),
+            ref_ttl: S::RUNTIME.ref_policy().ttl(),
             call: erase::<S, _, _>(typed),
             start: Arc::new(start),
             start_record: Arc::new(start_record),
@@ -726,6 +778,11 @@ impl ComponentHandler {
         self.one_shot
     }
 
+    /// The Route's declared Ref `ttl`; `None` for the App's `ref_ttl`.
+    pub(crate) fn ref_ttl(&self) -> Option<Duration> {
+        self.ref_ttl
+    }
+
     /// Starts the handler on `value` (the struct) with `ctx` and a
     /// responder over `shared`.
     pub(crate) fn call(
@@ -800,6 +857,8 @@ pub struct ModalHandler {
     signed: bool,
     auto_defer: bool,
     one_shot: bool,
+    /// The Route's declared `ttl`, if any.
+    ref_ttl: Option<Duration>,
     call: Arc<ErasedCall<ModalSubmitCtx>>,
     start: Arc<ModalStart>,
     start_record: Arc<ModalRecordStart>,
@@ -815,7 +874,7 @@ impl ModalHandler {
     #[doc(hidden)]
     pub fn __new<S, F, Fut>(name: &'static str, route: &'static str, f: F) -> Self
     where
-        S: ModalFromPayload + DeclaredRuntime + Send + 'static,
+        S: ModalFromPayload + DeclaredRuntime + __Guards<ModalSubmitCtx> + Send + 'static,
         for<'de> S::Payload: PayloadDecode<'de>,
         F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
@@ -838,7 +897,7 @@ impl ModalHandler {
         f: F,
     ) -> Self
     where
-        S: ModalFromPayload + DeclaredRuntime + Send + 'static,
+        S: ModalFromPayload + DeclaredRuntime + __Guards<ModalSubmitCtx> + Send + 'static,
         for<'de> S::Payload: PayloadDecode<'de>,
         D: DeferMode,
         F: Fn(S, ModalSubmitCtx, Responder<ModalSubmit, Pending, D>) -> Fut + Send + Sync + 'static,
@@ -850,7 +909,10 @@ impl ModalHandler {
                 boxed::<ModalSubmit, R, _>(f(value, ctx, Responder::new(shared)))
             },
         );
-        let starter = Arc::clone(&typed);
+        // Only the pipeline starters run the Guards; `call` (the detached
+        // seams) does not.
+        let guarded = Arc::new(guarded::<S, ModalSubmitCtx, _>(route, Arc::clone(&typed)));
+        let starter = Arc::clone(&guarded);
         let start = move |ctx: ModalSubmitCtx,
                           decoded: &Decoded<'_>,
                           submission: &ModalSubmission,
@@ -871,7 +933,7 @@ impl ModalHandler {
             modal_value::<S>(payload, submission)
                 .map(|value| Begin::Ready(starter(value, ctx, shared)))
         };
-        let starter = Arc::clone(&typed);
+        let starter = guarded;
         let start_record = move |ctx: ModalSubmitCtx,
                                  record: &[u8],
                                  submission: &ModalSubmission,
@@ -887,6 +949,7 @@ impl ModalHandler {
             signed: S::SHAPE.is_signed(),
             auto_defer: D::AUTO_DEFER,
             one_shot: S::RUNTIME.ref_policy().is_one_shot(),
+            ref_ttl: S::RUNTIME.ref_policy().ttl(),
             call: erase::<S, _, _>(typed),
             start: Arc::new(start),
             start_record: Arc::new(start_record),
@@ -1021,6 +1084,11 @@ impl ModalHandler {
     pub(crate) fn one_shot(&self) -> bool {
         self.one_shot
     }
+
+    /// The Route's declared Ref `ttl`; `None` for the App's `ref_ttl`.
+    pub(crate) fn ref_ttl(&self) -> Option<Duration> {
+        self.ref_ttl
+    }
 }
 
 impl fmt::Debug for ModalHandler {
@@ -1128,6 +1196,8 @@ mod tests {
     }
 
     impl DeclaredRuntime for Buy {}
+    impl __Guards<ComponentCtx> for Buy {}
+    impl __Guards<ModalSubmitCtx> for Buy {}
 
     impl Route for Buy {
         const ID: RouteId = RouteId::new("shop.buy");

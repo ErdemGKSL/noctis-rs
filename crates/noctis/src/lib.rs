@@ -561,22 +561,22 @@
 #![deny(missing_docs)]
 
 pub use noctis_core::{
-    AckDeadlineMissed, Acked, AfterCtx, AfterMiddleware, App, AppBuilder, AppId, AppIdError,
-    AutoDefer, AutocompleteChoice, AutocompleteCtx, AutocompleteError, AutocompleteValue, BaseMeta,
-    BeforeCtx, BeforeMiddleware, BuildError, BuildViolation, CallbackResource, CanShowModal,
-    Command, CommandCtx, CommandHandler, CommandInput, CommandInvocation, CommandMetadata,
-    CommandOption, CommandPath, CommandResponder, Component, ComponentCtx, ComponentHandler,
-    ComponentKind, ComponentResponder, ContextMenuHandler, DeferMode, DispatchError, Dispatcher,
-    EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink, Expired, ExpiredCtx, Ext,
-    ExtensionMissing, Extensions, Flow, Focused, FollowupHandle, GatewayUrlError, HandlerError,
-    HandlerResult, HttpConfig, HttpConfigError, HttpProxyError, IntegrationType,
-    InteractionContext, IntoEdit, IntoResponse, InvalidOption, Invocation, Kv, LogSink, Manual,
-    MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit,
-    ModalSubmitCtx, Module, OptionError, OptionValue, Options, OutgoingMessage, Partial,
-    PartialOptions, Pending, Permissions, Plugin, RefOps, Register, ReportKind, Resource,
-    ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
-    RunError, RunOutcome, Runtime, StartError, State, SuggestionLabel, SuggestionValue,
-    Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
+    Access, AckDeadlineMissed, Acked, AfterCtx, AfterMiddleware, App, AppBuilder, AppId,
+    AppIdError, AutoDefer, AutocompleteChoice, AutocompleteCtx, AutocompleteError,
+    AutocompleteValue, BaseMeta, BeforeCtx, BeforeMiddleware, BuildError, BuildViolation,
+    CallbackResource, CanShowModal, Command, CommandCtx, CommandHandler, CommandInput,
+    CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder, Component,
+    ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler,
+    DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport,
+    ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
+    FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
+    HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
+    Invocation, Kv, LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler,
+    ModalResponder, ModalSubmit, ModalSubmitCtx, Module, OptionError, OptionValue, Options,
+    OutgoingMessage, Partial, PartialOptions, Pending, Permissions, Plugin, RefOps, Register,
+    ReportKind, Resource, ResourceConflict, Responded, Responder, ResponderError, ResponderKind,
+    ResponderState, RunError, RunOutcome, Runtime, StartError, State, SuggestionLabel,
+    SuggestionValue, Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -1865,11 +1865,13 @@ pub mod prelude {
     //! - [`Middleware`], [`BeforeCtx`], [`AfterCtx`], [`Flow`] and [`Ext`]:
     //!   Module Middleware (`Module::before`, `Module::after`) and the typed
     //!   Extensions handlers take as `Ext<T>` parameters.
+    //! - [`Access`]: what a custom Route Guard (`guard = path::to::fn`)
+    //!   returns.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{
-        AfterCtx, App, AppBuilder, AutocompleteCtx, BeforeCtx, CommandCtx, CommandOption,
+        Access, AfterCtx, App, AppBuilder, AutocompleteCtx, BeforeCtx, CommandCtx, CommandOption,
         CommandResponder, ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink,
         Expired, ExpiredCtx, Ext, Flow, HandlerError, HandlerResult, IntoResponse, Manual,
         Middleware, ModalResponder, ModalSubmitCtx, Module, Options, Partial, RefOps, Responded,

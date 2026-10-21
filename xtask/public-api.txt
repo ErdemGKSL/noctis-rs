@@ -1,4 +1,19 @@
 pub mod noctis
+pub enum noctis::Access
+pub noctis::Access::Allow
+pub noctis::Access::Deny(noctis::prelude::MessageKey)
+impl noctis::Access
+pub const fn noctis::Access::deny() -> Self
+pub const fn noctis::Access::is_allowed(self) -> bool
+impl core::clone::Clone for noctis::Access
+pub fn noctis::Access::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Access
+impl core::cmp::PartialEq for noctis::Access
+pub fn noctis::Access::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Access
+pub fn noctis::Access::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::Access
+impl core::marker::StructuralPartialEq for noctis::Access
 #[non_exhaustive] pub struct noctis::AckDeadlineMissed
 pub noctis::AckDeadlineMissed::elapsed: core::time::Duration
 impl core::clone::Clone for noctis::AckDeadlineMissed
@@ -548,6 +563,7 @@ pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
+pub fn noctis::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ComponentCtx::module(&self) -> &'static str
 pub fn noctis::ComponentCtx::shard(&self) -> u32
 pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -761,6 +777,7 @@ pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::co
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
+pub fn noctis::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ExpiredCtx::module(&self) -> &'static str
 pub fn noctis::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -1151,6 +1168,7 @@ pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
+pub fn noctis::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
 pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -1394,6 +1412,7 @@ impl core::marker::Copy for noctis::RunError
 impl core::marker::StructuralPartialEq for noctis::RunError
 #[non_exhaustive] pub enum noctis::RunOutcome
 pub noctis::RunOutcome::Completed
+pub noctis::RunOutcome::Denied
 pub noctis::RunOutcome::Failed
 pub noctis::RunOutcome::Panicked
 pub noctis::RunOutcome::Stopped
@@ -3029,6 +3048,21 @@ pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> no
 impl noctis::ports::LocaleSource for noctis::ports::memory::NoLocaleOverlay
 pub fn noctis::ports::memory::NoLocaleOverlay::load<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, noctis::ports::PortError>>
 pub mod noctis::prelude
+pub enum noctis::prelude::Access
+pub noctis::prelude::Access::Allow
+pub noctis::prelude::Access::Deny(noctis::prelude::MessageKey)
+impl noctis::prelude::Access
+pub const fn noctis::prelude::Access::deny() -> Self
+pub const fn noctis::prelude::Access::is_allowed(self) -> bool
+impl core::clone::Clone for noctis::prelude::Access
+pub fn noctis::prelude::Access::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::Access
+impl core::cmp::PartialEq for noctis::prelude::Access
+pub fn noctis::prelude::Access::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::Access
+pub fn noctis::prelude::Access::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::prelude::Access
+impl core::marker::StructuralPartialEq for noctis::prelude::Access
 pub struct noctis::prelude::AfterCtx
 impl noctis::prelude::AfterCtx
 pub fn noctis::prelude::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
@@ -3233,6 +3267,7 @@ pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
 pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -3310,6 +3345,7 @@ pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<n
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::prelude::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -3437,6 +3473,7 @@ pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Opti
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
+pub fn noctis::prelude::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
 pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>

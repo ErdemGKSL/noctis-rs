@@ -1,0 +1,59 @@
+error[E0277]: `owner` needs a field of type `Id<UserMarker>`, found `Option<noctis::twilight::twilight_model::id::Id<UserMarker>>`
+ --> tests/types/owner_field_type.rs:6:23
+  |
+5 | #[derive(Button)]
+  |          ------ required by a bound introduced by this call
+6 | #[button("a", owner = user, defaults(style = Secondary, label = "Go"))]
+  |                       ^^^^ not an `Id<UserMarker>`
+  |
+  = help: the trait `noctis::__private::noctis_core::guard::__OwnerField` is not implemented for `Option<noctis::twilight::twilight_model::id::Id<UserMarker>>`
+help: the trait `noctis::__private::noctis_core::guard::__OwnerField` is implemented for `noctis::twilight::twilight_model::id::Id<UserMarker>`
+ --> $WORKSPACE/crates/noctis-core/src/guard.rs
+  |
+  | impl __OwnerField for Id<UserMarker> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `noctis::__private::noctis_core::guard::__owner_id`
+ --> $WORKSPACE/crates/noctis-core/src/guard.rs
+  |
+  | pub fn __owner_id<T: __OwnerField>(field: &T) -> Id<UserMarker> {
+  |                      ^^^^^^^^^^^^ required by this bound in `__owner_id`
+
+error[E0277]: `owner` needs a field of type `Id<UserMarker>`, found `noctis::twilight::twilight_model::id::Id<GuildMarker>`
+  --> tests/types/owner_field_type.rs:19:23
+   |
+18 | #[derive(Button)]
+   |          ------ required by a bound introduced by this call
+19 | #[button("b", owner = guild, defaults(style = Secondary, label = "Go"))]
+   |                       ^^^^^ not an `Id<UserMarker>`
+   |
+   = help: the trait `noctis::__private::noctis_core::guard::__OwnerField` is not implemented for `noctis::twilight::twilight_model::id::Id<GuildMarker>`
+help: the trait `noctis::__private::noctis_core::guard::__OwnerField` is implemented for `noctis::twilight::twilight_model::id::Id<UserMarker>`
+  --> $WORKSPACE/crates/noctis-core/src/guard.rs
+   |
+   | impl __OwnerField for Id<UserMarker> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `noctis::__private::noctis_core::guard::__owner_id`
+  --> $WORKSPACE/crates/noctis-core/src/guard.rs
+   |
+   | pub fn __owner_id<T: __OwnerField>(field: &T) -> Id<UserMarker> {
+   |                      ^^^^^^^^^^^^ required by this bound in `__owner_id`
+
+error[E0277]: `owner` needs a field of type `Id<UserMarker>`, found `u64`
+  --> tests/types/owner_field_type.rs:32:23
+   |
+31 | #[derive(Button)]
+   |          ------ required by a bound introduced by this call
+32 | #[button("c", owner = user, defaults(style = Secondary, label = "Go"))]
+   |                       ^^^^ not an `Id<UserMarker>`
+   |
+   = help: the trait `noctis::__private::noctis_core::guard::__OwnerField` is not implemented for `u64`
+help: the trait `noctis::__private::noctis_core::guard::__OwnerField` is implemented for `noctis::twilight::twilight_model::id::Id<UserMarker>`
+  --> $WORKSPACE/crates/noctis-core/src/guard.rs
+   |
+   | impl __OwnerField for Id<UserMarker> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `noctis::__private::noctis_core::guard::__owner_id`
+  --> $WORKSPACE/crates/noctis-core/src/guard.rs
+   |
+   | pub fn __owner_id<T: __OwnerField>(field: &T) -> Id<UserMarker> {
+   |                      ^^^^^^^^^^^^ required by this bound in `__owner_id`

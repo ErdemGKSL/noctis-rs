@@ -279,6 +279,15 @@ list in CI.
   1 s..=365 d. The derive records them in `DeclaredRuntime::RUNTIME`, and
   `noctis_ui::Handled` gains the supertrait `DeclaredRuntime` so the policy reaches
   both the encoder and dispatch; `Route` itself is unchanged.
+- **Amended (2026-10-21):** the Route Guards `owner = field`, `permissions = A | B`
+  and `guard = path::to::fn` (Story 7.7) are accepted once each on all seven kind
+  attributes, `#[modal]` included (a modal's `owner` must be a Payload field). They
+  live in core, not in `RouteRuntime`: the checks need `ComponentCtx`,
+  `ModalSubmitCtx` and `Permissions`, which codec cannot name, so the derive emits
+  core's hidden `__Guards<Ctx>` impl (an RPITIT `__guard`, empty without a Guard)
+  and `RouteRuntime` keeps only the Ref policy. The owner field's type is checked by
+  rustc (`Id<UserMarker>` only); a custom Guard is
+  `async fn(&Ctx, &Self) -> HandlerResult<Access>`.
 - **Prevents:** a Route that overflows 100 characters only for some values, and a
   macro bound that disagrees with the real encoding.
 - **Rule:**
@@ -789,7 +798,13 @@ list in CI.
   answers with the generic notice (`ref_store`). `RefOps` is a tuple response
   (`(message, RefOps)`), applied only after a successful send; `ctx.current_ref()`
   exposes the clicked Ref. A `one_shot` Ref is consumed at stage 2, before the
-  Guards of stage 8: Story 7.7 decides whether a Guard rejection keeps that.
+  Guards of stage 8.
+- **Amended (2026-10-21):** a Guard denial (stage 8) of a `one_shot` Route whose Ref
+  was taken at stage 2 puts the exact record back under the same Ref
+  (`put_if_absent`, with the Route's `ttl`, else `AppBuilder::ref_ttl`) before the
+  notice, so no other user can burn a confirmation; `take` stays atomic, and the
+  owner may see "expired" in the short window before the restore. A failed or
+  refused restore is one `warn` on `noctis::refs`, without the Ref (Story 7.7).
 
 ### AD-19 — Route identity lives in `noctis-codec`
 - **Binds:** `noctis-codec`, `noctis-ui`, `noctis-core`, `noctis-macros`; FR-15,
@@ -975,6 +990,19 @@ list in CI.
   `self`), bound into its descriptor by `#[handler]`; a hook or the App handler runs
   like a handler (stages 6, 9, 10: auto-defer, declared `response`, notices, Error
   Sink), the App handler always auto-deferred (Story 7.3).
+- **Amended (2026-10-21):** stage 8 (Route Guards, Story 7.7) runs for components and
+  modals only, never for Commands, menus, autocomplete, events, the Expired Handler
+  chain or the detached test seams. The pipeline starters wrap the handler future,
+  which is created at stage 4 and first polled after stage 7: the Guards run in
+  declared order (owner, then `permissions`, then the custom `guard`; the first
+  denial wins, the custom Guard runs only after the built-in ones passed). `permissions`
+  reads `member.permissions` (Discord's resolved channel permissions); `ADMINISTRATOR`
+  satisfies every requirement and a missing member (a DM) is denied. A denial is one
+  `debug` on `noctis::guard` (route, handler, guard, key; no user id or Payload),
+  the localized `noctis.guard.*` (or custom) ephemeral notice, after-Middleware with
+  `RunOutcome::Denied`, and no `noctis_handler_duration_seconds`,
+  `noctis_handler_errors_total` or Error Sink report. A custom Guard's error or panic
+  is handled like the handler's.
   - Extensions are a per-interaction type map of `Send + Sync + 'static` values.
     Inserting an existing type replaces it (the child Module wins) with a debug
     trace. Middleware descriptors declare the types they provide; `App::build`

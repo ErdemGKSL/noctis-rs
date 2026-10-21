@@ -1,0 +1,6 @@
+error: [META-01] permissions: limit a permission name of noctis::Permissions, actual `MANAGE_SERVER`
+         = help: see noctis::rules::command::PERMISSIONS for every name
+ --> tests/ui/meta/META-01_guard_unknown_permission.rs:4:29
+  |
+4 | #[button("a", permissions = MANAGE_SERVER, defaults(style = Secondary, label = "Go"))]
+  |                             ^^^^^^^^^^^^^

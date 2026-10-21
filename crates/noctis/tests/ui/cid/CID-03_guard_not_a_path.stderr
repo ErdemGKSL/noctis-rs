@@ -1,0 +1,6 @@
+error: [CID-03] `guard` takes a function path such as `guard = auth::is_staff`
+         = help: name an `async fn(ctx: &ComponentCtx, this: &Self) -> HandlerResult<Access>`, without generic arguments
+ --> tests/ui/cid/CID-03_guard_not_a_path.rs:4:23
+  |
+4 | #[button("a", guard = "auth::is_staff", defaults(style = Secondary, label = "Go"))]
+  |                       ^^^^^^^^^^^^^^^^

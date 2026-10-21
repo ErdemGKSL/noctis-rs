@@ -100,6 +100,9 @@ pub(crate) struct CtxInner {
     /// The run whose frozen Extensions the handler's `Ext<T>` parameters
     /// read; `None` without Middleware (and in the detached seams).
     pub(crate) run: Option<Arc<crate::middleware::Run>>,
+    /// The member's resolved channel permissions (`member.permissions`);
+    /// `None` in DMs and for every Command.
+    pub(crate) member_permissions: Option<crate::Permissions>,
 }
 
 impl CtxInner {
@@ -129,6 +132,7 @@ impl CtxInner {
             app: None,
             current_ref: None,
             run: None,
+            member_permissions: None,
         }
     }
 }

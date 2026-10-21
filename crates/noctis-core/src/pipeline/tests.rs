@@ -2853,5 +2853,6 @@ async fn int_05_manual_menu() {
 
 mod components;
 mod expired;
+mod guards;
 mod middleware;
 mod refs;
