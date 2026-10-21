@@ -61,19 +61,44 @@ Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
   `kind() -> ComponentKind`: `Button`, `StringSelect`, `UserSelect`, `RoleSelect`,
   `MentionableSelect`, `ChannelSelect`) or, for a modal, `noctis::ModalHandler` (`name()`,
   `route()`); `.add::<X>()` stores it with the Module.
-- Exactly one handler per component id (CID-04, App build). The `#[handler]` method
-  marks the struct as handled; a kind-derived struct without one does not compile
-  (E0080 ``[CID-04] `X` has no #[handler] method, so no component can be built for it``,
-  FR-58). Remember `.add::<ToggleModule>()` on the Module, or App build fails
-  ("Route has no mounted handler").
+- Exactly one handler per Route id across the whole App (CID-04). The `#[handler]`
+  method marks the struct as handled; a kind-derived struct without one does not
+  compile (E0080 ``[CID-04] `X` has no #[handler] method, so no component can be built
+  for it``, FR-58). Add each struct with `.add::<X>()` to exactly one mounted Module:
+  adding it twice (or two structs with one id, a component and a modal included)
+  fails `App::build` with ``[CID-04] Route `shop.buy` has two handlers: `bot::Buy`
+  (Module `a`) and `bot::Buy` (Module `b`): keep one handler per Route id and rename
+  the other Route (renaming breaks its live components)``.
+- A Module whose Views render another Module's Route declares it with
+  `Module::uses::<R>()`: `Module::new("dash").uses::<ToggleModule>()`. `App::build`
+  then checks that some mounted Module adds `R`, else it fails with ``[CID-04] Module
+  `dash` uses Route `dash.mod` (`bot::ToggleModule`), but no mounted Module handles
+  it: add `.add::<bot::ToggleModule>()` to a mounted Module``. A Module that renders
+  only Routes it adds itself needs no `uses`; `R` must be a kind-derived struct with a
+  `#[handler]` (else the `Handled` E0277 `[CID-04]` error).
 - Generic structs are rejected (`` `#[derive(Button)]` needs a struct with named fields
   or a unit struct ``), and so are tuple structs, enums and unions.
 - The kind derive implements the `Route` trait (`ID`, `SHAPE`, `SCHEMA`,
   `type Payload = Self`) and the `Payload`/`PayloadDecode` traits for the struct, and
   proves the length bound at compile time (§5). `.build()` (§9, `components-v2.md`)
-  encodes a Route's `custom_id`; decoding a click and running the handler happen in the
-  **[planned]** dispatcher (Epic 7), and the rest of this file's runtime parts are
-  **[planned]** too.
+  encodes a Route's `custom_id`.
+- **Dispatch is live.** A click or a modal submit decodes the `custom_id` once, looks
+  its Route up in the App's one Route map (O(1), no allocation for fixed-width
+  Payloads) and runs the `#[handler]` on the decoded struct, with `ctx.module()`,
+  `ctx.user_id()`, `ctx.guild_id()`, `ctx.shard()` and the locales from the
+  interaction. Nothing is stored per message: old components keep working across
+  restarts as long as the Route id and Payload shape are unchanged. A handler error or
+  panic goes to the `ErrorOrigin::Component` sink (`HandlerError::user` only logs at
+  `debug`).
+- **Current limits [planned: Stories 7.2-7.7].** Handlers cannot answer yet: no
+  `ctx.update`/responder, no acks and no auto-defer (Story 7.2). An id that reaches no
+  handler is only logged (one `warn` on `noctis::dispatch` with `reason` =
+  `malformed`, `unknown_route`, `kind_mismatch`, `stale`, `forged`, `ref_unresolved`,
+  `undecodable`, `submit_invalid` or `no_author`); the user sees nothing until the
+  generic notice of Story 7.2. Until then `signed` Routes are always rejected
+  (`forged`, no `NOCTIS_PAYLOAD_KEY` yet), `by_ref`/spilled ids are `ref_unresolved`
+  (Story 7.5) and stale ids have no stale/expired handler (Story 7.3). The rest of
+  this file's runtime parts stay **[planned]** where marked.
 
 ### Route id (CID-03)
 

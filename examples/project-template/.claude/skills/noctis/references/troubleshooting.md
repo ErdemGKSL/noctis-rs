@@ -82,8 +82,8 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 
 | Message | Fix |
 | --- | --- |
-| duplicate Route `x` in Modules A and B | rename one Route id (before release!) |
-| Route `x` has no mounted handler | `.add::<X>()` on a mounted Module |
+| ``[CID-04] Route `{route}` has two handlers: `{first_handler}` (Module `{first_module}`) and `{second_handler}` (Module `{second_module}`): keep one handler per Route id and rename the other Route (renaming breaks its live components)`` | `BuildViolation::DuplicateRoute`: `.add::<X>()` in one mounted Module only; for two different structs, rename one Route id (before release!) |
+| ``[CID-04] Module `{module}` uses Route `{route}` (`{route_type}`), but no mounted Module handles it: add `.add::<{route_type}>()` to a mounted Module`` | `BuildViolation::UnmountedRoute`: `.add::<X>()` on a mounted Module, or mount the Module that adds it |
 | duplicate Command Path / pattern expansion | one handler per path (FR-56) |
 | conflicting `default_member_permissions` (or contexts, integration types, nsfw) on base `x` | make leaves agree or declare `Module::base("x", …)` |
 | base `x` has options and subcommands | split the paths |
@@ -109,6 +109,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `NoReply` (`there is no reply message to fetch`) | `acked.fetch_reply()` over the `Dispatcher` before the handler posted its reply (a `defer_reply` there is only a typing indicator) | reply first, or keep the message you sent |
 | the first Discord request after a quiet period is slow, or `RequestTimedOut` after ~10 s | a NAT/firewall silently dropped an idle connection, or slow DNS | nothing to add: the HTTP edge keeps one connection warm with HTTP/2 PINGs and redials dead ones; do **not** poll `GET /users/@me`. If it persists, lower `HttpConfig::ping_interval` and check `noctis_http_ping_timeouts_total` and `noctis_http_phase_seconds{phase="dns"}` |
 | `ERROR noctis::http: the Discord HTTP edge could not start` | the tokio runtime has no IO driver | build it with `enable_all()` (as `#[tokio::main]` does) |
+| a click or modal submit runs nothing; `WARN noctis::dispatch: component interaction rejected reason=.. shard=.. route=..` | `unknown_route`: no mounted Module adds the Route (or it is the other family); `kind_mismatch`: a component of another kind carries the id; `malformed`/`undecodable`: a hand-built or tampered `custom_id`; `stale`: the Route's schema or shape changed; `forged`/`ref_unresolved`: `signed`/`by_ref` Routes, not dispatched until Stories 7.2/7.5 [planned] | build components only with `X { .. }.build()`; keep Route ids and Payload shapes stable (§ schema evolution in `routes-payloads-refs.md`) |
 | clicking an old message shows "expired" | Ref TTL passed, or Payload schema changed (stale) | longer `ttl`, `on_expired`/`on_stale` handler that re-opens the View |
 | clicks on another user's panel say "not allowed" | `owner = …` guard working as designed | make the View ephemeral or remove the guard |
 | select shows old choice after update | missing `select` on the Route or no `default_*` set | add `select` and set defaults to the current value |

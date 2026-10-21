@@ -415,8 +415,18 @@ async fn descriptors_and_handlers() {
         .add::<BioForm>();
     let debug = format!("{module:?}");
     assert!(debug.contains("shop.buy"), "{debug}");
-    // `App::build` does not read component descriptors yet (Story 7.1).
-    assert!(App::builder().module(module).build().is_ok());
+    // Story 7.1: one handler per Route id (CID-04).
+    let err = App::builder().module(module).build().unwrap_err();
+    assert!(
+        matches!(
+            err.violations(),
+            [noctis::BuildViolation::DuplicateRoute {
+                route: "shop.buy",
+                ..
+            }]
+        ),
+        "{err}"
+    );
 
     let _ = call_component(&buy, Buy { item: 7 }).await.unwrap();
     let _ = call_modal(

@@ -499,23 +499,30 @@ no_extra!(__ModalKind, __Modal, __ModalParams, ModalHandler);
 
 impl<S, F, Fut> __Bind<__C, S, F> for __ComponentKind
 where
-    S: __Component,
+    S: __Component
+        + noctis_codec::Route<Payload = S>
+        + for<'de> noctis_codec::PayloadDecode<'de>
+        + Send
+        + 'static,
     F: Fn(S, ComponentCtx) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
 {
     fn __bind(name: &'static str, f: F) -> ComponentHandler {
-        ComponentHandler::__new::<S, _, _>(name, S::ROUTE, S::KIND, f)
+        let route = <S as noctis_codec::Route>::ID.as_str();
+        ComponentHandler::__new::<S, _, _>(name, route, S::KIND, f)
     }
 }
 
 impl<S, F, Fut> __Bind<__C, S, F> for __ModalKind
 where
-    S: __Modal,
+    S: __Modal + noctis_codec::Route + noctis_ui::ModalForm + Send + 'static,
+    for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
     F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
 {
     fn __bind(name: &'static str, f: F) -> ModalHandler {
-        ModalHandler::__new::<S, _, _>(name, S::ROUTE, f)
+        let route = <S as noctis_codec::Route>::ID.as_str();
+        ModalHandler::__new::<S, _, _>(name, route, f)
     }
 }
 

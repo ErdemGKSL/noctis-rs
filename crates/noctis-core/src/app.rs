@@ -336,7 +336,6 @@ impl App {
     }
 
     /// What every handler invocation shares with this App.
-    #[cfg(test)]
     pub(crate) fn shared(&self) -> &Arc<AppShared> {
         &self.shared
     }

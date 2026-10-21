@@ -90,11 +90,14 @@ pub(crate) fn derive_or_fallback(component: Component, input: &DeriveInput) -> T
         let core = quote!(::noctis::__private::core);
         let ident = &input.ident;
         let variant = component.variant();
+        let route = crate::kind::fallback_route(ident);
         quote! {
             impl #core::__Component for #ident {
                 const ROUTE: &'static ::core::primitive::str = "";
                 const KIND: #core::ComponentKind = #core::ComponentKind::#variant;
             }
+
+            #route
         }
     })
 }

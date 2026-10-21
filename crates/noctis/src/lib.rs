@@ -89,7 +89,8 @@
 //!     #[handler]
 //!     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
 //!         # unimplemented!()
-//!         // Answering components arrives with Epic 7.
+//!         // A click runs this on the decoded value; responding to it
+//!         // arrives with Story 7.2.
 //!     }
 //! }
 //!
@@ -1039,7 +1040,9 @@ pub use noctis_macros::EventHandler;
 /// Derives an interactive button (styles 1-4) from a struct: the struct is
 /// a Route whose fields are the Payload of its `custom_id`, and its
 /// `#[handler]` method `(self, ctx: ComponentCtx) -> HandlerResult<Responded>`
-/// handles the click (dispatch arrives with Epic 7).
+/// handles the click: `App::build` maps the Route id to it (one handler per
+/// Route id, CID-04) and a click on a component built from the struct runs
+/// it on the decoded value. Responding to the click arrives with Story 7.2.
 ///
 /// `#[button("id", <codec args>, defaults(..))]`: the Route id (CID-03), the
 /// codec arguments `by_ref`, `overflow = spill`, `schema = n`, `signed`, and
@@ -1986,8 +1989,9 @@ pub mod ui {
     //! [`Modal`] with empty inputs; `X::from_json(bytes)` ([`ModalForm`])
     //! decodes the raw modal-submit interaction JSON, Payload included. A
     //! `#[handler]` method `(self, ctx: ModalSubmitCtx) ->
-    //! HandlerResult<Responded>` handles the submission (dispatch arrives
-    //! with Epic 7).
+    //! HandlerResult<Responded>` handles the submission: a modal submit whose
+    //! `custom_id` names the Route runs it on the decoded struct (one handler
+    //! per Route id, CID-04); responding arrives with Story 7.2.
     //!
     //! | Attribute | Arguments | Field types |
     //! | --- | --- | --- |

@@ -23,6 +23,7 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::events::EventCtx;
 use crate::handler::{AppShared, HandlerResult};
+use crate::pipeline::component::run_component;
 use crate::pipeline::{run_autocomplete, run_interaction};
 use crate::registry::{Entry, Handlers, Registry};
 use crate::sink::{ErrorOrigin, ErrorReport, ReportKind};
@@ -124,10 +125,11 @@ impl Workers {
         self.ordered.len()
     }
 
-    /// Hands one command interaction to the Command pipeline and one
-    /// autocomplete interaction to the autocomplete stage, each as one task
-    /// on the tracker (never taking a permit); any other interaction is
-    /// traced and dropped until its pipeline lands (Epic 7).
+    /// Hands one command interaction to the Command pipeline, one
+    /// autocomplete interaction to the autocomplete stage and one component
+    /// click or modal submit to the component pipeline, each as one task on
+    /// the tracker (never taking a permit); any other interaction (a ping)
+    /// is traced and dropped.
     fn interaction(&self, inbound: Inbound) {
         let kind = match &inbound.kind {
             InboundKind::Interaction(interaction, _) => Some(interaction.kind),
@@ -148,6 +150,11 @@ impl Workers {
                 self.shutdown
                     .tracker
                     .spawn(run_autocomplete(registry, app, inbound, cancel));
+            }
+            Some(InteractionType::MessageComponent | InteractionType::ModalSubmit) => {
+                self.shutdown
+                    .tracker
+                    .spawn(run_component(registry, app, inbound, cancel));
             }
             _ => interaction_unhandled(inbound, &self.app.app),
         }

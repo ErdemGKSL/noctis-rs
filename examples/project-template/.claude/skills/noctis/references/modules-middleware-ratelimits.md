@@ -17,7 +17,8 @@ pub fn module() -> Module {
         .add::<BadgesList>()               // #[derive(SlashCommand)] #[command("profile badges list")]
         .base("profile", BaseMeta::new().description("Profile commands"))  // base command
         .group("profile badges", "Manage badges")   // subcommand group description
-        .add::<OpenProfile>()              // #[derive(Button)] [planned, Epic 7]
+        .add::<OpenProfile>()              // #[derive(Button)]: this Module handles its clicks
+        .uses::<ToggleModule>()            // a Route its Views render, handled by another Module
         .template::<ProfileCard>()         // image Templates [planned]
         .locales(profile_strings::catalog())   // Module-scoped strings [planned]
         .before(Middleware::before(load_settings).provides::<GuildSettings>())   // [planned, Story 7.6]
@@ -29,8 +30,8 @@ pub fn module() -> Module {
 builder.module(profile::module()).module(ops::module());
 ```
 
-Implemented: `Module::new(id)`, `.add::<X>()`, `.module(child)`, `.base(name,
-BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
+Implemented: `Module::new(id)`, `.add::<X>()`, `.uses::<R>()`, `.module(child)`,
+`.base(name, BaseMeta)`, `.group(path, description)`, `.id()`, `Clone`, `Debug`, and
 `AppBuilder::module(Module)`. `.add::<X>()` registers a struct by type: any struct with a
 kind derive (`SlashCommand`, `UserCommand`, `MessageCommand`, `EventHandler`, `Button`,
 the select kinds, `Modal`) and a `#[handler]` method (the `noctis::Register` trait the
@@ -38,15 +39,24 @@ derives implement).
 
 - `AppBuilder::module(..)` mounts a tree; the App is the root. Plugins may mount Modules
   too (in `install`); those trees fold after the ones mounted before `build()`.
-- Commands, context menus and event handlers run today; component and modal structs
-  are stored with the Module and dispatched from Epic 7 [planned]; `#[hook]` joins
-  later [planned]. `#[autocomplete(field)]` methods are **not** added separately:
+- Commands, context menus, event handlers, components and modals run today
+  (component responses arrive with Story 7.2 [planned], see `routes-payloads-refs.md`
+  §1); `#[hook]` joins later [planned].
+- One handler per Route id per App: add each component or modal struct to exactly one
+  mounted Module, or `build()` fails with ``[CID-04] Route `…` has two handlers``.
+- `.uses::<R>()` (`#[must_use]`) declares that this Module's Views build components of
+  the Route `R` that another Module handles. `build()` checks it for mounted Modules:
+  if no mounted Module (this one, a child, a sibling or another tree) adds `R`, it fails
+  with ``[CID-04] Module `…` uses Route `…` (`path::R`), but no mounted Module handles
+  it: add `.add::<path::R>()` to a mounted Module``. Modules that render only their
+  own Routes need no `uses`. `#[autocomplete(field)]` methods are **not** added separately:
   `.add::<X>()` on the command registers them (`commands.md` §4).
 - Registration is data: nothing runs when you add or nest, and the call order of `.add`
   and `.module` does not matter. `build()` folds every mounted tree **once**, pre-order:
   a Module's own registrations in `.add` order, then each child in `.module` order
   (parent before child). Each registration records its Module id and the ancestor path.
-  Adding the same struct twice registers (and runs) it twice.
+  Adding the same event handler twice registers (and runs) it twice; a component or
+  modal struct added twice is a CID-04 build error.
 - `.base(name, BaseMeta)` declares a base command's description and metadata,
   `.group(path, description)` a subcommand group's description (`noctis::BaseMeta`; both
   `#[must_use]`, kept in call order). Any Module may declare them for commands other

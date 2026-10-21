@@ -70,8 +70,10 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       # Zero-allocation guard of fixed-width inline decode (AD-25, NFR-9).
-      # Story 7.1 adds the Route lookup test to this job.
       - run: cargo test --release -p noctis-codec --test alloc_decode
+      # Zero-allocation guard of component dispatch: Route lookup by borrowed
+      # key plus fixed-width decode, over 10 and 10 000 Routes (Story 7.1).
+      - run: cargo test --release -p noctis --test alloc_dispatch
 
   each-feature:
     name: Test each feature

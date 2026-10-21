@@ -1,10 +1,11 @@
 //! The immutable Registry `build()` folds once from the mounted Module trees
 //! (AD-7, AD-9, GW-05), including the merged command Registry
-//! ([`commands`]).
+//! ([`commands`]) and the Route map of every component and modal handler
+//! (AD-25, CID-04).
 
 pub(crate) mod commands;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use noctis_gateway::{DROPPABLE_EVENTS, EventTypeFlags};
@@ -12,6 +13,7 @@ use twilight_model::gateway::Intents;
 use twilight_model::gateway::event::EventType;
 
 use crate::BuildViolation;
+use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
 use crate::module::Module;
 
@@ -38,6 +40,46 @@ pub(crate) struct Entry {
     pub(crate) handler: EventHandler,
 }
 
+/// The handler of one Route id: a component or a modal.
+pub(crate) enum RouteHandler {
+    Component(ComponentHandler),
+    Modal(ModalHandler),
+}
+
+impl RouteHandler {
+    /// The handler's struct path.
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Component(h) => h.name(),
+            Self::Modal(h) => h.name(),
+        }
+    }
+
+    /// The Route id.
+    fn route(&self) -> &'static str {
+        match self {
+            Self::Component(h) => h.route(),
+            Self::Modal(h) => h.route(),
+        }
+    }
+}
+
+/// One folded Route registration.
+pub(crate) struct RouteEntry {
+    /// The id of the Module it was added to.
+    pub(crate) module: &'static str,
+    /// The ids of that Module's ancestors, root first.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Middleware (Story 7.6) walks it; tests read it now"
+        )
+    )]
+    pub(crate) ancestors: Arc<[&'static str]>,
+    pub(crate) handler: RouteHandler,
+}
+
 /// The handlers dispatched on one event type, in fold order.
 #[derive(Default)]
 pub(crate) struct Handlers {
@@ -62,6 +104,9 @@ pub(crate) struct Registry {
     droppable: EventTypeFlags,
     intents: Intents,
     commands: Commands,
+    /// Every component and modal handler by Route id (AD-25): one
+    /// immutable map, looked up with a borrowed `&str`.
+    routes: HashMap<&'static str, Arc<RouteEntry>>,
 }
 
 impl Registry {
@@ -70,10 +115,14 @@ impl Registry {
     /// [`BuildViolation::MissingIntent`] per handler whose privileged intent
     /// is not in `requested`, in fold order, then one
     /// [`BuildViolation::Command`] per command rule broken after merging
-    /// every Module's commands (`validate_merge` order).
+    /// every Module's commands (`validate_merge` order), then one
+    /// [`BuildViolation::DuplicateRoute`] per extra handler of a Route id
+    /// and one [`BuildViolation::UnmountedRoute`] per (Module, Route) a
+    /// Module `uses` without a mounted handler, each in fold order.
     pub(crate) fn fold(roots: &[Module], requested: Intents) -> (Self, Vec<BuildViolation>) {
         let mut entries = Vec::new();
         let mut folded = Vec::new();
+        let mut route_entries = Vec::new();
         let mut stack: Vec<(&Module, Arc<[&'static str]>)> = roots
             .iter()
             .rev()
@@ -90,6 +139,17 @@ impl Registry {
                     ancestors: Arc::clone(&ancestors),
                     handler: handler.clone(),
                 })
+            }));
+            let handlers = module
+                .components()
+                .iter()
+                .cloned()
+                .map(RouteHandler::Component)
+                .chain(module.modals().iter().cloned().map(RouteHandler::Modal));
+            route_entries.extend(handlers.map(|handler| RouteEntry {
+                module: module.id(),
+                ancestors: Arc::clone(&ancestors),
+                handler,
             }));
             if !module.children().is_empty() {
                 let path: Arc<[&'static str]> =
@@ -141,8 +201,11 @@ impl Registry {
             });
         let (commands, command_violations) = Commands::fold(&folded);
         violations.extend(command_violations);
+        let routes = fold_routes(route_entries, &mut violations);
+        check_uses(&folded, &routes, &mut violations);
         let registry = Self {
             commands,
+            routes,
             entries,
             handlers: by_dispatch
                 .into_iter()
@@ -172,9 +235,15 @@ impl Registry {
         &self.entries
     }
 
-    /// How many registrations it holds.
+    /// The handler of Route `id`, if any: one hash lookup with the
+    /// borrowed key, no allocation.
+    pub(crate) fn route(&self, id: &str) -> Option<&Arc<RouteEntry>> {
+        self.routes.get(id)
+    }
+
+    /// How many registrations it holds: event handlers and Routes.
     pub(crate) fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.len() + self.routes.len()
     }
 
     /// The event types the gateway parses: interactions plus every handled
@@ -196,6 +265,51 @@ impl Registry {
     /// Whether any handler is ordered (the sub-queues exist only then).
     pub(crate) fn has_ordered(&self) -> bool {
         self.handlers.values().any(|h| !h.ordered.is_empty())
+    }
+}
+
+/// Keeps the first handler of each Route id in fold order; each later one
+/// is a [`BuildViolation::DuplicateRoute`].
+fn fold_routes(
+    entries: Vec<RouteEntry>,
+    violations: &mut Vec<BuildViolation>,
+) -> HashMap<&'static str, Arc<RouteEntry>> {
+    let mut routes: HashMap<&'static str, Arc<RouteEntry>> = HashMap::with_capacity(entries.len());
+    for entry in entries {
+        let route = entry.handler.route();
+        if let Some(first) = routes.get(route) {
+            violations.push(BuildViolation::DuplicateRoute {
+                route,
+                first_module: first.module,
+                first_handler: first.handler.name(),
+                second_module: entry.module,
+                second_handler: entry.handler.name(),
+            });
+        } else {
+            routes.insert(route, Arc::new(entry));
+        }
+    }
+    routes
+}
+
+/// One [`BuildViolation::UnmountedRoute`] per (Module id, Route) that a
+/// mounted Module `uses` and no mounted Module handles, in fold order.
+fn check_uses(
+    folded: &[Folded<'_>],
+    routes: &HashMap<&'static str, Arc<RouteEntry>>,
+    violations: &mut Vec<BuildViolation>,
+) {
+    let mut seen = HashSet::new();
+    for module in folded.iter().map(|f| f.module) {
+        for used in module.used_routes() {
+            if !routes.contains_key(used.route) && seen.insert((module.id(), used.route)) {
+                violations.push(BuildViolation::UnmountedRoute {
+                    module: module.id(),
+                    route: used.route,
+                    route_type: used.route_type,
+                });
+            }
+        }
     }
 }
 

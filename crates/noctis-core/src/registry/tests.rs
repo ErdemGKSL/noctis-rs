@@ -701,3 +701,172 @@ async fn debug_output() {
     let app = builder().module(module).build().unwrap();
     assert!(format!("{app:?}").contains("handlers: 1"));
 }
+
+// --- Story 7.1: the Route map, CID-04 ----------------------------------------
+
+mod routes {
+    use super::*;
+    use crate::test_support::{TBuy, button, modal};
+
+    fn fold(roots: &[Module]) -> (Registry, Vec<BuildViolation>) {
+        Registry::fold(roots, Intents::empty())
+    }
+
+    fn duplicate(
+        route: &'static str,
+        first: (&'static str, &'static str),
+        second: (&'static str, &'static str),
+    ) -> BuildViolation {
+        BuildViolation::DuplicateRoute {
+            route,
+            first_module: first.0,
+            first_handler: first.1,
+            second_module: second.0,
+            second_handler: second.1,
+        }
+    }
+
+    fn unmounted(module: &'static str) -> BuildViolation {
+        BuildViolation::UnmountedRoute {
+            module,
+            route: "shop.buy",
+            route_type: std::any::type_name::<TBuy>(),
+        }
+    }
+
+    /// Matrix 2: one Route in two Modules.
+    #[tokio::test]
+    async fn duplicate_across_modules() {
+        let err = builder()
+            .module(Module::new("a").__add(button("m::Buy", "shop.buy")))
+            .module(Module::new("b").__add(button("m::Buy2", "shop.buy")))
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            violations(&err),
+            [duplicate("shop.buy", ("a", "m::Buy"), ("b", "m::Buy2"))]
+        );
+        let text = err.violations()[0].to_string();
+        assert!(
+            text.starts_with("[CID-04] Route `shop.buy` has two handlers"),
+            "{text}"
+        );
+    }
+
+    /// Matrix 3: the same struct added twice in one Module.
+    #[test]
+    fn duplicate_in_one_module() {
+        let m = Module::new("a")
+            .__add(button("m::Buy", "shop.buy"))
+            .__add(button("m::Buy", "shop.buy"));
+        let (registry, v) = fold(&[m]);
+        assert_eq!(v, [duplicate("shop.buy", ("a", "m::Buy"), ("a", "m::Buy"))]);
+        assert_eq!(registry.len(), 1);
+    }
+
+    /// Matrix 4: a Button and a Modal share an id.
+    #[test]
+    fn duplicate_across_families() {
+        let m = Module::new("a")
+            .__add(button("m::X", "x"))
+            .__add(modal("m::XForm", "x"));
+        let (_, v) = fold(&[m]);
+        assert_eq!(v, [duplicate("x", ("a", "m::X"), ("a", "m::XForm"))]);
+    }
+
+    /// Matrix 5: three handlers of one id give two violations, each
+    /// against the first.
+    #[test]
+    fn three_handlers() {
+        let roots = ["a", "b", "c"].map(|id| Module::new(id).__add(button("m::X", "x")));
+        let (_, v) = fold(&roots);
+        assert_eq!(
+            v,
+            [
+                duplicate("x", ("a", "m::X"), ("b", "m::X")),
+                duplicate("x", ("a", "m::X"), ("c", "m::X")),
+            ]
+        );
+    }
+
+    /// Matrix 6 and 11: distinct ids fold into one map; none is fine.
+    #[test]
+    fn distinct_routes() {
+        let m = Module::new("shop")
+            .__add(button("m::Buy", "shop.buy"))
+            .module(Module::new("shop/sell").__add(button("m::Sell", "shop.sell")))
+            .__add(modal("m::Bio", "bio"));
+        let (registry, v) = fold(&[m]);
+        assert!(v.is_empty(), "{v:?}");
+        let buy = registry.route("shop.buy").unwrap();
+        assert_eq!((buy.module, buy.handler.name()), ("shop", "m::Buy"));
+        let sell = registry.route("shop.sell").unwrap();
+        assert_eq!(
+            (sell.module, &*sell.ancestors),
+            ("shop/sell", &["shop"][..])
+        );
+        assert!(matches!(
+            registry.route("bio").unwrap().handler,
+            RouteHandler::Modal(_)
+        ));
+        assert!(registry.route("nope").is_none());
+        assert_eq!(registry.len(), 3);
+        let (empty, v) = fold(&[]);
+        assert!(v.is_empty() && empty.route("shop.buy").is_none());
+    }
+
+    /// Matrix 7: `uses` satisfied by a sibling or a child.
+    #[test]
+    fn uses_satisfied() {
+        let a = Module::new("a").uses::<TBuy>();
+        let b = Module::new("b").__add(button("m::Buy", "shop.buy"));
+        assert!(fold(&[a.clone(), b]).1.is_empty());
+        let nested = a.module(Module::new("a/c").__add(button("m::Buy", "shop.buy")));
+        assert!(fold(&[nested]).1.is_empty());
+    }
+
+    /// Matrix 8: `uses` without a mounted handler.
+    #[tokio::test]
+    async fn uses_unmounted() {
+        let err = builder()
+            .module(Module::new("a").uses::<TBuy>())
+            .build()
+            .unwrap_err();
+        assert_eq!(violations(&err), [unmounted("a")]);
+        let text = err.violations()[0].to_string();
+        assert!(
+            text.starts_with("[CID-04] Module `a` uses Route `shop.buy` (`")
+                && text.ends_with(&format!(
+                    "but no mounted Module handles it: add `.add::<{}>()` to a mounted Module",
+                    std::any::type_name::<TBuy>()
+                )),
+            "{text}"
+        );
+        // An unmounted Module's handler does not count.
+        let _unmounted = Module::new("b").__add(button("m::Buy", "shop.buy"));
+        let (_, v) = fold(&[Module::new("a").uses::<TBuy>()]);
+        assert_eq!(v, [unmounted("a")]);
+    }
+
+    /// Matrix 9: duplicate declarations give one violation; declarations
+    /// on unmounted Modules none. Duplicates come before unmounted Routes.
+    #[test]
+    fn uses_deduplicated_and_ordered() {
+        let a = Module::new("a").uses::<TBuy>().uses::<TBuy>();
+        let (_, v) = fold(&[a]);
+        assert_eq!(v, [unmounted("a")]);
+        let _never_mounted = Module::new("z").uses::<TBuy>();
+        assert!(fold(&[Module::new("y")]).1.is_empty());
+        let roots = [
+            Module::new("a").uses::<TBuy>(),
+            Module::new("b").__add(button("m::X", "x")),
+            Module::new("c").__add(button("m::X", "x")),
+        ];
+        let (_, v) = fold(&roots);
+        assert_eq!(
+            v,
+            [duplicate("x", ("b", "m::X"), ("c", "m::X")), unmounted("a")]
+        );
+        assert!(format!("{:?}", roots[0]).contains("uses: [\"shop.buy\"]"));
+    }
+}

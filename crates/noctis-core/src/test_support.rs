@@ -210,3 +210,76 @@ pub(crate) fn message_menu(
         },
     )
 }
+
+/// A hand-written component and modal Route struct with one `u64` field
+/// (`item`): what a kind derive implements. A modal submission also needs
+/// the text input `bio`.
+macro_rules! test_route {
+    ($name:ident, $id:literal, $shape:expr, $schema:literal) => {
+        #[derive(Debug)]
+        pub(crate) struct $name {
+            pub(crate) item: u64,
+        }
+
+        impl noctis_codec::Payload for $name {
+            const MAX_ENCODED_LEN: Option<usize> = Some(11);
+
+            fn encode_fields(&self, out: &mut noctis_codec::FieldWriter<'_>) -> std::fmt::Result {
+                out.field(&self.item)
+            }
+        }
+
+        impl noctis_codec::PayloadDecode<'_> for $name {
+            fn decode_fields(
+                f: &mut noctis_codec::FieldReader<'_>,
+            ) -> Result<Self, noctis_codec::CodecError> {
+                Ok(Self { item: f.field()? })
+            }
+        }
+
+        impl noctis_codec::Route for $name {
+            const ID: noctis_codec::RouteId = noctis_codec::RouteId::new($id);
+            const SHAPE: noctis_codec::RouteShape = $shape;
+            const SCHEMA: u8 = $schema;
+            type Payload = Self;
+        }
+
+        impl noctis_ui::Handled for $name {}
+
+        impl noctis_ui::ModalForm for $name {
+            fn from_submission(
+                submission: &noctis_ui::ModalSubmission,
+            ) -> Result<Self, noctis_ui::SubmitError> {
+                let this = noctis_ui::__macro::decode_modal_payload::<Self>(submission)?;
+                match submission.get("bio") {
+                    Some(noctis_ui::SubmittedValue::TextInput(_)) => Ok(this),
+                    _ => Err(noctis_ui::SubmitError::Missing { key: "bio".into() }),
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use test_route;
+
+test_route!(TBuy, "shop.buy", noctis_codec::RouteShape::INLINE, 0);
+
+/// A component handler of [`TBuy`] named `name` at `route` that does
+/// nothing.
+pub(crate) fn button(name: &'static str, route: &'static str) -> crate::ComponentHandler {
+    crate::ComponentHandler::__new::<TBuy, _, _>(
+        name,
+        route,
+        crate::ComponentKind::Button,
+        |_: TBuy, _: crate::ComponentCtx| async { Ok(crate::Responded::new()) },
+    )
+}
+
+/// A modal handler of [`TBuy`] named `name` at `route` that does nothing.
+pub(crate) fn modal(name: &'static str, route: &'static str) -> crate::ModalHandler {
+    crate::ModalHandler::__new::<TBuy, _, _>(
+        name,
+        route,
+        |_: TBuy, _: crate::ModalSubmitCtx| async { Ok(crate::Responded::new()) },
+    )
+}

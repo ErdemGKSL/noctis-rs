@@ -118,6 +118,42 @@ pub(crate) fn fallback(
     }
 }
 
+/// The placeholder Route impls of a component or modal struct whose derive
+/// failed: a valid placeholder id and an empty Payload that never decodes,
+/// so the `#[handler]` binding's codec bounds hold and the derive's error
+/// stays the only one.
+pub(crate) fn fallback_route(ident: &Ident) -> TokenStream {
+    let codec = quote!(::noctis::__private::codec);
+    quote! {
+        impl #codec::Route for #ident {
+            const ID: #codec::RouteId = #codec::RouteId::new("noctis.invalid");
+            const SHAPE: #codec::RouteShape = #codec::RouteShape::INLINE;
+            const SCHEMA: ::core::primitive::u8 = 0;
+            type Payload = Self;
+        }
+
+        impl #codec::Payload for #ident {
+            const MAX_ENCODED_LEN: ::core::option::Option<::core::primitive::usize> =
+                ::core::option::Option::Some(0);
+
+            fn encode_fields(
+                &self,
+                _: &mut #codec::FieldWriter<'_>,
+            ) -> ::core::fmt::Result {
+                ::core::result::Result::Ok(())
+            }
+        }
+
+        impl<'de> #codec::PayloadDecode<'de> for #ident {
+            fn decode_fields(
+                _: &mut #codec::FieldReader<'de>,
+            ) -> ::core::result::Result<Self, #codec::CodecError> {
+                ::core::result::Result::Err(#codec::CodecError::Empty)
+            }
+        }
+    }
+}
+
 /// The derive's `result`, or on an error the error with the placeholder
 /// impls of `kind::fallback` (`family_impl` gives the family impl); an enum,
 /// union or generic struct gets the error alone.

@@ -783,7 +783,8 @@ list in CI.
   - `.build()` requires `R: Handled`; a kind-derived struct without a
     `#[handler]` method does not compile (CID-04; compile-time half of FR-58). `noctis-core` binds handlers by `R::ID`
     in their own descriptor; `App::build` fails when a Route referenced by a mounted
-    Module's descriptors has no mounted handler (dynamic half).
+    Module's descriptors has no mounted handler (dynamic half; a Module declares Routes it
+    renders but does not handle with `Module::uses::<R>()`).
 
 ### AD-20 — Widget state rides the View's own Route — Withdrawn (2026-10-20)
 - **Status:** Withdrawn by maintainer decision (2026-10-20). Noctis ships no UI

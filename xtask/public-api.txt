@@ -200,6 +200,12 @@ pub noctis::BuildViolation::Command(noctis::rules::Violation)
 pub noctis::BuildViolation::CryptoProvider
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
+pub noctis::BuildViolation::DuplicateRoute
+pub noctis::BuildViolation::DuplicateRoute::first_handler: &'static str
+pub noctis::BuildViolation::DuplicateRoute::first_module: &'static str
+pub noctis::BuildViolation::DuplicateRoute::route: &'static str
+pub noctis::BuildViolation::DuplicateRoute::second_handler: &'static str
+pub noctis::BuildViolation::DuplicateRoute::second_module: &'static str
 pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
 pub noctis::BuildViolation::HttpEdge
@@ -232,6 +238,10 @@ pub noctis::BuildViolation::Plugin
 pub noctis::BuildViolation::Plugin::message: alloc::string::String
 pub noctis::BuildViolation::Plugin::plugin: &'static str
 pub noctis::BuildViolation::ResourceConflict(noctis::ResourceConflict)
+pub noctis::BuildViolation::UnmountedRoute
+pub noctis::BuildViolation::UnmountedRoute::module: &'static str
+pub noctis::BuildViolation::UnmountedRoute::route: &'static str
+pub noctis::BuildViolation::UnmountedRoute::route_type: &'static str
 impl noctis::BuildViolation
 pub fn noctis::BuildViolation::plugin<P: noctis::Plugin>(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for noctis::BuildViolation
@@ -853,6 +863,7 @@ pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
 pub fn noctis::Module::module(self, noctis::Module) -> Self
 pub fn noctis::Module::new(&'static str) -> Self
+pub fn noctis::Module::uses<R: noctis::__private::ui::Handled>(self) -> Self
 impl core::clone::Clone for noctis::Module
 pub fn noctis::Module::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Module
@@ -2741,6 +2752,7 @@ pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
 pub fn noctis::prelude::Module::module(self, noctis::prelude::Module) -> Self
 pub fn noctis::prelude::Module::new(&'static str) -> Self
+pub fn noctis::prelude::Module::uses<R: noctis::__private::ui::Handled>(self) -> Self
 impl core::clone::Clone for noctis::prelude::Module
 pub fn noctis::prelude::Module::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::Module

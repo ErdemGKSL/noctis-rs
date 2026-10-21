@@ -260,9 +260,11 @@ pub mod __testing {
 
     use futures_util::future::BoxFuture;
 
+    use std::future::Future;
+
     use crate::{
-        App, CommandHandler, ComponentHandler, ContextMenuHandler, HandlerResult, ModalHandler,
-        Responded,
+        App, BuildViolation, CommandHandler, ComponentHandler, ComponentKind, ContextMenuHandler,
+        HandlerResult, ModalHandler, Module, Responded,
     };
 
     /// The merged command Registry of `app`, one line per scope, base,
@@ -338,5 +340,108 @@ pub mod __testing {
     /// until their Responders arrive (Story 7.2).
     pub fn responded() -> Responded {
         Responded::new()
+    }
+
+    /// The Route map `build()` folds from `modules` (the allocation
+    /// proof's seam).
+    pub struct RouteTable(crate::registry::Registry);
+
+    impl std::fmt::Debug for RouteTable {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("RouteTable")
+                .field("len", &self.0.len())
+                .finish_non_exhaustive()
+        }
+    }
+
+    /// Folds `modules` as `build()` does (with no privileged intents
+    /// requested): the Route map, or every violation.
+    ///
+    /// # Errors
+    ///
+    /// The fold's violations, such as `DuplicateRoute`.
+    pub fn route_table(modules: &[Module]) -> Result<RouteTable, Vec<BuildViolation>> {
+        let (registry, violations) =
+            crate::registry::Registry::fold(modules, twilight_model::gateway::Intents::empty());
+        if violations.is_empty() {
+            Ok(RouteTable(registry))
+        } else {
+            Err(violations)
+        }
+    }
+
+    impl RouteTable {
+        /// Runs dispatch stage 2 for a click on a component of `kind` with
+        /// `custom_id`: decode, borrowed-key lookup, kind check and the
+        /// struct decode, without a handler. Returns the handler's name, or
+        /// the rejection label; it never allocates.
+        ///
+        /// # Errors
+        ///
+        /// The rejection label (`malformed`, `unknown_route`, …).
+        pub fn probe(
+            &self,
+            custom_id: &str,
+            kind: ComponentKind,
+        ) -> Result<&'static str, &'static str> {
+            use crate::pipeline::component::{Family, Rejection, resolve};
+            use crate::registry::RouteHandler;
+
+            let decoded =
+                noctis_codec::decode(custom_id).map_err(|_| Rejection::Malformed.as_str())?;
+            let entry = resolve(&self.0, &decoded, Family::Component(Some(kind)))
+                .map_err(Rejection::as_str)?;
+            let RouteHandler::Component(handler) = &entry.handler else {
+                return Err(Rejection::UnknownRoute.as_str());
+            };
+            handler
+                .probe(&decoded)
+                .map_err(|e| Rejection::from_decode(&e).as_str())?;
+            if matches!(decoded.body(), noctis_codec::RawBody::Ref(_)) {
+                return Err(Rejection::RefUnresolved.as_str());
+            }
+            Ok(handler.name())
+        }
+    }
+
+    /// Parses `raw` (an `INTERACTION_CREATE` `d` object) and runs it
+    /// through the component pipeline the worker spawns for clicks and
+    /// modal submits, on shard 0, received now, with a fresh cancel token.
+    /// Unparsable JSON is one `warn` (`malformed`); another interaction
+    /// type does nothing.
+    pub fn dispatch(app: &App, raw: &str) -> impl Future<Output = ()> + Send + use<> {
+        use noctis_gateway::{Inbound, InboundKind, RawJson};
+
+        let registry = std::sync::Arc::clone(app.registry());
+        let shared = std::sync::Arc::clone(app.shared());
+        let parsed =
+            serde_json::from_str::<twilight_model::application::interaction::Interaction>(raw);
+        let inbound = parsed.ok().map(|interaction| Inbound {
+            shard: twilight_model::gateway::ShardId::new(0, 1),
+            received_at: tokio::time::Instant::now(),
+            kind: InboundKind::Interaction(
+                Box::new(interaction),
+                RawJson::new(bytes::Bytes::from(raw.to_owned())),
+            ),
+        });
+        if inbound.is_none() {
+            tracing::warn!(
+                target: "noctis::dispatch",
+                reason = "malformed",
+                shard = 0_u32,
+                "component interaction rejected"
+            );
+        }
+        async move {
+            if let Some(inbound) = inbound {
+                crate::pipeline::component::run_component(
+                    registry,
+                    shared,
+                    inbound,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await;
+            }
+        }
     }
 }

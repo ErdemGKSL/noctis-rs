@@ -927,9 +927,23 @@ pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
     let result = expand(input);
     crate::kind::or_fallback(input, crate::kind::Family::Modal, result, || {
         let ident = &input.ident;
+        let route = crate::kind::fallback_route(ident);
+        let ui = quote!(::noctis::__private::ui);
         quote! {
             impl ::noctis::__private::core::__Modal for #ident {
                 const ROUTE: &'static ::core::primitive::str = "";
+            }
+
+            #route
+
+            impl #ui::ModalForm for #ident {
+                fn from_submission(
+                    _: &#ui::ModalSubmission,
+                ) -> ::core::result::Result<Self, #ui::SubmitError> {
+                    ::core::result::Result::Err(#ui::SubmitError::Malformed {
+                        reason: ::std::string::String::new(),
+                    })
+                }
             }
         }
     })

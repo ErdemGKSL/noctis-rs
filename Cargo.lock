@@ -1224,6 +1224,7 @@ name = "noctis"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "dhat",
  "insta",
  "noctis-codec",
  "noctis-core",
@@ -1268,6 +1269,7 @@ dependencies = [
  "hyper-util",
  "metrics",
  "metrics-util",
+ "noctis-codec",
  "noctis-gateway",
  "noctis-i18n",
  "noctis-ports",

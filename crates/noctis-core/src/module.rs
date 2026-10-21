@@ -140,8 +140,19 @@ pub struct Module {
     menus: Vec<ContextMenuHandler>,
     components: Vec<ComponentHandler>,
     modals: Vec<ModalHandler>,
+    uses: Vec<UsedRoute>,
     nodes: Vec<NodeDecl>,
     children: Vec<Module>,
+}
+
+/// A Route a Module renders but another Module handles
+/// ([`Module::uses`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct UsedRoute {
+    /// The Route id.
+    pub(crate) route: &'static str,
+    /// The Route struct's type path.
+    pub(crate) route_type: &'static str,
 }
 
 impl Module {
@@ -158,6 +169,7 @@ impl Module {
             menus: Vec::new(),
             components: Vec::new(),
             modals: Vec::new(),
+            uses: Vec::new(),
             nodes: Vec::new(),
             children: Vec::new(),
         }
@@ -178,6 +190,44 @@ impl Module {
     #[must_use]
     pub fn __add(mut self, descriptor: impl Descriptor) -> Self {
         descriptor.register(&mut self);
+        self
+    }
+
+    /// Declares that this Module's Views build components of the Route `R`
+    /// that another Module handles (CID-04, AD-19).
+    ///
+    /// `build()` checks it for mounted Modules only: some mounted Module
+    /// (this one, a child, a sibling or another tree) must `add::<R>()`,
+    /// else the build fails with ``[CID-04] Module `m` uses Route `id`
+    /// (`path::R`), but no mounted Module handles it``. A Module that renders
+    /// only its own Routes needs no declaration. `R` must be a kind-derived
+    /// struct with a `#[handler]` method.
+    ///
+    /// ```
+    /// use noctis_core::Module;
+    /// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
+    /// # struct Buy;
+    /// # impl Payload for Buy {
+    /// #     const MAX_ENCODED_LEN: Option<usize> = Some(0);
+    /// #     fn encode_fields(&self, _: &mut FieldWriter<'_>) -> core::fmt::Result { Ok(()) }
+    /// # }
+    /// # impl Route for Buy {
+    /// #     const ID: RouteId = RouteId::new("shop.buy");
+    /// #     const SHAPE: RouteShape = RouteShape::INLINE;
+    /// #     const SCHEMA: u8 = 0;
+    /// #     type Payload = Self;
+    /// # }
+    /// # impl noctis_ui::Handled for Buy {}
+    /// // `#[derive(Button)] #[button("shop.buy", ..)] struct Buy;`, added in Module "shop".
+    /// let dashboard = Module::new("dash").uses::<Buy>();
+    /// assert!(format!("{dashboard:?}").contains("shop.buy"));
+    /// ```
+    #[must_use = "Module::uses returns the Module with the declaration added"]
+    pub fn uses<R: noctis_ui::Handled>(mut self) -> Self {
+        self.uses.push(UsedRoute {
+            route: R::ID.as_str(),
+            route_type: std::any::type_name::<R>(),
+        });
         self
     }
 
@@ -269,16 +319,19 @@ impl Module {
         &self.menus
     }
 
-    /// Its own component handlers, in `add` order (read by Story 7.1).
-    #[expect(dead_code, reason = "component dispatch is Story 7.1")]
+    /// Its own component handlers, in `add` order.
     pub(crate) fn components(&self) -> &[ComponentHandler] {
         &self.components
     }
 
-    /// Its own modal handlers, in `add` order (read by Story 7.1).
-    #[expect(dead_code, reason = "modal dispatch is Story 7.1")]
+    /// Its own modal handlers, in `add` order.
     pub(crate) fn modals(&self) -> &[ModalHandler] {
         &self.modals
+    }
+
+    /// The Routes it declared with [`Module::uses`], in call order.
+    pub(crate) fn used_routes(&self) -> &[UsedRoute] {
+        &self.uses
     }
 
     /// Its `base`/`group` declarations, in call order.
@@ -307,6 +360,7 @@ impl fmt::Debug for Module {
             .map(ComponentHandler::route)
             .collect();
         let modals: Vec<&str> = self.modals.iter().map(ModalHandler::route).collect();
+        let uses: Vec<&str> = self.uses.iter().map(|u| u.route).collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
@@ -314,6 +368,7 @@ impl fmt::Debug for Module {
             .field("menus", &menus)
             .field("components", &components)
             .field("modals", &modals)
+            .field("uses", &uses)
             .field("nodes", &self.nodes)
             .field("children", &self.children)
             .finish()

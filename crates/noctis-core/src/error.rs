@@ -260,6 +260,57 @@ pub enum BuildViolation {
     /// last, the scope (`scope: global` or `scope: guild <id>`).
     #[error("{0}")]
     Command(noctis_rules::Violation),
+    /// Two handlers share one Route id (CID-04): the first registration in
+    /// fold order is kept, and each later one gives one violation.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::DuplicateRoute {
+    ///     route: "shop.buy",
+    ///     first_module: "a",
+    ///     first_handler: "bot::Buy",
+    ///     second_module: "b",
+    ///     second_handler: "bot::Buy",
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "[CID-04] Route `shop.buy` has two handlers: `bot::Buy` (Module `a`) and `bot::Buy` \
+    ///      (Module `b`): keep one handler per Route id and rename the other Route (renaming \
+    ///      breaks its live components)"
+    /// );
+    /// ```
+    #[error(
+        "[CID-04] Route `{route}` has two handlers: `{first_handler}` (Module `{first_module}`) \
+         and `{second_handler}` (Module `{second_module}`): keep one handler per Route id and \
+         rename the other Route (renaming breaks its live components)"
+    )]
+    DuplicateRoute {
+        /// The shared Route id.
+        route: &'static str,
+        /// The Module of the kept (first) handler.
+        first_module: &'static str,
+        /// The kept handler's struct path.
+        first_handler: &'static str,
+        /// The Module of the rejected handler.
+        second_module: &'static str,
+        /// The rejected handler's struct path.
+        second_handler: &'static str,
+    },
+    /// A mounted Module declares with `Module::uses::<R>()` a Route that no
+    /// mounted Module handles (CID-04).
+    #[error(
+        "[CID-04] Module `{module}` uses Route `{route}` (`{route_type}`), but no mounted Module \
+         handles it: add `.add::<{route_type}>()` to a mounted Module"
+    )]
+    UnmountedRoute {
+        /// The id of the declaring Module.
+        module: &'static str,
+        /// The Route id.
+        route: &'static str,
+        /// The Route struct's type path.
+        route_type: &'static str,
+    },
     /// A plugin reported a problem with [`AppBuilder::report`](crate::AppBuilder::report).
     #[error("plugin `{plugin}`: {message}")]
     Plugin {

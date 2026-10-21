@@ -48,6 +48,16 @@
 //! and goes to the Autocomplete Error Sink; an unknown Command or an option
 //! without a handler sends an empty list with a warning only. The
 //! [`Dispatcher`] has no autocomplete.
+//!
+//! # Components and modals
+//!
+//! A `MESSAGE_COMPONENT` or `MODAL_SUBMIT` interaction runs through
+//! [`component`] (Story 7.1, CID-04, CID-06): its `custom_id` is decoded
+//! once and its Route looked up in the Registry's Route map with the
+//! borrowed id (AD-25); the handler of the Route runs on the decoded struct
+//! under `catch_unwind` and the shutdown token, and failures go to the
+//! Component Error Sink. Any input that reaches no handler is one `warn`
+//! with a `reason` label and nothing else; responses arrive with Story 7.2.
 
 use std::any::Any;
 use std::fmt;
@@ -90,6 +100,8 @@ use crate::responder::{
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ErrorSink as _, LogSink, ReportKind};
 use crate::worker::panic_message;
+
+pub(crate) mod component;
 
 /// The `event_type` of a Command report.
 const INTERACTION_CREATE: &str = "INTERACTION_CREATE";
