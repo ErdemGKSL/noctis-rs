@@ -2,7 +2,8 @@
 title: 'Story 6.11: Simplification: one struct per interaction'
 type: 'refactor'
 created: '2026-10-21'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '72a45940fa77b8413b4b54a6f8e6a2daecbe03e9'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
