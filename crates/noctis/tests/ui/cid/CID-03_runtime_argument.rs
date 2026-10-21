@@ -1,10 +1,10 @@
 use noctis::prelude::*;
 
 #[derive(Button)]
-#[button("a", rate_limit(user, 5, per = "1m"), defaults(style = Secondary, label = "Go"))]
-struct Limited;
+#[button("a", owner = user, defaults(style = Secondary, label = "Go"))]
+struct Owned;
 
-impl Limited {
+impl Owned {
     #[handler]
     async fn handle(self, _ctx: ComponentCtx) -> HandlerResult<Responded> {
         unimplemented!()

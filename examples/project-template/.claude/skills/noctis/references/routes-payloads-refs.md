@@ -20,7 +20,7 @@ use noctis::id::marker::{GuildMarker, UserMarker};
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "dash.mod",                                     // the id, first
-    permissions = MANAGE_GUILD,                     // routing arguments: a Route Guard
+    permissions = MANAGE_GUILD,                     // routing arguments; `permissions` is [planned]
     defaults(style = Success, label = "common.enable"),  // mandatory
 )]
 pub struct ToggleModule {
@@ -146,12 +146,10 @@ inline Route each is ``[CID-03] `ttl` needs a by-Ref Route`` (help: add `by_ref`
 ``[CID-03] `ttl = "15x"` is not a duration`` or
 ``[CID-03] `ttl` must be between 1s and 365d, found `366d` ``; `one_shot` is a flag
 (`one_shot = true` is ``[CID-03] `one_shot` is a flag and takes no value``).
-The Route Guards `owner = field`, `permissions = A | B` and `guard = path::to::fn` work
-today on every kind attribute, `#[modal]` included (§1a below). `rate_limit(..)` is
-**[planned, Story 13.4]**: Noctis **rejects** it with ``[CID-03] `rate_limit` is a
-runtime argument of #[button] that this Noctis release does not support yet``
-(attribute name per kind; a silently ignored limit would be a hole), and accepts it
-from the release that implements it. Anything else is a compile error.
+`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: Noctis **rejects**
+them with ``[CID-03] `owner` is a runtime argument of #[button] that this Noctis release
+does not support yet`` (attribute name per kind) (a silently ignored guard would be a security hole), and each one is
+accepted from the release that implements it. Anything else is a compile error.
 `#[handler]` itself takes no arguments: every setting is here.
 
 | Argument | Meaning |
@@ -165,109 +163,15 @@ from the release that implements it. Anything else is a compile error.
 | `one_shot` | Ref is deleted on first use (`take`); for confirmations (by_ref/spill only) |
 | `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`), signed when the message is sent and verified on every click; a mounted `signed` Route without a key fails `build()` (``[CID-06] Route `x` is `signed`, but no payload key is configured …``); not with `by_ref` |
 | `schema = n` | Payload schema version 1..=61 (see §6) |
-| `owner = field` | Route Guard: only the user whose id is in `field` (an `Id<UserMarker>` Payload field) may click or submit |
-| `permissions = A \| B` | Route Guard: the clicking member's channel permissions contain these (`ADMINISTRATOR` passes; a DM is denied) |
-| `guard = path::to::fn` | custom Guard `async fn(ctx: &ComponentCtx, this: &Self) -> HandlerResult<Access>` (`&ModalSubmitCtx` on `#[modal]`) |
+| `owner = field` [planned] | Route Guard: only the user whose id is in `field` may click |
+| `permissions = A \| B` [planned] | Route Guard: the clicking member needs these permissions |
+| `guard = path::to::fn` [planned] | custom guard `async fn(&ComponentCtx, &Self) -> Result<(), MessageKey>` |
 | `rate_limit(user, 5, per = "1m")` [planned, Story 13.4] | see `modules-middleware-ratelimits.md` |
 | `defaults(..)` | the component defaults (table above); mandatory |
 
-Guards run before the handler on every click or submit of the Route; a denial sends a
-localized ephemeral notice and the handler does not run (§1a). Still re-check
-authorization for anything sensitive: Payloads are client input (CID-06).
-
-#### 1a. Route Guards (FR-19, AD-23 stage 8)
-
-```rust
-use noctis::prelude::*;
-use noctis::twilight::model::id::Id;
-use noctis::twilight::model::id::marker::UserMarker;
-
-mod auth {
-    use noctis::prelude::*;
-
-    /// A custom Guard: any path callable as `path(ctx, this)`.
-    pub async fn is_staff(ctx: &ComponentCtx, this: &super::Ban) -> HandlerResult<Access> {
-        let staff = ctx.state::<super::Staff>().is_some_and(|s| s.contains(ctx.user_id()));
-        let _ = this; // the decoded struct, if the decision needs it
-        Ok(if staff { Access::Allow } else { Access::Deny(MessageKey::new("mod.staff_only")) })
-    }
-}
-
-#[derive(Button)]
-#[button(
-    "mod.ban",
-    owner = moderator,             // only the moderator who opened the panel
-    permissions = BAN_MEMBERS,     // and only while they can still ban
-    guard = auth::is_staff,        // and only if the bot's staff list says so
-    response = ephemeral,
-    defaults(style = Danger, label = "mod.ban"),
-)]
-pub struct Ban {
-    pub moderator: Id<UserMarker>,
-    pub target: Id<UserMarker>,
-}
-```
-
-- **Order.** `owner`, then `permissions`, then the custom `guard`; the first denial
-  wins, and the custom Guard runs only when the built-in ones passed. Guards run
-  after the before-Middleware (stage 7) and before the handler (stage 9); a
-  `Flow::Stop` therefore wins over every Guard.
-- **`owner = field`** names a Payload field of type `Id<UserMarker>` (no `Option`,
-  no other id type); the click's or submit's user must equal it. On `#[modal]` the
-  field must be a Payload field (no input attribute): inputs are submitted text.
-- **`permissions = A | B`** uses the `noctis::Permissions` names (also as paths,
-  `Permissions::BAN_MEMBERS`; repeated names OR together). It reads
-  `member.permissions`, the member's permissions in the channel with overwrites, as
-  Discord resolved them (also `ctx.member_permissions()`). `ADMINISTRATOR` satisfies
-  every requirement; a DM click (no member) is always denied.
-- **`guard = path`** is a path without generic arguments (a generic fn is fine when
-  inferred). It is called as `path(ctx: &ComponentCtx, this: &Self)` (or
-  `&ModalSubmitCtx`) and returns a `Future<Output = HandlerResult<Access>> + Send`:
-  `Ok(Access::Allow)` runs the handler, `Ok(Access::deny())` shows
-  `noctis.guard.failed`, `Ok(Access::Deny(key))` shows `key` in the user's locale (an
-  unknown key renders the generic text with a `noctis::i18n` warning). An
-  `Err(HandlerError::user(k))` behaves like a handler user error (notice `k`, `debug`
-  log, `RunOutcome::UserError`); any other `Err` or a panic is handled like a handler
-  failure (generic notice, Component Error Sink report naming the handler,
-  `noctis_handler_errors_total`, `RunOutcome::Failed`/`Panicked`). A wrong signature
-  is a rustc error at the path. At most one `guard =`. `Access` (in the prelude;
-  `#[must_use]`, `Copy`, `Eq`, `Debug`) is `Allow | Deny(MessageKey)`, with
-  `Access::deny()` (`Deny(noctis.guard.failed)`, a `const fn`) and
-  `access.is_allowed()`.
-- **A denial** sends `noctis.guard.owner`, `noctis.guard.permissions` or the custom
-  key as one ephemeral type-4 notice; after an auto-defer it is an ephemeral
-  follow-up, and a type-5 deferred original (`response = ephemeral | public`) is
-  deleted first (a type-6 one under `response = update` is left alone). It is one
-  `debug` on target `noctis::guard` (`route`, `handler`, `guard` = `"owner"`,
-  `"permissions"` or the custom path as written, `key`; never the user id or the
-  Payload), the after-Middleware see `RunOutcome::Denied` (with the run's
-  Extensions), and nothing is counted, timed or reported.
-- **`one_shot` Refs survive a denial.** The Ref is taken before the Guards run; on a
-  denial the exact record is put back under the same Ref (`put_if_absent`, with the
-  Route's `ttl`, else `AppBuilder::ref_ttl`), so another user cannot burn someone
-  else's confirmation. In the short window before the restore, the owner may see
-  the expired notice. A failed restore is one `warn` on `noctis::refs` (no Ref in
-  it); the denial is still sent.
-- **Not guarded:** the Expired Handler chain (`#[on_stale]`, `#[on_expired]`, the
-  App's `expired_handler`: no `self` decoded), stale or forged ids, and the detached
-  `__testing::call_component`/`call_modal` seams (they run the handler directly).
-  Commands, context menus, autocomplete and events have no Route Guards; use their
-  `permissions` metadata or a Middleware.
-
-Guard argument errors (CID-03, spanned on the offending token, each with a `help:`):
-``[CID-03] `owner` takes a field name such as `owner = user` `` (bare `owner`,
-`owner = "user"`, `owner = a.b`, `owner = 1`); ``[CID-03] `guard` takes a function
-path such as `guard = auth::is_staff` `` (bare `guard`, `guard = "f"`,
-`guard = f::<T>`, `guard = 1`); ``[CID-03] `owner = usr` names no field of `S`; its
-fields are: user, page`` (``…; it has no fields`` on a unit struct); ``[CID-03]
-`owner` must name a Payload field; `bio` is a modal input``; a repeated one is
-``[CID-03] #[button] argument `owner` is given twice``. A `permissions` value keeps
-the command metadata errors: ``[META-01] `permissions` takes permission names joined
-by `|`, such as `permissions = MANAGE_GUILD | BAN_MEMBERS` `` (bare `permissions`,
-`= 8`, `= "X"`, `= A + B`, `= A || B`, `= A |`) and ``[META-01] permissions: limit a
-permission name of noctis::Permissions, actual `MANAGE_SERVER` `` (help ``use
-`MANAGE_GUILD` `` for a lower-case name). A field of another type is E0277
-`` `owner` needs a field of type `Id<UserMarker>`, found `Option<Id<UserMarker>>` ``.
+Guards run before the handler on every interaction; a failure sends a localized
+ephemeral notice and the handler does not run. Still re-check authorization for
+anything sensitive: Payloads are client input (CID-06).
 
 There is no `overflow = error`: a plain inline Route that could exceed 100 characters
 simply doesn't compile (`[CID-01]`), which is the "error" policy.
@@ -650,10 +554,6 @@ pub struct ConfirmBan {
   | record found | its Payload decodes and the handler runs (`undecodable` / `submit_invalid` as for inline ids) | `hit` |
   | `RefStore` error | `ref_store`: warn + generic notice | not counted |
 
-- `ctx.member_permissions() -> Option<noctis::Permissions>` on `ComponentCtx`,
-  `ModalSubmitCtx` and `ExpiredCtx`: the member's permissions in the channel,
-  including overwrites, as Discord resolved them; `None` in DMs (what the
-  `permissions` Route Guard reads, §1a).
 - `ctx.current_ref() -> Option<noctis::codec::Ref>` on `ComponentCtx`, `ModalSubmitCtx`
   and `ExpiredCtx`: the Ref the clicked or submitted id carried (`None` for inline ids).
   The Ref never appears in a log, span or metric label. `noctis::codec::Ref` is `Copy`,
@@ -709,8 +609,7 @@ pub struct ConfirmBan {
 - **App-wide:** `.expired_handler(f)` on the `AppBuilder`, with
   `f: async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<R>`. `ExpiredCtx`
   has the `ComponentCtx` accessors (`module`, `shard`, `guild_id`, `channel_id`,
-  `user_id`, `member_permissions`, `user_locale`, `guild_locale`, `current_ref`,
-  `state::<T>()`, `kv()`) plus `route()`, the Route
+  `user_id`, `user_locale`, `guild_locale`, `state::<T>()`, `kv()`) plus `route()`, the Route
   id. It takes no responder and is always auto-deferred, even on an
   `auto_defer = false` Route. The last call wins.
 

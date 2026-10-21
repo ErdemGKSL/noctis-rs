@@ -60,7 +60,6 @@ fn handler<S, M>(log: &Log, name: &'static str, response: __Response) -> Compone
 where
     S: noctis_codec::Route<Payload = S>
         + noctis_codec::DeclaredRuntime
-        + crate::__Guards<ComponentCtx>
         + for<'de> PayloadDecode<'de>
         + Send
         + 'static,

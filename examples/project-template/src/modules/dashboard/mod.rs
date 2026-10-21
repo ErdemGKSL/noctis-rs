@@ -70,7 +70,7 @@ impl DashTab {
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "dash.tab",
-    permissions = MANAGE_GUILD,
+    permissions = MANAGE_GUILD, // [planned]: runtime arguments are rejected until their release
     defaults(style = Secondary, label = "dashboard.tab.overview"),
 )]
 pub struct OpenTab {
@@ -85,7 +85,7 @@ pub struct OpenTab {
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "dash.page",
-    permissions = MANAGE_GUILD,
+    permissions = MANAGE_GUILD, // [planned]: runtime arguments are rejected until their release
     defaults(style = Secondary, label = "common.next"),
 )]
 pub struct TurnPage {
@@ -125,7 +125,7 @@ impl ModuleKey {
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "dash.mod",
-    permissions = MANAGE_GUILD,
+    permissions = MANAGE_GUILD, // [planned]: runtime arguments are rejected until their release
     defaults(style = Success, label = "common.enable"),
 )]
 pub struct ToggleModule {

@@ -1,6 +1,0 @@
-error: [CID-03] `owner = usr` names no field of `Owned`; its fields are: user, page
-         = help: name the Payload field of type `Id<UserMarker>` whose user alone may use this Route
- --> tests/ui/cid/CID-03_owner_unknown_field.rs:6:23
-  |
-6 | #[button("a", owner = usr, defaults(style = Secondary, label = "Go"))]
-  |                       ^^^

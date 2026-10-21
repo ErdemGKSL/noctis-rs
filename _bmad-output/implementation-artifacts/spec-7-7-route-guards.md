@@ -4,14 +4,21 @@ type: 'feature'
 created: '2026-10-21'
 status: 'in-progress'
 baseline_revision: '99256882c847dbd8c452997e5063a4ea61c11fb1'
-review_loop_iteration: 0
+review_loop_iteration: 1
 followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-7-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
   - '{project-root}/examples/project-template/.claude/skills/noctis/references/routes-payloads-refs.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      A before-Middleware Flow::Stop at stage 7 consumes a taken one_shot Ref without running the handler, and nothing restores it.
+    evidence: |-
+      Pre-existing since the stage-2 take and the stage-7 before-Middleware shipped before Story 7.7: run_started restores only on Outcome::Denied, so Outcome::Stopped after a one_shot take leaves the record deleted. Same "someone else can burn a confirmation" effect as the Guard case, but not caused by this story.
+    location: >-
+      crates/noctis-core/src/pipeline.rs run_started (Outcome::Stopped arm)
+    severity: medium
 ---
 
 <intent-contract>
@@ -172,14 +179,18 @@ deferred: []
   - `Outcome` L333 and `run_outcome`;
   - `before_and_handler` L460 (the stage-8 comment at L482);
   - `run_started` L540-620 (histogram, notice match, `report_kind` match);
-  - `notice_key`, `send_notice`.
+  - `notice_key`, `send_notice`;
+  - `restore_ref` and `Restore` (amended, see Design Notes "Guard phase"): the restore runs from one check placed before the notice `match`, for every outcome whose Guard phase is `GUARDING`, not from the `Denied` arm;
+  - `before_and_handler`: the duration start `at` is `None` whenever the Guard phase is `GUARDING` after `run_handler` returns (deny, Guard `Err`, Guard panic, cancel).
 - `crates/noctis-core/src/pipeline/component.rs`:
   - docs L1-56;
   - `Interaction` destructure L526 (add `member`);
   - `CtxInner` L640;
   - `lookup` L355 and the stage-4 Ref branch L690-715 (keep `r` and `record` for the restore).
 - `crates/noctis-core/src/middleware.rs`: L170 `RunOutcome` (add `Denied`, with a doc line).
-- `crates/noctis-core/src/responder.rs`: L1858 `Shared::notice`, which already does the after-defer delete plus follow-up; reuse it, no change expected.
+- `crates/noctis-core/src/responder.rs`: L1858 `Shared::notice`, which already does the after-defer delete plus follow-up; reuse it, no change expected. `Shared` (L1206) gains the crate-private Guard-phase field and its two crate-private methods (see Design Notes "Guard phase"); every `Shared` constructor initializes it to `UNGUARDED`.
+- `crates/noctis-core/src/component.rs` `guarded` (the stage-8 wrapper): sets the Guard phase to `GUARDING` before creating the Guard future and to `BODY` right before awaiting the typed handler future; the `!S::GUARDED` early return stays untouched.
+- `crates/noctis-macros/src/guard.rs`: the `owner` and custom-Guard emission (hygiene, see Design Notes "Derive hygiene").
 - `crates/noctis-core/src/test_support.rs`: L218 `test_route!` (emit empty `__Guards<ComponentCtx>` and `<ModalSubmitCtx>` impls); test fixtures in core that implement Routes by hand need the same.
 - `crates/noctis-core/src/lib.rs`: re-exports near L206-280 (`Permissions` at L275). `crates/noctis/src/lib.rs`: root re-exports ~L576, prelude ~L1819 and its doc list.
 - `crates/noctis-i18n/src/lib.rs` L46-51 and L100-102: the existing keys (read-only).
@@ -203,8 +214,18 @@ deferred: []
 2. `crates/noctis-core/src/{command.rs, component.rs, kind.rs, test_support.rs}`: the `member_permissions` field and accessor, the constructor bounds, the guarded starters, and the test-route impls.
 3. `crates/noctis-core/src/{pipeline.rs, pipeline/component.rs, middleware.rs}`:
    - `Outcome::Denied`, `RunOutcome::Denied`, the one-shot restore and the docs;
-   - unit tests in `pipeline/tests/guards.rs` (hand-written guarded test Routes) for rows 23, 27-29, 32, 33, 36 and 37.
-4. `crates/noctis-macros/src/{route.rs, meta.rs, component.rs, modal.rs, kind.rs}`: the grammar, the owner check and the `__Guards` emission. Unit tests for rows 1-3, 5, 7, 8, 10-13 and 15 (exact messages).
+   - the Guard phase on `Shared`, set by `guarded`, read by `before_and_handler` (duration) and `run_started` (restore), per Design Notes "Guard phase";
+   - unit tests in `pipeline/tests/guards.rs` (hand-written guarded test Routes) for rows 23, 27-29, 32, 33, 36 and 37, plus:
+     - G1: a custom Guard returning `Err(HandlerError::user(k))` on a `by_ref, one_shot` component Route: notice `k`, `debug` user condition, after `UserError` (row 27 unchanged), AND `put_if_absent` called once with the exact taken bytes under the same Ref, AND no `noctis_handler_duration_seconds` sample (use the existing metrics recorder pattern of `pipeline/tests`), AND the handler body not run;
+     - G2: same with `Err(HandlerError::new(io))`: row 28 report/counter/after `Failed`, record restored, no duration sample;
+     - G3: same with a panicking Guard: row 29 `Panic` report, after `Panicked`, record restored, no duration sample;
+     - G4: a Guard that never completes, then the shutdown `cancel` token fires: `Outcome::Cancelled` handling unchanged (Cancelled report), record restored;
+     - G5: a handler (not the Guard) that returns `Err` / panics on a guarded `by_ref, one_shot` Route whose Guards allowed: the record is NOT restored, a duration sample IS recorded (the body started);
+     - G6: an unguarded `by_ref, one_shot` Route whose handler errors: NOT restored, duration recorded (phase stays `UNGUARDED`);
+     - G7: a before-Middleware `Flow::Stop` on a guarded `by_ref, one_shot` Route: Guards not called, NOT restored (phase stays `UNGUARDED`; the stage-7 case is the deferred item);
+     - G8: a guarded `by_ref, one_shot` modal (`__Guards<ModalSubmitCtx>`, `RouteShape::BY_REF`, `RouteRuntime::EMPTY.one_shot().with_ttl_secs(900)`): a non-owner submit is denied with `noctis.guard.owner` and after `Denied`, the record is put back with `ttl == Duration::from_mins(15)`; then the owner submit runs the handler (`take` hit);
+     - G9: an `ExpiredCtx` built from a click with `"permissions": "32"` returns `member_permissions() == Some(MANAGE_GUILD)`, and `None` for a DM click.
+4. `crates/noctis-macros/src/{route.rs, meta.rs, component.rs, modal.rs, kind.rs, guard.rs}`: the grammar, the owner check and the `__Guards` emission (with the hygiene of Design Notes "Derive hygiene"). Unit tests for rows 1-3, 5, 7, 8, 10-13 and 15 (exact messages), plus one facade test in `crates/noctis/tests/guards.rs` that declares a guarded Button inside a `macro_rules!` taking `$owner:ident` and `$g:path` and passes `owner = $owner, guard = $g`; it must compile and the Guard must run.
 5. `crates/noctis/tests/ui/cid/`:
    - `CID-03_runtime_argument` (now `rate_limit`);
    - `CID-03_owner_unknown_field`, `CID-03_owner_modal_input`, `CID-03_guard_not_a_path`;
@@ -223,7 +244,7 @@ deferred: []
    - `one_shot_ref_survives_denial` (row 35).
 8. Skill:
    - `routes-payloads-refs.md`: drop the `[planned]` markers on `owner`, `permissions` and `guard`, and document:
-     - the exact semantics (field type, ADMINISTRATOR, DM deny, order, the real custom signature with `Access`, one-shot restore, not on the Expired chain or detached seams, after-defer behaviour);
+     - the exact semantics (field type, ADMINISTRATOR, DM deny, order, the real custom signature with `Access`, one-shot restore (also when the Guard errs, panics or is cancelled; never once the handler body started), not on the Expired chain or detached seams, after-defer behaviour);
      - every new error text;
      - a worked `guard = auth::is_staff` example.
    - `SKILL.md`: L23 and L159 markers, the API hash.
@@ -244,13 +265,80 @@ deferred: []
 
 ## Spec Change Log
 
+### 2026-10-21 — Review pass 1 loopback (bad_spec)
+- **Trigger:** blind + edge findings "one_shot Ref still burned when a custom Guard errors/panics", "shutdown cancel during a pending Guard loses the record", "duration includes the Guard's time when a custom Guard errors" (root cause: the restore and the no-duration rule were keyed on `Outcome::Denied`, but a Guard `Err`/panic/cancel is indistinguishable from a handler failure); plus folded-in patches: edge "custom Guard / owner emission gives `ctx`/`self` the path's hygiene" (`guard.rs` L85/L107), blind + vgap "no core test of guarded modals / modal one-shot restore TTL / `ExpiredCtx::member_permissions()`".
+- **Amended (outside `<intent-contract>`):** Code Map (`run_started`, `before_and_handler`, `Shared`, `guarded`, `macros/guard.rs`); Tasks 3 (Guard phase, tests G1-G9) and 4 (hygiene + `macro_rules!` facade test); Design Notes (one-shot bullet extended to every "body never started" case, new "Guard phase" and "Derive hygiene" decisions, rows 35a-35f).
+- **Known-bad state avoided:** a custom Guard that errs, panics or is cancelled deletes another user's one_shot record without running the handler and records a handler-duration sample; a guarded derive inside `macro_rules!` fails to resolve `ctx`/`self`; guarded modals and the modal restore TTL untested.
+- **KEEP (the code of commit `ca11010` is the base to rebuild from; re-derive only what the amendments change):**
+  - the macro grammar in `route.rs` (`GuardArgs`, `RUNTIME_ARGS = ["rate_limit"]`, exact CID-03 / META-01 / `PERMISSIONS_SYNTAX` texts) and its unit tests; `meta.rs::permissions` reuse;
+  - `crates/noctis-macros/src/guard.rs` emission shape (owner → permissions → custom, `__check_*` helpers, path text without spaces) apart from the hygiene change; the owner field checks in `component.rs`/`modal.rs`; the empty `__Guards` impls in `kind::or_fallback` and `test_support::test_route!`;
+  - `crates/noctis-core/src/guard.rs` (`Access`, `__Guards` with RPITIT, `__Denial`, `__OwnerField` with its `on_unimplemented`, `GuardDenied`) and its unit tests;
+  - the `guarded` wrapper's `if !S::GUARDED { return typed(..) }` zero-cost path; `call`/detached seams unguarded;
+  - `member_permissions` in `CtxInner` from `interaction.member.and_then(|m| m.permissions)`, accessors on the three contexts;
+  - `Outcome::Denied` / `RunOutcome::Denied`, the `noctis::guard` debug line (no user id, Payload or Ref), no metrics/sink on a denial, `send_notice` reuse (type-5 delete + ephemeral follow-up; type-6 follow-up only);
+  - `Restore { r, record, ttl }` moved (not cloned) into `Report`, `restore_ref` with `put_if_absent` and the single `noctis::refs` warn without the Ref;
+  - all trybuild fixtures (`CID-03_*`, `META-01_guard_unknown_permission`, `types/owner_field_type.rs`, `types/guard_wrong_ctx.rs`), the facade and testkit `tests/guards.rs`, skill/template/`AGENTS.md` text, `docs/discord-rules.md` and spine amendments, the re-bless procedure for the API snapshot and `SKILL.md` hash.
+
 ## Review Triage Log
+
+### 2026-10-21 — Review pass
+- verdicts: 25 findings — high 0, medium 5, low 8, false 11, maybe-false 1
+- findings:
+  - `[low]` `[reject]` (blind) The one_shot restore re-arms the Ref with the full Route/App TTL, so repeated denied clicks extend its life — real (`Restore { ttl: target.ref_ttl().unwrap_or(app.ref_ttl) }`, `take` returns no expiry), but it only lengthens the owner's window and needs a non-owner clicking repeatedly; the fix needs a `RefStore` port or record-format change (the spec forbids the latter), far beyond a direct correction.
+  - `[medium]` `[bad_spec]` (blind) A one_shot Ref is still burned when a custom Guard errors or panics — verified: `guarded` propagates `check.await?` as a plain handler error and `before_and_handler` maps only `GuardDenied` to `Outcome::Denied`, so `run_started` never restores; a guard that answers with `Err(HandlerError::user(k))` (Matrix row 27) lets any user burn another user's confirmation. Amendment: restore whenever the handler body never started (Guard deny, Guard `Err`, Guard panic, cancel during the Guard).
+  - `[medium]` `[defer]` (blind) A before-Middleware `Flow::Stop` burns a taken one_shot Ref — real but pre-existing (stage-2 take and stage-7 Stop predate this story); recorded in `deferred`.
+  - `[false]` `[reject]` (blind) `Restore` is built for every one_shot Route, guarded or not, as dead weight — the `Ref` and `Bytes` record are moved, not cloned, into `report.restore` after `start_record` borrowed them; no allocation and no observable effect for an unguarded Route.
+  - `[false]` `[reject]` (blind) The restore is awaited before the notice, so a slow RefStore delays the answer past ACK — the auto-defer timer stays armed until `drop(timer)` after `send_notice`, so a slow put moves the notice onto the deferred follow-up path, never past the 3 s ack; the order is the spec's deliberate choice.
+  - `[low]` `[reject]` (blind) `member_permissions` is not available on `CommandCtx` — the spec scopes the accessor to the three guarded contexts and Commands have `permissions` metadata; adding it is new public surface, not a correction of this change.
+  - `[maybe-false]` `[reject]` (blind) A non-`Send` custom Guard future errors at the derive rather than at the `guard = path` — would need a `types/` fixture to see where rustc spans the `Send` failure; if true it is only low (rare, developer-only diagnostic quality).
+  - `[low]` `[reject]` (blind) The trybuild `.stderr` snapshots pin private `__private` paths and rustc's note layout — this is how every `types/` fixture in the repo already works; the user-facing `on_unimplemented` message is present; churn only on rustc upgrades.
+  - `[medium]` `[patch]` (blind) No core test of guarded modals (denial, by-Ref one-shot restore) and no assertion on `ExpiredCtx::member_permissions()` — grouped with the vgap finding below (same missing coverage); carried into the bad_spec amendment as required tests because the code will be re-derived.
+  - `[low]` `[bad_spec]` (blind) The handler duration histogram records a sample when a custom Guard errors or panics — verified: `None => (Outcome::Returned(Err(error)), Some(at), None)` in `before_and_handler`, contrary to the Design Note "a guard's run time counts in the handler duration only when it allows the run". Same root cause as the Guard-error restore row (Guard failures indistinguishable from handler failures); grouped with it.
+  - `[low]` `[reject]` (blind) The `noctis::guard` debug line lacks a `reason` (no member vs missing bits) and the required permission names — an enhancement; `guard="permissions"` plus `member_permissions()` already settle it while debugging.
+  - `[medium]` `[bad_spec]` (edge) Custom Guard `Err`/panic on a one_shot Route burns the Ref — same defect as the blind Guard-error row; grouped, same amendment.
+  - `[low]` `[bad_spec]` (edge) A shutdown cancel while a guarded one_shot Route's Guard future is pending loses the taken record — real (`Outcome::Cancelled` never restores) but rare; same root cause (restore keyed on `Denied` instead of "handler never started"); grouped.
+  - `[low]` `[reject]` (edge) The restore re-puts the record with the full TTL on every denial — same claim as the first blind row; rejected for the same reason.
+  - `[low]` `[patch]` (edge) `quote_spanned!(path_span(path)=> … #path(ctx, self).await)` gives `ctx` and `self` the path's hygiene, so a derive inside `macro_rules!` with a `$g:path` guard fails to resolve them — verified at `crates/noctis-macros/src/guard.rs:107` (and `self` at L85 for `owner`); direct fix: span only the path tokens. Carried into the bad_spec amendment.
+  - `[false]` `[reject]` (intent D1) Type-6 deferred original is not deleted — the intent contract settles it: "a type-5 deferred original is deleted"; deleting the clicked View would be wrong.
+  - `[false]` `[reject]` (intent D2) `owner` names any `Id<UserMarker>` Payload field rather than a fixed `user` — the intent contract defines `owner = field`.
+  - `[false]` `[reject]` (intent D3) Guards also on `#[modal]` — the intent contract lists all seven kind attributes, `#[modal]` included.
+  - `[false]` `[reject]` (intent D4) Custom Guard returns `HandlerResult<Access>` instead of the previously planned `Result<(), MessageKey>` — the intent contract settles the `Access` shape.
+  - `[false]` `[reject]` (intent D5) Template reconciliation is textual, not compiled — the spec states the template is outside the gates; the guarded behaviour is exercised by facade and testkit tests.
+  - `[false]` `[reject]` (intent D6) Localization tested only on en-US — notices route through the existing locale chain of `send_notice`; the built-in catalog is en-US only, so no wrong outcome occurs.
+  - `[false]` `[reject]` (intent D7) One-shot restore added beyond the ACs — the intent contract and Design Notes decide it (closing AD-18's caveat).
+  - `[false]` `[reject]` (intent D8) Stage 8 lives inside the handler future — the Design Note decision; observable order matches AD-23 (`middleware_stop_runs_no_guard`).
+  - `[false]` `[reject]` (intent D9) Extra public API (`member_permissions`, `RunOutcome::Denied`, `Access`) — all named in the intent contract; skill, template and API hash updated.
+  - `[medium]` `[patch]` (vgap, pre-verified) No test runs a guarded by-Ref modal: the modal `start_record` guarded path and the modal one-shot restore TTL are unpinned — grouped with the blind modal-coverage row; carried into the bad_spec amendment as a required test.
 
 ## Design Notes
 
 - **Guards live in core, not in `RouteRuntime` (decision).** The checks need `ComponentCtx`, `ModalSubmitCtx` and `Permissions`, which codec cannot name. The derive emits `__Guards<Ctx>` (RPITIT, stable since 1.75; MSRV is 1.91), and `RouteRuntime` keeps only the Ref policy. Spine AD-6 is amended accordingly.
 - **Guards wrap the handler future (decision).** The future is created at stage 4 and first polled after stage 7, so a wrapper gives stage 8 its place with no new pipeline state. A sentinel `GuardDenied` user-condition error carries the denial to `run_started`, which turns it into `Outcome::Denied` (no histogram, no sink). A guard's run time counts in the handler duration only when it allows the run.
 - **One-shot Refs are restored on a denial (decision, closing AD-18's caveat).** Otherwise any user could burn another user's confirmation. `take` stays atomic; the restore has a small window in which the owner sees "expired".
+  - (decision, review pass 1) "Denial" here means every way the Guard phase ends without the handler body starting: a Guard `Access::Deny`, a built-in Guard denial, a Guard `Err` (user condition or not), a Guard panic, and a cancel (shutdown) while the Guard future is pending. In each case the taken record goes back with `put_if_absent` before the notice, exactly as for a denial.
+  - Error reporting does not change: a Guard `Err`/panic is still reported as Matrix rows 27-29 say (notice, `debug` or sink report naming the handler, counter, after-Middleware `UserError`/`Failed`/`Panicked`); a cancel keeps today's `Cancelled` handling. Only the record goes back and no duration sample is recorded.
+  - The restore warn text stays the one in the contract (`"could not restore the one-shot Ref after a Guard denial"`) for every one of these cases; no second text.
+  - A handler body that started (Guards allowed, then the handler errs, panics or is cancelled) never restores: the Route's effect may have happened.
+  - A before-Middleware `Flow::Stop`/error/panic at stage 7 (before the Guards ran) does not restore; that pre-existing hole is the `deferred` item, out of scope.
+  - Additional edge rows (Design Notes only, the Matrix is frozen):
+    | # | Scenario | Expected |
+    |---|----------|----------|
+    | 35a | `by_ref, one_shot`, custom Guard `Err(HandlerError::user(k))` | row 27 behaviour; record restored; no duration sample |
+    | 35b | same, Guard `Err(HandlerError::new(io))` | row 28 behaviour; record restored; no duration sample |
+    | 35c | same, Guard panics | row 29 behaviour; record restored; no duration sample |
+    | 35d | same, shutdown cancel while the Guard is pending | `Cancelled` handling; record restored |
+    | 35e | Guards allow, handler errs/panics | not restored; duration recorded |
+    | 35f | before-Middleware stops on a guarded one_shot Route | not restored (deferred item) |
+- **Guard phase (decision, review pass 1).** `run_started` must know whether the handler body started, because a Guard `Err`/panic travels through the same channel as a handler `Err`/panic.
+  - `Shared` gains a crate-private `guard_phase: AtomicU8` with three constants `UNGUARDED = 0` (initial; also stays 0 for an unguarded Route and when stage 7 stopped the run), `GUARDING = 1`, `BODY = 2`, and two crate-private methods `set_guard_phase(u8)` (`Release`) and `guard_phase() -> u8` (`Acquire`). No allocation, no public surface; the detached seams never touch it.
+  - `guarded` (only on the `S::GUARDED` path) stores `GUARDING` before calling `value.__guard(&ctx)`, and `BODY` after the Guards allowed and right before calling and awaiting `typed(value, ctx, shared)` (clone the `Arc<Shared>` for the store before it is moved into `typed`).
+  - `before_and_handler`: after `run_handler` returns, when `shared.guard_phase() == GUARDING`, the outcome keeps its kind (`Denied` via `GuardDenied`, `Returned(Err)`, `Panicked`, `Cancelled`) but `at` is `None`. Only `BODY`/`UNGUARDED` outcomes carry `Some(at)` as before. Thus a Guard's run time counts in the duration only when it allowed the run.
+  - `run_started`: right after `before_and_handler` and before the notice `match`, `if shared.guard_phase() == GUARDING && let Some(restore) = &report.restore { restore_ref(app, restore).instrument(span.clone()).await }`. The `Denied` arm keeps only the `debug` line and `send_notice`. This one check covers deny, `Err`, panic and cancel; no other arm restores.
+  - `report.restore` stays built (moved, not cloned) for every `one_shot` by-Ref take; the phase check decides whether it is used.
+- **Derive hygiene (decision, review pass 1).** Only the user's tokens carry their span; generated identifiers keep call-site hygiene so a derive inside `macro_rules!` works:
+  - custom Guard: `let f = quote_spanned!(path_span(path)=> #path); quote!(#core::__check_custom(#text, #f(ctx, self).await))` — `ctx`, `self` and `.await` come from `quote!`, never from the `quote_spanned!`;
+  - `owner`: `let field = &owner_ident; quote!(#core::__owner_id(&self.#field))`, where the field ident keeps its own span (so a wrong field type still errors at the field) and `self` is call-site; no `quote_spanned!` around `self`.
+  - The `guard_wrong_ctx.rs` and `owner_field_type.rs` fixtures must still point at the path / field; re-bless their `.stderr` only if the span moves within the same token.
 - **Permissions semantics (decision).** The source is `member.permissions` (the resolved channel permissions Discord sends). `ADMINISTRATOR` satisfies every requirement, and a missing member (DM) is denied.
 - **Accepted on all seven kind attributes, `#[modal]` included (decision)**, like `ttl`/`one_shot`. A modal's `owner` must be a Payload field, because inputs are submitted text.
 - Golden sketch of the derive output (Button, `owner = user`, `permissions = MANAGE_GUILD`, `guard = auth::is_staff`):

@@ -212,8 +212,7 @@ pub(crate) fn message_menu(
 }
 
 /// A hand-written component and modal Route struct with one `u64` field
-/// (`item`): what a kind derive implements, with empty `__Guards` impls
-/// (`@unguarded` leaves them to the test). A modal submission also needs
+/// (`item`): what a kind derive implements. A modal submission also needs
 /// the text input `bio`.
 macro_rules! test_route {
     ($name:ident, $id:literal, $shape:expr, $schema:literal) => {
@@ -226,12 +225,6 @@ macro_rules! test_route {
         );
     };
     ($name:ident, $id:literal, $shape:expr, $schema:literal, $runtime:expr) => {
-        $crate::test_support::test_route!(@unguarded $name, $id, $shape, $schema, $runtime);
-        impl $crate::__Guards<$crate::ComponentCtx> for $name {}
-        impl $crate::__Guards<$crate::ModalSubmitCtx> for $name {}
-    };
-    // Without the `__Guards` impls: the test writes its own.
-    (@unguarded $name:ident, $id:literal, $shape:expr, $schema:literal, $runtime:expr) => {
         #[derive(Debug)]
         pub(crate) struct $name {
             pub(crate) item: u64,

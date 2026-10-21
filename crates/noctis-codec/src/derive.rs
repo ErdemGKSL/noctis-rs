@@ -325,9 +325,7 @@ pub fn decode_variant(raw: &str, count: u8) -> Result<u8, FieldError> {
 
 /// The runtime arguments a Route declares that do not change its encoding:
 /// the Ref TTL and the one-shot flag of a `by_ref` or `spill` Route (FR-17).
-/// The Route Guards (`owner`, `permissions`, `guard`) are not here: they
-/// need the core contexts, so the derives emit core's hidden `__Guards`
-/// impl instead.
+/// Later releases add the Guard arguments.
 ///
 /// The derives emit `RouteRuntime::EMPTY[.with_ttl_secs(n)][.one_shot()]`.
 #[doc(hidden)]

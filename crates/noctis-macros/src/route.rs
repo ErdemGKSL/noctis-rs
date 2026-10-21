@@ -53,49 +53,6 @@ pub(crate) struct RouteArgs {
     pub(crate) auto_defer: bool,
     /// `ttl = ".."` and `one_shot` (by-Ref Routes only).
     pub(crate) ref_args: RefArgs,
-    /// The Route Guards: `owner`, `permissions` and `guard` (AD-23 stage 8).
-    pub(crate) guards: GuardArgs,
-}
-
-/// The Route Guard arguments of a kind attribute (FR-19, AD-23 stage 8);
-/// none of them changes the encoding.
-#[derive(Clone, Default)]
-pub(crate) struct GuardArgs {
-    /// `owner = field`: the Payload field of type `Id<UserMarker>`.
-    pub(crate) owner: Option<Ident>,
-    /// `permissions = A | B`, as permission bits.
-    pub(crate) permissions: Option<u64>,
-    /// `guard = path::to::fn`.
-    pub(crate) guard: Option<syn::Path>,
-}
-
-impl GuardArgs {
-    /// Whether any Guard is declared.
-    pub(crate) fn any(&self) -> bool {
-        self.owner.is_some() || self.permissions.is_some() || self.guard.is_some()
-    }
-}
-
-impl PartialEq for GuardArgs {
-    fn eq(&self, other: &Self) -> bool {
-        let path = |p: &Option<syn::Path>| p.as_ref().map(|p| quote!(#p).to_string());
-        self.owner == other.owner
-            && self.permissions == other.permissions
-            && path(&self.guard) == path(&other.guard)
-    }
-}
-
-impl Eq for GuardArgs {}
-
-impl core::fmt::Debug for GuardArgs {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let guard = self.guard.as_ref().map(|p| quote!(#p).to_string());
-        f.debug_struct("GuardArgs")
-            .field("owner", &self.owner)
-            .field("permissions", &self.permissions)
-            .field("guard", &guard)
-            .finish()
-    }
 }
 
 /// The Ref arguments of a by-Ref Route (AD-6, AD-18).
@@ -107,9 +64,9 @@ pub(crate) struct RefArgs {
     pub(crate) one_shot: bool,
 }
 
-/// The runtime arguments of AD-6 that a later story adds (`rate_limit` in
-/// 13.4).
-const RUNTIME_ARGS: [&str; 1] = ["rate_limit"];
+/// The runtime arguments of AD-6 that later stories add (Guards in 7.7,
+/// `rate_limit` in 13.4).
+const RUNTIME_ARGS: [&str; 4] = ["owner", "permissions", "guard", "rate_limit"];
 
 const TTL_HELP: &str = "write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")";
 
@@ -243,7 +200,6 @@ struct Seen {
     auto_defer: Option<bool>,
     ttl: Option<(Ident, u64)>,
     one_shot: Option<Ident>,
-    guards: GuardArgs,
     names: Vec<String>,
 }
 
@@ -316,7 +272,6 @@ fn parse_list(
                 ttl_secs: seen.ttl.map(|(_, secs)| secs),
                 one_shot: seen.one_shot.is_some(),
             },
-            guards: seen.guards,
         },
         seen.defaults,
     ))
@@ -426,9 +381,6 @@ fn parse_arg(
         "auto_defer",
         "ttl",
         "one_shot",
-        "owner",
-        "permissions",
-        "guard",
     ]
     .contains(&key.as_str())
     {
@@ -461,14 +413,6 @@ fn parse_arg(
         ("overflow", value) => parse_overflow(name, value, segment, kind, seen, errors),
         ("response", value) => parse_response(name, value, seen, errors),
         ("auto_defer", value) => parse_auto_defer(name, value, seen, errors),
-        ("owner", value) => parse_owner(name, value, seen, errors),
-        ("permissions", value) => {
-            match crate::meta::permissions(name.span(), value.unwrap_or_default()) {
-                Ok(bits) => seen.guards.permissions = Some(bits),
-                Err(error) => errors.push(error),
-            }
-        }
-        ("guard", value) => parse_guard(name, value, a, seen, errors),
         (_, value) => parse_schema(name, value, seen, errors),
     }
 }
@@ -536,54 +480,6 @@ fn parse_response(
             value_tokens(name, value),
             "`response` takes `update`, `ephemeral` or `public`",
             "write `response = update` (the default: answer by updating the clicked message), `response = ephemeral` or `response = public` (a new message)",
-        ));
-    }
-}
-
-/// `owner = field` (a bare identifier).
-fn parse_owner(
-    name: &Ident,
-    value: Option<&[TokenTree]>,
-    seen: &mut Seen,
-    errors: &mut Vec<syn::Error>,
-) {
-    if let Some([TokenTree::Ident(field)]) = value {
-        seen.guards.owner = Some(field.clone());
-    } else {
-        errors.push(cid_03(
-            value_tokens(name, value),
-            "`owner` takes a field name such as `owner = user`",
-            "name the Payload field of type `Id<UserMarker>` whose user alone may use this Route",
-        ));
-    }
-}
-
-/// `guard = path::to::fn` (a path without generic arguments).
-fn parse_guard(
-    name: &Ident,
-    value: Option<&[TokenTree]>,
-    attr: &str,
-    seen: &mut Seen,
-    errors: &mut Vec<syn::Error>,
-) {
-    use syn::parse::Parser as _;
-    let path = value
-        .filter(|v| !v.is_empty())
-        .and_then(|v| syn::Path::parse_mod_style.parse2(stream(v)).ok());
-    if let Some(path) = path {
-        seen.guards.guard = Some(path);
-    } else {
-        let ctx = if attr == "modal" {
-            "ModalSubmitCtx"
-        } else {
-            "ComponentCtx"
-        };
-        errors.push(cid_03(
-            value_tokens(name, value),
-            "`guard` takes a function path such as `guard = auth::is_staff`",
-            format!(
-                "name an `async fn(ctx: &{ctx}, this: &Self) -> HandlerResult<Access>`, without generic arguments"
-            ),
         ));
     }
 }
@@ -823,13 +719,8 @@ mod tests {
             response: super::Response::Update,
             auto_defer: true,
             ref_args: super::RefArgs::default(),
-            guards: super::GuardArgs::default(),
         }
     }
-
-    const OWNER_TEXT: &str = "[CID-03] `owner` takes a field name such as `owner = user`";
-    const GUARD_TEXT: &str =
-        "[CID-03] `guard` takes a function path such as `guard = auth::is_staff`";
 
     /// `#[button]` declarations the derive rejects, and the start of the first
     /// error message.
@@ -884,28 +775,8 @@ mod tests {
             "[CID-03] unknown #[button] argument `colour`",
         ),
         (
-            "#[button(\"a\", rate_limit(user, 5, per = \"1m\"))] struct R;",
-            "[CID-03] `rate_limit` is a runtime argument of #[button] that this Noctis release does not support yet",
-        ),
-        ("#[button(\"a\", owner)] struct R;", OWNER_TEXT),
-        ("#[button(\"a\", owner = \"user\")] struct R;", OWNER_TEXT),
-        ("#[button(\"a\", owner = a.b)] struct R;", OWNER_TEXT),
-        ("#[button(\"a\", owner = 1)] struct R;", OWNER_TEXT),
-        ("#[button(\"a\", guard)] struct R;", GUARD_TEXT),
-        ("#[button(\"a\", guard = \"f\")] struct R;", GUARD_TEXT),
-        ("#[button(\"a\", guard = f::<T>)] struct R;", GUARD_TEXT),
-        ("#[button(\"a\", guard = 1)] struct R;", GUARD_TEXT),
-        (
-            "#[button(\"a\", owner = a, owner = b)] struct R;",
-            "[CID-03] #[button] argument `owner` is given twice",
-        ),
-        (
-            "#[button(\"a\", guard = f, guard = g)] struct R;",
-            "[CID-03] #[button] argument `guard` is given twice",
-        ),
-        (
-            "#[button(\"a\", permissions = KICK_MEMBERS, permissions = BAN_MEMBERS)] struct R;",
-            "[CID-03] #[button] argument `permissions` is given twice",
+            "#[button(\"a\", owner = user)] struct R;",
+            "[CID-03] `owner` is a runtime argument of #[button] that this Noctis release does not support yet",
         ),
         (
             "#[button(\"a\", ttl = \"1m\")] struct R;",
@@ -962,6 +833,14 @@ mod tests {
         (
             "#[button(\"a\", by_ref, ttl = \"1m\", ttl = \"2m\")] struct R;",
             "[CID-03] #[button] argument `ttl` is given twice",
+        ),
+        (
+            "#[button(\"a\", permissions = X)] struct R;",
+            "[CID-03] `permissions` is a runtime argument",
+        ),
+        (
+            "#[button(\"a\", guard = f)] struct R;",
+            "[CID-03] `guard` is a runtime argument",
         ),
         (
             "#[button(\"a\", opens_modal)] struct R;",
@@ -1158,7 +1037,6 @@ mod tests {
                 response: super::Response::Update,
                 auto_defer: true,
                 ref_args: super::RefArgs::default(),
-                guards: super::GuardArgs::default(),
             })
         );
         assert_eq!(
@@ -1341,134 +1219,6 @@ mod tests {
         assert_eq!(
             m,
             "[CID-03] `ttl = \"15 m\"` is not a duration\n  = help: write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")"
-        );
-    }
-
-    /// Route Guard Matrix 1-3 and 15: the accepted Guard arguments, in any
-    /// position, leave the codec arguments alone.
-    #[test]
-    fn guard_arguments_parse() {
-        let input: DeriveInput = parse_quote!(
-            #[button("a", owner = user, defaults(style = Primary), schema = 2)]
-            struct R;
-        );
-        let parsed = parse(&input).unwrap();
-        assert_eq!(
-            parsed.guards.owner.map(|o| o.to_string()).as_deref(),
-            Some("user")
-        );
-        assert_eq!((parsed.schema, parsed.body), (2, Body::Inline));
-        assert_eq!(parsed.guards.permissions, None);
-        let bits = |input: &DeriveInput| parse(input).map(|a| a.guards.permissions);
-        assert_eq!(
-            bits(&parse_quote!(
-                #[button("a", permissions = MANAGE_GUILD | Permissions::BAN_MEMBERS)]
-                struct R;
-            )),
-            Ok(Some(32 | 4))
-        );
-        assert_eq!(
-            bits(&parse_quote!(
-                #[button("a", permissions = KICK_MEMBERS | KICK_MEMBERS)]
-                struct R;
-            )),
-            Ok(Some(2))
-        );
-        let all = noctis_rules::command::PERMISSIONS
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(" | ");
-        let input: DeriveInput =
-            syn::parse_str(&format!("#[button(\"a\", permissions = {all})] struct R;")).unwrap();
-        let union = noctis_rules::command::PERMISSIONS
-            .iter()
-            .fold(0, |acc, (_, bit)| acc | bit);
-        assert_eq!(bits(&input), Ok(Some(union)));
-        let parsed = parse(&parse_quote!(
-            #[button("a", guard = auth::is_staff, by_ref)]
-            struct R;
-        ))
-        .unwrap();
-        let guard = parsed.guards.guard.as_ref().unwrap();
-        assert_eq!(quote::quote!(#guard).to_string(), "auth :: is_staff");
-        assert_eq!(parsed.body, Body::ByRef);
-        let parsed = parse(&parse_quote!(
-            #[button("a", guard = ::crate_a::f)]
-            struct R;
-        ))
-        .unwrap();
-        assert!(parsed.guards.guard.is_some());
-        // Matrix 15: nothing declared.
-        assert!(
-            !parse(&parse_quote!(
-                #[button("a")]
-                struct R;
-            ))
-            .unwrap()
-            .guards
-            .any()
-        );
-        // On `#[modal]` too.
-        let modal = AttrKind {
-            attr: "modal",
-            derive: "Modal",
-            select: false,
-        };
-        let input: DeriveInput = parse_quote!(
-            #[modal("m", owner = user, permissions = ADMINISTRATOR, guard = f, defaults(title = "t"))]
-            struct R;
-        );
-        let parsed = parse_kind_attr(&input.attrs, &input.ident, modal).unwrap();
-        assert!(parsed.args.guards.any());
-        assert_eq!(parsed.args.guards.permissions, Some(8));
-    }
-
-    /// Route Guard Matrix 5 and 6: the permission errors keep META-01's text.
-    #[test]
-    fn guard_permission_errors() {
-        for value in ["", " = 8", " = \"X\"", " = A + B", " = A || B", " = A |"] {
-            let input: DeriveInput =
-                syn::parse_str(&format!("#[button(\"a\", permissions{value})] struct R;")).unwrap();
-            assert_eq!(
-                parse(&input).unwrap_err(),
-                crate::meta::PERMISSIONS_SYNTAX,
-                "{value}"
-            );
-        }
-        let m = parse(&parse_quote!(
-            #[button("a", permissions = MANAGE_SERVER)]
-            struct R;
-        ))
-        .unwrap_err();
-        assert!(m.starts_with("[META-01]"), "{m}");
-        assert!(m.contains("see noctis::rules::command::PERMISSIONS"), "{m}");
-        let m = parse(&parse_quote!(
-            #[button("a", permissions = manage_guild)]
-            struct R;
-        ))
-        .unwrap_err();
-        assert!(m.contains("use `MANAGE_GUILD`"), "{m}");
-    }
-
-    /// Route Guard Matrix 7 and 11: the exact Guard argument errors.
-    #[test]
-    fn guard_argument_errors() {
-        assert_eq!(
-            parse(&parse_quote!(
-                #[button("a", owner = a.b)]
-                struct R;
-            ))
-            .unwrap_err(),
-            "[CID-03] `owner` takes a field name such as `owner = user`\n  = help: name the Payload field of type `Id<UserMarker>` whose user alone may use this Route"
-        );
-        assert_eq!(
-            parse(&parse_quote!(
-                #[button("a", guard = 1)]
-                struct R;
-            ))
-            .unwrap_err(),
-            "[CID-03] `guard` takes a function path such as `guard = auth::is_staff`\n  = help: name an `async fn(ctx: &ComponentCtx, this: &Self) -> HandlerResult<Access>`, without generic arguments"
         );
     }
 }

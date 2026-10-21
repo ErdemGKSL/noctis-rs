@@ -318,11 +318,8 @@ impl Boost {                                       // #[derive(Button)] #[button
   ```
 
   Before-Middleware run after the auto-defer is armed (stage 6), before Route Guards
-  (stage 8: a component's or modal's `owner`, `permissions` and `guard = path`,
-  `routes-payloads-refs.md` §1a) and the handler (stage 9): a slow Middleware is
-  deferred like a slow handler, a `Flow::Stop` wins over every Guard, and the Guards
-  see the frozen Extensions' run (a Guard denial runs the after-Middleware with
-  `RunOutcome::Denied`). Commands, context menus and events have no stage 8.
+  (stage 8) and the handler (stage 9): a slow Middleware is deferred like a slow
+  handler.
 - **`Flow`**: `Continue` runs the next Middleware, then the handler. `Stop(Some(key))`
   skips the rest and the handler and shows `key`'s localized ephemeral notice (after an
   auto-defer: the deferred original is deleted, then an ephemeral follow-up; under
@@ -336,7 +333,7 @@ impl Boost {                                       // #[derive(Button)] #[button
   `noctis.error.generic`), a `HandlerError::user(key)` is a `debug`, anything else is
   counted and reported with `ErrorReport.middleware = Some(name)` (§6).
 - **After-Middleware run for every outcome** except a shutdown cancellation: completed,
-  stopped, denied by a Route Guard, user error, failed or panicked (`ctx.outcome()`), after the notice and before
+  stopped, user error, failed or panicked (`ctx.outcome()`), after the notice and before
   the Error Sink. An after-Middleware panic is caught and reported on its own
   (`ReportKind::Panic`, `middleware: Some(name)`, the same origin's sink, one
   `noctis_handler_errors_total`); the remaining after-Middleware still run and the run's
@@ -350,10 +347,7 @@ impl Boost {                                       // #[derive(Button)] #[button
 - **`Invocation`** (`#[non_exhaustive]`, `Copy`): `Command { path }` (slash or
   `Dispatcher`), `ContextMenu { name }`, `Component { route }`, `Modal { route }`, `Event
   { event_type }` (`"MESSAGE_CREATE"`). **`RunOutcome`** (`#[non_exhaustive]`, `Copy`):
-  `Completed`, `Stopped`, `UserError`, `Failed`, `Panicked`, `Denied` (a Route Guard
-  refused the click or submit: its notice was sent and the handler did not run; a
-  custom Guard's own error or panic is `UserError`/`Failed`/`Panicked` like the
-  handler's); `is_completed()`.
+  `Completed`, `Stopped`, `UserError`, `Failed`, `Panicked`; `is_completed()`.
 - **Extensions** are one run's type map (`T: Send + Sync + 'static`). Inserting a type
   that exists replaces it, so a child Module's value wins, with one `debug` on target
   `noctis::middleware` ("extension replaced", naming both Middleware, never the value).

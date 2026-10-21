@@ -934,11 +934,6 @@ pub(crate) fn expand_or_fallback(input: &DeriveInput) -> TokenStream {
                 const ROUTE: &'static ::core::primitive::str = "";
             }
 
-            impl ::noctis::__private::core::__Guards<::noctis::__private::core::ModalSubmitCtx>
-                for #ident
-            {
-            }
-
             #route
 
             impl #ui::ModalForm for #ident {
@@ -970,13 +965,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let (attr, defs, payload) = parse(input)?;
     let name = &input.ident;
     combine(check(name, &attr, &defs))?;
-    let all: Vec<&Ident> = match &input.data {
-        Data::Struct(s) => s.fields.iter().filter_map(|f| f.ident.as_ref()).collect(),
-        _ => Vec::new(),
-    };
-    let inputs: Vec<&Ident> = defs.iter().map(|d| &d.ident).collect();
-    crate::guard::check_owner(&attr.args.guards, name, &all, &inputs)?;
-    let guards = crate::guard::guards_impl(name, &attr.args.guards, crate::guard::GuardCtx::Modal);
 
     let ui = ui();
     let core = quote!(::noctis::__private::core);
@@ -1029,8 +1017,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         impl #core::__Modal for #name {
             const ROUTE: &'static ::core::primitive::str = #id;
         }
-
-        #guards
 
         impl #name {
             /// The modal of this value: its declared title, its Payload
@@ -1107,50 +1093,6 @@ mod tests {
         let input: DeriveInput = syn::parse2(input).unwrap_or_else(|e| panic!("{e}"));
         let (attr, defs, _) = parse(&input).unwrap_or_else(|e| panic!("{e}"));
         (attr, defs)
-    }
-
-    /// Route Guard Matrix 10 and 34: a modal's `owner` must be a Payload
-    /// field; a guarded modal emits its `__Guards<ModalSubmitCtx>`.
-    #[test]
-    fn modal_owner_guard() {
-        let out = run(quote! {
-            #[modal("f", owner = bio, defaults(title = "T"))]
-            struct F {
-                user: Id<UserMarker>,
-                #[text_input("Bio")]
-                bio: String,
-            }
-        });
-        assert!(
-            out.contains("[CID-03] `owner` must name a Payload field; `bio` is a modal input"),
-            "{out}"
-        );
-        let out = run(quote! {
-            #[modal("f", owner = usr, defaults(title = "T"))]
-            struct F {
-                user: Id<UserMarker>,
-                #[text_input("Bio")]
-                bio: String,
-            }
-        });
-        assert!(
-            out.contains("names no field of `F`; its fields are: user, bio"),
-            "{out}"
-        );
-        let out = run(quote! {
-            #[modal("f", owner = user, defaults(title = "T"))]
-            struct F {
-                user: Id<UserMarker>,
-                #[text_input("Bio")]
-                bio: String,
-            }
-        });
-        assert!(
-            out.contains("__Guards < :: noctis :: __private :: core :: ModalSubmitCtx > for F"),
-            "{out}"
-        );
-        assert!(out.contains("const GUARDED"), "{out}");
-        assert!(out.contains("__owner_id (& self . user)"), "{out}");
     }
 
     /// Story 7.2 Matrix 53: `response` and `auto_defer` on `#[modal]`

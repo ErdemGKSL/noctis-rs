@@ -64,7 +64,6 @@ fn handler<S, F, Fut, R>(name: &'static str, f: F) -> ComponentHandler
 where
     S: noctis_codec::Route<Payload = S>
         + noctis_codec::DeclaredRuntime
-        + crate::__Guards<ComponentCtx>
         + for<'de> noctis_codec::PayloadDecode<'de>
         + Send
         + 'static,

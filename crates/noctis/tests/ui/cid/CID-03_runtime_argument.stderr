@@ -1,6 +1,6 @@
-error: [CID-03] `rate_limit` is a runtime argument of #[button] that this Noctis release does not support yet
+error: [CID-03] `owner` is a runtime argument of #[button] that this Noctis release does not support yet
          = help: remove it for now; runtime arguments arrive with their release
  --> tests/ui/cid/CID-03_runtime_argument.rs:4:15
   |
-4 | #[button("a", rate_limit(user, 5, per = "1m"), defaults(style = Secondary, label = "Go"))]
-  |               ^^^^^^^^^^
+4 | #[button("a", owner = user, defaults(style = Secondary, label = "Go"))]
+  |               ^^^^^

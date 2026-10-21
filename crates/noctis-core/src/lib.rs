@@ -174,7 +174,6 @@ mod edge;
 mod error;
 pub mod events;
 mod gateway_url;
-mod guard;
 mod handler;
 mod kind;
 mod kv;
@@ -227,12 +226,6 @@ pub use error::{
 };
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
-pub use guard::Access;
-#[doc(hidden)]
-pub use guard::{
-    __Denial, __Guards, __OwnerField, __check_custom, __check_owner, __check_permissions,
-    __owner_id,
-};
 pub use handler::{HandlerError, HandlerResult};
 #[doc(hidden)]
 pub use kind::{

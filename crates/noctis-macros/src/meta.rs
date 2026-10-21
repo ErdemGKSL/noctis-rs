@@ -21,7 +21,7 @@ pub(crate) const NAMES: [&str; 5] = [
     "guilds",
 ];
 
-pub(crate) const PERMISSIONS_SYNTAX: &str = "[META-01] `permissions` takes permission names joined by `|`, such as `permissions = MANAGE_GUILD | BAN_MEMBERS`";
+const PERMISSIONS_SYNTAX: &str = "[META-01] `permissions` takes permission names joined by `|`, such as `permissions = MANAGE_GUILD | BAN_MEMBERS`";
 const NSFW_BOOL: &str = "[CMD-07] `nsfw` takes `true` or `false`";
 const GUILDS_LIST: &str =
     "`guilds` takes a list of guild id integer literals, such as `guilds = [123456789012345678]`";
@@ -222,7 +222,7 @@ fn path_last(tokens: &[TokenTree], i: &mut usize) -> Option<proc_macro2::Ident> 
 
 /// `A | B | C` (names or paths) as a permission bit set: the syntax first,
 /// then each name (META-01).
-pub(crate) fn permissions(span: Span, tokens: &[TokenTree]) -> syn::Result<u64> {
+fn permissions(span: Span, tokens: &[TokenTree]) -> syn::Result<u64> {
     let syntax = || syn::Error::new(span, PERMISSIONS_SYNTAX);
     let mut idents = Vec::new();
     let mut i = 0;

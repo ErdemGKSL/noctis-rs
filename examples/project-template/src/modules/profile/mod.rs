@@ -57,7 +57,7 @@ pub struct RefreshProfile {
 #[button(
     "profile.bio",
     auto_defer = false,
-    owner = user,
+    owner = user, // [planned]: runtime arguments are rejected until their release
     defaults(style = Primary, label = "profile.edit_bio"),
 )]
 pub struct EditBio {
@@ -91,7 +91,7 @@ pub enum Pronouns {
 #[derive(Modal, Debug)]
 #[modal(
     "profile.save",
-    owner = user,
+    owner = user, // [planned]: runtime arguments are rejected until their release
     defaults(title = "profile.bio_modal.title"),
 )]
 pub struct BioForm {

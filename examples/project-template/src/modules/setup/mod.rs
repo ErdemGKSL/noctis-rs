@@ -57,7 +57,7 @@ impl SetupStep {
 #[derive(Button, Debug, Clone, Copy, PartialEq, Eq)]
 #[button(
     "setup",
-    owner = owner,
+    owner = owner, // [planned]: runtime arguments are rejected until their release
     defaults(style = Primary, label = "setup.next"),
 )]
 pub struct SetupState {
@@ -75,7 +75,7 @@ pub struct SetupState {
 #[derive(ChannelSelectMenu, Debug, Clone, Copy)]
 #[channel_select(
     "setup.ch",
-    owner = owner,
+    owner = owner, // [planned]: runtime arguments are rejected until their release
     defaults(placeholder = "setup.channel_placeholder", channel_types = [GuildText]),
 )]
 pub struct PickLogChannel {
@@ -89,7 +89,7 @@ pub struct PickLogChannel {
 #[derive(RoleSelectMenu, Debug, Clone, Copy)]
 #[role_select(
     "setup.role",
-    owner = owner,
+    owner = owner, // [planned]: runtime arguments are rejected until their release
     defaults(placeholder = "setup.role_placeholder"),
 )]
 pub struct PickModRole {
@@ -103,7 +103,7 @@ pub struct PickModRole {
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "setup.cancel",
-    owner = owner,
+    owner = owner, // [planned]: runtime arguments are rejected until their release
     defaults(style = Secondary, label = "setup.cancel"),
 )]
 pub struct CancelSetup {
@@ -122,7 +122,7 @@ pub struct CancelSetup {
     by_ref,
     one_shot,
     ttl = "15m",
-    owner = owner,
+    owner = owner, // [planned]: runtime arguments are rejected until their release
     defaults(style = Success, label = "setup.finish"),
 )]
 pub struct FinishSetup {

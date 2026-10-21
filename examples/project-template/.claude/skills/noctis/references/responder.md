@@ -653,11 +653,8 @@ notice (`noctis.error.generic`, type 4 with flags 32832) after its `warn` (CID-0
 `routes-payloads-refs.md` §1). Stale and Ref ids go to the Expired Handler chain instead
 (`#[on_stale]`, `#[on_expired]`, `.expired_handler(f)`, else the `noctis.expired` notice;
 `routes-payloads-refs.md` §8).
-A Route Guard denial (`routes-payloads-refs.md` §1a) uses the same routing: one
-ephemeral type-4 notice while pending; after an auto-defer an ephemeral follow-up, with
-a type-5 deferred original deleted first.
-[planned, Epic 13] Notices from the "disabled here" and rate-limit stages use the same
-routing.
+[planned, Epic 7/13] Notices from the "disabled here", rate-limit and guard stages use
+the same routing.
 
 ## 6. `LegacyMessage`
 
