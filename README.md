@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 27 of 96" src="https://img.shields.io/badge/stories-27%20%2F%2096-3B2F8F">
+  <img alt="Stories done: 43 of 96" src="https://img.shields.io/badge/stories-43%20%2F%2096-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,10 +25,10 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–4 are done
+> **Noctis is under active development and not yet published.** Epics 1–6 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
-> Components V2 and modal model with compile-time checks), and Epic 5 (a running sharded
-> bot) is in progress. Nothing is on crates.io yet, and the public API can still change.
+> Components V2 and modal model with compile-time checks, a running sharded bot, slash
+> commands and Publish), and Epic 7 (routed components, Refs and modals) is next. Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
 ## Why Noctis?
@@ -157,9 +157,8 @@ fn dashboard_module() -> Module {
 }
 
 #[tokio::main]
-async fn main() -> noctis::Result<()> {
-    App::builder()
-        .token_from_env()
+async fn main() -> Result<(), noctis::Error> {
+    App::from_env()?                                             // reads the bot token from the environment
         .module(dashboard_module())
         .state(Db::connect("postgres://…").await?)               // read with `ctx.state::<Db>()`
         .ref_store(MyRedisRefStore::connect("redis://…").await?) // optional: memory by default
@@ -238,9 +237,9 @@ done. Live per-story status is in
 | 2 | Typed, length-proven `custom_id`s | P0 | ✅ Done |
 | 3 | Pluggable storage ports | P0 | ✅ Done |
 | 4 | Components V2 and modal model with limit validation | P0 | ✅ Done |
-| 5 | A running sharded bot | P0 | 🔨 In progress (4 / 8) |
-| 6 | Slash commands and Publish | P0 | ⏳ Next |
-| 7 | Routed components, Refs and modals | P0 | ⏳ |
+| 5 | A running sharded bot | P0 | ✅ Done |
+| 6 | Slash commands and Publish | P0 | ✅ Done |
+| 7 | Routed components, Refs and modals | P0 | ⏳ Next |
 | 8 | Views as plain functions, Responder ergonomics and the testing kit | P0 | ⏳ |
 | 9 | Attachments, webhooks and advanced component surfaces | P1 | ⏳ |
 | 10 | Generated images and GIFs | P1 | ⏳ |
@@ -278,6 +277,21 @@ done. Live per-story status is in
     instead of panics).
   - HTTP proxy mode.
   - Sharding on `twilight-gateway` with bucketed identify.
+  - A never-dropped priority interaction lane and a bounded event lane.
+  - Modules with typed event handlers; gateway intents derived from the handlers.
+  - Error Sinks, tracing spans and a public metrics catalog.
+  - Graceful shutdown with a drain grace period and fatal close reporting.
+  - A warm, deadline-safe Discord HTTP edge.
+- **Slash commands.**
+  - One struct per command with `derive(SlashCommand)` and a `#[handler]` method;
+    command paths and patterns are validated at compile time.
+  - Typed options (`derive(Options)`, `derive(Choices)`), command metadata, and
+    user and message context-menu commands.
+  - Cross-Module merge and conflict checks at `App::build`.
+  - The command pipeline with a typestate Responder, automatic deferral, token-expiry
+    fallback and a follow-up cap.
+  - Autocomplete, and handler errors and panics turned into user-facing notices.
+  - Publish with a diff against Discord, dry run, a dev-guild mirror and CLI modes.
 - **`noctis-testkit`.** Local fakes of the Discord HTTP API and the gateway, so every
   test runs without Discord.
 
