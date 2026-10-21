@@ -572,8 +572,8 @@ pub use noctis_core::{
     InteractionContext, IntoEdit, IntoResponse, InvalidOption, Kv, LogSink, Manual, MenuKind,
     MenuTargetError, ModalHandler, ModalResponder, ModalSubmit, ModalSubmitCtx, Module,
     OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending,
-    Permissions, Plugin, Register, ReportKind, Resource, ResourceConflict, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State,
+    Permissions, Plugin, RefOps, Register, ReportKind, Resource, ResourceConflict, Responded,
+    Responder, ResponderError, ResponderKind, ResponderState, RunError, Runtime, StartError, State,
     SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError, UnknownCommandPath,
     Visibility,
 };
@@ -1200,9 +1200,14 @@ pub use noctis_macros::EventHandler;
 ///   [`ComponentResponder<Manual>`](crate::ComponentResponder), which has
 ///   `show_modal` (INT-05; a mismatch is an `[INT-05]` compile error).
 ///
-/// `ttl`, `one_shot`, `owner`, `permissions`, `guard` and `rate_limit`
-/// arrive with later Epic 7 stories and are a `[CID-03]` compile error until
-/// then.
+/// - `ttl = "15m"` (units `d`, `h`, `m`, `s` in that order, 1 s..=365 d)
+///   and `one_shot` (the Ref is taken on first use), on a `by_ref` or
+///   `overflow = spill` Route only: the Ref's TTL (default
+///   [`AppBuilder::ref_ttl`], 24 h) and whether it is consumed by its first
+///   click. On an inline Route they are a `[CID-03]` compile error.
+///
+/// `owner`, `permissions`, `guard` and `rate_limit` arrive with later
+/// stories and are a `[CID-03]` compile error until then.
 ///
 /// `X { .. }.build()` returns a [`RouteButton<X>`](crate::ui::RouteButton)
 /// from the defaults; its setters (`label`, `emoji`, `style`, `disabled`)
@@ -1632,6 +1637,10 @@ pub mod codec {
     //!   [`FieldWriter`] and read through [`FieldReader`].
     //! - [`CodecError`] and [`Section`]: why an inline body or a `custom_id`
     //!   did not decode, and which layout section was wrong.
+    //! - [`Ref`] and [`RefError`]: the 11-character Ref a `by_ref` (or
+    //!   spilled) `custom_id` carries, as `ctx.current_ref()` returns it for
+    //!   [`RefOps`](crate::RefOps); [`Ref::mint`] draws one from the OS
+    //!   CSPRNG.
     //! - [`PayloadKey`] and [`KeyError`]: the 32-byte key that signs `signed`
     //!   Routes (`NOCTIS_PAYLOAD_KEY`, 64 hex digits; see
     //!   [`AppBuilder::payload_key`](crate::AppBuilder::payload_key)); [`Sign`],
@@ -1669,8 +1678,8 @@ pub mod codec {
 
     pub use noctis_codec::{
         BodyKind, BoundedStr, BoundedStrError, CodecError, Field, FieldDecode, FieldError,
-        FieldReader, FieldWriter, KeyError, Payload, PayloadDecode, PayloadKey, Route, RouteId,
-        RouteShape, Section, SelectRoute, Sign, Tag, Verify, check,
+        FieldReader, FieldWriter, KeyError, Payload, PayloadDecode, PayloadKey, Ref, RefError,
+        Route, RouteId, RouteShape, Section, SelectRoute, Sign, Tag, Verify, check,
     };
 }
 
@@ -1850,6 +1859,8 @@ pub mod prelude {
     //! - [`Rgb`] and the macros [`components!`], [`label!`],
     //!   [`placeholder!`], [`content!`] and [`rgb!`].
     //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
+    //! - [`RefOps`]: Ref deletions returned with a response,
+    //!   `(message, RefOps)`.
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
@@ -1857,7 +1868,8 @@ pub mod prelude {
         App, AppBuilder, AutocompleteCtx, CommandCtx, CommandOption, CommandResponder,
         ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink, Expired,
         ExpiredCtx, HandlerError, HandlerResult, IntoResponse, Manual, ModalResponder,
-        ModalSubmitCtx, Module, Options, Partial, Responded, State, Suggestions, Visibility,
+        ModalSubmitCtx, Module, Options, Partial, RefOps, Responded, State, Suggestions,
+        Visibility,
     };
     pub use noctis_macros::{
         Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,

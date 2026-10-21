@@ -28,7 +28,7 @@ def main() -> None:
         for m in re.finditer(r"^### Story (\d+\.\d+): (.+)$", EPICS.read_text(), re.M)
     }
     stories = []
-    for m in re.finditer(r"^  ((\d+)-(\d+)-[a-z0-9-]+): (\S+)", (IA / "sprint-status.yaml").read_text(), re.M):
+    for m in re.finditer(r"^  ((\d+)-(\d+)-[a-z0-9_-]+): (\S+)", (IA / "sprint-status.yaml").read_text(), re.M):
         key, epic, n, status = m[1], int(m[2]), m[3], m[4]
         if status == "done" or not lo <= epic <= hi:
             continue

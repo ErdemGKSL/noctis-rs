@@ -6,13 +6,14 @@
 //! `::noctis::__private::codec`, and they are not part of the stable API.
 
 use core::fmt;
+use core::time::Duration;
 
-use crate::FieldError;
 use crate::base62::{ALPHABET, digit_value};
 use crate::layout::{
     FMT_LEN, MAX_ID_LEN, NONCE_LEN, REF_LEN, REF_MARKER_LEN, SCHEMA_LEN, SEP_LEN, TAG_LEN,
 };
 use crate::route::{BodyKind, Payload, Route, RouteId};
+use crate::{FieldError, RefPolicy};
 
 /// Width of a Ref body: `~` and the Ref.
 const REF_BODY_LEN: usize = REF_MARKER_LEN + REF_LEN;
@@ -322,31 +323,70 @@ pub fn decode_variant(raw: &str, count: u8) -> Result<u8, FieldError> {
     }
 }
 
-/// The runtime arguments a Route declares (TTL, one-shot, owner,
-/// permissions, guard, modal). Empty in this release: `#[route]` accepts
-/// codec arguments only, and later releases add fields.
+/// The runtime arguments a Route declares that do not change its encoding:
+/// the Ref TTL and the one-shot flag of a `by_ref` or `spill` Route (FR-17).
+/// Later releases add the Guard arguments.
+///
+/// The derives emit `RouteRuntime::EMPTY[.with_ttl_secs(n)][.one_shot()]`.
 #[doc(hidden)]
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RouteRuntime {}
+pub struct RouteRuntime {
+    ref_policy: RefPolicy,
+}
 
 impl RouteRuntime {
     /// No runtime argument.
-    pub const EMPTY: Self = Self {};
+    pub const EMPTY: Self = Self {
+        ref_policy: RefPolicy::new(),
+    };
+
+    /// Keeps the Route's Refs for `secs` seconds instead of the App's
+    /// default TTL.
+    #[must_use]
+    pub const fn with_ttl_secs(self, secs: u64) -> Self {
+        Self {
+            ref_policy: self.ref_policy.with_ttl(Duration::from_secs(secs)),
+        }
+    }
+
+    /// Consumes the Route's Refs on their first use.
+    #[must_use]
+    pub const fn one_shot(self) -> Self {
+        Self {
+            ref_policy: self.ref_policy.one_shot(),
+        }
+    }
+
+    /// The Ref policy: TTL and one-shot flag.
+    pub const fn ref_policy(&self) -> RefPolicy {
+        self.ref_policy
+    }
+}
+
+impl Default for RouteRuntime {
+    fn default() -> Self {
+        Self::EMPTY
+    }
 }
 
 /// The [`RouteRuntime`] a derived Route declares.
 #[doc(hidden)]
 pub trait DeclaredRuntime {
-    /// The declaration.
-    const RUNTIME: RouteRuntime;
+    /// The declaration; no runtime argument by default.
+    const RUNTIME: RouteRuntime = RouteRuntime::EMPTY;
 }
 
 #[cfg(test)]
 mod tests {
     use core::fmt;
 
-    use super::{assert_fits, decode_variant, encode_variant, route_width, sum_fields};
+    use core::time::Duration;
+
+    use super::{
+        DeclaredRuntime, RouteRuntime, assert_fits, decode_variant, encode_variant, route_width,
+        sum_fields,
+    };
     use crate::{
         BodyKind, BoundedStr, CodecError, Field, FieldError, FieldReader, FieldWriter, Payload,
         PayloadDecode, Route, RouteId, RouteShape,
@@ -554,5 +594,28 @@ mod tests {
         assert_eq!(decode_variant("z", 62), Ok(61));
         assert_eq!(decode_variant("1", 1), Err(FieldError::Overflow));
         assert_eq!(decode_variant("0", 1), Ok(0));
+    }
+
+    #[test]
+    fn route_runtime_ref_policy() {
+        struct Plain;
+        impl DeclaredRuntime for Plain {}
+        struct Confirm;
+        impl DeclaredRuntime for Confirm {
+            const RUNTIME: RouteRuntime = RouteRuntime::EMPTY.with_ttl_secs(900).one_shot();
+        }
+
+        assert_eq!(Plain::RUNTIME, RouteRuntime::EMPTY);
+        assert_eq!(RouteRuntime::default(), RouteRuntime::EMPTY);
+        assert_eq!(Plain::RUNTIME.ref_policy(), crate::RefPolicy::new());
+        let policy = Confirm::RUNTIME.ref_policy();
+        assert_eq!(policy.ttl(), Some(Duration::from_mins(15)));
+        assert!(policy.is_one_shot());
+        let ttl_only = RouteRuntime::EMPTY.with_ttl_secs(1).ref_policy();
+        assert_eq!(ttl_only.ttl(), Some(Duration::from_secs(1)));
+        assert!(!ttl_only.is_one_shot());
+        let once = RouteRuntime::EMPTY.one_shot().ref_policy();
+        assert_eq!(once.ttl(), None);
+        assert!(once.is_one_shot());
     }
 }

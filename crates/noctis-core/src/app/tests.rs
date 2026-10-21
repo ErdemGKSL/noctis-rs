@@ -2017,6 +2017,56 @@ async fn ack_deadline_builder() {
     assert!(format!("{app:?}").contains("ack_deadline: 200ms"));
 }
 
+// ---- ref_ttl (Story 7.5 Matrix 37) ----
+
+#[tokio::test]
+async fn ref_ttl_builder() {
+    assert_eq!(
+        App::builder().build().unwrap().ref_ttl(),
+        Duration::from_hours(24)
+    );
+    let day = Duration::from_hours(24);
+    for ok in [Duration::from_secs(1), day * 365] {
+        assert_eq!(
+            App::builder().ref_ttl(ok).build().unwrap().ref_ttl(),
+            ok,
+            "{ok:?}"
+        );
+    }
+    for bad in [
+        Duration::ZERO,
+        Duration::from_millis(999),
+        day * 365 + Duration::from_secs(1),
+    ] {
+        // Listed with every other violation.
+        let deadline = Duration::from_secs(3);
+        assert_eq!(
+            App::builder()
+                .ref_ttl(bad)
+                .ack_deadline(deadline)
+                .build()
+                .unwrap_err()
+                .violations(),
+            [
+                BuildViolation::InvalidAckDeadline { actual: deadline },
+                BuildViolation::InvalidRefTtl { actual: bad },
+            ],
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        BuildViolation::InvalidRefTtl {
+            actual: Duration::ZERO
+        }
+        .to_string(),
+        "ref TTL 0ns is out of range: use a value in 1 s..=365 d"
+    );
+    let mut builder = App::builder();
+    builder.ref_ttl(day).ref_ttl(Duration::from_mins(1));
+    assert!(format!("{builder:?}").contains("ref_ttl: 60s"));
+    assert_eq!(builder.build().unwrap().ref_ttl(), Duration::from_mins(1));
+}
+
 /// Matrix 15: a CLI dry run writes the report, then a newline, to its
 /// output.
 #[tokio::test(flavor = "multi_thread")]

@@ -1,0 +1,6 @@
+error: [CID-03] `one_shot` needs a by-Ref Route
+         = help: add by_ref or overflow = spill: only a Ref has a TTL or is consumed on use
+ --> tests/ui/cid/CID-03_one_shot_on_inline_route.rs:4:15
+  |
+4 | #[button("a", one_shot, defaults(style = Secondary, label = "Go"))]
+  |               ^^^^^^^^

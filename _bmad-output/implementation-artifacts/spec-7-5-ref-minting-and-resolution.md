@@ -251,6 +251,7 @@ deferred: []
 - **Mint before validation (AD-18).** Refs stored for a message that then fails validation or sending are orphans until their TTL. That is accepted: they are unguessable and bounded by the TTL, and AD-18 fixes the order.
 - **Lookup labels (decision).** `hit` means a record bound to this Route and schema was found, even if its body later fails to decode (`undecodable`). An unparsable record counts as `forged`, because only Noctis writes records. Store errors are not lookups, so they are not counted, and they answer with the generic notice (`ref_store`).
 - **`RefOps` shape (decision).** A tuple response keeps pure render code pure (`Ok((render(..), RefOps::new().delete(r)))`). `ctx.current_ref()` is the only way pure code learns a Ref, which is exactly the step-flow cancel case.
+- **Tuple impls in the API snapshot (decision, implementation).** `cargo public-api` lists `impl IntoResponse<Component> for (V2Message, RefOps)`, whose self type has no path. `xtask/src/public_api.rs` now gives a trait impl on a tuple its trait's path as owner (an inherent tuple impl cannot exist), so the line belongs to the trait's re-exports like any other impl.
 - **Warning for Story 7.7:** `one_shot` is consumed at stage 2, before the Guards of stage 8, so a click rejected by a Guard still consumes the Ref. 7.7 must decide whether to keep this (AD-23 order) or document it.
 - Golden sketch (stage 2):
   ```rust

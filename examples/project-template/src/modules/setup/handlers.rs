@@ -65,8 +65,8 @@ impl SetupState {
         Ok(render_setup(first_step(&ctx), &Strings::of(ctx.response_locale())))
     }
 
-    /// Any other expired id of this Route (a missing Ref once Routes use `by_ref`):
-    /// the same restart.
+    /// Any other expired id of this Route: none while it stays inline (only a `by_ref`
+    /// Route such as `FinishSetup` has a Ref that can go missing); the same restart.
     #[on_expired]
     async fn expired(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<V2Message> {
         Ok(render_setup(first_step(&ctx), &Strings::of(ctx.response_locale())))

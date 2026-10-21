@@ -10,10 +10,12 @@
 //! declared `response` and `auto_defer` shape the auto-defer and a returned
 //! message.
 //!
-//! An id that is stale or carries a Ref never reaches the handler (Story
-//! 7.3, AD-23 stage 2, FR-18, FR-60): it runs the Route's `#[on_stale]` or
-//! `#[on_expired]` method (bound into the descriptor beside the handler),
-//! else the App's `expired_handler` with an [`ExpiredCtx`], else the default
+//! A Ref id is resolved through the App's `RefStore` first (Story 7.5,
+//! AD-23 stage 2, FR-17): the handler runs on the stored record. An id that
+//! is stale, or whose Ref is missing, never reaches the handler (Story 7.3,
+//! FR-18, FR-60): it runs the Route's `#[on_stale]` or `#[on_expired]`
+//! method (bound into the descriptor beside the handler), else the App's
+//! `expired_handler` with an [`ExpiredCtx`], else the default
 //! `noctis.expired` notice; [`Expired`] says why.
 
 use std::any::Any;
@@ -22,7 +24,10 @@ use std::future::Future;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
-use noctis_codec::{DecodeError, Decoded, PayloadDecode, PayloadSource, Route, Verify};
+use noctis_codec::{
+    DeclaredRuntime, DecodeError, Decoded, PayloadDecode, PayloadSource, Ref, RefRecord, Route,
+    Verify, decode_record,
+};
 use noctis_rules::Limits;
 use noctis_ui::__macro::ModalFromPayload;
 use noctis_ui::{ModalSubmission, SubmitError};
@@ -94,6 +99,15 @@ macro_rules! ctx_accessors {
             /// The guild's preferred locale (`guild_locale`), outside DMs.
             pub fn guild_locale(&self) -> Option<&str> {
                 self.0.guild_locale.as_deref()
+            }
+
+            /// The Ref the clicked or submitted `custom_id` carried (a
+            /// `by_ref` Route, or a spilled `overflow = spill` one); `None`
+            /// for an inline id. Return it in a
+            /// [`RefOps`](crate::RefOps) to delete its record after the
+            /// response is sent.
+            pub fn current_ref(&self) -> Option<Ref> {
+                self.0.current_ref
             }
 
             /// The state registered for `T` with `AppBuilder::state`, if any.
@@ -224,31 +238,64 @@ where
     Box::pin(async move { fut.await.map(<R as IntoResponse<K>>::__into_response) })
 }
 
+/// How a typed start begins: the handler future of an inline id, or the
+/// Ref of a Ref id, whose record the pipeline resolves and hands to the
+/// record start.
+pub(crate) enum Begin {
+    /// The handler started on the decoded inline Payload.
+    Ready(HandlerFuture),
+    /// The id carries this Ref.
+    Ref(Ref),
+}
+
 /// The typed start of a component handler: decodes the struct from the
 /// decoded `custom_id` (verifying a `signed` Route's tag with the key
 /// ring), then boxes the handler future with a responder over the shared
-/// state.
-type ComponentStart = dyn Fn(
-        ComponentCtx,
-        &Decoded<'_>,
-        Arc<Shared>,
-        Option<&dyn Verify>,
-    ) -> Result<HandlerFuture, Rejection>
+/// state; a Ref id gives its Ref.
+type ComponentStart = dyn Fn(ComponentCtx, &Decoded<'_>, Arc<Shared>, Option<&dyn Verify>) -> Result<Begin, Rejection>
     + Send
     + Sync;
 
+/// The record start of a component handler: decodes the struct from the
+/// stored record of the id's Ref, then boxes the handler future.
+type ComponentRecordStart =
+    dyn Fn(ComponentCtx, &[u8], Arc<Shared>) -> Result<HandlerFuture, Rejection> + Send + Sync;
+
 /// The typed start of a modal handler: checks the decoded `custom_id`
 /// against the Route (verifying a `signed` Route's tag), decodes the struct
-/// from the submission, then boxes the handler future.
+/// from the submission, then boxes the handler future; a Ref id gives its
+/// Ref.
 type ModalStart = dyn Fn(
         ModalSubmitCtx,
         &Decoded<'_>,
         &ModalSubmission,
         Arc<Shared>,
         Option<&dyn Verify>,
-    ) -> Result<HandlerFuture, Rejection>
+    ) -> Result<Begin, Rejection>
     + Send
     + Sync;
+
+/// The record start of a modal handler: decodes the Payload from the
+/// stored record of the id's Ref and the struct from it and the
+/// submission, then boxes the handler future.
+type ModalRecordStart = dyn Fn(ModalSubmitCtx, &[u8], &ModalSubmission, Arc<Shared>) -> Result<HandlerFuture, Rejection>
+    + Send
+    + Sync;
+
+/// Decodes the Payload of Route `R` from the stored `record` of a Ref:
+/// a record that does not parse, or one of another route, is forged; one
+/// of another schema is stale; a body that does not decode is undecodable.
+fn record_payload<R>(record: &[u8]) -> Result<R::Payload, Rejection>
+where
+    R: Route,
+    for<'de> R::Payload: PayloadDecode<'de>,
+{
+    // Only Noctis writes records: one that does not parse is forged.
+    if RefRecord::decode(record).is_err() {
+        return Err(Rejection::Forged);
+    }
+    decode_record::<R>(record).map_err(|error| Rejection::from_decode(&error))
+}
 
 /// Decodes the component struct `S` from `decoded`, verifying a `signed`
 /// Route's tag with `keys` (no keys: a signed id is `forged`).
@@ -477,8 +524,10 @@ pub struct ComponentHandler {
     response: Declared,
     auto_defer: bool,
     signed: bool,
+    one_shot: bool,
     call: Arc<ErasedCall<ComponentCtx>>,
     start: Arc<ComponentStart>,
+    start_record: Arc<ComponentRecordStart>,
     probe: fn(&Decoded<'_>) -> Result<(), DecodeError>,
     on_stale: Option<Arc<HookFn<ComponentCtx>>>,
     on_expired: Option<Arc<HookFn<ComponentCtx>>>,
@@ -496,7 +545,7 @@ impl ComponentHandler {
         f: F,
     ) -> Self
     where
-        S: Route<Payload = S> + for<'de> PayloadDecode<'de> + Send + 'static,
+        S: Route<Payload = S> + DeclaredRuntime + for<'de> PayloadDecode<'de> + Send + 'static,
         F: Fn(S, ComponentCtx) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
     {
@@ -523,7 +572,7 @@ impl ComponentHandler {
         f: F,
     ) -> Self
     where
-        S: Route<Payload = S> + for<'de> PayloadDecode<'de> + Send + 'static,
+        S: Route<Payload = S> + DeclaredRuntime + for<'de> PayloadDecode<'de> + Send + 'static,
         D: DeferMode,
         F: Fn(S, ComponentCtx, Responder<Component, Pending, D>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<R>> + Send + 'static,
@@ -539,12 +588,20 @@ impl ComponentHandler {
                           decoded: &Decoded<'_>,
                           shared: Arc<Shared>,
                           keys: Option<&dyn Verify>|
-              -> Result<HandlerFuture, Rejection> {
+              -> Result<Begin, Rejection> {
             match decode_payload::<S>(decoded, keys) {
-                Ok(PayloadSource::Inline(value)) => Ok(starter(value, ctx, shared)),
-                Ok(PayloadSource::Ref(_)) => Err(Rejection::RefUnresolved),
+                Ok(PayloadSource::Inline(value)) => Ok(Begin::Ready(starter(value, ctx, shared))),
+                Ok(PayloadSource::Ref(r)) => Ok(Begin::Ref(r)),
                 Err(error) => Err(Rejection::from_decode(&error)),
             }
+        };
+        let starter = Arc::clone(&typed);
+        let start_record = move |ctx: ComponentCtx,
+                                 record: &[u8],
+                                 shared: Arc<Shared>|
+              -> Result<HandlerFuture, Rejection> {
+            let value = record_payload::<S>(record)?;
+            Ok(starter(value, ctx, shared))
         };
         Self {
             name,
@@ -553,8 +610,10 @@ impl ComponentHandler {
             response: declared(response),
             auto_defer: D::AUTO_DEFER,
             signed: S::SHAPE.is_signed(),
+            one_shot: S::RUNTIME.ref_policy().is_one_shot(),
             call: erase::<S, _, _>(typed),
             start: Arc::new(start),
+            start_record: Arc::new(start_record),
             probe: probe::<S>,
             on_stale: None,
             on_expired: None,
@@ -634,6 +693,12 @@ impl ComponentHandler {
         self.signed
     }
 
+    /// Whether the Route's Refs are consumed by their first use
+    /// (`one_shot`: resolved with `take`).
+    pub(crate) fn one_shot(&self) -> bool {
+        self.one_shot
+    }
+
     /// Starts the handler on `value` (the struct) with `ctx` and a
     /// responder over `shared`.
     pub(crate) fn call(
@@ -654,8 +719,19 @@ impl ComponentHandler {
         decoded: &Decoded<'_>,
         shared: Arc<Shared>,
         keys: Option<&dyn Verify>,
-    ) -> Result<HandlerFuture, Rejection> {
+    ) -> Result<Begin, Rejection> {
         (self.start)(ctx, decoded, shared, keys)
+    }
+
+    /// Decodes the struct from the stored `record` of the id's Ref and
+    /// starts the handler, or says why it does not run.
+    pub(crate) fn start_record(
+        &self,
+        ctx: ComponentCtx,
+        record: &[u8],
+        shared: Arc<Shared>,
+    ) -> Result<HandlerFuture, Rejection> {
+        (self.start_record)(ctx, record, shared)
     }
 
     /// Decodes the struct from `decoded` and drops it: the decode of
@@ -675,6 +751,7 @@ impl fmt::Debug for ComponentHandler {
             .field("response", &self.response)
             .field("auto_defer", &self.auto_defer)
             .field("signed", &self.signed)
+            .field("one_shot", &self.one_shot)
             .field("on_stale", &self.on_stale.is_some())
             .field("on_expired", &self.on_expired.is_some())
             .finish_non_exhaustive()
@@ -695,8 +772,10 @@ pub struct ModalHandler {
     response: Declared,
     signed: bool,
     auto_defer: bool,
+    one_shot: bool,
     call: Arc<ErasedCall<ModalSubmitCtx>>,
     start: Arc<ModalStart>,
+    start_record: Arc<ModalRecordStart>,
     on_stale: Option<Arc<HookFn<ModalSubmitCtx>>>,
     on_expired: Option<Arc<HookFn<ModalSubmitCtx>>>,
 }
@@ -707,7 +786,7 @@ impl ModalHandler {
     #[doc(hidden)]
     pub fn __new<S, F, Fut>(name: &'static str, route: &'static str, f: F) -> Self
     where
-        S: ModalFromPayload + Send + 'static,
+        S: ModalFromPayload + DeclaredRuntime + Send + 'static,
         for<'de> S::Payload: PayloadDecode<'de>,
         F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = HandlerResult<Responded>> + Send + 'static,
@@ -730,7 +809,7 @@ impl ModalHandler {
         f: F,
     ) -> Self
     where
-        S: ModalFromPayload + Send + 'static,
+        S: ModalFromPayload + DeclaredRuntime + Send + 'static,
         for<'de> S::Payload: PayloadDecode<'de>,
         D: DeferMode,
         F: Fn(S, ModalSubmitCtx, Responder<ModalSubmit, Pending, D>) -> Fut + Send + Sync + 'static,
@@ -748,7 +827,7 @@ impl ModalHandler {
                           submission: &ModalSubmission,
                           shared: Arc<Shared>,
                           keys: Option<&dyn Verify>|
-              -> Result<HandlerFuture, Rejection> {
+              -> Result<Begin, Rejection> {
             // The `custom_id` is decoded exactly once, with the key ring
             // when one exists; the inputs are decoded from that Payload.
             let checked = match keys {
@@ -757,14 +836,20 @@ impl ModalHandler {
             };
             let payload = match checked {
                 Ok(PayloadSource::Inline(payload)) => payload,
-                Ok(PayloadSource::Ref(_)) => return Err(Rejection::RefUnresolved),
+                Ok(PayloadSource::Ref(r)) => return Ok(Begin::Ref(r)),
                 Err(error) => return Err(Rejection::from_decode(&error)),
             };
-            match S::from_payload(payload, submission) {
-                Ok(value) => Ok(starter(value, ctx, shared)),
-                Err(SubmitError::Malformed { .. }) => Err(Rejection::Undecodable),
-                Err(_) => Err(Rejection::SubmitInvalid),
-            }
+            modal_value::<S>(payload, submission)
+                .map(|value| Begin::Ready(starter(value, ctx, shared)))
+        };
+        let starter = Arc::clone(&typed);
+        let start_record = move |ctx: ModalSubmitCtx,
+                                 record: &[u8],
+                                 submission: &ModalSubmission,
+                                 shared: Arc<Shared>|
+              -> Result<HandlerFuture, Rejection> {
+            let payload = record_payload::<S>(record)?;
+            modal_value::<S>(payload, submission).map(|value| starter(value, ctx, shared))
         };
         Self {
             name,
@@ -772,8 +857,10 @@ impl ModalHandler {
             response: Declared::Update,
             signed: S::SHAPE.is_signed(),
             auto_defer: D::AUTO_DEFER,
+            one_shot: S::RUNTIME.ref_policy().is_one_shot(),
             call: erase::<S, _, _>(typed),
             start: Arc::new(start),
+            start_record: Arc::new(start_record),
             on_stale: None,
             on_expired: None,
         }
@@ -870,8 +957,27 @@ impl ModalHandler {
         submission: &ModalSubmission,
         shared: Arc<Shared>,
         keys: Option<&dyn Verify>,
-    ) -> Result<HandlerFuture, Rejection> {
+    ) -> Result<Begin, Rejection> {
         (self.start)(ctx, decoded, submission, shared, keys)
+    }
+
+    /// Decodes the Payload from the stored `record` of the id's Ref and the
+    /// struct from it and `submission`, then starts the handler, or says
+    /// why it does not run.
+    pub(crate) fn start_record(
+        &self,
+        ctx: ModalSubmitCtx,
+        record: &[u8],
+        submission: &ModalSubmission,
+        shared: Arc<Shared>,
+    ) -> Result<HandlerFuture, Rejection> {
+        (self.start_record)(ctx, record, submission, shared)
+    }
+
+    /// Whether the Route's Refs are consumed by their first use
+    /// (`one_shot`: resolved with `take`).
+    pub(crate) fn one_shot(&self) -> bool {
+        self.one_shot
     }
 }
 
@@ -883,9 +989,22 @@ impl fmt::Debug for ModalHandler {
             .field("response", &self.response)
             .field("auto_defer", &self.auto_defer)
             .field("signed", &self.signed)
+            .field("one_shot", &self.one_shot)
             .field("on_stale", &self.on_stale.is_some())
             .field("on_expired", &self.on_expired.is_some())
             .finish_non_exhaustive()
+    }
+}
+
+/// The modal struct `S` from its decoded `payload` and the `submission`.
+fn modal_value<S: ModalFromPayload>(
+    payload: S::Payload,
+    submission: &ModalSubmission,
+) -> Result<S, Rejection> {
+    match S::from_payload(payload, submission) {
+        Ok(value) => Ok(value),
+        Err(SubmitError::Malformed { .. }) => Err(Rejection::Undecodable),
+        Err(_) => Err(Rejection::SubmitInvalid),
     }
 }
 
@@ -965,6 +1084,8 @@ mod tests {
             Ok(Self { item: f.field()? })
         }
     }
+
+    impl DeclaredRuntime for Buy {}
 
     impl Route for Buy {
         const ID: RouteId = RouteId::new("shop.buy");

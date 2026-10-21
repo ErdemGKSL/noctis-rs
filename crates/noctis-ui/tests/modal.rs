@@ -48,6 +48,7 @@ macro_rules! route {
             type Payload = Self;
         }
 
+        impl noctis_codec::DeclaredRuntime for $name {}
         impl Handled for $name {}
     };
 }

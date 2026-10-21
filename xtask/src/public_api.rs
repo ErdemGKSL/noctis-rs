@@ -12,7 +12,9 @@
 //!   (`pub noctis::rules::Limits::button_label_len: usize`);
 //! - an **impl header**: `impl[<…>] [<Trait> for ]<SelfType>[ where …]`. It is a
 //!   trait impl when a ` for ` occurs at depth 0 of `<>()[]`; the self type ends
-//!   at a depth-0 ` where `; its path drops a leading `&`, lifetime and `mut `;
+//!   at a depth-0 ` where `; its path drops a leading `&`, lifetime and `mut `.
+//!   A tuple self type (`(A, B)`) has no path of its own, so the impl's path is
+//!   its trait's (an inherent impl on a tuple cannot exist);
 //! - an **impl member**: an item line right after an impl header (or another
 //!   member) whose parent path equals the header's self path. Any other line
 //!   closes the impl context.
@@ -228,6 +230,7 @@ fn parse_impl(s: &str) -> Option<(String, bool)> {
         Some(i) => (&rest[i + " for ".len()..], true),
         None => (rest, false),
     };
+    let trait_path = trait_impl.then_some(rest);
     let self_ty = match find_depth0(self_ty, " where ") {
         Some(i) => &self_ty[..i],
         None => self_ty,
@@ -243,6 +246,10 @@ fn parse_impl(s: &str) -> Option<(String, bool)> {
         } else {
             break;
         }
+    }
+    if self_ty.starts_with('(') {
+        let (path, _) = parse_path(trait_path?)?;
+        return Some((path, trait_impl));
     }
     let (path, _) = parse_path(self_ty)?;
     Some((path, trait_impl))
@@ -531,6 +538,20 @@ mod tests {
             one("impl<T> core::convert::From<noctis::X> for alloc::sync::Arc<T>").path,
             "alloc::sync::Arc"
         );
+    }
+
+    #[test]
+    fn l12_tuple_self() {
+        let line = one(
+            "impl noctis_core::IntoResponse<noctis_core::Component> for (noctis_ui::V2Message, noctis_core::RefOps)",
+        );
+        assert_eq!(line.kind, Kind::ImplHeader { trait_impl: true });
+        assert_eq!(line.path, "noctis_core::IntoResponse");
+        assert_eq!(
+            one("impl<T> noctis::X for (T,) where T: Send").path,
+            "noctis::X"
+        );
+        assert!(parse("impl (u8, u16)").is_err());
     }
 
     #[test]

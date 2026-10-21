@@ -97,12 +97,13 @@ Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
   `noctis::dispatch` with `reason` = `malformed`, `unknown_route`, `kind_mismatch`,
   `forged`, `undecodable`, `submit_invalid` or `no_author`, plus one generic ephemeral
   notice to the user (`noctis.error.generic`); nothing panics and no handler runs.
+  A Ref id whose record cannot be read (a `RefStore` error) is `ref_store`, with the
+  same generic notice.
   `signed` Routes are verified with the App's payload key ring (`NOCTIS_PAYLOAD_KEY`,
   plus `NOCTIS_PAYLOAD_KEY_PREVIOUS` during a rotation; `app-and-sharding.md`): a bad or
   missing tag is `forged`. A **stale** id (another `schema`, body kind or flag set of
-  the Route) and a **Ref** id (`by_ref`/spilled; every Ref is missing until the
-  RefStore lands [planned, Story 7.5]) are not rejections: they go to the Expired
-  Handler chain (§8), logged once at `debug`. The rest of this file's runtime parts
+  the Route) and a **Ref** id whose record is missing or expired (§7) are not
+  rejections: they go to the Expired Handler chain (§8), logged once at `debug`. The rest of this file's runtime parts
   stay **[planned]** where marked.
 
 - **Keys.** `noctis::codec::PayloadKey` is the 32-byte secret (`PayloadKey::from_hex(..)`
@@ -136,10 +137,18 @@ fields; see `views-and-recipes.md`.) Runtime arguments (no effect on the length)
 every component kind (`responder.md` §2b; a bad value is ``[CID-03] `response` takes
 `update`, `ephemeral` or `public` `` / `` `auto_defer` takes `true` or `false` ``, a
 repeated one ``[CID-03] #[button] argument `response` is given twice``); on `#[modal]`
-they arrive with Story 7.8 [planned]. `ttl`, `one_shot`, `owner`, `permissions`,
-`guard`, `rate_limit(..)` are **[planned]**: Noctis **rejects** them with
-``[CID-03] `ttl` is a runtime argument of #[button] that this Noctis release does not
-support yet`` (attribute name per kind) (a silently ignored guard would be a security hole), and each one is
+they arrive with Story 7.8 [planned]. `ttl = ".."` and `one_shot` work today on every
+by-Ref Route (`by_ref` or `overflow = spill`, components and `#[modal]`; §7); on an
+inline Route each is ``[CID-03] `ttl` needs a by-Ref Route`` (help: add `by_ref` or
+`overflow = spill`). A `ttl` is one or more `<digits><unit>` groups, units `d`, `h`, `m`,
+`s`, each at most once and in that order, no spaces: `"15m"`, `"1h30m"`, `"2d"`,
+`"1d2h3m4s"`; the total must be 1 s..=365 d. Otherwise it is
+``[CID-03] `ttl = "15x"` is not a duration`` or
+``[CID-03] `ttl` must be between 1s and 365d, found `366d` ``; `one_shot` is a flag
+(`one_shot = true` is ``[CID-03] `one_shot` is a flag and takes no value``).
+`owner`, `permissions`, `guard`, `rate_limit(..)` are **[planned]**: Noctis **rejects**
+them with ``[CID-03] `owner` is a runtime argument of #[button] that this Noctis release
+does not support yet`` (attribute name per kind) (a silently ignored guard would be a security hole), and each one is
 accepted from the release that implements it. Anything else is a compile error.
 `#[handler]` itself takes no arguments: every setting is here.
 
@@ -150,8 +159,8 @@ accepted from the release that implements it. Anything else is a compile error.
 | `auto_defer = true \| false` | default `true`; `false` for a component that opens a modal (its handler takes `ComponentResponder<Manual>`; INT-05, `responder.md` §2b) |
 | `by_ref` | always store the Payload in the RefStore; the id carries `~` + 11-char Ref |
 | `overflow = spill` | inline when the actual value fits, else by Ref |
-| `ttl = "2d"` [planned] | Ref TTL (by_ref/spill only); default `AppBuilder::ref_ttl` (24 h) |
-| `one_shot` [planned] | Ref is deleted on first use (`take`); for confirmations |
+| `ttl = "2d"` | Ref TTL (by_ref/spill only), 1 s..=365 d; default `AppBuilder::ref_ttl` (24 h) |
+| `one_shot` | Ref is deleted on first use (`take`); for confirmations (by_ref/spill only) |
 | `signed` | inline body gets a 6-char integrity tag (keyed BLAKE3, `NOCTIS_PAYLOAD_KEY`), signed when the message is sent and verified on every click; a mounted `signed` Route without a key fails `build()` (``[CID-06] Route `x` is `signed`, but no payload key is configured …``); not with `by_ref` |
 | `schema = n` | Payload schema version 1..=61 (see §6) |
 | `owner = field` [planned] | Route Guard: only the user whose id is in `field` may click |
@@ -511,11 +520,13 @@ Messages live for months; old components still get clicked after a deploy.
 ## 7. Refs
 
 A Ref is 11 base62 chars from the OS CSPRNG (~65.5 bits), never sequential, namespaced
-per App. It maps to a `RefRecord { route, schema, payload }` in the `RefStore`.
+per App (stored under `<app_id>:ref:<ref>`, so two Apps sharing a `RefStore` never
+resolve each other's Refs). It maps to a `RefRecord { route, schema, payload }` in the
+App's `RefStore` (`AppBuilder::ref_store(..)`, default in-memory; `adapters.md`).
 
 ```rust
 #[derive(Button, Debug, Clone)]
-#[button("mod.ban.ok", by_ref, one_shot, ttl = "15m", permissions = BAN_MEMBERS,   // runtime args [planned]
+#[button("mod.ban.ok", by_ref, one_shot, ttl = "15m",
          defaults(style = Danger, label = "mod.ban.confirm"))]
 pub struct ConfirmBan {
     pub target: Id<UserMarker>,
@@ -523,14 +534,54 @@ pub struct ConfirmBan {
 }
 ```
 
-- Minted in two phases: building a component makes a `RefSlot`; the Responder stores it
-  (`put_if_absent`) only when the message is actually sent. Identical slots in one
-  message share one Ref.
-- Resolution: `one_shot` → `take`, else `get`. Missing/expired → **Expired Handler**.
-  A record whose route differs from the id's route → forged (unknown-Route path).
-  Schema mismatch → stale.
-- A step flow's Cancel handler can delete the flow's Refs: return the deletions as
-  `RefOps` with the response; core runs them after a successful send.
+- **Minting.** Building a component makes a Ref slot; the Responder mints the Ref and
+  stores the record (`put_if_absent`) only when the message is actually sent, before
+  the request, for every send (reply, update, edit, follow-up, modal). Identical slots
+  in one message share one Ref. The TTL is the Route's `ttl`, else
+  `AppBuilder::ref_ttl(Duration)` (default 24 h, 1 s..=365 d, else
+  `BuildViolation::InvalidRefTtl` at `build()`; read back with `app.ref_ttl()`). A store
+  error fails the send with `ResponderError::RefStore`; three Ref collisions in a row
+  with `ResponderError::RefCollision`. A message that then fails validation or sending
+  leaves its Refs to expire with their TTL.
+- **Resolution** (on every click or submit of a Ref id, before the handler): `one_shot`
+  → `take` (the first click consumes it), else `get` (the record stays until its TTL).
+
+  | Lookup | Then | `noctis_ref_lookups_total{result}` |
+  | --- | --- | --- |
+  | missing or expired | Expired Handler chain with `Expired::RefMissing` (§8) | `miss` |
+  | record of another Route, or not a record | `forged`: warn + generic notice | `forged` |
+  | record of another `schema` | stale chain (§8) | `stale` |
+  | record found | its Payload decodes and the handler runs (`undecodable` / `submit_invalid` as for inline ids) | `hit` |
+  | `RefStore` error | `ref_store`: warn + generic notice | not counted |
+
+- `ctx.current_ref() -> Option<noctis::codec::Ref>` on `ComponentCtx`, `ModalSubmitCtx`
+  and `ExpiredCtx`: the Ref the clicked or submitted id carried (`None` for inline ids).
+  The Ref never appears in a log, span or metric label. `noctis::codec::Ref` is `Copy`,
+  `Eq`, `Hash`, with `as_str()` and `Display`; `Ref::mint()` returns
+  `Result<Ref, RefError>` (`RefError::Rng` when the OS RNG fails, `RefError::Exhausted`
+  when 8 random fills yield too few usable bytes), but bots never mint: core does, and
+  `Ref::mint()` is for tests of `RefOps`.
+- **Deleting Refs (`RefOps`).** A reusable flow (a step flow's Cancel) deletes its Refs by
+  returning `(message, RefOps)` (`V2Message`, `Components` or `Responded`) from a
+  component or modal handler; core deletes them, in order, only after the response was
+  sent successfully (for `Responded`, as soon as the handler returns `Ok`). A failed send,
+  an error or a panic deletes nothing; a failed delete is one `warn` on `noctis::refs`.
+
+  ```rust
+  impl Cancel {
+      #[handler]
+      async fn handle(self, ctx: ComponentCtx) -> HandlerResult<(Components, RefOps)> {
+          let ops = ctx.current_ref().map_or_else(RefOps::new, |r| RefOps::new().delete(r));
+          Ok((render_cancelled(&self), ops))
+      }
+  }
+  ```
+
+  `RefOps::new().delete(r)` ignores a Ref listed twice; `.delete_all(iter)` adds many.
+- **One-shot caveat.** A `one_shot` Ref is consumed when the click is resolved, before the
+  handler runs: a handler error or panic after that does not restore it, and the next
+  click gets the Expired notice. Keep `one_shot` for confirmations whose retry is "run the
+  command again".
 
 ## 8. Expired, stale, unknown, forged
 

@@ -82,6 +82,11 @@ const DEFAULT_ACK_DEADLINE: Duration = Duration::from_secs(2);
 /// The allowed `ack_deadline` range: above 2500 ms a hedged type-5
 /// callback no longer fits Discord's 3 s.
 const ACK_DEADLINE_RANGE: RangeInclusive<Duration> = Duration::ZERO..=Duration::from_millis(2500);
+/// The Ref TTL when `ref_ttl` is not called (FR-17).
+const DEFAULT_REF_TTL: Duration = Duration::from_hours(24);
+/// The allowed `ref_ttl` range, the same as a Route's `ttl = ".."`.
+const REF_TTL_RANGE: RangeInclusive<Duration> =
+    Duration::from_secs(1)..=Duration::from_hours(365 * 24);
 /// How long shutdown waits for cancelled handlers after the grace period.
 const CANCEL_WAIT: Duration = Duration::from_secs(1);
 /// How long a closing shard waits for the gateway's close frame.
@@ -281,6 +286,19 @@ impl App {
     /// ```
     pub fn ack_deadline(&self) -> Duration {
         self.shared.ack_deadline
+    }
+
+    /// How long a Ref lives when its Route declares no `ttl`
+    /// ([`AppBuilder::ref_ttl`]; 24 h when unset, FR-17).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.ref_ttl(), std::time::Duration::from_secs(24 * 3600));
+    /// # }
+    /// ```
+    pub fn ref_ttl(&self) -> Duration {
+        self.shared.ref_ttl
     }
 
     /// The normalized HTTP proxy authority (`host[:port]`), if one was set.
@@ -1179,6 +1197,7 @@ impl fmt::Debug for App {
             .field("error_sinks", &self.shared.sinks)
             .field("limits", &self.shared.limits)
             .field("ack_deadline", &self.shared.ack_deadline)
+            .field("ref_ttl", &self.shared.ref_ttl)
             .field("payload_key", &self.shared.payload_keys.is_some())
             .field("publisher", &self.publisher)
             .field("dev_guild", &self.dev_guild)
@@ -1241,6 +1260,8 @@ pub struct AppBuilder {
     limits: Limits,
     /// The raw auto-defer deadline; `build` checks it.
     ack_deadline: Duration,
+    /// The raw default Ref TTL; `build` checks it.
+    ref_ttl: Duration,
     /// Whether a normal run publishes globally at startup.
     publisher: bool,
     /// The default guild of `--publish-guild` without an id.
@@ -1327,6 +1348,7 @@ impl AppBuilder {
             error_sinks: ErrorSinks::default(),
             limits: Limits::default(),
             ack_deadline: DEFAULT_ACK_DEADLINE,
+            ref_ttl: DEFAULT_REF_TTL,
             publisher: false,
             dev_guild: None,
             payload_key: None,
@@ -1519,6 +1541,20 @@ impl AppBuilder {
     /// ```
     pub fn ack_deadline(&mut self, deadline: Duration) -> &mut Self {
         self.ack_deadline = deadline;
+        self
+    }
+
+    /// Sets how long a Ref lives when its Route declares no `ttl = ".."`:
+    /// 1 s..=365 d, default 24 h (FR-17). The Responder stores every minted
+    /// Ref with it; a Route's own `ttl` wins. Out of range is a
+    /// [`BuildViolation::InvalidRefTtl`]. The last call wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.ref_ttl(std::time::Duration::from_secs(3600));
+    /// ```
+    pub fn ref_ttl(&mut self, ttl: Duration) -> &mut Self {
+        self.ref_ttl = ttl;
         self
     }
 
@@ -1944,7 +1980,7 @@ impl AppBuilder {
     /// Installs every plugin once, in registration order (plugins added during
     /// an install afterwards, in the same build), then checks the HTTP
     /// timeout, the HTTP proxy, the gateway URL, the shard total, the event
-    /// lane, handler concurrency, the shutdown grace, the ack deadline, the
+    /// lane, handler concurrency, the shutdown grace, the ack deadline, the Ref TTL, the
     /// [`app_id`](Self::app_id) and the [`HttpConfig`],
     /// binds the Discord HTTP edge's loopback listener, folds the mounted
     /// Modules into the Registry (deriving the gateway filter and intents, GW-05,
@@ -2031,6 +2067,11 @@ impl AppBuilder {
                 actual: self.ack_deadline,
             });
         }
+        if !REF_TTL_RANGE.contains(&self.ref_ttl) {
+            self.violations.push(BuildViolation::InvalidRefTtl {
+                actual: self.ref_ttl,
+            });
+        }
         let explicit_app_id = match self.app_id.as_deref().map(AppId::new) {
             None => None,
             Some(Ok(id)) => Some(id),
@@ -2066,6 +2107,7 @@ impl AppBuilder {
         let http = http_client(&config, &edge, http_proxy.is_some());
         let ports = Ports::resolve(config.ports, &app_id);
         let kv: Arc<dyn CacheStore> = ports.cache_store.clone();
+        let refs: Arc<dyn RefStore> = ports.ref_store.clone();
         Ok(App {
             runtime: config.runtime,
             token: config.token,
@@ -2080,6 +2122,8 @@ impl AppBuilder {
                 limits: config.limits,
                 registry: Arc::clone(&registry),
                 ack_deadline: config.ack_deadline,
+                refs,
+                ref_ttl: config.ref_ttl,
                 strings: Arc::new(noctis_i18n::Builtin),
                 payload_keys,
                 expired_handler: config.expired_handler,
@@ -2162,6 +2206,7 @@ impl fmt::Debug for AppBuilder {
             .field("error_sinks", &self.error_sinks)
             .field("limits", &self.limits)
             .field("ack_deadline", &self.ack_deadline)
+            .field("ref_ttl", &self.ref_ttl)
             .field("publisher", &self.publisher)
             .field("dev_guild", &self.dev_guild)
             .field("payload_key", &self.payload_key.is_some())

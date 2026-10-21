@@ -640,20 +640,21 @@ async fn one_select_nonce_per_send() {
     assert!(nonces.iter().any(|n| *n != nonces[0]), "{nonces:?}");
 }
 
-/// Matrix 19: a Ref slot is `Encode` naming the Route; nothing is sent.
+/// Matrix 19 (Story 7.5): a Ref slot is now minted and stored before the
+/// callback (the full matrix is in `refs.rs`).
 #[tokio::test]
-async fn ref_slot_is_an_encode_error() {
+async fn ref_slot_is_minted() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.component(Declared::Update, v2_source());
     let msg =
         V2Message::new(Components::new().push(ActionRow::buttons([button(Stored { item: 1 })])));
-    let err = component(&shared).update(msg).await.unwrap_err();
-    assert!(
-        matches!(&err, ResponderError::Encode { reason } if reason.contains("`stored`")),
-        "{err}"
-    );
-    assert!(fx.requests().is_empty());
-    assert_eq!(shared.state(), PENDING);
+    let _ = component(&shared).update(msg).await.unwrap().done();
+    let id = fx.requests()[0].2["data"]["components"][0]["components"][0]["custom_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(id.starts_with("0stored:~"), "{id}");
+    assert_eq!(id.len(), "0stored:~".len() + 11, "{id}");
 }
 
 /// The source message is read from the raw interaction JSON.

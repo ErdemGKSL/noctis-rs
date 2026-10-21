@@ -1,0 +1,6 @@
+error: [CID-03] `ttl = "15x"` is not a duration
+         = help: write ttl = "15m" (units d, h, m, s, such as "1h30m")
+ --> tests/ui/cid/CID-03_ttl_not_a_duration.rs:4:29
+  |
+4 | #[button("a", by_ref, ttl = "15x", defaults(style = Secondary, label = "Go"))]
+  |                             ^^^^^

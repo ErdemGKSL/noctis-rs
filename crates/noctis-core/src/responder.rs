@@ -111,7 +111,11 @@ use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use noctis_codec::{SelectNonce, Sign};
+use std::collections::HashMap;
+use std::time::Duration;
+
+use noctis_codec::{PendingRef, Ref, SelectNonce, Sign};
+use noctis_ports::{PortError, RefStore};
 use noctis_rules::Limits;
 use noctis_ui::{
     CallbackFlags, Components, CreateFlags, CustomId, EditFlags, LegacyMessage, MessageBody,
@@ -126,6 +130,7 @@ use twilight_model::id::marker::{ChannelMarker, MessageMarker};
 pub(crate) use self::transport::{InteractionTarget, MessageTarget, Transport};
 use crate::AckDeadlineMissed;
 use crate::handler::AppShared;
+use crate::refs::RefOps;
 
 pub(crate) mod sealed {
     /// Seals [`ResponderKind`](super::ResponderKind).
@@ -331,13 +336,22 @@ pub enum ResponderError {
     #[error(transparent)]
     Invalid(#[from] UiError),
     /// The message could not be serialized: a Route `custom_id` could not
-    /// be resolved (a `by_ref` Route, or a select nonce that could not be
-    /// drawn), named in `reason`; nothing was sent.
+    /// be resolved (a select nonce or a Ref that could not be drawn, or an
+    /// encode error), named in `reason`; nothing was sent.
     #[error("the message could not be encoded: {reason}")]
     Encode {
         /// What failed, naming the Route.
         reason: String,
     },
+    /// A Ref minted for the message could not be stored in the App's
+    /// `RefStore`; nothing was sent. Refs stored before the failure expire
+    /// with their TTL.
+    #[error("the Ref could not be stored: {0}")]
+    RefStore(#[source] PortError),
+    /// Three freshly minted Refs in a row were already taken in the App's
+    /// `RefStore`; nothing was sent.
+    #[error("could not mint a unique Ref after 3 attempts")]
+    RefCollision,
     /// The message carries attachments, which arrive with Story 9.1;
     /// nothing was sent.
     #[error("attachments are not supported by the Responder yet")]
@@ -464,7 +478,9 @@ impl Responded {
 
 /// A value a handler of kind `K` may return: a [`V2Message`],
 /// [`Components`] or the [`Responded`] from [`done`](Responder::done); a
-/// command handler may also return a [`LegacyMessage`]. Component and modal
+/// command handler may also return a [`LegacyMessage`], and a component or
+/// modal handler any of its three paired with [`RefOps`] (Refs deleted
+/// after the response is sent). Component and modal
 /// handlers return V2 only (CV2-01): their returned message may update the
 /// component's message, which can't turn back into a legacy message.
 /// Sealed.
@@ -479,10 +495,18 @@ pub trait IntoResponse<K: ResponderKind>: sealed::Response + Send + 'static {
     fn __into_response(self) -> ResponseValue;
 }
 
-/// What a handler returned, as the pipeline sends it.
+/// What a handler returned, as the pipeline sends it, and the Refs to
+/// delete once it was sent.
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct ResponseValue(pub(crate) Response);
+pub struct ResponseValue(pub(crate) Response, pub(crate) RefOps);
+
+impl ResponseValue {
+    /// `response` without Ref operations.
+    fn of(response: Response) -> Self {
+        Self(response, RefOps::new())
+    }
+}
 
 /// What a handler returned.
 #[derive(Debug)]
@@ -500,7 +524,7 @@ impl sealed::Response for LegacyMessage {}
 
 impl<K: ResponderKind> IntoResponse<K> for Responded {
     fn __into_response(self) -> ResponseValue {
-        ResponseValue(Response::Done)
+        ResponseValue::of(Response::Done)
     }
 }
 
@@ -509,13 +533,13 @@ macro_rules! message_responses {
     ($($kind:ident),*) => {$(
         impl IntoResponse<$kind> for V2Message {
             fn __into_response(self) -> ResponseValue {
-                ResponseValue(Response::Message(self.into()))
+                ResponseValue::of(Response::Message(self.into()))
             }
         }
 
         impl IntoResponse<$kind> for Components {
             fn __into_response(self) -> ResponseValue {
-                ResponseValue(Response::Message(self.into()))
+                ResponseValue::of(Response::Message(self.into()))
             }
         }
 
@@ -535,9 +559,36 @@ macro_rules! message_responses {
 
 message_responses!(Command, Component, ModalSubmit);
 
+impl<T: sealed::Response> sealed::Response for (T, RefOps) {}
+
+/// `(response, RefOps)` for the component and modal kinds.
+macro_rules! ref_ops_responses {
+    ($($kind:ident),*) => {$(
+        impl IntoResponse<$kind> for (V2Message, RefOps) {
+            fn __into_response(self) -> ResponseValue {
+                ResponseValue(Response::Message(self.0.into()), self.1)
+            }
+        }
+
+        impl IntoResponse<$kind> for (Components, RefOps) {
+            fn __into_response(self) -> ResponseValue {
+                ResponseValue(Response::Message(self.0.into()), self.1)
+            }
+        }
+
+        impl IntoResponse<$kind> for (Responded, RefOps) {
+            fn __into_response(self) -> ResponseValue {
+                ResponseValue(Response::Done, self.1)
+            }
+        }
+    )*};
+}
+
+ref_ops_responses!(Component, ModalSubmit);
+
 impl IntoResponse<Command> for LegacyMessage {
     fn __into_response(self) -> ResponseValue {
-        ResponseValue(Response::Message(self.into()))
+        ResponseValue::of(Response::Message(self.into()))
     }
 }
 
@@ -989,7 +1040,7 @@ impl FollowupHandle {
     /// minutes for an ephemeral follow-up.
     pub async fn edit(&self, msg: impl Into<OutgoingMessage>) -> Result<(), ResponderError> {
         let mut msg = msg.into();
-        self.shared.prepare(&mut msg)?;
+        self.shared.prepare(&mut msg).await?;
         let format = *self.format.lock().unwrap_or_else(PoisonError::into_inner);
         let body = edit_body(&msg, format)?;
         match self
@@ -1273,16 +1324,33 @@ impl Shared {
         app.payload_keys.as_deref().map(|keys| keys as &dyn Sign)
     }
 
+    /// The App's namespaced `RefStore` and default Ref TTL, where minted
+    /// Refs are stored; `None` on the detached transport, which sends
+    /// nothing and so stores nothing.
+    fn ref_target(&self) -> Option<(&Arc<dyn RefStore>, Duration)> {
+        let app = match &self.transport {
+            Transport::Interaction(target) => &target.app,
+            Transport::Message(target) => &target.app,
+            Transport::Detached => return None,
+        };
+        Some((&app.refs, app.ref_ttl))
+    }
+
     /// Resolves every unresolved Route `custom_id` for this send: one
     /// select nonce for the whole message, the signer only for `signed`
-    /// Routes (AD-18). A Ref slot or any encode error is
-    /// [`ResponderError::Encode`] naming the Route.
-    fn resolve_ids<'a>(
+    /// Routes, and a minted Ref for every Ref slot (AD-18). Equal slots
+    /// share one Ref; each distinct one is stored in the App's `RefStore`
+    /// before anything is sent. An already-resolved id is kept.
+    ///
+    /// On an error nothing is sent; Refs already stored stay until their
+    /// TTL reaps them.
+    async fn resolve_ids<'a>(
         &self,
         ids: impl Iterator<Item = &'a mut CustomId>,
     ) -> Result<(), ResponderError> {
         let signer = self.signer();
         let mut nonce = None;
+        let mut slots: Vec<(&'a mut CustomId, PendingRef)> = Vec::new();
         for id in ids {
             if id.get().is_some() {
                 continue;
@@ -1293,14 +1361,7 @@ impl Shared {
             };
             match id.resolve_for_send(nonce, signer) {
                 Ok(None) => {}
-                Ok(Some(_)) => {
-                    return Err(ResponderError::Encode {
-                        reason: format!(
-                            "custom_id of route `{}` must be stored by Ref, which this Responder cannot mint yet",
-                            id.route()
-                        ),
-                    });
-                }
+                Ok(Some(slot)) => slots.push((id, slot)),
                 Err(error) => {
                     return Err(ResponderError::Encode {
                         reason: format!("custom_id of route `{}`: {error}", id.route()),
@@ -1308,15 +1369,34 @@ impl Shared {
                 }
             }
         }
+        if slots.is_empty() {
+            return Ok(());
+        }
+        let target = self.ref_target();
+        let mut minted: HashMap<PendingRef, Ref> = HashMap::new();
+        for (id, slot) in slots {
+            let r = if let Some(&r) = minted.get(&slot) {
+                r
+            } else {
+                let r = mint_ref(&slot, target).await?;
+                minted.insert(slot.clone(), r);
+                r
+            };
+            id.finish(&slot, r)
+                .map_err(|error| ResponderError::Encode {
+                    reason: format!("custom_id of route `{}`: {error}", slot.route()),
+                })?;
+        }
         Ok(())
     }
 
-    /// Resolves the Route `custom_id`s of `msg`, validates it against the
-    /// Limits (Lenient mode truncates), then rejects attachments.
-    fn prepare(&self, msg: &mut OutgoingMessage) -> Result<(), ResponderError> {
+    /// Mints the Route `custom_id`s of `msg` (storing their Refs), then
+    /// validates it against the Limits (Lenient mode truncates), then
+    /// rejects attachments.
+    async fn prepare(&self, msg: &mut OutgoingMessage) -> Result<(), ResponderError> {
         let report = match msg {
             OutgoingMessage::V2(m) => {
-                self.resolve_ids(m.custom_ids_mut())?;
+                self.resolve_ids(m.custom_ids_mut()).await?;
                 let report = noctis_ui::validate(m, &self.limits)?;
                 if !m.attachment_set().is_empty() {
                     return Err(ResponderError::AttachmentsUnsupported);
@@ -1324,7 +1404,7 @@ impl Shared {
                 report
             }
             OutgoingMessage::Legacy(m) => {
-                self.resolve_ids(m.custom_ids_mut())?;
+                self.resolve_ids(m.custom_ids_mut()).await?;
                 noctis_ui::validate(m, &self.limits)?
             }
         };
@@ -1368,7 +1448,7 @@ impl Shared {
         self: &Arc<Self>,
         mut msg: OutgoingMessage,
     ) -> Result<(), ResponderError> {
-        self.prepare(&mut msg)?;
+        self.prepare(&mut msg).await?;
         let gate = self.gate.lock().await;
         if self.state() != PENDING {
             drop(gate);
@@ -1398,7 +1478,7 @@ impl Shared {
         ephemerality: Ephemerality,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
-        self.prepare(&mut msg)?;
+        self.prepare(&mut msg).await?;
         let gate = self.gate.lock().await;
         match self.state() {
             PENDING => self.send_reply(&msg, ephemerality, with_response).await,
@@ -1514,7 +1594,7 @@ impl Shared {
         let Some(source) = self.source else {
             return Err(ResponderError::UpdateUnavailable);
         };
-        self.prepare(&mut msg)?;
+        self.prepare(&mut msg).await?;
         let gate = self.gate.lock().await;
         if self.state() != PENDING {
             drop(gate);
@@ -1612,7 +1692,8 @@ impl Shared {
         if self.transport.is_message() {
             return Err(ResponderError::ModalUnavailable);
         }
-        self.resolve_ids(std::iter::once(modal.custom_id_mut()))?;
+        self.resolve_ids(std::iter::once(modal.custom_id_mut()))
+            .await?;
         let report = noctis_ui::validate(&mut modal, &self.limits)?;
         for warning in &report.warnings {
             tracing::debug!(target: "noctis::responder", ?warning, "modal adjusted to fit");
@@ -1634,7 +1715,7 @@ impl Shared {
     }
 
     async fn edit_reply(&self, mut msg: OutgoingMessage) -> Result<(), ResponderError> {
-        self.prepare(&mut msg)?;
+        self.prepare(&mut msg).await?;
         self.edit_prepared(msg).await
     }
 
@@ -1712,7 +1793,7 @@ impl Shared {
         if self.transport.is_message() && visibility == Ephemerality::Ephemeral {
             return Err(ResponderError::EphemeralUnsupported);
         }
-        self.prepare(&mut msg)?;
+        self.prepare(&mut msg).await?;
         self.send_follow_up(msg, visibility).await
     }
 
@@ -1774,7 +1855,7 @@ impl Shared {
         let mut msg = OutgoingMessage::V2(V2Message::new(
             Components::new().push(TextDisplay::new(text)),
         ));
-        self.prepare(&mut msg)?;
+        self.prepare(&mut msg).await?;
         let visibility = if self.transport.is_message() {
             Ephemerality::Public
         } else {
@@ -1844,6 +1925,41 @@ impl Shared {
             (transport, message_id) => transport.delete_reply(message_id).await,
         }
     }
+}
+
+/// How many Refs a slot may mint before [`ResponderError::RefCollision`].
+const MINT_ATTEMPTS: usize = 3;
+
+/// Mints the Ref of `slot` and stores its record under it in `target`
+/// (`put_if_absent`, with the Route's TTL or the App's), retrying on a
+/// collision; with no target (detached) the Ref is only minted.
+async fn mint_ref(
+    slot: &PendingRef,
+    target: Option<(&Arc<dyn RefStore>, Duration)>,
+) -> Result<Ref, ResponderError> {
+    let mint = || {
+        Ref::mint().map_err(|error| ResponderError::Encode {
+            reason: format!(
+                "no Ref could be minted for route `{}`: {error}",
+                slot.route()
+            ),
+        })
+    };
+    let Some((refs, default_ttl)) = target else {
+        return mint();
+    };
+    let ttl = slot.ttl().unwrap_or(default_ttl);
+    for _ in 0..MINT_ATTEMPTS {
+        let r = mint()?;
+        if refs
+            .put_if_absent(r.as_str(), slot.record(), Some(ttl))
+            .await
+            .map_err(ResponderError::RefStore)?
+        {
+            return Ok(r);
+        }
+    }
+    Err(ResponderError::RefCollision)
 }
 
 /// One select nonce for a send, drawn uniformly in `0..=SelectNonce::MAX`

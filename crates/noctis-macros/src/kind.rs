@@ -132,6 +132,8 @@ pub(crate) fn fallback_route(ident: &Ident) -> TokenStream {
             type Payload = Self;
         }
 
+        impl #codec::DeclaredRuntime for #ident {}
+
         impl #codec::Payload for #ident {
             const MAX_ENCODED_LEN: ::core::option::Option<::core::primitive::usize> =
                 ::core::option::Option::Some(0);

@@ -511,6 +511,7 @@ impl<S, F, Fut, R> __Bind<__C, S, F> for __ComponentKind
 where
     S: __Component
         + noctis_codec::Route<Payload = S>
+        + noctis_codec::DeclaredRuntime
         + for<'de> noctis_codec::PayloadDecode<'de>
         + Send
         + 'static,
@@ -534,6 +535,7 @@ impl<S, D, F, Fut, R> __Bind<__CR<Responder<Component, Pending, D>>, S, F> for _
 where
     S: __Component
         + noctis_codec::Route<Payload = S>
+        + noctis_codec::DeclaredRuntime
         + for<'de> noctis_codec::PayloadDecode<'de>
         + Send
         + 'static,
@@ -556,7 +558,11 @@ where
 
 impl<S, F, Fut, R> __Bind<__C, S, F> for __ModalKind
 where
-    S: __Modal + noctis_ui::__macro::ModalFromPayload + Send + 'static,
+    S: __Modal
+        + noctis_ui::__macro::ModalFromPayload
+        + noctis_codec::DeclaredRuntime
+        + Send
+        + 'static,
     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
     F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
@@ -576,7 +582,11 @@ where
 
 impl<S, D, F, Fut, R> __Bind<__CR<Responder<ModalSubmit, Pending, D>>, S, F> for __ModalKind
 where
-    S: __Modal + noctis_ui::__macro::ModalFromPayload + Send + 'static,
+    S: __Modal
+        + noctis_ui::__macro::ModalFromPayload
+        + noctis_codec::DeclaredRuntime
+        + Send
+        + 'static,
     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
     D: DeferMode,
     F: Fn(S, ModalSubmitCtx, Responder<ModalSubmit, Pending, D>) -> Fut + Send + Sync + 'static,

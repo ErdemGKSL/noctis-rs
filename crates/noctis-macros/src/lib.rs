@@ -30,6 +30,7 @@ mod common;
 mod component;
 mod components;
 mod defaults;
+mod duration;
 mod event;
 mod handler;
 mod hook;

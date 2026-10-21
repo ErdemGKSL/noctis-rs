@@ -123,6 +123,7 @@ Implemented:
 | `.payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY`, else none | the key that signs and verifies `signed` Routes (`noctis::codec::PayloadKey`, 32 bytes: `PayloadKey::from_hex(..)` takes exactly **64 hex digits**, e.g. `openssl rand -hex 32`; `KeyError::Length`/`InvalidChar` otherwise, naming a length or a position, never a character); required when a `signed` Route is mounted (``BuildViolation::MissingPayloadKey``: ``[CID-06] Route `x` is `signed`, but no payload key is configured: set NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)` ``); identical on every process of a Cluster; never logged (`Debug` shows `payload_key: true`); the last call wins |
 | `.previous_payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY_PREVIOUS`, else none | the previous key during a rotation: ids it signed still verify, new ids use the current key; without a current key it is ``BuildViolation::PreviousKeyWithoutKey`` (``[CID-06] a previous payload key is set without a current one: set NOCTIS_PAYLOAD_KEY (or call `.payload_key(..)`) too``); the last call wins |
 | `.ack_deadline(Duration)` | 2000 ms | auto-defer deadline, measured from gateway receipt (queueing counts): 0 ms..=2500 ms, else `BuildViolation::InvalidAckDeadline` (`ack deadline 2.501s is out of range: use a value in 0 ms..=2500 ms`); 0 always defers; no environment variable; the last call wins. Read back with `app.ack_deadline()`; see `responder.md` §2 |
+| `.ref_ttl(Duration)` | 24 h | the TTL of every Ref whose Route has no `ttl = "…"`: 1 s..=365 d, else `BuildViolation::InvalidRefTtl` (`ref TTL 0ns is out of range: use a value in 1 s..=365 d`); the last call wins. Read back with `app.ref_ttl()`; see `routes-payloads-refs.md` §7 |
 | `.expired_handler(f)` | the `noctis.expired` ephemeral notice | the App-level Expired Handler: `f: Fn(ExpiredCtx, Expired) -> impl Future<Output = HandlerResult<R>>` (an `async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<V2Message>` works), `R` a message or `Responded`; it answers a stale or Ref id of a Route without its own `#[on_stale]`/`#[on_expired]`; `ctx.route()` names the Route; no responder, always auto-deferred, the returned message follows the Route's declared `response`; the last call wins; see `routes-payloads-refs.md` §8 |
 | `.build()` | — | `Result<App, BuildError>` |
 
@@ -132,7 +133,6 @@ Planned (signatures may change):
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
 | `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
-| `.ref_ttl(Duration)` [planned] | 24 h | default TTL for Refs without `ttl = …` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` [planned] | none | from `AppBuilderImageExt` (`image` feature); installs the `ImagePlugin` (see `images.md`) |
@@ -716,6 +716,7 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_handler_errors_total` | counter | `app`, `kind` | handler runs that returned `Err` or panicked |
 | `noctis_autodefer_total` | counter | `app` | interactions the auto-defer acknowledged (`responder.md` §2) |
 | `noctis_ack_latency_seconds` | histogram | `app` | time from gateway receipt to the initial interaction callback (reply, defer, modal or auto-defer) |
+| `noctis_ref_lookups_total` | counter | `app`, `result` (`hit` \| `miss` \| `stale` \| `forged`) | Ref lookups of clicked or submitted Ref ids (`routes-payloads-refs.md` §7); a `RefStore` error is not counted |
 | `noctis_shard_status` | gauge | `app`, `shard` | `1` after READY/RESUMED, `0` at start and after a disconnect or end; alert on `== 0` |
 | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx` \| `error`) | Discord HTTP upstream attempts by status class; `error` = no response |
 | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns` \| `connect` \| `tls` \| `ttfb` \| `total`) | dial phases per new connection, `ttfb`/`total` per attempt |
@@ -727,7 +728,7 @@ label carries a user, guild, channel or message id or free text):
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
 `autocomplete` are emitted today; `component` and `render` join with their handlers. Planned:
-Ref lookups [planned, Story 7.5], render metrics [planned, Epic 10].
+render metrics [planned, Epic 10].
 
 The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `name`,
 `metric_type: MetricType` (`Counter` | `Gauge` | `Histogram`), `labels` and

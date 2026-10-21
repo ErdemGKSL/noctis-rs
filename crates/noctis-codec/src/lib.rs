@@ -137,7 +137,7 @@
 //! route id and the worst case, when a Route can exceed 100 characters
 //! (CID-01). `encode_variant` and `decode_variant` write and read a
 //! `PayloadEnum` variant index as one base62 digit, and `RouteRuntime` is
-//! the (still empty) runtime declaration of a derived Route.
+//! the runtime declaration (Ref TTL, one-shot) of a derived Route.
 //!
 //! # Allocation
 //!

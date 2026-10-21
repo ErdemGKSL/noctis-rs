@@ -76,6 +76,26 @@ impl Fixture {
         Self { server, app }
     }
 
+    /// As [`Fixture::start`], with the `RefStore` `refs` and, if given,
+    /// the App's default Ref TTL.
+    pub(crate) async fn start_refs(
+        answer: Answer,
+        refs: Arc<crate::test_support::TestRefs>,
+        ttl: Option<Duration>,
+    ) -> Self {
+        let server = TestServer::start_with(false, answer).await;
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .http_proxy(server.authority())
+            .ref_store(refs);
+        if let Some(ttl) = ttl {
+            builder.ref_ttl(ttl);
+        }
+        let app = builder.build().unwrap();
+        Self { server, app }
+    }
+
     pub(crate) async fn start_with(answer: Answer, limits: Limits) -> Self {
         let server = TestServer::start_with(false, answer).await;
         let app = App::builder()
@@ -1477,3 +1497,4 @@ async fn renamed_calls_wire() {
 }
 
 mod components;
+mod refs;

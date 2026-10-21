@@ -10,6 +10,7 @@ use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, Ident, Lit, LitStr, Meta};
 
 use crate::common::{combine, error};
+use crate::duration::{DurationError, parse_secs};
 
 /// How a Route's body is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,17 +51,24 @@ pub(crate) struct RouteArgs {
     pub(crate) response: Response,
     /// `auto_defer = ..` (components only; `true` when omitted).
     pub(crate) auto_defer: bool,
+    /// `ttl = ".."` and `one_shot` (by-Ref Routes only).
+    pub(crate) ref_args: RefArgs,
 }
 
-/// The runtime arguments of AD-6 that later Epic 7 stories add.
-const RUNTIME_ARGS: [&str; 6] = [
-    "ttl",
-    "one_shot",
-    "owner",
-    "permissions",
-    "guard",
-    "rate_limit",
-];
+/// The Ref arguments of a by-Ref Route (AD-6, AD-18).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RefArgs {
+    /// `ttl = ".."` in seconds.
+    pub(crate) ttl_secs: Option<u64>,
+    /// `one_shot`.
+    pub(crate) one_shot: bool,
+}
+
+/// The runtime arguments of AD-6 that later stories add (Guards in 7.7,
+/// `rate_limit` in 13.4).
+const RUNTIME_ARGS: [&str; 4] = ["owner", "permissions", "guard", "rate_limit"];
+
+const TTL_HELP: &str = "write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")";
 
 /// The runtime arguments components take now and `#[modal]` takes with
 /// Story 7.8.
@@ -190,6 +198,8 @@ struct Seen {
     defaults: Option<(Ident, TokenStream)>,
     response: Option<Response>,
     auto_defer: Option<bool>,
+    ttl: Option<(Ident, u64)>,
+    one_shot: Option<Ident>,
     names: Vec<String>,
 }
 
@@ -230,6 +240,19 @@ fn parse_list(
             "remove `signed`: a Ref is already unguessable, and only inline bodies carry a tag",
         ));
     }
+    if seen.by_ref.is_none() && seen.spill.is_none() {
+        let names = [
+            seen.ttl.as_ref().map(|(name, _)| name),
+            seen.one_shot.as_ref(),
+        ];
+        for name in names.into_iter().flatten() {
+            errors.push(cid_03(
+                name,
+                format!("`{name}` needs a by-Ref Route"),
+                "add by_ref or overflow = spill: only a Ref has a TTL or is consumed on use",
+            ));
+        }
+    }
     combine(errors)?;
     let body = match (&seen.by_ref, &seen.spill) {
         (Some(_), _) => Body::ByRef,
@@ -245,6 +268,10 @@ fn parse_list(
             signed: seen.signed.is_some(),
             response: seen.response.unwrap_or(Response::Update),
             auto_defer: seen.auto_defer.unwrap_or(true),
+            ref_args: RefArgs {
+                ttl_secs: seen.ttl.map(|(_, secs)| secs),
+                one_shot: seen.one_shot.is_some(),
+            },
         },
         seen.defaults,
     ))
@@ -352,6 +379,8 @@ fn parse_arg(
         "signed",
         "response",
         "auto_defer",
+        "ttl",
+        "one_shot",
     ]
     .contains(&key.as_str())
     {
@@ -372,13 +401,15 @@ fn parse_arg(
     }
     seen.names.push(key.clone());
     match (key.as_str(), value) {
-        ("by_ref" | "signed", Some(_)) => errors.push(cid_03(
+        ("by_ref" | "signed" | "one_shot", Some(_)) => errors.push(cid_03(
             stream(segment),
             format!("`{key}` is a flag and takes no value"),
             format!("write `{key}` alone"),
         )),
         ("by_ref", None) => seen.by_ref = Some(name.clone()),
         ("signed", None) => seen.signed = Some(name.clone()),
+        ("one_shot", None) => seen.one_shot = Some(name.clone()),
+        ("ttl", value) => parse_ttl(name, value, seen, errors),
         ("overflow", value) => parse_overflow(name, value, segment, kind, seen, errors),
         ("response", value) => parse_response(name, value, seen, errors),
         ("auto_defer", value) => parse_auto_defer(name, value, seen, errors),
@@ -515,6 +546,46 @@ fn parse_overflow(
     }
 }
 
+/// `ttl = "<duration>"` (a string literal, `crate::duration`'s grammar).
+fn parse_ttl(
+    name: &Ident,
+    value: Option<&[TokenTree]>,
+    seen: &mut Seen,
+    errors: &mut Vec<syn::Error>,
+) {
+    let lit = match value {
+        Some([TokenTree::Literal(l)]) => {
+            match syn::parse2::<Lit>(TokenTree::Literal(l.clone()).into()) {
+                Ok(Lit::Str(s)) => Some(s),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    let Some(lit) = lit else {
+        errors.push(cid_03(
+            value_tokens(name, value),
+            "`ttl` takes a duration string",
+            TTL_HELP,
+        ));
+        return;
+    };
+    let text = lit.value();
+    match parse_secs(&text) {
+        Ok(secs) => seen.ttl = Some((name.clone(), secs)),
+        Err(DurationError::Syntax) => errors.push(cid_03(
+            &lit,
+            format!("`ttl = {text:?}` is not a duration"),
+            TTL_HELP,
+        )),
+        Err(DurationError::OutOfRange) => errors.push(cid_03(
+            &lit,
+            format!("`ttl` must be between 1s and 365d, found `{text}`"),
+            TTL_HELP,
+        )),
+    }
+}
+
 fn parse_schema(
     name: &Ident,
     value: Option<&[TokenTree]>,
@@ -577,6 +648,11 @@ pub(crate) fn route_impls(ident: &Ident, args: &RouteArgs, payload: &TokenStream
         }
     });
     let schema = args.schema;
+    let ttl = args
+        .ref_args
+        .ttl_secs
+        .map(|secs| quote!(.with_ttl_secs(#secs)));
+    let one_shot = args.ref_args.one_shot.then(|| quote!(.one_shot()));
     let proof = quote_spanned! {ident.span()=>
         const _: () = ::noctis::__private::codec::assert_fits::<#ident>();
     };
@@ -594,7 +670,7 @@ pub(crate) fn route_impls(ident: &Ident, args: &RouteArgs, payload: &TokenStream
 
         #[automatically_derived]
         impl #codec::DeclaredRuntime for #ident {
-            const RUNTIME: #codec::RouteRuntime = #codec::RouteRuntime::EMPTY;
+            const RUNTIME: #codec::RouteRuntime = #codec::RouteRuntime::EMPTY #ttl #one_shot;
         }
 
         #proof
@@ -642,6 +718,7 @@ mod tests {
             signed: false,
             response: super::Response::Update,
             auto_defer: true,
+            ref_args: super::RefArgs::default(),
         }
     }
 
@@ -698,16 +775,64 @@ mod tests {
             "[CID-03] unknown #[button] argument `colour`",
         ),
         (
+            "#[button(\"a\", owner = user)] struct R;",
+            "[CID-03] `owner` is a runtime argument of #[button] that this Noctis release does not support yet",
+        ),
+        (
             "#[button(\"a\", ttl = \"1m\")] struct R;",
-            "[CID-03] `ttl` is a runtime argument of #[button] that this Noctis release does not support yet",
+            "[CID-03] `ttl` needs a by-Ref Route",
         ),
         (
             "#[button(\"a\", one_shot)] struct R;",
-            "[CID-03] `one_shot` is a runtime argument",
+            "[CID-03] `one_shot` needs a by-Ref Route",
         ),
         (
-            "#[button(\"a\", owner = user)] struct R;",
-            "[CID-03] `owner` is a runtime argument",
+            "#[button(\"a\", by_ref, ttl = 15)] struct R;",
+            "[CID-03] `ttl` takes a duration string",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl)] struct R;",
+            "[CID-03] `ttl` takes a duration string",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = b\"1m\")] struct R;",
+            "[CID-03] `ttl` takes a duration string",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"1m\" \"2m\")] struct R;",
+            "[CID-03] `ttl` takes a duration string",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"15x\")] struct R;",
+            "[CID-03] `ttl = \"15x\"` is not a duration",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"1m1h\")] struct R;",
+            "[CID-03] `ttl = \"1m1h\"` is not a duration",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"0s\")] struct R;",
+            "[CID-03] `ttl` must be between 1s and 365d, found `0s`",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"366d\")] struct R;",
+            "[CID-03] `ttl` must be between 1s and 365d, found `366d`",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"99999999999999999999d\")] struct R;",
+            "[CID-03] `ttl` must be between 1s and 365d",
+        ),
+        (
+            "#[button(\"a\", by_ref, one_shot = true)] struct R;",
+            "[CID-03] `one_shot` is a flag and takes no value",
+        ),
+        (
+            "#[button(\"a\", by_ref, one_shot, one_shot)] struct R;",
+            "[CID-03] #[button] argument `one_shot` is given twice",
+        ),
+        (
+            "#[button(\"a\", by_ref, ttl = \"1m\", ttl = \"2m\")] struct R;",
+            "[CID-03] #[button] argument `ttl` is given twice",
         ),
         (
             "#[button(\"a\", permissions = X)] struct R;",
@@ -911,6 +1036,7 @@ mod tests {
                 signed: true,
                 response: super::Response::Update,
                 auto_defer: true,
+                ref_args: super::RefArgs::default(),
             })
         );
         assert_eq!(
@@ -1001,5 +1127,98 @@ mod tests {
             "{select}"
         );
         assert!(select.contains("type Payload = P ;"), "{select}");
+    }
+
+    /// Matrix rows 1 and 7: accepted `ttl`/`one_shot`, on components and
+    /// on `#[modal]`, and the emitted `RUNTIME`.
+    #[test]
+    fn ttl_and_one_shot_parse_and_emit() {
+        let ttl =
+            |input: &DeriveInput| parse(input).map(|a| (a.ref_args.ttl_secs, a.ref_args.one_shot));
+        assert_eq!(
+            ttl(&parse_quote!(
+                #[button("a", by_ref, ttl = "15m", one_shot)]
+                struct R;
+            )),
+            Ok((Some(900), true))
+        );
+        assert_eq!(
+            ttl(&parse_quote!(
+                #[button("a", overflow = spill, one_shot)]
+                struct R;
+            )),
+            Ok((None, true))
+        );
+        assert_eq!(
+            ttl(&parse_quote!(
+                #[button("a", by_ref, ttl = r"1h30m")]
+                struct R;
+            )),
+            Ok((Some(5_400), false))
+        );
+        let modal = AttrKind {
+            attr: "modal",
+            derive: "Modal",
+            select: false,
+        };
+        let input: DeriveInput = parse_quote!(
+            #[modal("m", by_ref, ttl = "1h", defaults(title = "t"))]
+            struct R;
+        );
+        let parsed = parse_kind_attr(&input.attrs, &input.ident, modal).unwrap();
+        assert_eq!(
+            (parsed.args.ref_args.ttl_secs, parsed.args.ref_args.one_shot),
+            (Some(3_600), false)
+        );
+
+        let ident: syn::Ident = parse_quote!(R);
+        let mut a = args("a");
+        let plain = route_impls(&ident, &a, &quote::quote!(Self)).to_string();
+        assert!(
+            plain.contains(
+                "RouteRuntime = :: noctis :: __private :: codec :: RouteRuntime :: EMPTY ;"
+            ),
+            "{plain}"
+        );
+        a.body = Body::ByRef;
+        a.ref_args = super::RefArgs {
+            ttl_secs: Some(900),
+            one_shot: true,
+        };
+        let emitted = route_impls(&ident, &a, &quote::quote!(Self)).to_string();
+        assert!(
+            emitted.contains("RouteRuntime :: EMPTY . with_ttl_secs (900u64) . one_shot () ;"),
+            "{emitted}"
+        );
+    }
+
+    /// Both inline errors are reported, each spanned on its name.
+    #[test]
+    fn ttl_and_one_shot_on_an_inline_route() {
+        let m = parse(&parse_quote!(
+            #[button("a", ttl = "1m", one_shot)]
+            struct R;
+        ))
+        .unwrap_err();
+        assert!(m.contains("[CID-03] `ttl` needs a by-Ref Route"), "{m}");
+        assert!(
+            m.contains("[CID-03] `one_shot` needs a by-Ref Route"),
+            "{m}"
+        );
+        assert!(
+            m.contains(
+                "help: add by_ref or overflow = spill: only a Ref has a TTL or is consumed on use"
+            ),
+            "{m}"
+        );
+        let m = parse(&parse_quote!(
+            #[button("a", by_ref, ttl = "15 m")]
+            struct R;
+        ))
+        .unwrap_err();
+        assert_eq!(
+            m,
+            "[CID-03] `ttl = \"15 m\"` is not a duration\n  = help: write ttl = \"15m\" (units d, h, m, s, such as \"1h30m\")"
+        );
     }
 }

@@ -72,17 +72,17 @@ help: `noctis::__private::noctis_core::kind::__ModalKind` implements trait `noct
 ...
    | / impl<S, F, Fut, R> __Bind<__C, S, F> for __ModalKind
    | | where
-   | |     S: __Modal + noctis_ui::__macro::ModalFromPayload + Send + 'static,
-   | |     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
-   | |     F: Fn(S, ModalSubmitCtx) -> Fut + Send + Sync + 'static,
+   | |     S: __Modal
+   | |         + noctis_ui::__macro::ModalFromPayload
+...  |
    | |     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
    | |     R: IntoResponse<ModalSubmit>,
    | |_________________________________^ `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, S, F>`
 ...
    | / impl<S, D, F, Fut, R> __Bind<__CR<Responder<ModalSubmit, Pending, D>>, S, F> for __ModalKind
    | | where
-   | |     S: __Modal + noctis_ui::__macro::ModalFromPayload + Send + 'static,
-   | |     for<'de> <S as noctis_codec::Route>::Payload: noctis_codec::PayloadDecode<'de>,
+   | |     S: __Modal
+   | |         + noctis_ui::__macro::ModalFromPayload
 ...  |
    | |     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
    | |     R: IntoResponse<ModalSubmit>,

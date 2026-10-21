@@ -28,7 +28,7 @@ const USER: u64 = 1_222_222_222_222_222_222;
 const FIXTURES: [u64; 3] = [GA, CHANNEL, USER];
 
 /// Every label name a catalog row may use.
-const ALLOWED_LABELS: [&str; 10] = [
+const ALLOWED_LABELS: [&str; 11] = [
     "app",
     "lane",
     "event_type",
@@ -39,6 +39,7 @@ const ALLOWED_LABELS: [&str; 10] = [
     "reason",
     "reused",
     "outcome",
+    "result",
 ];
 /// Substrings no label name may contain.
 const FORBIDDEN_IN_NAMES: [&str; 8] = [
@@ -56,9 +57,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 15);
+    assert_eq!(METRICS.len(), 16);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 15);
+    assert_eq!(names.len(), 16);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -87,6 +88,7 @@ fn catalog_static() {
             ("noctis_handler_errors_total", &["app", "kind"][..]),
             ("noctis_autodefer_total", &["app"][..]),
             ("noctis_ack_latency_seconds", &["app"][..]),
+            ("noctis_ref_lookups_total", &["app", "result"][..]),
             ("noctis_shard_status", &["app", "shard"][..]),
             ("noctis_http_requests_total", &["app", "status_class"][..]),
             ("noctis_http_phase_seconds", &["app", "phase"][..]),
@@ -129,6 +131,10 @@ fn check_value(metric: &str, label: &str, value: &str, total: u32) {
             "{metric}: {value}"
         ),
         "reused" => assert!(["true", "false"].contains(&value), "{metric}: {value}"),
+        "result" => assert!(
+            ["hit", "miss", "stale", "forged"].contains(&value),
+            "{metric}: {value}"
+        ),
         "outcome" => assert!(
             ["won", "lost", "40060"].contains(&value),
             "{metric}: {value}"
@@ -283,7 +289,8 @@ async fn recorded_set_core() {
     let seen = check_snapshot(&snapshot, 2);
     // The HTTP edge rows are recorded end to end in the testkit's
     // `observability.rs` (Story 5.9 Matrix 49); the auto-defer and ack
-    // latency rows in the pipeline tests (`int_01_auto_defer_at_deadline`).
+    // latency rows in the pipeline tests (`int_01_auto_defer_at_deadline`);
+    // the Ref lookups in `pipeline::tests::refs`.
     let all: HashSet<_> = METRICS
         .iter()
         .map(|m| m.name.to_owned())
@@ -292,6 +299,7 @@ async fn recorded_set_core() {
                 && !name.starts_with("noctis_interaction_")
                 && name != "noctis_autodefer_total"
                 && name != "noctis_ack_latency_seconds"
+                && name != "noctis_ref_lookups_total"
         })
         .collect();
     assert_eq!(seen, all, "{snapshot:?}");

@@ -41,10 +41,12 @@ edit body (type-7 `data`, `PATCH @original`, follow-up edits, bot-token edits). 
 the Limits validator (`AppBuilder::limits`, Strict by default; Lenient truncates with
 `…`) before any HTTP call. Before encoding, every Route `custom_id` of the message is
 resolved: one fresh select nonce per send for every select of the message, and the App's
-payload key signs `signed` Routes. [planned] Finalizing Refs (Story 7.5: a `by_ref` or
-spilled Route is `ResponderError::Encode` naming the Route today) and uploading
-attachments (Story 9.1): a message with attachments fails with
-`ResponderError::AttachmentsUnsupported` today, before any request.
+payload key signs `signed` Routes, and every `by_ref`/spilled Route gets its Ref: the
+Responder mints one per distinct Ref slot and stores its record in the App's
+`RefStore` with the Route's `ttl` (else `AppBuilder::ref_ttl`) before the request
+(`routes-payloads-refs.md` §7). [planned] Uploading attachments (Story 9.1): a message
+with attachments fails with `ResponderError::AttachmentsUnsupported` today, before any
+request.
 
 A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
 the `Command` (or `Component`) Error Sink (§5).
@@ -417,7 +419,9 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | Variant | When (nothing is sent unless noted) |
 | --- | --- |
 | `Invalid(UiError)` | Limits violation (Strict) or a command's V2 → legacy edit |
-| `Encode { reason }` | a Route `custom_id` cannot be resolved (a `by_ref`/spilled Route until Story 7.5, or a `signed` Route without a payload key on a detached responder); `reason` names the Route |
+| `Encode { reason }` | a Route `custom_id` cannot be resolved (a `signed` Route without a payload key on a detached responder, or a message that fails its own `custom_id` checks such as two equal ids); `reason` names the Route |
+| `RefStore(PortError)` | the `RefStore` failed while storing a Ref record of the message |
+| `RefCollision` | three freshly minted Refs in a row already existed in the `RefStore` |
 | `AttachmentsUnsupported` | the message has attachments ([planned, Story 9.1]) |
 | `EphemeralUnsupported` | an ephemeral response over a Dispatcher message reply (§4.1) |
 | `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |

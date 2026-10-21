@@ -217,6 +217,7 @@ impl Module {
     /// #     const SCHEMA: u8 = 0;
     /// #     type Payload = Self;
     /// # }
+    /// # impl noctis_codec::DeclaredRuntime for Buy {}
     /// # impl noctis_ui::Handled for Buy {}
     /// // `#[derive(Button)] #[button("shop.buy", ..)] struct Buy;`, added in Module "shop".
     /// let dashboard = Module::new("dash").uses::<Buy>();

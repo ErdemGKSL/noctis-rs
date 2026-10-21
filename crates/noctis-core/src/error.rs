@@ -224,6 +224,12 @@ pub enum BuildViolation {
         /// The rejected deadline.
         actual: Duration,
     },
+    /// `ref_ttl` is outside 1 s..=365 d (FR-17).
+    #[error("ref TTL {actual:?} is out of range: use a value in 1 s..=365 d")]
+    InvalidRefTtl {
+        /// The rejected TTL.
+        actual: Duration,
+    },
     /// `handler_concurrency` is outside 1..=65536.
     #[error("handler concurrency {actual} is out of range: use a value in 1..=65536")]
     InvalidHandlerConcurrency {

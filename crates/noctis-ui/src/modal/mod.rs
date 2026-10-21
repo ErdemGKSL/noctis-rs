@@ -63,6 +63,7 @@ type Text = Cow<'static, str>;
 /// #     const SCHEMA: u8 = 0;
 /// #     type Payload = Self;
 /// # }
+/// # impl noctis_codec::DeclaredRuntime for Save {}
 /// # impl noctis_ui::Handled for Save {}
 ///
 /// // What `#[derive(Modal)]`'s `Save.build()` expands to.

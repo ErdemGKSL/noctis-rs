@@ -17,10 +17,18 @@
 //! 4. **Decode the struct and start the handler:** the Payload is decoded
 //!    once, verifying a `signed` Route's tag with the App's payload key ring
 //!    (current or previous key); a modal's inputs are decoded from that
-//!    verified Payload and the submission (`ModalFromPayload`). A stale id
+//!    verified Payload and the submission (`ModalFromPayload`). A Ref id
+//!    (Story 7.5, FR-17) is resolved in the App's namespaced `RefStore`
+//!    (`take` for a `one_shot` Route, else `get`) and the struct decoded
+//!    from the stored record: a missing record goes to the Expired Handler
+//!    chain, a record of another route (or one that does not parse) is
+//!    `forged`, one of another schema is stale, and a store error is
+//!    `ref_store`; each completed lookup counts one
+//!    `noctis_ref_lookups_total{app, result}` (`hit`, `miss`, `stale`,
+//!    `forged`). The Ref is never logged. A stale id
 //!    (another `schema`, body kind or `N`/`T` flag set of the Route) or a
-//!    Ref id (no `RefStore` before Story 7.5: every Ref is missing) runs the
-//!    Expired Handler chain instead: a stale id the Route's `#[on_stale]`,
+//!    Ref id whose record is missing runs the Expired Handler chain
+//!    instead: a stale id the Route's `#[on_stale]`,
 //!    then its `#[on_expired]` with [`Expired::Stale`]; a Ref id only its
 //!    `#[on_expired]` with [`Expired::RefMissing`]; then the App's
 //!    `expired_handler`; else the default `noctis.expired` ephemeral notice
@@ -49,7 +57,8 @@ use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
 
-use noctis_codec::{DecodeError, Decoded, Verify};
+use bytes::Bytes;
+use noctis_codec::{DecodeError, Decoded, RawBody, Ref, Verify};
 use noctis_gateway::{Inbound, InboundKind};
 use noctis_i18n::keys;
 use noctis_rules::Locale;
@@ -64,8 +73,8 @@ use twilight_model::id::Id;
 use super::{Armed, INTERACTION_CREATE, Report, Started, USER_INSTALL_FOLLOWUPS, arm, run_started};
 use crate::command::CtxInner;
 use crate::component::{
-    ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ExpiredLink, HandlerFuture,
-    ModalHandler, ModalSubmitCtx,
+    Begin, ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ExpiredLink,
+    HandlerFuture, ModalHandler, ModalSubmitCtx,
 };
 use crate::handler::AppShared;
 use crate::notice;
@@ -92,9 +101,12 @@ pub(crate) enum Rejection {
     Stale,
     /// A bad or missing integrity tag, or one no key of the ring verifies.
     Forged,
-    /// A Ref body whose record is missing (no `RefStore` before Story 7.5):
-    /// the Expired Handler chain answers it.
+    /// A Ref body whose record is missing or expired in the App's
+    /// `RefStore` (or was already taken by a `one_shot` use): the Expired
+    /// Handler chain answers it.
     RefUnresolved,
+    /// The App's `RefStore` failed to look the Ref up.
+    RefStore,
     /// The inline body does not decode into the struct.
     Undecodable,
     /// The modal inputs do not decode into the struct.
@@ -113,6 +125,7 @@ impl Rejection {
             Self::Stale => "stale",
             Self::Forged => "forged",
             Self::RefUnresolved => "ref_unresolved",
+            Self::RefStore => "ref_store",
             Self::Undecodable => "undecodable",
             Self::SubmitInvalid => "submit_invalid",
             Self::NoAuthor => "no_author",
@@ -185,7 +198,7 @@ impl Target<'_> {
         decoded: &Decoded<'_>,
         shared: Arc<Shared>,
         keys: Option<&dyn Verify>,
-    ) -> Result<HandlerFuture, Rejection> {
+    ) -> Result<Begin, Rejection> {
         match self {
             Self::Component(handler) => {
                 handler.start(ComponentCtx::from_inner(parts), decoded, shared, keys)
@@ -197,6 +210,34 @@ impl Target<'_> {
                 shared,
                 keys,
             ),
+        }
+    }
+
+    /// Starts the handler on the stored `record` of the id's Ref.
+    fn start_record(
+        &self,
+        parts: Arc<CtxInner>,
+        record: &[u8],
+        shared: Arc<Shared>,
+    ) -> Result<HandlerFuture, Rejection> {
+        match self {
+            Self::Component(handler) => {
+                handler.start_record(ComponentCtx::from_inner(parts), record, shared)
+            }
+            Self::Modal(handler, submission) => handler.start_record(
+                ModalSubmitCtx::from_inner(parts),
+                record,
+                submission,
+                shared,
+            ),
+        }
+    }
+
+    /// Whether the Route's Refs are resolved with `take` (`one_shot`).
+    fn one_shot(&self) -> bool {
+        match self {
+            Self::Component(handler) => handler.one_shot(),
+            Self::Modal(handler, _) => handler.one_shot(),
         }
     }
 
@@ -280,6 +321,47 @@ pub(crate) fn resolve<'r>(
         }
         (RouteHandler::Modal(_), Family::Modal) => Ok(entry),
         _ => Err(Rejection::UnknownRoute),
+    }
+}
+
+/// Counts one completed Ref lookup of `app` with `result` (`hit`, `miss`,
+/// `stale` or `forged`). The Ref itself is never a label.
+fn count_lookup(app: &AppShared, result: &'static str) {
+    metrics::counter!(
+        "noctis_ref_lookups_total",
+        "app" => Arc::clone(&app.app),
+        "result" => result
+    )
+    .increment(1);
+}
+
+/// The `result` label of a resolved record's start: `forged` and `stale`
+/// for a record not bound to this Route and schema, else `hit`.
+const fn lookup_label(started: Result<(), Rejection>) -> &'static str {
+    match started {
+        Err(Rejection::Forged) => "forged",
+        Err(Rejection::Stale) => "stale",
+        _ => "hit",
+    }
+}
+
+/// Looks the Ref `r` up in the App's namespaced `RefStore`: `take` for a
+/// `one_shot` Route, else `get`. A missing record is counted (`miss`) and
+/// is [`Rejection::RefUnresolved`]; a store error is
+/// [`Rejection::RefStore`] and is not counted.
+async fn lookup(app: &AppShared, r: Ref, one_shot: bool) -> Result<Bytes, Rejection> {
+    let found = if one_shot {
+        app.refs.take(r.as_str()).await
+    } else {
+        app.refs.get(r.as_str()).await
+    };
+    match found {
+        Err(_) => Err(Rejection::RefStore),
+        Ok(None) => {
+            count_lookup(app, "miss");
+            Err(Rejection::RefUnresolved)
+        }
+        Ok(Some(record)) => Ok(record),
     }
 }
 
@@ -546,6 +628,10 @@ pub(crate) async fn run_component_over(
         user_locale: locale,
         guild_locale,
         app: Some(Arc::clone(&app)),
+        current_ref: match decoded.body() {
+            RawBody::Ref(r) => Some(r),
+            RawBody::Inline(_) => None,
+        },
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
     let parts = Arc::new(parts);
@@ -563,16 +649,39 @@ pub(crate) async fn run_component_over(
     if cancel.is_cancelled() {
         return run_started(&span, Some(&cancel), state, None, None, report).await;
     }
-    // Stage 4: decode the struct and start the handler, or route a stale or
-    // Ref id through the Expired Handler chain.
+    // Stage 4: decode the struct (resolving a Ref id's record) and start
+    // the handler, or route a stale or missing-Ref id through the Expired
+    // Handler chain.
     let at = Instant::now();
     let handle = Arc::clone(&state);
-    let started = span.in_scope(|| {
+    let begun = span.in_scope(|| {
         std::panic::catch_unwind(AssertUnwindSafe(|| {
             let keys = app.payload_keys.as_deref().map(|k| k as &dyn Verify);
             target.start(Arc::clone(&parts), &decoded, handle, keys)
         }))
     });
+    let started = match begun {
+        Ok(Ok(Begin::Ready(future))) => Ok(Ok(future)),
+        Ok(Ok(Begin::Ref(r))) => match lookup(&app, r, target.one_shot()).await {
+            Err(rejection) => Ok(Err(rejection)),
+            Ok(record) => {
+                let handle = Arc::clone(&state);
+                let started = span.in_scope(|| {
+                    std::panic::catch_unwind(AssertUnwindSafe(|| {
+                        target.start_record(Arc::clone(&parts), &record, handle)
+                    }))
+                });
+                let label = match &started {
+                    Ok(result) => lookup_label(result.as_ref().map(drop).map_err(|r| *r)),
+                    Err(_) => "hit",
+                };
+                count_lookup(&app, label);
+                started
+            }
+        },
+        Ok(Err(rejection)) => Ok(Err(rejection)),
+        Err(panic) => Err(panic),
+    };
     let (future, auto_defer) = match started {
         Ok(Ok(future)) => (Ok(future), target.auto_defer()),
         Err(panic) => (Err(panic), target.auto_defer()),

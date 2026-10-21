@@ -387,8 +387,8 @@ mod responder {
     #[button("t.form", defaults(style = Secondary, label = "Go"))]
     struct Form;
 
-    /// A Route stored by Ref: its `custom_id` cannot be resolved until
-    /// Story 7.5 mints Refs.
+    /// A Route stored by Ref: the detached seam mints its Ref without
+    /// storing it (Story 7.5).
     #[derive(::noctis::Button)]
     #[button("t.stored", by_ref, defaults(style = Secondary, label = "Stored"))]
     struct Stored {
@@ -468,13 +468,26 @@ mod responder {
     impl Unresolved {
         #[handler]
         async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
-            // A select resolves with the send's nonce (Story 7.2); a Ref
-            // Route does not.
+            // A select resolves with the send's nonce (Story 7.2) and a
+            // Ref Route with a minted Ref (Story 7.5); a `signed` Route
+            // needs the App's key, which the detached seam does not hold.
             Ok(Components::new()
                 .push(ActionRow::select(
                     Pick.build().options([SelectOption::new("A", "a")]),
                 ))
-                .push(ActionRow::buttons([Stored { n: 1 }.build()])))
+                .push(ActionRow::buttons([Stored { n: 1 }.build()]))
+                .push(ActionRow::buttons([Sig.build()])))
+        }
+    }
+
+    #[derive(SlashCommand)]
+    #[command("minted", description = "d")]
+    struct Minted;
+
+    impl Minted {
+        #[handler]
+        async fn handle(self, _ctx: CommandCtx) -> HandlerResult<Components> {
+            Ok(Components::new().push(ActionRow::buttons([Stored { n: 1 }.build()])))
         }
     }
 
@@ -539,9 +552,11 @@ mod responder {
             .downcast_ref::<ResponderError>()
             .unwrap_or_else(|| panic!("{err}"));
         assert!(
-            matches!(responder, ResponderError::Encode { reason } if reason.contains("`t.stored`")),
+            matches!(responder, ResponderError::Encode { reason } if reason.contains("`t.sig`")),
             "{responder}"
         );
+        // A Ref Route is minted (detached: nothing is stored).
+        call_command(&Minted::descriptor(), "minted").await.unwrap();
     }
 
     /// Story 6.10 boundary pass (INT-05): an `auto_defer = false` handler

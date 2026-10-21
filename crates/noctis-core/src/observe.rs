@@ -80,6 +80,7 @@ const fn row(
 /// | `noctis_handler_errors_total` | counter | `app`, `kind` |
 /// | `noctis_autodefer_total` | counter | `app` |
 /// | `noctis_ack_latency_seconds` | histogram | `app` |
+/// | `noctis_ref_lookups_total` | counter | `app`, `result` (`hit`, `miss`, `stale`, `forged`) |
 /// | `noctis_shard_status` | gauge | `app`, `shard` (1 up, 0 down) |
 /// | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx`, `error`) |
 /// | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns`, `connect`, `tls`, `ttfb`, `total`) |
@@ -134,6 +135,12 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Histogram,
         &["app"],
         "Time from gateway receipt to the initial interaction callback.",
+    ),
+    row(
+        "noctis_ref_lookups_total",
+        MetricType::Counter,
+        &["app", "result"],
+        "Ref lookups by result: hit, miss, stale or forged.",
     ),
     row(
         "noctis_shard_status",

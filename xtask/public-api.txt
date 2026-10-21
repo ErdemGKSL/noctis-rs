@@ -38,6 +38,7 @@ pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub fn noctis::App::is_publisher(&self) -> bool
 pub fn noctis::App::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
+pub fn noctis::App::ref_ttl(&self) -> core::time::Duration
 pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -79,6 +80,7 @@ pub fn noctis::AppBuilder::previous_payload_key(&mut self, noctis::codec::Payloa
 pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
 pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
+pub fn noctis::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
 pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
 pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
@@ -271,6 +273,8 @@ pub noctis::BuildViolation::InvalidHttpProxy
 pub noctis::BuildViolation::InvalidHttpProxy::reason: noctis::HttpProxyError
 pub noctis::BuildViolation::InvalidHttpTimeout
 pub noctis::BuildViolation::InvalidHttpTimeout::actual: core::time::Duration
+pub noctis::BuildViolation::InvalidRefTtl
+pub noctis::BuildViolation::InvalidRefTtl::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidShardTotal
 pub noctis::BuildViolation::InvalidShutdownGrace
 pub noctis::BuildViolation::InvalidShutdownGrace::actual: core::time::Duration
@@ -477,6 +481,7 @@ impl noctis::ResponderKind for noctis::Component
 pub struct noctis::ComponentCtx(_)
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
@@ -687,6 +692,7 @@ impl core::marker::StructuralPartialEq for noctis::Expired
 pub struct noctis::ExpiredCtx(_)
 impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
@@ -864,7 +870,19 @@ pub fn noctis::InteractionContext::hash<__H: core::hash::Hasher>(&self, &mut __H
 impl core::marker::Copy for noctis::InteractionContext
 impl core::marker::StructuralPartialEq for noctis::InteractionContext
 pub trait noctis::IntoEdit<K: noctis::ResponderKind>: noctis::__private::core::responder::sealed::Edit + core::marker::Send + 'static
+impl noctis::IntoResponse<noctis::Component> for (noctis::Responded, noctis::RefOps)
+impl noctis::IntoResponse<noctis::Component> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::IntoResponse<noctis::Component> for (noctis::ui::V2Message, noctis::RefOps)
+impl noctis::IntoResponse<noctis::ModalSubmit> for (noctis::Responded, noctis::RefOps)
+impl noctis::IntoResponse<noctis::ModalSubmit> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::IntoResponse<noctis::ModalSubmit> for (noctis::ui::V2Message, noctis::RefOps)
 pub trait noctis::IntoResponse<K: noctis::ResponderKind>: noctis::__private::core::responder::sealed::Response + core::marker::Send + 'static
+impl noctis::IntoResponse<noctis::Component> for (noctis::Responded, noctis::RefOps)
+impl noctis::IntoResponse<noctis::Component> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::IntoResponse<noctis::Component> for (noctis::ui::V2Message, noctis::RefOps)
+impl noctis::IntoResponse<noctis::ModalSubmit> for (noctis::Responded, noctis::RefOps)
+impl noctis::IntoResponse<noctis::ModalSubmit> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::IntoResponse<noctis::ModalSubmit> for (noctis::ui::V2Message, noctis::RefOps)
 pub struct noctis::InvalidOption
 impl noctis::InvalidOption
 pub fn noctis::InvalidOption::key(&self) -> noctis::prelude::MessageKey
@@ -983,6 +1001,7 @@ impl noctis::ResponderKind for noctis::ModalSubmit
 pub struct noctis::ModalSubmitCtx(_)
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
@@ -1095,6 +1114,24 @@ impl noctis::ResponderState for noctis::Pending
 pub use noctis::Permissions
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
+pub struct noctis::RefOps
+impl noctis::RefOps
+pub fn noctis::RefOps::delete(self, noctis::codec::Ref) -> Self
+pub fn noctis::RefOps::delete_all(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::codec::Ref>) -> Self
+pub fn noctis::RefOps::is_empty(&self) -> bool
+pub fn noctis::RefOps::len(&self) -> usize
+pub fn noctis::RefOps::new() -> Self
+pub fn noctis::RefOps::refs(&self) -> &[noctis::codec::Ref]
+impl core::clone::Clone for noctis::RefOps
+pub fn noctis::RefOps::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RefOps
+impl core::cmp::PartialEq for noctis::RefOps
+pub fn noctis::RefOps::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::RefOps
+pub fn noctis::RefOps::default() -> Self
+impl core::fmt::Debug for noctis::RefOps
+pub fn noctis::RefOps::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::RefOps
 pub trait noctis::Register
 #[non_exhaustive] pub enum noctis::ReportKind<'a>
 pub noctis::ReportKind::Cancelled
@@ -1170,6 +1207,8 @@ pub noctis::ResponderError::Invalid(noctis::ui::UiError)
 pub noctis::ResponderError::InvalidToken
 pub noctis::ResponderError::ModalUnavailable
 pub noctis::ResponderError::NoReply
+pub noctis::ResponderError::RefCollision
+pub noctis::ResponderError::RefStore(noctis::ports::PortError)
 pub noctis::ResponderError::Rejected
 pub noctis::ResponderError::Rejected::code: core::option::Option<u32>
 pub noctis::ResponderError::Rejected::status: u16
@@ -1718,6 +1757,38 @@ impl noctis::codec::Sign for noctis::codec::PayloadKey
 pub fn noctis::codec::PayloadKey::sign(&self, &str) -> noctis::codec::Tag
 impl noctis::codec::Verify for noctis::codec::PayloadKey
 pub fn noctis::codec::PayloadKey::verify(&self, &str, noctis::codec::Tag) -> bool
+pub struct noctis::codec::Ref(_)
+impl noctis::codec::Ref
+pub fn noctis::codec::Ref::as_str(&self) -> &str
+pub fn noctis::codec::Ref::mint() -> core::result::Result<Self, noctis::codec::RefError>
+impl core::clone::Clone for noctis::codec::Ref
+pub fn noctis::codec::Ref::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::Ref
+impl core::cmp::PartialEq for noctis::codec::Ref
+pub fn noctis::codec::Ref::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::codec::Ref
+pub fn noctis::codec::Ref::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::Ref
+pub fn noctis::codec::Ref::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::codec::Ref
+pub fn noctis::codec::Ref::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::codec::Ref
+impl core::marker::StructuralPartialEq for noctis::codec::Ref
+#[non_exhaustive] pub enum noctis::codec::RefError
+pub noctis::codec::RefError::Exhausted
+pub noctis::codec::RefError::Rng(getrandom::error::Error)
+impl core::clone::Clone for noctis::codec::RefError
+pub fn noctis::codec::RefError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::codec::RefError
+impl core::cmp::PartialEq for noctis::codec::RefError
+pub fn noctis::codec::RefError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::codec::RefError
+impl core::fmt::Debug for noctis::codec::RefError
+pub fn noctis::codec::RefError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::codec::RefError
+pub fn noctis::codec::RefError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::codec::RefError
+impl core::marker::StructuralPartialEq for noctis::codec::RefError
 pub trait noctis::codec::Route
 pub type noctis::codec::Route::Payload: noctis::codec::Payload
 pub const noctis::codec::Route::ID: noctis::codec::RouteId
@@ -2810,6 +2881,7 @@ pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents:
 pub fn noctis::prelude::App::is_publisher(&self) -> bool
 pub fn noctis::prelude::App::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
+pub fn noctis::prelude::App::ref_ttl(&self) -> core::time::Duration
 pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::prelude::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::prelude::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -2851,6 +2923,7 @@ pub fn noctis::prelude::AppBuilder::previous_payload_key(&mut self, noctis::code
 pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
@@ -2951,6 +3024,7 @@ pub type noctis::prelude::CommandResponder<D> = noctis::Responder<noctis::Comman
 pub struct noctis::prelude::ComponentCtx(_)
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
@@ -3027,6 +3101,7 @@ impl core::marker::StructuralPartialEq for noctis::prelude::Expired
 pub struct noctis::prelude::ExpiredCtx(_)
 impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
@@ -3055,7 +3130,19 @@ pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::from(E) -> Self
 pub type noctis::prelude::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
+impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::Responded, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::ui::V2Message, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::ModalSubmit> for (noctis::Responded, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::ModalSubmit> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::ModalSubmit> for (noctis::ui::V2Message, noctis::RefOps)
 pub trait noctis::prelude::IntoResponse<K: noctis::ResponderKind>: noctis::__private::core::responder::sealed::Response + core::marker::Send + 'static
+impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::Responded, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::ui::V2Message, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::ModalSubmit> for (noctis::Responded, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::ModalSubmit> for (noctis::ui::Components, noctis::RefOps)
+impl noctis::prelude::IntoResponse<noctis::ModalSubmit> for (noctis::ui::V2Message, noctis::RefOps)
 pub enum noctis::prelude::Manual
 impl core::clone::Clone for noctis::prelude::Manual
 pub fn noctis::prelude::Manual::clone(&self) -> Self
@@ -3104,6 +3191,7 @@ pub type noctis::prelude::ModalResponder<D> = noctis::Responder<noctis::ModalSub
 pub struct noctis::prelude::ModalSubmitCtx(_)
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
@@ -3140,6 +3228,24 @@ pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Payload)]
 pub proc macro noctis::prelude::#[derive(PayloadEnum)]
+pub struct noctis::prelude::RefOps
+impl noctis::prelude::RefOps
+pub fn noctis::prelude::RefOps::delete(self, noctis::codec::Ref) -> Self
+pub fn noctis::prelude::RefOps::delete_all(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::codec::Ref>) -> Self
+pub fn noctis::prelude::RefOps::is_empty(&self) -> bool
+pub fn noctis::prelude::RefOps::len(&self) -> usize
+pub fn noctis::prelude::RefOps::new() -> Self
+pub fn noctis::prelude::RefOps::refs(&self) -> &[noctis::codec::Ref]
+impl core::clone::Clone for noctis::prelude::RefOps
+pub fn noctis::prelude::RefOps::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::RefOps
+impl core::cmp::PartialEq for noctis::prelude::RefOps
+pub fn noctis::prelude::RefOps::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::prelude::RefOps
+pub fn noctis::prelude::RefOps::default() -> Self
+impl core::fmt::Debug for noctis::prelude::RefOps
+pub fn noctis::prelude::RefOps::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::prelude::RefOps
 pub struct noctis::prelude::Responded
 impl core::fmt::Debug for noctis::prelude::Responded
 pub fn noctis::prelude::Responded::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

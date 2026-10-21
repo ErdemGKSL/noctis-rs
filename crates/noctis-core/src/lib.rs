@@ -190,6 +190,7 @@ mod plugin;
 mod ports;
 mod proxy;
 pub mod publish;
+mod refs;
 mod registry;
 mod responder;
 mod runtime;
@@ -251,6 +252,7 @@ pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, Optio
 pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
+pub use refs::RefOps;
 pub use responder::{
     Acked, AutoDefer, CallbackResource, CanShowModal, Command, CommandResponder, Component,
     ComponentResponder, DeferMode, Ephemerality, FollowupHandle, IntoEdit, IntoResponse, Manual,

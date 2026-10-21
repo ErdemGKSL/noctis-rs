@@ -94,6 +94,9 @@ pub(crate) struct CtxInner {
     pub(crate) ephemerality: Ephemerality,
     /// `None` for the detached `__testing` seams.
     pub(crate) app: Option<Arc<AppShared>>,
+    /// The Ref the clicked or submitted `custom_id` carried; `None` for an
+    /// inline id and for every Command (a Command has no Ref).
+    pub(crate) current_ref: Option<noctis_codec::Ref>,
 }
 
 impl CtxInner {
@@ -111,6 +114,7 @@ impl CtxInner {
             guild_locale: None,
             ephemerality,
             app: None,
+            current_ref: None,
         }
     }
 }

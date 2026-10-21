@@ -58,7 +58,11 @@ fn sleep_ms(ms: u64) -> tokio::time::Sleep {
 /// `response`, of defer mode `M`.
 fn handler<S, M>(log: &Log, name: &'static str, response: __Response) -> ComponentHandler
 where
-    S: noctis_codec::Route<Payload = S> + for<'de> PayloadDecode<'de> + Send + 'static,
+    S: noctis_codec::Route<Payload = S>
+        + noctis_codec::DeclaredRuntime
+        + for<'de> PayloadDecode<'de>
+        + Send
+        + 'static,
     M: crate::DeferMode,
 {
     let log = log.clone();

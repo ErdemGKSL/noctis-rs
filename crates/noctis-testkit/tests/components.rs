@@ -1290,10 +1290,43 @@ async fn app_expired_handler_runs() {
     running.stop();
 }
 
+/// The process-wide metrics recorder, installed once.
+fn snapshotter() -> &'static metrics_util::debugging::Snapshotter {
+    static SNAPSHOTTER: OnceLock<metrics_util::debugging::Snapshotter> = OnceLock::new();
+    SNAPSHOTTER.get_or_init(|| {
+        let recorder = metrics_util::debugging::DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        recorder.install().unwrap();
+        snapshotter
+    })
+}
+
+/// The `noctis_ref_lookups_total{result}` count since the last snapshot.
+fn ref_lookups(result: &str) -> u64 {
+    snapshotter()
+        .snapshot()
+        .into_vec()
+        .into_iter()
+        .filter(|(key, ..)| {
+            key.key().name() == "noctis_ref_lookups_total"
+                && key
+                    .key()
+                    .labels()
+                    .any(|l| l.key() == "result" && l.value() == result)
+        })
+        .map(|(.., value)| match value {
+            metrics_util::debugging::DebugValue::Counter(n) => n,
+            _ => 0,
+        })
+        .sum()
+}
+
 /// Story 7.3 Matrix 14 (AC 4): a Ref id of a `by_ref` Route with both
-/// hooks runs only `#[on_expired]`, with `Expired::RefMissing`.
+/// hooks runs only `#[on_expired]`, with `Expired::RefMissing`; Story 7.5:
+/// the Ref is looked up (unknown to the App's `RefStore`: a `miss`).
 #[tokio::test(flavor = "multi_thread")]
 async fn ref_id_reaches_on_expired() {
+    ref_lookups("miss");
     let running = Running::start().await;
     running.dispatch(click_on_message("0rh:~0123456789A"));
     let sent = exactly(&running, 1).await;
@@ -1301,6 +1334,7 @@ async fn ref_id_reaches_on_expired() {
     assert_eq!(reply["type"], 4, "{reply}");
     assert_eq!(reply["data"]["flags"], 32832, "{reply}");
     assert_eq!(running.seen.lines(), ["rh on_expired ref_missing"]);
+    assert!(ref_lookups("miss") >= 1);
     running.stop();
 }
 

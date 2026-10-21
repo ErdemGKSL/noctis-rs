@@ -438,7 +438,7 @@ mod tests {
             );
             assert!(e.starts_with("[CID-03] unknown #[button] argument"), "{e}");
         }
-        for arg in [quote!(ttl = "1m"), quote!(rate_limit(1, 2))] {
+        for arg in [quote!(owner = user), quote!(rate_limit(1, 2))] {
             let e = run(
                 Component::Button,
                 quote!(

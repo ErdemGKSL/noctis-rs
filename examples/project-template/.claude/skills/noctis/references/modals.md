@@ -230,7 +230,7 @@ submission.unknown();                                        // &[serde_json::Va
   never dropped. Decoding never compares `custom_id` with the Route (dispatch is core's).
 - A `signed` modal is verified by component dispatch with the App's payload key; a
   `by_ref` or spilled one (once its Payload overflows) decodes only through component
-  dispatch with Story 7.5 [planned]. `from_submission`/`from_json` alone return
+  dispatch, which reads its record from the App's `RefStore`. `from_submission`/`from_json` alone return
   `SubmitError::Malformed` for them (the Ref or the tag needs the App).
 - `SubmittedValue` (`#[non_exhaustive]`): `TextInput(String)`, `StringSelect(Vec<String>)`,
   `UserSelect(Vec<Id<UserMarker>>)`, `RoleSelect(Vec<Id<RoleMarker>>)`,

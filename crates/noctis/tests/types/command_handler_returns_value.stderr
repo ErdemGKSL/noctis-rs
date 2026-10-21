@@ -17,7 +17,7 @@ help: the following other types implement trait `IntoResponse<K>`
 ...
   | message_responses!(Command, Component, ModalSubmit);
   | --------------------------------------------------- in this macro invocation
-  |
+...
   | impl IntoResponse<Command> for LegacyMessage {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `LegacyMessage`
   = note: required for `noctis::__private::noctis_core::kind::__SlashKind` to implement `noctis::__private::noctis_core::kind::__Bind<noctis::__private::noctis_core::kind::__C, Ping, fn(Ping, noctis::CommandCtx) -> impl Future<Output = Result<u8, HandlerError>> {Ping::handle}>`

@@ -46,6 +46,8 @@ impl PayloadDecode<'_> for Wide {
     }
 }
 
+impl noctis_codec::DeclaredRuntime for Wide {}
+
 impl noctis_codec::Route for Wide {
     const ID: noctis_codec::RouteId = noctis_codec::RouteId::new("w");
     const SHAPE: RouteShape = RouteShape::INLINE;
@@ -56,7 +58,12 @@ impl noctis_codec::Route for Wide {
 /// A component handler of `S` logging `name:item`.
 fn logging<S>(log: &Log, name: &'static str, kind: ComponentKind) -> ComponentHandler
 where
-    S: noctis_codec::Route<Payload = S> + for<'de> PayloadDecode<'de> + Send + 'static + HasItem,
+    S: noctis_codec::Route<Payload = S>
+        + noctis_codec::DeclaredRuntime
+        + for<'de> PayloadDecode<'de>
+        + Send
+        + 'static
+        + HasItem,
 {
     let log = log.clone();
     ComponentHandler::__new::<S, _, _>(
@@ -577,7 +584,11 @@ mod responses {
     /// of mode `D`.
     fn handler<S, M, F, Fut, R>(name: &'static str, response: __Response, f: F) -> ComponentHandler
     where
-        S: noctis_codec::Route<Payload = S> + for<'de> PayloadDecode<'de> + Send + 'static,
+        S: noctis_codec::Route<Payload = S>
+            + noctis_codec::DeclaredRuntime
+            + for<'de> PayloadDecode<'de>
+            + Send
+            + 'static,
         M: crate::DeferMode,
         F: Fn(S, ComponentCtx, crate::Responder<crate::Component, crate::Pending, M>) -> Fut
             + Send
@@ -1128,6 +1139,8 @@ mod amendments {
         item: u64,
         bio: String,
     }
+
+    impl noctis_codec::DeclaredRuntime for SigBio {}
 
     impl noctis_codec::Route for SigBio {
         const ID: noctis_codec::RouteId = noctis_codec::RouteId::new("sigbio");

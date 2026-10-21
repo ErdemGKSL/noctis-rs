@@ -1,0 +1,6 @@
+error: [CID-03] `ttl` must be between 1s and 365d, found `366d`
+         = help: write ttl = "15m" (units d, h, m, s, such as "1h30m")
+ --> tests/ui/cid/CID-03_ttl_out_of_range.rs:4:29
+  |
+4 | #[button("a", by_ref, ttl = "366d", defaults(style = Secondary, label = "Go"))]
+  |                             ^^^^^^

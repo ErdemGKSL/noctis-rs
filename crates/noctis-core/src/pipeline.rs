@@ -5,7 +5,8 @@
 //!
 //! 1. resolve the Command from the Registry's O(1) maps by its default
 //!    (unlocalized) names, in the scope `data.guild_id` names (LOC-06);
-//! 2. *Ref finalization: absent until Story 7.5;*
+//! 2. Ref resolution: none, since a Command has no Ref (components and
+//!    modals resolve theirs, `pipeline::component`);
 //! 3. *Module enablement checks: absent until Stories 13.2 and 13.3;*
 //! 4. resolve the locale default (User and Guild Locale, FR-43);
 //! 5. *rate limits: absent until Story 13.4;*
@@ -101,8 +102,8 @@ use crate::options::CommandInput;
 use crate::registry::Registry;
 use crate::registry::commands::{CommandEntry, MenuEntry, ScopeCommands};
 use crate::responder::{
-    Ephemerality, InteractionTarget, MessageTarget, PENDING, ResponderError, Response, Shared,
-    Transport,
+    Ephemerality, InteractionTarget, MessageTarget, PENDING, ResponderError, Response,
+    ResponseValue, Shared, Transport,
 };
 use crate::sink::{ErrorOrigin, ErrorReport, ErrorSink as _, LogSink, ReportKind};
 use crate::worker::panic_message;
@@ -331,6 +332,24 @@ async fn execute(
     run_started(span, cancel, shared, started, timer, report).await;
 }
 
+/// Runs `fut`, sends the message it returned (if any) through `shared`,
+/// then applies its [`RefOps`](crate::RefOps) to `refs`: only after a
+/// successful send (or a `Responded`).
+async fn answer(
+    fut: HandlerFuture,
+    shared: Arc<Shared>,
+    refs: Arc<dyn noctis_ports::RefStore>,
+) -> HandlerResult<()> {
+    let ResponseValue(response, ops) = fut.await?;
+    if let Response::Message(msg) = response {
+        shared.finish(msg).await.map_err(HandlerError::new)?;
+    }
+    if !ops.is_empty() {
+        crate::refs::apply(&*refs, &ops).await;
+    }
+    Ok(())
+}
+
 /// Stages 9 and 10 of a started handler (`None`: cancelled before the
 /// start): sends what it returned (a returned message is the reply or
 /// `update` while Pending, else an edit of the original, INT-12), races the
@@ -357,17 +376,9 @@ pub(crate) async fn run_started(
     {
         let outcome = match future {
             Ok(fut) => {
-                let finisher = Arc::clone(&shared);
-                let run = AssertUnwindSafe(async move {
-                    match fut.await?.0 {
-                        Response::Done => Ok(()),
-                        Response::Message(msg) => {
-                            finisher.finish(msg).await.map_err(HandlerError::new)
-                        }
-                    }
-                })
-                .catch_unwind()
-                .instrument(span.clone());
+                let run = AssertUnwindSafe(answer(fut, Arc::clone(&shared), Arc::clone(&app.refs)))
+                    .catch_unwind()
+                    .instrument(span.clone());
                 let result = match cancel {
                     Some(cancel) => tokio::select! {
                         biased;
@@ -576,8 +587,8 @@ pub(crate) async fn run_interaction(
         });
         return;
     };
-    // Stage 2 (Ref finalization) lands with Story 7.5; stage 3 (Module
-    // enablement) with Stories 13.2 and 13.3.
+    // Stage 2 (Ref resolution) has nothing to do: a Command has no Ref.
+    // Stage 3 (Module enablement) lands with Stories 13.2 and 13.3.
     // Stage 4: the locale default.
     let Interaction {
         application_id,
@@ -1219,6 +1230,7 @@ impl Dispatcher {
             guild_locale: None,
             ephemerality,
             app: Some(Arc::clone(&self.app)),
+            current_ref: None,
         };
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),

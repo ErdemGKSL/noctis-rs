@@ -421,3 +421,103 @@ proptest! {
         prop_assert_eq!(decode_route::<Mixed>(&id), Ok(PayloadSource::Inline(value)));
     }
 }
+
+/// Story 7.5 Matrix 7: a confirmation Route with `ttl` and `one_shot`.
+#[derive(::noctis::Button, Debug)]
+#[button("t.confirm", by_ref, one_shot, ttl = "15m", defaults(style = Danger, label = "Ok"))]
+struct Confirm {
+    target: u64,
+}
+
+impl Confirm {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+/// A `spill` Route consumed on first use, with the App's TTL.
+#[derive(::noctis::Button, Debug)]
+#[button("t.spill", overflow = spill, one_shot, defaults(style = Primary, label = "Go"))]
+struct SpillOnce {
+    note: String,
+}
+
+impl SpillOnce {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ComponentCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+/// A by-Ref modal kept for an hour.
+#[derive(::noctis::prelude::Modal, Debug)]
+#[modal("t.refmodal", by_ref, ttl = "1h", defaults(title = "Why"))]
+struct RefModal {
+    case: u64,
+    #[text_input("Reason")]
+    reason: Option<String>,
+}
+
+impl RefModal {
+    #[::noctis::handler]
+    async fn handle(
+        self,
+        _ctx: ::noctis::ModalSubmitCtx,
+    ) -> ::noctis::HandlerResult<::noctis::Responded> {
+        let _ = (self.case, self.reason);
+        Ok(::noctis::__private::core::__testing::responded())
+    }
+}
+
+/// Story 7.5 Matrix 7: the derives record `ttl` and `one_shot` in
+/// `RUNTIME`, and a built component's Ref slot carries them.
+#[test]
+fn ttl_and_one_shot_reach_the_ref_slot() {
+    use core::time::Duration;
+
+    use codec::{DeclaredRuntime, SelectNonce};
+    use noctis::ui::{ActionRow, Components};
+
+    let policy = <Confirm as DeclaredRuntime>::RUNTIME.ref_policy();
+    assert_eq!(
+        (policy.ttl(), policy.is_one_shot()),
+        (Some(Duration::from_mins(15)), true)
+    );
+    let policy = <SpillOnce as DeclaredRuntime>::RUNTIME.ref_policy();
+    assert_eq!((policy.ttl(), policy.is_one_shot()), (None, true));
+    let policy = <RefModal as DeclaredRuntime>::RUNTIME.ref_policy();
+    assert_eq!(
+        (policy.ttl(), policy.is_one_shot()),
+        (Some(Duration::from_hours(1)), false)
+    );
+    let policy = <BuyButton as DeclaredRuntime>::RUNTIME.ref_policy();
+    assert_eq!((policy.ttl(), policy.is_one_shot()), (None, false));
+
+    let mut row = Components::new().push(ActionRow::buttons([Confirm { target: 7 }.build()]));
+    let id = row.custom_ids_mut().next().unwrap();
+    let slot = id
+        .resolve_for_send(SelectNonce::new(0).unwrap(), None)
+        .unwrap()
+        .expect("a Ref slot");
+    assert_eq!(slot.ttl(), Some(Duration::from_mins(15)));
+    assert!(slot.is_one_shot());
+    assert_eq!(&slot.record()[..], b"0t.confirm:7");
+
+    let long = "x".repeat(120);
+    let mut row = Components::new().push(ActionRow::buttons([SpillOnce { note: long }.build()]));
+    let slot = row
+        .custom_ids_mut()
+        .next()
+        .unwrap()
+        .resolve_for_send(SelectNonce::new(0).unwrap(), None)
+        .unwrap()
+        .expect("a spilled Ref slot");
+    assert_eq!((slot.ttl(), slot.is_one_shot()), (None, true));
+}

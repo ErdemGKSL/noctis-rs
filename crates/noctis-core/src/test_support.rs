@@ -216,6 +216,15 @@ pub(crate) fn message_menu(
 /// the text input `bio`.
 macro_rules! test_route {
     ($name:ident, $id:literal, $shape:expr, $schema:literal) => {
+        $crate::test_support::test_route!(
+            $name,
+            $id,
+            $shape,
+            $schema,
+            noctis_codec::RouteRuntime::EMPTY
+        );
+    };
+    ($name:ident, $id:literal, $shape:expr, $schema:literal, $runtime:expr) => {
         #[derive(Debug)]
         pub(crate) struct $name {
             pub(crate) item: u64,
@@ -244,6 +253,9 @@ macro_rules! test_route {
             type Payload = Self;
         }
 
+        impl noctis_codec::DeclaredRuntime for $name {
+            const RUNTIME: noctis_codec::RouteRuntime = $runtime;
+        }
         impl noctis_ui::Handled for $name {}
 
         impl noctis_ui::ModalForm for $name {
@@ -303,4 +315,162 @@ pub(crate) fn modal(name: &'static str, route: &'static str) -> crate::ModalHand
         route,
         |_: TBuy, _: crate::ModalSubmitCtx| async { Ok(crate::Responded::new()) },
     )
+}
+
+/// One call a [`TestRefs`] store received: the op, the key and, for
+/// `put_if_absent`, the TTL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RefCall {
+    pub(crate) op: &'static str,
+    pub(crate) key: String,
+    pub(crate) ttl: Option<std::time::Duration>,
+}
+
+/// A scripted `RefStore`: a map with TTLs on the tokio clock (so a paused
+/// clock expires entries), a call log, scripted `put_if_absent` answers and
+/// failing ops.
+#[derive(Default)]
+pub(crate) struct TestRefs {
+    entries: Mutex<std::collections::HashMap<String, (bytes::Bytes, Option<tokio::time::Instant>)>>,
+    calls: Mutex<Vec<RefCall>>,
+    /// Answers of the next `put_if_absent` calls (`None`: a backend
+    /// error); empty means the real behavior.
+    put_script: Mutex<std::collections::VecDeque<Option<bool>>>,
+    /// Ops that fail with a backend error.
+    failing: Mutex<Vec<&'static str>>,
+}
+
+impl TestRefs {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// The next `put_if_absent` calls answer `answers` (`None`: an error).
+    pub(crate) fn script_puts(&self, answers: impl IntoIterator<Item = Option<bool>>) {
+        self.put_script.lock().unwrap().extend(answers);
+    }
+
+    /// Every later `op` fails with a backend error.
+    pub(crate) fn fail(&self, op: &'static str) {
+        self.failing.lock().unwrap().push(op);
+    }
+
+    /// Stores `value` under the full `key`, without TTL.
+    pub(crate) fn insert(&self, key: &str, value: &[u8]) {
+        self.entries
+            .lock()
+            .unwrap()
+            .insert(key.to_owned(), (bytes::Bytes::copy_from_slice(value), None));
+    }
+
+    /// The live value under the full `key`.
+    pub(crate) fn value(&self, key: &str) -> Option<bytes::Bytes> {
+        let now = tokio::time::Instant::now();
+        self.entries
+            .lock()
+            .unwrap()
+            .get(key)
+            .filter(|(_, deadline)| deadline.is_none_or(|d| d > now))
+            .map(|(v, _)| v.clone())
+    }
+
+    /// The calls so far.
+    pub(crate) fn calls(&self) -> Vec<RefCall> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    /// The calls of `op` so far.
+    pub(crate) fn calls_of(&self, op: &str) -> Vec<RefCall> {
+        self.calls().into_iter().filter(|c| c.op == op).collect()
+    }
+
+    fn record(
+        &self,
+        op: &'static str,
+        key: &str,
+        ttl: Option<std::time::Duration>,
+    ) -> Result<(), noctis_ports::PortError> {
+        self.calls.lock().unwrap().push(RefCall {
+            op,
+            key: key.to_owned(),
+            ttl,
+        });
+        if self.failing.lock().unwrap().contains(&op) {
+            return Err(noctis_ports::PortError::backend("scripted failure"));
+        }
+        Ok(())
+    }
+
+    fn live(&self, key: &str, take: bool) -> Option<bytes::Bytes> {
+        let now = tokio::time::Instant::now();
+        let mut entries = self.entries.lock().unwrap();
+        let live = entries
+            .get(key)
+            .is_some_and(|(_, deadline)| deadline.is_none_or(|d| d > now));
+        if !live {
+            entries.remove(key);
+            return None;
+        }
+        if take {
+            entries.remove(key).map(|(v, _)| v)
+        } else {
+            entries.get(key).map(|(v, _)| v.clone())
+        }
+    }
+}
+
+type RefFuture<'a, T> = noctis_ports::BoxFuture<'a, Result<T, noctis_ports::PortError>>;
+
+impl noctis_ports::RefStore for TestRefs {
+    fn put_if_absent<'a>(
+        &'a self,
+        key: &'a str,
+        value: bytes::Bytes,
+        ttl: Option<std::time::Duration>,
+    ) -> RefFuture<'a, bool> {
+        Box::pin(async move {
+            self.record("put_if_absent", key, ttl)?;
+            if let Some(answer) = self.put_script.lock().unwrap().pop_front() {
+                return answer.ok_or_else(|| noctis_ports::PortError::backend("scripted failure"));
+            }
+            if self.live(key, false).is_some() {
+                return Ok(false);
+            }
+            let deadline = ttl.map(|t| tokio::time::Instant::now() + t);
+            self.entries
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), (value, deadline));
+            Ok(true)
+        })
+    }
+
+    fn get<'a>(&'a self, key: &'a str) -> RefFuture<'a, Option<bytes::Bytes>> {
+        Box::pin(async move {
+            self.record("get", key, None)?;
+            Ok(self.live(key, false))
+        })
+    }
+
+    fn take<'a>(&'a self, key: &'a str) -> RefFuture<'a, Option<bytes::Bytes>> {
+        Box::pin(async move {
+            self.record("take", key, None)?;
+            Ok(self.live(key, true))
+        })
+    }
+
+    fn delete<'a>(&'a self, key: &'a str) -> RefFuture<'a, ()> {
+        Box::pin(async move {
+            self.record("delete", key, None)?;
+            self.entries.lock().unwrap().remove(key);
+            Ok(())
+        })
+    }
+
+    fn touch<'a>(&'a self, key: &'a str, ttl: std::time::Duration) -> RefFuture<'a, bool> {
+        Box::pin(async move {
+            self.record("touch", key, Some(ttl))?;
+            Ok(false)
+        })
+    }
 }

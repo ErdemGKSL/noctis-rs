@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use arrayvec::ArrayString;
 use noctis_codec::{
-    EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref, Route, RouteId, RouteShape,
-    SelectNonce, SelectRoute, Sign, encode_id,
+    BodyKind, DeclaredRuntime, EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref,
+    RefPolicy, Route, RouteId, RouteShape, SelectNonce, SelectRoute, Sign, encode_id,
 };
 use twilight_model::channel::ChannelType;
 use twilight_model::id::Id;
@@ -26,14 +26,15 @@ use crate::{Modal, UiError};
 ///
 /// The kind derives of `noctis` (`#[derive(Button)]`, the select derives,
 /// `#[derive(Modal)]`) implement it; a kind-derived struct without a
-/// `#[handler]` method does not compile (`[CID-04]`, FR-58). It is not
-/// public API.
+/// `#[handler]` method does not compile (`[CID-04]`, FR-58). Its
+/// [`DeclaredRuntime`] carries the Route's Ref policy (`ttl`, `one_shot`).
+/// It is not public API.
 #[diagnostic::on_unimplemented(
     message = "[CID-04] Route `{Self}` has no handler, so no component can be built for it",
     label = "no `#[handler]` for this Route",
     note = "derive a component kind (`#[derive(Button)]`, a select kind or `#[derive(Modal)]`) and add `impl {Self} {{ #[handler] async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> }}`"
 )]
-pub trait Handled: Route {}
+pub trait Handled: Route + DeclaredRuntime {}
 
 /// A component or modal Route declared by a kind derive, with the defaults
 /// of its `defaults(..)` block (AD-19, FR-59).
@@ -256,7 +257,11 @@ trait ErasedRoute: Send + Sync {
     fn encode(&self, parts: &Parts<'_>) -> Result<EncodedId, EncodeError>;
 }
 
-struct Erased<R: Route>(R::Payload);
+/// A Route value and the Ref policy of its Route.
+struct Erased<R: Route> {
+    payload: R::Payload,
+    ref_policy: RefPolicy,
+}
 
 impl<R> ErasedRoute for Erased<R>
 where
@@ -272,7 +277,11 @@ where
     }
 
     fn encode(&self, parts: &Parts<'_>) -> Result<EncodedId, EncodeError> {
-        encode_id::<R>(&self.0, parts)
+        if R::SHAPE.body() == BodyKind::Inline {
+            encode_id::<R>(&self.payload, parts)
+        } else {
+            encode_id::<R>(&self.payload, &parts.with_ref_policy(self.ref_policy))
+        }
     }
 }
 
@@ -294,12 +303,15 @@ pub struct CustomId {
 impl CustomId {
     pub(crate) fn new<R>(payload: R::Payload) -> Self
     where
-        R: Route + Send + Sync + 'static,
+        R: Handled + Send + Sync + 'static,
         R::Payload: Send + Sync + 'static,
     {
         let shape = R::SHAPE;
         let mut this = Self {
-            route: Arc::new(Erased::<R>(payload)),
+            route: Arc::new(Erased::<R> {
+                payload,
+                ref_policy: R::RUNTIME.ref_policy(),
+            }),
             id: None,
         };
         if !shape.has_select() && !shape.is_signed() {

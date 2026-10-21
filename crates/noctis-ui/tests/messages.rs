@@ -56,6 +56,7 @@ impl Route for Pick {
     type Payload = Self;
 }
 
+impl noctis_codec::DeclaredRuntime for Pick {}
 impl Handled for Pick {}
 impl SelectRoute for Pick {}
 

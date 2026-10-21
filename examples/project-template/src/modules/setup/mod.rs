@@ -111,12 +111,17 @@ pub struct CancelSetup {
 }
 
 /// Finish on the last step. Only rendered once both values are set, so its fields are
-/// not `Option`s: the type proves the configuration is complete.
+/// not `Option`s: the type proves the configuration is complete. A confirmation: its
+/// Payload is stored by Ref for 15 minutes and consumed by the first click, so a second
+/// click (or one after 15 minutes) gets the expired notice.
 ///
-/// Width (`noctis_route_width`): `setup.done: F 1 + route 10 + sep 1 + S 0 + N 0 + body 35 + T 0 = 47 (limit 100)`.
+/// Width (`noctis_route_width`): `setup.done: F 1 + route 10 + sep 1 + S 0 + N 0 + ref 12 = 24 (limit 100)`.
 #[derive(Button, Debug, Clone, Copy)]
 #[button(
     "setup.done",
+    by_ref,
+    one_shot,
+    ttl = "15m",
     owner = owner, // [planned]: runtime arguments are rejected until their release
     defaults(style = Success, label = "setup.finish"),
 )]

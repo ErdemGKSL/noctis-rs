@@ -218,6 +218,11 @@ pub(crate) struct AppShared {
     /// When the auto-defer acknowledges a pending interaction, after
     /// `received_at` (`AppBuilder::ack_deadline`, INT-01).
     pub(crate) ack_deadline: std::time::Duration,
+    /// The App's namespaced `RefStore` (`<app>:ref:`): the Responder stores
+    /// minted Refs in it and dispatch resolves Ref ids from it (AD-18).
+    pub(crate) refs: Arc<dyn noctis_ports::RefStore>,
+    /// The TTL of a Ref whose Route declares none (`AppBuilder::ref_ttl`).
+    pub(crate) ref_ttl: std::time::Duration,
     /// The strings every user-facing notice is rendered from (`noctis-i18n`
     /// `Builtin` until Epic 11 merges bot catalogs).
     pub(crate) strings: Arc<dyn Translate>,

@@ -142,7 +142,8 @@ says ``write `Route { .. }.build()` ``.
 - A plain Route (no `select` or `signed`) is encoded when you build the
   component. Ids that need a select nonce or a signature are finalized by the
   Responder when the message is sent (one fresh nonce per send; the App's payload key
-  signs); Refs follow with Story 7.5 [planned]. You never handle them
+  signs; every `by_ref`/spilled Route gets a Ref stored in the App's `RefStore`). You
+  never handle them
   (`UiError::SlotMismatch` is the Responder's internal error for a mismatched Ref slot).
 
 ## 1. Container: `Container`

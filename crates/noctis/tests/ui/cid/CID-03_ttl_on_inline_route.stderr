@@ -1,0 +1,6 @@
+error: [CID-03] `ttl` needs a by-Ref Route
+         = help: add by_ref or overflow = spill: only a Ref has a TTL or is consumed on use
+ --> tests/ui/cid/CID-03_ttl_on_inline_route.rs:4:15
+  |
+4 | #[button("a", ttl = "15m", defaults(style = Secondary, label = "Go"))]
+  |               ^^^

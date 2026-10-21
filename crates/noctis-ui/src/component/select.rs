@@ -292,6 +292,7 @@ impl StringSelect {
 /// #     type Payload = Self;
 /// # }
 /// # impl SelectRoute for Pick {}
+/// # impl noctis_codec::DeclaredRuntime for Pick {}
 /// # impl noctis_ui::Handled for Pick {}
 /// let defaults = SelectDefaults { placeholder: Some("Pick"), min_values: None, max_values: None, disabled: false };
 /// let _ = ActionRow::select(build_string_select_builder(Pick, &defaults)); // [CV2-09]

@@ -272,6 +272,13 @@ list in CI.
 - **Amended (2026-10-20):** the `view` codec argument and the `E` term are
   withdrawn with AD-20; `#[route]` rejects `view` as an unknown argument (CID-03)
   once Story 6.10 lands.
+- **Amended (2026-10-21):** the runtime arguments `ttl = "<duration>"` and
+  `one_shot` (Story 7.5) are accepted on by-Ref Routes only (`by_ref` or
+  `overflow = spill`; CID-03 otherwise). A duration is `<digits><unit>` groups with
+  the units `d`, `h`, `m`, `s`, each at most once and in that order, totalling
+  1 s..=365 d. The derive records them in `DeclaredRuntime::RUNTIME`, and
+  `noctis_ui::Handled` gains the supertrait `DeclaredRuntime` so the policy reaches
+  both the encoder and dispatch; `Route` itself is unchanged.
 - **Prevents:** a Route that overflows 100 characters only for some values, and a
   macro bound that disagrees with the real encoding.
 - **Rule:**
@@ -771,6 +778,18 @@ list in CI.
     returned response; only core executes them. One-shot Refs are consumed with
     `take`.
   - No crate below `noctis-core` holds a `RefStore` handle.
+- **Amended (2026-10-21):** Refs are stored under the App's namespace
+  (`<app_id>:ref:<ref>`), with the Route's `ttl`, else `AppBuilder::ref_ttl`
+  (default 24 h, 1 s..=365 d); three collisions in a row fail the send. Refs minted
+  for a message that then fails validation or sending stay until their TTL.
+  Dispatch resolves a Ref id at stage 2 (`take` for `one_shot`, else `get`) and
+  counts `noctis_ref_lookups_total{app,result}`: `hit` (a record of this Route and
+  schema, even if its body later fails to decode), `miss`, `stale`, `forged` (another
+  Route, or bytes that are not a `RefRecord`); a `RefStore` error is not counted and
+  answers with the generic notice (`ref_store`). `RefOps` is a tuple response
+  (`(message, RefOps)`), applied only after a successful send; `ctx.current_ref()`
+  exposes the clicked Ref. A `one_shot` Ref is consumed at stage 2, before the
+  Guards of stage 8: Story 7.7 decides whether a Guard rejection keeps that.
 
 ### AD-19 — Route identity lives in `noctis-codec`
 - **Binds:** `noctis-codec`, `noctis-ui`, `noctis-core`, `noctis-macros`; FR-15,
