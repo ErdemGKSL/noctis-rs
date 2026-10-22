@@ -54,7 +54,7 @@ your handler ──▶ ctx.respond(render_x(..)) / ctx.update(render_x(..)) ─�
 - **Component** = a struct whose derive names its kind: `#[derive(Button)]`,
   `#[derive(StringSelectMenu)]` (and the user/role/mentionable/channel selects),
   `#[derive(Modal)]`, with a stable id and **mandatory defaults**
-  (`#[button("shop.buy", defaults(style = Primary, label = "shop.buy"))]`). Its fields
+  (`#[button("shop.buy", defaults(style = Primary, label = keys::SHOP_BUY))]`). Its fields
   are the **Payload**, encoded into the component's `custom_id`. Build it from a value
   (`BuyItem { item, qty }.build()`, then per-render overrides such as `.disabled(..)`);
   each component id has exactly **one** handler. Too big for 100 chars? `by_ref` stores
@@ -159,7 +159,7 @@ and a literal that differs from the locale file is a compile error too.
 #[button(
     "dash.mod",                                      // id ≤ 24 chars [a-z0-9._-]
     permissions = MANAGE_GUILD,                      // Route Guard (owner / permissions / guard)
-    defaults(style = Success, label = "common.enable"),   // mandatory; texts are locale keys
+    defaults(style = Success, label = keys::COMMON_ENABLE),   // mandatory; a `keys::` path is translated, a literal is raw text
 )]
 pub struct ToggleModule { pub guild: Id<GuildMarker>, pub module: ModuleKey, pub enable: bool }
 
@@ -192,10 +192,10 @@ its struct declares `auto_defer = false` (§3.6).
 pub enum DashTab { Overview, Roles, Modules }
 
 #[derive(Button, Debug, Clone, Copy)]
-#[button("dash.tab", defaults(style = Secondary, label = "dashboard.tab.overview"))]
+#[button("dash.tab", defaults(style = Secondary, label = keys::DASHBOARD_TAB_OVERVIEW))]
 pub struct OpenTab { pub guild: Id<GuildMarker>, pub tab: DashTab }
 #[derive(Button, Debug, Clone, Copy)]
-#[button("dash.page", defaults(style = Secondary, label = "common.next"))]
+#[button("dash.page", defaults(style = Secondary, label = keys::COMMON_NEXT))]
 pub struct TurnPage { pub guild: Id<GuildMarker>, pub page: u16 }
 
 // Tab row: the active tab is disabled.
@@ -223,7 +223,7 @@ Full code: `references/views-and-recipes.md` §3.1-3.2 and `src/modules/dashboar
 pub enum SetupStep { Channel, Role, Confirm }
 
 #[derive(Button, Debug, Clone, Copy)]                  // Back and Next: the state + target step
-#[button("setup", owner = owner, defaults(style = Primary, label = "setup.next"))]
+#[button("setup", owner = owner, defaults(style = Primary, label = keys::SETUP_NEXT))]
 pub struct SetupState { pub owner: Id<UserMarker>, pub step: SetupStep,
     pub log_channel: Option<Id<ChannelMarker>>, pub mod_role: Option<Id<RoleMarker>> }
 
@@ -285,12 +285,12 @@ re-uploading it. A rendered image needs its own `.alt(..)` on the Thumbnail/Medi
 ```rust
 // A button that opens a modal MUST be `auto_defer = false` and take the `Manual` responder.
 #[derive(Button, Clone, Copy)]
-#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = "profile.edit_bio"))]
+#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = keys::PROFILE_EDIT_BIO))]
 pub struct EditBio { pub user: Id<UserMarker> }
 
 // The modal is its own struct: fields without an input attribute are its Payload.
 #[derive(Modal, Debug)]
-#[modal("profile.save", owner = user, defaults(title = "profile.bio_modal.title"))]
+#[modal("profile.save", owner = user, defaults(title = keys::PROFILE_BIO_MODAL_TITLE))]
 pub struct BioForm {
     pub user: Id<UserMarker>,                              // Payload: whose profile to redraw
     #[text_input("Bio", style = paragraph, max_length = 300)]

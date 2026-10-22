@@ -119,7 +119,7 @@ enum Frame {
     Seq,
     Map {
         entries: Vec<(Y, Y)>,
-        key: Option<Y>,
+        key: Option<(Y, Marker)>,
         seen: HashSet<(Scalar, String)>,
     },
 }
@@ -167,16 +167,16 @@ impl Builder {
         match top {
             Frame::Seq => {}
             Frame::Map { entries, key, seen } => match key.take() {
-                None => *key = Some(node),
-                Some(k) => {
+                None => *key = Some((node, mark)),
+                Some((k, key_mark)) => {
                     if let Y::Scalar(kind, text) = &k
                         && !seen.insert((*kind, text.clone()))
                         && self.error.is_none()
                     {
                         self.error = Some(format!(
                             "`{text}`: duplicated key in mapping at line {} column {}",
-                            mark.line(),
-                            mark.col() + 1
+                            key_mark.line(),
+                            key_mark.col() + 1
                         ));
                     }
                     entries.push((k, node));
@@ -321,11 +321,16 @@ impl Walk {
                     continue;
                 }
             }
-            self.value(&full, value, content && path.is_empty() && segment == "of");
+            self.value(
+                &full,
+                value,
+                content,
+                content && path.is_empty() && segment == "of",
+            );
         }
     }
 
-    fn value(&mut self, full: &str, value: Y, root_of: bool) {
+    fn value(&mut self, full: &str, value: Y, content: bool, root_of: bool) {
         match value {
             Y::Scalar(Scalar::Str, text) => {
                 if root_of {
@@ -356,7 +361,7 @@ impl Walk {
             Y::Map(children) if children.is_empty() => self
                 .errors
                 .push(format!("`{full}` is an empty map; remove it or add keys")),
-            Y::Map(children) => self.map(full, children, true),
+            Y::Map(children) => self.map(full, children, content),
         }
     }
 
@@ -871,6 +876,11 @@ mod tests {
         );
         let e = err("a: x\na: y");
         assert!(e.contains("duplicated key in mapping at line 2"), "{e}");
+        let e = err("a: x\nm:\n  b: c\nm:\n  b: c\n  d: e\n  f: g\n");
+        assert!(
+            e.contains("`m`: duplicated key in mapping at line 4 column 1"),
+            "{e}"
+        );
         assert_eq!(
             err("a: x\n---\nb: y"),
             "i18n!: `locales/en-US.yaml`: a locale file holds one YAML document"
@@ -1001,6 +1011,10 @@ mod tests {
         assert_eq!(m.files[0].entries["cmd.setup.description"], "Set {x} up");
         assert!(m.files[0].entries.contains_key("cmd.set-up.description"));
         assert!(m.placeholders.is_empty());
+        let m = ok(&[("en-US.yaml", "cmd: {admin: {set-up: {description: x}}}")]);
+        assert!(m.content.is_empty() && m.tree.children.is_empty());
+        assert!(m.placeholders.is_empty());
+        assert_eq!(m.files[0].entries["cmd.admin.set-up.description"], "x");
         let m = ok(&[
             ("en-US.yaml", ""),
             ("tr.yaml", "noctis: {expired: \"Panel expired\"}"),
@@ -1146,6 +1160,12 @@ mod tests {
         assert_eq!(row(&m, Locale::PtBr, "a"), "us");
         assert_eq!(m.row_of.len(), 32);
         assert!(m.row_of.iter().all(|r| *r < m.rows.len()));
+    }
+
+    #[test]
+    fn rows_resolve_through_a_missing_locale_sibling() {
+        let m = ok(&[("en-US.yaml", "a: us"), ("es-419.yaml", "a: latam")]);
+        assert_eq!(row(&m, Locale::EsEs, "a"), "latam");
     }
 
     #[test]

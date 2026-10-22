@@ -380,7 +380,7 @@ in your render function (`views-and-recipes.md` §3).
 
 ```rust
 ToggleModule { guild, module, enable: !enabled }
-    .build()                                  // defaults(style = Success, label = "common.enable")
+    .build()                                  // defaults(style = Success, label = keys::COMMON_ENABLE)
     .label(s.common.disable())                // override for this render
     .style(ButtonStyle::Danger)
 ```
@@ -455,7 +455,7 @@ Shared fields of all five:
 
 ```rust
 #[derive(StringSelectMenu, Debug, Clone, Copy)]
-#[string_select("shop.size", defaults(placeholder = "shop.size"))]
+#[string_select("shop.size", defaults(placeholder = keys::SHOP_SIZE))]
 pub struct Size { pub item: u32 }
 
 Size { item }.build().options([

@@ -28,7 +28,7 @@ pub enum Severity {
 }
 
 #[derive(Modal, Debug)]
-#[modal("mod.report", response = ephemeral, defaults(title = "mod.report.title"))]  // title 1–45 (MOD-01); a locale key
+#[modal("mod.report", response = ephemeral, defaults(title = keys::MOD_REPORT_TITLE))]  // title 1–45 (MOD-01); a `keys::` path, translated per locale
 pub struct ReportForm {
     pub id: u64,                                             // Payload: no input attribute
     #[text_display("Tell us what happened.")]
@@ -173,7 +173,7 @@ impl Bio {
 
 ```rust
 #[derive(Button, Debug, Clone, Copy)]
-#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = "profile.edit_bio"))]
+#[button("profile.bio", auto_defer = false, owner = user, defaults(style = Primary, label = keys::PROFILE_EDIT_BIO))]
 pub struct EditBio { pub user: Id<UserMarker> }
 
 impl EditBio {
@@ -615,11 +615,11 @@ so its handler knows which message to redraw:
 
 ```rust
 #[derive(Button, Debug, Clone, Copy)]
-#[button("ticket.text", auto_defer = false, defaults(style = Secondary, label = "ticket.edit_text"))]
+#[button("ticket.text", auto_defer = false, defaults(style = Secondary, label = keys::TICKET_EDIT_TEXT))]
 pub struct EditText { pub system: u32 }
 
 #[derive(Modal, Debug)]
-#[modal("ticket.text.save", defaults(title = "ticket.text_title"))]
+#[modal("ticket.text.save", defaults(title = keys::TICKET_TEXT_TITLE))]
 pub struct TextForm {
     pub system: u32,                                               // the same Payload
     #[text_input("Button text", max_length = 80)]

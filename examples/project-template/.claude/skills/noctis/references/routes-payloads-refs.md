@@ -21,7 +21,7 @@ use noctis::id::marker::{GuildMarker, UserMarker};
 #[button(
     "dash.mod",                                     // the id, first
     permissions = MANAGE_GUILD,                     // routing arguments: a Route Guard
-    defaults(style = Success, label = "common.enable"),  // mandatory
+    defaults(style = Success, label = keys::COMMON_ENABLE),  // mandatory
 )]
 pub struct ToggleModule {
     pub guild: Id<GuildMarker>,
@@ -212,7 +212,7 @@ mod auth {
     permissions = BAN_MEMBERS,     // and only while they can still ban
     guard = auth::is_staff,        // and only if the bot's staff list says so
     response = ephemeral,
-    defaults(style = Danger, label = "mod.ban"),
+    defaults(style = Danger, label = keys::MOD_BAN),
 )]
 pub struct Ban {
     pub moderator: Id<UserMarker>,
@@ -642,7 +642,7 @@ App's `RefStore` (`AppBuilder::ref_store(..)`, default in-memory; `adapters.md`)
 ```rust
 #[derive(Button, Debug, Clone)]
 #[button("mod.ban.ok", by_ref, one_shot, ttl = "15m",
-         defaults(style = Danger, label = "mod.ban.confirm"))]
+         defaults(style = Danger, label = keys::MOD_BAN_CONFIRM))]
 pub struct ConfirmBan {
     pub target: Id<UserMarker>,
     pub reason: String,               // fine: by_ref has no inline length limit

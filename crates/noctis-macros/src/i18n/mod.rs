@@ -29,6 +29,10 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         .iter()
         .map(|e| syn::Error::new(span, e))
         .collect();
+    let default_file = format!("{}.yaml", args.default.as_str());
+    if !errors.is_empty() && !loaded.files.iter().any(|(name, _)| *name == default_file) {
+        return failed(errors, &loaded.read);
+    }
     let model = model::compile(&loaded.files, args.default, dir);
     let model = match model {
         Ok(model) if errors.is_empty() => model,

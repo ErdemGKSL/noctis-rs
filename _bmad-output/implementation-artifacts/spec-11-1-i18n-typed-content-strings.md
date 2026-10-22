@@ -2,10 +2,10 @@
 title: 'Story 11.1: `i18n!` typed content strings'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'c5a5e1baae1d1361de7545baba1b1084850f8dba'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-11-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -15,7 +15,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      No gate compiles or tests examples/project-template, so its new keys:: defaults and the bio_modal overrides helper are unverified.
+    evidence: |-
+      The template is excluded from the workspace (Cargo.toml exclude), tools/story-loop/gates.sh runs only --workspace commands and xtask checks, skill-check reads only the skill directory, and the template CI job in .github/workflows-disabled/ci.yml is disabled and continue-on-error. edit_bio_opens_pre_filled in examples/project-template/tests/flows.rs does not assert the modal title or input labels. Building and testing the template is planned for Story 14.2.
+    location: >-
+      examples/project-template/src/modules/profile/handlers.rs
+    severity: medium
 ---
 
 <intent-contract>
@@ -282,6 +289,52 @@ Unless a row says otherwise: `D` = `dir` as written, the default is `en-US`, and
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 42 findings — high 0, medium 3, low 24, false 15, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) Adding, renaming or removing a locale file does not rebuild the crate — real, but the Usage Skill (`references/i18n.md:53-54`) documents it with the "touch `src/strings.rs`" workaround and AC1 only promises rebuilds on edits; tracking directory membership needs a template `build.rs` or unstable `tracked_path`, more than a direct correction for an occasional event.
+  - `[false]` `[reject]` (blind) No build check that a catalog backs `defaults(..)` keys; label renders the generic error text and a modal title overflows MOD-01 — `I18n::text` (`noctis-core/src/responder.rs:1350-1361`) falls back to the key string with a `warn`, not the generic text, the same designed fallback as every `Text::Key`; a build-time ownership check is new surface the intent does not ask for.
+  - `[low]` `[reject]` (blind) Translated default texts are not length-checked at compile time and no test covers the run-time rejection — the spec (row 67) settles run-time validation; `prepare`/`show_modal` validate after `resolve_keys` through the same `noctis_ui::validate` path the overrides already exercise, so only a test is missing; not worth an extra suite.
+  - `[low]` `[reject]` (blind) No end-to-end test of key-based `placeholder` and `title` defaults — the select and modal paths are a direct `DefaultText` → `Text` conversion covered by macro token tests and the shared resolve path; a further e2e test is more than a direct correction for little risk.
+  - `[low]` `[reject]` (blind) Error spans chosen by matching message text in `i18n/mod.rs` — spans are correct today; harm only appears if the message is reworded, and the fix is a refactor to structured errors.
+  - `[low]` `[reject]` (blind) `AppStrings::new` deduplicates by `origin` alone and drops a different catalog with the same origin — spec rows 62 and the `AppStrings` bullet settle origin dedup; a same-origin different catalog needs two versions of one package both registering catalogs (or the internal-only `__dir_from_source_file`), unusual, and the fix adds identity checks.
+  - `[false]` `[reject]` (blind) `noctis.*`/`cmd.*` keys in two catalogs make the App unbuildable with no precedence rule — the spec defines "a key that two catalogs define in any of their files is a DuplicateKey"; it fails loudly at `build()` with both origins named, which is the designed behavior, not a defect.
+  - `[low]` `[patch]` (blind) `#[allow(clippy::too_many_arguments)]` only when `params.len() > 7` misses 7 placeholders plus `&self` — clippy counts the receiver in `decl.inputs`; patch: condition becomes `>= 7`.
+  - `[low]` `[reject]` (blind) Generated `Debug` prints the whole row once per node struct — real but only visible when someone debug-prints `Strings`; a manual `Debug` impl is added complexity for a rare use.
+  - `[low]` `[reject]` (blind) A leaf named `clone`/`fmt` shadows trait methods on the generated structs — real for `clone` (inherent wins), but `Strings` is `Copy` and such key names are rare; the fix adds a new naming rule.
+  - `[false]` `[reject]` (blind) Several `i18n!` invocations in one module collide — rustc reports duplicate definitions loudly at compile time; a loud failure on an unshown misuse is correct behavior.
+  - `[low]` `[patch]` (blind) Duplicate-key YAML errors report the value's position, not the key's — `Builder::push` uses the marker of the completed value (a `MappingEnd` for map values); patch: keep the key's `Marker` with the pending key and report it. Grouped with the edge-layer duplicate.
+  - `[low]` `[reject]` (blind) Locale files with non-UTF-8 names are silently ignored — real (`filter_map(.. into_string().ok())`), but non-UTF-8 file names in a locale dir are very unlikely and reporting them adds a branch.
+  - `[low]` `[reject]` (blind) `translation_checks` uses a linear `find` per key per file — quadratic only at expansion time; realistic catalogs (hundreds to low thousands of keys, few locales) stay fast, and the fix is a refactor.
+  - `[low]` `[reject]` (blind) `Catalog::keys()` collects, sorts and dedups on every call — called once per catalog at `build()`; negligible.
+  - `[false]` `[reject]` (blind) `AppBuilder::locales` is public but only usable with the `i18n` feature — the spec deliberately keeps it ungated in core; without the feature no `catalog()` exists to pass, so nothing goes wrong.
+  - `[medium]` `[patch]` (edge) A reserved family nested two or more levels deep re-enters content checks, rejecting `cmd: {admin: {set-up: {description: x}}}` — `Walk::value` calls `self.map(full, children, true)` regardless of the caller's flag (`model.rs:359`), contradicting Matrix 35 and blocking Story 11.4 subcommand keys; patch: thread the `content` flag through `value` and add a unit test.
+  - `[low]` `[patch]` (edge) A missing `dir` or an unreadable/non-UTF-8 default file adds a misleading "default locale has no file" error — `expand` runs `model::compile` on the empty file list after load errors (`i18n/mod.rs:32`); a missing dir is a common first-setup mistake; patch: return `failed` before `compile` when load reported errors and no default file was loaded.
+  - `[low]` `[reject]` (edge) New or renamed locale files are not tracked for rebuilds — same root cause as the blind rebuild finding; rejected with it.
+  - `[low]` `[reject]` (edge) `origin` uses `dir` as written, so `locales` and `locales/` in one crate raise spurious `DuplicateLocaleKey` — real, but it needs two invocations over one directory in one crate and fails loudly at `build()` naming both visibly different origins.
+  - `[low]` `[reject]` (edge) `AppStrings` dedup by origin drops a different catalog with the same origin — same root cause as the blind dedup finding; rejected with it.
+  - `[low]` `[reject]` (edge) Non-UTF-8 names and dangling symlinks are silently dropped by `load` — same root cause as the blind non-UTF-8 finding; very unlikely, rejected with it.
+  - `[low]` `[patch]` (edge) Duplicate-key mark is the value's end — grouped with the blind duplicate-key finding; same patch.
+  - `[low]` `[patch]` (edge) `too_many_arguments` allow off by one — grouped with the blind finding; same patch.
+  - `[low]` `[reject]` (edge) `is_absolute` treats a relative Unix dir like `a:b` as absolute — real but such a dir name is very unlikely and the fix adds a platform branch.
+  - `[false]` `[reject]` (edge) `redial_on_close` polling no longer detects double redials — two redials before the first successful poll still sum to 2 and fail `assert_eq!(redials, 1)`; a redial after the poll was equally invisible to the old single read.
+  - `[medium]` `[patch]` (edge) The Usage Skill still shows key-looking string literals in `defaults(..)` (`modals.md:31` even calls it "a locale key") — verified at `modals.md:31,176,618,622`, `components-v2.md:383,458`, `routes-payloads-refs.md:24,215,645`, `responder.md:229,233,585`; these now render as raw text and violate maintainer decisions §9; patch: rewrite them as `keys::…` paths and fix the comment.
+  - `[low]` `[reject]` (edge) Claim "every read file has `include_bytes!`, so editing rebuilds" overstates rebuild tracking — edits do rebuild as claimed; directory-membership changes are the blind rebuild finding, rejected with it.
+  - `[low]` `[patch]` (vgap) `row_of`'s sibling `or_else` branch for a locale with no file of its own is never exercised — pre-verified gap; patch: add a unit test with only `en-US.yaml` and `es-419.yaml` asserting `row(&m, Locale::EsEs, "a")` is the es-419 value.
+  - `[medium]` `[defer]` (vgap) The template's switch to `keys::` defaults and the `bio_modal` helper is never compiled or tested — pre-verified; no gate builds the excluded template, and template CI is planned for Story 14.2; deferred to the frontmatter list.
+  - `[low]` `[patch]` (vgap other) `tests/i18n_app.rs` needs `i18n` and `testkit`, which the CI test job never enables together — verified: `ci.yml:62` runs featureless and `cargo hack --each-feature` enables one feature at a time, while `gates.sh` uses `--all-features`; patch: add a `cargo test --release -p noctis --features i18n,testkit --test i18n_app` step to the CI test job.
+  - `[low]` `[reject]` (vgap other) `origin` from the dir spelling yields spurious duplicates — same root cause as the edge origin finding; rejected with it.
+  - `[false]` `[reject]` (intent 1) App-level catalog merge and `DuplicateLocaleKey` land ahead of Story 11.2 — the spec settles this deliberately (Design Notes "Why merge in 11.1"; Never: no `Module::locales`).
+  - `[false]` `[reject]` (intent 2) Content surface beyond the ACs (`DefaultText` keys, `noctis.*` overrides, `FRAMEWORK_KEYS`) — the spec's Approach and Boundaries settle these, and maintainer decisions §9 requires the `defaults(..)` keys.
+  - `[false]` `[reject]` (intent 3) The template does not compile because `Strings::of` takes `Locale` while `response_locale()` returns `&str` — the spec deliberately keeps the planned call until Story 11.3 changes the return type (Never and Design Notes "Why `Strings::of(Locale)`"); the skill shows the interim parse.
+  - `[false]` `[reject]` (intent 4) The LOC-04 warning fixture asserts an error via `#![deny(deprecated)]` — the spec prescribes exactly this fixture; trybuild suites are `compile_fail` only.
+  - `[false]` `[reject]` (intent 5) `Strings` fallback is resolved at compile time — the spec settles "Rows are resolved at compile time", and the observable runtime result matches AC3.
+  - `[false]` `[reject]` (intent 6) Rebuild guarantee is partial — AC1 promises rebuilds on edits, which `include_bytes!` delivers; the added-file case is documented in the skill.
+  - `[false]` `[reject]` (intent 7) Accessor tree narrowed by extra key-segment errors and a reserved `noctis` family — every rule is settled in the spec's Key tree bullets and Matrix 28-33.
+  - `[false]` `[reject]` (intent 8) AC2's orphan-key reading is only a unit test — the spec names the trybuild fixtures and settles reading (a) for AC2; the orphan key is Matrix 50, covered by unit tests as the spec's Tasks say.
+  - `[false]` `[reject]` (intent 9) Input-attribute key paths stay a MOD-04 error, in tension with §9 — the spec's Never settles this; §9's syntax rule is not violated because a path there is rejected, never treated as literal text.
+  - `[false]` `[reject]` (intent 10) LOC-01 help wording differs from AC2 — Matrix 10 prescribes exactly "help: name it `en-GB.yaml` or `en-US.yaml`", and the help names both files.
+
 ## Design Notes
 
 - **Why a hidden `__dir_from_source_file`:** trybuild compiles fixtures in `<target>/tests/trybuild/noctis`, so `CARGO_MANIFEST_DIR` there is not `crates/noctis`. The fixture YAML cannot sit in the suite dir either, because `rules-catalog` rejects files other than `.rs`/`.stderr`. A file-relative escape hatch is deterministic, and `Span::local_file` is stable on the MSRV. Integration tests and doctests use the public crate-root form.
@@ -317,3 +370,12 @@ Unless a row says otherwise: `D` = `dir` as written, the default is `en-US`, and
 - `cargo deny check` -- expected: ok.
 - `cargo +1.91 check --release --workspace` -- expected: ok.
 - `test ! -d target/debug` -- expected: no debug profile.
+
+## Auto Run Result
+
+- **Summary:** `i18n!` macro in noctis-macros compiles a YAML locale directory into a typed `Strings` tree (`Strings::of(Locale)`, typed placeholder methods), with LOC-01/LOC-04 compile errors and a deprecation warning for partial locales; `AppBuilder::locales` merges catalogs with `DuplicateLocaleKey` at `build()`; `defaults(..)` texts accept `keys::` paths (DefaultText), and `noctis.*` framework keys are overridable.
+- **Files changed:** `crates/noctis-macros/src/i18n/{mod,model,emit}.rs` (macro: load, validate, emit); `crates/noctis-core` responder/app (catalog merge, key resolution); `crates/noctis/tests/ui-i18n/**` + `tests/i18n_app.rs` (trybuild and e2e); removed obsolete CV2-08/09, MOD-01 path fixtures; `docs/discord-rules.md`, `xtask/rules-*` (LOC rules); `xtask/public-api.txt` (re-blessed); `examples/project-template/**` (strings.rs, modules, AGENTS.md, Usage Skill incl. `references/i18n.md`); `.github/workflows-disabled/ci.yml` (i18n+testkit test step).
+- **Review findings:** 42 (high 0, medium 3, low 24, false 15). Patched: 8 entries (medium 2: nested reserved-family content flag in `Walk::value` with unit test; Usage Skill key-looking literals rewritten to `keys::` paths; low 6: `too_many_arguments` off-by-one, duplicate-key mark at key position (2 grouped), missing-dir misleading error, `row_of` sibling-fallback test, CI i18n+testkit step). Deferred: 1 medium (template not compiled by any gate; Story 14.2). Rejected: locale-file add/rename not tracked for rebuilds (documented touch workaround), origin-only dedup, dir-spelling origin duplicates, non-UTF-8 names ignored, compile-time length checks/e2e placeholder tests, message-matched spans, Debug verbosity, leaf names shadowing `clone`, linear `find`, `keys()` per call, `a:b` is_absolute, plus 15 false findings (designed fallbacks/spec-settled scope).
+- **Follow-up review recommended:** true (first pass, 2 medium patched). Named risk: the `Walk::value` content-flag threading for nested reserved families (`cmd.*` subcommands, needed by Story 11.4) is a logic change verified only by one new unit test.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, test, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** template unverified by any build gate; new/renamed locale files need a manual touch to rebuild; `Strings::of(Locale)` vs `response_locale() -> &str` interim parse until Story 11.3.

@@ -226,11 +226,11 @@ override it for one call.
 pub struct Settings;                         // auto-defer: type 5 + EPHEMERAL
 
 #[derive(Button)]
-#[button("mod.ban", response = ephemeral, auto_defer = true, defaults(style = Danger, label = "mod.ban"))]
+#[button("mod.ban", response = ephemeral, auto_defer = true, defaults(style = Danger, label = keys::MOD_BAN))]
 pub struct Ban { pub user: Id<UserMarker> }  // a click opens a new private panel
 
 #[derive(Button)]                            // a button that opens a modal
-#[button("profile.bio", auto_defer = false, defaults(style = Primary, label = "profile.edit_bio"))]
+#[button("profile.bio", auto_defer = false, defaults(style = Primary, label = keys::PROFILE_EDIT_BIO))]
 pub struct OpenBioModal { pub user: Id<UserMarker> }
 
 impl OpenBioModal {
@@ -582,7 +582,7 @@ Example: a component that opens a modal (its struct declares `auto_defer = false
 
 ```rust
 #[derive(Button, Clone, Copy)]
-#[button("profile.bio", auto_defer = false, defaults(style = Primary, label = "profile.edit_bio"))]
+#[button("profile.bio", auto_defer = false, defaults(style = Primary, label = keys::PROFILE_EDIT_BIO))]
 pub struct EditBio { pub user: Id<UserMarker> }
 
 impl EditBio {

@@ -75,7 +75,7 @@ impl Emit<'_> {
             Params::Named(_) => names.iter().map(|n| ident(n)).collect(),
             Params::Positional(n) => (0..*n).map(|i| format_ident!("arg{i}")).collect(),
         };
-        let allow = (params.len() > 7).then(|| quote!(#[allow(clippy::too_many_arguments)]));
+        let allow = (params.len() >= 7).then(|| quote!(#[allow(clippy::too_many_arguments)]));
         quote! {
             #[doc = #doc]
             #allow
