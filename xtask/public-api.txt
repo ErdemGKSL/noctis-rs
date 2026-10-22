@@ -116,6 +116,7 @@ pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::Identif
 pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
+pub fn noctis::AppBuilder::locales(&mut self, noctis::i18n::Catalog) -> &mut Self
 pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore>) -> &mut Self
 pub fn noctis::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
@@ -319,6 +320,10 @@ impl core::marker::StructuralPartialEq for noctis::BuildError
 #[non_exhaustive] pub enum noctis::BuildViolation
 pub noctis::BuildViolation::Command(noctis::rules::Violation)
 pub noctis::BuildViolation::CryptoProvider
+pub noctis::BuildViolation::DuplicateLocaleKey
+pub noctis::BuildViolation::DuplicateLocaleKey::first: &'static str
+pub noctis::BuildViolation::DuplicateLocaleKey::key: &'static str
+pub noctis::BuildViolation::DuplicateLocaleKey::second: &'static str
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateRoute
@@ -1651,6 +1656,7 @@ pub proc macro noctis::#[autocomplete]
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::#[handler]
+pub proc macro noctis::i18n!()
 pub proc macro noctis::label!()
 pub proc macro noctis::#[on_expired]
 pub proc macro noctis::#[on_stale]
@@ -2460,6 +2466,23 @@ pub fn noctis::http::RawResponse::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::http::RawResponse
 pub fn noctis::http::RawResponse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::http::RawResponse
+pub mod noctis::i18n
+pub struct noctis::i18n::Catalog
+impl noctis::i18n::Catalog
+pub const fn noctis::i18n::Catalog::default_locale(&self) -> noctis::rules::Locale
+pub fn noctis::i18n::Catalog::get(&self, noctis::rules::Locale, &str) -> core::option::Option<&'static str>
+pub fn noctis::i18n::Catalog::keys(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'static str> + use<>
+pub fn noctis::i18n::Catalog::locales(&self) -> impl core::iter::traits::iterator::Iterator<Item = noctis::rules::Locale> + '_
+pub const fn noctis::i18n::Catalog::origin(&self) -> &'static str
+pub fn noctis::i18n::Catalog::placeholders(&self, &str) -> core::option::Option<&'static [&'static str]>
+impl core::clone::Clone for noctis::i18n::Catalog
+pub fn noctis::i18n::Catalog::clone(&self) -> Self
+impl core::fmt::Debug for noctis::i18n::Catalog
+pub fn noctis::i18n::Catalog::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::i18n::Catalog
+impl noctis::rules::Translate for noctis::i18n::Catalog
+pub fn noctis::i18n::Catalog::translate(&self, noctis::rules::Locale, noctis::prelude::MessageKey, &[(&str, &dyn core::fmt::Display)]) -> core::option::Option<alloc::string::String>
+pub fn noctis::i18n::format(&str, &[(&str, &dyn core::fmt::Display)]) -> alloc::string::String
 pub mod noctis::image
 pub enum noctis::image::AnimatedFormat
 pub noctis::image::AnimatedFormat::Apng
@@ -3668,6 +3691,7 @@ pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports
 pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::prelude::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
+pub fn noctis::prelude::AppBuilder::locales(&mut self, noctis::i18n::Catalog) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
