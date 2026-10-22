@@ -112,7 +112,7 @@ development_status:
   8-2-deterministic-renders-select-freshness-and-safe-text: done
   8-3-budget-helpers-cost-and-how-many-items-fit: done
   8-4-testing-kit-simulated-interactions-and-message-snapshots: done
-  8-5-ui-recipes-and-example-tabs-pagination-step-flows-and-settin: backlog
+  8-5-ui-recipes-and-example-tabs-pagination-step-flows-and-settin: in-progress
   epic-8-retrospective: optional
 
   epic-9: backlog

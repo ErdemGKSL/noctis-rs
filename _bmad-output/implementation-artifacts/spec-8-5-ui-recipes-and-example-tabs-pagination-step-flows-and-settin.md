@@ -2,7 +2,8 @@
 title: 'Story 8.5: UI recipes and example: tabs, pagination, step flows and settings screens'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '78e7e2f28489ea5b1a6a7a7eaa464e971d81c84e'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
