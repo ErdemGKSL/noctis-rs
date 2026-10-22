@@ -15,7 +15,7 @@
 
 <p align="center">
   <img alt="Status: pre-alpha, in development" src="https://img.shields.io/badge/status-pre--alpha%20(in%20development)-7C5CFF">
-  <img alt="Stories done: 43 of 96" src="https://img.shields.io/badge/stories-43%20%2F%2096-3B2F8F">
+  <img alt="Stories done: 60 of 100" src="https://img.shields.io/badge/stories-60%20%2F%20100-3B2F8F">
   <img alt="Rust 1.91+" src="https://img.shields.io/badge/rust-1.91%2B-FFB547">
   <img alt="Edition 2024" src="https://img.shields.io/badge/edition-2024-3B2F8F">
   <img alt="twilight 0.17" src="https://img.shields.io/badge/twilight-0.17-3B2F8F">
@@ -25,10 +25,11 @@
 ---
 
 > [!IMPORTANT]
-> **Noctis is under active development and not yet published.** Epics 1–6 are done
+> **Noctis is under active development and not yet published.** Epics 1–9 are done
 > (workspace, Discord rules as code, length-proven `custom_id`s, storage ports, the
-> Components V2 and modal model with compile-time checks, a running sharded bot, slash
-> commands and Publish), and Epic 7 (routed components, Refs and modals) is next. Nothing is on crates.io yet, and the public API can still change.
+> Components V2 and modal model, a running sharded bot, slash commands and Publish,
+> routed components, Refs and modals, Responder ergonomics and the testing kit,
+> attachments and webhooks), and Epic 10 (generated images and GIFs) is next. Nothing is on crates.io yet, and the public API can still change.
 > The code below is an API preview. See the [roadmap](#roadmap) for live progress.
 
 ## Why Noctis?
@@ -239,10 +240,10 @@ done. Live per-story status is in
 | 4 | Components V2 and modal model with limit validation | P0 | ✅ Done |
 | 5 | A running sharded bot | P0 | ✅ Done |
 | 6 | Slash commands and Publish | P0 | ✅ Done |
-| 7 | Routed components, Refs and modals | P0 | ⏳ Next |
-| 8 | Views as plain functions, Responder ergonomics and the testing kit | P0 | ⏳ |
-| 9 | Attachments, webhooks and advanced component surfaces | P1 | ⏳ |
-| 10 | Generated images and GIFs | P1 | ⏳ |
+| 7 | Routed components, Refs and modals | P0 | ✅ Done |
+| 8 | Views as plain functions, Responder ergonomics and the testing kit | P0 | ✅ Done |
+| 9 | Attachments, webhooks and advanced component surfaces | P1 | ✅ Done |
+| 10 | Generated images and GIFs | P1 | ⏳ Next |
 | 11 | Localization | P1 | ⏳ |
 | 12 | Clusters and scale | P1 | ⏳ |
 | 13 | Module operations | P1 | ⏳ |
@@ -292,8 +293,29 @@ done. Live per-story status is in
     fallback and a follow-up cap.
   - Autocomplete, and handler errors and panics turned into user-facing notices.
   - Publish with a diff against Discord, dry run, a dev-guild mirror and CLI modes.
+- **Routed components, Refs and modals.**
+  - One handler per Route with O(1) dispatch; untrusted-input checks, signed
+    Payloads with a key ring, and in-place message updates.
+  - Stale and expired clicks routed through `#[on_stale]`, `#[on_expired]` and an
+    App-level Expired Handler.
+  - App-namespaced ports and a typed `ctx.kv()`.
+  - Refs minted at send time and resolved from the RefStore with a TTL.
+  - Middleware with typed Extensions, Route Guards, and `#[modal]` Routes with
+    typed submissions end to end.
+- **Views and Responder ergonomics.**
+  - `ctx.respond`, `ctx.update` and `ctx.reply_text` on every handler context.
+  - Deterministic renders with fresh select nonces, plus `escape_markdown` and
+    `escape_mentions`.
+  - `Budget` helpers answering how many more items fit.
+  - UI recipes (tabs, pagination, step flows, settings screen) in `examples/ui-recipes`.
+- **Attachments, webhooks and escape hatches.**
+  - Content-addressed attachments with edit diffs and upload budget checks.
+  - `RawComponent` and `ctx.http().raw(..)` for what the typed API does not cover.
+  - Route component defaults with per-render overrides, and modal pre-fill.
+  - Views over owned and foreign webhooks via `ctx.webhooks()`.
 - **`noctis-testkit`.** Local fakes of the Discord HTTP API and the gateway, so every
-  test runs without Discord.
+  test runs without Discord, plus `TestApp` for simulated interactions and message
+  snapshots (re-exported as `noctis::testkit`).
 
 ### 🔭 Beyond v1
 - Official Redis and SQL adapter crates
