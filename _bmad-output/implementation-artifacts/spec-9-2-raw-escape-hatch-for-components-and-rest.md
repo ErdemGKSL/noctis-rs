@@ -2,7 +2,8 @@
 title: 'Story 9.2: Raw escape hatch for components and REST'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '54c77825885b361255b672a09a3ba778ef39579c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
