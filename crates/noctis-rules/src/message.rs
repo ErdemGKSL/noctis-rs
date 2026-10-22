@@ -1,6 +1,7 @@
 //! Message fields outside the component tree: legacy `content` (MSG-01),
 //! allowed mentions (MSG-03..05), nonce and stickers (MSG-06), non-empty
-//! bodies (MSG-09) and webhook names (WH-04).
+//! bodies (MSG-09), webhook names (WH-04), webhook threads (WH-05) and the
+//! non-interactive components of a webhook the app does not own (WH-02).
 //!
 //! - MSG-02: Noctis has no embed API in v1, so there is nothing to check; an
 //!   embed builder added later must add its limits to this module.
@@ -23,6 +24,7 @@
 //! The functions only report: they never truncate.
 
 use crate::check::{at_most, text_at_most, text_between};
+use crate::component::{Accessory, Button, ButtonStyle, Component};
 use crate::{Actual, Bound, Limits, RuleId, Violation};
 
 /// Which ids of one type (users or roles) may be pinged (MSG-03).
@@ -203,7 +205,18 @@ pub fn validate_legacy_not_empty(content: &str, rows: usize, limits: &Limits) ->
     )]
 }
 
-/// WH-04: a webhook name of 1 to `webhook_name_len` characters (path `name`).
+/// WH-04: a webhook name of 1 to `webhook_name_len` characters (path
+/// `name`), without `clyde` or `discord` in any ASCII case (Discord's Create
+/// Webhook rule). A non-ASCII lookalike (`Díscord`) is not reported.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::message::validate_webhook_name;
+///
+/// let l = Limits::default();
+/// assert!(validate_webhook_name("Audit log", &l).is_empty());
+/// assert_eq!(validate_webhook_name("My Discord log", &l)[0].rule, RuleId::WH_04);
+/// ```
 pub fn validate_webhook_name(name: &str, limits: &Limits) -> Vec<Violation> {
     let mut out = Vec::new();
     text_between(
@@ -214,7 +227,154 @@ pub fn validate_webhook_name(name: &str, limits: &Limits) -> Vec<Violation> {
         name,
         &mut out,
     );
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("clyde") || lower.contains("discord") {
+        out.push(Violation::new(
+            RuleId::WH_04,
+            "name",
+            Bound::Describe("a name without `clyde` or `discord` (any case)"),
+            Actual::Text(name.to_owned()),
+        ));
+    }
     out
+}
+
+/// The thread a webhook request declares (WH-05), for
+/// [`validate_webhook_thread`].
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebhookThreadDecl<'a> {
+    /// Neither `thread_id` nor `thread_name`.
+    None,
+    /// A `thread_id` (an existing thread).
+    Id,
+    /// A `thread_name` (a new forum or media post).
+    Name(&'a str),
+}
+
+/// WH-05: a webhook request into a forum or media channel (`thread_only`)
+/// names a thread; a `thread_name` has 1 to `webhook_thread_name_len`
+/// characters and is only valid in a forum or media channel.
+///
+/// Reports, in this order: a missing thread in a forum or media channel
+/// (path `thread_id`); a `thread_name` length out of range (path
+/// `thread_name`, in any channel); a `thread_name` outside a forum or media
+/// channel (path `thread_name`). A `thread_id` is always fine.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::message::{WebhookThreadDecl, validate_webhook_thread};
+///
+/// let l = Limits::default();
+/// assert!(validate_webhook_thread(true, WebhookThreadDecl::Id, &l).is_empty());
+/// assert_eq!(
+///     validate_webhook_thread(true, WebhookThreadDecl::None, &l)[0].rule,
+///     RuleId::WH_05
+/// );
+/// ```
+pub fn validate_webhook_thread(
+    thread_only: bool,
+    thread: WebhookThreadDecl<'_>,
+    limits: &Limits,
+) -> Vec<Violation> {
+    let mut out = Vec::new();
+    match thread {
+        WebhookThreadDecl::None if thread_only => out.push(Violation::new(
+            RuleId::WH_05,
+            "thread_id",
+            Bound::Describe("a thread_id or a thread_name in a forum or media channel"),
+            Actual::Text("none".to_owned()),
+        )),
+        WebhookThreadDecl::Name(name) => {
+            text_between(
+                RuleId::WH_05,
+                "thread_name",
+                1,
+                limits.webhook_thread_name_len,
+                name,
+                &mut out,
+            );
+            if !thread_only {
+                out.push(Violation::new(
+                    RuleId::WH_05,
+                    "thread_name",
+                    Bound::Describe("a thread_name only in a forum or media channel"),
+                    Actual::Text(name.to_owned()),
+                ));
+            }
+        }
+        WebhookThreadDecl::None | WebhookThreadDecl::Id => {}
+    }
+    out
+}
+
+const STATIC_ONLY: &str = "a non-interactive component (a link button, text, media, file, separator, container or section)";
+
+/// WH-02: a webhook the app does not own sends only non-interactive
+/// components. Reports one violation per Button whose style is not
+/// [`ButtonStyle::Link`] (a Premium button counts as interactive) and per
+/// select, at any depth: Action Rows, Section accessories and Container
+/// children. Paths follow [`validate_components`](crate::component::validate_components)
+/// (`row[0].button[1]`, `section[2].accessory`). [`Component::Opaque`] is
+/// skipped: raw JSON is checked where it is built.
+///
+/// ```
+/// use noctis_rules::RuleId;
+/// use noctis_rules::component::{Button, ButtonStyle, Component};
+/// use noctis_rules::message::validate_static_components;
+///
+/// let link = [Component::Button(Button::new(ButtonStyle::Link("https://a.b")))];
+/// assert!(validate_static_components(&[Component::Row(&link)]).is_empty());
+/// let go = [Component::Button(Button::new(ButtonStyle::Primary))];
+/// let errs = validate_static_components(&[Component::Row(&go)]);
+/// assert_eq!((errs[0].rule, errs[0].path.as_str()), (RuleId::WH_02, "row[0].button[0]"));
+/// ```
+pub fn validate_static_components(components: &[Component<'_>]) -> Vec<Violation> {
+    let mut out = Vec::new();
+    for (i, node) in components.iter().enumerate() {
+        static_node(node, &format!("{}[{i}]", node.kind()), &mut out);
+    }
+    out
+}
+
+fn interactive(rule_path: &str, kind: &str, out: &mut Vec<Violation>) {
+    out.push(Violation::new(
+        RuleId::WH_02,
+        rule_path,
+        Bound::Describe(STATIC_ONLY),
+        Actual::Text(kind.to_owned()),
+    ));
+}
+
+fn static_button(button: &Button<'_>, path: &str, out: &mut Vec<Violation>) {
+    if !matches!(button.style, ButtonStyle::Link(_)) {
+        interactive(path, "button", out);
+    }
+}
+
+fn static_node(node: &Component<'_>, path: &str, out: &mut Vec<Violation>) {
+    let children = match node {
+        Component::Button(b) => {
+            static_button(b, path, out);
+            return;
+        }
+        Component::Select(_) => {
+            interactive(path, "select", out);
+            return;
+        }
+        Component::Section(s) => {
+            if let Accessory::Button(b) = &s.accessory {
+                static_button(b, &format!("{path}.accessory"), out);
+            }
+            return;
+        }
+        Component::Container(c) => c.children,
+        Component::Row(items) => items,
+        _ => return,
+    };
+    for (j, child) in children.iter().enumerate() {
+        static_node(child, &format!("{path}.{}[{j}]", child.kind()), out);
+    }
 }
 
 #[cfg(test)]
@@ -390,5 +550,135 @@ mod tests {
             validate_webhook_name(&"a".repeat(11), &lowered),
             [between(10, 11)]
         );
+    }
+
+    #[test]
+    fn wh_04_reserved_words() {
+        let l = Limits::default();
+        let reserved = |name: &str| {
+            Violation::new(
+                RuleId::WH_04,
+                "name",
+                Bound::Describe("a name without `clyde` or `discord` (any case)"),
+                Actual::Text(name.to_owned()),
+            )
+        };
+        for bad in ["Clyde", "my discord log", "DISCORD"] {
+            assert_eq!(validate_webhook_name(bad, &l), [reserved(bad)], "{bad}");
+        }
+        for ok in ["clyd e", "Díscord"] {
+            assert!(validate_webhook_name(ok, &l).is_empty(), "{ok}");
+        }
+        let long = format!("clyde{}", "a".repeat(80));
+        assert_eq!(validate_webhook_name(&long, &l).len(), 2);
+    }
+
+    fn wh05(path: &str, bound: Bound, actual: Actual) -> Violation {
+        Violation::new(RuleId::WH_05, path, bound, actual)
+    }
+
+    #[test]
+    fn wh_05_forum_needs_a_thread() {
+        let l = Limits::default();
+        assert_eq!(
+            validate_webhook_thread(true, WebhookThreadDecl::None, &l),
+            [wh05(
+                "thread_id",
+                Bound::Describe("a thread_id or a thread_name in a forum or media channel"),
+                Actual::Text("none".to_owned())
+            )]
+        );
+        assert!(validate_webhook_thread(true, WebhookThreadDecl::Id, &l).is_empty());
+        assert!(validate_webhook_thread(true, WebhookThreadDecl::Name("Daily log"), &l).is_empty());
+        assert!(validate_webhook_thread(false, WebhookThreadDecl::None, &l).is_empty());
+        assert!(validate_webhook_thread(false, WebhookThreadDecl::Id, &l).is_empty());
+    }
+
+    #[test]
+    fn wh_05_thread_name_bounds() {
+        let l = Limits::default();
+        let between = |count| {
+            wh05(
+                "thread_name",
+                Bound::Between { min: 1, max: 100 },
+                Actual::Count(count),
+            )
+        };
+        assert_eq!(
+            validate_webhook_thread(true, WebhookThreadDecl::Name(""), &l),
+            [between(0)]
+        );
+        let ok = "a".repeat(100);
+        assert!(validate_webhook_thread(true, WebhookThreadDecl::Name(&ok), &l).is_empty());
+        let over = "a".repeat(101);
+        assert_eq!(
+            validate_webhook_thread(true, WebhookThreadDecl::Name(&over), &l),
+            [between(101)]
+        );
+    }
+
+    #[test]
+    fn wh_05_thread_name_off_forum() {
+        let l = Limits::default();
+        assert_eq!(
+            validate_webhook_thread(false, WebhookThreadDecl::Name("x"), &l),
+            [wh05(
+                "thread_name",
+                Bound::Describe("a thread_name only in a forum or media channel"),
+                Actual::Text("x".to_owned())
+            )]
+        );
+        assert_eq!(
+            validate_webhook_thread(false, WebhookThreadDecl::Name(""), &l).len(),
+            2
+        );
+    }
+
+    fn wh02(path: &str, kind: &str) -> Violation {
+        Violation::new(
+            RuleId::WH_02,
+            path,
+            Bound::Describe(STATIC_ONLY),
+            Actual::Text(kind.to_owned()),
+        )
+    }
+
+    #[test]
+    fn wh_02_static_components_nested() {
+        use crate::component::{Container, Media, Section, Select, SelectKind};
+        let link = Button::new(ButtonStyle::Link("https://a.b"));
+        let go = Button::new(ButtonStyle::Primary).label("Go");
+        let premium = Button::new(ButtonStyle::Premium);
+        let row = [
+            Component::Button(link),
+            Component::Select(Select::new(SelectKind::User)),
+        ];
+        let children = [
+            Component::Text("x"),
+            Component::Section(Section::new(&["y"], Accessory::Button(go))),
+            Component::Row(&row),
+            Component::Section(Section::new(
+                &["z"],
+                Accessory::Thumbnail(Media::new("https://a.b/c.png")),
+            )),
+        ];
+        let premium_row = [Component::Button(premium)];
+        let tree = [
+            Component::Container(Container::new(&children)),
+            Component::Row(&premium_row),
+            Component::Opaque(3),
+            Component::Section(Section::new(&["w"], Accessory::Button(link))),
+        ];
+        assert_eq!(
+            validate_static_components(&tree),
+            [
+                wh02("container[0].section[1].accessory", "button"),
+                wh02("container[0].row[2].select[1]", "select"),
+                wh02("row[1].button[0]", "button"),
+            ]
+        );
+        assert!(validate_static_components(&[Component::Opaque(1)]).is_empty());
+        let links = [Component::Button(link)];
+        assert!(validate_static_components(&[Component::Row(&links)]).is_empty());
     }
 }

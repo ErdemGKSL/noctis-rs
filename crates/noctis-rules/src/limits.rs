@@ -135,6 +135,7 @@ limits! {
     attachments = 10, "ATT-03", "attachments per message.";
     attachment_description_len = 1024, "ATT-06", "characters in attachment alt text.";
     webhook_name_len = 80, "WH-04", "characters in a webhook name.";
+    webhook_thread_name_len = 100, "WH-05", "characters in a webhook `thread_name`.";
 }
 
 impl Limits {
@@ -162,7 +163,7 @@ mod tests {
     fn defaults_match_the_catalog() {
         let l = Limits::default();
         assert_eq!(l.mode, LimitMode::Strict);
-        let expected: [(usize, usize); 58] = [
+        let expected: [(usize, usize); 59] = [
             (l.command_name_len, 32),
             (l.command_description_len, 100),
             (l.command_size, 8000),
@@ -221,6 +222,7 @@ mod tests {
             (l.attachments, 10),
             (l.attachment_description_len, 1024),
             (l.webhook_name_len, 80),
+            (l.webhook_thread_name_len, 100),
         ];
         for (i, (actual, want)) in expected.into_iter().enumerate() {
             assert_eq!(actual, want, "field {} ({})", i, FIELDS[i].0);
@@ -261,10 +263,10 @@ mod tests {
     }
 
     #[test]
-    fn field_table_has_58_unique_fields_with_catalog_ids() {
-        assert_eq!(FIELDS.len(), 58);
+    fn field_table_has_59_unique_fields_with_catalog_ids() {
+        assert_eq!(FIELDS.len(), 59);
         let names: HashSet<_> = FIELDS.iter().map(|(name, _, _)| name).collect();
-        assert_eq!(names.len(), 58);
+        assert_eq!(names.len(), 59);
         for (name, rule, _) in FIELDS {
             assert!(RuleId::ALL.contains(rule), "{name}: {rule}");
         }
@@ -282,6 +284,7 @@ mod tests {
         assert_eq!(rule_of("media_url_len"), Some(RuleId::CV2_17));
         assert_eq!(rule_of("custom_id_len"), Some(RuleId::CID_01));
         assert_eq!(rule_of("webhook_name_len"), Some(RuleId::WH_04));
+        assert_eq!(rule_of("webhook_thread_name_len"), Some(RuleId::WH_05));
     }
 
     #[test]

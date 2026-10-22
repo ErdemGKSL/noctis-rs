@@ -62,12 +62,18 @@ const TARGET_DIR: &str = "target/public-api";
 /// constructors require (FR-58), the sealed supertraits of the placement
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
 /// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
-/// `SuggestionValue`, `NamespacedPort`, `IntoPort` and `RawHttp`.
+/// `SuggestionValue`, `NamespacedPort`, `IntoPort`, `RawHttp`, the static
+/// placement traits and `Ownership`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
         "noctis_ui::placement::sealed",
         "noctis::__private::ui::sealed",
+    ),
+    // The sealed supertraits of the static placement traits (WH-02).
+    (
+        "noctis_ui::message::static_msg::sealed",
+        "noctis::__private::ui::static_msg::sealed",
     ),
     // The sealed supertraits of `EventPayload` and `Descriptor` (AD-7).
     (
@@ -93,6 +99,11 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_core::namespace::sealed",
         "noctis::__private::core::namespace::sealed",
+    ),
+    // The sealed supertrait of `Ownership` (`Owned`, `Foreign`; WH-02).
+    (
+        "noctis_core::webhook::sealed",
+        "noctis::__private::core::webhook::sealed",
     ),
     // The sealed supertrait of `RawHttp` (AD-24: only `twilight_http::Client`).
     (

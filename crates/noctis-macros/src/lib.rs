@@ -142,6 +142,16 @@ pub fn alt(input: TokenStream) -> TokenStream {
         .into()
 }
 
+/// A webhook name literal, checked at expansion against WH-04 (1 to 80
+/// characters by `discord_len`, no `clyde` or `discord` in any ASCII case);
+/// expands to a `noctis::ui::WebhookName`.
+#[proc_macro]
+pub fn webhook_name(input: TokenStream) -> TokenStream {
+    literal::expand_text(&literal::WEBHOOK_NAME, &input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 /// A `0xRRGGBB` colour literal, checked at expansion against CV2-13;
 /// expands to a `noctis::ui::Rgb`.
 #[proc_macro]

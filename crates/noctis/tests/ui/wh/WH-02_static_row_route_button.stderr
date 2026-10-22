@@ -1,0 +1,21 @@
+error[E0277]: [WH-02] `RouteButton<Ack>` is not a static row button: a webhook the app does not own sends only link buttons
+  --> tests/ui/wh/WH-02_static_row_route_button.rs:16:38
+   |
+16 |     let _ = StaticActionRow::buttons([Ack.build()]);
+   |             ------------------------ ^^^^^^^^^^^^^ not a LinkButton
+   |             |
+   |             required by a bound introduced by this call
+   |
+   = help: the trait `StaticRowButton` is not implemented for `RouteButton<Ack>`
+   = note: StaticActionRow::buttons takes LinkButton values; selects and buttons with a custom_id are interactive
+   = note: send interactive components through an owned webhook, or convert a run-time tree with StaticMessage::try_from(msg)
+help: the trait `StaticRowButton` is implemented for `LinkButton`
+  --> $WORKSPACE/crates/noctis-ui/src/message/static_msg.rs
+   |
+   | impl StaticRowButton for LinkButton {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `StaticActionRow::buttons`
+  --> $WORKSPACE/crates/noctis-ui/src/message/static_msg.rs
+   |
+   |     pub fn buttons<B: StaticRowButton, const N: usize>(buttons: [B; N]) -> Self
+   |                       ^^^^^^^^^^^^^^^ required by this bound in `StaticActionRow::buttons`

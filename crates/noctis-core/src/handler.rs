@@ -325,6 +325,12 @@ impl EventCtx {
     pub fn kv(&self) -> crate::Kv {
         crate::Kv::of(Some(&self.0.app))
     }
+
+    /// The App's webhook factory: create a webhook the App owns, or wrap
+    /// stored credentials (a cheap clone).
+    pub fn webhooks(&self) -> crate::Webhooks {
+        crate::Webhooks::of(Some(&self.0.app))
+    }
 }
 
 impl crate::kind::__Extensions for EventCtx {

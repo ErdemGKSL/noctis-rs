@@ -31,7 +31,7 @@ enum Inner<'a> {
     V2 {
         msg: &'a V2Message,
         flags: u64,
-        clear_legacy: bool,
+        clear: Clear,
     },
     Legacy {
         msg: &'a LegacyMessage,
@@ -39,12 +39,25 @@ enum Inner<'a> {
     },
 }
 
+/// The legacy fields a V2 body sends empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Clear {
+    /// None: a send, or an edit of a V2 message.
+    Nothing,
+    /// `content`, `embeds`, `poll` and `sticker_ids`: an edit of a legacy
+    /// message (CV2-02).
+    Legacy,
+    /// `content`, `embeds` and `poll`: Edit Webhook Message, which has no
+    /// `sticker_ids` parameter (WH-03).
+    Webhook,
+}
+
 impl<'a> MessageBody<'a> {
-    pub(super) fn v2(msg: &'a V2Message, flags: u64, clear_legacy: bool) -> Self {
+    pub(super) fn v2(msg: &'a V2Message, flags: u64, clear: Clear) -> Self {
         Self(Inner::V2 {
             msg,
             flags: flags | IS_COMPONENTS_V2,
-            clear_legacy,
+            clear,
         })
     }
 
@@ -60,16 +73,14 @@ impl Serialize for MessageBody<'_> {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut map = s.serialize_map(None)?;
         match &self.0 {
-            Inner::V2 {
-                msg,
-                flags,
-                clear_legacy,
-            } => {
+            Inner::V2 { msg, flags, clear } => {
                 map.serialize_entry("flags", flags)?;
-                if *clear_legacy {
+                if *clear != Clear::Nothing {
                     map.serialize_entry("content", &())?;
                     map.serialize_entry("embeds", &NO_ITEMS)?;
                     map.serialize_entry("poll", &())?;
+                }
+                if *clear == Clear::Legacy {
                     map.serialize_entry("sticker_ids", &NO_ITEMS)?;
                 }
                 map.serialize_entry("components", msg.components())?;

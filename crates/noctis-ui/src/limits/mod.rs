@@ -279,6 +279,35 @@ pub(crate) fn child_cost(child: ContainerComponent) -> (usize, usize) {
     (c.components, c.text_len)
 }
 
+/// Every WH-02 violation of `components`, for
+/// [`StaticMessage::try_from`](crate::StaticMessage): the lowered tree
+/// through `validate_static_components`, then every raw node's JSON
+/// (`opaque[i]` at the top level, `container[i].opaque[j]` in a Container).
+pub(crate) fn static_violations(components: &Components) -> Vec<Violation> {
+    use crate::component::{ChildNode, TopNode};
+
+    let mut out = lower::with_v2(
+        components,
+        noctis_rules::message::validate_static_components,
+    );
+    let raw = |child: &ContainerComponent, path: String, out: &mut Vec<Violation>| {
+        if let ChildNode::Raw(r) = &child.0 {
+            r.static_violations(&path, out);
+        }
+    };
+    for (i, item) in components.items.iter().enumerate() {
+        match &item.0 {
+            TopNode::Container(c) => {
+                for (j, child) in c.children.iter().enumerate() {
+                    raw(child, format!("container[{i}].opaque[{j}]"), &mut out);
+                }
+            }
+            TopNode::Child(child) => raw(child, format!("opaque[{i}]"), &mut out),
+        }
+    }
+    out
+}
+
 impl sealed::Sealed for V2Message {}
 
 impl sealed::Check for V2Message {

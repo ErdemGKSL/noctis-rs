@@ -5,12 +5,21 @@
 mod body;
 mod flags;
 mod mentions;
+mod static_msg;
 
 use std::borrow::Cow;
 
 pub use body::MessageBody;
 pub use flags::{CallbackFlags, CreateFlags, EditFlags, MessageFormat};
 pub use mentions::{Mentions, Roles, Users};
+#[doc(hidden)]
+pub use static_msg::__into_static;
+pub use static_msg::{
+    IntoStaticMessage, StaticAccessory, StaticActionRow, StaticComponents, StaticContainer,
+    StaticContainerChild, StaticMessage, StaticRowButton, StaticSection, StaticTopLevel,
+};
+
+use body::Clear;
 
 use crate::arity::{Arity, LegacyRows};
 use crate::route::CustomId;
@@ -157,12 +166,12 @@ impl V2Message {
 
     /// The body of Create Message or Execute Webhook.
     pub fn create_body(&self, flags: CreateFlags) -> MessageBody<'_> {
-        MessageBody::v2(self, flags.bits(), false)
+        MessageBody::v2(self, flags.bits(), Clear::Nothing)
     }
 
     /// The `data` of callback type 4 or a follow-up message.
     pub fn callback_body(&self, flags: CallbackFlags) -> MessageBody<'_> {
-        MessageBody::v2(self, flags.bits(), false)
+        MessageBody::v2(self, flags.bits(), Clear::Nothing)
     }
 
     /// The body of an edit (Edit Message, Edit Original Interaction Response,
@@ -182,7 +191,41 @@ impl V2Message {
     /// assert_eq!(json["embeds"], serde_json::json!([]));
     /// ```
     pub fn edit_body(&self, format: MessageFormat, flags: EditFlags) -> MessageBody<'_> {
-        MessageBody::v2(self, flags.bits(), format == MessageFormat::Legacy)
+        let clear = match format {
+            MessageFormat::Legacy => Clear::Legacy,
+            MessageFormat::V2 => Clear::Nothing,
+        };
+        MessageBody::v2(self, flags.bits(), clear)
+    }
+
+    /// The body of Edit Webhook Message: `flags` (with `IS_COMPONENTS_V2`),
+    /// `content: null`, `embeds: []`, `poll: null`, `components` and
+    /// `allowed_mentions`.
+    ///
+    /// A webhook cannot know the target's format without a GET, so the
+    /// legacy fields are always cleared: harmless on a V2 message, required
+    /// on a legacy one (WH-03). `sticker_ids` is not an Edit Webhook Message
+    /// parameter and is never sent.
+    ///
+    /// ```
+    /// use noctis_ui::{Components, EditFlags, TextDisplay, V2Message};
+    ///
+    /// let msg = V2Message::new(Components::new().push(TextDisplay::new("hi")));
+    /// let json = serde_json::to_value(msg.webhook_edit_body(EditFlags::SUPPRESS_EMBEDS)).unwrap();
+    /// assert_eq!(
+    ///     json,
+    ///     serde_json::json!({
+    ///         "flags": 32772,
+    ///         "content": null,
+    ///         "embeds": [],
+    ///         "poll": null,
+    ///         "components": [{"type": 10, "id": 1, "content": "hi"}],
+    ///         "allowed_mentions": {"parse": []}
+    ///     })
+    /// );
+    /// ```
+    pub fn webhook_edit_body(&self, flags: EditFlags) -> MessageBody<'_> {
+        MessageBody::v2(self, flags.bits(), Clear::Webhook)
     }
 }
 

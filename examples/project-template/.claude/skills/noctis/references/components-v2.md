@@ -60,27 +60,28 @@ buttons = 6, Action Row + 1 select (25 options) = 2.
 ✅ allowed · ❌ rejected at `cargo check` with the rule id · ➖ not applicable.
 Message columns are Components V2 messages; the last column is a legacy (non-V2)
 message. Modal columns are a `Modal`'s top level and the single input inside a
-`ModalLabel`.
+`ModalLabel`. The foreign webhook column is a `StaticMessage`, the only message a webhook
+the App does not own can send (WH-02, §12b).
 
-| Component (type) | Noctis type | Message top level | Container child | Section text | Section accessory | Action Row | Modal top level | Inside a modal Label | Legacy message |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Action Row (1) | `ActionRow` | ✅ | ✅ | ❌ | ❌ | ➖ | ❌ (deprecated in modals; Noctis never emits it) | ❌ | ✅ up to 5 rows |
-| Button (2) | `RouteButton<R>`, `LinkButton`, `PremiumButton` | ❌ | ❌ | ❌ | ✅ | ✅ 1-5 per row | ❌ | ❌ | ✅ in a row |
-| String Select (3) | `StringSelect` / `ModalStringSelect` | ❌ | ❌ | ❌ | ❌ | ✅ alone in its row | ❌ | ✅ (`ModalStringSelect`) | ✅ alone in a row |
-| Text Input (4) | `TextInput` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| User / Role / Mentionable / Channel Select (5-8) | `UserSelect`… / `ModalUserSelect`… | ❌ | ❌ | ❌ | ❌ | ✅ alone in its row | ❌ | ✅ (`Modal*Select`) | ✅ alone in a row |
-| Section (9) | `Section` | ✅ | ✅ | ➖ | ➖ | ❌ | ❌ | ❌ | ❌ |
-| Text Display (10) | `TextDisplay` | ✅ | ✅ | ✅ 1-3 per Section | ❌ | ❌ | ✅ | ❌ | ❌ |
-| Thumbnail (11) | `Thumbnail` | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Media Gallery (12) | `MediaGallery` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| File (13) | `File` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Separator (14) | `Separator` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Container (17) | `Container` | ✅ | ❌ (no nesting) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Label (18) | `ModalLabel` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (wraps exactly one input) | ➖ | ❌ |
-| File Upload (19) | `FileUpload` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Radio Group (21) | `RadioGroup` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Checkbox Group (22) | `CheckboxGroup` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Checkbox (23) | `Checkbox` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Component (type) | Noctis type | Message top level | Container child | Section text | Section accessory | Action Row | Modal top level | Inside a modal Label | Legacy message | Foreign webhook (`StaticMessage`) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Action Row (1) | `ActionRow` | ✅ | ✅ | ❌ | ❌ | ➖ | ❌ (deprecated in modals; Noctis never emits it) | ❌ | ✅ up to 5 rows | ✅ `StaticActionRow`, Link buttons only |
+| Button (2) | `RouteButton<R>`, `LinkButton`, `PremiumButton` | ❌ | ❌ | ❌ | ✅ | ✅ 1-5 per row | ❌ | ❌ | ✅ in a row | ✅ `LinkButton` only (row or accessory); ❌ `RouteButton`, `PremiumButton`, `Button` (WH-02) |
+| String Select (3) | `StringSelect` / `ModalStringSelect` | ❌ | ❌ | ❌ | ❌ | ✅ alone in its row | ❌ | ✅ (`ModalStringSelect`) | ✅ alone in a row | ❌ (WH-02) |
+| Text Input (4) | `TextInput` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| User / Role / Mentionable / Channel Select (5-8) | `UserSelect`… / `ModalUserSelect`… | ❌ | ❌ | ❌ | ❌ | ✅ alone in its row | ❌ | ✅ (`Modal*Select`) | ✅ alone in a row | ❌ (WH-02) |
+| Section (9) | `Section` | ✅ | ✅ | ➖ | ➖ | ❌ | ❌ | ❌ | ❌ | ✅ `StaticSection` (Thumbnail or `LinkButton` accessory) |
+| Text Display (10) | `TextDisplay` | ✅ | ✅ | ✅ 1-3 per Section | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ |
+| Thumbnail (11) | `Thumbnail` | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ as a `StaticSection` accessory |
+| Media Gallery (12) | `MediaGallery` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| File (13) | `File` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Separator (14) | `Separator` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Container (17) | `Container` | ✅ | ❌ (no nesting) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ `StaticContainer` |
+| Label (18) | `ModalLabel` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (wraps exactly one input) | ➖ | ❌ | ❌ |
+| File Upload (19) | `FileUpload` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Radio Group (21) | `RadioGroup` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Checkbox Group (22) | `CheckboxGroup` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
+| Checkbox (23) | `Checkbox` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 
 How it's enforced, and what to remember:
 
@@ -652,6 +653,7 @@ for the endpoint and adds the `attachments` entries and `files[n]` parts (§6). 
 | `create_body(CreateFlags)` | Create Message, Execute Webhook | `CreateFlags::SUPPRESS_EMBEDS` (4), `CreateFlags::SUPPRESS_NOTIFICATIONS` (4096) |
 | `callback_body(CallbackFlags)` | callback type 4 data, follow-up messages | `CallbackFlags::SUPPRESS_EMBEDS` (4), `CallbackFlags::EPHEMERAL` (64), `CallbackFlags::SUPPRESS_NOTIFICATIONS` (4096) |
 | `edit_body(MessageFormat, EditFlags)` | Edit Message, Edit Original Interaction Response, Edit Webhook Message, callback type 7 (`UPDATE_MESSAGE`) data | `EditFlags::SUPPRESS_EMBEDS` (4) |
+| `webhook_edit_body(EditFlags)` (V2 only) | Edit Webhook Message (what `noctis::webhook` sends) | `EditFlags::SUPPRESS_EMBEDS` (4); always clears the legacy fields, whatever the old format (WH-03) |
 
 - Every flag set is `Copy + Default + Eq + Hash` with `empty()`, `union(other)` (const),
   `|`, `|=`, `contains(other)`, `is_empty()` and `bits()`. Only the consts above exist
@@ -700,6 +702,78 @@ for the endpoint and adds the `attachments` entries and `files[n]` parts (§6). 
 
 `parse` is always ordered users, roles, everyone. The 100-ids-per-list limit (MSG-04)
 is checked by `noctis::ui::validate` (§16).
+
+## 12b. Static messages for foreign webhooks: `StaticMessage`
+
+A webhook the App does not own (`ForeignWebhook`, see `responder.md` §7) cannot send
+interactive components: Discord drops them or rejects the request (WH-02). Its `send` and
+`edit` take only an `IntoStaticMessage`: a `StaticMessage` or a `StaticComponents`. The
+static builders mirror the V2 ones but accept only non-interactive children, so a Route
+button or a select in a foreign webhook message fails `cargo check` with `[WH-02]`.
+
+```rust
+use noctis::ui::{
+    LinkButton, StaticActionRow, StaticComponents, StaticContainer, StaticMessage,
+    StaticSection, TextDisplay, Thumbnail,
+};
+
+let msg = StaticMessage::new(
+    StaticComponents::new().push(
+        StaticContainer::new()
+            .push(StaticSection::new(
+                [TextDisplay::new("## Release 1.4")],
+                Thumbnail::new("https://example.com/logo.png").alt("Logo"),
+            ))
+            .push(StaticActionRow::buttons([
+                LinkButton::new("https://example.com/notes").label("Notes"),
+            ])),
+    ),
+);
+```
+
+- `StaticComponents::new().push(..)` takes `StaticContainer`, `StaticSection`,
+  `StaticActionRow`, `TextDisplay`, `MediaGallery`, `File` or `Separator`
+  (`StaticTopLevel`); `.len()`, `.is_empty()`; `Components::from(static_components)`.
+- `StaticMessage::new(components)` / `StaticMessage::from(components)`; `.attachments(set)`,
+  `.mentions(Mentions)` as on `V2Message`; `.as_v2()` borrows the `V2Message`;
+  `V2Message::from(static_msg)` (or `V2Message::from(static_components)`) converts back (every static message is a valid V2 message).
+- A tree built at runtime: `StaticMessage::try_from(v2_message)` walks it at any depth,
+  `RawComponent` JSON included, and returns `Err(UiError::Limits { violations })` with
+  every WH-02 violation (paths as in §16: `row[0].button[1]`,
+  `container[0].section[2].accessory`, `opaque[1].components[0]`), never a partial message.
+- Placement traits (sealed): `StaticTopLevel`, `StaticContainerChild`, `StaticAccessory`,
+  `StaticRowButton`, `IntoStaticMessage`. Each error starts with `[WH-02]` and says which
+  types fit.
+- An owned webhook (`OwnedWebhook`) takes any `V2Message`, interactive or not; use the
+  static builders only for foreign webhooks.
+
+### Static Container: `StaticContainer`
+
+- **Where:** top level of a `StaticComponents`. Never nested.
+- **Limits:** as `Container` (§1): CV2-03 counts, accent colour, spoiler; WH-02 for its
+  children (`StaticContainerChild`: `StaticSection`, `StaticActionRow`, `TextDisplay`,
+  `MediaGallery`, `File`, `Separator`). A plain `Section` or `ActionRow` is a compile
+  error, because it may hold interactive components.
+- **Builder:** `StaticContainer::new().push(child)`, `.accent(Rgb)`, `.spoiler(bool)`;
+  `Container::from(static_container)`. JSON type 17.
+
+### Static Section: `StaticSection`
+
+- **Where:** top level of a `StaticComponents` or a `StaticContainer` child.
+- **Limits:** as `Section` (§3): 1–3 Text Displays (CV2-07); the accessory is a
+  `Thumbnail` or a `LinkButton` (`StaticAccessory`, WH-02). A `RouteButton`,
+  `PremiumButton` or `Button` accessory fails with
+  ``[WH-02] `X` is not a static Section accessory``.
+- **Builder:** `StaticSection::new([TextDisplay; N], accessory)`;
+  `Section::from(static_section)`. JSON type 9.
+
+### Static Action Row: `StaticActionRow`
+
+- **Where:** top level of a `StaticComponents` or a `StaticContainer` child.
+- **Limits:** 1–5 `LinkButton`s (CV2-06 arity, `StaticRowButton`, WH-02). No selects and
+  no buttons with a `custom_id`: ``[WH-02] `X` is not a static row button``.
+- **Builder:** `StaticActionRow::buttons([LinkButton; N])`; `ActionRow::from(static_row)`.
+  JSON type 1.
 
 ## 13. Where each component may appear
 
@@ -968,7 +1042,10 @@ inside a Container`, `only buttons and selects in an Action Row`.
 | `AllowedMentions<'a>` | `#[non_exhaustive]` `{ users, roles: MentionIds, everyone, replied_user }`; `AllowedMentions::new()` = `Default` = pings nobody (MSG-05); `.users(..)`, `.roles(..)`, `.everyone(bool)`, `.replied_user(bool)` |
 | `validate_mentions(&AllowedMentions, &Limits)` | MSG-04 ≤ 100 ids each, paths `allowed_mentions.users`, `allowed_mentions.roles` |
 | `validate_nonce(&str, &Limits)` / `validate_sticker_ids(count, &Limits)` | MSG-06 nonce ≤ 25 (path `nonce`), ≤ 3 stickers (path `sticker_ids`) |
-| `validate_webhook_name(&str, &Limits)` | WH-04 1–80, path `name` |
+| `validate_webhook_name(&str, &Limits)` | WH-04 1–80 by `discord_len`, and no `clyde` or `discord` in it (ASCII case-insensitive, `Describe`, `Text(name)`), path `name` |
+| `WebhookThreadDecl<'a>` | `#[non_exhaustive]` `None`, `Id` (an existing `thread_id`) or `Name(&str)` (a new post's `thread_name`) |
+| `validate_webhook_thread(thread_only: bool, WebhookThreadDecl, &Limits) -> Vec<Violation>` | WH-05: `thread_only` (a forum or media channel) needs `Id` or `Name` (path `thread_id`, `Text("none")`); a `Name` is 1–100 (`Limits::webhook_thread_name_len`, path `thread_name`) and only in a thread-only channel |
+| `validate_static_components(&[Component]) -> Vec<Violation>` | WH-02: no select and no non-Link button at any depth (twilight `Component` trees), paths as in §16 |
 
 Noctis has no embed API in v1 (MSG-02), so there is nothing to check for embeds.
 

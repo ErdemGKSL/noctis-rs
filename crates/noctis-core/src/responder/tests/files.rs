@@ -13,10 +13,10 @@ use crate::test_support::Capture;
 
 /// One multipart part: its `name`, `filename` and bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Part {
-    name: String,
-    filename: Option<String>,
-    body: Vec<u8>,
+pub(crate) struct Part {
+    pub(crate) name: String,
+    pub(crate) filename: Option<String>,
+    pub(crate) body: Vec<u8>,
 }
 
 /// Every occurrence of `needle` in `hay`.
@@ -29,7 +29,7 @@ fn find_all(hay: &[u8], needle: &[u8]) -> Vec<usize> {
 
 /// The parts of a `multipart/form-data` request, or `None` for any other
 /// content type.
-fn parts(seen: &Seen) -> Option<Vec<Part>> {
+pub(crate) fn parts(seen: &Seen) -> Option<Vec<Part>> {
     let content_type = seen.headers.get("content-type")?.to_str().ok()?;
     let boundary = content_type.strip_prefix("multipart/form-data; boundary=")?;
     let delimiter = format!("--{boundary}");
@@ -56,7 +56,7 @@ fn parts(seen: &Seen) -> Option<Vec<Part>> {
 }
 
 /// The JSON of a request: its body, or its `payload_json` part.
-fn payload(seen: &Seen) -> Value {
+pub(crate) fn payload(seen: &Seen) -> Value {
     match parts(seen) {
         Some(parts) => {
             assert_eq!(parts[0].name, "payload_json");
@@ -67,7 +67,7 @@ fn payload(seen: &Seen) -> Value {
 }
 
 /// The uploaded parts of a request (`files[n]`), empty for JSON.
-fn uploads(seen: &Seen) -> Vec<Part> {
+pub(crate) fn uploads(seen: &Seen) -> Vec<Part> {
     parts(seen).map_or_else(Vec::new, |p| p.into_iter().skip(1).collect())
 }
 

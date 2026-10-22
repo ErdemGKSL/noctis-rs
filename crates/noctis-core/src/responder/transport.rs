@@ -34,6 +34,11 @@ pub(crate) enum Transport {
     Message(MessageTarget),
     /// Nowhere: no I/O (the `__testing` seams only).
     Detached,
+    /// A webhook send of the App (`crate::webhook`): only the App's
+    /// signer, `RefStore` and Limits are used; the webhook module sends
+    /// its own requests, and the interaction methods behave as
+    /// [`Detached`](Self::Detached) (they are never called).
+    Webhook(Arc<AppShared>),
 }
 
 /// How long an interaction token stays valid after the interaction
@@ -97,6 +102,7 @@ impl fmt::Debug for Transport {
                 .field("message_id", &target.message_id)
                 .finish_non_exhaustive(),
             Self::Detached => f.write_str("Detached"),
+            Self::Webhook(_) => f.write_str("Webhook"),
         }
     }
 }
@@ -129,7 +135,7 @@ impl Transport {
                 Some(id) => t.edit(id, body).await,
                 None => Ok(Posted::default()),
             },
-            Self::Detached => Ok(Posted::default()),
+            Self::Detached | Self::Webhook(_) => Ok(Posted::default()),
         }
     }
 
@@ -152,7 +158,7 @@ impl Transport {
                 Some(id) => channel_fetch(&t.app, t.channel_id, id).await,
                 None => Err(ResponderError::NoReply),
             },
-            Self::Detached => Err(ResponderError::NoReply),
+            Self::Detached | Self::Webhook(_) => Err(ResponderError::NoReply),
         }
     }
 
@@ -174,7 +180,7 @@ impl Transport {
                 Some(id) => t.delete(id).await,
                 None => Ok(()),
             },
-            Self::Detached => Ok(()),
+            Self::Detached | Self::Webhook(_) => Ok(()),
         }
     }
 
@@ -206,7 +212,7 @@ impl Transport {
                     files: posted(&response).files,
                 });
             }
-            Self::Detached => {
+            Self::Detached | Self::Webhook(_) => {
                 return Ok(Sent {
                     id: DETACHED_ID,
                     channel_id: None,
@@ -241,7 +247,7 @@ impl Transport {
                 Ok(posted(&send(&t.app, &route, Some(body), false).await?))
             }
             Self::Message(t) => t.edit(id, body).await,
-            Self::Detached => Ok(Posted::default()),
+            Self::Detached | Self::Webhook(_) => Ok(Posted::default()),
         }
     }
 
@@ -259,7 +265,7 @@ impl Transport {
                 send(&t.app, &route, None, false).await.map(drop)
             }
             Self::Message(t) => t.delete(id).await,
-            Self::Detached => Ok(()),
+            Self::Detached | Self::Webhook(_) => Ok(()),
         }
     }
 }
@@ -422,13 +428,24 @@ pub(crate) async fn channel_delete(
 /// Sends one request through the App's twilight client, with a JSON or
 /// multipart body; the response body. `bot` sends the bot token (never for
 /// interaction-token routes, INT-13).
-async fn send(
+pub(crate) async fn send(
     app: &AppShared,
     route: &Route<'_>,
     body: Option<Payload>,
     bot: bool,
 ) -> Result<Vec<u8>, ResponderError> {
-    let mut builder = Request::builder(route).use_authorization_token(bot);
+    let builder = Request::builder(route).use_authorization_token(bot);
+    send_built(app, builder, body).await
+}
+
+/// Sends the request of `builder` with `body` through the App's twilight
+/// client; the response body. The builder carries its route (or raw path)
+/// and whether it sends the bot token.
+pub(crate) async fn send_built(
+    app: &AppShared,
+    mut builder: twilight_http::request::RequestBuilder,
+    body: Option<Payload>,
+) -> Result<Vec<u8>, ResponderError> {
     match body {
         Some(Payload::Json(bytes)) => builder = builder.body(bytes),
         Some(Payload::Form(form)) => builder = builder.form(form),
@@ -452,7 +469,7 @@ async fn send(
 /// Maps a twilight error: an error status to
 /// [`ResponderError::Rejected`], anything else to
 /// [`ResponderError::Transport`].
-fn http_error(error: &twilight_http::Error) -> ResponderError {
+pub(crate) fn http_error(error: &twilight_http::Error) -> ResponderError {
     if let ErrorType::Response { body, status, .. } = error.kind() {
         return ResponderError::Rejected {
             status: status.get(),
@@ -478,7 +495,7 @@ fn message(body: &[u8]) -> Result<Message, ResponderError> {
 }
 
 /// The `id` of a message object.
-fn message_id(body: &[u8]) -> Result<Id<MessageMarker>, ResponderError> {
+pub(crate) fn message_id(body: &[u8]) -> Result<Id<MessageMarker>, ResponderError> {
     let value: Value = serde_json::from_slice(body).map_err(|_| ResponderError::Transport)?;
     value
         .get("id")
@@ -489,7 +506,7 @@ fn message_id(body: &[u8]) -> Result<Id<MessageMarker>, ResponderError> {
 }
 
 /// A snowflake string field of `value`.
-fn snowflake<T>(value: Option<&Value>) -> Option<Id<T>> {
+pub(crate) fn snowflake<T>(value: Option<&Value>) -> Option<Id<T>> {
     value
         .and_then(Value::as_str)
         .and_then(|id| id.parse::<u64>().ok())
@@ -499,7 +516,7 @@ fn snowflake<T>(value: Option<&Value>) -> Option<Id<T>> {
 /// The `id`, `channel_id` and `attachments` of a message object, when
 /// present; `files` only when the body is a message (an object with an
 /// `id`).
-fn posted(body: &[u8]) -> Posted {
+pub(crate) fn posted(body: &[u8]) -> Posted {
     let Ok(value) = serde_json::from_slice::<Value>(body) else {
         return Posted::default();
     };

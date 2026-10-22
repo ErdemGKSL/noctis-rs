@@ -204,6 +204,7 @@ mod state;
 #[cfg(test)]
 mod test_support;
 mod token;
+mod webhook;
 mod worker;
 
 pub use app::{App, AppBuilder};
@@ -279,6 +280,11 @@ pub use runtime::{Resource, ResourceConflict, Runtime};
 pub use sink::{ErrorOrigin, ErrorReport, ErrorSink, LogSink, ReportKind};
 pub use state::State;
 pub use token::{Token, TokenError};
+pub use webhook::{
+    DeleteWebhookMessage, EditWebhookMessage, ExecuteWebhook, Foreign, ForeignWebhook, Owned,
+    OwnedWebhook, Ownership, Webhook, WebhookChannel, WebhookError, WebhookMessage, WebhookThread,
+    Webhooks,
+};
 
 pub use noctis_rules::command::{IntegrationType, InteractionContext, MenuKind};
 pub use twilight_model::guild::Permissions;

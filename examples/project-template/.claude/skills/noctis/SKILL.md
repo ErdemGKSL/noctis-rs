@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `9e8f95b80d731ed4e69b9f3e1738dc0b8e1eb933ebf48f34a8766bb3e9f9fea8` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `7ea14a5f94679396ee00e65d1027cc49b52ba09cdd7c5e46cf36a41571f37938` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -361,7 +361,7 @@ async fn main() -> anyhow::Result<()> {
 | Destructive action | Danger button → confirm View → `one_shot` by-ref Route | Quality rule 3 |
 | Per-user settings on a shared message | Ephemeral sub-panel (`#[button("id", response = ephemeral, defaults(..))]`, `ctx.respond(..)`) | INT-10: ephemerality is fixed at creation |
 | A one-line notice, no interaction | `ctx.reply_text(key)` or `HandlerError::user(key)` | Localized, ephemeral |
-| Post to a log channel or white-label persona | a non-interactive `StaticMessage` through a webhook | WH-01/02 |
+| Post to a log channel or white-label persona | an owned webhook (`ctx.webhooks().create(..)` once, store id + token, then `owned(..).send(render_x(..))`); a webhook you don't own takes only a `StaticMessage` | WH-01..05; `references/responder.md` §7 |
 
 Image vs text: if users need to **read** many numbers at a glance → image; if they need
 to **act** on an item → a Section with an accessory button or a select option.

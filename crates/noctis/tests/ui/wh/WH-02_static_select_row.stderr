@@ -1,0 +1,24 @@
+error[E0277]: [WH-02] `noctis::ui::ActionRow` cannot be a top-level component of a StaticMessage: it may hold interactive components
+  --> tests/ui/wh/WH-02_static_select_row.rs:16:42
+   |
+16 |     let _ = StaticComponents::new().push(ActionRow::select(Pick.build()));
+   |                                     ---- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not a static top-level component
+   |                                     |
+   |                                     required by a bound introduced by this call
+   |
+   = help: the trait `StaticTopLevel` is not implemented for `noctis::ui::ActionRow`
+   = note: a StaticComponents takes a StaticContainer, StaticSection, StaticActionRow, TextDisplay, MediaGallery, File or Separator
+   = note: send interactive components through an owned webhook, or convert a run-time tree with StaticMessage::try_from(msg)
+   = help: the following other types implement trait `StaticTopLevel`:
+             StaticActionRow
+             StaticContainer
+             StaticSection
+             noctis::ui::File
+             noctis::ui::MediaGallery
+             noctis::ui::Separator
+             noctis::ui::TextDisplay
+note: required by a bound in `StaticComponents::push`
+  --> $WORKSPACE/crates/noctis-ui/src/message/static_msg.rs
+   |
+   |     pub fn push<T: StaticTopLevel>(mut self, component: T) -> Self {
+   |                    ^^^^^^^^^^^^^^ required by this bound in `StaticComponents::push`

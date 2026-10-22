@@ -90,6 +90,7 @@ pub fn noctis::App::runtime(&self) -> &noctis::Runtime
 pub fn noctis::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::App::shutdown_grace(&self) -> core::time::Duration
 pub fn noctis::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::App::webhooks(&self) -> noctis::webhook::Webhooks
 impl core::fmt::Debug for noctis::App
 pub fn noctis::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::AppBuilder
@@ -432,6 +433,7 @@ pub fn noctis::CommandCtx::shard(&self) -> u32
 pub fn noctis::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::CommandCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::CommandCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::CommandCtx
 pub fn noctis::CommandCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::CommandCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -575,6 +577,7 @@ pub fn noctis::ComponentCtx::shard(&self) -> u32
 pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
@@ -800,6 +803,7 @@ pub fn noctis::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ExpiredCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ExpiredCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -1198,6 +1202,7 @@ pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
@@ -1644,6 +1649,7 @@ pub proc macro noctis::#[on_expired]
 pub proc macro noctis::#[on_stale]
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
+pub proc macro noctis::webhook_name!()
 pub mod noctis::bytes
 pub use noctis::bytes::Bytes
 pub mod noctis::cli
@@ -2189,6 +2195,7 @@ pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
 pub fn noctis::events::EventCtx::shard(&self) -> u32
 pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::events::EventCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl core::clone::Clone for noctis::events::EventCtx
 pub fn noctis::events::EventCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::events::EventCtx
@@ -2202,6 +2209,7 @@ pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
 pub fn noctis::events::EventCtx::shard(&self) -> u32
 pub fn noctis::events::EventCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::events::EventCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl core::clone::Clone for noctis::events::EventCtx
 pub fn noctis::events::EventCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::events::EventCtx
@@ -3229,6 +3237,7 @@ pub fn noctis::prelude::App::runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::prelude::App::shutdown_grace(&self) -> core::time::Duration
 pub fn noctis::prelude::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::App::webhooks(&self) -> noctis::webhook::Webhooks
 impl core::fmt::Debug for noctis::prelude::App
 pub fn noctis::prelude::App::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::AppBuilder
@@ -3361,6 +3370,7 @@ pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
 pub fn noctis::prelude::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::CommandCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::CommandCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::CommandCtx
 pub fn noctis::prelude::CommandCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::CommandCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -3424,6 +3434,7 @@ pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
 pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
@@ -3513,6 +3524,7 @@ pub fn noctis::prelude::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::prelude::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ExpiredCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ExpiredCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -3670,6 +3682,7 @@ pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
 pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
@@ -3839,6 +3852,8 @@ impl core::convert::From<noctis::ui::Label> for noctis::prelude::Text
 pub fn noctis::prelude::Text::from(noctis::ui::Label) -> Self
 impl core::convert::From<noctis::ui::Placeholder> for noctis::prelude::Text
 pub fn noctis::prelude::Text::from(noctis::ui::Placeholder) -> Self
+impl core::convert::From<noctis::ui::WebhookName> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::WebhookName) -> Self
 impl core::fmt::Debug for noctis::prelude::Text
 pub fn noctis::prelude::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::prelude::Text
@@ -3854,6 +3869,8 @@ impl core::convert::From<noctis::ui::Label> for noctis::prelude::Text
 pub fn noctis::prelude::Text::from(noctis::ui::Label) -> Self
 impl core::convert::From<noctis::ui::Placeholder> for noctis::prelude::Text
 pub fn noctis::prelude::Text::from(noctis::ui::Placeholder) -> Self
+impl core::convert::From<noctis::ui::WebhookName> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::WebhookName) -> Self
 pub proc macro noctis::prelude::#[derive(UserCommand)]
 pub proc macro noctis::prelude::#[derive(UserSelectMenu)]
 pub struct noctis::prelude::UserSelectOverrides
@@ -3878,6 +3895,7 @@ pub proc macro noctis::prelude::#[on_expired]
 pub proc macro noctis::prelude::#[on_stale]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
+pub proc macro noctis::prelude::webhook_name!()
 pub mod noctis::publish
 pub struct noctis::publish::Publish<'a>
 impl<'a> noctis::publish::Publish<'a>
@@ -4079,6 +4097,7 @@ pub noctis::rules::Limits::thumbnail_description_len: usize
 pub noctis::rules::Limits::user_commands: usize
 pub noctis::rules::Limits::user_install_followups: usize
 pub noctis::rules::Limits::webhook_name_len: usize
+pub noctis::rules::Limits::webhook_thread_name_len: usize
 impl noctis::rules::Limits
 pub const fn noctis::rules::Limits::truncates(&self, noctis::rules::RuleId) -> bool
 impl core::clone::Clone for noctis::rules::Limits
@@ -4937,6 +4956,19 @@ impl<'a> core::fmt::Debug for noctis::rules::message::MentionIds<'a>
 pub fn noctis::rules::message::MentionIds<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Copy for noctis::rules::message::MentionIds<'a>
 impl<'a> core::marker::StructuralPartialEq for noctis::rules::message::MentionIds<'a>
+#[non_exhaustive] pub enum noctis::rules::message::WebhookThreadDecl<'a>
+pub noctis::rules::message::WebhookThreadDecl::Id
+pub noctis::rules::message::WebhookThreadDecl::Name(&'a str)
+pub noctis::rules::message::WebhookThreadDecl::None
+impl<'a> core::clone::Clone for noctis::rules::message::WebhookThreadDecl<'a>
+pub fn noctis::rules::message::WebhookThreadDecl<'a>::clone(&self) -> Self
+impl<'a> core::cmp::Eq for noctis::rules::message::WebhookThreadDecl<'a>
+impl<'a> core::cmp::PartialEq for noctis::rules::message::WebhookThreadDecl<'a>
+pub fn noctis::rules::message::WebhookThreadDecl<'a>::eq(&self, &Self) -> bool
+impl<'a> core::fmt::Debug for noctis::rules::message::WebhookThreadDecl<'a>
+pub fn noctis::rules::message::WebhookThreadDecl<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for noctis::rules::message::WebhookThreadDecl<'a>
+impl<'a> core::marker::StructuralPartialEq for noctis::rules::message::WebhookThreadDecl<'a>
 #[non_exhaustive] pub struct noctis::rules::message::AllowedMentions<'a>
 pub noctis::rules::message::AllowedMentions::everyone: bool
 pub noctis::rules::message::AllowedMentions::replied_user: bool
@@ -4963,9 +4995,11 @@ pub fn noctis::rules::message::validate_content(&str, &noctis::rules::Limits) ->
 pub fn noctis::rules::message::validate_legacy_not_empty(&str, usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_mentions(&noctis::rules::message::AllowedMentions<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_nonce(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_static_components(&[noctis::rules::component::Component<'_>]) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_sticker_ids(usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_v2_not_empty(usize, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::message::validate_webhook_name(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::message::validate_webhook_thread(bool, noctis::rules::message::WebhookThreadDecl<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub mod noctis::rules::modal
 pub enum noctis::rules::modal::LabelChild<'a>
 pub noctis::rules::modal::LabelChild::Checkbox(noctis::rules::modal::Checkbox)
@@ -5338,6 +5372,7 @@ pub async fn noctis::testkit::TestApp::build(&mut noctis::AppBuilder) -> core::r
 pub fn noctis::testkit::TestApp::click(&self, noctis::testkit::TestComponent) -> noctis::testkit::ClickRun<'_>
 pub fn noctis::testkit::TestApp::command(&self, &str) -> noctis::testkit::CommandRun<'_>
 pub fn noctis::testkit::TestApp::guild(self, noctis::testkit::TestGuild) -> Self
+pub fn noctis::testkit::TestApp::http_fake(&self) -> &noctis::testkit::fake::FakeDiscordHttp
 pub fn noctis::testkit::TestApp::message_command(&self, &str) -> noctis::testkit::MenuRun<'_>
 pub fn noctis::testkit::TestApp::select(&self, noctis::testkit::TestComponent) -> noctis::testkit::SelectRun<'_>
 pub async fn noctis::testkit::TestApp::stop(self) -> core::result::Result<(), noctis::testkit::TestError>
@@ -5527,6 +5562,121 @@ impl core::marker::StructuralPartialEq for noctis::testkit::WireCost
 pub async fn noctis::testkit::assert_memory_flat<'a, F, Fut>(&'a noctis::testkit::TestApp, usize, F) -> core::result::Result<noctis::testkit::MemoryReport, noctis::testkit::TestError> where F: core::ops::function::FnMut(&'a noctis::testkit::TestApp) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<(), noctis::testkit::TestError>>
 pub use noctis::testkit::dhat
 pub fn noctis::testkit::render_json(&noctis::ui::V2Message) -> core::result::Result<serde_json::value::Value, noctis::testkit::TestError>
+pub mod noctis::testkit::fake
+pub struct noctis::testkit::fake::FakeDiscordHttp
+impl noctis::testkit::fake::FakeDiscordHttp
+pub fn noctis::testkit::fake::FakeDiscordHttp::addr(&self) -> core::net::socket_addr::SocketAddr
+pub fn noctis::testkit::fake::FakeDiscordHttp::attach<'a>(&self, &'a mut noctis::AppBuilder) -> &'a mut noctis::AppBuilder
+pub fn noctis::testkit::fake::FakeDiscordHttp::black_hole(&self) -> usize
+pub fn noctis::testkit::fake::FakeDiscordHttp::clear_requests(&self)
+pub fn noctis::testkit::fake::FakeDiscordHttp::close_connections(&self) -> usize
+pub fn noctis::testkit::fake::FakeDiscordHttp::connections(&self) -> alloc::vec::Vec<noctis::testkit::fake::RecordedHttpConnection>
+pub fn noctis::testkit::fake::FakeDiscordHttp::fallback_with<F>(&self, F) -> &Self where F: core::ops::function::Fn(&noctis::testkit::fake::RecordedRequest) -> core::option::Option<noctis::testkit::fake::FakeResponse> + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::testkit::fake::FakeDiscordHttp::requests(&self) -> alloc::vec::Vec<noctis::testkit::fake::RecordedRequest>
+pub fn noctis::testkit::fake::FakeDiscordHttp::route(&self, http::method::Method, impl core::convert::Into<alloc::string::String>, noctis::testkit::fake::FakeResponse) -> &Self
+pub fn noctis::testkit::fake::FakeDiscordHttp::route_with<F>(&self, http::method::Method, impl core::convert::Into<alloc::string::String>, F) -> &Self where F: core::ops::function::Fn(&noctis::testkit::fake::RecordedRequest) -> noctis::testkit::fake::FakeResponse + core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::testkit::fake::FakeDiscordHttp::set_gateway_bot(&self, noctis::testkit::fake::GatewayBot)
+pub fn noctis::testkit::fake::FakeDiscordHttp::stall(&self, http::method::Method, impl core::convert::Into<alloc::string::String>, usize) -> &Self
+pub async fn noctis::testkit::fake::FakeDiscordHttp::start() -> core::io::error::Result<Self>
+pub async fn noctis::testkit::fake::FakeDiscordHttp::start_with(noctis::testkit::fake::GatewayBot) -> core::io::error::Result<Self>
+pub fn noctis::testkit::fake::FakeDiscordHttp::take_requests(&self) -> alloc::vec::Vec<noctis::testkit::fake::RecordedRequest>
+pub fn noctis::testkit::fake::FakeDiscordHttp::url(&self) -> alloc::string::String
+impl core::fmt::Debug for noctis::testkit::fake::FakeDiscordHttp
+pub fn noctis::testkit::fake::FakeDiscordHttp::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::ops::drop::Drop for noctis::testkit::fake::FakeDiscordHttp
+pub fn noctis::testkit::fake::FakeDiscordHttp::drop(&mut self)
+pub struct noctis::testkit::fake::FakeResponse
+impl noctis::testkit::fake::FakeResponse
+pub fn noctis::testkit::fake::FakeResponse::delay(self, core::time::Duration) -> Self
+pub fn noctis::testkit::fake::FakeResponse::empty(http::status::StatusCode) -> Self
+pub fn noctis::testkit::fake::FakeResponse::header(self, http::header::name::HeaderName, http::header::value::HeaderValue) -> Self
+pub fn noctis::testkit::fake::FakeResponse::json(http::status::StatusCode, &serde_json::value::Value) -> Self
+pub fn noctis::testkit::fake::FakeResponse::new(http::status::StatusCode, impl core::convert::Into<bytes::bytes::Bytes>) -> Self
+impl core::clone::Clone for noctis::testkit::fake::FakeResponse
+pub fn noctis::testkit::fake::FakeResponse::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::fake::FakeResponse
+pub fn noctis::testkit::fake::FakeResponse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::fake::GatewayBot
+pub noctis::testkit::fake::GatewayBot::session_start_limit: noctis::testkit::fake::SessionStartLimit
+pub noctis::testkit::fake::GatewayBot::shards: u32
+pub noctis::testkit::fake::GatewayBot::url: alloc::string::String
+impl noctis::testkit::fake::GatewayBot
+pub fn noctis::testkit::fake::GatewayBot::to_json(&self) -> serde_json::value::Value
+impl core::clone::Clone for noctis::testkit::fake::GatewayBot
+pub fn noctis::testkit::fake::GatewayBot::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::fake::GatewayBot
+impl core::cmp::PartialEq for noctis::testkit::fake::GatewayBot
+pub fn noctis::testkit::fake::GatewayBot::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::testkit::fake::GatewayBot
+pub fn noctis::testkit::fake::GatewayBot::default() -> Self
+impl core::fmt::Debug for noctis::testkit::fake::GatewayBot
+pub fn noctis::testkit::fake::GatewayBot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::fake::GatewayBot
+pub use noctis::testkit::fake::HeaderMap
+pub use noctis::testkit::fake::HeaderName
+pub use noctis::testkit::fake::HeaderValue
+#[non_exhaustive] pub enum noctis::testkit::fake::HttpProtocol
+pub noctis::testkit::fake::HttpProtocol::Http1
+pub noctis::testkit::fake::HttpProtocol::Http2
+impl core::clone::Clone for noctis::testkit::fake::HttpProtocol
+pub fn noctis::testkit::fake::HttpProtocol::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::fake::HttpProtocol
+impl core::cmp::PartialEq for noctis::testkit::fake::HttpProtocol
+pub fn noctis::testkit::fake::HttpProtocol::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::fake::HttpProtocol
+pub fn noctis::testkit::fake::HttpProtocol::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::testkit::fake::HttpProtocol
+impl core::marker::StructuralPartialEq for noctis::testkit::fake::HttpProtocol
+pub use noctis::testkit::fake::Method
+pub struct noctis::testkit::fake::RecordedHttpConnection
+pub noctis::testkit::fake::RecordedHttpConnection::black_holed: bool
+pub noctis::testkit::fake::RecordedHttpConnection::closed_at: core::option::Option<tokio::time::instant::Instant>
+pub noctis::testkit::fake::RecordedHttpConnection::id: usize
+pub noctis::testkit::fake::RecordedHttpConnection::opened_at: tokio::time::instant::Instant
+pub noctis::testkit::fake::RecordedHttpConnection::pings: alloc::vec::Vec<tokio::time::instant::Instant>
+pub noctis::testkit::fake::RecordedHttpConnection::protocol: noctis::testkit::fake::HttpProtocol
+pub noctis::testkit::fake::RecordedHttpConnection::requests: usize
+impl core::clone::Clone for noctis::testkit::fake::RecordedHttpConnection
+pub fn noctis::testkit::fake::RecordedHttpConnection::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::fake::RecordedHttpConnection
+impl core::cmp::PartialEq for noctis::testkit::fake::RecordedHttpConnection
+pub fn noctis::testkit::fake::RecordedHttpConnection::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::fake::RecordedHttpConnection
+pub fn noctis::testkit::fake::RecordedHttpConnection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::fake::RecordedHttpConnection
+pub struct noctis::testkit::fake::RecordedRequest
+pub noctis::testkit::fake::RecordedRequest::body: bytes::bytes::Bytes
+pub noctis::testkit::fake::RecordedRequest::connection: usize
+pub noctis::testkit::fake::RecordedRequest::headers: http::header::map::HeaderMap
+pub noctis::testkit::fake::RecordedRequest::method: http::method::Method
+pub noctis::testkit::fake::RecordedRequest::path: alloc::string::String
+pub noctis::testkit::fake::RecordedRequest::query: core::option::Option<alloc::string::String>
+impl noctis::testkit::fake::RecordedRequest
+pub fn noctis::testkit::fake::RecordedRequest::files(&self) -> alloc::vec::Vec<noctis::testkit::RecordedFile>
+pub fn noctis::testkit::fake::RecordedRequest::json(&self) -> core::option::Option<serde_json::value::Value>
+pub fn noctis::testkit::fake::RecordedRequest::route_path(&self) -> core::option::Option<&str>
+impl core::clone::Clone for noctis::testkit::fake::RecordedRequest
+pub fn noctis::testkit::fake::RecordedRequest::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::fake::RecordedRequest
+pub fn noctis::testkit::fake::RecordedRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::fake::SessionStartLimit
+pub noctis::testkit::fake::SessionStartLimit::max_concurrency: u32
+pub noctis::testkit::fake::SessionStartLimit::remaining: u32
+pub noctis::testkit::fake::SessionStartLimit::reset_after_ms: u64
+pub noctis::testkit::fake::SessionStartLimit::total: u32
+impl noctis::testkit::fake::SessionStartLimit
+pub fn noctis::testkit::fake::SessionStartLimit::to_json(&self) -> serde_json::value::Value
+impl core::clone::Clone for noctis::testkit::fake::SessionStartLimit
+pub fn noctis::testkit::fake::SessionStartLimit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::fake::SessionStartLimit
+impl core::cmp::PartialEq for noctis::testkit::fake::SessionStartLimit
+pub fn noctis::testkit::fake::SessionStartLimit::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::testkit::fake::SessionStartLimit
+pub fn noctis::testkit::fake::SessionStartLimit::default() -> Self
+impl core::fmt::Debug for noctis::testkit::fake::SessionStartLimit
+pub fn noctis::testkit::fake::SessionStartLimit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::fake::SessionStartLimit
+pub use noctis::testkit::fake::StatusCode
 pub mod noctis::twilight
 pub use noctis::twilight::http
 pub use noctis::twilight::model
@@ -5538,12 +5688,16 @@ pub fn noctis::ui::ActionRow::select<S: noctis::ui::RowSelect>(S) -> Self
 pub fn noctis::ui::ActionRow::try_buttons<B: noctis::ui::RowItem>(impl core::iter::traits::collect::IntoIterator<Item = B>, &noctis::rules::Limits) -> core::result::Result<Self, noctis::ui::UiError>
 impl core::clone::Clone for noctis::ui::ActionRow
 pub fn noctis::ui::ActionRow::clone(&self) -> Self
+impl core::convert::From<noctis::ui::StaticActionRow> for noctis::ui::ActionRow
+pub fn noctis::ui::ActionRow::from(noctis::ui::StaticActionRow) -> Self
 impl core::fmt::Debug for noctis::ui::ActionRow
 pub fn noctis::ui::ActionRow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl noctis::ui::ContainerChild for noctis::ui::ActionRow
 impl noctis::ui::TopLevel for noctis::ui::ActionRow
 impl serde_core::ser::Serialize for noctis::ui::ActionRow
 pub fn noctis::ui::ActionRow::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::StaticActionRow> for noctis::ui::ActionRow
+pub fn noctis::ui::ActionRow::from(noctis::ui::StaticActionRow) -> Self
 impl noctis::ui::ContainerChild for noctis::ui::ActionRow
 impl noctis::ui::TopLevel for noctis::ui::ActionRow
 pub struct noctis::ui::AltText(_)
@@ -5966,12 +6120,16 @@ pub fn noctis::ui::Components::new() -> Self
 pub fn noctis::ui::Components::push<T: noctis::ui::TopLevel>(self, T) -> Self
 impl core::clone::Clone for noctis::ui::Components
 pub fn noctis::ui::Components::clone(&self) -> Self
+impl core::convert::From<noctis::ui::StaticComponents> for noctis::ui::Components
+pub fn noctis::ui::Components::from(noctis::ui::StaticComponents) -> Self
 impl core::default::Default for noctis::ui::Components
 pub fn noctis::ui::Components::default() -> Self
 impl core::fmt::Debug for noctis::ui::Components
 pub fn noctis::ui::Components::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl serde_core::ser::Serialize for noctis::ui::Components
 pub fn noctis::ui::Components::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::StaticComponents> for noctis::ui::Components
+pub fn noctis::ui::Components::from(noctis::ui::StaticComponents) -> Self
 pub struct noctis::ui::Container
 impl noctis::ui::Container
 pub fn noctis::ui::Container::accent(self, noctis::prelude::Rgb) -> Self
@@ -5980,6 +6138,8 @@ pub fn noctis::ui::Container::push<C: noctis::ui::ContainerChild>(self, C) -> Se
 pub fn noctis::ui::Container::spoiler(self, bool) -> Self
 impl core::clone::Clone for noctis::ui::Container
 pub fn noctis::ui::Container::clone(&self) -> Self
+impl core::convert::From<noctis::ui::StaticContainer> for noctis::ui::Container
+pub fn noctis::ui::Container::from(noctis::ui::StaticContainer) -> Self
 impl core::default::Default for noctis::ui::Container
 pub fn noctis::ui::Container::default() -> Self
 impl core::fmt::Debug for noctis::ui::Container
@@ -5987,6 +6147,8 @@ pub fn noctis::ui::Container::fmt(&self, &mut core::fmt::Formatter<'_>) -> core:
 impl noctis::ui::TopLevel for noctis::ui::Container
 impl serde_core::ser::Serialize for noctis::ui::Container
 pub fn noctis::ui::Container::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::StaticContainer> for noctis::ui::Container
+pub fn noctis::ui::Container::from(noctis::ui::StaticContainer) -> Self
 impl noctis::ui::TopLevel for noctis::ui::Container
 pub trait noctis::ui::ContainerChild: noctis::__private::ui::sealed::IntoChild
 impl core::convert::From<noctis::ui::ActionRow> for noctis::ui::ContainerComponent
@@ -6161,10 +6323,14 @@ impl core::fmt::Debug for noctis::ui::File
 pub fn noctis::ui::File::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::File
 impl noctis::ui::ContainerChild for noctis::ui::File
+impl noctis::ui::StaticContainerChild for noctis::ui::File
+impl noctis::ui::StaticTopLevel for noctis::ui::File
 impl noctis::ui::TopLevel for noctis::ui::File
 impl serde_core::ser::Serialize for noctis::ui::File
 pub fn noctis::ui::File::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::File
+impl noctis::ui::StaticContainerChild for noctis::ui::File
+impl noctis::ui::StaticTopLevel for noctis::ui::File
 impl noctis::ui::TopLevel for noctis::ui::File
 pub trait noctis::ui::FileFetcher
 pub fn noctis::ui::FileFetcher::fetch(&self, &str, u64) -> impl core::future::future::Future<Output = core::result::Result<bytes::bytes::Bytes, alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>>> + core::marker::Send
@@ -6200,6 +6366,7 @@ impl core::default::Default for noctis::ui::InputOverrides
 pub fn noctis::ui::InputOverrides::default() -> Self
 impl core::fmt::Debug for noctis::ui::InputOverrides
 pub fn noctis::ui::InputOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::ui::IntoStaticMessage: noctis::__private::ui::static_msg::sealed::IntoStatic
 pub struct noctis::ui::Label(_)
 impl noctis::ui::Label
 pub fn noctis::ui::Label::as_str(&self) -> &str
@@ -6275,10 +6442,14 @@ pub fn noctis::ui::LinkButton::fmt(&self, &mut core::fmt::Formatter<'_>) -> core
 impl core::marker::StructuralPartialEq for noctis::ui::LinkButton
 impl noctis::ui::RowItem for noctis::ui::LinkButton
 impl noctis::ui::SectionAccessory for noctis::ui::LinkButton
+impl noctis::ui::StaticAccessory for noctis::ui::LinkButton
+impl noctis::ui::StaticRowButton for noctis::ui::LinkButton
 impl serde_core::ser::Serialize for noctis::ui::LinkButton
 pub fn noctis::ui::LinkButton::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowItem for noctis::ui::LinkButton
 impl noctis::ui::SectionAccessory for noctis::ui::LinkButton
+impl noctis::ui::StaticAccessory for noctis::ui::LinkButton
+impl noctis::ui::StaticRowButton for noctis::ui::LinkButton
 impl core::convert::From<noctis::ui::AttachmentRef> for noctis::ui::Media
 pub fn noctis::ui::Media::from(noctis::ui::AttachmentRef) -> Self
 pub struct noctis::ui::Media(_)
@@ -6311,10 +6482,14 @@ impl core::fmt::Debug for noctis::ui::MediaGallery
 pub fn noctis::ui::MediaGallery::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::MediaGallery
 impl noctis::ui::ContainerChild for noctis::ui::MediaGallery
+impl noctis::ui::StaticContainerChild for noctis::ui::MediaGallery
+impl noctis::ui::StaticTopLevel for noctis::ui::MediaGallery
 impl noctis::ui::TopLevel for noctis::ui::MediaGallery
 impl serde_core::ser::Serialize for noctis::ui::MediaGallery
 pub fn noctis::ui::MediaGallery::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::MediaGallery
+impl noctis::ui::StaticContainerChild for noctis::ui::MediaGallery
+impl noctis::ui::StaticTopLevel for noctis::ui::MediaGallery
 impl noctis::ui::TopLevel for noctis::ui::MediaGallery
 pub struct noctis::ui::MediaItem
 impl noctis::ui::MediaItem
@@ -6842,12 +7017,16 @@ pub fn noctis::ui::Section::new<A: noctis::ui::SectionAccessory, const N: usize>
 pub fn noctis::ui::Section::try_new<A: noctis::ui::SectionAccessory>(impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::TextDisplay>, A, &noctis::rules::Limits) -> core::result::Result<Self, noctis::ui::UiError>
 impl core::clone::Clone for noctis::ui::Section
 pub fn noctis::ui::Section::clone(&self) -> Self
+impl core::convert::From<noctis::ui::StaticSection> for noctis::ui::Section
+pub fn noctis::ui::Section::from(noctis::ui::StaticSection) -> Self
 impl core::fmt::Debug for noctis::ui::Section
 pub fn noctis::ui::Section::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl noctis::ui::ContainerChild for noctis::ui::Section
 impl noctis::ui::TopLevel for noctis::ui::Section
 impl serde_core::ser::Serialize for noctis::ui::Section
 pub fn noctis::ui::Section::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::StaticSection> for noctis::ui::Section
+pub fn noctis::ui::Section::from(noctis::ui::StaticSection) -> Self
 impl noctis::ui::ContainerChild for noctis::ui::Section
 impl noctis::ui::TopLevel for noctis::ui::Section
 pub trait noctis::ui::SectionAccessory: noctis::__private::ui::sealed::IntoAccessory
@@ -6889,10 +7068,14 @@ pub fn noctis::ui::Separator::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ui::Separator
 impl core::marker::StructuralPartialEq for noctis::ui::Separator
 impl noctis::ui::ContainerChild for noctis::ui::Separator
+impl noctis::ui::StaticContainerChild for noctis::ui::Separator
+impl noctis::ui::StaticTopLevel for noctis::ui::Separator
 impl noctis::ui::TopLevel for noctis::ui::Separator
 impl serde_core::ser::Serialize for noctis::ui::Separator
 pub fn noctis::ui::Separator::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::Separator
+impl noctis::ui::StaticContainerChild for noctis::ui::Separator
+impl noctis::ui::StaticTopLevel for noctis::ui::Separator
 impl noctis::ui::TopLevel for noctis::ui::Separator
 pub enum noctis::ui::Spacing
 pub noctis::ui::Spacing::Large
@@ -6910,6 +7093,82 @@ impl core::hash::Hash for noctis::ui::Spacing
 pub fn noctis::ui::Spacing::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ui::Spacing
 impl core::marker::StructuralPartialEq for noctis::ui::Spacing
+pub trait noctis::ui::StaticAccessory: noctis::__private::ui::static_msg::sealed::IntoStaticAccessory
+pub struct noctis::ui::StaticActionRow(_)
+impl noctis::ui::StaticActionRow
+pub fn noctis::ui::StaticActionRow::buttons<B: noctis::ui::StaticRowButton, const N: usize>([B; N]) -> Self where noctis::ui::Arity<N>: noctis::ui::RowButtons
+impl core::clone::Clone for noctis::ui::StaticActionRow
+pub fn noctis::ui::StaticActionRow::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::StaticActionRow
+pub fn noctis::ui::StaticActionRow::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::StaticContainerChild for noctis::ui::StaticActionRow
+impl noctis::ui::StaticTopLevel for noctis::ui::StaticActionRow
+impl noctis::ui::StaticContainerChild for noctis::ui::StaticActionRow
+impl noctis::ui::StaticTopLevel for noctis::ui::StaticActionRow
+pub struct noctis::ui::StaticComponents(_)
+impl noctis::ui::StaticComponents
+pub fn noctis::ui::StaticComponents::is_empty(&self) -> bool
+pub fn noctis::ui::StaticComponents::len(&self) -> usize
+pub fn noctis::ui::StaticComponents::new() -> Self
+pub fn noctis::ui::StaticComponents::push<T: noctis::ui::StaticTopLevel>(self, T) -> Self
+impl core::clone::Clone for noctis::ui::StaticComponents
+pub fn noctis::ui::StaticComponents::clone(&self) -> Self
+impl core::default::Default for noctis::ui::StaticComponents
+pub fn noctis::ui::StaticComponents::default() -> Self
+impl core::fmt::Debug for noctis::ui::StaticComponents
+pub fn noctis::ui::StaticComponents::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::IntoStaticMessage for noctis::ui::StaticComponents
+impl noctis::ui::IntoStaticMessage for noctis::ui::StaticComponents
+pub struct noctis::ui::StaticContainer(_)
+impl noctis::ui::StaticContainer
+pub fn noctis::ui::StaticContainer::accent(self, noctis::prelude::Rgb) -> Self
+pub fn noctis::ui::StaticContainer::new() -> Self
+pub fn noctis::ui::StaticContainer::push<C: noctis::ui::StaticContainerChild>(self, C) -> Self
+pub fn noctis::ui::StaticContainer::spoiler(self, bool) -> Self
+impl core::clone::Clone for noctis::ui::StaticContainer
+pub fn noctis::ui::StaticContainer::clone(&self) -> Self
+impl core::default::Default for noctis::ui::StaticContainer
+pub fn noctis::ui::StaticContainer::default() -> Self
+impl core::fmt::Debug for noctis::ui::StaticContainer
+pub fn noctis::ui::StaticContainer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::StaticTopLevel for noctis::ui::StaticContainer
+impl noctis::ui::StaticTopLevel for noctis::ui::StaticContainer
+pub trait noctis::ui::StaticContainerChild: noctis::__private::ui::static_msg::sealed::IntoStaticChild
+impl core::convert::From<noctis::ui::StaticComponents> for noctis::ui::StaticMessage
+pub fn noctis::ui::StaticMessage::from(noctis::ui::StaticComponents) -> Self
+pub struct noctis::ui::StaticMessage(_)
+impl noctis::ui::StaticMessage
+pub fn noctis::ui::StaticMessage::as_v2(&self) -> &noctis::ui::V2Message
+pub fn noctis::ui::StaticMessage::attachments(self, noctis::ui::AttachmentSet) -> Self
+pub fn noctis::ui::StaticMessage::mentions(self, noctis::ui::Mentions) -> Self
+pub fn noctis::ui::StaticMessage::new(noctis::ui::StaticComponents) -> Self
+impl core::clone::Clone for noctis::ui::StaticMessage
+pub fn noctis::ui::StaticMessage::clone(&self) -> Self
+impl core::convert::From<noctis::ui::StaticComponents> for noctis::ui::StaticMessage
+pub fn noctis::ui::StaticMessage::from(noctis::ui::StaticComponents) -> Self
+impl core::convert::TryFrom<noctis::ui::V2Message> for noctis::ui::StaticMessage
+pub type noctis::ui::StaticMessage::Error = noctis::ui::UiError
+pub fn noctis::ui::StaticMessage::try_from(noctis::ui::V2Message) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::fmt::Debug for noctis::ui::StaticMessage
+pub fn noctis::ui::StaticMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::IntoStaticMessage for noctis::ui::StaticMessage
+impl core::convert::TryFrom<noctis::ui::V2Message> for noctis::ui::StaticMessage
+pub type noctis::ui::StaticMessage::Error = noctis::ui::UiError
+pub fn noctis::ui::StaticMessage::try_from(noctis::ui::V2Message) -> core::result::Result<Self, noctis::ui::UiError>
+impl noctis::ui::IntoStaticMessage for noctis::ui::StaticMessage
+pub trait noctis::ui::StaticRowButton: noctis::__private::ui::static_msg::sealed::IntoStaticRowButton
+pub struct noctis::ui::StaticSection(_)
+impl noctis::ui::StaticSection
+pub fn noctis::ui::StaticSection::new<A: noctis::ui::StaticAccessory, const N: usize>([noctis::ui::TextDisplay; N], A) -> Self where noctis::ui::Arity<N>: noctis::ui::SectionTexts
+impl core::clone::Clone for noctis::ui::StaticSection
+pub fn noctis::ui::StaticSection::clone(&self) -> Self
+impl core::fmt::Debug for noctis::ui::StaticSection
+pub fn noctis::ui::StaticSection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::ui::StaticContainerChild for noctis::ui::StaticSection
+impl noctis::ui::StaticTopLevel for noctis::ui::StaticSection
+impl noctis::ui::StaticContainerChild for noctis::ui::StaticSection
+impl noctis::ui::StaticTopLevel for noctis::ui::StaticSection
+pub trait noctis::ui::StaticTopLevel: noctis::__private::ui::static_msg::sealed::IntoStaticTop
 pub struct noctis::ui::StringSelect
 impl noctis::ui::StringSelect
 pub fn noctis::ui::StringSelect::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::borrow::Cow<'static, str>>>) -> Self
@@ -7033,6 +7292,8 @@ impl core::convert::From<noctis::ui::Label> for noctis::ui::Text
 pub fn noctis::ui::Text::from(noctis::ui::Label) -> Self
 impl core::convert::From<noctis::ui::Placeholder> for noctis::ui::Text
 pub fn noctis::ui::Text::from(noctis::ui::Placeholder) -> Self
+impl core::convert::From<noctis::ui::WebhookName> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::WebhookName) -> Self
 impl core::fmt::Debug for noctis::ui::Text
 pub fn noctis::ui::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::ui::Text
@@ -7048,6 +7309,8 @@ impl core::convert::From<noctis::ui::Label> for noctis::ui::Text
 pub fn noctis::ui::Text::from(noctis::ui::Label) -> Self
 impl core::convert::From<noctis::ui::Placeholder> for noctis::ui::Text
 pub fn noctis::ui::Text::from(noctis::ui::Placeholder) -> Self
+impl core::convert::From<noctis::ui::WebhookName> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::WebhookName) -> Self
 pub struct noctis::ui::TextDisplay
 impl noctis::ui::TextDisplay
 pub fn noctis::ui::TextDisplay::content(&self) -> &str
@@ -7062,11 +7325,15 @@ pub fn noctis::ui::TextDisplay::fmt(&self, &mut core::fmt::Formatter<'_>) -> cor
 impl core::marker::StructuralPartialEq for noctis::ui::TextDisplay
 impl noctis::ui::ContainerChild for noctis::ui::TextDisplay
 impl noctis::ui::ModalTopLevel for noctis::ui::TextDisplay
+impl noctis::ui::StaticContainerChild for noctis::ui::TextDisplay
+impl noctis::ui::StaticTopLevel for noctis::ui::TextDisplay
 impl noctis::ui::TopLevel for noctis::ui::TextDisplay
 impl serde_core::ser::Serialize for noctis::ui::TextDisplay
 pub fn noctis::ui::TextDisplay::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::TextDisplay
 impl noctis::ui::ModalTopLevel for noctis::ui::TextDisplay
+impl noctis::ui::StaticContainerChild for noctis::ui::TextDisplay
+impl noctis::ui::StaticTopLevel for noctis::ui::TextDisplay
 impl noctis::ui::TopLevel for noctis::ui::TextDisplay
 pub struct noctis::ui::TextInput
 impl noctis::ui::TextInput
@@ -7099,9 +7366,11 @@ impl core::fmt::Debug for noctis::ui::Thumbnail
 pub fn noctis::ui::Thumbnail::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::Thumbnail
 impl noctis::ui::SectionAccessory for noctis::ui::Thumbnail
+impl noctis::ui::StaticAccessory for noctis::ui::Thumbnail
 impl serde_core::ser::Serialize for noctis::ui::Thumbnail
 pub fn noctis::ui::Thumbnail::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::SectionAccessory for noctis::ui::Thumbnail
+impl noctis::ui::StaticAccessory for noctis::ui::Thumbnail
 pub trait noctis::ui::TopLevel: noctis::__private::ui::sealed::IntoTop
 impl core::convert::From<noctis::ui::ActionRow> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::ActionRow) -> Self
@@ -7216,6 +7485,10 @@ pub fn noctis::ui::Users::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt
 impl core::marker::StructuralPartialEq for noctis::ui::Users
 impl core::convert::From<noctis::ui::Components> for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::from(noctis::ui::Components) -> Self
+impl core::convert::From<noctis::ui::StaticComponents> for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::from(noctis::ui::StaticComponents) -> Self
+impl core::convert::From<noctis::ui::StaticMessage> for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::from(noctis::ui::StaticMessage) -> Self
 pub struct noctis::ui::V2Message
 impl noctis::ui::V2Message
 pub fn noctis::ui::V2Message::allowed_mentions(&self) -> &noctis::ui::Mentions
@@ -7228,17 +7501,182 @@ pub fn noctis::ui::V2Message::edit_body(&self, noctis::ui::MessageFormat, noctis
 pub fn noctis::ui::V2Message::mentions(self, noctis::ui::Mentions) -> Self
 pub fn noctis::ui::V2Message::new(noctis::ui::Components) -> Self
 pub fn noctis::ui::V2Message::used_attachments(&self) -> impl core::iter::traits::iterator::Iterator<Item = &noctis::ui::Attachment>
+pub fn noctis::ui::V2Message::webhook_edit_body(&self, noctis::ui::EditFlags) -> noctis::ui::MessageBody<'_>
 impl core::clone::Clone for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::clone(&self) -> Self
 impl core::convert::From<noctis::ui::Components> for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::from(noctis::ui::Components) -> Self
+impl core::convert::From<noctis::ui::StaticComponents> for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::from(noctis::ui::StaticComponents) -> Self
+impl core::convert::From<noctis::ui::StaticMessage> for noctis::ui::V2Message
+pub fn noctis::ui::V2Message::from(noctis::ui::StaticMessage) -> Self
 impl core::fmt::Debug for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl noctis::ui::Validate for noctis::ui::V2Message
 impl noctis::ui::Validate for noctis::ui::V2Message
 pub trait noctis::ui::Validate: noctis::__private::ui::sealed::Check
+pub struct noctis::ui::WebhookName(_)
+impl noctis::ui::WebhookName
+pub fn noctis::ui::WebhookName::as_str(&self) -> &str
+pub fn noctis::ui::WebhookName::try_new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, &noctis::rules::Limits) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::clone::Clone for noctis::ui::WebhookName
+pub fn noctis::ui::WebhookName::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::WebhookName
+impl core::cmp::PartialEq for noctis::ui::WebhookName
+pub fn noctis::ui::WebhookName::eq(&self, &Self) -> bool
+impl core::convert::AsRef<str> for noctis::ui::WebhookName
+pub fn noctis::ui::WebhookName::as_ref(&self) -> &str
+impl core::convert::From<noctis::ui::WebhookName> for alloc::borrow::Cow<'static, str>
+pub fn alloc::borrow::Cow<'static, str>::from(noctis::ui::WebhookName) -> Self
+impl core::convert::TryFrom<&'static str> for noctis::ui::WebhookName
+pub type noctis::ui::WebhookName::Error = noctis::ui::UiError
+pub fn noctis::ui::WebhookName::try_from(&'static str) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::convert::TryFrom<alloc::string::String> for noctis::ui::WebhookName
+pub type noctis::ui::WebhookName::Error = noctis::ui::UiError
+pub fn noctis::ui::WebhookName::try_from(alloc::string::String) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::fmt::Debug for noctis::ui::WebhookName
+pub fn noctis::ui::WebhookName::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::WebhookName
+pub fn noctis::ui::WebhookName::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for noctis::ui::WebhookName
 pub fn noctis::ui::cost<M: noctis::ui::Validate>(&M, &noctis::rules::Limits) -> noctis::ui::CostReport
 pub fn noctis::ui::escape_markdown(&str) -> alloc::string::String
 pub fn noctis::ui::escape_mentions(&str) -> alloc::string::String
 pub fn noctis::ui::unknown_components(&[serde_json::value::Value]) -> alloc::vec::Vec<serde_json::value::Value>
 pub fn noctis::ui::validate<M: noctis::ui::Validate>(&mut M, &noctis::rules::Limits) -> core::result::Result<noctis::ui::CostReport, noctis::ui::UiError>
+pub mod noctis::webhook
+pub struct noctis::webhook::DeleteWebhookMessage<'a, O: noctis::webhook::Ownership>
+impl<O: noctis::webhook::Ownership> noctis::webhook::DeleteWebhookMessage<'_, O>
+pub fn noctis::webhook::DeleteWebhookMessage<'_, O>::thread(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+impl<'a, O: core::fmt::Debug + noctis::webhook::Ownership> core::fmt::Debug for noctis::webhook::DeleteWebhookMessage<'a, O>
+pub fn noctis::webhook::DeleteWebhookMessage<'a, O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a, O: noctis::webhook::Ownership> core::future::into_future::IntoFuture for noctis::webhook::DeleteWebhookMessage<'a, O>
+pub type noctis::webhook::DeleteWebhookMessage<'a, O>::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::webhook::DeleteWebhookMessage<'a, O> as core::future::into_future::IntoFuture>::Output> + core::marker::Send + 'a)>>
+pub type noctis::webhook::DeleteWebhookMessage<'a, O>::Output = core::result::Result<(), noctis::webhook::WebhookError>
+pub fn noctis::webhook::DeleteWebhookMessage<'a, O>::into_future(self) -> Self::IntoFuture
+pub struct noctis::webhook::EditWebhookMessage<'a, O: noctis::webhook::Ownership>
+impl<O: noctis::webhook::Ownership> noctis::webhook::EditWebhookMessage<'_, O>
+pub fn noctis::webhook::EditWebhookMessage<'_, O>::flags(self, noctis::ui::EditFlags) -> Self
+pub fn noctis::webhook::EditWebhookMessage<'_, O>::thread(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+impl<'a, O: core::fmt::Debug + noctis::webhook::Ownership> core::fmt::Debug for noctis::webhook::EditWebhookMessage<'a, O>
+pub fn noctis::webhook::EditWebhookMessage<'a, O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a, O: noctis::webhook::Ownership> core::future::into_future::IntoFuture for noctis::webhook::EditWebhookMessage<'a, O>
+pub type noctis::webhook::EditWebhookMessage<'a, O>::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::webhook::EditWebhookMessage<'a, O> as core::future::into_future::IntoFuture>::Output> + core::marker::Send + 'a)>>
+pub type noctis::webhook::EditWebhookMessage<'a, O>::Output = core::result::Result<(), noctis::webhook::WebhookError>
+pub fn noctis::webhook::EditWebhookMessage<'a, O>::into_future(self) -> Self::IntoFuture
+pub struct noctis::webhook::ExecuteWebhook<'a, O: noctis::webhook::Ownership>
+impl<O: noctis::webhook::Ownership> noctis::webhook::ExecuteWebhook<'_, O>
+pub fn noctis::webhook::ExecuteWebhook<'_, O>::avatar_url(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::webhook::ExecuteWebhook<'_, O>::flags(self, noctis::ui::CreateFlags) -> Self
+pub fn noctis::webhook::ExecuteWebhook<'_, O>::thread(self, impl core::convert::Into<noctis::webhook::WebhookThread>) -> Self
+pub fn noctis::webhook::ExecuteWebhook<'_, O>::username(self, noctis::ui::WebhookName) -> Self
+impl<'a, O: core::fmt::Debug + noctis::webhook::Ownership> core::fmt::Debug for noctis::webhook::ExecuteWebhook<'a, O>
+pub fn noctis::webhook::ExecuteWebhook<'a, O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a, O: noctis::webhook::Ownership> core::future::into_future::IntoFuture for noctis::webhook::ExecuteWebhook<'a, O>
+pub type noctis::webhook::ExecuteWebhook<'a, O>::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::webhook::ExecuteWebhook<'a, O> as core::future::into_future::IntoFuture>::Output> + core::marker::Send + 'a)>>
+pub type noctis::webhook::ExecuteWebhook<'a, O>::Output = core::result::Result<noctis::webhook::WebhookMessage<O>, noctis::webhook::WebhookError>
+pub fn noctis::webhook::ExecuteWebhook<'a, O>::into_future(self) -> Self::IntoFuture
+pub enum noctis::webhook::Foreign
+impl core::fmt::Debug for noctis::webhook::Foreign
+pub fn noctis::webhook::Foreign::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::webhook::Ownership for noctis::webhook::Foreign
+impl noctis::webhook::Ownership for noctis::webhook::Foreign
+pub type noctis::webhook::ForeignWebhook = noctis::webhook::Webhook<noctis::webhook::Foreign>
+pub enum noctis::webhook::Owned
+impl core::fmt::Debug for noctis::webhook::Owned
+pub fn noctis::webhook::Owned::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::webhook::Ownership for noctis::webhook::Owned
+impl noctis::webhook::Ownership for noctis::webhook::Owned
+pub type noctis::webhook::OwnedWebhook = noctis::webhook::Webhook<noctis::webhook::Owned>
+pub trait noctis::webhook::Ownership: noctis::__private::core::webhook::sealed::Sealed + core::fmt::Debug + core::marker::Send + core::marker::Sync + 'static
+pub struct noctis::webhook::Webhook<O: noctis::webhook::Ownership>
+impl noctis::webhook::Webhook<noctis::webhook::Foreign>
+pub fn noctis::webhook::Webhook<noctis::webhook::Foreign>::edit(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>, impl noctis::ui::IntoStaticMessage) -> noctis::webhook::EditWebhookMessage<'_, noctis::webhook::Foreign>
+pub fn noctis::webhook::Webhook<noctis::webhook::Foreign>::send(&self, impl noctis::ui::IntoStaticMessage) -> noctis::webhook::ExecuteWebhook<'_, noctis::webhook::Foreign>
+impl noctis::webhook::Webhook<noctis::webhook::Owned>
+pub fn noctis::webhook::Webhook<noctis::webhook::Owned>::edit(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>, impl core::convert::Into<noctis::ui::V2Message>) -> noctis::webhook::EditWebhookMessage<'_, noctis::webhook::Owned>
+pub fn noctis::webhook::Webhook<noctis::webhook::Owned>::send(&self, impl core::convert::Into<noctis::ui::V2Message>) -> noctis::webhook::ExecuteWebhook<'_, noctis::webhook::Owned>
+impl<O: noctis::webhook::Ownership> noctis::webhook::Webhook<O>
+pub fn noctis::webhook::Webhook<O>::channel_kind(&self) -> core::option::Option<twilight_model::channel::channel_type::ChannelType>
+pub fn noctis::webhook::Webhook<O>::delete(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> noctis::webhook::DeleteWebhookMessage<'_, O>
+pub fn noctis::webhook::Webhook<O>::id(&self) -> twilight_model::id::Id<twilight_model::id::marker::WebhookMarker>
+pub fn noctis::webhook::Webhook<O>::in_channel(self, twilight_model::channel::channel_type::ChannelType) -> Self
+pub fn noctis::webhook::Webhook<O>::token(&self) -> &str
+impl<O: noctis::webhook::Ownership> core::clone::Clone for noctis::webhook::Webhook<O>
+pub fn noctis::webhook::Webhook<O>::clone(&self) -> Self
+impl<O: noctis::webhook::Ownership> core::fmt::Debug for noctis::webhook::Webhook<O>
+pub fn noctis::webhook::Webhook<O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::webhook::WebhookChannel
+impl noctis::webhook::WebhookChannel
+pub const fn noctis::webhook::WebhookChannel::id(&self) -> twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>
+pub const fn noctis::webhook::WebhookChannel::kind(&self) -> twilight_model::channel::channel_type::ChannelType
+pub const fn noctis::webhook::WebhookChannel::new(twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, twilight_model::channel::channel_type::ChannelType) -> Self
+impl core::clone::Clone for noctis::webhook::WebhookChannel
+pub fn noctis::webhook::WebhookChannel::clone(&self) -> Self
+impl core::cmp::Eq for noctis::webhook::WebhookChannel
+impl core::cmp::PartialEq for noctis::webhook::WebhookChannel
+pub fn noctis::webhook::WebhookChannel::eq(&self, &Self) -> bool
+impl core::convert::From<&twilight_model::application::interaction::resolved::InteractionChannel> for noctis::webhook::WebhookChannel
+pub fn noctis::webhook::WebhookChannel::from(&twilight_model::application::interaction::resolved::InteractionChannel) -> Self
+impl core::fmt::Debug for noctis::webhook::WebhookChannel
+pub fn noctis::webhook::WebhookChannel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::webhook::WebhookChannel
+impl core::marker::StructuralPartialEq for noctis::webhook::WebhookChannel
+impl core::convert::From<noctis::ResponderError> for noctis::webhook::WebhookError
+pub fn noctis::webhook::WebhookError::from(noctis::ResponderError) -> Self
+#[non_exhaustive] pub enum noctis::webhook::WebhookError
+pub noctis::webhook::WebhookError::Detached
+pub noctis::webhook::WebhookError::Encode
+pub noctis::webhook::WebhookError::Encode::reason: alloc::string::String
+pub noctis::webhook::WebhookError::Invalid(noctis::ui::UiError)
+pub noctis::webhook::WebhookError::InvalidToken
+pub noctis::webhook::WebhookError::RefCollision
+pub noctis::webhook::WebhookError::RefStore(noctis::ports::PortError)
+pub noctis::webhook::WebhookError::Rejected
+pub noctis::webhook::WebhookError::Rejected::code: core::option::Option<u32>
+pub noctis::webhook::WebhookError::Rejected::status: u16
+pub noctis::webhook::WebhookError::Transport
+impl core::convert::From<noctis::ResponderError> for noctis::webhook::WebhookError
+pub fn noctis::webhook::WebhookError::from(noctis::ResponderError) -> Self
+impl core::convert::From<noctis::ui::UiError> for noctis::webhook::WebhookError
+pub fn noctis::webhook::WebhookError::from(noctis::ui::UiError) -> Self
+impl core::error::Error for noctis::webhook::WebhookError
+pub fn noctis::webhook::WebhookError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::webhook::WebhookError
+pub fn noctis::webhook::WebhookError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::webhook::WebhookError
+pub fn noctis::webhook::WebhookError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::webhook::WebhookMessage<O: noctis::webhook::Ownership>
+impl noctis::webhook::WebhookMessage<noctis::webhook::Foreign>
+pub fn noctis::webhook::WebhookMessage<noctis::webhook::Foreign>::edit(&self, impl noctis::ui::IntoStaticMessage) -> noctis::webhook::EditWebhookMessage<'_, noctis::webhook::Foreign>
+impl noctis::webhook::WebhookMessage<noctis::webhook::Owned>
+pub fn noctis::webhook::WebhookMessage<noctis::webhook::Owned>::edit(&self, impl core::convert::Into<noctis::ui::V2Message>) -> noctis::webhook::EditWebhookMessage<'_, noctis::webhook::Owned>
+impl<O: noctis::webhook::Ownership> noctis::webhook::WebhookMessage<O>
+pub fn noctis::webhook::WebhookMessage<O>::channel_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>
+pub fn noctis::webhook::WebhookMessage<O>::delete(&self) -> noctis::webhook::DeleteWebhookMessage<'_, O>
+pub fn noctis::webhook::WebhookMessage<O>::id(&self) -> twilight_model::id::Id<twilight_model::id::marker::MessageMarker>
+pub fn noctis::webhook::WebhookMessage<O>::thread_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+impl<O: core::fmt::Debug + noctis::webhook::Ownership> core::fmt::Debug for noctis::webhook::WebhookMessage<O>
+pub fn noctis::webhook::WebhookMessage<O>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum noctis::webhook::WebhookThread
+pub noctis::webhook::WebhookThread::Create(alloc::borrow::Cow<'static, str>)
+pub noctis::webhook::WebhookThread::Existing(twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>)
+impl core::clone::Clone for noctis::webhook::WebhookThread
+pub fn noctis::webhook::WebhookThread::clone(&self) -> Self
+impl core::cmp::Eq for noctis::webhook::WebhookThread
+impl core::cmp::PartialEq for noctis::webhook::WebhookThread
+pub fn noctis::webhook::WebhookThread::eq(&self, &Self) -> bool
+impl core::convert::From<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>> for noctis::webhook::WebhookThread
+pub fn noctis::webhook::WebhookThread::from(twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+impl core::fmt::Debug for noctis::webhook::WebhookThread
+pub fn noctis::webhook::WebhookThread::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::webhook::WebhookThread
+pub struct noctis::webhook::Webhooks
+impl noctis::webhook::Webhooks
+pub async fn noctis::webhook::Webhooks::create(&self, noctis::webhook::WebhookChannel, noctis::ui::WebhookName) -> core::result::Result<noctis::webhook::Webhook<noctis::webhook::Owned>, noctis::webhook::WebhookError>
+pub fn noctis::webhook::Webhooks::foreign(&self, twilight_model::id::Id<twilight_model::id::marker::WebhookMarker>, impl core::convert::Into<alloc::string::String>) -> core::result::Result<noctis::webhook::Webhook<noctis::webhook::Foreign>, noctis::webhook::WebhookError>
+pub fn noctis::webhook::Webhooks::owned(&self, twilight_model::id::Id<twilight_model::id::marker::WebhookMarker>, impl core::convert::Into<alloc::string::String>) -> core::result::Result<noctis::webhook::Webhook<noctis::webhook::Owned>, noctis::webhook::WebhookError>
+impl core::clone::Clone for noctis::webhook::Webhooks
+pub fn noctis::webhook::Webhooks::clone(&self) -> Self
+impl core::fmt::Debug for noctis::webhook::Webhooks
+pub fn noctis::webhook::Webhooks::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result

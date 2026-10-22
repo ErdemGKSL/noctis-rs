@@ -68,6 +68,7 @@ setup:
   next: İleri
   cancel: İptal
   cancelled: "-# Kurulum iptal edildi. Yeniden başlamak için /setup start çalıştır."
+  log_enabled: "-# {by} kurulumu tamamladı: kayıtlar {channel} kanalına gider; {role} moderasyon yapabilir."
 
 dashboard:
   tab:

@@ -1,12 +1,13 @@
-//! `label!`, `placeholder!`, `content!`, `alt!` and `rgb!`: one literal,
+//! `label!`, `placeholder!`, `content!`, `alt!`, `webhook_name!` and `rgb!`: one literal,
 //! measured at expansion with the `noctis-rules` function the runtime
-//! `try_new` / `TryFrom` path calls (CV2-08, CV2-09, MSG-01, ATT-06, CV2-13).
+//! `try_new` / `TryFrom` path calls (CV2-08, CV2-09, MSG-01, ATT-06, WH-04,
+//! CV2-13).
 
 use noctis_rules::attachment::validate_attachment_description;
 use noctis_rules::component::{
     validate_accent_color, validate_button_label, validate_select_placeholder,
 };
-use noctis_rules::message::validate_content;
+use noctis_rules::message::{validate_content, validate_webhook_name};
 use noctis_rules::{Actual, Limits, RuleId, Violation};
 use proc_macro2::{Literal, Span, TokenStream};
 use quote::{ToTokens, quote};
@@ -52,6 +53,14 @@ pub(crate) const ALT: TextMacro = TextMacro {
     rule: RuleId::ATT_06,
     ty: "AltText",
     check: validate_attachment_description,
+};
+
+/// `webhook_name!`: a webhook name or `username` (WH-04).
+pub(crate) const WEBHOOK_NAME: TextMacro = TextMacro {
+    name: "webhook_name",
+    rule: RuleId::WH_04,
+    ty: "WebhookName",
+    check: validate_webhook_name,
 };
 
 /// Spans a misuse error on the arguments, or on the call site when there are

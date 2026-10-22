@@ -743,17 +743,115 @@ dashboards. Editing a legacy message into a View is supported (content/embeds/po
 are cleared in the same request);
 V2 → legacy is a typed error (CV2-01).
 
-## 7. Webhooks (FR-65) [planned]
+## 7. Webhooks (FR-65)
+
+Every context (`ctx.webhooks()` on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`, `ExpiredCtx`, `EventCtx`)
+and the `App` (`app.webhooks()`) hand out a `Webhooks` factory. It gives two kinds of
+handle, told apart by type (`noctis::webhook`):
+
+| Handle | Made by | Sends |
+| --- | --- | --- |
+| `OwnedWebhook` (`Webhook<Owned>`) | `create(channel, name)` (the App creates it), or `owned(id, token)` for credentials you stored after a `create` | any `V2Message`: Route buttons, selects, Refs and nonces resolve exactly as in a reply |
+| `ForeignWebhook` (`Webhook<Foreign>`) | `foreign(id, token)` for a webhook a user or another app made | only a `StaticMessage` / `StaticComponents` (`components-v2.md` §12b); a `V2Message` is a `[WH-02]` compile error |
 
 ```rust
-// Application-owned webhook: any V2 message (from your render function).
-ctx.webhooks().execute(webhook_id, &token, render_log(&entry, &s)).await?;
-ctx.webhooks().edit(webhook_id, &token, message_id, render_log(&entry, &s)).await?;
+use noctis::prelude::*;
+use noctis::twilight::model::channel::ChannelType;
+use noctis::webhook::{WebhookChannel, WebhookThread};
 
-// A webhook you don't own: only a non-interactive StaticMessage (WH-02), checked by type.
-ForeignWebhook::new(url).send(StaticMessage::new(render_case_text(&case, &s))).await?;
+// Create once (the bot needs MANAGE_WEBHOOKS), store id + token like a password.
+let hook = ctx
+    .webhooks()
+    .create(WebhookChannel::new(log_channel, ChannelType::GuildText), webhook_name!("Audit log"))
+    .await?;
+store(hook.id(), hook.token());
+
+// Later: rebuild it from the stored credentials and send any View.
+let hook = ctx.webhooks().owned(id, token)?.in_channel(ChannelType::GuildText);
+let posted = hook
+    .send(render_log(&entry, &s))                  // V2Message from your render fn
+    .username(webhook_name!("Case bot"))           // per-message persona (WH-04)
+    .avatar_url("https://example.com/avatar.png")
+    .await?;                                       // WebhookMessage<Owned>
+posted.edit(render_log(&closed, &s)).await?;       // keeps its attachments
+posted.delete().await?;
+
+// A webhook you don't own: static content only.
+let mirror = ctx.webhooks().foreign(other_id, other_token)?;
+mirror.send(render_notice(&s)).await?;             // render_notice -> StaticMessage
 ```
 
-Noctis always sends `?with_components=true` (WH-01) and only the flags valid for the
-endpoint (MSG-07). Forum/media channels need `.thread_name(..)` or `.thread(id)` (WH-05).
-Webhook name: 1–80 chars (WH-04).
+- **Handles and requests.** `Webhook<O>` (`O: Ownership`, sealed: `Owned` or `Foreign`)
+  has `.id()`, `.token()`, `.channel_kind()` (`Some` after `create` or `.in_channel(kind)`),
+  `.send(msg)` → `ExecuteWebhook` (`.flags(..)`, `.username(..)`, `.avatar_url(..)`,
+  `.thread(..)`), `.edit(message_id, msg)` → `EditWebhookMessage` (`.flags(EditFlags)`,
+  `.thread(thread_id)`) and `.delete(message_id)` → `DeleteWebhookMessage` (`.thread(..)`).
+  Each request does nothing until `.await`ed. A send returns `WebhookMessage<O>`:
+  `.id()`, `.channel_id()`, `.thread_id()`, `.edit(msg)`, `.delete()`.
+- **Always V2, always `with_components=true`** (WH-01): every execute sends
+  `?wait=true&with_components=true` and every edit `?with_components=true`; there is no
+  setter to turn it off. Webhook-token requests never carry the bot `Authorization`
+  header.
+- **Flags per endpoint** (MSG-07): `.flags(CreateFlags)` on a send, `.flags(EditFlags)` on
+  an edit. There is no ephemeral webhook message.
+- **Edits clear legacy fields** (WH-03): every edit sends `content: null`, `embeds: []` and
+  `poll: null` with `flags = 32768 | your bits`, so a legacy webhook
+  message becomes V2. `hook.edit(message_id, msg)` (by id) re-uploads every attachment
+  `msg` uses; `posted.edit(msg)` on the returned `WebhookMessage` keeps the files Discord
+  already holds.
+- **Threads, forum and media channels** (WH-05): `.thread(thread_id)` (a `WebhookThread::Existing`) posts into an
+  existing thread; `.thread(WebhookThread::Create("Weekly report".into()))` opens a new
+  forum or media post (name 1–100). A forum or media channel without a thread, or a thread
+  name in a text channel, is `WebhookError::Invalid` before anything is sent when the
+  channel kind is known (`create` knows it; `owned(..)`/`foreign(..)` learn it from
+  `.in_channel(kind)`). Without a known kind, Discord's own answers 220001/220003 map to the
+  same WH-05 error. `WebhookMessage::thread_id()` is the thread to pass to a by-id
+  `.edit(..).thread(t)` / `.delete(..).thread(t)` later.
+- **Names** (WH-04): `WebhookName` is 1–80 characters with no `clyde` or `discord` (any
+  case). `webhook_name!("…")` checks a literal at `cargo check`
+  (`[WH-04] …`); `WebhookName::try_new(text, &limits)` / `WebhookName::try_from(text)` at
+  run time.
+- **Validation.** A send or edit runs the Responder's preparation: locale keys, Route
+  ids, Refs and nonces, `Limits`, the Upload Budget, attachments.
+- **Tokens are secrets.** `Webhook`'s `Debug` prints no token, errors never contain it,
+  and Noctis never logs it. Keep it out of your own logs and messages.
+
+**Errors** (`WebhookError`, `#[non_exhaustive]`; `?` converts it into a handler error):
+
+| Variant | When |
+| --- | --- |
+| `Invalid(UiError)` | Limits, the Upload Budget, WH-02 (`StaticMessage::try_from`), WH-04, WH-05; nothing sent (except Discord's own 220001/220003) |
+| `Encode { reason }` | a Route `custom_id` could not be resolved |
+| `RefStore(PortError)` / `RefCollision` | a Ref could not be stored or minted |
+| `InvalidToken` | the token is not 1–512 characters of `[A-Za-z0-9._-]` |
+| `Rejected { status, code }` | Discord refused (403 code 50013 without `MANAGE_WEBHOOKS`, 404 code 10015 for a deleted webhook: create a new one and store it) |
+| `Transport` | no usable answer |
+| `Detached` | a detached test context; nothing sent |
+
+A webhook failure in a side effect (an audit log, a mirror) should usually not fail the
+interaction: log it with `tracing::warn!` (without the token) and carry on.
+
+**Testing.** `TestApp` answers Discord through its HTTP fake; script the webhook routes
+with `app.http_fake()` and the types of `noctis::testkit::fake`:
+
+```rust
+use noctis::testkit::TestApp;
+use noctis::testkit::fake::{FakeResponse, Method, StatusCode};
+use serde_json::json;
+
+let app = TestApp::build(&mut builder).await?;
+app.http_fake()
+    .route(
+        Method::POST,
+        "/channels/50/webhooks",
+        FakeResponse::json(StatusCode::OK, &json!({"id": "900", "token": "tok", "channel_id": "50"})),
+    )
+    .route_with(Method::POST, "/webhooks/900/tok", |request| {
+        assert_eq!(request.query.as_deref(), Some("wait=true&with_components=true"));
+        assert_eq!(request.json().unwrap()["flags"], 32768);
+        FakeResponse::json(StatusCode::OK, &json!({"id": "71", "channel_id": "50", "attachments": []}))
+    });
+```
+
+Paths are given without `/api/v10`; `RecordedRequest` exposes `method`, `path` (with the
+prefix), `query`, `headers` and `json()`.

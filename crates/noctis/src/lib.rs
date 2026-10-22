@@ -1613,6 +1613,83 @@ pub mod http {
     pub use noctis_core::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
 }
 
+pub mod webhook {
+    //! Views over webhooks (FR-65): log channels, personas and cross-posts
+    //! with the same Components V2 safety as interaction replies.
+    //!
+    //! - [`Webhooks`] (`ctx.webhooks()` on every context, `app.webhooks()`):
+    //!   [`create`](Webhooks::create) a webhook the App owns in a
+    //!   [`WebhookChannel`] (bot token, `MANAGE_WEBHOOKS`), or wrap stored
+    //!   credentials with [`owned`](Webhooks::owned) or
+    //!   [`foreign`](Webhooks::foreign). A bad token is
+    //!   [`WebhookError::InvalidToken`] before any request.
+    //! - [`Webhook<O>`](Webhook) with [`Ownership`] `O` = [`Owned`]
+    //!   ([`OwnedWebhook`]) or [`Foreign`] ([`ForeignWebhook`]): an owned
+    //!   one sends any `V2Message` (Route buttons, selects, Refs, exactly as
+    //!   a reply); a foreign one sends only a
+    //!   [`StaticMessage`](crate::ui::StaticMessage) (WH-02: anything else is
+    //!   a `[WH-02]` compile error; convert a run-time tree with
+    //!   `StaticMessage::try_from`). [`token`](Webhook::token) is a secret
+    //!   to store, never to log; `Debug` redacts it.
+    //!   [`in_channel`](Webhook::in_channel) declares the channel kind of
+    //!   stored credentials.
+    //! - [`ExecuteWebhook`] (from `send`): `.flags(CreateFlags)`,
+    //!   `.username(WebhookName)`, `.avatar_url(..)`,
+    //!   `.thread(`[`WebhookThread`]`)`; it resolves to a
+    //!   [`WebhookMessage`], whose `edit` keeps the attachments the message
+    //!   holds and whose `delete` passes its thread.
+    //!   [`EditWebhookMessage`] (`.flags(EditFlags)`, `.thread(id)`) and
+    //!   [`DeleteWebhookMessage`] (`.thread(id)`) act by message id.
+    //! - Always `?with_components=true` on execute and edit (WH-01, no
+    //!   setter); every edit sends `content: null`, `embeds: []` and
+    //!   `poll: null` (WH-03); names are 1-80 characters without `clyde` or
+    //!   `discord` (WH-04, `webhook_name!`); a forum or media channel needs
+    //!   a thread, and a `thread_name` has 1-100 characters (WH-05, checked
+    //!   before sending when the channel kind is known; Discord's 220001 and
+    //!   220003 map to the same typed error). Webhook-token requests carry no
+    //!   bot `Authorization` header.
+    //!
+    //! An owned webhook for a log channel, and a foreign one for a mirror:
+    //!
+    //! ```no_run
+    //! use noctis::prelude::*;
+    //! use noctis::twilight::model::channel::ChannelType;
+    //! use noctis::twilight::model::id::Id;
+    //! use noctis::twilight::model::id::marker::ChannelMarker;
+    //! use noctis::ui::{StaticComponents, StaticContainer, TextDisplay};
+    //! use noctis::webhook::{WebhookChannel, WebhookError, WebhookThread};
+    //! use noctis::webhook_name;
+    //!
+    //! async fn log(ctx: &CommandCtx, channel: Id<ChannelMarker>) -> Result<(), WebhookError> {
+    //!     let hook = ctx
+    //!         .webhooks()
+    //!         .create(WebhookChannel::new(channel, ChannelType::GuildText), webhook_name!("Mod log"))
+    //!         .await?;
+    //!     let card = || StaticComponents::new().push(StaticContainer::new().push(TextDisplay::new("Case #1 opened")));
+    //!     let sent = hook.send(card()).username(webhook_name!("Case bot")).await?;
+    //!     sent.edit(StaticComponents::new().push(TextDisplay::new("Case #1 closed"))).await?;
+    //!     // Store `hook.id()` and `hook.token()` to reuse it with `ctx.webhooks().owned(..)`.
+    //!     Ok(())
+    //! }
+    //!
+    //! async fn mirror(ctx: &CommandCtx, id: u64, token: &str) -> Result<(), WebhookError> {
+    //!     let hook = ctx.webhooks().foreign(Id::new(id), token)?.in_channel(ChannelType::GuildForum);
+    //!     hook.send(card())
+    //!         .thread(WebhookThread::Create("Daily log".into()))
+    //!         .await?;
+    //!     Ok(())
+    //! }
+    //! # fn card() -> StaticComponents { StaticComponents::new().push(TextDisplay::new("Mirrored")) }
+    //! # let _ = (log, mirror);
+    //! ```
+
+    pub use noctis_core::{
+        DeleteWebhookMessage, EditWebhookMessage, ExecuteWebhook, Foreign, ForeignWebhook, Owned,
+        OwnedWebhook, Ownership, Webhook, WebhookChannel, WebhookError, WebhookMessage,
+        WebhookThread, Webhooks,
+    };
+}
+
 pub mod twilight {
     //! The twilight crates Noctis builds on, for the Discord endpoints and
     //! models Noctis does not wrap.
@@ -1649,6 +1726,9 @@ pub use noctis_macros::placeholder;
 /// A `0xRRGGBB` colour literal, checked at `cargo check` against CV2-13;
 /// yields a [`ui::Rgb`].
 pub use noctis_macros::rgb;
+/// A webhook name literal, checked at `cargo check` against WH-04 (1 to 80
+/// characters, no `clyde` or `discord`); yields a [`ui::WebhookName`].
+pub use noctis_macros::webhook_name;
 
 pub mod codec {
     //! Payload field encodings for `custom_id`s.
@@ -1897,7 +1977,7 @@ pub mod prelude {
     //! - [`Choices`]: the trait and `#[derive(Choices)]` on a unit enum, an
     //!   option set.
     //! - [`Rgb`] and the macros [`components!`], [`label!`],
-    //!   [`placeholder!`], [`content!`] and [`rgb!`].
+    //!   [`placeholder!`], [`content!`], [`rgb!`] and [`webhook_name!`].
     //! - [`Text`] (a literal or a [`MessageKey`]) and the per-render
     //!   overrides [`ButtonOverrides`], [`StringSelectOverrides`],
     //!   [`UserSelectOverrides`], [`RoleSelectOverrides`],
@@ -1932,7 +2012,7 @@ pub mod prelude {
     #[doc(hidden)]
     pub use noctis_macros::{Options, Route, command, event, message_command, user_command};
     pub use noctis_macros::{autocomplete, handler, on_expired, on_stale};
-    pub use noctis_macros::{components, content, label, placeholder, rgb};
+    pub use noctis_macros::{components, content, label, placeholder, rgb, webhook_name};
     pub use noctis_rules::MessageKey;
     pub use noctis_ui::{
         ButtonOverrides, ChannelSelectOverrides, Choices, InputOverrides,
@@ -2181,7 +2261,23 @@ pub mod ui {
     //! - [`MessageFormat`]: the format of the message an edit replaces; a
     //!   legacy-to-V2 edit clears `content`, `embeds`, `poll` and
     //!   `sticker_ids`.
-    //! - [`MessageBody`]: the borrowed JSON body core's Responder sends.
+    //! - [`MessageBody`]: the borrowed JSON body core's Responder sends;
+    //!   [`V2Message::webhook_edit_body`] is the Edit Webhook Message body,
+    //!   which always clears `content`, `embeds` and `poll` (WH-03).
+    //! - [`StaticMessage`]: a V2 message without interactive components, the
+    //!   only message a foreign webhook sends (WH-02,
+    //!   [`webhook`](crate::webhook)). It is built from [`StaticComponents`],
+    //!   [`StaticContainer`], [`StaticSection`] (a [`Thumbnail`] or
+    //!   [`LinkButton`] accessory) and [`StaticActionRow`] (link buttons),
+    //!   whose placement traits ([`StaticTopLevel`], [`StaticContainerChild`],
+    //!   [`StaticAccessory`], [`StaticRowButton`]) reject a Route button, a
+    //!   Premium button or a select with `[WH-02]` at `cargo check`; a
+    //!   run-time tree converts with `StaticMessage::try_from(v2)`
+    //!   ([`UiError::Limits`] naming every WH-02 node, raw JSON included). It
+    //!   converts into [`V2Message`]. [`IntoStaticMessage`] is what a foreign
+    //!   send takes.
+    //! - [`WebhookName`] (`webhook_name!`): a webhook name or `username`,
+    //!   1-80 characters without `clyde` or `discord` (WH-04).
     //!
     //! # Limits
     //!
@@ -2617,6 +2713,11 @@ pub mod ui {
         TopLevel, TopLevelComponent, UiError, UserSelect, UserSelectOverrides, Users, V2Message,
         Validate, cost, escape_markdown, escape_mentions, unknown_components, validate,
     };
+    pub use noctis_ui::{
+        IntoStaticMessage, StaticAccessory, StaticActionRow, StaticComponents, StaticContainer,
+        StaticContainerChild, StaticMessage, StaticRowButton, StaticSection, StaticTopLevel,
+        WebhookName,
+    };
 }
 
 pub mod rules {
@@ -2648,8 +2749,12 @@ pub mod rules {
     //!   (MOD-01..07).
     //! - [`message`]: legacy `content`, allowed mentions, nonce, stickers,
     //!   non-empty bodies ([`message::validate_v2_not_empty`],
-    //!   [`message::validate_legacy_not_empty`]) and webhook names (MSG-01,
-    //!   MSG-03..06, MSG-09, WH-04).
+    //!   [`message::validate_legacy_not_empty`]), webhook names
+    //!   ([`message::validate_webhook_name`]), webhook threads
+    //!   ([`message::validate_webhook_thread`] over a
+    //!   [`message::WebhookThreadDecl`]) and the non-interactive components of
+    //!   a foreign webhook ([`message::validate_static_components`]) (MSG-01,
+    //!   MSG-03..06, MSG-09, WH-02, WH-04, WH-05).
     //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
     //!   references (ATT-01..03, ATT-05, ATT-06).
     //!
@@ -2758,6 +2863,12 @@ pub mod testkit {
     //!   the per-send parts of each `custom_id` (select nonce `NN`, Ref
     //!   `~RRRRRRRRRRR`, integrity tag `TTTTTT`), so `insta` snapshots are
     //!   stable.
+    //! - [`fake`] and [`TestApp::http_fake`]: the HTTP fake behind the App;
+    //!   register answers for endpoints the built-in Discord wire does not
+    //!   model (Create Webhook, Execute Webhook, a raw REST call) with
+    //!   `app.http_fake().route(Method::POST, "/channels/5/webhooks",
+    //!   FakeResponse::json(StatusCode::OK, &body))` or `route_with`; a
+    //!   registered route wins, an unknown path is Discord's `404`.
     //! - [`assert_memory_flat`]: live heap stays within
     //!   [`MEMORY_FLAT_SLACK_BYTES`] over N runs (NFR-2). It needs the
     //!   [`dhat`] allocator in its own test binary with one `#[test]`.
@@ -2784,6 +2895,19 @@ pub mod testkit {
     //! # }
     //! ```
 
+    pub mod fake {
+        //! The HTTP fake behind a [`TestApp`](super::TestApp)
+        //! ([`TestApp::http_fake`](super::TestApp::http_fake)): register
+        //! answers for endpoints the built-in Discord wire does not model
+        //! with [`FakeDiscordHttp::route`] / [`FakeDiscordHttp::route_with`],
+        //! and read what the App sent as [`RecordedRequest`]s.
+
+        pub use noctis_testkit::fake::{
+            FakeDiscordHttp, FakeResponse, GatewayBot, HeaderMap, HeaderName, HeaderValue,
+            HttpProtocol, Method, RecordedHttpConnection, RecordedRequest, SessionStartLimit,
+            StatusCode,
+        };
+    }
     pub use noctis_testkit::{
         AutocompleteRun, ClickRun, CommandRun, HttpCall, MEMORY_FLAT_SLACK_BYTES, MemoryReport,
         MenuRun, ModalForm, RecordedFile, Response, ResponseKind, SelectRun, SubmitRun, TestApp,

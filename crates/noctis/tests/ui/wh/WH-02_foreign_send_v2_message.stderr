@@ -1,0 +1,23 @@
+error[E0277]: [WH-02] `V2Message` may hold interactive components: a webhook the app does not own sends only a `StaticMessage`
+ --> tests/ui/wh/WH-02_foreign_send_v2_message.rs:6:23
+  |
+6 |     let _ = hook.send(msg);
+  |                  ---- ^^^ not a StaticMessage
+  |                  |
+  |                  required by a bound introduced by this call
+  |
+  = help: the trait `IntoStaticMessage` is not implemented for `V2Message`
+  = note: build it with StaticComponents/StaticContainer/StaticSection/StaticActionRow, or convert at run time with StaticMessage::try_from(msg)
+help: the following other types implement trait `IntoStaticMessage`
+ --> $WORKSPACE/crates/noctis-ui/src/message/static_msg.rs
+  |
+  | impl IntoStaticMessage for StaticMessage {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `StaticMessage`
+...
+  | impl IntoStaticMessage for StaticComponents {}
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `StaticComponents`
+note: required by a bound in `noctis::webhook::Webhook::<Foreign>::send`
+ --> $WORKSPACE/crates/noctis-core/src/webhook.rs
+  |
+  |     pub fn send(&self, msg: impl IntoStaticMessage) -> ExecuteWebhook<'_, Foreign> {
+  |                                  ^^^^^^^^^^^^^^^^^ required by this bound in `Webhook::<Foreign>::send`

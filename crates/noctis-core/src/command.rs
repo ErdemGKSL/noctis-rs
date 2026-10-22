@@ -292,6 +292,13 @@ impl CommandCtx {
         crate::Kv::of(self.0.app.as_ref())
     }
 
+    /// The App's webhook factory: create a webhook the App owns, or wrap
+    /// stored credentials (a cheap clone); every request of a detached
+    /// test seam's factory is `WebhookError::Detached`.
+    pub fn webhooks(&self) -> crate::Webhooks {
+        crate::Webhooks::of(self.0.app.as_ref())
+    }
+
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns);
     /// an unconfigured client in the detached test seams.
     pub fn http(&self) -> &Arc<twilight_http::Client> {

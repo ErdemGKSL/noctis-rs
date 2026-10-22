@@ -550,6 +550,28 @@ list in CI.
   has no `show_modal`; a modal submit's responder state also refuses a dynamic
   `show_modal` with `ModalUnavailable` before any request, so no future erased path
   can answer a submit with a modal (INT-04).
+- **Amended (Story 9.5):** webhooks live in `noctis-core::webhook`. `ctx.webhooks()`
+  (every context) and `App::webhooks()` return a `Webhooks` factory:
+  `create(WebhookChannel, WebhookName)` (Create Webhook, bot token), `owned(id, token)`
+  and `foreign(id, token)` (a token failing `valid_token` is `InvalidToken`, nothing
+  sent). `Webhook<O: Ownership>` (`Owned` / `Foreign`, sealed) sends through the
+  Responder's own preparation: each request builds a fresh `Shared::webhook(app)`
+  (transport `Transport::Webhook`, the App's signer, `RefStore`, Limits and strings,
+  no locale, visibility public) and calls `prepare` and `body`, so locale keys,
+  Route ids and Refs, the runtime validator, the Upload Budget and the attachment
+  keep-list are the replies' own. Execute is `Route::ExecuteWebhook { wait: true,
+  with_components: true }` with `CreateFlags`; edit is a raw `PATCH
+  webhooks/{id}/{token}/messages/{mid}?with_components=true` with
+  `V2Message::webhook_edit_body(EditFlags)` (always `content: null`, `embeds: []`,
+  `poll: null`, no `sticker_ids`); neither has a `with_components` setter and no
+  webhook-token request carries the bot token. `ForeignWebhook` takes only
+  `impl IntoStaticMessage` (`noctis-ui`'s `StaticMessage`, built from the static
+  builders `StaticComponents`/`StaticContainer`/`StaticSection`/`StaticActionRow`
+  whose sealed placement traits reject interactive components with `[WH-02]`, or
+  `StaticMessage::try_from(V2Message)` at run time). WH-05 is checked before
+  sending when the channel kind is known (`create`, `in_channel`), and Discord's
+  220001/220003 map to the same typed error. `WebhookMessage<O>` keeps the sent
+  message's attachments so its `edit` diffs them like a reply edit.
 
 ### AD-12 — Noctis owns the Components V2 model
 - **Binds:** `noctis-ui`, `noctis-core`; FR-23 to FR-31, FR-63, FR-64; CV2-*,

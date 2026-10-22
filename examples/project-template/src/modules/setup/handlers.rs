@@ -5,12 +5,15 @@
 //! which updates the clicked panel in place; a failed check answers with
 //! `ctx.reply_text(key)`, a one-line ephemeral notice.
 
+use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
+use noctis::twilight::model::channel::ChannelType;
+use noctis::webhook::{OwnedWebhook, WebhookChannel};
 
-use super::view::{render_setup, render_setup_cancelled, render_setup_done};
+use super::view::{render_setup, render_setup_cancelled, render_setup_done, render_setup_log};
 use super::{
     CancelSetup, FinishSetup, GuildConfig, PickLogChannel, PickModRole, SetupState, SetupStep,
-    config_key,
+    StoredWebhook, config_key, log_webhook_key,
 };
 use crate::strings::{Strings, keys};
 
@@ -129,6 +132,42 @@ impl FinishSetup {
         };
         let config = GuildConfig { log_channel: self.log_channel, mod_role: self.mod_role };
         ctx.kv().put(&config_key(guild), &config, None).await?;
-        ctx.update(render_setup_done(config, &s)).await
+        let responded = ctx.update(render_setup_done(config, &s)).await?;
+        // A side effect: a failed log never fails the setup the admin just saved. The
+        // error never contains the webhook token.
+        if let Err(error) = post_log(&ctx, guild, config, &s).await {
+            tracing::warn!(%guild, %error, "setup log was not posted");
+        }
+        Ok(responded)
     }
+}
+
+/// Posts the setup line to the log channel through the bot's own webhook there: the
+/// stored one, or a new one (the bot needs `MANAGE_WEBHOOKS`) whose id and token are
+/// stored for the next time.
+async fn post_log(
+    ctx: &ComponentCtx,
+    guild: Id<GuildMarker>,
+    config: GuildConfig,
+    s: &Strings,
+) -> HandlerResult<()> {
+    let hook = log_webhook(ctx, guild, config).await?;
+    hook.send(render_setup_log(config, ctx.user_id(), s)).await?;
+    Ok(())
+}
+
+async fn log_webhook(
+    ctx: &ComponentCtx,
+    guild: Id<GuildMarker>,
+    config: GuildConfig,
+) -> HandlerResult<OwnedWebhook> {
+    let key = log_webhook_key(guild);
+    if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await? {
+        return Ok(ctx.webhooks().owned(stored.id, stored.token)?.in_channel(ChannelType::GuildText));
+    }
+    let channel = WebhookChannel::new(config.log_channel, ChannelType::GuildText);
+    let hook = ctx.webhooks().create(channel, webhook_name!("Noctis log")).await?;
+    let stored = StoredWebhook { id: hook.id(), token: hook.token().to_owned() };
+    ctx.kv().put(&key, &stored, None).await?;
+    Ok(hook)
 }

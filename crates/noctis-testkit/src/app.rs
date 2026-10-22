@@ -321,8 +321,14 @@ impl TestApp {
         }
     }
 
-    /// The HTTP fake the App sends to (the testkit's own end-to-end tests).
-    #[doc(hidden)]
+    /// The HTTP fake the App sends to. Register answers for endpoints the
+    /// built-in Discord wire does not model (a webhook the bot creates or
+    /// executes, a raw REST call) with
+    /// [`route`](FakeDiscordHttp::route) /
+    /// [`route_with`](FakeDiscordHttp::route_with); a registered route wins
+    /// over the built-in answers, and an unknown path is Discord's `404`.
+    /// Every request also shows up in the run's
+    /// [`Response::http_calls`](crate::Response::http_calls).
     pub fn http_fake(&self) -> &FakeDiscordHttp {
         &self.http
     }

@@ -68,6 +68,7 @@ setup:
   next: Next
   cancel: Cancel
   cancelled: "-# Setup cancelled. Run /setup start to begin again."
+  log_enabled: "-# {by} finished setup: logs go to {channel}; {role} can moderate."
 
 dashboard:
   tab:

@@ -96,6 +96,7 @@ fields; a struct literal does not compile. Every field is a `usize` maximum.
 | `attachments` | ATT-03 | 10 | attachments per message |
 | `attachment_description_len` | ATT-06 | 1024 | characters in attachment alt text |
 | `webhook_name_len` | WH-04 | 80 | characters in a webhook name |
+| `webhook_thread_name_len` | WH-05 | 100 | characters in a webhook `thread_name` |
 
 REG-01 counts also apply per guild (REG-02); `custom_id_len` also covers modal ids
 (MOD-08). Minima (0, 1, 2), protocol constants, timings, rate limits and codec widths
@@ -300,11 +301,11 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | ATT-05 | `attachment://` must reference an attached file | C / R |
 | ATT-06 | alt text ≤ 1024 (`alt!`); a rendered image in a Thumbnail/MediaItem needs its own alt (Strict error, Lenient/`cost` warning) | C / R |
 | ATT-07 | image formats png, jpg/jpeg, webp, gif | C |
-| WH-01 | `with_components=true` (automatic) | C |
-| WH-02 | foreign webhooks: non-interactive only | C |
-| WH-03 | V2 webhook body: no content/embeds/files/poll | C |
-| WH-04 | webhook name 1–80 | C / R |
-| WH-05 | forum/media channels need thread id or name | R |
+| WH-01 | `with_components=true` on every webhook execute and edit (automatic, no setter) | C |
+| WH-02 | foreign webhooks: non-interactive only (`ForeignWebhook` takes a `StaticMessage`, `[WH-02]` at `cargo check`; `StaticMessage::try_from` at run time) | C / R |
+| WH-03 | V2 webhook body: no content/embeds/files/poll; every edit clears them | C |
+| WH-04 | webhook name 1–80, no `clyde`/`discord` (`webhook_name!`, `WebhookName::try_new`) | C / R |
+| WH-05 | forum/media channels need a thread id or a new thread name (1–100, `Limits::webhook_thread_name_len`); a thread name only in forum/media | R |
 
 ## Gateway and HTTP
 

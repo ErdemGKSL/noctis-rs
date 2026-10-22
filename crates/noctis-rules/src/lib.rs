@@ -21,7 +21,9 @@
 //!   CV2-15..17).
 //! - [`modal`]: modals, Labels and their inputs (MOD-01..07).
 //! - [`message`]: legacy `content`, allowed mentions, nonce, stickers,
-//!   non-empty bodies and webhook names (MSG-01, MSG-03..06, MSG-09, WH-04).
+//!   non-empty bodies, webhook names and threads, and the non-interactive
+//!   components of foreign webhooks (MSG-01, MSG-03..06, MSG-09, WH-02, WH-04,
+//!   WH-05).
 //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
 //!   references (ATT-01..03, ATT-05, ATT-06).
 //! - [`cid`]: the route id grammar ([`cid::validate_route_id`]) and the

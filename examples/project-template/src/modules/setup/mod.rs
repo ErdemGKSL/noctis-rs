@@ -11,7 +11,7 @@ mod handlers;
 pub mod view;
 
 use noctis::BaseMeta;
-use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
+use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker, WebhookMarker};
 use noctis::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -145,4 +145,17 @@ pub struct GuildConfig {
 
 pub fn config_key(guild: Id<GuildMarker>) -> String {
     format!("guildcfg:{guild}")
+}
+
+/// The log channel's webhook, created by Finish (FR-65): an owned webhook, so a later
+/// log may carry buttons. The token is a secret: store it like a password and never log
+/// or show it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredWebhook {
+    pub id: Id<WebhookMarker>,
+    pub token: String,
+}
+
+pub fn log_webhook_key(guild: Id<GuildMarker>) -> String {
+    format!("logwebhook:{guild}")
 }

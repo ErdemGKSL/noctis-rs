@@ -107,9 +107,9 @@
 //! ```
 
 pub(crate) mod ergonomics;
-mod files;
+pub(crate) mod files;
 mod nonce;
-mod transport;
+pub(crate) mod transport;
 
 #[cfg(test)]
 pub(crate) mod tests;
@@ -1464,6 +1464,28 @@ impl Shared {
         })
     }
 
+    /// The state of one webhook send of the App behind `app` (see
+    /// `crate::webhook`): its signer, `RefStore` and Limits; its strings
+    /// with no locale (`en-US`); visibility public. Only [`prepare`] and
+    /// [`body`] are used on it.
+    ///
+    /// [`prepare`]: Self::prepare
+    /// [`body`]: Self::body
+    pub(crate) fn webhook(app: Arc<AppShared>) -> Arc<Self> {
+        let limits = app.limits.clone();
+        let strings = Arc::clone(&app.strings);
+        let shared = Self::build(
+            Transport::Webhook(app),
+            Declared::Reply(Ephemerality::Public),
+            None,
+            limits,
+            None,
+            true,
+        );
+        shared.set_i18n(strings, None, None);
+        shared
+    }
+
     /// Sets the strings and locales that resolve the locale keys of this
     /// run's sends; the first call wins.
     pub(crate) fn set_i18n(
@@ -1583,7 +1605,7 @@ impl Shared {
     fn file_limit(&self) -> Option<usize> {
         match &self.transport {
             Transport::Interaction(target) => target.file_limit,
-            Transport::Message(_) | Transport::Detached => None,
+            Transport::Message(_) | Transport::Detached | Transport::Webhook(_) => None,
         }
     }
 
@@ -1599,7 +1621,7 @@ impl Shared {
     ///
     /// [`ResponderError::Invalid`] over the Upload Budget,
     /// [`ResponderError::Encode`] when the JSON does not serialize.
-    fn body(
+    pub(crate) fn body(
         &self,
         msg: &OutgoingMessage,
         mut json: Value,
@@ -1621,6 +1643,7 @@ impl Shared {
         let app = match &self.transport {
             Transport::Interaction(target) => &target.app,
             Transport::Message(target) => &target.app,
+            Transport::Webhook(app) => app,
             Transport::Detached => return None,
         };
         app.payload_keys.as_deref().map(|keys| keys as &dyn Sign)
@@ -1633,6 +1656,7 @@ impl Shared {
         let app = match &self.transport {
             Transport::Interaction(target) => &target.app,
             Transport::Message(target) => &target.app,
+            Transport::Webhook(app) => app,
             Transport::Detached => return None,
         };
         Some((&app.refs, app.ref_ttl))
@@ -1734,7 +1758,7 @@ impl Shared {
     /// (FR-43), mints its Route `custom_id`s (storing their Refs), then
     /// validates it against the Limits (Lenient mode truncates). The
     /// Upload Budget is checked later, when the body is built.
-    async fn prepare(
+    pub(crate) async fn prepare(
         &self,
         msg: &mut OutgoingMessage,
         visibility: Ephemerality,
@@ -1880,7 +1904,9 @@ impl Shared {
                     ack_body = Some(ack);
                     (posted.message_id, posted.files.unwrap_or(body.kept))
                 }
-                Transport::Message(_) | Transport::Detached => (None, body.kept),
+                Transport::Message(_) | Transport::Detached | Transport::Webhook(_) => {
+                    (None, body.kept)
+                }
             }
         };
         self.state.store(REPLIED, Ordering::Release);
@@ -1934,7 +1960,7 @@ impl Shared {
                 ack = Some(target.callback_json(&body, with_response).await?);
             }
             Transport::Message(target) => target.typing().await?,
-            Transport::Detached => {}
+            Transport::Detached | Transport::Webhook(_) => {}
         }
         self.state.store(DEFERRED, Ordering::Release);
         self.set_original(Original {
@@ -1995,7 +2021,9 @@ impl Shared {
                 let files = transport::callback_posted(&ack).files.unwrap_or(body.kept);
                 (Some(ack), files)
             }
-            Transport::Message(_) | Transport::Detached => (None, body.kept),
+            Transport::Message(_) | Transport::Detached | Transport::Webhook(_) => {
+                (None, body.kept)
+            }
         };
         self.state.store(REPLIED, Ordering::Release);
         self.set_source_original(source, msg.format(), files);
@@ -2037,7 +2065,7 @@ impl Shared {
                     .callback_json(&json!({ "type": 6 }), with_response)
                     .await?,
             ),
-            Transport::Message(_) | Transport::Detached => None,
+            Transport::Message(_) | Transport::Detached | Transport::Webhook(_) => None,
         };
         self.state.store(DEFERRED_UPDATE, Ordering::Release);
         self.set_source_original(source, source.format, source.files.clone());
@@ -2276,7 +2304,7 @@ impl Shared {
                         let body = self.body(&msg, json, None, None)?;
                         Some(target.reply(body.payload).await?.0)
                     }
-                    Transport::Detached => None,
+                    Transport::Detached | Transport::Webhook(_) => None,
                 };
                 self.state.store(REPLIED, Ordering::Release);
                 self.set_original(Original {
@@ -2417,7 +2445,7 @@ fn resource_of(
 
 /// The JSON of a message body, or [`ResponderError::Encode`] (an
 /// unresolved Route `custom_id`).
-fn encode(body: MessageBody<'_>) -> Result<Value, ResponderError> {
+pub(crate) fn encode(body: MessageBody<'_>) -> Result<Value, ResponderError> {
     serde_json::to_value(body).map_err(|e| ResponderError::Encode {
         reason: e.to_string(),
     })

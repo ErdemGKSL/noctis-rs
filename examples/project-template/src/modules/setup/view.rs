@@ -3,9 +3,10 @@
 //! The setup flow's render functions. Pure: no I/O, so tests snapshot them directly.
 
 use noctis::prelude::*;
+use noctis::id::marker::UserMarker;
 use noctis::ui::{
     ActionRow, Button, ButtonStyle, Components, Container, ContainerComponent,
-    Separator, TextDisplay, V2Message,
+    Separator, StaticComponents, StaticContainer, StaticMessage, TextDisplay, V2Message,
 };
 
 use super::{CancelSetup, FinishSetup, GuildConfig, PickLogChannel, PickModRole, SetupState, SetupStep};
@@ -119,6 +120,19 @@ pub fn render_setup_done(config: GuildConfig, s: &Strings) -> V2Message {
         format!("<@&{}>", config.mod_role),
     );
     V2Message::new(Components::new().push(Container::new().accent(DONE).push(TextDisplay::new(text))))
+}
+
+/// The line Finish posts to the log channel through its webhook: static, so it would
+/// fit a webhook the bot does not own too (WH-02).
+pub fn render_setup_log(config: GuildConfig, by: Id<UserMarker>, s: &Strings) -> StaticMessage {
+    let text = s.setup.log_enabled(
+        format!("<@{by}>"),
+        format!("<#{}>", config.log_channel),
+        format!("<@&{}>", config.mod_role),
+    );
+    StaticMessage::new(
+        StaticComponents::new().push(StaticContainer::new().accent(DONE).push(TextDisplay::new(text))),
+    )
 }
 
 /// After Cancel: the same message, with no components left to click.

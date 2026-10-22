@@ -1,0 +1,5 @@
+error: [WH-04] name: limit between 1 and 80, actual 0
+ --> tests/ui/wh/WH-04_webhook_name_empty.rs:2:35
+  |
+2 |     let _ = noctis::webhook_name!("");
+  |                                   ^^

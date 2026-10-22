@@ -1563,5 +1563,5 @@ async fn renamed_calls_wire() {
 
 mod components;
 mod ergonomics;
-mod files;
+pub(crate) mod files;
 mod refs;

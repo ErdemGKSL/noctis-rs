@@ -247,6 +247,22 @@ impl App {
         &self.shared.http
     }
 
+    /// The App's webhook factory, for sends outside a handler (a startup
+    /// log, a scheduled job).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// use twilight_model::id::Id;
+    ///
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// let hook = app.webhooks().owned(Id::new(1), "token").unwrap();
+    /// assert_eq!(hook.token(), "token");
+    /// # }
+    /// ```
+    pub fn webhooks(&self) -> crate::Webhooks {
+        crate::Webhooks::of(Some(&self.shared))
+    }
+
     /// The HTTP request timeout (default 10 s).
     ///
     /// ```

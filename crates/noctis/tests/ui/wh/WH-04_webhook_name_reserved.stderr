@@ -1,0 +1,5 @@
+error: [WH-04] name: limit a name without `clyde` or `discord` (any case), actual `Discord log`
+ --> tests/ui/wh/WH-04_webhook_name_reserved.rs:2:35
+  |
+2 |     let _ = noctis::webhook_name!("Discord log");
+  |                                   ^^^^^^^^^^^^^

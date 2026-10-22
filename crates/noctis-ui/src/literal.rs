@@ -1,7 +1,7 @@
 //! Checked text newtypes: [`Label`] (CV2-08), [`Placeholder`] (CV2-09),
-//! [`Content`] (MSG-01) and [`AltText`] (ATT-06).
+//! [`Content`] (MSG-01), [`AltText`] (ATT-06) and [`WebhookName`] (WH-04).
 //!
-//! `label!`, `placeholder!`, `content!` and `alt!` build them from a literal and
+//! `label!`, `placeholder!`, `content!`, `alt!` and `webhook_name!` build them from a literal and
 //! check its length at `cargo check`; `try_new` and `TryFrom` are the runtime
 //! path and call the same `noctis-rules` function. Neither ever truncates:
 //! Lenient truncation belongs to [`validate`](crate::validate). Each converts
@@ -12,7 +12,7 @@ use std::borrow::Cow;
 
 use noctis_rules::attachment::validate_attachment_description;
 use noctis_rules::component::{validate_button_label, validate_select_placeholder};
-use noctis_rules::message::validate_content;
+use noctis_rules::message::{validate_content, validate_webhook_name};
 use noctis_rules::{Limits, Violation};
 
 use crate::Text;
@@ -183,4 +183,74 @@ literal_newtype! {
     /// # Ok::<(), UiError>(())
     /// ```
     AltText, validate_attachment_description
+}
+
+literal_newtype! {
+    /// A webhook name (or a per-message `username`) of 1 to 80 characters,
+    /// measured with `discord_len`, without `clyde` or `discord` in any
+    /// ASCII case (WH-04).
+    ///
+    /// `webhook_name!("Audit log")` checks a literal at `cargo check`;
+    /// `try_new` and `TryFrom` check runtime text with
+    /// `noctis_rules::message::validate_webhook_name` (path `name`), the
+    /// function the macro calls.
+    ///
+    /// ```
+    /// use noctis_rules::{Limits, RuleId};
+    /// use noctis_ui::{UiError, WebhookName};
+    ///
+    /// assert_eq!(WebhookName::try_from("Audit log")?.as_str(), "Audit log");
+    /// let Err(UiError::Limits { violations }) = WebhookName::try_new("Discord bot", &Limits::default()) else {
+    ///     panic!("a reserved word");
+    /// };
+    /// assert_eq!((violations[0].rule, violations[0].path.as_str()), (RuleId::WH_04, "name"));
+    /// # Ok::<(), UiError>(())
+    /// ```
+    WebhookName, validate_webhook_name
+}
+
+#[cfg(test)]
+mod tests {
+    use noctis_rules::{Bound, RuleId};
+
+    use super::*;
+
+    fn bounds(name: String) -> Vec<(RuleId, Bound)> {
+        match WebhookName::try_new(name, &Limits::default()) {
+            Ok(_) => Vec::new(),
+            Err(UiError::Limits { violations }) => {
+                violations.into_iter().map(|v| (v.rule, v.limit)).collect()
+            }
+            Err(other) => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wh_04_webhook_name_bounds() {
+        for ok in ["a".to_owned(), "a".repeat(80), "😀".repeat(40)] {
+            assert!(bounds(ok).is_empty());
+        }
+        let between = (RuleId::WH_04, Bound::Between { min: 1, max: 80 });
+        for bad in [String::new(), "a".repeat(81), "😀".repeat(41)] {
+            assert_eq!(bounds(bad), std::slice::from_ref(&between));
+        }
+    }
+
+    #[test]
+    fn wh_04_webhook_name_reserved_words() {
+        let reserved = (
+            RuleId::WH_04,
+            Bound::Describe("a name without `clyde` or `discord` (any case)"),
+        );
+        for bad in ["Clyde", "my discord log", "DISCORD"] {
+            assert_eq!(
+                bounds(bad.to_owned()),
+                std::slice::from_ref(&reserved),
+                "{bad}"
+            );
+        }
+        for ok in ["clyd e", "Díscord"] {
+            assert!(bounds(ok.to_owned()).is_empty(), "{ok}");
+        }
+    }
 }

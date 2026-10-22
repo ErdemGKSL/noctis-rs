@@ -158,6 +158,16 @@ impl RawComponent {
         self.count
     }
 
+    /// Pushes one WH-02 violation per interactive node of the walk (the
+    /// keys the construction check walks: `components`, `accessory`,
+    /// `component`): an object whose integer `type` is a select (3, 5, 6, 7,
+    /// 8), or a button (2) whose `style` is not 5 (link). Paths are
+    /// `<path>.<json path>` (`path` alone for the root). For
+    /// [`StaticMessage::try_from`](crate::StaticMessage).
+    pub(crate) fn static_violations(&self, path: &str, out: &mut Vec<Violation>) {
+        static_walk(&self.value, path, out);
+    }
+
     /// Every string value that starts with `attachment://`, at any key and
     /// depth, in document order.
     pub(crate) fn attachment_urls(&self) -> Vec<&str> {
@@ -284,6 +294,42 @@ impl Check {
     }
 }
 
+/// The WH-02 bound of an interactive raw node.
+const STATIC_ONLY: Bound = Bound::Describe(
+    "a non-interactive component (a link button, text, media, file, separator, container or section)",
+);
+
+/// The walk of [`RawComponent::static_violations`]; the construction check
+/// already bounded its depth.
+fn static_walk(value: &Value, path: &str, out: &mut Vec<Violation>) {
+    let Some(map) = value.as_object() else {
+        return;
+    };
+    let kind = match map.get("type").and_then(Value::as_u64) {
+        Some(3 | 5..=8) => Some("select"),
+        Some(2) if map.get("style").and_then(Value::as_u64) != Some(5) => Some("button"),
+        _ => None,
+    };
+    if let Some(kind) = kind {
+        out.push(Violation::new(
+            RuleId::WH_02,
+            path.to_owned(),
+            STATIC_ONLY,
+            Actual::Text(kind.to_owned()),
+        ));
+    }
+    if let Some(children) = map.get("components").and_then(Value::as_array) {
+        for (i, child) in children.iter().enumerate() {
+            static_walk(child, &join(path, &format!("components[{i}]")), out);
+        }
+    }
+    for key in ["accessory", "component"] {
+        if let Some(child) = map.get(key) {
+            static_walk(child, &join(path, key), out);
+        }
+    }
+}
+
 /// The message component types Noctis models.
 const MODELED: [u64; 14] = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17];
 
@@ -359,6 +405,45 @@ mod tests {
 
     fn count(value: Value) -> usize {
         RawComponent::new(value).expect("a valid raw node").count()
+    }
+
+    fn static_paths(value: Value) -> Vec<(RuleId, String)> {
+        let mut out = Vec::new();
+        RawComponent::new(value)
+            .expect("a valid raw node")
+            .static_violations("opaque[0]", &mut out);
+        out.into_iter().map(|v| (v.rule, v.path)).collect()
+    }
+
+    #[test]
+    fn wh_02_raw_static_walk() {
+        assert_eq!(
+            static_paths(
+                json!({"type": 1, "components": [{"type": 2, "style": 1, "custom_id": "x"}]})
+            ),
+            [(RuleId::WH_02, "opaque[0].components[0]".to_owned())]
+        );
+        assert!(
+            static_paths(
+                json!({"type": 1, "components": [{"type": 2, "style": 5, "url": "https://a.b"}]})
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            static_paths(json!({"type": 17, "components": [{"type": 3, "custom_id": "s"}]})),
+            [(RuleId::WH_02, "opaque[0].components[0]".to_owned())]
+        );
+        assert!(static_paths(json!({"type": 10, "content": "a"})).is_empty());
+        assert_eq!(
+            static_paths(json!({"type": 2, "style": 6, "sku_id": "1"})),
+            [(RuleId::WH_02, "opaque[0]".to_owned())]
+        );
+        assert_eq!(
+            static_paths(
+                json!({"type": 9, "components": [], "accessory": {"type": 2, "style": 2}})
+            ),
+            [(RuleId::WH_02, "opaque[0].accessory".to_owned())]
+        );
     }
 
     #[test]

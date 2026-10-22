@@ -11,7 +11,10 @@
 
 use noctis::Permissions;
 use noctis::prelude::*;
-use noctis::testkit::{ResponseKind, TestApp, TestGuild, TestUser};
+use std::sync::{Arc, Mutex};
+
+use noctis::testkit::fake::{FakeResponse, Method, RecordedRequest, StatusCode};
+use noctis::testkit::{Response, ResponseKind, TestApp, TestGuild, TestUser};
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 use noctis_bot_template::configure;
@@ -72,6 +75,69 @@ async fn setup_flow_validates_then_finishes() -> anyhow::Result<()> {
     let done = app.click(step3.button("Finish")?).by(ADMIN).run().await?;
     assert!(done.text().contains("Setup complete"));
     assert!(done.components().is_empty());
+    Ok(())
+}
+
+/// Runs `/setup start` to its Finish click for `ADMIN`.
+async fn finish_setup(app: &TestApp) -> anyhow::Result<Response> {
+    let step1 = app.command("setup start").by(ADMIN).in_guild(GUILD).run().await?;
+    let picked = app
+        .select(step1.component::<PickLogChannel>()?)
+        .channels([LOGS])
+        .by(ADMIN)
+        .run()
+        .await?;
+    let step2 = app.click(picked.button("Next")?).by(ADMIN).run().await?;
+    let step2 = app
+        .select(step2.component::<PickModRole>()?)
+        .roles([MODS])
+        .by(ADMIN)
+        .run()
+        .await?;
+    let step3 = app.click(step2.button("Next")?).by(ADMIN).run().await?;
+    Ok(app.click(step3.button("Finish")?).by(ADMIN).run().await?)
+}
+
+/// Finish posts a static log line through the bot's own webhook in the log channel
+/// (FR-65): created once, stored, reused on the next Finish.
+#[tokio::test(flavor = "multi_thread")]
+async fn setup_finish_logs_through_its_webhook() -> anyhow::Result<()> {
+    let app = app().await?;
+    let log: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
+    let record = |answer: serde_json::Value| {
+        let log = Arc::clone(&log);
+        move |request: &RecordedRequest| {
+            log.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(request.clone());
+            FakeResponse::json(StatusCode::OK, &answer)
+        }
+    };
+    app.http_fake()
+        .route_with(
+            Method::POST,
+            format!("/channels/{LOGS}/webhooks"),
+            record(serde_json::json!({"id": "900", "token": "log-token", "channel_id": LOGS.to_string()})),
+        )
+        .route_with(
+            Method::POST,
+            "/webhooks/900/log-token",
+            record(serde_json::json!({"id": "71", "channel_id": LOGS.to_string(), "attachments": []})),
+        );
+
+    for _ in 0..2 {
+        assert!(finish_setup(&app).await?.text().contains("Setup complete"));
+    }
+
+    let requests = log.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let creates = requests.iter().filter(|r| r.path.ends_with("/webhooks")).count();
+    let sends: Vec<_> = requests.iter().filter(|r| r.path.ends_with("/log-token")).collect();
+    assert_eq!((creates, sends.len()), (1, 2), "created once, then reused");
+    for send in sends {
+        assert_eq!(send.query.as_deref(), Some("wait=true&with_components=true"));
+        let body = send.json().ok_or_else(|| anyhow::anyhow!("webhook body is not JSON"))?;
+        assert_eq!(body["flags"], 32768);
+        assert!(body.get("content").is_none());
+        assert_eq!(body["components"][0]["type"], 17);
+    }
     Ok(())
 }
 

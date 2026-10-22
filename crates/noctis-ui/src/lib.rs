@@ -270,10 +270,14 @@ pub use components::Components;
 pub use error::UiError;
 pub use escape::{escape_markdown, escape_mentions};
 pub use limits::{Budget, CostReport, LimitWarning, Validate, cost, validate};
-pub use literal::{AltText, Content, Label, Placeholder};
+pub use literal::{AltText, Content, Label, Placeholder, WebhookName};
+#[doc(hidden)]
+pub use message::__into_static;
 pub use message::{
-    CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,
-    Roles, Users, V2Message,
+    CallbackFlags, CreateFlags, EditFlags, IntoStaticMessage, LegacyMessage, Mentions, MessageBody,
+    MessageFormat, Roles, StaticAccessory, StaticActionRow, StaticComponents, StaticContainer,
+    StaticContainerChild, StaticMessage, StaticRowButton, StaticSection, StaticTopLevel, Users,
+    V2Message,
 };
 pub use modal::{
     Checkbox, CheckboxGroup, Choices, DownloadError, FileFetcher, FileUpload, InputField,

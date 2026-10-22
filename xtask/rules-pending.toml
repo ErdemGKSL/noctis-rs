@@ -54,31 +54,6 @@ evidence = "by-construction"
 story = "10.4"
 
 [[rule]]
-id = "WH-01"
-evidence = "by-construction"
-story = "9.5"
-
-[[rule]]
-id = "WH-02"
-evidence = "diagnosed"
-story = "9.5"
-
-[[rule]]
-id = "WH-03"
-evidence = "by-construction"
-story = "9.5"
-
-[[rule]]
-id = "WH-04"
-evidence = "diagnosed"
-story = "9.5"
-
-[[rule]]
-id = "WH-05"
-evidence = "unit"
-story = "9.5"
-
-[[rule]]
 id = "RL-01"
 evidence = "unit"
 story = "12.4"

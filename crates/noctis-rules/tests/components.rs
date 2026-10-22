@@ -1,6 +1,6 @@
 //! The Story 1.6 acceptance criteria through the public API: each rule's limit
 //! passes and limit + 1 fails (CV2-03..15, MOD-01..07, MSG-01, MSG-04, MSG-06,
-//! ATT-01..03, ATT-05, ATT-06, WH-04, INT-07), and lowered overrides apply.
+//! ATT-01..03, ATT-05, ATT-06, WH-02, WH-04, WH-05, INT-07), and lowered overrides apply.
 
 use noctis_rules::attachment::{
     AttachmentDecl, validate_attachment_description, validate_attachment_ref, validate_attachments,
@@ -12,8 +12,9 @@ use noctis_rules::component::{
     validate_legacy_components, validate_spacing,
 };
 use noctis_rules::message::{
-    AllowedMentions, MentionIds, validate_content, validate_mentions, validate_nonce,
-    validate_sticker_ids, validate_webhook_name,
+    AllowedMentions, MentionIds, WebhookThreadDecl, validate_content, validate_mentions,
+    validate_nonce, validate_static_components, validate_sticker_ids, validate_webhook_name,
+    validate_webhook_thread,
 };
 use noctis_rules::modal::{
     Checkbox, CheckboxGroup, FileUpload, Label, LabelChild, Modal, ModalComponent, ModalOption,
@@ -327,6 +328,41 @@ fn wh_04_webhook_name() {
         ids(&validate_webhook_name(&"a".repeat(81), &l)),
         [RuleId::WH_04]
     );
+    assert_eq!(
+        ids(&validate_webhook_name("Clyde log", &l)),
+        [RuleId::WH_04]
+    );
+}
+
+#[test]
+fn wh_05_webhook_thread() {
+    let l = defaults();
+    assert!(
+        validate_webhook_thread(true, WebhookThreadDecl::Name(&"a".repeat(100)), &l).is_empty()
+    );
+    assert_eq!(
+        ids(&validate_webhook_thread(
+            true,
+            WebhookThreadDecl::Name(&"a".repeat(101)),
+            &l
+        )),
+        [RuleId::WH_05]
+    );
+    assert_eq!(
+        ids(&validate_webhook_thread(true, WebhookThreadDecl::None, &l)),
+        [RuleId::WH_05]
+    );
+}
+
+#[test]
+fn wh_02_static_components() {
+    let link = Component::Button(Button::new(ButtonStyle::Link("https://a.b")));
+    let links = [link];
+    let mixed = [link, B];
+    assert!(validate_static_components(&[Component::Row(&links)]).is_empty());
+    let errs = validate_static_components(&[Component::Row(&mixed)]);
+    assert_eq!(ids(&errs), [RuleId::WH_02]);
+    assert_eq!(errs[0].path, "row[0].button[1]");
 }
 
 #[test]

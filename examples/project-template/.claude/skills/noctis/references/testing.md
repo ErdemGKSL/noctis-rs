@@ -199,6 +199,31 @@ let call = again.http_calls().iter().find(|c| c.path().ends_with("/callback")).u
 assert!(call.files().is_empty());                        // kept by id
 ```
 
+### The HTTP fake: endpoints the wire does not model
+
+`app.http_fake()` is the `FakeDiscordHttp` (`noctis::testkit::fake`) the App sends to. The
+built-in wire answers interactions, messages and the gateway; register answers for
+anything else (Create Webhook, Execute Webhook, a raw REST call) before the run:
+
+| Item | What it does |
+| --- | --- |
+| `.route(Method, path, FakeResponse)` / `.route_with(Method, path, \|&RecordedRequest\| FakeResponse)` | answers `path` (relative to `/api/v10`, compared raw); the last registration wins; a registered route wins over the built-in answers; chainable |
+| `.fallback_with(\|&RecordedRequest\| Option<FakeResponse>)` | answers every unmatched path; `None` keeps Discord's `404` |
+| `.requests()` / `.take_requests()` / `.clear_requests()` | the recorded requests (copy, drain, clear); `response.http_calls()` is the per-run view |
+| `.stall(Method, path, n)` | the next `n` requests to `path` never get an answer (timeout tests) |
+| `.black_hole()` / `.close_connections()` | silently stop answering on / close every open connection; each returns the count |
+| `.connections()` | `Vec<RecordedHttpConnection>` (`id`, `protocol: HttpProtocol::{Http1, Http2}`, `opened_at`, `closed_at`, `requests`, `pings`, `black_holed`) |
+| `.set_gateway_bot(GatewayBot)` | the `GET /gateway/bot` answer: `GatewayBot { url, shards, session_start_limit: SessionStartLimit { total, remaining, reset_after_ms, max_concurrency } }`, `Default`, `.to_json()` |
+| `FakeDiscordHttp::start()` / `start_with(GatewayBot)`, `.url()`, `.addr()`, `.attach(&mut builder)` | a standalone fake for an `App` you build yourself; `TestApp` already does this |
+
+- `FakeResponse::json(StatusCode, &Value)`, `FakeResponse::new(StatusCode, bytes)`,
+  `FakeResponse::empty(StatusCode)`, `.header(HeaderName, HeaderValue)`, `.delay(Duration)`.
+- `RecordedRequest`: pub `method`, `path` (with `/api/v10`), `query`, `headers: HeaderMap`,
+  `body`, `connection`; `.route_path()` (the path after `/api/v10`), `.json()`,
+  `.files()`. `Method`, `StatusCode`, `HeaderMap`, `HeaderName` and `HeaderValue` are
+  re-exported from `http`.
+- A webhook recipe (create, execute, assert the query and body) is in `responder.md` §7.
+
 ## 5. Unit-testing a render function without an App
 
 A View is a plain function, so call it:
