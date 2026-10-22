@@ -384,3 +384,9 @@ impl Warn {
   generated per modal (`BioFormOverrides { title, bio: InputOverrides, .. }`, field names
   checked by rustc) and changes presentation only (title; per input label, description,
   placeholder), never values.
+- Literal versus localized text is decided by syntax, never by the `i18n` feature (this
+  replaces §7's "a literal without the `i18n` feature; with it, a locale key"): a string
+  literal is always hard-coded text, a path (`keys::PROFILE_SAVE`, a `MessageKey`) is
+  always a locale key. At run time overrides take `impl Into<Text>` (`&str`/`String` or
+  `MessageKey`). Existing key-looking literals in the template (`label =
+  "profile.edit_bio"`) become `keys::…` paths when Story 11.1 ships.
