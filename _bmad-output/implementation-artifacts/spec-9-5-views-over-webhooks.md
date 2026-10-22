@@ -2,7 +2,8 @@
 title: 'Story 9.5: Views over webhooks'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'd6d8779f0f53566a85a2e4787f60d4eab190d007'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

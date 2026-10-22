@@ -120,7 +120,7 @@ development_status:
   9-2-raw-escape-hatch-for-components-and-rest: done
   9-3-route-component-defaults-with-per-render-overrides: done
   # 9-4-modal-pre-fill: merged into 9-3 (maintainer decision 2026-10-22)
-  9-5-views-over-webhooks: backlog
+  9-5-views-over-webhooks: in-progress
   epic-9-retrospective: optional
 
   epic-10: backlog
