@@ -634,7 +634,12 @@ async fn idle_connection_stays_warm_with_pings() {
     let fake = FakeDiscordHttp::start().await.unwrap();
     let gw = FakeGateway::start().await.unwrap();
     let mut b = builder(&fake);
-    b.http(fast_pings());
+    // Fast PINGs, but the default 5 s ACK timeout: a scheduler stall on a
+    // loaded host must not turn a slow ACK into a ping-timeout redial here
+    // (the black-hole tests cover the 1 s timeout).
+    let mut config = fast_pings();
+    config.ping_timeout = HttpConfig::default().ping_timeout;
+    b.http(config);
     let running = Running::start(&mut b, &gw).await;
     let _ = Metrics::take(snapshotter);
     let requests = fake.requests().len();

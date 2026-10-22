@@ -757,22 +757,36 @@ handle, told apart by type (`noctis::webhook`):
 ```rust
 use noctis::prelude::*;
 use noctis::twilight::model::channel::ChannelType;
-use noctis::webhook::{WebhookChannel, WebhookThread};
+use noctis::webhook::{WebhookChannel, WebhookError, WebhookThread};
 
-// Create once (the bot needs MANAGE_WEBHOOKS), store id + token like a password.
+// Create once (the bot needs MANAGE_WEBHOOKS), store id + token + channel like a password.
 let hook = ctx
     .webhooks()
     .create(WebhookChannel::new(log_channel, ChannelType::GuildText), webhook_name!("Audit log"))
     .await?;
-store(hook.id(), hook.token());
+store(hook.id(), hook.token(), log_channel);
 
-// Later: rebuild it from the stored credentials and send any View.
+// Later: reuse the stored webhook only while it is the configured channel's (else
+// create and overwrite); a 404 means it was deleted in Discord: forget it, create a new
+// one and send once more (the template's `setup/handlers.rs` `post_log` does this).
 let hook = ctx.webhooks().owned(id, token)?.in_channel(ChannelType::GuildText);
-let posted = hook
+let sent = hook
     .send(render_log(&entry, &s))                  // V2Message from your render fn
     .username(webhook_name!("Case bot"))           // per-message persona (WH-04)
     .avatar_url("https://example.com/avatar.png")
-    .await?;                                       // WebhookMessage<Owned>
+    .await;                                        // WebhookMessage<Owned>
+let posted = match sent {
+    Err(WebhookError::Rejected { status: 404, .. }) => {
+        forget(); // delete the stored credentials
+        let hook = ctx
+            .webhooks()
+            .create(WebhookChannel::new(log_channel, ChannelType::GuildText), webhook_name!("Audit log"))
+            .await?;
+        store(hook.id(), hook.token(), log_channel);
+        hook.send(render_log(&entry, &s)).await?
+    }
+    sent => sent?,
+};
 posted.edit(render_log(&closed, &s)).await?;       // keeps its attachments
 posted.delete().await?;
 
@@ -814,7 +828,19 @@ mirror.send(render_notice(&s)).await?;             // render_notice -> StaticMes
 - **Validation.** A send or edit runs the Responder's preparation: locale keys, Route
   ids, Refs and nonces, `Limits`, the Upload Budget, attachments.
 - **Tokens are secrets.** `Webhook`'s `Debug` prints no token, errors never contain it,
-  and Noctis never logs it. Keep it out of your own logs and messages.
+  and Noctis never logs it. twilight-http's `req` span carries the request URL, which
+  for a webhook-token request contains the token, so keep `twilight_http=warn` in your
+  `RUST_LOG` filter (the template's default does). Keep it out of your own logs and
+  messages.
+- **Store and reuse a created webhook.** A channel holds at most 15 webhooks (beyond:
+  `Rejected { status: 400, code: Some(30007) }`), and lost credentials leak a webhook
+  Noctis cannot delete, so store the created webhook's credentials and reuse them.
+- **Ownership is your declaration.** Noctis does not verify that `owned(..)` credentials
+  belong to the App; a webhook the App did not create goes in `foreign(..)`. Discord
+  refuses interactive components through a non-owned webhook (`WebhookError::Rejected`).
+- **Refs expire.** Route buttons on an owned webhook message mint Refs with the App's
+  `ref_ttl`, so a `by_ref` button on a long-lived log or persona message expires into
+  `on_expired`. Prefer inline (non-`by_ref`) Routes there, or a longer `ttl`.
 
 **Errors** (`WebhookError`, `#[non_exhaustive]`; `?` converts it into a handler error):
 

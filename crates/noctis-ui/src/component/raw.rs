@@ -444,6 +444,17 @@ mod tests {
             ),
             [(RuleId::WH_02, "opaque[0].accessory".to_owned())]
         );
+        for kind in 5..=8 {
+            assert_eq!(
+                static_paths(json!({"type": 1, "components": [{"type": kind, "custom_id": "u"}]})),
+                [(RuleId::WH_02, "opaque[0].components[0]".to_owned())],
+                "select type {kind}"
+            );
+        }
+        assert_eq!(
+            static_paths(json!({"type": 1, "components": [{"type": 2, "custom_id": "x"}]})),
+            [(RuleId::WH_02, "opaque[0].components[0]".to_owned())]
+        );
     }
 
     #[test]

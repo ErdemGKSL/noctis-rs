@@ -20,8 +20,13 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // `twilight_http=warn`: twilight-http's `req` span carries the request URL, which
+    // holds the token of a webhook request.
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,twilight_http=warn".into()),
+        )
         .init();
 
     // `App::from_env` reads NOCTIS_* variables (token, payload key, shard range, proxy).

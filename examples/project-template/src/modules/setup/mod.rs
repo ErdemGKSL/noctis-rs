@@ -149,11 +149,13 @@ pub fn config_key(guild: Id<GuildMarker>) -> String {
 
 /// The log channel's webhook, created by Finish (FR-65): an owned webhook, so a later
 /// log may carry buttons. The token is a secret: store it like a password and never log
-/// or show it.
+/// or show it. `channel` is the channel it posts in: a new log channel needs a new
+/// webhook.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredWebhook {
     pub id: Id<WebhookMarker>,
     pub token: String,
+    pub channel: Id<ChannelMarker>,
 }
 
 pub fn log_webhook_key(guild: Id<GuildMarker>) -> String {

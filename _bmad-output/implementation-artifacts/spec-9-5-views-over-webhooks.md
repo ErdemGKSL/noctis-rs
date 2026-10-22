@@ -2,10 +2,10 @@
 title: 'Story 9.5: Views over webhooks'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'd6d8779f0f53566a85a2e4787f60d4eab190d007'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-9-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -250,6 +250,47 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 37 findings — high 0, medium 9, low 15, false 13, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) Webhook token reaches tracing through twilight-http's `req` span — twilight-http 0.17.1 `client/mod.rs` L3000 opens `info_span!("req", url = url)` with the token path and emits INFO/WARN events inside it; the template's default `info` filter prints it. Patch: narrow the "never logged" claim, document the span, add `twilight_http=warn` to the template's default filter.
+  - `[medium]` `[patch]` (blind) Template's stored webhook ignores a changed log channel and a deleted webhook — `log_webhook` reuses `logwebhook:{guild}` unconditionally; `StoredWebhook` has no channel id. Patch: store and compare the channel, recreate on 404.
+  - `[low]` `[patch]` (blind) No webhook delete, 15-per-channel cap undocumented — the delete-webhook endpoint is excluded by the intent's Never list; the cap (30007) is real and undocumented. Patch: one doc sentence on `create` and in responder.md §7.
+  - `[low]` `[patch]` (blind) WH-03 Limit cell still says `files[n]` → 400 on V2 execute — `docs/discord-rules.md` L275 contradicts the uploads `files_upload_and_budget` pins. Patch: reword the cell (grouped with intent D6).
+  - `[low]` `[patch]` (blind) `Webhooks::owned` takes the caller's word; WH-02 refusal untyped — ownership is a declaration by design (spec Boundaries; GET webhook excluded), but the rustdoc does not say so. Patch: document it in `owned`'s rustdoc.
+  - `[false]` `[reject]` (blind) `create` does not check the channel kind — a thread/DM/category makes Discord refuse Create Webhook, which comes back loudly as typed `WebhookError::Rejected`; the returned `channel_id` is the requested one.
+  - `[false]` `[reject]` (blind) `Transport::Webhook` arms pretend success — the spec settles them as Detached-like; `Shared::webhook` is only used by `webhook.rs`, which calls `prepare`/`body` and never an interaction method.
+  - `[false]` `[reject]` (blind) `From<ResponderError>` catch-all loses information — spec mandates it; the unlisted variants (`EphemeralUnsupported`, `TokenExpired`, `FollowupCap`, `NoReply`, `ModalUnavailable`, `UpdateUnavailable`, `AlreadyResponded`, `AckDeadlineMissed`) are interaction-only and unreachable from webhook paths; there is no timeout variant.
+  - `[low]` `[reject]` (blind) `avatar_url` unchecked — a bad URL gets Discord's typed `Rejected{400,..}`; rare, and a URL check adds a new guard beyond a direct correction.
+  - `[false]` `[reject]` (blind) Missing test: template failure path — `setup_flow_validates_then_finishes` runs Finish with no fake webhook routes and asserts "Setup complete"; `WebhookError`'s messages carry no token.
+  - `[medium]` `[patch]` (blind) Missing test: forum `Create` handle edit/delete sends the post's channel id as `thread_id` — no handle edit after a thread send is tested. Grouped with vgap "handle edit in thread" and intent D3: add `handle_edit_in_thread`.
+  - `[low]` `[patch]` (blind) Missing test: multi-byte `thread_name` at 100 — grouped with vgap "thread_name unknown kind": extend `wh_05_thread_name_bounds`.
+  - `[low]` `[patch]` (blind) Missing test: raw button without `style` — `static_walk` flags it today (`!= Some(5)`), but no test pins it. Grouped with vgap "raw types 5-8": extend `wh_02_raw_static_walk`.
+  - `[low]` `[patch]` (blind) Docs do not warn that Refs on webhook messages expire — owned sends mint Refs with the App's `ref_ttl`; long-lived log messages outlive them. Patch: a note in module docs and responder.md §7.
+  - `[false]` `[reject]` (blind) `Webhook::ready` re-validates the token — the spec orders the token check first before any request; no harm named.
+  - `[low]` `[reject]` (edge) Concurrent handle edits race on `KnownFiles` — real but needs two concurrent edits of one message; the fix (an async mutex across the request) adds state and complexity.
+  - `[low]` `[reject]` (edge) `avatar_url` unvalidated — same as the blind row: Discord's typed 400, a new guard is more than a direct correction.
+  - `[medium]` `[patch]` (edge) Stored webhook reused after the log channel changes — grouped with the blind template row.
+  - `[medium]` `[patch]` (edge) Stored webhook deleted in Discord (10015) fails forever — grouped with the blind template row.
+  - `[low]` `[reject]` (edge) Concurrent Finish clicks or a failed `put` leak a duplicate webhook — needs a double submit or a KV failure; the fix (compare-and-set, cleanup through an out-of-scope delete endpoint) is more than a direct correction.
+  - `[false]` `[reject]` (intent D1) FR-65's "dynamic attempt is a typed error" met only by `try_from` — the epics AC places it under `ForeignWebhook::send`, which accepts only `StaticMessage`; `try_from` is the only dynamic path into it, as the spec settled.
+  - `[false]` `[reject]` (intent D2) Ownership declared, not established — spec deliberately settles `owned(id, token)` for stored credentials; verifying needs the GET webhook endpoint the intent excludes (documentation gap patched under the blind `owned` row).
+  - `[medium]` `[patch]` (intent D3) AC1's create → send → handle edit wire not tested — grouped into `handle_edit_in_thread` (query, cleared fields, flags, no `Authorization`).
+  - `[false]` `[reject]` (intent D4) Click round trip not tested — dispatch is keyed only by the `custom_id`, whose prefixes and Ref storage are asserted; the carrier message does not enter routing.
+  - `[false]` `[reject]` (intent D5) Link buttons allowed in `StaticMessage` — spec Design Notes settle Discord's "non-interactive" reading.
+  - `[low]` `[patch]` (intent D6) WH-03 cell vs `files[n]` uploads — grouped with the blind WH-03 row.
+  - `[false]` `[reject]` (intent D7) WH-05 for unknown kind only after a request — spec Design Notes ("Channel kind") settle this; Discord's 220001/220003 map to the typed error.
+  - `[false]` `[reject]` (intent D8) WH-04 widened (clyde/discord, persona) — spec Boundaries settle it as Discord's Create Webhook rule.
+  - `[low]` `[reject]` (intent D9) Webhook token not `Zeroizing` (maintainer §5) — §5 sits under the template's bootstrap Memory bullet; noctis-core cannot add `zeroize` (Never: new deps) and keeps the token as a `String`, so wrapping only the template field wipes nothing; more than a direct correction.
+  - `[false]` `[reject]` (intent D10) `SUPPRESS_EMBEDS` on Edit Webhook Message unverified — Discord's Edit Webhook Message docs: "The `SUPPRESS_EMBEDS` flag can be both set and unset".
+  - `[false]` `[reject]` (intent D11) `skill-check` result not visible in the diff — a gate result, not a code defect; it runs in Verification.
+  - `[medium]` `[patch]` (vgap) Webhook locale-key resolution untested — pre-verified. Patch: `webhook_resolves_locale_keys`.
+  - `[medium]` `[patch]` (vgap) Handle edit inside a thread never checked for `thread_id` — pre-verified; grouped into `handle_edit_in_thread`.
+  - `[medium]` `[patch]` (vgap) Second handle edit never run (`KnownFiles` update unpinned) — pre-verified. Patch: extend `handle_edit_diffs_attachments`.
+  - `[low]` `[patch]` (vgap) 220001/220003 mapping untested on edit/delete — pre-verified. Patch: extend `wh_05_discord_forum_errors`.
+  - `[low]` `[patch]` (vgap) `thread_name` length never checked for an unknown-kind handle — pre-verified; grouped with the blind multi-byte row.
+  - `[low]` `[patch]` (vgap) Raw WH-02 walk tested only with select type 3 — pre-verified; grouped with the blind no-style row.
+
 ## Design Notes
 
 - **Static types, not a generic tree.** The erased nodes (`Container`, `Section`, `ActionRow`) can hold anything, so WH-02 cannot be a bound on them without a type parameter on the whole UI kit. Parallel static builders that lower into the same erased nodes give a `[WH-02]` compile error at the push site and reuse every serializer and validator. Run-time trees (`components!`, raw JSON) take the `try_from` path.
@@ -281,3 +322,16 @@ deferred: []
 - `cargo +1.91 check --release --workspace` -- ok
 - `cargo test --release --manifest-path examples/project-template/Cargo.toml` -- template flows pass
 - `test ! -d target/debug` -- no debug profile
+
+## Auto Run Result
+
+- **Summary:** Views over webhooks (FR-65, WH-01..05): `ctx.webhooks()` with `create(WebhookChannel, webhook_name!)`, `owned(id, token)` and `foreign(id, token)`; owned sends reuse the Responder (Route ids, Refs, nonces, locale keys in en-US, Limits, content-addressed attachments) and return a handle with edit/delete; foreign webhooks accept only `StaticMessage`/`StaticComponents` (compile-time `[WH-02]`, `try_from` for run-time trees); webhook-token routes send no bot token; every edit clears `content`/`embeds`/`poll`; Discord 220001/220003 map to typed WH-05. Template setup module posts to a log channel through a stored webhook.
+- **Files changed:** `crates/noctis-core/src/webhook.rs` (+tests) webhook API and transport; `crates/noctis-ui` static builders and raw WH-02 walk; `crates/noctis-macros` `webhook_name!` (WH-04); `crates/noctis/tests/ui/wh/` trybuild compile_fail cases; `crates/noctis/tests/webhook.rs` and `noctis-testkit/tests/http_edge.rs` wire tests; `docs/discord-rules.md` WH rows; `xtask/public-api.txt` re-blessed, `xtask/rules-pending.toml` WH entries removed; `examples/project-template/` setup module, flows tests, AGENTS.md, Usage Skill (responder.md §7, components-v2, limits, testing, troubleshooting).
+- **Review findings (37: high 0, medium 9, low 15, false 13):**
+  - Patched (9 medium, 12 low, grouped): token in twilight-http `req` span documented and template default filter gets `twilight_http=warn`; template stores the log channel id and recreates the webhook on channel change or 404/10015; 15-per-channel cap documented; WH-03 cell reworded for `files[n]`; `owned` rustdoc says ownership is declared; Ref expiry note on webhook messages; new/extended tests `handle_edit_in_thread`, `webhook_resolves_locale_keys`, second handle edit in `handle_edit_diffs_attachments`, 220001/220003 on edit/delete, multi-byte and unknown-kind `thread_name`, raw button without style and raw types 5-8.
+  - Deferred: none.
+  - Rejected (low): `avatar_url` unvalidated (Discord's typed 400; new guard beyond a direct correction, x2); concurrent handle edits racing on `KnownFiles` (needs an async mutex across the request); duplicate webhook on double Finish or failed KV `put` (needs compare-and-set plus the out-of-scope delete endpoint); token not `Zeroizing` (no new deps; core keeps a `String`, wrapping only the template wipes nothing).
+  - Rejected (false): channel kind on `create` (typed `Rejected`); `Transport::Webhook` arms (only `prepare`/`body` used); `From<ResponderError>` catch-all (spec-mandated, other variants unreachable); template failure-path test (exists); `ready` re-validating token (spec order); FR-65 dynamic path via `try_from` only (as settled); ownership declared (spec Boundaries); click round trip (routing keyed by `custom_id` only); link buttons allowed (spec Design Notes); WH-05 unknown kind after request (Design Notes); WH-04 widened (Discord rule); `SUPPRESS_EMBEDS` on edit (Discord docs allow set/unset); skill-check not in diff (gate result).
+- **Follow-up review recommended: true.** Patched counts by verdict: high 0, medium 9, low 12. Named unverified risk: the template's webhook re-creation path (channel change / 404-10015 recovery in `setup/handlers.rs`) and the `twilight_http=warn` filter change were written in the review pass and have only fake-HTTP coverage; a follow-up pass should verify the recreation logic cannot loop or leak webhooks and that no token-bearing span still reaches the template's default logs.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91, template tests, no debug profile). CI paused by maintainer (workflows in `.github/workflows-disabled/`).
+- **Residual risks:** concurrent edits of one webhook message can race on `KnownFiles`; double Finish or KV failure can leak a duplicate webhook; webhook token is held as a plain `String`; Refs minted on long-lived webhook messages expire after the App's `ref_ttl`; foreign webhooks of unknown channel kind get WH-05 only after Discord refuses.

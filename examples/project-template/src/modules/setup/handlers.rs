@@ -8,7 +8,7 @@
 use noctis::id::marker::GuildMarker;
 use noctis::prelude::*;
 use noctis::twilight::model::channel::ChannelType;
-use noctis::webhook::{OwnedWebhook, WebhookChannel};
+use noctis::webhook::{OwnedWebhook, WebhookChannel, WebhookError};
 
 use super::view::{render_setup, render_setup_cancelled, render_setup_done, render_setup_log};
 use super::{
@@ -143,31 +143,49 @@ impl FinishSetup {
 }
 
 /// Posts the setup line to the log channel through the bot's own webhook there: the
-/// stored one, or a new one (the bot needs `MANAGE_WEBHOOKS`) whose id and token are
-/// stored for the next time.
+/// stored one while it is still the configured channel's, or a new one (the bot needs
+/// `MANAGE_WEBHOOKS`) whose id, token and channel are stored for the next time. A stored
+/// webhook deleted in Discord (404) is forgotten and replaced once.
 async fn post_log(
     ctx: &ComponentCtx,
     guild: Id<GuildMarker>,
     config: GuildConfig,
     s: &Strings,
 ) -> HandlerResult<()> {
-    let hook = log_webhook(ctx, guild, config).await?;
-    hook.send(render_setup_log(config, ctx.user_id(), s)).await?;
+    let key = log_webhook_key(guild);
+    let line = || render_setup_log(config, ctx.user_id(), s);
+    if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await? {
+        if stored.channel == config.log_channel {
+            let hook =
+                ctx.webhooks().owned(stored.id, stored.token)?.in_channel(ChannelType::GuildText);
+            match hook.send(line()).await {
+                // Deleted in Discord: forget it and create a new one below.
+                Err(WebhookError::Rejected { status: 404, .. }) => ctx.kv().delete(&key).await?,
+                sent => {
+                    sent?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+    let hook = create_log_webhook(ctx, &key, config).await?;
+    hook.send(line()).await?;
     Ok(())
 }
 
-async fn log_webhook(
+/// Creates the log channel's webhook and stores (or overwrites) its credentials.
+async fn create_log_webhook(
     ctx: &ComponentCtx,
-    guild: Id<GuildMarker>,
+    key: &str,
     config: GuildConfig,
 ) -> HandlerResult<OwnedWebhook> {
-    let key = log_webhook_key(guild);
-    if let Some(stored) = ctx.kv().get::<StoredWebhook>(&key).await? {
-        return Ok(ctx.webhooks().owned(stored.id, stored.token)?.in_channel(ChannelType::GuildText));
-    }
     let channel = WebhookChannel::new(config.log_channel, ChannelType::GuildText);
     let hook = ctx.webhooks().create(channel, webhook_name!("Noctis log")).await?;
-    let stored = StoredWebhook { id: hook.id(), token: hook.token().to_owned() };
-    ctx.kv().put(&key, &stored, None).await?;
+    let stored = StoredWebhook {
+        id: hook.id(),
+        token: hook.token().to_owned(),
+        channel: config.log_channel,
+    };
+    ctx.kv().put(key, &stored, None).await?;
     Ok(hook)
 }

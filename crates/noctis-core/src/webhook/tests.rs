@@ -2,7 +2,7 @@
 
 #![allow(clippy::unwrap_used, reason = "tests panic with the failing case")]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use hyper::{Method as HttpMethod, StatusCode};
@@ -26,6 +26,7 @@ use crate::test_support::{TestRefs, test_route};
 
 test_route!(Stored, "stored", RouteShape::BY_REF, 0);
 test_route!(Picked, "picked", RouteShape::BY_REF.select(), 0);
+test_route!(Plain, "plain", RouteShape::INLINE, 0);
 
 impl SelectRoute for Picked {}
 
@@ -51,9 +52,11 @@ fn reply(status: StatusCode, value: &Value) -> (StatusCode, Bytes) {
 /// channel 5; a message answer (id 77, or the edited id) is in the
 /// `thread_id` of the query, a new post 88 for a `thread_name`, else
 /// channel 5, and echoes the request's attachments (new ones get ids 500,
-/// 501, …); a delete answers 204.
+/// 501, … in upload order; kept ones keep their id and filename); a delete
+/// answers 204.
 fn discord() -> Answer {
-    Arc::new(|seen: &Seen| {
+    let names: Mutex<Vec<Value>> = Mutex::default();
+    Arc::new(move |seen: &Seen| {
         if seen.method == HttpMethod::DELETE {
             return (StatusCode::NO_CONTENT, Bytes::new());
         }
@@ -81,12 +84,18 @@ fn discord() -> Answer {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .map(|entry| match entry["id"].as_str() {
-                Some(kept) => json!({"id": kept, "filename": "kept"}),
-                None => json!({
-                    "id": (500 + entry["id"].as_u64().unwrap()).to_string(),
-                    "filename": entry["filename"],
-                }),
+            .map(|entry| {
+                let mut names = names.lock().unwrap();
+                if let Some(kept) = entry["id"].as_str() {
+                    let index = kept.parse::<usize>().unwrap() - 500;
+                    json!({"id": kept, "filename": names[index]})
+                } else {
+                    names.push(entry["filename"].clone());
+                    json!({
+                        "id": (499 + names.len()).to_string(),
+                        "filename": entry["filename"],
+                    })
+                }
             })
             .collect();
         let id = if seen.method == HttpMethod::PATCH {
@@ -548,6 +557,35 @@ async fn wh_05_thread_name_bounds() {
         .unwrap_err();
     assert_eq!(check(err), [between(101)]);
     assert_eq!(fx.server.seen().len(), 1);
+    let unknown = owned(&fx);
+    let err = unknown
+        .send(v2("a"))
+        .thread(WebhookThread::Create("".into()))
+        .await
+        .unwrap_err();
+    assert_eq!(check(err), [between(0)]);
+    let err = unknown
+        .send(v2("a"))
+        .thread(WebhookThread::Create("a".repeat(101).into()))
+        .await
+        .unwrap_err();
+    assert_eq!(check(err), [between(101)]);
+    assert_eq!(
+        fx.server.seen().len(),
+        1,
+        "an unknown kind checks the length"
+    );
+    hook.send(v2("a"))
+        .thread(WebhookThread::Create("\u{1f600}".repeat(50).into()))
+        .await
+        .unwrap();
+    let err = hook
+        .send(v2("a"))
+        .thread(WebhookThread::Create("\u{1f600}".repeat(51).into()))
+        .await
+        .unwrap_err();
+    assert_eq!(check(err), [between(102)]);
+    assert_eq!(fx.server.seen().len(), 2);
 }
 
 /// T4: a `thread_name` only in a forum or media channel; an unknown kind
@@ -589,6 +627,14 @@ async fn wh_05_discord_forum_errors() {
     let fx = Fixture::start(answer(StatusCode::BAD_REQUEST, r#"{"code":220001}"#)).await;
     assert_eq!(
         rules(owned(&fx).send(v2("a")).await.unwrap_err()),
+        [RuleId::WH_05]
+    );
+    assert_eq!(
+        rules(owned(&fx).edit(Id::new(77), v2("a")).await.unwrap_err()),
+        [RuleId::WH_05]
+    );
+    assert_eq!(
+        rules(owned(&fx).delete(Id::new(77)).await.unwrap_err()),
         [RuleId::WH_05]
     );
     let fx = Fixture::start(answer(StatusCode::BAD_REQUEST, r#"{"code":220003}"#)).await;
@@ -679,6 +725,86 @@ async fn handle_edit_diffs_attachments() {
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].filename.as_deref(), Some(b.name()));
     assert_eq!(parts[0].body, b"b");
+    sent.edit(view(&[a, b], &[])).await.unwrap();
+    let seen = fx.server.seen();
+    let entries = payload(&seen[2])["attachments"].as_array().unwrap().clone();
+    assert_eq!(entries.len(), 2, "{entries:?}");
+    assert!(entries.contains(&json!({"id": "500"})), "{entries:?}");
+    assert!(entries.contains(&json!({"id": "501"})), "{entries:?}");
+    assert!(uploads(&seen[2]).is_empty());
+}
+
+/// D2 in a thread: a handle's edit and delete keep the send's thread.
+#[tokio::test]
+async fn handle_edit_in_thread() {
+    let fx = Fixture::start_with_token(discord()).await;
+    let hook = owned(&fx);
+    let plain = hook.send(v2("a")).await.unwrap();
+    plain.edit(v2("b")).await.unwrap();
+    let threaded = hook.send(v2("a")).thread(Id::new(9)).await.unwrap();
+    threaded.edit(v2("b")).await.unwrap();
+    let post = forum(&fx, ChannelType::GuildForum)
+        .send(v2("a"))
+        .thread(WebhookThread::Create("Daily".into()))
+        .await
+        .unwrap();
+    post.edit(v2("b")).await.unwrap();
+    post.delete().await.unwrap();
+    let seen = fx.server.seen();
+    let edits = [
+        (1, "with_components=true"),
+        (3, "with_components=true&thread_id=9"),
+        (5, "with_components=true&thread_id=88"),
+    ];
+    for (i, query) in edits {
+        assert_eq!(seen[i].method, HttpMethod::PATCH);
+        assert_eq!(seen[i].path, "/api/v10/webhooks/900/tok/messages/77");
+        assert_eq!(seen[i].query.as_deref(), Some(query));
+        assert!(seen[i].headers.get("authorization").is_none());
+        let body = payload(&seen[i]);
+        assert_eq!(body["content"], Value::Null);
+        assert!(body.as_object().unwrap().contains_key("content"));
+        assert_eq!(body["embeds"], json!([]));
+        assert_eq!(body["flags"].as_u64().unwrap() & 32768, 32768);
+    }
+    assert_eq!(seen[6].method, HttpMethod::DELETE);
+    assert_eq!(seen[6].query.as_deref(), Some("thread_id=88"));
+    assert!(seen[6].headers.get("authorization").is_none());
+}
+
+/// The App's strings resolve a webhook message's locale keys (en-US).
+#[tokio::test]
+async fn webhook_resolves_locale_keys() {
+    struct Shop;
+    impl noctis_rules::Translate for Shop {
+        fn translate(
+            &self,
+            locale: noctis_rules::Locale,
+            key: noctis_rules::MessageKey,
+            _: &[(&str, &dyn fmt::Display)],
+        ) -> Option<String> {
+            match (key.as_str(), locale) {
+                ("shop.buy", noctis_rules::Locale::EnUs) => Some("Buy".to_owned()),
+                _ => None,
+            }
+        }
+    }
+    let mut fx = Fixture::start(discord()).await;
+    fx.app.set_strings(Arc::new(Shop));
+    let button = build_button(
+        Plain { item: 1 },
+        &ButtonDefaults {
+            style: ButtonStyle::Primary,
+            label: Some("b"),
+            emoji: None,
+            disabled: false,
+        },
+    )
+    .label(noctis_rules::MessageKey::new("shop.buy"));
+    let msg = V2Message::new(Components::new().push(ActionRow::buttons([button])));
+    owned(&fx).send(msg).await.unwrap();
+    let body = payload(&fx.server.seen()[0]);
+    assert_eq!(body["components"][0]["components"][0]["label"], "Buy");
 }
 
 /// D3: an edit by id uploads every used file again.

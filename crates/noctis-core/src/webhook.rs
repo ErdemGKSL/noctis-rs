@@ -13,8 +13,15 @@
 //! setter); flags are typed per endpoint ([`CreateFlags`] on execute,
 //! [`EditFlags`] on edit, MSG-07); every edit clears the legacy fields
 //! (WH-03); a forum or media channel needs a thread (WH-05). Webhook-token
-//! requests never carry the bot `Authorization` header, and the token is
-//! never logged, displayed or put in an error.
+//! requests never carry the bot `Authorization` header, and Noctis never
+//! logs, displays or puts the token in an error. twilight-http's `req` span
+//! carries the request URL, which holds the token: keep the
+//! `twilight_http=warn` directive in the log filter.
+//!
+//! Route buttons on an owned webhook message mint Refs with the App's
+//! `ref_ttl`, so a `by_ref` button on a long-lived log or persona message
+//! expires into `on_expired`: prefer inline (non-`by_ref`) Routes there, or
+//! a longer `ttl`.
 //!
 //! A foreign webhook takes no [`V2Message`]:
 //!
@@ -309,7 +316,10 @@ impl Webhooks {
     /// Creates a webhook named `name` in `channel` (Create Webhook, with the
     /// bot token; the bot needs `MANAGE_WEBHOOKS`). The handle knows the
     /// channel's kind; store its [`id`](Webhook::id) and
-    /// [`token`](Webhook::token) to reuse it with [`owned`](Self::owned).
+    /// [`token`](Webhook::token) to reuse it with [`owned`](Self::owned): a
+    /// channel holds at most 15 webhooks (`Rejected { status: 400, code:
+    /// Some(30007) }` beyond), and lost credentials leak a webhook Noctis
+    /// cannot delete.
     ///
     /// # Errors
     ///
@@ -354,6 +364,11 @@ impl Webhooks {
     /// The webhook the App owns with these stored credentials. Its channel
     /// kind is unknown until [`in_channel`](Webhook::in_channel) declares
     /// it.
+    ///
+    /// Ownership is the caller's declaration: Noctis does not verify it.
+    /// Credentials of a webhook the App did not create belong in
+    /// [`foreign`](Self::foreign); Discord refuses interactive components
+    /// through a non-owned webhook ([`WebhookError::Rejected`]).
     ///
     /// # Errors
     ///
