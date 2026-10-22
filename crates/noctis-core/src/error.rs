@@ -159,6 +159,16 @@ pub enum BuildViolation {
         /// The state's type name.
         type_name: &'static str,
     },
+    /// Two catalogs passed to `AppBuilder::locales` define one locale key.
+    #[error("locale key `{key}` is defined by two catalogs: `{first}` and `{second}`")]
+    DuplicateLocaleKey {
+        /// The key.
+        key: &'static str,
+        /// The origin of the catalog registered first (`<crate>/<dir>`).
+        first: &'static str,
+        /// The origin of the other catalog.
+        second: &'static str,
+    },
     /// Two plugins of one type; the first is kept.
     #[error(
         "plugin `{type_name}` was added twice: add it once; before `build`, \

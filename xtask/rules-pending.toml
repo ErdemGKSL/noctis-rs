@@ -14,11 +14,6 @@
 # empty by Story 14.4, except entries for Epic 15 stories.
 
 [[rule]]
-id = "LOC-01"
-evidence = "diagnosed"
-story = "11.1"
-
-[[rule]]
 id = "LOC-02"
 evidence = "diagnosed"
 story = "11.4"

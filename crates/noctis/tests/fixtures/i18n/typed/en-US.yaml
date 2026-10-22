@@ -1,0 +1,5 @@
+# Story 11.1: complete locales for the typed-API fixtures and doctests.
+shop:
+  buy: Buy
+  left: "{n} left"
+greet: "Hi {name}"

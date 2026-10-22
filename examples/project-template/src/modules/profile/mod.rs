@@ -16,6 +16,8 @@ use noctis::id::marker::{GuildMarker, UserMarker};
 use noctis::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::strings::keys;
+
 pub use view::ProfileCard;
 
 pub fn module() -> Module {
@@ -38,11 +40,12 @@ pub fn module() -> Module {
 // ---------------------------------------------------------------------------------------
 
 /// The refresh button. `editable` remembers whether the viewer looks at their own
-/// profile, so the redraw shows the same buttons. Texts in `defaults` are locale keys.
+/// profile, so the redraw shows the same buttons. A `keys::` path in `defaults` is a
+/// locale key, resolved in the response locale; a string literal is fixed text.
 ///
 /// Width (`noctis_route_width`): `profile: F 1 + route 7 + sep 1 + S 0 + N 0 + body 13 + T 0 = 22 (limit 100)`.
 #[derive(Button, Debug, Clone, Copy)]
-#[button("profile", defaults(style = Secondary, label = "common.refresh"))]
+#[button("profile", defaults(style = Secondary, label = keys::COMMON_REFRESH))]
 pub struct RefreshProfile {
     pub user: Id<UserMarker>,
     pub editable: bool,
@@ -58,7 +61,7 @@ pub struct RefreshProfile {
     "profile.bio",
     auto_defer = false,
     owner = user,
-    defaults(style = Primary, label = "profile.edit_bio"),
+    defaults(style = Primary, label = keys::PROFILE_EDIT_BIO),
 )]
 pub struct EditBio {
     pub user: Id<UserMarker>,
@@ -66,7 +69,7 @@ pub struct EditBio {
 
 /// The pronoun choices: a Radio Group option set (MOD-07: 2-10 options, each text
 /// 1-100). The variant name is the submitted value unless `value = "…"` is given.
-// localized texts: [planned, Epic 11]
+// Choices labels are literal text [planned].
 #[derive(Choices, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Pronouns {
     #[choice("he/him", value = "he")]
@@ -90,12 +93,13 @@ pub enum Pronouns {
 /// (type 4).
 ///
 /// Width (`noctis_route_width`): `profile.save: F 1 + route 12 + sep 1 + S 0 + N 0 + body 11 + T 0 = 25 (limit 100)`.
-// localized input texts: [planned, Epic 11]
+// Input attribute texts are literals; `handlers::bio_modal` localizes them per render
+// through `BioFormOverrides`. The title is a locale key.
 #[derive(Modal, Debug)]
 #[modal(
     "profile.save",
     owner = user,
-    defaults(title = "profile.bio_modal.title"),
+    defaults(title = keys::PROFILE_BIO_MODAL_TITLE),
 )]
 pub struct BioForm {
     pub user: Id<UserMarker>,

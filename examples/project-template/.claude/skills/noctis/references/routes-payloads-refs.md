@@ -50,9 +50,10 @@ Module::new("dashboard").add::<ToggleModule>()
 
 A missing `defaults(..)` block or required key is a compile error naming the kind's
 required keys; an unknown key is a compile error; literal values are checked against
-Discord's limits (CV2-08, CV2-09, MOD-01). `defaults(..)` text values are string
-literals, shown as written; a path there (`label = keys::SAVE`) is a compile error
-(locale keys in `defaults` are [planned, Epic 11]). Per-render text takes a `Text`: a
+Discord's limits (CV2-08, CV2-09, MOD-01). A `defaults(..)` text (`label`,
+`placeholder`, `title`) is a string literal, shown as written, or a `keys::` path
+(`label = keys::SAVE`), a locale key the Responder translates in the response locale and
+validates after resolving (`i18n.md` §2). Per-render text takes a `Text`: a
 literal or a `MessageKey`, which the Responder translates in the response locale (§9).
 Link and
 Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.

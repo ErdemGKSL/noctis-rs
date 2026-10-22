@@ -109,6 +109,57 @@ pub trait Translate: Send + Sync {
     ) -> Option<String>;
 }
 
+/// The reserved `noctis.*` keys a locale file may override, each with the
+/// names of its placeholders, in `noctis_i18n::keys::ALL` order.
+///
+/// `i18n!` rejects any other `noctis.*` key and any override whose
+/// placeholder set differs from the listed one. Not public API.
+#[doc(hidden)]
+pub const FRAMEWORK_KEYS: &[(&str, &[&str])] = &[
+    ("noctis.error.generic", &[]),
+    ("noctis.validation.failed", &[]),
+    ("noctis.expired", &[]),
+    ("noctis.stale", &[]),
+    ("noctis.disabled_here", &[]),
+    ("noctis.rate_limited", &["retry"]),
+    ("noctis.guard.failed", &[]),
+    ("noctis.guard.owner", &[]),
+    ("noctis.guard.permissions", &[]),
+];
+
+/// The placeholder names of `template`, in order, repeats included.
+///
+/// A placeholder is `{`, one or more ASCII letters, digits or `_`, then `}`:
+/// the grammar `noctis_i18n::format` substitutes. Anything else (`{}`,
+/// `{a b}`, an unclosed `{x`) is literal text. Not public API.
+///
+/// ```
+/// use noctis_rules::placeholder_names;
+///
+/// let names: Vec<_> = placeholder_names("{n} of {total}, {n} {} {{x}}").collect();
+/// assert_eq!(names, ["n", "total", "n", "x"]);
+/// ```
+#[doc(hidden)]
+pub fn placeholder_names(template: &str) -> impl Iterator<Item = &str> {
+    let mut rest = template;
+    std::iter::from_fn(move || {
+        while let Some(open) = rest.find('{') {
+            let after = &rest[open + 1..];
+            let name_len = after
+                .bytes()
+                .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                .count();
+            if name_len > 0 && after.as_bytes().get(name_len) == Some(&b'}') {
+                rest = &after[name_len + 1..];
+                return Some(&after[..name_len]);
+            }
+            rest = after;
+        }
+        rest = "";
+        None
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,6 +223,26 @@ mod tests {
         assert!(MessageKey::new("noctis").is_framework());
         assert!(!MessageKey::new("noctisx.a").is_framework());
         assert!(!MessageKey::new("a.noctis").is_framework());
+    }
+
+    #[test]
+    fn placeholder_names_follow_the_format_grammar() {
+        let names = |t: &'static str| placeholder_names(t).collect::<Vec<_>>();
+        assert_eq!(names("Try again {retry}."), ["retry"]);
+        assert_eq!(names("{n}{n}"), ["n", "n"]);
+        assert_eq!(names("{{n}}"), ["n"]);
+        assert!(names("{} {a b} x {retry {").is_empty());
+        assert!(names("😀{😀}").is_empty());
+        assert_eq!(names("çğ😀 {n}"), ["n"]);
+        assert_eq!(names("{1} of {0} {Name} {_x}"), ["1", "0", "Name", "_x"]);
+    }
+
+    #[test]
+    fn framework_keys_are_framework_keys() {
+        for (key, names) in FRAMEWORK_KEYS {
+            assert!(MessageKey::new(key).is_framework(), "{key}");
+            assert!(names.iter().all(|n| !n.is_empty()), "{key}");
+        }
     }
 
     struct Table(HashMap<(Locale, &'static str), &'static str>);

@@ -4,9 +4,11 @@
 //! the `ComponentRoute::DEFAULTS` constant it lowers to.
 //!
 //! Literal versus localized text is decided by syntax, never by a cargo
-//! feature: a string literal is hard-coded text; a path (`keys::SAVE`) for
-//! `label`, `placeholder` or `title` is a locale key, rejected until locale
-//! keys ship ([planned, Epic 11]).
+//! feature: a string literal is hard-coded text, checked here; a path
+//! (`keys::SAVE`) for `label`, `placeholder` or `title` is a locale key,
+//! lowered to `DefaultText::Key` with its span kept (a path that is not a
+//! `MessageKey` is rustc's `E0308` at the path) and validated by core's
+//! Responder after it resolves the key.
 //!
 //! Omitted keys are not sent, so Discord's `min_values = 1`,
 //! `max_values = 1` and `disabled = false` apply.
@@ -109,16 +111,53 @@ pub(crate) enum EmojiLit {
     },
 }
 
+/// A `label`, `placeholder` or `title` value: a string literal or a locale
+/// key path.
+#[derive(Clone)]
+pub(crate) enum TextValue {
+    /// A string literal, checked at expansion.
+    Literal(LitStr),
+    /// A locale key path (`keys::SAVE`), after `Expr::Group` unwrapping.
+    Key(Expr),
+}
+
+impl TextValue {
+    /// The literal, when the value is one.
+    pub(crate) fn literal(&self) -> Option<&LitStr> {
+        match self {
+            Self::Literal(lit) => Some(lit),
+            Self::Key(_) => None,
+        }
+    }
+
+    /// The span of the value.
+    pub(crate) fn span(&self) -> proc_macro2::Span {
+        match self {
+            Self::Literal(lit) => lit.span(),
+            Self::Key(path) => path.span(),
+        }
+    }
+
+    /// The `DefaultText` expression.
+    pub(crate) fn tokens(&self) -> TokenStream {
+        let ui = ui();
+        match self {
+            Self::Literal(lit) => quote!(#ui::__macro::DefaultText::Literal(#lit)),
+            Self::Key(path) => quote!(#ui::__macro::DefaultText::Key(#path)),
+        }
+    }
+}
+
 /// The parsed `defaults(..)` of one kind.
 pub(crate) enum Defaults {
     Button {
         style: Ident,
-        label: Option<LitStr>,
+        label: Option<TextValue>,
         emoji: Option<EmojiLit>,
         disabled: bool,
     },
     Select {
-        placeholder: LitStr,
+        placeholder: TextValue,
         min_values: Option<u8>,
         max_values: Option<u8>,
         disabled: bool,
@@ -126,7 +165,7 @@ pub(crate) enum Defaults {
         channel_types: Vec<Ident>,
     },
     Modal {
-        title: LitStr,
+        title: TextValue,
     },
 }
 
@@ -171,42 +210,25 @@ fn literal_error(expr: &Expr, key: &str, what: &str) -> syn::Error {
     )
 }
 
-fn is_path(expr: &Expr) -> bool {
+/// The path of `expr` after `Expr::Group` unwrapping.
+fn key_path(expr: &Expr) -> Option<&Expr> {
     match expr {
-        Expr::Path(_) => true,
-        Expr::Group(g) => is_path(&g.expr),
-        _ => false,
-    }
-}
-
-/// The rule of a localizable `defaults(..)` text key.
-fn text_rule(key: &str) -> Option<RuleId> {
-    match key {
-        "label" => Some(RuleId::CV2_08),
-        "placeholder" => Some(RuleId::CV2_09),
-        "title" => Some(RuleId::MOD_01),
+        Expr::Path(_) => Some(expr),
+        Expr::Group(g) => key_path(&g.expr),
         _ => None,
     }
 }
 
-/// The error of a path given for a localizable text: literal versus
-/// localized text is decided by syntax, and locale key paths arrive with
-/// Story 11.1.
-pub(crate) fn key_path_error(tokens: impl ToTokens, rule: RuleId, key: &str) -> syn::Error {
-    syn::Error::new_spanned(
-        tokens,
-        format!(
-            "[{rule}] `{key}` is a locale key path: locale keys are [planned, Epic 11]; use a string literal"
-        ),
-    )
+/// A `label`, `placeholder` or `title`: a literal or a locale key path.
+fn text_value(expr: &Expr, key: &str) -> syn::Result<TextValue> {
+    if let Some(path) = key_path(expr) {
+        return Ok(TextValue::Key(path.clone()));
+    }
+    literal_text(expr, key).map(TextValue::Literal)
 }
 
-fn text(expr: &Expr, key: &str) -> syn::Result<LitStr> {
-    if let Some(rule) = text_rule(key)
-        && is_path(expr)
-    {
-        return Err(key_path_error(expr, rule, key));
-    }
+/// A text that must be a string literal (`emoji`).
+fn literal_text(expr: &Expr, key: &str) -> syn::Result<LitStr> {
     string_lit(expr)
         .cloned()
         .ok_or_else(|| literal_error(expr, key, "a string literal"))
@@ -265,15 +287,15 @@ fn count_violation(key: &str, n: usize, min: usize) -> Option<Violation> {
 #[derive(Default)]
 struct Raw {
     style: Option<Ident>,
-    label: Option<LitStr>,
+    label: Option<TextValue>,
     emoji: Option<EmojiLit>,
     disabled: Option<bool>,
-    placeholder: Option<LitStr>,
+    placeholder: Option<TextValue>,
     min_values: Option<(usize, LitInt)>,
     max_values: Option<(usize, LitInt)>,
     options: Option<Path>,
     channel_types: Option<Vec<Ident>>,
-    title: Option<LitStr>,
+    title: Option<TextValue>,
 }
 
 fn parse_style(expr: &Expr) -> syn::Result<Ident> {
@@ -343,10 +365,14 @@ fn parse_pair(raw: &mut Raw, kind: DefaultsKind, key: &str, expr: &Expr) -> syn:
     match key {
         "style" => raw.style = Some(parse_style(expr)?),
         "label" => {
-            let lit = text(expr, key)?;
+            let value = text_value(expr, key)?;
+            let TextValue::Literal(lit) = &value else {
+                raw.label = Some(value);
+                return Ok(());
+            };
             if lit.value().is_empty() {
                 return Err(syn::Error::new_spanned(
-                    &lit,
+                    lit,
                     "`label` is empty: omit it and give `emoji`",
                 ));
             }
@@ -354,14 +380,14 @@ fn parse_pair(raw: &mut Raw, kind: DefaultsKind, key: &str, expr: &Expr) -> syn:
                 .into_iter()
                 .map(|mut v| {
                     "defaults.label".clone_into(&mut v.path);
-                    syn::Error::new_spanned(&lit, v.to_string())
+                    syn::Error::new_spanned(lit, v.to_string())
                 })
                 .collect();
             combine(errors)?;
-            raw.label = Some(lit);
+            raw.label = Some(value);
         }
         "emoji" => {
-            let lit = text(expr, key)?;
+            let lit = literal_text(expr, key)?;
             let emoji = parse_emoji(&lit.value()).map_err(|e| syn::Error::new_spanned(&lit, e))?;
             raw.emoji = Some(emoji);
         }
@@ -371,16 +397,18 @@ fn parse_pair(raw: &mut Raw, kind: DefaultsKind, key: &str, expr: &Expr) -> syn:
             })?);
         }
         "placeholder" => {
-            let lit = text(expr, key)?;
-            let errors = validate_select_placeholder(&lit.value(), &limits)
-                .into_iter()
-                .map(|mut v| {
-                    "defaults.placeholder".clone_into(&mut v.path);
-                    syn::Error::new_spanned(&lit, v.to_string())
-                })
-                .collect();
-            combine(errors)?;
-            raw.placeholder = Some(lit);
+            let value = text_value(expr, key)?;
+            if let TextValue::Literal(lit) = &value {
+                let errors = validate_select_placeholder(&lit.value(), &limits)
+                    .into_iter()
+                    .map(|mut v| {
+                        "defaults.placeholder".clone_into(&mut v.path);
+                        syn::Error::new_spanned(lit, v.to_string())
+                    })
+                    .collect();
+                combine(errors)?;
+            }
+            raw.placeholder = Some(value);
         }
         "min_values" | "max_values" => {
             let (n, lit) = count(expr, key)?;
@@ -406,7 +434,7 @@ fn parse_pair(raw: &mut Raw, kind: DefaultsKind, key: &str, expr: &Expr) -> syn:
         "channel_types" => raw.channel_types = Some(parse_channel_types(expr)?),
         _ => {
             debug_assert_eq!(kind, DefaultsKind::Modal);
-            raw.title = Some(text(expr, key)?);
+            raw.title = Some(text_value(expr, key)?);
         }
     }
     Ok(())
@@ -532,6 +560,7 @@ impl Defaults {
             return TokenStream::new();
         };
         let (min, max) = (opt_u8(*min_values), opt_u8(*max_values));
+        let placeholder = placeholder.tokens();
         quote! {
             #ui::__macro::SelectDefaults {
                 placeholder: ::core::option::Option::Some(#placeholder),
@@ -552,7 +581,7 @@ impl Defaults {
                 emoji,
                 disabled,
             } => {
-                let label = crate::common::option(label.as_ref());
+                let label = crate::common::option(label.as_ref().map(TextValue::tokens));
                 let emoji = crate::common::option(emoji.as_ref().map(|e| match e {
                     EmojiLit::Unicode(text) => {
                         quote!(#ui::__macro::DefaultEmoji::Unicode(#text))
@@ -574,10 +603,13 @@ impl Defaults {
                     },
                 )
             }
-            Self::Modal { title } => (
-                quote!(#ui::__macro::ModalDefaults),
-                quote!(#ui::__macro::ModalDefaults { title: #title }),
-            ),
+            Self::Modal { title } => {
+                let title = title.tokens();
+                (
+                    quote!(#ui::__macro::ModalDefaults),
+                    quote!(#ui::__macro::ModalDefaults { title: #title }),
+                )
+            }
             Self::Select {
                 options,
                 channel_types,
@@ -673,27 +705,39 @@ mod tests {
 
     use DefaultsKind::{Button, ChannelSelect, Modal, RoleSelect, StringSelect, UserSelect};
 
-    /// Story 9.3 D1: a path for `label`, `placeholder` or `title` is a
-    /// locale key path, planned for Epic 11; other non-literals keep the
-    /// generic error.
+    /// Story 11.1 Matrix 64, 68, 69: a path for `label`, `placeholder` or
+    /// `title` lowers to `DefaultText::Key` with the path; other
+    /// non-literals keep the generic error.
     #[test]
-    fn key_paths_are_planned() {
-        let planned =
-            "is a locale key path: locale keys are [planned, Epic 11]; use a string literal";
-        let e = err(Button, quote!(style = Primary, label = keys::SAVE));
+    fn key_paths_lower_to_keys() {
+        let (_, t) = run(Button, quote!(style = Primary, label = keys::SAVE))
+            .ok()
+            .unwrap()
+            .tokens(Button);
+        let t = t.to_string();
+        assert!(t.contains("label : :: core :: option :: Option :: Some (:: noctis :: __private :: ui :: __macro :: DefaultText :: Key (keys :: SAVE))"), "{t}");
+        let (_, t) = run(UserSelect, quote!(placeholder = keys::P))
+            .ok()
+            .unwrap()
+            .tokens(UserSelect);
         assert!(
-            e.starts_with("[CV2-08] `label`") && e.contains(planned),
-            "{e}"
+            t.to_string().contains("DefaultText :: Key (keys :: P)"),
+            "{t}"
         );
-        let e = err(UserSelect, quote!(placeholder = keys::P));
+        let (_, t) = run(Modal, quote!(title = T)).ok().unwrap().tokens(Modal);
         assert!(
-            e.starts_with("[CV2-09] `placeholder`") && e.contains(planned),
-            "{e}"
+            t.to_string().contains(
+                "title : :: noctis :: __private :: ui :: __macro :: DefaultText :: Key (T)"
+            ),
+            "{t}"
         );
-        let e = err(Modal, quote!(title = T));
+        let (_, t) = run(Button, quote!(style = Primary, label = "Buy"))
+            .ok()
+            .unwrap()
+            .tokens(Button);
         assert!(
-            e.starts_with("[MOD-01] `title`") && e.contains(planned),
-            "{e}"
+            t.to_string().contains("DefaultText :: Literal (\"Buy\")"),
+            "{t}"
         );
         let e = err(Button, quote!(style = Primary, label = concat!("a")));
         assert!(e.contains("`defaults` values are literals"), "{e}");
@@ -710,7 +754,13 @@ mod tests {
             panic!("button");
         };
         assert_eq!(
-            (style.to_string(), label.map(|l| l.value())),
+            (
+                style.to_string(),
+                label
+                    .as_ref()
+                    .and_then(TextValue::literal)
+                    .map(LitStr::value)
+            ),
             ("Primary".into(), Some("Buy".into()))
         );
         assert_eq!(err(Button, quote!(style = Primary, emoji = "➡️")), "ok");
@@ -745,10 +795,7 @@ mod tests {
             err(Button, quote!(style = Primary, label = "a", label = "b")),
             "duplicate `defaults` key `label`"
         );
-        assert_eq!(
-            err(Button, quote!(style = Primary, label = LABEL)),
-            "[CV2-08] `label` is a locale key path: locale keys are [planned, Epic 11]; use a string literal"
-        );
+        assert_eq!(err(Button, quote!(style = Primary, label = LABEL)), "ok");
         assert_eq!(
             err(
                 Button,

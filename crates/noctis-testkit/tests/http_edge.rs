@@ -610,16 +610,21 @@ async fn redial_on_close() {
         "{:?}",
         closed.elapsed()
     );
-    let after = Metrics::take(snapshotter);
-    assert_eq!(
-        delta(
+    // The fake sees the connection before the pool's dial returns and
+    // counts it, so poll the counter instead of reading it once; each
+    // snapshot drains it, so sum the polls.
+    let mut redials = 0;
+    until("the redial metric", || {
+        redials += delta(
             &before,
-            &after,
+            &Metrics::take(snapshotter),
             "noctis_http_connections_total",
-            Some(("reason", "redial"))
-        ),
-        1
-    );
+            Some(("reason", "redial")),
+        );
+        redials >= 1
+    })
+    .await;
+    assert_eq!(redials, 1);
     let _ = running.http.current_user().await;
     let last = fake.requests().pop().unwrap();
     assert_eq!(last.route_path(), Some("/users/@me"));

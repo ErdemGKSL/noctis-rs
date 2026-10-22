@@ -1,0 +1,4 @@
+shop:
+  buy: Satın al
+  left: "{n} kaldı"
+greet: "Selam {name}"

@@ -1,4 +1,4 @@
-error: [MOD-04] the Label text is a locale key path: locale keys are [planned, Epic 11]; use a string literal
+error: [MOD-04] the Label text is a locale key path: input attribute texts are string literals; localize them per render with `InputOverrides`
   --> tests/ui/mod/MOD-04_text_input_label_path.rs:10:18
    |
 10 |     #[text_input(keys::L)]

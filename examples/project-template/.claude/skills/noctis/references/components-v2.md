@@ -369,9 +369,11 @@ in your render function (`views-and-recipes.md` §3).
   `.overrides(ButtonOverrides { label: Some("Again".into()), disabled: Some(true),
   ..Default::default() })` (the later call wins). A click reaches the Route's handler
   with the decoded Payload as `self`. The defaults live on the struct
-  (`#[button("id", defaults(style = .., label = "…" | emoji = "…", disabled = ..))]`;
-  `style` and one of `label`/`emoji` are required); `defaults` texts are string literals
-  (a path is `[CV2-08] … locale keys are [planned, Epic 11]`). A literal label can be
+  (`#[button("id", defaults(style = .., label = "…" | keys::X | emoji = "…", disabled = ..))]`;
+  `style` and one of `label`/`emoji` are required); a `defaults` text is a string literal
+  (fixed text, checked at `cargo check`) or a `keys::` path (a locale key the Responder
+  resolves in the response locale and validates after resolving; a path that is not a
+  `MessageKey` is rustc's `E0308`; `i18n.md` §2). A literal label can be
   checked at `cargo check`
   with `label!("Save")` (a `Label`, also usable in a `const`); runtime text (localized
   labels included) is passed as is or checked with `Label::try_new(text, &limits)`.

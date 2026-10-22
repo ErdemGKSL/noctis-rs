@@ -29,6 +29,7 @@ testkit = ["dep:noctis-testkit"]
 bytes.workspace = true
 noctis-codec.workspace = true
 noctis-core.workspace = true
+noctis-i18n.workspace = true
 noctis-macros.workspace = true
 noctis-ports.workspace = true
 noctis-rules.workspace = true

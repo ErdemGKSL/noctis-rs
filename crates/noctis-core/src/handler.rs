@@ -223,8 +223,9 @@ pub(crate) struct AppShared {
     pub(crate) refs: Arc<dyn noctis_ports::RefStore>,
     /// The TTL of a Ref whose Route declares none (`AppBuilder::ref_ttl`).
     pub(crate) ref_ttl: std::time::Duration,
-    /// The strings every user-facing notice is rendered from (`noctis-i18n`
-    /// `Builtin` until Epic 11 merges bot catalogs).
+    /// The strings every user-facing notice and `Text::Key` is rendered
+    /// from: the `AppBuilder::locales` catalogs over `noctis-i18n`'s
+    /// `Builtin` (`AppStrings`).
     pub(crate) strings: Arc<dyn Translate>,
     /// The payload key ring that signs and verifies `signed` Routes
     /// (`NOCTIS_PAYLOAD_KEY`, AD-5): never logged, never in a span field,

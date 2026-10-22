@@ -1,0 +1,16 @@
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+ --> tests/ui-i18n/loc/LOC-04_wrong_arg_count.rs:6:21
+  |
+6 |     let _ = strings.greet(); // [LOC-04]
+  |                     ^^^^^-- argument #1 is missing
+  |
+note: method defined here
+ --> tests/ui-i18n/loc/LOC-04_wrong_arg_count.rs:2:1
+  |
+2 | noctis::i18n!(dir = "../../fixtures/i18n/typed", __dir_from_source_file);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = note: this error originates in the macro `noctis::i18n` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: provide the argument
+  |
+6 |     let _ = strings.greet(/* name */); // [LOC-04]
+  |                           ++++++++++

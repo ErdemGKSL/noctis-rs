@@ -15,6 +15,8 @@ use noctis::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker, Web
 use noctis::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::strings::keys;
+
 /// The Module. `.base` declares the description of the `/setup` base command (FR-57),
 /// equal to `cmd.setup.description` in `locales/en-US.yaml`.
 pub fn module() -> Module {
@@ -58,7 +60,7 @@ impl SetupStep {
 #[button(
     "setup",
     owner = owner,
-    defaults(style = Primary, label = "setup.next"),
+    defaults(style = Primary, label = keys::SETUP_NEXT),
 )]
 pub struct SetupState {
     pub owner: Id<UserMarker>,
@@ -76,7 +78,7 @@ pub struct SetupState {
 #[channel_select(
     "setup.ch",
     owner = owner,
-    defaults(placeholder = "setup.channel_placeholder", channel_types = [GuildText]),
+    defaults(placeholder = keys::SETUP_CHANNEL_PLACEHOLDER, channel_types = [GuildText]),
 )]
 pub struct PickLogChannel {
     pub owner: Id<UserMarker>,
@@ -90,7 +92,7 @@ pub struct PickLogChannel {
 #[role_select(
     "setup.role",
     owner = owner,
-    defaults(placeholder = "setup.role_placeholder"),
+    defaults(placeholder = keys::SETUP_ROLE_PLACEHOLDER),
 )]
 pub struct PickModRole {
     pub owner: Id<UserMarker>,
@@ -104,7 +106,7 @@ pub struct PickModRole {
 #[button(
     "setup.cancel",
     owner = owner,
-    defaults(style = Secondary, label = "setup.cancel"),
+    defaults(style = Secondary, label = keys::SETUP_CANCEL),
 )]
 pub struct CancelSetup {
     pub owner: Id<UserMarker>,
@@ -123,7 +125,7 @@ pub struct CancelSetup {
     one_shot,
     ttl = "15m",
     owner = owner,
-    defaults(style = Success, label = "setup.finish"),
+    defaults(style = Success, label = keys::SETUP_FINISH),
 )]
 pub struct FinishSetup {
     pub owner: Id<UserMarker>,

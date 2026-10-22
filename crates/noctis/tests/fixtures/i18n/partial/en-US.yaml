@@ -1,0 +1,4 @@
+# Story 11.1 row 51: tr.yaml lacks `a` and `b` (LOC-04).
+a: A
+b: B
+c: C

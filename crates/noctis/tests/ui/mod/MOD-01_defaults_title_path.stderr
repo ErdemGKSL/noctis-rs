@@ -1,5 +1,0 @@
-error: [MOD-01] `title` is a locale key path: locale keys are [planned, Epic 11]; use a string literal
- --> tests/ui/mod/MOD-01_defaults_title_path.rs:8:36
-  |
-8 | #[modal("t.form", defaults(title = keys::T))]
-  |                                    ^^^^^^^

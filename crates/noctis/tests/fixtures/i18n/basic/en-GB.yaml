@@ -1,0 +1,11 @@
+common:
+  refresh: Refresh
+greet: "Hello {name}, {name}! You have {n}"
+p: "{1} of {0}"
+braces: "{{n}}"
+unicode: "çğ😀 {n}"
+empty: ""
+a: gb-a
+type: Kind
+profile:
+  match: "Match {type}"

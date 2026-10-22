@@ -734,7 +734,7 @@ let module = Module::new("mod").add::<ShowProfile>().add::<ReportMessage>();
   handler is exactly `(self, ctx: CommandCtx, target: ResolvedUser[, r: CommandResponder])`
   (or `ResolvedMessage` for `#[derive(MessageCommand)]`) returning `HandlerResult<R>` like a slash Command (`R` a
   `V2Message`, `Components`, `LegacyMessage` or `Responded`; `()` is E0277). [planned]
-  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Epic 11). Answer with
+  Localized as a whole: `ctxcmd.<key>.name` (with `key`, Story 11.4). Answer with
   `ctx.respond(..)` like a slash Command.
 - Check a dynamic name with `noctis::rules::command::validate_context_menu_name(name,
   &limits) -> Vec<Violation>`: length only (`discord_len`, 1 to
@@ -827,7 +827,7 @@ as declared (`default_member_permissions` as the bit string, `contexts` and
 are omitted; option fields only when set (`required: true`, `choices`, `min_value` /
 `max_value` as integers for integer bounds, `min_length` / `max_length`,
 `channel_types`, `autocomplete: true`, `file_types`). Menus carry `type` and `name` only
-(plus metadata). Localizations arrive with Epic 11.
+(plus metadata). Localizations arrive with Story 11.4 [planned].
 
 [planned] Boot Flags (Story 13.2), per-guild Module enablement (Story 13.3) and
 `apps = [...]` filter what is published. Disabled Modules: only their guild-scoped

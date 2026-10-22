@@ -71,7 +71,7 @@ impl DashTab {
 #[button(
     "dash.tab",
     permissions = MANAGE_GUILD,
-    defaults(style = Secondary, label = "dashboard.tab.overview"),
+    defaults(style = Secondary, label = keys::DASHBOARD_TAB_OVERVIEW),
 )]
 pub struct OpenTab {
     pub guild: Id<GuildMarker>,
@@ -86,7 +86,7 @@ pub struct OpenTab {
 #[button(
     "dash.page",
     permissions = MANAGE_GUILD,
-    defaults(style = Secondary, label = "common.next"),
+    defaults(style = Secondary, label = keys::COMMON_NEXT),
 )]
 pub struct TurnPage {
     pub guild: Id<GuildMarker>,
@@ -126,7 +126,7 @@ impl ModuleKey {
 #[button(
     "dash.mod",
     permissions = MANAGE_GUILD,
-    defaults(style = Success, label = "common.enable"),
+    defaults(style = Success, label = keys::COMMON_ENABLE),
 )]
 pub struct ToggleModule {
     pub guild: Id<GuildMarker>,

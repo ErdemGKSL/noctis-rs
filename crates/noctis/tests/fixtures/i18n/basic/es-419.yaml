@@ -1,0 +1,11 @@
+common:
+  refresh: Actualizar
+greet: "Hola {name}, {name}! Tienes {n}"
+p: "{1} de {0}"
+braces: "{{n}}"
+unicode: "çğ😀 {n}"
+empty: ""
+a: latam-a
+type: Tipo
+profile:
+  match: "Partido {type}"

@@ -25,11 +25,12 @@ use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Expr, Fields, Ident, Lit, LitInt, LitStr, Token, Type};
 
 use crate::common::{combine, error, option};
-use crate::defaults::{Defaults, DefaultsKind};
+use crate::defaults::{Defaults, DefaultsKind, TextValue};
 use crate::route::{AttrKind, RouteArgs, parse_kind_attr, route_impls};
 
-/// The help of a localized or non-literal text.
-const LOCALIZED: &str = "locale keys are [planned, Epic 11]; use a string literal";
+/// The help of a localized or non-literal input attribute text.
+const LOCALIZED: &str =
+    "input attribute texts are string literals; localize them per render with `InputOverrides`";
 
 /// The options a Radio Group lowers to: the largest legal count.
 static RADIO_SENTINEL: [rm::ModalOption<'static>; 10] = [rm::ModalOption::new("x", "x"); 10];
@@ -208,7 +209,7 @@ fn is_path(expr: &Expr) -> bool {
 }
 
 /// A text argument that must be a literal; a path is a locale key path,
-/// planned for Epic 11.
+/// which input attributes do not take (localize per render instead).
 fn text_arg(expr: &Expr, rule: RuleId, what: &str) -> syn::Result<LitStr> {
     if is_path(expr) {
         return Err(syn::Error::new_spanned(
@@ -238,7 +239,7 @@ fn localized(tokens: impl ToTokens, rule: RuleId, what: &str) -> syn::Error {
 /// The parsed `#[modal(..)]` attribute.
 struct ModalAttr {
     args: RouteArgs,
-    title: LitStr,
+    title: TextValue,
 }
 
 /// The help every withdrawn `#[modal(route = ..)]` form shows.
@@ -869,7 +870,13 @@ fn lower_child<'a>(
 fn check(name: &Ident, attr: &ModalAttr, defs: &[FieldDef]) -> Vec<syn::Error> {
     let limits = Limits::default();
     let spans = record_spans(name, attr, defs);
-    let mut violations = validate(&attr.title.value(), defs, &limits);
+    // A key title is validated by core after it resolves the key; a stand-in
+    // keeps the other checks.
+    let title = attr
+        .title
+        .literal()
+        .map_or_else(|| "x".to_owned(), LitStr::value);
+    let mut violations = validate(&title, defs, &limits);
     for (i, def) in defs.iter().enumerate() {
         if def.kind == Kind::TextDisplay {
             continue;
@@ -1361,7 +1368,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         },
     );
     let route = route_impls(name, &attr.args, &quote!(#payload_ident));
-    let title = &attr.title;
+    let title = attr.title.tokens();
     let m = Ident::new("__noctis_modal", Span::mixed_site());
     let s = Ident::new("__noctis_submission", Span::mixed_site());
     let p = Ident::new("__noctis_payload", Span::mixed_site());
@@ -1641,7 +1648,10 @@ mod tests {
             }
         });
         assert_eq!(attr.args.id, "f");
-        assert_eq!(attr.title.value(), "T");
+        assert_eq!(
+            attr.title.literal().map(LitStr::value).as_deref(),
+            Some("T")
+        );
         let bio = &defs[0];
         assert_eq!((bio.key.as_str(), bio.kind), ("type", Kind::TextInput));
         assert!(bio.paragraph);
@@ -1722,13 +1732,9 @@ mod tests {
         assert!(run(quote!(#[modal("f", defaults(title = ""))] #body)).contains("[MOD-01] title"));
         let emoji = "😀".repeat(23);
         assert!(run(quote!(#[modal("f", defaults(title = #emoji))] #body)).contains("actual 46"));
+        // Story 11.1 Matrix 68: a path title is a locale key.
         let out = run(quote!(#[modal("f", defaults(title = TITLE))] #body));
-        assert!(
-            out.contains(
-                "[MOD-01] `title` is a locale key path: locale keys are [planned, Epic 11]"
-            ),
-            "{out}"
-        );
+        assert!(out.contains("DefaultText :: Key (TITLE)"), "{out}");
         assert!(run(quote!(#[modal("f")] #body)).contains("`#[modal]` needs `defaults(title ="));
         // Story 6.11 Matrix 53: the withdrawn form.
         for withdrawn in [

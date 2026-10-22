@@ -593,7 +593,7 @@ fn button<R: noctis_ui::__macro::ComponentValue>(route: R) -> noctis_ui::RouteBu
         route,
         &ButtonDefaults {
             style: ButtonStyle::Primary,
-            label: Some("b"),
+            label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
             emoji: None,
             disabled: false,
         },
@@ -601,7 +601,7 @@ fn button<R: noctis_ui::__macro::ComponentValue>(route: R) -> noctis_ui::RouteBu
 }
 
 const PICK: SelectDefaults = SelectDefaults {
-    placeholder: Some("p"),
+    placeholder: Some(noctis_ui::__macro::DefaultText::Literal("p")),
     min_values: None,
     max_values: None,
     disabled: false,

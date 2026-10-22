@@ -1,0 +1,12 @@
+error: use of deprecated constant `_::W`: [LOC-04] `../../fixtures/i18n/partial/tr.yaml` lacks 2 key(s) of the default locale `en-US.yaml`: `a`, `b`; they fall back at runtime
+ --> tests/ui-i18n/loc/LOC-04_partial_locale_warning.rs:5:1
+  |
+5 | noctis::i18n!(dir = "../../fixtures/i18n/partial", __dir_from_source_file); // [LOC-04]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> tests/ui-i18n/loc/LOC-04_partial_locale_warning.rs:3:9
+  |
+3 | #![deny(deprecated)]
+  |         ^^^^^^^^^^
+  = note: this error originates in the macro `noctis::i18n` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -473,17 +473,19 @@
 //! Over the [`Dispatcher`] it is a public message. Then the error is logged
 //! with its full chain and reported to the `Command` Error Sink.
 //! [`HandlerError::user`] and a failed option validator are user
-//! conditions: only the notice and a `debug` log, no Error Sink. Built-in
-//! texts are English for every locale until locale files arrive (Epic 11);
-//! a key no catalog has shows the generic text with a `noctis::i18n` warning.
+//! conditions: only the notice and a `debug` log, no Error Sink. Message
+//! keys resolve from the catalogs passed to [`AppBuilder::locales`] (with the
+//! `i18n` feature, the `catalog()` that `noctis::i18n!` generates), and the built-in
+//! `noctis.*` texts are English unless a locale file overrides them; a key no
+//! catalog has shows the generic text with a `noctis::i18n` warning.
 //!
 //! ```
 //! use noctis::prelude::*;
 //! use noctis::rules::MessageKey;
 //! use noctis::ui::{Components, TextDisplay};
 //!
-//! // Bot keys: until locale files arrive (Epic 11) these show the generic
-//! // text and log a `noctis::i18n` warning.
+//! // Bot keys: with no catalog that defines them (`AppBuilder::locales`)
+//! // these show the generic text and log a `noctis::i18n` warning.
 //! const GUILD_ONLY: MessageKey = MessageKey::new("common.guild_only");
 //! const SAVE_FAILED: MessageKey = MessageKey::new("shop.save_failed");
 //!
@@ -557,7 +559,8 @@
 //! - `image-gif`: GIF/APNG output for rendered images.
 //! - `image-emoji`: Twemoji colour emoji in image Templates.
 //! - `default-font`: a bundled default font for image Templates.
-//! - `i18n`: the localization runtime.
+//! - `i18n`: typed locale files: the `i18n!` macro and the `i18n` module
+//!   (`Catalog`, `format`).
 //! - `prefix`: opt-in prefix commands.
 //! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
 //!   simulated interactions, message snapshots and the memory check;
@@ -2021,11 +2024,90 @@ pub mod prelude {
     };
 }
 
+/// Typed content strings from YAML locale files (FR-42; LOC-01, LOC-04):
+/// `noctis::i18n!(default = "en-US", dir = "locales")`, both optional, in
+/// any order, `dir` relative to the crate root.
+///
+/// The files are the `dir/*.yaml` entries named by exact Discord locale
+/// codes (`en-US.yaml`, `tr.yaml`); any other stem (`en.yaml`) or a `.yml`
+/// extension is a `[LOC-01]` compile error, and other entries are ignored.
+/// Each file is one YAML map of maps whose leaves are strings; every file
+/// read is `include_bytes!`-ed, so editing it rebuilds the crate. The
+/// macro generates, where it is invoked:
+///
+/// - `pub struct Strings`: `Strings::of(locale)` picks the locale's file,
+///   its [`Locale::sibling`](rules::Locale::sibling)'s, else the default's;
+///   its fields are the root maps (nested node structs), its methods the
+///   leaves. A leaf without placeholders returns `&'static str`; one with
+///   `{name}` or positional `{0}` placeholders takes one
+///   `impl Display` per name (`arg0`, `arg1`, … for indexes) and returns a
+///   `String` with every occurrence replaced. A keyword segment is a raw
+///   identifier (`r#type`).
+/// - `pub mod keys`: one [`MessageKey`](rules::MessageKey) const per
+///   content key, dots to `_` and uppercased (`setup.need_channel` is
+///   `keys::SETUP_NEED_CHANNEL`), for `HandlerError::with_message`,
+///   overrides and `defaults(label = keys::X)`.
+/// - `pub fn catalog() -> noctis::i18n::Catalog`, for
+///   [`AppBuilder::locales`].
+///
+/// A key missing from the default file, or a call with the wrong arguments,
+/// does not compile; a key another file lacks is one `[LOC-04]`
+/// `deprecated` warning per file (silence it with `#![allow(deprecated)]`)
+/// and falls back at run time. The reserved root maps `cmd`, `cmdword`,
+/// `ctxcmd` and `noctis` get no accessors; `noctis.*` keys override the
+/// built-in notices.
+///
+/// ```
+/// use noctis::rules::Locale;
+///
+/// noctis::i18n!(dir = "tests/fixtures/i18n/typed");
+///
+/// let tr = Strings::of(Locale::Tr);
+/// assert_eq!(tr.shop.buy(), "Satın al");
+/// assert_eq!(tr.shop.left(3), "3 kaldı");
+/// assert_eq!(Strings::of(Locale::De).greet("Ada"), "Hi Ada");
+/// assert_eq!(keys::SHOP_BUY.as_str(), "shop.buy");
+/// assert_eq!(catalog().get(Locale::Tr, "greet"), Some("Selam {name}"));
+/// ```
+///
+/// A wrong argument count does not compile:
+///
+/// ```compile_fail
+/// noctis::i18n!(dir = "tests/fixtures/i18n/typed");
+/// let _ = Strings::of(noctis::rules::Locale::Tr).shop.left();
+/// ```
+#[cfg(feature = "i18n")]
+pub use noctis_macros::i18n;
+
+#[cfg(feature = "i18n")]
+pub mod i18n {
+    //! The runtime half of [`i18n!`](crate::i18n!): [`Catalog`], the
+    //! compiled files `catalog()` returns (pass it to
+    //! [`AppBuilder::locales`](crate::AppBuilder::locales)), and
+    //! [`format`], the placeholder substitution the accessors use.
+    //!
+    //! ```
+    //! use noctis::rules::Locale;
+    //!
+    //! noctis::i18n!(dir = "tests/fixtures/i18n/typed");
+    //!
+    //! let c = catalog();
+    //! assert_eq!(c.default_locale(), Locale::EnUs);
+    //! assert_eq!(c.locales().collect::<Vec<_>>(), [Locale::EnUs, Locale::Tr]);
+    //! assert_eq!(c.placeholders("shop.left"), Some(&["n"][..]));
+    //! let n: &dyn std::fmt::Display = &2;
+    //! assert_eq!(noctis::i18n::format("{n} left", &[("n", n)]), "2 left");
+    //! ```
+
+    pub use noctis_i18n::{Catalog, format};
+}
+
 /// Paths the derive macros expand to; not public API.
 #[doc(hidden)]
 pub mod __private {
     pub use noctis_codec as codec;
     pub use noctis_core as core;
+    pub use noctis_i18n as i18n;
     pub use noctis_rules as rules;
     pub use noctis_ui as ui;
     pub use twilight_model as model;
@@ -2482,9 +2564,10 @@ pub mod ui {
     //!   Checkbox Group) or two defaults in a Radio Group (MOD-07).
     //! - Every literal is checked at `cargo check` against the
     //!   [`rules::modal`](crate::rules::modal) rules (MOD-01, MOD-02, MOD-04..07,
-    //!   CV2-09, CID-01 for keys, CV2-04 for the Text Displays). A locale key
-    //!   path in an attribute is [planned, Epic 11]; a [`Text`] override
-    //!   takes a key at run time. Option counts come from
+    //!   CV2-09, CID-01 for keys, CV2-04 for the Text Displays). Input
+    //!   attribute texts are literals only; localize them per render with a
+    //!   [`Text`] key in [`InputOverrides`]. `defaults(title = keys::T)` is
+    //!   a locale key, resolved and checked at run time. Option counts come from
     //!   [`Choices::Count`]: a Radio Group takes 2-10 options
     //!   ([`RadioOptions`]), a Checkbox Group 1-10 ([`CheckboxOptions`]), a
     //!   String Select 1-25 ([`StringSelectOptions`]).

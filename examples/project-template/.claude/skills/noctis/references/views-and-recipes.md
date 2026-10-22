@@ -27,9 +27,9 @@ pub fn render_x(data: &XData, selected: Option<u32>, page: u16) -> V2Message
 - **Arguments, in this order:** the data the handler loaded (`&XData`), then the ids
   that select what to show (selected entity, tab, page, step), taken from the Payload.
   Add `&Limits` (`ctx.limits()`, the App's Limits) when the function sizes a page with
-  the budget helper. Once `i18n!` lands (Epic 11) the strings for the response's locale
-  (`&Strings`, from `Strings::of(ctx.response_locale())`) go second; until then text
-  is literals, as in the recipes below.
+  the budget helper. The strings for the response's locale (`&Strings`, from
+  `Strings::of(ctx.response_locale())`, `i18n.md` §3) go second; the recipes below use
+  literals to stay short.
 - **Pure and deterministic.** All I/O (database, cache, `ctx.render(..)` for images)
   happens in the handler before the call. The same arguments give the same JSON (except
   per-render select nonces), so tests snapshot the function directly (`testing.md`).
@@ -85,9 +85,8 @@ drift apart. Each block is the whole module, with its own `use` lines, so it com
 shown in `src/<name>.rs` of a bot crate; the `app` block is the crate root `src/lib.rs`
 (not `src/app.rs`), and `store` is `src/store.rs`.
 
-One thing is literal on purpose until its feature lands: user-visible text in
-`defaults(..)` (it moves to the locale files with `i18n!`, Epic 11; per-render overrides
-already take a `MessageKey`). Modals open pre-filled from a struct value
+User-visible text in `defaults(..)` is a `keys::` path into the locale files
+(`label = keys::SETUP_NEXT`); per-render overrides take a `MessageKey` too. Modals open pre-filled from a struct value
 (`X { field: v, ..X::blank(..) }.build()`, `modals.md` §4a). Everything else is the
 shipped API.
 
@@ -1442,7 +1441,7 @@ are how every Noctis bot should be written.
     validates, saves and calls `ctx.update(render_x(..))` on the original message.
 11. **Every user-visible string goes through the locale files** (`Strings::of(locale)`),
     modal titles and placeholders included; no "Todo localization" literals. (The
-    recipes in §3 use literals only until `i18n!` lands, Epic 11.)
+    recipes in §3 use literals only to stay short.)
 12. **One-line notices with `ctx.reply_text(key)`**: validation failures, "not found",
     limits reached. Ephemeral, localized, never a whole Container.
 

@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/types/defaults_key_path_not_message_key.rs:8:49
+  |
+7 | #[derive(Button)]
+  |          ------ arguments to this enum variant are incorrect
+8 | #[button("f", defaults(style = Primary, label = LABEL))]
+  |                                                 ^^^^^ expected `MessageKey`, found `&str`
+  |
+note: tuple variant defined here
+ --> $WORKSPACE/crates/noctis-ui/src/route.rs
+  |
+  |     Key(MessageKey),
+  |     ^^^

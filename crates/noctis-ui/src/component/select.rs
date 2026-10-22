@@ -155,7 +155,7 @@ impl Common {
 
     /// The declared defaults of a kind derive.
     fn apply(&mut self, d: &SelectDefaults) {
-        self.placeholder = d.placeholder.map(Text::borrowed);
+        self.placeholder = d.placeholder.map(Text::from);
         self.min_values = d.min_values;
         self.max_values = d.max_values;
         self.disabled = d.disabled;
@@ -449,7 +449,7 @@ impl StringSelect {
 /// # use core::fmt;
 /// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape, SelectRoute};
 /// use noctis_ui::StringSelectOverrides;
-/// use noctis_ui::__macro::{SelectDefaults, build_string_select_builder};
+/// use noctis_ui::__macro::{DefaultText, SelectDefaults, build_string_select_builder};
 ///
 /// struct Pick;
 /// # impl Payload for Pick {
@@ -465,7 +465,7 @@ impl StringSelect {
 /// # impl SelectRoute for Pick {}
 /// # impl noctis_codec::DeclaredRuntime for Pick {}
 /// # impl noctis_ui::Handled for Pick {}
-/// let defaults = SelectDefaults { placeholder: Some("Pick"), min_values: None, max_values: None, disabled: false };
+/// let defaults = SelectDefaults { placeholder: Some(DefaultText::Literal("Pick")), min_values: None, max_values: None, disabled: false };
 /// let _ = build_string_select_builder(Pick, &defaults).overrides(StringSelectOverrides::default());
 /// ```
 ///
@@ -473,7 +473,7 @@ impl StringSelect {
 /// # use core::fmt;
 /// # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape, SelectRoute};
 /// use noctis_ui::ActionRow;
-/// use noctis_ui::__macro::{SelectDefaults, build_string_select_builder};
+/// use noctis_ui::__macro::{DefaultText, SelectDefaults, build_string_select_builder};
 ///
 /// struct Pick;
 /// # impl Payload for Pick {
@@ -489,7 +489,7 @@ impl StringSelect {
 /// # impl SelectRoute for Pick {}
 /// # impl noctis_codec::DeclaredRuntime for Pick {}
 /// # impl noctis_ui::Handled for Pick {}
-/// let defaults = SelectDefaults { placeholder: Some("Pick"), min_values: None, max_values: None, disabled: false };
+/// let defaults = SelectDefaults { placeholder: Some(DefaultText::Literal("Pick")), min_values: None, max_values: None, disabled: false };
 /// let _ = ActionRow::select(build_string_select_builder(Pick, &defaults)); // [CV2-09]
 /// ```
 pub struct StringSelectBuilder<R> {

@@ -16,7 +16,7 @@
 //! # use core::fmt;
 //! # use noctis_codec::{FieldWriter, Payload, Route, RouteId, RouteShape};
 //! use noctis_ui::{ButtonOverrides, ButtonStyle};
-//! use noctis_ui::__macro::{ButtonDefaults, build_button};
+//! use noctis_ui::__macro::{ButtonDefaults, DefaultText, build_button};
 //!
 //! # #[derive(Clone)]
 //! struct Buy;
@@ -33,7 +33,7 @@
 //! # impl noctis_codec::DeclaredRuntime for Buy {}
 //! # impl noctis_ui::Handled for Buy {}
 //! const DEFAULTS: ButtonDefaults =
-//!     ButtonDefaults { style: ButtonStyle::Secondary, label: Some("Buy"), emoji: None, disabled: false };
+//!     ButtonDefaults { style: ButtonStyle::Secondary, label: Some(DefaultText::Literal("Buy")), emoji: None, disabled: false };
 //!
 //! // What `#[derive(Button)]`'s `Buy.build()` expands to, then one render's overrides.
 //! let button = build_button(Buy, &DEFAULTS).overrides(ButtonOverrides {

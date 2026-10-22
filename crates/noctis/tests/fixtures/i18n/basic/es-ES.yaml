@@ -1,0 +1,11 @@
+# Lacks `a` on purpose: es-ES falls back to its sibling es-419 (row 53).
+common:
+  refresh: Actualizar
+greet: "Hola {name}, {name}! Tienes {n}"
+p: "{1} de {0}"
+braces: "{{n}}"
+unicode: "çğ😀 {n}"
+empty: ""
+type: Tipo
+profile:
+  match: "Partido {type}"

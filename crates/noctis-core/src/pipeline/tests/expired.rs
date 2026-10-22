@@ -816,6 +816,34 @@ async fn default_expired_notice_locale_and_failure() {
     assert!(fx.sink.seen().is_empty());
 }
 
+/// Story 11.1 Matrix 36: a `noctis.expired` override in a catalog's `tr`
+/// file replaces the built-in notice in `tr`; `de` keeps the built-in
+/// text.
+#[tokio::test]
+async fn catalog_overrides_the_expired_notice() {
+    static OVERRIDES: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+        "bot/locales",
+        Locale::EnUs,
+        &[
+            (Locale::EnUs, &[]),
+            (Locale::Tr, &[("noctis.expired", "Panel expired")]),
+        ],
+        &[("noctis.expired", &[])],
+    );
+    let fx = Fx::start_with(discord(), |b| {
+        b.locales(OVERRIDES);
+    })
+    .await;
+    for (locale, want) in [("tr", "Panel expired"), ("de", EXPIRED_TEXT)] {
+        let mut d = click("1shop.buy:147", 2);
+        d["locale"] = json!(locale);
+        fx.run(inbound(&d)).await;
+        let requests = fx.take();
+        assert_eq!(requests.len(), 1, "{locale}");
+        assert_expired_notice(&requests[0], want);
+    }
+}
+
 /// Matrix 29-31: stale modal submits; a modal `#[on_expired]` alone.
 #[tokio::test]
 async fn modal_stale_hooks() {

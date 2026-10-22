@@ -1201,7 +1201,7 @@ mod responses {
                 Buy { item: 1 },
                 &noctis_ui::__macro::ButtonDefaults {
                     style: noctis_ui::ButtonStyle::Primary,
-                    label: Some("b"),
+                    label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
                     emoji: None,
                     disabled: false,
                 },
@@ -1253,6 +1253,65 @@ mod responses {
         assert_eq!(requests.len(), 1, "{requests:?}");
         assert_eq!(requests[0].2["type"], 7);
         assert_eq!(label(&requests[0].2), "Al", "{requests:?}");
+    }
+
+    /// Story 11.1 Matrix 64: a `defaults(label = keys::X)` label
+    /// (`DefaultText::Key`) resolves from the App's `locales` catalog in
+    /// the user's locale on a component's update.
+    #[tokio::test]
+    async fn default_text_keys_resolve_from_catalogs() {
+        static SHOP: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+            "shop/locales",
+            Locale::EnUs,
+            &[
+                (Locale::EnUs, &[("shop.save", "Save")]),
+                (Locale::Tr, &[("shop.save", "Kaydet")]),
+            ],
+            &[("shop.save", &[])],
+        );
+        test_route!(KeyDef, "key.def", RouteShape::INLINE, 0);
+        fn keyed() -> V2Message {
+            let button = noctis_ui::__macro::build_button(
+                Buy { item: 1 },
+                &noctis_ui::__macro::ButtonDefaults {
+                    style: noctis_ui::ButtonStyle::Primary,
+                    label: Some(noctis_ui::__macro::DefaultText::Key(MessageKey::new(
+                        "shop.save",
+                    ))),
+                    emoji: None,
+                    disabled: false,
+                },
+            );
+            V2Message::new(noctis_ui::Components::new().push(ActionRow::buttons([button])))
+        }
+        let module = Module::new("ui").__add(handler::<KeyDef, AutoDefer, _, _, _>(
+            "c:key",
+            __Response::Update,
+            |_: KeyDef, _: ComponentCtx, _: ComponentResponder| async { Ok(keyed()) },
+        ));
+        let p = Pipeline::start_answering(module, discord(), |b| {
+            b.locales(SHOP);
+        })
+        .await;
+        for (locale, want) in [("tr", "Kaydet"), ("de", "Save")] {
+            let mut json = click("0key.def:1", 2);
+            json["locale"] = json!(locale);
+            p.fx.server.log.lock().unwrap().clear();
+            run_component(
+                Arc::clone(p.fx.app.registry()),
+                Arc::clone(p.fx.app.shared()),
+                on_message(&json, 32832),
+                CancellationToken::new(),
+            )
+            .await;
+            let requests = p.requests();
+            assert_eq!(requests.len(), 1, "{requests:?}");
+            assert_eq!(requests[0].2["type"], 7);
+            assert_eq!(
+                requests[0].2["data"]["components"][0]["components"][0]["label"], want,
+                "{requests:?}"
+            );
+        }
     }
 
     /// Story 7.8 rows 22-24: an `auto_defer = false` submit is never

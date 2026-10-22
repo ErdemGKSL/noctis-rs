@@ -1,0 +1,5 @@
+error: [LOC-01] locale file `../../fixtures/i18n/bare_stem/en.yaml` is not named by a Discord locale code; help: name it `en-GB.yaml` or `en-US.yaml`
+ --> tests/ui-i18n/loc/LOC-01_bare_language_stem.rs:3:21
+  |
+3 | noctis::i18n!(dir = "../../fixtures/i18n/bare_stem", __dir_from_source_file);
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

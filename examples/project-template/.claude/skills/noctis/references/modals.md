@@ -73,13 +73,17 @@ the decode or the declared specs.
 - The first literal of each attribute is the **Label text** (1–45, MOD-04); every Label
   attribute also takes `description = "…"` (≤ 100). `#[text_display("…")]` is a top-level
   Text Display instead (its literals together ≤ 4000, CV2-04).
-- Every text is a **literal**, checked at `cargo check` with the same
+- Every literal text is checked at `cargo check` with the same
   `noctis::rules::modal::validate_modal` the runtime validator uses; errors are spanned on
   the offending literal and cite the rule id (`[MOD-01] title: limit between 1 and 45,
-  actual 46`). A path (`title = keys::T`, `#[text_input(keys::L)]`) is rejected with
-  ``[MOD-01] `title` is a locale key path: locale keys are [planned, Epic 11]; use a string
-  literal`` (`[MOD-04]` for Label text); for per-render or localized text use the
-  `ModalBuilder` overrides (§4a), which take a literal or a `MessageKey`.
+  actual 46`). The title may be a locale key instead: `defaults(title = keys::T)` is
+  resolved in the User Locale first and checked after resolving (MOD-01 at run time).
+  Input attribute texts are literals only: a path (`#[text_input(keys::L)]`) is rejected
+  with ``[MOD-04] the Label text is a locale key path: input attribute texts are string
+  literals; localize them per render with `InputOverrides` ``; localize Labels,
+  descriptions and placeholders per render with the `ModalBuilder` overrides (§4a,
+  `.overrides(XOverrides { bio: InputOverrides { label: Some(keys::L.into()), .. }, .. })`),
+  which take a literal or a `MessageKey`.
 - An input field may not be named `title` (the overrides' own field) or a name whose
   upper-case handle is a derived const (`id` → `ID`, `defaults`, `route`, `shape`,
   `schema`, `runtime`, `response`, `guarded`): a compile error names the field.

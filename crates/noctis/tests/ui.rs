@@ -6,7 +6,11 @@
 //! by-construction rule's fixture carries `// [<RULE-ID>]` on the offending
 //! line. Fixtures that need a facade feature live in `tests/ui-<feature>/` and
 //! get their own feature-gated suite here, added by the first story that needs
-//! one. `cargo run --release -p xtask -- rules-catalog` checks the layout.
+//! one: `tests/ui-i18n/` (`ui_i18n`, Story 11.1) runs only with exactly the
+//! `i18n` feature on, and its fixtures read the YAML of `tests/fixtures/i18n/`
+//! through `i18n!(.., __dir_from_source_file)`, because trybuild compiles them
+//! outside this crate's manifest directory. `cargo run --release -p xtask --
+//! rules-catalog` checks the layout.
 //!
 //! `tests/types/<slug>.rs` holds `compile_fail` cases of the typed API that
 //! no Discord rule governs (for example a non-payload event handler parameter);
@@ -17,7 +21,8 @@
 //! boundary passes live in `tests/boundary/`.
 //!
 //! Bless after an intended change or a toolchain bump (same commit):
-//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui`.
+//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui` and
+//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui --features i18n`.
 //!
 //! trybuild runs `cargo check` without `--release`; the repo-root
 //! `.cargo/config.toml` makes `[profile.dev]` release-equivalent, and
@@ -50,13 +55,35 @@ fn ui() {
     harness::assert_trybuild_dev_profile();
 }
 
-/// The harness helpers; compiled with the suite only.
+/// The `i18n` suite: `tests/ui-i18n/**`, with exactly the `i18n` feature on.
+#[cfg(all(
+    feature = "i18n",
+    not(any(
+        feature = "image",
+        feature = "image-gif",
+        feature = "image-emoji",
+        feature = "default-font",
+        feature = "prefix",
+        feature = "testkit"
+    ))
+))]
+#[test]
+fn ui_i18n() {
+    harness::assert_pinned_toolchain();
+    {
+        let cases = trybuild::TestCases::new();
+        cases.compile_fail("tests/ui-i18n/**/*.rs");
+        // The cases run when `cases` drops here.
+    }
+    harness::assert_trybuild_dev_profile();
+}
+
+/// The harness helpers; compiled with a suite only.
 #[cfg(not(any(
     feature = "image",
     feature = "image-gif",
     feature = "image-emoji",
     feature = "default-font",
-    feature = "i18n",
     feature = "prefix",
     feature = "testkit"
 )))]

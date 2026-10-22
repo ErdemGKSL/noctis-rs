@@ -107,7 +107,7 @@ impl<X: ModalRender> From<ModalBuilder<X>> for Modal {
         let mut overrides = b.overrides;
         let title = X::title_mut(&mut overrides)
             .take()
-            .unwrap_or_else(|| Text::borrowed(X::DEFAULTS.title));
+            .unwrap_or_else(|| Text::from(X::DEFAULTS.title));
         X::render(Modal::from_id(b.custom_id, title), &b.prefill, &overrides)
     }
 }

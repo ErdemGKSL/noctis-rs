@@ -222,7 +222,7 @@ async fn wh_02_owned_sends_interactive_components() {
         Stored { item: 1 },
         &ButtonDefaults {
             style: ButtonStyle::Primary,
-            label: Some("b"),
+            label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
             emoji: None,
             disabled: false,
         },
@@ -230,7 +230,7 @@ async fn wh_02_owned_sends_interactive_components() {
     let select = build_user_select(
         Picked { item: 2 },
         &SelectDefaults {
-            placeholder: Some("p"),
+            placeholder: Some(noctis_ui::__macro::DefaultText::Literal("p")),
             min_values: None,
             max_values: None,
             disabled: false,
@@ -443,7 +443,7 @@ async fn wh_02_try_from_refuses_interactive() {
         Stored { item: 1 },
         &ButtonDefaults {
             style: ButtonStyle::Primary,
-            label: Some("b"),
+            label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
             emoji: None,
             disabled: false,
         },
@@ -795,7 +795,7 @@ async fn webhook_resolves_locale_keys() {
         Plain { item: 1 },
         &ButtonDefaults {
             style: ButtonStyle::Primary,
-            label: Some("b"),
+            label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
             emoji: None,
             disabled: false,
         },

@@ -11,6 +11,7 @@ use noctis_codec::{
     BodyKind, DeclaredRuntime, EncodeError, EncodedId, MAX_ID_LEN, Parts, PendingRef, Ref,
     RefPolicy, Route, RouteId, RouteShape, SelectNonce, SelectRoute, Sign, Tag, encode_id,
 };
+use noctis_rules::MessageKey;
 use twilight_model::channel::ChannelType;
 use twilight_model::id::Id;
 
@@ -82,6 +83,27 @@ impl DefaultEmoji {
     }
 }
 
+/// A `defaults(..)` text: a string literal, or a locale key path
+/// (`label = keys::SAVE`) that core's Responder translates in the response
+/// locale before validating and sending.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefaultText {
+    /// A string literal, checked at expansion.
+    Literal(&'static str),
+    /// A locale key, resolved and validated at run time.
+    Key(MessageKey),
+}
+
+impl From<DefaultText> for Text {
+    fn from(text: DefaultText) -> Self {
+        match text {
+            DefaultText::Literal(text) => Text::borrowed(text),
+            DefaultText::Key(key) => Text::Key(key),
+        }
+    }
+}
+
 /// The `defaults(..)` of `#[button]`; omitted keys are not sent.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,7 +111,7 @@ pub struct ButtonDefaults {
     /// `style` (required).
     pub style: ButtonStyle,
     /// `label`.
-    pub label: Option<&'static str>,
+    pub label: Option<DefaultText>,
     /// `emoji`.
     pub emoji: Option<DefaultEmoji>,
     /// `disabled` (`false` when omitted).
@@ -102,7 +124,7 @@ pub struct ButtonDefaults {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SelectDefaults {
     /// `placeholder` (required by the derives).
-    pub placeholder: Option<&'static str>,
+    pub placeholder: Option<DefaultText>,
     /// `min_values`.
     pub min_values: Option<u8>,
     /// `max_values`.
@@ -137,7 +159,7 @@ pub struct ChannelSelectDefaults {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModalDefaults {
     /// `title` (required).
-    pub title: &'static str,
+    pub title: DefaultText,
 }
 
 /// The select options of the [`Choices`] enum `C`, in declaration order;

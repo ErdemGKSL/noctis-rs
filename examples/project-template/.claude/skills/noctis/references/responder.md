@@ -712,11 +712,12 @@ Then:
   user condition.
 
 The locale of the notice is the User Locale, then the Guild Locale, then `en-US` (an
-unparseable code means `en-US`). Built-in `noctis.*` texts are English for every
-locale today. Until bot locale files arrive ([planned, Epic 11]), a key of your own
-(`keys::SAVE_FAILED`) is not in any catalog: the user sees the generic text and
-Noctis logs `warn` "missing message key" (target `noctis::i18n`, field `key`). Use
-the reserved keys (`i18n.md` §6) when the exact text matters today.
+unparseable code means `en-US`). Keys resolve from the catalogs registered with
+`AppBuilder::locales(strings::catalog())` (`i18n.md` §2), and the built-in `noctis.*`
+texts are English unless a locale file overrides them (`i18n.md` §6). A key no
+registered catalog defines (`keys::SAVE_FAILED` without `.locales(..)`) shows the
+generic text and Noctis logs `warn` "missing message key" (target `noctis::i18n`,
+field `key`).
 
 Logs never contain the token, a user id, option values or the notice text.
 Autocomplete never shows a notice (it answers an empty list, `commands.md` §4); event

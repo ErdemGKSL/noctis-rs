@@ -573,6 +573,7 @@ mod tests {
             "CV2-01", "CV2-02", "CV2-12", "CV2-14", "CID-05", "CID-07", "INT-03", "INT-04",
             "INT-06", "INT-08", "INT-09", "INT-10", "MSG-03", "MSG-05", "MSG-07", "WH-01", "WH-03",
             "META-05", "OPT-12", "OPT-14", "CTX-02", "CTX-03", "ATT-05", "ATT-07", "GW-07",
+            "LOC-04",
         ];
         let mut got = by_construction.clone();
         got.sort_unstable();
@@ -580,7 +581,7 @@ mod tests {
         assert_eq!(got, expected);
         assert_eq!(
             ids(&|c| *c == Class::DocOnly),
-            ["CMD-14", "LOC-04", "REG-06", "MSG-02"]
+            ["CMD-14", "REG-06", "MSG-02"]
         );
         assert_eq!(ids(&|c| matches!(c, Class::Alias(_))), ["LOC-05", "MOD-08"]);
         assert_eq!(

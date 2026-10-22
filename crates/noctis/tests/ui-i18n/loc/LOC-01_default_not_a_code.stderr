@@ -1,0 +1,5 @@
+error: [LOC-01] `en` is not a Discord locale code; matching codes: `en-GB`, `en-US`
+ --> tests/ui-i18n/loc/LOC-01_default_not_a_code.rs:2:25
+  |
+2 | noctis::i18n!(default = "en", dir = "../../fixtures/i18n/typed", __dir_from_source_file);
+  |                         ^^^^

@@ -1,0 +1,17 @@
+# Story 11.1: the runtime fixture of tests/i18n.rs (rows 1, 39, 40, 45-47, 53-55, 58).
+common:
+  refresh: Refresh
+greet: "Hi {name}, {name}! You have {n}"
+p: "{1} of {0}"
+braces: "{{n}}"
+unicode: "çğ😀 {n}"
+empty: ""
+a: us-a
+type: Kind
+profile:
+  match: "Match {type}"
+cmd:
+  setup:
+    description: "Set {x} up"
+cmdword:
+  setup: setup

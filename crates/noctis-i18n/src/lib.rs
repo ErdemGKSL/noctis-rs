@@ -3,9 +3,15 @@
 //! This crate is internal; use `noctis` instead. Its API is not stable and may
 //! change in any release.
 //!
-//! Today it ships [`Builtin`], the [`Translate`] implementation that holds the
-//! English (`en-US`) text of every reserved notice key in [`keys`]. Every other
-//! locale falls back to it (LOC-04). Merged bot catalogs arrive in Epic 11.
+//! It ships:
+//!
+//! - [`Builtin`], the [`Translate`] implementation that holds the English
+//!   (`en-US`) text of every reserved notice key in [`keys`]; every other
+//!   locale falls back to it (LOC-04);
+//! - [`Catalog`], the compiled locale files of one `i18n!` invocation;
+//! - [`AppStrings`], an App's catalogs layered over [`Builtin`], which
+//!   rejects a key that two catalogs define ([`DuplicateKey`]);
+//! - [`format`], the placeholder substitution every lookup uses.
 //!
 //! ```
 //! use noctis_i18n::{keys, Builtin};
@@ -18,6 +24,10 @@
 use std::fmt::{Display, Write as _};
 
 use noctis_rules::{Locale, MessageKey, Translate};
+
+mod catalog;
+
+pub use catalog::{AppStrings, Catalog, DuplicateKey};
 
 /// The reserved `noctis.*` notice keys the framework renders (AD-16).
 ///
@@ -277,6 +287,41 @@ mod tests {
         // Unicode stays intact.
         assert_eq!(format("çğ😀 {n}", &[("n", d(&"ü"))]), "çğ😀 ü");
         assert_eq!(format("😀{😀}", &[]), "😀{😀}");
+    }
+
+    /// `noctis_rules::placeholder_names` finds exactly the placeholders
+    /// `format` substitutes, in order, on every template above.
+    #[test]
+    fn placeholder_names_agree_with_format() {
+        for template in [
+            "Try again {retry}.",
+            "{}",
+            "{a b}",
+            "x {retry",
+            "{",
+            "{{retry}}",
+            "{retry}",
+            "{n}{n}",
+            "çğ😀 {n}",
+            "😀{😀}",
+            "{1} of {0}, {Name} {_x} {1a}",
+        ] {
+            let names: Vec<&str> = noctis_rules::placeholder_names(template).collect();
+            let marks: Vec<String> = names.iter().map(|n| format!("\u{1}{n}\u{2}")).collect();
+            let args: Vec<(&str, &dyn Display)> = names
+                .iter()
+                .zip(&marks)
+                .map(|(n, m)| (*n, m as &dyn Display))
+                .collect();
+            let out = format(template, &args);
+            let substituted: Vec<&str> = out
+                .split('\u{1}')
+                .skip(1)
+                .filter_map(|part| part.split_once('\u{2}').map(|(name, _)| name))
+                .collect();
+            assert_eq!(substituted, names, "{template}");
+            assert_eq!(format(template, &[]), template, "{template}");
+        }
     }
 
     #[test]

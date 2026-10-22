@@ -317,9 +317,9 @@ pub mod __macro {
     pub use crate::placement::{OptionsGiven, RowButtonItem, RowOne};
     pub use crate::route::{
         ButtonDefaults, ChannelSelectDefaults, ComponentRoute, ComponentValue, DefaultEmoji,
-        ModalDefaults, SelectDefaults, StringSelectDefaults, build_button, build_channel_select,
-        build_mentionable_select, build_modal, build_role_select, build_string_select,
-        build_string_select_builder, build_user_select, choices_options,
+        DefaultText, ModalDefaults, SelectDefaults, StringSelectDefaults, build_button,
+        build_channel_select, build_mentionable_select, build_modal, build_role_select,
+        build_string_select, build_string_select_builder, build_user_select, choices_options,
     };
     use crate::{ActionRow, Button};
 

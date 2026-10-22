@@ -22,12 +22,6 @@ struct SelectLabel;
 #[button("e", defaults(style = Primary, label = "a", label = "b"))]
 struct Twice;
 
-const LABEL: &str = "x";
-
-#[derive(Button)]
-#[button("f", defaults(style = Primary, label = LABEL))]
-struct NotLiteral;
-
 #[derive(UserSelectMenu)]
 #[user_select("g", defaults(placeholder = "p", disabled = "yes"))]
 struct NotBool;

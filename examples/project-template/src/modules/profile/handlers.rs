@@ -13,7 +13,7 @@ use noctis::ResponderError;
 use noctis::ui::{Components, ResolvedUser, TextDisplay, V2Message, escape_markdown};
 
 use super::view::{ProfileCard, ProfileData, render_profile};
-use super::{BioForm, EditBio, RefreshProfile, StoredProfile, profile_key, xp_key};
+use super::{BioForm, BioFormOverrides, EditBio, RefreshProfile, StoredProfile, profile_key, xp_key};
 use crate::strings::{Strings, keys};
 
 const XP_PER_LEVEL: u64 = 100;
@@ -56,8 +56,23 @@ impl Bio {
         // A fresh form: the Payload says whose bio, the inputs start empty (`blank` takes
         // the Payload fields). After a modal there is no original message to edit: end
         // with `done()`.
-        Ok(r.show_modal(BioForm::blank(ctx.user_id())).await?.done())
+        Ok(r.show_modal(bio_modal(BioForm::blank(ctx.user_id()))).await?.done())
     }
+}
+
+/// The bio modal of `form`, its input texts localized for this render: input attribute
+/// texts are literals, so the Labels and the placeholder come from the locale files through
+/// `BioFormOverrides` (each `InputOverrides` field takes a literal or a `keys::` path).
+fn bio_modal(form: BioForm) -> noctis::ui::ModalBuilder<BioForm> {
+    form.build().overrides(BioFormOverrides {
+        bio: InputOverrides {
+            label: Some(keys::PROFILE_BIO_MODAL_BIO.into()),
+            placeholder: Some(keys::PROFILE_BIO_MODAL_BIO_HINT.into()),
+            ..Default::default()
+        },
+        pronouns: InputOverrides { label: Some(keys::PROFILE_BIO_MODAL_PRONOUNS.into()), ..Default::default() },
+        ..Default::default()
+    })
 }
 
 /// The badges `/badge` knows.
@@ -144,9 +159,10 @@ impl EditBio {
             ctx.kv().get(&profile_key(guild, self.user)).await?.unwrap_or_default();
         // Every BioForm input has an empty value, so `blank` returns a `BioForm` and the
         // struct update fills in the rest. `.build()` is a `ModalBuilder` that also takes
-        // `.title(..)`, `.value(BioForm::BIO, ..)` and `.overrides(BioFormOverrides { .. })`.
+        // `.title(..)`, `.value(BioForm::BIO, ..)` and `.overrides(BioFormOverrides { .. })`;
+        // `bio_modal` localizes the input texts with the latter.
         let form = BioForm { bio: stored.bio, pronouns: stored.pronouns, ..BioForm::blank(self.user) };
-        Ok(responder.show_modal(form.build()).await?.done())
+        Ok(responder.show_modal(bio_modal(form)).await?.done())
     }
 }
 

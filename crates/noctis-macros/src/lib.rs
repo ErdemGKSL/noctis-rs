@@ -2,8 +2,8 @@
 //! `MessageCommand`, `EventHandler`, `Button`, the five select derives,
 //! `Modal`), the `#[handler]`, `#[autocomplete(field)]`, `#[on_stale]` and
 //! `#[on_expired]` method attributes,
-//! the `Payload`/`PayloadEnum`/`Choices` derives, `components!` and the
-//! literal macros.
+//! the `Payload`/`PayloadEnum`/`Choices` derives, `components!`, `i18n!`
+//! and the literal macros.
 //!
 //! This crate is internal; use `noctis` instead. Its API is not stable and may
 //! change in any release.
@@ -35,6 +35,7 @@ mod event;
 mod guard;
 mod handler;
 mod hook;
+mod i18n;
 mod kind;
 mod literal;
 mod menu;
@@ -167,6 +168,14 @@ pub fn rgb(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn components(input: TokenStream) -> TokenStream {
     components::components(input.into()).into()
+}
+
+/// `i18n!(default = "en-US", dir = "locales")`: typed content strings from
+/// the YAML locale files of `dir` (relative to the crate root), checked at
+/// expansion (LOC-01, LOC-04); see `noctis::i18n!`.
+#[proc_macro]
+pub fn i18n(input: TokenStream) -> TokenStream {
+    i18n::expand(input.into()).into()
 }
 
 /// `#[derive(SlashCommand)]`: a slash Command struct whose named fields are

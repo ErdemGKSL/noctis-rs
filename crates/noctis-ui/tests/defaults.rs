@@ -14,8 +14,8 @@ use noctis_codec::{
 };
 use noctis_rules::{LimitMode, Limits, RuleId};
 use noctis_ui::__macro::{
-    ButtonDefaults, ChannelSelectDefaults, ComponentRoute, DefaultEmoji, ModalDefaults,
-    SelectDefaults, StringSelectDefaults, build_button, build_channel_select,
+    ButtonDefaults, ChannelSelectDefaults, ComponentRoute, DefaultEmoji, DefaultText,
+    ModalDefaults, SelectDefaults, StringSelectDefaults, build_button, build_channel_select,
     build_mentionable_select, build_modal, build_role_select, build_string_select,
     build_string_select_builder, build_user_select, choices_options,
 };
@@ -65,7 +65,7 @@ macro_rules! route {
 
 const fn select(placeholder: &'static str) -> SelectDefaults {
     SelectDefaults {
-        placeholder: Some(placeholder),
+        placeholder: Some(DefaultText::Literal(placeholder)),
         min_values: None,
         max_values: None,
         disabled: false,
@@ -73,7 +73,7 @@ const fn select(placeholder: &'static str) -> SelectDefaults {
 }
 
 const fn button_defaults(
-    label: Option<&'static str>,
+    label: Option<DefaultText>,
     emoji: Option<DefaultEmoji>,
 ) -> ButtonDefaults {
     ButtonDefaults {
@@ -87,7 +87,7 @@ const fn button_defaults(
 route!(
     Buy { item: u64 } = "shop.buy",
     RouteShape::INLINE,
-    ButtonDefaults = button_defaults(Some("Buy"), None)
+    ButtonDefaults = button_defaults(Some(DefaultText::Literal("Buy")), None)
 );
 route!(
     Next {} = "next",
@@ -97,7 +97,10 @@ route!(
 route!(
     Both {} = "both",
     RouteShape::INLINE,
-    ButtonDefaults = button_defaults(Some("Go"), Some(DefaultEmoji::Unicode("➡️")))
+    ButtonDefaults = button_defaults(
+        Some(DefaultText::Literal("Go")),
+        Some(DefaultEmoji::Unicode("➡️"))
+    )
 );
 route!(
     Custom {} = "custom",
@@ -175,7 +178,7 @@ route!(
     },
     SelectRoute
 );
-route!(Bio { user: Id<twilight_model::id::marker::UserMarker> } = "bio", RouteShape::INLINE, ModalDefaults = ModalDefaults { title: "Bio" });
+route!(Bio { user: Id<twilight_model::id::marker::UserMarker> } = "bio", RouteShape::INLINE, ModalDefaults = ModalDefaults { title: DefaultText::Literal("Bio") });
 
 /// A hand-written `Choices` enum (what `#[derive(Choices)]` implements).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -63,7 +63,7 @@ fn button<R: noctis_ui::__macro::ComponentValue>(route: R) -> noctis_ui::RouteBu
         route,
         &ButtonDefaults {
             style: ButtonStyle::Primary,
-            label: Some("b"),
+            label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
             emoji: None,
             disabled: false,
         },
@@ -364,7 +364,7 @@ async fn ref_select_carries_schema_and_nonce() {
     let refs = TestRefs::new();
     let fx = Fixture::start_refs(discord(), Arc::clone(&refs), None).await;
     let defaults = SelectDefaults {
-        placeholder: Some("p"),
+        placeholder: Some(noctis_ui::__macro::DefaultText::Literal("p")),
         min_values: None,
         max_values: None,
         disabled: false,

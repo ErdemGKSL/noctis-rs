@@ -1,0 +1,15 @@
+common:
+  refresh: Yenile
+greet: "Selam {name}, {name}! {n} tane var"
+p: "{1} / {0}"
+braces: "{{n}}"
+unicode: "çğ😀 {n}"
+empty: ""
+a: tr-a
+type: Tür
+profile:
+  match: "Eşleşme {type}"
+cmdword:
+  setup: kurulum
+noctis:
+  expired: "Panelin süresi doldu"

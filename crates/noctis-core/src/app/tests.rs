@@ -244,6 +244,67 @@ async fn duplicate_state() {
     );
 }
 
+static SHOP: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+    "shop/locales",
+    noctis_rules::Locale::EnUs,
+    &[(noctis_rules::Locale::EnUs, &[("common.ok", "OK")])],
+    &[("common.ok", &[])],
+);
+
+/// Story 11.1 Matrix 61: a key two catalogs define is a violation naming
+/// it and both origins.
+#[tokio::test]
+async fn duplicate_locale_key() {
+    static OTHER: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+        "other/locales",
+        noctis_rules::Locale::EnUs,
+        &[(noctis_rules::Locale::Tr, &[("common.ok", "Tamam")])],
+        &[],
+    );
+    let err = App::builder()
+        .locales(SHOP)
+        .locales(OTHER)
+        .state(1_u8)
+        .state(2_u8)
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [
+            BuildViolation::DuplicateState { type_name: "u8" },
+            BuildViolation::DuplicateLocaleKey {
+                key: "common.ok",
+                first: "shop/locales",
+                second: "other/locales",
+            },
+        ]
+    );
+    assert_eq!(
+        err.violations()[1].to_string(),
+        "locale key `common.ok` is defined by two catalogs: `shop/locales` and `other/locales`"
+    );
+}
+
+/// Story 11.1 Matrix 62, 63: one catalog twice is deduplicated; without
+/// catalogs the strings are the built-in ones.
+#[tokio::test]
+async fn locales_are_idempotent() {
+    use noctis_rules::{Locale, MessageKey, Translate};
+    let app = App::builder().locales(SHOP).locales(SHOP).build().unwrap();
+    let ok = app
+        .shared()
+        .strings
+        .translate(Locale::Tr, MessageKey::new("common.ok"), &[]);
+    assert_eq!(ok.as_deref(), Some("OK"));
+    let app = App::builder().build().unwrap();
+    for key in noctis_i18n::keys::ALL {
+        assert_eq!(
+            app.shared().strings.translate(Locale::Tr, key, &[]),
+            noctis_i18n::Builtin.translate(Locale::Tr, key, &[])
+        );
+    }
+}
+
 #[test]
 fn build_outside_runtime() {
     let err = App::builder().build().unwrap_err();

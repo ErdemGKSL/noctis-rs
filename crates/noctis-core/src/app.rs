@@ -1298,6 +1298,8 @@ pub struct AppBuilder {
     expired_handler: Option<Arc<AppExpiredFn>>,
     /// The hidden run-end observer (`__testing::observe_runs`).
     run_observer: Option<crate::handler::RunObserver>,
+    /// The locale catalogs, in registration order (`locales`).
+    catalogs: Vec<noctis_i18n::Catalog>,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1381,6 +1383,7 @@ impl AppBuilder {
             previous_payload_key: None,
             expired_handler: None,
             run_observer: None,
+            catalogs: Vec::new(),
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -1522,6 +1525,35 @@ impl AppBuilder {
                 type_name: std::any::type_name::<T>(),
             });
         }
+        self
+    }
+
+    /// Adds the locale catalog of an `i18n!` invocation (its `catalog()`):
+    /// every `Text::Key`, `noctis.*` notice and `HandlerError` message key
+    /// then resolves from its files (the response locale, its sibling, then
+    /// the catalog's default locale), and keys no catalog has fall back to
+    /// the built-in `noctis.*` texts.
+    ///
+    /// Catalogs with one `origin()` count once. A key that two catalogs
+    /// define is a [`BuildViolation::DuplicateLocaleKey`] at `build`.
+    ///
+    /// ```
+    /// use noctis_i18n::Catalog;
+    /// use noctis_rules::Locale;
+    ///
+    /// // What `i18n!` generates as `catalog()`.
+    /// static CATALOG: Catalog = Catalog::__new(
+    ///     "my-bot/locales",
+    ///     Locale::EnUs,
+    ///     &[(Locale::EnUs, &[("shop.buy", "Buy")])],
+    ///     &[("shop.buy", &[])],
+    /// );
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.locales(CATALOG);
+    /// ```
+    pub fn locales(&mut self, catalog: noctis_i18n::Catalog) -> &mut Self {
+        self.catalogs.push(catalog);
         self
     }
 
@@ -2024,7 +2056,8 @@ impl AppBuilder {
     /// One [`BuildError`] with every violation: setters', plugins' reports
     /// and the checks', in that order; among the checks, missing intents
     /// (GW-05), then every [`BuildViolation::Command`] (in the rule engine's
-    /// order), then the crypto provider and the runtime.
+    /// order), then every [`BuildViolation::DuplicateLocaleKey`], then the
+    /// crypto provider and the runtime.
     ///
     /// ```no_run
     /// # #[tokio::main] async fn main() -> Result<(), noctis_core::BuildError> {
@@ -2113,6 +2146,19 @@ impl AppBuilder {
         let registry = Arc::new(registry);
         self.violations.extend(missing);
         let payload_keys = self.key_ring(&registry);
+        let strings = match noctis_i18n::AppStrings::new(&self.catalogs) {
+            Ok(strings) => Some(strings),
+            Err(duplicates) => {
+                self.violations.extend(duplicates.into_iter().map(|d| {
+                    BuildViolation::DuplicateLocaleKey {
+                        key: d.key,
+                        first: d.first,
+                        second: d.second,
+                    }
+                }));
+                None
+            }
+        };
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }
@@ -2121,9 +2167,10 @@ impl AppBuilder {
         }
         let fresh = Self::new(self.runtime.clone());
         let config = std::mem::replace(self, fresh);
-        let (Some(event_capacity), Some((listener, edge_addr))) = (
+        let (Some(event_capacity), Some((listener, edge_addr)), Some(strings)) = (
             event_capacity.filter(|_| config.violations.is_empty()),
             edge_listener,
+            strings,
         ) else {
             return Err(BuildError::new(config.violations));
         };
@@ -2151,7 +2198,7 @@ impl AppBuilder {
                 ack_deadline: config.ack_deadline,
                 refs,
                 ref_ttl: config.ref_ttl,
-                strings: Arc::new(noctis_i18n::Builtin),
+                strings: Arc::new(strings),
                 payload_keys,
                 expired_handler: config.expired_handler,
                 run_observer: config.run_observer,
@@ -2219,6 +2266,11 @@ impl AppBuilder {
 impl fmt::Debug for AppBuilder {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let plugins: Vec<&str> = self.plugins.iter().map(|e| e.type_name).collect();
+        let catalogs: Vec<&str> = self
+            .catalogs
+            .iter()
+            .map(noctis_i18n::Catalog::origin)
+            .collect();
         f.debug_struct("AppBuilder")
             .field("runtime", &self.runtime)
             .field("token", &self.token)
@@ -2245,6 +2297,7 @@ impl fmt::Debug for AppBuilder {
             .field("payload_key", &self.payload_key.is_some())
             .field("previous_payload_key", &self.previous_payload_key.is_some())
             .field("expired_handler", &self.expired_handler.is_some())
+            .field("catalogs", &catalogs)
             .field("plugins", &plugins)
             .field("violations", &self.violations)
             .finish()

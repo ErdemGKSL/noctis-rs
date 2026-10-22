@@ -28,38 +28,32 @@ error: duplicate `defaults` key `label`
 22 | #[button("e", defaults(style = Primary, label = "a", label = "b"))]
    |                                                      ^^^^^
 
-error: [CV2-08] `label` is a locale key path: locale keys are [planned, Epic 11]; use a string literal
-  --> tests/types/defaults_unknown_key.rs:28:49
-   |
-28 | #[button("f", defaults(style = Primary, label = LABEL))]
-   |                                                 ^^^^^
-
 error: `disabled` takes `true` or `false`
-  --> tests/types/defaults_unknown_key.rs:32:59
+  --> tests/types/defaults_unknown_key.rs:26:59
    |
-32 | #[user_select("g", defaults(placeholder = "p", disabled = "yes"))]
+26 | #[user_select("g", defaults(placeholder = "p", disabled = "yes"))]
    |                                                           ^^^^^
 
 error: Link and Premium buttons have no handler: build them with `LinkButton::new(url)` / `PremiumButton`
-  --> tests/types/defaults_unknown_key.rs:36:32
+  --> tests/types/defaults_unknown_key.rs:30:32
    |
-36 | #[button("h", defaults(style = Link, label = "Docs"))]
+30 | #[button("h", defaults(style = Link, label = "Docs"))]
    |                                ^^^^
 
 error: `style` takes `Primary`, `Secondary`, `Success` or `Danger`
-  --> tests/types/defaults_unknown_key.rs:40:32
+  --> tests/types/defaults_unknown_key.rs:34:32
    |
-40 | #[button("i", defaults(style = Blurple, label = "B"))]
+34 | #[button("i", defaults(style = Blurple, label = "B"))]
    |                                ^^^^^^^
 
 error: custom emoji literals are `<:name:id>` or `<a:name:id>`
-  --> tests/types/defaults_unknown_key.rs:44:49
+  --> tests/types/defaults_unknown_key.rs:38:49
    |
-44 | #[button("j", defaults(style = Primary, emoji = "<:x:abc>"))]
+38 | #[button("j", defaults(style = Primary, emoji = "<:x:abc>"))]
    |                                                 ^^^^^^^^^^
 
 error: unknown channel type `Bogus`; expected one of GuildText, Private, GuildVoice, Group, GuildCategory, GuildAnnouncement, AnnouncementThread, PublicThread, PrivateThread, GuildStageVoice, GuildDirectory, GuildForum, GuildMedia
-  --> tests/types/defaults_unknown_key.rs:48:68
+  --> tests/types/defaults_unknown_key.rs:42:68
    |
-48 | #[channel_select("k", defaults(placeholder = "p", channel_types = [Bogus]))]
+42 | #[channel_select("k", defaults(placeholder = "p", channel_types = [Bogus]))]
    |                                                                    ^^^^^

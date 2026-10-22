@@ -1,0 +1,14 @@
+error[E0425]: cannot find value `SHOP_MISSING` in module `keys`
+ --> tests/ui-i18n/loc/LOC-04_missing_default_key.rs:8:19
+  |
+8 |     let _ = keys::SHOP_MISSING; // [LOC-04]
+  |                   ^^^^^^^^^^^^ not found in `keys`
+
+error[E0599]: no method named `missing` found for struct `N0` in the current scope
+ --> tests/ui-i18n/loc/LOC-04_missing_default_key.rs:7:26
+  |
+3 | noctis::i18n!(dir = "../../fixtures/i18n/typed", __dir_from_source_file);
+  | ------------------------------------------------------------------------ method `missing` not found for this struct
+...
+7 |     let _ = strings.shop.missing(); // [LOC-04]
+  |                          ^^^^^^^ method not found in `N0`
