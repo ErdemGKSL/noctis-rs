@@ -566,15 +566,14 @@ async fn cv2_03_raw_view_through_respond() {
     assert_eq!(components[38], raw_node());
     assert_eq!(components[37]["id"], 38);
 
-    let over = app.command("rawview over").run().await;
+    let before = app.http_fake().requests().len();
+    let _over = app.command("rawview over").run().await;
     assert_eq!(log.lines(), ["invalid CV2-03 41"]);
-    if let Ok(over) = over {
-        let carried = over
-            .http_calls()
-            .iter()
-            .any(|c| c.json().is_some_and(|b| b.to_string().contains("Lunch?")));
-        assert!(!carried, "{:?}", over.http_calls());
-    }
+    let after = app.http_fake().requests();
+    let carried = after[before..]
+        .iter()
+        .any(|r| String::from_utf8_lossy(&r.body).contains("Lunch?"));
+    assert!(!carried, "{:?}", &after[before..]);
 }
 
 /// V5: the Responder uploads the attachment a raw node references, and

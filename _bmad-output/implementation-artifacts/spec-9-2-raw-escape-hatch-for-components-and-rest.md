@@ -2,7 +2,7 @@
 title: 'Story 9.2: Raw escape hatch for components and REST'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '54c77825885b361255b672a09a3ba778ef39579c'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -14,7 +14,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      RawHttp's path rule passes percent-encoded dot segments, slashes and backslashes (`%2e%2e`, `%2f`, `%5c`), so the `.`/`..`, empty-segment and `api`-prefix rules can be sidestepped.
+    evidence: |-
+      `check_path` in crates/noctis-core/src/raw_http.rs never decodes escapes (as the spec states). Whether this does harm depends on whether Discord's edge (Cloudflare URL normalization) or a configured http_proxy decodes `%2E`/`%2F` and removes dot segments before routing; if it does, a path segment interpolated from user input could reach another route with the bot token. Settle by sending `channels/1/%2e%2e/%2e%2e/applications/@me` against Discord and checking which route answers.
+    location: >-
+      crates/noctis-core/src/raw_http.rs:210 (check_path)
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -269,6 +276,34 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 24 findings — high 0, medium 2, low 10, false 10, maybe-false 2
+- findings:
+  - `[medium]` `[patch]` (blind) `RawHttpError::InvalidPath` Display embeds the whole rejected path, leaking webhook/interaction tokens into logs — verified: the default error sink logs `%Chain(error)` (sink.rs L268), so a malformed `webhooks/1/<token>/` path prints the token, contradicting the redacting `RawRequest` Debug; patch: drop the path from the `#[error]` text.
+  - `[maybe-false]` `[defer]` (blind) percent escapes (`%2e%2e`, `%2f`, `%5c`) bypass the dot-segment/empty-segment/api rules — the spec deliberately leaves escapes undecoded; harm depends on edge/proxy normalization; settle by probing Discord with an encoded `..` path; deferred as medium (unverified).
+  - `[low]` `[reject]` (blind) `RawHttpError::Status` drops response headers, so a 429's `retry-after` is unreadable — real but rare (twilight's limiter or the proxy absorbs 429s) and the fix adds public surface to a shape the spec fixed.
+  - `[low]` `[reject]` (blind) no way to set request headers (`X-Audit-Log-Reason`), `.body` always JSON — feature gap, not a defect in everyday raw use; fix adds public surface.
+  - `[false]` `[reject]` (blind) `RawComponent` accepts modeled `type`s, bypassing CV2-05/CV2-07 — the spec deliberately accepts any `type` ≥ 1 (matrix R3 uses type-9 and type-18 roots) and the skill documents "no placement rules and no field checks inside a raw node"; Discord's 400 is the documented outcome.
+  - `[low]` `[reject]` (blind) type-2 message context menu on a message twilight cannot parse, and MESSAGE_CREATE/UPDATE, are not covered by the fallback — twilight parses unknown u8 types as `Component::Unknown`, so only type > 255 or malformed known fields fail; rare, spec G4 and Never keep it out, spine keeps `RawJson` only for interactions; fix adds a new branch.
+  - `[low]` `[reject]` (blind) `source_unknowns` parses message components into `Value` on every click — real but small (deserializes only `message.components`, at most 40 nodes); spec mandates eager computation; a lazy `OnceLock` adds complexity.
+  - `[low]` `[reject]` (blind) `MODELED` type list is hand-maintained and repeated in a test — drift only if a future story forgets it; the fix is a new guard test, not a direct correction.
+  - `[low]` `[patch]` (blind) `cv2_03_raw_view_through_respond` checks "no request carries the message" only inside `if let Ok(over)` — verified at crates/noctis-testkit/tests/raw_http.rs L571; patch: assert over `app.http_fake().requests()` unconditionally.
+  - `[low]` `[reject]` (blind) placement rejections are `compile_fail` doctests only, labelled `[CV2-16]`, diagnostic text unpinned — labels follow spec P3; the unpinned message is a regression risk only; adding trybuild cases is more than a direct correction.
+  - `[false]` `[reject]` (blind) raw type-10 `content` not counted toward CV2-04 — the spec deliberately excludes raw text (V3) and the skill caveat documents it.
+  - `[false]` `[reject]` (blind) every raw `attachment://` violation reports at `opaque[i].url` — the spec defines exactly `<raw path>.url`; the name in the violation tells them apart.
+  - `[false]` `[reject]` (blind) `unreachable!` in `from_twilight` is a panic site — the arm is unreachable: `error.kind()` is checked to be `Response` immediately before `into_parts()`.
+  - `[maybe-false]` `[defer]` (edge) percent-encoded dot segments/slashes bypass the path rule — same root cause as the blind percent-escape finding; deferred with it.
+  - `[false]` `[reject]` (edge) modeled-type raw roots skip typed checks — same refutation as the blind modeled-type finding (deliberate, documented caveat).
+  - `[low]` `[patch]` (edge) the Err path of `rawview over` leaves "no request sent" unchecked — same defect as the blind test-conditional finding; patched with it.
+  - `[low]` `[patch]` (vgap) `RawRequest`'s token-hiding `Debug` is not pinned by any test — pre-verified gap; patch: add `raw_request_debug_hides_the_path` in `raw_http.rs` tests.
+  - `[medium]` `[patch]` (vgap other) `InvalidPath` Display/Debug includes the full path with its token — same defect as the blind InvalidPath finding; patched with it.
+  - `[low]` `[reject]` (intent) "received message" narrowed to click source messages (no MESSAGE_CREATE, no message context menu) — same reasoning as the blind type-2 finding: spine keeps `RawJson` only for interactions, twilight parses unknown u8 types, the remaining case is rare.
+  - `[false]` `[reject]` (intent) raw nodes limited to top level and Containers — the epic says "inside a View"; the rules `Accessory` descriptor has no opaque variant and no current Discord row/accessory type is unmodeled; the spec settled this deliberately (Design Notes).
+  - `[false]` `[reject]` (intent) the App client's own limiter is never exercised by a raw request — raw requests use the same `Client::request` as every App call, and H13 proves the limiter applies to that call.
+  - `[false]` `[reject]` (intent) edit-path coverage stops at component flows — `SourceMessage` stores no components (responder.rs L1161), so no edit path can re-send them; other edits build only from the given `V2Message`.
+  - `[false]` `[reject]` (intent) template source code unchanged — the template needs no raw hatch (spec Never); its `AGENTS.md` and skill are updated, as maintainer decision 5 requires.
+  - `[false]` `[reject]` (intent) raw-node count deferred to run time in `components!` holes — existing, documented hole semantics (CV2-03 row); a raw node is dynamic data.
+
 ## Design Notes
 
 - **Placement.** The rules descriptor `Accessory` has only Button/Thumbnail, while `Component::Opaque` is already legal at the top level and in Containers. Allowing raw there needs no `noctis-rules` API change. An accessory or row raw node can follow when Discord ships one.
@@ -298,3 +333,12 @@ deferred: []
 - `cargo deny check` -- ok
 - `cargo +1.91 check --release --workspace` -- ok
 - `test ! -d target/debug` -- no debug profile created
+
+## Auto Run Result
+
+- **Summary:** Story 9.2 adds a raw escape hatch: `RawComponent` (verbatim JSON node, `type` >= 1, no `id`, allowed at top level and inside Containers, scanned for `attachment://` refs) and `ctx.http().raw(method, path)` via an extension trait on the twilight client (path rule [N] keeps requests inside `/api/v10/`, token-redacting `RawRequest` Debug, typed `RawHttpError`); the gateway falls back to raw JSON for interactions twilight cannot parse.
+- **Files changed:** `crates/noctis-ui/src/component/raw.rs` (RawComponent), `crates/noctis-core/src/raw_http.rs` (raw REST), `crates/noctis-gateway/src/shard.rs` (raw interaction fallback), `crates/noctis-ui/src/{placement,limits/*}.rs` (opaque placement/limit walk), `crates/noctis-core/src/pipeline/component.rs` (source unknowns), `crates/noctis/src/lib.rs` (re-exports), tests in `noctis-testkit/tests/raw_http.rs`, `noctis-ui/tests/validate.rs`, pipeline tests, CV2-05 trybuild stderr; `docs/discord-rules.md` (CV2-14/CV2-16), ARCHITECTURE-SPINE, template `AGENTS.md` + noctis skill references, `xtask/public-api.txt`, xtask api/skill checks.
+- **Review findings:** 24 total (high 0, medium 2, low 10, false 10, maybe-false 2). Patched: 1 medium (`InvalidPath` Display leaked tokenized path; path dropped from message), 2 low (unconditional "no request sent" assertion in `cv2_03_raw_view_through_respond`; new `raw_request_debug_hides_the_path` test). Deferred: percent-encoded dot segments/slashes bypassing the path rule (maybe-false, needs Discord probe). Rejected: 429 headers dropped, no custom headers/non-JSON body, modeled types accepted raw, message-context/MESSAGE_CREATE fallback not covered, eager `source_unknowns`, hand-maintained MODELED list, compile_fail-only placement diagnostics, raw text not counted in CV2-04, opaque url path naming, `unreachable!` in `from_twilight`, top-level/Container-only placement, limiter coverage, edit-path coverage, template source unchanged, hole raw counts at runtime — reasons in the triage log.
+- **Follow-up review recommended:** false (patched by verdict: high 0, medium 1, low 2).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, test, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** percent-encoded path escapes depend on Discord edge normalization (deferred); raw nodes bypass typed CV2 checks by design, so Discord 400s are the failure mode; 429 `retry-after` not exposed on `RawHttpError::Status`.

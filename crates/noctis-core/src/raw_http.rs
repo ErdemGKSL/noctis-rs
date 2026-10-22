@@ -296,7 +296,7 @@ impl fmt::Debug for RawResponse {
 #[non_exhaustive]
 pub enum RawHttpError {
     /// The path breaks the rule of [`RawHttp::raw`]; nothing was sent.
-    #[error("raw request: invalid path `{path}`: {reason}")]
+    #[error("raw request: invalid path: {reason}")]
     InvalidPath {
         /// The rejected path.
         path: String,
@@ -403,6 +403,21 @@ mod tests {
         for error in [invalid, status] {
             assert!(error.to_string().starts_with("raw request:"), "{error}");
         }
+        let token_path = RawHttpError::InvalidPath {
+            path: "webhooks/1/SECRET/".to_owned(),
+            reason: "the path has an empty segment",
+        };
+        assert!(!token_path.to_string().contains("SECRET"), "{token_path}");
+    }
+
+    #[tokio::test]
+    async fn raw_request_debug_hides_the_path() {
+        let client = Client::new(String::new());
+        let request = client.raw(Method::Post, "webhooks/1/SECRET");
+        let debug = format!("{request:?}");
+        assert!(!debug.contains("SECRET"), "{debug}");
+        assert!(debug.contains("method"), "{debug}");
+        assert!(debug.contains("token"), "{debug}");
     }
 
     const _: () = {
