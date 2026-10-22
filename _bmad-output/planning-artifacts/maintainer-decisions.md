@@ -378,3 +378,7 @@ impl Warn {
   ..Default::default() })` next to the chainable setters (the later call wins). Modal
   pre-fill uses struct update syntax over the blank value: `BioForm { bio: Some(v),
   ..BioForm::blank(user) }`. The Usage Skill shows both forms with examples.
+- A modal struct is its submitted data, not its component layout: the field attributes
+  declare the components, the field values are the Payload plus the input values (what
+  the submit decodes into and what pre-fill sends). `ModalOverrides` therefore changes
+  presentation only (title; per input label, description, placeholder), never values.
