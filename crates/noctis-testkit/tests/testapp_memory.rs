@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use noctis::prelude::*;
 use noctis::ui::{Components, TextDisplay, V2Message};
-use noctis_testkit::{TestApp, TestError, assert_memory_flat};
+use noctis_testkit::{MEMORY_FLAT_SLACK_BYTES, TestApp, TestError, assert_memory_flat};
 
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
@@ -81,7 +81,13 @@ async fn scenarios() -> Result<(), TestError> {
     else {
         panic!("{err}");
     };
-    assert!(after - before >= 200 * 1024, "{before} -> {after}");
+    // Live-heap noise from other runtime workers (pools, HPACK) can shift
+    // either snapshot by up to the slack, so the kept 200 KiB is checked
+    // within it rather than exactly.
+    assert!(
+        after - before >= 200 * 1024 - MEMORY_FLAT_SLACK_BYTES,
+        "{before} -> {after}"
+    );
 
     // Mem3: at least 10 runs.
     let err = assert_memory_flat(&app, 9, ping).await.unwrap_err();

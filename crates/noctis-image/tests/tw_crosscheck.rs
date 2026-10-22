@@ -35,9 +35,11 @@ enum VariantKind {
 }
 
 /// What takumi makes of one class.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Oracle {
     verdict: Verdict,
+    /// The variable takumi reads, as `Debug` shows it.
+    debug: String,
     variant: VariantKind,
     important: bool,
 }
@@ -66,6 +68,7 @@ fn oracle(class: &str) -> Oracle {
         verdict,
         variant,
         important: debug.contains("important: true"),
+        debug,
     }
 }
 
@@ -93,6 +96,17 @@ fn compare(class: &str) -> Option<String> {
         ));
     }
     let ours = ours?;
+    if let Utility::Theme { namespaces, token } = ours.utility
+        && !namespaces.iter().any(|ns| {
+            theirs
+                .debug
+                .contains(&format!("{}{token}", ns.css_prefix()))
+        })
+    {
+        return Some(format!(
+            "`{class}`: grammar reads `{token}` in {namespaces:?}, takumi reads another variable"
+        ));
+    }
     let variant = match ours.variant {
         None => VariantKind::None,
         Some(Variant::Builtin(_)) => VariantKind::Builtin,

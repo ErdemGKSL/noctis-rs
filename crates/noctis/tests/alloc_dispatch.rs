@@ -10,7 +10,10 @@
 //! must allocate, so the guard cannot pass vacuously.
 //!
 //! dhat allows one profiler per process, so this binary holds exactly one
-//! `#[test]`.
+//! hand-written `#[test]`. The derives also generate `route_width` tests,
+//! which the harness would run on other threads during the measured regions
+//! (dhat counts the whole process), so the test re-runs itself alone in a
+//! child process and measures there.
 
 #![allow(
     clippy::unwrap_used,
@@ -19,6 +22,7 @@
 )]
 
 use std::hint::black_box;
+use std::process::Command;
 
 use noctis::__private::codec::{MAX_ID_LEN, Parts, SelectNonce, encode};
 use noctis::__private::core::__testing::{RouteTable, responded, route_table};
@@ -196,8 +200,25 @@ fn measure(table: &RouteTable, inputs: &[Probe], repeats: usize) -> (u64, u64) {
     )
 }
 
+/// Set in the child process that runs the measured test alone.
+const CHILD_ENV: &str = "NOCTIS_ALLOC_DISPATCH_CHILD";
+
 #[test]
 fn dispatch_lookup_and_decode_allocate_nothing() {
+    if std::env::var_os(CHILD_ENV).is_none() {
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "dispatch_lookup_and_decode_allocate_nothing",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(CHILD_ENV, "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "the measuring child failed: {status}");
+        return;
+    }
     let _profiler = dhat::Profiler::builder()
         .testing()
         .file_name(concat!(

@@ -30,5 +30,6 @@ run msrv cargo +1.91 check --release --workspace
 run deny cargo deny check
 run cfg bash .github/scripts/check-build-config.sh
 for t in deps-check rules-catalog api-snapshot skill-check; do run "$t" cargo run --release -q -p xtask -- "$t"; done
+run tw-grammar cargo run --release -q -p xtask -- tw-grammar --check
 test ! -d target/debug || { echo "FAIL:debug-dir"; exit 1; }
 echo ALL-OK

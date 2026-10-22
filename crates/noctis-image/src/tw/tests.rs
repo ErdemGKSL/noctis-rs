@@ -352,3 +352,19 @@ fn samples_are_nonempty_and_unique() {
     assert_eq!(unique.len(), samples.len());
     assert!(samples.iter().any(|s| s == "brand:flex"));
 }
+
+#[test]
+fn var_target_prefix_stops_the_search() {
+    // takumi reads `--radius-5` and stops; the grammar must not retry `rounded`.
+    assert_eq!(classify("rounded-t-5"), None);
+}
+
+#[test]
+fn dotted_custom_variant_is_unknown() {
+    assert_eq!(classify("a.b:flex"), None);
+}
+
+#[test]
+fn negative_class_gets_a_hint() {
+    assert!(matches!(suggest("-space-x-4"), Some(Suggestion::Hint(_))));
+}

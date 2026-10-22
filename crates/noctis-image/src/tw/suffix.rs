@@ -214,6 +214,10 @@ impl SuffixRule {
                     "blue-600/50",
                     "white/100",
                 ]);
+                values.extend(PALETTE.iter().map(|name| format!("{name}-500")));
+                values.extend(SHADES.iter().map(|shade| format!("red-{shade}")));
+                values.sort();
+                values.dedup();
                 if current {
                     values.extend(owned(&["current", "current/50"]));
                 }

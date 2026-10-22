@@ -357,10 +357,9 @@ fn real_sources() -> Option<BTreeMap<String, String>> {
 
 #[test]
 fn table_covers_exactly_the_real_parse_types() {
-    let Some(sources) = real_sources() else {
-        eprintln!("takumi-core sources not available; skipped");
-        return;
-    };
+    let sources = real_sources().expect(
+        "the pinned takumi-core sources (`cargo metadata` must locate the takumi-core crate)",
+    );
     let ex = extract(&sources).expect("real sources extract");
     let types: BTreeSet<&str> = ex.parsers.iter().map(|p| p.parse_type.as_str()).collect();
     let keys: BTreeSet<&str> = VALUE_GRAMMARS.iter().map(|(k, _)| *k).collect();

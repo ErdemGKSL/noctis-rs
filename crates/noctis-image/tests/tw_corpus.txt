@@ -94,3 +94,18 @@ text-brand/50 theme
 text-title theme
 font-display theme
 rounded-card theme
+
+# Narrowings that need a regression line.
+rounded-t-5 unknown narrowed=numeric-token
+a.b:flex unknown
+animate-wiggle unknown narrowed=builtin-animations-only
+from-rebeccapurple unknown narrowed=palette-only
+bg-(--brand) unknown narrowed=var-shorthand
+bg-inf unknown narrowed=numeric-token
+bg-1e3 unknown narrowed=numeric-token
+bg-brand/50.5 unknown narrowed=fractional-opacity
+bg-Brand unknown narrowed=uppercase-token
+bg-brand- unknown narrowed=trailing-dash
+text-sm/6 builtin
+bg-current/50.5 unknown narrowed=fractional-opacity
+bg-current/50 builtin

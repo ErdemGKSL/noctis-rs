@@ -2,10 +2,10 @@
 title: 'Story 10.1: Strict Tailwind v4 grammar and takumi cross-check'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '9c2342e93efecd6c44a7ea1da28d752fa9c6c2be'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -232,3 +232,51 @@ The verdict column shows `classify` → `validate(.., &NoTheme)`. B = Builtin, T
 ## Spec Change Log
 
 ## Review Triage Log
+
+### 2026-10-22 — Review pass
+- verdicts: 35 findings — high 0, medium 8, low 11, false 16, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) deps-check: takumi deps of members other than noctis-image are filtered out of `check_edge` and never seen by `check_takumi` — confirmed at deps_check.rs:434 and :707-711; patch: flag any takumi dep on a member other than noctis-image under `takumi-gated`, with a unit test (grouped with edge "member other than noctis-image").
+  - `[low]` `[patch]` (blind) hand-copied PALETTE/SHADES etc. drift unnoticed on a takumi bump — keyword rules sample every word, but `SuffixRule::Color::samples` covers only 5 of 26 palette names and 4 of 11 shades, so a dropped color would widen the grammar unseen; patch: Color samples cover every PALETTE name and every SHADE (grouped with edge "hand-copied vocabulary").
+  - `[medium]` `[patch]` (blind) only the first negatable rule per parser gets a negative sample — confirmed at mod.rs:427-441; `-m-px`, `-w-1/2`, `-m-[10px]` are Builtin but never compared with takumi, so a widening there is invisible; patch: one negative sample per negatable rule (grouped with edge "negatable parser later rules").
+  - `[false]` `[reject]` (blind) `/50` theme sample uses `first() == Color` while the matcher uses `contains` — the only prefix with Color not first is `text`, and the corpus line `text-brand/50 theme` is cross-checked without `narrowed`, so the path is checked.
+  - `[low]` `[reject]` (blind) corpus parser ignores misspelled `narrowed=` and extra fields — a misspelled marker falls back to strict comparison and fails loudly; only empty reasons/extra tokens pass silently; the fix adds malformed-line branches for an unlikely authoring slip.
+  - `[false]` `[reject]` (blind) oracle reads `Debug` substrings; mixed `None`/`Some` fallbacks misclassified — in takumi-core 0.31.0 `VarUtility::from_builtin` gives every target a fallback and the `VAR_TARGETS` path gives none, so mixed fallbacks cannot occur; the Debug-based oracle and its pinned self-test are what the spec prescribes.
+  - `[low]` `[patch]` (blind) several implemented narrowings have no corpus line (animations, var colors, numeric theme suffix, fractional theme opacity, uppercase/trailing-dash tokens, `text-sm/6`, `current`) — confirmed absent from tw_corpus.txt; patch: add those corpus lines with the verdict the cross-check confirms (grouped with vgap "dotted custom variant").
+  - `[low]` `[reject]` (blind) `Percent`, arbitrary Integer/Percentage accept non-canonical forms (`00%`, `999%`, `-0`) — `Percent` is exactly the spec's `\d{1,3}%`, and takumi's f32 parsing accepts these forms, so no widening is shown; tightening adds code for no user-visible gain.
+  - `[false]` `[reject]` (blind) `Number { max: 0, decimals > 0 }` samples `1.5` — generated.rs has only `Number { max: 99, decimals: 2 }`; no rule with `max: 0` exists.
+  - `[low]` `[patch]` (blind) `table_covers_exactly_the_real_parse_types` returns early and passes when the real sources are missing — confirmed at xtask/src/tw_grammar/tests.rs:359-363; patch: fail (`expect`) instead of skipping.
+  - `[false]` `[reject]` (blind) generator runs an unpinned `rustfmt` — `rust-toolchain.toml` pins 1.97.0 with the `rustfmt` component, rustup's proxy resolves it from the repo cwd, and the CI job's `rustup toolchain install` installs that component.
+  - `[low]` `[reject]` (blind) fingerprints miss delegated helpers and depend on proc-macro2 spacing — the fingerprint set is the spec's; a token-spacing change fails closed (loud re-audit); keyword drift is caught by the cross-check once every keyword is sampled (see palette patch); extending the fingerprint set is more than a direct correction.
+  - `[false]` `[reject]` (blind) `render_lookup_tables` defaults an unknown variant to an empty value — the only caller, `generate` (mod.rs:79-80), runs `emit::check` (which includes `check_names`) before `render`, so the default is unreachable.
+  - `[false]` `[reject]` (blind) a missing `macro_rules! property_parsers` is skipped silently — `hard_coded_parser(file)?` (extract.rs:180) runs first and errors naming the item when the macro is missing.
+  - `[false]` `[reject]` (blind) smoke render uses an empty container and skips corpus classes — the spec prescribes exactly `Node::container([]).with_tw(..)` on 64x64 with `Fonts::default()` for each sample.
+  - `[low]` `[patch]` (blind) `suggest` does not strip a leading `-`, so `-space-x-4` gets no hint — confirmed at mod.rs:200-225; patch: strip one leading `-` before the hint lookup (grouped with edge "negative v3 class").
+  - `[medium]` `[patch]` (edge) `rounded-t-5` falls through to the shorter prefix — confirmed: takumi's `var_expression([Radius], "5")` yields `--radius-5` and stops, while `classify_utility` (mod.rs:333-337) gets `None` from `theme_utility` and continues to `rounded` with token `t-5`, so `validate` checks the wrong token; patch: stop at the first VAR_TARGETS prefix whenever takumi's `var_expression` would yield a group, returning the narrowed result (or `None`) without falling through.
+  - `[medium]` `[patch]` (edge) cross-check compares Theme with VarOnly but not the token or namespace — confirmed at tw_crosscheck.rs:76-82, which is why the `rounded-t-5` divergence passes; patch: for a Theme verdict, require takumi's Debug to name `<css_prefix><token>` for one of the grammar's namespaces, and add the corpus line `rounded-t-5`.
+  - `[medium]` `[patch]` (edge) only the first negatable rule gets a negative sample — same root cause as the blind finding; patched there.
+  - `[false]` `[reject]` (edge) `text` (Color not first) opacity path never cross-checked — corpus line `text-brand/50 theme` is cross-checked.
+  - `[low]` `[patch]` (edge) hand-copied vocabulary drifts on a bump — same root cause as the blind palette finding; patched there.
+  - `[low]` `[patch]` (edge) `suggest` on `-space-x-4` gives no hint — same root cause as the blind `suggest` finding; patched there.
+  - `[false]` `[reject]` (edge) `suggest` keeps an unknown custom variant (`hover:bg-gradient-to-r`) — the spec requires a rename to keep the variant; the rename fixes the utility, and `hover:` is a valid custom breakpoint whenever the theme defines it.
+  - `[medium]` `[patch]` (edge) another member depending on takumi is not reported — same root cause as the blind deps-check finding; patched there.
+  - `[false]` `[reject]` (edge) a renamed takumi dep evades the closure check — `Member::closure` maps each `dep:key` through `package_for` and stores package names in `activated`, which is what `dep.name` holds.
+  - `[medium]` `[patch]` (vgap, pre-verified) `tw-grammar --check` is not in `tools/story-loop/gates.sh` — a stale generated.rs passes every local gate; patch: add `run tw-grammar cargo run --release -q -p xtask -- tw-grammar --check` to gates.sh.
+  - `[medium]` `[patch]` (vgap, pre-verified) rejecting `.` in custom variants is untested — removing the guard would widen past takumi unnoticed; patch: corpus line `a.b:flex unknown` and a unit test that `classify("a.b:flex")` is `None` (grouped with blind "missing narrowing corpus lines").
+  - `[low]` `[patch]` (vgap, pre-verified) the `from_metadata` takumi filter is untested — the rule could silently see no deps; patch: a deps_check test that builds the Workspace from the repo's own `cargo metadata --no-deps` and asserts noctis-image lists `takumi` and `takumi-core` as optional.
+  - `[false]` `[reject]` (intent D1) oracle compares takumi's `Debug` text, not only list emptiness — the spec deliberately prescribes the Debug-based three-way oracle because `TailwindValue` is private; list emptiness is still the Unknown marker.
+  - `[false]` `[reject]` (intent D2) `narrowed=` exemptions versus "any disagreement fails" — the spec's Design Notes settle narrowing as a proven subset, and each narrowed line is still checked against takumi.
+  - `[false]` `[reject]` (intent D3) v3 names classify as Theme, rejected only at `validate` — the spec's three-verdict design and matrix row `bg-gradient-to-r` T -> Err settle this.
+  - `[false]` `[reject]` (intent D4) `split_variant` hand-ported rather than generated — the spec mandates a hand-written matcher guarded by fingerprints.
+  - `[false]` `[reject]` (intent D5) rename table has two renames — the spec curates exactly this rename and hint list; `flex-grow-0` is Builtin in takumi, so it draws.
+  - `[false]` `[reject]` (intent D6) minimal smoke-render surface — the spec prescribes exactly this render setup.
+  - `[low]` `[reject]` (intent D7) check placement and `takumi-raster` 0.5.8 held only by Cargo.lock — the gate-placement part is patched via the vgap gates.sh finding; the lock part bites only on a deliberate `cargo update`, is logged as a decision, and pinning a transitive crate adds a dependency edge.
+
+## Auto Run Result
+
+- Summary: noctis-image gains a strict Tailwind v4 class grammar (`tw` module) generated from takumi-core 0.31.0 sources by `xtask tw-grammar` (with `--check` drift gate), three verdicts (Builtin / Theme / Unknown), v3-rename suggestions, and a corpus-driven cross-check test against takumi's own parser plus a smoke render; deps-check gains a `takumi-gated` rule.
+- Files changed: `crates/noctis-image/src/tw/{mod,suffix,generated,tests}.rs` (grammar, suffix rules, generated tables, unit tests); `crates/noctis-image/tests/tw_corpus.txt`, `tw_crosscheck.rs` (corpus + takumi oracle); `crates/noctis-image/Cargo.toml`, `src/lib.rs` (feature wiring); `xtask/src/tw_grammar/*` (extractor, table, emitter, tests); `xtask/src/deps_check.rs` (takumi gating rule); `xtask/src/main.rs`; `tools/story-loop/gates.sh`, `.github/workflows-disabled/ci.yml` (tw-grammar --check gate); `Cargo.lock`; `AGENTS.md`; memlog.
+- Review findings: 35 total (high 0, medium 8, low 11, false 16). Patched: 8 medium (deps-check other-member takumi deps; negative sample per negatable rule; `rounded-t-5` prefix fall-through; Theme cross-check now compares token/namespace; gates.sh tw-grammar check; custom-variant `.` rejection test; plus duplicates grouped) and 6 low (full palette/shade samples; missing narrowing corpus lines; real-sources test fails instead of skipping; `suggest` strips leading `-`; `from_metadata` filter test). Deferred: none. Rejected low: misspelled `narrowed=` marker (fails loudly), non-canonical Percent forms (takumi accepts them), fingerprint coverage (fails closed), takumi-raster lock-only pin (logged decision). Rejected false: 16, each with recorded reason in the triage log (spec-prescribed oracle/smoke design, unreachable paths, pinned toolchain).
+- Follow-up review recommended: true (first pass, 8 medium patched, 0 high). Named risk: the `rounded-t-5` fix changed prefix resolution in `classify_utility` for every VAR_TARGETS prefix, and the strengthened Theme token/namespace comparison in the cross-check is new oracle logic; both are unreviewed.
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV, tw-grammar --check). CI paused by maintainer.
+- Residual risks: takumi-raster 0.5.8 held only by Cargo.lock; the cross-check oracle reads takumi's `Debug` output and breaks loudly on a takumi bump; the hand-ported variant splitter relies on fingerprints for drift detection.

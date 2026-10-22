@@ -204,6 +204,7 @@ pub fn suggest(class: &str) -> Option<Suggestion> {
     };
     let (lead, rest) = rest.strip_prefix('!').map_or(("", rest), |r| ("!", r));
     let (core, trail) = rest.strip_suffix('!').map_or((rest, ""), |r| (r, "!"));
+    let unsigned = core.strip_prefix('-').unwrap_or(core);
     let rebuild = |utility: &str| {
         let variant = variant.map(|v| format!("{v}:")).unwrap_or_default();
         format!("{variant}{lead}{utility}{trail}")
@@ -220,7 +221,7 @@ pub fn suggest(class: &str) -> Option<Suggestion> {
     }
     HINTS
         .iter()
-        .find(|(prefix, _)| core.starts_with(prefix))
+        .find(|(prefix, _)| unsigned.starts_with(prefix))
         .map(|(_, hint)| Suggestion::Hint(hint))
 }
 
@@ -331,9 +332,10 @@ fn classify_utility(token: &str) -> Option<Utility<'_>> {
             return (!negative || matched).then_some(Utility::Builtin);
         }
         if let Some(namespaces) = lookup(VAR_TARGETS, prefix)
-            && let Some(utility) = theme_utility(namespaces, suffix)
+            && takumi_reads_var(namespaces, suffix)
         {
-            return (!negative).then_some(utility);
+            // takumi stops at this prefix, so a shorter one is never tried.
+            return theme_utility(namespaces, suffix).filter(|_| !negative);
         }
     }
     None
@@ -346,6 +348,20 @@ fn match_parsers(parsers: &[Parser], suffix: &str) -> Option<bool> {
         let rule = parser.value.iter().find(|rule| rule.matches(suffix))?;
         Some(parser.negatable && rule.negation == Negation::Allowed)
     })
+}
+
+/// Whether takumi-core's `var_expression` yields a variable for `suffix` in
+/// at least one namespace group, which ends its prefix search.
+fn takumi_reads_var(namespaces: &[ThemeNamespace], suffix: &str) -> bool {
+    if suffix.starts_with('[') {
+        return false;
+    }
+    match suffix.split_once('/') {
+        Some((_, opacity)) => {
+            namespaces.contains(&ThemeNamespace::Color) && parse_opacity_modifier(opacity)
+        }
+        None => !namespaces.is_empty(),
+    }
 }
 
 /// takumi-core's `var_expression` over a `VAR_TARGETS` entry, narrowed.
@@ -417,28 +433,27 @@ pub mod __crosscheck {
 
     /// Every class the cross-check compares with takumi: each fixed utility,
     /// each (prefix, parser, rule) sample, a negative sample per negatable
-    /// parser, variant and `!` forms, a theme token per `VAR_TARGETS` prefix
-    /// and a custom variant.
+    /// rule of a negatable parser, variant and `!` forms, a theme token per
+    /// `VAR_TARGETS` prefix and a custom variant.
     pub fn samples() -> Vec<String> {
         let mut out: Vec<String> = FIXED.iter().map(|key| (*key).to_owned()).collect();
         for (prefix, parsers) in PREFIXES {
             let mut first = None;
             for parser in *parsers {
-                let mut negative = None;
                 for rule in parser.value {
-                    for sample in rule.samples() {
+                    let samples = rule.samples();
+                    if parser.negatable
+                        && rule.negation == Negation::Allowed
+                        && let Some(sample) = samples.first()
+                    {
+                        out.push(format!("-{prefix}-{sample}"));
+                    }
+                    for sample in samples {
                         let class = format!("{prefix}-{sample}");
-                        if negative.is_none()
-                            && parser.negatable
-                            && rule.negation == Negation::Allowed
-                        {
-                            negative = Some(format!("-{class}"));
-                        }
                         first.get_or_insert_with(|| class.clone());
                         out.push(class);
                     }
                 }
-                out.extend(negative);
             }
             if let Some(first) = first {
                 out.extend([

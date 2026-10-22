@@ -703,8 +703,19 @@ fn check_render(ws: &Workspace, out: &mut BTreeSet<Violation>) {
 }
 
 /// Every takumi dependency of `noctis-image` is optional, normal, and turned
-/// on only by features that imply `render`.
+/// on only by features that imply `render`; no other member depends on takumi.
 fn check_takumi(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    for member in ws.crates.iter().filter(|m| m.name != IMAGE) {
+        for dep in member.deps.iter().filter(|d| is_takumi(&d.name)) {
+            out.insert(Violation::edge(
+                Rule::TakumiGated,
+                &member.name,
+                &dep.name,
+                dep.kind,
+                format!("only `{IMAGE}` may depend on takumi, behind `{RENDER}`"),
+            ));
+        }
+    }
     let Some(image) = ws.member(IMAGE) else {
         return;
     };
@@ -965,6 +976,41 @@ mod tests {
             name: IMAGE.to_owned(),
             deps,
             ..member(features)
+        }
+    }
+
+    #[test]
+    fn takumi_on_another_member_fails() {
+        let other = Member {
+            name: "noctis-ui".to_owned(),
+            deps: vec![dep("takumi")],
+            ..member(&[])
+        };
+        assert_eq!(
+            takumi_rule(other),
+            [
+                "deps-check: noctis-ui -> takumi (normal): only `noctis-image` may depend on \
+              takumi, behind `render` [takumi-gated]"
+            ]
+        );
+    }
+
+    #[test]
+    fn from_metadata_keeps_the_optional_takumi_deps() {
+        let metadata = MetadataCommand::new()
+            .manifest_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.toml"))
+            .no_deps()
+            .exec()
+            .expect("cargo metadata on the repo");
+        let ws = Workspace::from_metadata(&metadata);
+        let image = ws.member(IMAGE).expect("noctis-image is a member");
+        for name in ["takumi", "takumi-core"] {
+            let dep = image
+                .deps
+                .iter()
+                .find(|d| d.name == name)
+                .unwrap_or_else(|| panic!("noctis-image lists {name}"));
+            assert!(dep.optional, "{name} must be optional");
         }
     }
 
