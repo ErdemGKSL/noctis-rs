@@ -115,7 +115,7 @@ development_status:
   8-5-ui-recipes-and-example-tabs-pagination-step-flows-and-settin: done
   epic-8-retrospective: optional
 
-  epic-9: in-progress
+  epic-9: done
   9-1-content-addressed-attachments-with-edit-diffs: done
   9-2-raw-escape-hatch-for-components-and-rest: done
   9-3-route-component-defaults-with-per-render-overrides: done
