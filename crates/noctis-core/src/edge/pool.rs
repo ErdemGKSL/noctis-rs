@@ -307,6 +307,12 @@ impl KeeperHandle {
         self.pool.request_redial();
     }
 
+    /// Whether a dialed connection is placed and watched (not between a
+    /// close and the redial's placement).
+    pub(crate) fn is_connected(&self) -> bool {
+        self.pool.lock().watched.is_some()
+    }
+
     /// How many redials were requested so far.
     #[cfg(test)]
     pub(crate) fn redial_requests(&self) -> usize {

@@ -666,7 +666,10 @@ async fn http_edge_recorded_set() {
     let app = builder.build().unwrap();
     // Row 17: the warm-up.
     let warm = keep_warm(&app);
-    until("the warm connection", || fake.connections().len() == 1).await;
+    until("the warm connection", || {
+        fake.connections().len() == 1 && warm.is_connected()
+    })
+    .await;
     // Row 26: a forwarded request.
     let _ = app.http().current_user().await;
     let body = bytes::Bytes::from_static(br#"{"type":5}"#);

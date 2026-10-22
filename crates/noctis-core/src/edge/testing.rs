@@ -39,12 +39,26 @@ pub async fn interaction_callback(
 /// until the returned guard is dropped.
 pub fn keep_warm(app: &App) -> KeepWarm {
     let (guard, _first) = app.edge().start_keeper();
-    KeepWarm { _guard: guard }
+    KeepWarm {
+        _guard: guard,
+        keeper: app.edge().keeper(),
+    }
 }
 
 /// Stops the keeper started by [`keep_warm`] when dropped.
 pub struct KeepWarm {
     _guard: super::KeeperGuard,
+    keeper: super::KeeperHandle,
+}
+
+impl KeepWarm {
+    /// Whether the pool holds a placed, watched connection: false until the
+    /// first warm-up is placed and between a close and the redial's
+    /// placement. The fake's accept alone does not mean a request reuses it.
+    #[must_use]
+    pub fn is_connected(&self) -> bool {
+        self.keeper.is_connected()
+    }
 }
 
 impl std::fmt::Debug for KeepWarm {

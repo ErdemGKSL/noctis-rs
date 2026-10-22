@@ -706,17 +706,18 @@ async fn black_hole_is_redialed_before_the_callback() {
         FakeResponse::empty(StatusCode::NO_CONTENT),
     );
     let app = builder(&fake).http(fast_pings()).build().unwrap();
-    let _warm = keep_warm(&app);
-    until("the warm connection", || fake.connections().len() == 1).await;
+    let warm = keep_warm(&app);
+    until("the warm connection", || {
+        fake.connections().len() == 1 && warm.is_connected()
+    })
+    .await;
     let before = Metrics::take(snapshotter);
     assert_eq!(fake.black_hole(), 1);
     let holed = Instant::now();
     until("a redial", || fake.connections().len() == 2).await;
-    assert!(
-        holed.elapsed() <= Duration::from_millis(2100),
-        "{:?}",
-        holed.elapsed()
-    );
+    let redialed = holed.elapsed();
+    assert!(redialed <= Duration::from_millis(2100), "{redialed:?}");
+    until("the redial placed", || warm.is_connected()).await;
     let after = Metrics::take(snapshotter);
     assert_eq!(
         delta(&before, &after, "noctis_http_ping_timeouts_total", None),
@@ -743,8 +744,11 @@ async fn black_hole_during_a_callback_is_hedged() {
         FakeResponse::empty(StatusCode::NO_CONTENT),
     );
     let app = builder(&fake).build().unwrap();
-    let _warm = keep_warm(&app);
-    until("the warm connection", || fake.connections().len() == 1).await;
+    let warm = keep_warm(&app);
+    until("the warm connection", || {
+        fake.connections().len() == 1 && warm.is_connected()
+    })
+    .await;
     let before = Metrics::take(snapshotter);
     fake.black_hole();
     let started = Instant::now();
