@@ -138,7 +138,7 @@ development_status:
   epic-10-retrospective: optional
 
   epic-11: backlog
-  11-1-i18n-typed-content-strings: backlog
+  11-1-i18n-typed-content-strings: in-progress
   11-2-module-scoped-locale-catalogs: backlog
   11-3-user-and-guild-locale-resolution: backlog
   11-4-command-localization-in-publish: backlog

@@ -2,7 +2,8 @@
 title: 'Story 11.1: `i18n!` typed content strings'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'c5a5e1baae1d1361de7545baba1b1084850f8dba'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
