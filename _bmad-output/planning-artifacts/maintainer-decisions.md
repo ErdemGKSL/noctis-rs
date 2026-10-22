@@ -365,3 +365,10 @@ impl Warn {
 - **Conversion.** Story 6.7 ships the runtime (Suggestions, truncation, empty list on
   failure, the 3 s budget). Story 6.11 converts whatever 6.7 shipped on the old surface
   (`autocomplete = path`, a free function, `ctx.respond(choices)`) to this form.
+
+## 9. Modal pre-fill is part of Route defaults and overrides (2026-10-22)
+
+- Modal pre-fill (FR-63) is the modal case of Story 9.3's per-render overrides: `.build()`
+  pre-fills the inputs from the struct value, `.value(field, ..)` and `.title(..)` override
+  one render. Story 9.4's acceptance criteria moved into Story 9.3, and 9.4 is not
+  implemented as a separate story.

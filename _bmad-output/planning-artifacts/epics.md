@@ -545,7 +545,7 @@ is mapped.
 | FR-60 | P0 | E2 + E7 | Schema version and Stale decoding (E2); stale routing (E7) |
 | FR-61 | P0 | E6 + E8 | Returned message as the Command response (E6, Story 6.5); `ctx.respond`/`ctx.update`/`ctx.reply_text` (E8, Story 8.1) |
 | FR-62 | P0 | E4 + E8 | `cost` (E4, Story 4.3); budget helpers "how many items fit" (E8, Story 8.3) |
-| FR-63 | P1 | E9 | Modal pre-fill |
+| FR-63 | P1 | E9 | Modal pre-fill (Story 9.3) |
 | FR-64 | P1 | E7 | Radio/Checkbox decoding from raw JSON (built into the modal decoder per AD-12) |
 | FR-65 | P1 | E9 | Views over webhooks |
 | FR-66 | P1 | E10 | Tailwind v4 grammar, v3 suggestions, runtime class warnings |
@@ -2503,7 +2503,7 @@ As a bot author,
 I want to declare a Route's default label, style, emoji, placeholder and value bounds once,
 So that every component for that Route looks consistent and I override only what changes.
 
-**Implements:** FR-59; AD-19; rules CV2-08, CV2-09.
+**Implements:** FR-59, FR-63 (modal pre-fill, merged from the former Story 9.4); AD-12, AD-19; rules CV2-08, CV2-09, MOD-05, MOD-07.
 
 **Acceptance Criteria:**
 
@@ -2519,20 +2519,6 @@ So that every component for that Route looks consistent and I override only what
 **When** the component is built
 **Then** each override replaces one field for that render only, the rest comes from the defaults, and the result is validated against the Limits (Strict or Lenient) after overrides apply
 
-**Given** the new public API
-**When** the story is done
-**Then** the Usage Skill documents Route defaults and overrides, and `skill-check` passes
-
-### Story 9.4: Modal pre-fill
-
-As a bot author,
-I want to open a modal with values pre-filled from the entity being edited,
-So that editing feels natural instead of starting from blank fields.
-
-**Implements:** FR-63; AD-12; rules MOD-05, MOD-07, CV2-09.
-
-**Acceptance Criteria:**
-
 **Given** a `derive(Modal)` struct value (maintainer decisions §7)
 **When** it is built with `.build()` (its input fields' values pre-fill the inputs, `None` = empty), with `X::blank(<payload fields>)` (empty inputs, for forms whose required inputs have no empty value), or with the per-field override `.value(field, ..)` and `.title(..)`
 **Then** Text Inputs receive initial values and selects, Radio Groups and Checkbox Groups receive default selections
@@ -2543,7 +2529,11 @@ So that editing feels natural instead of starting from blank fields.
 
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill's modal recipe shows pre-fill, the template's bio modal pre-fill is reconciled, and `skill-check` passes
+**Then** the Usage Skill documents Route defaults and overrides, its modal recipe shows pre-fill, the template's bio modal pre-fill is reconciled, and `skill-check` passes
+
+### Story 9.4: Modal pre-fill (merged into Story 9.3)
+
+Maintainer decision 2026-10-22: modal pre-fill is the modal case of Story 9.3's Route defaults with per-render overrides (`.build()` from the struct value, `.value(field, ..)`, `.title(..)`), so its acceptance criteria moved to Story 9.3 and this story is not implemented separately.
 
 ### Story 9.5: Views over webhooks
 

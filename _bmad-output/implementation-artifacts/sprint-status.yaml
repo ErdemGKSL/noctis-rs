@@ -119,7 +119,7 @@ development_status:
   9-1-content-addressed-attachments-with-edit-diffs: in-progress
   9-2-raw-escape-hatch-for-components-and-rest: backlog
   9-3-route-component-defaults-with-per-render-overrides: backlog
-  9-4-modal-pre-fill: backlog
+  # 9-4-modal-pre-fill: merged into 9-3 (maintainer decision 2026-10-22)
   9-5-views-over-webhooks: backlog
   epic-9-retrospective: optional
 
