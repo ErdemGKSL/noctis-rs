@@ -322,6 +322,43 @@ pub enum BuildViolation {
         /// The rejected handler's struct path.
         second_handler: &'static str,
     },
+    /// One Template id is registered twice across the mounted Modules
+    /// ([`Module::template`](crate::Module::template)); the first
+    /// registration in fold order is kept. Any version counts, and so does
+    /// the same type registered twice.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::DuplicateTemplate {
+    ///     id: "profile.card",
+    ///     first_module: "profile",
+    ///     first_type: "bot::ProfileCard",
+    ///     second_module: "stats",
+    ///     second_type: "bot::StatsCard",
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "Template id `profile.card` is registered twice: `bot::ProfileCard` (Module \
+    ///      `profile`) and `bot::StatsCard` (Module `stats`): give each Template its own id"
+    /// );
+    /// ```
+    #[error(
+        "Template id `{id}` is registered twice: `{first_type}` (Module `{first_module}`) and \
+         `{second_type}` (Module `{second_module}`): give each Template its own id"
+    )]
+    DuplicateTemplate {
+        /// The shared Template id.
+        id: &'static str,
+        /// The Module of the kept (first) registration.
+        first_module: &'static str,
+        /// The kept Template's type path.
+        first_type: &'static str,
+        /// The Module of the rejected registration.
+        second_module: &'static str,
+        /// The rejected Template's type path.
+        second_type: &'static str,
+    },
     /// A mounted Module declares with `Module::uses::<R>()` a Route that no
     /// mounted Module handles (CID-04).
     #[error(

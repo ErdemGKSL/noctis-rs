@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `b8a1b3f27eb57c36859ba5b6738815de753ce1d949408b3b5d8f9d4e415398d1` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `66a65f7a238abbf19f898064fc7dc73d567ec2328f8e72d242ad10095a72084e` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -252,18 +252,21 @@ PickLogChannel { owner, mod_role }`), never in a listener. Full code: `reference
 ```rust
 #[derive(Template, Serialize, Deserialize)]   // the Renderer decodes the value it gets
 #[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
-pub struct ProfileCard { pub name: String, pub progress: f32, #[asset] pub avatar: RemoteImage }
+pub struct ProfileCard { pub name: String, pub progress: f32 }   // never a HashMap field
 
 impl TemplateView for ProfileCard {
     fn view(&self, _frame: Frame) -> Node {     // Frame::STILL unless animated
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
-                <img src={&self.avatar} tw="w-40 h-40 rounded-full" />
-                <span tw="text-5xl font-bold text-white">{&self.name}</span>
+                <span tw="text-5xl font-bold text-white">{&self.name}</span>  // user text: a text child only
+                <div tw="h-6 rounded-full bg-brand" style={Style::new().width_pct(self.progress * 100.0)} />
             </div>
         }
     }
 }
+// register: Module::new("profile").template::<ProfileCard>()  (same id twice: BuildViolation::DuplicateTemplate)
+// classes are checked at `cargo check` ([TW-01]) against noctis-theme.css ([TW-02]);
+// `<img>` and `#[asset] avatar: RemoteImage` are [planned, Stories 10.7-10.8].
 
 // in a handler (rendering is awaited in the handler, so auto-defer covers it):
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;

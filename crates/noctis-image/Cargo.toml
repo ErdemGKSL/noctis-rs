@@ -9,14 +9,22 @@ repository.workspace = true
 
 [features]
 default = []
-# Adds the takumi renderer (Story 10.1 wires the crates; the noctis-core,
-# -ports and -ui edges follow in Story 10.3).
-render = ["dep:takumi", "dep:takumi-core"]
+# Adds the node tree, `TemplateView`, the runtime class check and the takumi
+# renderer (the noctis-core and -ui edges follow in Story 10.3).
+render = ["dep:takumi", "dep:takumi-core", "dep:noctis-ports", "dep:tracing"]
 
 [dependencies]
+# `tw` and `tw::theme` (takumi-free, ungated): the theme parser and its digest.
+blake3.workspace = true
+cssparser.workspace = true
+noctis-ports = { workspace = true, optional = true }
 takumi = { workspace = true, optional = true, features = ["raster-backend"] }
 takumi-core = { workspace = true, optional = true }
 thiserror.workspace = true
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde.workspace = true
 
 [lints]
 workspace = true

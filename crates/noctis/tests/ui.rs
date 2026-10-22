@@ -21,8 +21,9 @@
 //! boundary passes live in `tests/boundary/`.
 //!
 //! Bless after an intended change or a toolchain bump (same commit):
-//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui` and
-//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui --features i18n`.
+//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui`,
+//! `TRYBUILD=overwrite cargo test --release -p noctis --test ui --features i18n`
+//! and `TRYBUILD=overwrite cargo test --release -p noctis --test ui --features image`.
 //!
 //! trybuild runs `cargo check` without `--release`; the repo-root
 //! `.cargo/config.toml` makes `[profile.dev]` release-equivalent, and
@@ -78,15 +79,69 @@ fn ui_i18n() {
     harness::assert_trybuild_dev_profile();
 }
 
-/// The harness helpers; compiled with a suite only.
-#[cfg(not(any(
+/// The `image` suite (Story 10.2): `tests/ui-image/<area>/` holds the TW-01,
+/// TW-02 and ATT-07 fixtures, `tests/types-image/` the typed-API cases of
+/// Templates and `view!`. It runs only when `image` is the one optional
+/// feature on (`cargo hack --each-feature`). trybuild's project has no
+/// `noctis-theme.css`, so theme tokens are unknown there; positive theme
+/// cases live in `tests/template.rs`.
+#[cfg(all(
     feature = "image",
-    feature = "image-gif",
-    feature = "image-emoji",
-    feature = "default-font",
-    feature = "prefix",
-    feature = "testkit"
-)))]
+    not(any(
+        feature = "image-gif",
+        feature = "image-emoji",
+        feature = "default-font",
+        feature = "i18n",
+        feature = "prefix",
+        feature = "testkit"
+    ))
+))]
+#[test]
+fn ui_image() {
+    harness::assert_pinned_toolchain();
+    {
+        let cases = trybuild::TestCases::new();
+        cases.compile_fail("tests/ui-image/**/*.rs");
+        cases.compile_fail("tests/types-image/**/*.rs");
+        // The cases run when `cases` drops here.
+    }
+    harness::assert_trybuild_dev_profile();
+}
+
+/// The harness helpers; compiled with the suites only.
+#[cfg(any(
+    not(any(
+        feature = "image",
+        feature = "image-gif",
+        feature = "image-emoji",
+        feature = "default-font",
+        feature = "i18n",
+        feature = "prefix",
+        feature = "testkit"
+    )),
+    all(
+        feature = "i18n",
+        not(any(
+            feature = "image",
+            feature = "image-gif",
+            feature = "image-emoji",
+            feature = "default-font",
+            feature = "prefix",
+            feature = "testkit"
+        ))
+    ),
+    all(
+        feature = "image",
+        not(any(
+            feature = "image-gif",
+            feature = "image-emoji",
+            feature = "default-font",
+            feature = "i18n",
+            feature = "prefix",
+            feature = "testkit"
+        ))
+    )
+))]
 mod harness {
     use std::path::{Path, PathBuf};
     use std::process::Command;

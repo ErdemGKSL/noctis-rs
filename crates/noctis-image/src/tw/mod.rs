@@ -11,7 +11,9 @@
 //!   that only reads a theme token ([`Utility::Theme`]);
 //! - [`validate`] accepts a class list when every class is built in or every
 //!   token it reads is defined by the [`ThemeTokens`];
-//! - [`suggest`] names the Tailwind v4 replacement of a known v3 class.
+//! - [`suggest`] names the Tailwind v4 replacement of a known v3 class;
+//! - [`Theme`] parses a crate's `noctis-theme.css` into the tokens
+//!   [`validate`] reads ([`theme`]).
 //!
 //! ```
 //! use noctis_image::tw::{self, NoTheme, Utility};
@@ -28,11 +30,13 @@ mod generated;
 mod suffix;
 #[cfg(test)]
 mod tests;
+pub mod theme;
 
 use std::collections::BTreeSet;
 use std::fmt;
 
 pub use generated::{TAKUMI_CORE_VERSION, ThemeNamespace};
+pub use theme::{Theme, ThemeError, ThemeErrorKind};
 
 use generated::{BREAKPOINTS, EXACT_RENAMES, FIXED, HINTS, PREFIX_RENAMES, PREFIXES, VAR_TARGETS};
 use suffix::{Negation, Parser};
@@ -400,7 +404,7 @@ fn parse_opacity_modifier(modifier: &str) -> bool {
 }
 
 /// `[a-z0-9]([a-z0-9._-]*[a-z0-9])?`, at most 64 bytes.
-fn is_theme_token(token: &str) -> bool {
+pub(crate) fn is_theme_token(token: &str) -> bool {
     let edge = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
     let bytes = token.as_bytes();
     match (bytes.first(), bytes.last()) {

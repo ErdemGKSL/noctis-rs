@@ -7,9 +7,11 @@
 //! (crate-level rules omit `-> <to> (<kind>)`), sorted and deduplicated.
 //!
 //! The graph labels the `noctis-macros -> noctis-image` edge "tw module only,
-//! render feature off". Only the "render feature off" half is enforced here
-//! (`render-on`); "tw module only" is a source-level property that dependency
-//! metadata cannot see, so deps-check does not check it.
+//! render feature off". The `tw` module includes `tw::theme` (the Theme file
+//! parser the image macros run at expansion). Only the "render feature off"
+//! half is enforced here (`render-on`); "tw module only" is a source-level
+//! property that dependency metadata cannot see, so deps-check does not check
+//! it.
 //!
 //! The `takumi-gated` rule (AD-15) keeps takumi out of default builds: every
 //! `noctis-image` dependency whose name starts with `takumi` must be an

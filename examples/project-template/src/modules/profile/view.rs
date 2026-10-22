@@ -4,7 +4,9 @@
 //! The card is read-only: every action lives in buttons next to it, never in the image.
 
 use noctis::id::marker::UserMarker;
-use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
+use noctis::image::{Frame, Node, Style, Template, TemplateView, view};
+// [planned, Story 10.8] `RemoteImage` and `#[asset]` (remote images).
+use noctis::image::RemoteImage;
 use noctis::prelude::*;
 use noctis::ui::{
     ActionRow, Attachment, AttachmentSet, Button, Components, Container, MediaGallery, MediaItem,
@@ -76,7 +78,7 @@ pub struct ProfileCard {
     pub progress: f32,
     /// Declared remote image: fetched from the Discord CDN and cached before rendering.
     /// On failure the built-in placeholder is used (add `required` to fail instead).
-    #[asset]
+    #[asset] // [planned, Story 10.8]
     pub avatar: RemoteImage,
 }
 
@@ -84,10 +86,12 @@ impl TemplateView for ProfileCard {
     // A still card ignores `frame` (it is `Frame::STILL`); an animated Template can compute
     // its state per frame from `frame.index` and `frame.count` (FR-69).
     fn view(&self, _frame: Frame) -> Node {
-        // Literal classes are checked at compile time against the Tailwind v4 grammar and
-        // the tokens in noctis-theme.css (bg-surface, text-muted, from-brand, ...).
+        // Literal classes are checked at compile time ([TW-01]) against the Tailwind v4
+        // grammar and the tokens in noctis-theme.css (bg-surface, text-muted, border-brand).
+        // Gradient stops take palette colours only, never theme tokens.
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
+                // [planned, Story 10.7] `<img>` (static and remote images).
                 <img src={&self.avatar} tw="w-40 h-40 rounded-full border-4 border-brand" />
                 <div tw="flex flex-col gap-3 flex-1">
                     <span tw="text-5xl font-bold text-white">{&self.name}</span>
@@ -98,7 +102,7 @@ impl TemplateView for ProfileCard {
                     </div>
                     <div tw="flex w-full h-6 rounded-full bg-slate-700">
                         <div
-                            tw="h-full rounded-full bg-linear-to-r from-brand to-brand-soft"
+                            tw="h-full rounded-full bg-linear-to-r from-indigo-500 to-violet-400"
                             style={Style::new().width_pct(self.progress * 100.0)}
                         />
                     </div>

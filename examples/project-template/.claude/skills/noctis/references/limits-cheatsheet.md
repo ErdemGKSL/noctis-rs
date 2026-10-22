@@ -300,7 +300,7 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | ATT-04 | `files[n]` naming over new uploads only (automatic) | R |
 | ATT-05 | `attachment://` must reference an attached file | C / R |
 | ATT-06 | alt text ≤ 1024 (`alt!`); a rendered image in a Thumbnail/MediaItem needs its own alt (Strict error, Lenient/`cost` warning) | C / R |
-| ATT-07 | image formats png, jpg/jpeg, webp, gif | C |
+| ATT-07 | image formats png, jpg/jpeg, webp, gif (a Template's still `format` is never GIF) | C |
 | WH-01 | `with_components=true` on every webhook execute and edit (automatic, no setter) | C |
 | WH-02 | foreign webhooks: non-interactive only (`ForeignWebhook` takes a `StaticMessage`, `[WH-02]` at `cargo check`; `StaticMessage::try_from` at run time) | C / R |
 | WH-03 | V2 webhook body: no content/embeds/files/poll; every edit clears them | C |
@@ -322,6 +322,13 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | RL-02 | 50 req/s global per token across processes → shared proxy | startup / R |
 | RL-03 | 10,000 invalid requests / 10 min → Cloudflare ban | R |
 | RL-04 | undocumented per-resource limits (e.g. channel renames) | R |
+
+## Image Templates
+
+| Id | Limit | Where |
+| --- | --- | --- |
+| TW-01 | Template classes are Tailwind v4 in Noctis's strict grammar plus `noctis-theme.css` tokens (`tw!`, `tw="…"`; `Classes::dynamic` strings when rendered) | C / R |
+| TW-02 | `noctis-theme.css`: only `@theme` and `@keyframes`, known namespaces, valid tokens, no duplicates, no built-in animation names, ≤ 256 KiB | C |
 
 ## Rendering (Noctis defaults, FR-70)
 

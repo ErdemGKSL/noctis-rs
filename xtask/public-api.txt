@@ -116,7 +116,6 @@ pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::Identif
 pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
-pub fn noctis::AppBuilder::locales(&mut self, noctis::i18n::Catalog) -> &mut Self
 pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore>) -> &mut Self
 pub fn noctis::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
@@ -320,10 +319,6 @@ impl core::marker::StructuralPartialEq for noctis::BuildError
 #[non_exhaustive] pub enum noctis::BuildViolation
 pub noctis::BuildViolation::Command(noctis::rules::Violation)
 pub noctis::BuildViolation::CryptoProvider
-pub noctis::BuildViolation::DuplicateLocaleKey
-pub noctis::BuildViolation::DuplicateLocaleKey::first: &'static str
-pub noctis::BuildViolation::DuplicateLocaleKey::key: &'static str
-pub noctis::BuildViolation::DuplicateLocaleKey::second: &'static str
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateRoute
@@ -334,6 +329,12 @@ pub noctis::BuildViolation::DuplicateRoute::second_handler: &'static str
 pub noctis::BuildViolation::DuplicateRoute::second_module: &'static str
 pub noctis::BuildViolation::DuplicateState
 pub noctis::BuildViolation::DuplicateState::type_name: &'static str
+pub noctis::BuildViolation::DuplicateTemplate
+pub noctis::BuildViolation::DuplicateTemplate::first_module: &'static str
+pub noctis::BuildViolation::DuplicateTemplate::first_type: &'static str
+pub noctis::BuildViolation::DuplicateTemplate::id: &'static str
+pub noctis::BuildViolation::DuplicateTemplate::second_module: &'static str
+pub noctis::BuildViolation::DuplicateTemplate::second_type: &'static str
 pub noctis::BuildViolation::HttpEdge
 pub noctis::BuildViolation::HttpEdge::kind: core::io::error::ErrorKind
 pub noctis::BuildViolation::InvalidAckDeadline
@@ -1230,6 +1231,7 @@ pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
 pub fn noctis::Module::module(self, noctis::Module) -> Self
 pub fn noctis::Module::new(&'static str) -> Self
+pub fn noctis::Module::template<T: noctis::image::Template>(self) -> Self
 pub fn noctis::Module::uses<R: noctis::__private::ui::Handled>(self) -> Self
 impl core::clone::Clone for noctis::Module
 pub fn noctis::Module::clone(&self) -> Self
@@ -1649,7 +1651,6 @@ pub proc macro noctis::#[autocomplete]
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
 pub proc macro noctis::#[handler]
-pub proc macro noctis::i18n!()
 pub proc macro noctis::label!()
 pub proc macro noctis::#[on_expired]
 pub proc macro noctis::#[on_stale]
@@ -2459,23 +2460,404 @@ pub fn noctis::http::RawResponse::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::http::RawResponse
 pub fn noctis::http::RawResponse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::http::RawResponse
-pub mod noctis::i18n
-pub struct noctis::i18n::Catalog
-impl noctis::i18n::Catalog
-pub const fn noctis::i18n::Catalog::default_locale(&self) -> noctis::rules::Locale
-pub fn noctis::i18n::Catalog::get(&self, noctis::rules::Locale, &str) -> core::option::Option<&'static str>
-pub fn noctis::i18n::Catalog::keys(&self) -> impl core::iter::traits::iterator::Iterator<Item = &'static str> + use<>
-pub fn noctis::i18n::Catalog::locales(&self) -> impl core::iter::traits::iterator::Iterator<Item = noctis::rules::Locale> + '_
-pub const fn noctis::i18n::Catalog::origin(&self) -> &'static str
-pub fn noctis::i18n::Catalog::placeholders(&self, &str) -> core::option::Option<&'static [&'static str]>
-impl core::clone::Clone for noctis::i18n::Catalog
-pub fn noctis::i18n::Catalog::clone(&self) -> Self
-impl core::fmt::Debug for noctis::i18n::Catalog
-pub fn noctis::i18n::Catalog::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for noctis::i18n::Catalog
-impl noctis::rules::Translate for noctis::i18n::Catalog
-pub fn noctis::i18n::Catalog::translate(&self, noctis::rules::Locale, noctis::prelude::MessageKey, &[(&str, &dyn core::fmt::Display)]) -> core::option::Option<alloc::string::String>
-pub fn noctis::i18n::format(&str, &[(&str, &dyn core::fmt::Display)]) -> alloc::string::String
+pub mod noctis::image
+pub enum noctis::image::AnimatedFormat
+pub noctis::image::AnimatedFormat::Apng
+pub noctis::image::AnimatedFormat::Gif
+pub noctis::image::AnimatedFormat::Webp
+pub noctis::image::AnimatedFormat::Webp::quality: u8
+impl core::clone::Clone for noctis::image::AnimatedFormat
+pub fn noctis::image::AnimatedFormat::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::AnimatedFormat
+impl core::cmp::PartialEq for noctis::image::AnimatedFormat
+pub fn noctis::image::AnimatedFormat::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::AnimatedFormat
+pub fn noctis::image::AnimatedFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::AnimatedFormat
+pub fn noctis::image::AnimatedFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::AnimatedFormat
+impl core::marker::StructuralPartialEq for noctis::image::AnimatedFormat
+pub struct noctis::image::AnimationSpec
+pub noctis::image::AnimationSpec::duration: core::time::Duration
+pub noctis::image::AnimationSpec::format: noctis::image::AnimatedFormat
+pub noctis::image::AnimationSpec::fps: u16
+impl noctis::image::AnimationSpec
+pub const fn noctis::image::AnimationSpec::new(core::time::Duration, u16, noctis::image::AnimatedFormat) -> Self
+impl core::clone::Clone for noctis::image::AnimationSpec
+pub fn noctis::image::AnimationSpec::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::AnimationSpec
+impl core::cmp::PartialEq for noctis::image::AnimationSpec
+pub fn noctis::image::AnimationSpec::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::AnimationSpec
+pub fn noctis::image::AnimationSpec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::AnimationSpec
+pub fn noctis::image::AnimationSpec::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::AnimationSpec
+impl core::marker::StructuralPartialEq for noctis::image::AnimationSpec
+pub struct noctis::image::Classes
+impl noctis::image::Classes
+pub fn noctis::image::Classes::and(self, noctis::image::Classes) -> noctis::image::Classes
+pub fn noctis::image::Classes::as_str(&self) -> &str
+pub fn noctis::image::Classes::dynamic(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for noctis::image::Classes
+pub fn noctis::image::Classes::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Classes
+impl core::cmp::PartialEq for noctis::image::Classes
+pub fn noctis::image::Classes::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::image::Classes
+pub fn noctis::image::Classes::default() -> Self
+impl core::fmt::Debug for noctis::image::Classes
+pub fn noctis::image::Classes::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::Classes
+pub enum noctis::image::Format
+pub noctis::image::Format::Jpeg
+pub noctis::image::Format::Jpeg::quality: u8
+pub noctis::image::Format::Png
+pub noctis::image::Format::Webp
+pub noctis::image::Format::Webp::quality: u8
+pub noctis::image::Format::WebpLossless
+impl core::clone::Clone for noctis::image::Format
+pub fn noctis::image::Format::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Format
+impl core::cmp::PartialEq for noctis::image::Format
+pub fn noctis::image::Format::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Format
+pub fn noctis::image::Format::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::Format
+pub fn noctis::image::Format::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::Format
+impl core::marker::StructuralPartialEq for noctis::image::Format
+pub struct noctis::image::Frame
+pub noctis::image::Frame::count: u32
+pub noctis::image::Frame::index: u32
+impl noctis::image::Frame
+pub const noctis::image::Frame::STILL: Self
+impl core::clone::Clone for noctis::image::Frame
+pub fn noctis::image::Frame::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Frame
+impl core::cmp::PartialEq for noctis::image::Frame
+pub fn noctis::image::Frame::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Frame
+pub fn noctis::image::Frame::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::Frame
+pub fn noctis::image::Frame::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::Frame
+impl core::marker::StructuralPartialEq for noctis::image::Frame
+pub trait noctis::image::IntoNodes: noctis::__private::image::sealed::Sealed
+impl<T: noctis::__private::image::sealed::Sealed> noctis::image::IntoNodes for T
+#[non_exhaustive] pub struct noctis::image::InvalidClasses
+impl noctis::image::InvalidClasses
+pub fn noctis::image::InvalidClasses::classes(&self) -> &[noctis::image::UnknownClass]
+impl core::clone::Clone for noctis::image::InvalidClasses
+pub fn noctis::image::InvalidClasses::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::InvalidClasses
+impl core::cmp::PartialEq for noctis::image::InvalidClasses
+pub fn noctis::image::InvalidClasses::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::image::InvalidClasses
+impl core::fmt::Debug for noctis::image::InvalidClasses
+pub fn noctis::image::InvalidClasses::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::InvalidClasses
+pub fn noctis::image::InvalidClasses::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::InvalidClasses
+pub struct noctis::image::Node
+impl noctis::image::Node
+pub fn noctis::image::Node::child(self, impl noctis::image::IntoNodes) -> Self
+pub fn noctis::image::Node::children<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: noctis::image::IntoNodes
+pub fn noctis::image::Node::classes(self, noctis::image::Classes) -> Self
+pub fn noctis::image::Node::element(noctis::image::Tag) -> Self
+pub fn noctis::image::Node::style(self, noctis::image::Style) -> Self
+pub fn noctis::image::Node::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for noctis::image::Node
+pub fn noctis::image::Node::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::image::Node
+pub fn noctis::image::Node::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Node
+pub fn noctis::image::Node::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::Node
+pub struct noctis::image::Size
+impl noctis::image::Size
+pub const fn noctis::image::Size::height(self) -> u32
+pub const fn noctis::image::Size::new(u32, u32) -> Self
+pub const fn noctis::image::Size::try_new(u32, u32) -> core::option::Option<Self>
+pub const fn noctis::image::Size::width(self) -> u32
+impl core::clone::Clone for noctis::image::Size
+pub fn noctis::image::Size::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Size
+impl core::cmp::PartialEq for noctis::image::Size
+pub fn noctis::image::Size::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Size
+pub fn noctis::image::Size::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::Size
+pub fn noctis::image::Size::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::Size
+impl core::marker::StructuralPartialEq for noctis::image::Size
+pub struct noctis::image::Style
+impl noctis::image::Style
+pub const fn noctis::image::Style::bg_rgb(self, u32) -> Self
+pub const fn noctis::image::Style::border_color_rgb(self, u32) -> Self
+pub const fn noctis::image::Style::color_rgb(self, u32) -> Self
+pub const fn noctis::image::Style::gap_px(self, u32) -> Self
+pub const fn noctis::image::Style::height_pct(self, f32) -> Self
+pub const fn noctis::image::Style::height_px(self, u32) -> Self
+pub const fn noctis::image::Style::new() -> Self
+pub const fn noctis::image::Style::opacity(self, f32) -> Self
+pub const fn noctis::image::Style::rotate_deg(self, f32) -> Self
+pub const fn noctis::image::Style::translate_px(self, i32, i32) -> Self
+pub const fn noctis::image::Style::width_pct(self, f32) -> Self
+pub const fn noctis::image::Style::width_px(self, u32) -> Self
+impl core::clone::Clone for noctis::image::Style
+pub fn noctis::image::Style::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::image::Style
+pub fn noctis::image::Style::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::image::Style
+pub fn noctis::image::Style::default() -> Self
+impl core::fmt::Debug for noctis::image::Style
+pub fn noctis::image::Style::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::image::Style
+impl core::marker::StructuralPartialEq for noctis::image::Style
+#[non_exhaustive] pub enum noctis::image::Suggestion
+pub noctis::image::Suggestion::Hint(&'static str)
+pub noctis::image::Suggestion::Rename(alloc::string::String)
+impl core::clone::Clone for noctis::image::Suggestion
+pub fn noctis::image::Suggestion::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Suggestion
+impl core::cmp::PartialEq for noctis::image::Suggestion
+pub fn noctis::image::Suggestion::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Suggestion
+pub fn noctis::image::Suggestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::Suggestion
+#[non_exhaustive] pub enum noctis::image::Tag
+pub noctis::image::Tag::Div
+pub noctis::image::Tag::H1
+pub noctis::image::Tag::H2
+pub noctis::image::Tag::H3
+pub noctis::image::Tag::P
+pub noctis::image::Tag::Span
+impl core::clone::Clone for noctis::image::Tag
+pub fn noctis::image::Tag::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Tag
+impl core::cmp::PartialEq for noctis::image::Tag
+pub fn noctis::image::Tag::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Tag
+pub fn noctis::image::Tag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::Tag
+pub fn noctis::image::Tag::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::Tag
+impl core::marker::StructuralPartialEq for noctis::image::Tag
+pub proc macro noctis::image::#[derive(Template)]
+pub trait noctis::image::Template: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::marker::Send + core::marker::Sync + 'static
+pub const noctis::image::Template::ANIMATION: core::option::Option<noctis::image::AnimationSpec>
+pub const noctis::image::Template::FORMAT: noctis::image::Format
+pub const noctis::image::Template::ID: &'static str
+pub const noctis::image::Template::SIZE: noctis::image::Size
+pub const noctis::image::Template::VERSION: u32
+pub fn noctis::image::Template::view() -> noctis::ports::ErasedView
+pub struct noctis::image::TemplateDescriptor
+pub noctis::image::TemplateDescriptor::id: &'static str
+pub noctis::image::TemplateDescriptor::version: u32
+pub noctis::image::TemplateDescriptor::view: noctis::ports::ErasedView
+impl noctis::image::TemplateDescriptor
+pub fn noctis::image::TemplateDescriptor::of<T: noctis::image::Template>() -> Self
+impl core::clone::Clone for noctis::image::TemplateDescriptor
+pub fn noctis::image::TemplateDescriptor::clone(&self) -> Self
+impl core::fmt::Debug for noctis::image::TemplateDescriptor
+pub fn noctis::image::TemplateDescriptor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub trait noctis::image::TemplateView
+pub fn noctis::image::TemplateView::view(&self, noctis::image::Frame) -> noctis::image::Node
+pub struct noctis::image::Theme
+impl noctis::image::Theme
+pub fn noctis::image::Theme::animations(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &str)> + '_
+pub fn noctis::image::Theme::digest(&self) -> [u8; 32]
+pub fn noctis::image::Theme::empty() -> Self
+pub fn noctis::image::Theme::keyframes(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &str)> + '_
+pub fn noctis::image::Theme::parse(&str) -> core::result::Result<Self, noctis::image::ThemeError>
+impl core::clone::Clone for noctis::image::Theme
+pub fn noctis::image::Theme::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Theme
+impl core::cmp::PartialEq for noctis::image::Theme
+pub fn noctis::image::Theme::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Theme
+pub fn noctis::image::Theme::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::Theme
+impl noctis::image::ThemeTokens for noctis::image::Theme
+pub fn noctis::image::Theme::contains(&self, noctis::image::ThemeNamespace, &str) -> bool
+pub struct noctis::image::Theme
+impl noctis::image::Theme
+pub fn noctis::image::Theme::animations(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &str)> + '_
+pub fn noctis::image::Theme::digest(&self) -> [u8; 32]
+pub fn noctis::image::Theme::empty() -> Self
+pub fn noctis::image::Theme::keyframes(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, &str)> + '_
+pub fn noctis::image::Theme::parse(&str) -> core::result::Result<Self, noctis::image::ThemeError>
+impl core::clone::Clone for noctis::image::Theme
+pub fn noctis::image::Theme::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Theme
+impl core::cmp::PartialEq for noctis::image::Theme
+pub fn noctis::image::Theme::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Theme
+pub fn noctis::image::Theme::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::Theme
+impl noctis::image::ThemeTokens for noctis::image::Theme
+pub fn noctis::image::Theme::contains(&self, noctis::image::ThemeNamespace, &str) -> bool
+impl noctis::image::ThemeTokens for noctis::image::Theme
+pub fn noctis::image::Theme::contains(&self, noctis::image::ThemeNamespace, &str) -> bool
+#[non_exhaustive] pub struct noctis::image::ThemeError
+impl noctis::image::ThemeError
+pub fn noctis::image::ThemeError::column(&self) -> u32
+pub fn noctis::image::ThemeError::kind(&self) -> &noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeError::line(&self) -> u32
+impl core::clone::Clone for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ThemeError
+impl core::cmp::PartialEq for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::image::ThemeError
+impl core::fmt::Debug for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::ThemeError
+#[non_exhaustive] pub struct noctis::image::ThemeError
+impl noctis::image::ThemeError
+pub fn noctis::image::ThemeError::column(&self) -> u32
+pub fn noctis::image::ThemeError::kind(&self) -> &noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeError::line(&self) -> u32
+impl core::clone::Clone for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ThemeError
+impl core::cmp::PartialEq for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::image::ThemeError
+impl core::fmt::Debug for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::ThemeError
+pub fn noctis::image::ThemeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::ThemeError
+#[non_exhaustive] pub enum noctis::image::ThemeErrorKind
+pub noctis::image::ThemeErrorKind::BuiltinAnimation
+pub noctis::image::ThemeErrorKind::BuiltinAnimation::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::Duplicate
+pub noctis::image::ThemeErrorKind::Duplicate::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::EmptyValue
+pub noctis::image::ThemeErrorKind::EmptyValue::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::InvalidToken
+pub noctis::image::ThemeErrorKind::InvalidToken::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::NotCustomProperty
+pub noctis::image::ThemeErrorKind::Syntax
+pub noctis::image::ThemeErrorKind::TooLarge
+pub noctis::image::ThemeErrorKind::TooLarge::bytes: usize
+pub noctis::image::ThemeErrorKind::UnexpectedRule
+pub noctis::image::ThemeErrorKind::UnknownNamespace
+pub noctis::image::ThemeErrorKind::UnknownNamespace::name: alloc::string::String
+impl core::clone::Clone for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ThemeErrorKind
+impl core::cmp::PartialEq for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::ThemeErrorKind
+#[non_exhaustive] pub enum noctis::image::ThemeErrorKind
+pub noctis::image::ThemeErrorKind::BuiltinAnimation
+pub noctis::image::ThemeErrorKind::BuiltinAnimation::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::Duplicate
+pub noctis::image::ThemeErrorKind::Duplicate::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::EmptyValue
+pub noctis::image::ThemeErrorKind::EmptyValue::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::InvalidToken
+pub noctis::image::ThemeErrorKind::InvalidToken::name: alloc::string::String
+pub noctis::image::ThemeErrorKind::NotCustomProperty
+pub noctis::image::ThemeErrorKind::Syntax
+pub noctis::image::ThemeErrorKind::TooLarge
+pub noctis::image::ThemeErrorKind::TooLarge::bytes: usize
+pub noctis::image::ThemeErrorKind::UnexpectedRule
+pub noctis::image::ThemeErrorKind::UnknownNamespace
+pub noctis::image::ThemeErrorKind::UnknownNamespace::name: alloc::string::String
+impl core::clone::Clone for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ThemeErrorKind
+impl core::cmp::PartialEq for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::ThemeErrorKind
+pub fn noctis::image::ThemeErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::ThemeErrorKind
+#[non_exhaustive] pub enum noctis::image::ThemeNamespace
+pub noctis::image::ThemeNamespace::Aspect
+pub noctis::image::ThemeNamespace::Breakpoint
+pub noctis::image::ThemeNamespace::Color
+pub noctis::image::ThemeNamespace::Container
+pub noctis::image::ThemeNamespace::Font
+pub noctis::image::ThemeNamespace::FontWeight
+pub noctis::image::ThemeNamespace::Leading
+pub noctis::image::ThemeNamespace::Radius
+pub noctis::image::ThemeNamespace::Spacing
+pub noctis::image::ThemeNamespace::Text
+pub noctis::image::ThemeNamespace::Tracking
+impl noctis::image::ThemeNamespace
+pub const fn noctis::image::ThemeNamespace::css_prefix(self) -> &'static str
+impl core::clone::Clone for noctis::image::ThemeNamespace
+pub fn noctis::image::ThemeNamespace::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ThemeNamespace
+impl core::cmp::PartialEq for noctis::image::ThemeNamespace
+pub fn noctis::image::ThemeNamespace::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::ThemeNamespace
+pub fn noctis::image::ThemeNamespace::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::ThemeNamespace
+pub fn noctis::image::ThemeNamespace::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::ThemeNamespace
+impl core::marker::StructuralPartialEq for noctis::image::ThemeNamespace
+pub trait noctis::image::ThemeTokens
+pub fn noctis::image::ThemeTokens::contains(&self, noctis::image::ThemeNamespace, &str) -> bool
+pub struct noctis::image::UnknownClass
+impl noctis::image::UnknownClass
+pub fn noctis::image::UnknownClass::class(&self) -> &str
+pub fn noctis::image::UnknownClass::suggestion(&self) -> core::option::Option<&noctis::image::Suggestion>
+impl core::clone::Clone for noctis::image::UnknownClass
+pub fn noctis::image::UnknownClass::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::UnknownClass
+impl core::cmp::PartialEq for noctis::image::UnknownClass
+pub fn noctis::image::UnknownClass::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::UnknownClass
+pub fn noctis::image::UnknownClass::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::UnknownClass
+pub fn noctis::image::UnknownClass::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::UnknownClass
+pub fn noctis::image::div(noctis::image::Classes) -> noctis::image::Node
+pub fn noctis::image::span(noctis::image::Classes) -> noctis::image::Node
+pub fn noctis::image::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::image::Classes) -> noctis::image::Node
+pub proc macro noctis::image::theme!()
+pub proc macro noctis::image::tw!()
+pub proc macro noctis::image::view!()
+pub mod noctis::image::unstable
+pub struct noctis::image::unstable::ClassCheck
+impl noctis::image::unstable::ClassCheck
+pub fn noctis::image::unstable::ClassCheck::check(&self, &noctis::image::Node, &noctis::image::Theme) -> core::result::Result<usize, noctis::image::InvalidClasses>
+pub fn noctis::image::unstable::ClassCheck::new(noctis::image::unstable::ClassCheckMode) -> Self
+impl core::fmt::Debug for noctis::image::unstable::ClassCheck
+pub fn noctis::image::unstable::ClassCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::image::unstable::ClassCheckMode
+pub noctis::image::unstable::ClassCheckMode::Deny
+pub noctis::image::unstable::ClassCheckMode::Warn
+impl core::clone::Clone for noctis::image::unstable::ClassCheckMode
+pub fn noctis::image::unstable::ClassCheckMode::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::unstable::ClassCheckMode
+impl core::cmp::PartialEq for noctis::image::unstable::ClassCheckMode
+pub fn noctis::image::unstable::ClassCheckMode::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::unstable::ClassCheckMode
+pub fn noctis::image::unstable::ClassCheckMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::image::unstable::ClassCheckMode
+impl core::marker::StructuralPartialEq for noctis::image::unstable::ClassCheckMode
+pub struct noctis::image::unstable::ViewFn(_)
+impl noctis::image::unstable::ViewFn
+pub fn noctis::image::unstable::ViewFn::call(&self, &[u8], noctis::image::Frame) -> core::result::Result<noctis::image::Node, noctis::ports::RenderError>
+impl core::clone::Clone for noctis::image::unstable::ViewFn
+pub fn noctis::image::unstable::ViewFn::clone(&self) -> Self
+impl core::fmt::Debug for noctis::image::unstable::ViewFn
+pub fn noctis::image::unstable::ViewFn::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::image::unstable::ViewFn
 pub mod noctis::observe
 pub const noctis::observe::METRICS: &[noctis::observe::MetricInfo]
 #[non_exhaustive] pub struct noctis::observe::MetricInfo
@@ -2527,10 +2909,10 @@ impl core::marker::Copy for noctis::ports::AnimatedFormat
 impl core::marker::StructuralPartialEq for noctis::ports::AnimatedFormat
 pub struct noctis::ports::AnimationSpec
 pub noctis::ports::AnimationSpec::duration: core::time::Duration
-pub noctis::ports::AnimationSpec::format: noctis::ports::AnimatedFormat
+pub noctis::ports::AnimationSpec::format: noctis::image::AnimatedFormat
 pub noctis::ports::AnimationSpec::fps: u16
 impl noctis::ports::AnimationSpec
-pub const fn noctis::ports::AnimationSpec::new(core::time::Duration, u16, noctis::ports::AnimatedFormat) -> Self
+pub const fn noctis::ports::AnimationSpec::new(core::time::Duration, u16, noctis::image::AnimatedFormat) -> Self
 impl core::clone::Clone for noctis::ports::AnimationSpec
 pub fn noctis::ports::AnimationSpec::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::AnimationSpec
@@ -2576,7 +2958,7 @@ pub struct noctis::ports::EncodeSettings
 pub noctis::ports::EncodeSettings::fps: core::option::Option<u16>
 pub noctis::ports::EncodeSettings::frames: u32
 pub noctis::ports::EncodeSettings::quality: core::option::Option<u8>
-pub noctis::ports::EncodeSettings::size: noctis::ports::Size
+pub noctis::ports::EncodeSettings::size: noctis::image::Size
 impl core::clone::Clone for noctis::ports::EncodeSettings
 pub fn noctis::ports::EncodeSettings::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::EncodeSettings
@@ -2708,10 +3090,10 @@ impl noctis::ports::NamespacedPort for dyn noctis::ports::RateLimitStore
 impl noctis::ports::NamespacedPort for dyn noctis::ports::RefStore
 impl noctis::ports::NamespacedPort for dyn noctis::ports::RenderCache
 impl noctis::ports::NamespacedPort for dyn noctis::ports::SessionStore
-impl core::convert::From<noctis::ports::AnimatedFormat> for noctis::ports::OutputFormat
-pub fn noctis::ports::OutputFormat::from(noctis::ports::AnimatedFormat) -> Self
-impl core::convert::From<noctis::ports::Format> for noctis::ports::OutputFormat
-pub fn noctis::ports::OutputFormat::from(noctis::ports::Format) -> Self
+impl core::convert::From<noctis::image::AnimatedFormat> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::image::AnimatedFormat) -> Self
+impl core::convert::From<noctis::image::Format> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::image::Format) -> Self
 pub enum noctis::ports::OutputFormat
 pub noctis::ports::OutputFormat::Apng
 pub noctis::ports::OutputFormat::Gif
@@ -2725,10 +3107,10 @@ pub fn noctis::ports::OutputFormat::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::OutputFormat
 impl core::cmp::PartialEq for noctis::ports::OutputFormat
 pub fn noctis::ports::OutputFormat::eq(&self, &Self) -> bool
-impl core::convert::From<noctis::ports::AnimatedFormat> for noctis::ports::OutputFormat
-pub fn noctis::ports::OutputFormat::from(noctis::ports::AnimatedFormat) -> Self
-impl core::convert::From<noctis::ports::Format> for noctis::ports::OutputFormat
-pub fn noctis::ports::OutputFormat::from(noctis::ports::Format) -> Self
+impl core::convert::From<noctis::image::AnimatedFormat> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::image::AnimatedFormat) -> Self
+impl core::convert::From<noctis::image::Format> for noctis::ports::OutputFormat
+pub fn noctis::ports::OutputFormat::from(noctis::image::Format) -> Self
 impl core::fmt::Debug for noctis::ports::OutputFormat
 pub fn noctis::ports::OutputFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for noctis::ports::OutputFormat
@@ -2801,14 +3183,14 @@ pub fn noctis::ports::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> 
 impl core::fmt::Display for noctis::ports::RenderError
 pub fn noctis::ports::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::ports::RenderJob
-pub noctis::ports::RenderJob::animation: core::option::Option<noctis::ports::AnimationSpec>
+pub noctis::ports::RenderJob::animation: core::option::Option<noctis::image::AnimationSpec>
 pub noctis::ports::RenderJob::data: bytes::bytes::Bytes
-pub noctis::ports::RenderJob::format: noctis::ports::Format
-pub noctis::ports::RenderJob::size: noctis::ports::Size
+pub noctis::ports::RenderJob::format: noctis::image::Format
+pub noctis::ports::RenderJob::size: noctis::image::Size
 pub noctis::ports::RenderJob::template_id: &'static str
 pub noctis::ports::RenderJob::template_version: u32
 impl noctis::ports::RenderJob
-pub fn noctis::ports::RenderJob::of<T: noctis::ports::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
+pub fn noctis::ports::RenderJob::of<T: noctis::image::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
 impl core::clone::Clone for noctis::ports::RenderJob
 pub fn noctis::ports::RenderJob::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::RenderJob
@@ -2831,7 +3213,7 @@ impl core::fmt::Debug for noctis::ports::RenderOutput
 pub fn noctis::ports::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ports::RenderOutput
 pub trait noctis::ports::Renderer: core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ports::Renderer::register(&self, &[noctis::ports::TemplateDescriptor]) -> core::result::Result<(), noctis::ports::RenderError>
+pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescriptor]) -> core::result::Result<(), noctis::ports::RenderError>
 pub fn noctis::ports::Renderer::render(&self, noctis::ports::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::RenderOutput, noctis::ports::RenderError>>
 pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
@@ -2881,10 +3263,10 @@ pub fn noctis::ports::Size::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::ports::Size
 impl core::marker::StructuralPartialEq for noctis::ports::Size
 pub trait noctis::ports::Template: serde_core::ser::Serialize + serde_core::de::DeserializeOwned + core::marker::Send + core::marker::Sync + 'static
-pub const noctis::ports::Template::ANIMATION: core::option::Option<noctis::ports::AnimationSpec>
-pub const noctis::ports::Template::FORMAT: noctis::ports::Format
+pub const noctis::ports::Template::ANIMATION: core::option::Option<noctis::image::AnimationSpec>
+pub const noctis::ports::Template::FORMAT: noctis::image::Format
 pub const noctis::ports::Template::ID: &'static str
-pub const noctis::ports::Template::SIZE: noctis::ports::Size
+pub const noctis::ports::Template::SIZE: noctis::image::Size
 pub const noctis::ports::Template::VERSION: u32
 pub fn noctis::ports::Template::view() -> noctis::ports::ErasedView
 pub struct noctis::ports::TemplateDescriptor
@@ -2892,7 +3274,7 @@ pub noctis::ports::TemplateDescriptor::id: &'static str
 pub noctis::ports::TemplateDescriptor::version: u32
 pub noctis::ports::TemplateDescriptor::view: noctis::ports::ErasedView
 impl noctis::ports::TemplateDescriptor
-pub fn noctis::ports::TemplateDescriptor::of<T: noctis::ports::Template>() -> Self
+pub fn noctis::ports::TemplateDescriptor::of<T: noctis::image::Template>() -> Self
 impl core::clone::Clone for noctis::ports::TemplateDescriptor
 pub fn noctis::ports::TemplateDescriptor::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ports::TemplateDescriptor
@@ -2915,7 +3297,7 @@ impl core::fmt::Display for noctis::ports::ValueError
 pub fn noctis::ports::ValueError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::ports::ValueError
 impl core::marker::StructuralPartialEq for noctis::ports::ValueError
-pub fn noctis::ports::decode_template<T: noctis::ports::Template>(&[u8]) -> core::result::Result<T, noctis::ports::ValueError>
+pub fn noctis::ports::decode_template<T: noctis::image::Template>(&[u8]) -> core::result::Result<T, noctis::ports::ValueError>
 pub fn noctis::ports::decode_value<T: serde_core::de::DeserializeOwned>(u8, &[u8]) -> core::result::Result<core::option::Option<T>, noctis::ports::ValueError>
 pub fn noctis::ports::encode_value<T: serde_core::ser::Serialize + ?core::marker::Sized>(u8, &T) -> core::result::Result<bytes::bytes::Bytes, noctis::ports::ValueError>
 pub mod noctis::ports::memory
@@ -3286,7 +3668,6 @@ pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports
 pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::prelude::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
-pub fn noctis::prelude::AppBuilder::locales(&mut self, noctis::i18n::Catalog) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::ModuleStateStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
@@ -3729,6 +4110,7 @@ pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
 pub fn noctis::prelude::Module::module(self, noctis::prelude::Module) -> Self
 pub fn noctis::prelude::Module::new(&'static str) -> Self
+pub fn noctis::prelude::Module::template<T: noctis::image::Template>(self) -> Self
 pub fn noctis::prelude::Module::uses<R: noctis::__private::ui::Handled>(self) -> Self
 impl core::clone::Clone for noctis::prelude::Module
 pub fn noctis::prelude::Module::clone(&self) -> Self
@@ -4353,6 +4735,8 @@ pub const noctis::rules::RuleId::RL_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::RL_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::RL_03: noctis::rules::RuleId
 pub const noctis::rules::RuleId::RL_04: noctis::rules::RuleId
+pub const noctis::rules::RuleId::TW_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::TW_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::WH_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::WH_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::WH_03: noctis::rules::RuleId

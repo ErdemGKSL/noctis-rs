@@ -7,11 +7,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+# The test theme of the facade's own tests and doctests.
+exclude = ["noctis-theme.css"]
 
 [features]
 default = []
-# Image rendering through takumi (noctis-image `render`); off by default.
-image = []
+# Image Templates: `#[derive(Template)]`, `view!`/`tw!`/`theme!` and the
+# Renderer seam (noctis-image `render`, takumi); off by default.
+image = ["dep:noctis-image", "noctis-image/render", "noctis-macros/image"]
 # GIF/APNG output for rendered images.
 image-gif = []
 # Twemoji colour emoji in image Templates.
@@ -30,6 +33,7 @@ bytes.workspace = true
 noctis-codec.workspace = true
 noctis-core.workspace = true
 noctis-i18n.workspace = true
+noctis-image = { workspace = true, optional = true }
 noctis-macros.workspace = true
 noctis-ports.workspace = true
 noctis-rules.workspace = true

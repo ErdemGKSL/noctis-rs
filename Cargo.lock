@@ -1591,6 +1591,7 @@ dependencies = [
  "noctis-codec",
  "noctis-core",
  "noctis-i18n",
+ "noctis-image",
  "noctis-macros",
  "noctis-ports",
  "noctis-rules",
@@ -1688,15 +1689,21 @@ dependencies = [
 name = "noctis-image"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "cssparser",
+ "noctis-ports",
+ "serde",
  "takumi",
  "takumi-core",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
 name = "noctis-macros"
 version = "0.1.0"
 dependencies = [
+ "noctis-image",
  "noctis-rules",
  "proc-macro2",
  "quote",

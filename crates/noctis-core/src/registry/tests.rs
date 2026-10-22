@@ -1053,3 +1053,117 @@ mod extensions {
         assert_eq!(names(&entries[1]), ["r1", "r2", "c1"]);
     }
 }
+
+// --- Story 10.2: Templates ----------------------------------------------------
+
+mod templates {
+    use noctis_ports::{AnimationSpec, ErasedView, Format, Size, Template};
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    macro_rules! template {
+        ($name:ident, $id:literal, $version:literal) => {
+            #[derive(Serialize, Deserialize)]
+            struct $name;
+
+            impl Template for $name {
+                const ID: &'static str = $id;
+                const VERSION: u32 = $version;
+                const SIZE: Size = Size::new(1, 1);
+                const FORMAT: Format = Format::Png;
+                const ANIMATION: Option<AnimationSpec> = None;
+
+                fn view() -> ErasedView {
+                    ErasedView::new(())
+                }
+            }
+        };
+    }
+
+    template!(CardA, "card", 1);
+    template!(CardB, "card", 2);
+    template!(Badge, "badge", 1);
+
+    fn ids(registry: &Registry) -> Vec<(&'static str, u32)> {
+        registry
+            .templates()
+            .iter()
+            .map(|t| (t.id, t.version))
+            .collect()
+    }
+
+    /// Two Modules, one Template id: one violation naming both.
+    #[tokio::test]
+    async fn duplicate_template_across_modules() {
+        let err = builder()
+            .module(Module::new("a").template::<CardA>())
+            .module(Module::new("b").template::<CardB>())
+            .build()
+            .unwrap_err();
+        let expected = BuildViolation::DuplicateTemplate {
+            id: "card",
+            first_module: "a",
+            first_type: std::any::type_name::<CardA>(),
+            second_module: "b",
+            second_type: std::any::type_name::<CardB>(),
+        };
+        assert_eq!(violations(&err), std::slice::from_ref(&expected));
+        let text = expected.to_string();
+        assert!(
+            text.starts_with("Template id `card` is registered twice: `")
+                && text.ends_with("(Module `b`): give each Template its own id"),
+            "{text}"
+        );
+    }
+
+    /// The same type twice in one Module.
+    #[test]
+    fn same_template_twice() {
+        let (registry, violations) = Registry::fold(
+            &[Module::new("a").template::<CardA>().template::<CardA>()],
+            Intents::empty(),
+        );
+        let name = std::any::type_name::<CardA>();
+        assert_eq!(
+            violations,
+            [BuildViolation::DuplicateTemplate {
+                id: "card",
+                first_module: "a",
+                first_type: name,
+                second_module: "a",
+                second_type: name,
+            }]
+        );
+        assert_eq!(ids(&registry), [("card", 1)]);
+    }
+
+    /// Distinct ids across a nested child: kept in fold order.
+    #[tokio::test]
+    async fn templates_in_fold_order() {
+        let app = builder()
+            .module(
+                Module::new("root")
+                    .template::<Badge>()
+                    .module(Module::new("root/child").template::<CardB>()),
+            )
+            .build()
+            .unwrap();
+        assert_eq!(ids(app.registry()), [("badge", 1), ("card", 2)]);
+        let (registry, violations) = Registry::fold(
+            &[
+                Module::new("x").module(Module::new("x/y").template::<CardA>()),
+                Module::new("z").template::<Badge>(),
+            ],
+            Intents::empty(),
+        );
+        assert!(violations.is_empty());
+        assert_eq!(ids(&registry), [("card", 1), ("badge", 1)]);
+    }
+
+    #[test]
+    fn module_debug_names_templates() {
+        let module = Module::new("m").template::<Badge>();
+        assert!(format!("{module:?}").contains("templates: [\"badge\"]"));
+    }
+}

@@ -1,0 +1,23 @@
+error: Template data must serialize deterministically (it is part of the render cache key): `HashMap` iterates in random order; use `BTreeMap`, `BTreeSet` or `Vec`
+  --> tests/types-image/template_hashmap.rs:10:8
+   |
+10 |     a: HashMap<String, u8>,
+   |        ^^^^^^^
+
+error: Template data must serialize deterministically (it is part of the render cache key): `HashMap` iterates in random order; use `BTreeMap`, `BTreeSet` or `Vec`
+  --> tests/types-image/template_hashmap.rs:11:12
+   |
+11 |     b: Vec<HashMap<u8, u8>>,
+   |            ^^^^^^^
+
+error: Template data must serialize deterministically (it is part of the render cache key): `HashSet` iterates in random order; use `BTreeMap`, `BTreeSet` or `Vec`
+  --> tests/types-image/template_hashmap.rs:12:33
+   |
+12 |     c: Option<std::collections::HashSet<u8>>,
+   |                                 ^^^^^^^
+
+error: Template data must serialize deterministically (it is part of the render cache key): `HashSet` iterates in random order; use `BTreeMap`, `BTreeSet` or `Vec`
+  --> tests/types-image/template_hashmap.rs:13:8
+   |
+13 |     d: HashSet<u8>,
+   |        ^^^^^^^

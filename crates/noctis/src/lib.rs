@@ -47,6 +47,9 @@
 //!   values and the render contract.
 //! - [`bytes`]: [`Bytes`](bytes::Bytes), the value type every byte-store port
 //!   takes and returns.
+//! - `image` (feature `image`): image Templates (`#[derive(Template)]`,
+//!   `TemplateView`, `view!`, `tw!`), the node tree and the Theme
+//!   (`theme!`).
 //!
 //! # One struct per interaction
 //!
@@ -555,7 +558,10 @@
 //! All features are additive, and the default features build without the image
 //! stack.
 //!
-//! - `image`: image rendering through takumi (off by default).
+//! - `image` (off by default): image Templates (`#[derive(Template)]`,
+//!   `TemplateView`), `view!`/`tw!` with compile-time Tailwind class checks,
+//!   the Theme (`theme!`) and the Renderer seam, through takumi; the
+//!   Renderer itself arrives in Story 10.3.
 //! - `image-gif`: GIF/APNG output for rendered images.
 //! - `image-emoji`: Twemoji colour emoji in image Templates.
 //! - `default-font`: a bundled default font for image Templates.
@@ -1939,6 +1945,99 @@ pub mod ports {
     }
 }
 
+#[cfg(feature = "image")]
+pub mod image {
+    //! Image Templates (feature `image`, FR-32, FR-66; AD-15, AD-22).
+    //!
+    //! A Template is a typed value with fixed render settings:
+    //! `#[derive(Template)]` reads `#[template(id, version, size, format[,
+    //! animation(..)])]`, and [`TemplateView`] draws it as a [`Node`] tree,
+    //! usually written with [`view!`]. Register it with
+    //! [`Module::template`](crate::Module::template).
+    //!
+    //! - [`view!`] and [`tw!`]: literal Tailwind v4 classes are checked at
+    //!   compile time against Noctis's strict grammar and the crate's
+    //!   `noctis-theme.css` (`[TW-01]`); a v3 name suggests its v4 rename.
+    //! - The node tree: [`Node`], [`Tag`], [`Classes`], [`Style`] (typed
+    //!   dynamic values), [`IntoNodes`] and [`div`], [`span`], [`text`]. User
+    //!   data enters a tree only as text: no constructor turns a string into
+    //!   markup or classes.
+    //! - The Theme: [`Theme`], parsed from `noctis-theme.css` ([`ThemeError`],
+    //!   [`ThemeErrorKind`], `[TW-02]`); [`theme!`] embeds it. Its tokens are
+    //!   read through [`ThemeTokens`] by [`ThemeNamespace`].
+    //! - The contract: [`Template`], [`Frame`], [`Size`], [`Format`],
+    //!   [`AnimationSpec`], [`AnimatedFormat`] and [`TemplateDescriptor`].
+    //! - The class errors: [`InvalidClasses`], [`UnknownClass`] and
+    //!   [`Suggestion`].
+    //! - [`unstable`]: renderer-facing items outside semver.
+    //!
+    //! ```
+    //! use noctis::image::{Frame, Node, Style, Template, TemplateView, view};
+    //! use serde::{Deserialize, Serialize};
+    //!
+    //! #[derive(Template, Serialize, Deserialize)]
+    //! #[template(id = "card", version = 1, size = (600, 200), format = Png)]
+    //! struct Card {
+    //!     name: String,
+    //!     progress: f32,
+    //! }
+    //!
+    //! impl TemplateView for Card {
+    //!     fn view(&self, _frame: Frame) -> Node {
+    //!         view! {
+    //!             <div tw="flex flex-col w-full h-full p-8 bg-surface">
+    //!                 <span tw="text-4xl text-white">{&self.name}</span>
+    //!                 <div tw="h-4 rounded-full bg-brand"
+    //!                      style={Style::new().width_pct(self.progress * 100.0)} />
+    //!             </div>
+    //!         }
+    //!     }
+    //! }
+    //!
+    //! assert_eq!(<Card as Template>::ID, "card");
+    //! let module = noctis::Module::new("profile").template::<Card>();
+    //! # let _ = module;
+    //! ```
+
+    /// `#[derive(Template)]`: implements [`Template`] from
+    /// `#[template(id = "..", version = N, size = (w, h), format = ..[,
+    /// animation(duration_ms = .., fps = .., format = ..)])]`, checked at
+    /// `cargo check`. `Serialize` and `Deserialize` are required too.
+    pub use noctis_macros::Template;
+    /// `theme!()`: the crate's `noctis-theme.css` as a [`Theme`], validated
+    /// at `cargo check` (`[TW-02]`); `theme!("path")` reads a file relative
+    /// to the calling file.
+    pub use noctis_macros::theme;
+    /// `tw!("classes")`: checked [`Classes`] (`[TW-01]`), usable in a
+    /// `const`.
+    pub use noctis_macros::tw;
+    /// `view! { <div tw="..">..</div> }`: one root element as a [`Node`];
+    /// every `tw = "…"` literal is checked at `cargo check` (`[TW-01]`).
+    pub use noctis_macros::view;
+
+    pub use noctis_image::tw::{
+        InvalidClasses, Suggestion, Theme, ThemeError, ThemeErrorKind, ThemeNamespace, ThemeTokens,
+        UnknownClass,
+    };
+    pub use noctis_image::{Classes, IntoNodes, Node, Style, Tag, TemplateView, div, span, text};
+    pub use noctis_ports::{
+        AnimatedFormat, AnimationSpec, Format, Frame, Size, Template, TemplateDescriptor,
+    };
+
+    pub mod unstable {
+        //! Renderer-facing items. **Semver does not cover them**: they may
+        //! change in any release. Bots do not need them.
+        //!
+        //! - [`ViewFn`]: what a Template's
+        //!   [`ErasedView`](crate::ports::ErasedView) holds; it decodes the
+        //!   Template value and calls its view.
+        //! - [`ClassCheck`] and [`ClassCheckMode`]: the runtime half of
+        //!   `[TW-01]`, which validates `Classes::dynamic` strings.
+
+        pub use noctis_image::{ClassCheck, ClassCheckMode, ViewFn};
+    }
+}
+
 pub mod prelude {
     //! The derives, the method attributes and the traits they implement:
     //! `use noctis::prelude::*;`.
@@ -2108,6 +2207,9 @@ pub mod __private {
     pub use noctis_codec as codec;
     pub use noctis_core as core;
     pub use noctis_i18n as i18n;
+    #[cfg(feature = "image")]
+    pub use noctis_image as image;
+    pub use noctis_ports as ports;
     pub use noctis_rules as rules;
     pub use noctis_ui as ui;
     pub use twilight_model as model;

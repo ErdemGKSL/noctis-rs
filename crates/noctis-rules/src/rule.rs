@@ -74,6 +74,7 @@ rule_ids! {
     RL_01 = "RL-01", RL_02 = "RL-02", RL_03 = "RL-03", RL_04 = "RL-04",
     GW_01 = "GW-01", GW_02 = "GW-02", GW_03 = "GW-03", GW_04 = "GW-04",
     GW_05 = "GW-05", GW_06 = "GW-06", GW_07 = "GW-07",
+    TW_01 = "TW-01", TW_02 = "TW-02",
 }
 
 impl RuleId {
@@ -303,10 +304,10 @@ mod tests {
     }
 
     #[test]
-    fn all_has_126_unique_well_formed_ids() {
-        assert_eq!(RuleId::ALL.len(), 126);
+    fn all_has_128_unique_well_formed_ids() {
+        assert_eq!(RuleId::ALL.len(), 128);
         let unique: HashSet<_> = RuleId::ALL.iter().collect();
-        assert_eq!(unique.len(), 126);
+        assert_eq!(unique.len(), 128);
         for id in RuleId::ALL {
             assert!(has_id_shape(id.as_str()), "{id}");
         }

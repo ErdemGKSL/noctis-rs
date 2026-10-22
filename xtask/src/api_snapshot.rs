@@ -106,6 +106,11 @@ const HIDDEN: &[(&str, &str)] = &[
         "noctis::__private::core::webhook::sealed",
     ),
     // The sealed supertrait of `RawHttp` (AD-24: only `twilight_http::Client`).
+    // The sealed supertrait of `IntoNodes` (Story 10.2).
+    (
+        "noctis_image::node::into_nodes::sealed",
+        "noctis::__private::image::sealed",
+    ),
     (
         "noctis_core::raw_http::sealed",
         "noctis::__private::core::raw_http::sealed",

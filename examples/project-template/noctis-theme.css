@@ -1,5 +1,7 @@
-/* Theme tokens and keyframes for Templates (AD-15, FR-32, FR-69).
-   tw!/view! accept these tokens at compile time: bg-brand, text-muted, animate-rise, ... */
+/* Theme tokens and keyframes for Templates (AD-15, FR-32, FR-69; TW-02).
+   tw!/view! accept these tokens at compile time: bg-brand, text-brand, border-brand,
+   bg-surface, text-muted, font-display, ... Gradient stops (from-*, via-*, to-*) take
+   palette colours only. animate-rise is [planned, Story 10.6]. */
 @theme {
   --color-brand: #5865f2;
   --color-brand-soft: #8b93f8;
@@ -9,7 +11,7 @@
   --animate-rise: rise 1.2s ease-out both;
 }
 
-/* Never redefine built-in names (spin, ping, pulse, bounce): registration error. */
+/* Never redefine built-in names (spin, ping, pulse, bounce): a [TW-02] compile error. */
 @keyframes rise {
   from { transform: translateY(12px); opacity: 0; }
   to   { transform: translateY(0);    opacity: 1; }

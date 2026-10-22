@@ -1,0 +1,23 @@
+error: missing `#[template(id = "..", version = 1, size = (w, h), format = Png)]`
+ --> tests/types-image/template_attribute.rs:6:8
+  |
+6 | struct NoAttribute;
+  |        ^^^^^^^^^^^
+
+error: `#[template(..)]` is missing `size = (<width>, <height>)`
+ --> tests/types-image/template_attribute.rs:9:1
+  |
+9 | #[template(id = "a", version = 1, format = Png)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: duplicate key `id` in `#[template(..)]`
+  --> tests/types-image/template_attribute.rs:13:22
+   |
+13 | #[template(id = "a", id = "b", version = 1, size = (1, 1), format = Png)]
+   |                      ^^
+
+error: unknown key `colour` in `#[template(..)]`: it takes `id`, `version`, `size`, `format` and `animation(..)`
+  --> tests/types-image/template_attribute.rs:17:64
+   |
+17 | #[template(id = "a", version = 1, size = (1, 1), format = Png, colour = 1)]
+   |                                                                ^^^^^^

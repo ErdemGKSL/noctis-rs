@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use noctis_gateway::{DROPPABLE_EVENTS, EventTypeFlags};
+use noctis_ports::TemplateDescriptor;
 use twilight_model::gateway::Intents;
 use twilight_model::gateway::event::EventType;
 
@@ -123,6 +124,13 @@ pub(crate) struct Registry {
     routes: HashMap<&'static str, Arc<RouteEntry>>,
     /// The ids of the mounted `signed` Routes, in fold order (CID-06).
     signed: Vec<&'static str>,
+    /// The first registration of every Template id, in fold order (for the
+    /// Renderer, Story 10.3).
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the Renderer wiring of Story 10.3")
+    )]
+    templates: Vec<TemplateDescriptor>,
 }
 
 impl Registry {
@@ -136,7 +144,9 @@ impl Registry {
     /// and one [`BuildViolation::UnmountedRoute`] per (Module, Route) a
     /// Module `uses` without a mounted handler, each in fold order, then
     /// one [`BuildViolation::MissingExtension`] per (handler, `Ext<T>`)
-    /// that no before-Middleware on the handler's Module path provides.
+    /// that no before-Middleware on the handler's Module path provides,
+    /// then one [`BuildViolation::DuplicateTemplate`] per extra
+    /// registration of a Template id, in fold order.
     pub(crate) fn fold(roots: &[Module], requested: Intents) -> (Self, Vec<BuildViolation>) {
         let mut entries = Vec::new();
         let mut folded = Vec::new();
@@ -230,6 +240,8 @@ impl Registry {
             commands,
             routes,
             signed,
+            // After the extension checks: its violations come last.
+            templates: fold_templates(&folded, &mut violations),
             entries,
             handlers: by_dispatch
                 .into_iter()
@@ -263,6 +275,15 @@ impl Registry {
     /// borrowed key, no allocation.
     pub(crate) fn route(&self, id: &str) -> Option<&Arc<RouteEntry>> {
         self.routes.get(id)
+    }
+
+    /// The first registration of every Template id, in fold order.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the Renderer wiring of Story 10.3")
+    )]
+    pub(crate) fn templates(&self) -> &[TemplateDescriptor] {
+        &self.templates
     }
 
     /// The ids of the mounted `signed` Routes, in fold order.
@@ -324,6 +345,35 @@ fn fold_routes(
         }
     }
     (routes, signed)
+}
+
+/// Keeps the first registration of each Template id in fold order; each
+/// later one (any version, the same type included) is a
+/// [`BuildViolation::DuplicateTemplate`].
+fn fold_templates(
+    folded: &[Folded<'_>],
+    violations: &mut Vec<BuildViolation>,
+) -> Vec<TemplateDescriptor> {
+    let mut kept: Vec<TemplateDescriptor> = Vec::new();
+    // Template id → (first Module, first type name).
+    let mut first: HashMap<&'static str, (&'static str, &'static str)> = HashMap::new();
+    for f in folded {
+        for &(ref descriptor, type_name) in f.module.templates() {
+            if let Some(&(first_module, first_type)) = first.get(descriptor.id) {
+                violations.push(BuildViolation::DuplicateTemplate {
+                    id: descriptor.id,
+                    first_module,
+                    first_type,
+                    second_module: f.module.id(),
+                    second_type: type_name,
+                });
+            } else {
+                first.insert(descriptor.id, (f.module.id(), type_name));
+                kept.push(descriptor.clone());
+            }
+        }
+    }
+    kept
 }
 
 /// One [`BuildViolation::UnmountedRoute`] per (Module id, Route) that a

@@ -1,0 +1,23 @@
+error: [TW-01] unknown Tailwind class `flx`
+ --> tests/ui-image/tw/TW-01_unknown_class.rs:6:26
+  |
+6 |     let _: Classes = tw!("flx");
+  |                          ^^^^^
+
+error: [TW-01] unknown Tailwind class `bg-gradient-to-r`; use `bg-linear-to-r` (Tailwind v4); or declare `--color-gradient-to-r` in noctis-theme.css
+ --> tests/ui-image/tw/TW-01_unknown_class.rs:7:26
+  |
+7 |     let _: Classes = tw!("bg-gradient-to-r");
+  |                          ^^^^^^^^^^^^^^^^^^
+
+error: [TW-01] unknown Tailwind class `bg-brand`; or declare `--color-brand` in noctis-theme.css
+ --> tests/ui-image/tw/TW-01_unknown_class.rs:8:26
+  |
+8 |     let _: Classes = tw!("bg-brand");
+  |                          ^^^^^^^^^^
+
+error: [TW-01] unknown Tailwind class `w-FULL`
+ --> tests/ui-image/tw/TW-01_unknown_class.rs:9:35
+  |
+9 |     let _: Node = view! { <div tw="flex w-FULL"></div> };
+  |                                   ^^^^^^^^^^^^^

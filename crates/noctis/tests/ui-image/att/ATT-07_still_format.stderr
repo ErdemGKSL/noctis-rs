@@ -1,0 +1,5 @@
+error: `Gif` is not a still format: `format` takes `Png`, `Jpeg { quality: 1..=100 }`, `Webp { quality: 1..=100 }` or `WebpLossless`; put an animated format in `animation(duration_ms = .., fps = .., format = Gif)`
+ --> tests/ui-image/att/ATT-07_still_format.rs:7:64
+  |
+7 | #[template(id = "card", version = 1, size = (10, 10), format = Gif)] // [ATT-07]
+  |                                                                ^^^

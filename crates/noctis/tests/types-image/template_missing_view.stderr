@@ -1,0 +1,18 @@
+error[E0277]: `Card` derives `Template` but does not implement `TemplateView`
+ --> tests/types-image/template_missing_view.rs:5:10
+  |
+5 | #[derive(Template, Serialize, Deserialize)]
+  |          ^^^^^^^^ unsatisfied trait bound
+  |
+help: the trait `TemplateView` is not implemented for `Card`
+ --> tests/types-image/template_missing_view.rs:7:1
+  |
+7 | struct Card {
+  | ^^^^^^^^^^^
+  = note: add `impl TemplateView for Card { fn view(&self, frame: Frame) -> Node { view! { .. } } }`
+note: required by a bound in `noctis::__private::noctis_image::template::erased_view`
+ --> $WORKSPACE/crates/noctis-image/src/template.rs
+  |
+  | pub fn erased_view<T: Template + TemplateView>() -> ErasedView {
+  |                                  ^^^^^^^^^^^^ required by this bound in `erased_view`
+  = note: this error originates in the derive macro `Template` (in Nightly builds, run with -Z macro-backtrace for more info)

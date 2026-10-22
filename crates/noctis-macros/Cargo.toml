@@ -10,7 +10,14 @@ repository.workspace = true
 [lib]
 proc-macro = true
 
+[features]
+default = []
+# `#[derive(Template)]`, `view!`, `tw!` and `theme!` (noctis-image's `tw`
+# module only; its `render` feature stays off).
+image = ["dep:noctis-image"]
+
 [dependencies]
+noctis-image = { workspace = true, optional = true }
 noctis-rules.workspace = true
 proc-macro2.workspace = true
 yaml-rust2.workspace = true

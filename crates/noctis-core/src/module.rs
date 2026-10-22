@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use noctis_ports::{Template, TemplateDescriptor};
+
 use crate::command::CommandHandler;
 use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
@@ -145,6 +147,7 @@ pub struct Module {
     nodes: Vec<NodeDecl>,
     before: Vec<BeforeMiddleware>,
     after: Vec<AfterMiddleware>,
+    templates: Vec<(TemplateDescriptor, &'static str)>,
     children: Vec<Module>,
 }
 
@@ -176,6 +179,7 @@ impl Module {
             nodes: Vec::new(),
             before: Vec::new(),
             after: Vec::new(),
+            templates: Vec::new(),
             children: Vec::new(),
         }
     }
@@ -234,6 +238,38 @@ impl Module {
             route: R::ID.as_str(),
             route_type: std::any::type_name::<R>(),
         });
+        self
+    }
+
+    /// Registers the image Template `T` (FR-32, AD-22): its id, version and
+    /// view reach the App's Renderer.
+    ///
+    /// `build()` rejects a Template id registered twice across the mounted
+    /// Modules (any version, the same type included) with
+    /// [`BuildViolation::DuplicateTemplate`](crate::BuildViolation::DuplicateTemplate),
+    /// naming both types and Modules.
+    ///
+    /// ```
+    /// use noctis_core::Module;
+    /// # use noctis_ports::{AnimationSpec, ErasedView, Format, Size, Template};
+    /// # #[derive(serde::Serialize, serde::Deserialize)]
+    /// # struct ProfileCard;
+    /// # impl Template for ProfileCard {
+    /// #     const ID: &'static str = "profile.card";
+    /// #     const VERSION: u32 = 1;
+    /// #     const SIZE: Size = Size::new(934, 282);
+    /// #     const FORMAT: Format = Format::Png;
+    /// #     const ANIMATION: Option<AnimationSpec> = None;
+    /// #     fn view() -> ErasedView { ErasedView::new(()) }
+    /// # }
+    /// // `#[derive(Template)] #[template(id = "profile.card", ..)] struct ProfileCard { .. }`
+    /// let profile = Module::new("profile").template::<ProfileCard>();
+    /// assert!(format!("{profile:?}").contains("profile.card"));
+    /// ```
+    #[must_use = "Module::template returns the Module with the Template registered"]
+    pub fn template<T: Template>(mut self) -> Self {
+        self.templates
+            .push((TemplateDescriptor::of::<T>(), std::any::type_name::<T>()));
         self
     }
 
@@ -402,6 +438,11 @@ impl Module {
         &self.after
     }
 
+    /// Its Templates with their type paths, in `template` order.
+    pub(crate) fn templates(&self) -> &[(TemplateDescriptor, &'static str)] {
+        &self.templates
+    }
+
     /// Its children, in `module` order.
     pub(crate) fn children(&self) -> &[Module] {
         &self.children
@@ -426,6 +467,7 @@ impl fmt::Debug for Module {
         let uses: Vec<&str> = self.uses.iter().map(|u| u.route).collect();
         let before: Vec<&str> = self.before.iter().map(BeforeMiddleware::name).collect();
         let after: Vec<&str> = self.after.iter().map(AfterMiddleware::name).collect();
+        let templates: Vec<&str> = self.templates.iter().map(|(t, _)| t.id).collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
@@ -437,6 +479,7 @@ impl fmt::Debug for Module {
             .field("nodes", &self.nodes)
             .field("before", &before)
             .field("after", &after)
+            .field("templates", &templates)
             .field("children", &self.children)
             .finish()
     }

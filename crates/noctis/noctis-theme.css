@@ -1,0 +1,14 @@
+/* The facade's test theme: the macros of the facade's own tests and doctests
+   validate against it (Story 10.2). Not published (`exclude` in Cargo.toml). */
+@theme {
+  --color-brand: #5865f2;
+  --color-brand-soft: #8b93f8;
+  --color-surface: #11131a;
+  --color-muted: #9aa3b5;
+  --font-display: "Inter", sans-serif;
+}
+
+@keyframes rise {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

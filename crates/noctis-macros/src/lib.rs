@@ -2,8 +2,9 @@
 //! `MessageCommand`, `EventHandler`, `Button`, the five select derives,
 //! `Modal`), the `#[handler]`, `#[autocomplete(field)]`, `#[on_stale]` and
 //! `#[on_expired]` method attributes,
-//! the `Payload`/`PayloadEnum`/`Choices` derives, `components!`, `i18n!`
-//! and the literal macros.
+//! the `Payload`/`PayloadEnum`/`Choices` derives, `components!`, `i18n!`,
+//! the literal macros and, with the `image` feature, `#[derive(Template)]`,
+//! `view!`, `tw!` and `theme!`.
 //!
 //! This crate is internal; use `noctis` instead. Its API is not stable and may
 //! change in any release.
@@ -16,7 +17,7 @@
 //! are stubs that fail with the struct form (`withdrawn`).
 //!
 //! Generated code names runtime items only through
-//! `::noctis::__private::{codec, ui, core, rules, model}` and std items through `::core`/`::std`
+//! `::noctis::__private::{codec, ui, core, rules, model, ports, image}` and std items through `::core`/`::std`
 //! (AD-2). Errors are `[RULE-ID] what is wrong` plus a `= help:` line (or a
 //! `noctis_rules::Violation`'s `Display`), spanned on the offending token.
 
@@ -45,6 +46,14 @@ mod options;
 mod payload;
 mod payload_enum;
 mod route;
+#[cfg(feature = "image")]
+mod template;
+#[cfg(feature = "image")]
+mod theme;
+#[cfg(feature = "image")]
+mod tw;
+#[cfg(feature = "image")]
+mod view;
 mod withdrawn;
 
 /// Derives `Payload` and `PayloadDecode` for a struct, for a hand-written
@@ -270,6 +279,51 @@ pub fn on_stale(args: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn on_expired(args: TokenStream, item: TokenStream) -> TokenStream {
     hook::expand_or_fallback(hook::Hook::Expired, args.into(), item.into()).into()
+}
+
+/// `#[derive(Template)]` with `#[template(id = "..", version = N, size = (w,
+/// h), format = ..[, animation(duration_ms = .., fps = .., format = ..)])]`:
+/// implements `noctis::image::Template` (AD-22). Keys, forms and ranges are
+/// checked at expansion (an animated format in `format` is ATT-07); generic
+/// structs, `HashMap`/`HashSet` fields and `#[asset]` fields are errors.
+#[cfg(feature = "image")]
+#[proc_macro_derive(Template, attributes(template, asset))]
+pub fn derive_template(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    template::derive(&input).into()
+}
+
+/// `view! { <div tw="..">..</div> }`: one root element lowered to the
+/// `noctis::image::Node` builders; every `tw = "…"` literal is checked
+/// against the Tailwind grammar and the crate's `noctis-theme.css` (TW-01).
+#[cfg(feature = "image")]
+#[proc_macro]
+pub fn view(input: TokenStream) -> TokenStream {
+    view::expand(input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// `tw!("classes")`: a checked `noctis::image::Classes` const expression,
+/// validated against the Tailwind grammar and the crate's
+/// `noctis-theme.css` (TW-01).
+#[cfg(feature = "image")]
+#[proc_macro]
+pub fn tw(input: TokenStream) -> TokenStream {
+    tw::expand(input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// `theme!()` / `theme!("path")`: embeds the crate's `noctis-theme.css` (or
+/// the file at `path`, relative to the calling file) as a
+/// `noctis::image::Theme`, validated at expansion (TW-02).
+#[cfg(feature = "image")]
+#[proc_macro]
+pub fn theme(input: TokenStream) -> TokenStream {
+    theme::expand(input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 /// Withdrawn: `#[command]` on a free function. Fails with the

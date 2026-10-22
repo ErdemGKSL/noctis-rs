@@ -31,7 +31,7 @@ pub fn module() -> Module {
         .add::<EditBio>()
         .add::<BioForm>()
         .add::<events::AwardXp>()
-        // Registering the Template lets App build check fonts, theme tokens and keyframes.
+        // Registers the card for the Renderer; App build rejects a Template id used twice.
         .template::<ProfileCard>()
 }
 

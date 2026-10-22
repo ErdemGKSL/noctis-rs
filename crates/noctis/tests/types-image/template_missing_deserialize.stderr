@@ -1,0 +1,29 @@
+error[E0277]: the trait bound `Card: serde::Deserialize<'de>` is not satisfied
+ --> tests/types-image/template_missing_deserialize.rs:7:8
+  |
+7 | struct Card {
+  |        ^^^^ unsatisfied trait bound
+  |
+help: the trait `for<'de> Deserialize<'de>` is not implemented for `Card`
+ --> tests/types-image/template_missing_deserialize.rs:7:1
+  |
+7 | struct Card {
+  | ^^^^^^^^^^^
+  = note: for local types consider adding `#[derive(serde::Deserialize)]` to your `Card` type
+  = note: for types from other crates check whether the crate offers a `serde` feature flag
+  = help: the following other types implement trait `Deserialize<'de>`:
+            &'a Path
+            &'a [u8]
+            &'a serde_json::raw::RawValue
+            &'a str
+            ()
+            (T,)
+            (T0, T1)
+            (T0, T1, T2)
+          and $N others
+  = note: required for `Card` to implement `DeserializeOwned`
+note: required by a bound in `noctis::ports::Template`
+ --> $WORKSPACE/crates/noctis-ports/src/render.rs
+  |
+  | pub trait Template: Serialize + DeserializeOwned + Send + Sync + 'static {
+  |                                 ^^^^^^^^^^^^^^^^ required by this bound in `Template`

@@ -1,0 +1,166 @@
+//! The node tree a Template view returns: Noctis-owned and takumi-free.
+//!
+//! A [`Node`] is an element ([`Tag`], [`Classes`], [`Style`] and children) or
+//! a text node. User data enters a tree only as text: text children are never
+//! parsed, [`Classes`] come from `tw!` literals or [`Classes::dynamic`], and no
+//! constructor turns a string into markup. Dynamic values (widths, colours,
+//! percentages) use the typed [`Style`] setters, which override class values
+//! of the same property when the Renderer draws the tree.
+//!
+//! `view!` expands to the builder calls below; they can be used directly:
+//!
+//! ```
+//! use noctis_image::{Classes, Node, Style, Tag, div, text};
+//!
+//! let name = String::from("<b>Ada</b>");
+//! let card = div(Classes::default())
+//!     .style(Style::new().width_px(300))
+//!     .child(text(name.clone(), Classes::default()))
+//!     .child(Node::element(Tag::Span).child(42u8));
+//! assert_eq!(card, card.clone());
+//! ```
+
+mod classes;
+mod into_nodes;
+mod style;
+#[cfg(test)]
+mod tests;
+
+use std::borrow::Cow;
+
+pub use classes::Classes;
+pub use into_nodes::IntoNodes;
+pub use style::Style;
+
+use into_nodes::sealed::Sealed as _;
+
+/// An element tag. Tags carry no default styles: every look comes from
+/// classes and [`Style`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Tag {
+    /// `<div>`.
+    Div,
+    /// `<span>`.
+    Span,
+    /// `<p>`.
+    P,
+    /// `<h1>`.
+    H1,
+    /// `<h2>`.
+    H2,
+    /// `<h3>`.
+    H3,
+}
+
+/// One node of a view tree: an element or a text node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Node {
+    kind: Kind,
+    classes: Classes,
+    style: Style,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Kind {
+    Element { tag: Tag, children: Vec<Node> },
+    Text(Cow<'static, str>),
+}
+
+impl Node {
+    /// An empty `tag` element without classes or style.
+    pub fn element(tag: Tag) -> Self {
+        Self {
+            kind: Kind::Element {
+                tag,
+                children: Vec::new(),
+            },
+            classes: Classes::default(),
+            style: Style::new(),
+        }
+    }
+
+    /// A text node: `text` is drawn as is, never parsed as markup or classes.
+    pub fn text(text: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            kind: Kind::Text(text.into()),
+            classes: Classes::default(),
+            style: Style::new(),
+        }
+    }
+
+    /// Sets the classes; a later call replaces them. Applies to text nodes
+    /// too.
+    #[must_use]
+    pub fn classes(mut self, classes: Classes) -> Self {
+        self.classes = classes;
+        self
+    }
+
+    /// Sets the style; a later call replaces it. Applies to text nodes too.
+    #[must_use]
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Appends `child` (0..n nodes, see [`IntoNodes`]). A no-op on a text
+    /// node.
+    #[must_use]
+    pub fn child(mut self, child: impl IntoNodes) -> Self {
+        if let Kind::Element { children, .. } = &mut self.kind {
+            child.push_into(children);
+        }
+        self
+    }
+
+    /// Appends every item of `children`, in order. A no-op on a text node.
+    #[must_use]
+    pub fn children<I>(mut self, children: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: IntoNodes,
+    {
+        if let Kind::Element { children: own, .. } = &mut self.kind {
+            for child in children {
+                child.push_into(own);
+            }
+        }
+        self
+    }
+
+    /// Appends `item` to `nodes`; what `view!` expands `if` and `for`
+    /// children to.
+    #[doc(hidden)]
+    pub fn __push(nodes: &mut Vec<Node>, item: impl IntoNodes) {
+        item.push_into(nodes);
+    }
+
+    /// The node's classes.
+    pub(crate) fn class_list(&self) -> &Classes {
+        &self.classes
+    }
+
+    /// The element's children; empty for a text node.
+    pub(crate) fn child_nodes(&self) -> &[Node] {
+        match &self.kind {
+            Kind::Element { children, .. } => children,
+            Kind::Text(_) => &[],
+        }
+    }
+}
+
+/// A `<div>` with `classes`.
+pub fn div(classes: Classes) -> Node {
+    Node::element(Tag::Div).classes(classes)
+}
+
+/// A `<span>` with `classes`.
+pub fn span(classes: Classes) -> Node {
+    Node::element(Tag::Span).classes(classes)
+}
+
+/// A text node with `classes`; `text` is never parsed.
+pub fn text(text: impl Into<Cow<'static, str>>, classes: Classes) -> Node {
+    Node::text(text).classes(classes)
+}

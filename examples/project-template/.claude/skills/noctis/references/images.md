@@ -23,7 +23,7 @@ would otherwise render invisibly).
 ## 2. A Template
 
 ```rust
-use noctis::image::{Frame, Node, RemoteImage, Style, Template, TemplateView, view};
+use noctis::image::{Frame, Node, Style, Template, TemplateView, view};
 use serde::{Deserialize, Serialize};
 
 #[derive(Template, Serialize, Deserialize, Debug)]   // Deserialize: the Renderer decodes the data
@@ -33,20 +33,18 @@ pub struct ProfileCard {
     pub subtitle: String,
     pub level_label: String,         // localized text is data: format it in the handler
     pub xp_label: String,
-    pub progress: f32,
-    #[asset]                         // remote image, fetched + cached before rendering
-    pub avatar: RemoteImage,
+    pub progress: f32,               // 0.0..=1.0
 }
 
 impl TemplateView for ProfileCard {
     fn view(&self, _frame: Frame) -> Node {   // Frame::STILL for stills
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
-                <img src={&self.avatar} tw="w-40 h-40 rounded-full border-4 border-brand" />
                 <div tw="flex flex-col gap-3 flex-1">
                     <span tw="text-5xl font-bold text-white">{&self.name}</span>
+                    <span tw="text-xl text-muted">{&self.subtitle}</span>
                     <div tw="flex w-full h-6 rounded-full bg-slate-700">
-                        <div tw="h-full rounded-full bg-linear-to-r from-brand to-brand-soft"
+                        <div tw="h-full rounded-full bg-linear-to-r from-indigo-500 to-violet-400"
                              style={Style::new().width_pct(self.progress * 100.0)} />
                     </div>
                 </div>
@@ -56,77 +54,153 @@ impl TemplateView for ProfileCard {
 }
 ```
 
-Register it on its Module: `.template::<ProfileCard>()` (App build then checks fonts,
-theme tokens and keyframes).
+Register it on its Module: `Module::new("profile").template::<ProfileCard>()`. Two
+Templates with the same `id` anywhere in the App fail `App::build` with
+`BuildViolation::DuplicateTemplate { id, first_module, first_type, second_module,
+second_type }` (registering the same type twice counts too). The derive implements
+`noctis::image::Template` (consts `ID`, `VERSION`, `SIZE`, `FORMAT`, `ANIMATION`);
+`TemplateDescriptor::of::<T>()` is the type-erased record the Renderer keys on, and its
+`view` is a `noctis::image::unstable::ViewFn` that decodes the data and calls your
+`view` (`ViewFn::call(&data, frame)`; a decode error is `RenderError::Failed` with a
+`ValueError`). A struct that lacks `impl TemplateView` or `Deserialize` does not
+compile.
 
-`#[template(...)]`: `id` (stable, part of the cache key), `version` (**bump whenever
-`view` changes**, or cached images go stale), `size = (w, h)` in px, `format` (the
-still encoding: `Png` | `Jpeg { quality }` | `Webp { quality }` | `WebpLossless`), and
-optionally `animation(duration_ms = 2000, fps = 20, format = Webp)` (animated
-`Webp { quality }` | `Gif` | `Apng`) to render animated by default. Data must serialize deterministically: the derive rejects `HashMap`
-fields (use `Vec` or `BTreeMap`).
+`#[template(..)]` keys (any order, each exactly once, unknown keys are errors):
 
-## 3. `view!` syntax [planned]
+| Key | Takes |
+| --- | --- |
+| `id` | a string literal of 1 to 64 characters `[a-z0-9._-]`; stable, part of the cache key |
+| `version` | an integer literal `0..=4294967295` (`u32`, suffix `u32` allowed); **bump whenever the data or `view` changes**, or cached images go stale |
+| `size` | `(width, height)` integer literals, each `1..=4294967295` px |
+| `format` | the still encoding: `Png`, `Jpeg { quality: 1..=100 }`, `Webp { quality: 1..=100 }` or `WebpLossless` (`Gif`/`Apng` are not still formats) |
+| `animation(..)` | optional: `duration_ms = 1..`, `fps = 1..=90` (`1..=50` for `Gif`), `format = Webp { quality } \| Gif \| Apng`; renders animated by default |
+
+The item must be a struct (named, tuple or unit) without generics or lifetimes. Data
+must serialize deterministically (it is part of the render cache key): a field whose
+type mentions `HashMap` or `HashSet` anywhere (`Vec<HashMap<..>>`, `Option<HashSet<..>>`)
+is a compile error; use `BTreeMap`, `BTreeSet` or `Vec`. `#[asset]` remote-image fields
+are [planned, Story 10.8] and rejected until then.
+
+## 3. `view!` syntax
 
 ```rust
 view! {
-    <div tw="flex flex-col">
-        {&self.title}                                   // text node (always escaped text)
+    <div tw="flex flex-col" style={Style::new().gap_px(8)}>
+        "Title: "                                        // a string literal is a text node
+        {&self.title}                                    // {expr}: anything IntoNodes
         if self.boosting { <span tw="text-pink-400">{&self.boost_label}</span> }
-        for badge in &self.badges { {badge_node(badge)} }   // fn(&T) -> Node components
-        <img src={&self.avatar} tw="w-16 h-16" />
-        <div style={Style::new().width_pct(p).bg_rgb(0x5865F2)} />
+        else if self.trial { "trial" } else { "free" }
+        for badge in &self.badges { {badge_node(badge)} } // fn(&T) -> Node components
+        <p tw={tw!("text-sm").and(Classes::dynamic(level_class))} />
     </div>
 }
 ```
 
-Elements: `div`, `span`, `img`, `p`, `h1`–`h3`, `svg` (inline literal). User text can
-only enter as a text node, never as a class string or markup (FR-32).
+- Exactly one root element; `view!` is an expression of type `Node`.
+- Tags: `div`, `span`, `p`, `h1`, `h2`, `h3` (`Tag::{Div, Span, P, H1, H2, H3}`).
+  `<img>` and `<svg>` are [planned, Story 10.7] and rejected with that message.
+- Attributes, each at most once: `tw="literal"` (checked like `tw!`, §4) or
+  `tw={expr}` of type `Classes`, and `style={expr}` of type `Style`. `class=` is an
+  error that points to `tw`; other attributes are errors.
+- Children: elements, string literals, `{expr}`, `if cond { .. }` with `else if` /
+  `else`, and `for pat in expr { .. }`. `{expr}` takes any `IntoNodes`: `Node`,
+  `Vec<Node>`, `&str`, `String`, `&String`, `Cow<'static, str>`, integers, `f32`/`f64`
+  (as text) and `Option<T>` (`None` adds nothing). Text children are always text:
+  `"<b>"` renders the characters, never markup.
+- **User text enters only as a text child** (FR-32), never as classes or styles.
 
-`tw!("…")` gives a validated class set for the builder API:
-`div(tw!("flex gap-2")).child(text(&name, tw!("text-xl")))`.
+The builder API builds the same tree: `div(classes)`, `span(classes)`,
+`text(content, classes)`, `Node::element(Tag::P)`, `Node::text(..)`, then
+`.classes(..)`, `.style(..)`, `.child(impl IntoNodes)` and `.children(iter)`; for
+example `div(tw!("flex gap-2")).child(text(&name, tw!("text-xl")))`. A `view!` tree and
+its builder twin compare equal (`Node: PartialEq`), which is how to unit-test a view.
 
-## 4. Tailwind: v4 names, strict grammar
+## 4. Classes: `tw!`, Tailwind v4, strict grammar
 
-- Classes are **Tailwind v4**. Literal classes are checked at compile time against
-  Noctis's strict grammar plus your theme tokens; unknown classes are compile errors.
-  takumi alone would silently drop them.
-- Common v3 → v4 renames (the error suggests these):
+- `tw!("flex p-4")` is a `const`-usable `Classes` checked at `cargo check`; `tw="…"`
+  in `view!` is checked the same way. Each unknown class is one `[TW-01]` error on the
+  literal, e.g. ``[TW-01] unknown Tailwind class `bg-nope`; or declare `--color-nope`
+  in noctis-theme.css``; with a known v3 name the error suggests the v4 one.
+- Classes are **Tailwind v4** in Noctis's strict grammar (`noctis::image::tw`):
+  built-in utilities, variants (`sm:`, `md:`, …, or a custom `--breakpoint-*`),
+  `!important`, opacity modifiers (`bg-black/50`), plus the tokens of your theme
+  (§5). takumi alone would silently drop an unknown class. A failed runtime check
+  is an `InvalidClasses`, whose `classes()` are `UnknownClass`es (`class()`,
+  `suggestion() -> Option<&Suggestion>`); a `Suggestion` is `Rename(v4 class)` or
+  `Hint(text)`.
+- v3 names the grammar suggests:
   | v3 | v4 |
   | --- | --- |
-  | `bg-gradient-to-r` | `bg-linear-to-r` |
-  | `flex-shrink-0` / `flex-grow` | `shrink-0` / `grow` |
-  | `shadow-sm` / `shadow` | `shadow-xs` / `shadow-sm` |
-  | `rounded-sm` / `rounded` | `rounded-xs` / `rounded-sm` |
-  | `blur-sm` / `blur` | `blur-xs` / `blur-sm` |
-  | `outline-none` | `outline-hidden` |
-  | `ring` | `ring-3` |
-  | `bg-opacity-50` | `bg-black/50` (opacity modifier) |
+  | `bg-gradient-to-r` (any side) | `bg-linear-to-r` |
   | `overflow-ellipsis` | `text-ellipsis` |
+  | `bg-opacity-50`, `border-opacity-*`, … | an opacity modifier: `bg-black/50` (hint) |
+  | `space-x-4` / `space-y-*` | `gap-x-*` / `gap-y-*` on a flex parent (hint) |
+
+  General Tailwind v4 advice the error does not spell out: `shrink-0`/`grow` (not
+  `flex-shrink-0`/`flex-grow`), `shadow-xs`/`rounded-xs`/`blur-xs` for v3's `-sm`,
+  `outline-hidden`, `ring-3`.
 - Layout is flexbox/grid (taffy): use `flex`, `flex-col`, `items-*`, `justify-*`,
   `gap-*`, `grid grid-cols-*`. Set explicit sizes on the root (`w-full h-full`).
-- **Dynamic values never go into class strings.** Use typed setters:
-  `Style::new().width_pct(f32)`, `.height_px(u32)`, `.bg_rgb(u32)`, `.color_rgb(u32)`,
-  `.opacity(f32)`, `.translate_px(x, y)`, `.rotate_deg(f32)` [planned]. A runtime class
-  string with an unknown class logs a warning once and fails tests under the testkit.
+- Classes chosen at run time: `Classes::dynamic(text)` (a known class name from your
+  own code, such as a tier → `"text-amber-400"` match) and `a.and(b)` (joins with a
+  space); `as_str()` reads the text. **Never pass user text to `Classes::dynamic`.**
+  Dynamic strings are checked when rendered (`noctis::image::unstable::ClassCheck`,
+  `ClassCheckMode::Warn` logs each invalid string once on target `noctis::image`,
+  `ClassCheckMode::Deny` fails, as test Apps do).
+- **Data-driven values never go into class strings.** Use the `Style` setters (all
+  `const`; the last setter on a property wins; a NaN or infinite `f32` leaves the
+  property unchanged; style overrides a class of the same property):
+  `Style::new()`, `.width_px(u32)`, `.width_pct(f32)` and `.height_pct(f32)` (clamped
+  to `0..=100`), `.height_px(u32)`, `.gap_px(u32)`, `.bg_rgb(0xRRGGBB)`,
+  `.color_rgb(..)`, `.border_color_rgb(..)` (the low 24 bits are used),
+  `.opacity(f32)` (clamped to `0..=1`), `.translate_px(i32, i32)`, `.rotate_deg(f32)`.
 
 ## 5. Theme (`noctis-theme.css`)
 
-At the crate root; the macros read it at compile time and `.theme(noctis::image::theme!())`
-embeds it for runtime:
+At the crate root (next to `Cargo.toml`); `tw!`, `tw="…"` and `view!` read it at
+compile time and rebuild when it changes. No file means an empty theme (built-in
+classes only). `noctis::image::theme!()` embeds it as a `Theme` value for runtime
+(`theme!("path/to/file.css")` takes a path relative to the calling source file); both
+fail the build on a missing or invalid file.
 
 ```css
+/* comments anywhere */
 @theme {
-  --color-brand: #5865f2;      /* → bg-brand, text-brand, from-brand, border-brand */
+  --color-brand: #5865f2;      /* → bg-brand, text-brand, border-brand, text-brand/50 */
   --color-surface: #11131a;
   --font-display: "Inter", sans-serif;   /* → font-display */
-  --animate-rise: rise 1.2s ease-out both;  /* → animate-rise */
+  --font-weight-heavy: 900;    /* longest prefix wins: --font-weight-, not --font- */
+  --animate-rise: rise 1.2s ease-out both;   /* animate-rise is [planned, Story 10.6] */
 }
 @keyframes rise { from { opacity: 0 } to { opacity: 1 } }
 ```
 
-Redefining a built-in animation (`spin`, `ping`, `pulse`, `bounce`) is a registration
-error (it would render static).
+Rules (each violation is `[TW-02] <line>:<column>: <what>` at compile time, or a
+`ThemeError` from `Theme::parse(css)` with `line()`, `column()` and a `ThemeErrorKind`
+from `kind()`):
+
+- The top level holds only `@theme { … }` (no prelude: `@theme inline` is an error)
+  and `@keyframes <name> { … }`; several `@theme` blocks merge.
+- `@theme` holds only `--<namespace><token>: <value>;`. Namespaces: `--color-`,
+  `--spacing-`, `--container-`, `--text-`, `--font-`, `--font-weight-`, `--tracking-`,
+  `--leading-`, `--radius-`, `--aspect-`, `--breakpoint-`, and `--animate-`. The token
+  is `[a-z0-9]([a-z0-9._-]*[a-z0-9])?`, at most 64 bytes; the value must not be empty.
+- A name defined twice is an error, and so is a `@keyframes` or `--animate-` named
+  `spin`, `ping`, `pulse` or `bounce` (the built-in animations would render static).
+- The file is at most 256 KiB.
+
+`ThemeErrorKind` (non-exhaustive) names the cause: `UnexpectedRule` (anything but
+`@theme`/`@keyframes` at the top level, a prelude, an at-rule inside `@theme`),
+`NotCustomProperty`, `UnknownNamespace { name }`, `InvalidToken { name }`,
+`EmptyValue { name }`, `Duplicate { name }`, `BuiltinAnimation { name }`, `Syntax`
+(an unclosed block, a declaration without `:`) and `TooLarge { bytes }`.
+
+A `Theme` also has `Theme::empty()`, `digest()` (part of the render cache key),
+`animations()` and `keyframes()` (`(name, body)` pairs), and implements
+`ThemeTokens`: `theme.contains(ThemeNamespace::Color, "brand")`. `ThemeNamespace` has
+one variant per namespace above (`Color`, `Spacing`, `Container`, `Text`, `Font`,
+`FontWeight`, `Tracking`, `Leading`, `Radius`, `Aspect`, `Breakpoint`) and
+`css_prefix()` (`"--color-"`).
 
 ## 6. Fonts and emoji
 
