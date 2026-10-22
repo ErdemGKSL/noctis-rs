@@ -582,6 +582,49 @@ fn cv2_09_default_values() {
 }
 
 #[test]
+fn cv2_09_string_default_list() {
+    let options = [
+        SelectOption::new("a", "a").default(true),
+        SelectOption::new("b", "b"),
+        SelectOption::new("c", "c"),
+    ];
+    let string = Select::new(SelectKind::String(&options));
+    // The list replaces the flags: only `b` counts.
+    assert_eq!(select(string.string_defaults(&["b"])), []);
+    // A value no option has, Actual the value.
+    assert_eq!(
+        select(string.string_defaults(&["b", "z"]).max_values(2)),
+        [v(
+            RuleId::CV2_09,
+            "row[0].select[0].default_values[1]",
+            Bound::Describe("a value of one of the options"),
+            Actual::Text("z".to_owned())
+        )]
+    );
+    // Two known values with max 1.
+    assert_eq!(
+        select(string.string_defaults(&["a", "b"])),
+        [v(
+            RuleId::CV2_09,
+            "row[0].select[0].default_values",
+            btw(1, 1),
+            cnt(2)
+        )]
+    );
+    assert_eq!(
+        select(
+            string
+                .string_defaults(&["a", "b"])
+                .min_values(2)
+                .max_values(3)
+        ),
+        []
+    );
+    // An empty list selects nothing, whatever the flags.
+    assert_eq!(select(string.string_defaults(&[])), []);
+}
+
+#[test]
 fn cv2_09_disabled_in_a_message() {
     assert_eq!(select(Select::new(SelectKind::Role).disabled(true)), []);
 }

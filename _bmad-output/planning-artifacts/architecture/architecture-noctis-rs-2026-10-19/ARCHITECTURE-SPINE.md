@@ -878,6 +878,26 @@ list in CI.
     buttons have no Route and stay plain builders (`LinkButton::new(url)`). (Amended
     2026-10-20: the per-kind `.button()`/`.string_select(..)`/… constructors are
     folded into `.build()`; Story 6.11 converts the shipped ones.)
+  - Amended (Story 9.3): every display text a render can set (label, placeholder,
+    modal title, Label text and description) is a `noctis_ui::Text`, a literal or a
+    `MessageKey`; core's Responder resolves keys in the response locale (User then
+    Guild for an ephemeral send or a modal, Guild then User for a public send,
+    en-US otherwise) before validating, and a missing key is sent as the key with
+    one `warn`. A path in `defaults(..)` is a compile error ([planned, Epic 11]).
+    Each Route component kind has one plain-data overrides struct
+    (`ButtonOverrides`, `StringSelectOverrides`, `UserSelectOverrides`, …) applied
+    with `.overrides(..)`; setters and overrides compose and the later call wins.
+    Every select takes `.default_values(..)` (duplicates count once; a String
+    Select default must name an option, CV2-09). `#[derive(Modal)]`'s
+    `X { .. }.build()` returns a `ModalBuilder<X>` (`.title(..)`,
+    `.value(X::FIELD, v)` through typed `InputField` consts, `.overrides(<X>Overrides)`)
+    that converts into `Modal`, pre-filling each input from its field (`None`,
+    `""`, `vec![]`, `false` send nothing; File Uploads never). `X::blank(..)`
+    returns `Self` when every input field has an empty value (`Option`, `Vec`,
+    `String`, `bool`, `()`), so `X { f: v, ..X::blank(..) }` works, and a
+    `ModalBuilder<X>` otherwise. `show_modal` takes `impl Into<Modal>`. Pre-fill
+    limits (MOD-05 value ≤ `max_length`, MOD-07 group defaults, CV2-09 select
+    defaults) are errors in both Limit modes.
   - `.build()` requires `R: Handled`; a kind-derived struct without a
     `#[handler]` method does not compile (CID-04; compile-time half of FR-58). `noctis-core` binds handlers by `R::ID`
     in their own descriptor; `App::build` fails when a Route referenced by a mounted

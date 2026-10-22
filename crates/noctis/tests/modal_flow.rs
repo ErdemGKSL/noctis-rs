@@ -24,7 +24,7 @@
 use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{GuildMarker, UserMarker};
-use noctis::ui::{Components, TextDisplay, V2Message};
+use noctis::ui::{Components, Modal, TextDisplay, V2Message};
 use noctis::{Kv, ResponderError, Runtime};
 use serde::{Deserialize, Serialize};
 
@@ -283,7 +283,7 @@ async fn template_bio_flow_builds_an_app() {
         .build();
     assert!(app.is_ok(), "{:?}", app.err());
     // The built modal carries the declared Route id and both inputs.
-    let modal = serde_json::to_value(BioForm::blank(Id::new(3))).unwrap();
+    let modal = serde_json::to_value(Modal::from(BioForm::blank(Id::new(3)))).unwrap();
     assert!(
         modal["custom_id"]
             .as_str()

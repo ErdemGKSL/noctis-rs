@@ -9,9 +9,10 @@ use serde::{Serialize, Serializer};
 
 pub use noctis_rules::modal::TextInputStyle;
 
+use crate::Text;
 use crate::wire::{Ids, Wire, flag, head, opt, serialize_via_wire};
 
-type Text = Cow<'static, str>;
+type Str = Cow<'static, str>;
 
 /// Writes `"required": false` only when `required` is `false` (Discord's
 /// default is `true`).
@@ -49,18 +50,18 @@ pub(crate) fn required_entry<M: SerializeMap>(map: &mut M, required: bool) -> Re
 /// ```
 #[derive(Debug, Clone)]
 pub struct TextInput {
-    pub(crate) key: Text,
+    pub(crate) key: Str,
     pub(crate) style: TextInputStyle,
     pub(crate) min_length: Option<u16>,
     pub(crate) max_length: Option<u16>,
     pub(crate) required: bool,
-    pub(crate) value: Option<Text>,
+    pub(crate) value: Option<Str>,
     pub(crate) placeholder: Option<Text>,
 }
 
 impl TextInput {
     /// A required Text Input whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>, style: TextInputStyle) -> Self {
+    pub fn new(key: impl Into<Str>, style: TextInputStyle) -> Self {
         Self {
             key: key.into(),
             style,
@@ -95,12 +96,12 @@ impl TextInput {
 
     /// The pre-filled text (≤ 4000, FR-63).
     #[must_use]
-    pub fn value(mut self, value: impl Into<Text>) -> Self {
+    pub fn value(mut self, value: impl Into<Str>) -> Self {
         self.value = Some(value.into());
         self
     }
 
-    /// The text shown while it is empty (≤ 100).
+    /// The text shown while it is empty: a literal or a locale key (≤ 100).
     #[must_use]
     pub fn placeholder(mut self, placeholder: impl Into<Text>) -> Self {
         self.placeholder = Some(placeholder.into());
@@ -117,7 +118,7 @@ impl Wire for TextInput {
         opt(&mut map, "max_length", self.max_length.as_ref())?;
         required_entry(&mut map, self.required)?;
         opt(&mut map, "value", self.value.as_deref())?;
-        opt(&mut map, "placeholder", self.placeholder.as_deref())?;
+        opt(&mut map, "placeholder", self.placeholder.as_ref())?;
         map.end()
     }
 }
@@ -143,16 +144,16 @@ impl Wire for TextInput {
 /// ```
 #[derive(Debug, Clone)]
 pub struct FileUpload {
-    pub(crate) key: Text,
+    pub(crate) key: Str,
     pub(crate) min_values: Option<u8>,
     pub(crate) max_values: Option<u8>,
     pub(crate) required: bool,
-    pub(crate) file_types: Vec<Text>,
+    pub(crate) file_types: Vec<Str>,
 }
 
 impl FileUpload {
     /// A required File Upload whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>) -> Self {
+    pub fn new(key: impl Into<Str>) -> Self {
         Self {
             key: key.into(),
             min_values: None,
@@ -186,7 +187,7 @@ impl FileUpload {
     /// Appends accepted file types: `image`, `video`, `audio` or `.ext`
     /// (at most 10 in all); none means any file.
     #[must_use]
-    pub fn file_types(mut self, types: impl IntoIterator<Item = impl Into<Text>>) -> Self {
+    pub fn file_types(mut self, types: impl IntoIterator<Item = impl Into<Str>>) -> Self {
         self.file_types.extend(types.into_iter().map(Into::into));
         self
     }
@@ -221,15 +222,15 @@ impl Wire for FileUpload {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModalOption {
-    pub(crate) label: Text,
-    pub(crate) value: Text,
-    pub(crate) description: Option<Text>,
+    pub(crate) label: Str,
+    pub(crate) value: Str,
+    pub(crate) description: Option<Str>,
     pub(crate) default: bool,
 }
 
 impl ModalOption {
     /// An option showing `label` and submitting `value`.
-    pub fn new(label: impl Into<Text>, value: impl Into<Text>) -> Self {
+    pub fn new(label: impl Into<Str>, value: impl Into<Str>) -> Self {
         Self {
             label: label.into(),
             value: value.into(),
@@ -240,7 +241,7 @@ impl ModalOption {
 
     /// The text under the label (≤ 100).
     #[must_use]
-    pub fn description(mut self, description: impl Into<Text>) -> Self {
+    pub fn description(mut self, description: impl Into<Str>) -> Self {
         self.description = Some(description.into());
         self
     }
@@ -285,14 +286,14 @@ impl Serialize for ModalOption {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RadioGroup {
-    pub(crate) key: Text,
+    pub(crate) key: Str,
     pub(crate) options: Vec<ModalOption>,
     pub(crate) required: bool,
 }
 
 impl RadioGroup {
     /// A required Radio Group whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>, options: impl IntoIterator<Item = ModalOption>) -> Self {
+    pub fn new(key: impl Into<Str>, options: impl IntoIterator<Item = ModalOption>) -> Self {
         Self {
             key: key.into(),
             options: options.into_iter().collect(),
@@ -338,7 +339,7 @@ impl Wire for RadioGroup {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CheckboxGroup {
-    pub(crate) key: Text,
+    pub(crate) key: Str,
     pub(crate) options: Vec<ModalOption>,
     pub(crate) min_values: Option<u8>,
     pub(crate) max_values: Option<u8>,
@@ -347,7 +348,7 @@ pub struct CheckboxGroup {
 
 impl CheckboxGroup {
     /// A required Checkbox Group whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>, options: impl IntoIterator<Item = ModalOption>) -> Self {
+    pub fn new(key: impl Into<Str>, options: impl IntoIterator<Item = ModalOption>) -> Self {
         Self {
             key: key.into(),
             options: options.into_iter().collect(),
@@ -414,13 +415,13 @@ impl Wire for CheckboxGroup {
 /// ```
 #[derive(Debug, Clone)]
 pub struct Checkbox {
-    pub(crate) key: Text,
+    pub(crate) key: Str,
     pub(crate) default: bool,
 }
 
 impl Checkbox {
     /// An unchecked Checkbox whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>) -> Self {
+    pub fn new(key: impl Into<Str>) -> Self {
         Self {
             key: key.into(),
             default: false,

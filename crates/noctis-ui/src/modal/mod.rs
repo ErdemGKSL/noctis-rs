@@ -1,17 +1,17 @@
 //! The modal model: [`Modal`], its top-level [`ModalComponent`]s and the
 //! [`ModalLabel`] that wraps one input (FR-29, FR-63; AD-12; MOD-01..08).
 
+pub(crate) mod builder;
 pub(crate) mod form;
 mod input;
 mod resolved;
 mod select;
 mod submit;
 
-use std::borrow::Cow;
-
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
+pub use builder::{InputField, InputOverrides, ModalBuilder};
 pub use form::{Choices, ModalForm};
 pub use input::{
     Checkbox, CheckboxGroup, FileUpload, ModalOption, RadioGroup, TextInput, TextInputStyle,
@@ -27,12 +27,10 @@ pub use select::{
 
 pub use submit::{ModalSubmission, SubmitError, SubmittedValue};
 
-use crate::TextDisplay;
 use crate::placement::{ModalInput, ModalTopLevel};
 use crate::route::CustomId;
 use crate::wire::{Ids, Wire, WiredSeq, head, opt, serialize_via_wire};
-
-type Text = Cow<'static, str>;
+use crate::{Text, TextDisplay};
 
 /// A modal (the `data` of interaction callback type 9): a title and 1-5
 /// top-level components, built only from a `#[derive(Modal)]` struct
@@ -114,9 +112,10 @@ impl Modal {
         self
     }
 
-    /// The title.
+    /// The title (a locale key as written until core's Responder resolves
+    /// it).
     pub fn title(&self) -> &str {
-        &self.title
+        self.title.as_str()
     }
 
     /// The number of top-level components.
@@ -127,6 +126,40 @@ impl Modal {
     /// Whether there is no component.
     pub fn is_empty(&self) -> bool {
         self.components.is_empty()
+    }
+
+    /// Replaces every [`Text::Key`] of the modal (its title, Label texts
+    /// and descriptions, Text Input and select placeholders) with
+    /// `Literal(f(key))`; core's Responder calls it before validating. Not
+    /// public API.
+    #[doc(hidden)]
+    pub fn resolve_keys(&mut self, f: &mut dyn FnMut(noctis_rules::MessageKey) -> String) {
+        self.title.resolve(f);
+        for component in &mut self.components {
+            let ModalTopNode::Label(label) = &mut component.0 else {
+                continue;
+            };
+            label.label.resolve(f);
+            if let Some(d) = &mut label.description {
+                d.resolve(f);
+            }
+            match &mut label.input {
+                ModalInputNode::TextInput(t) => {
+                    if let Some(p) = &mut t.placeholder {
+                        p.resolve(f);
+                    }
+                }
+                ModalInputNode::Select(s) => {
+                    if let Some(p) = &mut s.parts_mut().0.placeholder {
+                        p.resolve(f);
+                    }
+                }
+                ModalInputNode::FileUpload(_)
+                | ModalInputNode::RadioGroup(_)
+                | ModalInputNode::CheckboxGroup(_)
+                | ModalInputNode::Checkbox(_) => {}
+            }
+        }
     }
 
     /// The modal's Route `custom_id`; core resolves it before sending
@@ -220,7 +253,7 @@ pub struct ModalLabel {
 }
 
 impl ModalLabel {
-    /// A Label showing `label` above `input`.
+    /// A Label showing `label` (a literal or a locale key) above `input`.
     pub fn new(label: impl Into<Text>, input: impl ModalInput) -> Self {
         Self {
             label: label.into(),
@@ -229,7 +262,7 @@ impl ModalLabel {
         }
     }
 
-    /// The text shown with the label (≤ 100).
+    /// The text shown with the label: a literal or a locale key (≤ 100).
     #[must_use]
     pub fn description(mut self, description: impl Into<Text>) -> Self {
         self.description = Some(description.into());
@@ -241,7 +274,7 @@ impl Wire for ModalLabel {
     fn wire<S: Serializer>(&self, ids: Option<&Ids>, s: S) -> Result<S::Ok, S::Error> {
         let mut map = head(s, 18, ids)?;
         map.serialize_entry("label", &self.label)?;
-        opt(&mut map, "description", self.description.as_deref())?;
+        opt(&mut map, "description", self.description.as_ref())?;
         map.serialize_entry("component", &crate::wire::Wired(&self.input, ids))?;
         map.end()
     }

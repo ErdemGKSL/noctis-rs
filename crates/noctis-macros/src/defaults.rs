@@ -3,6 +3,11 @@
 //! literal-only values checked against Discord's limits at expansion, and
 //! the `ComponentRoute::DEFAULTS` constant it lowers to.
 //!
+//! Literal versus localized text is decided by syntax, never by a cargo
+//! feature: a string literal is hard-coded text; a path (`keys::SAVE`) for
+//! `label`, `placeholder` or `title` is a locale key, rejected until locale
+//! keys ship ([planned, Epic 11]).
+//!
 //! Omitted keys are not sent, so Discord's `min_values = 1`,
 //! `max_values = 1` and `disabled = false` apply.
 
@@ -166,7 +171,42 @@ fn literal_error(expr: &Expr, key: &str, what: &str) -> syn::Error {
     )
 }
 
+fn is_path(expr: &Expr) -> bool {
+    match expr {
+        Expr::Path(_) => true,
+        Expr::Group(g) => is_path(&g.expr),
+        _ => false,
+    }
+}
+
+/// The rule of a localizable `defaults(..)` text key.
+fn text_rule(key: &str) -> Option<RuleId> {
+    match key {
+        "label" => Some(RuleId::CV2_08),
+        "placeholder" => Some(RuleId::CV2_09),
+        "title" => Some(RuleId::MOD_01),
+        _ => None,
+    }
+}
+
+/// The error of a path given for a localizable text: literal versus
+/// localized text is decided by syntax, and locale key paths arrive with
+/// Story 11.1.
+pub(crate) fn key_path_error(tokens: impl ToTokens, rule: RuleId, key: &str) -> syn::Error {
+    syn::Error::new_spanned(
+        tokens,
+        format!(
+            "[{rule}] `{key}` is a locale key path: locale keys are [planned, Epic 11]; use a string literal"
+        ),
+    )
+}
+
 fn text(expr: &Expr, key: &str) -> syn::Result<LitStr> {
+    if let Some(rule) = text_rule(key)
+        && is_path(expr)
+    {
+        return Err(key_path_error(expr, rule, key));
+    }
     string_lit(expr)
         .cloned()
         .ok_or_else(|| literal_error(expr, key, "a string literal"))
@@ -633,6 +673,34 @@ mod tests {
 
     use DefaultsKind::{Button, ChannelSelect, Modal, RoleSelect, StringSelect, UserSelect};
 
+    /// Story 9.3 D1: a path for `label`, `placeholder` or `title` is a
+    /// locale key path, planned for Epic 11; other non-literals keep the
+    /// generic error.
+    #[test]
+    fn key_paths_are_planned() {
+        let planned =
+            "is a locale key path: locale keys are [planned, Epic 11]; use a string literal";
+        let e = err(Button, quote!(style = Primary, label = keys::SAVE));
+        assert!(
+            e.starts_with("[CV2-08] `label`") && e.contains(planned),
+            "{e}"
+        );
+        let e = err(UserSelect, quote!(placeholder = keys::P));
+        assert!(
+            e.starts_with("[CV2-09] `placeholder`") && e.contains(planned),
+            "{e}"
+        );
+        let e = err(Modal, quote!(title = T));
+        assert!(
+            e.starts_with("[MOD-01] `title`") && e.contains(planned),
+            "{e}"
+        );
+        let e = err(Button, quote!(style = Primary, label = concat!("a")));
+        assert!(e.contains("`defaults` values are literals"), "{e}");
+        let e = err(Button, quote!(style = Primary, emoji = keys::E));
+        assert!(e.contains("`defaults` values are literals"), "{e}");
+    }
+
     /// Story 6.11 Matrix 29.
     #[test]
     fn button_defaults() {
@@ -679,7 +747,7 @@ mod tests {
         );
         assert_eq!(
             err(Button, quote!(style = Primary, label = LABEL)),
-            "`defaults` values are literals: `label` takes a string literal"
+            "[CV2-08] `label` is a locale key path: locale keys are [planned, Epic 11]; use a string literal"
         );
         assert_eq!(
             err(

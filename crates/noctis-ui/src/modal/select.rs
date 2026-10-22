@@ -13,16 +13,18 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, RoleMarker, UserMarker};
 
 use super::input::required_entry;
-use crate::SelectOption;
-use crate::component::{DefaultValue, SelectTail, channel_types_entry, select_map};
+use crate::component::{
+    DefaultValue, SelectTail, channel_types_entry, extend_defaults, select_map,
+};
 use crate::wire::{Ids, Wire, serialize_via_wire};
+use crate::{MentionableId, SelectOption, Text};
 
-type Text = Cow<'static, str>;
+type Str = Cow<'static, str>;
 
 /// The fields every modal select shares.
 #[derive(Debug, Clone)]
 pub(crate) struct ModalCommon {
-    pub(crate) key: Text,
+    pub(crate) key: Str,
     pub(crate) placeholder: Option<Text>,
     pub(crate) min_values: Option<u8>,
     pub(crate) max_values: Option<u8>,
@@ -30,7 +32,7 @@ pub(crate) struct ModalCommon {
 }
 
 impl ModalCommon {
-    fn new(key: Text) -> Self {
+    fn new(key: Str) -> Self {
         Self {
             key,
             placeholder: None,
@@ -52,7 +54,7 @@ fn wire_modal_select<S: Serializer>(
     defaults: &[DefaultValue],
 ) -> Result<S::Ok, S::Error> {
     let tail = SelectTail {
-        placeholder: common.placeholder.as_deref(),
+        placeholder: common.placeholder.as_ref().map(Text::as_str),
         defaults,
         min_values: common.min_values,
         max_values: common.max_values,
@@ -65,7 +67,8 @@ fn wire_modal_select<S: Serializer>(
 macro_rules! modal_common_setters {
     ($($ty:ident),*) => {$(
         impl $ty {
-            /// The text shown while nothing is selected (≤ 150).
+            /// The text shown while nothing is selected: a literal or a
+            /// locale key (≤ 150).
             #[must_use]
             pub fn placeholder(mut self, placeholder: impl Into<Text>) -> Self {
                 self.common.placeholder = Some(placeholder.into());
@@ -130,7 +133,7 @@ pub struct ModalStringSelect {
 
 impl ModalStringSelect {
     /// A required String Select whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>, options: impl IntoIterator<Item = SelectOption>) -> Self {
+    pub fn new(key: impl Into<Str>, options: impl IntoIterator<Item = SelectOption>) -> Self {
         Self {
             common: ModalCommon::new(key.into()),
             options: options.into_iter().collect(),
@@ -170,7 +173,7 @@ pub struct ModalUserSelect {
 
 impl ModalUserSelect {
     /// A required User Select whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>) -> Self {
+    pub fn new(key: impl Into<Str>) -> Self {
         Self {
             common: ModalCommon::new(key.into()),
             defaults: Vec::new(),
@@ -180,8 +183,10 @@ impl ModalUserSelect {
     /// Appends users selected when the modal opens.
     #[must_use]
     pub fn default_users(mut self, users: impl IntoIterator<Item = Id<UserMarker>>) -> Self {
-        self.defaults
-            .extend(users.into_iter().map(DefaultValue::User));
+        extend_defaults(
+            &mut self.defaults,
+            users.into_iter().map(DefaultValue::User),
+        );
         self
     }
 }
@@ -215,7 +220,7 @@ pub struct ModalRoleSelect {
 
 impl ModalRoleSelect {
     /// A required Role Select whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>) -> Self {
+    pub fn new(key: impl Into<Str>) -> Self {
         Self {
             common: ModalCommon::new(key.into()),
             defaults: Vec::new(),
@@ -225,8 +230,10 @@ impl ModalRoleSelect {
     /// Appends roles selected when the modal opens.
     #[must_use]
     pub fn default_roles(mut self, roles: impl IntoIterator<Item = Id<RoleMarker>>) -> Self {
-        self.defaults
-            .extend(roles.into_iter().map(DefaultValue::Role));
+        extend_defaults(
+            &mut self.defaults,
+            roles.into_iter().map(DefaultValue::Role),
+        );
         self
     }
 }
@@ -259,7 +266,7 @@ pub struct ModalMentionableSelect {
 
 impl ModalMentionableSelect {
     /// A required Mentionable Select whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>) -> Self {
+    pub fn new(key: impl Into<Str>) -> Self {
         Self {
             common: ModalCommon::new(key.into()),
             defaults: Vec::new(),
@@ -270,8 +277,10 @@ impl ModalMentionableSelect {
     /// already set.
     #[must_use]
     pub fn default_users(mut self, users: impl IntoIterator<Item = Id<UserMarker>>) -> Self {
-        self.defaults
-            .extend(users.into_iter().map(DefaultValue::User));
+        extend_defaults(
+            &mut self.defaults,
+            users.into_iter().map(DefaultValue::User),
+        );
         self
     }
 
@@ -279,8 +288,17 @@ impl ModalMentionableSelect {
     /// already set.
     #[must_use]
     pub fn default_roles(mut self, roles: impl IntoIterator<Item = Id<RoleMarker>>) -> Self {
-        self.defaults
-            .extend(roles.into_iter().map(DefaultValue::Role));
+        extend_defaults(
+            &mut self.defaults,
+            roles.into_iter().map(DefaultValue::Role),
+        );
+        self
+    }
+
+    /// Appends users and roles selected when the modal opens, in order.
+    #[must_use]
+    pub fn default_mentionables(mut self, ids: impl IntoIterator<Item = MentionableId>) -> Self {
+        extend_defaults(&mut self.defaults, ids.into_iter().map(DefaultValue::from));
         self
     }
 }
@@ -315,7 +333,7 @@ pub struct ModalChannelSelect {
 
 impl ModalChannelSelect {
     /// A required Channel Select whose submitted field is named `key`.
-    pub fn new(key: impl Into<Text>) -> Self {
+    pub fn new(key: impl Into<Str>) -> Self {
         Self {
             common: ModalCommon::new(key.into()),
             defaults: Vec::new(),
@@ -329,8 +347,10 @@ impl ModalChannelSelect {
         mut self,
         channels: impl IntoIterator<Item = Id<ChannelMarker>>,
     ) -> Self {
-        self.defaults
-            .extend(channels.into_iter().map(DefaultValue::Channel));
+        extend_defaults(
+            &mut self.defaults,
+            channels.into_iter().map(DefaultValue::Channel),
+        );
         self
     }
 

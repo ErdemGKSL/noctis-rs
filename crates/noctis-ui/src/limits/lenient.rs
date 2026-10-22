@@ -10,7 +10,8 @@
 //! placeholders (MOD-05), modal select placeholders and String Select option
 //! labels and descriptions (CV2-09), and Radio and Checkbox Group option
 //! labels and descriptions (MOD-07); never a Text Input `value`, an option
-//! value, a key or a count.
+//! value, a default value, a key or a count. A truncated [`Text::Key`]
+//! becomes a literal.
 
 use std::borrow::Cow;
 
@@ -24,32 +25,67 @@ use crate::component::{
     SelectNode, TopNode,
 };
 use crate::modal::{ModalInputNode, ModalTopNode};
-use crate::{LegacyMessage, Modal, ModalOption, SelectOption, V2Message};
+use crate::{LegacyMessage, Modal, ModalOption, SelectOption, Text, V2Message};
 
-type Text = Cow<'static, str>;
+type Str = Cow<'static, str>;
+
+/// A truncatable text: plain or a [`Text`] (truncating a key makes it a
+/// literal).
+enum Slot<'m> {
+    Str(&'m mut Str),
+    Text(&'m mut Text),
+}
+
+impl Slot<'_> {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Str(s) => s,
+            Self::Text(t) => t.as_str(),
+        }
+    }
+
+    fn set(&mut self, text: String) {
+        match self {
+            Self::Str(s) => **s = Cow::Owned(text),
+            Self::Text(t) => **t = Text::Literal(Cow::Owned(text)),
+        }
+    }
+}
+
+impl<'m> From<&'m mut Str> for Slot<'m> {
+    fn from(s: &'m mut Str) -> Self {
+        Self::Str(s)
+    }
+}
+
+impl<'m> From<&'m mut Text> for Slot<'m> {
+    fn from(t: &'m mut Text) -> Self {
+        Self::Text(t)
+    }
+}
 
 /// A truncatable field with its rule, limit and path.
 struct Field<'m> {
     rule: RuleId,
     max: usize,
     path: String,
-    text: &'m mut Text,
+    text: Slot<'m>,
 }
 
 /// The truncatable fields of a tree, in pre-order, and its Text Displays.
 #[derive(Default)]
 struct Sites<'m> {
     fields: Vec<Field<'m>>,
-    texts: Vec<(String, &'m mut Text)>,
+    texts: Vec<(String, &'m mut Str)>,
 }
 
 impl<'m> Sites<'m> {
-    fn field(&mut self, rule: RuleId, max: usize, path: String, text: &'m mut Text) {
+    fn field(&mut self, rule: RuleId, max: usize, path: String, text: impl Into<Slot<'m>>) {
         self.fields.push(Field {
             rule,
             max,
             path,
-            text,
+            text: text.into(),
         });
     }
 }
@@ -80,7 +116,7 @@ pub(super) fn fit_v2(msg: &mut V2Message, limits: &Limits, warnings: &mut Vec<Li
                 RuleId::ATT_06,
                 limits.attachment_description_len,
                 format!("attachments[{k}].description"),
-                alt,
+                Slot::Str(alt),
                 limits,
             )
         {
@@ -106,7 +142,7 @@ pub(super) fn fit_legacy(
         RuleId::MSG_01,
         limits.content_len,
         "content".to_owned(),
-        &mut msg.content,
+        Slot::Str(&mut msg.content),
         limits,
     ) {
         warnings.push(LimitWarning::Truncated(v));
@@ -119,14 +155,15 @@ fn fit(
     rule: RuleId,
     max: usize,
     path: String,
-    text: &mut Text,
+    mut text: Slot<'_>,
     limits: &Limits,
 ) -> Option<Violation> {
-    let len = discord_len(text);
+    let len = discord_len(text.as_str());
     if len <= max || !limits.truncates(rule) {
         return None;
     }
-    *text = Cow::Owned(truncate(text, max).into_owned());
+    let cut = truncate(text.as_str(), max).into_owned();
+    text.set(cut);
     Some(Violation::new(
         rule,
         path,
@@ -150,7 +187,7 @@ fn fit_fields(fields: Vec<Field<'_>>, limits: &Limits, warnings: &mut Vec<LimitW
 /// first text over its allowance is truncated to it and every later one to
 /// one unit (`…`). This fits whenever `L ≥ n`; otherwise nothing changes and
 /// the check fails.
-fn fit_texts(texts: Vec<(String, &mut Text)>, limits: &Limits, warnings: &mut Vec<LimitWarning>) {
+fn fit_texts(texts: Vec<(String, &mut Str)>, limits: &Limits, warnings: &mut Vec<LimitWarning>) {
     let max = limits.text_total_len;
     let n = texts.len();
     let total = texts
@@ -246,19 +283,23 @@ fn row_sites<'m>(row: &'m mut ActionRow, path: &str, limits: &Limits, sites: &mu
 }
 
 fn button_sites<'m>(button: &'m mut Button, path: &str, limits: &Limits, sites: &mut Sites<'m>) {
-    let label = match &mut button.0 {
-        ButtonNode::Route(d) => &mut d.label,
-        ButtonNode::Link(l) => &mut l.label,
+    let label: Slot<'m> = match &mut button.0 {
+        ButtonNode::Route(d) => match &mut d.label {
+            Some(label) => Slot::Text(label),
+            None => return,
+        },
+        ButtonNode::Link(l) => match &mut l.label {
+            Some(label) => Slot::Str(label),
+            None => return,
+        },
         ButtonNode::Premium(_) => return,
     };
-    if let Some(label) = label {
-        sites.field(
-            RuleId::CV2_08,
-            limits.button_label_len,
-            format!("{path}.label"),
-            label,
-        );
-    }
+    sites.field(
+        RuleId::CV2_08,
+        limits.button_label_len,
+        format!("{path}.label"),
+        label,
+    );
 }
 
 fn select_sites<'m>(

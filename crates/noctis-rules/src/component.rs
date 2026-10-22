@@ -398,6 +398,10 @@ pub struct Select<'a> {
     /// The number of `default_values` (user, role, mentionable and channel
     /// selects only).
     pub default_values: usize,
+    /// A String Select's `default_values` list: the values of the options
+    /// selected on render, replacing every option's `default` flag. Each
+    /// must be the value of one of the options (CV2-09).
+    pub string_defaults: Option<&'a [&'a str]>,
     /// Whether the select is disabled (messages only, MOD-03).
     pub disabled: bool,
 }
@@ -411,6 +415,7 @@ impl<'a> Select<'a> {
             min_values: None,
             max_values: None,
             default_values: 0,
+            string_defaults: None,
             disabled: false,
         }
     }
@@ -447,6 +452,15 @@ impl<'a> Select<'a> {
     pub const fn default_values(self, count: usize) -> Self {
         Self {
             default_values: count,
+            ..self
+        }
+    }
+
+    /// Sets a String Select's `default_values` list.
+    #[must_use]
+    pub const fn string_defaults(self, values: &'a [&'a str]) -> Self {
+        Self {
+            string_defaults: Some(values),
             ..self
         }
     }
@@ -860,8 +874,9 @@ fn check_button(button: &Button<'_>, path: &str, limits: &Limits, out: &mut Vec<
 ///
 /// Placeholder, `min_values`, `max_values`, order (only when both effective
 /// values are in range), options count, per option label / value /
-/// description, then the default count (only when the order check ran and
-/// passed).
+/// description, each String Select `default_values` entry no option has
+/// (`default_values[i]`), then the default count (only when the order check
+/// ran and passed).
 pub(crate) fn check_select(
     select: &Select<'_>,
     path: &str,
@@ -912,6 +927,16 @@ pub(crate) fn check_select(
     let ordered = in_range && min <= max;
     if let SelectKind::String(options) = select.kind {
         check_select_options(options, path, limits, out);
+        for (i, value) in select.string_defaults.into_iter().flatten().enumerate() {
+            if !options.iter().any(|o| o.value == *value) {
+                out.push(Violation::new(
+                    RuleId::CV2_09,
+                    format!("{}[{i}]", join(path, "default_values")),
+                    Bound::Describe("a value of one of the options"),
+                    Actual::Text((*value).to_owned()),
+                ));
+            }
+        }
     }
     if !ordered {
         return;
@@ -929,7 +954,10 @@ pub(crate) fn check_select(
                     Actual::Count(select.default_values),
                 ));
             }
-            options.iter().filter(|o| o.default).count()
+            match select.string_defaults {
+                Some(list) => options.iter().filter(|o| list.contains(&o.value)).count(),
+                None => options.iter().filter(|o| o.default).count(),
+            }
         }
         _ => select.default_values,
     };

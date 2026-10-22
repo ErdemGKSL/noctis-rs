@@ -122,7 +122,7 @@ struct UploadForm {
     #[checkbox("I agree")]
     agree: bool,
     #[text_input("Title", min_length = 2, max_length = 5)]
-    r#title: String,
+    r#type: String,
     #[string_select("Colours")]
     colours: Vec<Colour>,
 }
@@ -246,8 +246,8 @@ fn label(component: Value) -> Value {
     Value::Object(label)
 }
 
-fn modal_json(modal: noctis::ui::Modal) -> Value {
-    let mut modal = modal;
+fn modal_json(modal: impl Into<Modal>) -> Value {
+    let mut modal = modal.into();
     validate(&mut modal, &Limits::default()).expect("a derived modal validates");
     serde_json::to_value(&modal).unwrap()
 }
@@ -266,7 +266,7 @@ fn mod_02_derived_modals_snapshot() {
     );
     assert_eq!(
         forms["upload"]["components"][3]["component"]["custom_id"],
-        "title"
+        "type"
     );
     insta::assert_json_snapshot!("form", forms);
 }
@@ -327,7 +327,7 @@ fn mod_09_decode_uploads_and_checks() {
     assert_eq!(form.evidence[1].content_type(), Some("application/pdf"));
     assert_eq!(form.avatar.as_ref().map(ResolvedAttachment::size), Some(7));
     assert!(form.agree);
-    assert_eq!(form.r#title, "Bug");
+    assert_eq!(form.r#type, "Bug");
     assert_eq!(form.colours, vec![Colour::Red, Colour::Blue]);
 }
 
@@ -561,13 +561,13 @@ fn mod_09_counts_and_lengths_out_of_bounds() {
     // Text over max_length 5 (by discord_len: 3 emoji are 6) and under min_length 2.
     assert!(invalid(with(
         3,
-        json!({"type": 4, "custom_id": "title", "value": "😀😀😀"})
+        json!({"type": 4, "custom_id": "type", "value": "😀😀😀"})
     )));
     assert!(invalid(with(
         3,
-        json!({"type": 4, "custom_id": "title", "value": "a"})
+        json!({"type": 4, "custom_id": "type", "value": "a"})
     )));
-    assert!(with(3, json!({"type": 4, "custom_id": "title", "value": "😀😀"})).is_ok());
+    assert!(with(3, json!({"type": 4, "custom_id": "type", "value": "😀😀"})).is_ok());
     // A String Select over its option count.
     assert!(invalid(with(
         4,
@@ -672,7 +672,7 @@ fn cid_01_raw_ident_key_and_field_order() {
         .iter()
         .map(|c| c["component"]["custom_id"].as_str().unwrap())
         .collect();
-    assert_eq!(keys, ["evidence", "avatar", "agree", "title", "colours"]);
+    assert_eq!(keys, ["evidence", "avatar", "agree", "type", "colours"]);
     assert_eq!(json["custom_id"], "0t.modal:");
 }
 
@@ -710,4 +710,388 @@ fn mod_09_file_upload_default_max_values_is_ten() {
         matches!(&err, SubmitError::Invalid { key, .. } if key == "files"),
         "{err:?}"
     );
+}
+
+// Story 9.3: pre-fill, `blank`, and per-render modal overrides.
+
+use noctis::rules::{LimitMode, MessageKey, RuleId};
+use noctis::ui::{InputOverrides, Modal, ModalBuilder, UiError};
+
+/// Validates `modal` in `mode` and returns its JSON, or the violated rules.
+fn checked(modal: impl Into<Modal>, mode: LimitMode) -> Result<Value, Vec<RuleId>> {
+    let mut modal = modal.into();
+    let mut limits = Limits::default();
+    limits.mode = mode;
+    match validate(&mut modal, &limits) {
+        Ok(_) => Ok(serde_json::to_value(&modal).unwrap()),
+        Err(UiError::Limits { violations }) => Err(violations.iter().map(|v| v.rule).collect()),
+        Err(other) => panic!("{other}"),
+    }
+}
+
+/// The inner component of the `i`-th Label.
+fn input(json: &Value, i: usize) -> &Value {
+    &json["components"][i]["component"]
+}
+
+fn defaults(component: &Value) -> Vec<&str> {
+    component["options"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|o| o["default"] == json!(true))
+        .filter_map(|o| o["value"].as_str())
+        .collect()
+}
+
+fn text_form() -> TextForm {
+    TextForm {
+        _intro: (),
+        bio: Some("hi".into()),
+        colour: Colour::Green,
+        severity: Severity::High,
+        topics: vec![Topic::Rust, Topic::Music],
+    }
+}
+
+/// M1, M3, M4: text, radio, string select and checkbox group pre-fill;
+/// the pre-filled `TextForm` snapshot.
+#[test]
+fn m1_m4_prefill_text_and_choices() {
+    let json = checked(text_form().build(), LimitMode::Strict).unwrap();
+    assert_eq!(
+        json["components"][0]["type"], 10,
+        "the Text Display is unchanged"
+    );
+    assert_eq!(input(&json, 1)["value"], "hi");
+    assert_eq!(defaults(input(&json, 2)), ["g"]);
+    assert_eq!(defaults(input(&json, 3)), ["h"]);
+    assert_eq!(defaults(input(&json, 4)), ["Rust", "Music"]);
+    insta::assert_json_snapshot!("prefill_text", json);
+    // The decode is unchanged (M19): the custom_id is the blank one.
+    let blank = checked(TextForm::blank(), LimitMode::Strict).unwrap();
+    assert_eq!(json["custom_id"], blank["custom_id"]);
+}
+
+/// M2, M3: empty values send nothing.
+#[test]
+fn m2_m3_empty_values_send_nothing() {
+    let none = checked(
+        OptionalForm {
+            note: None,
+            pick: None,
+            colour: None,
+            file: None,
+            topics: vec![],
+        },
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert!(input(&none, 0).get("value").is_none());
+    for i in 1..5 {
+        assert!(defaults(input(&none, i)).is_empty(), "{i}");
+    }
+    let empty = checked(
+        OptionalForm {
+            note: Some(String::new()),
+            ..OptionalForm::blank()
+        },
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert!(input(&empty, 0).get("value").is_none());
+    let legacy = checked(
+        LegacyForm {
+            reason: String::new(),
+        }
+        .build(),
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert!(input(&legacy, 0).get("value").is_none());
+    assert_eq!(
+        none,
+        checked(OptionalForm::blank(), LimitMode::Strict).unwrap()
+    );
+}
+
+/// M3, M6: a `true` Checkbox starts checked, File Uploads get no
+/// defaults; the pre-filled `UploadForm` snapshot.
+#[test]
+fn m3_m6_checkbox_and_uploads() {
+    let form = UploadForm::from_json(&fixture("uploads_and_checks")).unwrap();
+    assert!(form.agree);
+    let json = checked(form, LimitMode::Strict).unwrap();
+    for i in 0..2 {
+        let upload = input(&json, i);
+        assert_eq!(upload["type"], 19);
+        assert!(upload.get("default_values").is_none() && upload.get("value").is_none());
+    }
+    assert_eq!(input(&json, 2)["default"], true);
+    assert_eq!(input(&json, 3)["value"], "Bug");
+    insta::assert_json_snapshot!("prefill_upload", json);
+    let unchecked = checked(UploadForm::blank(), LimitMode::Strict).unwrap();
+    assert!(input(&unchecked, 2).get("default").is_none());
+}
+
+/// M5: entity selects pre-fill their ids with their kinds; the
+/// pre-filled `EntityForm` snapshot.
+#[test]
+fn m5_prefill_entities() {
+    let form = EntityForm::from_json(&fixture("entity_selects")).unwrap();
+    let json = checked(form, LimitMode::Strict).unwrap();
+    assert_eq!(
+        input(&json, 0)["default_values"],
+        json!([
+            {"id": "1000000000000000001", "type": "user"},
+            {"id": "1000000000000000002", "type": "user"}
+        ])
+    );
+    assert_eq!(
+        input(&json, 1)["default_values"],
+        json!([{"id": "1000000000000000010", "type": "role"}])
+    );
+    assert_eq!(
+        input(&json, 2)["default_values"],
+        json!([
+            {"id": "1000000000000000002", "type": "user"},
+            {"id": "1000000000000000010", "type": "role"}
+        ])
+    );
+    assert_eq!(
+        input(&json, 3)["default_values"],
+        json!([{"id": "1000000000000000020", "type": "channel"}])
+    );
+    insta::assert_json_snapshot!("prefill_entity", json);
+}
+
+/// M7, M8: `blank` is `Self` when every input has an empty value, else a
+/// `ModalBuilder`.
+#[test]
+fn m7_m8_blank_kinds() {
+    let blank: OptionalForm = OptionalForm::blank();
+    assert!(blank.note.is_none() && blank.topics.is_empty());
+    let upload: UploadForm = UploadForm::blank();
+    assert!(!upload.agree && upload.r#type.is_empty() && upload.evidence.is_empty());
+    let _: LegacyForm = LegacyForm::blank();
+    let _: ModalBuilder<EntityForm> = EntityForm::blank();
+    let _: ModalBuilder<TextForm> = TextForm::blank();
+    let _: ModalBuilder<RequiredForm> = RequiredForm::blank();
+    let note = OptionalForm {
+        note: Some("n".into()),
+        ..OptionalForm::blank()
+    };
+    let json = checked(note, LimitMode::Strict).unwrap();
+    assert_eq!(input(&json, 0)["value"], "n");
+}
+
+/// M9: the title override and its MOD-01 bound.
+#[test]
+fn m9_title_override() {
+    let json = checked(TextForm::blank().title("x"), LimitMode::Strict).unwrap();
+    assert_eq!(json["title"], "x");
+    assert!(checked(TextForm::blank().title("t".repeat(45)), LimitMode::Strict).is_ok());
+    assert_eq!(
+        checked(TextForm::blank().title("t".repeat(46)), LimitMode::Strict).unwrap_err(),
+        [RuleId::MOD_01]
+    );
+    let lenient = checked(TextForm::blank().title("t".repeat(46)), LimitMode::Lenient).unwrap();
+    assert_eq!(
+        lenient["title"].as_str().map(|t| t.chars().count()),
+        Some(45)
+    );
+    // An unresolved key serializes as the key; core resolves it before sending.
+    let key = Modal::from(TextForm::blank().title(MessageKey::new("form.title")));
+    assert_eq!(serde_json::to_value(&key).unwrap()["title"], "form.title");
+}
+
+/// M10: `.value(X::FIELD, v)` replaces one pre-fill; the later call wins.
+#[test]
+fn m10_value_handles() {
+    let json = checked(
+        text_form().build().value(TextForm::BIO, Some("new".into())),
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert_eq!(input(&json, 1)["value"], "new");
+    let json = checked(
+        TextForm::blank()
+            .value(TextForm::BIO, Some("one".into()))
+            .value(TextForm::TOPICS, vec![Topic::Art])
+            .value(TextForm::BIO, Some("two".into())),
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert_eq!(input(&json, 1)["value"], "two");
+    assert_eq!(defaults(input(&json, 4)), ["art"]);
+    let cleared = checked(
+        text_form().build().value(TextForm::BIO, None),
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert!(input(&cleared, 1).get("value").is_none());
+}
+
+/// M11, M12: input overrides change the Label only and merge field by
+/// field; the title override composes with `.title`.
+#[test]
+fn m11_m12_input_overrides() {
+    let json = checked(
+        text_form().build().overrides(TextFormOverrides {
+            bio: InputOverrides {
+                label: Some("About".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert_eq!(json["components"][1]["label"], "About");
+    assert_eq!(input(&json, 1)["value"], "hi");
+    assert_eq!(json["components"][2]["label"], "Colour");
+    let merged = checked(
+        TextForm::blank()
+            .overrides(TextFormOverrides {
+                bio: InputOverrides {
+                    label: Some("a".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .overrides(TextFormOverrides {
+                bio: InputOverrides {
+                    description: Some("d".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .title("a")
+            .overrides(TextFormOverrides {
+                title: Some("b".into()),
+                ..Default::default()
+            }),
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert_eq!(merged["components"][1]["label"], "a");
+    assert_eq!(merged["components"][1]["description"], "d");
+    assert_eq!(merged["title"], "b");
+}
+
+fn bio(o: InputOverrides) -> TextFormOverrides {
+    TextFormOverrides {
+        bio: o,
+        ..Default::default()
+    }
+}
+
+/// Builds the overrides of one bound case from a text length.
+type MakeOverrides = fn(usize) -> TextFormOverrides;
+
+/// M13: override bounds; a placeholder on a radio is ignored.
+#[test]
+fn m13_override_bounds() {
+    let with = |o: TextFormOverrides, mode| checked(TextForm::blank().overrides(o), mode);
+    let cases: [(MakeOverrides, usize, RuleId); 4] = [
+        (
+            |n| {
+                bio(InputOverrides {
+                    label: Some("l".repeat(n).into()),
+                    ..Default::default()
+                })
+            },
+            45,
+            RuleId::MOD_04,
+        ),
+        (
+            |n| {
+                bio(InputOverrides {
+                    description: Some("d".repeat(n).into()),
+                    ..Default::default()
+                })
+            },
+            100,
+            RuleId::MOD_04,
+        ),
+        (
+            |n| {
+                bio(InputOverrides {
+                    placeholder: Some("p".repeat(n).into()),
+                    ..Default::default()
+                })
+            },
+            100,
+            RuleId::MOD_05,
+        ),
+        (
+            |n| TextFormOverrides {
+                colour: InputOverrides {
+                    placeholder: Some("p".repeat(n).into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            150,
+            RuleId::CV2_09,
+        ),
+    ];
+    for (make, max, rule) in cases {
+        assert!(
+            with(make(max), LimitMode::Strict).is_ok(),
+            "{rule} at {max}"
+        );
+        assert_eq!(with(make(max + 1), LimitMode::Strict).unwrap_err(), [rule]);
+        assert!(
+            with(make(max + 1), LimitMode::Lenient).is_ok(),
+            "{rule} truncates"
+        );
+    }
+    let radio = with(
+        TextFormOverrides {
+            severity: InputOverrides {
+                placeholder: Some("p".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        LimitMode::Strict,
+    )
+    .unwrap();
+    assert!(input(&radio, 3).get("placeholder").is_none());
+}
+
+/// M14, M15: a value over 4000, or over the input's `max_length`, is
+/// MOD-05 in both modes.
+#[test]
+fn m14_m15_value_bounds() {
+    for mode in [LimitMode::Strict, LimitMode::Lenient] {
+        let legacy = |n: usize| {
+            checked(
+                LegacyForm {
+                    reason: "r".repeat(n),
+                },
+                mode,
+            )
+        };
+        assert!(legacy(4000).is_ok());
+        assert_eq!(legacy(4001).unwrap_err(), [RuleId::MOD_05]);
+        let bio =
+            |text: String| checked(text_form().build().value(TextForm::BIO, Some(text)), mode);
+        assert!(bio("b".repeat(300)).is_ok());
+        assert!(bio("ü".repeat(300)).is_ok());
+        assert_eq!(bio("b".repeat(301)).unwrap_err(), [RuleId::MOD_05]);
+    }
+}
+
+/// M16: more Checkbox Group defaults than `max_values` is MOD-07.
+#[test]
+fn m16_too_many_checkbox_defaults() {
+    for mode in [LimitMode::Strict, LimitMode::Lenient] {
+        let three = TextForm {
+            topics: vec![Topic::Rust, Topic::Art, Topic::Music],
+            ..text_form()
+        };
+        assert_eq!(checked(three, mode).unwrap_err(), [RuleId::MOD_07]);
+    }
 }

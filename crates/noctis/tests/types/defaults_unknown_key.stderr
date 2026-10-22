@@ -28,7 +28,7 @@ error: duplicate `defaults` key `label`
 22 | #[button("e", defaults(style = Primary, label = "a", label = "b"))]
    |                                                      ^^^^^
 
-error: `defaults` values are literals: `label` takes a string literal
+error: [CV2-08] `label` is a locale key path: locale keys are [planned, Epic 11]; use a string literal
   --> tests/types/defaults_unknown_key.rs:28:49
    |
 28 | #[button("f", defaults(style = Primary, label = LABEL))]

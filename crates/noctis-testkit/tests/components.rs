@@ -243,7 +243,7 @@ impl Open {
 }
 
 fn bio_modal() -> Modal {
-    BioForm::blank(Id::new(42))
+    BioForm::blank(Id::new(42)).into()
 }
 
 /// A modal that tries `update` (`step = 0`) or `defer_update` (`1`) and
@@ -1075,7 +1075,7 @@ async fn manual_button_opens_a_modal() {
 async fn slash_opened_modal_cannot_update() {
     let running = Running::start().await;
     for step in [0_u8, 1] {
-        let form = serde_json::to_value(Note { step, note: None }.build()).unwrap();
+        let form = serde_json::to_value(Modal::from(Note { step, note: None }.build())).unwrap();
         let id = form["custom_id"].as_str().unwrap().to_owned();
         running.dispatch(json!({
             "id": (300 + u64::from(step)).to_string(),
@@ -1129,7 +1129,7 @@ async fn signed_modal_submit_runs_its_handler() {
     let capture = capture();
     let running = Running::start().await;
     let id = |item: u64| {
-        let mut modal = SigBio::blank(item);
+        let mut modal = Modal::from(SigBio::blank(item));
         let id = modal.custom_id_mut();
         assert!(
             id.resolve(&Parts::new().with_signer(&key_a()))

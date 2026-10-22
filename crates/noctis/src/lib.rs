@@ -1898,6 +1898,11 @@ pub mod prelude {
     //!   option set.
     //! - [`Rgb`] and the macros [`components!`], [`label!`],
     //!   [`placeholder!`], [`content!`] and [`rgb!`].
+    //! - [`Text`] (a literal or a [`MessageKey`]) and the per-render
+    //!   overrides [`ButtonOverrides`], [`StringSelectOverrides`],
+    //!   [`UserSelectOverrides`], [`RoleSelectOverrides`],
+    //!   [`MentionableSelectOverrides`], [`ChannelSelectOverrides`] and
+    //!   [`InputOverrides`] (in a modal's generated `<X>Overrides`).
     //! - [`ErrorSink`] and [`ErrorOrigin`]: routing handler failures.
     //! - [`RefOps`]: Ref deletions returned with a response,
     //!   `(message, RefOps)`.
@@ -1929,7 +1934,11 @@ pub mod prelude {
     pub use noctis_macros::{autocomplete, handler, on_expired, on_stale};
     pub use noctis_macros::{components, content, label, placeholder, rgb};
     pub use noctis_rules::MessageKey;
-    pub use noctis_ui::{Choices, ModalForm, Rgb};
+    pub use noctis_ui::{
+        ButtonOverrides, ChannelSelectOverrides, Choices, InputOverrides,
+        MentionableSelectOverrides, ModalForm, Rgb, RoleSelectOverrides, StringSelectOverrides,
+        Text, UserSelectOverrides,
+    };
 }
 
 /// Paths the derive macros expand to; not public API.
@@ -1946,8 +1955,10 @@ pub mod ui {
     //! The Components V2 message model.
     //!
     //! Every component is its own type with by-value, chainable setters
-    //! (text is `impl Into<Cow<'static, str>>`), and serializes straight to
-    //! Discord's JSON with unset fields left out:
+    //! (text is `impl Into<Cow<'static, str>>`; the label, placeholder,
+    //! title and description of Route components and modals are
+    //! `impl Into<`[`Text`]`>`, a literal or a locale key), and serializes
+    //! straight to Discord's JSON with unset fields left out:
     //!
     //! - Layout: [`Container`] (type 17, [`Container::push`],
     //!   [`Container::accent`] with an [`Rgb`], [`Container::spoiler`]),
@@ -1961,8 +1972,18 @@ pub mod ui {
     //!   [`Emoji`]), [`LinkButton`], [`PremiumButton`], and [`Button`] holding
     //!   any of them.
     //! - Selects: [`StringSelect`] (type 3, of [`SelectOption`]s),
-    //!   [`UserSelect`] (5), [`RoleSelect`] (6), [`MentionableSelect`] (7) and
-    //!   [`ChannelSelect`] (8).
+    //!   [`UserSelect`] (5), [`RoleSelect`] (6), [`MentionableSelect`] (7, its
+    //!   defaults [`MentionableId`]s) and [`ChannelSelect`] (8).
+    //! - [`Text`]: display text that is a literal or a
+    //!   [`MessageKey`](crate::rules::MessageKey); the Responder translates a
+    //!   key in the response locale before validating (User Locale first for
+    //!   an ephemeral send or a modal, Guild Locale first for a public one;
+    //!   a key with no translation is sent as the key, with a `warn`).
+    //! - Per-render overrides: [`ButtonOverrides`], [`StringSelectOverrides`],
+    //!   [`UserSelectOverrides`], [`RoleSelectOverrides`],
+    //!   [`MentionableSelectOverrides`] and [`ChannelSelectOverrides`]
+    //!   (`.overrides(..)`), and for modals [`ModalBuilder`], [`InputField`]
+    //!   and [`InputOverrides`].
     //! - [`Components`]: a message body; it numbers every component in
     //!   pre-order from 1, and no API sets a numeric id (CV2-14).
     //! - [`ContainerComponent`] and [`TopLevelComponent`]: any component of a
@@ -2231,8 +2252,9 @@ pub mod ui {
     //! # Modals
     //!
     //! - [`Modal`]: interaction callback `data` (type 9), built only from a
-    //!   `#[derive(Modal)]` struct (`X { .. }.build()` or `X::blank(..)`), so
-    //!   its `custom_id` is the struct's Route encoding (MOD-08); push 1 to 5
+    //!   `#[derive(Modal)]` struct (`Modal::from(x)`, `X { .. }.build()` or
+    //!   `X::blank(..)`, through a [`ModalBuilder`]), so its `custom_id` is
+    //!   the struct's Route encoding (MOD-08); push 1 to 5
     //!   [`ModalLabel`]s or [`TextDisplay`]s ([`ModalTopLevel`], MOD-02).
     //!   [`ModalComponent`] holds either, for lists built at runtime.
     //! - [`ModalLabel`] (type 18): Discord's Label component, with text, an
@@ -2254,7 +2276,7 @@ pub mod ui {
     //! ```
     //! use noctis::prelude::*;
     //! use noctis::rules::Limits;
-    //! use noctis::ui::{ModalLabel, ResolvedAttachment, TextDisplay, TextInput, TextInputStyle, validate};
+    //! use noctis::ui::{Modal, ModalLabel, ResolvedAttachment, TextDisplay, TextInput, TextInputStyle, validate};
     //!
     //! #[derive(Choices, Clone, Copy, PartialEq, Eq, Debug)]
     //! enum Severity {
@@ -2287,7 +2309,8 @@ pub mod ui {
     //!     }
     //! }
     //!
-    //! let mut modal = Report::blank(7);
+    //! // `severity` has no empty value, so `blank` is a `ModalBuilder`.
+    //! let mut modal = Modal::from(Report::blank(7));
     //! assert_eq!(validate(&mut modal, &Limits::default()).unwrap().components, 9);
     //! let json = serde_json::to_value(&modal).unwrap();
     //! assert_eq!(json["custom_id"], "0mod.report:7");
@@ -2306,10 +2329,11 @@ pub mod ui {
     //! other field is one top-level component, in declaration order; its
     //! name is the input key (`custom_id`, `r#` stripped) and it carries
     //! exactly one attribute whose first literal is the Label text (every
-    //! Label attribute also takes `description = "…"`). `X { .. }.build()`
-    //! and the generated `X::blank(<Payload fields in order>)` build the
-    //! [`Modal`] with empty inputs; `X::from_json(bytes)` ([`ModalForm`])
-    //! decodes the raw modal-submit interaction JSON, Payload included. A
+    //! Label attribute also takes `description = "…"`). A modal struct is
+    //! its submitted data, not its layout: `X { .. }.build()` returns a
+    //! [`ModalBuilder`] whose inputs are pre-filled from the field values
+    //! (FR-63), and `X::from_json(bytes)` ([`ModalForm`]) decodes the raw
+    //! modal-submit interaction JSON, Payload included. A
     //! `#[handler]` method `(self, ctx: ModalSubmitCtx[, r: ModalResponder])
     //! -> HandlerResult<R>` handles the submission: a modal submit whose
     //! `custom_id` names the Route runs it on the decoded struct (one handler
@@ -2332,10 +2356,39 @@ pub mod ui {
     //! - `Option<_>` is optional (`"required": false`), a plain type required;
     //!   a `Vec<_>` is required unless `min_values = 0`. `min_values` /
     //!   `max_values` are for `Vec` fields only.
+    //! - Pre-fill: a non-empty Text Input value becomes its `value`; a chosen
+    //!   `Choices` option of a String Select, Radio Group or Checkbox Group is
+    //!   marked `default`; picked users, roles, mentionables and channels
+    //!   become `default_values`; a `true` Checkbox starts checked. `None`,
+    //!   `""`, `vec![]` and `false` send nothing; File Uploads and Text
+    //!   Displays take none. Pre-fill never changes the `custom_id` or the
+    //!   decode.
+    //! - `X::blank(<Payload fields in order>)` returns `Self` with empty
+    //!   inputs when every input field type is syntactically `Option<_>`,
+    //!   `Vec<_>`, `String`, `bool` or `()`, so
+    //!   `X { bio: Some(v), ..X::blank(user) }.build()` pre-fills what it
+    //!   names; otherwise (a required `Choices` enum or `Resolved*` field, or
+    //!   a type alias) it returns the empty [`ModalBuilder`]. `impl From<X>
+    //!   for Modal` makes `show_modal(X::blank(p))` read the same either way.
+    //! - On the [`ModalBuilder`], for one render: `.title(..)` (MOD-01),
+    //!   `.value(X::FIELD, v)` through the generated typed handle
+    //!   [`InputField`]`<X, T>` (one `X::<FIELD>` const per input but File
+    //!   Uploads and Text Displays, `T` the field type), and
+    //!   `.overrides(XOverrides { title, <input>: `[`InputOverrides`]` { label,
+    //!   description, placeholder }, .. })`, the generated per-modal struct
+    //!   (presentation only; each `Some` replaces, later calls win). An
+    //!   input named `title`, or one whose handle would shadow a derived
+    //!   const (`ID`, `SHAPE`, `SCHEMA`, `DEFAULTS`, `RUNTIME`, `ROUTE`,
+    //!   `RESPONSE`, `GUARDED`, `NAME`), is a compile error.
+    //! - Pre-fill limits are validator rules checked before sending, in
+    //!   every mode: a value over 4000 or over its own `max_length`
+    //!   (MOD-05), more defaults than `max_values` (CV2-09; MOD-07 for a
+    //!   Checkbox Group) or two defaults in a Radio Group (MOD-07).
     //! - Every literal is checked at `cargo check` against the
     //!   [`rules::modal`](crate::rules::modal) rules (MOD-01, MOD-02, MOD-04..07,
-    //!   CV2-09, CID-01 for keys, CV2-04 for the Text Displays). Localized
-    //!   texts are [planned, Epic 11]. Option counts come from
+    //!   CV2-09, CID-01 for keys, CV2-04 for the Text Displays). A locale key
+    //!   path in an attribute is [planned, Epic 11]; a [`Text`] override
+    //!   takes a key at run time. Option counts come from
     //!   [`Choices::Count`]: a Radio Group takes 2-10 options
     //!   ([`RadioOptions`]), a Checkbox Group 1-10 ([`CheckboxOptions`]), a
     //!   String Select 1-25 ([`StringSelectOptions`]).
@@ -2402,7 +2455,7 @@ pub mod ui {
     //!     }
     //! }
     //!
-    //! let modal = ReportForm::blank(7);
+    //! let modal = noctis::ui::Modal::from(ReportForm::blank(7));
     //! assert_eq!(modal.len(), 5);
     //!
     //! let bytes = br#"{"type": 5, "data": {"custom_id": "0mod.report:7", "components": [
@@ -2478,8 +2531,14 @@ pub mod ui {
     //! `custom_id`. Each setter overrides one field: `label`, `emoji`,
     //! `style` and `disabled` on a [`RouteButton`]; `placeholder`,
     //! `min_values`, `max_values`, `disabled`, `options` (String Select),
-    //! `default_users` / `default_roles` / `default_channels` and
-    //! `channel_types` on the selects. A struct without a `#[handler]`
+    //! `default_values` (option values on a String Select, ids on the
+    //! others; duplicates removed), `default_users` / `default_roles` /
+    //! `default_channels` and `channel_types` on the selects. `.overrides(..)`
+    //! takes the kind's overrides struct ([`ButtonOverrides`],
+    //! [`StringSelectOverrides`], …) and applies each `Some` field as its
+    //! setter would; setters and overrides compose and the later call wins.
+    //! Overrides change one render only and are validated with the message
+    //! (Strict errors, Lenient truncates display text). A struct without a `#[handler]`
     //! method does not compile (`[CID-04]`). `custom_id`s that need a select
     //! nonce, signature or Ref are finalized by the Responder before sending;
     //! serializing one before is an error naming the Route.
@@ -2514,6 +2573,15 @@ pub mod ui {
     //! let json = serde_json::to_value(&body).unwrap();
     //! assert_eq!(json[0]["components"][0]["accessory"]["custom_id"], "0shop.buy:47");
     //! assert_eq!(json[0]["components"][0]["accessory"]["style"], 1);
+    //!
+    //! // Several fields for one render; the rest comes from `defaults(..)`.
+    //! let again = Buy { item: 255 }.build().overrides(ButtonOverrides {
+    //!     label: Some("Buy again".into()),
+    //!     disabled: Some(true),
+    //!     ..Default::default()
+    //! });
+    //! let json = serde_json::to_value(&again).unwrap();
+    //! assert_eq!((&json["label"], &json["disabled"], &json["style"]), (&"Buy again".into(), &true.into(), &1.into()));
     //! # let _ = ButtonStyle::Primary;
     //! ```
     //!
@@ -2531,21 +2599,23 @@ pub mod ui {
 
     pub use noctis_ui::{
         ActionRow, AltText, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet,
-        Budget, Button, ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup,
-        CheckboxOptions, Choices, Components, Container, ContainerChild, ContainerComponent,
-        Content, CostReport, CreateFlags, DownloadError, EditFlags, Emoji, File, FileFetcher,
-        FileUpload, GalleryItems, Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton,
-        Media, MediaGallery, MediaItem, Mentionable, MentionableSelect, Mentions, MessageBody,
-        MessageFormat, Modal, ModalChannelSelect, ModalComponent, ModalForm, ModalInput,
-        ModalLabel, ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect,
-        ModalSubmission, ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup,
-        RadioOptions, RawComponent, ResolvedAttachment, ResolvedChannel, ResolvedMessage,
-        ResolvedRole, ResolvedUser, Rgb, RoleSelect, Roles, RouteButton, RowButtons, RowItem,
-        RowSelect, Section, SectionAccessory, SectionTexts, SelectOption, Separator, Spacing,
-        StringSelect, StringSelectBuilder, StringSelectOptions, SubmitError, SubmittedValue,
-        TextDisplay, TextInput, TextInputStyle, Thumbnail, TopLevel, TopLevelComponent, UiError,
-        UserSelect, Users, V2Message, Validate, cost, escape_markdown, escape_mentions,
-        unknown_components, validate,
+        Budget, Button, ButtonOverrides, ButtonStyle, CallbackFlags, ChannelSelect,
+        ChannelSelectOverrides, Checkbox, CheckboxGroup, CheckboxOptions, Choices, Components,
+        Container, ContainerChild, ContainerComponent, Content, CostReport, CreateFlags,
+        DownloadError, EditFlags, Emoji, File, FileFetcher, FileUpload, GalleryItems, InputField,
+        InputOverrides, Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton, Media,
+        MediaGallery, MediaItem, Mentionable, MentionableId, MentionableSelect,
+        MentionableSelectOverrides, Mentions, MessageBody, MessageFormat, Modal, ModalBuilder,
+        ModalChannelSelect, ModalComponent, ModalForm, ModalInput, ModalLabel,
+        ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect, ModalSubmission,
+        ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup, RadioOptions,
+        RawComponent, ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole,
+        ResolvedUser, Rgb, RoleSelect, RoleSelectOverrides, Roles, RouteButton, RowButtons,
+        RowItem, RowSelect, Section, SectionAccessory, SectionTexts, SelectOption, Separator,
+        Spacing, StringSelect, StringSelectBuilder, StringSelectOptions, StringSelectOverrides,
+        SubmitError, SubmittedValue, Text, TextDisplay, TextInput, TextInputStyle, Thumbnail,
+        TopLevel, TopLevelComponent, UiError, UserSelect, UserSelectOverrides, Users, V2Message,
+        Validate, cost, escape_markdown, escape_mentions, unknown_components, validate,
     };
 }
 

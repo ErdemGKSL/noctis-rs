@@ -37,6 +37,7 @@
 use crate::check::{at_most, between, finish, join, text_at_most, text_between};
 use crate::command::{FILE_TYPE, is_file_type};
 use crate::component::{Component, Select, check_select};
+use crate::len::discord_len;
 use crate::{Actual, Bound, Limits, RuleId, Violation};
 
 const REQUIRED_MIN: &str = "min_values ≥ 1 when required";
@@ -454,12 +455,16 @@ impl Checkbox {
 /// MOD-03 for a [`ModalComponent::Message`] (not walked; a message
 /// [`Component::Text`] is allowed like [`ModalComponent::Text`]); for a Label
 /// its text, its description, then the child. `TextInput`: `min_length`,
-/// `max_length`, order, `value`, `placeholder`. `Select`: MOD-03 `disabled`, the
+/// `max_length`, order, `value` (≤ `text_input_len`, then ≤ its own
+/// `max_length`), `placeholder`. `Select`: MOD-03 `disabled`, the
 /// CV2-09 checks, then required with `min_values` 0. `FileUpload`: `min_values`,
 /// `max_values`, order, required with `min_values` 0, `file_types` count, each
-/// entry. `RadioGroup`: options count, then per option label, value,
-/// description. `CheckboxGroup`: options count, `min_values`, `max_values`,
-/// order, required with `min_values` 0, then per option. `Checkbox`: `required`.
+/// entry. `RadioGroup`: options count, per option label, value,
+/// description, then at most one default (`default_values`).
+/// `CheckboxGroup`: options count, `min_values`, `max_values`, order,
+/// required with `min_values` 0, per option, then (with at least one
+/// default and an ordered range) the default count within the effective
+/// `[min_values, max_values]` (`default_values`). `Checkbox`: `required`.
 ///
 /// # Errors
 ///
@@ -543,6 +548,8 @@ fn check_label(label: &Label<'_>, path: &str, limits: &Limits, out: &mut Vec<Vio
                 out,
             );
             check_options(r.options, &p, limits, out);
+            let defaults = r.options.iter().filter(|o| o.default).count();
+            at_most(RuleId::MOD_07, join(&p, "default_values"), 1, defaults, out);
         }
         LabelChild::CheckboxGroup(g) => {
             check_checkbox_group(g, &join(path, "checkbox_group"), limits, out);
@@ -606,7 +613,17 @@ fn check_text_input(input: &TextInput<'_>, path: &str, limits: &Limits, out: &mu
         ));
     }
     if let Some(v) = input.value {
-        text_at_most(RuleId::MOD_05, join(path, "value"), max_len, v, out);
+        let len = discord_len(v);
+        let value_path = join(path, "value");
+        if len > max_len {
+            text_at_most(RuleId::MOD_05, value_path, max_len, v, out);
+        } else if let Some(max) = max
+            && len > max
+        {
+            // A pre-fill longer than the input's own `max_length`; a value
+            // shorter than `min_length` is not checked.
+            at_most(RuleId::MOD_05, value_path, max, len, out);
+        }
     }
     if let Some(p) = input.placeholder {
         text_at_most(
@@ -663,7 +680,7 @@ fn check_required_min(
 
 /// `min_values` (0..=`limit`), `max_values` (1..=`limit`), then the order of the
 /// effective values (defaults `default_min` / `default_max`) when both are in
-/// range.
+/// range. The effective `(min, max)` when both are in range and ordered.
 fn check_value_range(
     rule: RuleId,
     (min, max): (Option<usize>, Option<usize>),
@@ -671,7 +688,7 @@ fn check_value_range(
     limit: usize,
     path: &str,
     out: &mut Vec<Violation>,
-) {
+) -> Option<(usize, usize)> {
     if let Some(min) = min {
         between(rule, join(path, "min_values"), 0, limit, min, out);
     }
@@ -680,9 +697,14 @@ fn check_value_range(
     }
     let min = min.unwrap_or(default_min);
     let max = max.unwrap_or(default_max);
-    if min <= limit && (1..=limit).contains(&max) && min > max {
-        out.push(ordering(rule, path, "min_values ≤ max_values", min, max));
+    if min <= limit && (1..=limit).contains(&max) {
+        if min > max {
+            out.push(ordering(rule, path, "min_values ≤ max_values", min, max));
+            return None;
+        }
+        return Some((min, max));
     }
+    None
 }
 
 /// MOD-06: `min_values`, `max_values`, order, required, `file_types`.
@@ -692,7 +714,7 @@ fn check_file_upload(
     limits: &Limits,
     out: &mut Vec<Violation>,
 ) {
-    check_value_range(
+    let _ = check_value_range(
         RuleId::MOD_06,
         (upload.min_values, upload.max_values),
         (1, 1),
@@ -742,7 +764,7 @@ fn check_checkbox_group(
         group.options.len(),
         out,
     );
-    check_value_range(
+    let ordered = check_value_range(
         RuleId::MOD_07,
         (group.min_values, group.max_values),
         (1, group.options.len()),
@@ -752,6 +774,19 @@ fn check_checkbox_group(
     );
     check_required_min(RuleId::MOD_07, group.required, group.min_values, path, out);
     check_options(group.options, path, limits, out);
+    let defaults = group.options.iter().filter(|o| o.default).count();
+    if let Some((min, max)) = ordered
+        && defaults > 0
+    {
+        between(
+            RuleId::MOD_07,
+            join(path, "default_values"),
+            min,
+            max,
+            defaults,
+            out,
+        );
+    }
 }
 
 /// MOD-07 per option: label, value, description.

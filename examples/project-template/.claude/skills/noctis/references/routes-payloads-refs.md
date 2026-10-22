@@ -46,13 +46,15 @@ Module::new("dashboard").add::<ToggleModule>()
 | `StringSelectMenu` | `#[string_select("id", ..)]` | `StringSelect` with `options`, else a `StringSelectBuilder<Self>` that needs `.options(..)` | `placeholder` | `options = SomeChoicesEnum`, `min_values` (1), `max_values` (1), `disabled` (`false`) |
 | `UserSelectMenu` / `RoleSelectMenu` / `MentionableSelectMenu` | `#[user_select(..)]` / `#[role_select(..)]` / `#[mentionable_select(..)]` | `UserSelect` / `RoleSelect` / `MentionableSelect` | `placeholder` | `min_values` (1), `max_values` (1), `disabled` (`false`) |
 | `ChannelSelectMenu` | `#[channel_select("id", ..)]` | `ChannelSelect` | `placeholder` | the above plus `channel_types = [GuildText, …]` |
-| `Modal` | `#[modal("id", ..)]` | `Modal` (`modals.md`) | `title` | — |
+| `Modal` | `#[modal("id", ..)]` | `ModalBuilder<Self>`, which converts into `Modal` (`modals.md` §4a) | `title` | — |
 
 A missing `defaults(..)` block or required key is a compile error naming the kind's
 required keys; an unknown key is a compile error; literal values are checked against
-Discord's limits (CV2-08, CV2-09, MOD-01). Text values are locale keys with the `i18n`
-feature (checked against the default-locale file) and literal text without it
-[planned: Story 9.3]; today every text value is a literal, shown as written. Link and
+Discord's limits (CV2-08, CV2-09, MOD-01). `defaults(..)` text values are string
+literals, shown as written; a path there (`label = keys::SAVE`) is a compile error
+(locale keys in `defaults` are [planned, Epic 11]). Per-render text takes a `Text`: a
+literal or a `MessageKey`, which the Responder translates in the response locale (§9).
+Link and
 Premium buttons have no handler and stay plain builders: `LinkButton::new(url)`.
 
 - The struct's fields **are** the Payload. The handler receives the decoded value as
@@ -774,11 +776,31 @@ TicketSystem.build()                                // a string select whose def
     .options(systems.iter().map(|t| SelectOption::new(&t.name, t.id.to_string())));  // required before use (typestate)
 ```
 
-Overrides: `.label(..)`, `.emoji(..)`, `.style(..)`, `.disabled(..)`, `.placeholder(..)`,
-`.options(..)`, `.min_values(..)`, `.max_values(..)`, `.channel_types(..)`, and the
-per-kind `.default_users(..)` / `.default_roles(..)` / `.default_channels(..)`.
-`.default_values(..)` on every select kind and the modal `.title(..)` / `.value(field, ..)`
-overrides are [planned: Story 9.3]. Anything not overridden comes from the defaults;
+Overrides, one field each: `.label(..)`, `.emoji(..)`, `.style(..)`, `.disabled(..)`,
+`.placeholder(..)`, `.options(..)`, `.min_values(..)`, `.max_values(..)`,
+`.channel_types(..)`, `.default_values(..)` on every select (replaces: option values on a
+String Select, ids on the entity selects, `MentionableId::User/Role` on a Mentionable
+Select) and the appending `.default_users(..)` / `.default_roles(..)` /
+`.default_channels(..)`. Several at once with one plain-data struct per kind:
+
+```rust
+Buy { item: 1 }.build().overrides(ButtonOverrides {
+    label: Some(MessageKey::new("shop.buy_again").into()),  // a literal or a MessageKey
+    disabled: Some(true),
+    ..Default::default()
+});
+```
+
+(`ButtonOverrides`, `StringSelectOverrides`, `UserSelectOverrides`, `RoleSelectOverrides`,
+`MentionableSelectOverrides`, `ChannelSelectOverrides`; a `StringSelectBuilder` takes
+`.options(..)` before `.overrides(..)`). Setters and `.overrides` compose and the later
+call wins; overrides change one render only. Label, placeholder and title texts are
+`Text`: a `MessageKey` is translated in the response locale before validation (User then
+Guild Locale for an ephemeral send or a modal, Guild then User for a public send, else
+en-US; a missing key is sent as the key with one `warn`). Duplicate defaults count once;
+a String Select default that no option has is `[CV2-09]` (both modes). The modal
+`ModalBuilder` overrides (`.title(..)`, `.value(X::FIELD, v)`, `XOverrides`) are in
+`modals.md` §4a. Anything not overridden comes from the defaults;
 the result is validated against the Limits (Strict or Lenient) when sent. A kind-derived
 struct needs a `#[handler]` method (`[CID-04]`); on a struct without a declared kind,
 `.build()` is a compile error whose help lists the kind derives.

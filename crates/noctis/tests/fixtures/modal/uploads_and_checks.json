@@ -15,7 +15,7 @@
       {"type": 18, "id": 1, "component": {"type": 19, "id": 2, "custom_id": "evidence", "values": ["1000000000000000031", "1000000000000000032"]}},
       {"type": 18, "id": 3, "component": {"type": 19, "id": 4, "custom_id": "avatar", "values": ["1000000000000000033"]}},
       {"type": 18, "id": 5, "component": {"type": 23, "id": 6, "custom_id": "agree", "value": true}},
-      {"type": 18, "id": 7, "component": {"type": 4, "id": 8, "custom_id": "title", "value": "Bug"}},
+      {"type": 18, "id": 7, "component": {"type": 4, "id": 8, "custom_id": "type", "value": "Bug"}},
       {"type": 18, "id": 9, "component": {"type": 3, "id": 10, "custom_id": "colours", "values": ["r", "b"]}}
     ],
     "resolved": {

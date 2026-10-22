@@ -247,8 +247,15 @@ impl Shared {
         mut msg: OutgoingMessage,
     ) -> Result<(), ResponderError> {
         self.refuse_closed()?;
-        self.prepare(&mut msg).await?;
         let visibility = self.default_ephemerality();
+        // The edit of a type-5 loading message keeps the defer's
+        // visibility; anything else is seen as declared.
+        let seen = if self.loading() {
+            self.original().ephemerality
+        } else {
+            visibility
+        };
+        self.prepare(&mut msg, seen).await?;
         let _gate = self.gate.lock().await;
         match self.state() {
             PENDING => {
@@ -287,7 +294,12 @@ impl Shared {
         let Some(source) = self.source.as_ref() else {
             return Err(ResponderError::UpdateUnavailable);
         };
-        self.prepare(&mut msg).await?;
+        let seen = if self.state() == PENDING {
+            source.ephemerality
+        } else {
+            self.original().ephemerality
+        };
+        self.prepare(&mut msg, seen).await?;
         let _gate = self.gate.lock().await;
         self.refuse_answered()?;
         match self.state() {
@@ -320,7 +332,7 @@ impl Shared {
         let mut msg = OutgoingMessage::V2(V2Message::new(
             Components::new().push(TextDisplay::new(text)),
         ));
-        self.prepare(&mut msg).await?;
+        self.prepare(&mut msg, visibility).await?;
         let _gate = self.gate.lock().await;
         match self.state() {
             PENDING => {

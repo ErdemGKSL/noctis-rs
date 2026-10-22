@@ -5,7 +5,8 @@
 //! check its length at `cargo check`; `try_new` and `TryFrom` are the runtime
 //! path and call the same `noctis-rules` function. Neither ever truncates:
 //! Lenient truncation belongs to [`validate`](crate::validate). Each converts
-//! into `Cow<'static, str>`, so it goes wherever a builder takes text.
+//! into `Cow<'static, str>` and [`Text`], so it goes wherever a builder takes
+//! text.
 
 use std::borrow::Cow;
 
@@ -14,6 +15,7 @@ use noctis_rules::component::{validate_button_label, validate_select_placeholder
 use noctis_rules::message::validate_content;
 use noctis_rules::{Limits, Violation};
 
+use crate::Text;
 use crate::error::{UiError, checked};
 
 macro_rules! literal_newtype {
@@ -61,6 +63,12 @@ macro_rules! literal_newtype {
         impl From<$name> for Cow<'static, str> {
             fn from(value: $name) -> Self {
                 value.0
+            }
+        }
+
+        impl From<$name> for Text {
+            fn from(value: $name) -> Self {
+                Text::Literal(value.0)
             }
         }
 

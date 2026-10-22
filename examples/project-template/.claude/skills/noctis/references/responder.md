@@ -236,7 +236,7 @@ pub struct OpenBioModal { pub user: Id<UserMarker> }
 impl OpenBioModal {
     #[handler]
     async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
-        Ok(r.show_modal(BioForm { user: self.user, bio: None }.build()).await?.done())
+        Ok(r.show_modal(BioForm::blank(self.user)).await?.done())   // inputs empty
     }
 }
 ```
@@ -563,14 +563,20 @@ pub struct Bio;
 impl Bio {
     #[handler]
     async fn handle(self, ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-        let form = BioForm { user: ctx.user_id(), bio: None, pronouns: None };
-        Ok(r.show_modal(form.build()).await?.done())
+        Ok(r.show_modal(BioForm::blank(ctx.user_id())).await?.done())
     }
 }
 ```
 
-`show_modal(m)` validates the modal against the Limits (`Invalid`) and encodes it (`Encode`
-for an unresolved Route id) before any request.
+`show_modal(m)` takes `impl Into<Modal>`: a runtime `Modal`, a derived modal value or
+`X::blank(..)`, or the `ModalBuilder` of `X { .. }.build()` with its `.title(..)`,
+`.value(X::FIELD, v)` and `.overrides(..)` (`modals.md` §4a). It resolves locale keys in
+the User Locale first, validates the modal against the Limits (`Invalid`: also a
+pre-fill over a Text Input's `max_length` or more defaults than `max_values`, in every
+Limit mode) and encodes it (`Encode` for an unresolved Route id) before any request.
+Every send resolves `MessageKey` texts (labels, placeholders) the same way: User then
+Guild Locale for an ephemeral send, Guild then User for a public one, else en-US; a
+missing key is sent as the key with one `warn` on `noctis::i18n`.
 
 Example: a component that opens a modal (its struct declares `auto_defer = false`):
 
@@ -582,7 +588,7 @@ pub struct EditBio { pub user: Id<UserMarker> }
 impl EditBio {
     #[handler]
     async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
-        Ok(r.show_modal(BioForm { user: self.user, bio: None, pronouns: None }.build()).await?.done())
+        Ok(r.show_modal(BioForm::blank(self.user)).await?.done())
     }
 }
 ```

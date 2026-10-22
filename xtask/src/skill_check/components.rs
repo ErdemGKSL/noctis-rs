@@ -53,6 +53,7 @@ pub(super) const BUILDERS: &[&str] = &[
     "RadioGroup",
     "CheckboxGroup",
     "Checkbox",
+    "ModalBuilder",
     "RawComponent",
 ];
 

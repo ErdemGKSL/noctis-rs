@@ -1,0 +1,82 @@
+---
+source: crates/noctis/tests/modal_derive.rs
+assertion_line: 852
+expression: json
+---
+{
+  "components": [
+    {
+      "component": {
+        "custom_id": "users",
+        "default_values": [
+          {
+            "id": "1000000000000000001",
+            "type": "user"
+          },
+          {
+            "id": "1000000000000000002",
+            "type": "user"
+          }
+        ],
+        "max_values": 3,
+        "type": 5
+      },
+      "label": "Users",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "role",
+        "default_values": [
+          {
+            "id": "1000000000000000010",
+            "type": "role"
+          }
+        ],
+        "type": 6
+      },
+      "label": "Role",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "pings",
+        "default_values": [
+          {
+            "id": "1000000000000000002",
+            "type": "user"
+          },
+          {
+            "id": "1000000000000000010",
+            "type": "role"
+          }
+        ],
+        "max_values": 25,
+        "type": 7
+      },
+      "label": "Pings",
+      "type": 18
+    },
+    {
+      "component": {
+        "channel_types": [
+          0,
+          5
+        ],
+        "custom_id": "channel",
+        "default_values": [
+          {
+            "id": "1000000000000000020",
+            "type": "channel"
+          }
+        ],
+        "required": false,
+        "type": 8
+      },
+      "label": "Channel",
+      "type": 18
+    }
+  ],
+  "custom_id": "0t.modal:",
+  "title": "Pick people"
+}

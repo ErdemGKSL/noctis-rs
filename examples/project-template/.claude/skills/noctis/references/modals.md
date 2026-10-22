@@ -43,14 +43,21 @@ pub struct ReportForm {
     pub agree: bool,
 }
 
-let modal: noctis::ui::Modal = ReportForm::blank(7).build();         // Payload only, inputs empty
+let modal: noctis::ui::Modal = ReportForm::blank(7).into();          // Payload only, inputs empty
 let form: ReportForm = ReportForm::from_json(raw_interaction_bytes)?; // ModalForm::from_json
 ```
 
-`X { .. }.build()` builds from a whole value; pre-filling every input with its field is
-[planned: Story 9.4], so today it builds the same modal as `X::blank(..)`.
-`X::blank(<payload fields in order>)` builds with empty inputs, for forms whose required
-inputs (`String`, a `Choices` enum, `bool`) have no "empty" value.
+`X { .. }.build()` builds from a whole value and returns a `ModalBuilder<X>` (§4a) that
+pre-fills every input from its field: a Text Input's `value`, the chosen options marked
+`default`, picked users/roles/channels as `default_values`, a `true` Checkbox checked;
+`None`, `""`, `vec![]` and `false` send nothing, and File Uploads are never pre-filled.
+`X::blank(<payload fields in order>)` builds with empty inputs. It returns `X` itself when
+every input field has an empty value (`Option<_>`, `Vec<_>`, `String`, `bool`, the `()` of
+a Text Display), so `X { bio: v, ..X::blank(user) }` pre-fills only what you name; a form
+with an input that has none (a required `Choices` enum or `ResolvedRole`, a required File
+Upload) gets a `ModalBuilder<X>` instead. Both convert into `Modal` (`.into()`,
+`Modal::from(..)`) and `show_modal` takes either. Pre-fill never changes the `custom_id`,
+the decode or the declared specs.
 
 - `#[modal("id", .., defaults(title = "…"))]` is required: the id is the modal's own
   (it needs a `#[handler]` method, else `[CID-04]`), `defaults(..)` must give `title`
@@ -69,9 +76,13 @@ inputs (`String`, a `Choices` enum, `bool`) have no "empty" value.
 - Every text is a **literal**, checked at `cargo check` with the same
   `noctis::rules::modal::validate_modal` the runtime validator uses; errors are spanned on
   the offending literal and cite the rule id (`[MOD-01] title: limit between 1 and 45,
-  actual 46`). Localized text (`title(key = …)`, `key = …`, a constant) is rejected with
-  `localized modal text is [planned, Epic 11]; use a literal`; for dynamic text build a
-  `Modal` at runtime (§4b).
+  actual 46`). A path (`title = keys::T`, `#[text_input(keys::L)]`) is rejected with
+  ``[MOD-01] `title` is a locale key path: locale keys are [planned, Epic 11]; use a string
+  literal`` (`[MOD-04]` for Label text); for per-render or localized text use the
+  `ModalBuilder` overrides (§4a), which take a literal or a `MessageKey`.
+- An input field may not be named `title` (the overrides' own field) or a name whose
+  upper-case handle is a derived const (`id` → `ID`, `defaults`, `route`, `shape`,
+  `schema`, `runtime`, `response`, `guarded`): a compile error names the field.
 - `Option<_>` field ⇒ optional (`"required": false`); a plain type ⇒ required; a `Vec<_>`
   ⇒ required unless `min_values = 0` (then `"min_values": 0, "required": false`).
   `min_values` / `max_values` are allowed on `Vec` fields only.
@@ -165,15 +176,16 @@ impl EditBio {
     #[handler]
     async fn handle(self, ctx: ComponentCtx, r: ComponentResponder<Manual>) -> HandlerResult<Responded> {
         let stored: StoredProfile = ctx.kv().get(&key).await?.unwrap_or_default();
-        // The value's input fields pre-fill the inputs [planned, Story 9.4].
-        let form = BioForm { user: self.user, bio: stored.bio, pronouns: stored.pronouns };
+        // The value's input fields pre-fill the inputs; `None` sends nothing.
+        let form = BioForm { bio: stored.bio, pronouns: stored.pronouns, ..BioForm::blank(self.user) };
         Ok(r.show_modal(form.build()).await?.done())
     }
 }
 ```
 
-Per-render overrides on a built modal, `.title(..)` and `.value(field, ..)` (one input's
-initial value), are [planned: Story 9.3]; today the title comes from `defaults(..)`.
+Per-render overrides on the built modal (§4a): `.title(..)`, `.value(BioForm::BIO, v)`
+and `.overrides(BioFormOverrides { .. })`; anything not overridden comes from the
+declaration.
 
 The `Manual` responder is required exactly when `auto_defer = false` is declared (an
 `[INT-05]` compile error otherwise), `show_modal` on an auto-defer responder fails with
@@ -366,8 +378,9 @@ be a modal Label input`.
 with a `label` of its own (the Label holds the text).
 
 **Limits:** `min_length` 0–4000, `max_length` 1–4000, `min_length ≤ max_length`, `value`
-(pre-fill) ≤ 4000, `placeholder` ≤ 100 (MOD-05). Lenient mode truncates the placeholder,
-never the `value`.
+(pre-fill) ≤ 4000 and ≤ its own `max_length` (by `discord_len`), `placeholder` ≤ 100
+(MOD-05). Lenient mode truncates the placeholder, never the `value`: a too-long value is
+an error in both modes.
 
 **Builder:** `TextInput::new(key, TextInputStyle::Short | Paragraph)`, `.min_length(u16)`,
 `.max_length(u16)`, `.required(bool)` (default `true`), `.value(..)` (pre-fill, FR-63),
@@ -412,7 +425,8 @@ never the `value`.
 **Limits:** as `ModalUserSelect` (CV2-09). No `disabled`.
 
 **Builder:** `ModalMentionableSelect::new(key)`, `.default_users(ids)`,
-`.default_roles(ids)`, plus `.placeholder`, `.min_values`, `.max_values`, `.required`.
+`.default_roles(ids)`, `.default_mentionables([MentionableId::User(id), MentionableId::Role(id)])`
+(appends in order; duplicates count once), plus `.placeholder`, `.min_values`, `.max_values`, `.required`.
 
 ### 4.7 Modal Channel Select: `ModalChannelSelect`
 
@@ -442,7 +456,8 @@ with `ResolvedAttachment::download` (§3.1) and re-check the content type (MOD-0
 **Where:** inside a `ModalLabel` only. Type 21. Submits one option or none.
 
 **Limits:** 2–10 options; each `ModalOption` label and value 1–100, description ≤ 100
-(MOD-07). The constructor accepts any count; `validate` rejects a wrong one. A
+(MOD-07); at most one option with `.default(true)` (MOD-07, both modes). The constructor
+accepts any count; `validate` rejects a wrong one. A
 `#[radio_group]` field's option count is checked at `cargo check` instead (§1.2).
 
 **Builder:** `RadioGroup::new(key, [ModalOption::new(label, value), …])`, `.required(bool)`.
@@ -454,8 +469,9 @@ with `ResolvedAttachment::download` (§3.1) and re-check the content type (MOD-0
 **Where:** inside a `ModalLabel` only. Type 22.
 
 **Limits:** 1–10 options, `min_values` 0–10 (0 only with `.required(false)`),
-`max_values` 1–10, `min ≤ max` (default max = option count); option text as Radio Group
-(MOD-07).
+`max_values` 1–10, `min ≤ max` (default max = option count); option text as Radio Group;
+the count of `.default(true)` options, when there is one, within `[min_values, max_values]`
+(MOD-07, both modes).
 
 **Builder:** `CheckboxGroup::new(key, options)`, `.min_values(u8)`, `.max_values(u8)`,
 `.required(bool)`.
@@ -475,6 +491,50 @@ one-option `CheckboxGroup` with `min_values(1)`.
 A `TextDisplay` (type 10, see `components-v2.md` §2) may sit at the top level of a modal
 and counts toward the 5. In a derived modal it is a `#[text_display("…")]` field of type
 `()`.
+
+## 4a. Per-render derived modal: `ModalBuilder`
+
+**Where:** what `X { .. }.build()` returns for a `#[derive(Modal)]` struct `X` (and
+`X::blank(..)` when an input has no empty value). It is not a component: it converts into
+a `Modal` (`.into()`, `Modal::from(b)`) and `show_modal` takes it directly. Never store
+it across renders; build a new one each time.
+
+**Limits:** the converted `Modal` is validated with everything else before it is sent, in
+every Limit mode: title 1–45 (MOD-01), Label text ≤ 45 and description ≤ 100 (MOD-04), a
+Text Input placeholder ≤ 100 and a select's ≤ 150 (Lenient truncates these), a Text Input
+`value` ≤ 4000 and ≤ its `max_length` (MOD-05), a Checkbox Group's defaults within
+`[min_values, max_values]` and a Radio Group's at most one (MOD-07), a select's defaults
+≤ `max_values` (CV2-09). A failure is `ResponderError::Invalid(UiError::Limits { .. })`
+and no request is sent. Locale keys are resolved first (User Locale, then Guild Locale,
+then en-US); a missing key is sent as the key with one `warn` on `noctis::i18n`.
+
+**Builder:**
+
+```rust
+let modal = BioForm { bio: Some("hi".into()), ..BioForm::blank(user) }
+    .build()
+    .title(MessageKey::new("profile.bio_modal.edit_title")) // a literal or a MessageKey
+    .value(BioForm::BIO, Some("replaced".into()))           // typed handle: the field's type
+    .overrides(BioFormOverrides {
+        bio: InputOverrides { label: Some("About you".into()), ..Default::default() },
+        ..Default::default()
+    });
+Ok(r.show_modal(modal).await?.done())
+```
+
+- `.title(t)` replaces the declared title for this render; it is the same field as
+  `XOverrides::title`.
+- `.value(X::FIELD, v)` replaces one input's pre-fill. The derive generates one handle
+  const per input field, its name upper-cased (`bio` → `BioForm::BIO`, of type
+  `InputField<BioForm, Option<String>>`); `#[text_display]` and `#[file_upload]` fields
+  have none.
+- `.overrides(XOverrides { .. })`: the derive generates `XOverrides` with `title:
+  Option<Text>` and, per Label input, an `InputOverrides { label, description,
+  placeholder }` (each `Option<Text>`). Each `Some` replaces; `InputOverrides` merge field
+  by field. A placeholder on a File Upload, Radio Group, Checkbox Group or Checkbox is
+  ignored. Overrides change presentation only, never a value, the `custom_id` or the
+  decode.
+- Calls compose and the later one wins.
 
 ## 4b. Building a modal at runtime: `Modal`
 

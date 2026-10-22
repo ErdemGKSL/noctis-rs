@@ -146,6 +146,15 @@ impl V2Message {
         self.components.custom_ids_mut()
     }
 
+    /// Replaces every [`Text::Key`](crate::Text::Key) of the tree (Route
+    /// button labels, select placeholders) with `Literal(f(key))`; core's
+    /// Responder calls it with the response locale's translations before
+    /// validating. Not public API.
+    #[doc(hidden)]
+    pub fn resolve_keys(&mut self, f: &mut dyn FnMut(noctis_rules::MessageKey) -> String) {
+        self.components.resolve_keys(f);
+    }
+
     /// The body of Create Message or Execute Webhook.
     pub fn create_body(&self, flags: CreateFlags) -> MessageBody<'_> {
         MessageBody::v2(self, flags.bits(), false)
@@ -272,6 +281,19 @@ impl LegacyMessage {
             row.custom_ids_mut(&mut out);
         }
         out.into_iter()
+    }
+
+    /// Replaces every [`Text::Key`](crate::Text::Key) of the rows with
+    /// `Literal(f(key))`, as [`V2Message::resolve_keys`]. Not public API.
+    #[doc(hidden)]
+    pub fn resolve_keys(&mut self, f: &mut dyn FnMut(noctis_rules::MessageKey) -> String) {
+        let mut out = Vec::new();
+        for row in &mut self.rows {
+            row.texts_mut(&mut out);
+        }
+        for text in out {
+            text.resolve(f);
+        }
     }
 
     /// The body of Create Message or Execute Webhook; `flags` is left out

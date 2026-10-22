@@ -220,6 +220,14 @@ impl Mentionable {
             .map(Self::User)
             .or_else(|| ResolvedRole::from_resolved(resolved, id.cast()).map(Self::Role))
     }
+
+    /// The id and kind, for pre-fill.
+    pub(crate) fn id(&self) -> crate::MentionableId {
+        match self {
+            Self::User(u) => crate::MentionableId::User(u.user.id),
+            Self::Role(r) => crate::MentionableId::Role(r.role.id),
+        }
+    }
 }
 
 /// A file uploaded through a File Upload (type 19).

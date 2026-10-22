@@ -23,7 +23,7 @@ use serde_json::Value;
 use twilight_model::id::Id;
 
 /// What `#[derive(Modal)]`'s `.build()` expands to, before the inputs.
-fn modal<R: ComponentValue>(route: R, title: impl Into<std::borrow::Cow<'static, str>>) -> Modal {
+fn modal<R: ComponentValue>(route: R, title: impl Into<noctis_ui::Text>) -> Modal {
     build_modal::<R>(route, title)
 }
 
@@ -807,4 +807,49 @@ fn mod_05_required_false_emitted() {
             .get("required")
             .is_none()
     );
+}
+
+/// The rules of `m`'s violations in `limits`.
+fn rules_of(mut m: Modal, limits: &Limits) -> Vec<RuleId> {
+    match validate(&mut m, limits) {
+        Ok(_) => Vec::new(),
+        Err(UiError::Limits { violations }) => violations.iter().map(|v| v.rule).collect(),
+        Err(other) => panic!("{other}"),
+    }
+}
+
+/// Story 9.3 M16: more defaults than a select's `max_values` is CV2-09 and
+/// two default options on a Radio Group are MOD-07, in both modes;
+/// duplicate user defaults count once.
+#[test]
+fn m16_too_many_modal_defaults() {
+    let users = |ids: &[u64]| {
+        one(ModalUserSelect::new("u")
+            .max_values(3)
+            .default_users(ids.iter().map(|i| Id::new(*i))))
+    };
+    let radio = one(RadioGroup::new(
+        "r",
+        [
+            ModalOption::new("A", "a").default(true),
+            ModalOption::new("B", "b").default(true),
+        ],
+    ));
+    for limits in [strict(), lenient()] {
+        assert!(rules_of(users(&[1, 2, 3]), &limits).is_empty());
+        assert!(rules_of(users(&[1, 1, 2, 2, 3]), &limits).is_empty());
+        assert_eq!(rules_of(users(&[1, 2, 3, 4]), &limits), [RuleId::CV2_09]);
+        assert_eq!(rules_of(radio.clone(), &limits), [RuleId::MOD_07]);
+    }
+}
+
+/// Story 9.3 M15: a Text Input value is checked against its own
+/// `max_length` by `discord_len`, in both modes.
+#[test]
+fn m15_value_within_max_length() {
+    let with = |value: String| one(short("k").max_length(300).value(value));
+    for limits in [strict(), lenient()] {
+        assert!(rules_of(with("ü".repeat(300)), &limits).is_empty());
+        assert_eq!(rules_of(with("b".repeat(301)), &limits), [RuleId::MOD_05]);
+    }
 }

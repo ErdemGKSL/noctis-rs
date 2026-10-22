@@ -134,10 +134,6 @@ struct NoteV3 {
 }
 
 #[derive(Modal, Debug)]
-#[expect(
-    dead_code,
-    reason = "a Ref modal never decodes outside component dispatch, so its fields are never read"
-)]
 #[modal("note.ref", by_ref, defaults(title = "Note"))]
 struct NoteRef {
     user: Id<UserMarker>,
@@ -276,6 +272,63 @@ fn overrides_replace_one_field() {
     assert_eq!(colours[0]["components"][0]["placeholder"], "Colour");
 }
 
+/// Story 9.3 B1-B5 and S4 through the derives: one overrides struct per
+/// render, the later call wins, defaults stay a const.
+#[test]
+fn derived_overrides_and_defaults() {
+    let plain = json!(Buy { item: 1 }.build());
+    assert_eq!(
+        json!(
+            Buy { item: 1 }
+                .build()
+                .overrides(ButtonOverrides::default())
+        ),
+        plain
+    );
+    let again = json!(Buy { item: 1 }.build().overrides(ButtonOverrides {
+        label: Some("Again".into()),
+        disabled: Some(true),
+        ..Default::default()
+    }));
+    assert_eq!(
+        (&again["label"], &again["disabled"]),
+        (&Value::from("Again"), &Value::from(true))
+    );
+    assert_eq!(
+        (&again["style"], &again["custom_id"]),
+        (&plain["style"], &plain["custom_id"])
+    );
+    let later = json!(
+        Buy { item: 1 }
+            .build()
+            .overrides(ButtonOverrides {
+                label: Some("b".into()),
+                ..Default::default()
+            })
+            .label("a")
+    );
+    assert_eq!(later["label"], "a");
+    assert_eq!(json!(Buy { item: 1 }.build()), plain);
+
+    let colours = resolved(row(Colourful.build().overrides(StringSelectOverrides {
+        placeholder: Some("Pick a colour".into()),
+        default_values: Some(vec!["b".into()]),
+        ..Default::default()
+    })));
+    let select = &colours[0]["components"][0];
+    assert_eq!(select["placeholder"], "Pick a colour");
+    assert_eq!(select["options"][1]["default"], true);
+    assert!(select["options"][0].get("default").is_none());
+    let users = resolved(row(Pick.build().overrides(UserSelectOverrides {
+        default_values: Some(vec![Id::new(1)]),
+        ..Default::default()
+    })));
+    assert_eq!(
+        users[0]["components"][0]["default_values"],
+        serde_json::json!([{"id": "1", "type": "user"}])
+    );
+}
+
 /// Matrix 47 (runtime half): options given empty at runtime fail the
 /// validator with CV2-09; a count is never truncated, so Lenient mode fails
 /// too.
@@ -310,19 +363,22 @@ fn select_id_is_unresolved_until_core_resolves_it() {
 #[test]
 fn modal_build_blank_and_submission() {
     let user = Id::new(42);
-    let built = json!(
+    let built = json!(Modal::from(
         BioForm {
             user,
             bio: Some("hi".into())
         }
         .build()
-    );
-    let blank = json!(BioForm::blank(user));
-    assert_eq!(built, blank, "pre-fill arrives with Story 9.4");
+    ));
+    let blank = json!(Modal::from(BioForm::blank(user)));
+    // The struct value pre-fills the input; a blank form sends no value.
+    assert_eq!(built["components"][0]["component"]["value"], "hi");
+    assert!(blank["components"][0]["component"].get("value").is_none());
+    assert_eq!(built["custom_id"], blank["custom_id"]);
     assert_eq!(built["custom_id"], "0bio:g");
     assert_eq!(built["title"], "Bio");
     insta::assert_json_snapshot!("modal", built);
-    let _: Modal = BioForm::blank(user);
+    let _: Modal = BioForm::blank(user).into();
 
     let submission = |custom_id: &str| {
         format!(
@@ -363,12 +419,12 @@ fn modal_codec_arguments() {
         }
     };
 
-    let built = json!(NoteV3 { user, note: None }.build());
+    let built = json!(Modal::from(NoteV3 { user, note: None }.build()));
     let id = built["custom_id"].as_str().unwrap();
     let form = NoteV3::from_json(submission(id).as_bytes()).unwrap();
     assert_eq!((form.user, form.note.as_deref()), (user, Some("hey")));
 
-    let mut modal = NoteRef::blank(user);
+    let mut modal = Modal::from(NoteRef::blank(user));
     let id = modal.custom_id_mut();
     let slot = id.resolve(&Parts::new()).unwrap().expect("a Ref slot");
     id.finish(&slot, Ref::mint().unwrap()).unwrap();
@@ -377,7 +433,7 @@ fn modal_codec_arguments() {
     assert!(reason.contains("Ref"), "{reason}");
 
     let key = PayloadKey::from_bytes([7; 32]);
-    let mut modal = NoteSigned::blank(user);
+    let mut modal = Modal::from(NoteSigned::blank(user));
     let id = modal.custom_id_mut();
     assert!(
         id.resolve(&Parts::new().with_signer(&key))

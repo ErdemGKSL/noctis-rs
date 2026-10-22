@@ -4,7 +4,6 @@
 //! FR-59).
 
 use core::fmt;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrayvec::ArrayString;
@@ -20,7 +19,7 @@ use crate::component::{
     StringSelect, StringSelectBuilder, UserSelect,
 };
 use crate::modal::Choices;
-use crate::{Modal, UiError};
+use crate::{Modal, Text, UiError};
 
 /// A Route that has a handler.
 ///
@@ -242,7 +241,7 @@ pub fn build_channel_select<R: ComponentValue + SelectRoute>(
 /// The empty [`Modal`] titled `title` of the modal Route `R` whose Payload
 /// is `payload`; the derive pushes the inputs.
 #[doc(hidden)]
-pub fn build_modal<R>(payload: R::Payload, title: impl Into<Cow<'static, str>>) -> Modal
+pub fn build_modal<R>(payload: R::Payload, title: impl Into<Text>) -> Modal
 where
     R: Handled + Send + Sync + 'static,
     R::Payload: Send + Sync + 'static,

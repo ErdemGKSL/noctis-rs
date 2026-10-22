@@ -1,0 +1,5 @@
+error: [CV2-09] `placeholder` is a locale key path: locale keys are [planned, Epic 11]; use a string literal
+ --> tests/ui/cv2/CV2-09_defaults_placeholder_path.rs:8:50
+  |
+8 | #[user_select("pick.who", defaults(placeholder = keys::P))]
+  |                                                  ^^^^^^^

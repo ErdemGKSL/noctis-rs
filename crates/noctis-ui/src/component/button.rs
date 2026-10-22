@@ -10,6 +10,8 @@ use serde::{Serialize, Serializer};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{EmojiMarker, SkuMarker};
 
+use crate::Text;
+use crate::overrides::ButtonOverrides;
 use crate::route::CustomId;
 use crate::wire::{Ids, Wire, flag, head, opt, serialize_via_wire};
 
@@ -99,7 +101,7 @@ impl ButtonStyle {
 #[derive(Debug, Clone)]
 pub(crate) struct RouteButtonData {
     pub(crate) style: ButtonStyle,
-    pub(crate) label: Option<Cow<'static, str>>,
+    pub(crate) label: Option<Text>,
     pub(crate) emoji: Option<Emoji>,
     disabled: bool,
     pub(crate) custom_id: CustomId,
@@ -108,7 +110,13 @@ pub(crate) struct RouteButtonData {
 /// An interactive button (styles 1-4) whose click reaches the handler of
 /// Route `R`; built with `R { .. }.build()` from a `#[derive(Button)]`
 /// struct, whose `defaults(..)` set the style, label, emoji and `disabled`.
-/// The setters override one field each.
+///
+/// The setters override one field each and [`overrides`](Self::overrides)
+/// several at once; they compose, and the later call wins. Overrides change
+/// this render only (the declared defaults are a const) and are validated
+/// with everything else before sending (CV2-08). A label is a [`Text`]: a
+/// literal or a [`MessageKey`](noctis_rules::MessageKey) that core's
+/// Responder translates in the response locale.
 ///
 /// Placement: an Action Row or a Section accessory.
 pub struct RouteButton<R> {
@@ -141,9 +149,9 @@ impl<R> RouteButton<R> {
         self.map(|d| d.style = style)
     }
 
-    /// The label text.
+    /// The label: a literal or a locale key (≤ 80, CV2-08).
     #[must_use]
-    pub fn label(self, label: impl Into<Cow<'static, str>>) -> Self {
+    pub fn label(self, label: impl Into<Text>) -> Self {
         self.map(|d| d.label = Some(label.into()))
     }
 
@@ -157,6 +165,32 @@ impl<R> RouteButton<R> {
     #[must_use]
     pub fn disabled(self, disabled: bool) -> Self {
         self.map(|d| d.disabled = disabled)
+    }
+
+    /// Applies every `Some` field of `overrides` exactly as its setter
+    /// would, in declaration order (`style`, `label`, `emoji`, `disabled`).
+    #[must_use]
+    pub fn overrides(self, overrides: ButtonOverrides) -> Self {
+        let ButtonOverrides {
+            style,
+            label,
+            emoji,
+            disabled,
+        } = overrides;
+        let mut this = self;
+        if let Some(style) = style {
+            this = this.style(style);
+        }
+        if let Some(label) = label {
+            this = this.label(label);
+        }
+        if let Some(emoji) = emoji {
+            this = this.emoji(emoji);
+        }
+        if let Some(disabled) = disabled {
+            this = this.disabled(disabled);
+        }
+        this
     }
 }
 
@@ -185,7 +219,7 @@ impl Wire for RouteButtonData {
     fn wire<S: Serializer>(&self, ids: Option<&Ids>, s: S) -> Result<S::Ok, S::Error> {
         let mut map = head(s, 2, ids)?;
         map.serialize_entry("style", &self.style.value())?;
-        opt(&mut map, "label", self.label.as_deref())?;
+        opt(&mut map, "label", self.label.as_ref())?;
         opt(&mut map, "emoji", self.emoji.as_ref())?;
         map.serialize_entry("custom_id", &self.custom_id)?;
         flag(&mut map, "disabled", self.disabled)?;
@@ -194,6 +228,10 @@ impl Wire for RouteButtonData {
 
     fn custom_ids_mut<'a>(&'a mut self, out: &mut Vec<&'a mut CustomId>) {
         out.push(&mut self.custom_id);
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        out.extend(self.label.as_mut());
     }
 }
 
@@ -204,6 +242,10 @@ impl<R> Wire for RouteButton<R> {
 
     fn custom_ids_mut<'a>(&'a mut self, out: &mut Vec<&'a mut CustomId>) {
         self.data.custom_ids_mut(out);
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        self.data.texts_mut(out);
     }
 }
 
@@ -382,6 +424,12 @@ impl Wire for Button {
     fn custom_ids_mut<'a>(&'a mut self, out: &mut Vec<&'a mut CustomId>) {
         if let ButtonNode::Route(b) = &mut self.0 {
             b.custom_ids_mut(out);
+        }
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        if let ButtonNode::Route(b) = &mut self.0 {
+            b.texts_mut(out);
         }
     }
 }

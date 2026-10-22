@@ -433,7 +433,7 @@ fn click(custom_id: &str) -> Value {
 /// A submit of [`Note`] without a source message (opened from a slash
 /// command).
 fn slash_opened_submit(ms: u64) -> Value {
-    let modal = serde_json::to_value(Note::blank(ms)).unwrap();
+    let modal = serde_json::to_value(noctis::ui::Modal::from(Note::blank(ms))).unwrap();
     json!({
         "id": "100",
         "application_id": "7",
@@ -654,7 +654,7 @@ async fn ctx_limits_are_the_apps() {
         "limits: app"
     );
 
-    let modal = serde_json::to_value(LimitsModal::blank()).unwrap();
+    let modal = serde_json::to_value(noctis::ui::Modal::from(LimitsModal::blank())).unwrap();
     running.dispatch(json!({
         "id": "100",
         "application_id": "7",

@@ -117,14 +117,14 @@ pub(crate) mod tests;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use std::collections::HashMap;
 use std::time::Duration;
 
 use noctis_codec::{PendingRef, Ref, SelectNonce, Sign};
 use noctis_ports::{PortError, RefStore};
-use noctis_rules::Limits;
+use noctis_rules::{Limits, MessageKey, Translate};
 use noctis_ui::{
     CallbackFlags, Components, CreateFlags, CustomId, EditFlags, LegacyMessage, MessageBody,
     MessageFormat, Modal, TextDisplay, UiError, V2Message,
@@ -941,6 +941,14 @@ macro_rules! show_modal {
             /// leaves no reply to edit: return [`done`](Responder::done)
             /// afterwards.
             ///
+            /// `modal` is anything that converts into a [`Modal`]: a
+            /// `#[derive(Modal)]` struct value, its `X { .. }.build()`
+            /// builder (with `.title(..)`, `.value(..)`, `.overrides(..)`),
+            /// `X::blank(..)` or a `Modal`. Locale keys in it are resolved in
+            /// the User Locale (then the Guild Locale) before it is
+            /// validated; a pre-fill or override that breaks a limit is
+            /// [`ResponderError::Invalid`] with no request.
+            ///
             /// ```
             /// use noctis_core::{CommandResponder, HandlerResult, Manual, Responded};
             /// use noctis_ui::Modal;
@@ -960,12 +968,12 @@ macro_rules! show_modal {
             /// already answered; any other [`ResponderError`] from Discord.
             pub async fn show_modal(
                 self,
-                modal: Modal,
+                modal: impl Into<Modal>,
             ) -> Result<Responder<$kind, Acked, D>, ResponderError>
             where
                 D: CanShowModal,
             {
-                self.shared.show_modal(modal).await?;
+                self.shared.show_modal(modal.into()).await?;
                 Ok(self.acked())
             }
         }
@@ -1073,7 +1081,7 @@ impl FollowupHandle {
     /// minutes for an ephemeral follow-up.
     pub async fn edit(&self, msg: impl Into<OutgoingMessage>) -> Result<(), ResponderError> {
         let mut msg = msg.into();
-        self.shared.prepare(&mut msg).await?;
+        self.shared.prepare(&mut msg, self.visibility).await?;
         let format = *self.format.lock().unwrap_or_else(PoisonError::into_inner);
         let known = self
             .files
@@ -1311,6 +1319,55 @@ pub(crate) struct Shared {
     /// method or a typestate Pending method); never set by the auto-defer,
     /// `finish` or `notice`. Written only under `gate`.
     handler_answered: AtomicBool,
+    /// The App's strings and the run's locales, which resolve the locale
+    /// keys of every send ([`I18n::DETACHED`] until the pipeline sets it).
+    i18n: OnceLock<I18n>,
+}
+
+/// What resolves the [`noctis_ui::Text::Key`]s of a send: the App's
+/// strings and the run's User and Guild Locale codes.
+pub(crate) struct I18n {
+    pub(crate) strings: Arc<dyn Translate>,
+    pub(crate) user_locale: Option<String>,
+    pub(crate) guild_locale: Option<String>,
+}
+
+impl I18n {
+    /// The built-in strings and no locale (`en-US`).
+    fn detached() -> Self {
+        Self {
+            strings: Arc::new(noctis_i18n::Builtin),
+            user_locale: None,
+            guild_locale: None,
+        }
+    }
+
+    /// The text of `key` for a send of `visibility`: the User Locale first
+    /// for an ephemeral send (and a modal), the Guild Locale first for a
+    /// public one, `en-US` when the first known code does not parse (as
+    /// `ergonomics::text_in`). A key with no translation is its own key
+    /// string, with one `warn` on target `noctis::i18n`.
+    fn text(&self, key: MessageKey, visibility: Ephemerality) -> String {
+        let (user, guild) = (self.user_locale.as_deref(), self.guild_locale.as_deref());
+        let locale = match visibility {
+            Ephemerality::Ephemeral => crate::notice::locale(user, guild),
+            Ephemerality::Public => crate::notice::locale(guild, user),
+        };
+        if let Some(text) = self.strings.translate(locale, key, &[]) {
+            return text;
+        }
+        tracing::warn!(target: "noctis::i18n", key = key.as_str(), "missing message key");
+        key.as_str().to_owned()
+    }
+}
+
+impl fmt::Debug for I18n {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("I18n")
+            .field("user_locale", &self.user_locale)
+            .field("guild_locale", &self.guild_locale)
+            .finish_non_exhaustive()
+    }
 }
 
 impl fmt::Debug for Shared {
@@ -1403,7 +1460,38 @@ impl Shared {
             fill: Mutex::new(None),
             no_modal,
             handler_answered: AtomicBool::new(false),
+            i18n: OnceLock::new(),
         })
+    }
+
+    /// Sets the strings and locales that resolve the locale keys of this
+    /// run's sends; the first call wins.
+    pub(crate) fn set_i18n(
+        &self,
+        strings: Arc<dyn Translate>,
+        user_locale: Option<String>,
+        guild_locale: Option<String>,
+    ) {
+        let _ = self.i18n.set(I18n {
+            strings,
+            user_locale,
+            guild_locale,
+        });
+    }
+
+    fn i18n(&self) -> &I18n {
+        self.i18n.get_or_init(I18n::detached)
+    }
+
+    /// Who sees a send while nothing is known about the original: the
+    /// response's ephemerality while Pending, else the original's (an edit
+    /// keeps it).
+    fn send_visibility(&self) -> Ephemerality {
+        if self.state() == PENDING {
+            self.response_ephemerality()
+        } else {
+            self.original().ephemerality
+        }
     }
 
     /// Records the run's [`GuardPhase`].
@@ -1642,16 +1730,25 @@ impl Shared {
         Ok(())
     }
 
-    /// Mints the Route `custom_id`s of `msg` (storing their Refs), then
+    /// Resolves the locale keys of `msg` for a send seen as `visibility`
+    /// (FR-43), mints its Route `custom_id`s (storing their Refs), then
     /// validates it against the Limits (Lenient mode truncates). The
     /// Upload Budget is checked later, when the body is built.
-    async fn prepare(&self, msg: &mut OutgoingMessage) -> Result<(), ResponderError> {
+    async fn prepare(
+        &self,
+        msg: &mut OutgoingMessage,
+        visibility: Ephemerality,
+    ) -> Result<(), ResponderError> {
+        let i18n = self.i18n();
+        let mut text = |key: MessageKey| i18n.text(key, visibility);
         let report = match msg {
             OutgoingMessage::V2(m) => {
+                m.resolve_keys(&mut text);
                 self.resolve_ids(m.custom_ids_mut()).await?;
                 noctis_ui::validate(m, &self.limits)?
             }
             OutgoingMessage::Legacy(m) => {
+                m.resolve_keys(&mut text);
                 self.resolve_ids(m.custom_ids_mut()).await?;
                 noctis_ui::validate(m, &self.limits)?
             }
@@ -1696,7 +1793,7 @@ impl Shared {
         self: &Arc<Self>,
         mut msg: OutgoingMessage,
     ) -> Result<(), ResponderError> {
-        self.prepare(&mut msg).await?;
+        self.prepare(&mut msg, self.send_visibility()).await?;
         let gate = self.gate.lock().await;
         if self.state() != PENDING {
             drop(gate);
@@ -1727,7 +1824,13 @@ impl Shared {
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
         self.refuse_answered()?;
-        self.prepare(&mut msg).await?;
+        // A reply (or, after a type-6 defer, a follow-up) has
+        // `ephemerality`; an edit of a deferred reply keeps the defer's.
+        let visibility = match self.state() {
+            PENDING | DEFERRED_UPDATE => ephemerality,
+            _ => self.original().ephemerality,
+        };
+        self.prepare(&mut msg, visibility).await?;
         let _gate = self.gate.lock().await;
         self.refuse_answered()?;
         let sent = match self.state() {
@@ -1856,7 +1959,12 @@ impl Shared {
         let Some(source) = self.source.as_ref() else {
             return Err(ResponderError::UpdateUnavailable);
         };
-        self.prepare(&mut msg).await?;
+        let visibility = if self.state() == PENDING {
+            source.ephemerality
+        } else {
+            self.original().ephemerality
+        };
+        self.prepare(&mut msg, visibility).await?;
         let _gate = self.gate.lock().await;
         self.refuse_answered()?;
         let sent = if self.state() == PENDING {
@@ -1967,6 +2075,9 @@ impl Shared {
             return Err(ResponderError::ModalUnavailable);
         }
         self.refuse_answered()?;
+        // A modal is seen by the user alone: User Locale first.
+        let i18n = self.i18n();
+        modal.resolve_keys(&mut |key| i18n.text(key, Ephemerality::Ephemeral));
         self.resolve_ids(std::iter::once(modal.custom_id_mut()))
             .await?;
         let report = noctis_ui::validate(&mut modal, &self.limits)?;
@@ -1992,7 +2103,7 @@ impl Shared {
     }
 
     async fn edit_reply(&self, mut msg: OutgoingMessage) -> Result<(), ResponderError> {
-        self.prepare(&mut msg).await?;
+        self.prepare(&mut msg, self.original().ephemerality).await?;
         self.edit_prepared(msg).await
     }
 
@@ -2079,7 +2190,7 @@ impl Shared {
         if self.transport.is_message() && visibility == Ephemerality::Ephemeral {
             return Err(ResponderError::EphemeralUnsupported);
         }
-        self.prepare(&mut msg).await?;
+        self.prepare(&mut msg, visibility).await?;
         self.send_follow_up(msg, visibility).await
     }
 
@@ -2143,7 +2254,7 @@ impl Shared {
         let mut msg = OutgoingMessage::V2(V2Message::new(
             Components::new().push(TextDisplay::new(text)),
         ));
-        self.prepare(&mut msg).await?;
+        self.prepare(&mut msg, Ephemerality::Ephemeral).await?;
         let visibility = if self.transport.is_message() {
             Ephemerality::Public
         } else {

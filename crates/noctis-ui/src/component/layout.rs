@@ -13,6 +13,7 @@ use noctis_rules::component::{
 use super::{
     Button, File, MediaGallery, RawComponent, SelectNode, Separator, TextDisplay, Thumbnail,
 };
+use crate::Text;
 use crate::arity::{Arity, RowButtons, SectionTexts};
 use crate::error::{UiError, checked};
 use crate::placement::sealed::IntoRowButton;
@@ -99,6 +100,12 @@ impl Wire for AccessoryNode {
     fn custom_ids_mut<'a>(&'a mut self, out: &mut Vec<&'a mut CustomId>) {
         if let Self::Button(b) = self {
             b.custom_ids_mut(out);
+        }
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        if let Self::Button(b) = self {
+            b.texts_mut(out);
         }
     }
 }
@@ -199,6 +206,10 @@ impl Wire for Section {
 
     fn custom_ids_mut<'a>(&'a mut self, out: &mut Vec<&'a mut CustomId>) {
         self.accessory.custom_ids_mut(out);
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        self.accessory.texts_mut(out);
     }
 }
 
@@ -307,6 +318,17 @@ impl Wire for ActionRow {
             RowNode::Select(select) => select.custom_ids_mut(out),
         }
     }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        match &mut self.0 {
+            RowNode::Buttons(buttons) => {
+                for b in buttons {
+                    b.texts_mut(out);
+                }
+            }
+            RowNode::Select(select) => select.texts_mut(out),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -351,6 +373,18 @@ impl Wire for ContainerComponent {
         match &mut self.0 {
             ChildNode::Section(x) => x.custom_ids_mut(out),
             ChildNode::Row(x) => x.custom_ids_mut(out),
+            ChildNode::Text(_)
+            | ChildNode::Gallery(_)
+            | ChildNode::File(_)
+            | ChildNode::Separator(_)
+            | ChildNode::Raw(_) => {}
+        }
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        match &mut self.0 {
+            ChildNode::Section(x) => x.texts_mut(out),
+            ChildNode::Row(x) => x.texts_mut(out),
             ChildNode::Text(_)
             | ChildNode::Gallery(_)
             | ChildNode::File(_)
@@ -440,6 +474,12 @@ impl Wire for Container {
             child.custom_ids_mut(out);
         }
     }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        for child in &mut self.children {
+            child.texts_mut(out);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -473,6 +513,13 @@ impl Wire for TopLevelComponent {
         match &mut self.0 {
             TopNode::Container(x) => x.custom_ids_mut(out),
             TopNode::Child(x) => x.custom_ids_mut(out),
+        }
+    }
+
+    fn texts_mut<'a>(&'a mut self, out: &mut Vec<&'a mut Text>) {
+        match &mut self.0 {
+            TopNode::Container(x) => x.texts_mut(out),
+            TopNode::Child(x) => x.texts_mut(out),
         }
     }
 }

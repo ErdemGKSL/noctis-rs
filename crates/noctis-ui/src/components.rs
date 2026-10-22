@@ -66,6 +66,18 @@ impl Components {
         }
         out.into_iter()
     }
+
+    /// Replaces every [`Text::Key`](crate::Text::Key) of the tree (Route
+    /// button labels, select placeholders) with `Literal(f(key))`.
+    pub(crate) fn resolve_keys(&mut self, f: &mut dyn FnMut(noctis_rules::MessageKey) -> String) {
+        let mut out = Vec::new();
+        for item in &mut self.items {
+            item.texts_mut(&mut out);
+        }
+        for text in out {
+            text.resolve(f);
+        }
+    }
 }
 
 impl Serialize for Components {

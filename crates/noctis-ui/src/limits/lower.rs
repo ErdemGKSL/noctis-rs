@@ -8,6 +8,7 @@
 //! Row items, then Container children, then the top level. Each pass hands
 //! the lists of the level below out through a cursor in the same pre-order.
 
+use std::borrow::Cow;
 use std::slice;
 
 use noctis_rules::component as rc;
@@ -18,7 +19,7 @@ use crate::component::{
     RowNode, SelectNode, TopNode,
 };
 use crate::modal::{ModalInputNode, ModalSelectNode, ModalTopNode};
-use crate::{ButtonStyle, Components, Media, Modal, ModalOption, SelectOption, Spacing};
+use crate::{ButtonStyle, Components, Media, Modal, ModalOption, SelectOption, Spacing, Text};
 
 /// Lowers a V2 tree and runs `f` on it.
 pub(super) fn with_v2<R>(components: &Components, f: impl FnOnce(&[rc::Component<'_>]) -> R) -> R {
@@ -136,12 +137,31 @@ fn child_nodes(items: &[crate::TopLevelComponent]) -> Vec<&ContainerComponent> {
     out
 }
 
+/// A String Select's lowered options (their `default` flags decided by its
+/// `default_values` list) and that list.
+struct StringParts<'t> {
+    options: Vec<rc::SelectOption<'t>>,
+    defaults: Option<Vec<&'t str>>,
+}
+
+impl<'t> StringParts<'t> {
+    fn of(options: &'t [SelectOption], list: Option<&'t [Cow<'static, str>]>) -> Self {
+        Self {
+            options: options
+                .iter()
+                .map(|o| lower_option(o, o.is_default(list)))
+                .collect(),
+            defaults: list.map(|l| l.iter().map(|v| &**v).collect()),
+        }
+    }
+}
+
 /// The options of every String Select of `rows`, in order.
-fn collect_options<'t>(rows: &[&'t ActionRow]) -> Vec<Vec<rc::SelectOption<'t>>> {
+fn collect_options<'t>(rows: &[&'t ActionRow]) -> Vec<StringParts<'t>> {
     rows.iter()
         .filter_map(|r| match &r.0 {
             RowNode::Select(SelectNode::String(s)) => {
-                Some(s.options.iter().map(lower_option).collect())
+                Some(StringParts::of(&s.options, s.default_values.as_deref()))
             }
             _ => None,
         })
@@ -151,7 +171,7 @@ fn collect_options<'t>(rows: &[&'t ActionRow]) -> Vec<Vec<rc::SelectOption<'t>>>
 /// The items of every row, in order.
 fn lower_rows<'s>(
     rows: &[&'s ActionRow],
-    options: &'s [Vec<rc::SelectOption<'s>>],
+    options: &'s [StringParts<'s>],
 ) -> Vec<Vec<rc::Component<'s>>> {
     let mut options = options.iter();
     rows.iter()
@@ -217,7 +237,7 @@ fn lower_button(button: &Button) -> rc::Button<'_> {
                 ButtonStyle::Success => rc::ButtonStyle::Success,
                 ButtonStyle::Danger => rc::ButtonStyle::Danger,
             };
-            (style, d.label.as_deref(), d.emoji.is_some())
+            (style, d.label.as_ref().map(Text::as_str), d.emoji.is_some())
         }
         ButtonNode::Link(l) => (
             rc::ButtonStyle::Link(&l.url),
@@ -235,10 +255,16 @@ fn lower_button(button: &Button) -> rc::Button<'_> {
 
 fn lower_select<'s>(
     select: &'s SelectNode,
-    options: &mut slice::Iter<'s, Vec<rc::SelectOption<'s>>>,
+    options: &mut slice::Iter<'s, StringParts<'s>>,
 ) -> rc::Select<'s> {
+    let mut defaults = None;
     let kind = match select {
-        SelectNode::String(_) => rc::SelectKind::String(take(options)),
+        SelectNode::String(_) => {
+            let next = options.next();
+            debug_assert!(next.is_some(), "lowering passes disagree on the pre-order");
+            defaults = next.and_then(|p| p.defaults.as_deref());
+            rc::SelectKind::String(next.map_or(&[], |p| p.options.as_slice()))
+        }
         SelectNode::User(_) => rc::SelectKind::User,
         SelectNode::Role(_) => rc::SelectKind::Role,
         SelectNode::Mentionable(_) => rc::SelectKind::Mentionable,
@@ -248,8 +274,11 @@ fn lower_select<'s>(
     let mut out = rc::Select::new(kind)
         .default_values(select.default_count())
         .disabled(common.disabled);
-    if let Some(p) = common.placeholder.as_deref() {
-        out = out.placeholder(p);
+    if let Some(list) = defaults {
+        out = out.string_defaults(list);
+    }
+    if let Some(p) = common.placeholder.as_ref() {
+        out = out.placeholder(p.as_str());
     }
     if let Some(min) = common.min_values {
         out = out.min_values(usize::from(min));
@@ -260,8 +289,8 @@ fn lower_select<'s>(
     out
 }
 
-fn lower_option(option: &SelectOption) -> rc::SelectOption<'_> {
-    let out = rc::SelectOption::new(&option.label, &option.value).default(option.default);
+fn lower_option(option: &SelectOption, default: bool) -> rc::SelectOption<'_> {
+    let out = rc::SelectOption::new(&option.label, &option.value).default(default);
     match option.description.as_deref() {
         Some(d) => out.description(d),
         None => out,
@@ -288,7 +317,12 @@ pub(super) fn with_modal<R>(modal: &Modal, f: impl FnOnce(&rm::Modal<'_>) -> R) 
     for input in inputs() {
         match input {
             ModalInputNode::Select(ModalSelectNode::String(s)) => {
-                select_options.push(s.options.iter().map(lower_option).collect::<Vec<_>>());
+                select_options.push(
+                    s.options
+                        .iter()
+                        .map(|o| lower_option(o, o.default))
+                        .collect::<Vec<_>>(),
+                );
             }
             ModalInputNode::RadioGroup(r) => modal_options.push(lower_modal_options(&r.options)),
             ModalInputNode::CheckboxGroup(g) => {
@@ -320,15 +354,15 @@ pub(super) fn with_modal<R>(modal: &Modal, f: impl FnOnce(&rm::Modal<'_>) -> R) 
         .map(|c| match &c.0 {
             ModalTopNode::Text(t) => rm::ModalComponent::Text(&t.content),
             ModalTopNode::Label(l) => {
-                let label = rm::Label::new(&l.label, lower_input(&l.input, &mut cursor));
-                rm::ModalComponent::Label(match l.description.as_deref() {
-                    Some(d) => label.description(d),
+                let label = rm::Label::new(l.label.as_str(), lower_input(&l.input, &mut cursor));
+                rm::ModalComponent::Label(match l.description.as_ref() {
+                    Some(d) => label.description(d.as_str()),
                     None => label,
                 })
             }
         })
         .collect();
-    f(&rm::Modal::new(&modal.title, &components))
+    f(&rm::Modal::new(modal.title.as_str(), &components))
 }
 
 /// The leaf lists of a modal, handed out in pre-order.
@@ -351,8 +385,8 @@ fn lower_input<'s>(input: &'s ModalInputNode, cursor: &mut ModalCursor<'s>) -> r
             if let Some(v) = t.value.as_deref() {
                 out = out.value(v);
             }
-            if let Some(p) = t.placeholder.as_deref() {
-                out = out.placeholder(p);
+            if let Some(p) = t.placeholder.as_ref() {
+                out = out.placeholder(p.as_str());
             }
             rm::LabelChild::TextInput(out)
         }
@@ -370,8 +404,8 @@ fn lower_input<'s>(input: &'s ModalInputNode, cursor: &mut ModalCursor<'s>) -> r
             let mut select = rc::Select::new(kind)
                 .default_values(s.default_count())
                 .disabled(false);
-            if let Some(p) = common.placeholder.as_deref() {
-                select = select.placeholder(p);
+            if let Some(p) = common.placeholder.as_ref() {
+                select = select.placeholder(p.as_str());
             }
             if let Some(min) = common.min_values {
                 select = select.min_values(usize::from(min));

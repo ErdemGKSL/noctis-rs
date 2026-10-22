@@ -53,10 +53,10 @@ pub struct Bio;
 impl Bio {
     #[handler]
     async fn handle(self, ctx: CommandCtx, r: CommandResponder<Manual>) -> HandlerResult<Responded> {
-        // A fresh form: the Payload says whose bio, the inputs start empty. After a modal
-        // there is no original message to edit: end with `done()`.
-        let form = BioForm { user: ctx.user_id(), bio: None, pronouns: None };
-        Ok(r.show_modal(form.build()).await?.done())
+        // A fresh form: the Payload says whose bio, the inputs start empty (`blank` takes
+        // the Payload fields). After a modal there is no original message to edit: end
+        // with `done()`.
+        Ok(r.show_modal(BioForm::blank(ctx.user_id())).await?.done())
     }
 }
 
@@ -133,7 +133,7 @@ impl RefreshProfile {
 
 impl EditBio {
     /// Button → modal: builds the modal from a `BioForm` value whose input fields hold
-    /// the stored values, so the inputs open pre-filled (FR-63, [planned, Story 9.4]);
+    /// the stored values, so the inputs open pre-filled (FR-63; `None` sends nothing);
     /// its Payload (`user`) tells the submit whose profile message to redraw. A button
     /// that opens a modal is `auto_defer = false` (on its `#[button]`) and takes
     /// `ComponentResponder<Manual>` (INT-05).
@@ -142,7 +142,10 @@ impl EditBio {
         let guild = guild_of(&ctx)?;
         let stored: StoredProfile =
             ctx.kv().get(&profile_key(guild, self.user)).await?.unwrap_or_default();
-        let form = BioForm { user: self.user, bio: stored.bio, pronouns: stored.pronouns };
+        // Every BioForm input has an empty value, so `blank` returns a `BioForm` and the
+        // struct update fills in the rest. `.build()` is a `ModalBuilder` that also takes
+        // `.title(..)`, `.value(BioForm::BIO, ..)` and `.overrides(BioFormOverrides { .. })`.
+        let form = BioForm { bio: stored.bio, pronouns: stored.pronouns, ..BioForm::blank(self.user) };
         Ok(responder.show_modal(form.build()).await?.done())
     }
 }

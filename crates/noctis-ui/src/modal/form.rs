@@ -6,6 +6,7 @@ use noctis_rules::Limits;
 use noctis_rules::len::discord_len;
 use twilight_model::channel::ChannelType;
 
+use super::builder::{Prefill, PrefillKind};
 use super::resolved::{
     Mentionable, ResolvedAttachment, ResolvedChannel, ResolvedRole, ResolvedUser,
 };
@@ -189,6 +190,8 @@ mod sealed {
 trait Shape<I>: Sized {
     /// Whether the field is a `Vec`.
     const MULTI: bool;
+    /// The items of a field value, for pre-fill.
+    fn items(self) -> Vec<I>;
     /// Whether the built input is required, given the declared min.
     fn required(min: Option<u16>) -> bool;
     /// The field from the items (`None` when the input is absent).
@@ -214,6 +217,10 @@ fn at_most_one<I>(key: &str, items: Option<Vec<I>>) -> Result<Option<I>, SubmitE
 impl<I> Shape<I> for I {
     const MULTI: bool = false;
 
+    fn items(self) -> Vec<I> {
+        vec![self]
+    }
+
     fn required(_: Option<u16>) -> bool {
         true
     }
@@ -231,6 +238,10 @@ impl<I> Shape<I> for I {
 impl<I> Shape<I> for Option<I> {
     const MULTI: bool = false;
 
+    fn items(self) -> Vec<I> {
+        self.into_iter().collect()
+    }
+
     fn required(_: Option<u16>) -> bool {
         false
     }
@@ -247,6 +258,10 @@ impl<I> Shape<I> for Option<I> {
 
 impl<I> Shape<I> for Vec<I> {
     const MULTI: bool = true;
+
+    fn items(self) -> Vec<I> {
+        self
+    }
 
     fn required(min: Option<u16>) -> bool {
         min != Some(0)
@@ -466,6 +481,13 @@ pub trait TextInputField: sealed::Sealed + Sized {
     ///
     /// See [`ModalForm::from_submission`].
     fn decode(submission: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError>;
+    /// The pre-fill of the value: a non-empty text becomes the input's
+    /// `value`; `""` and `None` send none.
+    fn prefill(self) -> Prefill;
+}
+
+fn text_prefill(value: Option<String>) -> Prefill {
+    Prefill(PrefillKind::Text(value.filter(|v| !v.is_empty())))
 }
 
 fn text(s: &ModalSubmission, key: &str, spec: &Spec) -> Result<Option<String>, SubmitError> {
@@ -501,6 +523,10 @@ impl TextInputField for String {
     fn decode(s: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError> {
         text(s, key, spec)?.ok_or_else(|| SubmitError::missing(key))
     }
+
+    fn prefill(self) -> Prefill {
+        text_prefill(Some(self))
+    }
 }
 
 impl TextInputField for Option<String> {
@@ -508,6 +534,10 @@ impl TextInputField for Option<String> {
 
     fn decode(s: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError> {
         text(s, key, spec)
+    }
+
+    fn prefill(self) -> Prefill {
+        text_prefill(self)
     }
 }
 
@@ -533,6 +563,8 @@ macro_rules! choice_kind {
             ///
             /// See [`ModalForm::from_submission`].
             fn decode(submission: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError>;
+            /// The pre-fill: each chosen option is marked `default`.
+            fn prefill(self) -> Prefill;
         }
 
         $(
@@ -548,6 +580,11 @@ macro_rules! choice_kind {
                 fn decode(s: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError> {
                     let max = spec.max.map_or_else(|| $max(C::ALL.len()), usize::from);
                     <$shape as Shape<C>>::shape(key, $items::<C>(s, key)?, spec.min, max)
+                }
+
+                fn prefill(self) -> Prefill {
+                    let items = <$shape as Shape<C>>::items(self);
+                    Prefill(PrefillKind::Options(items.iter().map(Choices::value).collect()))
                 }
             }
         )+
@@ -591,7 +628,7 @@ choice_kind!(
 macro_rules! entity_kind {
     (
         $(#[$meta:meta])*
-        $trait:ident, $item:ty, $items:ident, default_max: $max:expr
+        $trait:ident, $item:ty, $items:ident, default_max: $max:expr, prefill: $prefill:expr
     ) => {
         $(#[$meta])*
         #[doc(hidden)]
@@ -608,17 +645,19 @@ macro_rules! entity_kind {
             ///
             /// See [`ModalForm::from_submission`].
             fn decode(submission: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError>;
+            /// The pre-fill: the picked entities become `default_values`.
+            fn prefill(self) -> Prefill;
         }
 
         impl sealed::Sealed for $item {}
         impl sealed::Sealed for Option<$item> {}
         impl sealed::Sealed for Vec<$item> {}
 
-        entity_kind!(@impl $trait, $item, $items, $item);
-        entity_kind!(@impl $trait, $item, $items, Option<$item>);
-        entity_kind!(@impl $trait, $item, $items, Vec<$item>);
+        entity_kind!(@impl $trait, $item, $items, $prefill, $item);
+        entity_kind!(@impl $trait, $item, $items, $prefill, Option<$item>);
+        entity_kind!(@impl $trait, $item, $items, $prefill, Vec<$item>);
     };
-    (@impl $trait:ident, $item:ty, $items:ident, $shape:ty) => {
+    (@impl $trait:ident, $item:ty, $items:ident, $prefill:expr, $shape:ty) => {
         impl $trait for $shape {
             const MULTI: bool = <$shape as Shape<$item>>::MULTI;
 
@@ -629,6 +668,11 @@ macro_rules! entity_kind {
             fn decode(s: &ModalSubmission, key: &str, spec: &Spec) -> Result<Self, SubmitError> {
                 let max = spec.max.map_or(Self::DEFAULT_MAX, usize::from);
                 <$shape as Shape<$item>>::shape(key, $items(s, key)?, spec.min, max)
+            }
+
+            fn prefill(self) -> Prefill {
+                let prefill: fn(Vec<$item>) -> Prefill = $prefill;
+                prefill(<$shape as Shape<$item>>::items(self))
             }
         }
     };
@@ -641,7 +685,8 @@ entity_kind!(
         label = "not a User Select field type",
         note = "a `#[user_select]` field is `ResolvedUser`, `Option<ResolvedUser>` or `Vec<ResolvedUser>`"
     )]
-    UserSelectField, ResolvedUser, user_items, default_max: SELECT_MAX
+    UserSelectField, ResolvedUser, user_items, default_max: SELECT_MAX,
+    prefill: |v| Prefill(PrefillKind::Users(v.iter().map(|u| u.user.id).collect()))
 );
 
 entity_kind!(
@@ -651,7 +696,8 @@ entity_kind!(
         label = "not a Role Select field type",
         note = "a `#[role_select]` field is `ResolvedRole`, `Option<ResolvedRole>` or `Vec<ResolvedRole>`"
     )]
-    RoleSelectField, ResolvedRole, role_items, default_max: SELECT_MAX
+    RoleSelectField, ResolvedRole, role_items, default_max: SELECT_MAX,
+    prefill: |v| Prefill(PrefillKind::Roles(v.iter().map(|r| r.role.id).collect()))
 );
 
 entity_kind!(
@@ -661,7 +707,8 @@ entity_kind!(
         label = "not a Mentionable Select field type",
         note = "a `#[mentionable_select]` field is `Mentionable`, `Option<Mentionable>` or `Vec<Mentionable>`"
     )]
-    MentionableSelectField, Mentionable, mentionable_items, default_max: SELECT_MAX
+    MentionableSelectField, Mentionable, mentionable_items, default_max: SELECT_MAX,
+    prefill: |v| Prefill(PrefillKind::Mentionables(v.iter().map(Mentionable::id).collect()))
 );
 
 entity_kind!(
@@ -671,7 +718,8 @@ entity_kind!(
         label = "not a Channel Select field type",
         note = "a `#[channel_select]` field is `ResolvedChannel`, `Option<ResolvedChannel>` or `Vec<ResolvedChannel>`"
     )]
-    ChannelSelectField, ResolvedChannel, channel_items, default_max: SELECT_MAX
+    ChannelSelectField, ResolvedChannel, channel_items, default_max: SELECT_MAX,
+    prefill: |v| Prefill(PrefillKind::Channels(v.iter().map(|c| c.channel.id).collect()))
 );
 
 entity_kind!(
@@ -681,7 +729,8 @@ entity_kind!(
         label = "not a File Upload field type",
         note = "a `#[file_upload]` field is `ResolvedAttachment`, `Option<ResolvedAttachment>` or `Vec<ResolvedAttachment>`"
     )]
-    FileUploadField, ResolvedAttachment, attachment_items, default_max: UPLOAD_MAX
+    FileUploadField, ResolvedAttachment, attachment_items, default_max: UPLOAD_MAX,
+    prefill: |_| Prefill(PrefillKind::Options(Vec::new()))
 );
 
 /// A `#[checkbox]` field: `bool`.
@@ -698,6 +747,8 @@ pub trait CheckboxField: sealed::Sealed + Sized {
     ///
     /// See [`ModalForm::from_submission`].
     fn decode(submission: &ModalSubmission, key: &str) -> Result<Self, SubmitError>;
+    /// The pre-fill: `true` starts checked.
+    fn prefill(self) -> Prefill;
 }
 
 impl sealed::Sealed for bool {}
@@ -709,6 +760,10 @@ impl CheckboxField for bool {
             _ => None,
         })?
         .ok_or_else(|| SubmitError::missing(key))
+    }
+
+    fn prefill(self) -> Prefill {
+        Prefill(PrefillKind::Checkbox(self))
     }
 }
 
@@ -733,12 +788,13 @@ impl TextDisplayField for () {
 // The builders `derive(Modal)` expands to; each applies the field type's
 // required flag and default `max_values`.
 
-/// A Text Input for a `T` field.
+/// A Text Input for a `T` field, with its pre-filled `value`.
 #[doc(hidden)]
 pub fn text_input<T: TextInputField>(
     key: &'static str,
     style: TextInputStyle,
     spec: Spec,
+    prefill: Option<&Prefill>,
 ) -> TextInput {
     let mut x = TextInput::new(key, style);
     if let Some(n) = spec.min {
@@ -752,6 +808,9 @@ pub fn text_input<T: TextInputField>(
     }
     if let Some(p) = spec.placeholder {
         x = x.placeholder(p);
+    }
+    if let Some(value) = prefill.and_then(Prefill::text) {
+        x = x.value(value.to_owned());
     }
     x
 }
@@ -776,15 +835,21 @@ macro_rules! values {
     }};
 }
 
-/// A String Select of `T::Choice`'s options for a `T` field.
+/// A String Select of `T::Choice`'s options for a `T` field, the chosen
+/// ones marked `default`.
 #[doc(hidden)]
-pub fn string_select<T>(key: &'static str, spec: Spec) -> ModalStringSelect
+pub fn string_select<T>(
+    key: &'static str,
+    spec: Spec,
+    prefill: Option<&Prefill>,
+) -> ModalStringSelect
 where
     T: StringSelectField,
     T::Count: StringSelectOptions,
 {
+    let chosen = prefill.map_or(&[][..], Prefill::options);
     let options = T::Choice::ALL.iter().map(|c| {
-        let o = SelectOption::new(c.label(), c.value());
+        let o = SelectOption::new(c.label(), c.value()).default(chosen.contains(&c.value()));
         match c.description() {
             Some(d) => o.description(d),
             None => o,
@@ -795,10 +860,17 @@ where
     values!(x, spec, T::required(&spec), default_max)
 }
 
-/// A User Select for a `T` field.
+/// A User Select for a `T` field, the picked users as `default_values`.
 #[doc(hidden)]
-pub fn user_select<T: UserSelectField>(key: &'static str, spec: Spec) -> ModalUserSelect {
+pub fn user_select<T: UserSelectField>(
+    key: &'static str,
+    spec: Spec,
+    prefill: Option<&Prefill>,
+) -> ModalUserSelect {
     let mut x = ModalUserSelect::new(key);
+    if let Some(Prefill(PrefillKind::Users(ids))) = prefill {
+        x = x.default_users(ids.iter().copied());
+    }
     values!(
         x,
         spec,
@@ -807,10 +879,17 @@ pub fn user_select<T: UserSelectField>(key: &'static str, spec: Spec) -> ModalUs
     )
 }
 
-/// A Role Select for a `T` field.
+/// A Role Select for a `T` field, the picked roles as `default_values`.
 #[doc(hidden)]
-pub fn role_select<T: RoleSelectField>(key: &'static str, spec: Spec) -> ModalRoleSelect {
+pub fn role_select<T: RoleSelectField>(
+    key: &'static str,
+    spec: Spec,
+    prefill: Option<&Prefill>,
+) -> ModalRoleSelect {
     let mut x = ModalRoleSelect::new(key);
+    if let Some(Prefill(PrefillKind::Roles(ids))) = prefill {
+        x = x.default_roles(ids.iter().copied());
+    }
     values!(
         x,
         spec,
@@ -819,13 +898,18 @@ pub fn role_select<T: RoleSelectField>(key: &'static str, spec: Spec) -> ModalRo
     )
 }
 
-/// A Mentionable Select for a `T` field.
+/// A Mentionable Select for a `T` field, the picked users and roles as
+/// `default_values`.
 #[doc(hidden)]
 pub fn mentionable_select<T: MentionableSelectField>(
     key: &'static str,
     spec: Spec,
+    prefill: Option<&Prefill>,
 ) -> ModalMentionableSelect {
     let mut x = ModalMentionableSelect::new(key);
+    if let Some(Prefill(PrefillKind::Mentionables(ids))) = prefill {
+        x = x.default_mentionables(ids.iter().copied());
+    }
     values!(
         x,
         spec,
@@ -834,14 +918,19 @@ pub fn mentionable_select<T: MentionableSelectField>(
     )
 }
 
-/// A Channel Select for a `T` field.
+/// A Channel Select for a `T` field, the picked channels as
+/// `default_values`.
 #[doc(hidden)]
 pub fn channel_select<T: ChannelSelectField>(
     key: &'static str,
     spec: Spec,
     channel_types: &[ChannelType],
+    prefill: Option<&Prefill>,
 ) -> ModalChannelSelect {
     let mut x = ModalChannelSelect::new(key);
+    if let Some(Prefill(PrefillKind::Channels(ids))) = prefill {
+        x = x.default_channels(ids.iter().copied());
+    }
     if !channel_types.is_empty() {
         x = x.channel_types(channel_types.iter().copied());
     }
@@ -878,9 +967,10 @@ pub fn file_upload<T: FileUploadField>(
     x
 }
 
-fn modal_options<C: Choices>() -> impl Iterator<Item = ModalOption> {
-    C::ALL.iter().map(|c| {
-        let o = ModalOption::new(c.label(), c.value());
+fn modal_options<C: Choices>(prefill: Option<&Prefill>) -> impl Iterator<Item = ModalOption> {
+    let chosen = prefill.map_or(&[][..], Prefill::options);
+    C::ALL.iter().map(move |c| {
+        let o = ModalOption::new(c.label(), c.value()).default(chosen.contains(&c.value()));
         match c.description() {
             Some(d) => o.description(d),
             None => o,
@@ -888,14 +978,15 @@ fn modal_options<C: Choices>() -> impl Iterator<Item = ModalOption> {
     })
 }
 
-/// A Radio Group of `T::Choice`'s options for a `T` field.
+/// A Radio Group of `T::Choice`'s options for a `T` field, the chosen one
+/// marked `default`.
 #[doc(hidden)]
-pub fn radio_group<T>(key: &'static str) -> RadioGroup
+pub fn radio_group<T>(key: &'static str, prefill: Option<&Prefill>) -> RadioGroup
 where
     T: RadioGroupField,
     T::Count: RadioOptions,
 {
-    let x = RadioGroup::new(key, modal_options::<T::Choice>());
+    let x = RadioGroup::new(key, modal_options::<T::Choice>(prefill));
     if T::required(&Spec::default()) {
         x
     } else {
@@ -903,14 +994,15 @@ where
     }
 }
 
-/// A Checkbox Group of `T::Choice`'s options for a `T` field.
+/// A Checkbox Group of `T::Choice`'s options for a `T` field, the chosen
+/// ones marked `default`.
 #[doc(hidden)]
-pub fn checkbox_group<T>(key: &'static str, spec: Spec) -> CheckboxGroup
+pub fn checkbox_group<T>(key: &'static str, spec: Spec, prefill: Option<&Prefill>) -> CheckboxGroup
 where
     T: CheckboxGroupField,
     T::Count: CheckboxOptions,
 {
-    let mut x = CheckboxGroup::new(key, modal_options::<T::Choice>());
+    let mut x = CheckboxGroup::new(key, modal_options::<T::Choice>(prefill));
     if let Some(n) = spec.min {
         x = x.min_values(to_u8(n));
     }
@@ -923,10 +1015,11 @@ where
     x
 }
 
-/// A Checkbox for a `T` field.
+/// A Checkbox for a `T` field, checked when pre-filled with `true`.
 #[doc(hidden)]
-pub fn checkbox<T: CheckboxField>(key: &'static str) -> Checkbox {
-    Checkbox::new(key)
+pub fn checkbox<T: CheckboxField>(key: &'static str, prefill: Option<&Prefill>) -> Checkbox {
+    let checked = matches!(prefill, Some(Prefill(PrefillKind::Checkbox(true))));
+    Checkbox::new(key).default(checked)
 }
 
 /// A Text Display for a `T` field.

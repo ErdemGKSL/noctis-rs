@@ -1,0 +1,5 @@
+error: [CV2-08] `label` is a locale key path: locale keys are [planned, Epic 11]; use a string literal
+ --> tests/ui/cv2/CV2-08_defaults_label_path.rs:8:49
+  |
+8 | #[button("a", defaults(style = Primary, label = keys::SAVE))]
+  |                                                 ^^^^^^^^^^

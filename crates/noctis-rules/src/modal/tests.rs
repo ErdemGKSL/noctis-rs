@@ -451,6 +451,63 @@ fn mod_07_checkbox_group() {
 }
 
 #[test]
+fn mod_07_group_default_counts() {
+    let on = |v: &'static str| opt(v, v).default(true);
+    let at = |f: &str| format!("label[0].checkbox_group.{f}");
+    // Checkbox Group `max_values = 2` with 3 chosen.
+    let three = [on("a"), on("b"), on("c")];
+    assert_eq!(
+        group(CheckboxGroup::new(&three).max_values(2)),
+        [v(RuleId::MOD_07, &at("default_values"), btw(1, 2), cnt(3))]
+    );
+    // The effective max is the option count; min 2 with one default.
+    assert_eq!(group(CheckboxGroup::new(&three)), []);
+    let mixed = [on("a"), opt("b", "b"), opt("c", "c")];
+    assert_eq!(
+        group(CheckboxGroup::new(&mixed).min_values(2)),
+        [v(RuleId::MOD_07, &at("default_values"), btw(2, 3), cnt(1))]
+    );
+    // No default: no count check.
+    let none = [opt("a", "a"), opt("b", "b")];
+    assert_eq!(group(CheckboxGroup::new(&none).min_values(2)), []);
+    // A Radio Group takes at most one default.
+    assert_eq!(radio(&[on("a"), opt("b", "b")]), []);
+    assert_eq!(
+        radio(&[on("a"), on("b")]),
+        [v(
+            RuleId::MOD_07,
+            "label[0].radio_group.default_values",
+            Bound::AtMost(1),
+            cnt(2)
+        )]
+    );
+}
+
+#[test]
+fn mod_05_value_within_max_length() {
+    let value_at = "label[0].text_input.value";
+    let v300 = "a".repeat(300);
+    let v301 = "a".repeat(301);
+    let umlauts = "ü".repeat(300);
+    let capped = SHORT.max_length(300);
+    assert_eq!(input(capped.value(&v300)), []);
+    assert_eq!(input(capped.value(&umlauts)), []);
+    assert_eq!(
+        input(capped.value(&v301)),
+        [v(RuleId::MOD_05, value_at, Bound::AtMost(300), cnt(301))]
+    );
+    // Shorter than `min_length` is not checked.
+    assert_eq!(input(SHORT.min_length(10).value("ab")), []);
+    // Over 4000 is the one violation, whatever `max_length`.
+    let v4001 = "a".repeat(4001);
+    assert_eq!(
+        input(capped.value(&v4001)),
+        [v(RuleId::MOD_05, value_at, Bound::AtMost(4000), cnt(4001))]
+    );
+    assert_eq!(input(SHORT.value(&"a".repeat(4000))), []);
+}
+
+#[test]
 fn mod_07_checkbox() {
     assert_eq!(child(LabelChild::Checkbox(Checkbox::new())), []);
     assert_eq!(

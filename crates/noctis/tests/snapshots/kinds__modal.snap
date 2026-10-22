@@ -1,5 +1,6 @@
 ---
 source: crates/noctis/tests/kinds.rs
+assertion_line: 323
 expression: built
 ---
 {
@@ -10,7 +11,8 @@ expression: built
         "max_length": 300,
         "required": false,
         "style": 2,
-        "type": 4
+        "type": 4,
+        "value": "hi"
       },
       "label": "Bio",
       "type": 18

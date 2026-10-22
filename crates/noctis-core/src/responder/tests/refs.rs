@@ -429,13 +429,19 @@ async fn a_resolved_id_is_not_minted_again() {
     let fx = Fixture::start_refs(discord(), Arc::clone(&refs), None).await;
     let shared = fx.component(Declared::Update, Some(source()));
     let mut msg: OutgoingMessage = row!([button(Stored { item: 1 })]).into();
-    shared.prepare(&mut msg).await.unwrap();
+    shared
+        .prepare(&mut msg, Ephemerality::Public)
+        .await
+        .unwrap();
     let id = |msg: &mut OutgoingMessage| match msg {
         OutgoingMessage::V2(m) => m.custom_ids_mut().next().unwrap().get().unwrap().to_owned(),
         OutgoingMessage::Legacy(_) => unreachable!("a V2 message"),
     };
     let first = id(&mut msg);
-    shared.prepare(&mut msg).await.unwrap();
+    shared
+        .prepare(&mut msg, Ephemerality::Public)
+        .await
+        .unwrap();
     assert_eq!(id(&mut msg), first);
     assert_eq!(refs.calls_of("put_if_absent").len(), 1);
 }

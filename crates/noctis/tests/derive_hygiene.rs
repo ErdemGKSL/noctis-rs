@@ -229,7 +229,7 @@ fn modal_derives_ignore_local_names() {
     assert_eq!(shadowed::Pick::A.value(), "A");
     assert_eq!(shadowed::Pick::A.description(), Some("first"));
     assert_eq!(shadowed::Pick::from_value("b"), Some(shadowed::Pick::B));
-    assert_eq!(shadowed::Form::blank(7).len(), 5);
+    assert_eq!(noctis::ui::Modal::from(shadowed::Form::blank(7)).len(), 5);
     let json = br#"{"type": 5, "data": {"custom_id": "0hygiene.form:7", "components": [
         {"type": 18, "component": {"type": 4, "custom_id": "text", "value": "t"}},
         {"type": 18, "component": {"type": 22, "custom_id": "picks", "values": ["b"]}},

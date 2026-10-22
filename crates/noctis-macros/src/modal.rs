@@ -29,7 +29,7 @@ use crate::defaults::{Defaults, DefaultsKind};
 use crate::route::{AttrKind, RouteArgs, parse_kind_attr, route_impls};
 
 /// The help of a localized or non-literal text.
-const LOCALIZED: &str = "localized modal text is [planned, Epic 11]; use a literal";
+const LOCALIZED: &str = "locale keys are [planned, Epic 11]; use a string literal";
 
 /// The options a Radio Group lowers to: the largest legal count.
 static RADIO_SENTINEL: [rm::ModalOption<'static>; 10] = [rm::ModalOption::new("x", "x"); 10];
@@ -199,8 +199,23 @@ fn lit_int(expr: &Expr) -> Option<&LitInt> {
     }
 }
 
-/// A text argument that must be a literal.
+fn is_path(expr: &Expr) -> bool {
+    match expr {
+        Expr::Path(_) => true,
+        Expr::Group(g) => is_path(&g.expr),
+        _ => false,
+    }
+}
+
+/// A text argument that must be a literal; a path is a locale key path,
+/// planned for Epic 11.
 fn text_arg(expr: &Expr, rule: RuleId, what: &str) -> syn::Result<LitStr> {
+    if is_path(expr) {
+        return Err(syn::Error::new_spanned(
+            expr,
+            format!("[{rule}] {what} is a locale key path: {LOCALIZED}"),
+        ));
+    }
     lit_str(expr).cloned().ok_or_else(|| {
         error(
             expr,
@@ -275,6 +290,7 @@ fn parse_modal_attr(input: &DeriveInput) -> syn::Result<ModalAttr> {
 /// A parsed field.
 struct FieldDef {
     ident: Ident,
+    vis: syn::Visibility,
     key: String,
     ty: Type,
     kind: Kind,
@@ -373,6 +389,7 @@ fn parse_field(
     };
     let mut def = FieldDef {
         ident: ident.clone(),
+        vis: syn::Visibility::Inherited,
         key: ident.unraw().to_string(),
         ty: ty.clone(),
         kind,
@@ -493,6 +510,66 @@ fn apply_arg(def: &mut FieldDef, kind: Kind, name: &Ident, expr: &Expr) -> syn::
     }
 }
 
+/// The associated consts the derive's traits define on the struct that a
+/// bot author names as `X::<CONST>`; an input's `X::<FIELD>` handle may not
+/// shadow one. `__Kind::NAME` is left out on purpose: it is internal, only
+/// ever read as `<X as __Kind>::NAME`, and `name` is a common input field.
+const RESERVED_CONSTS: [&str; 8] = [
+    "ID", "SHAPE", "SCHEMA", "DEFAULTS", "RUNTIME", "ROUTE", "RESPONSE", "GUARDED",
+];
+
+/// The `X::<FIELD>` handle name of an input: its unraw name in upper case.
+fn screaming(key: &str) -> String {
+    key.to_uppercase()
+}
+
+/// An input named `title` (the overrides' own field) or one whose handle
+/// would shadow a derived associated const is an error.
+fn check_reserved(def: &FieldDef) -> syn::Result<()> {
+    if def.key == "title" {
+        return Err(syn::Error::new_spanned(
+            &def.ident,
+            format!(
+                "input field `{}` cannot be named `title`: `<Modal>Overrides` has its own `title` field for the modal's title; rename the field",
+                def.key
+            ),
+        ));
+    }
+    let handle = screaming(&def.key);
+    if RESERVED_CONSTS.contains(&handle.as_str()) {
+        return Err(syn::Error::new_spanned(
+            &def.ident,
+            format!(
+                "input field `{}` cannot be named so: its `.value(..)` handle `{handle}` would shadow the associated const `{handle}` the derive's traits define; rename the field",
+                def.key
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `ty` has an empty value `X::blank(..)` can fill in: it is
+/// syntactically `Option<_>`, `Vec<_>`, `String`, `bool` or `()`. A type
+/// alias counts as not empty-able.
+fn is_blankable(ty: &Type) -> bool {
+    match ty {
+        Type::Tuple(t) => t.elems.is_empty(),
+        Type::Group(g) => is_blankable(&g.elem),
+        Type::Paren(p) => is_blankable(&p.elem),
+        Type::Path(p) if p.qself.is_none() => p.path.segments.last().is_some_and(|s| {
+            let name = s.ident.to_string();
+            match name.as_str() {
+                "Option" | "Vec" => {
+                    matches!(s.arguments, syn::PathArguments::AngleBracketed(_))
+                }
+                "String" | "bool" => s.arguments.is_none(),
+                _ => false,
+            }
+        }),
+        _ => false,
+    }
+}
+
 /// A Payload field: in the `custom_id`, not an input.
 struct PayloadField {
     ident: Ident,
@@ -560,7 +637,11 @@ fn parse(input: &DeriveInput) -> syn::Result<(ModalAttr, Vec<FieldDef>, Vec<Payl
             ));
             continue;
         }
-        if let Some(def) = parse_field(ident, &field.ty, attr, kind, &mut errors) {
+        if let Some(mut def) = parse_field(ident, &field.ty, attr, kind, &mut errors) {
+            def.vis = field.vis.clone();
+            if let Err(e) = check_reserved(&def) {
+                errors.push(e);
+            }
             defs.push(def);
         }
     }
@@ -845,14 +926,41 @@ fn ui() -> TokenStream {
     quote!(::noctis::__private::ui)
 }
 
-/// The top-level component expression of a field.
-fn component(def: &FieldDef) -> TokenStream {
+/// The field trait of a kind, the one whose `prefill` and `decode` the
+/// expansion calls (`None` for a Text Display).
+fn field_trait(kind: Kind) -> Option<TokenStream> {
+    Some(match kind {
+        Kind::TextDisplay => return None,
+        Kind::TextInput => quote!(TextInputField),
+        Kind::StringSelect => quote!(StringSelectField),
+        Kind::UserSelect => quote!(UserSelectField),
+        Kind::RoleSelect => quote!(RoleSelectField),
+        Kind::MentionableSelect => quote!(MentionableSelectField),
+        Kind::ChannelSelect => quote!(ChannelSelectField),
+        Kind::FileUpload => quote!(FileUploadField),
+        Kind::RadioGroup => quote!(RadioGroupField),
+        Kind::CheckboxGroup => quote!(CheckboxGroupField),
+        Kind::Checkbox => quote!(CheckboxField),
+    })
+}
+
+/// Whether the field's value pre-fills its input (and it has an
+/// `X::<FIELD>` handle): every input but a File Upload and a Text Display.
+fn prefills(kind: Kind) -> bool {
+    !matches!(kind, Kind::FileUpload | Kind::TextDisplay)
+}
+
+/// The top-level component expression of a field, pre-filled from the
+/// render's prefill `p` and with the render's overrides `o` applied.
+fn component(def: &FieldDef, p: &Ident, o: &Ident) -> TokenStream {
     let ui = ui();
     let ty = &def.ty;
     let sp = ty.span();
+    let ident = &def.ident;
     let key = LitStr::new(&def.key, def.ident.span());
     let text = &def.text;
     let spec = spec(def);
+    let prefill = quote!(::core::option::Option::as_ref(&#p.#ident));
     let input = match def.kind {
         Kind::TextDisplay => {
             return quote_spanned!(sp=> #ui::__macro::text_display::<#ty>(#text));
@@ -863,35 +971,44 @@ fn component(def: &FieldDef) -> TokenStream {
             } else {
                 quote!(#ui::TextInputStyle::Short)
             };
-            quote_spanned!(sp=> #ui::__macro::text_input::<#ty>(#key, #style, #spec))
+            quote_spanned!(sp=> #ui::__macro::text_input::<#ty>(#key, #style, #spec, #prefill))
         }
-        Kind::StringSelect => quote_spanned!(sp=> #ui::__macro::string_select::<#ty>(#key, #spec)),
-        Kind::UserSelect => quote_spanned!(sp=> #ui::__macro::user_select::<#ty>(#key, #spec)),
-        Kind::RoleSelect => quote_spanned!(sp=> #ui::__macro::role_select::<#ty>(#key, #spec)),
+        Kind::StringSelect => {
+            quote_spanned!(sp=> #ui::__macro::string_select::<#ty>(#key, #spec, #prefill))
+        }
+        Kind::UserSelect => {
+            quote_spanned!(sp=> #ui::__macro::user_select::<#ty>(#key, #spec, #prefill))
+        }
+        Kind::RoleSelect => {
+            quote_spanned!(sp=> #ui::__macro::role_select::<#ty>(#key, #spec, #prefill))
+        }
         Kind::MentionableSelect => {
-            quote_spanned!(sp=> #ui::__macro::mentionable_select::<#ty>(#key, #spec))
+            quote_spanned!(sp=> #ui::__macro::mentionable_select::<#ty>(#key, #spec, #prefill))
         }
         Kind::ChannelSelect => {
             let types = &def.channel_types;
             quote_spanned!(sp=> #ui::__macro::channel_select::<#ty>(
-                #key, #spec, &[#(#ui::__macro::ChannelType::#types),*]
+                #key, #spec, &[#(#ui::__macro::ChannelType::#types),*], #prefill
             ))
         }
         Kind::FileUpload => {
             let types = &def.file_types;
             quote_spanned!(sp=> #ui::__macro::file_upload::<#ty>(#key, #spec, &[#(#types),*]))
         }
-        Kind::RadioGroup => quote_spanned!(sp=> #ui::__macro::radio_group::<#ty>(#key)),
-        Kind::CheckboxGroup => {
-            quote_spanned!(sp=> #ui::__macro::checkbox_group::<#ty>(#key, #spec))
+        Kind::RadioGroup => {
+            quote_spanned!(sp=> #ui::__macro::radio_group::<#ty>(#key, #prefill))
         }
-        Kind::Checkbox => quote_spanned!(sp=> #ui::__macro::checkbox::<#ty>(#key)),
+        Kind::CheckboxGroup => {
+            quote_spanned!(sp=> #ui::__macro::checkbox_group::<#ty>(#key, #spec, #prefill))
+        }
+        Kind::Checkbox => quote_spanned!(sp=> #ui::__macro::checkbox::<#ty>(#key, #prefill)),
     };
     let label = quote!(#ui::ModalLabel::new(#text, #input));
-    match &def.description {
+    let label = match &def.description {
         Some(d) => quote!(#ui::ModalLabel::description(#label, #d)),
         None => label,
-    }
+    };
+    quote!(#ui::__macro::input_label(#label, &#o.#ident))
 }
 
 /// The decode expression of a field, reading the submission `s`.
@@ -901,23 +1018,12 @@ fn decode(def: &FieldDef, s: &Ident) -> TokenStream {
     let sp = ty.span();
     let key = LitStr::new(&def.key, def.ident.span());
     let spec = spec(def);
-    let field_trait = match def.kind {
-        Kind::TextDisplay => {
-            return quote_spanned!(sp=> <#ty as #ui::__macro::TextDisplayField>::decode());
-        }
-        Kind::Checkbox => {
-            return quote_spanned!(sp=> <#ty as #ui::__macro::CheckboxField>::decode(#s, #key)?);
-        }
-        Kind::TextInput => quote!(TextInputField),
-        Kind::StringSelect => quote!(StringSelectField),
-        Kind::UserSelect => quote!(UserSelectField),
-        Kind::RoleSelect => quote!(RoleSelectField),
-        Kind::MentionableSelect => quote!(MentionableSelectField),
-        Kind::ChannelSelect => quote!(ChannelSelectField),
-        Kind::FileUpload => quote!(FileUploadField),
-        Kind::RadioGroup => quote!(RadioGroupField),
-        Kind::CheckboxGroup => quote!(CheckboxGroupField),
+    let Some(field_trait) = field_trait(def.kind) else {
+        return quote_spanned!(sp=> <#ty as #ui::__macro::TextDisplayField>::decode());
     };
+    if def.kind == Kind::Checkbox {
+        return quote_spanned!(sp=> <#ty as #ui::__macro::CheckboxField>::decode(#s, #key)?);
+    }
     quote_spanned!(sp=> <#ty as #ui::__macro::#field_trait>::decode(#s, #key, &#spec)?)
 }
 
@@ -981,6 +1087,249 @@ fn modal_impl(name: &Ident, args: &RouteArgs) -> TokenStream {
     }
 }
 
+/// The Payload fields: names and types, in order.
+struct PayloadIdents<'a> {
+    idents: &'a [&'a Ident],
+    types: &'a [&'a Type],
+}
+
+/// The hygienic locals of the generated render code.
+struct Idents<'a> {
+    modal: &'a Ident,
+    prefill: &'a Ident,
+    overrides: &'a Ident,
+}
+
+/// The generated `blank`: `Self` when every input has an empty value,
+/// else a `ModalBuilder` with empty inputs.
+fn blank_fn(
+    name: &Ident,
+    defs: &[FieldDef],
+    payload_ident: &Ident,
+    payload: &PayloadIdents<'_>,
+) -> TokenStream {
+    let ui = ui();
+    let p_idents = payload.idents;
+    let p_types = payload.types;
+    let blankable = defs.iter().all(|d| is_blankable(&d.ty));
+    let blank_doc_tail = if blankable {
+        "Every input is empty (`None`, `vec![]`, `String::new()`, `false`), so `X { field: value, ..X::blank(..) }.build()` pre-fills only what it names."
+    } else {
+        "An input has no empty value (a required `Choices` enum or `Resolved*` field), so this is the builder with empty inputs; set one with `.value(X::FIELD, v)`."
+    };
+    let blank_doc = format!(
+        " The modal with empty inputs, for these Payload fields (`{name}`'s fields without an input attribute, in order). {blank_doc_tail}"
+    );
+    if blankable {
+        let all_idents = defs.iter().map(|d| &d.ident);
+        quote! {
+            #[doc = #blank_doc]
+            #[must_use]
+            pub fn blank(#(#p_idents: #p_types),*) -> Self {
+                Self {
+                    #(#p_idents,)*
+                    #(#all_idents: ::core::default::Default::default(),)*
+                }
+            }
+        }
+    } else {
+        quote! {
+            #[doc = #blank_doc]
+            pub fn blank(#(#p_idents: #p_types),*) -> #ui::ModalBuilder<Self> {
+                #ui::ModalBuilder::__new(
+                    #payload_ident { #(#p_idents),* },
+                    ::core::default::Default::default(),
+                )
+            }
+        }
+    }
+}
+
+/// The `X::<FIELD>` handles of the pre-filled inputs.
+fn handle_consts(name: &Ident, filled: &[&FieldDef], prefill_ident: &Ident) -> TokenStream {
+    let ui = ui();
+    let handles = filled.iter().map(|d| {
+        let ident = &d.ident;
+        let ty = &d.ty;
+        let fvis = &d.vis;
+        let tr = field_trait(d.kind);
+        let handle = Ident::new(&screaming(&d.key), d.ident.span());
+        let doc = format!(
+            " The typed handle of the `{}` input, for `ModalBuilder::value`: `.value({name}::{handle}, v)` replaces its pre-fill.",
+            d.key
+        );
+        quote_spanned! {ty.span()=>
+            #[doc = #doc]
+            // A form that never pre-fills through `.value(..)` leaves it unused.
+            #[allow(dead_code)]
+            #fvis const #handle: #ui::InputField<Self, #ty> = #ui::InputField::__new(
+                |__noctis_p: &mut #prefill_ident, __noctis_v: #ty| {
+                    __noctis_p.#ident = ::core::option::Option::Some(
+                        <#ty as #ui::__macro::#tr>::prefill(__noctis_v),
+                    );
+                },
+            );
+        }
+    });
+    quote!(#(#handles)*)
+}
+
+/// The generated `build`: every input field's value pre-fills its input.
+fn build_fn(
+    defs: &[FieldDef],
+    payload_ident: &Ident,
+    p_idents: &[&Ident],
+    prefill_ident: &Ident,
+    pf: &Ident,
+) -> TokenStream {
+    let ui = ui();
+    let field_locals: Vec<Ident> = (0..defs.len())
+        .map(|i| Ident::new(&format!("__noctis_field_{i}"), Span::mixed_site()))
+        .collect();
+    let destructure = defs.iter().zip(&field_locals).map(|(d, local)| {
+        let ident = &d.ident;
+        if prefills(d.kind) {
+            quote!(#ident: #local)
+        } else {
+            quote!(#ident: _)
+        }
+    });
+    let fills = defs.iter().zip(&field_locals).filter(|(d, _)| prefills(d.kind)).map(|(d, local)| {
+        let ident = &d.ident;
+        let ty = &d.ty;
+        let tr = field_trait(d.kind);
+        quote_spanned!(ty.span()=> #pf.#ident = ::core::option::Option::Some(<#ty as #ui::__macro::#tr>::prefill(#local));)
+    });
+
+    quote! {
+            /// The modal of this value: its declared title, its Payload
+            /// fields in the `custom_id` and every input pre-filled from its
+            /// field (`None`, `""`, `vec![]` and `false` send nothing). The
+            /// builder takes `.title(..)`, `.value(X::FIELD, v)` and
+            /// `.overrides(..)` for this render and converts into a `Modal`.
+            pub fn build(self) -> #ui::ModalBuilder<Self> {
+                let Self { #(#p_idents,)* #(#destructure,)* } = self;
+                #[allow(unused_mut)]
+                let mut #pf = <#prefill_ident as ::core::default::Default>::default();
+                #(#fills)*
+                #ui::ModalBuilder::__new(#payload_ident { #(#p_idents),* }, #pf)
+            }
+    }
+}
+
+/// The per-render surface: the hidden prefill struct, `<X>Overrides`,
+/// `ModalRender`, `build`, `blank`, the `X::<FIELD>` handles and
+/// `From<X> for Modal`.
+fn render_impls(
+    name: &Ident,
+    vis: &syn::Visibility,
+    defs: &[FieldDef],
+    payload_ident: &Ident,
+    payload: &PayloadIdents<'_>,
+    locals: &Idents<'_>,
+) -> TokenStream {
+    let ui = ui();
+    let &Idents {
+        modal: m,
+        prefill: pf,
+        overrides: ov,
+    } = locals;
+    let prefill_ident = format_ident!("__NoctisModalPrefill{}", name.unraw());
+    let overrides_ident = format_ident!("{}Overrides", name.unraw());
+    let filled: Vec<&FieldDef> = defs.iter().filter(|d| prefills(d.kind)).collect();
+    let filled_idents: Vec<&Ident> = filled.iter().map(|d| &d.ident).collect();
+    let labels: Vec<&FieldDef> = defs
+        .iter()
+        .filter(|d| d.kind != Kind::TextDisplay)
+        .collect();
+    let label_idents: Vec<&Ident> = labels.iter().map(|d| &d.ident).collect();
+    let label_docs = labels.iter().map(|d| {
+        format!(
+            " The Label text, description and placeholder of the `{}` input.",
+            d.key
+        )
+    });
+    let label_locals: Vec<Ident> = (0..labels.len())
+        .map(|i| Ident::new(&format!("__noctis_input_{i}"), Span::mixed_site()))
+        .collect();
+    let title_local = Ident::new("__noctis_title", Span::mixed_site());
+    let into = Ident::new("__noctis_into", Span::mixed_site());
+    let from = Ident::new("__noctis_from", Span::mixed_site());
+    let components = defs.iter().map(|d| component(d, pf, ov));
+
+    let build = build_fn(defs, payload_ident, payload.idents, &prefill_ident, pf);
+    let blank = blank_fn(name, defs, payload_ident, payload);
+    let handles = handle_consts(name, &filled, &prefill_ident);
+    let overrides_doc = format!(
+        " The per-render presentation overrides of `{name}` (title, and per Label input its text, description and placeholder), applied with `ModalBuilder::overrides`; they never change a value."
+    );
+
+    quote! {
+        #[doc(hidden)]
+        #[allow(non_camel_case_types, dead_code)]
+        #[derive(::core::default::Default, ::core::clone::Clone, ::core::fmt::Debug)]
+        #vis struct #prefill_ident {
+            #(#filled_idents: ::core::option::Option<#ui::__macro::Prefill>,)*
+        }
+
+        #[doc = #overrides_doc]
+        #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::default::Default)]
+        #vis struct #overrides_ident {
+            /// The modal's title (a literal or a locale key, ≤ 45, MOD-01).
+            pub title: ::core::option::Option<#ui::Text>,
+            #(
+                #[doc = #label_docs]
+                pub #label_idents: #ui::InputOverrides,
+            )*
+        }
+
+        #[automatically_derived]
+        impl #ui::__macro::ModalRender for #name {
+            type Prefill = #prefill_ident;
+            type Overrides = #overrides_ident;
+
+            fn title_mut(
+                #ov: &mut Self::Overrides,
+            ) -> &mut ::core::option::Option<#ui::Text> {
+                &mut #ov.title
+            }
+
+            fn merge(#into: &mut Self::Overrides, #from: Self::Overrides) {
+                let #overrides_ident { title: #title_local, #(#label_idents: #label_locals,)* } = #from;
+                if ::core::option::Option::is_some(&#title_local) {
+                    #into.title = #title_local;
+                }
+                #(#ui::InputOverrides::__merge(&mut #into.#label_idents, #label_locals);)*
+            }
+
+            #[allow(unused_variables)]
+            fn render(
+                #m: #ui::Modal,
+                #pf: &Self::Prefill,
+                #ov: &Self::Overrides,
+            ) -> #ui::Modal {
+                #(let #m = #ui::Modal::push(#m, #components);)*
+                #m
+            }
+        }
+
+        impl #name {
+            #build
+
+            #blank
+
+            #handles
+        }
+
+        #[automatically_derived]
+        impl ::core::convert::From<#name> for #ui::Modal {
+            fn from(value: #name) -> Self {
+                ::core::convert::From::from(#name::build(value))
+            }
+        }
+    }
+}
+
 /// Expands `#[derive(Modal)]`.
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let (attr, defs, payload) = parse(input)?;
@@ -1014,15 +1363,28 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let m = Ident::new("__noctis_modal", Span::mixed_site());
     let s = Ident::new("__noctis_submission", Span::mixed_site());
     let p = Ident::new("__noctis_payload", Span::mixed_site());
-    let components = defs.iter().map(component);
+    let pf = Ident::new("__noctis_prefill", Span::mixed_site());
+    let ov = Ident::new("__noctis_overrides", Span::mixed_site());
     let idents = defs.iter().map(|d| &d.ident);
     let decodes = defs.iter().map(|d| decode(d, &s));
-    let blank_doc = format!(
-        " The modal with empty inputs, for these Payload fields (`{name}`'s fields without an input attribute, in order)."
-    );
     let modal_impl = modal_impl(name, &attr.args);
     let scaffolding =
         crate::kind::scaffolding(name, crate::kind::Family::Modal, !attr.args.auto_defer);
+    let render = render_impls(
+        name,
+        vis,
+        &defs,
+        &payload_ident,
+        &PayloadIdents {
+            idents: &p_idents,
+            types: &p_types,
+        },
+        &Idents {
+            modal: &m,
+            prefill: &pf,
+            overrides: &ov,
+        },
+    );
     Ok(quote! {
         #[doc(hidden)]
         #[allow(non_camel_case_types, dead_code)]
@@ -1045,31 +1407,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
         #guards
 
-        impl #name {
-            /// The modal of this value: its declared title, its Payload
-            /// fields in the `custom_id`, empty inputs (pre-fill arrives
-            /// with Story 9.4).
-            #[must_use]
-            pub fn build(self) -> #ui::Modal {
-                let Self { #(#p_idents,)* .. } = self;
-                Self::__noctis_modal(#payload_ident { #(#p_idents),* })
-            }
-
-            #[doc = #blank_doc]
-            #[must_use]
-            pub fn blank(#(#p_idents: #p_types),*) -> #ui::Modal {
-                Self::__noctis_modal(#payload_ident { #(#p_idents),* })
-            }
-
-            fn __noctis_modal(#p: #payload_ident) -> #ui::Modal {
-                let #m = #ui::__macro::build_modal::<Self>(
-                    #p,
-                    <Self as #ui::ComponentRoute>::DEFAULTS.title,
-                );
-                #(let #m = #ui::Modal::push(#m, #components);)*
-                #m
-            }
-        }
+        #render
 
         #[automatically_derived]
         impl #ui::ModalForm for #name {
@@ -1384,7 +1722,9 @@ mod tests {
         assert!(run(quote!(#[modal("f", defaults(title = #emoji))] #body)).contains("actual 46"));
         let out = run(quote!(#[modal("f", defaults(title = TITLE))] #body));
         assert!(
-            out.contains("`defaults` values are literals: `title` takes a string literal"),
+            out.contains(
+                "[MOD-01] `title` is a locale key path: locale keys are [planned, Epic 11]"
+            ),
             "{out}"
         );
         assert!(run(quote!(#[modal("f")] #body)).contains("`#[modal]` needs `defaults(title ="));
@@ -1596,5 +1936,104 @@ mod tests {
             out.contains("[CV2-04] components: limit at most 4000, actual 4001"),
             "{out}"
         );
+    }
+
+    /// Story 9.3 M18: an input named `title` or one whose handle shadows a
+    /// derived associated const is a compile error naming the field.
+    #[test]
+    fn m18_reserved_input_names() {
+        let title = run(quote!(
+            #[modal("f", defaults(title = "T"))]
+            struct F {
+                #[text_input("Title")]
+                title: String,
+            }
+        ));
+        assert!(
+            title.contains("input field `title` cannot be named `title`"),
+            "{title}"
+        );
+        for (field, handle) in [("id", "ID"), ("defaults", "DEFAULTS"), ("route", "ROUTE")] {
+            let ident = Ident::new(field, Span::call_site());
+            let out = run(quote!(
+                #[modal("f", defaults(title = "T"))]
+                struct F {
+                    #[text_input("X")]
+                    #ident: String,
+                }
+            ));
+            assert!(out.contains(&format!("input field `{field}`")), "{out}");
+            assert!(out.contains(&format!("`{handle}`")), "{out}");
+        }
+        // `name` stays allowed: `__Kind::NAME` is only read fully qualified.
+        let name = run(quote!(
+            #[modal("f", defaults(title = "T"))]
+            struct F {
+                #[text_input("Name")]
+                name: String,
+            }
+        ));
+        assert!(name.contains("const NAME"), "{name}");
+    }
+
+    /// The return type of the generated `blank`.
+    fn blank_return(input: TokenStream) -> String {
+        let out = run(input);
+        let start = out
+            .find("pub fn blank")
+            .unwrap_or_else(|| panic!("no blank: {out}"));
+        let rest = &out[start..];
+        let arrow = rest.find("->").unwrap_or_else(|| panic!("{rest}"));
+        let body = rest.find('{').unwrap_or_else(|| panic!("{rest}"));
+        rest[arrow + 2..body].trim().to_owned()
+    }
+
+    /// Story 9.3 M7/M8: `blank` is `Self` only when every input field has
+    /// an empty value (`Option`, `Vec`, `String`, `bool`, `()`).
+    #[test]
+    fn blankable_classification() {
+        let blankable = blank_return(quote!(
+            #[modal("f", defaults(title = "T"))]
+            struct F {
+                user: u64,
+                #[text_display("Hi")]
+                intro: (),
+                #[text_input("A")]
+                a: Option<String>,
+                #[text_input("B")]
+                b: String,
+                #[checkbox("C")]
+                c: bool,
+                #[checkbox_group("D")]
+                d: Vec<Topic>,
+            }
+        ));
+        assert_eq!(blankable, "Self");
+        for required in [
+            quote!(Severity),
+            quote!(ResolvedRole),
+            quote!(ResolvedAttachment),
+        ] {
+            let kind = if required.to_string() == "Severity" {
+                quote!(radio_group)
+            } else if required.to_string() == "ResolvedRole" {
+                quote!(role_select)
+            } else {
+                quote!(file_upload)
+            };
+            let ret = blank_return(quote!(
+                #[modal("f", defaults(title = "T"))]
+                struct F {
+                    #[text_input("A")]
+                    a: Option<String>,
+                    #[#kind("R")]
+                    r: #required,
+                }
+            ));
+            assert!(ret.contains("ModalBuilder < Self >"), "{required}: {ret}");
+        }
+        assert!(is_blankable(&syn::parse_quote!(::std::option::Option<u8>)));
+        assert!(!is_blankable(&syn::parse_quote!(Option)));
+        assert!(!is_blankable(&syn::parse_quote!(u8)));
     }
 }

@@ -248,8 +248,10 @@ mod limits;
 mod literal;
 mod message;
 mod modal;
+mod overrides;
 mod placement;
 mod route;
+mod text;
 mod wire;
 
 pub use arity::{
@@ -259,9 +261,10 @@ pub use arity::{
 pub use attachment::{Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet};
 pub use component::{
     ActionRow, Button, ButtonStyle, ChannelSelect, Container, ContainerComponent, Emoji, File,
-    LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, PremiumButton, RawComponent,
-    Rgb, RoleSelect, RouteButton, Section, SelectOption, Separator, Spacing, StringSelect,
-    StringSelectBuilder, TextDisplay, Thumbnail, TopLevelComponent, UserSelect, unknown_components,
+    LinkButton, Media, MediaGallery, MediaItem, MentionableId, MentionableSelect, PremiumButton,
+    RawComponent, Rgb, RoleSelect, RouteButton, Section, SelectOption, Separator, Spacing,
+    StringSelect, StringSelectBuilder, TextDisplay, Thumbnail, TopLevelComponent, UserSelect,
+    unknown_components,
 };
 pub use components::Components;
 pub use error::UiError;
@@ -273,11 +276,16 @@ pub use message::{
     Roles, Users, V2Message,
 };
 pub use modal::{
-    Checkbox, CheckboxGroup, Choices, DownloadError, FileFetcher, FileUpload, Mentionable, Modal,
-    ModalChannelSelect, ModalComponent, ModalForm, ModalLabel, ModalMentionableSelect, ModalOption,
-    ModalRoleSelect, ModalStringSelect, ModalSubmission, ModalUserSelect, RadioGroup,
-    ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole, ResolvedUser, SubmitError,
-    SubmittedValue, TextInput, TextInputStyle,
+    Checkbox, CheckboxGroup, Choices, DownloadError, FileFetcher, FileUpload, InputField,
+    InputOverrides, Mentionable, Modal, ModalBuilder, ModalChannelSelect, ModalComponent,
+    ModalForm, ModalLabel, ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect,
+    ModalSubmission, ModalUserSelect, RadioGroup, ResolvedAttachment, ResolvedChannel,
+    ResolvedMessage, ResolvedRole, ResolvedUser, SubmitError, SubmittedValue, TextInput,
+    TextInputStyle,
+};
+pub use overrides::{
+    ButtonOverrides, ChannelSelectOverrides, MentionableSelectOverrides, RoleSelectOverrides,
+    StringSelectOverrides, UserSelectOverrides,
 };
 pub use placement::{
     ContainerChild, ModalInput, ModalTopLevel, RowItem, RowSelect, SectionAccessory, TopLevel,
@@ -285,6 +293,7 @@ pub use placement::{
 pub use route::Handled;
 #[doc(hidden)]
 pub use route::{ComponentRoute, CustomId};
+pub use text::Text;
 
 /// Helpers the `components!`, `derive(Modal)` and `derive(Choices)`
 /// expansions call; not public API.
@@ -292,6 +301,7 @@ pub use route::{ComponentRoute, CustomId};
 pub mod __macro {
     pub use twilight_model::channel::ChannelType;
 
+    pub use crate::modal::builder::{ModalRender, Prefill, input_label};
     pub use crate::modal::form::{
         ChannelSelectField, CheckboxField, CheckboxGroupField, FileUploadField,
         MentionableSelectField, RadioGroupField, RoleSelectField, Spec, StringSelectField,

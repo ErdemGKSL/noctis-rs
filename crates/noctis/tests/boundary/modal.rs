@@ -289,17 +289,17 @@ impl Groups {
 
 #[test]
 fn mod_02_derive_five_fields_at_every_limit() {
-    assert_eq!(passes(FiveFields::blank()), 9);
+    assert_eq!(passes(Modal::from(FiveFields::blank())), 9);
 }
 
 #[test]
 fn mod_01_derive_title_45_and_mod_04_label_45() {
-    assert_eq!(FiveFields::blank().title().chars().count(), 45);
+    assert_eq!(Modal::from(FiveFields::blank()).title().chars().count(), 45);
 }
 
 #[test]
 fn mod_05_derive_text_input_bounds_and_mod_06_file_upload() {
-    let json = serde_json::to_value(FiveFields::blank()).unwrap();
+    let json = serde_json::to_value(Modal::from(FiveFields::blank())).unwrap();
     assert_eq!(json["components"][1]["component"]["max_length"], 4000);
     assert_eq!(
         json["components"][2]["component"]["file_types"]
@@ -311,8 +311,8 @@ fn mod_05_derive_text_input_bounds_and_mod_06_file_upload() {
 
 #[test]
 fn mod_07_derive_radio_2_10_checkbox_1_10_and_choice_text_100() {
-    passes(Groups::blank());
-    let json = serde_json::to_value(Groups::blank()).unwrap();
+    passes(Modal::from(Groups::blank()));
+    let json = serde_json::to_value(Modal::from(Groups::blank())).unwrap();
     assert_eq!(
         json["components"][0]["component"]["options"]
             .as_array()
@@ -335,7 +335,7 @@ fn mod_07_derive_radio_2_10_checkbox_1_10_and_choice_text_100() {
 
 #[test]
 fn cv2_09_derive_string_select_25_options_placeholder_150() {
-    let json = serde_json::to_value(Groups::blank()).unwrap();
+    let json = serde_json::to_value(Modal::from(Groups::blank())).unwrap();
     assert_eq!(
         json["components"][2]["component"]["options"]
             .as_array()
@@ -346,7 +346,7 @@ fn cv2_09_derive_string_select_25_options_placeholder_150() {
 
 #[test]
 fn cid_01_derive_key_100() {
-    let json = serde_json::to_value(Groups::blank()).unwrap();
+    let json = serde_json::to_value(Modal::from(Groups::blank())).unwrap();
     assert_eq!(
         json["components"][4]["component"]["custom_id"]
             .as_str()

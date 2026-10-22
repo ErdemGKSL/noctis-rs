@@ -234,15 +234,28 @@ impl PickSystem {
 }
 
 impl RenameSystem {
-    /// Button → modal. The modal opens blank: pre-filling it with the stored name is
-    /// Story 9.4.
+    /// Button → modal, pre-filled with the stored name: every input of `RenameForm`
+    /// has an empty value, so `blank` returns a `RenameForm` to update.
     #[handler]
     async fn handle(
         self,
-        _ctx: ComponentCtx,
+        ctx: ComponentCtx,
         r: ComponentResponder<Manual>,
     ) -> HandlerResult<Responded> {
-        Ok(r.show_modal(RenameForm::blank(self.system)).await?.done())
+        let name = match (ctx.guild_id(), ctx.state::<TicketStore>()) {
+            (Some(guild), Some(store)) => store
+                .systems(guild)
+                .into_iter()
+                .find(|t| t.id == self.system)
+                .map(|t| t.name)
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let form = RenameForm {
+            name,
+            ..RenameForm::blank(self.system)
+        };
+        Ok(r.show_modal(form).await?.done())
     }
 }
 

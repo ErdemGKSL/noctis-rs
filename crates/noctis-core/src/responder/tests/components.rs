@@ -1116,3 +1116,212 @@ async fn modal_fetch_and_delete() {
     let _ = acked.done();
     assert_no_bot_token(&fx);
 }
+
+/// Story 9.3: `shop.buy` is `Al` in Turkish, `Kaufen` in German and `Buy`
+/// in en-US; `shop.long` is 81 characters; anything else is missing.
+struct Shop;
+
+impl Translate for Shop {
+    fn translate(
+        &self,
+        locale: noctis_rules::Locale,
+        key: MessageKey,
+        _: &[(&str, &dyn core::fmt::Display)],
+    ) -> Option<String> {
+        match (key.as_str(), format!("{locale:?}").as_str()) {
+            ("shop.buy", "Tr") => Some("Al".to_owned()),
+            ("shop.buy", "De") => Some("Kaufen".to_owned()),
+            ("shop.buy", _) => Some("Buy".to_owned()),
+            ("shop.long", _) => Some("l".repeat(81)),
+            _ => None,
+        }
+    }
+}
+
+/// A V2 message with one Route button labelled by the key `key`.
+fn keyed(key: &'static str) -> V2Message {
+    V2Message::new(Components::new().push(ActionRow::buttons([
+        button(Form { item: 1 }).label(MessageKey::new(key)),
+    ])))
+}
+
+/// The label of the first button of a sent message body.
+fn sent_label(body: &Value) -> Value {
+    body["data"]["components"][0]["components"][0]["label"].clone()
+}
+
+fn with_locales(shared: Arc<Shared>, user: Option<&str>, guild: Option<&str>) -> Arc<Shared> {
+    shared.set_i18n(
+        Arc::new(Shop),
+        user.map(str::to_owned),
+        guild.map(str::to_owned),
+    );
+    shared
+}
+
+/// T3: keys resolve in the response locale: User first for an ephemeral
+/// send or a modal, Guild first for a public send, en-US without a
+/// parsable locale.
+#[tokio::test]
+async fn t3_keys_resolve_in_the_response_locale() {
+    let fx = Fixture::start(discord()).await;
+    let cases = [
+        (
+            Declared::Reply(Ephemerality::Ephemeral),
+            v2_source(),
+            true,
+            "Al",
+        ),
+        (
+            Declared::Reply(Ephemerality::Public),
+            v2_source(),
+            true,
+            "Kaufen",
+        ),
+        (
+            Declared::Update,
+            source(MessageFormat::V2, Ephemerality::Ephemeral),
+            false,
+            "Al",
+        ),
+        (Declared::Update, v2_source(), false, "Kaufen"),
+    ];
+    for (declared, src, reply, expected) in cases {
+        clear(&fx);
+        let shared = with_locales(fx.component(declared, src), Some("tr"), Some("de"));
+        let r = component(&shared);
+        let _ = if reply {
+            r.reply(keyed("shop.buy")).await.unwrap().done()
+        } else {
+            r.update(keyed("shop.buy")).await.unwrap().done()
+        };
+        let requests = fx.requests();
+        assert_eq!(sent_label(&requests[0].2), expected, "{declared:?}");
+    }
+
+    clear(&fx);
+    let shared = with_locales(
+        fx.component(Declared::Reply(Ephemerality::Public), v2_source()),
+        Some("tr"),
+        Some("de"),
+    );
+    let manual: ComponentResponder<Manual> = Responder::new(Arc::clone(&shared));
+    let modal =
+        noctis_ui::__macro::build_modal::<Form>(Form { item: 1 }, MessageKey::new("shop.buy"))
+            .push(ModalLabel::new(
+                "Bio",
+                TextInput::new("bio", TextInputStyle::Short),
+            ));
+    let _ = manual.show_modal(modal).await.unwrap().done();
+    assert_eq!(fx.requests()[0].2["data"]["title"], "Al");
+
+    clear(&fx);
+    let shared = with_locales(
+        fx.component(Declared::Reply(Ephemerality::Ephemeral), v2_source()),
+        Some("xx"),
+        None,
+    );
+    let _ = component(&shared)
+        .reply(keyed("shop.buy"))
+        .await
+        .unwrap()
+        .done();
+    assert_eq!(sent_label(&fx.requests()[0].2), "Buy");
+}
+
+/// T4: a key with no translation is sent as the key, with one `warn` on
+/// `noctis::i18n`.
+#[tokio::test]
+async fn t4_missing_key_sends_the_key() {
+    let fx = Fixture::start(discord()).await;
+    let shared = with_locales(
+        fx.component(Declared::Reply(Ephemerality::Public), v2_source()),
+        Some("tr"),
+        None,
+    );
+    let capture = crate::test_support::Capture::default();
+    let _guard = tracing::subscriber::set_default(capture.subscriber());
+    let _ = component(&shared)
+        .reply(keyed("shop.missing"))
+        .await
+        .unwrap()
+        .done();
+    assert_eq!(sent_label(&fx.requests()[0].2), "shop.missing");
+    let lines = capture.lines_with(&["WARN", "noctis::i18n", "shop.missing"]);
+    assert_eq!(lines.len(), 1, "{}", capture.text());
+}
+
+/// T5: a translation over a limit is validated after resolution: Strict
+/// is `Invalid` with no request, Lenient truncates to 80 ending `…`.
+#[tokio::test]
+async fn t5_resolved_text_is_validated() {
+    let fx = Fixture::start(discord()).await;
+    let shared = with_locales(
+        fx.component(Declared::Reply(Ephemerality::Public), v2_source()),
+        None,
+        None,
+    );
+    let err = component(&shared)
+        .reply(keyed("shop.long"))
+        .await
+        .unwrap_err();
+    let ResponderError::Invalid(UiError::Limits { violations }) = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(violations[0].rule, RuleId::CV2_08);
+    assert!(fx.requests().is_empty());
+
+    let transport = Transport::Interaction(InteractionTarget {
+        app: Arc::clone(fx.app.shared()),
+        application_id: Id::new(7),
+        interaction_id: Id::new(100),
+        token: "tok".to_owned(),
+        received_at: Instant::now(),
+        channel_id: Some(Id::new(9)),
+        file_limit: None,
+    });
+    let mut limits = fx.app.limits().clone();
+    limits.mode = LimitMode::Lenient;
+    let shared = with_locales(
+        Shared::declared(
+            transport,
+            Declared::Reply(Ephemerality::Public),
+            v2_source(),
+            limits,
+            None,
+        ),
+        None,
+        None,
+    );
+    let _ = component(&shared)
+        .reply(keyed("shop.long"))
+        .await
+        .unwrap()
+        .done();
+    let label = sent_label(&fx.requests()[0].2);
+    let label = label.as_str().unwrap();
+    assert_eq!(label.chars().count(), 80);
+    assert!(label.ends_with('…'), "{label}");
+}
+
+/// M17, M20: `show_modal` takes `impl Into<Modal>` and validates before
+/// sending: a value over its `max_length` is `Invalid` with no callback.
+#[tokio::test]
+async fn m17_show_modal_validates_before_sending() {
+    let fx = Fixture::start(discord()).await;
+    let shared = fx.component(Declared::Update, v2_source());
+    let manual: ComponentResponder<Manual> = Responder::new(Arc::clone(&shared));
+    let over =
+        noctis_ui::__macro::build_modal::<Form>(Form { item: 1 }, "Form").push(ModalLabel::new(
+            "Bio",
+            TextInput::new("bio", TextInputStyle::Short)
+                .max_length(5)
+                .value("toolong"),
+        ));
+    let err = manual.show_modal(over).await.unwrap_err();
+    let ResponderError::Invalid(UiError::Limits { violations }) = &err else {
+        panic!("{err}");
+    };
+    assert_eq!(violations[0].rule, RuleId::MOD_05);
+    assert!(fx.requests().is_empty());
+}

@@ -902,6 +902,11 @@ pub(crate) async fn run_interaction(
     // A user-install-only interaction may send 5 follow-ups (INT-11).
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
     let state = Shared::with_followup_cap(transport, ephemerality, app.limits.clone(), cap);
+    state.set_i18n(
+        Arc::clone(&app.strings),
+        parts.user_locale.clone(),
+        parts.guild_locale.clone(),
+    );
     // Stage 6: the auto-defer.
     let armed = Armed {
         handler: resolved.handler(),
@@ -1461,6 +1466,24 @@ impl Dispatcher {
         }
     }
 
+    /// The responder state of a message-transport run on `target` (channel,
+    /// message), whose locale keys resolve in `user_locale`.
+    fn message_shared(
+        &self,
+        (channel_id, message_id): (Id<ChannelMarker>, Id<MessageMarker>),
+        ephemerality: Ephemerality,
+        user_locale: Option<String>,
+    ) -> Arc<Shared> {
+        let transport = Transport::Message(MessageTarget {
+            app: Arc::clone(&self.app),
+            channel_id,
+            message_id,
+        });
+        let shared = Shared::new(transport, ephemerality, self.app.limits.clone());
+        shared.set_i18n(Arc::clone(&self.app.strings), user_locale, None);
+        shared
+    }
+
     /// Runs the Command registered at the invocation's path, in span
     /// `noctis.dispatch`; its response is a reply to the invoking message.
     ///
@@ -1536,12 +1559,8 @@ impl Dispatcher {
             values: crate::component::SelectedValues::default(),
             unknown: Vec::new(),
         };
-        let transport = Transport::Message(MessageTarget {
-            app: Arc::clone(&self.app),
-            channel_id,
-            message_id,
-        });
-        let shared = Shared::new(transport, ephemerality, self.app.limits.clone());
+        let target = (channel_id, message_id);
+        let shared = self.message_shared(target, ephemerality, parts.user_locale.clone());
         let report = Report {
             app: &self.app,
             origin: ErrorOrigin::Command,

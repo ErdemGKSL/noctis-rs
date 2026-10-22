@@ -1,0 +1,98 @@
+---
+source: crates/noctis/tests/modal_derive.rs
+assertion_line: 767
+expression: json
+---
+{
+  "components": [
+    {
+      "content": "Fill this in.",
+      "type": 10
+    },
+    {
+      "component": {
+        "custom_id": "bio",
+        "max_length": 300,
+        "placeholder": "About you",
+        "required": false,
+        "style": 2,
+        "type": 4,
+        "value": "hi"
+      },
+      "label": "Bio",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "colour",
+        "options": [
+          {
+            "label": "Red",
+            "value": "r"
+          },
+          {
+            "default": true,
+            "description": "Like grass",
+            "label": "Green",
+            "value": "g"
+          },
+          {
+            "label": "Blue",
+            "value": "b"
+          }
+        ],
+        "placeholder": "Pick one",
+        "type": 3
+      },
+      "label": "Colour",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "severity",
+        "options": [
+          {
+            "label": "Low",
+            "value": "l"
+          },
+          {
+            "default": true,
+            "label": "High",
+            "value": "h"
+          }
+        ],
+        "type": 21
+      },
+      "description": "How bad?",
+      "label": "Severity",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "topics",
+        "max_values": 2,
+        "options": [
+          {
+            "default": true,
+            "label": "Rust",
+            "value": "Rust"
+          },
+          {
+            "label": "Art",
+            "value": "art"
+          },
+          {
+            "default": true,
+            "label": "Music",
+            "value": "Music"
+          }
+        ],
+        "type": 22
+      },
+      "label": "Topics",
+      "type": 18
+    }
+  ],
+  "custom_id": "0t.modal:",
+  "title": "Tell us"
+}

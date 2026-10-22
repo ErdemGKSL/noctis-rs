@@ -1,0 +1,80 @@
+---
+source: crates/noctis/tests/modal_derive.rs
+assertion_line: 819
+expression: json
+---
+{
+  "components": [
+    {
+      "component": {
+        "custom_id": "evidence",
+        "file_types": [
+          "image",
+          ".pdf"
+        ],
+        "max_values": 3,
+        "type": 19
+      },
+      "label": "Evidence",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "avatar",
+        "required": false,
+        "type": 19
+      },
+      "label": "Avatar",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "agree",
+        "default": true,
+        "type": 23
+      },
+      "label": "I agree",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "type",
+        "max_length": 5,
+        "min_length": 2,
+        "style": 1,
+        "type": 4,
+        "value": "Bug"
+      },
+      "label": "Title",
+      "type": 18
+    },
+    {
+      "component": {
+        "custom_id": "colours",
+        "max_values": 3,
+        "options": [
+          {
+            "default": true,
+            "label": "Red",
+            "value": "r"
+          },
+          {
+            "description": "Like grass",
+            "label": "Green",
+            "value": "g"
+          },
+          {
+            "default": true,
+            "label": "Blue",
+            "value": "b"
+          }
+        ],
+        "type": 3
+      },
+      "label": "Colours",
+      "type": 18
+    }
+  ],
+  "custom_id": "0t.modal:",
+  "title": "Upload"
+}

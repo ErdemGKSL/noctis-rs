@@ -556,8 +556,8 @@ fn survey_inputs(note: &str, severity: &str, topics: &[&str], agree: bool) -> Ve
 }
 
 /// The encoded `custom_id` of `modal`.
-fn modal_id(modal: noctis::ui::Modal) -> String {
-    serde_json::to_value(modal).unwrap()["custom_id"]
+fn modal_id(modal: impl Into<noctis::ui::Modal>) -> String {
+    serde_json::to_value(modal.into()).unwrap()["custom_id"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -783,23 +783,29 @@ async fn modal_auto_defer_follows_response() {
     let me = Id::new(3);
     let cases = [
         // Row 15: update with a source message.
-        (slow(SlowUpdate::blank(me, 300), true), json!({ "type": 6 })),
+        (
+            slow(SlowUpdate::blank(me, 300).into(), true),
+            json!({ "type": 6 }),
+        ),
         // Row 17: update, slash-opened.
         (
-            slow(SlowUpdate::blank(me, 300), false),
+            slow(SlowUpdate::blank(me, 300).into(), false),
             json!({ "type": 5 }),
         ),
         // Row 19: ephemeral, with and without a source message.
         (
-            slow(SlowEphemeral::blank(me, 300), true),
+            slow(SlowEphemeral::blank(me, 300).into(), true),
             json!({ "type": 5, "data": { "flags": 64 } }),
         ),
         (
-            slow(SlowEphemeral::blank(me, 300), false),
+            slow(SlowEphemeral::blank(me, 300).into(), false),
             json!({ "type": 5, "data": { "flags": 64 } }),
         ),
         // Row 21: public on a component-opened modal: a new message.
-        (slow(SlowPublic::blank(me, 300), true), json!({ "type": 5 })),
+        (
+            slow(SlowPublic::blank(me, 300).into(), true),
+            json!({ "type": 5 }),
+        ),
     ];
     for (i, (case, defer)) in cases.into_iter().enumerate() {
         running.dispatch(case);

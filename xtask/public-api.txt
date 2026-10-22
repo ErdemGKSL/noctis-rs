@@ -1388,14 +1388,14 @@ impl<K: noctis::ResponderKind> noctis::IntoResponse<K> for noctis::Responded
 impl<K: noctis::ResponderKind> noctis::IntoResponse<K> for noctis::Responded
 pub struct noctis::Responder<K: noctis::ResponderKind, S: noctis::ResponderState, D: noctis::DeferMode>
 impl<D: noctis::DeferMode> noctis::Responder<noctis::Command, noctis::Pending, D>
-pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::show_modal(self, noctis::ui::Modal) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError> where D: noctis::CanShowModal
+pub async fn noctis::Responder<noctis::Command, noctis::Pending, D>::show_modal(self, impl core::convert::Into<noctis::ui::Modal>) -> core::result::Result<noctis::Responder<noctis::Command, noctis::Acked, D>, noctis::ResponderError> where D: noctis::CanShowModal
 impl<D: noctis::DeferMode> noctis::Responder<noctis::Component, noctis::Pending, D>
 pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::defer_update(self) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError>
 pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::defer_update_with_response(self) -> core::result::Result<(noctis::Responder<noctis::Component, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
 pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::update(self, impl noctis::IntoEdit<noctis::Component>) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError>
 pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::update_with_response(self, impl noctis::IntoEdit<noctis::Component>) -> core::result::Result<(noctis::Responder<noctis::Component, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
 impl<D: noctis::DeferMode> noctis::Responder<noctis::Component, noctis::Pending, D>
-pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::show_modal(self, noctis::ui::Modal) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError> where D: noctis::CanShowModal
+pub async fn noctis::Responder<noctis::Component, noctis::Pending, D>::show_modal(self, impl core::convert::Into<noctis::ui::Modal>) -> core::result::Result<noctis::Responder<noctis::Component, noctis::Acked, D>, noctis::ResponderError> where D: noctis::CanShowModal
 impl<D: noctis::DeferMode> noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>
 pub async fn noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>::defer_update(self) -> core::result::Result<noctis::Responder<noctis::ModalSubmit, noctis::Acked, D>, noctis::ResponderError>
 pub async fn noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>::defer_update_with_response(self) -> core::result::Result<(noctis::Responder<noctis::ModalSubmit, noctis::Acked, D>, core::option::Option<noctis::CallbackResource>), noctis::ResponderError>
@@ -3312,7 +3312,31 @@ pub fn noctis::prelude::BeforeCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::BeforeCtx
 pub fn noctis::prelude::BeforeCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Button)]
+pub struct noctis::prelude::ButtonOverrides
+pub noctis::prelude::ButtonOverrides::disabled: core::option::Option<bool>
+pub noctis::prelude::ButtonOverrides::emoji: core::option::Option<noctis::ui::Emoji>
+pub noctis::prelude::ButtonOverrides::label: core::option::Option<noctis::prelude::Text>
+pub noctis::prelude::ButtonOverrides::style: core::option::Option<noctis::ui::ButtonStyle>
+impl core::clone::Clone for noctis::prelude::ButtonOverrides
+pub fn noctis::prelude::ButtonOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::ButtonOverrides
+pub fn noctis::prelude::ButtonOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::ButtonOverrides
+pub fn noctis::prelude::ButtonOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(ChannelSelectMenu)]
+pub struct noctis::prelude::ChannelSelectOverrides
+pub noctis::prelude::ChannelSelectOverrides::channel_types: core::option::Option<alloc::vec::Vec<twilight_model::channel::channel_type::ChannelType>>
+pub noctis::prelude::ChannelSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>
+pub noctis::prelude::ChannelSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::prelude::ChannelSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::prelude::ChannelSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::prelude::ChannelSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::prelude::ChannelSelectOverrides
+pub fn noctis::prelude::ChannelSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::ChannelSelectOverrides
+pub fn noctis::prelude::ChannelSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::ChannelSelectOverrides
+pub fn noctis::prelude::ChannelSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Choices)]
 pub trait noctis::prelude::Choices: core::marker::Sized + 'static
 pub type noctis::prelude::Choices::Count
@@ -3538,6 +3562,16 @@ pub fn noctis::prelude::HandlerError::fmt(&self, &mut core::fmt::Formatter<'_>) 
 impl<E: core::error::Error + core::marker::Send + core::marker::Sync + 'static> core::convert::From<E> for noctis::prelude::HandlerError
 pub fn noctis::prelude::HandlerError::from(E) -> Self
 pub type noctis::prelude::HandlerResult<T> = core::result::Result<T, noctis::HandlerError>
+pub struct noctis::prelude::InputOverrides
+pub noctis::prelude::InputOverrides::description: core::option::Option<noctis::prelude::Text>
+pub noctis::prelude::InputOverrides::label: core::option::Option<noctis::prelude::Text>
+pub noctis::prelude::InputOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::prelude::InputOverrides
+pub fn noctis::prelude::InputOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::InputOverrides
+pub fn noctis::prelude::InputOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::InputOverrides
+pub fn noctis::prelude::InputOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::Responded, noctis::RefOps)
 impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::ui::Components, noctis::RefOps)
 impl noctis::prelude::IntoResponse<noctis::Component> for (noctis::ui::V2Message, noctis::RefOps)
@@ -3568,6 +3602,18 @@ impl noctis::DeferMode for noctis::prelude::Manual
 impl noctis::CanShowModal for noctis::prelude::Manual
 impl noctis::DeferMode for noctis::prelude::Manual
 pub proc macro noctis::prelude::#[derive(MentionableSelectMenu)]
+pub struct noctis::prelude::MentionableSelectOverrides
+pub noctis::prelude::MentionableSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<noctis::ui::MentionableId>>
+pub noctis::prelude::MentionableSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::prelude::MentionableSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::prelude::MentionableSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::prelude::MentionableSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::prelude::MentionableSelectOverrides
+pub fn noctis::prelude::MentionableSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::MentionableSelectOverrides
+pub fn noctis::prelude::MentionableSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::MentionableSelectOverrides
+pub fn noctis::prelude::MentionableSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(MessageCommand)]
 pub struct noctis::prelude::MessageKey(_)
 impl noctis::prelude::MessageKey
@@ -3708,6 +3754,18 @@ pub fn noctis::prelude::Rgb::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::prelude::Rgb
 impl core::marker::StructuralPartialEq for noctis::prelude::Rgb
 pub proc macro noctis::prelude::#[derive(RoleSelectMenu)]
+pub struct noctis::prelude::RoleSelectOverrides
+pub noctis::prelude::RoleSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>
+pub noctis::prelude::RoleSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::prelude::RoleSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::prelude::RoleSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::prelude::RoleSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::prelude::RoleSelectOverrides
+pub fn noctis::prelude::RoleSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::RoleSelectOverrides
+pub fn noctis::prelude::RoleSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::RoleSelectOverrides
+pub fn noctis::prelude::RoleSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::prelude::Route
 pub type noctis::prelude::Route::Payload: noctis::codec::Payload
 pub const noctis::prelude::Route::ID: noctis::codec::RouteId
@@ -3723,6 +3781,19 @@ impl<T> core::ops::deref::Deref for noctis::prelude::State<T>
 pub type noctis::prelude::State<T>::Target = T
 pub fn noctis::prelude::State<T>::deref(&self) -> &T
 pub proc macro noctis::prelude::#[derive(StringSelectMenu)]
+pub struct noctis::prelude::StringSelectOverrides
+pub noctis::prelude::StringSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<alloc::borrow::Cow<'static, str>>>
+pub noctis::prelude::StringSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::prelude::StringSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::prelude::StringSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::prelude::StringSelectOverrides::options: core::option::Option<alloc::vec::Vec<noctis::ui::SelectOption>>
+pub noctis::prelude::StringSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::prelude::StringSelectOverrides
+pub fn noctis::prelude::StringSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::StringSelectOverrides
+pub fn noctis::prelude::StringSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::StringSelectOverrides
+pub fn noctis::prelude::StringSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::Suggestions<T: noctis::SuggestionValue>
 impl<T: noctis::SuggestionValue> noctis::prelude::Suggestions<T>
 pub fn noctis::prelude::Suggestions<T>::is_empty(&self) -> bool
@@ -3739,8 +3810,64 @@ impl<T: noctis::SuggestionValue, L: core::convert::Into<noctis::SuggestionLabel>
 pub fn noctis::prelude::Suggestions<T>::from_iter<I: core::iter::traits::collect::IntoIterator<Item = (T, L)>>(I) -> Self
 impl<T: noctis::SuggestionValue> core::default::Default for noctis::prelude::Suggestions<T>
 pub fn noctis::prelude::Suggestions<T>::default() -> Self
+#[non_exhaustive] pub enum noctis::prelude::Text
+pub noctis::prelude::Text::Key(noctis::prelude::MessageKey)
+pub noctis::prelude::Text::Literal(alloc::borrow::Cow<'static, str>)
+impl noctis::prelude::Text
+pub fn noctis::prelude::Text::as_str(&self) -> &str
+pub fn noctis::prelude::Text::key(&self) -> core::option::Option<noctis::prelude::MessageKey>
+impl core::clone::Clone for noctis::prelude::Text
+pub fn noctis::prelude::Text::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::Text
+impl core::cmp::PartialEq for noctis::prelude::Text
+pub fn noctis::prelude::Text::eq(&self, &Self) -> bool
+impl core::convert::AsRef<str> for noctis::prelude::Text
+pub fn noctis::prelude::Text::as_ref(&self) -> &str
+impl core::convert::From<&'static str> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(&'static str) -> Self
+impl core::convert::From<alloc::borrow::Cow<'static, str>> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(alloc::borrow::Cow<'static, str>) -> Self
+impl core::convert::From<alloc::string::String> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(alloc::string::String) -> Self
+impl core::convert::From<noctis::prelude::MessageKey> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::prelude::MessageKey) -> Self
+impl core::convert::From<noctis::ui::AltText> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::AltText) -> Self
+impl core::convert::From<noctis::ui::Content> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::Content) -> Self
+impl core::convert::From<noctis::ui::Label> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::Label) -> Self
+impl core::convert::From<noctis::ui::Placeholder> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::Placeholder) -> Self
+impl core::fmt::Debug for noctis::prelude::Text
+pub fn noctis::prelude::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::prelude::Text
+pub fn noctis::prelude::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::prelude::Text
+impl serde_core::ser::Serialize for noctis::prelude::Text
+pub fn noctis::prelude::Text::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::AltText> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::AltText) -> Self
+impl core::convert::From<noctis::ui::Content> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::Content) -> Self
+impl core::convert::From<noctis::ui::Label> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::Label) -> Self
+impl core::convert::From<noctis::ui::Placeholder> for noctis::prelude::Text
+pub fn noctis::prelude::Text::from(noctis::ui::Placeholder) -> Self
 pub proc macro noctis::prelude::#[derive(UserCommand)]
 pub proc macro noctis::prelude::#[derive(UserSelectMenu)]
+pub struct noctis::prelude::UserSelectOverrides
+pub noctis::prelude::UserSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>
+pub noctis::prelude::UserSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::prelude::UserSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::prelude::UserSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::prelude::UserSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::prelude::UserSelectOverrides
+pub fn noctis::prelude::UserSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::prelude::UserSelectOverrides
+pub fn noctis::prelude::UserSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::prelude::UserSelectOverrides
+pub fn noctis::prelude::UserSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub type noctis::prelude::Visibility = noctis::Ephemerality
 pub proc macro noctis::prelude::#[autocomplete]
 pub proc macro noctis::prelude::components!()
@@ -4728,6 +4855,7 @@ pub noctis::rules::component::Select::kind: noctis::rules::component::SelectKind
 pub noctis::rules::component::Select::max_values: core::option::Option<usize>
 pub noctis::rules::component::Select::min_values: core::option::Option<usize>
 pub noctis::rules::component::Select::placeholder: core::option::Option<&'a str>
+pub noctis::rules::component::Select::string_defaults: core::option::Option<&'a [&'a str]>
 impl<'a> noctis::rules::component::Select<'a>
 pub const fn noctis::rules::component::Select<'a>::default_values(self, usize) -> Self
 pub const fn noctis::rules::component::Select<'a>::disabled(self, bool) -> Self
@@ -4735,6 +4863,7 @@ pub const fn noctis::rules::component::Select<'a>::max_values(self, usize) -> Se
 pub const fn noctis::rules::component::Select<'a>::min_values(self, usize) -> Self
 pub const fn noctis::rules::component::Select<'a>::new(noctis::rules::component::SelectKind<'a>) -> Self
 pub const fn noctis::rules::component::Select<'a>::placeholder(self, &'a str) -> Self
+pub const fn noctis::rules::component::Select<'a>::string_defaults(self, &'a [&'a str]) -> Self
 impl<'a> core::clone::Clone for noctis::rules::component::Select<'a>
 pub fn noctis::rules::component::Select<'a>::clone(&self) -> Self
 impl<'a> core::cmp::PartialEq for noctis::rules::component::Select<'a>
@@ -5705,6 +5834,17 @@ impl<R> core::convert::From<noctis::ui::RouteButton<R>> for noctis::ui::Button
 pub fn noctis::ui::Button::from(noctis::ui::RouteButton<R>) -> Self
 impl noctis::ui::RowItem for noctis::ui::Button
 impl noctis::ui::SectionAccessory for noctis::ui::Button
+pub struct noctis::ui::ButtonOverrides
+pub noctis::ui::ButtonOverrides::disabled: core::option::Option<bool>
+pub noctis::ui::ButtonOverrides::emoji: core::option::Option<noctis::ui::Emoji>
+pub noctis::ui::ButtonOverrides::label: core::option::Option<noctis::prelude::Text>
+pub noctis::ui::ButtonOverrides::style: core::option::Option<noctis::ui::ButtonStyle>
+impl core::clone::Clone for noctis::ui::ButtonOverrides
+pub fn noctis::ui::ButtonOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::ButtonOverrides
+pub fn noctis::ui::ButtonOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::ButtonOverrides
+pub fn noctis::ui::ButtonOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum noctis::ui::ButtonStyle
 pub noctis::ui::ButtonStyle::Danger
 pub noctis::ui::ButtonStyle::Primary
@@ -5756,11 +5896,13 @@ pub struct noctis::ui::ChannelSelect
 impl noctis::ui::ChannelSelect
 pub fn noctis::ui::ChannelSelect::channel_types(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::channel::channel_type::ChannelType>) -> Self
 pub fn noctis::ui::ChannelSelect::default_channels(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>) -> Self
+pub fn noctis::ui::ChannelSelect::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>) -> Self
+pub fn noctis::ui::ChannelSelect::overrides(self, noctis::prelude::ChannelSelectOverrides) -> Self
 impl noctis::ui::ChannelSelect
 pub fn noctis::ui::ChannelSelect::disabled(self, bool) -> Self
 pub fn noctis::ui::ChannelSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::ChannelSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::ChannelSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ChannelSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 impl core::clone::Clone for noctis::ui::ChannelSelect
 pub fn noctis::ui::ChannelSelect::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::ChannelSelect
@@ -5769,6 +5911,19 @@ impl noctis::ui::RowSelect for noctis::ui::ChannelSelect
 impl serde_core::ser::Serialize for noctis::ui::ChannelSelect
 pub fn noctis::ui::ChannelSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::ChannelSelect
+pub struct noctis::ui::ChannelSelectOverrides
+pub noctis::ui::ChannelSelectOverrides::channel_types: core::option::Option<alloc::vec::Vec<twilight_model::channel::channel_type::ChannelType>>
+pub noctis::ui::ChannelSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>
+pub noctis::ui::ChannelSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::ui::ChannelSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::ui::ChannelSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::ui::ChannelSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::ui::ChannelSelectOverrides
+pub fn noctis::ui::ChannelSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::ChannelSelectOverrides
+pub fn noctis::ui::ChannelSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::ChannelSelectOverrides
+pub fn noctis::ui::ChannelSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::ui::Checkbox
 impl noctis::ui::Checkbox
 pub fn noctis::ui::Checkbox::default(self, bool) -> Self
@@ -6029,6 +6184,22 @@ impl serde_core::ser::Serialize for noctis::ui::FileUpload
 pub fn noctis::ui::FileUpload::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ModalInput for noctis::ui::FileUpload
 pub trait noctis::ui::GalleryItems: noctis::__private::ui::sealed::Sealed
+pub struct noctis::ui::InputField<X: ModalRender, T>
+impl<X: ModalRender, T> core::clone::Clone for noctis::ui::InputField<X, T>
+pub fn noctis::ui::InputField<X, T>::clone(&self) -> Self
+impl<X: ModalRender, T> core::fmt::Debug for noctis::ui::InputField<X, T>
+pub fn noctis::ui::InputField<X, T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<X: ModalRender, T> core::marker::Copy for noctis::ui::InputField<X, T>
+pub struct noctis::ui::InputOverrides
+pub noctis::ui::InputOverrides::description: core::option::Option<noctis::prelude::Text>
+pub noctis::ui::InputOverrides::label: core::option::Option<noctis::prelude::Text>
+pub noctis::ui::InputOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::ui::InputOverrides
+pub fn noctis::ui::InputOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::InputOverrides
+pub fn noctis::ui::InputOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::InputOverrides
+pub fn noctis::ui::InputOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::ui::Label(_)
 impl noctis::ui::Label
 pub fn noctis::ui::Label::as_str(&self) -> &str
@@ -6172,15 +6343,31 @@ pub fn noctis::ui::Mentionable::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::ui::Mentionable
 pub fn noctis::ui::Mentionable::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::Mentionable
+#[non_exhaustive] pub enum noctis::ui::MentionableId
+pub noctis::ui::MentionableId::Role(twilight_model::id::Id<twilight_model::id::marker::RoleMarker>)
+pub noctis::ui::MentionableId::User(twilight_model::id::Id<twilight_model::id::marker::UserMarker>)
+impl core::clone::Clone for noctis::ui::MentionableId
+pub fn noctis::ui::MentionableId::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::MentionableId
+impl core::cmp::PartialEq for noctis::ui::MentionableId
+pub fn noctis::ui::MentionableId::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ui::MentionableId
+pub fn noctis::ui::MentionableId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::MentionableId
+pub fn noctis::ui::MentionableId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ui::MentionableId
+impl core::marker::StructuralPartialEq for noctis::ui::MentionableId
 pub struct noctis::ui::MentionableSelect
 impl noctis::ui::MentionableSelect
 pub fn noctis::ui::MentionableSelect::default_roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
 pub fn noctis::ui::MentionableSelect::default_users(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+pub fn noctis::ui::MentionableSelect::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::MentionableId>) -> Self
+pub fn noctis::ui::MentionableSelect::overrides(self, noctis::prelude::MentionableSelectOverrides) -> Self
 impl noctis::ui::MentionableSelect
 pub fn noctis::ui::MentionableSelect::disabled(self, bool) -> Self
 pub fn noctis::ui::MentionableSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::MentionableSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::MentionableSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::MentionableSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 impl core::clone::Clone for noctis::ui::MentionableSelect
 pub fn noctis::ui::MentionableSelect::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::MentionableSelect
@@ -6189,6 +6376,18 @@ impl noctis::ui::RowSelect for noctis::ui::MentionableSelect
 impl serde_core::ser::Serialize for noctis::ui::MentionableSelect
 pub fn noctis::ui::MentionableSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::MentionableSelect
+pub struct noctis::ui::MentionableSelectOverrides
+pub noctis::ui::MentionableSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<noctis::ui::MentionableId>>
+pub noctis::ui::MentionableSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::ui::MentionableSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::ui::MentionableSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::ui::MentionableSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::ui::MentionableSelectOverrides
+pub fn noctis::ui::MentionableSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::MentionableSelectOverrides
+pub fn noctis::ui::MentionableSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::MentionableSelectOverrides
+pub fn noctis::ui::MentionableSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::ui::Mentions
 impl noctis::ui::Mentions
 pub fn noctis::ui::Mentions::everyone(self, bool) -> Self
@@ -6248,7 +6447,20 @@ pub fn noctis::ui::Modal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt
 impl noctis::ui::Validate for noctis::ui::Modal
 impl serde_core::ser::Serialize for noctis::ui::Modal
 pub fn noctis::ui::Modal::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<X: ModalRender> core::convert::From<noctis::ui::ModalBuilder<X>> for noctis::ui::Modal
+pub fn noctis::ui::Modal::from(noctis::ui::ModalBuilder<X>) -> Self
+impl<X: ModalRender> core::convert::From<noctis::ui::ModalBuilder<X>> for noctis::ui::Modal
+pub fn noctis::ui::Modal::from(noctis::ui::ModalBuilder<X>) -> Self
 impl noctis::ui::Validate for noctis::ui::Modal
+pub struct noctis::ui::ModalBuilder<X: ModalRender>
+impl<X: ModalRender> noctis::ui::ModalBuilder<X>
+pub fn noctis::ui::ModalBuilder<X>::overrides(self, <X as >::Overrides) -> Self
+pub fn noctis::ui::ModalBuilder<X>::title(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
+pub fn noctis::ui::ModalBuilder<X>::value<T>(self, noctis::ui::InputField<X, T>, T) -> Self
+impl<X: ModalRender> core::clone::Clone for noctis::ui::ModalBuilder<X>
+pub fn noctis::ui::ModalBuilder<X>::clone(&self) -> Self
+impl<X: ModalRender> core::fmt::Debug for noctis::ui::ModalBuilder<X>
+pub fn noctis::ui::ModalBuilder<X>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::ui::ModalChannelSelect
 impl noctis::ui::ModalChannelSelect
 pub fn noctis::ui::ModalChannelSelect::channel_types(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::channel::channel_type::ChannelType>) -> Self
@@ -6257,7 +6469,7 @@ pub fn noctis::ui::ModalChannelSelect::new(impl core::convert::Into<alloc::borro
 impl noctis::ui::ModalChannelSelect
 pub fn noctis::ui::ModalChannelSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::ModalChannelSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::ModalChannelSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalChannelSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::ModalChannelSelect::required(self, bool) -> Self
 impl core::clone::Clone for noctis::ui::ModalChannelSelect
 pub fn noctis::ui::ModalChannelSelect::clone(&self) -> Self
@@ -6290,8 +6502,8 @@ pub fn noctis::ui::ModalForm::from_submission(&noctis::ui::ModalSubmission) -> c
 pub trait noctis::ui::ModalInput: noctis::__private::ui::sealed::IntoModalInput
 pub struct noctis::ui::ModalLabel
 impl noctis::ui::ModalLabel
-pub fn noctis::ui::ModalLabel::description(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
-pub fn noctis::ui::ModalLabel::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl noctis::ui::ModalInput) -> Self
+pub fn noctis::ui::ModalLabel::description(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
+pub fn noctis::ui::ModalLabel::new(impl core::convert::Into<noctis::prelude::Text>, impl noctis::ui::ModalInput) -> Self
 impl core::clone::Clone for noctis::ui::ModalLabel
 pub fn noctis::ui::ModalLabel::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::ModalLabel
@@ -6302,13 +6514,14 @@ pub fn noctis::ui::ModalLabel::serialize<S: serde_core::ser::Serializer>(&self, 
 impl noctis::ui::ModalTopLevel for noctis::ui::ModalLabel
 pub struct noctis::ui::ModalMentionableSelect
 impl noctis::ui::ModalMentionableSelect
+pub fn noctis::ui::ModalMentionableSelect::default_mentionables(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::MentionableId>) -> Self
 pub fn noctis::ui::ModalMentionableSelect::default_roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
 pub fn noctis::ui::ModalMentionableSelect::default_users(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
 pub fn noctis::ui::ModalMentionableSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 impl noctis::ui::ModalMentionableSelect
 pub fn noctis::ui::ModalMentionableSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::ModalMentionableSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::ModalMentionableSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalMentionableSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::ModalMentionableSelect::required(self, bool) -> Self
 impl core::clone::Clone for noctis::ui::ModalMentionableSelect
 pub fn noctis::ui::ModalMentionableSelect::clone(&self) -> Self
@@ -6340,7 +6553,7 @@ pub fn noctis::ui::ModalRoleSelect::new(impl core::convert::Into<alloc::borrow::
 impl noctis::ui::ModalRoleSelect
 pub fn noctis::ui::ModalRoleSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::ModalRoleSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::ModalRoleSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalRoleSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::ModalRoleSelect::required(self, bool) -> Self
 impl core::clone::Clone for noctis::ui::ModalRoleSelect
 pub fn noctis::ui::ModalRoleSelect::clone(&self) -> Self
@@ -6354,7 +6567,7 @@ pub struct noctis::ui::ModalStringSelect
 impl noctis::ui::ModalStringSelect
 pub fn noctis::ui::ModalStringSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::ModalStringSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::ModalStringSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalStringSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::ModalStringSelect::required(self, bool) -> Self
 impl noctis::ui::ModalStringSelect
 pub fn noctis::ui::ModalStringSelect::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> Self
@@ -6388,7 +6601,7 @@ pub fn noctis::ui::ModalUserSelect::new(impl core::convert::Into<alloc::borrow::
 impl noctis::ui::ModalUserSelect
 pub fn noctis::ui::ModalUserSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::ModalUserSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::ModalUserSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::ModalUserSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::ModalUserSelect::required(self, bool) -> Self
 impl core::clone::Clone for noctis::ui::ModalUserSelect
 pub fn noctis::ui::ModalUserSelect::clone(&self) -> Self
@@ -6560,11 +6773,13 @@ impl core::marker::StructuralPartialEq for noctis::ui::Rgb
 pub struct noctis::ui::RoleSelect
 impl noctis::ui::RoleSelect
 pub fn noctis::ui::RoleSelect::default_roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+pub fn noctis::ui::RoleSelect::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+pub fn noctis::ui::RoleSelect::overrides(self, noctis::prelude::RoleSelectOverrides) -> Self
 impl noctis::ui::RoleSelect
 pub fn noctis::ui::RoleSelect::disabled(self, bool) -> Self
 pub fn noctis::ui::RoleSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::RoleSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::RoleSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::RoleSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 impl core::clone::Clone for noctis::ui::RoleSelect
 pub fn noctis::ui::RoleSelect::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::RoleSelect
@@ -6573,6 +6788,18 @@ impl noctis::ui::RowSelect for noctis::ui::RoleSelect
 impl serde_core::ser::Serialize for noctis::ui::RoleSelect
 pub fn noctis::ui::RoleSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::RoleSelect
+pub struct noctis::ui::RoleSelectOverrides
+pub noctis::ui::RoleSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>
+pub noctis::ui::RoleSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::ui::RoleSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::ui::RoleSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::ui::RoleSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::ui::RoleSelectOverrides
+pub fn noctis::ui::RoleSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::RoleSelectOverrides
+pub fn noctis::ui::RoleSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::RoleSelectOverrides
+pub fn noctis::ui::RoleSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum noctis::ui::Roles
 pub noctis::ui::Roles::All
 pub noctis::ui::Roles::None
@@ -6593,7 +6820,8 @@ pub struct noctis::ui::RouteButton<R>
 impl<R> noctis::ui::RouteButton<R>
 pub fn noctis::ui::RouteButton<R>::disabled(self, bool) -> Self
 pub fn noctis::ui::RouteButton<R>::emoji(self, noctis::ui::Emoji) -> Self
-pub fn noctis::ui::RouteButton<R>::label(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::RouteButton<R>::label(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
+pub fn noctis::ui::RouteButton<R>::overrides(self, noctis::prelude::ButtonOverrides) -> Self
 pub fn noctis::ui::RouteButton<R>::style(self, noctis::ui::ButtonStyle) -> Self
 impl<R> core::clone::Clone for noctis::ui::RouteButton<R>
 pub fn noctis::ui::RouteButton<R>::clone(&self) -> Self
@@ -6684,12 +6912,14 @@ impl core::marker::Copy for noctis::ui::Spacing
 impl core::marker::StructuralPartialEq for noctis::ui::Spacing
 pub struct noctis::ui::StringSelect
 impl noctis::ui::StringSelect
+pub fn noctis::ui::StringSelect::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::borrow::Cow<'static, str>>>) -> Self
+pub fn noctis::ui::StringSelect::options(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> Self
+pub fn noctis::ui::StringSelect::overrides(self, noctis::prelude::StringSelectOverrides) -> Self
+impl noctis::ui::StringSelect
 pub fn noctis::ui::StringSelect::disabled(self, bool) -> Self
 pub fn noctis::ui::StringSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::StringSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::StringSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
-impl noctis::ui::StringSelect
-pub fn noctis::ui::StringSelect::options(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> Self
+pub fn noctis::ui::StringSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 impl core::clone::Clone for noctis::ui::StringSelect
 pub fn noctis::ui::StringSelect::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::StringSelect
@@ -6700,11 +6930,12 @@ pub fn noctis::ui::StringSelect::serialize<S: serde_core::ser::Serializer>(&self
 impl noctis::ui::RowSelect for noctis::ui::StringSelect
 pub struct noctis::ui::StringSelectBuilder<R>
 impl<R> noctis::ui::StringSelectBuilder<R>
+pub fn noctis::ui::StringSelectBuilder<R>::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::borrow::Cow<'static, str>>>) -> Self
 pub fn noctis::ui::StringSelectBuilder<R>::disabled(self, bool) -> Self
 pub fn noctis::ui::StringSelectBuilder<R>::max_values(self, u8) -> Self
 pub fn noctis::ui::StringSelectBuilder<R>::min_values(self, u8) -> Self
 pub fn noctis::ui::StringSelectBuilder<R>::options(self, impl core::iter::traits::collect::IntoIterator<Item = noctis::ui::SelectOption>) -> noctis::ui::StringSelect
-pub fn noctis::ui::StringSelectBuilder<R>::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::StringSelectBuilder<R>::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 impl<R: OptionsGiven> noctis::ui::RowSelect for noctis::ui::StringSelectBuilder<R>
 impl<R> core::clone::Clone for noctis::ui::StringSelectBuilder<R>
 pub fn noctis::ui::StringSelectBuilder<R>::clone(&self) -> Self
@@ -6712,6 +6943,19 @@ impl<R> core::fmt::Debug for noctis::ui::StringSelectBuilder<R>
 pub fn noctis::ui::StringSelectBuilder<R>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<R: OptionsGiven> noctis::ui::RowSelect for noctis::ui::StringSelectBuilder<R>
 pub trait noctis::ui::StringSelectOptions: noctis::__private::ui::sealed::Sealed
+pub struct noctis::ui::StringSelectOverrides
+pub noctis::ui::StringSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<alloc::borrow::Cow<'static, str>>>
+pub noctis::ui::StringSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::ui::StringSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::ui::StringSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::ui::StringSelectOverrides::options: core::option::Option<alloc::vec::Vec<noctis::ui::SelectOption>>
+pub noctis::ui::StringSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::ui::StringSelectOverrides
+pub fn noctis::ui::StringSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::StringSelectOverrides
+pub fn noctis::ui::StringSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::StringSelectOverrides
+pub fn noctis::ui::StringSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::ui::SubmitError
 pub noctis::ui::SubmitError::Duplicate
 pub noctis::ui::SubmitError::Duplicate::key: alloc::string::String
@@ -6760,6 +7004,50 @@ pub fn noctis::ui::SubmittedValue::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::ui::SubmittedValue
 pub fn noctis::ui::SubmittedValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ui::SubmittedValue
+#[non_exhaustive] pub enum noctis::ui::Text
+pub noctis::ui::Text::Key(noctis::prelude::MessageKey)
+pub noctis::ui::Text::Literal(alloc::borrow::Cow<'static, str>)
+impl noctis::ui::Text
+pub fn noctis::ui::Text::as_str(&self) -> &str
+pub fn noctis::ui::Text::key(&self) -> core::option::Option<noctis::prelude::MessageKey>
+impl core::clone::Clone for noctis::ui::Text
+pub fn noctis::ui::Text::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::Text
+impl core::cmp::PartialEq for noctis::ui::Text
+pub fn noctis::ui::Text::eq(&self, &Self) -> bool
+impl core::convert::AsRef<str> for noctis::ui::Text
+pub fn noctis::ui::Text::as_ref(&self) -> &str
+impl core::convert::From<&'static str> for noctis::ui::Text
+pub fn noctis::ui::Text::from(&'static str) -> Self
+impl core::convert::From<alloc::borrow::Cow<'static, str>> for noctis::ui::Text
+pub fn noctis::ui::Text::from(alloc::borrow::Cow<'static, str>) -> Self
+impl core::convert::From<alloc::string::String> for noctis::ui::Text
+pub fn noctis::ui::Text::from(alloc::string::String) -> Self
+impl core::convert::From<noctis::prelude::MessageKey> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::prelude::MessageKey) -> Self
+impl core::convert::From<noctis::ui::AltText> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::AltText) -> Self
+impl core::convert::From<noctis::ui::Content> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::Content) -> Self
+impl core::convert::From<noctis::ui::Label> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::Label) -> Self
+impl core::convert::From<noctis::ui::Placeholder> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::Placeholder) -> Self
+impl core::fmt::Debug for noctis::ui::Text
+pub fn noctis::ui::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ui::Text
+pub fn noctis::ui::Text::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::Text
+impl serde_core::ser::Serialize for noctis::ui::Text
+pub fn noctis::ui::Text::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl core::convert::From<noctis::ui::AltText> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::AltText) -> Self
+impl core::convert::From<noctis::ui::Content> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::Content) -> Self
+impl core::convert::From<noctis::ui::Label> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::Label) -> Self
+impl core::convert::From<noctis::ui::Placeholder> for noctis::ui::Text
+pub fn noctis::ui::Text::from(noctis::ui::Placeholder) -> Self
 pub struct noctis::ui::TextDisplay
 impl noctis::ui::TextDisplay
 pub fn noctis::ui::TextDisplay::content(&self) -> &str
@@ -6785,7 +7073,7 @@ impl noctis::ui::TextInput
 pub fn noctis::ui::TextInput::max_length(self, u16) -> Self
 pub fn noctis::ui::TextInput::min_length(self, u16) -> Self
 pub fn noctis::ui::TextInput::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::rules::modal::TextInputStyle) -> Self
-pub fn noctis::ui::TextInput::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::TextInput::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 pub fn noctis::ui::TextInput::required(self, bool) -> Self
 pub fn noctis::ui::TextInput::value(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 impl core::clone::Clone for noctis::ui::TextInput
@@ -6883,11 +7171,13 @@ impl core::marker::StructuralPartialEq for noctis::ui::UiError
 pub struct noctis::ui::UserSelect
 impl noctis::ui::UserSelect
 pub fn noctis::ui::UserSelect::default_users(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+pub fn noctis::ui::UserSelect::default_values(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+pub fn noctis::ui::UserSelect::overrides(self, noctis::prelude::UserSelectOverrides) -> Self
 impl noctis::ui::UserSelect
 pub fn noctis::ui::UserSelect::disabled(self, bool) -> Self
 pub fn noctis::ui::UserSelect::max_values(self, u8) -> Self
 pub fn noctis::ui::UserSelect::min_values(self, u8) -> Self
-pub fn noctis::ui::UserSelect::placeholder(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+pub fn noctis::ui::UserSelect::placeholder(self, impl core::convert::Into<noctis::prelude::Text>) -> Self
 impl core::clone::Clone for noctis::ui::UserSelect
 pub fn noctis::ui::UserSelect::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ui::UserSelect
@@ -6896,6 +7186,18 @@ impl noctis::ui::RowSelect for noctis::ui::UserSelect
 impl serde_core::ser::Serialize for noctis::ui::UserSelect
 pub fn noctis::ui::UserSelect::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::RowSelect for noctis::ui::UserSelect
+pub struct noctis::ui::UserSelectOverrides
+pub noctis::ui::UserSelectOverrides::default_values: core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>
+pub noctis::ui::UserSelectOverrides::disabled: core::option::Option<bool>
+pub noctis::ui::UserSelectOverrides::max_values: core::option::Option<u8>
+pub noctis::ui::UserSelectOverrides::min_values: core::option::Option<u8>
+pub noctis::ui::UserSelectOverrides::placeholder: core::option::Option<noctis::prelude::Text>
+impl core::clone::Clone for noctis::ui::UserSelectOverrides
+pub fn noctis::ui::UserSelectOverrides::clone(&self) -> Self
+impl core::default::Default for noctis::ui::UserSelectOverrides
+pub fn noctis::ui::UserSelectOverrides::default() -> Self
+impl core::fmt::Debug for noctis::ui::UserSelectOverrides
+pub fn noctis::ui::UserSelectOverrides::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum noctis::ui::Users
 pub noctis::ui::Users::All
 pub noctis::ui::Users::None

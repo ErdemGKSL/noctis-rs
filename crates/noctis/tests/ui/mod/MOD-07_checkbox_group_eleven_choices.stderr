@@ -19,7 +19,7 @@ error[E0277]: [MOD-07] a Checkbox Group takes 1 to 10 options
 note: required by a bound in `noctis::__private::noctis_ui::modal::form::checkbox_group`
   --> $WORKSPACE/crates/noctis-ui/src/modal/form.rs
    |
-   | pub fn checkbox_group<T>(key: &'static str, spec: Spec) -> CheckboxGroup
+   | pub fn checkbox_group<T>(key: &'static str, spec: Spec, prefill: Option<&Prefill>) -> CheckboxGroup
    |        -------------- required by a bound in this function
 ...
    |     T::Count: CheckboxOptions,

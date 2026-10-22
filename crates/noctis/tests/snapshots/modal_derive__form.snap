@@ -1,5 +1,6 @@
 ---
 source: crates/noctis/tests/modal_derive.rs
+assertion_line: 271
 expression: forms
 ---
 {
@@ -262,7 +263,7 @@ expression: forms
       },
       {
         "component": {
-          "custom_id": "title",
+          "custom_id": "type",
           "max_length": 5,
           "min_length": 2,
           "style": 1,

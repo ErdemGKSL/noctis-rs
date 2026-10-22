@@ -19,7 +19,7 @@ error[E0277]: [CV2-09] a String Select takes 1 to 25 options
 note: required by a bound in `noctis::__private::noctis_ui::modal::form::string_select`
   --> $WORKSPACE/crates/noctis-ui/src/modal/form.rs
    |
-   | pub fn string_select<T>(key: &'static str, spec: Spec) -> ModalStringSelect
+   | pub fn string_select<T>(
    |        ------------- required by a bound in this function
 ...
    |     T::Count: StringSelectOptions,

@@ -85,10 +85,11 @@ drift apart. Each block is the whole module, with its own `use` lines, so it com
 shown in `src/<name>.rs` of a bot crate; the `app` block is the crate root `src/lib.rs`
 (not `src/app.rs`), and `store` is `src/store.rs`.
 
-Two things are literal on purpose until their features land: user-visible text (it moves
-to the locale files with `i18n!`, Epic 11; `defaults(label = "…")` then takes a locale key)
-and modal pre-fill (modals open blank with `X::blank(..)` until Story 9.4). Everything
-else is the shipped API.
+One thing is literal on purpose until its feature lands: user-visible text in
+`defaults(..)` (it moves to the locale files with `i18n!`, Epic 11; per-render overrides
+already take a `MessageKey`). Modals open pre-filled from a struct value
+(`X { field: v, ..X::blank(..) }.build()`, `modals.md` §4a). Everything else is the
+shipped API.
 
 ### 3.1 Tabs (UD-5)
 
@@ -873,15 +874,28 @@ impl PickSystem {
 }
 
 impl RenameSystem {
-    /// Button → modal. The modal opens blank: pre-filling it with the stored name is
-    /// Story 9.4.
+    /// Button → modal, pre-filled with the stored name: every input of `RenameForm`
+    /// has an empty value, so `blank` returns a `RenameForm` to update.
     #[handler]
     async fn handle(
         self,
-        _ctx: ComponentCtx,
+        ctx: ComponentCtx,
         r: ComponentResponder<Manual>,
     ) -> HandlerResult<Responded> {
-        Ok(r.show_modal(RenameForm::blank(self.system)).await?.done())
+        let name = match (ctx.guild_id(), ctx.state::<TicketStore>()) {
+            (Some(guild), Some(store)) => store
+                .systems(guild)
+                .into_iter()
+                .find(|t| t.id == self.system)
+                .map(|t| t.name)
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        let form = RenameForm {
+            name,
+            ..RenameForm::blank(self.system)
+        };
+        Ok(r.show_modal(form).await?.done())
     }
 }
 
@@ -1423,8 +1437,8 @@ are how every Noctis bot should be written.
 9. **Autocomplete backed by storage queries capped at 25** in the query itself
    (`commands.md` §4).
 10. **Button → modal → re-render chains**: the button's Route and the modal's Route carry
-    the same Payload; the button handler opens the modal (pre-filled from storage once
-    Story 9.4 lands; blank with `X::blank(..)` until then); the submit handler
+    the same Payload; the button handler opens the modal pre-filled from storage
+    (`X { field: stored, ..X::blank(..) }.build()`); the submit handler
     validates, saves and calls `ctx.update(render_x(..))` on the original message.
 11. **Every user-visible string goes through the locale files** (`Strings::of(locale)`),
     modal titles and placeholders included; no "Todo localization" literals. (The

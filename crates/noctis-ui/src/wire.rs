@@ -6,6 +6,7 @@ use core::cell::Cell;
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Serialize, Serializer};
 
+use crate::Text;
 use crate::route::CustomId;
 
 /// The numeric id counter of one [`Components`](crate::Components) body:
@@ -27,6 +28,10 @@ pub(crate) trait Wire {
 
     /// Pushes every `custom_id` of the subtree, in pre-order.
     fn custom_ids_mut<'a>(&'a mut self, _out: &mut Vec<&'a mut CustomId>) {}
+
+    /// Pushes every [`Text`] of the subtree (Route button labels and
+    /// select placeholders), in pre-order.
+    fn texts_mut<'a>(&'a mut self, _out: &mut Vec<&'a mut Text>) {}
 }
 
 /// Serializes a [`Wire`] value with the given id counter.

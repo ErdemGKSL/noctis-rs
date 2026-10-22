@@ -362,12 +362,16 @@ in your render function (`views-and-recipes.md` §3).
 - **Limits:** styles 1–4; label ≤ 80 (CV2-08); `custom_id` ≤ 100, proven by the Route
   derive (CID-01).
 - **Builder:** `MyRoute { .. }.build()` on a `#[derive(Button)]` struct → `RouteButton<MyRoute>`, starting from the struct's `defaults(..)`; `.style(ButtonStyle::
-  Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)`,
-  `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`. A click reaches the Route's handler
+  Primary | Secondary | Success | Danger)` (default Secondary), `.label(..)` (a literal or
+  a `MessageKey`, translated in the response locale before sending),
+  `.emoji(Emoji::unicode("🛒"))`, `.disabled(bool)`, or several at once with
+  `.overrides(ButtonOverrides { label: Some("Again".into()), disabled: Some(true),
+  ..Default::default() })` (the later call wins). A click reaches the Route's handler
   with the decoded Payload as `self`. The defaults live on the struct
   (`#[button("id", defaults(style = .., label = "…" | emoji = "…", disabled = ..))]`;
-  `style` and one of `label`/`emoji` are required); locale-key defaults are [planned:
-  Story 9.3]. A literal label can be checked at `cargo check`
+  `style` and one of `label`/`emoji` are required); `defaults` texts are string literals
+  (a path is `[CV2-08] … locale keys are [planned, Epic 11]`). A literal label can be
+  checked at `cargo check`
   with `label!("Save")` (a `Label`, also usable in a `const`); runtime text (localized
   labels included) is passed as is or checked with `Label::try_new(text, &limits)`.
 
@@ -435,8 +439,14 @@ Shared fields of all five:
   SelectOption>`, so a `Vec` works) before it is placed: placing it without options is
   E0277 ``[CV2-09] this String Select has no options: call `.options(..)` or declare
   `defaults(options = …)` ``. `StringSelectBuilder` has `.placeholder(..)`,
-  `.min_values(n)`, `.max_values(n)`, `.disabled(bool)` and `.options(..) ->
-  StringSelect`. `SelectOption::new(label, value).description(..).emoji(..).default(true)`.
+  `.min_values(n)`, `.max_values(n)`, `.disabled(bool)`, `.default_values(values)` and
+  `.options(..) -> StringSelect` (no `.overrides`: give options first).
+  `SelectOption::new(label, value).description(..).emoji(..).default(true)`.
+  `.default_values(["b"])` (option values) replaces every option's own `default` flag, in
+  either order with `.options(..)`; a value no option has is `[CV2-09]` at
+  `…default_values[i]` in both modes. `.overrides(StringSelectOverrides { placeholder,
+  min_values, max_values, disabled, options, default_values, ..Default::default() })` sets
+  several fields at once.
   Options given empty at runtime fail the validator with `[CV2-09]` in every limit mode.
   JSON type 3. `try_string_select` [planned].
 
@@ -466,8 +476,9 @@ Size { item }.build().options([
 - **Where:** alone in an Action Row.
 - **Limits:** shared fields; `default_values` count within [min, max] (CV2-09).
 - **Builder:** `route.build()` on a `#[derive(UserSelectMenu)]` struct, `.default_users(ids)`
-  (any `IntoIterator<Item = Id<UserMarker>>`, so an `Option` works; appends). JSON type 5.
-  `.default_values(ids)` on every select kind is [planned: Story 9.3].
+  (any `IntoIterator<Item = Id<UserMarker>>`, so an `Option` works; appends, duplicates
+  count once), `.default_values(ids)` (replaces), `.overrides(UserSelectOverrides { .. })`.
+  JSON type 5.
 
 ### 10c. Role Select: `RoleSelect`
 
@@ -759,8 +770,8 @@ spread    := ".." expr                          IntoIterator of components; top 
   derive: the receiver is the Route value and the calls after it
   (`.style(..)`, `.label(..)`, `.placeholder(..)`, `.max_values(..)`, `.disabled(..)`,
   `.emoji(..)`, …) are re-applied in order.
-- `link` needs literal `url` and `label`, in that order. `button_with` arrives with
-  Story 9.3 [planned]. Spreads in a `row`, `section` or `gallery` are a syntax error:
+- `link` needs literal `url` and `label`, in that order. `button_with` is [planned].
+  Spreads in a `row`, `section` or `gallery` are a syntax error:
   build a dynamic row with `ActionRow::try_buttons` and pass it as a `{hole}`.
 - A `{hole}` inside `row [ .. ]` is a button; a pre-built select there fails with E0277
   `[CV2-05]`. Pass it as a node-level hole instead: `{ActionRow::select(sel)}`.
@@ -901,7 +912,7 @@ after the fields.
 | `ButtonStyle<'a>` | `Primary`, `Secondary`, `Success`, `Danger`, `Link(url)`, `Premium`; `.value()` → 1..=6 |
 | `Button<'a>` | `{ style, label: Option<&str>, emoji: bool }`; `Button::new(style)`, `.label(..)`, `.emoji(bool)`; no `custom_id` (Routes own it) |
 | `SelectKind<'a>` | `String(&[SelectOption])`, `User`, `Role`, `Mentionable`, `Channel` |
-| `Select<'a>` | `{ kind, placeholder, min_values: Option<usize>, max_values: Option<usize>, default_values: usize, disabled }`; `Select::new(kind)`, `.placeholder(..)`, `.min_values(n)`, `.max_values(n)`, `.default_values(count)` (auto-populated selects only), `.disabled(bool)` |
+| `Select<'a>` | `{ kind, placeholder, min_values: Option<usize>, max_values: Option<usize>, default_values: usize, string_defaults: Option<&[&str]>, disabled }`; `Select::new(kind)`, `.placeholder(..)`, `.min_values(n)`, `.max_values(n)`, `.default_values(count)` (auto-populated selects only), `.string_defaults(&["b"])` (a String Select's `default_values` list: each must name an option, CV2-09 at `…default_values[i]`, and the count comes from the options it names), `.disabled(bool)` |
 | `SelectOption<'a>` | `{ label, value, description, default }`; `SelectOption::new(label, value)`, `.description(..)`, `.default(bool)` |
 | `Cost` | `{ components, text_len }` (`#[non_exhaustive]`, `Copy`, `PartialEq`) |
 

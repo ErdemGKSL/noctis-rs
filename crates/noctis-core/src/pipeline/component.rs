@@ -615,19 +615,26 @@ pub(crate) async fn run_component_over(
     // A modal submit (`Input::Modal`) never shows a modal: its state refuses
     // `show_modal` for the handler, the hooks and the notices (INT-04).
     let submit = kind == InteractionType::ModalSubmit;
+    let locales = (locale.clone(), guild_locale.clone());
     let shared_for = |transport, declared| {
         let build = if submit {
             Shared::declared_submit
         } else {
             Shared::declared
         };
-        build(
+        let state = build(
             transport,
             declared,
             SourceMessage::from_interaction(raw.as_bytes()),
             app.limits.clone(),
             cap,
-        )
+        );
+        state.set_i18n(
+            Arc::clone(&app.strings),
+            locales.0.clone(),
+            locales.1.clone(),
+        );
+        state
     };
     let notice_state = |transport| shared_for(transport, Declared::Reply(Ephemerality::Ephemeral));
     // Stage 1: read the input.
