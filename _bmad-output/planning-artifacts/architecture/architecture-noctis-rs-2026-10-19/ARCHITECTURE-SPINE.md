@@ -578,6 +578,18 @@ list in CI.
     macro: it expands a literal tree into the same typed builder calls and checks
     the static rules at expansion (AD-4). It is unrelated to the image Template
     macro `view!` (AD-15), which builds takumi nodes.
+- **Amended (Story 9.2):** `noctis_ui::RawComponent` is the outgoing raw escape hatch
+  (FR-31, CV2-16): JSON checked once at construction (component objects, no `id`,
+  at most 32 levels) and serialized verbatim, never numbered. It implements only
+  `TopLevel` and `ContainerChild` (the rules `Accessory` descriptor has no opaque
+  variant) and lowers to `Component::Opaque(count)`, so it counts toward CV2-03 in
+  `validate`, `cost` and `Budget`. Incoming unmodelled components are exposed as
+  `ctx.unknown_components()` (from the raw `message.components` of a click, or
+  `ModalSubmission::unknown` of a submit). `noctis-gateway` re-parses a type-3 or
+  type-5 `INTERACTION_CREATE` twilight rejects from a copy with `message.components`
+  (and, for type 5, `data.components`) emptied; the `RawJson` keeps the original
+  bytes and core never reads twilight's message components. Edits are built only
+  from the handler's View.
 
 ### AD-13 — Error model
 - **Binds:** all crates; FR-19, FR-22, NFR-4.
@@ -1142,6 +1154,12 @@ list in CI.
     App's installed `Renderer` port; it has no edge to `noctis-image`.
   - **App-scoped:** HTTP client, gateway and Shards, Registry, Responder, namespaced
     ports, Theme, `State<T>`, `Limits`, `AppId`.
+- **Amended (Story 9.2):** raw REST is the sealed extension trait
+  `noctis::http::RawHttp` over that one `twilight_http::Client`: `.raw(method, path)`
+  builds `RequestBuilder::raw` and sends it with `Client::request`, so it passes the
+  edge, the client's rate limiter (off when proxied), its timeout and its token.
+  There is no second client and no bypass; the path is checked first (Noctis rule:
+  no leading `/`, no dot or empty segment, no `api` prefix, printable ASCII only).
 
 ### AD-25 — Allocation and memory discipline
 - **Binds:** `noctis-codec`, `noctis-core`, `noctis-gateway`, `noctis-ports`,

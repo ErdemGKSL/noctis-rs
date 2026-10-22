@@ -566,6 +566,7 @@ pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_
 pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ComponentCtx::module(&self) -> &'static str
@@ -576,6 +577,7 @@ pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_m
 pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
@@ -789,6 +791,7 @@ pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_mo
 pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ExpiredCtx::module(&self) -> &'static str
@@ -1186,6 +1189,7 @@ pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twiligh
 pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
@@ -1196,6 +1200,7 @@ pub fn noctis::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight
 pub fn noctis::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -2390,6 +2395,56 @@ pub use noctis::events::UserUpdate
 pub use noctis::events::VoiceServerUpdate
 pub use noctis::events::VoiceStateUpdate
 pub use noctis::events::WebhooksUpdate
+pub mod noctis::http
+pub use noctis::http::Method
+pub trait noctis::http::RawHttp: noctis::__private::core::raw_http::sealed::Sealed
+pub fn noctis::http::RawHttp::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
+impl noctis::http::RawHttp for twilight_http::client::Client
+pub fn twilight_http::client::Client::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
+#[non_exhaustive] pub enum noctis::http::RawHttpError
+pub noctis::http::RawHttpError::Body(twilight_http::response::DeserializeBodyError)
+pub noctis::http::RawHttpError::Decode(serde_json::error::Error)
+pub noctis::http::RawHttpError::Encode(serde_json::error::Error)
+pub noctis::http::RawHttpError::Http(twilight_http::error::Error)
+pub noctis::http::RawHttpError::InvalidPath
+pub noctis::http::RawHttpError::InvalidPath::path: alloc::string::String
+pub noctis::http::RawHttpError::InvalidPath::reason: &'static str
+pub noctis::http::RawHttpError::Status
+pub noctis::http::RawHttpError::Status::body: bytes::bytes::Bytes
+pub noctis::http::RawHttpError::Status::status: u16
+impl core::error::Error for noctis::http::RawHttpError
+pub fn noctis::http::RawHttpError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::http::RawHttpError
+pub fn noctis::http::RawHttpError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::http::RawHttpError
+pub fn noctis::http::RawHttpError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::http::RawRequest<'a>
+impl noctis::http::RawRequest<'_>
+pub fn noctis::http::RawRequest<'_>::body(self, alloc::vec::Vec<u8>) -> Self
+pub fn noctis::http::RawRequest<'_>::form(self, twilight_http::request::multipart::Form) -> Self
+pub fn noctis::http::RawRequest<'_>::json<T: serde_core::ser::Serialize + ?core::marker::Sized>(self, &T) -> Self
+pub fn noctis::http::RawRequest<'_>::without_token(self) -> Self
+impl core::fmt::Debug for noctis::http::RawRequest<'_>
+pub fn noctis::http::RawRequest<'_>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::future::into_future::IntoFuture for noctis::http::RawRequest<'a>
+pub type noctis::http::RawRequest<'a>::IntoFuture = core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = <noctis::http::RawRequest<'a> as core::future::into_future::IntoFuture>::Output> + core::marker::Send + 'a)>>
+pub type noctis::http::RawRequest<'a>::Output = core::result::Result<noctis::http::RawResponse, noctis::http::RawHttpError>
+pub fn noctis::http::RawRequest<'a>::into_future(self) -> Self::IntoFuture
+pub struct noctis::http::RawResponse
+impl noctis::http::RawResponse
+pub fn noctis::http::RawResponse::bytes(&self) -> &[u8]
+pub fn noctis::http::RawResponse::header(&self, &str) -> core::option::Option<&str>
+pub fn noctis::http::RawResponse::into_bytes(self) -> bytes::bytes::Bytes
+pub fn noctis::http::RawResponse::json<T: serde_core::de::DeserializeOwned>(&self) -> core::result::Result<T, noctis::http::RawHttpError>
+pub fn noctis::http::RawResponse::status(&self) -> u16
+impl core::clone::Clone for noctis::http::RawResponse
+pub fn noctis::http::RawResponse::clone(&self) -> Self
+impl core::cmp::Eq for noctis::http::RawResponse
+impl core::cmp::PartialEq for noctis::http::RawResponse
+pub fn noctis::http::RawResponse::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::http::RawResponse
+pub fn noctis::http::RawResponse::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::http::RawResponse
 pub mod noctis::observe
 pub const noctis::observe::METRICS: &[noctis::observe::MetricInfo]
 #[non_exhaustive] pub struct noctis::observe::MetricInfo
@@ -3336,6 +3391,7 @@ pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<
 pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
@@ -3346,6 +3402,7 @@ pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<t
 pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::prelude::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
@@ -3423,6 +3480,7 @@ pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<tw
 pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
@@ -3557,6 +3615,7 @@ pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Optio
 pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
@@ -3567,6 +3626,7 @@ pub fn noctis::prelude::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id
 pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -3602,6 +3662,10 @@ pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Payload)]
 pub proc macro noctis::prelude::#[derive(PayloadEnum)]
+pub trait noctis::prelude::RawHttp: noctis::__private::core::raw_http::sealed::Sealed
+pub fn noctis::prelude::RawHttp::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
+impl noctis::prelude::RawHttp for twilight_http::client::Client
+pub fn twilight_http::client::Client::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
 pub struct noctis::prelude::RefOps
 impl noctis::prelude::RefOps
 pub fn noctis::prelude::RefOps::delete(self, noctis::codec::Ref) -> Self
@@ -5781,6 +5845,8 @@ impl core::convert::From<noctis::ui::File> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::File) -> Self
 impl core::convert::From<noctis::ui::MediaGallery> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::MediaGallery) -> Self
+impl core::convert::From<noctis::ui::RawComponent> for noctis::ui::ContainerComponent
+pub fn noctis::ui::ContainerComponent::from(noctis::ui::RawComponent) -> Self
 impl core::convert::From<noctis::ui::Section> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::Section) -> Self
 impl core::convert::From<noctis::ui::Separator> for noctis::ui::ContainerComponent
@@ -5796,6 +5862,8 @@ impl core::convert::From<noctis::ui::File> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::File) -> Self
 impl core::convert::From<noctis::ui::MediaGallery> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::MediaGallery) -> Self
+impl core::convert::From<noctis::ui::RawComponent> for noctis::ui::ContainerComponent
+pub fn noctis::ui::ContainerComponent::from(noctis::ui::RawComponent) -> Self
 impl core::convert::From<noctis::ui::Section> for noctis::ui::ContainerComponent
 pub fn noctis::ui::ContainerComponent::from(noctis::ui::Section) -> Self
 impl core::convert::From<noctis::ui::Separator> for noctis::ui::ContainerComponent
@@ -6386,6 +6454,29 @@ impl serde_core::ser::Serialize for noctis::ui::RadioGroup
 pub fn noctis::ui::RadioGroup::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ModalInput for noctis::ui::RadioGroup
 pub trait noctis::ui::RadioOptions: noctis::__private::ui::sealed::Sealed
+pub struct noctis::ui::RawComponent
+impl noctis::ui::RawComponent
+pub fn noctis::ui::RawComponent::as_json(&self) -> &serde_json::value::Value
+pub fn noctis::ui::RawComponent::component_type(&self) -> u64
+pub fn noctis::ui::RawComponent::count(&self) -> usize
+pub fn noctis::ui::RawComponent::into_json(self) -> serde_json::value::Value
+pub fn noctis::ui::RawComponent::new(serde_json::value::Value) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::clone::Clone for noctis::ui::RawComponent
+pub fn noctis::ui::RawComponent::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::ui::RawComponent
+pub fn noctis::ui::RawComponent::eq(&self, &Self) -> bool
+impl core::convert::TryFrom<serde_json::value::Value> for noctis::ui::RawComponent
+pub type noctis::ui::RawComponent::Error = noctis::ui::UiError
+pub fn noctis::ui::RawComponent::try_from(serde_json::value::Value) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::fmt::Debug for noctis::ui::RawComponent
+pub fn noctis::ui::RawComponent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::ui::RawComponent
+impl noctis::ui::ContainerChild for noctis::ui::RawComponent
+impl noctis::ui::TopLevel for noctis::ui::RawComponent
+impl serde_core::ser::Serialize for noctis::ui::RawComponent
+pub fn noctis::ui::RawComponent::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl noctis::ui::ContainerChild for noctis::ui::RawComponent
+impl noctis::ui::TopLevel for noctis::ui::RawComponent
 #[non_exhaustive] pub struct noctis::ui::ResolvedAttachment
 pub noctis::ui::ResolvedAttachment::attachment: twilight_model::channel::attachment::Attachment
 impl noctis::ui::ResolvedAttachment
@@ -6734,6 +6825,8 @@ impl core::convert::From<noctis::ui::File> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::File) -> Self
 impl core::convert::From<noctis::ui::MediaGallery> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::MediaGallery) -> Self
+impl core::convert::From<noctis::ui::RawComponent> for noctis::ui::TopLevelComponent
+pub fn noctis::ui::TopLevelComponent::from(noctis::ui::RawComponent) -> Self
 impl core::convert::From<noctis::ui::Section> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::Section) -> Self
 impl core::convert::From<noctis::ui::Separator> for noctis::ui::TopLevelComponent
@@ -6753,6 +6846,8 @@ impl core::convert::From<noctis::ui::File> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::File) -> Self
 impl core::convert::From<noctis::ui::MediaGallery> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::MediaGallery) -> Self
+impl core::convert::From<noctis::ui::RawComponent> for noctis::ui::TopLevelComponent
+pub fn noctis::ui::TopLevelComponent::from(noctis::ui::RawComponent) -> Self
 impl core::convert::From<noctis::ui::Section> for noctis::ui::TopLevelComponent
 pub fn noctis::ui::TopLevelComponent::from(noctis::ui::Section) -> Self
 impl core::convert::From<noctis::ui::Separator> for noctis::ui::TopLevelComponent
@@ -6843,4 +6938,5 @@ pub trait noctis::ui::Validate: noctis::__private::ui::sealed::Check
 pub fn noctis::ui::cost<M: noctis::ui::Validate>(&M, &noctis::rules::Limits) -> noctis::ui::CostReport
 pub fn noctis::ui::escape_markdown(&str) -> alloc::string::String
 pub fn noctis::ui::escape_mentions(&str) -> alloc::string::String
+pub fn noctis::ui::unknown_components(&[serde_json::value::Value]) -> alloc::vec::Vec<serde_json::value::Value>
 pub fn noctis::ui::validate<M: noctis::ui::Validate>(&mut M, &noctis::rules::Limits) -> core::result::Result<noctis::ui::CostReport, noctis::ui::UiError>

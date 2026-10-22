@@ -6,9 +6,9 @@
 
 use crate::component::{
     AccessoryNode, ActionRow, Button, ChannelSelect, Container, ContainerComponent, File,
-    LinkButton, MediaGallery, MentionableSelect, PremiumButton, RoleSelect, RouteButton, Section,
-    SelectNode, Separator, StringSelect, StringSelectBuilder, TextDisplay, Thumbnail,
-    TopLevelComponent, UserSelect,
+    LinkButton, MediaGallery, MentionableSelect, PremiumButton, RawComponent, RoleSelect,
+    RouteButton, Section, SelectNode, Separator, StringSelect, StringSelectBuilder, TextDisplay,
+    Thumbnail, TopLevelComponent, UserSelect,
 };
 use crate::modal::{
     Checkbox, CheckboxGroup, FileUpload, ModalChannelSelect, ModalComponent, ModalInputNode,
@@ -82,21 +82,23 @@ pub(crate) mod sealed {
 }
 
 /// A component that may sit at the top level of a message: Container,
-/// Section, Text Display, Media Gallery, File, Separator or Action Row.
+/// Section, Text Display, Media Gallery, File, Separator, Action Row or
+/// [`RawComponent`].
 #[diagnostic::on_unimplemented(
     message = "[CV2-05] `{Self}` cannot be a top-level message component",
     label = "not allowed at the top level of a message",
-    note = "the top level takes a Container, Section, TextDisplay, MediaGallery, File, Separator or ActionRow",
+    note = "the top level takes a Container, Section, TextDisplay, MediaGallery, File, Separator, ActionRow or RawComponent",
     note = "a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow"
 )]
 pub trait TopLevel: sealed::IntoTop {}
 
 /// A component that may sit in a Container: Section, Text Display, Media
-/// Gallery, File, Separator or Action Row. Never another Container.
+/// Gallery, File, Separator, Action Row or [`RawComponent`]. Never another
+/// Container.
 #[diagnostic::on_unimplemented(
     message = "[CV2-05] `{Self}` cannot be a Container child",
     label = "not allowed inside a Container",
-    note = "a Container takes a Section, TextDisplay, MediaGallery, File, Separator or ActionRow; never another Container",
+    note = "a Container takes a Section, TextDisplay, MediaGallery, File, Separator, ActionRow or RawComponent; never another Container",
     note = "a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow"
 )]
 pub trait ContainerChild: sealed::IntoChild {}
@@ -269,6 +271,7 @@ sealed!(
     File,
     Separator,
     ActionRow,
+    RawComponent,
     TopLevelComponent,
     ContainerComponent,
     LinkButton,
@@ -352,6 +355,7 @@ top_level!(
     File,
     Separator,
     ActionRow,
+    RawComponent,
     TopLevelComponent,
 );
 container_child!(
@@ -361,6 +365,7 @@ container_child!(
     File,
     Separator,
     ActionRow,
+    RawComponent,
     ContainerComponent,
 );
 button!(LinkButton, PremiumButton, Button);

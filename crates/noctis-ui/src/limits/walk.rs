@@ -1,6 +1,7 @@
 //! The pre-order walk behind the checks `noctis-rules` cannot make from
 //! descriptors: `custom_id`s (CID-02), `attachment://` references (ATT-05)
-//! and missing alt text.
+//! and missing alt text. A [`RawComponent`](crate::RawComponent) is one
+//! [`Site::RawUrl`] per `attachment://` string inside it.
 //!
 //! Paths use the kind names and positions of `noctis_rules::component`, so a
 //! node gets the same path prefix here as in a rules violation.
@@ -25,6 +26,8 @@ pub(super) enum Site<'t> {
     Thumbnail(&'t Thumbnail),
     /// A Media Gallery item.
     Item(&'t MediaItem),
+    /// An `attachment://` string inside a raw component.
+    RawUrl(&'t str),
 }
 
 impl<'t> Site<'t> {
@@ -36,16 +39,18 @@ impl<'t> Site<'t> {
                 ButtonNode::Link(_) | ButtonNode::Premium(_) => None,
             },
             Self::Select(s) => Some(&s.common().custom_id),
-            Self::File(_) | Self::Thumbnail(_) | Self::Item(_) => None,
+            Self::File(_) | Self::Thumbnail(_) | Self::Item(_) | Self::RawUrl(_) => None,
         }
     }
 
-    /// The URL of a File, Thumbnail or gallery item.
+    /// The URL of a File, Thumbnail or gallery item, or a raw
+    /// `attachment://` string.
     pub(super) fn url(self) -> Option<&'t str> {
         match self {
             Self::File(f) => Some(f.attachment().url()),
             Self::Thumbnail(t) => Some(t.media.as_str()),
             Self::Item(i) => Some(i.media.as_str()),
+            Self::RawUrl(url) => Some(url),
             Self::Button(_) | Self::Select(_) => None,
         }
     }
@@ -55,7 +60,7 @@ impl<'t> Site<'t> {
         match self {
             Self::Thumbnail(t) => Some((&t.media, t.alt.as_deref())),
             Self::Item(i) => Some((&i.media, i.alt.as_deref())),
-            Self::Button(_) | Self::Select(_) | Self::File(_) => None,
+            Self::Button(_) | Self::Select(_) | Self::File(_) | Self::RawUrl(_) => None,
         }
     }
 }
@@ -75,6 +80,7 @@ pub(super) fn child_kind(node: &ChildNode) -> &'static str {
         ChildNode::File(_) => "file",
         ChildNode::Separator(_) => "separator",
         ChildNode::Row(_) => "row",
+        ChildNode::Raw(_) => "opaque",
     }
 }
 
@@ -130,6 +136,10 @@ fn child_sites<'t>(child: &'t ContainerComponent, path: String, out: &mut Vec<Vi
             site: Site::File(f),
         }),
         ChildNode::Row(row) => row_sites_at(row, &path, out),
+        ChildNode::Raw(raw) => out.extend(raw.attachment_urls().into_iter().map(|url| Visit {
+            path: path.clone(),
+            site: Site::RawUrl(url),
+        })),
         ChildNode::Text(_) | ChildNode::Separator(_) => {}
     }
 }

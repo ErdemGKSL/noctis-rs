@@ -264,7 +264,8 @@ submission.unknown();                                        // &[serde_json::Va
 - Values decode from the raw interaction JSON, Label-wrapped (type 18) or legacy
   Action-Row-wrapped (type 1); Radio Group, Checkbox Group and Checkbox work although
   twilight-model drops them (FR-64). Unknown components are kept verbatim in `unknown()`,
-  never dropped. Decoding never compares `custom_id` with the Route (dispatch is core's).
+  never dropped; a handler reads them as `ctx.unknown_components()` on its
+  `ModalSubmitCtx`. Decoding never compares `custom_id` with the Route (dispatch is core's).
 - A `signed` modal is verified by component dispatch with the App's payload key; a
   `by_ref` or spilled one (once its Payload overflows) decodes only through component
   dispatch, which reads its record from the App's `RefStore`. `from_submission`/`from_json` alone return

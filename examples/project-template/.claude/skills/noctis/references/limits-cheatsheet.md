@@ -261,9 +261,9 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | CV2-11 | Thumbnail description ≤ 1024; images only | C / R |
 | CV2-12 | File: `attachment://` only | C / R |
 | CV2-13 | Separator spacing 1 or 2; accent 0x000000–0xFFFFFF (`rgb!`, `Rgb::try_from(u32)`) | C / R |
-| CV2-14 | numeric `id` 32-bit, unique (assigned by Noctis) | C |
+| CV2-14 | numeric `id` 32-bit, unique (assigned by Noctis); a `RawComponent` may not carry an `id` | C / R |
 | CV2-15 | legacy: ≤ 5 Action Rows, types 1–8 | C |
-| CV2-16 | unknown component types round-trip as raw JSON | R |
+| CV2-16 | unknown component types round-trip as raw JSON: `RawComponent` (component objects, ≤ 32 levels; counts `count()` toward CV2-03; top level / Container only), `ctx.unknown_components()` | R |
 | CV2-17 | media URL (Media Gallery item, Thumbnail) ≤ 2048 [U] | C / R |
 
 ## Modals

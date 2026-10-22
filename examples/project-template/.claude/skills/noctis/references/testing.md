@@ -174,7 +174,7 @@ assert!(roles.cost().components <= 40);
 multi-thread runtime), `Io`, `Build` (your builder's `BuildError`), `Start`, `Stopped`,
 `Timeout`, `Unknown`, `UnknownCommand`, `UnknownOption`, `OptionType`, `InvalidOption`
 (a NaN, or an integer beyond ±2^53 − 1), `MissingOption`, `NotAChoice`,
-`NotAutocomplete`, `NotFound`, `WrongComponent`, `Disabled`, `NotInteractive`,
+`NotAutocomplete`, `NotFound` (`what` and the `available` alternatives), `WrongComponent`, `Disabled`, `NotInteractive`,
 `NotVisible`, `SelectValues`, `NotAnOption`, `UnknownInput`, `WrongInput`,
 `InvalidInput`, `Unsupported`, `Render`, `TooFewRuns`, `ProfilerBusy`,
 `AllocatorMissing`, `MemoryGrew`. Simulating rate limits (`is_rate_limited()`) is

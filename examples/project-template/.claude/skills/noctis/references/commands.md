@@ -853,7 +853,7 @@ commands are left out of a guild publish; global commands stay published and ans
 | `reply_text(text)` | `ReplyText` (`.public()`, then `.await` → `HandlerResult<Responded>`): a one-Text-Display notice, ephemeral by default |
 | `state::<T>()` | `Option<State<T>>`: state registered with `AppBuilder::state` |
 | `kv()` | `Kv`: your typed key-value data over the App's namespaced `CacheStore` (`adapters.md` §3) |
-| `http()` | `&Arc<twilight_http::Client>`: the App's one client |
+| `http()` | `&Arc<twilight_http::Client>`: the App's one client; `.raw(method, path)` for endpoints twilight does not model (`components-v2.md` §11b) |
 | `limits()` | `&Limits`: the App's Limits (`AppBuilder::limits`), what the Responder validates against; pass it to render functions that size pages with `Budget` (`views-and-recipes.md` §4) |
 
 Interactions resolve by default (unlocalized) names only (LOC-06): `data.name` and the
@@ -873,6 +873,12 @@ every other handler context.
 Locale first for `response = ephemeral` or an update of an ephemeral message, Guild
 Locale first otherwise, `"en-US"` when neither is known). `ComponentCtx` and
 `ModalSubmitCtx` also have `limits() -> &Limits`, the App's Limits, like `CommandCtx`.
+All three have `http() -> &Arc<twilight_http::Client>`, the App's one client, like
+`CommandCtx` (`.raw(method, path)` for endpoints twilight does not model,
+`components-v2.md` §11b). `ComponentCtx::unknown_components()` and
+`ModalSubmitCtx::unknown_components()` return `&[serde_json::Value]`: the clicked
+message's (or the submit's) components Noctis does not model, verbatim
+(`components-v2.md` §11a); empty when there are none.
 `AutocompleteCtx` has none of them: return `Suggestions<T>`.
 
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,

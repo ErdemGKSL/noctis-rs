@@ -53,6 +53,7 @@ pub(super) const BUILDERS: &[&str] = &[
     "RadioGroup",
     "CheckboxGroup",
     "Checkbox",
+    "RawComponent",
 ];
 
 /// Builder names the snapshot exports outside `noctis::rules` and

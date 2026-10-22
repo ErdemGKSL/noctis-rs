@@ -229,6 +229,17 @@ macro_rules! ctx_accessors {
                 crate::Kv::of(self.0.app.as_ref())
             }
 
+            /// The App's one Discord HTTP client (the `Arc` `App::http`
+            /// returns), for endpoints the Responder does not cover;
+            /// `RawHttp::raw` adds requests twilight does not model. An
+            /// unconfigured client in the detached test seams.
+            pub fn http(&self) -> &Arc<twilight_http::Client> {
+                match &self.0.app {
+                    Some(app) => &app.http,
+                    None => crate::command::detached_http(),
+                }
+            }
+
             /// A detached context (the `__testing` seams): no App, shard 0,
             /// user 1.
             #[allow(dead_code, reason = "`ExpiredCtx` has no detached seam outside the tests")]
@@ -297,6 +308,15 @@ impl ComponentCtx {
     pub fn values(&self) -> &SelectedValues {
         &self.0.values
     }
+
+    /// The components of the clicked message that Noctis does not model,
+    /// verbatim and in pre-order, as `noctis::ui::unknown_components`
+    /// finds them in the raw interaction's `message.components` (FR-31,
+    /// CV2-16); empty when there are none or no message. An update or edit
+    /// never re-sends them: its body is only the View the handler gives.
+    pub fn unknown_components(&self) -> &[serde_json::Value] {
+        &self.0.unknown
+    }
 }
 crate::responder::ergonomics::ctx_methods!(ComponentCtx, update = Component);
 
@@ -323,6 +343,13 @@ impl ModalSubmitCtx {
     /// seams.
     pub fn limits(&self) -> &Limits {
         crate::command::limits_of(self.0.app.as_deref())
+    }
+
+    /// The submitted components Noctis does not model, verbatim
+    /// (`ModalSubmission::unknown` of the submit; FR-31, CV2-16); empty in
+    /// the detached test seams.
+    pub fn unknown_components(&self) -> &[serde_json::Value] {
+        &self.0.unknown
     }
 }
 crate::responder::ergonomics::ctx_methods!(ModalSubmitCtx, update = ModalSubmit);

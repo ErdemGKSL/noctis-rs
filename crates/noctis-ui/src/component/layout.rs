@@ -10,7 +10,9 @@ use noctis_rules::component::{
     validate_accent_color, validate_row_buttons, validate_section_texts,
 };
 
-use super::{Button, File, MediaGallery, SelectNode, Separator, TextDisplay, Thumbnail};
+use super::{
+    Button, File, MediaGallery, RawComponent, SelectNode, Separator, TextDisplay, Thumbnail,
+};
 use crate::arity::{Arity, RowButtons, SectionTexts};
 use crate::error::{UiError, checked};
 use crate::placement::sealed::IntoRowButton;
@@ -315,10 +317,12 @@ pub(crate) enum ChildNode {
     File(File),
     Separator(Separator),
     Row(ActionRow),
+    Raw(RawComponent),
 }
 
 /// Any component a Container may hold, converted with `From`: Section, Text
-/// Display, Media Gallery, File, Separator or Action Row.
+/// Display, Media Gallery, File, Separator, Action Row or
+/// [`RawComponent`].
 ///
 /// ```
 /// use noctis_ui::{Container, ContainerComponent, Separator, TextDisplay};
@@ -339,6 +343,7 @@ impl Wire for ContainerComponent {
             ChildNode::File(x) => x.wire(ids, s),
             ChildNode::Separator(x) => x.wire(ids, s),
             ChildNode::Row(x) => x.wire(ids, s),
+            ChildNode::Raw(x) => x.wire(ids, s),
         }
     }
 
@@ -349,7 +354,8 @@ impl Wire for ContainerComponent {
             ChildNode::Text(_)
             | ChildNode::Gallery(_)
             | ChildNode::File(_)
-            | ChildNode::Separator(_) => {}
+            | ChildNode::Separator(_)
+            | ChildNode::Raw(_) => {}
         }
     }
 }
@@ -493,7 +499,8 @@ child_from!(
     MediaGallery => Gallery,
     File => File,
     Separator => Separator,
-    ActionRow => Row
+    ActionRow => Row,
+    RawComponent => Raw
 );
 
 impl From<ContainerComponent> for TopLevelComponent {

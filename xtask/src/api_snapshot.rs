@@ -62,7 +62,7 @@ const TARGET_DIR: &str = "target/public-api";
 /// constructors require (FR-58), the sealed supertraits of the placement
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
 /// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
-/// `SuggestionValue`, `NamespacedPort` and `IntoPort`.
+/// `SuggestionValue`, `NamespacedPort`, `IntoPort` and `RawHttp`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
@@ -93,6 +93,11 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_core::namespace::sealed",
         "noctis::__private::core::namespace::sealed",
+    ),
+    // The sealed supertrait of `RawHttp` (AD-24: only `twilight_http::Client`).
+    (
+        "noctis_core::raw_http::sealed",
+        "noctis::__private::core::raw_http::sealed",
     ),
 ];
 

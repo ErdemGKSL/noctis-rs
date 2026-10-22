@@ -1880,3 +1880,90 @@ fn cv2_13_rgb_runtime_path() {
         Actual::Text("0x1000000".to_owned())
     );
 }
+
+// Story 9.2: raw components (FR-31, CV2-16).
+
+fn raw(value: Value) -> noctis_ui::RawComponent {
+    noctis_ui::RawComponent::new(value).expect("a valid raw node")
+}
+
+/// A raw node of count 2.
+fn raw2() -> noctis_ui::RawComponent {
+    raw(serde_json::json!({"type": 99, "components": [{"type": 98}]}))
+}
+
+#[test]
+fn cv2_03_raw_counts_toward_the_total() {
+    for limits in [strict(), lenient()] {
+        let mut ok = msg((0..38).map(|_| t("a").into()).chain([raw2().into()]));
+        assert_eq!(validate(&mut ok, &limits).expect("40 fit").components, 40);
+        let over = msg((0..39).map(|_| t("a").into()).chain([raw2().into()]));
+        let e = errs_v2(over, &limits);
+        assert_eq!(
+            (e[0].rule, e[0].path.as_str(), &e[0].actual),
+            (RuleId::CV2_03, "components", &Actual::Count(41))
+        );
+    }
+}
+
+#[test]
+fn cv2_03_raw_cost_and_budget() {
+    let three = raw(serde_json::json!({"type": 99, "components": [{"type": 98}, {"type": 97}]}));
+    let m = msg([Container::new().push(t("a")).push(three).into()]);
+    // Container + text + raw(3).
+    assert_eq!(cost(&m, &strict()).components, 5);
+    assert_eq!(
+        noctis_ui::Budget::of(&m, &strict()).components_left(),
+        40 - 5
+    );
+}
+
+#[test]
+fn cv2_04_raw_text_is_not_counted() {
+    let long = raw(serde_json::json!({"type": 99, "content": rep("a", 5000)}));
+    let mut m = msg([t("hi").into(), long.into()]);
+    let report = validate(&mut m, &strict()).expect("raw text is not CV2-04 text");
+    assert_eq!(report.text_chars, 2);
+}
+
+#[test]
+fn cv2_16_lenient_never_changes_raw() {
+    let json = serde_json::json!({"type": 99, "content": rep("a", 5000), "label": rep("b", 200)});
+    let mut m = msg([t(rep("x", 4001)).into(), raw(json.clone()).into()]);
+    let report = validate(&mut m, &lenient()).expect("lenient truncates the text");
+    assert!(!report.warnings.is_empty());
+    let body = serde_json::to_value(m.create_body(CreateFlags::empty())).expect("serializes");
+    assert_eq!(body["components"][1], json);
+    assert_ne!(body["components"][0]["content"], rep("x", 4001));
+}
+
+#[test]
+fn att_05_raw_reference_is_used() {
+    let mut set = AttachmentSet::new();
+    let a = set.add(att(b"a"));
+    let _unused = set.add(att(b"b"));
+    let node = raw(serde_json::json!({"type": 99, "media": {"url": a.url()}}));
+    let mut m = msg([node.into()]).attachments(set);
+    let used: Vec<&str> = m.used_attachments().map(Attachment::name).collect();
+    assert_eq!(used, [a.name()]);
+    validate(&mut m, &strict()).expect("the reference names a member");
+}
+
+#[test]
+fn att_05_raw_reference_to_a_non_member() {
+    let node = raw(serde_json::json!({"type": 99, "media": {"url": "attachment://zz.png"}}));
+    let e = errs_v2(msg([t("a").into(), node.into()]), &strict());
+    assert_eq!(
+        (e[0].rule, e[0].path.as_str()),
+        (RuleId::ATT_05, "opaque[1].url")
+    );
+    let inner = raw(serde_json::json!({"type": 99, "x": ["attachment://zz.png"]}));
+    let e = errs_v2(
+        msg([Container::new().push(t("a")).push(inner).into()]),
+        &strict(),
+    );
+    assert_eq!(
+        (e[0].rule, e[0].path.as_str()),
+        (RuleId::ATT_05, "container[0].opaque[1].url")
+    );
+}

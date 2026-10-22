@@ -7,10 +7,11 @@ error[E0277]: [CV2-05] `LinkButton` cannot be a Container child
   |                              required by a bound introduced by this call
   |
   = help: the trait `ContainerChild` is not implemented for `LinkButton`
-  = note: a Container takes a Section, TextDisplay, MediaGallery, File, Separator or ActionRow; never another Container
+  = note: a Container takes a Section, TextDisplay, MediaGallery, File, Separator, ActionRow or RawComponent; never another Container
   = note: a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow
   = help: the following other types implement trait `ContainerChild`:
             ContainerComponent
+            RawComponent
             noctis::ui::ActionRow
             noctis::ui::File
             noctis::ui::MediaGallery

@@ -536,9 +536,11 @@ With `.http_proxy(..)` (or `NOCTIS_HTTP_PROXY`) set, the edge forwards to
 `http://{proxy}/api/v10/..` instead of Discord (HTTP/1.1, or h2c with `upstream_h2c`)
 and the App's local rate limiter is off (the proxy limits). Accepted forms: `host`, `host:port`, `[ipv6]`, `[ipv6]:port`, each
 optionally prefixed with `http://` (any case) and followed by one `/`; HTTPS proxies,
-paths and credentials are rejected (`HttpProxyError`). Request timeout defaults to 10 s. Raw requests (FR-31) [planned]:
-`ctx.http_raw().request(Method::Get, "/applications/@me", None).await?` — still rate
-limited / proxied.
+paths and credentials are rejected (`HttpProxyError`). Request timeout defaults to 10 s. Raw requests (FR-31) for endpoints twilight does not
+model go through the same client:
+`ctx.http().raw(Method::Get, "applications/@me").await?` (`noctis::http::Method`;
+`RawHttp` is in the prelude) — still rate limited / proxied, with the bot token and the
+timeout (`components-v2.md` §11b).
 
 ## 6. Presence and gateway commands [planned]
 

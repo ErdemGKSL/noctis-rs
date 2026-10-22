@@ -1534,6 +1534,7 @@ impl Dispatcher {
             member_permissions: None,
             shared: None,
             values: crate::component::SelectedValues::default(),
+            unknown: Vec::new(),
         };
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),

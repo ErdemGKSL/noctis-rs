@@ -493,11 +493,103 @@ Size { item }.build().options([
   `ChannelType`; none = every type; also a `defaults(channel_types = [GuildText, ..])`
   key). JSON type 8.
 
-## 11. Raw escape hatch (FR-31) [planned]
+## 11. Raw escape hatch (FR-31)
 
-`RawComponent::new(serde_json::Value)` places JSON for a component type Noctis doesn't
-model; it still counts toward CV2-03. Received unknown components are available as raw
-JSON (`ctx.raw_message_components()`) and never re-sent on edit.
+Use the typed components whenever one exists. The raw hatch is for a component type
+Noctis does not model yet (a new Discord component) and for endpoints twilight does not
+model (§11b).
+
+### 11a. Raw component: `RawComponent`
+
+```rust
+use noctis::ui::{Components, Container, RawComponent, TextDisplay, V2Message};
+use serde_json::json;
+
+let poll = RawComponent::new(json!({"type": 99, "question": "Lunch?"}))?; // UiError::Limits on bad JSON
+let view = V2Message::new(
+    Components::new()
+        .push(TextDisplay::new("Vote"))
+        .push(poll)                                   // top level
+        .push(Container::new().push(RawComponent::try_from(json!({"type": 98}))?)), // or in a Container
+);
+// [{"type":10,"id":1,"content":"Vote"},{"type":99,"question":"Lunch?"},{"type":17,"id":2,"components":[{"type":98}]}]
+```
+
+- **Where:** the top level of a message or inside a Container (it implements
+  `TopLevel` and `ContainerChild`), also as a `components!` `{hole}` there. Never a
+  Section accessory, an Action Row item or a modal input: those fail `cargo check`
+  (E0277, `[CV2-05]`/`[CV2-07]`/`[MOD-03]` messages).
+- **Limits:** CV2-03: counts `raw.count()` components (every component object it holds,
+  itself included) in `validate`, `cost` and `Budget`; a `{hole}` counts 1 at
+  expansion and the real count at run time. CV2-14: an `id` key on any walked component
+  object is rejected (``remove `id`; Discord numbers raw components itself``); Noctis
+  never numbers a raw node and the ids around it stay consecutive. CV2-16: every walked
+  node (the root, then only its `components` array, `accessory` and `component`
+  children) must be a JSON object with an integer `type` ≥ 1, `components` must be an
+  array, and nesting is at most 32 levels. Other keys (`emoji`, `options`,
+  `default_values`, …) are not walked. Every violation is collected in pre-order, with
+  paths like `components[0].accessory.id`; the validator names a raw node
+  `opaque[i]` (`container[0].opaque[2]`).
+- **Builder:** `RawComponent::new(json!(..))?` or `RawComponent::try_from(value)?`;
+  read back with `.as_json()`, `.into_json()`, `.component_type()` and `.count()`. There
+  is no mutation API: the JSON is sent verbatim (no id injection, no truncation, no key
+  changes).
+
+Stability caveats:
+
+- Noctis checks only the shape above: no placement rules and no field checks inside a raw
+  node. Discord may change, reject (400) or ignore component types Noctis does not
+  model; such a send fails at Discord, not before.
+- `custom_id`s inside raw JSON are not checked (CID-02, select freshness) and no Route
+  handles them unless you encode them yourself.
+- Raw text is not counted toward CV2-04, and Lenient mode never truncates it.
+- Every `attachment://<name>` string inside a raw node is tracked like a `Media` URL: a
+  name of the message's `AttachmentSet` is uploaded or kept (§12), any other name is
+  ATT-05 at `opaque[i].url`.
+
+Receive side:
+
+- `ctx.unknown_components()` on `ComponentCtx` gives the clicked message's components
+  Noctis does not model (types other than 1, 2, 3, 5-14 and 17, or malformed nodes),
+  verbatim and in pre-order; an unknown node is taken whole. On `ModalSubmitCtx` it gives
+  the submit's unknown components. Empty when there are none.
+- `noctis::ui::unknown_components(&components)` does the same walk over any raw
+  `components` array you hold.
+- A click on a message whose components twilight cannot parse still reaches its handler
+  (the gateway re-parses it without them).
+- An update or edit never re-sends the received components: `ctx.update(view)`, a
+  returned View and `defer_update` + `edit_reply` send only the View you give. Keep a
+  raw node by putting it into the View again.
+
+### 11b. Raw REST requests
+
+```rust
+use noctis::http::Method;                              // RawHttp is in the prelude
+
+let body = serde_json::json!({"content": "hi"});
+let sent = ctx.http().raw(Method::Post, format!("channels/{id}/messages")).json(&body).await?;
+let msg: serde_json::Value = sent.json()?;            // RawResponse: status(), header(name), bytes()
+```
+
+- `ctx.http()` (every context) and `app.http()` are the App's one twilight client;
+  `.raw(method, path)` goes through it, so it is rate limited (or proxied, then the
+  proxy limits), uses the configured timeout and the bot token.
+- Path rule: the part after `/api/v10/`, query included (`channels/1/messages?limit=2`);
+  no leading `/`, no empty, `.` or `..` segment, not starting with `api`, printable
+  ASCII only without `#` or `\` (percent-encode the rest, e.g. an emoji
+  `reactions/%F0%9F%91%8D/@me`). A bad path is `RawHttpError::InvalidPath` and nothing
+  is sent.
+- Bodies: `.json(&value)`, `.body(bytes)` (JSON bytes) or `.form(Form)` (multipart,
+  `noctis::twilight::http::request::Form`); the last one set wins.
+  `.without_token()` for webhook and interaction-token routes.
+- `.raw(..)` returns a `RawRequest` (nothing is sent until `.await`); a 2xx answer is a
+  `RawResponse`: `.status()`, `.header(name)` (case-insensitive, first value),
+  `.bytes()`, `.into_bytes()` (`bytes::Bytes`) and `.json::<T>()`.
+- Errors (`RawHttpError`, converts into `HandlerError` with `?`): `InvalidPath`,
+  `Encode`, `Status { status, body }` for any non-2xx, `Body`, `Decode` (from
+  `.json()`), `Http` (timeout, transport).
+- The Responder never sees raw requests: never answer an interaction (callbacks,
+  `@original`, follow-ups) through `.raw(..)`; use `ctx.respond`/`ctx.update`.
 
 ## 12. Messages: `V2Message`, `LegacyMessage`, flags and mentions
 

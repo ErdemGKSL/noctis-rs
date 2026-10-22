@@ -7,10 +7,11 @@ error[E0277]: [CV2-05] `noctis::ui::Thumbnail` cannot be a Container child
   |                              required by a bound introduced by this call
   |
   = help: the trait `ContainerChild` is not implemented for `noctis::ui::Thumbnail`
-  = note: a Container takes a Section, TextDisplay, MediaGallery, File, Separator or ActionRow; never another Container
+  = note: a Container takes a Section, TextDisplay, MediaGallery, File, Separator, ActionRow or RawComponent; never another Container
   = note: a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow
   = help: the following other types implement trait `ContainerChild`:
             ContainerComponent
+            RawComponent
             noctis::ui::ActionRow
             noctis::ui::File
             noctis::ui::MediaGallery
@@ -32,9 +33,10 @@ error[E0277]: [CV2-05] `noctis::ui::Thumbnail` cannot be a top-level message com
   |                               required by a bound introduced by this call
   |
   = help: the trait `TopLevel` is not implemented for `noctis::ui::Thumbnail`
-  = note: the top level takes a Container, Section, TextDisplay, MediaGallery, File, Separator or ActionRow
+  = note: the top level takes a Container, Section, TextDisplay, MediaGallery, File, Separator, ActionRow or RawComponent
   = note: a Thumbnail goes only in a Section accessory; a button or select goes in an ActionRow
   = help: the following other types implement trait `TopLevel`:
+            RawComponent
             TopLevelComponent
             noctis::ui::ActionRow
             noctis::ui::Container

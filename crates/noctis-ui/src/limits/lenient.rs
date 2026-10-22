@@ -229,7 +229,8 @@ fn child_sites<'m>(
             }
         }
         ChildNode::Row(row) => row_sites(row, &path, limits, sites),
-        ChildNode::File(_) | ChildNode::Separator(_) => {}
+        // Raw JSON is never changed (CV2-16).
+        ChildNode::File(_) | ChildNode::Separator(_) | ChildNode::Raw(_) => {}
     }
 }
 

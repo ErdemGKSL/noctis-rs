@@ -506,6 +506,31 @@ fn read_input(
     }
 }
 
+/// The `message.components` of a raw interaction, read without twilight
+/// (which may not parse them).
+#[derive(serde::Deserialize)]
+struct RawSourceComponents {
+    #[serde(default)]
+    message: Option<RawMessageComponents>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawMessageComponents {
+    #[serde(default)]
+    components: Option<Vec<serde_json::Value>>,
+}
+
+/// The components of a click's source message that Noctis does not model
+/// (`noctis_ui::unknown_components`); empty without a message or when there
+/// are none (FR-31, CV2-16).
+fn source_unknowns(raw: &[u8]) -> Vec<serde_json::Value> {
+    serde_json::from_slice::<RawSourceComponents>(raw)
+        .ok()
+        .and_then(|s| s.message?.components)
+        .map(|components| noctis_ui::unknown_components(&components))
+        .unwrap_or_default()
+}
+
 /// Where a component run sends its responses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Wire {
@@ -700,6 +725,10 @@ pub(crate) async fn run_component_over(
         values: match &input {
             Input::Component { values, .. } => values.clone(),
             Input::Modal(_) => SelectedValues::default(),
+        },
+        unknown: match &input {
+            Input::Component { .. } => source_unknowns(raw.as_bytes()),
+            Input::Modal(submission) => submission.unknown().to_vec(),
         },
         ..CtxInner::detached_parts(Ephemerality::Public)
     };

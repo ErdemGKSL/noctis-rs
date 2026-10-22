@@ -225,7 +225,10 @@
 //! unanswered PING or a shard's network loss makes it redial. The defaults
 //! are tuned for Discord; [`AppBuilder::http`] takes an [`HttpConfig`] to
 //! change them. A twilight client kept after its App is dropped gets
-//! connection errors.
+//! connection errors. For an endpoint twilight does not model,
+//! [`http::RawHttp`] adds `.raw(method, path)` to that same client
+//! (`ctx.http().raw(Method::Get, "applications/@me").await?`): the request
+//! passes the edge, the client's rate limiter and the configured proxy.
 //!
 //! ```
 //! use std::time::Duration;
@@ -1579,6 +1582,37 @@ pub mod events {
     pub use noctis_core::{EventCtx, EventHandler, EventPayload};
 }
 
+pub mod http {
+    //! Raw REST requests to endpoints twilight does not model (FR-31,
+    //! FR-52).
+    //!
+    //! [`RawHttp`] (in the prelude) adds [`raw`](RawHttp::raw) to the App's
+    //! one twilight client, so it works on `ctx.http()` and
+    //! [`App::http`](crate::App::http). The request goes through that
+    //! client: the edge (or `AppBuilder::http_proxy`), its rate limiter (off
+    //! when proxied), its timeout and its bot token
+    //! ([`RawRequest::without_token`] for webhook and interaction-token
+    //! routes). The path is the part after `/api/v10/`, query included; an
+    //! invalid one is [`RawHttpError::InvalidPath`] and nothing is sent.
+    //! Only 2xx responses are a [`RawResponse`]; other statuses are
+    //! [`RawHttpError::Status`]. The Responder never sees these requests:
+    //! answer interactions with `ctx.respond`/`ctx.update`.
+    //!
+    //! ```no_run
+    //! use noctis::http::{Method, RawHttp};
+    //! use noctis::prelude::*;
+    //!
+    //! async fn pin_count(ctx: &CommandCtx, channel: u64) -> Result<usize, HandlerError> {
+    //!     let pins = ctx.http().raw(Method::Get, format!("channels/{channel}/pins")).await?;
+    //!     let pins: Vec<serde_json::Value> = pins.json()?;
+    //!     Ok(pins.len())
+    //! }
+    //! # let _ = pin_count;
+    //! ```
+
+    pub use noctis_core::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
+}
+
 pub mod twilight {
     //! The twilight crates Noctis builds on, for the Discord endpoints and
     //! models Noctis does not wrap.
@@ -1872,6 +1906,8 @@ pub mod prelude {
     //!   Extensions handlers take as `Ext<T>` parameters.
     //! - [`Access`]: what a custom Route Guard (`guard = path::to::fn`)
     //!   returns.
+    //! - [`RawHttp`]: `.raw(method, path)` on `ctx.http()` and `app.http()`
+    //!   ([`http`](crate::http)).
 
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
@@ -1879,8 +1915,8 @@ pub mod prelude {
         Access, AfterCtx, App, AppBuilder, AutocompleteCtx, BeforeCtx, CommandCtx, CommandOption,
         CommandResponder, ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink,
         Expired, ExpiredCtx, Ext, Flow, HandlerError, HandlerResult, IntoResponse, Manual,
-        Middleware, ModalResponder, ModalSubmitCtx, Module, Options, Partial, RefOps, Responded,
-        State, Suggestions, Visibility,
+        Middleware, ModalResponder, ModalSubmitCtx, Module, Options, Partial, RawHttp, RefOps,
+        Responded, State, Suggestions, Visibility,
     };
     pub use noctis_macros::{
         Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,
@@ -1931,6 +1967,13 @@ pub mod ui {
     //!   pre-order from 1, and no API sets a numeric id (CV2-14).
     //! - [`ContainerComponent`] and [`TopLevelComponent`]: any component of a
     //!   Container or of the top level, for lists built at runtime.
+    //! - [`RawComponent`]: the escape hatch for a component type Noctis does
+    //!   not model (FR-31, CV2-16), checked JSON sent verbatim at the top
+    //!   level or in a Container; it counts [`RawComponent::count`] toward
+    //!   CV2-03 and carries no `id`. [`unknown_components`] picks the
+    //!   unmodelled components out of a received message's raw
+    //!   `components`; `ctx.unknown_components()` gives them for a click or
+    //!   a modal submit.
     //! - [`Attachment`], [`AttachmentOrigin`], [`AttachmentSet`] and
     //!   [`AttachmentRef`]: content-addressed files; [`File`] takes only an
     //!   [`AttachmentRef`], which only [`AttachmentSet::add`] returns (CV2-12);
@@ -2496,12 +2539,13 @@ pub mod ui {
         MessageFormat, Modal, ModalChannelSelect, ModalComponent, ModalForm, ModalInput,
         ModalLabel, ModalMentionableSelect, ModalOption, ModalRoleSelect, ModalStringSelect,
         ModalSubmission, ModalTopLevel, ModalUserSelect, Placeholder, PremiumButton, RadioGroup,
-        RadioOptions, ResolvedAttachment, ResolvedChannel, ResolvedMessage, ResolvedRole,
-        ResolvedUser, Rgb, RoleSelect, Roles, RouteButton, RowButtons, RowItem, RowSelect, Section,
-        SectionAccessory, SectionTexts, SelectOption, Separator, Spacing, StringSelect,
-        StringSelectBuilder, StringSelectOptions, SubmitError, SubmittedValue, TextDisplay,
-        TextInput, TextInputStyle, Thumbnail, TopLevel, TopLevelComponent, UiError, UserSelect,
-        Users, V2Message, Validate, cost, escape_markdown, escape_mentions, validate,
+        RadioOptions, RawComponent, ResolvedAttachment, ResolvedChannel, ResolvedMessage,
+        ResolvedRole, ResolvedUser, Rgb, RoleSelect, Roles, RouteButton, RowButtons, RowItem,
+        RowSelect, Section, SectionAccessory, SectionTexts, SelectOption, Separator, Spacing,
+        StringSelect, StringSelectBuilder, StringSelectOptions, SubmitError, SubmittedValue,
+        TextDisplay, TextInput, TextInputStyle, Thumbnail, TopLevel, TopLevelComponent, UiError,
+        UserSelect, Users, V2Message, Validate, cost, escape_markdown, escape_mentions,
+        unknown_components, validate,
     };
 }
 

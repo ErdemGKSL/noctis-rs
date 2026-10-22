@@ -625,3 +625,32 @@ fn cid_02_not_compared() {
         ]
     );
 }
+
+/// Story 9.2 P4: a `RawComponent` fills a `{hole}` at the top level and in
+/// a Container; the runtime count is the real one (CV2-03, CV2-16).
+#[test]
+fn cv2_16_raw_component_in_holes() {
+    let raw = || {
+        noctis::ui::RawComponent::new(serde_json::json!({"type": 99, "components": [{"type": 98}]}))
+            .expect("a valid raw node")
+    };
+    let (top, inner) = (raw(), raw());
+    let c = components! {
+        text("a"),
+        {top},
+        container [ text("b"), {inner} ],
+    };
+    assert_eq!(
+        json(&c),
+        serde_json::json!([
+            {"type": 10, "id": 1, "content": "a"},
+            {"type": 99, "components": [{"type": 98}]},
+            {"type": 17, "id": 2, "components": [
+                {"type": 10, "id": 3, "content": "b"},
+                {"type": 99, "components": [{"type": 98}]}
+            ]}
+        ])
+    );
+    // text + raw(2) + container + text + raw(2).
+    assert_eq!(valid(c), 7);
+}

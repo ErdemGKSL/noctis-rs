@@ -1601,3 +1601,236 @@ mod amendments {
         assert_eq!(follow_ups, 5, "{requests:?}");
     }
 }
+
+// ---- Story 9.2: unknown incoming components (FR-31, CV2-16) ----
+
+mod raw_escape {
+    use std::sync::Mutex;
+
+    use super::*;
+    use crate::kind::__Response;
+    use crate::{AutoDefer, ComponentResponder, ModalResponder};
+
+    test_route!(Unk, "unk", RouteShape::INLINE, 0);
+    test_route!(UnkRet, "unk.ret", RouteShape::INLINE, 0);
+    test_route!(UnkModal, "unk.m", RouteShape::INLINE, 0);
+
+    type Seen = Arc<Mutex<Vec<Vec<Value>>>>;
+
+    /// Click handlers recording `ctx.unknown_components()`: `unk` answers
+    /// with `update` (`item` 0) or `defer_update` + `edit_reply`, `unk.ret`
+    /// returns a View; and a modal handler recording the submit's.
+    fn module(seen: &Seen) -> Module {
+        let clicks = Arc::clone(seen);
+        let returns = Arc::clone(seen);
+        let submits = Arc::clone(seen);
+        Module::new("raw")
+            .__add(ComponentHandler::__new_with_responder::<
+                Unk,
+                AutoDefer,
+                _,
+                _,
+                _,
+            >(
+                "raw::Unk",
+                "unk",
+                ComponentKind::Button,
+                __Response::Update,
+                move |v: Unk, ctx: ComponentCtx, r: ComponentResponder| {
+                    clicks
+                        .lock()
+                        .unwrap()
+                        .push(ctx.unknown_components().to_vec());
+                    async move {
+                        if v.item == 0 {
+                            Ok(r.update(v2("view")).await?.done())
+                        } else {
+                            let acked = r.defer_update().await?;
+                            acked.edit_reply(v2("view")).await?;
+                            Ok(acked.done())
+                        }
+                    }
+                },
+            ))
+            .__add(ComponentHandler::__new_with_responder::<
+                UnkRet,
+                AutoDefer,
+                _,
+                _,
+                _,
+            >(
+                "raw::UnkRet",
+                "unk.ret",
+                ComponentKind::Button,
+                __Response::Update,
+                move |_: UnkRet, ctx: ComponentCtx, _: ComponentResponder| {
+                    returns
+                        .lock()
+                        .unwrap()
+                        .push(ctx.unknown_components().to_vec());
+                    async { Ok(v2("view")) }
+                },
+            ))
+            .__add(ModalHandler::__new_with_responder::<
+                UnkModal,
+                AutoDefer,
+                _,
+                _,
+                _,
+            >(
+                "raw::UnkModal",
+                "unk.m",
+                __Response::Ephemeral,
+                move |_: UnkModal, ctx: ModalSubmitCtx, _: ModalResponder| {
+                    submits
+                        .lock()
+                        .unwrap()
+                        .push(ctx.unknown_components().to_vec());
+                    async { Ok(Responded::new()) }
+                },
+            ))
+    }
+
+    async fn start(seen: &Seen) -> Pipeline {
+        Pipeline::start_with(module(seen), |_| {}).await
+    }
+
+    async fn run(p: &Pipeline, inbound: Inbound) {
+        run_component(
+            Arc::clone(p.fx.app.registry()),
+            Arc::clone(p.fx.app.shared()),
+            inbound,
+            CancellationToken::new(),
+        )
+        .await;
+    }
+
+    /// The source message's components of U1: a text, an unknown 99, a
+    /// Container holding a 98, a Section whose accessory is a 97, and a
+    /// type 300 twilight cannot parse.
+    fn source_components() -> Value {
+        json!([
+            { "type": 10, "id": 1, "content": "a" },
+            { "type": 99, "x": 1 },
+            { "type": 17, "id": 2, "components": [{ "type": 98 }] },
+            { "type": 9, "id": 3, "components": [{ "type": 10, "id": 4, "content": "s" }],
+              "accessory": { "type": 97 } },
+            { "type": 300 },
+        ])
+    }
+
+    /// A click on `custom_id` whose raw source message holds `components`
+    /// (twilight's copy holds none, as after the gateway fallback).
+    fn press(custom_id: &str, components: &Value) -> Inbound {
+        let parsed = click(custom_id, 2);
+        let mut raw = parsed.clone();
+        raw["message"] =
+            json!({ "id": "77", "channel_id": "55", "flags": 32768, "components": components });
+        inbound_raw(&parsed, &raw)
+    }
+
+    fn unknown_nodes() -> Vec<Value> {
+        vec![
+            json!({ "type": 99, "x": 1 }),
+            json!({ "type": 98 }),
+            json!({ "type": 97 }),
+            json!({ "type": 300 }),
+        ]
+    }
+
+    /// The View every handler answers with, as rendered.
+    fn view_components() -> Value {
+        json!([{ "type": 10, "id": 1, "content": "view" }])
+    }
+
+    /// U1 and E1: the handler sees every unknown node verbatim, and its
+    /// type-7 update holds only the View.
+    #[tokio::test]
+    async fn cv2_16_unknown_components_reach_the_handler() {
+        let seen = Seen::default();
+        let p = start(&seen).await;
+        for id in ["0unk:0", "0unk.ret:0"] {
+            p.fx.server.log.lock().unwrap().clear();
+            run(&p, press(id, &source_components())).await;
+            assert_eq!(seen.lock().unwrap().pop(), Some(unknown_nodes()), "{id}");
+            let requests = p.requests();
+            assert_eq!(requests.len(), 1, "{requests:?}");
+            assert_eq!(requests[0].2["type"], 7);
+            assert_eq!(requests[0].2["data"]["components"], view_components());
+        }
+    }
+
+    /// E2: `defer_update` + `edit_reply` edits `@original` with the View
+    /// only.
+    #[tokio::test]
+    async fn fr_31_deferred_edit_sends_only_the_view() {
+        let seen = Seen::default();
+        let p = start(&seen).await;
+        run(&p, press("0unk:2", &source_components())).await;
+        let requests = p.requests();
+        assert_eq!(requests[0].2, json!({ "type": 6 }));
+        assert_eq!(
+            (&requests[1].0, requests[1].1.as_str()),
+            (&Method::PATCH, ORIGINAL)
+        );
+        assert_eq!(requests[1].2["components"], view_components());
+        let body = requests[1].2.to_string();
+        for ty in ["99", "98", "97", "300"] {
+            assert!(!body.contains(&format!("\"type\":{ty}")), "{body}");
+        }
+    }
+
+    /// U4: only known types, or no message, give `&[]`; so does a
+    /// detached context.
+    #[tokio::test]
+    async fn cv2_16_no_unknown_components() {
+        let seen = Seen::default();
+        let p = start(&seen).await;
+        run(
+            &p,
+            press("0unk:0", &json!([{ "type": 10, "id": 1, "content": "a" }])),
+        )
+        .await;
+        run(&p, inbound(&click("0unk:0", 2))).await;
+        assert_eq!(*seen.lock().unwrap(), [Vec::<Value>::new(), Vec::new()]);
+        assert!(ComponentCtx::detached().unknown_components().is_empty());
+        assert!(ModalSubmitCtx::detached().unknown_components().is_empty());
+    }
+
+    /// U5: an unknown node in a legacy row.
+    #[tokio::test]
+    async fn cv2_16_unknown_in_legacy_rows() {
+        let seen = Seen::default();
+        let p = start(&seen).await;
+        let parsed = click("0unk:0", 2);
+        let mut raw = parsed.clone();
+        raw["message"] = json!({ "id": "77", "channel_id": "55", "flags": 0, "components": [
+            { "type": 1, "components": [{ "type": 95 }] }
+        ] });
+        run(&p, inbound_raw(&parsed, &raw)).await;
+        assert_eq!(*seen.lock().unwrap(), [vec![json!({ "type": 95 })]]);
+    }
+
+    /// U6: a modal submit's unknown top-level component.
+    #[tokio::test]
+    async fn cv2_16_modal_submit_unknown_components() {
+        let seen = Seen::default();
+        let p = start(&seen).await;
+        let mut json = submit("0unk.m:1", true);
+        json["data"]["components"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "type": 99, "custom_id": "x" }));
+        let raw = json.clone();
+        let mut parsed = json;
+        parsed["data"]["components"] = json!([]);
+        let submission =
+            noctis_ui::ModalSubmission::from_slice(raw.to_string().as_bytes()).unwrap();
+        run(&p, inbound_raw(&parsed, &raw)).await;
+        assert_eq!(*seen.lock().unwrap(), [submission.unknown().to_vec()]);
+        assert_eq!(
+            seen.lock().unwrap()[0],
+            [json!({ "type": 99, "custom_id": "x" })]
+        );
+    }
+}

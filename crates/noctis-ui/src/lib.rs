@@ -22,6 +22,7 @@
 //! | --- | --- | --- | --- | --- |
 //! | [`Container`] | yes | no | no | no |
 //! | [`Section`], [`TextDisplay`], [`MediaGallery`], [`File`], [`Separator`], [`ActionRow`] | yes | yes | no | no |
+//! | [`RawComponent`] | yes | yes | no | no |
 //! | [`Thumbnail`] | no | no | yes | no |
 //! | [`RouteButton`], [`LinkButton`], [`PremiumButton`], [`Button`] | no | no | yes | 1-5 ([`RowItem`]) |
 //! | [`StringSelect`], [`UserSelect`], [`RoleSelect`], [`MentionableSelect`], [`ChannelSelect`] | no | no | no | alone ([`RowSelect`]) |
@@ -32,6 +33,15 @@
 //!
 //! [`ContainerComponent`] and [`TopLevelComponent`] hold any component of
 //! their level, for lists built at runtime.
+//!
+//! # Raw components
+//!
+//! [`RawComponent`] is the escape hatch for a component type Noctis does not
+//! model (FR-31, CV2-16): checked JSON (component objects, no `id`, at most
+//! 32 levels) that is sent verbatim at the top level or in a Container,
+//! counts [`RawComponent::count`] toward CV2-03 and never takes a numeric
+//! id. [`unknown_components`] picks the components Noctis does not model
+//! out of a received message's raw `components`.
 //!
 //! # `custom_id`s
 //!
@@ -249,9 +259,9 @@ pub use arity::{
 pub use attachment::{Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet};
 pub use component::{
     ActionRow, Button, ButtonStyle, ChannelSelect, Container, ContainerComponent, Emoji, File,
-    LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, PremiumButton, Rgb, RoleSelect,
-    RouteButton, Section, SelectOption, Separator, Spacing, StringSelect, StringSelectBuilder,
-    TextDisplay, Thumbnail, TopLevelComponent, UserSelect,
+    LinkButton, Media, MediaGallery, MediaItem, MentionableSelect, PremiumButton, RawComponent,
+    Rgb, RoleSelect, RouteButton, Section, SelectOption, Separator, Spacing, StringSelect,
+    StringSelectBuilder, TextDisplay, Thumbnail, TopLevelComponent, UserSelect, unknown_components,
 };
 pub use components::Components;
 pub use error::UiError;

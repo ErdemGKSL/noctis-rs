@@ -95,7 +95,7 @@ pub(crate) fn classify(
         },
         Ok(_) => None,
         Err(_) => {
-            let fallback = raw.and_then(modal_submit_without_components);
+            let fallback = raw.and_then(interaction_without_components);
             if fallback.is_none() {
                 tracing::warn!(
                     target: "noctis::gateway",
@@ -116,22 +116,31 @@ pub(crate) fn classify(
     }
 }
 
-/// A modal submit (interaction type 5) that twilight cannot parse, because
-/// it rejects some modal components (a Checkbox's boolean `value`, FR-64),
-/// parsed again with an empty `data.components`. Noctis never reads
-/// twilight's components of a submit: the component pipeline decodes the
-/// raw bytes, which are kept as they are (`ModalSubmission`, MOD-09).
-/// `None` for anything else.
-fn modal_submit_without_components(raw: Bytes) -> Option<InboundKind> {
+/// A component click (interaction type 3) or a modal submit (type 5) that
+/// twilight cannot parse, parsed again from a copy with its components
+/// emptied: `message.components` when `message` is an object (a source
+/// message holding a component type twilight does not know, CV2-16) and,
+/// for a submit, also `data.components` (twilight rejects some modal
+/// components, such as a Checkbox's boolean `value`, FR-64). Noctis never
+/// reads twilight's components of either: the component pipeline decodes
+/// the raw bytes, which are kept as they are (`ModalSubmission`, MOD-09,
+/// `ctx.unknown_components()`). `None` for any other type, or when the copy
+/// still fails.
+fn interaction_without_components(raw: Bytes) -> Option<InboundKind> {
     let mut value: serde_json::Value = serde_json::from_slice(&raw).ok()?;
-    if value.get("type")?.as_u64()? != 5 {
+    let kind = value.get("type")?.as_u64()?;
+    if kind != 3 && kind != 5 {
         return None;
     }
-    let data = value.get_mut("data")?.as_object_mut()?;
-    data.insert(
-        "components".to_owned(),
-        serde_json::Value::Array(Vec::new()),
-    );
+    let empty = || serde_json::Value::Array(Vec::new());
+    if let Some(message) = value.get_mut("message").and_then(|m| m.as_object_mut()) {
+        message.insert("components".to_owned(), empty());
+    }
+    if kind == 5
+        && let Some(data) = value.get_mut("data").and_then(|d| d.as_object_mut())
+    {
+        data.insert("components".to_owned(), empty());
+    }
     let interaction = serde_json::from_value(value).ok()?;
     Some(InboundKind::Interaction(
         Box::new(interaction),
@@ -376,6 +385,110 @@ mod tests {
         click["data"] = json!({ "custom_id": "x", "component_type": true });
         let text = dispatch("INTERACTION_CREATE", &click.to_string());
         assert!(run(&text, EventTypeFlags::all()).inbound.is_none());
+    }
+
+    /// A message object holding `components`.
+    fn message(components: &Value) -> Value {
+        json!({
+            "id": "88",
+            "channel_id": "9",
+            "author": { "id": "7", "username": "bot", "discriminator": "0", "avatar": null },
+            "content": "",
+            "timestamp": "2026-10-20T12:00:00.000000+00:00",
+            "edited_timestamp": null,
+            "tts": false,
+            "mention_everyone": false,
+            "mentions": [],
+            "mention_roles": [],
+            "attachments": [],
+            "embeds": [],
+            "pinned": false,
+            "type": 0,
+            "flags": 32768,
+            "components": components,
+        })
+    }
+
+    /// A button click on a message holding `components`.
+    fn click(components: &Value) -> Value {
+        let mut d = interaction_d();
+        d["type"] = json!(3);
+        d["data"] = json!({ "custom_id": "0t:", "component_type": 2 });
+        d["message"] = message(components);
+        d
+    }
+
+    fn twilight_parses(d: &str) -> bool {
+        serde_json::from_str::<twilight_model::application::interaction::Interaction>(d).is_ok()
+    }
+
+    /// The interaction and raw bytes `d` classifies to, if any.
+    fn interaction_of(
+        d: &str,
+    ) -> Option<(
+        Box<twilight_model::application::interaction::Interaction>,
+        RawJson,
+    )> {
+        match run(&dispatch("INTERACTION_CREATE", d), EventTypeFlags::all()).inbound {
+            Some(Inbound {
+                kind: InboundKind::Interaction(interaction, raw),
+                ..
+            }) => Some((interaction, raw)),
+            _ => None,
+        }
+    }
+
+    /// Story 9.2 G1: a click on a message whose components twilight cannot
+    /// parse still dispatches, with the raw bytes unchanged.
+    #[test]
+    fn cv2_16_click_unparsable_message_still_dispatches() {
+        for bad in [json!({"type": 300}), json!({"type": 99, "content": 5})] {
+            let d = click(&json!([{ "type": 10, "id": 1, "content": "a" }, bad])).to_string();
+            let (interaction, raw) = interaction_of(&d).expect("the click dispatches");
+            assert_eq!(interaction.id.get(), 5);
+            assert_eq!(raw.as_bytes(), d.as_bytes());
+        }
+        assert!(!twilight_parses(
+            &click(&json!([{ "type": 300 }])).to_string()
+        ));
+    }
+
+    /// G2: a submit of a modal opened from such a message, with a Checkbox
+    /// twilight rejects: both component lists are emptied in the copy.
+    #[test]
+    fn cv2_16_submit_from_unparsable_message_still_dispatches() {
+        let mut d = interaction_d();
+        d["type"] = json!(5);
+        d["data"] = json!({ "custom_id": "0m:", "components": [
+            { "type": 18, "id": 1, "component": { "type": 23, "id": 2, "custom_id": "agree", "value": true } }
+        ] });
+        d["message"] = message(&json!([{ "type": 300 }]));
+        let d = d.to_string();
+        assert!(!twilight_parses(&d));
+        let (interaction, raw) = interaction_of(&d).expect("the submit dispatches");
+        assert_eq!(interaction.id.get(), 5);
+        assert_eq!(raw.as_bytes(), d.as_bytes());
+    }
+
+    /// G3: a component twilight parses needs no fallback.
+    #[test]
+    fn cv2_16_parsable_unknown_component_parses_normally() {
+        let d = click(&json!([{ "type": 99 }])).to_string();
+        assert!(twilight_parses(&d));
+        let (_, raw) = interaction_of(&d).expect("the click dispatches");
+        assert_eq!(raw.as_bytes(), d.as_bytes());
+    }
+
+    /// G4: other types, and a click whose `data` is broken, are still
+    /// ignored.
+    #[test]
+    fn cv2_16_no_fallback_outside_components() {
+        let mut command = click(&json!([{ "type": 300 }]));
+        command["type"] = json!(2);
+        assert!(interaction_of(&command.to_string()).is_none());
+        let mut broken = click(&json!([{ "type": 300 }]));
+        broken["data"] = json!({ "custom_id": "x", "component_type": true });
+        assert!(interaction_of(&broken.to_string()).is_none());
     }
 
     #[test]

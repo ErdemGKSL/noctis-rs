@@ -126,6 +126,10 @@ pub(crate) struct CtxInner {
     /// The values a select click picked; empty for every other
     /// interaction.
     pub(crate) values: crate::component::SelectedValues,
+    /// The components Noctis does not model: of the clicked message
+    /// (`message.components`) for a click, of the submit for a modal
+    /// submit; empty otherwise (FR-31, CV2-16).
+    pub(crate) unknown: Vec<serde_json::Value>,
 }
 
 impl CtxInner {
@@ -172,6 +176,7 @@ impl CtxInner {
             member_permissions: None,
             shared: None,
             values: crate::component::SelectedValues::default(),
+            unknown: Vec::new(),
         }
     }
 }

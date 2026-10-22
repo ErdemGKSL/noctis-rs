@@ -192,6 +192,7 @@ mod plugin;
 mod ports;
 mod proxy;
 pub mod publish;
+mod raw_http;
 mod refs;
 mod registry;
 mod responder;
@@ -266,6 +267,7 @@ pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, Optio
 pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
+pub use raw_http::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
 pub use refs::RefOps;
 pub use responder::{
     Acked, AutoDefer, CallbackResource, CanShowModal, Command, CommandResponder, Component,

@@ -188,6 +188,7 @@ fn lower_child<'s>(child: &'s ContainerComponent, cursor: &mut Cursor<'s>) -> rc
             ))
         }
         ChildNode::Row(_) => rc::Component::Row(take(&mut cursor.rows)),
+        ChildNode::Raw(r) => rc::Component::Opaque(r.count()),
     }
 }
 
