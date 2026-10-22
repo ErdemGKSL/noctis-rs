@@ -1,5 +1,6 @@
 #!/bin/bash
 # usage: cp.sh "message" — commit everything, push to main (and the current branch if it is not main); prints FAIL: if the push never lands.
+# On a parallel lane branch (story-loop/<lane>) it pushes only that branch; lane.sh push-main lands it on main.
 # Trailers: the maintainer as co-author, then the lines in target/story-loop/trailers (the session's own attribution, written by the orchestrator).
 source "$(dirname "$0")/env.sh"
 git add -A
@@ -14,6 +15,12 @@ else
   echo "nothing to commit"
 fi
 b=$(git branch --show-current)
+if [[ $b == story-loop/* ]]; then
+  # A parallel lane: commits stay on the lane branch (pushed as a backup) until lane.sh merge/push-main land them on main.
+  for i in 1 2 3 4; do git push -q -f origin "HEAD:$b" 2>/dev/null && break; sleep $((2**i)); done
+  git log --oneline -1
+  exit 0
+fi
 for i in 1 2 3 4; do
   git push -q origin HEAD:main 2>/dev/null && { [ -z "$b" ] || [ "$b" = main ] || git push -q origin "HEAD:$b" 2>/dev/null; } && break
   sleep $((2**i))
