@@ -43,9 +43,9 @@ use crate::handler::{HandlerError, HandlerResult};
 use crate::kind::__Response;
 use crate::pipeline::component::Rejection;
 use crate::responder::{
-    AutoDefer, Component, Declared, DeferMode, Ephemerality, GuardPhase, IntoResponse, ModalSubmit,
-    NonceSet, Pending, Responded, Responder, ResponderKind, Response, Shared, SourceMessage,
-    Transport,
+    AutoDefer, Component, Declared, DeferMode, Ephemerality, GuardPhase, IntoResponse, KnownFiles,
+    ModalSubmit, NonceSet, Pending, Responded, Responder, ResponderKind, Response, Shared,
+    SourceMessage, Transport,
 };
 
 /// The kind of a message component a [`ComponentHandler`] answers.
@@ -1290,6 +1290,7 @@ const DETACHED_SOURCE: SourceMessage = SourceMessage {
     format: MessageFormat::V2,
     ephemerality: Ephemerality::Public,
     nonces: NonceSet::EMPTY,
+    files: KnownFiles::EMPTY,
 };
 
 /// A detached shared state declaring `response`, on the placeholder

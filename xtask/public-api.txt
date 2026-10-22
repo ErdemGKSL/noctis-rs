@@ -1414,7 +1414,6 @@ pub fn noctis::Responder<K, S, D>::fmt(&self, &mut core::fmt::Formatter<'_>) -> 
 #[non_exhaustive] pub enum noctis::ResponderError
 pub noctis::ResponderError::AckDeadlineMissed(noctis::AckDeadlineMissed)
 pub noctis::ResponderError::AlreadyResponded
-pub noctis::ResponderError::AttachmentsUnsupported
 pub noctis::ResponderError::Encode
 pub noctis::ResponderError::Encode::reason: alloc::string::String
 pub noctis::ResponderError::EphemeralUnsupported
@@ -1630,6 +1629,7 @@ pub fn noctis::UnknownCommandPath::fmt(&self, &mut core::fmt::Formatter<'_>) -> 
 pub proc macro noctis::#[derive(UserCommand)]
 pub proc macro noctis::#[derive(UserSelectMenu)]
 pub type noctis::Visibility = noctis::Ephemerality
+pub proc macro noctis::alt!()
 pub proc macro noctis::#[autocomplete]
 pub proc macro noctis::components!()
 pub proc macro noctis::content!()
@@ -4192,6 +4192,7 @@ pub fn noctis::rules::attachment::validate_attachment_description(&str, &noctis:
 pub fn noctis::rules::attachment::validate_attachment_ref(&str, &[noctis::rules::attachment::AttachmentDecl<'_>], &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::attachment::validate_attachments(&[noctis::rules::attachment::AttachmentDecl<'_>], usize, core::option::Option<usize>, &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
 pub fn noctis::rules::attachment::validate_file_size(usize, core::option::Option<usize>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub fn noctis::rules::attachment::validate_rendered_image_alt(core::option::Option<&str>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub mod noctis::rules::command
 pub enum noctis::rules::command::ChoiceValue<'a>
 pub noctis::rules::command::ChoiceValue::Float(f64)
@@ -5005,6 +5006,7 @@ impl<'a> core::fmt::Debug for noctis::testkit::CommandRun<'a>
 pub fn noctis::testkit::CommandRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::testkit::HttpCall
 impl noctis::testkit::HttpCall
+pub fn noctis::testkit::HttpCall::files(&self) -> &[noctis::testkit::RecordedFile]
 pub fn noctis::testkit::HttpCall::json(&self) -> core::option::Option<&serde_json::value::Value>
 pub fn noctis::testkit::HttpCall::method(&self) -> &str
 pub fn noctis::testkit::HttpCall::path(&self) -> &str
@@ -5050,6 +5052,30 @@ impl core::clone::Clone for noctis::testkit::ModalForm
 pub fn noctis::testkit::ModalForm::clone(&self) -> Self
 impl core::fmt::Debug for noctis::testkit::ModalForm
 pub fn noctis::testkit::ModalForm::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::testkit::RecordedFile
+pub noctis::testkit::RecordedFile::bytes: bytes::bytes::Bytes
+pub noctis::testkit::RecordedFile::filename: alloc::string::String
+pub noctis::testkit::RecordedFile::name: alloc::string::String
+impl core::clone::Clone for noctis::testkit::RecordedFile
+pub fn noctis::testkit::RecordedFile::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::RecordedFile
+impl core::cmp::PartialEq for noctis::testkit::RecordedFile
+pub fn noctis::testkit::RecordedFile::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::RecordedFile
+pub fn noctis::testkit::RecordedFile::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::RecordedFile
+#[non_exhaustive] pub struct noctis::testkit::RecordedFile
+pub noctis::testkit::RecordedFile::bytes: bytes::bytes::Bytes
+pub noctis::testkit::RecordedFile::filename: alloc::string::String
+pub noctis::testkit::RecordedFile::name: alloc::string::String
+impl core::clone::Clone for noctis::testkit::RecordedFile
+pub fn noctis::testkit::RecordedFile::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::RecordedFile
+impl core::cmp::PartialEq for noctis::testkit::RecordedFile
+pub fn noctis::testkit::RecordedFile::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::RecordedFile
+pub fn noctis::testkit::RecordedFile::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::RecordedFile
 pub struct noctis::testkit::Response
 impl noctis::testkit::Response
 pub fn noctis::testkit::Response::button(&self, &str) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
@@ -5327,6 +5353,30 @@ impl serde_core::ser::Serialize for noctis::ui::ActionRow
 pub fn noctis::ui::ActionRow::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
 impl noctis::ui::ContainerChild for noctis::ui::ActionRow
 impl noctis::ui::TopLevel for noctis::ui::ActionRow
+pub struct noctis::ui::AltText(_)
+impl noctis::ui::AltText
+pub fn noctis::ui::AltText::as_str(&self) -> &str
+pub fn noctis::ui::AltText::try_new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, &noctis::rules::Limits) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::clone::Clone for noctis::ui::AltText
+pub fn noctis::ui::AltText::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ui::AltText
+impl core::cmp::PartialEq for noctis::ui::AltText
+pub fn noctis::ui::AltText::eq(&self, &Self) -> bool
+impl core::convert::AsRef<str> for noctis::ui::AltText
+pub fn noctis::ui::AltText::as_ref(&self) -> &str
+impl core::convert::From<noctis::ui::AltText> for alloc::borrow::Cow<'static, str>
+pub fn alloc::borrow::Cow<'static, str>::from(noctis::ui::AltText) -> Self
+impl core::convert::TryFrom<&'static str> for noctis::ui::AltText
+pub type noctis::ui::AltText::Error = noctis::ui::UiError
+pub fn noctis::ui::AltText::try_from(&'static str) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::convert::TryFrom<alloc::string::String> for noctis::ui::AltText
+pub type noctis::ui::AltText::Error = noctis::ui::UiError
+pub fn noctis::ui::AltText::try_from(alloc::string::String) -> core::result::Result<Self, noctis::ui::UiError>
+impl core::fmt::Debug for noctis::ui::AltText
+pub fn noctis::ui::AltText::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ui::AltText
+pub fn noctis::ui::AltText::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for noctis::ui::AltText
 pub struct noctis::ui::Arity<const N: usize>
 impl noctis::ui::CheckboxOptions for noctis::ui::Arity<10>
 impl noctis::ui::CheckboxOptions for noctis::ui::Arity<1>
@@ -6780,6 +6830,7 @@ pub fn noctis::ui::V2Message::create_body(&self, noctis::ui::CreateFlags) -> noc
 pub fn noctis::ui::V2Message::edit_body(&self, noctis::ui::MessageFormat, noctis::ui::EditFlags) -> noctis::ui::MessageBody<'_>
 pub fn noctis::ui::V2Message::mentions(self, noctis::ui::Mentions) -> Self
 pub fn noctis::ui::V2Message::new(noctis::ui::Components) -> Self
+pub fn noctis::ui::V2Message::used_attachments(&self) -> impl core::iter::traits::iterator::Iterator<Item = &noctis::ui::Attachment>
 impl core::clone::Clone for noctis::ui::V2Message
 pub fn noctis::ui::V2Message::clone(&self) -> Self
 impl core::convert::From<noctis::ui::Components> for noctis::ui::V2Message

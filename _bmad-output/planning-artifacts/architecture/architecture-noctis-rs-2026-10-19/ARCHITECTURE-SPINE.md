@@ -986,6 +986,16 @@ list in CI.
     implements `Template` and supplies the `ErasedView`. Its `ImagePlugin` installs
     the Renderer on an App (AD-24). Without a Renderer, `ctx.render` returns a typed
     error.
+- **Amended (2026-10-22, Story 9.1):** "used" means referenced: the Responder
+  uploads or keeps only `V2Message::used_attachments` (the set members whose
+  `attachment://` URL a File, Thumbnail or gallery item names); an unreferenced
+  member is never sent. Keep-list ids come only from Discord: the source message's
+  `attachments` (component interactions) and the responses to type-4/7 callbacks
+  (`with_response`), edits and follow-ups; an unknown id degrades to a re-upload,
+  never to a broken keep-list. The single Upload Budget check (ATT-01..03) runs in
+  body building, after the entries and the `payload_json` exist and before the
+  transport call, in every mode. A rendered image in a Thumbnail or gallery item
+  without its own alt text is ATT-06 (Strict error, Lenient warning).
 
 ### AD-23 — Fixed interaction pipeline and Extensions
 - **Binds:** `noctis-core`, `noctis-prefix`; FR-14, FR-18 to FR-22, FR-43, FR-45,

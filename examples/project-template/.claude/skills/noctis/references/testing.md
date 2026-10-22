@@ -125,7 +125,7 @@ Locale, default `en-US`). `CommandRun`, `MenuRun` and `AutocompleteRun` add
   `radio(key, value)`, `checkbox(key, bool)`. Unset inputs send their pre-filled value
   or nothing. A required text input left empty or a text outside its length bounds is
   `InvalidInput`; an unknown key is `UnknownInput`; the wrong setter is `WrongInput`; a
-  File Upload is `Unsupported` ([planned, Story 9.1]). A form opened from a component
+  File Upload is `Unsupported` ([planned]). A form opened from a component
   keeps that component's message, so the submit can `ctx.update(..)` it.
 
 ## 4. Assertions on a response
@@ -140,7 +140,7 @@ Locale, default `en-US`). `CommandRun`, `MenuRun` and `AutocompleteRun` add
 | `modal()` | `Result<ModalForm, TestError>` (`NotFound { what: "modal" }` otherwise) |
 | `suggestions()` | autocomplete `(value, label)` pairs as sent, after truncation to 25 (values as strings) |
 | `is_guard_notice()`, `is_expired_notice()`, `is_error()` | the final message or a follow-up is that built-in notice in the run's locale (guard failed/owner/permissions; expired; generic error or validation failed). Custom-key notices are not recognized |
-| `http_calls()` | `&[HttpCall]`: every request of the run (`method()`, `path()` after `/api/v10`, `json()`); REST routes the fake does not know answer 404 |
+| `http_calls()` | `&[HttpCall]`: every request of the run (`method()`, `path()` after `/api/v10`, `json()` (the `payload_json` part of a multipart upload), `files()` (`&[RecordedFile]`: the `files[n]` parts, empty for JSON bodies)); REST routes the fake does not know answer 404 |
 | `text()` | all Text Display content (legacy: `content`) joined with `\n`; `""` without a message |
 | `button(label)`, `button_by_emoji(e)`, `component::<R>()` | `Result<TestComponent, TestError>` (`NotFound` lists what is there) |
 | `buttons()`, `components()` | every button / component, pre-order |
@@ -178,7 +178,26 @@ multi-thread runtime), `Io`, `Build` (your builder's `BuildError`), `Start`, `St
 `NotVisible`, `SelectValues`, `NotAnOption`, `UnknownInput`, `WrongInput`,
 `InvalidInput`, `Unsupported`, `Render`, `TooFewRuns`, `ProfilerBusy`,
 `AllocatorMissing`, `MemoryGrew`. Simulating rate limits (`is_rate_limited()`) is
-[planned, Story 13.4]; attachments on a response are [planned, Story 9.1].
+[planned, Story 13.4].
+
+**Attachments.** A response with files is recorded as multipart: `call.json()` is its
+`payload_json` and `call.files()` lists the uploads, each a `RecordedFile`
+(`#[non_exhaustive]`, pub `name` = `"files[n]"`, `filename` = the content name,
+`bytes: Bytes`), in body order. The fake answers like Discord: every message it
+returns (reply, follow-up, `@original`, the message of a later click) carries
+`attachments` with fresh ids, so a later `update` of the same View shows kept entries
+(`{"id": "<snowflake>"}`) and no `files()`. The low-level fake has the same view on
+`noctis_testkit::fake::RecordedRequest` (`.json()`, `.files()`).
+
+```rust
+let reply = app.command("card").run().await?;
+let call = reply.http_calls().iter().find(|c| c.path().ends_with("/callback")).unwrap();
+assert_eq!(call.files().len(), 1);                       // uploaded once
+assert_eq!(call.json().unwrap()["data"]["attachments"][0]["id"], 0);
+let again = app.click(reply.button("Same")?).run().await?;
+let call = again.http_calls().iter().find(|c| c.path().ends_with("/callback")).unwrap();
+assert!(call.files().is_empty());                        // kept by id
+```
 
 ## 5. Unit-testing a render function without an App
 

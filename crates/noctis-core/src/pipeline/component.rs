@@ -581,6 +581,7 @@ pub(crate) async fn run_component_over(
             token,
             received_at,
             channel_id,
+            file_limit: crate::responder::file_limit(raw.as_bytes()),
         }),
         Wire::Detached => Transport::Detached,
     };

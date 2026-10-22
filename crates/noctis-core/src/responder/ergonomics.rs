@@ -284,7 +284,7 @@ impl Shared {
     ) -> Result<(), ResponderError> {
         self.refuse_answered()?;
         self.refuse_closed()?;
-        let Some(source) = self.source else {
+        let Some(source) = self.source.as_ref() else {
             return Err(ResponderError::UpdateUnavailable);
         };
         self.prepare(&mut msg).await?;

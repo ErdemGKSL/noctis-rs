@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use hyper::header::HeaderValue;
 use serde_json::Value;
 use twilight_http::error::ErrorType;
 use twilight_http::request::Request;
@@ -21,6 +22,7 @@ use twilight_model::id::marker::{
 };
 
 use super::ResponderError;
+use super::files::{KnownFiles, Payload};
 use crate::edge::callback::{CallbackBody, CallbackError, CallbackRequest, valid_token};
 use crate::handler::AppShared;
 
@@ -49,21 +51,28 @@ pub(crate) struct InteractionTarget {
     /// The channel the interaction was invoked in (the bot-token fallback
     /// after the token expired, INT-02).
     pub(crate) channel_id: Option<Id<ChannelMarker>>,
+    /// The interaction's `attachment_size_limit` (ATT-01), when Discord sent
+    /// a positive one.
+    pub(crate) file_limit: Option<usize>,
 }
 
-/// What an edit response names: the message and its channel, when the
-/// body carries them.
-#[derive(Clone, Copy, Debug, Default)]
+/// What an edit response names: the message, its channel and its
+/// attachments, when the body carries them.
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Posted {
     pub(crate) message_id: Option<Id<MessageMarker>>,
     pub(crate) channel_id: Option<Id<ChannelMarker>>,
+    /// The message's attachments; `None` when the body is not a message.
+    pub(crate) files: Option<KnownFiles>,
 }
 
-/// A sent follow-up: its id and, when the response names it, its channel.
-#[derive(Clone, Copy, Debug)]
+/// A sent follow-up: its id and, when the response names them, its channel
+/// and attachments.
+#[derive(Clone, Debug)]
 pub(crate) struct Sent {
     pub(crate) id: Id<MessageMarker>,
     pub(crate) channel_id: Option<Id<ChannelMarker>>,
+    pub(crate) files: Option<KnownFiles>,
 }
 
 /// One message to reply to.
@@ -105,7 +114,7 @@ impl Transport {
     pub(crate) async fn edit_reply(
         &self,
         message_id: Option<Id<MessageMarker>>,
-        body: Value,
+        body: Payload,
     ) -> Result<Posted, ResponderError> {
         match self {
             Self::Interaction(t) => {
@@ -114,10 +123,10 @@ impl Transport {
                     application_id: t.application_id.get(),
                     interaction_token: token,
                 };
-                Ok(posted(&send(&t.app, &route, Some(&body), false).await?))
+                Ok(posted(&send(&t.app, &route, Some(body), false).await?))
             }
             Self::Message(t) => match message_id {
-                Some(id) => t.edit(id, &body).await.map(|()| Posted::default()),
+                Some(id) => t.edit(id, body).await,
                 None => Ok(Posted::default()),
             },
             Self::Detached => Ok(Posted::default()),
@@ -171,8 +180,8 @@ impl Transport {
 
     /// Sends a follow-up (`body`: callback data, or a Create Message body
     /// over a message transport); its message id and channel.
-    pub(crate) async fn follow_up(&self, body: Value) -> Result<Sent, ResponderError> {
-        let id = match self {
+    pub(crate) async fn follow_up(&self, body: Payload) -> Result<Sent, ResponderError> {
+        let response = match self {
             Self::Interaction(t) => {
                 let token = t.token()?;
                 let route = Route::ExecuteWebhook {
@@ -183,32 +192,43 @@ impl Transport {
                     with_components: None,
                     webhook_id: t.application_id.get(),
                 };
-                let response = send(&t.app, &route, Some(&body), false).await?;
-                return Ok(Sent {
-                    id: message_id(&response)?,
-                    channel_id: posted(&response).channel_id,
-                });
+                send(&t.app, &route, Some(body), false).await?
             }
             Self::Message(t) => {
                 let route = Route::CreateMessage {
                     channel_id: t.channel_id.get(),
                 };
-                message_id(&send(&t.app, &route, Some(&body), true).await?)?
+                let response = send(&t.app, &route, Some(body), true).await?;
+                let id = message_id(&response)?;
+                return Ok(Sent {
+                    id,
+                    channel_id: None,
+                    files: posted(&response).files,
+                });
             }
-            Self::Detached => DETACHED_ID,
+            Self::Detached => {
+                return Ok(Sent {
+                    id: DETACHED_ID,
+                    channel_id: None,
+                    files: None,
+                });
+            }
         };
+        let id = message_id(&response)?;
+        let posted = posted(&response);
         Ok(Sent {
             id,
-            channel_id: None,
+            channel_id: posted.channel_id,
+            files: posted.files,
         })
     }
 
-    /// Edits the follow-up `id`.
+    /// Edits the follow-up `id`; what the response names.
     pub(crate) async fn edit_message(
         &self,
         id: Id<MessageMarker>,
-        body: Value,
-    ) -> Result<(), ResponderError> {
+        body: Payload,
+    ) -> Result<Posted, ResponderError> {
         match self {
             Self::Interaction(t) => {
                 let token = t.token()?;
@@ -218,10 +238,10 @@ impl Transport {
                     token,
                     webhook_id: t.application_id.get(),
                 };
-                send(&t.app, &route, Some(&body), false).await.map(drop)
+                Ok(posted(&send(&t.app, &route, Some(body), false).await?))
             }
-            Self::Message(t) => t.edit(id, &body).await,
-            Self::Detached => Ok(()),
+            Self::Message(t) => t.edit(id, body).await,
+            Self::Detached => Ok(Posted::default()),
         }
     }
 
@@ -259,21 +279,42 @@ impl InteractionTarget {
         tokio::time::Instant::now() >= self.received_at + TOKEN_LIFETIME
     }
 
-    /// Sends the initial callback `body` over the hedged edge path (no bot
-    /// token, INT-13) and records the ack latency; the response body (with
-    /// `with_response`, the callback resource; empty otherwise).
-    pub(crate) async fn callback(
+    /// [`callback`](Self::callback) of a JSON `body`.
+    pub(crate) async fn callback_json(
         &self,
         body: &Value,
         with_response: bool,
     ) -> Result<Bytes, ResponderError> {
-        let body = serde_json::to_vec(body).map_err(|e| ResponderError::Encode {
+        let json = serde_json::to_vec(body).map_err(|e| ResponderError::Encode {
             reason: e.to_string(),
         })?;
+        self.callback(Payload::Json(json), with_response).await
+    }
+
+    /// Sends the initial callback `body` (JSON, or multipart with uploads)
+    /// over the hedged edge path (no bot token, INT-13) and records the ack
+    /// latency; the response body (with `with_response`, the callback
+    /// resource; empty otherwise).
+    pub(crate) async fn callback(
+        &self,
+        body: Payload,
+        with_response: bool,
+    ) -> Result<Bytes, ResponderError> {
+        let body = match body {
+            Payload::Json(json) => CallbackBody::Json(Bytes::from(json)),
+            Payload::Form(form) => CallbackBody::Raw {
+                content_type: HeaderValue::from_bytes(&form.content_type()).map_err(|e| {
+                    ResponderError::Encode {
+                        reason: e.to_string(),
+                    }
+                })?,
+                body: Bytes::from(form.build()),
+            },
+        };
         let request = CallbackRequest {
             interaction_id: self.interaction_id,
             token: self.token.clone(),
-            body: CallbackBody::Json(Bytes::from(body)),
+            body,
             with_response,
             received_at: self.received_at,
         };
@@ -294,9 +335,9 @@ impl InteractionTarget {
 }
 
 impl MessageTarget {
-    /// Posts `body` as a reply to the message; the reply's id.
-    pub(crate) async fn reply(&self, mut body: Value) -> Result<Id<MessageMarker>, ResponderError> {
-        if let Value::Object(map) = &mut body {
+    /// Makes the Create Message `body` a reply to the message.
+    pub(crate) fn reference(&self, body: &mut Value) {
+        if let Value::Object(map) = body {
             map.insert(
                 "message_reference".to_owned(),
                 serde_json::json!({
@@ -305,10 +346,19 @@ impl MessageTarget {
                 }),
             );
         }
+    }
+
+    /// Posts `body` (built with [`reference`](Self::reference)) as a reply
+    /// to the message; the reply's id and attachments.
+    pub(crate) async fn reply(
+        &self,
+        body: Payload,
+    ) -> Result<(Id<MessageMarker>, Option<KnownFiles>), ResponderError> {
         let route = Route::CreateMessage {
             channel_id: self.channel_id.get(),
         };
-        message_id(&send(&self.app, &route, Some(&body), true).await?)
+        let response = send(&self.app, &route, Some(body), true).await?;
+        Ok((message_id(&response)?, posted(&response).files))
     }
 
     /// Starts the typing indicator.
@@ -319,10 +369,8 @@ impl MessageTarget {
         send(&self.app, &route, None, true).await.map(drop)
     }
 
-    async fn edit(&self, id: Id<MessageMarker>, body: &Value) -> Result<(), ResponderError> {
-        channel_edit(&self.app, self.channel_id, id, body)
-            .await
-            .map(drop)
+    async fn edit(&self, id: Id<MessageMarker>, body: Payload) -> Result<Posted, ResponderError> {
+        channel_edit(&self.app, self.channel_id, id, body).await
     }
 
     async fn delete(&self, id: Id<MessageMarker>) -> Result<(), ResponderError> {
@@ -336,7 +384,7 @@ pub(crate) async fn channel_edit(
     app: &AppShared,
     channel_id: Id<ChannelMarker>,
     id: Id<MessageMarker>,
-    body: &Value,
+    body: Payload,
 ) -> Result<Posted, ResponderError> {
     let route = Route::UpdateMessage {
         channel_id: channel_id.get(),
@@ -371,20 +419,20 @@ pub(crate) async fn channel_delete(
     send(app, &route, None, true).await.map(drop)
 }
 
-/// Sends one request through the App's twilight client; the response
-/// body. `bot` sends the bot token (never for interaction-token routes).
+/// Sends one request through the App's twilight client, with a JSON or
+/// multipart body; the response body. `bot` sends the bot token (never for
+/// interaction-token routes, INT-13).
 async fn send(
     app: &AppShared,
     route: &Route<'_>,
-    body: Option<&Value>,
+    body: Option<Payload>,
     bot: bool,
 ) -> Result<Vec<u8>, ResponderError> {
     let mut builder = Request::builder(route).use_authorization_token(bot);
-    if let Some(body) = body {
-        let bytes = serde_json::to_vec(body).map_err(|e| ResponderError::Encode {
-            reason: e.to_string(),
-        })?;
-        builder = builder.body(bytes);
+    match body {
+        Some(Payload::Json(bytes)) => builder = builder.body(bytes),
+        Some(Payload::Form(form)) => builder = builder.form(form),
+        None => {}
     }
     let request = builder.build().map_err(|error| {
         tracing::debug!(target: "noctis::responder", %error, "request not built");
@@ -448,19 +496,36 @@ fn snowflake<T>(value: Option<&Value>) -> Option<Id<T>> {
         .and_then(Id::new_checked)
 }
 
-/// The `id` and `channel_id` of a message object, when present.
+/// The `id`, `channel_id` and `attachments` of a message object, when
+/// present; `files` only when the body is a message (an object with an
+/// `id`).
 fn posted(body: &[u8]) -> Posted {
     let Ok(value) = serde_json::from_slice::<Value>(body) else {
         return Posted::default();
     };
+    message_posted(&value)
+}
+
+/// [`posted`] of a parsed message object.
+fn message_posted(value: &Value) -> Posted {
     Posted {
         message_id: snowflake(value.get("id")),
         channel_id: snowflake(value.get("channel_id")),
+        files: value
+            .get("id")
+            .is_some()
+            .then(|| KnownFiles::from_message(value)),
     }
 }
 
-/// The `resource.message.id` of a `with_response` callback body.
-pub(crate) fn callback_message_id(body: &[u8]) -> Option<Id<MessageMarker>> {
-    let value: Value = serde_json::from_slice(body).ok()?;
-    snowflake(value.pointer("/resource/message/id"))
+/// The `resource.message` of a `with_response` callback body: its id and
+/// attachments.
+pub(crate) fn callback_posted(body: &[u8]) -> Posted {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return Posted::default();
+    };
+    value
+        .pointer("/resource/message")
+        .map(message_posted)
+        .unwrap_or_default()
 }

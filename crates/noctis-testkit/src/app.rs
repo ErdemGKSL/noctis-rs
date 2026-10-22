@@ -393,7 +393,15 @@ impl TestApp {
             token,
             dispatch.kind,
             dispatch.ctx.channel,
-            dispatch.source.as_ref().map(|s| s.id),
+            dispatch.source.as_ref().map(|s| {
+                let attachments = s
+                    .json
+                    .get("attachments")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                (s.id, attachments)
+            }),
         );
         let (done, finished) = oneshot::channel();
         lock(&self.waiters).insert(id, done);

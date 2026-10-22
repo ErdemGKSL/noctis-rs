@@ -40,13 +40,15 @@ fn flagged_ephemeral(body: &Value) -> bool {
 }
 
 impl Run<'_> {
-    /// A message `id` in `channel` with `body` as sent.
+    /// A message `id` in `channel` with `body` as sent, holding the
+    /// attachment objects `attachments`.
     fn message(
         &self,
         id: Id<MessageMarker>,
         channel: Id<ChannelMarker>,
         body: Value,
         ephemeral: bool,
+        attachments: &[Value],
     ) -> TestMessage {
         let mut seen = body.clone();
         if ephemeral {
@@ -59,7 +61,7 @@ impl Run<'_> {
             raw: body,
             source: Arc::new(Source {
                 id,
-                json: wire::message_json(id, channel, &seen),
+                json: wire::message_json_with(id, channel, &seen, attachments),
                 ephemeral,
                 ctx,
             }),
@@ -80,53 +82,57 @@ impl Run<'_> {
         let mut callback: Option<(u8, Value, Id<MessageMarker>)> = None;
         let mut edited = false;
         let mut final_body: Option<Value> = None;
+        let mut final_files: Vec<Value> = Vec::new();
         // A follow-up's ephemerality is fixed by its creating body; edits
         // never carry flag 64.
-        let mut followups: Vec<(Id<MessageMarker>, Value, bool)> = Vec::new();
+        let mut followups: Vec<(Id<MessageMarker>, Value, bool, Vec<Value>)> = Vec::new();
         for event in events {
             match event {
                 WireEvent::Callback {
                     kind,
                     data,
                     original,
+                    attachments,
                 } => {
                     if callback.is_none() {
                         if matches!(kind, 4 | 7) {
                             final_body = Some(data.clone());
                         }
+                        final_files = attachments;
                         callback = Some((kind, data, original));
                     }
                 }
-                WireEvent::Original { body } => {
+                WireEvent::Original { body, attachments } => {
                     edited = true;
                     final_body = body;
+                    final_files = attachments;
                 }
-                WireEvent::FollowUp { id, body } => {
+                WireEvent::FollowUp {
+                    id,
+                    body,
+                    attachments,
+                } => {
                     let ephemeral = flagged_ephemeral(&body);
-                    followups.push((id, body, ephemeral));
+                    followups.push((id, body, ephemeral, attachments));
                 }
-                WireEvent::Message { id, body } => match body {
+                WireEvent::Message {
+                    id,
+                    body,
+                    attachments,
+                } => match body {
                     Some(body) => {
-                        if let Some(entry) = followups.iter_mut().find(|(f, _, _)| *f == id) {
+                        if let Some(entry) = followups.iter_mut().find(|f| f.0 == id) {
                             entry.1 = body;
+                            entry.3 = attachments;
                         }
                     }
-                    None => followups.retain(|(f, _, _)| *f != id),
+                    None => followups.retain(|f| f.0 != id),
                 },
             }
         }
         let callback_type = callback.as_ref().map(|(kind, _, _)| *kind);
         let has_final = final_body.is_some();
-        let kind = match callback_type {
-            Some(4) => ResponseKind::Reply,
-            Some(5) if edited && has_final => ResponseKind::Reply,
-            Some(6) if edited && has_final => ResponseKind::Update,
-            Some(7) => ResponseKind::Update,
-            Some(5 | 6) => ResponseKind::Deferred,
-            Some(8) => ResponseKind::Autocomplete,
-            Some(9) => ResponseKind::Modal,
-            _ => ResponseKind::None,
-        };
+        let kind = response_kind(callback_type, edited && has_final);
         let ephemeral = match &callback {
             Some((4 | 5, data, _)) => flagged_ephemeral(data),
             Some((6 | 7, _, _)) => source_ephemeral,
@@ -134,14 +140,20 @@ impl Run<'_> {
         };
         let update = matches!(callback_type, Some(6 | 7));
         let message = match (&callback, final_body) {
-            (Some((_, _, original)), Some(body)) => {
-                Some(self.message(*original, self.channel(update), body, ephemeral))
-            }
+            (Some((_, _, original)), Some(body)) => Some(self.message(
+                *original,
+                self.channel(update),
+                body,
+                ephemeral,
+                &final_files,
+            )),
             _ => None,
         };
         let followups: Vec<TestMessage> = followups
             .into_iter()
-            .map(|(id, body, ephemeral)| self.message(id, self.ctx.channel, body, ephemeral))
+            .map(|(id, body, ephemeral, files)| {
+                self.message(id, self.ctx.channel, body, ephemeral, &files)
+            })
             .collect();
         let modal = match &callback {
             Some((9, data, _)) => Some(ModalForm {
@@ -225,5 +237,21 @@ fn http_call(request: &RecordedRequest) -> HttpCall {
             .unwrap_or(request.path.as_str())
             .to_owned(),
         json: request.json(),
+        files: request.files(),
+    }
+}
+
+/// The [`ResponseKind`] of a run whose callback had `callback_type`;
+/// `edited` is whether a deferred response was later edited into a message.
+fn response_kind(callback_type: Option<u8>, edited: bool) -> ResponseKind {
+    match callback_type {
+        Some(4) => ResponseKind::Reply,
+        Some(5) if edited => ResponseKind::Reply,
+        Some(6) if edited => ResponseKind::Update,
+        Some(7) => ResponseKind::Update,
+        Some(5 | 6) => ResponseKind::Deferred,
+        Some(8) => ResponseKind::Autocomplete,
+        Some(9) => ResponseKind::Modal,
+        _ => ResponseKind::None,
     }
 }

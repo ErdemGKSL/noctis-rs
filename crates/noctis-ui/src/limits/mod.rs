@@ -6,8 +6,9 @@
 //! counts, paths and violation order match `components!` exactly. On top of
 //! that they check what the descriptors do not carry: duplicate `custom_id`s
 //! (CID-02, unresolved ones compared by Route and Payload), `attachment://`
-//! references (ATT-05), attachment alt text (ATT-06), legacy `content`
-//! (MSG-01), empty bodies (MSG-09) and mention id counts (MSG-04). A modal
+//! references (ATT-05), attachment alt text and the alt text of rendered
+//! images (ATT-06), legacy `content` (MSG-01), empty bodies (MSG-09) and
+//! mention id counts (MSG-04). A modal
 //! is lowered into `noctis_rules::modal` descriptors and checked by
 //! `validate_modal`, then its input keys by CID-01 and CID-02.
 
@@ -18,12 +19,13 @@ mod walk;
 
 pub use budget::Budget;
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use noctis_rules::attachment::{
     AttachmentDecl, validate_attachment_description, validate_attachment_ref,
+    validate_rendered_image_alt,
 };
 use noctis_rules::component as rc;
 use noctis_rules::len::discord_len;
@@ -35,11 +37,12 @@ use noctis_rules::modal as rm;
 use noctis_rules::{Actual, Bound, LimitMode, Limits, RuleId, Violation};
 
 use self::walk::Visit;
+use crate::attachment::SCHEME;
 use crate::modal::ModalTopNode;
 use crate::route::DupKey;
 use crate::{
-    AttachmentOrigin, AttachmentSet, Components, ContainerComponent, LegacyMessage, Mentions,
-    Modal, Roles, TopLevelComponent, UiError, Users, V2Message,
+    AttachmentOrigin, AttachmentSet, Components, ContainerComponent, LegacyMessage, Media,
+    Mentions, Modal, Roles, TopLevelComponent, UiError, Users, V2Message,
 };
 
 use crate::placement::sealed;
@@ -89,7 +92,8 @@ pub struct CostReport {
     /// Text Display characters (V2, CV2-04) or `content` characters (legacy).
     pub text_chars: usize,
     /// Lenient-mode truncations (per-field ones in pre-order, then the CV2-04
-    /// one, ATT-06 and MSG-01), then images without alt text in pre-order.
+    /// one, ATT-06 and MSG-01), then images without alt text in pre-order
+    /// (rendered ones only in Lenient mode and from [`cost`]).
     pub warnings: Vec<LimitWarning>,
 }
 
@@ -121,8 +125,10 @@ pub enum LimitWarning {
     /// Lenient mode truncated display text with `…`; the violation is the one
     /// it avoided, with the length before truncation.
     Truncated(Violation),
-    /// A Thumbnail or gallery item that is not a rendered image has no alt
-    /// text (empty or whitespace-only counts as none).
+    /// A Thumbnail or gallery item has no alt text of its own (empty or
+    /// whitespace-only counts as none). For a rendered image this is a
+    /// warning only in Lenient mode and from [`cost`]; Strict
+    /// [`validate`] rejects it with ATT-06 (FR-30).
     MissingAlt {
         /// The node's path, such as `section[0].accessory` or
         /// `gallery[1].item[0]`.
@@ -169,9 +175,18 @@ impl fmt::Display for LimitWarning {
 /// `min_values` / `max_values`, ids, CID-02, ATT-05, MSG-04, MSG-09) still
 /// fails.
 ///
+/// A rendered image (an [`AttachmentOrigin::Rendered`] attachment, by its
+/// ref or by an `attachment://` URL naming it) in a Thumbnail or gallery
+/// item needs that component's own alt text (FR-30, UX-DR2; the
+/// attachment's alt does not count): Strict mode rejects it with ATT-06 at
+/// `<path>.description`, Lenient mode warns with
+/// [`LimitWarning::MissingAlt`]. Any other image without alt text is a
+/// `MissingAlt` warning in both modes.
+///
 /// The violations come in this order: the `noctis_rules::component` result
-/// in its own order, then CID-02, ATT-05, ATT-06, MSG-01 (legacy), MSG-09
-/// and MSG-04. Each names its path, such as
+/// in its own order, then CID-02, ATT-05, ATT-06 (attachment alt text),
+/// ATT-06 (rendered images without alt text, in pre-order), MSG-01
+/// (legacy), MSG-09 and MSG-04. Each names its path, such as
 /// `container[0].section[2].accessory.label`. CID-02 compares unresolved
 /// `custom_id`s (select, signed and by-Ref Routes) by Route and Payload, so a
 /// duplicate fails before and after the Responder resolves it; its help
@@ -283,9 +298,13 @@ impl sealed::Check for V2Message {
         check_custom_ids(&sites, &mut violations);
         check_attachment_refs(&sites, &self.attachments, limits, &mut violations);
         check_attachment_alts(&self.attachments, limits, &mut violations);
+        let lenient = limits.mode == LimitMode::Lenient;
+        if !lenient {
+            check_rendered_alts(&sites, &self.attachments, limits, &mut violations);
+        }
         violations.extend(validate_v2_not_empty(self.components.len(), limits));
         violations.extend(check_mentions(&self.mentions, limits));
-        missing_alt(&sites, &mut warnings);
+        missing_alt(&sites, &self.attachments, lenient, &mut warnings);
         finish(
             CostReport {
                 components: c.components,
@@ -299,7 +318,12 @@ impl sealed::Check for V2Message {
     fn cost_with(&self, limits: &Limits) -> CostReport {
         let c = lower::with_v2(&self.components, |tree| rc::cost(tree, limits));
         let mut warnings = Vec::new();
-        missing_alt(&walk::v2_sites(&self.components), &mut warnings);
+        missing_alt(
+            &walk::v2_sites(&self.components),
+            &self.attachments,
+            true,
+            &mut warnings,
+        );
         CostReport {
             components: c.components,
             text_chars: c.text_len,
@@ -555,17 +579,72 @@ fn check_mentions(mentions: &Mentions, limits: &Limits) -> Vec<Violation> {
     validate_mentions(&allowed, limits)
 }
 
-/// Thumbnails and gallery items that are not rendered images and have no
-/// alt text of their own.
-fn missing_alt(sites: &[Visit<'_>], out: &mut Vec<LimitWarning>) {
+/// The `attachment://` names the File, Thumbnail and gallery item sites of
+/// `components` reference (each once).
+pub(crate) fn referenced_names(components: &Components) -> HashSet<&str> {
+    walk::v2_sites(components)
+        .iter()
+        .filter_map(|visit| visit.site.url())
+        .filter_map(|url| url.strip_prefix(SCHEME))
+        .collect()
+}
+
+/// Whether `media` shows a rendered image: its ref's origin, or the origin
+/// of the member of `set` its `attachment://` URL names.
+fn is_rendered(media: &Media, set: &AttachmentSet) -> bool {
+    media
+        .attachment()
+        .is_some_and(|r| r.origin() == AttachmentOrigin::Rendered)
+        || media
+            .as_str()
+            .strip_prefix(SCHEME)
+            .and_then(|name| set.get(name))
+            .is_some_and(|a| a.origin() == AttachmentOrigin::Rendered)
+}
+
+/// Whether `alt` is missing: `None`, empty or whitespace-only.
+fn no_alt(alt: Option<&str>) -> bool {
+    alt.is_none_or(|a| a.trim().is_empty())
+}
+
+/// The ATT-06 help of a rendered image without alt text.
+const RENDERED_ALT_HELP: &str = "add `.alt(..)` to the Thumbnail or MediaItem (UX-DR2)";
+
+/// ATT-06 (Strict, FR-30): every rendered image in a Thumbnail or gallery
+/// item has its own alt text, in pre-order.
+fn check_rendered_alts(
+    sites: &[Visit<'_>],
+    set: &AttachmentSet,
+    limits: &Limits,
+    out: &mut Vec<Violation>,
+) {
     for visit in sites {
         let Some((media, alt)) = visit.site.image() else {
             continue;
         };
-        let rendered = media
-            .attachment()
-            .is_some_and(|r| r.origin() == AttachmentOrigin::Rendered);
-        if !rendered && alt.is_none_or(|a| a.trim().is_empty()) {
+        if !is_rendered(media, set) {
+            continue;
+        }
+        for mut v in validate_rendered_image_alt(alt, limits) {
+            v.path = format!("{}.description", visit.path);
+            out.push(v.with_help(RENDERED_ALT_HELP));
+        }
+    }
+}
+
+/// Thumbnails and gallery items without alt text of their own; rendered
+/// images only when `rendered_too` (Lenient mode and `cost`).
+fn missing_alt(
+    sites: &[Visit<'_>],
+    set: &AttachmentSet,
+    rendered_too: bool,
+    out: &mut Vec<LimitWarning>,
+) {
+    for visit in sites {
+        let Some((media, alt)) = visit.site.image() else {
+            continue;
+        };
+        if no_alt(alt) && (rendered_too || !is_rendered(media, set)) {
             out.push(LimitWarning::MissingAlt {
                 path: visit.path.clone(),
             });

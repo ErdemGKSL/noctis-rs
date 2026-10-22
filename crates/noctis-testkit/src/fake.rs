@@ -357,9 +357,126 @@ impl RecordedRequest {
     /// };
     /// assert_eq!(request.json().unwrap()["content"], "hi");
     /// ```
+    ///
+    /// A `multipart/form-data` request (a message with uploads) gives its
+    /// `payload_json` part.
     pub fn json(&self) -> Option<serde_json::Value> {
-        serde_json::from_slice(&self.body).ok()
+        match self.parts() {
+            Some(parts) => parts
+                .into_iter()
+                .find(|p| p.name == "payload_json" && p.filename.is_none())
+                .and_then(|p| serde_json::from_slice(&p.bytes).ok()),
+            None => serde_json::from_slice(&self.body).ok(),
+        }
     }
+
+    /// The uploaded files of a `multipart/form-data` request (`files[n]`
+    /// parts), in body order; empty for any other request.
+    ///
+    /// ```
+    /// use noctis_testkit::fake::{HeaderMap, HeaderValue, Method, RecordedRequest};
+    ///
+    /// let mut headers = HeaderMap::new();
+    /// headers.insert("content-type", HeaderValue::from_static("multipart/form-data; boundary=B"));
+    /// let body = "--B\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n{\"attachments\":[{\"id\":0,\"filename\":\"a.png\"}]}\r\n--B\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"a.png\"\r\n\r\nPNG\r\n--B--";
+    /// let request = RecordedRequest {
+    ///     method: Method::POST,
+    ///     path: "/api/v10/channels/1/messages".into(),
+    ///     query: None,
+    ///     headers,
+    ///     body: body.into(),
+    ///     connection: 0,
+    /// };
+    /// assert_eq!(request.json().unwrap()["attachments"][0]["filename"], "a.png");
+    /// let files = request.files();
+    /// assert_eq!((files[0].name.as_str(), files[0].filename.as_str()), ("files[0]", "a.png"));
+    /// assert_eq!(&files[0].bytes[..], b"PNG");
+    /// ```
+    pub fn files(&self) -> Vec<RecordedFile> {
+        self.parts()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|p| {
+                Some(RecordedFile {
+                    name: p.name,
+                    filename: p.filename?,
+                    bytes: p.bytes,
+                })
+            })
+            .collect()
+    }
+
+    /// The parts of a `multipart/form-data` body, or `None` for any other
+    /// content type (or a body that does not parse).
+    fn parts(&self) -> Option<Vec<Part>> {
+        let content_type = self
+            .headers
+            .get(hyper::header::CONTENT_TYPE)?
+            .to_str()
+            .ok()?;
+        let (kind, params) = content_type.split_once(';')?;
+        if !kind.trim().eq_ignore_ascii_case("multipart/form-data") {
+            return None;
+        }
+        let boundary = params.split(';').find_map(|p| {
+            let (key, value) = p.split_once('=')?;
+            key.trim()
+                .eq_ignore_ascii_case("boundary")
+                .then(|| value.trim().trim_matches('"').to_owned())
+        })?;
+        let delimiter = format!("--{boundary}");
+        let body = &self.body[..];
+        let starts: Vec<usize> = body
+            .windows(delimiter.len())
+            .enumerate()
+            .filter_map(|(i, w)| (w == delimiter.as_bytes()).then_some(i))
+            .collect();
+        let mut parts = Vec::new();
+        for pair in starts.windows(2) {
+            let start = pair[0] + delimiter.len();
+            let segment = body.get(start..pair[1])?;
+            let skip = if segment.starts_with(b"\r\n") { 2 } else { 0 };
+            let segment = &segment[skip..];
+            let split = segment.windows(4).position(|w| w == b"\r\n\r\n")?;
+            let headers = std::str::from_utf8(&segment[..split]).ok()?;
+            let value_start = start + skip + split + 4;
+            let mut value_end = pair[1];
+            if body.get(value_end - 2..value_end) == Some(&b"\r\n"[..]) {
+                value_end -= 2;
+            }
+            let field = |key: &str| {
+                let at = headers.find(&format!("{key}=\""))? + key.len() + 2;
+                let len = headers[at..].find('"')?;
+                Some(headers[at..at + len].to_owned())
+            };
+            parts.push(Part {
+                name: field("name")?,
+                filename: field("filename"),
+                bytes: self.body.slice(value_start..value_end.max(value_start)),
+            });
+        }
+        Some(parts)
+    }
+}
+
+/// One part of a multipart body.
+struct Part {
+    name: String,
+    filename: Option<String>,
+    bytes: Bytes,
+}
+
+/// One uploaded file of a multipart request a [`FakeDiscordHttp`]
+/// received (see [`RecordedRequest::files`]).
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordedFile {
+    /// The part name, `files[n]`.
+    pub name: String,
+    /// The part's filename (the attachment's name).
+    pub filename: String,
+    /// The file contents.
+    pub bytes: Bytes,
 }
 
 /// A per-test route handler.

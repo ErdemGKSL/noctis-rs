@@ -1597,6 +1597,9 @@ pub mod twilight {
     pub use twilight_model as model;
 }
 
+/// An alt text literal, checked at `cargo check` against ATT-06 (at most
+/// 1024 characters); yields a [`ui::AltText`].
+pub use noctis_macros::alt;
 /// A literal Components V2 tree, checked at `cargo check`; yields a
 /// [`ui::Components`]. See [`ui`](ui#literal-macros-and-components).
 pub use noctis_macros::components;
@@ -1933,7 +1936,13 @@ pub mod ui {
     //!   [`AttachmentRef`], which only [`AttachmentSet::add`] returns (CV2-12);
     //!   [`Media`] takes an [`AttachmentRef`] or a URL, and an `attachment://`
     //!   name given as a URL (or a ref from another set) is checked at runtime
-    //!   by ATT-05.
+    //!   by ATT-05. The Responder uploads only
+    //!   [`V2Message::used_attachments`] (the members the tree references),
+    //!   keeps already-uploaded ones by id on an edit (MSG-08) and checks the
+    //!   Upload Budget (ATT-01..03) before any request. A rendered image in a
+    //!   [`Thumbnail`] or [`MediaItem`] needs that component's own `.alt(..)`
+    //!   ([`AltText`], `alt!`): an ATT-06 error in Strict mode, a warning in
+    //!   Lenient mode (FR-30).
     //! - [`UiError`]: a bad attachment extension, a mismatched Ref slot, an
     //!   edit of a V2 message back into a legacy one
     //!   ([`UiError::V2ToLegacy`]), or a message or value over its Limits
@@ -1986,12 +1995,13 @@ pub mod ui {
     //! `noctis-rules` function the runtime path calls:
     //! [`label!`](crate::label) ([`Label`], CV2-08, at most 80 characters),
     //! [`placeholder!`](crate::placeholder) ([`Placeholder`], CV2-09, 150),
-    //! [`content!`](crate::content) ([`Content`], MSG-01, 2000) and
+    //! [`content!`](crate::content) ([`Content`], MSG-01, 2000),
+    //! [`alt!`](crate::alt) ([`AltText`], ATT-06, 1024) and
     //! [`rgb!`](crate::rgb) ([`Rgb`], CV2-13, `0x000000..=0xFFFFFF`). Each
     //! works in a `const`. Text known only at runtime (localized text
     //! included) goes through `Label::try_new(text, &limits)` (or
-    //! `Placeholder`, `Content`) and `Rgb::try_from(u32)`; none of them ever
-    //! truncates.
+    //! `Placeholder`, `Content`, `AltText`) and `Rgb::try_from(u32)`; none
+    //! of them ever truncates.
     //!
     //! ```
     //! use noctis::prelude::*;
@@ -2477,8 +2487,8 @@ pub mod ui {
     //! ```
 
     pub use noctis_ui::{
-        ActionRow, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet, Budget,
-        Button, ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup,
+        ActionRow, AltText, Arity, Attachment, AttachmentOrigin, AttachmentRef, AttachmentSet,
+        Budget, Button, ButtonStyle, CallbackFlags, ChannelSelect, Checkbox, CheckboxGroup,
         CheckboxOptions, Choices, Components, Container, ContainerChild, ContainerComponent,
         Content, CostReport, CreateFlags, DownloadError, EditFlags, Emoji, File, FileFetcher,
         FileUpload, GalleryItems, Label, LegacyMessage, LegacyRows, LimitWarning, LinkButton,
@@ -2624,7 +2634,10 @@ pub mod testkit {
     //! - [`Response`]: [`ResponseKind`] (a type-5 or type-6 defer followed by
     //!   an edit counts as `Reply` or `Update`), ephemerality, the final
     //!   message ([`TestMessage`]), follow-ups, a modal ([`ModalForm`]),
-    //!   suggestions, built-in notices and every HTTP call ([`HttpCall`]).
+    //!   suggestions, built-in notices and every HTTP call ([`HttpCall`]:
+    //!   its JSON, the `payload_json` of a multipart send, and its uploads
+    //!   as [`RecordedFile`]s). The fake echoes attachments like Discord, so
+    //!   a later click carries them and an edit keeps them by id.
     //!   Finders ([`TestComponent`]) return `Result`, so a test uses `?`.
     //!   [`WireCost`] counts the message as sent, like [`crate::ui::cost`].
     //! - Snapshots: [`Response::message_json`] and [`render_json`] mask only
@@ -2659,8 +2672,8 @@ pub mod testkit {
 
     pub use noctis_testkit::{
         AutocompleteRun, ClickRun, CommandRun, HttpCall, MEMORY_FLAT_SLACK_BYTES, MemoryReport,
-        MenuRun, ModalForm, Response, ResponseKind, SelectRun, SubmitRun, TestApp, TestComponent,
-        TestError, TestGuild, TestMessage, TestOption, TestUser, WireCost, assert_memory_flat,
-        dhat, render_json,
+        MenuRun, ModalForm, RecordedFile, Response, ResponseKind, SelectRun, SubmitRun, TestApp,
+        TestComponent, TestError, TestGuild, TestMessage, TestOption, TestUser, WireCost,
+        assert_memory_flat, dhat, render_json,
     };
 }

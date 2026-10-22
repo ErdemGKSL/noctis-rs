@@ -115,10 +115,10 @@
 //! ([`GalleryItems`], CV2-10); any other length fails `cargo check`.
 //! [`ActionRow::try_buttons`], [`Section::try_new`] and
 //! [`MediaGallery::try_new`] take lengths known only at runtime. [`Label`]
-//! (CV2-08), [`Placeholder`] (CV2-09), [`Content`] (MSG-01) and
-//! `Rgb::try_from` (CV2-13) check runtime values with the same `noctis-rules`
-//! function the literal macros `label!`, `placeholder!`, `content!` and
-//! `rgb!` call at compile time.
+//! (CV2-08), [`Placeholder`] (CV2-09), [`Content`] (MSG-01), [`AltText`]
+//! (ATT-06) and `Rgb::try_from` (CV2-13) check runtime values with the same
+//! `noctis-rules` function the literal macros `label!`, `placeholder!`,
+//! `content!`, `alt!` and `rgb!` call at compile time.
 //!
 //! ```
 //! use noctis_rules::Limits;
@@ -206,8 +206,13 @@
 //! and for a modal CID-01 and CID-02 on its input keys and CV2-04 on its
 //! Text Displays. A failure is
 //! [`UiError::Limits`] with path-precise violations; Lenient mode truncates
-//! display text with `…` instead, as a [`LimitWarning::Truncated`]. Images
-//! without alt text are a [`LimitWarning::MissingAlt`] in both modes.
+//! display text with `…` instead, as a [`LimitWarning::Truncated`]. A
+//! rendered image (FR-30) in a Thumbnail or gallery item without alt text of
+//! its own is an ATT-06 violation in Strict mode and a
+//! [`LimitWarning::MissingAlt`] in Lenient mode; other images without alt
+//! text are a `MissingAlt` warning in both modes.
+//! [`V2Message::used_attachments`] lists the set members the tree
+//! references: the only files core's Responder uploads or keeps.
 //!
 //! ```
 //! use noctis_rules::{Limits, RuleId};
@@ -252,7 +257,7 @@ pub use components::Components;
 pub use error::UiError;
 pub use escape::{escape_markdown, escape_mentions};
 pub use limits::{Budget, CostReport, LimitWarning, Validate, cost, validate};
-pub use literal::{Content, Label, Placeholder};
+pub use literal::{AltText, Content, Label, Placeholder};
 pub use message::{
     CallbackFlags, CreateFlags, EditFlags, LegacyMessage, Mentions, MessageBody, MessageFormat,
     Roles, Users, V2Message,

@@ -1,5 +1,7 @@
 //! Message attachments: [`validate_attachments`] (ATT-01..03, ATT-06),
-//! [`validate_attachment_ref`] (ATT-05) and granular functions.
+//! [`validate_attachment_ref`] (ATT-05), [`validate_rendered_image_alt`]
+//! (ATT-06: a rendered image in a Thumbnail or Media Gallery needs alt text,
+//! FR-30) and granular functions.
 //!
 //! The per-file limit is `Limits::attachment_bytes` unless the caller passes
 //! the interaction's `attachment_size_limit` as `file_limit`, which then
@@ -153,6 +155,33 @@ pub fn validate_attachment_description(description: &str, limits: &Limits) -> Ve
         &mut out,
     );
     out
+}
+
+/// ATT-06 (Noctis policy, FR-30): a rendered image shown in a Thumbnail or
+/// a Media Gallery item needs its own alt text. `alt` is that component's
+/// `description`; `None`, empty or whitespace-only is one violation
+/// (`Actual::Text` of the alt, `""` for `None`). The path is empty and
+/// `limits` is not read.
+///
+/// ```
+/// use noctis_rules::{Limits, RuleId};
+/// use noctis_rules::attachment::validate_rendered_image_alt;
+///
+/// let l = Limits::default();
+/// assert_eq!(validate_rendered_image_alt(None, &l)[0].rule, RuleId::ATT_06);
+/// assert!(validate_rendered_image_alt(Some("Profile card"), &l).is_empty());
+/// ```
+pub fn validate_rendered_image_alt(alt: Option<&str>, limits: &Limits) -> Vec<Violation> {
+    let _ = limits;
+    if alt.is_some_and(|a| !a.trim().is_empty()) {
+        return Vec::new();
+    }
+    vec![Violation::new(
+        RuleId::ATT_06,
+        "",
+        Bound::Describe("alt text on a rendered image (FR-30)"),
+        Actual::Text(alt.unwrap_or_default().to_owned()),
+    )]
 }
 
 /// ATT-05: an `attachment://<name>` URL must name a file of `attachments`
@@ -350,6 +379,29 @@ mod tests {
                 RuleId::ATT_02
             ]
         );
+    }
+
+    #[test]
+    fn att_06_rendered_image_alt_missing() {
+        let l = Limits::default();
+        let miss = |alt: &str| {
+            vec![Violation::new(
+                RuleId::ATT_06,
+                "",
+                Bound::Describe("alt text on a rendered image (FR-30)"),
+                Actual::Text(alt.to_owned()),
+            )]
+        };
+        assert_eq!(validate_rendered_image_alt(None, &l), miss(""));
+        assert_eq!(validate_rendered_image_alt(Some(""), &l), miss(""));
+        assert_eq!(validate_rendered_image_alt(Some(" \n"), &l), miss(" \n"));
+    }
+
+    #[test]
+    fn att_06_rendered_image_alt_present() {
+        let l = Limits::default();
+        assert!(validate_rendered_image_alt(Some("a"), &l).is_empty());
+        assert!(validate_rendered_image_alt(Some(" a "), &l).is_empty());
     }
 
     #[test]

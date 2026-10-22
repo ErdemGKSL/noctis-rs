@@ -1,7 +1,8 @@
-//! `label!`, `placeholder!`, `content!` and `rgb!`: one literal, measured at
-//! expansion with the `noctis-rules` function the runtime `try_new` /
-//! `TryFrom` path calls (CV2-08, CV2-09, MSG-01, CV2-13).
+//! `label!`, `placeholder!`, `content!`, `alt!` and `rgb!`: one literal,
+//! measured at expansion with the `noctis-rules` function the runtime
+//! `try_new` / `TryFrom` path calls (CV2-08, CV2-09, MSG-01, ATT-06, CV2-13).
 
+use noctis_rules::attachment::validate_attachment_description;
 use noctis_rules::component::{
     validate_accent_color, validate_button_label, validate_select_placeholder,
 };
@@ -43,6 +44,14 @@ pub(crate) const CONTENT: TextMacro = TextMacro {
     rule: RuleId::MSG_01,
     ty: "Content",
     check: validate_content,
+};
+
+/// `alt!`: alt text (ATT-06).
+pub(crate) const ALT: TextMacro = TextMacro {
+    name: "alt",
+    rule: RuleId::ATT_06,
+    ty: "AltText",
+    check: validate_attachment_description,
 };
 
 /// Spans a misuse error on the arguments, or on the call site when there are
@@ -188,6 +197,31 @@ mod tests {
             text(&PLACEHOLDER, &quote!(#over)),
             "[CV2-09] limit at most 150, actual 151"
         );
+    }
+
+    #[test]
+    fn att_06_alt_bounds() {
+        for ok in ["a".repeat(1024), "😀".repeat(512), String::new()] {
+            assert!(text(&ALT, &quote!(#ok)).contains("AltText :: __from_checked"));
+        }
+        let over = "a".repeat(1025);
+        assert_eq!(
+            text(&ALT, &quote!(#over)),
+            "[ATT-06] limit at most 1024, actual 1025"
+        );
+        let emoji = "😀".repeat(513);
+        assert_eq!(
+            text(&ALT, &quote!(#emoji)),
+            "[ATT-06] limit at most 1024, actual 1026"
+        );
+        for bad in [quote!(x), quote!()] {
+            let err = text(&ALT, &bad);
+            assert!(
+                err.starts_with("[ATT-06] alt! takes one string literal"),
+                "{err}"
+            );
+            assert!(err.contains("AltText::try_new"), "{err}");
+        }
     }
 
     #[test]

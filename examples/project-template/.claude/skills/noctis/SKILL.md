@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `e28d20bc3032ad36e4bc7da8493c3f63eb9ae8b9bd4bf7e9df86b686a493b0ff` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `67330da565525d7c3f5f23abff10c23c02db60f4e2f34f8aff69e5a6d5970475` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -274,6 +274,12 @@ let gallery = MediaGallery::new([MediaItem::new(card).alt(s.profile.card_alt(&na
 // … V2Message::new(components).attachments(files)
 ```
 
+The Responder uploads only the files the tree uses (`msg.used_attachments()`), each
+once, and an `update` that shows the same card again keeps it by id instead of
+re-uploading it. A rendered image needs its own `.alt(..)` on the Thumbnail/MediaItem
+(`[ATT-06]` in Strict mode); use `alt!("Profile card")` for a fixed text
+(`components-v2.md` §6).
+
 ### 3.6 A button that opens a modal (with pre-fill)
 
 ```rust
@@ -441,7 +447,7 @@ Read only what the task touches.
 | `references/commands.md` | declare commands, Command Patterns, options, choices, autocomplete, context menus, metadata, Publish |
 | `references/routes-payloads-refs.md` | declare Routes, Payload field types, the `custom_id` format and length proof, `by_ref`/spill, TTL, one-shot, guards, stale/expired handling, schema evolution |
 | `references/responder.md` | need explicit replies, defers, follow-ups, modals, ephemerality, auto-defer, errors shown to users, webhooks |
-| `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`rgb!` |
+| `references/components-v2.md` | **where each component can be used (placement matrix: messages, Containers, Sections, Action Rows, modals, Labels, legacy messages)**; build any component: every type, where it may go, every field and limit, builder sketch, `components!` literal trees, `label!`/`alt!`/`rgb!`; attachments: upload, keep-by-id edits, Upload Budget, rendered-image alt |
 | `references/views-and-recipes.md` | write a render function and the update flow; recipes with complete code for tabs, pagination, step flows and settings screens; budget helpers; attachments, mentions, select freshness; UI quality rulebook; schwi-style best practices and pitfalls |
 | `references/modals.md` | build modals, Labels, Text Input, selects, File Upload, Radio/Checkbox, pre-fill, submissions |
 | `references/images.md` | write Templates, `view!`/`tw!`, Tailwind v4 names, theme, fonts, emoji, remote images, animation, render pool, cache |

@@ -40,6 +40,7 @@ mod seed;
 pub use app::{AutocompleteRun, ClickRun, CommandRun, MenuRun, SelectRun, SubmitRun, TestApp};
 pub use dhat;
 pub use error::TestError;
+pub use fake::RecordedFile;
 pub use memory::{MEMORY_FLAT_SLACK_BYTES, MemoryReport, assert_memory_flat};
 pub use render::render_json;
 pub use response::{

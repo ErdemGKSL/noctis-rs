@@ -77,6 +77,7 @@ fn source() -> SourceMessage {
         format: MessageFormat::V2,
         ephemerality: Ephemerality::Public,
         nonces: NonceSet::EMPTY,
+        files: KnownFiles::EMPTY,
     }
 }
 

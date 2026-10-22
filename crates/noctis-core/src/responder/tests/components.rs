@@ -30,6 +30,7 @@ fn source(format: MessageFormat, ephemerality: Ephemerality) -> Option<SourceMes
         format,
         ephemerality,
         nonces: NonceSet::EMPTY,
+        files: KnownFiles::EMPTY,
     })
 }
 
@@ -770,7 +771,9 @@ fn source_with_nonce_ab() -> Option<SourceMessage> {
     });
     let source = SourceMessage::from_interaction(raw.to_string().as_bytes());
     assert_eq!(
-        source.map(|s| s.nonces.iter().map(|n| n.to_string()).collect::<Vec<_>>()),
+        source
+            .as_ref()
+            .map(|s| s.nonces.iter().map(|n| n.to_string()).collect::<Vec<_>>()),
         Some(vec!["ab".to_owned()])
     );
     source

@@ -6,9 +6,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use hyper::{Method, StatusCode};
 use noctis_rules::{LimitMode, RuleId};
-use noctis_ui::{
-    ActionRow, Attachment, AttachmentSet, Components, LegacyMessage, LinkButton, TextDisplay,
-};
+use noctis_ui::{ActionRow, Components, LegacyMessage, LinkButton, TextDisplay};
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
@@ -125,6 +123,7 @@ impl Fixture {
             token: token.to_owned(),
             received_at,
             channel_id: Some(Id::new(9)),
+            file_limit: None,
         });
         Shared::new(transport, ephemerality, self.app.limits().clone())
     }
@@ -143,6 +142,7 @@ impl Fixture {
             token: "tok".to_owned(),
             received_at: Instant::now(),
             channel_id: Some(Id::new(9)),
+            file_limit: None,
         });
         Shared::declared(transport, declared, source, self.app.limits().clone(), None)
     }
@@ -157,6 +157,7 @@ impl Fixture {
             token: "tok".to_owned(),
             received_at: Instant::now(),
             channel_id: Some(Id::new(9)),
+            file_limit: None,
         });
         Shared::declared_submit(transport, declared, source, self.app.limits().clone(), None)
     }
@@ -479,22 +480,10 @@ async fn fr_24_lenient_never_splits() {
     assert!(content.ends_with('…'), "{content}");
 }
 
-/// Matrix 29 and 33: attachments and a bad token send nothing.
+/// Matrix 33: a bad token sends nothing.
 #[tokio::test]
-async fn attachments_and_bad_token() {
+async fn bad_token_sends_nothing() {
     let fx = Fixture::start(discord()).await;
-    let mut set = AttachmentSet::new();
-    let _ = set.add(Attachment::new(&b"x"[..], "png").unwrap());
-    let shared = fx.interaction("tok", Ephemerality::Public);
-    let err = responder(&shared)
-        .reply(v2("a").attachments(set))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, ResponderError::AttachmentsUnsupported),
-        "{err}"
-    );
-
     let shared = fx.interaction("a b", Ephemerality::Public);
     assert!(!format!("{shared:?}").contains("a b"));
     let err = responder(&shared).reply(v2("a")).await.unwrap_err();
@@ -548,6 +537,7 @@ async fn callback_rejected() {
         token: "tok".to_owned(),
         received_at: Instant::now(),
         channel_id: None,
+        file_limit: None,
     });
     let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
     let _ = responder(&shared).reply(v2("a")).await.unwrap().done();
@@ -620,6 +610,7 @@ async fn edit_and_followup_rejected() {
         token: "tok".to_owned(),
         received_at: Instant::now(),
         channel_id: None,
+        file_limit: None,
     });
     let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
     let err = responder(&shared).reply(v2("a")).await.unwrap_err();
@@ -831,6 +822,7 @@ fn routes(fx: &Fixture, from: usize) -> Vec<(Method, String)> {
 /// a known id fall back to the bot token; everything else is
 /// `TokenExpired` with no request.
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one block per matrix row")]
 async fn int_02_token_expired_without_http() {
     const T: Duration = Duration::from_mins(15);
     let fx = Fixture::start(discord_with_message()).await;
@@ -931,6 +923,7 @@ async fn int_02_token_expired_without_http() {
         token: "tok".to_owned(),
         received_at: Instant::now(),
         channel_id: None,
+        file_limit: None,
     });
     let shared = Shared::new(transport, Ephemerality::Public, Limits::default());
     let acked = responder(&shared).reply(v2("a")).await.unwrap();
@@ -1031,6 +1024,7 @@ async fn followup_cap_slots() {
         token: "tok".to_owned(),
         received_at: Instant::now(),
         channel_id: None,
+        file_limit: None,
     });
     let shared =
         Shared::with_followup_cap(transport, Ephemerality::Public, Limits::default(), Some(5));
@@ -1569,4 +1563,5 @@ async fn renamed_calls_wire() {
 
 mod components;
 mod ergonomics;
+mod files;
 mod refs;

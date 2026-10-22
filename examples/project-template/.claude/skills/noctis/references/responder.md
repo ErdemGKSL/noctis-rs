@@ -36,17 +36,22 @@ component's `update`) while the interaction is unanswered, and an edit of the or
 (`PATCH …/messages/@original`) after the handler or the auto-defer acknowledged it
 (INT-12). It adds `IS_COMPONENTS_V2` to every V2 send and edit (CV2-01), never
 `EPHEMERAL` on an edit or `update`, sends `allowed_mentions` on every body (the default
-`Mentions` ping nobody, MSG-05) and the attachments keep-list `"attachments": []` on every
-edit body (type-7 `data`, `PATCH @original`, follow-up edits, bot-token edits). It runs
+`Mentions` ping nobody, MSG-05) and the attachments keep-list `"attachments"` on every
+edit body (type-7 `data`, `PATCH @original`, follow-up edits, bot-token edits): files the
+edited message already holds are kept by id, new ones uploaded, unused ones dropped
+(MSG-08). It runs
 the Limits validator (`AppBuilder::limits`, Strict by default; Lenient truncates with
 `…`) before any HTTP call. Before encoding, every Route `custom_id` of the message is
 resolved: one fresh select nonce per send for every select of the message, and the App's
 payload key signs `signed` Routes, and every `by_ref`/spilled Route gets its Ref: the
 Responder mints one per distinct Ref slot and stores its record in the App's
 `RefStore` with the Route's `ttl` (else `AppBuilder::ref_ttl`) before the request
-(`routes-payloads-refs.md` §7). [planned] Uploading attachments (Story 9.1): a message
-with attachments fails with `ResponderError::AttachmentsUnsupported` today, before any
-request.
+(`routes-payloads-refs.md` §7). A message with attachments (`V2Message::attachments`)
+is sent as `multipart/form-data` (`payload_json` + `files[n]`) with only its used files
+(`used_attachments()`), each uploaded once; a re-render that shows the same bytes
+uploads nothing. The Upload Budget (ATT-01..03: 20 MiB per file or the interaction's
+`attachment_size_limit`, 25 MiB per request, 10 files) is checked before any request;
+a miss is `Invalid(UiError::Limits { .. })` in both modes (`components-v2.md` §6).
 
 A returned message that cannot be sent (invalid, rejected) is a handler error: it goes to
 the `Command` (or `Component`) Error Sink (§5).
@@ -483,11 +488,10 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 
 | Variant | When (nothing is sent unless noted) |
 | --- | --- |
-| `Invalid(UiError)` | Limits violation (Strict) or a command's V2 → legacy edit |
+| `Invalid(UiError)` | Limits violation (Strict), an Upload Budget miss (ATT-01..03, both modes) or a command's V2 → legacy edit |
 | `Encode { reason }` | a Route `custom_id` cannot be resolved (a `signed` Route without a payload key on a detached responder, a select nonce or Ref that could not be drawn, or a `custom_id` that fails to encode or finish); `reason` names the Route |
 | `RefStore(PortError)` | the `RefStore` failed while storing a Ref record of the message |
 | `RefCollision` | three freshly minted Refs in a row already existed in the `RefStore` |
-| `AttachmentsUnsupported` | the message has attachments ([planned, Story 9.1]) |
 | `EphemeralUnsupported` | an ephemeral response over a Dispatcher message reply (§4.1) |
 | `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |
 | `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01) |

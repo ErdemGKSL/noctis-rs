@@ -1,7 +1,7 @@
-//! Checked text newtypes: [`Label`] (CV2-08), [`Placeholder`] (CV2-09) and
-//! [`Content`] (MSG-01).
+//! Checked text newtypes: [`Label`] (CV2-08), [`Placeholder`] (CV2-09),
+//! [`Content`] (MSG-01) and [`AltText`] (ATT-06).
 //!
-//! `label!`, `placeholder!` and `content!` build them from a literal and
+//! `label!`, `placeholder!`, `content!` and `alt!` build them from a literal and
 //! check its length at `cargo check`; `try_new` and `TryFrom` are the runtime
 //! path and call the same `noctis-rules` function. Neither ever truncates:
 //! Lenient truncation belongs to [`validate`](crate::validate). Each converts
@@ -9,6 +9,7 @@
 
 use std::borrow::Cow;
 
+use noctis_rules::attachment::validate_attachment_description;
 use noctis_rules::component::{validate_button_label, validate_select_placeholder};
 use noctis_rules::message::validate_content;
 use noctis_rules::{Limits, Violation};
@@ -146,4 +147,32 @@ literal_newtype! {
     /// # Ok::<(), UiError>(())
     /// ```
     Content, validate_content
+}
+
+literal_newtype! {
+    /// Alt text (a `description`) of at most 1024 characters (ATT-06),
+    /// measured with `discord_len`; empty is allowed.
+    ///
+    /// `alt!("Profile card")` checks a literal at `cargo check`; `try_new`
+    /// and `TryFrom` check runtime text with
+    /// `noctis_rules::attachment::validate_attachment_description`, the
+    /// function the macro calls. It goes wherever alt text goes
+    /// ([`MediaItem::alt`](crate::MediaItem::alt),
+    /// [`Thumbnail::alt`](crate::Thumbnail::alt),
+    /// [`Attachment::alt`](crate::Attachment::alt)):
+    ///
+    /// ```
+    /// use noctis_rules::{Limits, RuleId};
+    /// use noctis_ui::{AltText, Media, MediaItem, UiError};
+    ///
+    /// let item = MediaItem::new(Media::url("https://i/a.png")).alt(AltText::try_from("A cat")?);
+    /// # let _ = item;
+    /// assert!(AltText::try_new("a".repeat(1024), &Limits::default()).is_ok());
+    /// let Err(UiError::Limits { violations }) = AltText::try_new("a".repeat(1025), &Limits::default()) else {
+    ///     panic!("1025 characters");
+    /// };
+    /// assert_eq!(violations[0].rule, RuleId::ATT_06);
+    /// # Ok::<(), UiError>(())
+    /// ```
+    AltText, validate_attachment_description
 }

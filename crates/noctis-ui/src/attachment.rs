@@ -15,7 +15,7 @@ const MAX_EXT_LEN: usize = 10;
 /// Hex digits of the content hash in a name.
 const HASH_LEN: usize = 16;
 /// `attachment://`.
-const SCHEME: &str = "attachment://";
+pub(crate) const SCHEME: &str = "attachment://";
 /// `attachment://` + 16 hex digits + `.` + a 10-character extension.
 const MAX_URL_LEN: usize = SCHEME.len() + HASH_LEN + 1 + MAX_EXT_LEN;
 
@@ -181,7 +181,15 @@ fn name_of(url: &str) -> &str {
 /// A reference to an attachment of an [`AttachmentSet`]: the only way to
 /// build a [`File`](crate::File) or an attachment [`Media`](crate::Media).
 ///
-/// It has no public constructor; [`AttachmentSet::add`] returns it.
+/// It has no public constructor; [`AttachmentSet::add`] returns it, so an
+/// `attachment://` reference built from a ref always names a file of a set
+/// (ATT-05):
+///
+/// ```compile_fail,E0451
+/// use noctis_ui::{AttachmentOrigin, AttachmentRef};
+///
+/// let r = AttachmentRef { url: Default::default(), origin: AttachmentOrigin::Plain }; // [ATT-05]
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AttachmentRef {
     url: ArrayString<MAX_URL_LEN>,

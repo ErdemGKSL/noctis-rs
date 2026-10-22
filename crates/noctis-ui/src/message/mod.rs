@@ -15,7 +15,7 @@ pub use mentions::{Mentions, Roles, Users};
 use crate::arity::{Arity, LegacyRows};
 use crate::route::CustomId;
 use crate::wire::Wire;
-use crate::{ActionRow, AttachmentSet, Components, UiError};
+use crate::{ActionRow, Attachment, AttachmentSet, Components, UiError};
 
 /// A Components V2 message: a component tree, the attachments it uses and
 /// who it may ping.
@@ -106,6 +106,32 @@ impl V2Message {
     /// The attachments the tree uses.
     pub fn attachment_set(&self) -> &AttachmentSet {
         &self.attachments
+    }
+
+    /// The members of the attachment set the tree references, each once, in
+    /// name order: those whose `attachment://<name>` URL appears at a File,
+    /// Thumbnail or Media Gallery item (built from an
+    /// [`AttachmentRef`](crate::AttachmentRef) or written as
+    /// `Media::url("attachment://<name>")`). Core's Responder uploads (or,
+    /// on an edit, keeps) only these; an unreferenced member is never sent.
+    ///
+    /// ```
+    /// use noctis_ui::{Attachment, AttachmentSet, Components, MediaGallery, MediaItem, V2Message};
+    ///
+    /// let mut set = AttachmentSet::new();
+    /// let a = set.add(Attachment::new(&b"a"[..], "png")?);
+    /// let _unused = set.add(Attachment::new(&b"b"[..], "png")?);
+    /// let gallery = MediaGallery::new([MediaItem::new(a.clone()).alt("A"), MediaItem::new(a.clone()).alt("A")]);
+    /// let msg = V2Message::new(Components::new().push(gallery)).attachments(set);
+    /// let used: Vec<&str> = msg.used_attachments().map(|f| f.name()).collect();
+    /// assert_eq!(used, [a.name()]);
+    /// # Ok::<(), noctis_ui::UiError>(())
+    /// ```
+    pub fn used_attachments(&self) -> impl Iterator<Item = &Attachment> {
+        let used = crate::limits::referenced_names(&self.components);
+        self.attachments
+            .iter()
+            .filter(move |a| used.contains(a.name()))
     }
 
     /// Who the message may ping.

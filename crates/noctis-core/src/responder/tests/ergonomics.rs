@@ -70,6 +70,7 @@ fn source(format: MessageFormat, ephemerality: Ephemerality) -> Option<SourceMes
         format,
         ephemerality,
         nonces: NonceSet::EMPTY,
+        files: KnownFiles::EMPTY,
     })
 }
 
@@ -280,6 +281,7 @@ async fn respond_follow_up_cap_and_expiry() {
         token: "tok".to_owned(),
         received_at: Instant::now(),
         channel_id: None,
+        file_limit: None,
     });
     let shared =
         Shared::with_followup_cap(transport, Ephemerality::Public, Limits::default(), Some(0));
@@ -1068,7 +1070,7 @@ async fn component_response_locale() {
         (Declared::Reply(Ephemerality::Ephemeral), v2_source(), "tr"),
         (
             Declared::Reply(Ephemerality::Public),
-            ephemeral_source,
+            ephemeral_source.clone(),
             "de",
         ),
         (Declared::Update, ephemeral_source, "tr"),

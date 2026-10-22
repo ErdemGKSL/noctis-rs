@@ -897,6 +897,7 @@ pub(crate) async fn run_interaction(
         token,
         received_at,
         channel_id,
+        file_limit: crate::responder::file_limit(raw.as_bytes()),
     });
     // A user-install-only interaction may send 5 follow-ups (INT-11).
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
@@ -942,7 +943,7 @@ async fn send_choices(
     choices: &[crate::AutocompleteChoice],
 ) -> Result<(), ResponderError> {
     target
-        .callback(&callback_body(choices), false)
+        .callback_json(&callback_body(choices), false)
         .await
         .map(|_| ())
 }
@@ -1029,6 +1030,8 @@ pub(crate) async fn run_autocomplete(
         token,
         received_at,
         channel_id,
+        // Autocomplete answers with choices, never files.
+        file_limit: None,
     };
     let report_for = |module, handler| Report {
         app: &app,

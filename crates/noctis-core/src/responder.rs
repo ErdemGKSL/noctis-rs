@@ -107,6 +107,7 @@
 //! ```
 
 pub(crate) mod ergonomics;
+mod files;
 mod nonce;
 mod transport;
 
@@ -135,6 +136,8 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, MessageMarker};
 
 pub use self::ergonomics::{NoticeText, ReplyText};
+use self::files::{Body, Files};
+pub(crate) use self::files::{KnownFiles, file_limit};
 pub(crate) use self::nonce::NonceSet;
 
 /// The nonce passed to `resolve_for_send` for an id without a select,
@@ -351,8 +354,9 @@ impl From<Components> for OutgoingMessage {
 #[non_exhaustive]
 #[derive(Debug, thiserror::Error)]
 pub enum ResponderError {
-    /// The message breaks a Discord Limit (Strict mode), or an edit would
-    /// turn a V2 message back into a legacy one; nothing was sent.
+    /// The message breaks a Discord Limit (Strict mode; the Upload Budget,
+    /// ATT-01..03, in every mode), or an edit would turn a V2 message back
+    /// into a legacy one; nothing was sent.
     #[error(transparent)]
     Invalid(#[from] UiError),
     /// The message could not be serialized: a Route `custom_id` could not
@@ -372,10 +376,6 @@ pub enum ResponderError {
     /// `RefStore`; nothing was sent.
     #[error("could not mint a unique Ref after 3 attempts")]
     RefCollision,
-    /// The message carries attachments, which arrive with Story 9.1;
-    /// nothing was sent.
-    #[error("attachments are not supported by the Responder yet")]
-    AttachmentsUnsupported,
     /// An ephemeral response over a transport that has none (a
     /// [`Dispatcher`](crate::Dispatcher) message reply); nothing was sent.
     #[error("this response cannot be ephemeral: a message reply is always public")]
@@ -1053,6 +1053,8 @@ pub struct FollowupHandle {
     channel_id: Option<Id<ChannelMarker>>,
     visibility: Visibility,
     format: Mutex<MessageFormat>,
+    /// The follow-up's attachments on Discord (its keep-list, MSG-08).
+    files: Mutex<KnownFiles>,
 }
 
 impl FollowupHandle {
@@ -1061,8 +1063,9 @@ impl FollowupHandle {
         self.message_id
     }
 
-    /// Replaces the follow-up with `msg`. After 15 minutes a public
-    /// follow-up is edited with the bot token (INT-02).
+    /// Replaces the follow-up with `msg`, keeping its attachments that
+    /// `msg` still uses by id and uploading the new ones (MSG-08). After 15
+    /// minutes a public follow-up is edited with the bot token (INT-02).
     ///
     /// # Errors
     ///
@@ -1072,22 +1075,32 @@ impl FollowupHandle {
         let mut msg = msg.into();
         self.shared.prepare(&mut msg).await?;
         let format = *self.format.lock().unwrap_or_else(PoisonError::into_inner);
-        let body = edit_body(&msg, format)?;
-        match self
+        let known = self
+            .files
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let body = self
             .shared
-            .expired_route(self.visibility, Some(self.message_id), self.channel_id)?
-        {
-            Some((app, channel_id, id)) => transport::channel_edit(app, channel_id, id, &body)
-                .await
-                .map(drop)?,
+            .body(&msg, edit_body(&msg, format)?, Some(&known), None)?;
+        let posted = match self.shared.expired_route(
+            self.visibility,
+            Some(self.message_id),
+            self.channel_id,
+        )? {
+            Some((app, channel_id, id)) => {
+                transport::channel_edit(app, channel_id, id, body.payload).await?
+            }
             None => {
                 self.shared
                     .transport
-                    .edit_message(self.message_id, body)
-                    .await?;
+                    .edit_message(self.message_id, body.payload)
+                    .await?
             }
-        }
+        };
         *self.format.lock().unwrap_or_else(PoisonError::into_inner) = msg.format();
+        *self.files.lock().unwrap_or_else(PoisonError::into_inner) =
+            posted.files.unwrap_or(body.kept);
         Ok(())
     }
 
@@ -1144,7 +1157,7 @@ pub(crate) enum Declared {
 
 /// The message a component lives on (or a modal was opened from), read from
 /// the raw interaction JSON.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SourceMessage {
     pub(crate) id: Id<MessageMarker>,
     pub(crate) channel_id: Id<ChannelMarker>,
@@ -1154,6 +1167,9 @@ pub(crate) struct SourceMessage {
     /// (its `data` and this message's components), which a send must not
     /// reuse (FR-25).
     pub(crate) nonces: NonceSet,
+    /// The message's attachments (`message.attachments`), which an update
+    /// keeps by id (MSG-08).
+    pub(crate) files: KnownFiles,
 }
 
 /// The `message` fields of a raw interaction that the Responder reads; the
@@ -1171,6 +1187,8 @@ struct RawMessage<'a> {
     channel_id: &'a str,
     #[serde(default)]
     flags: Option<u64>,
+    #[serde(default)]
+    attachments: Option<Value>,
 }
 
 /// `IS_COMPONENTS_V2`.
@@ -1200,6 +1218,7 @@ impl SourceMessage {
                 Ephemerality::Ephemeral
             },
             nonces: nonce::nonces_in(raw),
+            files: KnownFiles::from_list(message.attachments.as_ref()),
         })
     }
 }
@@ -1217,7 +1236,7 @@ enum Shape {
 }
 
 /// The original response.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Original {
     shape: Shape,
     /// The original message, when known: the message reply, the
@@ -1228,6 +1247,10 @@ struct Original {
     ephemerality: Ephemerality,
     /// Its channel, when known.
     channel_id: Option<Id<ChannelMarker>>,
+    /// Its attachments on Discord (the keep-list of the next edit, MSG-08):
+    /// from the reply's, update's or edit's response, the source message's
+    /// after `update`/`defer_update`, else the entries the last send kept.
+    files: KnownFiles,
 }
 
 /// The bot-token route of an expired interaction: the App, the channel and
@@ -1359,6 +1382,7 @@ impl Shared {
             Declared::Reply(e) => e,
             Declared::Update => Ephemerality::Public,
         };
+        let source_nonces = source.as_ref().map_or(NonceSet::EMPTY, |s| s.nonces);
         Arc::new(Self {
             transport,
             state: AtomicU8::new(PENDING),
@@ -1373,7 +1397,7 @@ impl Shared {
             followups: AtomicU8::new(0),
             followup_cap: cap,
             guard_phase: AtomicU8::new(GuardPhase::UNGUARDED),
-            source_nonces: source.map_or(NonceSet::EMPTY, |s| s.nonces),
+            source_nonces,
             drawn: Mutex::new(NonceSet::EMPTY),
             #[cfg(test)]
             fill: Mutex::new(None),
@@ -1402,7 +1426,7 @@ impl Shared {
     /// the declared ephemerality, or under `response = update` the source
     /// message's (`Public` without one).
     pub(crate) fn response_ephemerality(&self) -> Ephemerality {
-        match (self.declared, self.source) {
+        match (self.declared, &self.source) {
             (Declared::Reply(ephemerality), _) => ephemerality,
             (Declared::Update, Some(source)) => source.ephemerality,
             (Declared::Update, None) => Ephemerality::Public,
@@ -1439,7 +1463,10 @@ impl Shared {
     }
 
     fn original(&self) -> Original {
-        *self.original.lock().unwrap_or_else(PoisonError::into_inner)
+        self.original
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     fn set_original(&self, original: Original) {
@@ -1447,14 +1474,57 @@ impl Shared {
     }
 
     /// The original after an `update`/`defer_update` of `source`: the
-    /// clicked message, now in `format`.
-    fn set_source_original(&self, source: SourceMessage, format: MessageFormat) {
+    /// clicked message, now in `format` and holding `files`.
+    fn set_source_original(
+        &self,
+        source: &SourceMessage,
+        format: MessageFormat,
+        files: KnownFiles,
+    ) {
         self.set_original(Original {
             shape: Shape::Sent(format),
             message_id: Some(source.id),
             ephemerality: source.ephemerality,
             channel_id: Some(source.channel_id),
+            files,
         });
+    }
+
+    /// The interaction's `attachment_size_limit` (ATT-01); `None` off the
+    /// interaction transport.
+    fn file_limit(&self) -> Option<usize> {
+        match &self.transport {
+            Transport::Interaction(target) => target.file_limit,
+            Transport::Message(_) | Transport::Detached => None,
+        }
+    }
+
+    /// Builds one send of the prepared `msg`: `json` is its message object
+    /// (callback `data`, a follow-up, or a Create or Edit body), `known`
+    /// the edit target's attachments (`None` for a new message) and
+    /// `callback` the callback type that wraps it as `{"type", "data"}`.
+    /// It places the `attachments` entries (FR-30, MSG-08, ATT-04), then
+    /// checks the Upload Budget (ATT-01..03) once, before any request, in
+    /// every mode (also when detached).
+    ///
+    /// # Errors
+    ///
+    /// [`ResponderError::Invalid`] over the Upload Budget,
+    /// [`ResponderError::Encode`] when the JSON does not serialize.
+    fn body(
+        &self,
+        msg: &OutgoingMessage,
+        mut json: Value,
+        known: Option<&KnownFiles>,
+        callback: Option<u8>,
+    ) -> Result<Body, ResponderError> {
+        let files = Files::plan(msg, known);
+        files.place(&mut json, known.is_some());
+        let payload = match callback {
+            Some(kind) => json!({ "type": kind, "data": json }),
+            None => json,
+        };
+        files.finish(&payload, self.file_limit(), &self.limits)
     }
 
     /// The App's payload key ring, the signer of `signed` Routes; never
@@ -1573,17 +1643,13 @@ impl Shared {
     }
 
     /// Mints the Route `custom_id`s of `msg` (storing their Refs), then
-    /// validates it against the Limits (Lenient mode truncates), then
-    /// rejects attachments.
+    /// validates it against the Limits (Lenient mode truncates). The
+    /// Upload Budget is checked later, when the body is built.
     async fn prepare(&self, msg: &mut OutgoingMessage) -> Result<(), ResponderError> {
         let report = match msg {
             OutgoingMessage::V2(m) => {
                 self.resolve_ids(m.custom_ids_mut()).await?;
-                let report = noctis_ui::validate(m, &self.limits)?;
-                if !m.attachment_set().is_empty() {
-                    return Err(ResponderError::AttachmentsUnsupported);
-                }
-                report
+                noctis_ui::validate(m, &self.limits)?
             }
             OutgoingMessage::Legacy(m) => {
                 self.resolve_ids(m.custom_ids_mut()).await?;
@@ -1636,7 +1702,7 @@ impl Shared {
             drop(gate);
             return self.edit_prepared(msg).await;
         }
-        match (self.declared, self.source) {
+        match (self.declared, self.source.as_ref()) {
             (Declared::Update, Some(source)) => {
                 self.send_update(&msg, source, false).await.map(drop)
             }
@@ -1692,22 +1758,26 @@ impl Shared {
         if self.transport.is_message() && ephemerality == Ephemerality::Ephemeral {
             return Err(ResponderError::EphemeralUnsupported);
         }
-        let mut body = None;
-        let message_id = if let Transport::Message(target) = &self.transport {
-            Some(target.reply(create(msg)?).await?)
+        let mut ack_body = None;
+        let (message_id, files) = if let Transport::Message(target) = &self.transport {
+            let mut json = create(msg)?;
+            target.reference(&mut json);
+            let body = self.body(msg, json, None, None)?;
+            let (id, files) = target.reply(body.payload).await?;
+            (Some(id), files.unwrap_or(body.kept))
         } else {
-            // Encoded even when detached, so the seams catch encode errors.
+            // Encoded (and budget-checked) even when detached, so the seams
+            // catch encode and Limits errors.
             let data = callback_data(msg, ephemerality.callback_flags())?;
+            let body = self.body(msg, data, None, Some(4))?;
             match &self.transport {
                 Transport::Interaction(target) => {
-                    let ack = target
-                        .callback(&json!({ "type": 4, "data": data }), true)
-                        .await?;
-                    let id = transport::callback_message_id(&ack);
-                    body = Some(ack);
-                    id
+                    let ack = target.callback(body.payload, true).await?;
+                    let posted = transport::callback_posted(&ack);
+                    ack_body = Some(ack);
+                    (posted.message_id, posted.files.unwrap_or(body.kept))
                 }
-                Transport::Message(_) | Transport::Detached => None,
+                Transport::Message(_) | Transport::Detached => (None, body.kept),
             }
         };
         self.state.store(REPLIED, Ordering::Release);
@@ -1716,8 +1786,9 @@ impl Shared {
             message_id,
             ephemerality,
             channel_id: None,
+            files,
         });
-        resource_of(body.as_deref(), with_response)
+        resource_of(ack_body.as_deref(), with_response)
     }
 
     async fn defer_reply(
@@ -1757,7 +1828,7 @@ impl Shared {
                         json!({ "type": 5, "data": { "flags": CallbackFlags::EPHEMERAL.bits() } })
                     }
                 };
-                ack = Some(target.callback(&body, with_response).await?);
+                ack = Some(target.callback_json(&body, with_response).await?);
             }
             Transport::Message(target) => target.typing().await?,
             Transport::Detached => {}
@@ -1768,6 +1839,7 @@ impl Shared {
             message_id: None,
             ephemerality,
             channel_id: None,
+            files: KnownFiles::EMPTY,
         });
         resource_of(ack.as_deref(), with_response)
     }
@@ -1781,7 +1853,7 @@ impl Shared {
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
         self.refuse_answered()?;
-        let Some(source) = self.source else {
+        let Some(source) = self.source.as_ref() else {
             return Err(ResponderError::UpdateUnavailable);
         };
         self.prepare(&mut msg).await?;
@@ -1796,25 +1868,29 @@ impl Shared {
         Ok(sent)
     }
 
-    /// Sends the type-7 update of `source` with the prepared `msg`; the
-    /// caller holds the gate and saw `PENDING`.
+    /// Sends the type-7 update of `source` with the prepared `msg`, keeping
+    /// the source's attachments `msg` still uses by id (MSG-08); an update
+    /// that uploads a file is sent `with_response`, so the new ids are
+    /// learned. The caller holds the gate and saw `PENDING`.
     async fn send_update(
         &self,
         msg: &OutgoingMessage,
-        source: SourceMessage,
+        source: &SourceMessage,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
         let data = edit_body(msg, source.format)?;
-        let ack = match &self.transport {
-            Transport::Interaction(target) => Some(
-                target
-                    .callback(&json!({ "type": 7, "data": data }), with_response)
-                    .await?,
-            ),
-            Transport::Message(_) | Transport::Detached => None,
+        let body = self.body(msg, data, Some(&source.files), Some(7))?;
+        let (ack, files) = match &self.transport {
+            Transport::Interaction(target) => {
+                let ask = with_response || body.uploads();
+                let ack = target.callback(body.payload, ask).await?;
+                let files = transport::callback_posted(&ack).files.unwrap_or(body.kept);
+                (Some(ack), files)
+            }
+            Transport::Message(_) | Transport::Detached => (None, body.kept),
         };
         self.state.store(REPLIED, Ordering::Release);
-        self.set_source_original(source, msg.format());
+        self.set_source_original(source, msg.format(), files);
         resource_of(ack.as_deref(), with_response)
     }
 
@@ -1826,7 +1902,7 @@ impl Shared {
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
         self.refuse_answered()?;
-        let Some(source) = self.source else {
+        let Some(source) = self.source.as_ref() else {
             return Err(ResponderError::UpdateUnavailable);
         };
         let _gate = self.gate.lock().await;
@@ -1844,19 +1920,19 @@ impl Shared {
     /// Sends the type-6 defer; the caller holds the gate and saw `PENDING`.
     async fn send_defer_update(
         &self,
-        source: SourceMessage,
+        source: &SourceMessage,
         with_response: bool,
     ) -> Result<Option<CallbackResource>, ResponderError> {
         let ack = match &self.transport {
             Transport::Interaction(target) => Some(
                 target
-                    .callback(&json!({ "type": 6 }), with_response)
+                    .callback_json(&json!({ "type": 6 }), with_response)
                     .await?,
             ),
             Transport::Message(_) | Transport::Detached => None,
         };
         self.state.store(DEFERRED_UPDATE, Ordering::Release);
-        self.set_source_original(source, source.format);
+        self.set_source_original(source, source.format, source.files.clone());
         resource_of(ack.as_deref(), with_response)
     }
 
@@ -1873,7 +1949,7 @@ impl Shared {
         if self.state() != PENDING {
             return true;
         }
-        let sent = match (self.declared, self.source) {
+        let sent = match (self.declared, self.source.as_ref()) {
             (Declared::Update, Some(source)) => self.send_defer_update(source, false).await,
             _ => self.send_defer(self.default_ephemerality(), false).await,
         };
@@ -1907,7 +1983,7 @@ impl Shared {
         }
         if let Transport::Interaction(target) = &self.transport {
             target
-                .callback(&json!({ "type": 9, "data": data }), false)
+                .callback_json(&json!({ "type": 9, "data": data }), false)
                 .await?;
         }
         self.state.store(MODAL, Ordering::Release);
@@ -1929,29 +2005,37 @@ impl Shared {
             Shape::Unsent | Shape::Deferred => msg.format(),
         };
         let mut channel_id = original.channel_id;
-        let message_id = match (&self.transport, original.message_id) {
+        let (message_id, files) = match (&self.transport, original.message_id) {
             (Transport::Message(target), None) => {
                 // A deferred message reply has no message yet: post it,
                 // unless the reply is ephemeral.
                 if original.ephemerality == Ephemerality::Ephemeral {
                     return Err(ResponderError::EphemeralUnsupported);
                 }
-                Some(target.reply(create(&msg)?).await?)
+                let mut json = create(&msg)?;
+                target.reference(&mut json);
+                let body = self.body(&msg, json, None, None)?;
+                let (id, files) = target.reply(body.payload).await?;
+                (Some(id), files.unwrap_or(body.kept))
             }
             (transport, message_id) => {
-                let body = edit_body(&msg, format)?;
+                let json = edit_body(&msg, format)?;
+                let body = self.body(&msg, json, Some(&original.files), None)?;
                 let posted = match self.expired_route(
                     original.ephemerality,
                     message_id,
                     original.channel_id,
                 )? {
                     Some((app, channel, id)) => {
-                        transport::channel_edit(app, channel, id, &body).await?
+                        transport::channel_edit(app, channel, id, body.payload).await?
                     }
-                    None => transport.edit_reply(message_id, body).await?,
+                    None => transport.edit_reply(message_id, body.payload).await?,
                 };
                 channel_id = posted.channel_id.or(channel_id);
-                posted.message_id.or(message_id)
+                (
+                    posted.message_id.or(message_id),
+                    posted.files.unwrap_or(body.kept),
+                )
             }
         };
         self.set_original(Original {
@@ -1959,6 +2043,7 @@ impl Shared {
             message_id,
             ephemerality: original.ephemerality,
             channel_id,
+            files,
         });
         Ok(())
     }
@@ -2007,10 +2092,11 @@ impl Shared {
         if self.transport.is_message() && visibility == Ephemerality::Ephemeral {
             return Err(ResponderError::EphemeralUnsupported);
         }
-        let body = match &self.transport {
+        let json = match &self.transport {
             Transport::Message(_) => create(&msg)?,
             _ => callback_data(&msg, visibility.callback_flags())?,
         };
+        let body = self.body(&msg, json, None, None)?;
         if let Transport::Interaction(target) = &self.transport
             && target.expired()
         {
@@ -2025,13 +2111,14 @@ impl Shared {
                 })
                 .map_err(|_| ResponderError::FollowupCap)?;
         }
-        let posted = self.transport.follow_up(body).await?;
+        let posted = self.transport.follow_up(body.payload).await?;
         Ok(FollowupHandle {
             shared: Arc::clone(self),
             message_id: posted.id,
             channel_id: posted.channel_id,
             visibility,
             format: Mutex::new(msg.format()),
+            files: Mutex::new(posted.files.unwrap_or(body.kept)),
         })
     }
 
@@ -2068,12 +2155,16 @@ impl Shared {
                 let message_id = match &self.transport {
                     Transport::Interaction(target) => {
                         let data = callback_data(&msg, Ephemerality::Ephemeral.callback_flags())?;
-                        let ack = target
-                            .callback(&json!({ "type": 4, "data": data }), false)
-                            .await?;
-                        transport::callback_message_id(&ack)
+                        let body = self.body(&msg, data, None, Some(4))?;
+                        let ack = target.callback(body.payload, false).await?;
+                        transport::callback_posted(&ack).message_id
                     }
-                    Transport::Message(target) => Some(target.reply(create(&msg)?).await?),
+                    Transport::Message(target) => {
+                        let mut json = create(&msg)?;
+                        target.reference(&mut json);
+                        let body = self.body(&msg, json, None, None)?;
+                        Some(target.reply(body.payload).await?.0)
+                    }
                     Transport::Detached => None,
                 };
                 self.state.store(REPLIED, Ordering::Release);
@@ -2082,6 +2173,7 @@ impl Shared {
                     message_id,
                     ephemerality: visibility,
                     channel_id: None,
+                    files: KnownFiles::EMPTY,
                 });
                 drop(gate);
                 Ok(())
@@ -2228,18 +2320,14 @@ fn callback_data(msg: &OutgoingMessage, flags: CallbackFlags) -> Result<Value, R
     }
 }
 
-/// The body editing a message in `format` into the prepared `msg`, with
-/// the attachments keep-list (`"attachments": []`, until Story 9.1 sends
-/// files); a V2 → legacy edit is [`UiError::V2ToLegacy`].
+/// The body editing a message in `format` into the prepared `msg`, before
+/// [`Shared::body`] adds its attachments keep-list; a V2 → legacy edit is
+/// [`UiError::V2ToLegacy`].
 fn edit_body(msg: &OutgoingMessage, format: MessageFormat) -> Result<Value, ResponderError> {
-    let mut body = match msg {
-        OutgoingMessage::V2(m) => encode(m.edit_body(format, EditFlags::empty()))?,
-        OutgoingMessage::Legacy(m) => encode(m.edit_body(format, EditFlags::empty())?)?,
-    };
-    if let Value::Object(map) = &mut body {
-        map.insert("attachments".to_owned(), Value::Array(Vec::new()));
+    match msg {
+        OutgoingMessage::V2(m) => encode(m.edit_body(format, EditFlags::empty())),
+        OutgoingMessage::Legacy(m) => encode(m.edit_body(format, EditFlags::empty())?),
     }
-    Ok(body)
 }
 
 /// The Create Message body of `msg`.

@@ -133,6 +133,15 @@ pub fn content(input: TokenStream) -> TokenStream {
         .into()
 }
 
+/// An alt text literal, checked at expansion against ATT-06 (at most 1024
+/// characters by `discord_len`); expands to a `noctis::ui::AltText`.
+#[proc_macro]
+pub fn alt(input: TokenStream) -> TokenStream {
+    literal::expand_text(&literal::ALT, &input.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 /// A `0xRRGGBB` colour literal, checked at expansion against CV2-13;
 /// expands to a `noctis::ui::Rgb`.
 #[proc_macro]

@@ -1435,12 +1435,182 @@ fn cv2_11_missing_alt_warns() {
     }
 }
 
-#[test]
-fn cv2_11_rendered_image_needs_no_alt() {
+// Story 9.1 matrix 30-38 and 44: rendered images need alt text (FR-30).
+
+/// A rendered card in a fresh set.
+fn rendered_card() -> (AttachmentSet, noctis_ui::AttachmentRef) {
     let mut set = AttachmentSet::new();
     let r = set.add(Attachment::rendered(Bytes::new(), [0xAB; 32], "webp").expect("valid ext"));
-    let report = passes(msg([Section::new([t("a")], Thumbnail::new(r)).into()]).attachments(set));
+    (set, r)
+}
+
+/// The ATT-06 violation of a rendered image without alt text at `path`.
+fn rendered_alt(path: &str, actual: &str) -> Violation {
+    Violation::new(
+        RuleId::ATT_06,
+        format!("{path}.description"),
+        Bound::Describe("alt text on a rendered image (FR-30)"),
+        Actual::Text(actual.to_owned()),
+    )
+    .with_help("add `.alt(..)` to the Thumbnail or MediaItem (UX-DR2)")
+}
+
+fn missing(path: &str) -> LimitWarning {
+    LimitWarning::MissingAlt {
+        path: path.to_owned(),
+    }
+}
+
+#[test]
+fn att_06_rendered_thumbnail_without_alt_is_strict_error() {
+    for alt in [None, Some(""), Some("  ")] {
+        let (set, r) = rendered_card();
+        let thumb = match alt {
+            Some(a) => Thumbnail::new(r).alt(a),
+            None => Thumbnail::new(r),
+        };
+        let m = msg([Section::new([t("a")], thumb).into()]).attachments(set);
+        assert_eq!(
+            errs_v2(m.clone(), &strict()),
+            [rendered_alt(
+                "section[0].accessory",
+                alt.unwrap_or_default()
+            )]
+        );
+        let report = validate(&mut m.clone(), &lenient()).expect("a warning in Lenient mode");
+        assert_eq!(report.warnings, [missing("section[0].accessory")]);
+        assert_eq!(
+            cost(&m, &strict()).warnings,
+            [missing("section[0].accessory")]
+        );
+    }
+}
+
+#[test]
+fn att_06_rendered_gallery_item_without_alt_is_strict_error() {
+    let (set, r) = rendered_card();
+    let m = msg([
+        t("a").into(),
+        MediaGallery::new([MediaItem::new(r.clone()).alt("Card"), MediaItem::new(r)]).into(),
+    ])
+    .attachments(set);
+    assert_eq!(
+        errs_v2(m.clone(), &strict()),
+        [rendered_alt("gallery[1].item[1]", "")]
+    );
+    let report = validate(&mut m.clone(), &lenient()).expect("a warning in Lenient mode");
+    assert_eq!(report.warnings, [missing("gallery[1].item[1]")]);
+}
+
+#[test]
+fn att_06_rendered_image_with_alt_passes() {
+    let (set, r) = rendered_card();
+    let m = msg([Section::new([t("a")], Thumbnail::new(r).alt("Card")).into()]).attachments(set);
+    assert!(passes(m.clone()).warnings.is_empty());
+    assert!(cost(&m, &strict()).warnings.is_empty());
+}
+
+#[test]
+fn att_06_rendered_file_alt_does_not_count() {
+    let mut set = AttachmentSet::new();
+    let r = set.add(
+        Attachment::rendered(Bytes::new(), [0xAB; 32], "webp")
+            .expect("valid ext")
+            .alt("x"),
+    );
+    let m = msg([MediaGallery::new([MediaItem::new(r)]).into()]).attachments(set);
+    assert_eq!(
+        errs_v2(m, &strict()),
+        [rendered_alt("gallery[0].item[0]", "")]
+    );
+}
+
+#[test]
+fn att_06_rendered_by_url_is_rendered() {
+    let (set, r) = rendered_card();
+    let url = Media::url(format!("attachment://{}", r.name()));
+    let m = msg([MediaGallery::new([MediaItem::new(url)]).into()]).attachments(set);
+    assert_eq!(
+        errs_v2(m, &strict()),
+        [rendered_alt("gallery[0].item[0]", "")]
+    );
+}
+
+#[test]
+fn att_06_rendered_file_component_needs_no_alt() {
+    let (set, r) = rendered_card();
+    let report = passes(msg([File::new(r).into()]).attachments(set));
     assert!(report.warnings.is_empty());
+}
+
+#[test]
+fn att_06_plain_image_without_alt_only_warns() {
+    let mut set = AttachmentSet::new();
+    let r = set.add(att(b"a"));
+    let m = msg([Section::new([t("a")], Thumbnail::new(r)).into()]).attachments(set);
+    for limits in [strict(), lenient()] {
+        let report = validate(&mut m.clone(), &limits).expect("warnings only");
+        assert_eq!(report.warnings, [missing("section[0].accessory")]);
+    }
+}
+
+#[test]
+fn att_06_rendered_alt_violation_order() {
+    let (mut set, r) = rendered_card();
+    set.add(att(b"a").alt(rep("a", 1025)));
+    let foreign = AttachmentSet::new().add(att(b"b"));
+    let m = msg((0..40).map(|_| t("a").into()).chain([
+        File::new(foreign).into(),
+        Section::new([t("a")], Thumbnail::new(r)).into(),
+    ]))
+    .attachments(set)
+    .mentions(Mentions::none().users(Users::only((1..=101).map(Id::new))));
+    let rules: Vec<(RuleId, String)> = errs_v2(m, &strict())
+        .into_iter()
+        .map(|x| (x.rule, x.path))
+        .collect();
+    assert_eq!(
+        rules,
+        [
+            (RuleId::CV2_03, "components".to_owned()),
+            (RuleId::ATT_05, "file[40].url".to_owned()),
+            (RuleId::ATT_06, "attachments[0].description".to_owned()),
+            (
+                RuleId::ATT_06,
+                "section[41].accessory.description".to_owned()
+            ),
+            (RuleId::MSG_04, "allowed_mentions.users".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn att_05_used_attachments() {
+    assert_eq!(texts(1, "a").used_attachments().count(), 0);
+    let mut set = AttachmentSet::new();
+    let a = set.add(att(b"a"));
+    let unused = set.add(att(b"b"));
+    let m = msg([MediaGallery::new([
+        MediaItem::new(a.clone()).alt("a"),
+        MediaItem::new(a.clone()).alt("a"),
+        MediaItem::new(Media::url("attachment://0000000000000000.png")).alt("x"),
+    ])
+    .into()])
+    .attachments(set);
+    let used: Vec<&str> = m.used_attachments().map(Attachment::name).collect();
+    assert_eq!(used, [a.name()]);
+    assert_ne!(a.name(), unused.name());
+    // A hand-written URL to a member counts.
+    let mut set = AttachmentSet::new();
+    let b = set.add(att(b"b"));
+    let by_url = msg([Section::new(
+        [t("a")],
+        Thumbnail::new(Media::url(format!("attachment://{}", b.name()))).alt("b"),
+    )
+    .into()])
+    .attachments(set);
+    let used: Vec<&str> = by_url.used_attachments().map(Attachment::name).collect();
+    assert_eq!(used, [b.name()]);
 }
 
 #[test]

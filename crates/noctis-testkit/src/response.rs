@@ -10,6 +10,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, MessageMarker, UserMarker};
 
 use crate::TestError;
+use crate::fake::RecordedFile;
 use crate::render::mask;
 
 /// `IS_COMPONENTS_V2`.
@@ -68,6 +69,7 @@ pub struct HttpCall {
     pub(crate) method: String,
     pub(crate) path: String,
     pub(crate) json: Option<Value>,
+    pub(crate) files: Vec<RecordedFile>,
 }
 
 impl HttpCall {
@@ -81,9 +83,16 @@ impl HttpCall {
         &self.path
     }
 
-    /// The JSON body, when there is one.
+    /// The JSON body, when there is one; the `payload_json` part of a
+    /// multipart request (a message with uploads).
     pub fn json(&self) -> Option<&Value> {
         self.json.as_ref()
+    }
+
+    /// The uploaded files (`files[n]` parts) of a multipart request, in
+    /// body order; empty for a JSON request.
+    pub fn files(&self) -> &[RecordedFile] {
+        &self.files
     }
 }
 

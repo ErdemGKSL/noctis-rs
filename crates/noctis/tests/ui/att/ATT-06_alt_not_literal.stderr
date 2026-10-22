@@ -1,0 +1,6 @@
+error: [ATT-06] alt! takes one string literal
+         = help: for text known only at runtime use `AltText::try_new(text, &limits)`
+ --> tests/ui/att/ATT-06_alt_not_literal.rs:3:26
+  |
+3 |     let _ = noctis::alt!(text);
+  |                          ^^^^

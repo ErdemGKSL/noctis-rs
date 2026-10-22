@@ -14,7 +14,7 @@ use twilight_model::id::marker::{
 };
 
 use crate::TestError;
-use crate::fake::{FakeResponse, Method, RecordedRequest, StatusCode};
+use crate::fake::{FakeResponse, Method, RecordedFile, RecordedRequest, StatusCode};
 use crate::response::RunCtx;
 use crate::seed::{Seeds, TestUser};
 
@@ -25,7 +25,8 @@ const FIRST_MESSAGE_ID: u64 = 1_200_000_000_000_000_000;
 /// The timestamp of every message and member.
 const TIMESTAMP: &str = "2026-01-01T00:00:00.000000+00:00";
 
-/// What one request of the current run did to its messages.
+/// What one request of the current run did to its messages; every
+/// message event carries the attachment objects the message then holds.
 #[derive(Debug, Clone)]
 pub(crate) enum WireEvent {
     /// An interaction callback; `original` is the id `@original` then
@@ -34,15 +35,24 @@ pub(crate) enum WireEvent {
         kind: u8,
         data: Value,
         original: Id<MessageMarker>,
+        attachments: Vec<Value>,
     },
     /// `PATCH` (`Some(body)`) or `DELETE` (`None`) of `@original`.
-    Original { body: Option<Value> },
+    Original {
+        body: Option<Value>,
+        attachments: Vec<Value>,
+    },
     /// A follow-up message.
-    FollowUp { id: Id<MessageMarker>, body: Value },
+    FollowUp {
+        id: Id<MessageMarker>,
+        body: Value,
+        attachments: Vec<Value>,
+    },
     /// `PATCH` (`Some(body)`) or `DELETE` (`None`) of a follow-up.
     Message {
         id: Id<MessageMarker>,
         body: Option<Value>,
+        attachments: Vec<Value>,
     },
 }
 
@@ -58,6 +68,9 @@ struct WireRun {
     original: Option<Id<MessageMarker>>,
     /// The last body of each message, for `GET`.
     bodies: HashMap<Id<MessageMarker>, Value>,
+    /// The attachment objects each message holds (the source's from its
+    /// interaction `message`).
+    files: HashMap<Id<MessageMarker>, Vec<Value>>,
 }
 
 #[derive(Debug, Default)]
@@ -92,16 +105,22 @@ impl Wire {
         Id::new_checked(id).unwrap_or(Id::new(FIRST_MESSAGE_ID))
     }
 
-    /// Starts recording for a run answering with `token`.
+    /// Starts recording for a run answering with `token`; `source` is the
+    /// source message's id and the attachment objects it holds.
     pub(crate) fn begin(
         &self,
         token: String,
         kind: u8,
         channel: Id<ChannelMarker>,
-        source: Option<Id<MessageMarker>>,
+        source: Option<(Id<MessageMarker>, Vec<Value>)>,
     ) {
         let mut state = self.lock();
         state.events.clear();
+        let mut files = HashMap::new();
+        let source = source.map(|(id, attachments)| {
+            files.insert(id, attachments);
+            id
+        });
         state.run = Some(WireRun {
             token,
             kind,
@@ -109,7 +128,57 @@ impl Wire {
             source,
             original: None,
             bodies: HashMap::new(),
+            files,
         });
+    }
+
+    /// The attachment objects a message holds after `body`, sent with the
+    /// multipart `uploads`, replaced `previous`: a kept entry `{"id":
+    /// "<sf>"}` copies that previous object (an unknown id is dropped), a
+    /// new entry `{"id": n, …}` becomes a fresh attachment of the `files[n]`
+    /// part. A body without `attachments` keeps `previous`.
+    fn echo(
+        &self,
+        body: &Value,
+        uploads: &[RecordedFile],
+        previous: &[Value],
+        channel: Id<ChannelMarker>,
+    ) -> Vec<Value> {
+        let Some(entries) = body.get("attachments").and_then(Value::as_array) else {
+            return previous.to_vec();
+        };
+        entries
+            .iter()
+            .filter_map(|entry| match entry.get("id") {
+                Some(Value::String(kept)) => previous
+                    .iter()
+                    .find(|p| p.get("id").and_then(Value::as_str) == Some(kept.as_str()))
+                    .cloned(),
+                Some(Value::Number(n)) => {
+                    let part = format!("files[{n}]");
+                    let file = uploads.iter().find(|f| f.name == part)?;
+                    let filename = entry
+                        .get("filename")
+                        .and_then(Value::as_str)
+                        .unwrap_or(&file.filename);
+                    let id = self.fresh_id();
+                    let url =
+                        format!("https://cdn.discordapp.com/attachments/{channel}/{id}/{filename}");
+                    let mut object = json!({
+                        "id": id.to_string(),
+                        "filename": filename,
+                        "size": file.bytes.len(),
+                        "url": url,
+                        "proxy_url": url,
+                    });
+                    if let Some(description) = entry.get("description") {
+                        object["description"] = description.clone();
+                    }
+                    Some(object)
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// Ends the run; returns what it recorded.
@@ -134,10 +203,10 @@ impl Wire {
                 if !with_response {
                     return Some(FakeResponse::empty(StatusCode::NO_CONTENT));
                 }
-                let (interaction, kind, original, channel, data) = answered;
+                let (interaction, kind, original, channel, data, attachments) = answered;
                 let mut resource = json!({ "type": kind });
                 if matches!(kind, 4 | 7) {
-                    resource["message"] = message_json(original, channel, &data);
+                    resource["message"] = message_json_with(original, channel, &data, &attachments);
                 }
                 let body = json!({
                     "interaction": { "id": *id, "type": interaction },
@@ -148,15 +217,19 @@ impl Wire {
             ["webhooks", _, token] if *method == Method::POST => {
                 let id = self.fresh_id();
                 let body = request.json().unwrap_or(Value::Null);
-                let channel = self.record(token, |run, events| {
+                let uploads = request.files();
+                let (channel, attachments) = self.record(token, |run, events| {
+                    let attachments = self.echo(&body, &uploads, &[], run.channel);
                     run.bodies.insert(id, body.clone());
+                    run.files.insert(id, attachments.clone());
                     events.push(WireEvent::FollowUp {
                         id,
                         body: body.clone(),
+                        attachments: attachments.clone(),
                     });
-                    run.channel
+                    (run.channel, attachments)
                 });
-                Some(message_response(id, channel, &body))
+                Some(message_response(id, channel, &body, &attachments))
             }
             ["webhooks", _, token, "messages", which] => self.message(token, which, request),
             _ => None,
@@ -165,13 +238,11 @@ impl Wire {
 
     /// Records a callback and fixes what `@original` names; returns the
     /// interaction type (0 for a stray token), the callback type, the
-    /// message `@original` names, its channel and the callback's `data`.
-    fn callback(
-        &self,
-        token: &str,
-        request: &RecordedRequest,
-    ) -> (u8, u8, Id<MessageMarker>, Id<ChannelMarker>, Value) {
+    /// message `@original` names, its channel, the callback's `data` and
+    /// the attachment objects the message then holds.
+    fn callback(&self, token: &str, request: &RecordedRequest) -> Answered {
         let body = request.json().unwrap_or(Value::Null);
+        let uploads = request.files();
         let kind = body
             .get("type")
             .and_then(Value::as_u64)
@@ -187,15 +258,22 @@ impl Wire {
             if run.original.is_none() {
                 run.original = Some(original);
             }
-            if matches!(kind, 4 | 7) {
+            let previous = run.files.get(&original).cloned().unwrap_or_default();
+            let attachments = if matches!(kind, 4 | 7) {
+                let attachments = self.echo(&data, &uploads, &previous, run.channel);
                 run.bodies.insert(original, data.clone());
-            }
+                run.files.insert(original, attachments.clone());
+                attachments
+            } else {
+                previous
+            };
             events.push(WireEvent::Callback {
                 kind,
                 data: data.clone(),
                 original,
+                attachments: attachments.clone(),
             });
-            (run.kind, kind, original, run.channel, data)
+            (run.kind, kind, original, run.channel, data, attachments)
         })
     }
 
@@ -213,24 +291,36 @@ impl Wire {
         }
         let fresh = self.fresh_id();
         let body = request.json();
-        let (id, channel, stored) = self.record(token, |run, events| {
+        let uploads = request.files();
+        let (id, channel, stored, attachments) = self.record(token, |run, events| {
             let id = named.or(run.original).unwrap_or(fresh);
-            let edit = if method == Method::GET {
-                return (id, run.channel, run.bodies.get(&id).cloned());
+            let previous = run.files.get(&id).cloned().unwrap_or_default();
+            let (edit, attachments) = if method == Method::GET {
+                return (id, run.channel, run.bodies.get(&id).cloned(), previous);
             } else if method == Method::DELETE {
                 run.bodies.remove(&id);
-                None
+                run.files.remove(&id);
+                (None, Vec::new())
             } else {
                 let body = body.clone().unwrap_or(Value::Null);
+                let attachments = self.echo(&body, &uploads, &previous, run.channel);
                 run.bodies.insert(id, body.clone());
-                Some(body)
+                run.files.insert(id, attachments.clone());
+                (Some(body), attachments)
             };
             let stored = edit.clone();
             events.push(match named {
-                None => WireEvent::Original { body: edit },
-                Some(id) => WireEvent::Message { id, body: edit },
+                None => WireEvent::Original {
+                    body: edit,
+                    attachments: attachments.clone(),
+                },
+                Some(id) => WireEvent::Message {
+                    id,
+                    body: edit,
+                    attachments: attachments.clone(),
+                },
             });
-            (id, run.channel, stored)
+            (id, run.channel, stored, attachments)
         });
         if method == Method::DELETE {
             return Some(FakeResponse::empty(StatusCode::NO_CONTENT));
@@ -239,6 +329,7 @@ impl Wire {
             id,
             channel,
             &stored.or(body).unwrap_or(Value::Null),
+            &attachments,
         ))
     }
 
@@ -258,6 +349,7 @@ impl Wire {
                     source: None,
                     original: None,
                     bodies: HashMap::new(),
+                    files: HashMap::new(),
                 };
                 f(&mut scratch, &mut Vec::new())
             }
@@ -265,21 +357,49 @@ impl Wire {
     }
 }
 
-/// A `200` with the complete message `id` built from `body`.
+/// What [`Wire::callback`] answers: the interaction type, the callback
+/// type, the message `@original` names, its channel, the `data` and the
+/// message's attachment objects.
+type Answered = (
+    u8,
+    u8,
+    Id<MessageMarker>,
+    Id<ChannelMarker>,
+    Value,
+    Vec<Value>,
+);
+
+/// A `200` with the complete message `id` built from `body`, holding
+/// `attachments`.
 fn message_response(
     id: Id<MessageMarker>,
     channel: Id<ChannelMarker>,
     body: &Value,
+    attachments: &[Value],
 ) -> FakeResponse {
-    FakeResponse::json(StatusCode::OK, &message_json(id, channel, body))
+    FakeResponse::json(
+        StatusCode::OK,
+        &message_json_with(id, channel, body, attachments),
+    )
 }
 
 /// A complete Discord message object for `id` in `channel`, with the
-/// `content`, `flags` and `components` of `body`, authored by the App.
+/// `content`, `flags` and `components` of `body`, authored by the App,
+/// without attachments.
 pub(crate) fn message_json(
     id: Id<MessageMarker>,
     channel: Id<ChannelMarker>,
     body: &Value,
+) -> Value {
+    message_json_with(id, channel, body, &[])
+}
+
+/// [`message_json`] holding the attachment objects `attachments`.
+pub(crate) fn message_json_with(
+    id: Id<MessageMarker>,
+    channel: Id<ChannelMarker>,
+    body: &Value,
+    attachments: &[Value],
 ) -> Value {
     json!({
         "id": id.to_string(),
@@ -301,7 +421,7 @@ pub(crate) fn message_json(
         "mention_everyone": false,
         "mentions": [],
         "mention_roles": [],
-        "attachments": [],
+        "attachments": attachments,
         "embeds": [],
         "pinned": false,
         "flags": body.get("flags").and_then(Value::as_u64).unwrap_or(0),
@@ -610,6 +730,47 @@ mod tests {
         let value = resolved.into_value().unwrap();
         assert_eq!(value["users"]["40"]["id"], "40");
         assert!(value["members"]["40"].get("user").is_none());
+    }
+
+    /// Story 9.1: kept entries copy the previous object, unknown ids are
+    /// dropped, new ones get a fresh id, size and CDN URLs; the message
+    /// parses as twilight's `Message`.
+    #[test]
+    fn attachments_echo_like_discord() {
+        use twilight_model::channel::Message;
+
+        let wire = Wire::new();
+        let channel = Id::new(20);
+        let previous = [json!({ "id": "5", "filename": "old.png", "size": 1,
+            "url": "https://cdn.discordapp.com/attachments/20/5/old.png",
+            "proxy_url": "https://cdn.discordapp.com/attachments/20/5/old.png" })];
+        let uploads = [RecordedFile {
+            name: "files[0]".to_owned(),
+            filename: "new.png".to_owned(),
+            bytes: bytes::Bytes::from_static(b"abc"),
+        }];
+        let body = json!({ "attachments": [
+            { "id": "5" },
+            { "id": "6" },
+            { "id": 0, "filename": "new.png", "description": "alt" },
+            { "id": 1, "filename": "missing.png" },
+        ] });
+        let echoed = wire.echo(&body, &uploads, &previous, channel);
+        assert_eq!(echoed.len(), 2);
+        assert_eq!(echoed[0], previous[0]);
+        assert_eq!(echoed[1]["filename"], "new.png");
+        assert_eq!(echoed[1]["size"], 3);
+        assert_eq!(echoed[1]["description"], "alt");
+        let id = echoed[1]["id"].as_str().unwrap();
+        assert_eq!(
+            echoed[1]["url"],
+            format!("https://cdn.discordapp.com/attachments/20/{id}/new.png")
+        );
+        assert_eq!(wire.echo(&json!({}), &[], &previous, channel), previous);
+        let message = message_json_with(Id::new(7), channel, &json!({}), &echoed);
+        let parsed = serde_json::from_value::<Message>(message);
+        assert!(parsed.is_ok(), "{parsed:?}");
+        assert_eq!(parsed.unwrap().attachments.len(), 2);
     }
 
     /// Every shape the testkit sends parses as twilight's `Interaction`, so

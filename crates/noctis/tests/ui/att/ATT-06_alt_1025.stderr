@@ -1,0 +1,5 @@
+error: [ATT-06] limit at most 1024, actual 1025
+ --> tests/ui/att/ATT-06_alt_1025.rs:2:26
+  |
+2 | ...t!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

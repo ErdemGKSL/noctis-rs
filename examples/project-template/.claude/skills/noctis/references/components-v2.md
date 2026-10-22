@@ -214,8 +214,8 @@ Section::new([TextDisplay::new(format!("**{name}** · {state}"))], toggle_button
 - **Where:** **only** as a Section accessory (CV2-05); anywhere else fails with
   ``[CV2-05] `Thumbnail` cannot be a Container child`` (or top-level component).
 - **Limits:** `media.url` https or `attachment://` (ATT-05), ≤ 2048 [U] (CV2-17);
-  `description` ≤ 1024 (CV2-11); missing alt = warning (strict: error for rendered
-  images, FR-30). Images only (GIF/WebP animate), **no video**. Cost 1.
+  `description` ≤ 1024 (CV2-11); missing alt = warning (Strict: `[ATT-06]` error for
+  rendered images, FR-30). Images only (GIF/WebP animate), **no video**. Cost 1.
 - **Builder:** `Thumbnail::new(media)` where `media` is a `Media` or an
   `AttachmentRef`; `.alt(text)` (`description`), `.spoiler(bool)`. JSON type 11.
 - `Media::url(url)` is an `https` source; `Media::from(attachment_ref)` (or passing the
@@ -275,8 +275,33 @@ let raw = File::new(files.add(Attachment::new(csv_bytes, "csv")?.content_type("t
 - `AttachmentRef` has no public constructor: `.name()`, `.url()`
   (`attachment://<name>`), `.origin()`; `Clone + Eq + Hash`.
 - In a render function, `files.add(att) -> AttachmentRef` on the message's
-  `AttachmentSet`, then `V2Message::attachments(files)`. The
-  Upload Budget (ATT-01..03) is checked by the Responder [planned].
+  `AttachmentSet`, then `V2Message::attachments(files)`.
+- `V2Message::used_attachments() -> impl Iterator<Item = &Attachment>`: the set
+  members whose `attachment://<name>` appears at a File, Thumbnail or MediaItem site
+  (through an `AttachmentRef` or a hand-written `Media::url("attachment://<name>")`),
+  each once, in name order. Only these are sent; an unreferenced member is dropped
+  (one `debug!` on target `noctis::responder`).
+- **Sending (automatic, FR-30).** The Responder uploads each used file once as
+  `multipart/form-data` (`payload_json`, then `files[0]`, `files[1]`, … over the new
+  files only, ATT-04), with entry `{"id": n, "filename": name}` plus `"description"`
+  when `Attachment::alt` is set. On an edit (`update`, `PATCH @original`, follow-up
+  edits, channel edits) a file the target message already holds (same content name) is
+  kept by id (`{"id": "<snowflake>"}`, not re-uploaded) and files no longer used are
+  dropped; edit bodies always carry the `attachments` keep-list (MSG-08), create bodies
+  only when a file is used. The same View re-rendered with the same bytes uploads
+  nothing. `Attachment::mime` is not sent (Discord reads the extension).
+- **Upload Budget (ATT-01..03)**, checked before any request, in Strict and Lenient
+  alike: each new file ≤ 20 MiB (`Limits::attachment_bytes`; an interaction's
+  `attachment_size_limit` wins), the whole request (`payload_json` + new files) ≤ 25
+  MiB, ≤ 10 used attachments (kept ones count, with size 0). A miss is
+  `ResponderError::Invalid(UiError::Limits { .. })` and nothing is sent.
+- **Rendered images need alt text (ATT-06, FR-30, UX-DR2).** A Thumbnail or MediaItem
+  showing an `Attachment::rendered(..)` must have its own `.alt(..)` (the site's alt;
+  `Attachment::alt` does not count). Without one (`None`, `""`, whitespace): Strict
+  `validate` fails with `[ATT-06]` at `<site path>.description` (help: add `.alt(..)`
+  to the Thumbnail or MediaItem); Lenient and `cost` report `LimitWarning::MissingAlt`.
+  For a fixed alt text use `alt!("Profile card")` (an `AltText`, ≤ 1024 checked at
+  `cargo check`; `AltText::try_new(text, &limits)` at runtime).
 
 ## 7. Separator: `Separator`
 
@@ -517,7 +542,7 @@ notices.
 **Bodies.** Flags are chosen per endpoint when you ask for the body, so one message can
 be sent, replied or edited. Each body method returns a `MessageBody<'_>` (borrowed,
 `#[must_use]`, `Serialize`) that core's Responder sends; the Responder picks the body
-for the endpoint and adds attachments/`files` [planned]. You rarely call these yourself.
+for the endpoint and adds the `attachments` entries and `files[n]` parts (§6). You rarely call these yourself.
 
 | Method | Endpoints | Flag set and its consts |
 | --- | --- | --- |
@@ -704,6 +729,7 @@ lower bound only: `noctis::ui::validate` (§16) checks the actual tree before se
 | `label!("…")` | `Label` | CV2-08, ≤ 80 | `Label::try_new(text, &limits)`, `Label::try_from(&'static str / String)` (`validate_button_label`) |
 | `placeholder!("…")` | `Placeholder` | CV2-09, ≤ 150 | `Placeholder::try_new`, `Placeholder::try_from` (`validate_select_placeholder`) |
 | `content!("…")` | `Content` | MSG-01, ≤ 2000 | `Content::try_new`, `Content::try_from` (`message::validate_content`, path `content`) |
+| `alt!("…")` | `AltText` | ATT-06, ≤ 1024 (empty allowed) | `AltText::try_new`, `AltText::try_from` (`validate_attachment_description`) |
 | `rgb!(0x…)` | `Rgb` | CV2-13, `0x000000..=0xFFFFFF` | `Rgb::try_from(u32)` (`validate_accent_color`) |
 
 - All are in the prelude (and at `noctis::label!` etc.), measure with `discord_len`
@@ -713,10 +739,11 @@ lower bound only: `noctis::ui::validate` (§16) checks the actual tree before se
   `label!()` fail with `[CV2-08] label! takes one string literal` (help: use
   `Label::try_new(text, &limits)`); `rgb!(-1)` / `rgb!(1.0)` with
   `[CV2-13] rgb! takes one non-negative integer literal`.
-- `Label`, `Placeholder` and `Content` are newtypes over `Cow<'static, str>`
+- `Label`, `Placeholder`, `Content` and `AltText` are newtypes over `Cow<'static, str>`
   (`Debug + Clone + Eq + Hash`) with `as_str()`, `AsRef<str>` and
   `From<_> for Cow<'static, str>`, so they go wherever a builder takes text
-  (`.label(SAVE)`, `.placeholder(PICK)`, `LegacyMessage::new(content!("…"))`).
+  (`.label(SAVE)`, `.placeholder(PICK)`, `LegacyMessage::new(content!("…"))`,
+  `MediaItem::new(card).alt(alt!("Profile card"))`).
 - `try_new` / `TryFrom` return `Err(UiError::Limits { violations })` (empty path, or
   `content` for MSG-01) and never truncate, even in Lenient mode; truncation is
   `validate`'s.
@@ -851,6 +878,7 @@ Noctis has no embed API in v1 (MSG-02), so there is nothing to check for embeds.
 | `file_limit` | the interaction's `attachment_size_limit`; when `Some`, it replaces `Limits::attachment_bytes` (20 MiB) |
 | `validate_file_size(size, file_limit, &Limits)` / `validate_attachment_description(&str, &Limits)` | single ATT-01 / ATT-06 checks, path `""` |
 | `validate_attachment_ref(url, &[AttachmentDecl], &Limits) -> Vec<Violation>` | ATT-05: an `attachment://<name>` URL must name one of the files (exact, case-sensitive); other URLs pass |
+| `validate_rendered_image_alt(Option<&str>, &Limits) -> Vec<Violation>` | ATT-06 (FR-30): a rendered image's alt text is present (`None`, `""` or whitespace fails), path `""`; `validate` calls it for every rendered Thumbnail/MediaItem |
 
 ## 16. Runtime validation: validate and cost
 
@@ -882,7 +910,7 @@ let budget: CostReport = cost(&msg, &limits); // never changes or sends
 | `Validate` | sealed; implemented for `V2Message` and `LegacyMessage` only |
 | `CostReport` | `#[non_exhaustive]` `{ components: usize, text_chars: usize, warnings: Vec<LimitWarning> }`; V2: CV2-03 count at every depth and CV2-04 Text Display sum; legacy: rows plus their items, and `discord_len(content)` |
 | `LimitWarning::Truncated(Violation)` | Lenient mode truncated a field; the violation it avoided, with the length before (`Count`) |
-| `LimitWarning::MissingAlt { path }` | a Thumbnail or gallery item that is not a rendered image has no alt text of its own (`None`, `""` or whitespace); both modes, also from `cost` |
+| `LimitWarning::MissingAlt { path }` | a Thumbnail or gallery item has no alt text of its own (`None`, `""` or whitespace): a non-rendered image in both modes, a rendered image in Lenient mode (Strict: `[ATT-06]` violation), and every one from `cost` |
 | `LimitWarning::path()` / `.rule()` | the path; `Some(rule)` for `Truncated`, `None` for `MissingAlt` |
 | `UiError::Limits { violations: Vec<Violation> }` | the failure, never empty; `Display` joins each violation's `Display` with `\n` |
 | `Budget::of(&V2Message, &Limits) -> Budget` | what the message leaves: `components_left()` = `limits.components - cost.components`, `text_left()` = `limits.text_total_len - cost.text_chars`, both saturating at 0; reads only, Strict and Lenient alike (FR-62) |

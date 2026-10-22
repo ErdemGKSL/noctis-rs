@@ -120,7 +120,7 @@ functions live in `noctis::rules::command` (see `commands.md` §2 "Rule function
 | `modal::{validate_modal, Modal, ModalComponent, Label, LabelChild, TextInput, TextInputStyle, ModalSelect, FileUpload, RadioGroup, CheckboxGroup, Checkbox, ModalOption}` | modals, MOD-01..07 and CV2-09 for modal selects (`modals.md` §7) |
 | `modal::{validate_modal_title, validate_label_text, validate_label_description, validate_text_input, validate_text_input_value, validate_input_custom_id}` | single modal values; `validate_input_custom_id` is CID-01 for a modal input key (`modals.md` §7) |
 | `message::{validate_content, validate_mentions, validate_nonce, validate_sticker_ids, validate_v2_not_empty, validate_legacy_not_empty, validate_webhook_name, AllowedMentions, MentionIds}` | MSG-01, MSG-03..06, MSG-09, WH-04 (`components-v2.md` §15) |
-| `attachment::{validate_attachments, validate_file_size, validate_attachment_description, validate_attachment_ref, AttachmentDecl}` | ATT-01..03, ATT-05, ATT-06 (`components-v2.md` §15) |
+| `attachment::{validate_attachments, validate_file_size, validate_attachment_description, validate_attachment_ref, validate_rendered_image_alt, AttachmentDecl}` | ATT-01..03, ATT-05, ATT-06 (`components-v2.md` §15) |
 | `RuleId` | a catalog id: consts `RuleId::CV2_03`, `RuleId::META_05`, … (the id with `-` → `_`); `RuleId::ALL` (126, catalog order); `as_str()` / `Display` → `"CV2-03"`; `area()` → `"CV2"`; `number()` → `3`; `RuleId::lookup("CMD-01")` (exact, case-sensitive) → `Option<RuleId>`; `is_structural()` |
 | `Violation` | `{ rule, path, limit, actual, notes: Vec<String>, help: Option<String> }`, `#[non_exhaustive]`, built with `Violation::new(rule, path, limit, actual)` plus `.with_note(…)` (appends) and `.with_help(…)` (replaces); implements `Error`; prints `[CV2-03] components: limit at most 40, actual 41` (no `path: ` part when the path is empty), then a `\n  = note: …` line per note and a `\n  = help: …` line |
 | `Bound` | the broken limit: `AtMost(n)` "at most n", `AtLeast(n)` "at least n", `Between { min, max }` "between min and max", `Exactly(n)` "exactly n", `Describe(&str)` printed as is |
@@ -293,12 +293,12 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | MSG-07 | flags per endpoint | C |
 | MSG-08 | edits replace components; attachments list rebuilt | R |
 | MSG-09 | a message is never empty: V2 needs ≥ 1 component; legacy needs non-blank content or ≥ 1 row | R |
-| ATT-01 | ≤ 20 MiB per file default; interaction `attachment_size_limit` wins | R |
+| ATT-01 | ≤ 20 MiB per file default; interaction `attachment_size_limit` wins (Responder, before any request) | R |
 | ATT-02 | ≤ 25 MiB per request | R |
 | ATT-03 | ≤ 10 attachments per message [U] | R |
-| ATT-04 | `files[n]` naming (automatic) | R |
+| ATT-04 | `files[n]` naming over new uploads only (automatic) | R |
 | ATT-05 | `attachment://` must reference an attached file | C / R |
-| ATT-06 | alt text ≤ 1024 | C / R |
+| ATT-06 | alt text ≤ 1024 (`alt!`); a rendered image in a Thumbnail/MediaItem needs its own alt (Strict error, Lenient/`cost` warning) | C / R |
 | ATT-07 | image formats png, jpg/jpeg, webp, gif | C |
 | WH-01 | `with_components=true` (automatic) | C |
 | WH-02 | foreign webhooks: non-interactive only | C |

@@ -216,7 +216,11 @@ Section::new([TextDisplay::new(title)], Thumbnail::new(cx.attach(&self.badge)).a
 - Wide cards, charts, tables → Media Gallery (1 component, 0 text chars). 1 wide image
   (≈ 2:1) or 2 side by side.
 - Icons, avatars, badges → Thumbnail.
-- Always alt text. Never actionable info in the image; put buttons next to it.
+- Always alt text on the Thumbnail/MediaItem itself (`.alt(..)`, or `alt!("…")` for a
+  fixed text): a rendered image without it fails Strict `validate` with `[ATT-06]`
+  (Lenient/`cost`: `MissingAlt` warning). Never actionable info in the image; put
+  buttons next to it. Images are uploaded once and kept by id on later edits
+  (`components-v2.md` §6).
 - Light and dark themes: use opaque card backgrounds or mid-contrast palettes.
 
 ## 11. Testing
