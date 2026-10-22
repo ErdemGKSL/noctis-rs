@@ -132,6 +132,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p xtask -- deps-check
 
+  tw-crosscheck:
+    name: Tailwind grammar cross-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p xtask -- tw-grammar --check
+      - run: cargo test --release -p noctis-image --features render --test tw_crosscheck
+
   rules-catalog:
     name: Rules catalog
     runs-on: ubuntu-latest

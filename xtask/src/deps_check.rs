@@ -11,6 +11,10 @@
 //! (`render-on`); "tw module only" is a source-level property that dependency
 //! metadata cannot see, so deps-check does not check it.
 //!
+//! The `takumi-gated` rule (AD-15) keeps takumi out of default builds: every
+//! `noctis-image` dependency whose name starts with `takumi` must be an
+//! optional normal dependency that only the `render` feature turns on.
+//!
 //! The `http-client` rule (AD-24) keeps one Discord HTTP client per App: only
 //! `noctis-core`, `noctis-gateway` and the facade may depend on
 //! `twilight-http`, and only `noctis-core` may construct a client, so the
@@ -32,6 +36,14 @@ const MACROS: &str = "noctis-macros";
 const RENDER: &str = "render";
 /// The facade feature that reaches `noctis-testkit`.
 const TESTKIT_FEATURE: &str = "testkit";
+
+/// The prefix of the takumi renderer crates, gated behind `noctis-image/render`.
+const TAKUMI_PREFIX: &str = "takumi";
+
+/// Whether `name` is a takumi crate (`takumi`, `takumi-core`, ...).
+fn is_takumi(name: &str) -> bool {
+    name.starts_with(TAKUMI_PREFIX)
+}
 
 /// The Discord HTTP client crate (AD-24).
 const TWILIGHT_HTTP: &str = "twilight-http";
@@ -232,7 +244,7 @@ pub(crate) struct Workspace {
 impl Workspace {
     /// Keeps workspace members and every dependency on a member, on an
     /// internal (`noctis`/`noctis-*`) package, wherever that package lives, or
-    /// on `twilight-http`; scans the gateway's and the facade's sources for
+    /// on `twilight-http` or a takumi crate; scans the gateway's and the facade's sources for
     /// client construction.
     pub(crate) fn from_metadata(metadata: &Metadata) -> Self {
         let packages = metadata.workspace_packages();
@@ -262,6 +274,7 @@ impl Workspace {
                         names.contains(d.name.as_str())
                             || is_internal(&d.name)
                             || d.name == TWILIGHT_HTTP
+                            || is_takumi(&d.name)
                     })
                     .map(|d| Dep {
                         name: d.name.clone(),
@@ -311,6 +324,7 @@ pub(crate) enum Rule {
     DependsOnFacade,
     UngatedEdge,
     RenderOn,
+    TakumiGated,
     UnknownCrate,
     MissingCrate,
     BotDependency,
@@ -325,6 +339,7 @@ impl Rule {
             Self::DependsOnFacade => "depends-on-facade",
             Self::UngatedEdge => "ungated-edge",
             Self::RenderOn => "render-on",
+            Self::TakumiGated => "takumi-gated",
             Self::UnknownCrate => "unknown-crate",
             Self::MissingCrate => "missing-crate",
             Self::BotDependency => "bot-dependency",
@@ -413,7 +428,11 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
             ));
             continue;
         }
-        for dep in member.deps.iter().filter(|d| d.name != TWILIGHT_HTTP) {
+        for dep in member
+            .deps
+            .iter()
+            .filter(|d| d.name != TWILIGHT_HTTP && !is_takumi(&d.name))
+        {
             if let Some(v) = check_edge(&member.name, dep) {
                 out.insert(v);
             }
@@ -421,6 +440,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
         check_gate_features(member, &mut out);
     }
     check_render(ws, &mut out);
+    check_takumi(ws, &mut out);
     out.into_iter().collect()
 }
 
@@ -682,6 +702,38 @@ fn check_render(ws: &Workspace, out: &mut BTreeSet<Violation>) {
     }
 }
 
+/// Every takumi dependency of `noctis-image` is optional, normal, and turned
+/// on only by features that imply `render`.
+fn check_takumi(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    let Some(image) = ws.member(IMAGE) else {
+        return;
+    };
+    for dep in image.deps.iter().filter(|d| is_takumi(&d.name)) {
+        if dep.kind != Kind::Normal || !dep.optional {
+            out.insert(Violation::edge(
+                Rule::TakumiGated,
+                IMAGE,
+                &dep.name,
+                dep.kind,
+                format!("must be an optional normal dependency enabled only by `{RENDER}`"),
+            ));
+            continue;
+        }
+        for feature in image.features.keys() {
+            let closure = image.closure(feature);
+            if closure.activated.contains(&dep.name) && !closure.features.contains(RENDER) {
+                out.insert(Violation::edge(
+                    Rule::TakumiGated,
+                    IMAGE,
+                    &dep.name,
+                    dep.kind,
+                    format!("feature `{feature}` enables it without `{RENDER}`"),
+                ));
+            }
+        }
+    }
+}
+
 /// Runs the check on the workspace of `manifest_path` and prints the report.
 pub(crate) fn run(manifest_path: &Path) -> ExitCode {
     let metadata = match MetadataCommand::new()
@@ -894,6 +946,89 @@ mod tests {
               HTTP client; only noctis-core builds the App's one client (AD-24) [http-client]"
             ]
         );
+    }
+
+    fn takumi_rule(image: Member) -> Vec<String> {
+        let ws = Workspace {
+            crates: vec![image],
+            client_sites: Vec::new(),
+        };
+        check(&ws)
+            .into_iter()
+            .filter(|v| v.rule == Rule::TakumiGated)
+            .map(|v| v.to_string())
+            .collect()
+    }
+
+    fn image_with(features: &[(&str, &[&str])], deps: Vec<Dep>) -> Member {
+        Member {
+            name: IMAGE.to_owned(),
+            deps,
+            ..member(features)
+        }
+    }
+
+    #[test]
+    fn takumi_behind_render_passes() {
+        let image = image_with(
+            &[
+                ("default", &[]),
+                ("render", &["dep:takumi", "dep:takumi-core"]),
+            ],
+            vec![dep("takumi"), dep("takumi-core")],
+        );
+        assert_eq!(takumi_rule(image), Vec::<String>::new());
+        let implied = image_with(
+            &[("all", &["render"]), ("render", &["dep:takumi"])],
+            vec![dep("takumi")],
+        );
+        assert_eq!(takumi_rule(implied), Vec::<String>::new());
+    }
+
+    #[test]
+    fn takumi_outside_render_fails() {
+        let required = image_with(
+            &[("render", &[])],
+            vec![Dep {
+                optional: false,
+                ..dep("takumi-core")
+            }],
+        );
+        assert_eq!(
+            takumi_rule(required),
+            [
+                "deps-check: noctis-image -> takumi-core (normal): must be an optional normal \
+              dependency enabled only by `render` [takumi-gated]"
+            ]
+        );
+        let dev = image_with(
+            &[],
+            vec![Dep {
+                kind: Kind::Dev,
+                optional: false,
+                ..dep("takumi")
+            }],
+        );
+        assert_eq!(takumi_rule(dev).len(), 1);
+        let other_feature = image_with(
+            &[
+                ("render", &["dep:takumi"]),
+                ("fast", &["dep:takumi-raster"]),
+            ],
+            vec![dep("takumi"), dep("takumi-raster")],
+        );
+        assert_eq!(
+            takumi_rule(other_feature),
+            [
+                "deps-check: noctis-image -> takumi-raster (normal): feature `fast` enables it \
+              without `render` [takumi-gated]"
+            ]
+        );
+        let by_default = image_with(
+            &[("default", &["dep:takumi"]), ("render", &["dep:takumi"])],
+            vec![dep("takumi")],
+        );
+        assert_eq!(takumi_rule(by_default).len(), 1);
     }
 
     #[test]

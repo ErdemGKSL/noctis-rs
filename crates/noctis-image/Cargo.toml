@@ -9,8 +9,14 @@ repository.workspace = true
 
 [features]
 default = []
-# Adds takumi and the noctis-core/-ports/-ui edges in Epic 10.
-render = []
+# Adds the takumi renderer (Story 10.1 wires the crates; the noctis-core,
+# -ports and -ui edges follow in Story 10.3).
+render = ["dep:takumi", "dep:takumi-core"]
+
+[dependencies]
+takumi = { workspace = true, optional = true, features = ["raster-backend"] }
+takumi-core = { workspace = true, optional = true }
+thiserror.workspace = true
 
 [lints]
 workspace = true

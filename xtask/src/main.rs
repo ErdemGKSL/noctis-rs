@@ -12,12 +12,16 @@
 //! - `skill-check [--root <path>]`: checks that the Noctis Usage Skill mentions
 //!   every snapshot item and carries its API hash, and lints the Project
 //!   Template for UI Doctrine violations (FR-49, FR-50, AD-17, AD-28).
+//! - `tw-grammar [--check]`: generates `crates/noctis-image/src/tw/generated.rs`
+//!   from the pinned takumi-core sources and the closed suffix table; `--check`
+//!   fails when the committed file is stale (FR-32, FR-66, AD-15, AD-28).
 
 mod api_snapshot;
 mod deps_check;
 mod public_api;
 mod rules_catalog;
 mod skill_check;
+mod tw_grammar;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -37,6 +41,9 @@ tasks:
   skill-check [--root <path>]
       check the Usage Skill against xtask/public-api.txt and lint the Project
       Template for UI Doctrine violations (default root: the noctis-rs repo)
+  tw-grammar [--check]
+      generate crates/noctis-image/src/tw/generated.rs from the pinned
+      takumi-core sources; --check fails if the committed file is stale
   help, --help, -h
       print this message";
 
@@ -83,6 +90,21 @@ fn main() -> ExitCode {
                 usage(ExitCode::from(USAGE_ERROR))
             }
         },
+        Some((task, rest)) if task == "tw-grammar" => {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+            match rest {
+                [] => tw_grammar::run(&root, false),
+                [flag] if flag == "--check" => tw_grammar::run(&root, true),
+                [flag, extra, ..] if flag == "--check" => {
+                    eprintln!("tw-grammar: unexpected argument: {extra}");
+                    usage(ExitCode::from(USAGE_ERROR))
+                }
+                [other, ..] => {
+                    eprintln!("tw-grammar: unexpected argument: {other}");
+                    usage(ExitCode::from(USAGE_ERROR))
+                }
+            }
+        }
         Some((task, _)) => {
             eprintln!("unknown task: {task}");
             usage(ExitCode::from(USAGE_ERROR))

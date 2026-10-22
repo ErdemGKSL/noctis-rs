@@ -1,0 +1,96 @@
+# Near-miss corpus for tests/tw_crosscheck.rs.
+# One class per line: `<class> <builtin|theme|unknown> [narrowed=<reason>]`.
+# A line without `narrowed=` must agree with takumi; a `narrowed=` line must be
+# unknown to the grammar while takumi accepts it.
+
+# Tailwind v3 names (takumi reads them as variables and draws nothing).
+bg-gradient-to-r theme
+bg-gradient-to-tl theme
+sm:!bg-gradient-to-r theme
+bg-opacity-50 theme
+text-opacity-75 theme
+border-opacity-25 theme
+overflow-ellipsis unknown
+space-x-4 unknown
+space-y-2 unknown
+flex-grow-0 builtin
+shadow-outline unknown narrowed=stop-color-variable
+decoration-clone theme
+
+# Typos and unknown prefixes.
+flx unknown
+flexx unknown
+itmes-center unknown
+justify-centre unknown
+ring-2 unknown
+divide-y unknown
+z-10 unknown
+cursor-pointer unknown
+transition unknown
+duration-300 unknown
+bg-red-501 theme
+text-gray-1000 theme
+
+# Case.
+SM:flex unknown narrowed=uppercase-variant
+Flex unknown
+w-FULL unknown narrowed=uppercase-keyword
+bg-RED-500 unknown narrowed=uppercase-color
+TEXT-sm unknown
+
+# Numbers.
+w-inf unknown narrowed=non-finite
+w-NaN unknown narrowed=non-finite
+w-1e3 unknown narrowed=exponent
+w-0.1 unknown narrowed=off-scale
+p-01 unknown narrowed=leading-zero
+w-+4 unknown narrowed=explicit-sign
+bg-red-500/101 unknown narrowed=opacity-over-100
+bg-red-500/50.5 unknown narrowed=fractional-opacity
+m-brand/50 unknown
+bg-brand/150 unknown
+opacity-1e2 unknown narrowed=exponent
+
+# Unicode.
+bg-rød unknown narrowed=non-ascii
+w-４ unknown narrowed=non-ascii
+ｆlex unknown
+
+# Arbitrary values.
+w-[10px] builtin
+bg-[#ff0000] builtin
+rotate-[45deg] builtin
+w-[] unknown
+w-[calc(1px+1px)] unknown
+w-[calc(1px_+_1px)] unknown narrowed=calc
+bg-[url(a.png)] unknown narrowed=url
+w-[10px unknown
+
+# Negatives.
+-m-4 builtin
+-translate-x-1/2 builtin
+-col-start-2 builtin
+-m-auto unknown
+-bg-red-500 unknown
+-flex unknown
+-bg-brand unknown narrowed=negative-theme-token
+--m-4 unknown
+
+# Variants and important.
+sm:flex builtin
+2xl:p-4 builtin
+hover:flex builtin
+sm:md:flex unknown
+!sm:flex unknown
+:flex unknown
+!p-4 builtin
+p-4! builtin
+!p-4! builtin
+!!p-4 unknown
+
+# Theme tokens.
+bg-brand theme
+text-brand/50 theme
+text-title theme
+font-display theme
+rounded-card theme
