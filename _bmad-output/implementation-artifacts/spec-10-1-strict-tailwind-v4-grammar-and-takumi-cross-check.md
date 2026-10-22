@@ -2,7 +2,8 @@
 title: 'Story 10.1: Strict Tailwind v4 grammar and takumi cross-check'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '9c2342e93efecd6c44a7ea1da28d752fa9c6c2be'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

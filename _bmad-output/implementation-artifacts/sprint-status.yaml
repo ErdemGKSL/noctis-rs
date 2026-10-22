@@ -124,7 +124,7 @@ development_status:
   epic-9-retrospective: optional
 
   epic-10: backlog
-  10-1-strict-tailwind-v4-grammar-and-takumi-cross-check: backlog
+  10-1-strict-tailwind-v4-grammar-and-takumi-cross-check: in-progress
   10-2-templates-with-compile-time-class-validation-and-a-theme: backlog
   10-3-renderer-and-bounded-render-pool: backlog
   10-4-output-formats-and-size-budget: backlog
