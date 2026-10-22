@@ -139,7 +139,7 @@ development_status:
 
   epic-11: in-progress
   11-1-i18n-typed-content-strings: done
-  11-2-module-scoped-locale-catalogs: backlog
+  11-2-module-scoped-locale-catalogs: in-progress
   11-3-user-and-guild-locale-resolution: backlog
   11-4-command-localization-in-publish: backlog
   11-5-runtime-locale-overlays-through-localesource: backlog

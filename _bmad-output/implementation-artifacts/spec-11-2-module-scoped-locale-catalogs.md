@@ -2,7 +2,8 @@
 title: 'Story 11.2: Module-scoped Locale catalogs'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '2818c396c94fa49fb44fa61e1bf754a289129d15'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
