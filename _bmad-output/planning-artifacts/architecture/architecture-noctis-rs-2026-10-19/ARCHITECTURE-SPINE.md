@@ -1228,8 +1228,13 @@ list in CI.
     `page: u16` Payload field, a `match` in the render function, Route buttons with
     the active tab disabled and prev/next disabled at the bounds.
   - Messages default to `allowed_mentions.parse = []` (MSG-05).
-  - `xtask skill-check` also lints the Project Template for doctrine violations
-    (embeds or `content` in interactive surfaces, manual response-type selection).
+  - `xtask skill-check` also lints every crate under `examples/` (the Project
+    Template and `examples/ui-recipes`) for doctrine violations (embeds or
+    `content` in interactive surfaces, manual response-type selection, per-message
+    listeners), and checks that the `rust recipe=` blocks of
+    `views-and-recipes.md` equal the marked regions of `examples/ui-recipes/`, a
+    workspace crate (`publish = false`) whose recipes are tested with
+    `noctis::testkit`.
 
 ### AD-28 — Release, versioning and supply chain
 - **Binds:** workspace, `xtask`, CI, release; FR-48, FR-74, NFR-7, NFR-8, PRD §6.

@@ -32,8 +32,9 @@ use noctis_codec::{
 use noctis_rules::Limits;
 use noctis_ui::__macro::ModalFromPayload;
 use noctis_ui::{MessageFormat, ModalSubmission, SubmitError};
+use twilight_model::application::interaction::InteractionDataResolved;
 use twilight_model::id::Id;
-use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
+use twilight_model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 
 use crate::State;
 use crate::command::CtxInner;
@@ -63,6 +64,94 @@ pub enum ComponentKind {
     MentionableSelect,
     /// `#[derive(ChannelSelectMenu)]` (type 8).
     ChannelSelect,
+}
+
+/// The values the user picked in a select menu, typed by the select's
+/// kind: what [`ComponentCtx::values`] returns.
+///
+/// [`strings`](Self::strings) holds every raw value as Discord sent it,
+/// for any select kind. The typed lists hold the values parsed as ids:
+/// a user, role or channel select fills [`users`](Self::users),
+/// [`roles`](Self::roles) or [`channels`](Self::channels); a mentionable
+/// select splits its values into `roles` (an id found among the resolved
+/// roles) and `users` (an id found among the resolved users or members).
+/// A value that does not parse as a non-zero id stays in `strings` only.
+/// Every list keeps the sent order and duplicates. A button click, and a
+/// string select, has empty typed lists.
+///
+/// ```
+/// use noctis_core::SelectedValues;
+///
+/// let values = SelectedValues::default();
+/// assert!(values.strings().is_empty());
+/// assert!(values.users().is_empty());
+/// assert!(values.roles().is_empty());
+/// assert!(values.channels().is_empty());
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SelectedValues {
+    strings: Vec<String>,
+    users: Vec<Id<UserMarker>>,
+    roles: Vec<Id<RoleMarker>>,
+    channels: Vec<Id<ChannelMarker>>,
+}
+
+impl SelectedValues {
+    /// Every raw value as Discord sent it, for any select kind (a string
+    /// select's option values, or the ids of a typed select), in order.
+    pub fn strings(&self) -> &[String] {
+        &self.strings
+    }
+
+    /// The picked users: a user select's values, or a mentionable
+    /// select's values that resolved to a user or member.
+    pub fn users(&self) -> &[Id<UserMarker>] {
+        &self.users
+    }
+
+    /// The picked roles: a role select's values, or a mentionable
+    /// select's values that resolved to a role.
+    pub fn roles(&self) -> &[Id<RoleMarker>] {
+        &self.roles
+    }
+
+    /// The picked channels: a channel select's values.
+    pub fn channels(&self) -> &[Id<ChannelMarker>] {
+        &self.channels
+    }
+
+    /// The values of a click on a component of `kind`, with the select's
+    /// `resolved` data (which splits a mentionable select's values).
+    pub(crate) fn from_data(
+        kind: Option<ComponentKind>,
+        values: Vec<String>,
+        resolved: Option<&InteractionDataResolved>,
+    ) -> Self {
+        let mut out = Self::default();
+        for value in &values {
+            let Some(raw) = value.parse::<u64>().ok().filter(|&n| n != 0) else {
+                continue;
+            };
+            match kind {
+                Some(ComponentKind::UserSelect) => out.users.push(Id::new(raw)),
+                Some(ComponentKind::RoleSelect) => out.roles.push(Id::new(raw)),
+                Some(ComponentKind::ChannelSelect) => out.channels.push(Id::new(raw)),
+                Some(ComponentKind::MentionableSelect) => {
+                    let Some(resolved) = resolved else { continue };
+                    if resolved.roles.contains_key(&Id::new(raw)) {
+                        out.roles.push(Id::new(raw));
+                    } else if resolved.users.contains_key(&Id::new(raw))
+                        || resolved.members.contains_key(&Id::new(raw))
+                    {
+                        out.users.push(Id::new(raw));
+                    }
+                }
+                _ => {}
+            }
+        }
+        out.strings = values;
+        out
+    }
 }
 
 /// The accessors [`ComponentCtx`] and [`ModalSubmitCtx`] share.
@@ -201,6 +290,12 @@ impl ComponentCtx {
     /// seams.
     pub fn limits(&self) -> &Limits {
         crate::command::limits_of(self.0.app.as_deref())
+    }
+
+    /// The values the user picked, typed by the select's kind (see
+    /// [`SelectedValues`]); empty for a button click.
+    pub fn values(&self) -> &SelectedValues {
+        &self.0.values
     }
 }
 crate::responder::ergonomics::ctx_methods!(ComponentCtx, update = Component);
@@ -1465,5 +1560,133 @@ mod tests {
         assert_eq!(crate::CommandCtx::new("ping").limits(), &default);
         assert_eq!(ComponentCtx::detached().limits(), &default);
         assert_eq!(ModalSubmitCtx::detached().limits(), &default);
+    }
+
+    /// The values of `raw` picked on a component of `kind`.
+    fn picked(kind: Option<ComponentKind>, raw: &[&str]) -> SelectedValues {
+        let values = raw.iter().map(|v| (*v).to_owned()).collect();
+        SelectedValues::from_data(kind, values, None)
+    }
+
+    fn strings(raw: &[&str]) -> Vec<String> {
+        raw.iter().map(|v| (*v).to_owned()).collect()
+    }
+
+    /// Resolved data holding users `users` and roles `roles`.
+    fn resolved(users: &[&str], roles: &[&str]) -> InteractionDataResolved {
+        let user = |id: &str| {
+            serde_json::json!({
+                "id": id, "username": "u", "discriminator": "0000",
+                "avatar": null, "global_name": null
+            })
+        };
+        let role = |id: &str| {
+            serde_json::json!({
+                "id": id, "name": "r", "color": 0, "colors": { "primary_color": 0 },
+                "hoist": false, "managed": false,
+                "mentionable": false, "permissions": "0", "position": 1, "flags": 0
+            })
+        };
+        let users: serde_json::Map<_, _> = users
+            .iter()
+            .map(|id| ((*id).to_owned(), user(id)))
+            .collect();
+        let roles: serde_json::Map<_, _> = roles
+            .iter()
+            .map(|id| ((*id).to_owned(), role(id)))
+            .collect();
+        serde_json::from_value(serde_json::json!({ "users": users, "roles": roles }))
+            .expect("valid resolved data")
+    }
+
+    /// V1: a button click picks nothing.
+    #[test]
+    fn button_click_has_no_values() {
+        let values = picked(Some(ComponentKind::Button), &[]);
+        assert_eq!(values, SelectedValues::default());
+        assert!(ComponentCtx::detached().values().strings().is_empty());
+    }
+
+    /// V2: a string select fills `strings` only; an empty pick is empty.
+    #[test]
+    fn string_select_fills_strings_only() {
+        let values = picked(Some(ComponentKind::StringSelect), &["a", "b", "41"]);
+        assert_eq!(values.strings(), strings(&["a", "b", "41"]));
+        assert!(values.users().is_empty());
+        assert!(values.roles().is_empty());
+        assert!(values.channels().is_empty());
+        let empty = picked(Some(ComponentKind::StringSelect), &[]);
+        assert_eq!(empty, SelectedValues::default());
+    }
+
+    /// V3: a typed select fills its own list and keeps the raw values.
+    #[test]
+    fn typed_selects_fill_their_list() {
+        let users = picked(Some(ComponentKind::UserSelect), &["41"]);
+        assert_eq!(users.users(), [Id::new(41)]);
+        assert_eq!(users.strings(), strings(&["41"]));
+        assert!(users.roles().is_empty() && users.channels().is_empty());
+        let roles = picked(Some(ComponentKind::RoleSelect), &["30"]);
+        assert_eq!(roles.roles(), [Id::new(30)]);
+        assert_eq!(roles.strings(), strings(&["30"]));
+        assert!(roles.users().is_empty() && roles.channels().is_empty());
+        let channels = picked(Some(ComponentKind::ChannelSelect), &["20"]);
+        assert_eq!(channels.channels(), [Id::new(20)]);
+        assert_eq!(channels.strings(), strings(&["20"]));
+        assert!(channels.users().is_empty() && channels.roles().is_empty());
+    }
+
+    /// V4: a value that is not a non-zero `u64` stays in `strings` only.
+    #[test]
+    fn unparsable_ids_stay_raw() {
+        for raw in ["abc", "0", "18446744073709551616", "-1", ""] {
+            let values = picked(Some(ComponentKind::UserSelect), &[raw]);
+            assert_eq!(values.strings(), strings(&[raw]), "{raw:?}");
+            assert!(values.users().is_empty(), "{raw:?}");
+        }
+    }
+
+    /// V5: a mentionable select splits its values by the resolved data.
+    #[test]
+    fn mentionable_select_splits_users_and_roles() {
+        let data = resolved(&["41"], &["30"]);
+        let values = SelectedValues::from_data(
+            Some(ComponentKind::MentionableSelect),
+            strings(&["41", "30"]),
+            Some(&data),
+        );
+        assert_eq!(values.users(), [Id::new(41)]);
+        assert_eq!(values.roles(), [Id::new(30)]);
+        assert!(values.channels().is_empty());
+        assert_eq!(values.strings(), strings(&["41", "30"]));
+    }
+
+    /// V6: a mentionable value missing from the resolved data (or with no
+    /// resolved data) fills no typed list.
+    #[test]
+    fn unresolved_mentionables_stay_raw() {
+        let data = resolved(&["41"], &["30"]);
+        for resolved in [Some(&data), None] {
+            let values = SelectedValues::from_data(
+                Some(ComponentKind::MentionableSelect),
+                strings(&["42"]),
+                resolved,
+            );
+            assert_eq!(values.strings(), strings(&["42"]));
+            assert!(values.users().is_empty() && values.roles().is_empty());
+        }
+    }
+
+    /// V7: 25 values and duplicates keep their order.
+    #[test]
+    fn values_keep_order_and_duplicates() {
+        let raw: Vec<String> = (0..25).map(|n| (40 + n % 3).to_string()).collect();
+        let refs: Vec<&str> = raw.iter().map(String::as_str).collect();
+        let values = picked(Some(ComponentKind::UserSelect), &refs);
+        assert_eq!(values.strings(), raw);
+        let ids: Vec<Id<UserMarker>> = (0..25).map(|n| Id::new(40 + n % 3)).collect();
+        assert_eq!(values.users(), ids);
+        let dup = picked(Some(ComponentKind::UserSelect), &["41", "41"]);
+        assert_eq!(dup.users(), [Id::new(41), Id::new(41)]);
     }
 }

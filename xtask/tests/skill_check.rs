@@ -8,6 +8,7 @@
 )]
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -41,7 +42,32 @@ async fn xp(ctx: EventCtx, msg: MessageCreate) -> HandlerResult<()> {
 }
 ";
 
-const OK: &str = "skill-check: ok (8 public items mentioned, 0 component entries checked, 2 template files linted)";
+const OK: &str = "skill-check: ok (8 public items mentioned, 0 component entries checked, 3 example files linted, 4 recipes in sync)";
+
+const RECIPES_MD: &str =
+    "examples/project-template/.claude/skills/noctis/references/views-and-recipes.md";
+const RECIPES_RS: &str = "examples/ui-recipes/src/lib.rs";
+const REQUIRED: [&str; 4] = ["tabs", "pagination", "step-flow", "settings"];
+
+/// The four required recipes as Markdown blocks.
+fn recipes_md() -> String {
+    let mut out = String::new();
+    for n in REQUIRED {
+        let f = n.replace('-', "_");
+        let _ = write!(out, "## {n}\n\n```rust recipe={n}\nfn {f}() {{}}\n```\n\n");
+    }
+    out
+}
+
+/// The four required recipes as marked regions of one file.
+fn recipes_rs() -> String {
+    let mut out = String::from("//! Recipes.\n");
+    for n in REQUIRED {
+        let f = n.replace('-', "_");
+        let _ = write!(out, "\n// recipe: {n}\nfn {f}() {{}}\n// recipe-end: {n}\n");
+    }
+    out
+}
 
 fn hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
@@ -78,6 +104,12 @@ fn root(test: &'static str) -> Root {
         "#[test]\nfn flow() { let v: Vec<u8> = it.collect(); }\n",
     )
     .with("examples/project-template/src/notes.txt", "embed")
+    .with(RECIPES_MD, &recipes_md())
+    .with(RECIPES_RS, &recipes_rs())
+    .with(
+        "examples/ui-recipes/target/release/gen.rs",
+        "fn f() -> EmbedBuilder { x }\n",
+    )
 }
 
 impl Root {
@@ -166,7 +198,7 @@ fn real_repo_passes() {
         stderr(&out)
     );
     assert!(stderr(&out).contains(" component entries checked, "));
-    assert!(stderr(&out).ends_with(" template files linted)\n"));
+    assert!(stderr(&out).ends_with(" example files linted, 6 recipes in sync)\n"));
 }
 
 #[test]
@@ -205,6 +237,7 @@ fn m8_skill_missing_or_bad() {
     let out = root("m8_missing")
         .without(&format!("{SKILL_DIR}/SKILL.md"))
         .without(&format!("{SKILL_DIR}/references/limits.md"))
+        .without(RECIPES_MD)
         .run();
     assert_problems(
         &out,
@@ -325,7 +358,7 @@ fn c2_full_entry() {
         &out,
         0,
         &[
-            "skill-check: ok (10 public items mentioned, 1 component entries checked, 2 template files linted)",
+            "skill-check: ok (10 public items mentioned, 1 component entries checked, 3 example files linted, 4 recipes in sync)",
         ],
     );
 }
@@ -398,7 +431,7 @@ fn c7_entry_in_modals() {
         &out,
         0,
         &[
-            "skill-check: ok (10 public items mentioned, 1 component entries checked, 2 template files linted)",
+            "skill-check: ok (10 public items mentioned, 1 component entries checked, 3 example files linted, 4 recipes in sync)",
         ],
     );
 }
@@ -463,6 +496,50 @@ fn d18_lex_error() {
     let path = "examples/project-template/tests/broken.rs";
     let out = root("d18").with(path, "fn f() { (\n").run();
     assert_exit(&out, 1, &[&format!("skill-check: {path}: cannot lex: ")]);
+}
+
+// R rows: the recipe sync check and the examples-wide lint.
+
+#[test]
+fn r2_drifted_recipe() {
+    let out = root("r2")
+        .with(
+            RECIPES_RS,
+            &recipes_rs().replace("fn tabs() {}", "fn tabs() { 1 }"),
+        )
+        .run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{RECIPES_MD}: recipe `tabs` differs from {RECIPES_RS} (recipe line 1)"
+        )],
+    );
+}
+
+#[test]
+fn r6_missing_recipes_dir() {
+    let out = root("r6").without(RECIPES_RS).run();
+    assert_problems(
+        &out,
+        &["examples/ui-recipes/src: cannot read: not a directory"],
+    );
+}
+
+#[test]
+fn r7_every_example_is_linted() {
+    let path = "examples/ui-recipes/tests/flows.rs";
+    let out = root("r7")
+        .with(
+            path,
+            "impl X {\n#[handler]\nasync fn handle(self, ctx: ComponentCtx) { tokio::spawn(f()); }\n}\n",
+        )
+        .run();
+    assert_problems(
+        &out,
+        &[&format!(
+            "{path}:3: [UD-7] task spawned per interaction or event; use a Ref TTL or a port"
+        )],
+    );
 }
 
 // X rows.

@@ -783,8 +783,9 @@ the result is validated against the Limits (Strict or Lenient) when sent. A kind
 struct needs a `#[handler]` method (`[CID-04]`); on a struct without a declared kind,
 `.build()` is a compile error whose help lists the kind derives.
 
-Selected values: `ctx.values()` → `.strings()`, `.users()`, `.roles()`, `.channels()`,
-`.mentionables()`; resolved entities: `ctx.resolved()` [planned, Epic 7].
+Selected values: `ctx.values()` → `SelectedValues` with `.strings()` (every raw value),
+`.users()`, `.roles()` and `.channels()` (typed ids; a Mentionable Select's values are
+split into users and roles); resolved entities: `ctx.resolved()` [planned].
 
 ## 10. Interaction pipeline (fixed order)
 

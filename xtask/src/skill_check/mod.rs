@@ -1,6 +1,6 @@
 //! `skill-check [--root <path>]`: keeps the Noctis Usage Skill in step with the
-//! public API and lints the Project Template for UI Doctrine violations (FR-49,
-//! FR-50, UX-DR1..9, NFR-8, AD-17, AD-27, AD-28).
+//! public API and the tested recipes, and lints every example crate for UI
+//! Doctrine violations (FR-49, FR-50, UX-DR1..9, NFR-8, AD-17, AD-27, AD-28).
 //!
 //! # Checks
 //!
@@ -13,20 +13,25 @@
 //!   the snapshot exports has exactly one entry, with `**Where:**`,
 //!   `**Limits:**` and `**Builder:**`, in the skill's
 //!   `references/components-v2.md` or `references/modals.md`;
-//! - **UI Doctrine** ([`doctrine`]): UD-1, UD-3 and UD-7 over the template's
-//!   `src/` and `tests/`.
+//! - **UI Doctrine** ([`doctrine`]): UD-1, UD-3 and UD-7 over the `src/` and
+//!   `tests/` of every crate directory under `examples/` (the Project Template
+//!   and `examples/ui-recipes`);
+//! - **recipes** ([`recipes`]): the ```` ```rust recipe=<name> ```` blocks of
+//!   the skill's `references/views-and-recipes.md` equal the regions of
+//!   `examples/ui-recipes/src`.
 //!
 //! # Output
 //!
 //! Every problem is one stderr line `skill-check: <subject>: <message>`, sorted
 //! and deduplicated, and the exit code is 1. Success prints `skill-check: ok (<N>
-//! public items mentioned, <E> component entries checked, <F> template files
-//! linted)`.
+//! public items mentioned, <E> component entries checked, <F> example files
+//! linted, <R> recipes in sync)`.
 
 mod components;
 mod doctrine;
 mod hash;
 mod mention;
+mod recipes;
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -39,11 +44,12 @@ use crate::public_api;
 
 /// The Usage Skill's directory.
 const SKILL_DIR: &str = "examples/project-template/.claude/skills/noctis";
-/// The template's linted directories.
-const TEMPLATE_DIRS: &[&str] = &[
-    "examples/project-template/src",
-    "examples/project-template/tests",
-];
+/// The directory whose crates the doctrine lint covers.
+const EXAMPLES_DIR: &str = "examples";
+/// The linted directories of each example crate.
+const EXAMPLE_SUBDIRS: &[&str] = &["src", "tests"];
+/// The skill file whose `recipe=` blocks copy `examples/ui-recipes`.
+const RECIPES_MD: &str = "references/views-and-recipes.md";
 
 /// One problem; field order is the report's sort order.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -160,23 +166,53 @@ fn check(repo: &Repo<'_>, problems: &mut Problems) -> String {
         _ => 0,
     };
 
-    let mut linted = 0;
-    for dir in TEMPLATE_DIRS {
-        let Some(files) = repo.files(dir, "rs") else {
-            problems.add(*dir, "cannot read: not a directory");
-            continue;
-        };
-        for file in files {
-            if let Some(src) = repo.read(&file, problems) {
-                linted += 1;
-                doctrine::check(&file, &src, problems);
-            }
+    let linted = lint_examples(repo, problems);
+
+    let recipes_md = format!("{SKILL_DIR}/{RECIPES_MD}");
+    // An unreadable skill is already reported by `mention::read_skill`.
+    let mut in_sync = 0;
+    if let Some(files) = &skill {
+        if let Some((_, text)) = files.iter().find(|(path, _)| *path == recipes_md) {
+            in_sync = recipes::check(repo, &recipes_md, text, problems);
+        } else {
+            problems.add(&recipes_md, "cannot read: not in the Usage Skill");
         }
     }
 
     format!(
-        "{mentioned} public items mentioned, {entries} component entries checked, {linted} template files linted"
+        "{mentioned} public items mentioned, {entries} component entries checked, {linted} example files linted, {in_sync} recipes in sync"
     )
+}
+
+/// The doctrine lint over `examples/<crate>/{src,tests}` (missing subdirectories are
+/// skipped, and nothing else of a crate, such as `target/`, is read); returns how
+/// many files it linted.
+fn lint_examples(repo: &Repo<'_>, problems: &mut Problems) -> usize {
+    let Ok(entries) = fs::read_dir(repo.path(EXAMPLES_DIR)) else {
+        problems.add(EXAMPLES_DIR, "cannot read: not a directory");
+        return 0;
+    };
+    let mut crates: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    crates.sort();
+    let mut linted = 0;
+    for name in crates {
+        for sub in EXAMPLE_SUBDIRS {
+            let Some(files) = repo.files(&format!("{EXAMPLES_DIR}/{name}/{sub}"), "rs") else {
+                continue;
+            };
+            for file in files {
+                if let Some(src) = repo.read(&file, problems) {
+                    linted += 1;
+                    doctrine::check(&file, &src, problems);
+                }
+            }
+        }
+    }
+    linted
 }
 
 /// Reads and parses the snapshot (M9, H5, L16).
@@ -204,5 +240,38 @@ fn read_snapshot(
             }
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R7: every example crate's `src/` and `tests/` are linted, nothing else.
+    #[test]
+    fn r7_doctrine_covers_every_example() {
+        let root = std::env::temp_dir().join(format!("xtask-skill-r7-{}", std::process::id()));
+        let write = |rel: &str, src: &str| {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, src).unwrap();
+        };
+        let spawn = "impl X {\n#[handler]\nasync fn handle(self, ctx: ComponentCtx) { tokio::spawn(f()); }\n}\n";
+        write("examples/project-template/src/lib.rs", "fn ok() {}\n");
+        write("examples/project-template/tests/flows.rs", "fn ok() {}\n");
+        write("examples/ui-recipes/src/tabs.rs", spawn);
+        write("examples/ui-recipes/target/release/build/gen.rs", spawn);
+        write("examples/ui-recipes/benches/b.rs", spawn);
+        let mut problems = Problems::default();
+        let linted = lint_examples(&Repo { root: &root }, &mut problems);
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(linted, 3);
+        let got: Vec<String> = problems.0.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            got,
+            [
+                "skill-check: examples/ui-recipes/src/tabs.rs:3: [UD-7] task spawned per interaction or event; use a Ref TTL or a port"
+            ]
+        );
     }
 }

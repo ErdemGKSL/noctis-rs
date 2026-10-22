@@ -219,7 +219,7 @@ pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
 pub use component::{__Absent, __ExpiredHook, __HookCtx, __StaleHook};
 pub use component::{
     ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ModalHandler,
-    ModalSubmitCtx,
+    ModalSubmitCtx, SelectedValues,
 };
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{

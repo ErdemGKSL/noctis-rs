@@ -4,7 +4,8 @@
 //! Route on the decoded struct, with a responder over the interaction.
 //!
 //! 1. **Read the input:** the `custom_id` (and, for a click, the component
-//!    type) from the interaction; a modal submit is parsed as a
+//!    type and the picked values, as [`SelectedValues`]) from the
+//!    interaction; a modal submit is parsed as a
 //!    [`ModalSubmission`]; the source message (`message.id`, `channel_id`,
 //!    `flags`) is read from the raw JSON.
 //! 2. **Look up the Route:** split the `custom_id` once with
@@ -91,7 +92,7 @@ use super::{
 use crate::command::CtxInner;
 use crate::component::{
     Begin, ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ExpiredLink,
-    HandlerFuture, ModalHandler, ModalSubmitCtx,
+    HandlerFuture, ModalHandler, ModalSubmitCtx, SelectedValues,
 };
 use crate::handler::AppShared;
 use crate::middleware::{Around, Invocation, RunInfo};
@@ -185,10 +186,12 @@ pub(crate) const fn kind_of(kind: ComponentType) -> Option<ComponentKind> {
 
 /// What the interaction carries.
 enum Input {
-    /// A click: the `custom_id` and the component kind of its type.
+    /// A click: the `custom_id`, the component kind of its type and the
+    /// values a select picked.
     Component {
         custom_id: String,
         kind: Option<ComponentKind>,
+        values: SelectedValues,
     },
     /// A modal submit.
     Modal(Box<ModalSubmission>),
@@ -480,8 +483,10 @@ fn read_input(
         InteractionType::MessageComponent => Some(match data {
             Some(InteractionData::MessageComponent(data)) => {
                 let data = *data;
+                let kind = kind_of(data.component_type);
                 Ok(Input::Component {
-                    kind: kind_of(data.component_type),
+                    values: SelectedValues::from_data(kind, data.values, data.resolved.as_ref()),
+                    kind,
                     custom_id: data.custom_id,
                 })
             }
@@ -691,6 +696,10 @@ pub(crate) async fn run_component_over(
         },
         run: around.run(),
         member_permissions: member.and_then(|m| m.permissions),
+        values: match &input {
+            Input::Component { values, .. } => values.clone(),
+            Input::Modal(_) => SelectedValues::default(),
+        },
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
     let state = shared_for(transport, target.response());

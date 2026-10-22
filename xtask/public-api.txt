@@ -576,6 +576,7 @@ pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_m
 pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
@@ -1490,6 +1491,22 @@ impl core::cmp::PartialEq for noctis::Runtime
 pub fn noctis::Runtime::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::Runtime
 pub fn noctis::Runtime::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::SelectedValues
+impl noctis::SelectedValues
+pub fn noctis::SelectedValues::channels(&self) -> &[twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>]
+pub fn noctis::SelectedValues::roles(&self) -> &[twilight_model::id::Id<twilight_model::id::marker::RoleMarker>]
+pub fn noctis::SelectedValues::strings(&self) -> &[alloc::string::String]
+pub fn noctis::SelectedValues::users(&self) -> &[twilight_model::id::Id<twilight_model::id::marker::UserMarker>]
+impl core::clone::Clone for noctis::SelectedValues
+pub fn noctis::SelectedValues::clone(&self) -> Self
+impl core::cmp::Eq for noctis::SelectedValues
+impl core::cmp::PartialEq for noctis::SelectedValues
+pub fn noctis::SelectedValues::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::SelectedValues
+pub fn noctis::SelectedValues::default() -> Self
+impl core::fmt::Debug for noctis::SelectedValues
+pub fn noctis::SelectedValues::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::SelectedValues
 pub proc macro noctis::#[derive(SlashCommand)]
 #[non_exhaustive] pub enum noctis::StartError
 pub noctis::StartError::CryptoProvider
@@ -3329,6 +3346,7 @@ pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<t
 pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_

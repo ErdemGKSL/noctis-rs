@@ -1530,6 +1530,7 @@ impl Dispatcher {
             run: around.run(),
             member_permissions: None,
             shared: None,
+            values: crate::component::SelectedValues::default(),
         };
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),

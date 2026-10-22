@@ -123,6 +123,9 @@ pub(crate) struct CtxInner {
     /// `ctx.reply_text` answer through; `None` only for contexts built by
     /// hand in crate unit tests (they answer `NoReply`).
     pub(crate) shared: Option<Arc<Shared>>,
+    /// The values a select click picked; empty for every other
+    /// interaction.
+    pub(crate) values: crate::component::SelectedValues,
 }
 
 impl CtxInner {
@@ -168,6 +171,7 @@ impl CtxInner {
             run: None,
             member_permissions: None,
             shared: None,
+            values: crate::component::SelectedValues::default(),
         }
     }
 }

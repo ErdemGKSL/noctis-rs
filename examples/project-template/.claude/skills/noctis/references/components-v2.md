@@ -391,8 +391,12 @@ Shared fields of all five:
   Text Display, never nothing.
 - More than 25 items: page them (25 options per page with prev/next, `views-and-recipes.md` §3.2).
 - `derive(Choices)` enums can produce options: `Severity::select_options(locale)` [planned].
-- Selected values in the handler: `ctx.values().strings()`, `.users()`, `.roles()`,
-  `.mentionables()`, `.channels()`, plus `ctx.resolved()` [planned].
+- Selected values in the handler: `ctx.values()` returns a `SelectedValues` typed by the
+  select's kind: `.strings()` (every raw value, any kind), `.users()`, `.roles()` and
+  `.channels()` (ids in the order sent, duplicates kept); a Mentionable Select's values
+  are split into `.users()` and `.roles()` by the interaction's resolved data. A value
+  that is not an id stays in `.strings()` only. Resolved entities (`ctx.resolved()`) are
+  [planned].
 
 ### 10a. String Select: `StringSelect`
 

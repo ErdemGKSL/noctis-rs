@@ -24,7 +24,7 @@ use noctis::ui::{
     Mentionable, ResolvedChannel, ResolvedMessage, ResolvedRole, ResolvedUser, Section,
     TextDisplay, V2Message,
 };
-use noctis::{Permissions, Plugin, ResponderError};
+use noctis::{Permissions, Plugin, ResponderError, SelectedValues};
 use noctis_testkit::{
     Response, ResponseKind, TestApp, TestComponent, TestError, TestGuild, TestMessage, TestUser,
     WireCost, render_json,
@@ -870,9 +870,22 @@ struct PickStr;
 impl PickStr {
     #[handler]
     async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-        note!(ctx, "pick");
+        note!(ctx, "pick {}", picks(ctx.values()));
         ctx.update(selects_view()).await
     }
+}
+
+/// What a select handler picked (`ctx.values()`, X7): the raw values, then
+/// the typed ids.
+fn picks(values: &SelectedValues) -> String {
+    let ids = |ids: Vec<u64>| format!("{ids:?}");
+    format!(
+        "s{:?} u{} r{} c{}",
+        values.strings(),
+        ids(values.users().iter().map(|id| id.get()).collect()),
+        ids(values.roles().iter().map(|id| id.get()).collect()),
+        ids(values.channels().iter().map(|id| id.get()).collect()),
+    )
 }
 
 macro_rules! select_route {
@@ -884,7 +897,7 @@ macro_rules! select_route {
         impl $name {
             #[handler]
             async fn handle(self, ctx: ComponentCtx) -> HandlerResult<Responded> {
-                note!(ctx, $id);
+                note!(ctx, "{} {}", $id, picks(ctx.values()));
                 ctx.update(view($id)).await
             }
         }
@@ -1845,7 +1858,13 @@ async fn string_select_bounds_and_freshness() -> Result<(), TestError> {
     assert_eq!(rerendered.kind(), ResponseKind::Update);
     let fresh = by_route(&rerendered, "pick");
     assert_ne!(fresh.custom_id(), pick.custom_id());
-    assert_eq!(log.lines(), ["pick", "pick"]);
+    assert_eq!(
+        log.lines(),
+        [
+            r#"pick s["a"] u[] r[] c[]"#,
+            r#"pick s["a", "b"] u[] r[] c[]"#
+        ]
+    );
     Ok(())
 }
 
@@ -1889,7 +1908,12 @@ async fn entity_selects_resolve_seeds() -> Result<(), TestError> {
     );
     assert_eq!(
         log.lines(),
-        ["pick.user", "pick.role", "pick.chan", "pick.who"]
+        [
+            r#"pick.user s["41"] u[41] r[] c[]"#,
+            r#"pick.role s["30"] u[] r[30] c[]"#,
+            r#"pick.chan s["20"] u[] r[] c[20]"#,
+            r#"pick.who s["41", "30"] u[41] r[30] c[]"#,
+        ]
     );
     Ok(())
 }

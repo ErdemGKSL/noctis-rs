@@ -1,0 +1,19 @@
+[package]
+name = "ui-recipes"
+description = "The Usage Skill's UI recipes (tabs, pagination, step flow, settings screen), compiled and tested."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+noctis.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+noctis = { workspace = true, features = ["testkit"] }
+
+[lints]
+workspace = true

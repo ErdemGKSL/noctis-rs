@@ -13,6 +13,7 @@ members = [
     "crates/noctis-image",
     "crates/noctis-prefix",
     "crates/noctis-testkit",
+    "examples/ui-recipes",
     "xtask",
 ]
 # The template is a standalone bot with its own empty `[workspace]`.
