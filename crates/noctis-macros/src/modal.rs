@@ -526,7 +526,9 @@ fn screaming(key: &str) -> String {
 /// An input named `title` (the overrides' own field) or one whose handle
 /// would shadow a derived associated const is an error.
 fn check_reserved(def: &FieldDef) -> syn::Result<()> {
-    if def.key == "title" {
+    // A Text Display has no overrides field, and neither it nor a File
+    // Upload gets an `X::<FIELD>` handle.
+    if def.key == "title" && def.kind != Kind::TextDisplay {
         return Err(syn::Error::new_spanned(
             &def.ident,
             format!(
@@ -536,7 +538,7 @@ fn check_reserved(def: &FieldDef) -> syn::Result<()> {
         ));
     }
     let handle = screaming(&def.key);
-    if RESERVED_CONSTS.contains(&handle.as_str()) {
+    if prefills(def.kind) && RESERVED_CONSTS.contains(&handle.as_str()) {
         return Err(syn::Error::new_spanned(
             &def.ident,
             format!(
@@ -1974,6 +1976,20 @@ mod tests {
             }
         ));
         assert!(name.contains("const NAME"), "{name}");
+        // Kinds without a handle (and Text Display without an overrides
+        // field) may use those names.
+        let free = run(quote!(
+            #[modal("f", defaults(title = "T"))]
+            struct F {
+                #[text_display("Heading")]
+                title: (),
+                #[text_display("Intro")]
+                id: (),
+                #[file_upload("F")]
+                route: Vec<A>,
+            }
+        ));
+        assert!(!free.contains("cannot be named"), "{free}");
     }
 
     /// The return type of the generated `blank`.

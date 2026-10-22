@@ -719,3 +719,78 @@ fn s9_channel_overrides() {
         json!([{"id": "9", "type": "channel"}])
     );
 }
+
+/// Replaces every key with `T:<key>` and returns the serialized JSON text.
+fn tag(key: noctis_rules::MessageKey) -> String {
+    format!("T:{}", key.as_str())
+}
+
+/// `resolve_keys` walks every stored `Text`: nested and accessory buttons,
+/// select placeholders, Legacy rows, and the modal's Label texts,
+/// descriptions and input placeholders.
+#[test]
+fn resolve_keys_walks_every_text() {
+    use noctis_rules::MessageKey;
+    use noctis_ui::{
+        CallbackFlags, Container, LegacyMessage, ModalLabel, ModalUserSelect, Section, TextDisplay,
+        TextInput, TextInputStyle,
+    };
+
+    let keyed = |key: &'static str| button(Buy { item: 1 }).label(MessageKey::new(key));
+    let pick =
+        || build_user_select(Pick {}, &Pick::DEFAULTS).placeholder(MessageKey::new("k.pick"));
+    let resolve = |ids: &mut dyn Iterator<Item = &mut noctis_ui::CustomId>| {
+        for id in ids {
+            if id.get().is_none() {
+                let nonce = SelectNonce::new(1).expect("in range");
+                assert_eq!(id.resolve(&Parts::new().with_nonce(nonce)), Ok(None));
+            }
+        }
+    };
+
+    let mut v2 = V2Message::new(
+        Components::new()
+            .push(Container::new().push(ActionRow::buttons([keyed("k.nested")])))
+            .push(Section::new([TextDisplay::new("a")], keyed("k.accessory")))
+            .push(ActionRow::select(pick())),
+    );
+    v2.resolve_keys(&mut tag);
+    resolve(&mut v2.custom_ids_mut());
+    let text = to_json(&v2.callback_body(CallbackFlags::empty())).to_string();
+    for key in ["k.nested", "k.accessory", "k.pick"] {
+        assert!(text.contains(&format!("\"T:{key}\"")), "{key}: {text}");
+        assert!(!text.contains(&format!("\"{key}\"")), "{key}: {text}");
+    }
+
+    let mut legacy = LegacyMessage::new("x").rows([
+        ActionRow::buttons([keyed("k.row")]),
+        ActionRow::select(pick()),
+    ]);
+    legacy.resolve_keys(&mut tag);
+    resolve(&mut legacy.custom_ids_mut());
+    let text = to_json(&legacy.callback_body(CallbackFlags::empty())).to_string();
+    for key in ["k.row", "k.pick"] {
+        assert!(text.contains(&format!("\"T:{key}\"")), "{key}: {text}");
+        assert!(!text.contains(&format!("\"{key}\"")), "{key}: {text}");
+    }
+
+    let mut modal = build_modal::<Bio>(Bio { user: Id::new(1) }, Bio::DEFAULTS.title)
+        .push(
+            ModalLabel::new(
+                MessageKey::new("k.label"),
+                TextInput::new("bio", TextInputStyle::Short)
+                    .placeholder(MessageKey::new("k.input")),
+            )
+            .description(MessageKey::new("k.description")),
+        )
+        .push(ModalLabel::new(
+            "Who",
+            ModalUserSelect::new("who").placeholder(MessageKey::new("k.select")),
+        ));
+    modal.resolve_keys(&mut tag);
+    let text = to_json(&modal).to_string();
+    for key in ["k.label", "k.input", "k.description", "k.select"] {
+        assert!(text.contains(&format!("\"T:{key}\"")), "{key}: {text}");
+        assert!(!text.contains(&format!("\"{key}\"")), "{key}: {text}");
+    }
+}

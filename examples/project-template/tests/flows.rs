@@ -15,6 +15,7 @@ use noctis::testkit::{ResponseKind, TestApp, TestGuild, TestUser};
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 use noctis_bot_template::configure;
+use noctis_bot_template::modules::profile::EditBio;
 use noctis_bot_template::modules::setup::{PickLogChannel, PickModRole};
 
 const GUILD: Id<GuildMarker> = Id::new(100);
@@ -141,3 +142,49 @@ async fn dashboard_module_autocomplete_suggests_stored_modules() -> anyhow::Resu
     assert!(forged.button("Overview")?.is_disabled());
     Ok(())
 }
+
+/// The `data` of a run's type-9 (modal) callback.
+macro_rules! modal_data {
+    ($response:expr) => {
+        $response
+            .http_calls()
+            .iter()
+            .filter_map(|c| c.json())
+            .find(|j| j["type"] == 9)
+            .map(|j| j["data"].clone())
+            .ok_or_else(|| anyhow::anyhow!("no modal callback"))
+    };
+}
+
+/// `/bio` opens a blank bio modal; after a save, "Edit bio" reopens it pre-filled with
+/// the stored bio and pronouns (FR-63).
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_bio_opens_pre_filled() -> anyhow::Result<()> {
+    let app = app().await?;
+
+    let opened = app.command("bio").by(MEMBER).in_guild(GUILD).run().await?;
+    assert_eq!(opened.kind(), ResponseKind::Modal);
+    let blank = modal_data!(opened)?;
+    let inputs = &blank["components"];
+    assert!(inputs[0]["component"].get("value").is_none(), "{blank}");
+    let options = inputs[1]["component"]["options"].as_array().cloned().unwrap_or_default();
+    assert!(!options.is_empty(), "{blank}");
+    assert!(options.iter().all(|o| o.get("default").is_none()), "{blank}");
+
+    let form = opened.modal()?.text("bio", "Hello there").radio("pronouns", "they");
+    let saved = app.submit(form).run().await?;
+    assert_eq!(saved.kind(), ResponseKind::Reply);
+
+    let edit = app.click(saved.component::<EditBio>()?).by(MEMBER).run().await?;
+    assert_eq!(edit.kind(), ResponseKind::Modal);
+    let filled = modal_data!(edit)?;
+    let inputs = &filled["components"];
+    assert_eq!(inputs[0]["component"]["value"], "Hello there", "{filled}");
+    let options = inputs[1]["component"]["options"].as_array().cloned().unwrap_or_default();
+    let defaults: Vec<_> =
+        options.iter().filter(|o| o["default"] == true).map(|o| o["value"].clone()).collect();
+    assert_eq!(defaults, ["they"], "{filled}");
+    app.stop().await?;
+    Ok(())
+}
+

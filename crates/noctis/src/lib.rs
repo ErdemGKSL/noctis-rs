@@ -2379,7 +2379,7 @@ pub mod ui {
     //!   (presentation only; each `Some` replaces, later calls win). An
     //!   input named `title`, or one whose handle would shadow a derived
     //!   const (`ID`, `SHAPE`, `SCHEMA`, `DEFAULTS`, `RUNTIME`, `ROUTE`,
-    //!   `RESPONSE`, `GUARDED`, `NAME`), is a compile error.
+    //!   `RESPONSE`, `GUARDED`), is a compile error.
     //! - Pre-fill limits are validator rules checked before sending, in
     //!   every mode: a value over 4000 or over its own `max_length`
     //!   (MOD-05), more defaults than `max_values` (CV2-09; MOD-07 for a

@@ -391,6 +391,14 @@ impl App {
         &self.shared
     }
 
+    /// Replaces the App's strings; only before the App is shared.
+    #[cfg(test)]
+    pub(crate) fn set_strings(&mut self, strings: Arc<dyn noctis_rules::Translate>) {
+        Arc::get_mut(&mut self.shared)
+            .expect("the App is not shared yet")
+            .strings = strings;
+    }
+
     /// The App's Discord HTTP edge.
     pub(crate) fn edge(&self) -> &Edge {
         &self.shared.edge

@@ -1227,6 +1227,77 @@ async fn t3_keys_resolve_in_the_response_locale() {
         .unwrap()
         .done();
     assert_eq!(sent_label(&fx.requests()[0].2), "Buy");
+
+    t3_later_sends(&fx).await;
+}
+
+/// The label of the first button of a webhook (follow-up or edit) body.
+fn body_label(body: &Value) -> Value {
+    body["components"][0]["components"][0]["label"].clone()
+}
+
+/// T3 for the sends after the first response: follow-ups, edits of a
+/// deferred response, an update after a type-6 defer and a follow-up edit.
+async fn t3_later_sends(fx: &Fixture) {
+    let tr_de = |shared| with_locales(shared, Some("tr"), Some("de"));
+
+    // After a public reply: an ephemeral and a public follow-up, then an
+    // edit of the ephemeral one.
+    clear(fx);
+    let shared = tr_de(fx.component(Declared::Reply(Ephemerality::Public), v2_source()));
+    let acked = component(&shared).reply(v2("a")).await.unwrap();
+    let private = acked
+        .follow_up(keyed("shop.buy"), Visibility::Ephemeral)
+        .await
+        .unwrap();
+    let _public = acked
+        .follow_up(keyed("shop.buy"), Visibility::Public)
+        .await
+        .unwrap();
+    private.edit(keyed("shop.buy")).await.unwrap();
+    let _ = acked.done();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 4, "{requests:?}");
+    assert_eq!(body_label(&requests[1].2), "Al", "ephemeral follow-up");
+    assert_eq!(body_label(&requests[2].2), "Kaufen", "public follow-up");
+    assert_eq!(body_label(&requests[3].2), "Al", "follow-up edit");
+
+    // An ephemeral type-5 defer, then `reply` or `ctx.respond`: an edit.
+    for respond in [false, true] {
+        clear(fx);
+        let shared = tr_de(fx.component(Declared::Reply(Ephemerality::Ephemeral), v2_source()));
+        assert!(shared.auto_defer().await);
+        if respond {
+            shared.ctx_respond(keyed("shop.buy").into()).await.unwrap();
+        } else {
+            let _ = component(&shared)
+                .reply(keyed("shop.buy"))
+                .await
+                .unwrap()
+                .done();
+        }
+        let requests = fx.requests();
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert_eq!(requests[1].0, Method::PATCH);
+        assert_eq!(body_label(&requests[1].2), "Al", "respond: {respond}");
+    }
+
+    // A type-6 defer of an ephemeral source, then `update`: an edit.
+    clear(fx);
+    let shared = tr_de(fx.component(
+        Declared::Update,
+        source(MessageFormat::V2, Ephemerality::Ephemeral),
+    ));
+    assert!(shared.auto_defer().await);
+    let _ = component(&shared)
+        .update(keyed("shop.buy"))
+        .await
+        .unwrap()
+        .done();
+    let requests = fx.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].0, Method::PATCH);
+    assert_eq!(body_label(&requests[1].2), "Al", "update after type 6");
 }
 
 /// T4: a key with no translation is sent as the key, with one `warn` on
@@ -1304,24 +1375,92 @@ async fn t5_resolved_text_is_validated() {
     assert!(label.ends_with('…'), "{label}");
 }
 
+/// A component Responder's state on the fixture in limit mode `mode`.
+fn shared_in(fx: &Fixture, mode: LimitMode, declared: Declared) -> Arc<Shared> {
+    let transport = Transport::Interaction(InteractionTarget {
+        app: Arc::clone(fx.app.shared()),
+        application_id: Id::new(7),
+        interaction_id: Id::new(100),
+        token: "tok".to_owned(),
+        received_at: Instant::now(),
+        channel_id: Some(Id::new(9)),
+        file_limit: None,
+    });
+    let mut limits = fx.app.limits().clone();
+    limits.mode = mode;
+    Shared::declared(transport, declared, v2_source(), limits, None)
+}
+
 /// M17, M20: `show_modal` takes `impl Into<Modal>` and validates before
-/// sending: a value over its `max_length` is `Invalid` with no callback.
+/// sending, in every mode: a value over 4000 or its `max_length` (MOD-05),
+/// a Checkbox Group over `max_values` or a Radio Group with two defaults
+/// (MOD-07) and a modal select over `max_values` (CV2-09) are `Invalid`
+/// with no callback.
 #[tokio::test]
 async fn m17_show_modal_validates_before_sending() {
+    use noctis_ui::{CheckboxGroup, ModalInput, ModalOption, ModalUserSelect, RadioGroup};
+
+    fn modal(input: impl ModalInput) -> Modal {
+        noctis_ui::__macro::build_modal::<Form>(Form { item: 1 }, "Form")
+            .push(ModalLabel::new("Input", input))
+    }
+    fn options() -> [ModalOption; 3] {
+        ["a", "b", "c"].map(|v| ModalOption::new(v.to_uppercase(), v).default(true))
+    }
+    let cases: [(fn() -> Modal, RuleId); 5] = [
+        (
+            || modal(TextInput::new("bio", TextInputStyle::Paragraph).value("x".repeat(4001))),
+            RuleId::MOD_05,
+        ),
+        (
+            || {
+                modal(
+                    TextInput::new("bio", TextInputStyle::Short)
+                        .max_length(5)
+                        .value("toolong"),
+                )
+            },
+            RuleId::MOD_05,
+        ),
+        (
+            || modal(CheckboxGroup::new("pick", options()).max_values(2)),
+            RuleId::MOD_07,
+        ),
+        (
+            || {
+                modal(RadioGroup::new(
+                    "one",
+                    [
+                        ModalOption::new("A", "a").default(true),
+                        ModalOption::new("B", "b").default(true),
+                    ],
+                ))
+            },
+            RuleId::MOD_07,
+        ),
+        (
+            || {
+                modal(
+                    ModalUserSelect::new("who")
+                        .max_values(3)
+                        .default_users([1, 2, 3, 4].map(Id::new)),
+                )
+            },
+            RuleId::CV2_09,
+        ),
+    ];
     let fx = Fixture::start(discord()).await;
-    let shared = fx.component(Declared::Update, v2_source());
-    let manual: ComponentResponder<Manual> = Responder::new(Arc::clone(&shared));
-    let over =
-        noctis_ui::__macro::build_modal::<Form>(Form { item: 1 }, "Form").push(ModalLabel::new(
-            "Bio",
-            TextInput::new("bio", TextInputStyle::Short)
-                .max_length(5)
-                .value("toolong"),
-        ));
-    let err = manual.show_modal(over).await.unwrap_err();
-    let ResponderError::Invalid(UiError::Limits { violations }) = &err else {
-        panic!("{err}");
-    };
-    assert_eq!(violations[0].rule, RuleId::MOD_05);
-    assert!(fx.requests().is_empty());
+    for mode in [LimitMode::Strict, LimitMode::Lenient] {
+        for (i, (build, rule)) in cases.iter().enumerate() {
+            clear(&fx);
+            let shared = shared_in(&fx, mode, Declared::Update);
+            let manual: ComponentResponder<Manual> = Responder::new(shared);
+            let err = manual.show_modal(build()).await.unwrap_err();
+            let ResponderError::Invalid(UiError::Limits { violations }) = &err else {
+                panic!("{mode:?} case {i}: {err}");
+            };
+            assert_eq!(violations[0].rule, *rule, "{mode:?} case {i}");
+            assert!(fx.requests().is_empty(), "{mode:?} case {i}");
+        }
+    }
 }

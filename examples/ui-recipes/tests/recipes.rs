@@ -335,7 +335,18 @@ async fn settings_rename_through_a_modal() -> Result<(), TestError> {
     );
     assert!(saved.text().contains("**Destek 🎫**"));
 
+    // The reopened modal is pre-filled with the stored name.
     let opened = app.click(saved.button("Rename")?).run().await?;
+    let modal = opened
+        .http_calls()
+        .iter()
+        .filter_map(|c| c.json())
+        .find(|j| j["type"] == 9)
+        .expect("a type-9 callback");
+    assert_eq!(
+        modal["data"]["components"][0]["component"]["value"], "Destek 🎫",
+        "{modal}"
+    );
     let bold = app
         .submit(opened.modal()?.text("name", "*bold*"))
         .run()

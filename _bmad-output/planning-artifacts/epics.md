@@ -2509,7 +2509,7 @@ So that every component for that Route looks consistent and I override only what
 
 **Given** a component struct with its mandatory `defaults(..)` block (maintainer decisions §7, AD-6, AD-19; associated const on `ComponentRoute`), e.g. `#[button("punish-history-set", defaults(style = Secondary, label = "punish.next", emoji = "➡️"))]` or `#[string_select("ticket-system", defaults(placeholder = "ticket.pick", options = TicketKind))]`
 **When** it compiles
-**Then** a missing `defaults` block or required key (Button: `style` and `label` or `emoji`; selects: `placeholder`; modal: `title`) is a compile error naming the kind's required keys, an unknown key is a compile error, literal values are checked against Discord's limits (CV2-08, CV2-09, MOD-01 fixtures), omitted keys take the documented kind defaults (`min_values = 1`, `max_values = 1`, `disabled = false`), and text defaults are literals without `i18n` or locale keys checked against the default-locale file with it (AD-16)
+**Then** a missing `defaults` block or required key (Button: `style` and `label` or `emoji`; selects: `placeholder`; modal: `title`) is a compile error naming the kind's required keys, an unknown key is a compile error, literal values are checked against Discord's limits (CV2-08, CV2-09, MOD-01 fixtures), omitted keys take the documented kind defaults (`min_values = 1`, `max_values = 1`, `disabled = false`), and a text default's syntax decides its meaning (maintainer decisions §9): a string literal is always literal text, and a path is a locale key, a compile error "[planned, Epic 11]" until Story 11.1
 
 **Given** `R { .. }.build()` with no overrides
 **When** the component is built

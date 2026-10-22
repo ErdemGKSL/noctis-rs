@@ -194,9 +194,9 @@ impl EditBio {
             .await?
             .unwrap_or_default();
         let form = BioForm {
-            user: self.user,
             bio: stored.bio,
             pronouns: stored.pronouns,
+            ..BioForm::blank(self.user)
         };
         Ok(responder.show_modal(form.build()).await?.done())
     }

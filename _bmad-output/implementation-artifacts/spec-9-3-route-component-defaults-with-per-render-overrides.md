@@ -2,10 +2,10 @@
 title: 'Story 9.3: Route component defaults with per-render overrides'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '9693e7a90f4d2e2b446b375722f63be8f3ad8bb5'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-9-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -274,6 +274,44 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 34 findings — high 0, medium 8, low 11, false 15, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) Facade docs list `NAME` as a reserved input handle, the derive allows it — confirmed at `crates/noctis/src/lib.rs:2382` vs `RESERVED_CONSTS` (8 names, no `NAME`) and the m18 test; drop `NAME` from the facade list (grouped with the edge `NAME` row).
+  - `[medium]` `[patch]` (blind) No test covers the template "Edit bio" / `/bio` acceptance criteria; `modal_flow.rs` `EditBio` copy still builds `BioForm` by hand — confirmed: `examples/project-template/tests/*.rs` never opens the Edit Bio modal; add a template flow test and use `..BioForm::blank(..)` in the copy (grouped with vgap "example pre-fill call sites").
+  - `[medium]` `[patch]` (blind) Key resolution tested only for a top-level Route button and the modal title — confirmed: no test calls `V2Message`/`LegacyMessage`/`Modal::resolve_keys` on nested buttons, select placeholders or modal Label/description/placeholders; add a noctis-ui walk test (grouped with vgap "resolve_keys tree walk").
+  - `[low]` `[reject]` (blind) `Wire::texts_mut` default no-op lets a future node fail silently — every current `Text` holder overrides it (button.rs, select.rs, layout.rs); the harm is hypothetical and the fix (a required method on every `Wire` impl) adds churn; the walk test added above covers today's nodes.
+  - `[low]` `[patch]` (blind) Spine AD-19 amendment says "Every select takes `.default_values(..)`" but modal selects have only the appending setters — confirmed at the spine L890 and `modal/select.rs`; the spec scopes `.default_values` to message selects, so narrow the spine sentence to message (Route) selects.
+  - `[false]` `[reject]` (blind) Empty String Select default list clears option defaults without saying so — `StringSelect::default_values` docs (`select.rs:399-404`) say exactly the listed options get `default: true` whatever their own flag, and `noctis-rules` `component/tests.rs:624` covers the empty list.
+  - `[low]` `[reject]` (blind) Locale visibility is read before the gate is taken — real (`responder.rs` `reply`/`update` call `prepare` before `gate.lock()`), but it only bites when an auto-defer lands during `prepare`, the send visibility differs from the defer's, the text is keyed and user/guild locales differ; the fix needs re-preparing after the lock, not a direct correction.
+  - `[false]` `[reject]` (blind) Translations never get arguments — the spec fixes `Text::Key(MessageKey)` without arguments and bot catalogs arrive in Epic 11; today only `noctis.*` keys resolve, none of which is passed as a `Text` with placeholders.
+  - `[false]` `[reject]` (blind) "One `warn`" is per occurrence — the spec's "one `warn`" is per unresolved key lookup, which is what `I18n::text` does and T4 asserts.
+  - `[low]` `[reject]` (blind) `FileUploadField::prefill` returns a fake options pre-fill — hidden method never called (`prefills(Kind::FileUpload)` is false, no handle is generated); removing it needs a new macro arm, not worth it for an unreachable hidden path.
+  - `[false]` `[reject]` (blind) Test translator matches on `Debug` output, so a `Debug` change would silently pass — a changed `Debug` would send every case to `"Buy"`, which T3's `Al`/`Kaufen` assertions reject loudly; nothing passes silently.
+  - `[false]` `[reject]` (blind) Modal String/entity select defaults are not checked against `min_values` — `check_select` (`noctis-rules/src/component.rs:964-965`) runs `between(min, max, defaults)` whenever defaults > 0, so the lower bound is checked.
+  - `[medium]` `[patch]` (blind) M17 covers only the Strict `max_length` case — confirmed: `m17_show_modal_validates_before_sending` sends one hand-built modal; extend it with the M14 4001-char value and the M16 MOD-07/CV2-09 default counts, in Strict and Lenient (grouped with intent D7).
+  - `[low]` `[reject]` (edge) Auto-defer between visibility sampling and gate lock picks the wrong locale — same defect as the blind gate row; rejected for the same reason.
+  - `[false]` `[reject]` (edge) Detached seams build `Shared` without `set_i18n` — the spec says `Builtin` when detached; no App strings exist on a detached seam, so this is the specified behaviour.
+  - `[low]` `[patch]` (edge) Facade docs list `NAME` as reserved — same defect as the blind `NAME` row; drop `NAME`.
+  - `[low]` `[patch]` (edge) `check_reserved` runs on File Upload and Text Display fields, which get no handle (and Text Display no overrides field) — confirmed: `parse` calls it for every def (`modal.rs:642`) while `handle_consts` and the overrides struct skip those kinds; a Text Display named `title` (a natural heading name) is refused spuriously; skip the const check when `!prefills(kind)` and the `title` check for Text Display.
+  - `[low]` `[reject]` (edge) Two fields differing only in case map to one handle — Rust fields are snake_case (`Bio` warns), rustc still reports the duplicate const; adding a HashSet check is extra code for a case nobody writes.
+  - `[low]` `[reject]` (edge) `is_blankable` trusts a user type named `Option`/`Vec`/`String` — a shadowing user type is very unlikely and rustc reports the missing `Default`; restricting paths adds logic.
+  - `[false]` `[reject]` (edge) Duplicate `string_defaults` entries pass validation — the count is derived from options (`options.iter().filter(|o| list.contains(..))`), the wire marks options, and noctis-ui dedupes, so a duplicate never reaches Discord or inflates a count.
+  - `[medium]` `[patch]` (vgap) Pipeline wiring of App strings and run locales (`set_i18n` in `pipeline.rs:905`, `:1483`, `pipeline/component.rs:632`) is unverified — pre-verified; add a dispatch-level test with translated App strings and user/guild locales asserting the sent label for a command reply and a component update.
+  - `[medium]` `[patch]` (vgap) Response-locale choice for deferred, follow-up and edit sends is unpinned — pre-verified; extend `t3_keys_resolve_in_the_response_locale` with follow-up, deferred edit, `FollowupHandle::edit` and `ctx.respond` cases.
+  - `[medium]` `[patch]` (vgap) `resolve_keys` tree walk verified only for a top-level button and the modal title — pre-verified; same group as the blind key-resolution row.
+  - `[medium]` `[patch]` (vgap) Example pre-fill call sites not asserted (`ui-recipes` RenameSystem, template EditBio) — pre-verified; same group as the blind template-AC row; assert the reopened rename modal's `value` and add an Edit Bio flow test.
+  - `[false]` `[reject]` (intent D1) `.overrides` absent on `StringSelectBuilder` — the spec deliberately settles this (Boundaries, S10 `compile_fail` doctest).
+  - `[false]` `[reject]` (intent D2) `..X::blank(..)` struct update only for blankable forms — settled by the spec's Design Notes (§7 and §9 reconciled).
+  - `[false]` `[reject]` (intent D3) Modal `.build()` returns `ModalBuilder<X>` — specified (`X { .. }.build() -> ModalBuilder<X>`, `From` into `Modal`).
+  - `[false]` `[reject]` (intent D4) Reserved input names — specified in Boundaries (M18) and forced by `<X>Overrides { title, .. }`.
+  - `[false]` `[reject]` (intent D5) Runtime locale resolution beyond the criteria — §9 requires a key "resolved per response locale"; the spec settles the order and the warn.
+  - `[false]` `[reject]` (intent D6) Option texts stay `Cow` — the spec's Never list keeps option/TextDisplay/LinkButton localization for Epic 11.
+  - `[medium]` `[patch]` (intent D7) "Before sending" tested only on a hand-built modal — same group as the blind M17 row; the extended M17 cases cover the derived-modal limits through `show_modal`.
+  - `[low]` `[patch]` (intent D8) `epics.md` Story 9.3 AC1 still states the AD-16 feature-gated literal/key rule that §9 withdrew — confirmed (`epics.md` L2512); maintainer decisions require fixing the other document in the same change; reword that clause to §9's syntax rule.
+  - `[false]` `[reject]` (intent D9) Omitted keys are not sent — shipped 6.11 behaviour, the "documented kind defaults" reading; Discord applies them.
+  - `[false]` `[reject]` (intent D10) AC example's key-looking literal is sent verbatim — exactly §9's rule (a string literal is always hard-coded text).
+
 ## Design Notes
 
 - **`blank` return type.** The story and decision §7 want `blank` for "forms whose required inputs have no empty value", while §9 (newer, binding) wants `..X::blank(user)`, which needs `Self`. Both hold:
@@ -306,3 +344,12 @@ deferred: []
 - `cargo deny check` -- ok
 - `cargo +1.91 check --release --workspace` -- ok
 - `test ! -d target/debug` -- no debug profile
+
+## Auto Run Result
+
+- **Summary:** Route component defaults (`label`/`placeholder`/`emoji`/`style`/`disabled`, `Text` literal-or-key syntax per decision §9) with per-render `.overrides(..)` for message components, plus modal pre-fill (Story 9.4 merged in): derived `X::blank(..)`, typed `.value(X::FIELD, v)` consts, `<X>Overrides` structs, reserved input names, and Responder-side key resolution in the response locale.
+- **Files changed:** noctis-macros (route/modal derive: defaults, overrides, handles, reserved-name checks); noctis-ui (`Text`, `resolve_keys` walk, select `default_values`, modal builders); noctis-rules + `docs/discord-rules.md` (CV2-08/09, MOD-01/04/07 limits on defaults); noctis-core (responder locale resolution, pipeline `set_i18n` wiring, tests); noctis facade docs and trybuild/snapshot tests; `examples/project-template` (code, AGENTS.md, noctis skill references) and `examples/ui-recipes`; `xtask/public-api.txt` re-blessed; spine AD-19 and `epics.md` AC1 wording.
+- **Review findings:** 34 total (high 0, medium 8, low 11, false 15). Patched: 8 medium, 5 low (grouped into ~8 fixes): facade `NAME` reserved-list fix; template Edit Bio flow test + `..BioForm::blank(..)`; noctis-ui `resolve_keys` tree-walk test; M17 extended (M14/M16 limits, Strict and Lenient); dispatch-level App-strings/locale test; T3 extended to follow-up/deferred/edit/`ctx.respond`; `check_reserved` skipped for non-prefill kinds; spine AD-19 and epics.md AC1 rewording. Deferred: none. Rejected: `Wire::texts_mut` default no-op (hypothetical, churn); locale read before gate lock (blind+edge, narrow race, needs re-prepare after lock); hidden `FileUploadField::prefill` (unreachable); case-only duplicate field names (rustc reports); `is_blankable` shadowed-type trust (unlikely, rustc reports); plus 15 false findings (empty select default list documented, translator args are Epic 11, warn-per-lookup, Debug-based test translator fails loudly, min_values checked, detached `Builtin` specified, duplicate defaults deduped, D1-D6/D9/D10 settled by spec).
+- **Follow-up review recommended: true** (first pass, 8 medium patched, 0 high). Named risk: the newly added dispatch-level i18n wiring test and the extended locale-choice cases for deferred/follow-up/edit sends were written in this pass and have not been independently reviewed for whether they pin the intended locale order.
+- **Verification:** all local gates via `tools/story-loop/gates.sh` green (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91, no debug profile). CI paused by maintainer.
+- **Residual risks:** auto-defer landing between `prepare` and gate lock can pick the defer's locale for keyed text (rejected, narrow); only `noctis.*` keys resolve until Epic 11 catalogs; exhaustive Overrides structs make new fields breaking (accepted pre-1.0).

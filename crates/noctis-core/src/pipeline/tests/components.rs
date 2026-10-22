@@ -1174,6 +1174,87 @@ mod responses {
         );
     }
 
+    /// Story 9.3: the pipeline hands the Responder the App's strings and
+    /// the run's locales, so a `MessageKey` label resolves in the response
+    /// locale: the guild's for a public command reply, the user's for an
+    /// update of an ephemeral message.
+    #[tokio::test]
+    async fn keys_resolve_with_the_app_strings_and_run_locales() {
+        struct Shop;
+        impl noctis_rules::Translate for Shop {
+            fn translate(
+                &self,
+                locale: Locale,
+                key: MessageKey,
+                _: &[(&str, &dyn fmt::Display)],
+            ) -> Option<String> {
+                match (key.as_str(), locale) {
+                    ("shop.buy", Locale::Tr) => Some("Al".to_owned()),
+                    ("shop.buy", Locale::De) => Some("Kaufen".to_owned()),
+                    _ => None,
+                }
+            }
+        }
+        test_route!(KeyUpd, "key.upd", RouteShape::INLINE, 0);
+        fn keyed() -> V2Message {
+            let button = noctis_ui::__macro::build_button(
+                Buy { item: 1 },
+                &noctis_ui::__macro::ButtonDefaults {
+                    style: noctis_ui::ButtonStyle::Primary,
+                    label: Some("b"),
+                    emoji: None,
+                    disabled: false,
+                },
+            )
+            .label(MessageKey::new("shop.buy"));
+            V2Message::new(noctis_ui::Components::new().push(ActionRow::buttons([button])))
+        }
+        let module = Module::new("ui")
+            .__add(CommandHandler::__new_plain(
+                "ui::buy",
+                &["buy"],
+                "d",
+                |_: CommandCtx, _: CommandResponder| async { Ok(keyed()) },
+            ))
+            .__add(handler::<KeyUpd, AutoDefer, _, _, _>(
+                "c:key",
+                __Response::Update,
+                |_: KeyUpd, _: ComponentCtx, _: ComponentResponder| async { Ok(keyed()) },
+            ));
+        let mut p = Pipeline::start(module).await;
+        p.fx.app.set_strings(Arc::new(Shop));
+        let localized = |mut json: Value| {
+            json["locale"] = json!("tr");
+            json["guild_locale"] = json!("de");
+            json["guild_id"] = json!("9");
+            json
+        };
+        let label = |body: &Value| body["data"]["components"][0]["components"][0]["label"].clone();
+
+        p.run(inbound(&localized(interaction(
+            slash("buy", json!([])),
+            json!({}),
+        ))))
+        .await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(requests[0].2["type"], 4);
+        assert_eq!(label(&requests[0].2), "Kaufen", "{requests:?}");
+
+        p.fx.server.log.lock().unwrap().clear();
+        run_component(
+            Arc::clone(p.fx.app.registry()),
+            Arc::clone(p.fx.app.shared()),
+            on_message(&localized(click("0key.upd:1", 2)), 32832),
+            CancellationToken::new(),
+        )
+        .await;
+        let requests = p.requests();
+        assert_eq!(requests.len(), 1, "{requests:?}");
+        assert_eq!(requests[0].2["type"], 7);
+        assert_eq!(label(&requests[0].2), "Al", "{requests:?}");
+    }
+
     /// Story 7.8 rows 22-24: an `auto_defer = false` submit is never
     /// auto-deferred.
     #[tokio::test]

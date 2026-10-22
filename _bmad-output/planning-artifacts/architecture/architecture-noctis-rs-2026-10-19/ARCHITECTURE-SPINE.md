@@ -887,8 +887,8 @@ list in CI.
     Each Route component kind has one plain-data overrides struct
     (`ButtonOverrides`, `StringSelectOverrides`, `UserSelectOverrides`, …) applied
     with `.overrides(..)`; setters and overrides compose and the later call wins.
-    Every select takes `.default_values(..)` (duplicates count once; a String
-    Select default must name an option, CV2-09). `#[derive(Modal)]`'s
+    Every message (Route) select takes `.default_values(..)` (duplicates count
+    once; a String Select default must name an option, CV2-09). `#[derive(Modal)]`'s
     `X { .. }.build()` returns a `ModalBuilder<X>` (`.title(..)`,
     `.value(X::FIELD, v)` through typed `InputField` consts, `.overrides(<X>Overrides)`)
     that converts into `Modal`, pre-filling each input from its field (`None`,
