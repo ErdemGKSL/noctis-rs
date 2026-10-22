@@ -373,12 +373,14 @@ impl Warn {
   one render. Story 9.4's acceptance criteria moved into Story 9.3, and 9.4 is not
   implemented as a separate story.
 - Overrides are flexible: every kind gets an overrides struct (`ButtonOverrides`,
-  `StringSelectOverrides`, …, `ModalOverrides`) with every field an `Option` and a
+  `StringSelectOverrides`, …, and per modal `<Modal>Overrides`) with every field an `Option` and a
   `Default` impl, applied with `.overrides(ButtonOverrides { label: Some(..),
   ..Default::default() })` next to the chainable setters (the later call wins). Modal
   pre-fill uses struct update syntax over the blank value: `BioForm { bio: Some(v),
   ..BioForm::blank(user) }`. The Usage Skill shows both forms with examples.
 - A modal struct is its submitted data, not its component layout: the field attributes
   declare the components, the field values are the Payload plus the input values (what
-  the submit decodes into and what pre-fill sends). `ModalOverrides` therefore changes
-  presentation only (title; per input label, description, placeholder), never values.
+  the submit decodes into and what pre-fill sends). A modal's overrides struct is
+  generated per modal (`BioFormOverrides { title, bio: InputOverrides, .. }`, field names
+  checked by rustc) and changes presentation only (title; per input label, description,
+  placeholder), never values.
