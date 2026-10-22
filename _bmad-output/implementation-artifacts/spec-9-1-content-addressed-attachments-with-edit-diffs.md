@@ -2,10 +2,10 @@
 title: 'Story 9.1: Content-addressed attachments with edit diffs'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '7b3e9ebcd014c0f463fbf433126b04145aeb0beb'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-9-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -14,7 +14,21 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Template AGENTS.md and skill references still point modal pre-fill at "[planned, Story 9.4]" although Story 9.4 was merged into Story 9.3.
+    evidence: |-
+      examples/project-template/AGENTS.md:55, references/modals.md:51/168 and references/views-and-recipes.md:90/877/1427 name Story 9.4; maintainer-decisions.md section 9 and epics.md (commit d9efbb4, a maintainer-decision commit, not Story 9.1 work) moved it to 9.3. Story 9.3 should retag these lines. Separately, Story 9.1 retagged testing.md's File Upload submit as a bare "[planned]" because no story owns it.
+    location: >-
+      examples/project-template/AGENTS.md:55
+    severity: low
+  - summary: >-
+      maintainer-decisions.md section 9 overrides one sentence of section 7 without amending section 7 in place.
+    evidence: |-
+      Section 9 says it "replaces section 7's a literal without the i18n feature; with it, a locale key", but section 7 still carries the old text. It came from maintainer-decision commit c14f940, not from Story 9.1; the page's own header asks for the other text to be fixed in the same change.
+    location: >-
+      _bmad-output/planning-artifacts/maintainer-decisions.md section 7
+    severity: low
 ---
 
 <intent-contract>
@@ -184,6 +198,45 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 35 findings — high 0, medium 4, low 12, false 19, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) `notice` stores `KnownFiles::EMPTY` and drops what the reply learned — `notice` always sends a text-only `TextDisplay` V2 message with an empty `AttachmentSet`, so there is nothing to learn or keep.
+  - `[low]` `[reject]` (blind) kept entries carry no `description`, so a changed `Attachment::alt` on unchanged bytes never reaches Discord — real but rare (same bytes, new file-level alt); the visible alt is the component's; kept-entry `description` is undocumented and the spec's Design Notes deliberately send `{"id"}` only.
+  - `[low]` `[reject]` (blind) ATT-02 counts `payload_json` + file sizes, not multipart framing — only a request within a few hundred bytes of 25 MiB is affected; the spec fixes `json_len` as the payload_json length (matrix 25), so changing it is not a direct correction.
+  - `[low]` `[reject]` (blind) one upload is copied into the `Form` buffer and `form.build()` — transient copies are real, but the spec mandates twilight `Form` and no new dependency; avoiding them needs a streaming body, far more than a direct fix.
+  - `[false]` `[reject]` (blind) `Files::plan` couples a peeked `used_attachments()` to `attachment_set().iter()` — `used_attachments` is literally `self.attachments.iter().filter(..)` over the same set (`message/mod.rs:130`), so the orders cannot diverge; no named harm.
+  - `[low]` `[reject]` (blind) `file_limit` re-parses the raw interaction JSON — one extra small serde scan per interaction; folding it into the existing parse adds plumbing, and the spec places the parse in the pipeline.
+  - `[false]` `[reject]` (blind) `validate_rendered_image_alt` ignores `limits` and returns an empty path — the spec mandates both, and the rustdoc says "The path is empty and `limits` is not read" (`noctis-rules/src/attachment.rs:160-165`).
+  - `[medium]` `[patch]` (blind) no tests for attachments over the `Transport::Message` paths, ATT-03 through the Responder, follow-up budget — grouped with the vgap message-transport finding (ATT-03/ATT-02 part also covered by the budget patch); patch adds `message_transport_attachments` and Responder-level ATT-02/03 no-request tests.
+  - `[false]` `[reject]` (blind) `RecordedFile` appears twice in `xtask/public-api.txt` — `noctis::testkit` re-exports it once (`noctis/src/lib.rs:2673`); the second block is cargo-public-api listing `noctis_testkit::fake::RecordedFile` and the root re-export, a deterministic snapshot artifact the gate compares as is; no user-visible harm.
+  - `[low]` `[defer]` (blind) template `AGENTS.md` still says "[planned, Story 9.4]"; testing.md File Upload now bare "[planned]" — the 9.4 tags predate 9.1 and became stale through maintainer commit d9efbb4 (Story 9.3 owns the retag); no story owns File Upload submits, so a bare tag is honest.
+  - `[low]` `[defer]` (blind) epics/maintainer-decisions edits in range; section 9 contradicts section 7 — those are maintainer-decision commits (d9efbb4..c14f940), not 9.1's `96d0434`; the section 7/9 overlap is pre-existing to this story.
+  - `[false]` `[reject]` (blind) testkit `Wire::echo` silently drops unknown kept ids — the spec requires exactly that ("an unknown id is dropped"), and core only ever keeps ids learned from Discord.
+  - `[low]` `[reject]` (blind) core tests duplicate the testkit's multipart parser — test-only duplication; the boundary is random so a collision inside file bytes is negligible; sharing needs a new test-support dependency path.
+  - `[false]` `[reject]` (blind) uploading `update` silently forces `with_response=true` — the spec mandates it (Wire: "A type-7 update with at least one upload is sent `with_response=true`"); it changes only the response body, not the ack.
+  - `[low]` `[reject]` (edge) concurrent `FollowupHandle::edit` calls read one `files` snapshot — needs two simultaneous edits of the same follow-up, which also already race on `format`; a per-handle async lock adds state not demonstrated.
+  - `[low]` `[reject]` (edge) concurrent `@original` edits share a stale `Original.files` — same unlikely race as above, pre-existing shape for `Original`; a held lock is more than a direct fix.
+  - `[low]` `[reject]` (edge) kept attachment whose alt changed is not resent — same root cause and decision as the blind kept-`description` row.
+  - `[low]` `[reject]` (edge) ATT-02 ignores multipart overhead — same root cause and decision as the blind ATT-02 row.
+  - `[false]` `[reject]` (edge) a message object with an id but no `attachments` overrides `body.kept` — Discord's message object always carries `attachments` (twilight `Message` requires it), and the testkit echo always sets it.
+  - `[false]` `[reject]` (edge) Discord renames a sanitized filename so kept lookup misses — every name is content-addressed `<hex>.<ext>` (no second naming scheme), which Discord does not alter.
+  - `[false]` `[reject]` (edge) testkit `parts` mis-parses `filename=` before `name=` — the fake only receives bodies built by twilight `Form`, which always writes `name="..."; filename="..."`.
+  - `[false]` `[reject]` (edge) one malformed part makes the whole body non-multipart — same: twilight `Form` never emits a part without the blank-line terminator or a name.
+  - `[medium]` `[patch]` (vgap, pre-verified) pipeline wiring of `attachment_size_limit` into `InteractionTarget::file_limit` is untested — patch adds a pipeline-level test (raw interaction with the limit, over-limit reply → ATT-01 with that bound, no callback).
+  - `[medium]` `[patch]` (vgap, pre-verified) attachments over the message transport have no test — patch adds `message_transport_attachments` (reply, deferred finish, edit keeps by id).
+  - `[low]` `[patch]` (vgap, pre-verified) testkit echo for deferred edits and follow-ups is not asserted end to end — caused by this change's new `outcome.rs`/`wire.rs` arms; patch adds a TestApp flow clicking a deferred-edited message and a follow-up holding files.
+  - `[false]` `[reject]` (intent 1) "attached" narrowed to "referenced" — the spec deliberately settles it (Design Notes "Used = referenced"; V2 shows only referenced files) and AD-22 is amended accordingly.
+  - `[false]` `[reject]` (intent 2) keep-list knowledge is local — the listed loss cases hold no files to keep (notice is text-only, a type-5 defer has no attachments, detached has no message) or degrade to a safe re-upload as the spec settles.
+  - `[false]` `[reject]` (intent 3) Lenient over-length alt truncated, not rejected — the PRD (L668) defines Lenient as truncating text with "…"; the spec keeps Story 4.3's policy.
+  - `[false]` `[reject]` (intent 4) only the site's alt counts — Discord shows the component `description`; Story 4.3's test already treats file alt that way; the spec settles it.
+  - `[false]` `[reject]` (intent 5) rendered-alt rule tested at `validate`, not the send — `Shared::prepare` calls `noctis_ui::validate` before any body or transport and returns its error, so the send cannot go out.
+  - `[medium]` `[patch]` (intent 6) Upload Budget bot-author surface only partly exercised — grouped with the vgap `attachment_size_limit` finding; patch adds the pipeline test plus Responder-level ATT-02/ATT-03 no-request tests.
+  - `[false]` `[reject]` (intent 7) typed error reused — `ResponderError::Invalid(UiError::Limits)` is typed and names the rule id; the spec settles it.
+  - `[false]` `[reject]` (intent 8) mixed edit diff tested only at the internal surface — the mixed keep/upload/drop case is pinned through `Shared::body`, the same path `ctx.update` uses; no bad outcome.
+  - `[false]` `[reject]` (intent 9) ATT-07 and CV2-12 not addressed — ATT-07 stays tracked to Story 10.4 (`xtask/rules-pending.toml`, render formats, excluded by the spec's no-Epic-10 boundary); CV2-12 holds by construction.
+  - `[false]` `[reject]` (intent 10) out-of-intent planning edits in the diff — they are separate maintainer-decision commits (d9efbb4..c14f940); the 9.1 commit `96d0434` touches neither file.
+
 ## Design Notes
 
 - **Rule id for the rendered-alt check.** No catalog rule covers it. It reuses ATT-06 (alt text), which the story lists, instead of a new non-Discord id. The ATT-06 row gains the Noctis policy, with the same id in docs and `noctis-rules`.
@@ -214,3 +267,12 @@ deferred: []
 - `cargo +1.91 check --release --workspace` -- ok
 - `bash .github/scripts/check-build-config.sh` -- ok
 - `test ! -d target/debug` -- no debug profile created
+
+## Auto Run Result
+
+- **Summary:** Content-addressed attachments (`<hex>.<ext>` names) with edit diffs: edits keep known Discord attachment ids (`{"id"}` only), upload only new bytes and drop unreferenced files; one Upload Budget check in body building enforces ATT-01 (per-file limit from the interaction's `attachment_size_limit`), ATT-02 (25 MiB total incl. payload_json) and ATT-03; rendered-image alt is validated under ATT-06; multipart via twilight `Form`; testkit fake parses multipart and echoes attachments.
+- **Files changed:** `crates/noctis-core` (responder body/files plan, wire multipart, pipeline file limit, edge pool reuse of ready H1 senders), `crates/noctis-ui` (limits, attachment, message used-attachments), `crates/noctis-rules` (ATT-04/05/06/MSG-08 rules), `crates/noctis-testkit` (fake multipart recording, wire echo, outcome arms, `tests/attachments.rs`), `crates/noctis` (re-exports, trybuild `tests/ui/att/`), `docs/discord-rules.md`, `xtask/public-api.txt`, `xtask/rules-pending.toml`, project-template skill refs and `AGENTS.md`.
+- **Review findings:** 35 total (high 0, medium 4, low 12, false 19). Patched: 4 medium + 1 low (pipeline `attachment_size_limit` wiring test; `message_transport_attachments`; Responder-level ATT-02/ATT-03 no-request tests; TestApp deferred-edit and follow-up file echo flow). Deferred: 2 low (stale "[planned, Story 9.4]" template tag, owned by Story 9.3; pre-existing maintainer-decision section 7/9 overlap). Rejected: 29, each with its reason in the Review Triage Log (kept-entry alt/description not resent, ATT-02 ignores multipart framing, concurrent-edit snapshot races, Form buffer copies, spec-mandated behaviors, and false findings).
+- **Follow-up review recommended:** true (first pass, 4 medium patched; patched by verdict: high 0, medium 4, low 1). Named risk: the new pipeline/message-transport tests and the edge pool change (pool a ready H1 sender immediately) are unreviewed; the pool change touches connection reuse under load.
+- **Verification:** all local gates green via `tools/story-loop/gates.sh` (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** changed alt on unchanged bytes is not resent for kept entries; ATT-02 within a few hundred bytes of 25 MiB may pass locally yet exceed Discord's limit due to multipart framing; concurrent edits of the same message can use a stale keep-list (degrades to re-upload/drop).

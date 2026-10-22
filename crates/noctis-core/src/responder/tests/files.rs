@@ -551,3 +551,124 @@ async fn att_01_over_budget_sends_nothing() {
     );
     assert_eq!(fx.server.seen().len(), 1);
 }
+
+/// Matrix 2, 7 and 12 over `Transport::Message`: a prefix reply and a
+/// deferred reply finished by `edit_reply` post multipart with the
+/// `message_reference`; a following edit keeps the learned id as JSON.
+#[tokio::test]
+async fn message_transport_attachments() {
+    let fx = Fixture::start(discord_files()).await;
+    let a = png(b"a");
+    for deferred in [false, true] {
+        fx.server.log.lock().unwrap().clear();
+        let shared = fx.message(Ephemerality::Public);
+        let acked = if deferred {
+            let acked = responder(&shared)
+                .defer_reply_as(Ephemerality::Public)
+                .await
+                .unwrap();
+            acked
+                .edit_reply(view(std::slice::from_ref(&a), &[]))
+                .await
+                .unwrap();
+            acked
+        } else {
+            responder(&shared)
+                .reply(view(std::slice::from_ref(&a), &[]))
+                .await
+                .unwrap()
+        };
+        let seen = last(&fx);
+        assert_eq!(
+            (seen.method.clone(), seen.path.as_str()),
+            (Method::POST, "/api/v10/channels/5/messages"),
+            "deferred = {deferred}"
+        );
+        let json = payload(&seen);
+        assert_eq!(
+            json["message_reference"],
+            json!({ "message_id": "6", "fail_if_not_exists": false })
+        );
+        assert_eq!(
+            json["attachments"],
+            json!([{ "id": 0, "filename": a.name() }])
+        );
+        let parts = uploads(&seen);
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].name, "files[0]");
+        assert_eq!(parts[0].body, b"a");
+
+        acked
+            .edit_reply(view(std::slice::from_ref(&a), &[]))
+            .await
+            .unwrap();
+        let seen = last(&fx);
+        assert_eq!(
+            (seen.method.clone(), seen.path.as_str()),
+            (Method::PATCH, "/api/v10/channels/5/messages/55")
+        );
+        assert_eq!(seen.headers["content-type"], "application/json");
+        let learned = if deferred { "22" } else { "21" };
+        assert_eq!(payload(&seen)["attachments"], json!([{ "id": learned }]));
+        assert!(uploads(&seen).is_empty());
+        let _ = acked.done();
+    }
+}
+
+/// The `Invalid(Limits)` violation of `err`, which must name `rule` at
+/// `path`.
+fn assert_limit(err: &ResponderError, rule: RuleId, path: &str) {
+    let ResponderError::Invalid(UiError::Limits { violations }) = err else {
+        panic!("{err}");
+    };
+    assert_eq!(
+        (violations[0].rule, violations[0].path.as_str()),
+        (rule, path),
+        "{violations:?}"
+    );
+}
+
+/// Matrix 26 through the Responder: 11 used files fail ATT-03 before any
+/// request.
+#[tokio::test]
+async fn att_03_eleven_files_send_nothing() {
+    let fx = Fixture::start(discord_files()).await;
+    let files: Vec<Attachment> = (0_u8..11)
+        .map(|i| Attachment::new(vec![i], "png").unwrap())
+        .collect();
+    let mut set = AttachmentSet::new();
+    let refs: Vec<AttachmentRef> = files.iter().map(|f| set.add(f.clone())).collect();
+    let gallery = |refs: &[AttachmentRef]| {
+        MediaGallery::try_new(
+            refs.iter().map(|r| MediaItem::new(r.clone()).alt("x")),
+            &Limits::default(),
+        )
+        .unwrap()
+    };
+    let msg = V2Message::new(
+        Components::new()
+            .push(gallery(&refs[..10]))
+            .push(gallery(&refs[10..])),
+    )
+    .attachments(set);
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let err = responder(&shared).reply(msg).await.unwrap_err();
+    assert_limit(&err, RuleId::ATT_03, "attachments");
+    assert!(fx.server.seen().is_empty());
+}
+
+/// Matrix 25 through the Responder: a request over 25 MiB fails ATT-02
+/// before any request.
+#[tokio::test]
+async fn att_02_request_over_budget_sends_nothing() {
+    let fx = Fixture::start(discord_files()).await;
+    let a = Attachment::new(vec![0_u8; 13_107_200], "png").unwrap();
+    let b = Attachment::new(vec![1_u8; 13_107_200], "png").unwrap();
+    let shared = fx.interaction("tok", Ephemerality::Public);
+    let err = responder(&shared)
+        .reply(view(&[a, b], &[]))
+        .await
+        .unwrap_err();
+    assert_limit(&err, RuleId::ATT_02, "request");
+    assert!(fx.server.seen().is_empty());
+}

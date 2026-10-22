@@ -63,6 +63,32 @@ impl Show {
     }
 }
 
+#[derive(SlashCommand)]
+#[command("later", description = "Defer, then edit the card in")]
+struct Later;
+
+impl Later {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        let acked = r.defer_reply().await?;
+        acked.edit_reply(render(Some(0))).await?;
+        Ok(acked.done())
+    }
+}
+
+#[derive(SlashCommand)]
+#[command("post", description = "Reply, then post the card as a follow-up")]
+struct Post;
+
+impl Post {
+    #[handler]
+    async fn handle(self, _ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        let acked = r.reply(render(None)).await?;
+        let _ = acked.follow_up(render(Some(0)), Visibility::Public).await?;
+        Ok(acked.done())
+    }
+}
+
 /// `mode` 0 re-renders the same card, 1 a changed one, 2 none.
 #[derive(Button, Debug, Clone, Copy)]
 #[button("card.step", defaults(style = Secondary, label = "Same"))]
@@ -84,7 +110,13 @@ impl Step {
 
 async fn start() -> TestApp {
     let mut builder = App::builder();
-    builder.module(Module::new("card").add::<Show>().add::<Step>());
+    builder.module(
+        Module::new("card")
+            .add::<Show>()
+            .add::<Later>()
+            .add::<Post>()
+            .add::<Step>(),
+    );
     TestApp::build(&mut builder).await.unwrap()
 }
 
@@ -196,4 +228,34 @@ fn att_04_recorded_request_multipart() {
     assert_eq!(plain.json(), Some(json!({ "type": 5 })));
     assert!(plain.files().is_empty());
     assert!(request(None, "").files().is_empty());
+}
+
+/// The update of a click re-rendering the same card keeps it by its
+/// snowflake id and uploads nothing.
+fn assert_kept(update: &Response) {
+    let call = callback(update);
+    assert!(call.files().is_empty());
+    let kept = entries(call);
+    let id = kept[0]["id"]
+        .as_str()
+        .expect("a kept id is a snowflake string");
+    assert!(id.parse::<u64>().unwrap() > 0);
+    assert_eq!(kept, json!([{ "id": id }]));
+}
+
+/// The testkit echoes the attachments of a deferred reply finished by an
+/// edit (`@original`) and of a follow-up, so a click on either keeps them.
+#[tokio::test(flavor = "multi_thread")]
+async fn att_04_deferred_edit_and_follow_up_are_echoed() -> Result<(), TestError> {
+    let app = start().await;
+
+    let later = app.command("later").run().await?;
+    let same = app.click(later.button("Same")?).run().await?;
+    assert_kept(&same);
+
+    let post = app.command("post").run().await?;
+    let followup = post.followups().first().expect("one follow-up");
+    let same = app.click(followup.button("Same")?).run().await?;
+    assert_kept(&same);
+    app.stop().await
 }

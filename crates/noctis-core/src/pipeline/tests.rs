@@ -2923,3 +2923,55 @@ mod expired;
 mod guards;
 mod middleware;
 mod refs;
+
+/// Story 9.1 Matrix 22 through the pipeline: the raw interaction's
+/// `attachment_size_limit` becomes the Upload Budget, and a file over it
+/// fails ATT-01 with that bound before any request carries it.
+#[tokio::test]
+async fn att_01_interaction_attachment_size_limit() {
+    use noctis_rules::{Bound, RuleId};
+    use noctis_ui::{Attachment, AttachmentSet, MediaGallery, MediaItem, UiError};
+
+    type Got = Option<(RuleId, Bound)>;
+    let seen: Arc<Mutex<Got>> = Arc::default();
+    let slot = Arc::clone(&seen);
+    let handler = CommandHandler::__new_plain(
+        "m::big",
+        &["big"],
+        "d",
+        move |_: CommandCtx, r: CommandResponder| {
+            let slot = Arc::clone(&slot);
+            async move {
+                let mut set = AttachmentSet::new();
+                let file = set.add(Attachment::new(vec![0_u8; 10_485_761], "png").unwrap());
+                let msg = V2Message::new(
+                    Components::new().push(MediaGallery::new([MediaItem::new(file).alt("x")])),
+                )
+                .attachments(set);
+                let Err(ResponderError::Invalid(UiError::Limits { violations })) =
+                    r.reply(msg).await
+                else {
+                    panic!("the oversized reply was not refused");
+                };
+                *slot.lock().unwrap() = Some((violations[0].rule, violations[0].limit.clone()));
+                Ok(v2("ok"))
+            }
+        },
+    );
+    let p = Pipeline::start(Module::new("m").__add(handler)).await;
+    p.run(inbound(&interaction(
+        slash("big", json!([])),
+        json!({ "attachment_size_limit": 10_485_760 }),
+    )))
+    .await;
+    assert_eq!(
+        seen.lock().unwrap().clone(),
+        Some((RuleId::ATT_01, Bound::AtMost(10_485_760)))
+    );
+    // Only the returned plain reply went out; the file never did.
+    let requests = p.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].1, CB_REPLY);
+    assert!(requests[0].2["data"].get("attachments").is_none());
+    assert!(p.reports().is_empty());
+}

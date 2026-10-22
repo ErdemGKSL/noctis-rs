@@ -236,6 +236,15 @@ impl Pool {
         let Sender::H1(mut sender) = sender else {
             return;
         };
+        // Already ready: pool it now, so a checkout right after (before a
+        // spawned task would run, under load) reuses it instead of dialing.
+        if sender.is_ready() {
+            let mut state = self.lock();
+            if state.idle.len() < MAX_IDLE {
+                state.idle.push(sender);
+            }
+            return;
+        }
         let pool = Arc::clone(self);
         tokio::spawn(async move {
             let cancel = pool.cancel.clone();
