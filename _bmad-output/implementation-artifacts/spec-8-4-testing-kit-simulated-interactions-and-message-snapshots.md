@@ -2,7 +2,8 @@
 title: 'Story 8.4: Testing kit — simulated interactions and message snapshots'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '6acd504ed317ea2f53e817e7e80adf3dd3ffd561'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
