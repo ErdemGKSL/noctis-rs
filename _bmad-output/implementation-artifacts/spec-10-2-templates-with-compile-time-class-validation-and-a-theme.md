@@ -2,7 +2,8 @@
 title: 'Story 10.2: Templates with compile-time class validation and a Theme'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '14338ce02db653f3b958b7c40e408c01b87ecad2'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
