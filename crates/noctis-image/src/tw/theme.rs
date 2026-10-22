@@ -126,7 +126,8 @@ impl Theme {
         }
         let mut theme = Self::empty();
         theme.digest = *blake3::hash(source.as_bytes()).as_bytes();
-        let mut parser = Parser::new(source);
+        // cssparser does not strip a UTF-8 BOM; the size check and digest keep it.
+        let mut parser = Parser::new(source.strip_prefix('\u{feff}').unwrap_or(source));
         theme.parse_top_level(&mut parser)?;
         Ok(theme)
     }
@@ -168,14 +169,14 @@ impl Theme {
     fn parse_top_level(&mut self, parser: &mut Parser<'_>) -> Result<(), ThemeError> {
         while let Some((at, token)) = next_token(parser) {
             match token {
-                Token::AtKeyword(name) if &*name == "theme" => {
+                Token::AtKeyword(name) if name.eq_ignore_ascii_case("theme") => {
                     let (open, token) = next_token(parser).ok_or_else(|| at.error(Syntax))?;
                     if !matches!(token, Token::CurlyBracketBlock) {
                         return Err(open.error(UnexpectedRule));
                     }
                     nested(parser, open, |p| self.parse_theme_block(p))?;
                 }
-                Token::AtKeyword(name) if &*name == "keyframes" => {
+                Token::AtKeyword(name) if name.eq_ignore_ascii_case("keyframes") => {
                     let (name_at, token) = next_token(parser).ok_or_else(|| at.error(Syntax))?;
                     let Token::Ident(name) = token else {
                         return Err(name_at.error(Syntax));

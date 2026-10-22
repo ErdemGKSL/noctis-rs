@@ -1,0 +1,15 @@
+error: [TW-02] no noctis-theme.css at /home/claude/noctis-rs/target/tests/trybuild/noctis/noctis-theme.css
+ --> tests/ui-image/tw/TW-02_missing_theme_file.rs:5:20
+  |
+5 |     let _: Theme = theme!();
+  |                    ^^^^^^^^
+  |
+  = note: this error originates in the macro `theme` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: [TW-02] theme file not found at $DIR/tests/ui-image/tw/nope.css
+ --> tests/ui-image/tw/TW-02_missing_theme_file.rs:6:20
+  |
+6 |     let _: Theme = theme!("nope.css");
+  |                    ^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `theme` (in Nightly builds, run with -Z macro-backtrace for more info)

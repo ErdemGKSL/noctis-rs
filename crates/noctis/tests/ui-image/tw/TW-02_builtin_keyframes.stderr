@@ -1,5 +1,4 @@
-error: [TW-02] 2:12: `spin` redefines a built-in animation (`spin`, `ping`, `pulse`, `bounce`), which would render static; give it another name
-         = note: in $DIR/tests/fixtures/theme/builtin_keyframes.css
+error: [TW-02] 2:12: `spin` redefines a built-in animation (`spin`, `ping`, `pulse`, `bounce`), which would render static; give it another name (in $DIR/tests/fixtures/theme/builtin_keyframes.css)
  --> tests/ui-image/tw/TW-02_builtin_keyframes.rs:5:20
   |
 5 |     let _: Theme = theme!("../../fixtures/theme/builtin_keyframes.css");

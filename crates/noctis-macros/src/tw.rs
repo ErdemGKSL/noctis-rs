@@ -2,7 +2,8 @@
 //! validated with `noctis_image::tw::validate` against the crate's theme.
 
 use noctis_image::tw::{
-    Theme, ThemeNamespace, ThemeTokens, UnknownClass, Utility, Variant, classify, validate,
+    Suggestion, Theme, ThemeNamespace, ThemeTokens, UnknownClass, Utility, Variant, classify,
+    validate,
 };
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -27,7 +28,9 @@ pub(crate) fn check_literal(lit: &LitStr, theme: &Theme) -> Vec<syn::Error> {
 /// theme utility (or custom variant) draw.
 fn message(class: &UnknownClass, theme: &Theme) -> String {
     let mut missing = Vec::new();
-    if let Some(parsed) = classify(class.class()) {
+    if !matches!(class.suggestion(), Some(Suggestion::Rename(_)))
+        && let Some(parsed) = classify(class.class())
+    {
         if let Some(Variant::Custom(token)) = parsed.variant
             && !theme.contains(ThemeNamespace::Breakpoint, token)
         {
@@ -110,8 +113,7 @@ mod tests {
         assert_eq!(
             errors("bg-gradient-to-r", &Theme::empty()),
             [
-                "[TW-01] unknown Tailwind class `bg-gradient-to-r`; use `bg-linear-to-r` (Tailwind v4); \
-              or declare `--color-gradient-to-r` in noctis-theme.css"
+                "[TW-01] unknown Tailwind class `bg-gradient-to-r`; use `bg-linear-to-r` (Tailwind v4)"
             ]
         );
         assert_eq!(

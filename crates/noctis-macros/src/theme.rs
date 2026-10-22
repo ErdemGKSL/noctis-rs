@@ -159,7 +159,7 @@ fn read(path: &Path, span: Span) -> syn::Result<Option<String>> {
 
 fn parse(source: &str, path: &Path, span: Span) -> syn::Result<Theme> {
     Theme::parse(source)
-        .map_err(|err| syn::Error::new(span, format!("{err}\n  = note: in {}", path.display())))
+        .map_err(|err| syn::Error::new(span, format!("{err} (in {})", path.display())))
 }
 
 #[cfg(test)]
@@ -183,7 +183,27 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.starts_with("[TW-02] 1:12: `spin`"), "{err}");
-        assert!(err.ends_with("in /x/noctis-theme.css"), "{err}");
+        assert!(err.ends_with(" (in /x/noctis-theme.css)"), "{err}");
+    }
+
+    #[test]
+    fn tracking_includes_the_absolute_path() {
+        let path = PathBuf::from("/x/noctis-theme.css");
+        let expected = quote!(
+            const _: &[u8] = ::core::include_bytes!("/x/noctis-theme.css");
+        )
+        .to_string();
+        assert_eq!(track(&path).to_string(), expected);
+        let with = CrateTheme {
+            theme: Theme::empty(),
+            path: Some(path),
+        };
+        assert_eq!(with.tracking().to_string(), expected);
+        let without = CrateTheme {
+            theme: Theme::empty(),
+            path: None,
+        };
+        assert!(without.tracking().is_empty());
     }
 
     #[test]

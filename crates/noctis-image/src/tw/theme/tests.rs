@@ -354,3 +354,18 @@ fn every_namespace_has_its_slot() {
         assert_eq!(slot(*ns), index);
     }
 }
+
+#[test]
+fn tw_02_at_rule_names_are_case_insensitive() {
+    let theme = Theme::parse("@Theme { --color-a: #000; }\n@KEYFRAMES rise {}").unwrap();
+    assert!(theme.contains(ThemeNamespace::Color, "a"));
+    assert_eq!(theme.keyframes().count(), 1);
+}
+
+#[test]
+fn tw_02_leading_bom_is_ignored() {
+    let source = "\u{feff}@theme { --color-a: #000; }";
+    let theme = Theme::parse(source).unwrap();
+    assert!(theme.contains(ThemeNamespace::Color, "a"));
+    assert_eq!(theme.digest(), *blake3::hash(source.as_bytes()).as_bytes());
+}

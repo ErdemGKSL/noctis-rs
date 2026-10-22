@@ -78,7 +78,10 @@ compile.
 The item must be a struct (named, tuple or unit) without generics or lifetimes. Data
 must serialize deterministically (it is part of the render cache key): a field whose
 type mentions `HashMap` or `HashSet` anywhere (`Vec<HashMap<..>>`, `Option<HashSet<..>>`)
-is a compile error; use `BTreeMap`, `BTreeSet` or `Vec`. `#[asset]` remote-image fields
+is a compile error; use `BTreeMap`, `BTreeSet` or `Vec`. The check matches only path
+segments named `HashMap`/`HashSet`: type aliases, third-party maps (`FxHashMap`,
+`AHashMap`, `DashMap`) and nested structs holding a `HashMap` are not detected, so use
+`BTreeMap`/`BTreeSet`/`Vec` throughout Template data. `#[asset]` remote-image fields
 are [planned, Story 10.8] and rejected until then.
 
 ## 3. `view!` syntax
@@ -144,9 +147,10 @@ its builder twin compare equal (`Node: PartialEq`), which is how to unit-test a 
 - Classes chosen at run time: `Classes::dynamic(text)` (a known class name from your
   own code, such as a tier → `"text-amber-400"` match) and `a.and(b)` (joins with a
   space); `as_str()` reads the text. **Never pass user text to `Classes::dynamic`.**
-  Dynamic strings are checked when rendered (`noctis::image::unstable::ClassCheck`,
-  `ClassCheckMode::Warn` logs each invalid string once on target `noctis::image`,
-  `ClassCheckMode::Deny` fails, as test Apps do).
+  Dynamic strings are checked when rendered: the Story 10.3 Renderer runs
+  `noctis::image::unstable::ClassCheck` (`ClassCheckMode::Warn` logs each invalid string
+  once on target `noctis::image`; `ClassCheckMode::Deny` fails, on `Runtime::for_test()`
+  Apps) [planned, Story 10.3].
 - **Data-driven values never go into class strings.** Use the `Style` setters (all
   `const`; the last setter on a property wins; a NaN or infinite `f32` leaves the
   property unchanged; style overrides a class of the same property):
@@ -161,7 +165,9 @@ At the crate root (next to `Cargo.toml`); `tw!`, `tw="…"` and `view!` read it 
 compile time and rebuild when it changes. No file means an empty theme (built-in
 classes only). `noctis::image::theme!()` embeds it as a `Theme` value for runtime
 (`theme!("path/to/file.css")` takes a path relative to the calling source file); both
-fail the build on a missing or invalid file.
+fail the build on a missing or invalid file. After creating the file in a crate that
+was built without one, touch a source file or run `cargo clean -p <crate>` once so the
+macros re-read it.
 
 ```css
 /* comments anywhere */

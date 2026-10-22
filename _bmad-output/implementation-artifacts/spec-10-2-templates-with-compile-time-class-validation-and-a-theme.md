@@ -2,10 +2,10 @@
 title: 'Story 10.2: Templates with compile-time class validation and a Theme'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '14338ce02db653f3b958b7c40e408c01b87ecad2'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -16,7 +16,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The runtime half of TW-01 (ClassCheck) is not wired into any render path, so no Runtime::for_test() App fails on an unknown dynamic class yet.
+    evidence: |-
+      Story 10.2 AC 3 says "When it renders ... on an App whose Runtime is Runtime::for_test() the same string is an error". This story ships ClassCheck (Warn/Deny) with unit tests only; nothing calls it and the diff never mentions Runtime::is_test(). Rendering needs the Story 10.3 Renderer, which this spec forbids building, and the Story 10.3 epic ACs do not mention ClassCheck, so the wiring (Deny when Runtime::is_test(), Warn otherwise) plus an end-to-end testkit assertion must be carried into Story 10.3.
+    location: >-
+      crates/noctis-image/src/check.rs (ClassCheck); Story 10.3 Renderer
+    severity: medium
 ---
 
 <intent-contract>
@@ -306,6 +313,51 @@ The test theme is `crates/noctis/noctis-theme.css`, which defines `--color-brand
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 41 findings — high 0, medium 4, low 26, false 11, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) project-template `profile/view.rs` keeps `RemoteImage`, `#[asset]` and `<img>`, which do not compile against the shipped API — the spec's Tasks deliberately keep the `#[asset] avatar` field and `<img>` marked `[planned, Story 10.8/10.7]` (the import is their planned dependency, also marked); the file's header declares it is written against the planned API and the template crate is not compiled by any gate.
+  - `[low]` `[patch]` (blind) `xtask/src/api_snapshot.rs`: the new IntoNodes `HIDDEN` entry splits the RawHttp comment from its tuple — confirmed at lines 108-117; patch moves the RawHttp comment back above the `raw_http::sealed` tuple.
+  - `[low]` `[reject]` (blind) `theme!("path")` can embed a different file from the one `tw!`/`view!` validate — real but needs an author to deliberately choose a second file; a token missing at compile time is already loud, and detecting the reverse needs digest plumbing between the macros and the Renderer (more than a direct fix).
+  - `[low]` `[patch]` (blind) creating `noctis-theme.css` after a build emits no tracking, so stale results persist until a source edit — confirmed: `CrateTheme::tracking` is empty when `path` is `None` and a missing file cannot be `include_bytes!`ed; patch documents the "touch a source file or `cargo clean` after creating the file" step in the skill and in TW-02.
+  - `[low]` `[reject]` (blind) every expansion re-reads and re-parses the theme — a ≤256 KiB file parses in microseconds; the spec allows but does not require a cache, and adding one adds process state for no named harm.
+  - `[low]` `[patch]` (blind) TW-01 adds "or declare `--color-gradient-to-r`" after a v3 rename — confirmed in `tw.rs::message`, the unit test and `TW-01_unknown_class.stderr`; patch skips the declare hint when the class has a `Suggestion::Rename`.
+  - `[low]` `[reject]` (blind) `animate-<name>` with a declared `--animate-<name>` gets no hint — the matrix row "theme anim class → CE [TW-01] (10.6)" settles it and the skill marks `animate-rise` `[planned, Story 10.6]`; a dedicated hint adds a branch for a transitional state.
+  - `[low]` `[reject]` (blind) `--animate-` values are not cross-checked against `@keyframes`, keyframes bodies are raw — true, but animations are stored verbatim for Story 10.6, which consumes and validates them; nothing renders them yet, and the check adds validation logic.
+  - `[low]` `[patch]` (blind) at-rule names are compared case-sensitively (`@THEME` is `UnexpectedRule`); keyframes names skip the token grammar — case part confirmed in `theme.rs::parse_top_level` (CSS at-rule names are ASCII case-insensitive); patch uses `eq_ignore_ascii_case` for `theme`/`keyframes`. The keyframes-name grammar part is not adopted (adds a new error path for a rare case).
+  - `[false]` `[reject]` (blind) `#[template(size, animation)]` accepts values up to `u32::MAX` — the spec deliberately sets these ranges; FR-70 caps (≤4 MP, ≤90 frames, ≤6 s, configurable) are Story 10.5's admission check, which rejects such jobs before they are queued, so no unbounded render can happen.
+  - `[low]` `[patch]` (blind) the theme path is appended as a fake `= note:` inside the TW-02 message, rendered misindented — confirmed in `TW-02_builtin_keyframes.stderr`; patch puts the path on the message's first line (e.g. `… (in <path>)`) and re-blesses the fixture.
+  - `[low]` `[patch]` (blind) the HashMap scan matches only the segments `HashMap`/`HashSet` (aliases, `FxHashMap`, nested structs pass) — confirmed in `template.rs::scan_type`; the AC wording ("a field is a `HashMap`") is met and a macro cannot see through aliases, so patch documents the limitation in the skill (§2) instead of widening the check.
+  - `[low]` `[patch]` (blind) TW-01 docs say `Classes::dynamic` strings are checked by `ClassCheck` when a view renders, which nothing does yet — confirmed (`ClassCheck` has no caller); patch marks the render-time check as arriving with the Story 10.3 Renderer in `docs/discord-rules.md` TW-01 and in `images.md` §4. The missing wiring itself is deferred (intent D1).
+  - `[low]` `[reject]` (blind) `ClassCheck`'s warn-once key ignores the theme — in Story 10.3 each App's Renderer is bound to one Theme, so one `ClassCheck` never sees two themes in practice; changing the key adds no value for that use.
+  - `[low]` `[reject]` (blind) `Node::child`/`children` on a text node silently drop the argument — the spec defines it as a no-op; `view!` never builds children on a text node, so only hand-written builder misuse meets it, and a split builder type adds public surface.
+  - `[low]` `[reject]` (blind) `Classes::and` with an empty side yields a leading space and distinct strings for one set — `validate` splits on whitespace so results are identical; the only effect is a marginally fuller warn-once set; the fix adds branches.
+  - `[low]` `[reject]` (blind) no `IntoNodes` for `&&str`/`&Cow`/`char`/`bool` — the result is a loud compile error, the spec lists the impl set, and new impls add public surface; the skill's `for` example passes `Node`s and works.
+  - `[low]` `[reject]` (blind) `crates/noctis/tests/ui.rs` repeats the feature list three times — developer-only duplication; a missed feature makes a gate run in a wrong combo, visible in review; restructuring the cfgs is more than a direct fix.
+  - `[low]` `[reject]` (blind) `xtask/public-api.txt` lists `Theme`/`ThemeError`/`ThemeErrorKind` twice and the `ThemeTokens` impl three times — the snapshot is deterministic and the gate works; deduplicating needs snapshot-tool path work beyond a direct fix.
+  - `[low]` `[patch]` (edge) missing theme file at first build, created later: no tracking — same root cause as the blind rebuild finding; grouped, doc patch.
+  - `[low]` `[reject]` (edge) a comment-only value (`--color-brand: /* todo */;`) is stored as the value — confirmed in `parse_theme_block`, but rare and the fix adds token filtering with a new error path.
+  - `[low]` `[patch]` (edge) a UTF-8 BOM makes a valid theme fail with `UnexpectedRule` at 1:1 — confirmed: cssparser's tokenizer does not strip U+FEFF and `read_to_string` keeps it; patch strips a leading `\u{feff}` in `Theme::parse` before tokenizing (digest of the original text unchanged).
+  - `[low]` `[patch]` (edge) at-rules with different case are rejected — same root cause as the blind at-rule finding; grouped, `eq_ignore_ascii_case` patch.
+  - `[low]` `[reject]` (edge) `{&self.level}` with a numeric field does not compile — loud compile error; `{self.level}` works and the skill lists integers by value; reference impls add public surface (grouped with the blind `IntoNodes` finding).
+  - `[false]` `[reject]` (edge) huge `size` accepted — Story 10.5 per-job caps reject it before the queue (see the blind finding).
+  - `[false]` `[reject]` (edge) near-`u32::MAX` `duration_ms` × fps accepted — Story 10.5 caps (≤90 frames, ≤6 s) reject it before the queue.
+  - `[low]` `[patch]` (edge) HashMap aliases slip past the scan — grouped with the blind HashMap finding; skill documents the limitation.
+  - `[low]` `[patch]` (edge) RawHttp comment orphaned in `api_snapshot.rs` — grouped with the blind finding; comment moved.
+  - `[false]` `[reject]` (edge) the template still imports `noctis::image::RemoteImage` — the import serves the spec-mandated `[planned, Story 10.8]` field and is itself marked planned (see the blind template finding).
+  - `[medium]` `[patch]` (vgap) `theme!()` / `theme!("nope.css")` missing-file errors are not pinned by any test — pre-verified gap; patch adds `crates/noctis/tests/ui-image/tw/TW-02_missing_theme_file.rs` + `.stderr` covering both messages.
+  - `[medium]` `[patch]` (vgap) the `include_bytes!` rebuild tracking is never asserted — pre-verified gap; patch adds a macro unit test asserting `track`/`CrateTheme::tracking` emits `include_bytes!` with the absolute path when the file exists and nothing when it does not.
+  - `[low]` `[patch]` (vgap other) RawHttp comment orphaned — grouped with the blind finding.
+  - `[medium]` `[defer]` (intent D1) the runtime class check is not wired into rendering or `Runtime::for_test()` — confirmed: `ClassCheck` has no caller; rendering needs the Story 10.3 Renderer, which the spec's Never forbids and Epic 10 orders after this story, and the 10.3 epic ACs do not name the wiring, so it is recorded in `deferred` for Story 10.3.
+  - `[false]` `[reject]` (intent D2) declared theme tokens are still rejected for `animate-*` and gradient stops — the spec deliberately and correctly settles both (matrix rows "theme anim class → 10.6", "narrowed stops → 10.1 palette narrowing"), matching the Epic 10 order.
+  - `[false]` `[reject]` (intent D3) "user data only text" holds by convention because `Classes::dynamic` exists — AC 3 itself requires runtime-built class strings; user data entering through `view!` can only become text children, `tw={..}` takes `Classes`, and the dynamic constructor is documented "never user text" and backstopped by the runtime check.
+  - `[false]` `[reject]` (intent D4) the missing-`Deserialize` error does not name the derive — the blessed stderr says ``consider adding `#[derive(serde::Deserialize)]` to your `Card` type`` and names the `Template` bound, which satisfies "naming the derive".
+  - `[low]` `[patch]` (intent D5) the HashMap check is syntactic only — grouped with the blind HashMap finding; skill documents the limitation.
+  - `[medium]` `[patch]` (intent D6) no test proves a theme edit rebuilds — grouped with the vgap tracking finding; unit test on the emitted `include_bytes!`.
+  - `[false]` `[reject]` (intent D7) `ErasedView` holds a `ViewFn` newtype, not the bare `fn` — the spec deliberately chose `ViewFn` (private field, `call`) and its AC downcasts to `noctis::image::unstable::ViewFn`; the wrapped value is exactly the decoder `fn` the intent names.
+  - `[false]` `[reject]` (intent D8) the profile card is reconciled only partly — the spec's Tasks define reconciliation as shipped imports and classes plus planned parts marked; see the blind template finding.
+  - `[false]` `[reject]` (intent D9) `theme!()` parses embedded CSS into heap maps, against maintainer decision §5 Memory — the Theme is used on every render and stays resident (like locale data), so it is not "embedded data used once"; §5 itself lists `theme!()` as the embedded theme source.
+
 ## Design Notes
 
 - **Why a Noctis-owned node tree.** The template already imports `Node`/`Style` from stable `noctis::image`, while AD-2 keeps takumi types under `unstable`. Owning the tree also gives three properties:
@@ -336,3 +388,15 @@ The test theme is `crates/noctis/noctis-theme.css`, which defines `--color-brand
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `cargo tree -p noctis -e normal | grep -E 'noctis-image|cssparser|takumi'` -- no output; with `--features image` -- matches
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- **Summary:** Story 10.2 ships `#[derive(Template)]`/`#[template(size, animation)]`, the `view!` macro producing a Noctis-owned node tree (`Node`, `Tag`, `Classes`, `IntoNodes`), compile-time `tw="..."` validation against the strict v4 grammar plus the crate's `noctis-theme.css` (TW-01 unknown class with v3-rename hints, TW-02 theme errors), `theme!()`/`theme!("path")` with `include_bytes!` rebuild tracking, the runtime `Theme` parser (`@theme` tokens, `@keyframes` stored verbatim for 10.6), and `ClassCheck` (Warn/Deny) for `Classes::dynamic` strings. Template rejects `HashMap`/`HashSet` fields and missing `Deserialize`/view.
+- **Files changed:** `crates/noctis-macros` (template, view, tw, theme macros); `crates/noctis-image/src/tw/theme*` (Theme parser); `crates/noctis/src/lib.rs` + `noctis-theme.css` (facade re-exports, test theme); `crates/noctis/tests/{template.rs,ui.rs,ui-image/*,types-image/*}` (integration + trybuild fixtures); `docs/discord-rules.md` (TW-01/TW-02); `examples/project-template/` (skill images.md, cheatsheet, troubleshooting, AGENTS.md, profile view reconciled); `xtask/{public-api.txt,src/api_snapshot.rs,src/deps_check.rs,rules-pending.toml}` (snapshot re-blessed, deps rules).
+- **Review findings:** 41 total (high 0, medium 4, low 26, false 11).
+  - Patched (medium 3, low 14 incl. grouped): missing-theme-file trybuild fixture (TW-02); unit test asserting `include_bytes!` tracking; RawHttp comment restored in `api_snapshot.rs`; rebuild-after-creating-theme-file documented; no declare hint after a v3 rename; case-insensitive `@theme`/`@keyframes`; theme path moved to TW-02 message first line; HashMap-alias limitation documented; render-time `ClassCheck` marked as arriving with 10.3; UTF-8 BOM stripped in `Theme::parse`.
+  - Deferred (medium 1): wiring `ClassCheck` into rendering and `Runtime::for_test()` (Deny) -> Story 10.3.
+  - Rejected: 11 false (planned template parts, size/duration caps owned by 10.5, D2/D3/D4/D7/D8/D9 settled by spec/decisions) and 12 low (second theme path digest, parse cache, animate hint, keyframes cross-check, warn-once key, text-node child no-op, `Classes::and` spacing, extra `IntoNodes` impls, ui.rs feature dup, public-api duplicates, comment-only values) with reasons in the triage log.
+- **Follow-up review recommended: true** (first pass, 3 medium patched, 0 high). Named risk: the new rebuild-tracking unit test and missing-file fixture are the only evidence that a theme edit triggers recompilation; no end-to-end incremental-build test proves it.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, tw-grammar --check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** `ClassCheck` has no caller until 10.3; HashMap detection is syntactic (aliases pass); a `theme!("path")` different from the crate theme file is not cross-checked; animation tokens unvalidated until 10.6.
