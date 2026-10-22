@@ -68,6 +68,8 @@ graph TD
   testkit --> core
   testkit --> gateway
   testkit --> ports
+  testkit --> ui
+  testkit --> rules
   core --> gateway[noctis-gateway]
   core --> i18n
   core --> ui[noctis-ui]
@@ -1087,7 +1089,10 @@ list in CI.
     them only through the production override points: the configured HTTP proxy
     (the edge's upstream, so tests run the edge too) and the gateway `proxy_url` (exposed as `.gateway_url(..)`, also used for gateway
     proxies). Core has no test-only branch. End-to-end tests for Epics 5 to 7 live in
-    `crates/noctis-testkit/tests/`, and `TestApp` (Story 8.6) runs on the same fakes.
+    `crates/noctis-testkit/tests/`, and `TestApp` (Story 8.4) runs on the same fakes.
+    The hidden `noctis_core::__testing` run observer and `AppProbe` only observe (run
+    end, command definitions, notice texts, `custom_id` masking); the App reaches the
+    fakes only through its override points.
   - Non-Discord HTTP exists only in `noctis-image`'s `AssetFetcher` (AD-15).
   - **`Runtime`** is defined in `noctis-core` and re-exported as `noctis::Runtime`.
     It owns the process-scoped resources: the metrics recorder plus a type map of

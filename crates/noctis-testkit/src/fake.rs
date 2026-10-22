@@ -365,6 +365,10 @@ impl RecordedRequest {
 /// A per-test route handler.
 type Handler = Arc<dyn Fn(&RecordedRequest) -> FakeResponse + Send + Sync>;
 
+/// The handler of requests no route matches; `None` falls through to the
+/// `404`.
+type Fallback = Arc<dyn Fn(&RecordedRequest) -> Option<FakeResponse> + Send + Sync>;
+
 /// What a route answers.
 #[derive(Clone)]
 enum Route {
@@ -385,6 +389,8 @@ impl Route {
 struct State {
     gateway_bot: GatewayBot,
     routes: HashMap<(Method, String), Route>,
+    /// Answers what no route (nor the canned `GET /gateway/bot`) matches.
+    fallback: Option<Fallback>,
     requests: Vec<RecordedRequest>,
     /// Requests left to stall per method and route path.
     stalls: HashMap<(Method, String), usize>,
@@ -408,7 +414,8 @@ impl Shared {
 /// connection (see [`connections`](Self::connections)). Under
 /// `/api/v10` it answers, in order: the per-test route registered for the
 /// exact method and raw path (query ignored; the last registration wins), the
-/// canned `GET /gateway/bot`, or a Discord-shaped `404`. Bodies over
+/// canned `GET /gateway/bot`, the [fallback](Self::fallback_with), or a
+/// Discord-shaped `404`. Bodies over
 /// [`MAX_BODY_BYTES`] get `413`. Dropping the fake stops the server and its
 /// connections.
 ///
@@ -463,6 +470,7 @@ impl FakeDiscordHttp {
         let shared = Shared(Arc::new(Mutex::new(State {
             gateway_bot,
             routes: HashMap::new(),
+            fallback: None,
             requests: Vec::new(),
             stalls: HashMap::new(),
             connections: Vec::new(),
@@ -549,6 +557,43 @@ impl FakeDiscordHttp {
         F: Fn(&RecordedRequest) -> FakeResponse + Send + Sync + 'static,
     {
         self.insert_route(method, path.into(), Route::Dynamic(Arc::new(handler)))
+    }
+
+    /// Answers every request under `/api/v10` that no route and not the
+    /// canned `GET /gateway/bot` matches with `handler`, when it returns
+    /// `Some`; `None` keeps the Discord-shaped `404`. Replaces the previous
+    /// fallback.
+    ///
+    /// ```no_run
+    /// use noctis_testkit::fake::{FakeDiscordHttp, FakeResponse, Method, StatusCode};
+    ///
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let fake = FakeDiscordHttp::start().await?;
+    /// fake.fallback_with(|req| {
+    ///     (req.method == Method::POST).then(|| FakeResponse::empty(StatusCode::NO_CONTENT))
+    /// });
+    /// # Ok(()) }
+    /// ```
+    pub fn fallback_with<F>(&self, handler: F) -> &Self
+    where
+        F: Fn(&RecordedRequest) -> Option<FakeResponse> + Send + Sync + 'static,
+    {
+        self.shared.lock().fallback = Some(Arc::new(handler));
+        self
+    }
+
+    /// Takes every request received so far, in arrival order, leaving the
+    /// log empty.
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let fake = noctis_testkit::fake::FakeDiscordHttp::start().await?;
+    /// assert!(fake.take_requests().is_empty());
+    /// assert!(fake.requests().is_empty());
+    /// # Ok(()) }
+    /// ```
+    pub fn take_requests(&self) -> Vec<RecordedRequest> {
+        std::mem::take(&mut self.shared.lock().requests)
     }
 
     /// Every request received so far, in arrival order.

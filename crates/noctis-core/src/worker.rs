@@ -19,7 +19,7 @@ use tracing::field::Empty;
 use twilight_model::application::interaction::InteractionType;
 use twilight_model::gateway::event::Event;
 use twilight_model::id::Id;
-use twilight_model::id::marker::GuildMarker;
+use twilight_model::id::marker::{GuildMarker, InteractionMarker};
 
 use crate::events::EventCtx;
 use crate::handler::{AppShared, HandlerResult};
@@ -132,10 +132,20 @@ impl Workers {
     /// the tracker (never taking a permit); any other interaction (a ping)
     /// is traced and dropped.
     fn interaction(&self, inbound: Inbound) {
-        let kind = match &inbound.kind {
-            InboundKind::Interaction(interaction, _) => Some(interaction.kind),
-            _ => None,
+        let (kind, id) = match &inbound.kind {
+            InboundKind::Interaction(interaction, _) => {
+                (Some(interaction.kind), Some(interaction.id))
+            }
+            _ => (None, None),
         };
+        // Reports the run's end to the hidden observer, also when the task
+        // panics or is cancelled (it is dropped either way).
+        let observed = id.and_then(|id| {
+            self.app
+                .run_observer
+                .clone()
+                .map(|observer| RunEnd { observer, id })
+        });
         let (registry, app, cancel) = (
             Arc::clone(&self.registry),
             Arc::clone(&self.app),
@@ -143,21 +153,27 @@ impl Workers {
         );
         match kind {
             Some(InteractionType::ApplicationCommand) => {
-                self.shutdown
-                    .tracker
-                    .spawn(run_interaction(registry, app, inbound, cancel));
+                self.shutdown.tracker.spawn(observe(
+                    run_interaction(registry, app, inbound, cancel),
+                    observed,
+                ));
             }
             Some(InteractionType::ApplicationCommandAutocomplete) => {
-                self.shutdown
-                    .tracker
-                    .spawn(run_autocomplete(registry, app, inbound, cancel));
+                self.shutdown.tracker.spawn(observe(
+                    run_autocomplete(registry, app, inbound, cancel),
+                    observed,
+                ));
             }
             Some(InteractionType::MessageComponent | InteractionType::ModalSubmit) => {
-                self.shutdown
-                    .tracker
-                    .spawn(run_component(registry, app, inbound, cancel));
+                self.shutdown.tracker.spawn(observe(
+                    run_component(registry, app, inbound, cancel),
+                    observed,
+                ));
             }
-            _ => interaction_unhandled(inbound, &self.app.app),
+            _ => {
+                interaction_unhandled(inbound, &self.app.app);
+                drop(observed);
+            }
         }
     }
 
@@ -188,6 +204,25 @@ impl Workers {
             let _ = tx.send(job);
         }
     }
+}
+
+/// Calls the run observer with its interaction id when dropped: when the
+/// interaction's task returns, panics or is cancelled.
+pub(crate) struct RunEnd {
+    observer: crate::handler::RunObserver,
+    id: Id<InteractionMarker>,
+}
+
+impl Drop for RunEnd {
+    fn drop(&mut self) {
+        (self.observer)(self.id);
+    }
+}
+
+/// `run`, then the drop of `end` (if any), which reports the run's end.
+pub(crate) async fn observe<F: Future<Output = ()>>(run: F, end: Option<RunEnd>) {
+    let _end = end;
+    run.await;
 }
 
 /// What the drain does next.

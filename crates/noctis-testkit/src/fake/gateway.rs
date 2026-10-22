@@ -591,6 +591,28 @@ impl FakeGateway {
         sent
     }
 
+    /// How many live connections have a session (received READY or
+    /// RESUMED): the connections [`dispatch`](Self::dispatch) reaches.
+    ///
+    /// ```no_run
+    /// # #[tokio::main] async fn main() -> std::io::Result<()> {
+    /// let gateway = noctis_testkit::fake::FakeGateway::start().await?;
+    /// assert_eq!(gateway.live_sessions(), 0);
+    /// # Ok(()) }
+    /// ```
+    pub fn live_sessions(&self) -> usize {
+        let state = self.shared.lock();
+        state
+            .live
+            .values()
+            .filter(|live| {
+                live.session
+                    .as_ref()
+                    .is_some_and(|session| state.sessions.contains_key(session))
+            })
+            .count()
+    }
+
     /// Sends `text` as a text frame to every live connection, unchanged.
     /// Returns the number of connections it was queued for.
     ///

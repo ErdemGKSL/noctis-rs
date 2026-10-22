@@ -1,0 +1,71 @@
+---
+source: crates/noctis-testkit/tests/testapp.rs
+expression: first.message_json()
+---
+{
+  "allowed_mentions": {
+    "parse": []
+  },
+  "components": [
+    {
+      "components": [
+        {
+          "content": "## Render",
+          "id": 2,
+          "type": 10
+        },
+        {
+          "components": [
+            {
+              "custom_id": "4pick:NN",
+              "id": 4,
+              "max_values": 2,
+              "min_values": 1,
+              "options": [
+                {
+                  "label": "A",
+                  "value": "a"
+                },
+                {
+                  "label": "B",
+                  "value": "b"
+                },
+                {
+                  "label": "C",
+                  "value": "c"
+                }
+              ],
+              "placeholder": "Pick",
+              "type": 3
+            }
+          ],
+          "id": 3,
+          "type": 1
+        },
+        {
+          "components": [
+            {
+              "custom_id": "8sig:5TTTTTT",
+              "id": 6,
+              "label": "Sig",
+              "style": 1,
+              "type": 2
+            },
+            {
+              "custom_id": "0byref:~RRRRRRRRRRR",
+              "id": 7,
+              "label": "Ref",
+              "style": 1,
+              "type": 2
+            }
+          ],
+          "id": 5,
+          "type": 1
+        }
+      ],
+      "id": 1,
+      "type": 17
+    }
+  ],
+  "flags": 32768
+}

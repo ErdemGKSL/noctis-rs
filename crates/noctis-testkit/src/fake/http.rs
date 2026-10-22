@@ -324,6 +324,7 @@ async fn handle(
         }
         Ok(_) => match lookup(shared, &recorded) {
             Lookup::Route(route) => route.respond(&recorded),
+            Lookup::Fallback(fallback) => fallback(&recorded).unwrap_or_else(not_found),
             Lookup::Response(response) => response,
         },
     };
@@ -336,6 +337,7 @@ async fn handle(
 /// What a lookup found; a route is called after the lock is released.
 enum Lookup {
     Route(super::Route),
+    Fallback(super::Fallback),
     Response(FakeResponse),
 }
 
@@ -357,7 +359,10 @@ fn lookup(shared: &Shared, request: &RecordedRequest) -> Lookup {
             &state.gateway_bot.to_json(),
         ));
     }
-    Lookup::Response(not_found())
+    match &state.fallback {
+        Some(fallback) => Lookup::Fallback(Arc::clone(fallback)),
+        None => Lookup::Response(not_found()),
+    }
 }
 
 /// Discord's `404` body.

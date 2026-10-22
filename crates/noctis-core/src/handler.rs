@@ -13,7 +13,7 @@ use noctis_rules::{MessageKey, Translate};
 use twilight_model::gateway::Intents;
 use twilight_model::gateway::event::{Event, EventType};
 use twilight_model::id::Id;
-use twilight_model::id::marker::GuildMarker;
+use twilight_model::id::marker::{GuildMarker, InteractionMarker};
 
 use crate::State;
 use crate::events::EventPayload;
@@ -232,7 +232,14 @@ pub(crate) struct AppShared {
     pub(crate) payload_keys: Option<Arc<noctis_codec::PayloadKeys>>,
     /// The App-level Expired Handler (`AppBuilder::expired_handler`).
     pub(crate) expired_handler: Option<Arc<crate::component::AppExpiredFn>>,
+    /// Called with the interaction id when an interaction's pipeline task
+    /// ends (the testkit's hidden seam, `__testing::observe_runs`); `None`
+    /// in production. It only observes.
+    pub(crate) run_observer: Option<RunObserver>,
 }
+
+/// The hidden run-end observer of [`AppShared::run_observer`].
+pub(crate) type RunObserver = Arc<dyn Fn(Id<InteractionMarker>) + Send + Sync>;
 
 /// The context an event handler receives: the shard, the guild, the
 /// handler's Module, the App's typed state, its HTTP client and its

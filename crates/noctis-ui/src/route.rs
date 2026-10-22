@@ -389,6 +389,36 @@ impl CustomId {
         self.resolve(&parts)
     }
 
+    /// Resolves an unresolved id with placeholder parts, for a snapshot of
+    /// a render that is never sent: select nonce `00`, an all-zero tag on a
+    /// `signed` Route and the all-`0` Ref for a Ref slot. A resolved id is
+    /// kept. Used by the testkit's `render_json`; not public API.
+    ///
+    /// # Errors
+    ///
+    /// The [`EncodeError`] of [`encode_id`]; the id is left unchanged.
+    #[doc(hidden)]
+    pub fn resolve_placeholder(&mut self) -> Result<(), EncodeError> {
+        if self.id.is_some() {
+            return Ok(());
+        }
+        let shape = self.route.shape();
+        let mut parts = Parts::new();
+        if shape.has_select()
+            && let Some(nonce) = SelectNonce::new(0)
+        {
+            parts = parts.with_nonce(nonce);
+        }
+        if shape.is_signed() {
+            parts = parts.with_signer(&PlaceholderSign);
+        }
+        self.id = Some(match self.route.encode(&parts)? {
+            EncodedId::Inline(id) => id,
+            EncodedId::RefSlot(slot) => noctis_codec::finish(&slot, Ref::PLACEHOLDER),
+        });
+        Ok(())
+    }
+
     /// The key CID-02 compares to find two components with the same Route
     /// and Payload, resolved or not.
     ///

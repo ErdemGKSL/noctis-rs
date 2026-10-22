@@ -181,7 +181,7 @@ pub use key::{PayloadKey, PayloadKeys};
 pub use layout::{
     Decoded, FMT_LEN, MAX_ID_LEN, NONCE_LEN, Parts, PayloadSource, REF_LEN, REF_MARKER_LEN,
     RawBody, RefPolicy, SCHEMA_LEN, SEP_LEN, TAG_LEN, decode, decode_route, decode_route_verified,
-    encode,
+    encode, mask_volatile,
 };
 pub use parts::{Flags, SelectNonce, Sign, Tag, Verify};
 pub use record::{RefRecord, decode_record};

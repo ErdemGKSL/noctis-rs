@@ -4957,6 +4957,339 @@ pub fn noctis::rules::modal::validate_modal_title(&str, &noctis::rules::Limits) 
 pub fn noctis::rules::modal::validate_text_input(&noctis::rules::modal::TextInput<'_>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::modal::validate_text_input_value(&str, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::truncate(&str, usize) -> alloc::borrow::Cow<'_, str>
+pub mod noctis::testkit
+pub struct noctis::testkit::AutocompleteRun<'a>
+impl<'a> noctis::testkit::AutocompleteRun<'a>
+pub fn noctis::testkit::AutocompleteRun<'a>::by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::AutocompleteRun<'a>::in_channel(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+pub fn noctis::testkit::AutocompleteRun<'a>::in_guild(self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> Self
+pub fn noctis::testkit::AutocompleteRun<'a>::locale(self, &str) -> Self
+pub fn noctis::testkit::AutocompleteRun<'a>::option(self, &str, impl core::convert::Into<noctis::testkit::TestOption>) -> Self
+pub async fn noctis::testkit::AutocompleteRun<'a>::run(self) -> core::result::Result<noctis::testkit::Response, noctis::testkit::TestError>
+impl<'a> core::fmt::Debug for noctis::testkit::AutocompleteRun<'a>
+pub fn noctis::testkit::AutocompleteRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::ClickRun<'a>
+impl<'a> noctis::testkit::ClickRun<'a>
+pub fn noctis::testkit::ClickRun<'a>::by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::ClickRun<'a>::locale(self, &str) -> Self
+pub async fn noctis::testkit::ClickRun<'a>::run(self) -> core::result::Result<noctis::testkit::Response, noctis::testkit::TestError>
+impl<'a> core::fmt::Debug for noctis::testkit::ClickRun<'a>
+pub fn noctis::testkit::ClickRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::CommandRun<'a>
+impl<'a> noctis::testkit::CommandRun<'a>
+pub fn noctis::testkit::CommandRun<'a>::by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::CommandRun<'a>::in_channel(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+pub fn noctis::testkit::CommandRun<'a>::in_guild(self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> Self
+pub fn noctis::testkit::CommandRun<'a>::locale(self, &str) -> Self
+pub fn noctis::testkit::CommandRun<'a>::option(self, &str, impl core::convert::Into<noctis::testkit::TestOption>) -> Self
+pub async fn noctis::testkit::CommandRun<'a>::run(self) -> core::result::Result<noctis::testkit::Response, noctis::testkit::TestError>
+impl<'a> core::fmt::Debug for noctis::testkit::CommandRun<'a>
+pub fn noctis::testkit::CommandRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::HttpCall
+impl noctis::testkit::HttpCall
+pub fn noctis::testkit::HttpCall::json(&self) -> core::option::Option<&serde_json::value::Value>
+pub fn noctis::testkit::HttpCall::method(&self) -> &str
+pub fn noctis::testkit::HttpCall::path(&self) -> &str
+impl core::clone::Clone for noctis::testkit::HttpCall
+pub fn noctis::testkit::HttpCall::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::HttpCall
+pub fn noctis::testkit::HttpCall::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub const noctis::testkit::MEMORY_FLAT_SLACK_BYTES: u64
+#[non_exhaustive] pub struct noctis::testkit::MemoryReport
+pub noctis::testkit::MemoryReport::after_bytes: u64
+pub noctis::testkit::MemoryReport::before_bytes: u64
+pub noctis::testkit::MemoryReport::runs: usize
+pub noctis::testkit::MemoryReport::warm_up: usize
+impl core::clone::Clone for noctis::testkit::MemoryReport
+pub fn noctis::testkit::MemoryReport::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::MemoryReport
+impl core::cmp::PartialEq for noctis::testkit::MemoryReport
+pub fn noctis::testkit::MemoryReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::MemoryReport
+pub fn noctis::testkit::MemoryReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::testkit::MemoryReport
+impl core::marker::StructuralPartialEq for noctis::testkit::MemoryReport
+pub struct noctis::testkit::MenuRun<'a>
+impl<'a> noctis::testkit::MenuRun<'a>
+pub fn noctis::testkit::MenuRun<'a>::by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::MenuRun<'a>::in_channel(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+pub fn noctis::testkit::MenuRun<'a>::in_guild(self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> Self
+pub fn noctis::testkit::MenuRun<'a>::locale(self, &str) -> Self
+pub async fn noctis::testkit::MenuRun<'a>::run(self) -> core::result::Result<noctis::testkit::Response, noctis::testkit::TestError>
+pub fn noctis::testkit::MenuRun<'a>::target_message(self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> Self
+pub fn noctis::testkit::MenuRun<'a>::target_user(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+impl<'a> core::fmt::Debug for noctis::testkit::MenuRun<'a>
+pub fn noctis::testkit::MenuRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::ModalForm
+impl noctis::testkit::ModalForm
+pub fn noctis::testkit::ModalForm::checkbox(self, impl core::convert::Into<alloc::string::String>, bool) -> Self
+pub fn noctis::testkit::ModalForm::custom_id(&self) -> &str
+pub fn noctis::testkit::ModalForm::radio(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::testkit::ModalForm::text(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::testkit::ModalForm::title(&self) -> &str
+pub fn noctis::testkit::ModalForm::values<I>(self, impl core::convert::Into<alloc::string::String>, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::Into<alloc::string::String>
+impl core::clone::Clone for noctis::testkit::ModalForm
+pub fn noctis::testkit::ModalForm::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::ModalForm
+pub fn noctis::testkit::ModalForm::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::Response
+impl noctis::testkit::Response
+pub fn noctis::testkit::Response::button(&self, &str) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
+pub fn noctis::testkit::Response::button_by_emoji(&self, &str) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
+pub fn noctis::testkit::Response::buttons(&self) -> alloc::vec::Vec<noctis::testkit::TestComponent>
+pub fn noctis::testkit::Response::callback_type(&self) -> core::option::Option<u8>
+pub fn noctis::testkit::Response::component<R: noctis::__private::ui::Handled>(&self) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
+pub fn noctis::testkit::Response::components(&self) -> alloc::vec::Vec<noctis::testkit::TestComponent>
+pub fn noctis::testkit::Response::cost(&self) -> noctis::testkit::WireCost
+pub fn noctis::testkit::Response::followups(&self) -> &[noctis::testkit::TestMessage]
+pub fn noctis::testkit::Response::http_calls(&self) -> &[noctis::testkit::HttpCall]
+pub fn noctis::testkit::Response::is_ephemeral(&self) -> bool
+pub fn noctis::testkit::Response::is_error(&self) -> bool
+pub fn noctis::testkit::Response::is_expired_notice(&self) -> bool
+pub fn noctis::testkit::Response::is_guard_notice(&self) -> bool
+pub fn noctis::testkit::Response::kind(&self) -> noctis::testkit::ResponseKind
+pub fn noctis::testkit::Response::message(&self) -> core::option::Option<&noctis::testkit::TestMessage>
+pub fn noctis::testkit::Response::message_json(&self) -> serde_json::value::Value
+pub fn noctis::testkit::Response::modal(&self) -> core::result::Result<noctis::testkit::ModalForm, noctis::testkit::TestError>
+pub fn noctis::testkit::Response::suggestions(&self) -> &[(alloc::string::String, alloc::string::String)]
+pub fn noctis::testkit::Response::text(&self) -> alloc::string::String
+impl core::clone::Clone for noctis::testkit::Response
+pub fn noctis::testkit::Response::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::Response
+pub fn noctis::testkit::Response::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub enum noctis::testkit::ResponseKind
+pub noctis::testkit::ResponseKind::Autocomplete
+pub noctis::testkit::ResponseKind::Deferred
+pub noctis::testkit::ResponseKind::Modal
+pub noctis::testkit::ResponseKind::None
+pub noctis::testkit::ResponseKind::Reply
+pub noctis::testkit::ResponseKind::Update
+impl core::clone::Clone for noctis::testkit::ResponseKind
+pub fn noctis::testkit::ResponseKind::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::ResponseKind
+impl core::cmp::PartialEq for noctis::testkit::ResponseKind
+pub fn noctis::testkit::ResponseKind::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::testkit::ResponseKind
+pub fn noctis::testkit::ResponseKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::testkit::ResponseKind
+pub fn noctis::testkit::ResponseKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::testkit::ResponseKind
+impl core::marker::StructuralPartialEq for noctis::testkit::ResponseKind
+pub struct noctis::testkit::SelectRun<'a>
+impl<'a> noctis::testkit::SelectRun<'a>
+pub fn noctis::testkit::SelectRun<'a>::by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::SelectRun<'a>::channels(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>) -> Self
+pub fn noctis::testkit::SelectRun<'a>::locale(self, &str) -> Self
+pub fn noctis::testkit::SelectRun<'a>::roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+pub async fn noctis::testkit::SelectRun<'a>::run(self) -> core::result::Result<noctis::testkit::Response, noctis::testkit::TestError>
+pub fn noctis::testkit::SelectRun<'a>::users(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> Self
+pub fn noctis::testkit::SelectRun<'a>::values<I: core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>>(self, I) -> Self
+impl<'a> core::fmt::Debug for noctis::testkit::SelectRun<'a>
+pub fn noctis::testkit::SelectRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::SubmitRun<'a>
+impl<'a> noctis::testkit::SubmitRun<'a>
+pub fn noctis::testkit::SubmitRun<'a>::by(self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::SubmitRun<'a>::locale(self, &str) -> Self
+pub async fn noctis::testkit::SubmitRun<'a>::run(self) -> core::result::Result<noctis::testkit::Response, noctis::testkit::TestError>
+impl<'a> core::fmt::Debug for noctis::testkit::SubmitRun<'a>
+pub fn noctis::testkit::SubmitRun<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::TestApp
+impl noctis::testkit::TestApp
+pub const noctis::testkit::TestApp::DEFAULT_USER: twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::testkit::TestApp::autocomplete(&self, &str, &str, &str) -> noctis::testkit::AutocompleteRun<'_>
+pub async fn noctis::testkit::TestApp::build(&mut noctis::AppBuilder) -> core::result::Result<Self, noctis::testkit::TestError>
+pub fn noctis::testkit::TestApp::click(&self, noctis::testkit::TestComponent) -> noctis::testkit::ClickRun<'_>
+pub fn noctis::testkit::TestApp::command(&self, &str) -> noctis::testkit::CommandRun<'_>
+pub fn noctis::testkit::TestApp::guild(self, noctis::testkit::TestGuild) -> Self
+pub fn noctis::testkit::TestApp::message_command(&self, &str) -> noctis::testkit::MenuRun<'_>
+pub fn noctis::testkit::TestApp::select(&self, noctis::testkit::TestComponent) -> noctis::testkit::SelectRun<'_>
+pub async fn noctis::testkit::TestApp::stop(self) -> core::result::Result<(), noctis::testkit::TestError>
+pub fn noctis::testkit::TestApp::submit(&self, noctis::testkit::ModalForm) -> noctis::testkit::SubmitRun<'_>
+pub fn noctis::testkit::TestApp::timeout(self, core::time::Duration) -> Self
+pub fn noctis::testkit::TestApp::user(self, noctis::testkit::TestUser) -> Self
+pub fn noctis::testkit::TestApp::user_command(&self, &str) -> noctis::testkit::MenuRun<'_>
+impl core::fmt::Debug for noctis::testkit::TestApp
+pub fn noctis::testkit::TestApp::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::ops::drop::Drop for noctis::testkit::TestApp
+pub fn noctis::testkit::TestApp::drop(&mut self)
+pub struct noctis::testkit::TestComponent
+impl noctis::testkit::TestComponent
+pub fn noctis::testkit::TestComponent::component_type(&self) -> u8
+pub fn noctis::testkit::TestComponent::custom_id(&self) -> core::option::Option<&str>
+pub fn noctis::testkit::TestComponent::emoji(&self) -> core::option::Option<&str>
+pub fn noctis::testkit::TestComponent::is_disabled(&self) -> bool
+pub fn noctis::testkit::TestComponent::label(&self) -> core::option::Option<&str>
+pub fn noctis::testkit::TestComponent::options(&self) -> alloc::vec::Vec<alloc::string::String>
+pub fn noctis::testkit::TestComponent::route(&self) -> core::option::Option<&str>
+pub fn noctis::testkit::TestComponent::style(&self) -> core::option::Option<noctis::ui::ButtonStyle>
+impl core::clone::Clone for noctis::testkit::TestComponent
+pub fn noctis::testkit::TestComponent::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::TestComponent
+pub fn noctis::testkit::TestComponent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::testkit::TestError
+pub noctis::testkit::TestError::AllocatorMissing
+pub noctis::testkit::TestError::Build(noctis::BuildError)
+pub noctis::testkit::TestError::Disabled
+pub noctis::testkit::TestError::Disabled::custom_id: alloc::string::String
+pub noctis::testkit::TestError::InvalidInput
+pub noctis::testkit::TestError::InvalidInput::key: alloc::string::String
+pub noctis::testkit::TestError::InvalidInput::reason: alloc::string::String
+pub noctis::testkit::TestError::InvalidOption
+pub noctis::testkit::TestError::InvalidOption::option: alloc::string::String
+pub noctis::testkit::TestError::InvalidOption::reason: &'static str
+pub noctis::testkit::TestError::Io(core::io::error::Error)
+pub noctis::testkit::TestError::MemoryGrew
+pub noctis::testkit::TestError::MemoryGrew::after: u64
+pub noctis::testkit::TestError::MemoryGrew::before: u64
+pub noctis::testkit::TestError::MemoryGrew::runs: usize
+pub noctis::testkit::TestError::MissingOption
+pub noctis::testkit::TestError::MissingOption::option: alloc::string::String
+pub noctis::testkit::TestError::NotAChoice
+pub noctis::testkit::TestError::NotAChoice::option: alloc::string::String
+pub noctis::testkit::TestError::NotAChoice::value: alloc::string::String
+pub noctis::testkit::TestError::NotAnOption
+pub noctis::testkit::TestError::NotAnOption::value: alloc::string::String
+pub noctis::testkit::TestError::NotAutocomplete
+pub noctis::testkit::TestError::NotAutocomplete::option: alloc::string::String
+pub noctis::testkit::TestError::NotFound
+pub noctis::testkit::TestError::NotFound::available: alloc::vec::Vec<alloc::string::String>
+pub noctis::testkit::TestError::NotFound::what: alloc::string::String
+pub noctis::testkit::TestError::NotInteractive
+pub noctis::testkit::TestError::NotVisible
+pub noctis::testkit::TestError::NotVisible::user: u64
+pub noctis::testkit::TestError::OptionType
+pub noctis::testkit::TestError::OptionType::expected: &'static str
+pub noctis::testkit::TestError::OptionType::found: &'static str
+pub noctis::testkit::TestError::OptionType::option: alloc::string::String
+pub noctis::testkit::TestError::ProfilerBusy
+pub noctis::testkit::TestError::Render(alloc::string::String)
+pub noctis::testkit::TestError::Runtime
+pub noctis::testkit::TestError::SelectValues
+pub noctis::testkit::TestError::SelectValues::got: usize
+pub noctis::testkit::TestError::SelectValues::max: u8
+pub noctis::testkit::TestError::SelectValues::min: u8
+pub noctis::testkit::TestError::Start(noctis::Error)
+pub noctis::testkit::TestError::Stopped
+pub noctis::testkit::TestError::Timeout
+pub noctis::testkit::TestError::Timeout::after: core::time::Duration
+pub noctis::testkit::TestError::Timeout::what: &'static str
+pub noctis::testkit::TestError::TooFewRuns
+pub noctis::testkit::TestError::TooFewRuns::n: usize
+pub noctis::testkit::TestError::Unknown
+pub noctis::testkit::TestError::Unknown::id: u64
+pub noctis::testkit::TestError::Unknown::kind: &'static str
+pub noctis::testkit::TestError::UnknownCommand
+pub noctis::testkit::TestError::UnknownCommand::path: alloc::string::String
+pub noctis::testkit::TestError::UnknownInput
+pub noctis::testkit::TestError::UnknownInput::key: alloc::string::String
+pub noctis::testkit::TestError::UnknownOption
+pub noctis::testkit::TestError::UnknownOption::option: alloc::string::String
+pub noctis::testkit::TestError::UnknownOption::path: alloc::string::String
+pub noctis::testkit::TestError::Unsupported(&'static str)
+pub noctis::testkit::TestError::WrongComponent
+pub noctis::testkit::TestError::WrongComponent::expected: &'static str
+pub noctis::testkit::TestError::WrongComponent::found: &'static str
+pub noctis::testkit::TestError::WrongInput
+pub noctis::testkit::TestError::WrongInput::expected: &'static str
+pub noctis::testkit::TestError::WrongInput::key: alloc::string::String
+impl core::convert::From<core::io::error::Error> for noctis::testkit::TestError
+pub fn noctis::testkit::TestError::from(core::io::error::Error) -> Self
+impl core::error::Error for noctis::testkit::TestError
+pub fn noctis::testkit::TestError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::testkit::TestError
+pub fn noctis::testkit::TestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::testkit::TestError
+pub fn noctis::testkit::TestError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::TestGuild
+impl noctis::testkit::TestGuild
+pub fn noctis::testkit::TestGuild::channel(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, impl core::convert::Into<alloc::string::String>, twilight_model::channel::channel_type::ChannelType) -> Self
+pub fn noctis::testkit::TestGuild::locale(self, &str) -> Self
+pub fn noctis::testkit::TestGuild::new(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::testkit::TestGuild::role(self, twilight_model::id::Id<twilight_model::id::marker::RoleMarker>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::testkit::TestGuild::text_channel(self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for noctis::testkit::TestGuild
+pub fn noctis::testkit::TestGuild::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::TestGuild
+pub fn noctis::testkit::TestGuild::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::TestMessage
+impl noctis::testkit::TestMessage
+pub fn noctis::testkit::TestMessage::button(&self, &str) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
+pub fn noctis::testkit::TestMessage::button_by_emoji(&self, &str) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
+pub fn noctis::testkit::TestMessage::buttons(&self) -> alloc::vec::Vec<noctis::testkit::TestComponent>
+pub fn noctis::testkit::TestMessage::component<R: noctis::__private::ui::Handled>(&self) -> core::result::Result<noctis::testkit::TestComponent, noctis::testkit::TestError>
+pub fn noctis::testkit::TestMessage::components(&self) -> alloc::vec::Vec<noctis::testkit::TestComponent>
+pub fn noctis::testkit::TestMessage::cost(&self) -> noctis::testkit::WireCost
+pub fn noctis::testkit::TestMessage::id(&self) -> twilight_model::id::Id<twilight_model::id::marker::MessageMarker>
+pub fn noctis::testkit::TestMessage::is_ephemeral(&self) -> bool
+pub fn noctis::testkit::TestMessage::message_json(&self) -> serde_json::value::Value
+pub fn noctis::testkit::TestMessage::raw_json(&self) -> &serde_json::value::Value
+pub fn noctis::testkit::TestMessage::text(&self) -> alloc::string::String
+impl core::clone::Clone for noctis::testkit::TestMessage
+pub fn noctis::testkit::TestMessage::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::TestMessage
+pub fn noctis::testkit::TestMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::testkit::TestOption
+pub noctis::testkit::TestOption::Boolean(bool)
+pub noctis::testkit::TestOption::Channel(twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>)
+pub noctis::testkit::TestOption::Integer(i64)
+pub noctis::testkit::TestOption::Number(f64)
+pub noctis::testkit::TestOption::Role(twilight_model::id::Id<twilight_model::id::marker::RoleMarker>)
+pub noctis::testkit::TestOption::String(alloc::string::String)
+pub noctis::testkit::TestOption::User(twilight_model::id::Id<twilight_model::id::marker::UserMarker>)
+impl core::clone::Clone for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::eq(&self, &Self) -> bool
+impl core::convert::From<&str> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(alloc::string::String) -> Self
+impl core::convert::From<bool> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(bool) -> Self
+impl core::convert::From<f64> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(f64) -> Self
+impl core::convert::From<i32> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(i32) -> Self
+impl core::convert::From<i64> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(i64) -> Self
+impl core::convert::From<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> Self
+impl core::convert::From<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(twilight_model::id::Id<twilight_model::id::marker::RoleMarker>) -> Self
+impl core::convert::From<twilight_model::id::Id<twilight_model::id::marker::UserMarker>> for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::from(twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+impl core::fmt::Debug for noctis::testkit::TestOption
+pub fn noctis::testkit::TestOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::testkit::TestOption
+pub struct noctis::testkit::TestUser
+impl noctis::testkit::TestUser
+pub fn noctis::testkit::TestUser::name(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::testkit::TestUser::new(twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> Self
+pub fn noctis::testkit::TestUser::permissions(self, twilight_model::guild::permissions::Permissions) -> Self
+pub fn noctis::testkit::TestUser::roles(self, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>) -> Self
+impl core::clone::Clone for noctis::testkit::TestUser
+pub fn noctis::testkit::TestUser::clone(&self) -> Self
+impl core::fmt::Debug for noctis::testkit::TestUser
+pub fn noctis::testkit::TestUser::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::testkit::WireCost
+pub noctis::testkit::WireCost::components: usize
+pub noctis::testkit::WireCost::text_chars: usize
+impl core::clone::Clone for noctis::testkit::WireCost
+pub fn noctis::testkit::WireCost::clone(&self) -> Self
+impl core::cmp::Eq for noctis::testkit::WireCost
+impl core::cmp::PartialEq for noctis::testkit::WireCost
+pub fn noctis::testkit::WireCost::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::testkit::WireCost
+pub fn noctis::testkit::WireCost::default() -> Self
+impl core::fmt::Debug for noctis::testkit::WireCost
+pub fn noctis::testkit::WireCost::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::testkit::WireCost
+pub fn noctis::testkit::WireCost::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::testkit::WireCost
+impl core::marker::StructuralPartialEq for noctis::testkit::WireCost
+pub async fn noctis::testkit::assert_memory_flat<'a, F, Fut>(&'a noctis::testkit::TestApp, usize, F) -> core::result::Result<noctis::testkit::MemoryReport, noctis::testkit::TestError> where F: core::ops::function::FnMut(&'a noctis::testkit::TestApp) -> Fut, Fut: core::future::future::Future<Output = core::result::Result<(), noctis::testkit::TestError>>
+pub use noctis::testkit::dhat
+pub fn noctis::testkit::render_json(&noctis::ui::V2Message) -> core::result::Result<serde_json::value::Value, noctis::testkit::TestError>
 pub mod noctis::twilight
 pub use noctis::twilight::http
 pub use noctis::twilight::model

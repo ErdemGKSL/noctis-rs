@@ -11,7 +11,7 @@ use crate::registry::commands::{CommandNode, ScopeCommands};
 
 /// Every command object of one scope: the chat-input bases, then the
 /// context menus.
-pub(super) fn local(scope: &ScopeCommands) -> Vec<Value> {
+pub(crate) fn local(scope: &ScopeCommands) -> Vec<Value> {
     let bases = scope.bases.iter().map(|base| {
         let mut object = node(base, 1);
         add_metadata(&mut object, &base.metadata);

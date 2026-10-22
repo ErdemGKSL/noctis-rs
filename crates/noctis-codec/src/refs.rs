@@ -82,6 +82,15 @@ impl Ref {
         Self(digits)
     }
 
+    /// The all-`0` Ref the testkit renders unresolved by-Ref ids with
+    /// (snapshots mask it anyway); never stored. Not public API.
+    ///
+    /// ```
+    /// assert_eq!(noctis_codec::Ref::PLACEHOLDER.as_str(), "00000000000");
+    /// ```
+    #[doc(hidden)]
+    pub const PLACEHOLDER: Self = Self([b'0'; REF_LEN]);
+
     /// The Ref's 11 characters.
     pub fn as_str(&self) -> &str {
         // Every byte is a base62 digit, so the bytes are ASCII.

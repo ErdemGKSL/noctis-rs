@@ -556,8 +556,9 @@
 //! - `default-font`: a bundled default font for image Templates.
 //! - `i18n`: the localization runtime.
 //! - `prefix`: opt-in prefix commands.
-//! - `testkit`: Discord fakes and test helpers; enable it in
-//!   `[dev-dependencies]` only.
+//! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
+//!   simulated interactions, message snapshots and the memory check;
+//!   enable it in `[dev-dependencies]` only.
 #![deny(missing_docs)]
 
 pub use noctis_core::{
@@ -2595,4 +2596,71 @@ pub mod rules {
         Violation,
     };
     pub use noctis_rules::{attachment, command, component, message, modal};
+}
+
+#[cfg(feature = "testkit")]
+pub mod testkit {
+    //! The bot's own App on local Discord fakes, driven by simulated
+    //! interactions (FR-51). Enable the `testkit` feature in
+    //! `[dev-dependencies]` only.
+    //!
+    //! - [`TestApp`]: `TestApp::build(configure(&mut App::builder()))` builds
+    //!   the bot's builder (its Modules and Plugins install as in
+    //!   production) against a local HTTP and gateway fake on
+    //!   `Runtime::for_test()`, and runs it. It needs a multi-thread tokio
+    //!   runtime: `#[tokio::test(flavor = "multi_thread")]`.
+    //! - Seeds: [`TestGuild`] (channels, roles, locale), [`TestUser`]
+    //!   (name, permissions, roles); [`TestApp::DEFAULT_USER`] is always
+    //!   seeded. Every id a run references must be seeded
+    //!   ([`TestError::Unknown`]).
+    //! - Runs: [`TestApp::command`], [`TestApp::user_command`],
+    //!   [`TestApp::message_command`], [`TestApp::click`],
+    //!   [`TestApp::select`], [`TestApp::submit`] and
+    //!   [`TestApp::autocomplete`] return a builder ([`CommandRun`],
+    //!   [`MenuRun`], [`ClickRun`], [`SelectRun`], [`SubmitRun`],
+    //!   [`AutocompleteRun`]) that ends in `.run().await`. Each run is one
+    //!   `INTERACTION_CREATE` through the gateway fake into the real
+    //!   pipeline; it ends when the pipeline task ends.
+    //! - [`Response`]: [`ResponseKind`] (a type-5 or type-6 defer followed by
+    //!   an edit counts as `Reply` or `Update`), ephemerality, the final
+    //!   message ([`TestMessage`]), follow-ups, a modal ([`ModalForm`]),
+    //!   suggestions, built-in notices and every HTTP call ([`HttpCall`]).
+    //!   Finders ([`TestComponent`]) return `Result`, so a test uses `?`.
+    //!   [`WireCost`] counts the message as sent, like [`crate::ui::cost`].
+    //! - Snapshots: [`Response::message_json`] and [`render_json`] mask only
+    //!   the per-send parts of each `custom_id` (select nonce `NN`, Ref
+    //!   `~RRRRRRRRRRR`, integrity tag `TTTTTT`), so `insta` snapshots are
+    //!   stable.
+    //! - [`assert_memory_flat`]: live heap stays within
+    //!   [`MEMORY_FLAT_SLACK_BYTES`] over N runs (NFR-2). It needs the
+    //!   [`dhat`] allocator in its own test binary with one `#[test]`.
+    //!
+    //! ```no_run
+    //! use noctis::prelude::*;
+    //! use noctis::testkit::{ResponseKind, TestApp, TestError, TestGuild, TestUser};
+    //! use noctis::twilight::model::id::Id;
+    //!
+    //! fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
+    //!     builder // .module(..) mounts the bot's Modules
+    //! }
+    //!
+    //! # async fn flow() -> Result<(), TestError> {
+    //! let app = TestApp::build(configure(&mut App::builder()))
+    //!     .await?
+    //!     .guild(TestGuild::new(Id::new(10), "Guild").text_channel(Id::new(20), "logs"))
+    //!     .user(TestUser::new(Id::new(40)));
+    //! let step1 = app.command("setup start").by(Id::new(40)).in_guild(Id::new(10)).run().await?;
+    //! assert_eq!(step1.kind(), ResponseKind::Reply);
+    //! let next = app.click(step1.button("Next")?).run().await?;
+    //! assert!(!next.button("Back")?.is_disabled());
+    //! app.stop().await
+    //! # }
+    //! ```
+
+    pub use noctis_testkit::{
+        AutocompleteRun, ClickRun, CommandRun, HttpCall, MEMORY_FLAT_SLACK_BYTES, MemoryReport,
+        MenuRun, ModalForm, Response, ResponseKind, SelectRun, SubmitRun, TestApp, TestComponent,
+        TestError, TestGuild, TestMessage, TestOption, TestUser, WireCost, assert_memory_flat,
+        dhat, render_json,
+    };
 }

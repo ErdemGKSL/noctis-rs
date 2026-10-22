@@ -23,7 +23,7 @@ i18n = []
 # Opt-in prefix commands (noctis-prefix, P2).
 prefix = []
 # Test kit (noctis-testkit); enable it in `[dev-dependencies]` only.
-testkit = []
+testkit = ["dep:noctis-testkit"]
 
 [dependencies]
 bytes.workspace = true
@@ -32,6 +32,7 @@ noctis-core.workspace = true
 noctis-macros.workspace = true
 noctis-ports.workspace = true
 noctis-rules.workspace = true
+noctis-testkit = { workspace = true, optional = true }
 noctis-ui.workspace = true
 twilight-http.workspace = true
 twilight-model.workspace = true

@@ -1231,6 +1231,7 @@ dependencies = [
  "noctis-macros",
  "noctis-ports",
  "noctis-rules",
+ "noctis-testkit",
  "noctis-ui",
  "proptest",
  "serde",
@@ -1367,6 +1368,7 @@ name = "noctis-testkit"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "dhat",
  "futures-util",
  "http-body-util",
  "hyper",
@@ -1378,6 +1380,8 @@ dependencies = [
  "noctis-core",
  "noctis-gateway",
  "noctis-ports",
+ "noctis-rules",
+ "noctis-ui",
  "serde_json",
  "thiserror",
  "tokio",

@@ -1272,6 +1272,8 @@ pub struct AppBuilder {
     previous_payload_key: Option<PayloadKey>,
     /// The App-level Expired Handler (`expired_handler`).
     expired_handler: Option<Arc<AppExpiredFn>>,
+    /// The hidden run-end observer (`__testing::observe_runs`).
+    run_observer: Option<crate::handler::RunObserver>,
     /// Plugins waiting for `install`.
     plugins: Vec<PluginEntry>,
     /// Every plugin type registered since the last `build`.
@@ -1354,6 +1356,7 @@ impl AppBuilder {
             payload_key: None,
             previous_payload_key: None,
             expired_handler: None,
+            run_observer: None,
             plugins: Vec::new(),
             plugin_types: HashSet::new(),
             violations: Vec::new(),
@@ -2127,6 +2130,7 @@ impl AppBuilder {
                 strings: Arc::new(noctis_i18n::Builtin),
                 payload_keys,
                 expired_handler: config.expired_handler,
+                run_observer: config.run_observer,
             }),
             http_timeout: config.http_timeout,
             http_proxy,
@@ -2145,6 +2149,11 @@ impl AppBuilder {
             dev_guild: config.dev_guild,
             lifecycle: Lifecycle::new(),
         })
+    }
+
+    /// Sets the hidden run-end observer (`__testing::observe_runs`).
+    pub(crate) fn set_run_observer(&mut self, observer: crate::handler::RunObserver) {
+        self.run_observer = Some(observer);
     }
 
     /// Records one violation per out-of-range [`HttpConfig`] field, then

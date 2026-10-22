@@ -65,6 +65,8 @@ const GRAPH: &[(&str, &str)] = &[
     ("noctis-testkit", "noctis-core"),
     ("noctis-testkit", "noctis-gateway"),
     ("noctis-testkit", "noctis-ports"),
+    ("noctis-testkit", "noctis-ui"),
+    ("noctis-testkit", "noctis-rules"),
     ("noctis-core", "noctis-gateway"),
     ("noctis-core", "noctis-i18n"),
     ("noctis-core", "noctis-ui"),
@@ -724,8 +726,8 @@ mod tests {
     #[test]
     fn graph_encodes_every_drawn_non_facade_edge() {
         // The facade's drawn ungated edges (core, macros, image, i18n, prefix)
-        // are covered by its any-crate rule, so GRAPH holds the other 18.
-        assert_eq!(GRAPH.len(), 18);
+        // are covered by its any-crate rule, so GRAPH holds the other 20.
+        assert_eq!(GRAPH.len(), 20);
         assert_eq!(GATED.len(), 4);
     }
 

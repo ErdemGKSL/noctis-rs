@@ -298,6 +298,111 @@ pub mod __testing {
         HandlerResult, ModalHandler, Module, Responded,
     };
 
+    /// Installs `observer` as the App's run-end observer: it is called with
+    /// the interaction id when that interaction's pipeline task ends
+    /// (returned, panicked or cancelled; for an interaction without a
+    /// pipeline, once it has been traced). It only observes and changes no
+    /// dispatch behaviour; the last call wins.
+    pub fn observe_runs(
+        builder: &mut crate::AppBuilder,
+        observer: std::sync::Arc<
+            dyn Fn(twilight_model::id::Id<twilight_model::id::marker::InteractionMarker>)
+                + Send
+                + Sync,
+        >,
+    ) {
+        builder.set_run_observer(observer);
+    }
+
+    /// A read-only view of a built App for the testkit: its command
+    /// definitions, its built-in notice texts, and the codec's `custom_id`
+    /// masking and Route lookup. It only reads.
+    #[derive(Clone)]
+    pub struct AppProbe {
+        shared: std::sync::Arc<crate::handler::AppShared>,
+        registry: std::sync::Arc<crate::registry::Registry>,
+    }
+
+    impl std::fmt::Debug for AppProbe {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("AppProbe")
+                .field("app", &self.shared.app)
+                .finish_non_exhaustive()
+        }
+    }
+
+    impl AppProbe {
+        /// The probe of `app`.
+        pub fn of(app: &App) -> Self {
+            Self {
+                shared: std::sync::Arc::clone(app.shared()),
+                registry: std::sync::Arc::clone(app.registry()),
+            }
+        }
+
+        /// Every command object Publish would send, with its scope (`None`
+        /// for global): each scope's chat-input bases, then its context
+        /// menus, in Registry order.
+        pub fn commands(
+            &self,
+        ) -> Vec<(
+            Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>,
+            serde_json::Value,
+        )> {
+            use noctis_rules::command::Scope;
+
+            let mut out = Vec::new();
+            for scope in self.registry.commands().scopes() {
+                let guild = match scope.scope {
+                    Scope::Global => None,
+                    Scope::Guild(id) => match twilight_model::id::Id::new_checked(id) {
+                        Some(id) => Some(id),
+                        None => continue,
+                    },
+                };
+                out.extend(
+                    crate::publish::json::local(scope)
+                        .into_iter()
+                        .map(|command| (guild, command)),
+                );
+            }
+            out
+        }
+
+        /// The text of the built-in notice `key` (a `noctis.*` key) in the
+        /// locale a failed run's notice uses: the User Locale, then the
+        /// Guild Locale, else `en-US`. A key no catalog has renders the
+        /// generic error text, as at run time.
+        pub fn notice(
+            &self,
+            key: &'static str,
+            user_locale: Option<&str>,
+            guild_locale: Option<&str>,
+        ) -> String {
+            crate::notice::text(
+                &*self.shared.strings,
+                crate::notice::locale(user_locale, guild_locale),
+                noctis_rules::MessageKey::new(key),
+            )
+        }
+    }
+
+    /// `raw` with its per-send parts masked (select nonce `NN`, Ref body
+    /// `~RRRRRRRRRRR`, integrity tag `TTTTTT`); unchanged for an inline
+    /// unsigned id or a `custom_id` that is not Noctis's.
+    pub fn mask_custom_id(raw: &str) -> std::borrow::Cow<'_, str> {
+        noctis_codec::mask_volatile(raw)
+            .map_or(std::borrow::Cow::Borrowed(raw), std::borrow::Cow::Owned)
+    }
+
+    /// The Route id of the Noctis `custom_id` `raw`, or `None` when it is
+    /// not one.
+    pub fn route_of(raw: &str) -> Option<&str> {
+        noctis_codec::decode(raw)
+            .ok()
+            .map(|decoded| decoded.route())
+    }
+
     /// The merged command Registry of `app`, one line per scope, base,
     /// child and context menu (format in Story 6.4's spec); `""` when it has
     /// no commands.

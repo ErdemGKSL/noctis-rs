@@ -710,6 +710,58 @@ pub fn decode(raw: &str) -> Result<Decoded<'_>, CodecError> {
     })
 }
 
+/// What [`mask_volatile`] writes for a select nonce.
+const NONCE_MASK: &str = "NN";
+/// What [`mask_volatile`] writes for a Ref (after the `~` marker).
+const REF_MASK: &str = "RRRRRRRRRRR";
+/// What [`mask_volatile`] writes for an integrity tag.
+const TAG_MASK: &str = "TTTTTT";
+
+/// The `custom_id` with its per-send parts masked, for message snapshots:
+/// the select nonce becomes `NN`, a Ref body `~RRRRRRRRRRR` and the
+/// integrity tag `TTTTTT`; everything else is kept byte for byte.
+///
+/// `None` when `raw` has no such part (an inline unsigned id) or is not a
+/// Noctis `custom_id` at all: the caller keeps it unchanged. Used by the
+/// testkit; not public API.
+///
+/// ```
+/// use noctis_codec::mask_volatile;
+///
+/// assert_eq!(mask_volatile("4pick:1a7").as_deref(), Some("4pick:NN7"));
+/// assert_eq!(mask_volatile("0shop.buy:47"), None);
+/// assert_eq!(mask_volatile("not a custom id"), None);
+/// ```
+#[doc(hidden)]
+pub fn mask_volatile(raw: &str) -> Option<String> {
+    let decoded = decode(raw).ok()?;
+    let nonce = decoded.nonce.is_some();
+    let tag = decoded.tag.is_some();
+    if !nonce && !decoded.is_ref && !tag {
+        return None;
+    }
+    let head_end = if nonce {
+        decoded.body_start.checked_sub(NONCE_LEN)?
+    } else {
+        decoded.body_start
+    };
+    let mut out = String::with_capacity(raw.len());
+    out.push_str(raw.get(..head_end)?);
+    if nonce {
+        out.push_str(NONCE_MASK);
+    }
+    if decoded.is_ref {
+        out.push('~');
+        out.push_str(REF_MASK);
+    } else {
+        out.push_str(raw.get(decoded.body_start..decoded.body_end)?);
+    }
+    if tag {
+        out.push_str(TAG_MASK);
+    }
+    Some(out)
+}
+
 /// [`decode`] then [`Decoded::payload`] in one call, with no keys.
 ///
 /// It fails closed: an inline id of a `signed` Route is always
@@ -940,5 +992,33 @@ mod tests {
         assert_eq!(err("1a:"), trunc(Section::Schema));
         assert_eq!(err("4a:0"), trunc(Section::Nonce));
         assert_eq!(err("8a:12345"), trunc(Section::Tag));
+    }
+
+    #[test]
+    fn mask_volatile_masks_only_per_send_parts() {
+        use super::mask_volatile;
+        // Inline and unsigned: unchanged.
+        assert_eq!(mask_volatile("0shop.buy:47,3"), None);
+        assert_eq!(mask_volatile("1turn:5"), None);
+        // A select nonce.
+        assert_eq!(mask_volatile("4pick:z0a").as_deref(), Some("4pick:NNa"));
+        // A signed inline id keeps its body.
+        assert_eq!(
+            mask_volatile("8ban:7abcdef").as_deref(),
+            Some("8ban:7TTTTTT")
+        );
+        // A by-Ref id.
+        assert_eq!(
+            mask_volatile("0big:~0123456789A").as_deref(),
+            Some("0big:~RRRRRRRRRRR")
+        );
+        // Schema, nonce and tag together.
+        assert_eq!(
+            mask_volatile("Dall:z00x000001").as_deref(),
+            Some("Dall:zNNxTTTTTT")
+        );
+        // Not a Noctis id (a CodecError): the caller keeps it.
+        assert_eq!(mask_volatile("abc"), None);
+        assert_eq!(mask_volatile(""), None);
     }
 }

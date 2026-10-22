@@ -9,15 +9,19 @@ repository.workspace = true
 
 [dependencies]
 bytes.workspace = true
+dhat.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["http1", "http2", "server"] }
 hyper-util = { workspace = true, features = ["server-auto", "tokio"] }
 noctis-core.workspace = true
+noctis-rules.workspace = true
+noctis-ui.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 tokio-websockets = { workspace = true, features = ["server", "sha1_smol"] }
+twilight-model.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
@@ -30,7 +34,6 @@ noctis-ports.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 tokio-websockets = { workspace = true, features = ["client", "server", "sha1_smol"] }
 twilight-gateway.workspace = true
-twilight-model.workspace = true
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 
 [lints]

@@ -619,6 +619,28 @@ fn resolve_for_send_matrix() {
     assert_eq!(select.get(), Some("4pick:011"));
 }
 
+/// Story 8.4: `resolve_placeholder` resolves a select with nonce `00`, a
+/// signed Route with the all-zero tag and a by-Ref Route with the all-`0`
+/// Ref; a resolved id is kept.
+#[test]
+fn resolve_placeholder_matrix() {
+    let mut body = Components::new()
+        .push(ActionRow::buttons([button(Buy { item: 1 })]))
+        .push(ActionRow::buttons([button(Signed { n: 1 })]))
+        .push(ActionRow::buttons([button(Stored { n: 1 })]))
+        .push(ActionRow::select(user_select(Pick { page: 1 })));
+    let mut resolved = Vec::new();
+    for id in body.custom_ids_mut() {
+        assert_eq!(id.resolve_placeholder(), Ok(()));
+        resolved.push(id.get().expect("resolved").to_owned());
+    }
+    assert_eq!(resolved[0], "0shop.buy:1");
+    assert!(resolved[1].ends_with("000000"), "{}", resolved[1]);
+    assert!(resolved[2].ends_with(":~00000000000"), "{}", resolved[2]);
+    assert_eq!(resolved[3], "4pick:001");
+    assert!(serde_json::to_string(&body).is_ok());
+}
+
 #[test]
 fn section_accessory_ids_resolve() {
     let key = PayloadKey::from_bytes([7; 32]);

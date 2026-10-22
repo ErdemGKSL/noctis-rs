@@ -1771,3 +1771,102 @@ mod shutdown {
         assert_eq!(run.kinds(), ["cancelled"]);
     }
 }
+
+/// An interaction of `kind` with id `id` and `data` (application 7, token
+/// `tok`, user 3).
+fn interaction_of(id: u64, kind: u8, data: Option<serde_json::Value>) -> InboundKind {
+    let mut d = json!({
+        "id": id.to_string(),
+        "application_id": "7",
+        "type": kind,
+        "token": "tok",
+        "version": 1,
+        "authorizing_integration_owners": {},
+        "entitlements": [],
+        "user": { "id": "3", "username": "u", "discriminator": "0000", "avatar": null, "global_name": null },
+    });
+    if let Some(data) = data {
+        d["data"] = data;
+    }
+    let raw = RawJson::new(bytes::Bytes::from(d.to_string()));
+    InboundKind::Interaction(Box::new(serde_json::from_value(d).unwrap()), raw)
+}
+
+/// Story 8.4: the hidden run observer fires exactly once per interaction,
+/// for a command, an autocomplete, a component, a modal submit and an
+/// unhandled ping, each with its interaction id.
+#[tokio::test]
+async fn run_observer_fires_once_per_interaction() {
+    let server = crate::edge::test_support::TestServer::start_with(
+        false,
+        crate::responder::tests::discord(),
+    )
+    .await;
+    let seen: Arc<Mutex<Vec<u64>>> = Arc::default();
+    let mut builder = App::builder();
+    builder.http_proxy(server.authority());
+    let sink = Arc::clone(&seen);
+    crate::__testing::observe_runs(
+        &mut builder,
+        Arc::new(move |id| sink.lock().unwrap().push(id.get())),
+    );
+    let h = Harness::start(&mut builder);
+    h.push_on(
+        ShardId::ONE,
+        interaction_of(
+            11,
+            2,
+            Some(json!({ "id": "9", "name": "nope", "type": 1, "options": [] })),
+        ),
+    );
+    h.push_on(
+        ShardId::ONE,
+        interaction_of(
+            12,
+            4,
+            Some(json!({ "id": "9", "name": "nope", "type": 1, "options": [] })),
+        ),
+    );
+    h.push_on(
+        ShardId::ONE,
+        interaction_of(
+            13,
+            3,
+            Some(json!({ "custom_id": "0nope:1", "component_type": 2 })),
+        ),
+    );
+    h.push_on(
+        ShardId::ONE,
+        interaction_of(
+            14,
+            5,
+            Some(json!({ "custom_id": "0nope:1", "components": [] })),
+        ),
+    );
+    h.push_on(ShardId::ONE, interaction_of(15, 1, None));
+    until("five run ends", || seen.lock().unwrap().len() == 5).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut ids = seen.lock().unwrap().clone();
+    ids.sort_unstable();
+    assert_eq!(ids, [11, 12, 13, 14, 15]);
+    h.close().await;
+}
+
+/// Story 8.4: the observer still fires when the run's task panics.
+#[tokio::test]
+async fn run_observer_fires_on_a_panicking_run() {
+    let seen: Arc<Mutex<Vec<u64>>> = Arc::default();
+    let sink = Arc::clone(&seen);
+    let end = RunEnd {
+        observer: Arc::new(move |id| sink.lock().unwrap().push(id.get())),
+        id: Id::new(21),
+    };
+    let task = tokio::spawn(observe(
+        async {
+            panic!("pipeline panicked");
+        },
+        Some(end),
+    ));
+    assert!(task.await.is_err());
+    assert_eq!(*seen.lock().unwrap(), [21]);
+}

@@ -20,7 +20,7 @@
 //! ```
 
 mod diff;
-mod json;
+pub(crate) mod json;
 
 use std::collections::HashSet;
 use std::fmt;
