@@ -2,7 +2,8 @@
 title: 'Story 9.1: Content-addressed attachments with edit diffs'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '7b3e9ebcd014c0f463fbf433126b04145aeb0beb'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

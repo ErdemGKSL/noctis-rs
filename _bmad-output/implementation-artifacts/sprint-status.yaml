@@ -116,7 +116,7 @@ development_status:
   epic-8-retrospective: optional
 
   epic-9: backlog
-  9-1-content-addressed-attachments-with-edit-diffs: backlog
+  9-1-content-addressed-attachments-with-edit-diffs: in-progress
   9-2-raw-escape-hatch-for-components-and-rest: backlog
   9-3-route-component-defaults-with-per-render-overrides: backlog
   9-4-modal-pre-fill: backlog
