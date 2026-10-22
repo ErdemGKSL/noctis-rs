@@ -53,7 +53,9 @@ and gateway fake (through the App's normal proxy settings), runs it on
 `Runtime::for_test()` with `.publisher(false)` (nothing is published), and waits until
 its shard is connected. Every run sends one simulated `INTERACTION_CREATE` through the
 gateway fake into the **real** pipeline (decode, guards, Middleware, auto-defer timing,
-validators, notices); the run ends when the pipeline task ends. Runs are serialized.
+validators, notices); the run ends when the pipeline task ends. Requests a handler
+sends from a task it spawned (a detached `tokio::spawn` follow-up) after it returned
+are not part of that run's `Response`. Runs are serialized.
 Memory Adapters are the App's defaults; any you configure are kept.
 
 - `TestApp::timeout(Duration)`: how long each run waits (default 10 s); past it the run

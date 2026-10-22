@@ -50,6 +50,8 @@ pub(crate) enum WireEvent {
 #[derive(Debug)]
 struct WireRun {
     token: String,
+    /// The interaction type, echoed in `with_response` callback answers.
+    kind: u8,
     channel: Id<ChannelMarker>,
     /// The source message's id, when the interaction has one.
     source: Option<Id<MessageMarker>>,
@@ -94,6 +96,7 @@ impl Wire {
     pub(crate) fn begin(
         &self,
         token: String,
+        kind: u8,
         channel: Id<ChannelMarker>,
         source: Option<Id<MessageMarker>>,
     ) {
@@ -101,6 +104,7 @@ impl Wire {
         state.events.clear();
         state.run = Some(WireRun {
             token,
+            kind,
             channel,
             source,
             original: None,
@@ -121,9 +125,25 @@ impl Wire {
         let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         let method = &request.method;
         match segments.as_slice() {
-            ["interactions", _, token, "callback"] if *method == Method::POST => {
-                self.callback(token, request);
-                Some(FakeResponse::empty(StatusCode::NO_CONTENT))
+            ["interactions", id, token, "callback"] if *method == Method::POST => {
+                let answered = self.callback(token, request);
+                let with_response = request
+                    .query
+                    .as_deref()
+                    .is_some_and(|q| q.split('&').any(|pair| pair == "with_response=true"));
+                if !with_response {
+                    return Some(FakeResponse::empty(StatusCode::NO_CONTENT));
+                }
+                let (interaction, kind, original, channel, data) = answered;
+                let mut resource = json!({ "type": kind });
+                if matches!(kind, 4 | 7) {
+                    resource["message"] = message_json(original, channel, &data);
+                }
+                let body = json!({
+                    "interaction": { "id": *id, "type": interaction },
+                    "resource": resource,
+                });
+                Some(FakeResponse::json(StatusCode::OK, &body))
             }
             ["webhooks", _, token] if *method == Method::POST => {
                 let id = self.fresh_id();
@@ -143,8 +163,14 @@ impl Wire {
         }
     }
 
-    /// Records a callback and fixes what `@original` names.
-    fn callback(&self, token: &str, request: &RecordedRequest) {
+    /// Records a callback and fixes what `@original` names; returns the
+    /// interaction type (0 for a stray token), the callback type, the
+    /// message `@original` names, its channel and the callback's `data`.
+    fn callback(
+        &self,
+        token: &str,
+        request: &RecordedRequest,
+    ) -> (u8, u8, Id<MessageMarker>, Id<ChannelMarker>, Value) {
         let body = request.json().unwrap_or(Value::Null);
         let kind = body
             .get("type")
@@ -169,7 +195,8 @@ impl Wire {
                 data: data.clone(),
                 original,
             });
-        });
+            (run.kind, kind, original, run.channel, data)
+        })
     }
 
     /// `PATCH`, `GET` or `DELETE` of `@original` or a follow-up.
@@ -226,6 +253,7 @@ impl Wire {
             _ => {
                 let mut scratch = WireRun {
                     token: token.to_owned(),
+                    kind: 0,
                     channel: Id::new(1),
                     source: None,
                     original: None,

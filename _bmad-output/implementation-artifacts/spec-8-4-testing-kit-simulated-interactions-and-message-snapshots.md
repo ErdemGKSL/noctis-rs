@@ -2,10 +2,10 @@
 title: 'Story 8.4: Testing kit — simulated interactions and message snapshots'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '6acd504ed317ea2f53e817e7e80adf3dd3ffd561'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-8-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -14,7 +14,21 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/async-and-concurrency.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The project template's tests/flows.rs and tests/memory.rs are not compiled or run by any gate.
+    evidence: |-
+      The template is excluded from the workspace (Cargo.toml exclude), no AGENTS.md gate runs cargo test in it, and the disabled CI template-build job only runs cargo build with continue-on-error. Its src/ still targets the planned API until Story 14.2, so the reconciled tests cannot type-check yet.
+    location: >-
+      examples/project-template/tests/flows.rs
+    severity: medium
+  - summary: >-
+      Select handlers cannot read picked values (X7 checks only the sent shape) and pre-filled modal inputs (F5) are unit-tested only.
+    evidence: |-
+      ComponentCtx select values are still planned and derive modals pre-fill nothing before Story 9.4 (memlog Story 8.4 implementation decision); add end-to-end handler assertions once those APIs land.
+    location: >-
+      crates/noctis-testkit/tests/testapp.rs
+    severity: low
 ---
 
 <intent-contract>
@@ -244,6 +258,52 @@ Unless stated: guild `G=10` "Guild" with text channel `C=20` and role `R=30`, us
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 42 findings — high 0, medium 4, low 22, false 15, maybe-false 1
+- findings:
+  - `[low]` `[reject]` (blind) a timed-out run's late requests appear in the next run's `http_calls()` — real (`execute` takes the whole request log), but the spec defines `http_calls()` as every request of the run window and kind/message are token-filtered by `Wire::record`; only reachable after a timeout overlap, and the fix adds filtering logic.
+  - `[false]` `[reject]` (blind) a second callback gets 204 not 40060; PATCH @original before ack succeeds — core's edge counts 40060 as answered (`edge/callback.rs:41`), so production does not fail either; `edit_reply`/`fetch_reply`/`follow_up` exist only on `Responder<_, Acked>` (`responder.rs:977`), so an edit before ack cannot be sent.
+  - `[low]` `[reject]` (blind) modal selects/radio/checkbox-group submits skip min/max/options/required checks — real, but the spec's modal fidelity list covers text inputs only; a bad submit reaches the handler and surfaces as its error notice; adding the checks means new branches; unlikely in everyday tests.
+  - `[low]` `[reject]` (blind) message-component selects accept duplicate values, ignore `channel_types`/`default_values` and guild membership — real; test authors rarely pick invalid values and each check adds guards.
+  - `[low]` `[patch]` (blind) `Seeds::channel`/`Seeds::role` fall back across guilds — confirmed at `seed.rs:292-321`; patch: look only in the run's guild when it has one.
+  - `[low]` `[reject]` (blind) member permissions/roles are global across guilds — the spec defines `TestUser` permissions/roles once (Always, seeds); multi-guild per-member data needs new public surface; rarely met.
+  - `[false]` `[reject]` (blind) message JSON drops embeds/attachments — Noctis bodies never carry embeds or attachments (`noctis-ui/src/message/body.rs` writes `embeds: []` only to clear legacy; attachments are Story 9.1).
+  - `[false]` `[reject]` (blind) multipart bodies treated as no body — no Noctis send path emits multipart before Story 9.1 (attachments out of scope per spec Never).
+  - `[low]` `[reject]` (blind) `target_message(id)` resolves an empty bot-authored message — real; the spec's API is `target_message(Id<MessageMarker>)` and a content setter would add public surface; the command still runs end to end.
+  - `[low]` `[reject]` (blind) a panicked App task maps to `TestError::Stopped` without its cause — real but rare (App panics at start/stop); the spec's error list is exact, so a new variant is new surface.
+  - `[low]` `[reject]` (blind) `MEMORY_FLAT_SLACK_BYTES` does not scale with `n` — the 64 KiB slack and `n >= 10` are spec-settled (Design Notes state the ≥330 B/run sensitivity at N = 200); changing it edits the spec.
+  - `[low]` `[reject]` (blind) `pub use dhat;` couples dhat's version to the public API — `pub use dhat;` is in the spec's Always list; changing it edits the spec.
+  - `[low]` `[patch]` (blind) the template's `dashboard_roles_tab_pages_within_limits` is `[planned, Story 12.5]` but not ignored — confirmed at `flows.rs:98-107`; patch: `#[ignore = "planned, Story 12.5 ..."]`.
+  - `[false]` `[reject]` (blind) the skill dropped `app.event`/`app.advance` without markers — the spec's Never list drops them deliberately (no story owns them) and FR-51's consequences do not include events or a clock.
+  - `[low]` `[patch]` (blind) run-observer contract gaps (cancellation, `None` path, detached tasks) — the `None` path is every other core test and cancellation is structural (`RunEnd` drop guard, `worker.rs:209-226`); the detached-task limit is real and undocumented; patch: document it in testing.md and the `TestApp` rustdoc.
+  - `[false]` `[reject]` (blind) `AppProbe::commands` silently skips invalid guild scopes — scopes are built from `Id<GuildMarker>::get()` (`metadata.rs:133`), never 0, so the `continue` branch is unreachable.
+  - `[false]` `[reject]` (edge) second callback answered 204 — see the blind row: 40060 counts as answered in core, and the typestate removes ack methods after an ack.
+  - `[false]` `[reject]` (edge) PATCH/GET @original or follow-up before any ack — `edit_reply`/`fetch_reply`/`follow_up` are only on `Acked` responders (`responder.rs:977-1022`).
+  - `[low]` `[reject]` (edge) PATCH/GET/DELETE of an unknown follow-up id succeeds — `FollowupHandle` only addresses ids the fake returned; reachable only through raw `ctx.http()` webhook calls; the fix adds a guard.
+  - `[false]` `[reject]` (edge) editing the original by explicit message id is dropped — core edits the original only via `@original`; under TestApp the callback id is not even known to core, so no request names it.
+  - `[false]` `[reject]` (edge) callback type invalid for the interaction kind accepted — the per-kind responder aliases expose only legal callbacks (`update` only on components/modal submits, `show_modal` gated by INT-05, autocomplete has no responder).
+  - `[low]` `[reject]` (edge) stray requests of another run in `http_calls()` — same claim as the blind row; spec defines the run window.
+  - `[low]` `[reject]` (edge) duplicate string-select values accepted — see the blind select row.
+  - `[low]` `[reject]` (edge) modal select/radio/checkbox-group validation missing — see the blind modal row.
+  - `[false]` `[reject]` (edge) legacy Action Row modal inputs echoed as Labels — Noctis modals are Label-only (`noctis-ui/src/modal` has no Action Row) and the spec mandates Label-wrapped submits.
+  - `[low]` `[reject]` (edge) `channel_types` ignored for channel options/selects — real; rarely met and adds a guard per path.
+  - `[low]` `[patch]` (edge) cross-guild channel/role resolution — same root cause as the blind `Seeds` row; same patch.
+  - `[low]` `[reject]` (edge) DM run with `in_channel` of a guild channel has no `guild_id` — real (`wire.rs` `run_channel (None, Some)`); an unusual call, and choosing the error shape is beyond a direct correction (the spec's error list is exact).
+  - `[low]` `[reject]` (edge) the same entity option set twice leaves a stale `resolved` entry — real (`command.rs:116-127`), harmless to handlers (they read the option's id), rare, and needs restructuring.
+  - `[medium]` `[patch]` (vgap) follow-up edit/delete and `fetch_reply` folding is untested — pre-verified gap; patch: an end-to-end test that edits one follow-up, deletes another and fetches the reply.
+  - `[low]` `[patch]` (vgap) run-token isolation after a timeout is never exercised — pre-verified gap guarding L7; patch: make the post-timeout run outlast `sleepy`'s late answer and assert kind/text (not `http_calls()`, which by spec is the run window).
+  - `[medium]` `[defer]` (vgap) the template's `tests/flows.rs`/`tests/memory.rs` never compile in any gate — pre-verified; the template's `src/` targets the planned API (pre-existing, until Story 14.2), so no gate can compile it in this change.
+  - `[medium]` `[patch]` (vgap other) `*_with_response` methods fail under TestApp — verified: the fallback answers an empty 204 (`wire.rs` `answer`), `CallbackResource::parse` then returns `ResponderError::Transport` (`responder.rs:474-476`); patch: answer 200 with a `resource` body when the query has `with_response=true`, plus a test.
+  - `[low]` `[patch]` (vgap other) an edited ephemeral follow-up reports non-ephemeral — verified: `outcome.rs` takes `flagged_ephemeral` of the latest body and edits carry no flag 64; patch: keep the creation body's ephemerality.
+  - `[false]` `[reject]` (intent 1) seeds are not App-visible world state — the spec's Never list deliberately leaves `ctx.cache()` seeding to Story 12.5; seeds in the payload fulfil the AC's "builds TestApp with test guilds ...".
+  - `[medium]` `[defer]` (intent 2) template reconciliation is textual, not compiled — same root cause as the vgap template row; deferred with it.
+  - `[false]` `[reject]` (intent 3) `assert_memory_flat` measures process heap, not framework memory — the spec settles process-wide dhat `curr_bytes` (a superset of framework memory) with a Design Note; framework growth fails it too.
+  - `[false]` `[reject]` (intent 4) snapshots depend on masking — the spec deliberately masks only per-send random parts (FR-25, AD-18 keep them random); PRD FR-51 "changes only when its rendered JSON changes" holds for the meaningful JSON.
+  - `[maybe-false]` `[reject]` (intent 5) legacy `WireCost` never compared with `noctis::ui::cost` — settle by asserting M8's message against `noctis::ui::cost`; if it differed it would only be low (legacy counting is spec'd at Always "cost()").
+  - `[false]` `[reject]` (intent 6) the facade path is not exercised — the facade's `no_run` doctest compiles `noctis::testkit` paths, `cargo hack --each-feature` builds `noctis --features testkit`, and the api-snapshot pins the export list.
+  - `[false]` `[reject]` (intent 7) a test seam runs in core's production dispatch path — spec-settled hidden observer, `None` in production; `observe` with `None` only awaits the future (`worker.rs:223-226`); the spine was amended per the spec.
+  - `[low]` `[defer]` (intent memlog) X7 handlers cannot read picked select values and F5 is unit-tested only — pre-existing: `ComponentCtx` select values are still planned and derive modals pre-fill nothing before Story 9.4.
+
 ## Design Notes
 
 - **Why the FakeGateway path, not a lane handle.** AD-10 says the testkit injects `Inbound` into "the same lanes", and AD-24 forbids a test-only branch. Dispatching `INTERACTION_CREATE` through the fake makes the real shard build the `Inbound` (raw bytes included) and push it, so TestApp exercises exactly the production path; the cost is one local WebSocket frame per run.
@@ -277,3 +337,12 @@ insta::assert_json_snapshot!("setup_step2", next.message_json());
 - `cargo metadata --format-version 1 --manifest-path examples/project-template/Cargo.toml > /dev/null` -- ok
 - `grep -n "\[planned\]" examples/project-template/.claude/skills/noctis/references/testing.md` -- no hit (remaining markers name their story)
 - CI: no new gate (the new tests run inside `cargo test`); `.github/workflows-disabled/ci.yml` unchanged
+
+## Auto Run Result
+
+- **Summary:** `noctis-testkit` gains `TestApp`: simulated slash/user/message commands, component clicks/selects and modal submits driven through FakeGateway into the real pipeline, awaited via a hidden core run observer; `Response` finders, `message_json`/`render_json` snapshots with masked volatile `custom_id` parts, seeds (`TestGuild`/`TestUser`), `assert_memory_flat` (dhat, 64 KiB slack); re-exported as `noctis::testkit`.
+- **Files changed:** `crates/noctis-testkit/src/app/*` (builders, wire fake, runs, outcome), `response.rs`, `seed.rs`, `render.rs`, `memory.rs`, `error.rs`, `fake/*`; tests `testapp.rs`, `testapp_memory.rs`, snapshot; `crates/noctis-ui/src/route.rs` (test codec hooks); `crates/noctis/` facade feature `testkit`; `xtask/public-api.txt`, `xtask/src/deps_check.rs` (two new edges); project template `tests/flows.rs`, `tests/memory.rs`, `AGENTS.md`, noctis skill `testing.md`.
+- **Review findings:** 42 (high 0, medium 4, low 22, false 15, maybe-false 1). Patched 8 (medium 2: follow-up edit/delete/fetch_reply end-to-end test; `*_with_response` answered 200 with `resource` body; low 6: run-guild-scoped `Seeds::channel`/`role`, ignore Story 12.5 template test, document detached-task observer limit, post-timeout run-token isolation test, edited ephemeral follow-up keeps ephemerality, cross-guild resolution). Deferred 3 (template tests not compiled by any gate until Story 14.2, x2; X7 select values / F5 pre-existing). Rejected 31, each with reason in the Review Triage Log (spec-settled scope, unreachable via typestate, or new public surface).
+- **Follow-up review recommended:** true (2 medium patched on first pass). Named risk: the new `with_response=true` 200/`resource` fake answer and the follow-up folding paths in `outcome.rs`/`wire.rs` were patched after review and are verified only by the tests added in the same patch.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, test, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** template `tests/flows.rs`/`memory.rs` are reconciled textually only; modal select/checkbox validation and `channel_types` not simulated; `http_calls()` may include a timed-out run's late requests.

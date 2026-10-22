@@ -96,6 +96,7 @@ async fn setup_rejects_other_users() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "planned, Story 12.5: ctx.cache() seeding"]
 async fn dashboard_roles_tab_pages_within_limits() -> anyhow::Result<()> {
     let app = app().await?;
     let overview = app.command("dashboard").by(ADMIN).in_guild(GUILD).run().await?;

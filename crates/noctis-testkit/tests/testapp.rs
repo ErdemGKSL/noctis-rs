@@ -469,6 +469,67 @@ impl Sleepy {
     }
 }
 
+/// Outlasts `sleepy`'s late answer under a 2 s run timeout (L7).
+#[derive(SlashCommand)]
+#[command("drowsy", description = "Sleeps a little longer")]
+struct Drowsy;
+
+impl Drowsy {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        ctx.respond(view("rested")).await
+    }
+}
+
+/// Replies through `reply_with_response` and notes the resource.
+#[derive(SlashCommand)]
+#[command("withresp", description = "Reply with the callback response")]
+struct WithResp;
+
+impl WithResp {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        let (acked, resource) = r.reply_with_response(view("hi")).await?;
+        note!(
+            ctx,
+            "resource {:?} {}",
+            resource.as_ref().map(noctis::CallbackResource::kind),
+            resource.as_ref().is_some_and(|r| r.message().is_some())
+        );
+        Ok(acked.done())
+    }
+}
+
+/// Edits one ephemeral follow-up, deletes another, fetches the reply.
+#[derive(SlashCommand)]
+#[command("fups", description = "Follow-up edits")]
+struct Fups;
+
+impl Fups {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx, r: CommandResponder) -> HandlerResult<Responded> {
+        let acked = r.reply(view("main")).await?;
+        let kept = acked
+            .follow_up(view("draft"), Ephemerality::Ephemeral)
+            .await?;
+        kept.edit(view("final")).await?;
+        let gone = acked
+            .follow_up(view("bye"), Ephemerality::Ephemeral)
+            .await?;
+        gone.delete().await?;
+        let fetched = acked.fetch_reply().await?;
+        note!(
+            ctx,
+            "fetched {} {} {}",
+            fetched.id,
+            fetched.components.len(),
+            fetched.flags.map_or(0, |f| f.bits())
+        );
+        Ok(acked.done())
+    }
+}
+
 #[derive(SlashCommand)]
 #[command("legacy", description = "A legacy reply")]
 struct Legacy;
@@ -898,6 +959,9 @@ fn configure<'b>(builder: &'b mut AppBuilder, log: &Arc<Log>) -> &'b mut AppBuil
                 .add::<DeferOnly>()
                 .add::<Fetch>()
                 .add::<Sleepy>()
+                .add::<Drowsy>()
+                .add::<WithResp>()
+                .add::<Fups>()
                 .add::<Legacy>()
                 .add::<Buttons>()
                 .add::<AskNote>()
@@ -1057,6 +1121,14 @@ async fn timed_out_run_does_not_break_the_app() -> Result<(), TestError> {
     let app = app.timeout(Duration::from_millis(200));
     let err = app.command("sleepy").run().await.unwrap_err();
     assert!(matches!(err, TestError::Timeout { .. }), "{err}");
+    // `sleepy` answers while `drowsy` runs; its late callback is not
+    // `drowsy`'s.
+    let app = app.timeout(Duration::from_secs(2));
+    let rested = app.command("drowsy").run().await?;
+    assert_eq!(
+        (rested.kind(), rested.callback_type(), rested.text()),
+        (ResponseKind::Reply, Some(4), "rested".to_owned())
+    );
     assert_eq!(app.command("ping").run().await?.text(), "pong");
     app.stop().await
 }
@@ -1429,6 +1501,37 @@ async fn replies_follow_ups_errors_and_silence() -> Result<(), TestError> {
         .unwrap();
     assert!(line.contains("404"), "{line}");
     Ok(())
+}
+
+/// `reply_with_response` gets Discord's callback resource.
+#[tokio::test(flavor = "multi_thread")]
+async fn reply_with_response_gets_the_resource() -> Result<(), TestError> {
+    let (app, log) = start().await;
+    let reply = app.command("withresp").run().await?;
+    assert!(!reply.is_error(), "{log:?}", log = log.lines());
+    assert_eq!(
+        (reply.kind(), reply.callback_type(), reply.text()),
+        (ResponseKind::Reply, Some(4), "hi".to_owned())
+    );
+    assert!(log.has("resource Some(4) true"), "{:?}", log.lines());
+    app.stop().await
+}
+
+/// Follow-up edits and deletes, and `fetch_reply`.
+#[tokio::test(flavor = "multi_thread")]
+async fn follow_up_edits_deletes_and_fetch() -> Result<(), TestError> {
+    let (app, log) = start().await;
+    let run = app.command("fups").run().await?;
+    assert!(!run.is_error(), "{:?}", log.lines());
+    let followups = run.followups();
+    assert_eq!(followups.len(), 1);
+    assert_eq!(followups[0].text(), "final");
+    assert!(followups[0].is_ephemeral());
+    let main = run.message().unwrap();
+    assert_eq!(main.text(), "main");
+    let expected = format!("fetched {} 1 {}", main.id(), 1 << 15);
+    assert!(log.has(&expected), "{expected} not in {:?}", log.lines());
+    app.stop().await
 }
 
 /// K6, M13: a defer without an edit.

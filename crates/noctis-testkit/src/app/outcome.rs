@@ -80,7 +80,9 @@ impl Run<'_> {
         let mut callback: Option<(u8, Value, Id<MessageMarker>)> = None;
         let mut edited = false;
         let mut final_body: Option<Value> = None;
-        let mut followups: Vec<(Id<MessageMarker>, Value)> = Vec::new();
+        // A follow-up's ephemerality is fixed by its creating body; edits
+        // never carry flag 64.
+        let mut followups: Vec<(Id<MessageMarker>, Value, bool)> = Vec::new();
         for event in events {
             match event {
                 WireEvent::Callback {
@@ -99,14 +101,17 @@ impl Run<'_> {
                     edited = true;
                     final_body = body;
                 }
-                WireEvent::FollowUp { id, body } => followups.push((id, body)),
+                WireEvent::FollowUp { id, body } => {
+                    let ephemeral = flagged_ephemeral(&body);
+                    followups.push((id, body, ephemeral));
+                }
                 WireEvent::Message { id, body } => match body {
                     Some(body) => {
-                        if let Some(entry) = followups.iter_mut().find(|(f, _)| *f == id) {
+                        if let Some(entry) = followups.iter_mut().find(|(f, _, _)| *f == id) {
                             entry.1 = body;
                         }
                     }
-                    None => followups.retain(|(f, _)| *f != id),
+                    None => followups.retain(|(f, _, _)| *f != id),
                 },
             }
         }
@@ -136,10 +141,7 @@ impl Run<'_> {
         };
         let followups: Vec<TestMessage> = followups
             .into_iter()
-            .map(|(id, body)| {
-                let ephemeral = flagged_ephemeral(&body);
-                self.message(id, self.ctx.channel, body, ephemeral)
-            })
+            .map(|(id, body, ephemeral)| self.message(id, self.ctx.channel, body, ephemeral))
             .collect();
         let modal = match &callback {
             Some((9, data, _)) => Some(ModalForm {

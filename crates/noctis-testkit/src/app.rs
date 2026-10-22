@@ -54,7 +54,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// gateway fake, and runs it on [`Runtime::for_test`]. Every run sends one
 /// `INTERACTION_CREATE` through the gateway fake, so the real shard parses
 /// it and the real pipeline answers; the [`Response`] is read off the HTTP
-/// fake once the pipeline task has ended. Runs are serialized. No network
+/// fake once the pipeline task has ended. Requests a handler sends from a
+/// task it spawned (a detached `tokio::spawn` follow-up) after it returned
+/// are not part of that run's [`Response`]. Runs are serialized. No network
 /// is used.
 ///
 /// ```no_run
@@ -389,6 +391,7 @@ impl TestApp {
         d["token"] = json!(token);
         self.wire.begin(
             token,
+            dispatch.kind,
             dispatch.ctx.channel,
             dispatch.source.as_ref().map(|s| s.id),
         );

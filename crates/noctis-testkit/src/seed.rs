@@ -288,35 +288,77 @@ impl Seeds {
         })
     }
 
-    /// The channel in `guild` first, then in any seeded guild.
+    /// The channel in `guild` (a guild run sees only its own guild's); in a
+    /// DM run, in any seeded guild.
     pub(crate) fn channel(
         &self,
         guild: Option<Id<GuildMarker>>,
         id: Id<ChannelMarker>,
     ) -> Result<(&str, ChannelType), crate::TestError> {
-        guild
-            .and_then(|g| self.guilds.get(&g))
-            .and_then(|g| g.find_channel(id))
-            .or_else(|| self.guilds.values().find_map(|g| g.find_channel(id)))
-            .ok_or(crate::TestError::Unknown {
-                kind: "channel",
-                id: id.get(),
-            })
+        match guild {
+            Some(g) => self.guilds.get(&g).and_then(|g| g.find_channel(id)),
+            None => self.guilds.values().find_map(|g| g.find_channel(id)),
+        }
+        .ok_or(crate::TestError::Unknown {
+            kind: "channel",
+            id: id.get(),
+        })
     }
 
-    /// The role in `guild` first, then in any seeded guild.
+    /// The role in `guild` (a guild run sees only its own guild's); in a
+    /// DM run, in any seeded guild.
     pub(crate) fn role(
         &self,
         guild: Option<Id<GuildMarker>>,
         id: Id<RoleMarker>,
     ) -> Result<&str, crate::TestError> {
-        guild
-            .and_then(|g| self.guilds.get(&g))
-            .and_then(|g| g.find_role(id))
-            .or_else(|| self.guilds.values().find_map(|g| g.find_role(id)))
-            .ok_or(crate::TestError::Unknown {
-                kind: "role",
-                id: id.get(),
+        match guild {
+            Some(g) => self.guilds.get(&g).and_then(|g| g.find_role(id)),
+            None => self.guilds.values().find_map(|g| g.find_role(id)),
+        }
+        .ok_or(crate::TestError::Unknown {
+            kind: "role",
+            id: id.get(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, reason = "tests panic with the failing case")]
+
+    use super::*;
+
+    /// A guild run never resolves another guild's channels or roles.
+    #[test]
+    fn guild_run_resolves_only_its_own_guild() {
+        let mut seeds = Seeds::default();
+        let a = TestGuild::new(Id::new(10), "A")
+            .text_channel(Id::new(20), "a-logs")
+            .role(Id::new(30), "a-mods");
+        let b = TestGuild::new(Id::new(11), "B")
+            .text_channel(Id::new(21), "b-logs")
+            .role(Id::new(31), "b-mods");
+        seeds.guilds.insert(a.id, a);
+        seeds.guilds.insert(b.id, b);
+        let guild = Some(Id::new(10));
+        assert_eq!(seeds.channel(guild, Id::new(20)).unwrap().0, "a-logs");
+        assert_eq!(seeds.role(guild, Id::new(30)).unwrap(), "a-mods");
+        assert!(matches!(
+            seeds.channel(guild, Id::new(21)),
+            Err(crate::TestError::Unknown {
+                kind: "channel",
+                id: 21
             })
+        ));
+        assert!(matches!(
+            seeds.role(guild, Id::new(31)),
+            Err(crate::TestError::Unknown {
+                kind: "role",
+                id: 31
+            })
+        ));
+        assert_eq!(seeds.channel(None, Id::new(21)).unwrap().0, "b-logs");
+        assert_eq!(seeds.role(None, Id::new(31)).unwrap(), "b-mods");
     }
 }
