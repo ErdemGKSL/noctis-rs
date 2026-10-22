@@ -11,7 +11,7 @@ Complete the Components V2 surface for bot authors: files attached to Views are 
 - Story 9.1: Content-addressed attachments with edit diffs
 - Story 9.2: Raw escape hatch for components and REST
 - Story 9.3: Route component defaults with per-render overrides
-- Story 9.4: Modal pre-fill
+- Story 9.4: Modal pre-fill (merged into Story 9.3; not implemented separately)
 - Story 9.5: Views over webhooks
 
 ## Requirements & Constraints
@@ -30,13 +30,14 @@ Complete the Components V2 surface for bot authors: files attached to Views are 
 - A rendered View is `(MessageTree, AttachmentSet)` keyed by name, so one image used twice uploads once. `noctis-ui` only checks every `attachment://` reference has a member; core's Responder alone enforces the Upload Budget, builds the multipart body and computes the edit diff. Views hold only ready attachments; rendering is awaited inside handlers so auto-defer covers it.
 - The Responder owns every reply, including webhook sends that must never silently drop components. Flag sets are typed per endpoint.
 - Noctis owns the V2 model: its types serialize directly to Discord JSON as raw twilight-http bodies; twilight-model is used only for ids, interactions, events and commands. Unmodelled incoming component data is kept as `serde_json::Value`, never dropped. Modal submissions decode from raw interaction bytes. Pre-fill values go through the same validator.
-- One struct per interaction: kind derives (`Button`, `StringSelectMenu`, ..., `Modal`) with a mandatory `defaults(..)` block as an associated const on `ComponentRoute`. Required keys: Button `style` and `label` or `emoji`; selects `placeholder` (optional `channel_types`, `options = ChoicesEnum` for string selects); modal `title`. Missing block/key or unknown key is a compile error naming required keys; literals checked against limits at compile time; omitted keys default to `min_values = 1`, `max_values = 1`, `disabled = false`. Text defaults are literals, or locale keys checked against the default-locale file with `i18n`.
+- One struct per interaction: kind derives (`Button`, `StringSelectMenu`, ..., `Modal`) with a mandatory `defaults(..)` block as an associated const on `ComponentRoute`. Required keys: Button `style` and `label` or `emoji`; selects `placeholder` (optional `channel_types`, `options = ChoicesEnum` for string selects); modal `title`. Missing block/key or unknown key is a compile error naming required keys; literals checked against limits at compile time; omitted keys default to `min_values = 1`, `max_values = 1`, `disabled = false`. Literal vs localized text is decided by syntax, never by a cargo feature: a string literal is hard-coded text checked against limits at compile time; a path (`keys::X`, a `MessageKey` from `i18n!`, Story 11.1) is a locale key; until 11.1 ships, a path value is a compile error saying locale keys are planned for Epic 11. Overrides take `impl Into<Text>` (`&str`/`String` or `MessageKey`).
 - `.build()` emits the component from defaults plus the Payload as `custom_id`; chainable setters `.label/.emoji/.style/.disabled/.placeholder/.options/.default_values/.min_values/.max_values`, and for modals `.title(..)` and `.value(field, ..)`. A string select without `options` in defaults returns a typestate builder requiring `.options(..)` (trybuild fixture).
-- Modals: non-input fields are the Payload; input fields pre-fill from the struct value (`None` = empty); the derive also generates `X::blank(<payload fields>)`.
+- Multi-field overrides: each kind has an overrides struct (`ButtonOverrides`, `StringSelectOverrides`, `UserSelectOverrides`, `RoleSelectOverrides`, `MentionableSelectOverrides`, `ChannelSelectOverrides`, per modal `<Modal>Overrides`) with all `Option` fields and `Default`, applied via `.overrides(..)` with `..Default::default()`; composes with chainable setters (later call wins), validated the same way.
+- Modals: non-input fields are the Payload; input fields pre-fill from the struct value (`None` = empty); the derive also generates `X::blank(<payload fields>)`; pre-fill uses struct update syntax `BioForm { bio: Some(v), ..BioForm::blank(user) }`. The struct is submitted data, not layout: input components come from field attributes. `<Modal>Overrides { title, <input>: InputOverrides { label, description, placeholder } }` changes presentation only, never values.
 - Non-owned webhooks accept only a non-interactive `StaticMessage` type (WH-02 enforced in types, trybuild `compile_fail`).
 - Plugins attach only through core's `Plugin` seam; HTTP fakes drive the real paths in tests.
 
 ## Cross-Story Dependencies
 
 - Builds on Story 4.1 (`Attachment`/`AttachmentSet`, V2 types), 4.3 (runtime validator and alt-text warning), 4.5/4.6 (modal model and `derive(Modal)`), 5.9 (single warm HTTP client, proxy), 6.11 (one struct per interaction, `defaults(..)`), Epic 8 (`ctx.respond`/`ctx.update`, views as plain functions).
-- Story 9.1's `Attachment::rendered` and Responder diff are consumed by Epic 10 (`ctx.render`). Story 9.4 depends on 9.3's override/`.build()` surface for modals.
+- Story 9.1's `Attachment::rendered` and Responder diff are consumed by Epic 10 (`ctx.render`). Modal pre-fill (former 9.4) ships inside Story 9.3; the template's bio modal pre-fill is reconciled there. Key-looking literals in the template become `keys::` paths in Story 11.1.
