@@ -21,6 +21,7 @@ const AT_LIMIT: &str = "You can have at most 25 ticket systems.";
     "tickets",
     description = "Configure ticket systems",
     response = ephemeral,
+    permissions = MANAGE_GUILD,
     contexts = [Guild]
 )]
 pub struct Tickets;

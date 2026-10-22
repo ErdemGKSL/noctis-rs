@@ -16,7 +16,13 @@ const NEED_ROLE: &str = "Pick a moderator role first.";
 
 /// `/setup`: one admin's private flow, so ephemeral, and only in servers.
 #[derive(SlashCommand, Debug)]
-#[command("setup", description = "Set up the bot", response = ephemeral, contexts = [Guild])]
+#[command(
+    "setup",
+    description = "Set up the bot",
+    response = ephemeral,
+    permissions = MANAGE_GUILD,
+    contexts = [Guild]
+)]
 pub struct Setup;
 
 impl Setup {

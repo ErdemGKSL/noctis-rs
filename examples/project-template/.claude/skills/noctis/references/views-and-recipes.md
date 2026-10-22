@@ -82,7 +82,8 @@ Every block below is a **verbatim copy** of one module of `examples/ui-recipes/`
 noctis-rs, a workspace crate that is compiled, linted and tested end to end with
 `noctis::testkit` on every change; `xtask skill-check` fails when a block and its source
 drift apart. Each block is the whole module, with its own `use` lines, so it compiles as
-shown in `src/<name>.rs` of a bot crate.
+shown in `src/<name>.rs` of a bot crate; the `app` block is the crate root `src/lib.rs`
+(not `src/app.rs`), and `store` is `src/store.rs`.
 
 Two things are literal on purpose until their features land: user-visible text (it moves
 to the locale files with `i18n!`, Epic 11; `defaults(label = "…")` then takes a locale key)
@@ -207,8 +208,8 @@ use noctis::ui::{
 
 use crate::store::{Catalog, ITEM_NAME_MAX, missing};
 
-/// The longest row: `65535. ` plus a name whose every character `escape_markdown`
-/// doubled. Sizing pages with it keeps page boundaries stable.
+/// The longest row: a row number of up to six digits plus `. ` (the `+ 8`), and a
+/// name whose every character `escape_markdown` doubled. Sizing pages with it keeps page boundaries stable.
 pub const ROW_MAX_CHARS: usize = 2 * ITEM_NAME_MAX + 8;
 
 /// `/items`: the first page of the catalog.
@@ -324,7 +325,13 @@ const NEED_ROLE: &str = "Pick a moderator role first.";
 
 /// `/setup`: one admin's private flow, so ephemeral, and only in servers.
 #[derive(SlashCommand, Debug)]
-#[command("setup", description = "Set up the bot", response = ephemeral, contexts = [Guild])]
+#[command(
+    "setup",
+    description = "Set up the bot",
+    response = ephemeral,
+    permissions = MANAGE_GUILD,
+    contexts = [Guild]
+)]
 pub struct Setup;
 
 impl Setup {
@@ -653,6 +660,7 @@ const AT_LIMIT: &str = "You can have at most 25 ticket systems.";
     "tickets",
     description = "Configure ticket systems",
     response = ephemeral,
+    permissions = MANAGE_GUILD,
     contexts = [Guild]
 )]
 pub struct Tickets;
@@ -1078,7 +1086,8 @@ use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker, RoleMarker};
 
-/// The longest item name the catalog holds (a String Select option label's limit).
+/// The longest item name the catalog holds; it bounds a catalog row's width, which
+/// `pagination::ROW_MAX_CHARS` sizes pages from.
 pub const ITEM_NAME_MAX: usize = 100;
 /// The most ticket systems a guild can have: the switcher holds at most 25 options.
 pub const MAX_SYSTEMS: usize = 25;
@@ -1436,6 +1445,20 @@ are how every Noctis bot should be written.
 | `Math.random()` in select data to force fresh defaults | ad-hoc, wastes custom-id space | every select gets a fresh per-send nonce |
 | next page disabled when `rows.length < 25` | one empty page too many when the last page is exactly full | query `per_page + 1` rows |
 
+### Patterns and anti-patterns
+
+- **Do** keep one render function per View and call it from every handler that changes
+  its state. **Don't** keep a message alive with per-message listeners, collectors,
+  `tokio::spawn` tasks or `await` loops (UD-7); every click is a fresh, stateless route.
+- **Do** answer a component click with `ctx.update(..)` and a re-rendered View. **Don't**
+  reply with legacy `content` messages or send a new message per step.
+- **Do** carry state in typed Payload fields (ids, enums, page and step numbers).
+  **Don't** put free text in a custom id; keep it in storage or behind a `by_ref` Route.
+- **Do** guard a destructive action (delete, reset) with a one-shot confirm view.
+  **Don't** delete on the first click.
+- **Do** clamp a client-supplied page or step to the valid range in the handler.
+  **Don't** trust a Payload value: it is client input and can be stale or forged.
+
 ## 8. Decision table: which pattern?
 
 | Situation | Pattern |
@@ -1457,3 +1480,6 @@ are how every Noctis bot should be written.
   `Budget`, module toggles), `src/modules/setup/` (a three-step flow with pre-filled
   selects and Cancel) and `src/modules/profile/` (a rendered card, button → modal →
   re-render) apply the same recipes with localized text; read them next to this file.
+  One variant: the template's `setup/view.rs` renders Next disabled until the step is
+  set, as a hint, and its handler still checks the step on every click; the default is
+  §3.3's always-enabled Next with an inline notice.

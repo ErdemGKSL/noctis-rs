@@ -10,7 +10,8 @@ use noctis::prelude::*;
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker, RoleMarker};
 
-/// The longest item name the catalog holds (a String Select option label's limit).
+/// The longest item name the catalog holds; it bounds a catalog row's width, which
+/// `pagination::ROW_MAX_CHARS` sizes pages from.
 pub const ITEM_NAME_MAX: usize = 100;
 /// The most ticket systems a guild can have: the switcher holds at most 25 options.
 pub const MAX_SYSTEMS: usize = 25;

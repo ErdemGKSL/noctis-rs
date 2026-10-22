@@ -2,10 +2,10 @@
 title: 'Story 8.5: UI recipes and example: tabs, pagination, step flows and settings screens'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '78e7e2f28489ea5b1a6a7a7eaa464e971d81c84e'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-8-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -170,6 +170,41 @@ Fixture for example tests (`examples/ui-recipes/tests/recipes.rs`, `#[tokio::tes
 
 ## Review Triage Log
 
+### 2026-10-21 — Review pass
+- verdicts: 31 findings — high 0, medium 4, low 18, false 9, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) `/tickets` and `/setup` have no permission gate — confirmed: both `#[command]`s lack `permissions`, the shipped `#[command]` supports `permissions = MANAGE_GUILD` (template setup/dashboard use it), the old recipe had `permissions = ADMINISTRATOR`; any member can change guild config. Patch: add `permissions = MANAGE_GUILD` to both and sync the md blocks.
+  - `[low]` `[reject]` (blind) recipes store select/Payload ids without the guild-membership check §2 asks for — entity select values come from Discord's own picker and Payloads only from the bot's own components; the harm needs a forged interaction never shown reachable, and the fix adds guards.
+  - `[low]` `[reject]` (blind) `lint_examples` skips a missing `src`/`tests` silently — true, but the spec Code Map prescribes "skip missing dirs"; deleting the template's `src/` also breaks the workspace build, and a required-dir set adds branches.
+  - `[false]` `[reject]` (blind) a system with more than 5 roles breaks the role select — roles are only written by `SetRoles` (`max_values = 5`) and by `TicketStore::with` in tests; no reachable path stores more than 5.
+  - `[low]` `[patch]` (blind) pagination loses items past 65535 pages and the `ROW_MAX_CHARS` comment is wrong — the comment names `65535. ` but the prefix is the 1-based global item number: patch rewords the comment; the u16 clamp needs >1M items (catalog 300), not worth extra branches.
+  - `[low]` `[patch]` (blind) `ITEM_NAME_MAX` doc gives a wrong reason (select option label) — names render only in Text Displays. Patch rewords the doc.
+  - `[low]` `[reject]` (blind) settings handlers repeat the same preamble — the spec prescribes this per-handler flow; a helper refactor is more than a direct correction and the named harm is only copy-paste length.
+  - `[low]` `[reject]` (blind) `run_component_over` clones `SelectedValues` per click — true but negligible (a few small vecs); `decoded` still borrows `input` at that point, so moving out is not a direct change.
+  - `[low]` `[reject]` (blind) no public constructor for `SelectedValues` — the spec deliberately keeps fields private with `Default` only; select logic is tested through `TestApp::select(..)`; a constructor adds public surface.
+  - `[false]` `[reject]` (blind) the fence parser ends a block at the first bare fence line — no recipe contains a nested fence; on such input the check fails loudly with a "differs" problem, which is correct behaviour for an unreached case.
+  - `[low]` `[reject]` (blind) `real_repo_passes` pins "6 recipes in sync" — the spec Verification names 6 recipes; adding a recipe updating that test is intended.
+  - `[low]` `[reject]` (blind) test code hides failures / claims more than it checks — the CID-02 claim holds (`validate` runs CID-02 on messages, noctis-ui lib.rs L205); `u16::try_from(page).unwrap_or(0)` cannot fail for ≤ 16 pages; 40/4000 is the spec's P3 oracle.
+  - `[low]` `[reject]` (blind) two temp-dir tests leak files on panic — test-only, r6 writes nothing, r7 cleans before asserting; a drop guard adds code for a rare case.
+  - `[low]` `[reject]` (blind) owner guard never exercised by a recipe test — the guard is framework code covered by noctis-testkit guard tests; the ephemeral reply makes it unreachable for B in this flow; a new test is not a direct correction.
+  - `[medium]` `[patch]` (edge) `/tickets` lets non-admins edit systems — same root cause as the first row; shares its patch.
+  - `[medium]` `[patch]` (edge) `/setup` lets non-admins overwrite saved setup — same root cause as the first row; shares its patch.
+  - `[low]` `[reject]` (edge) forged/stale Finish payload saves foreign ids — custom ids come only from the bot's own message; a stale deleted id is a sample-store concern; fix adds guards.
+  - `[false]` `[reject]` (edge) `render_items` with names over `ITEM_NAME_MAX` exceeds the budget — the only catalog source (`Catalog::sample`) truncates to `ITEM_NAME_MAX`, and an oversize page fails loudly in Responder validation; no reachable path shown.
+  - `[low]` `[reject]` (edge) items past 65535 pages unreachable — needs > 1M items; the recipe's catalog holds 300; cap/report adds branches.
+  - `[low]` `[reject]` (edge) deleted/unreadable template `src` passes skill-check silently — same as the blind row: spec-prescribed skip, build breaks anyway.
+  - `[low]` `[reject]` (edge) a symlinked example crate is skipped — no example is a symlink; hypothetical.
+  - `[low]` `[patch]` (edge) §3 intro claims every block compiles as `src/<name>.rs`, wrong for `app` (it is `src/lib.rs`) — confirmed at views-and-recipes.md L84-85. Patch: name `src/lib.rs` for `app`.
+  - `[low]` `[reject]` (vgap other) `lint_examples` skips a missing `src`/`tests` silently — same as the blind row: spec-prescribed, no test removed.
+  - `[false]` `[reject]` (intent 1) public API grows inside a recipes story — the spec deliberately adds `SelectedValues`/`ctx.values()` (Approach, Design Notes) as a read-only primitive, allowed by maintainer decisions §1.
+  - `[medium]` `[patch]` (intent 2) template step flow (Next disabled until set) contradicts §3.3 (Next always enabled) while §9 says the template applies the same recipes — confirmed in template `setup/view.rs` L18 and md L309/L1459; agents learn from the skill alone. Patch: one sentence naming the template variant and the default.
+  - `[false]` `[reject]` (intent 3) no recipe combines tabs and pagination — FR-49's tabbed paginated View is the template dashboard (pre-existing, `dash.tab`/`dash.page`); §3.1 points at adding `page` to the tab Payload.
+  - `[false]` `[reject]` (intent 4) cancel leaves one Text Display, not zero components — the spec's Design Notes settle this (V2 needs one component, UD-1 forbids `content`).
+  - `[false]` `[reject]` (intent 5) the 300-item test uses hard-coded limits and never asserts Next disabled on the last page — 40/4000 is the spec's P3 oracle; the loop exits only on a disabled Next and then asserts items 1..=300 seen once, which proves Next is disabled exactly on the last page.
+  - `[low]` `[patch]` (intent 6) views-and-recipes.md lacks the AC's patterns/anti-patterns — confirmed: decision table and pitfalls exist, no patterns/anti-patterns list. Patch: add a short do/don't list.
+  - `[false]` `[reject]` (intent 7) rulebook and decision table are mostly pre-existing — the AC only requires the file to contain them, and it does (§6, §8).
+  - `[false]` `[reject]` (intent 8) literal strings and blank modals — the spec's Never excludes i18n and pre-filled modals, and §3 documents both as temporary (Epic 11, Story 9.4).
+
 ## Design Notes
 
 - **Why add `ctx.values()` here.** The skill and template already call it without a `[planned]` marker, and the AC's entity switcher and the step flow's selects cannot be demonstrated without reading the pick. It is a read-only view over data the pipeline already parses; no behaviour changes.
@@ -203,3 +238,12 @@ use noctis::ui::{ActionRow, Button, ButtonStyle, Components, Container, TextDisp
 - `cargo +1.91 check --release --workspace` -- ok
 - `bash .github/scripts/check-build-config.sh` -- ok
 - `test ! -d target/debug` -- no debug profile created
+
+## Auto Run Result
+
+- **Summary:** Adds the `examples/ui-recipes` crate (tabs, pagination, step flow, settings screen with entity switcher, sample store) with end-to-end testkit tests; rewrites the usage skill's `views-and-recipes.md` with recipe blocks kept byte-identical to the example by a new `skill-check` recipes sync check; adds the read-only `SelectedValues` / `ctx.values()` primitive to noctis-core (API snapshot re-blessed).
+- **Files changed:** `crates/noctis-core/src/{component.rs,command.rs,lib.rs,pipeline.rs,pipeline/component.rs}` (SelectedValues, ctx.values()); `crates/noctis/src/lib.rs` (re-export); `crates/noctis-testkit/tests/testapp.rs` (select value tests); `examples/ui-recipes/**` (new example + tests); `examples/project-template/.claude/skills/noctis/**`, `examples/project-template/AGENTS.md` (skill recipes, API hash); `xtask/src/skill_check/{mod.rs,recipes.rs}`, `xtask/tests/skill_check.rs` (recipe sync + example lint); `xtask/public-api.txt`; `Cargo.toml` (workspace member); `ARCHITECTURE-SPINE.md` (note).
+- **Review findings:** 31 total (high 0, medium 4, low 18, false 9). Patched: 4 medium (missing `permissions = MANAGE_GUILD` on `/tickets` and `/setup`, three rows one root cause; template step-flow vs. §3.3 Next-enabled contradiction documented) and 4 low (ROW_MAX_CHARS comment, ITEM_NAME_MAX doc, §3 intro `src/lib.rs` for `app`, patterns/anti-patterns list). Deferred: none. Rejected: 23, each with its reason in the spec triage log (spec-prescribed missing-dir skip, unreachable >1M-item / >5-role / forged-payload cases, deliberate private `SelectedValues` fields, spec P3 oracle, cancel leaving one Text Display per Design Notes, etc.).
+- **Follow-up review recommended: true** — first pass patched 4 medium (0 high). Named risk: the permission-gate patch changes `/tickets` and `/setup` command metadata in both the example and the skill md blocks; the sync check and tests pass, but no test asserts that a non-MANAGE_GUILD member is actually refused.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, test, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check with 6 recipes in sync, cargo deny, MSRV 1.91, build-config, no target/debug). CI paused by maintainer.
+- **Residual risks:** pagination u16 page clamp loses items past ~1M items (documented, unreachable for 300-item catalog); skill-check silently skips a missing example `src`/`tests` dir (spec-prescribed); settings handlers duplicate their preamble.

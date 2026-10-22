@@ -11,8 +11,8 @@ use noctis::ui::{
 
 use crate::store::{Catalog, ITEM_NAME_MAX, missing};
 
-/// The longest row: `65535. ` plus a name whose every character `escape_markdown`
-/// doubled. Sizing pages with it keeps page boundaries stable.
+/// The longest row: a row number of up to six digits plus `. ` (the `+ 8`), and a
+/// name whose every character `escape_markdown` doubled. Sizing pages with it keeps page boundaries stable.
 pub const ROW_MAX_CHARS: usize = 2 * ITEM_NAME_MAX + 8;
 
 /// `/items`: the first page of the catalog.
