@@ -2,7 +2,8 @@
 title: 'Story 9.3: Route component defaults with per-render overrides'
 type: 'feature'
 created: '2026-10-22'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '9693e7a90f4d2e2b446b375722f63be8f3ad8bb5'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
