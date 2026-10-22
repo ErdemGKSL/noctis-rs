@@ -2527,9 +2527,14 @@ So that every component for that Route looks consistent and I override only what
 **When** the modal is prepared
 **Then** a typed error is returned before sending
 
+**Given** a render that overrides several fields at once (maintainer decision §9)
+**When** the author passes an overrides value, e.g. `ShopBuy { item }.build().overrides(ButtonOverrides { label: Some("shop.buy_again".into()), disabled: Some(true), ..Default::default() })`
+**Then** each kind has an overrides struct (`ButtonOverrides`, `StringSelectOverrides`, `UserSelectOverrides`, `RoleSelectOverrides`, `MentionableSelectOverrides`, `ChannelSelectOverrides`, `ModalOverrides`) whose every field is an `Option` and which implements `Default`, so only the set fields replace the defaults and `..Default::default()` fills the rest; it composes with the chainable overrides (the later call wins), and it is validated like them
+**And** a modal value is pre-filled with struct update syntax over its blank value, e.g. `BioForm { bio: Some(current), ..BioForm::blank(user) }`, so the author sets only the inputs they have (every input field is an `Option`, `None` = empty)
+
 **Given** the new public API
 **When** the story is done
-**Then** the Usage Skill documents Route defaults and overrides, its modal recipe shows pre-fill, the template's bio modal pre-fill is reconciled, and `skill-check` passes
+**Then** the Usage Skill documents Route defaults and overrides, with an example of an overrides struct with `..Default::default()` and of a modal pre-filled with `..X::blank(..)`, its modal recipe shows pre-fill, the template's bio modal pre-fill is reconciled, and `skill-check` passes
 
 ### Story 9.4: Modal pre-fill (merged into Story 9.3)
 

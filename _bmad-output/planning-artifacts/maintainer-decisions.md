@@ -372,3 +372,9 @@ impl Warn {
   pre-fills the inputs from the struct value, `.value(field, ..)` and `.title(..)` override
   one render. Story 9.4's acceptance criteria moved into Story 9.3, and 9.4 is not
   implemented as a separate story.
+- Overrides are flexible: every kind gets an overrides struct (`ButtonOverrides`,
+  `StringSelectOverrides`, …, `ModalOverrides`) with every field an `Option` and a
+  `Default` impl, applied with `.overrides(ButtonOverrides { label: Some(..),
+  ..Default::default() })` next to the chainable setters (the later call wins). Modal
+  pre-fill uses struct update syntax over the blank value: `BioForm { bio: Some(v),
+  ..BioForm::blank(user) }`. The Usage Skill shows both forms with examples.
