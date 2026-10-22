@@ -107,7 +107,7 @@ development_status:
   7-8-modal-routes-and-typed-submissions-end-to-end: done
   epic-7-retrospective: optional
 
-  epic-8: in-progress
+  epic-8: done
   8-1-responder-ergonomics-ctx-respond-ctx-update-and-ctx-reply_te: done
   8-2-deterministic-renders-select-freshness-and-safe-text: done
   8-3-budget-helpers-cost-and-how-many-items-fit: done
