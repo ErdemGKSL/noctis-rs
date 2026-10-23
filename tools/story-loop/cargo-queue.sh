@@ -48,7 +48,12 @@ runner(){
   born=$(stat -c %Y "$me")
   while true; do
     # A reinstalled cargo-queue.sh takes over between commands.
-    [ "$(stat -c %Y "$me" 2>/dev/null)" = "$born" ] || { exec 9>&-; exec bash "$me" --runner; }
+    # It starts from the caller-like environment, not this runner's exports (a variable a new version dropped must go).
+    if [ "$(stat -c %Y "$me" 2>/dev/null)" != "$born" ]; then
+      exec 9>&-
+      mapfile -d '' keep < <(env -0 | grep -z -E '^(PATH|HOME|USER|LANG|TERM|CARGO_HOME|RUSTUP_HOME|NOCTIS_[A-Z_]+)=' | grep -z -v '^NOCTIS_CARGO_DIRECT=')
+      exec env -i "${keep[@]}" bash "$me" --runner
+    fi
     q=$(ls "$Q/queue" 2>/dev/null | sort | head -1)
     if [ -z "$q" ]; then idle=$((idle + 1)); [ $idle -gt 3600 ] && exit 0; sleep 1; continue; fi
     idle=0; key=${q#*.}; J=$Q/jobs/$key
