@@ -289,7 +289,8 @@ impl AutocompleteCtx {
     }
 
     /// The resolved Guild Locale (FR-43): Discord's `guild_locale`, then
-    /// (in a DM) the User Locale, then the App's default; then the App's
+    /// the User Locale (in a DM, or when the guild's code has no file),
+    /// then the App's default; then the App's
     /// `LocaleResolver`.
     pub fn guild_locale(&self) -> noctis_rules::Locale {
         self.parts.locales.get().guild

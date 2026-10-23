@@ -2,10 +2,10 @@
 title: 'Story 11.3: User and Guild Locale resolution'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '247385f5e22a855330fb07a5080b540084a09acd'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-11-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -249,6 +249,38 @@ Codes in quotes are raw Discord strings. `A` is the available set and `D` the de
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 28 findings — high 0, medium 4, low 15, false 9, maybe-false 0
+- findings:
+  - `[low]` `[patch]` Dispatcher's stage 4 refreshes the guild record with the value it just read from it (lost-update race with a concurrent `GUILD_UPDATE`; contradicts the memlog "not events or the Dispatcher") — confirmed: `Dispatcher::run_command` passes `user_id: Some(..)` and `discord_guild: locales.guild(..)` to `stage4`, which calls `refresh`; patch: the Dispatcher must resolve without refreshing the record.
+  - `[low]` `[reject]` An interaction created before a locale change but processed after the `GUILD_UPDATE` writes the old `guild_locale` back — real but needs a locale change within milliseconds of an interaction in that guild, and the next interaction or guild event corrects it; the spec mandates interaction refresh, and ordering the two sources needs versioning (more than a direct correction).
+  - `[medium]` `[patch]` Unhandled `GUILD_CREATE`/`UPDATE`/`DELETE` (now in every event-handler App's filter) still wait in the drain's permit loop before `dispatch` drops them — confirmed at `worker.rs:265-276`: `observe` then the `acquire_owned` loop, and `dispatch` only then finds no handler; a startup `GUILD_CREATE` burst stalls the event lane behind saturated permits; patch: skip the permit wait after `observe` when no handler is registered for the kind.
+  - `[low]` `[reject]` A `GUILD_UPDATE` dropped by a full overflow or discarded at shutdown leaves the record stale — the overflow (16384) only fills under severe overload, already reported as dropped events; shutdown discards do not matter; recording at ingress is an architectural change.
+  - `[false]` `[reject]` `GUILD_CREATE` parsing cost is unmeasured and unmentioned — the spec's design note and the memlog deliberately accept "`GUILD_*` parsing only for Apps with event handlers"; the cost is a settled, documented trade-off.
+  - `[low]` `[reject]` `LocaleSet` (`u32`) has no compile-time check that `Locale::ALL.len() <= 32` — `Locale::ALL` is typed `[Locale; 32]` in `noctis-rules`, whose API this story may not change, so a 33rd locale is a deliberate future edit; unlikely, and the guard is extra code.
+  - `[low]` `[patch]` Template `AGENTS.md` says the three accessors always return a locale with a file, so `Strings::of` never needs a fallback, contradicting verbatim resolver/Middleware overrides (row 29 returns `PtBr` with no file) — confirmed at `examples/project-template/AGENTS.md:44`; patch: say the built-in resolution picks a locale with a file, while a resolver or Middleware override is used verbatim and renders through each catalog's fallback.
+  - `[low]` `[reject]` `LocaleRequest` has no public constructor, so bot authors cannot unit-test a resolver — the spec makes it `#[non_exhaustive]` (built only by Noctis); a test builder is new public surface for a rare need, and `TestApp` round trips cover resolvers.
+  - `[false]` `[reject]` Handlers lose Discord's raw `locale`/`guild_locale` — the spec's Never list forbids a raw accessor on handler contexts and its design note gives the raw codes to the `LocaleResolver` only; a deliberate, settled choice.
+  - `[low]` `[reject]` A panicking resolver also prints the default panic hook's message to stderr, and `panic = "abort"` voids the guarantee — every caught handler panic in Noctis behaves the same way; suppressing the hook is extra machinery, and abort semantics are standard Rust.
+  - `[low]` `[patch]` `pipeline/component.rs` labels the resolver block "Stage 3" and says "Notices before stage 3", while every doc calls it stage 4 (AD-23) — confirmed at `component.rs:601` and `:700`; patch: reword the two comments so the resolver block is identified as AD-23 stage 4 (the local numbering can stay, with the AD-23 name next to it).
+  - `[low]` `[reject]` The record is not pruned on `READY` after a re-IDENTIFY, so a guild left while disconnected keeps an entry — one tiny entry per such guild, and no event or bot interaction from that guild reaches the App afterwards; pruning on `READY` adds a new code path.
+  - `[false]` `[reject]` Row 33's test does not check the locale of pre-stage-4 notices — `resolver_once_per_component_run` asserts the resolver ran zero times for the malformed and unknown ids, so no resolver result exists that such a notice could use.
+  - `[medium]` `[patch]` (same root cause as the permit-wait row) Unhandled `GUILD_*` events wait on a handler permit — patch as above.
+  - `[low]` `[patch]` When every handler on a `GUILD_*` slot is droppable, the lane may evict a `GUILD_DELETE`/`GUILD_UPDATE`, leaving a stale record — confirmed: `registry.rs:228-233` folds any all-droppable dispatch type into `droppable`; patch: keep `GUILD_CREATE | GUILD_UPDATE | GUILD_DELETE` out of the droppable set whenever they feed the record.
+  - `[low]` `[reject]` (same root cause as the interaction-ordering row) `refresh` checks under the read lock and writes under the write lock, so a `GUILD_UPDATE` in between is overwritten — the write is unconditional under the write lock anyway, so this is the same best-effort race; rejected with it.
+  - `[false]` `[reject]` An unparseable interaction `guild_locale` leaves the record instead of removing it — the spec says only a parseable `guild_locale` refreshes a record; Discord always sends one of its codes.
+  - `[low]` `[patch]` (same root cause as the AGENTS.md row) Template says every accessor result has a locale file — patch as above.
+  - `[medium]` `[patch]` (same root cause as the permit-wait row) The memlog decision says `GUILD_*` events "never wait on or skip a handler permit", which the drain contradicts — the code patch makes the claim true; adjust the memlog wording if it still differs.
+  - `[medium]` `[patch]` Component, modal and Expired-chain runs never verify that a non-identity resolver or a before-Middleware override reaches the handler ctx, the Responder keys, Guard notices or the default Expired notice (verification gap, pre-verified) — patch: add the component-path test the gap report describes.
+  - `[low]` `[patch]` Webhook sends' switch to the App default locale is tested only with an en-US default (verification gap, pre-verified) — patch: add a webhook case with a `default = tr` catalog asserting the tr label.
+  - `[low]` `[patch]` Rustdoc says the Guild Locale falls back to the User Locale "(in a DM)", but the code (per the spec's formula `step(guild) ∥ step(user) ∥ default`) also falls back inside a guild whose `guild_locale` has no file or sibling file — the code follows the spec; the docs are wrong at `command.rs:268`, `component.rs:203`, `noctis/src/lib.rs:2168` and the `i18n.md` §7 DM bullet; patch: describe the fallback as "then the User Locale (in a DM, or when the guild's code has no file)".
+  - `[false]` `[reject]` Bots without locale files see `en-US` instead of Discord's codes — the spec's design note deliberately chose resolved, non-`Option` accessors.
+  - `[low]` `[patch]` (same root cause as the AGENTS.md row) Template `AGENTS.md` "always has a locale file" contradicts verbatim overrides — patch as above.
+  - `[false]` `[reject]` AC 2 is exercised only at the crate-internal surface — the spec places the event rows in `worker/tests.rs`, which feeds parsed `Event`s through the real `Workers` drain into `EventCtx`, and row 27 in `registry/tests.rs`; the public facade only re-exports it.
+  - `[false]` `[reject]` A Middleware override does not reach autocomplete — the spec settles that autocomplete runs no Middleware and sees only the resolver (`Invocation::Autocomplete` doc).
+  - `[false]` `[reject]` Notices before stage 4 ignore the resolver — the spec settles it explicitly (no invocation exists yet).
+  - `[false]` `[reject]` The diff cannot show that `skill-check` passes — not a defect; the gate runs in verification.
+
 ## Design Notes
 
 These decisions are logged in the architecture memlog.
@@ -287,3 +319,41 @@ These decisions are logged in the architecture memlog.
 - `cargo deny check`: expected ok.
 - `cargo +1.91 check --release --workspace`: expected ok.
 - `test ! -d target/debug`: expected no debug profile.
+
+## Auto Run Result
+
+- **Summary:** Interaction handlers get resolved, non-`Option` `user_locale()`, `guild_locale()` and `locale()` accessors. The built-in resolution picks the best code that has a file in any merged catalog, then falls back to the first catalog's default. An optional sync `LocaleResolver` runs once at AD-23 stage 4, inside `catch_unwind`. Before-Middleware can override the result, and overrides are used verbatim. A bounded per-guild framework record, fed by `GUILD_CREATE`/`GUILD_UPDATE`/`GUILD_DELETE` and refreshed by interactions, gives event contexts and webhook sends their locale (webhooks use the App default).
+- **Files changed:** `noctis-core` (`command.rs`, `component.rs`, `autocomplete.rs`, `pipeline.rs` and `pipeline/component.rs`, `registry.rs`, `worker.rs`, `responder*.rs`, `test_support.rs`, plus new `pipeline/tests/locales.rs` and the worker, registry and responder tests); the `noctis` facade (`lib.rs`, `tests/i18n_locales.rs`, `tests/fixtures/i18n/resolve/*`); testkit test updates; the project-template skill references, `AGENTS.md` and API hash; `xtask/public-api.txt` re-blessed; the architecture memlog decisions.
+- **Review findings:** 28 findings (high 0, medium 4, low 15, false 9). 11 patch entries, covering 4 medium and 7 low:
+  - unhandled `GUILD_*` events skip the handler-permit wait (3 medium entries, one root cause, memlog wording aligned);
+  - the component/modal/Expired path now has a test showing that the resolver and Middleware overrides reach the handler (medium);
+  - the Dispatcher resolves without refreshing the guild record;
+  - `GUILD_*` events that feed the record are never droppable;
+  - the template `AGENTS.md` wording on verbatim overrides is corrected (3 entries);
+  - the "stage 4" comments in `pipeline/component.rs` are fixed;
+  - the guild-to-user fallback docs are fixed;
+  - a webhook test with a `tr` default was added.
+- **Deferred:** none.
+- **Rejected (17):**
+  - Low, rejected as best-effort or extra machinery:
+    - an interaction that races a `GUILD_UPDATE` can write back the old locale, and the read-then-write `refresh` has the same race;
+    - a `GUILD_UPDATE` dropped by a full overflow leaves the record stale;
+    - `LocaleSet` has no compile-time check on its width;
+    - `LocaleRequest` has no public constructor;
+    - a resolver panic still prints the panic-hook message;
+    - the record is not pruned on `READY`.
+  - Settled by the spec (false):
+    - the cost of `GUILD_*` parsing;
+    - no raw locale codes on handler contexts;
+    - the row 33 notice locale;
+    - unparseable `guild_locale` handling;
+    - `en-US` for bots without locale files;
+    - AC 2 surface placement;
+    - autocomplete runs no Middleware;
+    - notices before stage 4 use the built-in resolution;
+    - the `skill-check` gate.
+- **Follow-up review recommended:** true. Patched by verdict: high 0, medium 4, low 7. Named risk: the drain's new permit-skip and non-droppable rules for `GUILD_*` events change how events are scheduled under load. Only unit tests cover them. Nobody has checked that they cannot starve or reorder handled events when a startup `GUILD_CREATE` burst arrives.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green: fmt, clippy `-D warnings`, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny and the MSRV 1.91 check, with no debug profile. CI is paused by the maintainer.
+- **Residual risks:**
+  - The best-effort ordering between `GUILD_UPDATE` and interaction refreshes can briefly show a stale guild locale.
+  - The guild record is not pruned on a re-IDENTIFY `READY`.

@@ -2036,3 +2036,159 @@ async fn resolver_once_per_component_run() {
     }
     assert!(calls.lock().unwrap().is_empty());
 }
+
+mod locale_overrides {
+    //! Story 11.3 rows 29, 36, 39 and 47 on the component path: a
+    //! `LocaleResolver` result and a Route-path before-Middleware override
+    //! reach the handler context, the Responder's keys, the default
+    //! Expired notice and a Guard denial.
+
+    use noctis_codec::RouteRuntime;
+
+    use super::*;
+    use crate::guard::{__Denial, __check_custom};
+    use crate::kind::__Response;
+    use crate::{Access, AutoDefer, BeforeCtx, ComponentResponder, Flow, Middleware};
+
+    test_route!(Lbl, "loc.lbl", RouteShape::INLINE, 0);
+    test_route!(@unguarded Deny, "loc.deny", RouteShape::INLINE, 0, RouteRuntime::EMPTY);
+
+    impl crate::__Guards<ComponentCtx> for Deny {
+        const GUARDED: bool = true;
+
+        async fn __guard(&self, _: &ComponentCtx) -> HandlerResult<Option<__Denial>> {
+            __check_custom("t::deny", Ok(Access::deny()))
+        }
+    }
+
+    /// A keyed label, and tr overrides of two built-in notices (keys
+    /// sorted, as `i18n!` emits them).
+    static CATALOG: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+        "loc/locales",
+        Locale::EnUs,
+        &[
+            (Locale::EnUs, &[("shop.save", "Save")]),
+            (
+                Locale::Tr,
+                &[
+                    ("noctis.expired", "Panelin süresi doldu"),
+                    ("noctis.guard.failed", "Bunu kullanamazsın"),
+                    ("shop.save", "Kaydet"),
+                ],
+            ),
+        ],
+        &[
+            ("noctis.expired", &[]),
+            ("noctis.guard.failed", &[]),
+            ("shop.save", &[]),
+        ],
+    );
+
+    /// A Module whose `loc.lbl` handler logs `user_locale()` and answers
+    /// an ephemeral keyed button, and whose `loc.deny` Guard denies.
+    fn module(log: &Log) -> Module {
+        let log = log.clone();
+        Module::new("loc")
+            .__add(ComponentHandler::__new_with_responder::<
+                Lbl,
+                AutoDefer,
+                _,
+                _,
+                _,
+            >(
+                "loc::Lbl",
+                "loc.lbl",
+                ComponentKind::Button,
+                __Response::Ephemeral,
+                move |_: Lbl, ctx: ComponentCtx, _: ComponentResponder| {
+                    let log = log.clone();
+                    let button = noctis_ui::__macro::build_button(
+                        Lbl { item: 1 },
+                        &noctis_ui::__macro::ButtonDefaults {
+                            style: noctis_ui::ButtonStyle::Primary,
+                            label: Some(noctis_ui::__macro::DefaultText::Key(MessageKey::new(
+                                "shop.save",
+                            ))),
+                            emoji: None,
+                            disabled: false,
+                        },
+                    );
+                    async move {
+                        log.push(format!("{:?}", ctx.user_locale()));
+                        Ok(V2Message::new(
+                            noctis_ui::Components::new().push(ActionRow::buttons([button])),
+                        ))
+                    }
+                },
+            ))
+            .__add(ComponentHandler::__new::<Deny, _, _>(
+                "loc::Deny",
+                "loc.deny",
+                ComponentKind::Button,
+                |_: Deny, _: ComponentCtx| async { Ok(Responded::new()) },
+            ))
+    }
+
+    /// Runs a click on `custom_id` from an `en-US` user; returns the one
+    /// request it sent.
+    async fn press(p: &Pipeline, custom_id: &str) -> (Method, String, Value) {
+        let mut json = click(custom_id, 2);
+        json["locale"] = json!("en-US");
+        p.fx.server.log.lock().unwrap().clear();
+        run_component(
+            Arc::clone(p.fx.app.registry()),
+            Arc::clone(p.fx.app.shared()),
+            inbound(&json),
+            CancellationToken::new(),
+        )
+        .await;
+        let mut requests = p.requests();
+        assert_eq!(requests.len(), 1, "{custom_id}: {requests:?}");
+        requests.remove(0)
+    }
+
+    fn label(request: &(Method, String, Value)) -> &Value {
+        &request.2["data"]["components"][0]["components"][0]["label"]
+    }
+
+    fn content(request: &(Method, String, Value)) -> &Value {
+        &request.2["data"]["components"][0]["content"]
+    }
+
+    /// A resolver mapping an `en-US` user to tr reaches the handler, the
+    /// keyed label and the default Expired notice of a stale id.
+    #[tokio::test]
+    async fn resolver_reaches_component_runs() {
+        let log = Log::default();
+        let p = Pipeline::start_answering(module(&log), discord(), |b| {
+            b.locales(CATALOG)
+                .locale_resolver(|_: &crate::LocaleRequest| Locales::both(Locale::Tr));
+        })
+        .await;
+        let reply = press(&p, "0loc.lbl:1").await;
+        assert_eq!(log.lines(), ["Tr"]);
+        assert_eq!(label(&reply), "Kaydet", "{reply:?}");
+        let expired = press(&p, "1loc.lbl:147").await;
+        assert_eq!(content(&expired), "Panelin süresi doldu", "{expired:?}");
+    }
+
+    /// A Route-path before-Middleware `set_locale(Tr)` reaches the
+    /// Responder's keyed label and a Guard denial notice.
+    #[tokio::test]
+    async fn middleware_reaches_component_runs() {
+        let log = Log::default();
+        let module = module(&log).before(Middleware::before(|ctx: BeforeCtx| async move {
+            ctx.set_locale(Locale::Tr);
+            Ok(Flow::Continue)
+        }));
+        let p = Pipeline::start_answering(module, discord(), |b| {
+            b.locales(CATALOG);
+        })
+        .await;
+        let reply = press(&p, "0loc.lbl:1").await;
+        assert_eq!(log.lines(), ["Tr"]);
+        assert_eq!(label(&reply), "Kaydet", "{reply:?}");
+        let denied = press(&p, "0loc.deny:1").await;
+        assert_eq!(content(&denied), "Bunu kullanamazsın", "{denied:?}");
+    }
+}

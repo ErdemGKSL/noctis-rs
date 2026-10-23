@@ -2181,8 +2181,8 @@ pub mod prelude {
 /// a locale "has a file" when any catalog ships one, and the App's default
 /// is the first catalog's `default`. An interaction's User Locale is
 /// Discord's `locale`, then its `guild_locale`, then the default; its
-/// Guild Locale is `guild_locale`, then (in a DM) `locale`, then the
-/// default; a guild event uses the guild's recorded `preferred_locale`,
+/// Guild Locale is `guild_locale`, then `locale` (in a DM, or when the
+/// guild's code has no file), then the default; a guild event uses the guild's recorded `preferred_locale`,
 /// then the default. Each step takes the code's own file or its sibling's
 /// (`en-GB` → `en-US`). A [`LocaleResolver`]
 /// ([`AppBuilder::locale_resolver`]) and a before-Middleware

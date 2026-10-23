@@ -2138,6 +2138,13 @@ mod autocomplete {
             ],
             &[("noctis.guard.owner", &[])],
         );
+        // This run reaches the same `warn!` callsites as
+        // `labels_are_lowered`; registering them with no live subscriber
+        // can cache `Interest::never` while that test rebuilds the cache
+        // in parallel, hiding its lines. A live subscriber keeps it `always`.
+        let capture = Capture::default();
+        let _guard = tracing::subscriber::set_default(capture.subscriber());
+        tracing::callsite::rebuild_interest_cache();
         let calls: Arc<Mutex<Vec<Invocation>>> = Arc::default();
         let seen = Arc::clone(&calls);
         let module = Module::new("m").__add(config());

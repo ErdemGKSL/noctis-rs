@@ -221,12 +221,7 @@ impl Registry {
                 slot.concurrent.push(Arc::clone(entry));
             }
         }
-        let droppable = by_dispatch
-            .iter()
-            .filter(|(_, handlers)| handlers.all_droppable())
-            .fold(DROPPABLE_EVENTS, |flags, (dispatch, _)| {
-                flags | EventTypeFlags::from(*dispatch)
-            });
+        let droppable = droppable_events(&by_dispatch, !entries.is_empty());
         let (commands, command_violations) = Commands::fold(&folded);
         violations.extend(command_violations);
         let (routes, signed) = fold_routes(route_entries, &mut violations);
@@ -446,12 +441,34 @@ fn check_extensions(folded: &[Folded<'_>], violations: &mut Vec<BuildViolation>)
 /// lifecycle (`GUILD_CREATE`, `GUILD_UPDATE`, `GUILD_DELETE`) that feeds the
 /// guild locale record (FR-43) whenever an event handler may read
 /// `EventCtx::guild_locale`.
+/// The events that feed the guild locale record (Story 11.3).
+const GUILD_RECORD: EventTypeFlags = EventTypeFlags::GUILD_CREATE
+    .union(EventTypeFlags::GUILD_UPDATE)
+    .union(EventTypeFlags::GUILD_DELETE);
+
+/// The dispatch types whose events may be dropped under backpressure:
+/// [`DROPPABLE_EVENTS`] plus every type whose handlers are all droppable.
+fn droppable_events(
+    by_dispatch: &HashMap<EventType, Handlers>,
+    has_event_handlers: bool,
+) -> EventTypeFlags {
+    let droppable = by_dispatch
+        .iter()
+        .filter(|(_, handlers)| handlers.all_droppable())
+        .fold(DROPPABLE_EVENTS, |flags, (dispatch, _)| {
+            flags | EventTypeFlags::from(*dispatch)
+        });
+    // The guild record's feed is never dropped.
+    if has_event_handlers {
+        droppable.difference(GUILD_RECORD)
+    } else {
+        droppable
+    }
+}
+
 fn base_event_types(has_event_handlers: bool) -> EventTypeFlags {
     if has_event_handlers {
-        EventTypeFlags::INTERACTION_CREATE
-            | EventTypeFlags::GUILD_CREATE
-            | EventTypeFlags::GUILD_UPDATE
-            | EventTypeFlags::GUILD_DELETE
+        EventTypeFlags::INTERACTION_CREATE | GUILD_RECORD
     } else {
         EventTypeFlags::INTERACTION_CREATE
     }

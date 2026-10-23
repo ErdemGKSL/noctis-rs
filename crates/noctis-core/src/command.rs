@@ -265,7 +265,8 @@ impl CommandCtx {
     }
 
     /// The resolved Guild Locale (FR-43): Discord's `guild_locale`, then
-    /// (in a DM) the User Locale, then the App's default, resolved like
+    /// the User Locale (in a DM, or when the guild's code has no file),
+    /// then the App's default, resolved like
     /// [`user_locale`](Self::user_locale) and overridable the same way. Use
     /// it for shared content.
     pub fn guild_locale(&self) -> Locale {

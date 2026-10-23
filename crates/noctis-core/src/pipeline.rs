@@ -1583,9 +1583,9 @@ impl Dispatcher {
             return Ok(());
         };
         let ephemerality = entry.handler.ephemerality();
-        // Stage 4: the User Locale the caller gave, the guild's recorded one.
-        let locales = stage4(
-            &self.app,
+        // Stage 4: the User Locale the caller gave, the guild's recorded one;
+        // only interactions refresh the record.
+        let locales = LocaleCell::new(self.app.locales.resolve_run(
             Stage4 {
                 invocation: Invocation::Command { path },
                 guild_id,
@@ -1594,7 +1594,7 @@ impl Dispatcher {
                 discord_guild: self.app.locales.guild(guild_id),
             },
             entry.handler.name(),
-        );
+        ));
         let around = Around::new(
             &entry.chain,
             || RunInfo {

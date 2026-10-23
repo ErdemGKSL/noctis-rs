@@ -807,6 +807,43 @@ async fn webhook_resolves_locale_keys() {
     assert_eq!(body["components"][0]["components"][0]["label"], "Buy");
 }
 
+/// Story 11.3: a webhook message's keys resolve in the App's default
+/// locale, here a catalog's `default = tr`.
+#[tokio::test]
+async fn webhook_resolves_keys_in_the_app_default() {
+    static SHOP: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+        "shop/locales",
+        noctis_rules::Locale::Tr,
+        &[
+            (noctis_rules::Locale::EnUs, &[("shop.buy", "Buy")]),
+            (noctis_rules::Locale::Tr, &[("shop.buy", "Satın al")]),
+        ],
+        &[("shop.buy", &[])],
+    );
+    let server = crate::edge::test_support::TestServer::start_with(false, discord()).await;
+    let app = crate::App::builder()
+        .runtime(&crate::Runtime::for_test())
+        .http_proxy(server.authority())
+        .locales(SHOP)
+        .build()
+        .unwrap();
+    let fx = Fixture { server, app };
+    let button = build_button(
+        Plain { item: 1 },
+        &ButtonDefaults {
+            style: ButtonStyle::Primary,
+            label: Some(noctis_ui::__macro::DefaultText::Literal("b")),
+            emoji: None,
+            disabled: false,
+        },
+    )
+    .label(noctis_rules::MessageKey::new("shop.buy"));
+    let msg = V2Message::new(Components::new().push(ActionRow::buttons([button])));
+    owned(&fx).send(msg).await.unwrap();
+    let body = payload(&fx.server.seen()[0]);
+    assert_eq!(body["components"][0]["components"][0]["label"], "Satın al");
+}
+
 /// D3: an edit by id uploads every used file again.
 #[tokio::test]
 async fn edit_by_id_uploads_again() {

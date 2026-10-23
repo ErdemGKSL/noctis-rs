@@ -2020,6 +2020,40 @@ mod guild_locales {
         );
     }
 
+    /// Unhandled `GUILD_CREATE`s update the record without waiting on a
+    /// permit: with the only permit held, a second create after the first
+    /// is still observed.
+    #[tokio::test]
+    async fn unhandled_guild_create_skips_the_permit() {
+        let log = Log::default();
+        let gate = Arc::new(Semaphore::new(0));
+        let mut builder = App::builder();
+        builder
+            .handler_concurrency(1)
+            .locales(EN_TR)
+            .module(Module::new("m").__add({
+                let (log, gate) = (log.clone(), Arc::clone(&gate));
+                handler("h", false, move |_, _: MessageCreate| {
+                    let (log, gate) = (log.clone(), Arc::clone(&gate));
+                    async move {
+                        log.push("start");
+                        let _permit = gate.acquire().await;
+                        Ok(())
+                    }
+                })
+            }));
+        let h = Harness::start(&mut builder);
+        h.push(message_create(1));
+        until("the handler holds the permit", || !log.lines().is_empty()).await;
+        h.push(guild_create(9, "tr"));
+        h.push(guild_create(10, "tr"));
+        let locales = &h.app.shared().locales;
+        until("both records", || locales.recorded() == 2).await;
+        assert_eq!(locales.guild(Some(Id::new(10))), Some(Locale::Tr));
+        gate.add_permits(1);
+        h.close().await;
+    }
+
     /// Row 44: an event before-Middleware overrides the Guild Locale.
     #[tokio::test]
     async fn event_middleware_overrides() {

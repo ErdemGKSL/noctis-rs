@@ -598,7 +598,7 @@ pub(crate) async fn run_component_over(
         locale::parse(locale.as_deref()),
         locale::parse(guild_locale.as_deref()),
     );
-    // Notices before stage 3 use the built-in resolution (no resolver).
+    // Notices before AD-23 stage 4 use the built-in resolution (no resolver).
     let builtin = LocaleCell::new(app.locales.builtin(discord_user, discord_guild));
     let answer = Rejecter {
         span: &span,
@@ -697,8 +697,9 @@ pub(crate) async fn run_component_over(
             .reject(Some(route), Rejection::NoAuthor, &notice_state(transport))
             .await;
     };
-    // Stage 3: resolve the locales (once, before the Expired Handler chain
-    // branch), then build the context and the responder state.
+    // Stage 3 (AD-23 stage 4): resolve the locales (once, before the
+    // Expired Handler chain branch), then build the context and the
+    // responder state.
     let invocation = match &target {
         Target::Component(_) => Invocation::Component {
             route: entry.handler.route(),

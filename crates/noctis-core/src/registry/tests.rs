@@ -90,6 +90,22 @@ async fn guild_lifecycle_follows_event_handlers() {
     assert!(with.registry().event_types().contains(GUILD_LIFECYCLE));
     let without = builder().module(Module::new("m")).build().unwrap();
     assert!(!without.registry().event_types().intersects(GUILD_LIFECYCLE));
+    // All-droppable handlers never make the record's feed droppable.
+    let droppable = builder()
+        .module(
+            Module::new("m")
+                .__add(noop_with::<GuildCreate>("c", false, true))
+                .__add(noop_with::<GuildUpdate>("u", false, true))
+                .__add(noop_with::<GuildDelete>("d", false, true)),
+        )
+        .build()
+        .unwrap();
+    assert!(
+        !droppable
+            .lane_config()
+            .droppable
+            .intersects(GUILD_LIFECYCLE)
+    );
 }
 
 /// Matrix 4: pre-order fold with ancestor paths.
@@ -511,7 +527,9 @@ async fn droppable_unavailable_guild() {
         .build()
         .unwrap();
     let droppable = app.lane_config().droppable;
-    assert_eq!(droppable, DROPPABLE_EVENTS | EventTypeFlags::GUILD_DELETE);
+    // An all-droppable slot would add `GUILD_DELETE`, but it feeds the
+    // guild locale record (Story 11.3), so it stays non-droppable.
+    assert_eq!(droppable, DROPPABLE_EVENTS);
     assert!(!droppable.contains(EventTypeFlags::UNAVAILABLE_GUILD));
 }
 

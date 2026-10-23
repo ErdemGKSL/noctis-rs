@@ -265,6 +265,12 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
             InboundKind::Event(event) => {
                 // The guild record follows every event, handled or not.
                 workers.app.locales.observe(&event);
+                // An unhandled event never waits on a permit.
+                if workers.registry.handlers(event.kind()).is_none() {
+                    let kind = event.kind();
+                    tracing::trace!(target: "noctis::app", shard, kind = ?kind, "no handler registered");
+                    continue;
+                }
                 let permit = loop {
                     tokio::select! {
                         biased;

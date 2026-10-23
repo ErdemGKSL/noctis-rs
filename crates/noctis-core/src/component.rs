@@ -200,8 +200,9 @@ macro_rules! ctx_accessors {
             }
 
             /// The resolved Guild Locale (FR-43): Discord's
-            /// `guild_locale`, then (in a DM) the User Locale, then the
-            /// App's default, resolved and overridable like
+            /// `guild_locale`, then the User Locale (in a DM, or when the
+            /// guild's code has no file), then the App's default, resolved
+            /// and overridable like
             /// [`user_locale`](Self::user_locale). Use it for shared
             /// content.
             pub fn guild_locale(&self) -> Locale {
