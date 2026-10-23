@@ -137,7 +137,6 @@ pub struct App {
     shard_total: Option<NonZeroU32>,
     intents: Intents,
     ports: Ports,
-    renderer: Option<Arc<dyn Renderer>>,
     registry: Arc<Registry>,
     event_capacity: NonZeroUsize,
     overflow_capacity: usize,
@@ -497,7 +496,20 @@ impl App {
     /// # }
     /// ```
     pub fn has_renderer(&self) -> bool {
-        self.renderer.is_some()
+        self.shared.renderer.is_some()
+    }
+
+    /// The App's [`Renderer`], if one was set (by a plugin or
+    /// `.renderer(..)`); `ctx.render` renders through it.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert!(app.renderer().is_none());
+    /// # }
+    /// ```
+    pub fn renderer(&self) -> Option<&Arc<dyn Renderer>> {
+        self.shared.renderer.as_ref()
     }
 
     /// The resolved ports.
@@ -2154,6 +2166,7 @@ impl AppBuilder {
         let (registry, missing) = Registry::fold(&self.modules, self.intents);
         let registry = Arc::new(registry);
         self.violations.extend(missing);
+        self.register_templates(&registry);
         let payload_keys = self.key_ring(&registry);
         let sources = locale_sources(&self.catalogs, &self.modules);
         let catalogs: Vec<noctis_i18n::Catalog> = sources.iter().map(|(c, _)| *c).collect();
@@ -2221,6 +2234,7 @@ impl AppBuilder {
                 ref_ttl: config.ref_ttl,
                 strings: Arc::new(strings),
                 payload_keys,
+                renderer: config.renderer,
                 expired_handler: config.expired_handler,
                 run_observer: config.run_observer,
             }),
@@ -2231,7 +2245,6 @@ impl AppBuilder {
             shard_total,
             intents: config.intents | registry.intents(),
             ports,
-            renderer: config.renderer,
             registry,
             event_capacity,
             overflow_capacity: overflow,
@@ -2241,6 +2254,29 @@ impl AppBuilder {
             dev_guild: config.dev_guild,
             lifecycle: Lifecycle::new(),
         })
+    }
+
+    /// Hands the folded Templates to the Renderer (a rejection is a
+    /// [`BuildViolation::TemplateRejected`]); without a Renderer, warns
+    /// when Templates are registered.
+    fn register_templates(&mut self, registry: &Registry) {
+        let templates = registry.templates();
+        match &self.renderer {
+            Some(renderer) => {
+                if let Err(error) = renderer.register(templates) {
+                    self.violations.push(BuildViolation::TemplateRejected {
+                        message: error_chain(&error),
+                    });
+                }
+            }
+            None if !templates.is_empty() => tracing::warn!(
+                target: "noctis::render",
+                templates = templates.len(),
+                "Templates are registered but no Renderer is installed; ctx.render will fail: \
+                 call .theme(..) or .image(..)"
+            ),
+            None => {}
+        }
     }
 
     /// Sets the hidden run-end observer (`__testing::observe_runs`).
@@ -2413,6 +2449,18 @@ fn read_var(
         .map_err(|_| EnvError::NotUnicode { var })?;
     let trimmed = raw.trim_matches(|c: char| c.is_ascii_whitespace());
     Ok((!trimmed.is_empty()).then(|| trimmed.to_owned()))
+}
+
+/// `error` and its source chain, joined by `": "`.
+fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
 
 #[cfg(test)]

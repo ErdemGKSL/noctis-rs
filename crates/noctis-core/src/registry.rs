@@ -124,12 +124,8 @@ pub(crate) struct Registry {
     routes: HashMap<&'static str, Arc<RouteEntry>>,
     /// The ids of the mounted `signed` Routes, in fold order (CID-06).
     signed: Vec<&'static str>,
-    /// The first registration of every Template id, in fold order (for the
-    /// Renderer, Story 10.3).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the Renderer wiring of Story 10.3")
-    )]
+    /// The first registration of every Template id, in fold order (handed
+    /// to `Renderer::register` at `App::build`).
     templates: Vec<TemplateDescriptor>,
 }
 
@@ -278,10 +274,6 @@ impl Registry {
     }
 
     /// The first registration of every Template id, in fold order.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the Renderer wiring of Story 10.3")
-    )]
     pub(crate) fn templates(&self) -> &[TemplateDescriptor] {
         &self.templates
     }

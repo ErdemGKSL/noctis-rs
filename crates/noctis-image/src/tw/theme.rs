@@ -166,6 +166,18 @@ impl Theme {
             .map(|(name, block)| (name.as_str(), block.as_str()))
     }
 
+    /// Every token as a CSS custom property `(css_prefix + token, value)`,
+    /// namespace by namespace, tokens in order; what the Renderer's `@theme`
+    /// stylesheet declares.
+    #[cfg(any(feature = "render", test))]
+    pub(crate) fn custom_properties(&self) -> impl Iterator<Item = (String, &str)> + '_ {
+        NAMESPACES.iter().flat_map(move |&ns| {
+            self.tokens[slot(ns)]
+                .iter()
+                .map(move |(token, value)| (format!("{}{token}", ns.css_prefix()), value.as_str()))
+        })
+    }
+
     fn parse_top_level(&mut self, parser: &mut Parser<'_>) -> Result<(), ThemeError> {
         while let Some((at, token)) = next_token(parser) {
             match token {

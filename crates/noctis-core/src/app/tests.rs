@@ -1081,6 +1081,104 @@ async fn plugin_installs_renderer_once() {
     assert_eq!(installs.load(Ordering::SeqCst), 1);
 }
 
+/// A Template for the register tests.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Tpl;
+
+impl noctis_ports::Template for Tpl {
+    const ID: &'static str = "tpl";
+    const VERSION: u32 = 3;
+    const SIZE: noctis_ports::Size = noctis_ports::Size::new(1, 1);
+    const FORMAT: noctis_ports::Format = noctis_ports::Format::Png;
+    const ANIMATION: Option<noctis_ports::AnimationSpec> = None;
+
+    fn view() -> noctis_ports::ErasedView {
+        noctis_ports::ErasedView::new(())
+    }
+}
+
+/// A Renderer recording what `register` received, or rejecting it.
+struct Registering {
+    seen: Mutex<Vec<(&'static str, u32)>>,
+    reject: bool,
+}
+
+impl Renderer for Registering {
+    fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        Box::pin(async { Err(RenderError::QueueFull) })
+    }
+
+    fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        self.seen
+            .lock()
+            .unwrap()
+            .extend(templates.iter().map(|t| (t.id, t.version)));
+        if self.reject {
+            Err(RenderError::failed(std::io::Error::other("no fonts")))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[tokio::test]
+async fn build_registers_templates_with_the_renderer() {
+    let renderer = Arc::new(Registering {
+        seen: Mutex::new(Vec::new()),
+        reject: false,
+    });
+    let app = App::builder()
+        .renderer(Arc::clone(&renderer) as Arc<dyn Renderer>)
+        .module(Module::new("m").template::<Tpl>())
+        .build()
+        .unwrap();
+    assert!(app.has_renderer());
+    assert!(app.renderer().is_some());
+    assert_eq!(*renderer.seen.lock().unwrap(), [("tpl", 3)]);
+}
+
+#[tokio::test]
+async fn a_rejected_register_is_template_rejected() {
+    let renderer = Arc::new(Registering {
+        seen: Mutex::new(Vec::new()),
+        reject: true,
+    });
+    let err = App::builder()
+        .renderer(renderer)
+        .module(Module::new("m").template::<Tpl>())
+        .build()
+        .unwrap_err();
+    assert_eq!(
+        err.violations(),
+        [BuildViolation::TemplateRejected {
+            message: "render failed: no fonts".to_owned()
+        }]
+    );
+    assert!(
+        err.to_string()
+            .contains("the Renderer cannot render the registered Templates")
+    );
+}
+
+#[tokio::test]
+async fn templates_without_a_renderer_warn_once() {
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    let app = App::builder()
+        .module(Module::new("m").template::<Tpl>())
+        .build()
+        .unwrap();
+    assert!(!app.has_renderer());
+    let lines = capture.lines_with(&["noctis::render", "no Renderer is installed"]);
+    assert_eq!(lines.len(), 1, "{}", capture.text());
+    assert!(lines[0].contains("templates=1"), "{}", lines[0]);
+    // No Templates, no warning.
+    let capture = crate::test_support::Capture::default();
+    let _logs = tracing::subscriber::set_default(capture.subscriber());
+    App::builder().build().unwrap();
+    assert!(capture.lines_with(&["noctis::render"]).is_empty());
+}
+
 type Log = Arc<Mutex<Vec<&'static str>>>;
 
 struct P1(Log);

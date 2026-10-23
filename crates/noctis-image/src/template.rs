@@ -42,10 +42,14 @@ pub trait TemplateView {
 /// let decode = view.downcast_ref::<ViewFn>().expect("a derived view");
 /// let job = RenderJob::of(&Card { level: 3 })?;
 /// assert_eq!(decode.call(&job.data, Frame::STILL)?, Node::text("3"));
+/// assert!(!decode.is_animated());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct ViewFn(fn(&[u8], Frame) -> Result<Node, RenderError>);
+pub struct ViewFn {
+    decode: fn(&[u8], Frame) -> Result<Node, RenderError>,
+    animated: bool,
+}
 
 impl ViewFn {
     /// Decodes `data` and returns the view of `frame`.
@@ -55,7 +59,12 @@ impl ViewFn {
     /// [`RenderError::Failed`] with the [`ValueError`](noctis_ports::ValueError)
     /// as its source when `data` does not decode as the Template.
     pub fn call(&self, data: &[u8], frame: Frame) -> Result<Node, RenderError> {
-        (self.0)(data, frame)
+        (self.decode)(data, frame)
+    }
+
+    /// Whether the Template is animated ([`Template::ANIMATION`] is `Some`).
+    pub fn is_animated(&self) -> bool {
+        self.animated
     }
 }
 
@@ -63,7 +72,10 @@ impl ViewFn {
 /// what `#[derive(Template)]` returns from `Template::view`.
 #[doc(hidden)]
 pub fn erased_view<T: Template + TemplateView>() -> ErasedView {
-    ErasedView::new(ViewFn(decode_view::<T>))
+    ErasedView::new(ViewFn {
+        decode: decode_view::<T>,
+        animated: T::ANIMATION.is_some(),
+    })
 }
 
 /// Decodes a `T` from `data` and returns its view of `frame`.

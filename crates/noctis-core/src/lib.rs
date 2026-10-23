@@ -195,6 +195,7 @@ pub mod publish;
 mod raw_http;
 mod refs;
 mod registry;
+mod render;
 mod responder;
 mod runtime;
 mod sharding;

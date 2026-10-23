@@ -83,6 +83,7 @@ pub fn noctis::App::is_publisher(&self) -> bool
 pub fn noctis::App::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::App::ref_ttl(&self) -> core::time::Duration
+pub fn noctis::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
 pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -383,6 +384,8 @@ pub noctis::BuildViolation::Plugin::message: alloc::string::String
 pub noctis::BuildViolation::Plugin::plugin: &'static str
 pub noctis::BuildViolation::PreviousKeyWithoutKey
 pub noctis::BuildViolation::ResourceConflict(noctis::ResourceConflict)
+pub noctis::BuildViolation::TemplateRejected
+pub noctis::BuildViolation::TemplateRejected::message: alloc::string::String
 pub noctis::BuildViolation::UnmountedRoute
 pub noctis::BuildViolation::UnmountedRoute::module: &'static str
 pub noctis::BuildViolation::UnmountedRoute::route: &'static str
@@ -448,6 +451,7 @@ pub fn noctis::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_mod
 pub fn noctis::CommandCtx::user_locale(&self) -> core::option::Option<&str>
 pub fn noctis::CommandCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::CommandCtx
+pub fn noctis::CommandCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::CommandCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::CommandCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::CommandCtx
@@ -596,6 +600,7 @@ pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::ComponentCtx
+pub fn noctis::ComponentCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl noctis::ComponentCtx
@@ -818,6 +823,7 @@ pub fn noctis::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_mod
 pub fn noctis::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
 pub fn noctis::ExpiredCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::ExpiredCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ExpiredCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl noctis::ExpiredCtx
@@ -1234,6 +1240,7 @@ impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl noctis::ModalSubmitCtx
@@ -2534,6 +2541,9 @@ impl core::hash::Hash for noctis::image::AnimationSpec
 pub fn noctis::image::AnimationSpec::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::AnimationSpec
 impl core::marker::StructuralPartialEq for noctis::image::AnimationSpec
+pub trait noctis::image::AppBuilderImageExt: noctis::__private::image::plugin::sealed::Sealed
+pub fn noctis::image::AppBuilderImageExt::image(&mut self, noctis::image::ImageConfig) -> &mut Self
+pub fn noctis::image::AppBuilderImageExt::theme(&mut self, noctis::image::Theme) -> &mut Self
 pub struct noctis::image::Classes
 impl noctis::image::Classes
 pub fn noctis::image::Classes::and(self, noctis::image::Classes) -> noctis::image::Classes
@@ -2583,6 +2593,26 @@ impl core::hash::Hash for noctis::image::Frame
 pub fn noctis::image::Frame::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::Frame
 impl core::marker::StructuralPartialEq for noctis::image::Frame
+pub struct noctis::image::ImageConfig
+impl noctis::image::ImageConfig
+pub fn noctis::image::ImageConfig::new() -> Self
+pub fn noctis::image::ImageConfig::queue_capacity(self, usize) -> Self
+pub fn noctis::image::ImageConfig::threads(self, usize) -> Self
+impl core::clone::Clone for noctis::image::ImageConfig
+pub fn noctis::image::ImageConfig::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::ImageConfig
+impl core::cmp::PartialEq for noctis::image::ImageConfig
+pub fn noctis::image::ImageConfig::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::image::ImageConfig
+pub fn noctis::image::ImageConfig::default() -> Self
+impl core::fmt::Debug for noctis::image::ImageConfig
+pub fn noctis::image::ImageConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::ImageConfig
+pub struct noctis::image::ImagePlugin
+impl core::fmt::Debug for noctis::image::ImagePlugin
+pub fn noctis::image::ImagePlugin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl noctis::Plugin for noctis::image::ImagePlugin
+pub fn noctis::image::ImagePlugin::install(&self, &mut noctis::AppBuilder)
 pub trait noctis::image::IntoNodes: noctis::__private::image::sealed::Sealed
 impl<T: noctis::__private::image::sealed::Sealed> noctis::image::IntoNodes for T
 #[non_exhaustive] pub struct noctis::image::InvalidClasses
@@ -2614,6 +2644,26 @@ pub fn noctis::image::Node::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::image::Node
 pub fn noctis::image::Node::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::Node
+#[non_exhaustive] pub enum noctis::image::RenderError
+pub noctis::image::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::image::RenderError::NoRenderer
+pub noctis::image::RenderError::Panicked
+pub noctis::image::RenderError::Panicked::message: alloc::string::String
+pub noctis::image::RenderError::QueueFull
+pub noctis::image::RenderError::UnknownTemplate
+pub noctis::image::RenderError::UnknownTemplate::id: alloc::string::String
+pub noctis::image::RenderError::UnknownTemplate::version: u32
+pub noctis::image::RenderError::Unsupported
+pub noctis::image::RenderError::Unsupported::id: alloc::string::String
+pub noctis::image::RenderError::Unsupported::why: alloc::borrow::Cow<'static, str>
+impl noctis::image::RenderError
+pub fn noctis::image::RenderError::failed(impl core::convert::Into<alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>>) -> Self
+impl core::error::Error for noctis::image::RenderError
+pub fn noctis::image::RenderError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::image::RenderError
+pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::RenderError
+pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::image::Size
 impl noctis::image::Size
 pub const fn noctis::image::Size::height(self) -> u32
@@ -2890,9 +2940,10 @@ impl core::fmt::Debug for noctis::image::unstable::ClassCheckMode
 pub fn noctis::image::unstable::ClassCheckMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::image::unstable::ClassCheckMode
 impl core::marker::StructuralPartialEq for noctis::image::unstable::ClassCheckMode
-pub struct noctis::image::unstable::ViewFn(_)
+pub struct noctis::image::unstable::ViewFn
 impl noctis::image::unstable::ViewFn
-pub fn noctis::image::unstable::ViewFn::call(&self, &[u8], noctis::image::Frame) -> core::result::Result<noctis::image::Node, noctis::ports::RenderError>
+pub fn noctis::image::unstable::ViewFn::call(&self, &[u8], noctis::image::Frame) -> core::result::Result<noctis::image::Node, noctis::image::RenderError>
+pub fn noctis::image::unstable::ViewFn::is_animated(&self) -> bool
 impl core::clone::Clone for noctis::image::unstable::ViewFn
 pub fn noctis::image::unstable::ViewFn::clone(&self) -> Self
 impl core::fmt::Debug for noctis::image::unstable::ViewFn
@@ -3207,6 +3258,9 @@ pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::Box
 pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 #[non_exhaustive] pub enum noctis::ports::RenderError
 pub noctis::ports::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::ports::RenderError::NoRenderer
+pub noctis::ports::RenderError::Panicked
+pub noctis::ports::RenderError::Panicked::message: alloc::string::String
 pub noctis::ports::RenderError::QueueFull
 pub noctis::ports::RenderError::UnknownTemplate
 pub noctis::ports::RenderError::UnknownTemplate::id: alloc::string::String
@@ -3253,8 +3307,8 @@ impl core::fmt::Debug for noctis::ports::RenderOutput
 pub fn noctis::ports::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::ports::RenderOutput
 pub trait noctis::ports::Renderer: core::marker::Send + core::marker::Sync + 'static
-pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescriptor]) -> core::result::Result<(), noctis::ports::RenderError>
-pub fn noctis::ports::Renderer::render(&self, noctis::ports::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::RenderOutput, noctis::ports::RenderError>>
+pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescriptor]) -> core::result::Result<(), noctis::image::RenderError>
+pub fn noctis::ports::Renderer::render(&self, noctis::ports::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::RenderOutput, noctis::image::RenderError>>
 pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::SessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
@@ -3675,6 +3729,7 @@ pub fn noctis::prelude::App::is_publisher(&self) -> bool
 pub fn noctis::prelude::App::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::prelude::App::ref_ttl(&self) -> core::time::Duration
+pub fn noctis::prelude::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
 pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::prelude::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::prelude::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -3730,6 +3785,7 @@ pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::
 pub fn noctis::prelude::AppBuilder::token(&mut self, noctis::Token) -> &mut Self
 impl core::fmt::Debug for noctis::prelude::AppBuilder
 pub fn noctis::prelude::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub use noctis::prelude::AppBuilderImageExt
 pub struct noctis::prelude::AutocompleteCtx
 impl noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
@@ -3818,6 +3874,7 @@ pub fn noctis::prelude::CommandCtx::user_id(&self) -> twilight_model::id::Id<twi
 pub fn noctis::prelude::CommandCtx::user_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::CommandCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::CommandCtx
+pub fn noctis::prelude::CommandCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::prelude::CommandCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::CommandCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl core::clone::Clone for noctis::prelude::CommandCtx
@@ -3886,6 +3943,7 @@ pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::prelude::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::prelude::ComponentCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ComponentCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl noctis::prelude::ComponentCtx
@@ -3972,6 +4030,7 @@ pub fn noctis::prelude::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twi
 pub fn noctis::prelude::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::ExpiredCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::prelude::ExpiredCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ExpiredCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl noctis::prelude::ExpiredCtx
@@ -4133,6 +4192,7 @@ impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
 pub fn noctis::prelude::ModalSubmitCtx::reply_text(&self, impl core::convert::Into<noctis::NoticeText>) -> noctis::ReplyText
 pub fn noctis::prelude::ModalSubmitCtx::respond(&self, impl core::convert::Into<noctis::OutgoingMessage>) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::Responded>> + core::marker::Send + '_
 impl noctis::prelude::ModalSubmitCtx

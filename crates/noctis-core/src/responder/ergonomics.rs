@@ -455,6 +455,70 @@ macro_rules! ctx_methods {
             ) -> $crate::ReplyText {
                 $crate::ReplyText::new(::std::sync::Arc::clone(&self.0), text.into())
             }
+
+            /// Renders `template` through the App's Renderer (feature
+            /// `image`: `.theme(..)` or `.image(..)`) into an
+            /// [`Attachment`](noctis_ui::Attachment) named by its render
+            /// digest, to show in a Media Gallery or a Thumbnail. The
+            /// render runs on the render pool, never on a tokio worker; a
+            /// render slower than the ack deadline is covered by the
+            /// auto-defer.
+            ///
+            /// It runs in the `noctis.render{app, template}` span and
+            /// records `noctis_render_duration_seconds`,
+            /// `noctis_render_queue_depth` and
+            /// `noctis_render_rejected_total`.
+            ///
+            /// ```no_run
+            /// use noctis_ports::{AnimationSpec, ErasedView, Format, Size, Template};
+            #[doc = concat!("use noctis_core::{", stringify!($ty), ", HandlerResult, Responded};")]
+            /// use noctis_ui::{AttachmentSet, Components, MediaGallery, MediaItem, V2Message};
+            ///
+            /// #[derive(serde::Serialize, serde::Deserialize)]
+            /// struct Card {
+            ///     name: String,
+            /// }
+            ///
+            /// impl Template for Card {
+            ///     const ID: &'static str = "card";
+            ///     const VERSION: u32 = 1;
+            ///     const SIZE: Size = Size::new(600, 200);
+            ///     const FORMAT: Format = Format::Png;
+            ///     const ANIMATION: Option<AnimationSpec> = None;
+            ///     fn view() -> ErasedView {
+            ///         ErasedView::new(())
+            ///     }
+            /// }
+            ///
+            #[doc = concat!("async fn card(ctx: ", stringify!($ty), ") -> HandlerResult<Responded> {")]
+            ///     let mut files = AttachmentSet::new();
+            ///     let image = files.add(ctx.render(Card { name: "Ada".into() }).await?);
+            ///     let gallery = MediaGallery::new([MediaItem::new(image).alt("Card")]);
+            ///     let msg = V2Message::new(Components::new().push(gallery)).attachments(files);
+            ///     ctx.respond(msg).await
+            /// }
+            /// ```
+            ///
+            /// # Errors
+            ///
+            /// A [`HandlerError`](crate::HandlerError) wrapping the
+            /// [`RenderError`](noctis_ports::RenderError) (find it with
+            /// `err.as_error().downcast_ref::<RenderError>()`): `NoRenderer`
+            /// without a Renderer; `QueueFull` when the render queue is full
+            /// (show a "busy" notice and retry later); `UnknownTemplate` for
+            /// a Template the App did not register; `Unsupported`; `Failed`
+            /// for a render, encode or class-check failure; `Panicked` when
+            /// the view panicked. Every one except `NoRenderer` and
+            /// `QueueFull` is also reported to the Render Error Sink.
+            pub fn render<T: ::noctis_ports::Template>(
+                &self,
+                template: T,
+            ) -> impl ::std::future::Future<
+                Output = $crate::HandlerResult<::noctis_ui::Attachment>,
+            > + Send
+                   + '_ {
+                async move { $crate::render::render(&self.0, template).await }
+            }
         }
     };
     ($ty:ident, update = $kind:ident) => {

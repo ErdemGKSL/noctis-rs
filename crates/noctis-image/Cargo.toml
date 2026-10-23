@@ -9,22 +9,39 @@ repository.workspace = true
 
 [features]
 default = []
-# Adds the node tree, `TemplateView`, the runtime class check and the takumi
-# renderer (the noctis-core and -ui edges follow in Story 10.3).
-render = ["dep:takumi", "dep:takumi-core", "dep:noctis-ports", "dep:tracing"]
+# Adds the node tree, `TemplateView`, the runtime class check, the takumi
+# Renderer, the rayon render pool and `ImagePlugin` (the noctis-core edge).
+render = [
+  "dep:takumi",
+  "dep:takumi-core",
+  "dep:noctis-ports",
+  "dep:noctis-core",
+  "dep:tracing",
+  "dep:rayon",
+  "dep:tokio",
+  "dep:bytes",
+]
 
 [dependencies]
 # `tw` and `tw::theme` (takumi-free, ungated): the theme parser and its digest.
 blake3.workspace = true
+bytes = { workspace = true, optional = true }
 cssparser.workspace = true
+noctis-core = { workspace = true, optional = true }
 noctis-ports = { workspace = true, optional = true }
-takumi = { workspace = true, optional = true, features = ["raster-backend"] }
+rayon = { workspace = true, optional = true }
+# `rayon`: takumi's internal parallelism runs on whichever pool executes the
+# job, which is the render pool.
+takumi = { workspace = true, optional = true, features = ["raster-backend", "rayon"] }
 takumi-core = { workspace = true, optional = true }
 thiserror.workspace = true
+tokio = { workspace = true, optional = true, features = ["sync"] }
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
+png.workspace = true
 serde.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true

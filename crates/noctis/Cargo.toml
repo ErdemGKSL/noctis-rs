@@ -12,8 +12,9 @@ exclude = ["noctis-theme.css"]
 
 [features]
 default = []
-# Image Templates: `#[derive(Template)]`, `view!`/`tw!`/`theme!` and the
-# Renderer seam (noctis-image `render`, takumi); off by default.
+# Image Templates: `#[derive(Template)]`, `view!`/`tw!`/`theme!`, the takumi
+# Renderer and its render pool (noctis-image `render`); off by default. Needs a
+# C compiler: the WebP encoder (libwebp) is built from source.
 image = ["dep:noctis-image", "noctis-image/render", "noctis-macros/image"]
 # GIF/APNG output for rendered images.
 image-gif = []
@@ -43,8 +44,10 @@ twilight-http.workspace = true
 twilight-model.workspace = true
 
 [dev-dependencies]
+blake3.workspace = true
 dhat.workspace = true
 insta = { workspace = true, features = ["json"] }
+png.workspace = true
 proptest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

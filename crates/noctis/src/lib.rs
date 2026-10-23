@@ -560,8 +560,9 @@
 //!
 //! - `image` (off by default): image Templates (`#[derive(Template)]`,
 //!   `TemplateView`), `view!`/`tw!` with compile-time Tailwind class checks,
-//!   the Theme (`theme!`) and the Renderer seam, through takumi; the
-//!   Renderer itself arrives in Story 10.3.
+//!   the Theme (`theme!`), and the takumi Renderer with its bounded render
+//!   pool (`.theme(..)`/`.image(..)`, `ctx.render`). It needs a C compiler:
+//!   the WebP encoder (libwebp) is built from source.
 //! - `image-gif`: GIF/APNG output for rendered images.
 //! - `image-emoji`: Twemoji colour emoji in image Templates.
 //! - `default-font`: a bundled default font for image Templates.
@@ -1971,6 +1972,13 @@ pub mod image {
     //!   [`AnimationSpec`], [`AnimatedFormat`] and [`TemplateDescriptor`].
     //! - The class errors: [`InvalidClasses`], [`UnknownClass`] and
     //!   [`Suggestion`].
+    //! - Rendering: [`AppBuilderImageExt`] (`.theme(..)`, `.image(..)`,
+    //!   also in the prelude) adds the [`ImagePlugin`], which installs the
+    //!   App's takumi Renderer on the process-scoped render pool
+    //!   ([`ImageConfig`]: threads and queue capacity). A handler renders
+    //!   with `ctx.render(template).await?`, which returns an
+    //!   [`Attachment`](crate::ui::Attachment) or a [`RenderError`]
+    //!   (`QueueFull` when the queue is full).
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```
@@ -2021,9 +2029,11 @@ pub mod image {
         InvalidClasses, Suggestion, Theme, ThemeError, ThemeErrorKind, ThemeNamespace, ThemeTokens,
         UnknownClass,
     };
+    pub use noctis_image::{AppBuilderImageExt, ImageConfig, ImagePlugin};
     pub use noctis_image::{Classes, IntoNodes, Node, Style, Tag, TemplateView, div, span, text};
     pub use noctis_ports::{
-        AnimatedFormat, AnimationSpec, Format, Frame, Size, Template, TemplateDescriptor,
+        AnimatedFormat, AnimationSpec, Format, Frame, RenderError, Size, Template,
+        TemplateDescriptor,
     };
 
     pub mod unstable {
@@ -2097,7 +2107,13 @@ pub mod prelude {
     //!   returns.
     //! - [`RawHttp`]: `.raw(method, path)` on `ctx.http()` and `app.http()`
     //!   ([`http`](crate::http)).
+    //! - With the `image` feature, `AppBuilderImageExt`: `.theme(..)` and
+    //!   `.image(..)` on the [`AppBuilder`], which install the Renderer
+    //!   behind `ctx.render`.
 
+    /// `.theme(..)` and `.image(..)` on the [`AppBuilder`] (feature `image`).
+    #[cfg(feature = "image")]
+    pub use crate::image::AppBuilderImageExt;
     pub use noctis_codec::{Payload, Route};
     pub use noctis_core::events::EventCtx;
     pub use noctis_core::{

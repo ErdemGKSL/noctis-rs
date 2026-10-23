@@ -336,6 +336,18 @@ pub enum RenderError {
     /// The render failed.
     #[error("render failed")]
     Failed(#[source] Box<dyn Error + Send + Sync>),
+    /// The App has no [`Renderer`]; only core returns it.
+    #[error(
+        "no Renderer is installed: call `.theme(..)` or `.image(..)` (feature `image`) on the \
+         AppBuilder"
+    )]
+    NoRenderer,
+    /// The Template's view panicked; the render pool survives.
+    #[error("render panicked: {message}")]
+    Panicked {
+        /// The panic's `&str`/`String` message, or `"<non-string panic>"`.
+        message: String,
+    },
 }
 
 impl RenderError {
@@ -520,6 +532,20 @@ mod tests {
         assert_eq!(descriptor.id, Card::ID);
         assert_eq!(descriptor.version, Card::VERSION);
         assert!(descriptor.view.downcast_ref::<CardView>().is_some());
+    }
+
+    #[test]
+    fn render_error_no_renderer_and_panicked() {
+        assert_eq!(
+            RenderError::NoRenderer.to_string(),
+            "no Renderer is installed: call `.theme(..)` or `.image(..)` (feature `image`) on \
+             the AppBuilder"
+        );
+        let panicked = RenderError::Panicked {
+            message: "boom".to_owned(),
+        };
+        assert_eq!(panicked.to_string(), "render panicked: boom");
+        assert!(panicked.source().is_none());
     }
 
     #[test]

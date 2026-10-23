@@ -28,7 +28,7 @@ const USER: u64 = 1_222_222_222_222_222_222;
 const FIXTURES: [u64; 3] = [GA, CHANNEL, USER];
 
 /// Every label name a catalog row may use.
-const ALLOWED_LABELS: [&str; 11] = [
+const ALLOWED_LABELS: [&str; 12] = [
     "app",
     "lane",
     "event_type",
@@ -40,6 +40,7 @@ const ALLOWED_LABELS: [&str; 11] = [
     "reused",
     "outcome",
     "result",
+    "template",
 ];
 /// Substrings no label name may contain.
 const FORBIDDEN_IN_NAMES: [&str; 8] = [
@@ -57,9 +58,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 16);
+    assert_eq!(METRICS.len(), 19);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 16);
+    assert_eq!(names.len(), 19);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -100,6 +101,9 @@ fn catalog_static() {
                 "noctis_interaction_ack_hedges_total",
                 &["app", "outcome"][..]
             ),
+            ("noctis_render_duration_seconds", &["app", "template"][..]),
+            ("noctis_render_queue_depth", &["app"][..]),
+            ("noctis_render_rejected_total", &["app", "reason"][..]),
         ]
     );
 }
@@ -127,7 +131,23 @@ fn check_value(metric: &str, label: &str, value: &str, total: u32) {
             "{metric}: {value}"
         ),
         "reason" => assert!(
-            ["warmup", "redial", "hedge", "demand"].contains(&value),
+            [
+                "warmup",
+                "redial",
+                "hedge",
+                "demand",
+                "queue_full",
+                "unknown_template",
+                "unsupported"
+            ]
+            .contains(&value),
+            "{metric}: {value}"
+        ),
+        "template" => assert!(
+            (1..=64).contains(&value.len())
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b)),
             "{metric}: {value}"
         ),
         "reused" => assert!(["true", "false"].contains(&value), "{metric}: {value}"),
@@ -290,7 +310,8 @@ async fn recorded_set_core() {
     // The HTTP edge rows are recorded end to end in the testkit's
     // `observability.rs` (Story 5.9 Matrix 49); the auto-defer and ack
     // latency rows in the pipeline tests (`int_01_auto_defer_at_deadline`);
-    // the Ref lookups in `pipeline::tests::refs`.
+    // the Ref lookups in `pipeline::tests::refs`; the render rows in
+    // `render::tests`.
     let all: HashSet<_> = METRICS
         .iter()
         .map(|m| m.name.to_owned())
@@ -300,6 +321,7 @@ async fn recorded_set_core() {
                 && name != "noctis_autodefer_total"
                 && name != "noctis_ack_latency_seconds"
                 && name != "noctis_ref_lookups_total"
+                && !name.starts_with("noctis_render_")
         })
         .collect();
     assert_eq!(seen, all, "{snapshot:?}");

@@ -369,3 +369,26 @@ fn tw_02_leading_bom_is_ignored() {
     assert!(theme.contains(ThemeNamespace::Color, "a"));
     assert_eq!(theme.digest(), *blake3::hash(source.as_bytes()).as_bytes());
 }
+
+#[test]
+fn custom_properties_list_every_token_with_its_prefix() {
+    let theme = Theme::parse(TEST_THEME).unwrap();
+    let props: Vec<(String, &str)> = theme.custom_properties().collect();
+    assert_eq!(
+        props,
+        [
+            ("--color-brand".to_owned(), "#5865f2"),
+            ("--color-brand-soft".to_owned(), "#8b93f8"),
+            ("--color-muted".to_owned(), "#9aa3b5"),
+            ("--color-surface".to_owned(), "#11131a"),
+            ("--font-display".to_owned(), "\"Inter\", sans-serif"),
+        ]
+    );
+    let heavy =
+        Theme::parse("@theme { --font-weight-heavy: 900; --animate-rise: rise 1s; }").unwrap();
+    assert_eq!(
+        heavy.custom_properties().collect::<Vec<_>>(),
+        [("--font-weight-heavy".to_owned(), "900")]
+    );
+    assert_eq!(Theme::empty().custom_properties().count(), 0);
+}

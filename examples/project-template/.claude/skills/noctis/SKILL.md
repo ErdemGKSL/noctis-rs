@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `6ede7554e6402c75d5a4fe5073c8e41a355a394cd5ef815c389deb40c209d5df` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `a45108cba17b5ded916cc0b006b97d26ef2c739bb0405152a1e72bc88c1134b2` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -268,8 +268,13 @@ impl TemplateView for ProfileCard {
 // classes are checked at `cargo check` ([TW-01]) against noctis-theme.css ([TW-02]);
 // `<img>` and `#[asset] avatar: RemoteImage` are [planned, Stories 10.7-10.8].
 
+// the App needs a Renderer: `.theme(noctis::image::theme!())` and/or `.image(ImageConfig::new())`
+// (AppBuilderImageExt, in the prelude); a hand-written or animated Template fails the
+// build with BuildViolation::TemplateRejected.
 // in a handler (rendering is awaited in the handler, so auto-defer covers it):
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;
+// errors: err.as_error().downcast_ref::<RenderError>(): QueueFull (show a busy notice),
+// NoRenderer, UnknownTemplate, Unsupported, Failed, Panicked (see references/images.md §8).
 // in the render function:
 let mut files = AttachmentSet::new();
 let card = files.add(data.card.clone());
@@ -279,7 +284,9 @@ let gallery = MediaGallery::new([MediaItem::new(card).alt(s.profile.card_alt(&na
 
 The Responder uploads only the files the tree uses (`msg.used_attachments()`), each
 once, and an `update` that shows the same card again keeps it by id instead of
-re-uploading it. A rendered image needs its own `.alt(..)` on the Thumbnail/MediaItem
+re-uploading it. `ctx.render(t)` exists on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx` and
+`ExpiredCtx`; the render runs on the process-scoped render pool, never on a tokio
+worker. A rendered image needs its own `.alt(..)` on the Thumbnail/MediaItem
 (`[ATT-06]` in Strict mode); use `alt!("Profile card")` for a fixed text
 (`components-v2.md` §6).
 

@@ -231,6 +231,9 @@ pub(crate) struct AppShared {
     /// (`NOCTIS_PAYLOAD_KEY`, AD-5): never logged, never in a span field,
     /// never handed to a port or adapter (AD-29).
     pub(crate) payload_keys: Option<Arc<noctis_codec::PayloadKeys>>,
+    /// The App's Renderer (`AppBuilder::renderer`, or the image plugin's),
+    /// behind every `ctx.render`.
+    pub(crate) renderer: Option<Arc<dyn noctis_ports::Renderer>>,
     /// The App-level Expired Handler (`AppBuilder::expired_handler`).
     pub(crate) expired_handler: Option<Arc<crate::component::AppExpiredFn>>,
     /// Called with the interaction id when an interaction's pipeline task

@@ -89,7 +89,8 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.http_config()` (`HttpConfig`, §5),
 `app.app_id()` (`&AppId`: `as_str()`, `Display`; §1 `.app_id`),
 `app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`), `app.has_renderer()`
-(whether a Plugin or `.renderer(..)` set a `Renderer`), `app.is_publisher()`,
+(whether a Plugin or `.renderer(..)` set a `Renderer`), `app.renderer()`
+(`Option<&Arc<dyn Renderer>>`, the one `ctx.render` uses), `app.is_publisher()`,
 `app.dev_guild()` (`Option<Id<GuildMarker>>`) and `app.publish(scope)` (§3).
 
 ### AppBuilder methods
@@ -135,7 +136,7 @@ Planned (signatures may change):
 | `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
 | `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
-| `.theme(noctis::image::theme!())` / `.image(ImageConfig)` [planned] | none | from `AppBuilderImageExt` (`image` feature); installs the `ImagePlugin` (see `images.md`) |
+| `.theme(noctis::image::theme!())` / `.image(ImageConfig)` | none | from `AppBuilderImageExt` (`image` feature, in the prelude); installs the `ImagePlugin` and with it the Renderer; the last call of each kind wins (see `images.md` §8) |
 | `.limits(Limits)` | `Limits::default()` (Strict) | the Limits every Responder validates outgoing messages against before any request; `LimitMode::Lenient` truncates over-long texts with `…` instead of failing with `ResponderError::Invalid`; the last call wins. Read back with `app.limits() -> &Limits`; see `limits-cheatsheet.md` |
 | `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |
 | `.presence(Presence)` [planned] | none | initial presence |
@@ -704,7 +705,8 @@ Spans (live):
   does name the URL; filter `twilight_http` if that matters).
 - `noctis.publish{app, scope, dry_run, clear}` around each Publish (`scope` is
   `global` or `guild <id>`); its logs use target `noctis::publish`.
-- `noctis.render` [planned, Epic 10].
+- `noctis.render{app, template}` around each `ctx.render` (`template` is the Template
+  id).
 
 Metrics (live; every name starts with `noctis_`, every metric has an `app` label, and no
 label carries a user, guild, channel or message id or free text):
@@ -727,10 +729,12 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_http_h2_ping_rtt_seconds` | histogram | `app` | HTTP/2 PING round trips of the warm connection |
 | `noctis_http_ping_timeouts_total` | counter | `app` | connections dropped because a PING went unanswered |
 | `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won` \| `lost` \| `40060`) | hedged interaction callbacks, and callbacks Discord answered "already acknowledged" |
+| `noctis_render_duration_seconds` | histogram | `app`, `template` | successful `ctx.render` time, queue wait included, by Template id |
+| `noctis_render_queue_depth` | gauge | `app` | this App's renders in flight (queued or running on the render pool) |
+| `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full` \| `unknown_template` \| `unsupported`) | renders rejected before drawing |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
-`autocomplete` are emitted today; `component` and `render` join with their handlers. Planned:
-render metrics [planned, Epic 10].
+`autocomplete` are emitted today; `component` and `render` join with their handlers.
 
 The catalog is public: `noctis::observe::METRICS` (`&[MetricInfo]`, each with `name`,
 `metric_type: MetricType` (`Counter` | `Gauge` | `Histogram`), `labels` and
@@ -785,8 +789,10 @@ let app = builder.build()?;
   `runtime`, `current_runtime`, `report`, `state`); process resources come from
   `app.current_runtime().resource_or_init::<T>(config)` (§10). A panicking `install`
   panics `build()`.
-- `ImagePlugin` (`image` feature) [planned]: installed by `.image(..)` or `.theme(..)`;
-  adds the Renderer and the process-scoped render pool and fonts.
+- `ImagePlugin` (`image` feature): installed by `.image(..)` or `.theme(..)`; gets the
+  process-scoped render pool from the Runtime (`RenderPool`, frozen per `ImageConfig`),
+  checks the config ranges and sets the takumi Renderer; fonts join in Story 10.7
+  [planned].
 - `PrefixPlugin` (`prefix` feature, P2) [planned]: `.plugin(PrefixPlugin::new("!"))`
   mounts a `MESSAGE_CREATE` handler that runs your slash Commands from `!command`
   messages through `ctx.dispatcher()`; it requires the message-content intent.

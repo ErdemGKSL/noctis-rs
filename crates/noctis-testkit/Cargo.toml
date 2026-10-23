@@ -31,7 +31,8 @@ metrics-util = { workspace = true, features = ["debugging"] }
 noctis.workspace = true
 noctis-gateway.workspace = true
 noctis-ports.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+serde.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
 tokio-websockets = { workspace = true, features = ["client", "server", "sha1_smol"] }
 twilight-gateway.workspace = true
 tracing-subscriber = { workspace = true, features = ["fmt", "std"] }

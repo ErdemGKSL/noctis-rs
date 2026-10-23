@@ -367,6 +367,30 @@ pub enum BuildViolation {
         /// The rejected Template's type path.
         second_type: &'static str,
     },
+    /// The App's Renderer rejected the registered Templates at `App::build`
+    /// (`Renderer::register`): for the takumi Renderer, a Template whose view
+    /// was not made by `#[derive(Template)]`, or an animated one (not
+    /// rendered yet).
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::TemplateRejected {
+    ///     message: "template `x` is unsupported: its view was not made by \
+    ///               `#[derive(Template)]`"
+    ///         .to_owned(),
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "the Renderer cannot render the registered Templates: template `x` is unsupported: \
+    ///      its view was not made by `#[derive(Template)]`"
+    /// );
+    /// ```
+    #[error("the Renderer cannot render the registered Templates: {message}")]
+    TemplateRejected {
+        /// The Renderer's error, with its source chain joined by `": "`.
+        message: String,
+    },
     /// A mounted Module declares with `Module::uses::<R>()` a Route that no
     /// mounted Module handles (CID-04).
     #[error(

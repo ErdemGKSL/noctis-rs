@@ -30,6 +30,7 @@ use std::borrow::Cow;
 
 pub use classes::Classes;
 pub use into_nodes::IntoNodes;
+pub(crate) use style::Dimension;
 pub use style::Style;
 
 use into_nodes::sealed::Sealed as _;
@@ -62,7 +63,7 @@ pub struct Node {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum Kind {
+pub(crate) enum Kind {
     Element { tag: Tag, children: Vec<Node> },
     Text(Cow<'static, str>),
 }
@@ -139,6 +140,16 @@ impl Node {
     /// The node's classes.
     pub(crate) fn class_list(&self) -> &Classes {
         &self.classes
+    }
+
+    /// Whether the node is an element (with its tag and children) or text.
+    pub(crate) fn kind(&self) -> &Kind {
+        &self.kind
+    }
+
+    /// The node's style.
+    pub(crate) fn style_values(&self) -> &Style {
+        &self.style
     }
 
     /// The element's children; empty for a text node.

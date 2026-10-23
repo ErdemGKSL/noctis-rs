@@ -601,10 +601,12 @@ async fn recorded_set_matches_catalog() {
     // hedges) are covered by `http_edge_recorded_set`; this App answers no
     // interaction, so the auto-defer and ack-latency rows are covered by
     // noctis-core's `int_01_auto_defer_at_deadline`; Ref lookups need a
-    // click, covered by noctis-core's Ref dispatch tests and `refs.rs`.
+    // click, covered by noctis-core's Ref dispatch tests and `refs.rs`;
+    // render rows need a Renderer, covered by noctis-core's `render` tests.
     let covered_elsewhere = |name: &str| {
         name.starts_with("noctis_http_")
             || name.starts_with("noctis_interaction_")
+            || name.starts_with("noctis_render_")
             || name == "noctis_autodefer_total"
             || name == "noctis_ack_latency_seconds"
             || name == "noctis_ref_lookups_total"

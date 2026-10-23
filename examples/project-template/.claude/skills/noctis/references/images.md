@@ -13,12 +13,13 @@ noctis = { version = "0.1", features = ["image", "default-font"] }
 # "image-emoji" → bundles Twemoji (colour emoji in Templates)
 ```
 
-`image` is off by default; it adds ~100 crates and the native WebP encoder needs a C
-compiler. With it, `noctis::prelude` brings in `AppBuilderImageExt`: calling
-`.image(ImageConfig)` or `.theme(Theme)` on your builder installs the `ImagePlugin`,
-which puts the Renderer on the App. Without either call, `ctx.render` returns a typed
-error. Without a registered font and without `default-font`, startup fails (text
-would otherwise render invisibly).
+`image` is off by default; it adds ~100 crates and needs a **C compiler**: the WebP
+encoder (libwebp) is built from source. With it, `noctis::prelude` brings in
+`AppBuilderImageExt`: calling `.image(ImageConfig)` or `.theme(Theme)` on your builder
+installs the `ImagePlugin`, which puts the Renderer on the App (`app.renderer()`).
+Without either call, `ctx.render` returns `RenderError::NoRenderer`. Fonts are not
+registered yet, so text draws no glyphs [planned, Story 10.7]; then a missing font
+without `default-font` fails startup [planned, Story 10.7].
 
 ## 2. A Template
 
@@ -62,7 +63,8 @@ second_type }` (registering the same type twice counts too). The derive implemen
 `TemplateDescriptor::of::<T>()` is the type-erased record the Renderer keys on, and its
 `view` is a `noctis::image::unstable::ViewFn` that decodes the data and calls your
 `view` (`ViewFn::call(&data, frame)`; a decode error is `RenderError::Failed` with a
-`ValueError`). A struct that lacks `impl TemplateView` or `Deserialize` does not
+`ValueError`; `ViewFn::is_animated()` says whether the Template declares
+`animation(..)`). A struct that lacks `impl TemplateView` or `Deserialize` does not
 compile.
 
 `#[template(..)]` keys (any order, each exactly once, unknown keys are errors):
@@ -147,10 +149,11 @@ its builder twin compare equal (`Node: PartialEq`), which is how to unit-test a 
 - Classes chosen at run time: `Classes::dynamic(text)` (a known class name from your
   own code, such as a tier → `"text-amber-400"` match) and `a.and(b)` (joins with a
   space); `as_str()` reads the text. **Never pass user text to `Classes::dynamic`.**
-  Dynamic strings are checked when rendered: the Story 10.3 Renderer runs
-  `noctis::image::unstable::ClassCheck` (`ClassCheckMode::Warn` logs each invalid string
-  once on target `noctis::image`; `ClassCheckMode::Deny` fails, on `Runtime::for_test()`
-  Apps) [planned, Story 10.3].
+  Dynamic strings are checked when rendered: the Renderer runs
+  `noctis::image::unstable::ClassCheck` before drawing (`ClassCheckMode::Warn` logs each
+  invalid string once on target `noctis::image` and renders; on `Runtime::for_test()`
+  Apps, so in every `TestApp`, `ClassCheckMode::Deny` fails the render with
+  `RenderError::Failed` whose source is the `InvalidClasses`).
 - **Data-driven values never go into class strings.** Use the `Style` setters (all
   `const`; the last setter on a property wins; a NaN or infinite `f32` leaves the
   property unchanged; style overrides a class of the same property):
@@ -243,21 +246,65 @@ builder.image(
 ## 8. Rendering
 
 ```rust
-let card: Attachment = ctx.render(ProfileCard { .. }).await?;                    // template defaults
-let anim = ctx.render_with(card_data, RenderOptions::new()
-        .animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::Webp { quality: 80 })))
-    .await?;
-let report = anim.render_report();   // format, size, fps, quality actually used, cache hit
+use noctis::image::RenderError;
+
+// In the handler: render, then place the Attachment (§10).
+let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by value
+    Ok(card) => card,
+    Err(err) => match err.as_error().downcast_ref::<RenderError>() {
+        Some(RenderError::QueueFull) => return ctx.reply_text("Busy, try again soon.").await,
+        _ => return Err(err),
+    },
+};
 ```
 
-- Always render **in the handler** (or its `load` fn), never in a render function; the
-  auto-defer covers slow renders.
-- Runs on a dedicated bounded rayon pool, never on tokio workers. A full queue fails
-  fast: `RenderError::Overloaded` (show a "busy, try again" notice).
-- Per-job caps, checked before queueing: ≤ 4 MP per job, ≤ 1 MP per frame, ≤ 90
-  frames, ≤ 6 s; fps ≤ 50 GIF, ≤ 90 WebP/APNG (`RenderError::CapExceeded`).
-- If the interaction is gone, the queued job is skipped; animations stop between frames.
-- Without a Renderer (feature off or replaced by none) `ctx.render` returns a typed error.
+- `ctx.render(t).await?` (on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx` and
+  `ExpiredCtx`) returns an `Attachment` named by the output digest
+  (`<16 hex>.png`/`.jpg`/`.webp`) in the Template's still `format`. Always render **in
+  the handler**, never in a render function; the auto-defer covers a render slower
+  than the ack deadline (type 5, then the edit carrying the file).
+- Errors are a `HandlerError` wrapping a `RenderError`, found with
+  `err.as_error().downcast_ref::<RenderError>()`:
+  - `QueueFull`: the render queue is full; show a "busy, try again" notice;
+  - `NoRenderer`: no `.theme(..)`/`.image(..)` on the builder;
+  - `UnknownTemplate { id, version }`: not registered with `Module::template` (or a
+    version skew);
+  - `Unsupported { id, why }`: animated Templates are not rendered yet;
+  - `Failed(source)`: decode, class check (Deny), takumi or encode failure (a canvas
+    over 64 MP fails here);
+  - `Panicked { message }`: the view panicked; the pool survives.
+- The pool: `builder.image(ImageConfig::new().threads(4).queue_capacity(128))`.
+  `threads` is 1..=256 (default half the available parallelism, at least 1),
+  `queue_capacity` 1..=4096 (default 64), counting queued plus running renders;
+  out-of-range values fail `App::build` with a plugin violation. Renders run on this
+  dedicated rayon pool (`noctis-render-<i>` threads), never on tokio workers or rayon's
+  global pool.
+- The pool is **process-scoped**: every App on one `Runtime` shares it, so they must
+  pass an equal `ImageConfig`; another one fails `build` with
+  `BuildViolation::ResourceConflict` naming `RenderPool`. Each `Runtime::for_test()`
+  has its own pool.
+- `ImagePlugin` is added by `AppBuilderImageExt::image`/`theme` (each call updates
+  the one plugin; the last call of each kind wins, order does not matter, never a
+  `DuplicatePlugin`). `app.has_renderer()` / `app.renderer()` expose the result.
+- At `App::build` the Renderer receives every `Module::template` registration; a
+  hand-written `Template` (view not from `#[derive(Template)]`) or an animated one fails
+  the build with `BuildViolation::TemplateRejected`. Templates registered without any
+  Renderer only log a warning on target `noctis::render`.
+- The Render Error Sink (`error_sink(ErrorOrigin::Render, ..)`) gets every render
+  failure (`ReportKind::Error`) and panic (`ReportKind::Panic`), except `QueueFull` and
+  `NoRenderer`. A failure your handler also propagates with `?` is reported once more
+  by the handler's own origin.
+- Observability: span `noctis.render{app, template}`; metrics
+  `noctis_render_duration_seconds{app, template}`, `noctis_render_queue_depth{app}`
+  (this App's renders in flight) and `noctis_render_rejected_total{app, reason}`
+  (`queue_full`, `unknown_template`, `unsupported`).
+- On `Runtime::for_test()` Apps an unknown `Classes::dynamic` class fails the render
+  (Deny, §4).
+- Planned: `ctx.render_with(t, RenderOptions::new().animation(..))` and
+  `render_report()` [planned, Story 10.6]; per-job caps (≤ 4 MP per job, ≤ 1 MP per
+  frame, ≤ 90 frames, ≤ 6 s; fps ≤ 50 GIF, ≤ 90 WebP/APNG), admission weighting and
+  skipping a job whose interaction is gone [planned, Story 10.5]; the size budget
+  [planned, Story 10.4].
 
 ### Animation
 
@@ -277,7 +324,7 @@ let report = anim.render_report();   // format, size, fps, quality actually used
 
 Budget = min(Upload Budget, target ≈ 2 MB). Over budget, Noctis lowers fps, then size,
 then quality, then falls back to a still frame; still too big → typed error. The
-settings used are in `render_report()`.
+settings used are in `render_report()`. [planned, Story 10.4]
 
 ## 9. Cache
 

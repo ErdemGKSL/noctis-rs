@@ -20,8 +20,10 @@
 //! (`phase` is `before` or `after`), and
 //! `noctis.http{app, kind, method, attempt, reused, status_class}` around
 //! each upstream attempt of the Discord HTTP edge (`kind` is `forward`,
-//! `callback` or `warmup`). No span field or label carries a path, a token,
-//! an id or a header value.
+//! `callback` or `warmup`), and
+//! `noctis.render{app, template}` around each `ctx.render` (`template` is
+//! the Template id). No span field or label carries a path, a token, an id
+//! or a header value.
 //!
 //! ```
 //! use noctis_core::observe::{METRICS, MetricType};
@@ -91,6 +93,9 @@ const fn row(
 /// | `noctis_http_h2_ping_rtt_seconds` | histogram | `app` |
 /// | `noctis_http_ping_timeouts_total` | counter | `app` |
 /// | `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won`, `lost`, `40060`) |
+/// | `noctis_render_duration_seconds` | histogram | `app`, `template` (the Template id) |
+/// | `noctis_render_queue_depth` | gauge | `app` (this App's renders in flight) |
+/// | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full`, `unknown_template`, `unsupported`) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -192,6 +197,24 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Counter,
         &["app", "outcome"],
         "Interaction callback hedges that won or lost, and callbacks Discord answered with 40060.",
+    ),
+    row(
+        "noctis_render_duration_seconds",
+        MetricType::Histogram,
+        &["app", "template"],
+        "Successful ctx.render time in seconds, queue wait included, by Template id.",
+    ),
+    row(
+        "noctis_render_queue_depth",
+        MetricType::Gauge,
+        &["app"],
+        "This App's renders in flight: queued on or running in the render pool.",
+    ),
+    row(
+        "noctis_render_rejected_total",
+        MetricType::Counter,
+        &["app", "reason"],
+        "Renders rejected by reason: queue_full, unknown_template or unsupported.",
     ),
 ];
 
