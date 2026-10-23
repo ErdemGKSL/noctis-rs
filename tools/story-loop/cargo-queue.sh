@@ -2,7 +2,7 @@
 # cargo-queue: one queue for every building cargo command of the story-loop checkouts.
 # Installed as $CARGO_HOME/bin/cargo (`tools/story-loop/cargo-queue.sh --install`; again after a container restart),
 # it runs cargo directly outside the story-loop checkouts. A command started in the main checkout or a lane copies
-# that working tree into a work dir of its own and runs there, one command at a time, against one cargo target dir:
+# that working tree into one shared work dir and runs there, one command at a time, against one cargo target dir:
 # parallel lanes code side by side while their builds wait in line, instead of splitting the CPUs and each filling a
 # target dir. Output streams back with work-dir paths mapped to the caller's tree, and files the command changed
 # (cargo fmt, --bless, Cargo.lock) are copied back. A caller cut off by a timeout can rerun the same command: it
@@ -11,10 +11,12 @@
 CH=${CARGO_HOME:-$HOME/.cargo}
 Q=${NOCTIS_CARGO_QUEUE:-/home/claude/cargo-queue}
 ROOTS=${NOCTIS_QUEUE_ROOTS:-/home/claude/noctis-rs /home/claude/lanes/*/noctis-rs}
-# One work dir per caller tree: cargo keys workspace crates by path, so each lane keeps its own warm workspace
-# artifacts in the shared target dir (registry dependencies are shared) and lanes taking turns do not rebuild each
-# other's changes.
-wdir(){ echo "$Q/work/$(printf %s "$1" | md5sum | cut -c1-8)/noctis-rs"; }
+# One work dir for every caller tree. Cargo hashes a workspace crate by its path relative to the workspace root, so
+# separate work dirs would share artifacts in the shared target dir while each kept old mtimes: a lane could then
+# link another lane's build of a crate as "fresh". In one work dir a file is rewritten, and so rebuilt, exactly when
+# its content differs from the tree built last.
+W=$Q/work/noctis-rs
+LAYOUT=1  # bump to rebuild the work dir from scratch (fresh mtimes everywhere) after a layout change
 real(){ exec -a cargo "$CH/bin/rustup" "$@"; }
 
 install(){
@@ -40,6 +42,8 @@ runner(){
     [ -f "$j/started" ] && [ ! -f "$j/status" ] && { echo "cargo-queue: the runner restarted; run the command again" >> "$j/log"; echo 125 > "$j/status"; }
   done
   find "$Q/jobs" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} + 2>/dev/null
+  [ "$(cat "$Q/work/.layout" 2>/dev/null)" = "$LAYOUT" ] || { rm -rf "$Q/work"; mkdir -p "$W"; echo "$LAYOUT" > "$Q/work/.layout"; }
+  mkdir -p "$W"
   local idle=0 q key J root rel rc args a me=$Q/bin/cargo-queue.sh born
   born=$(stat -c %Y "$me")
   while true; do
@@ -51,7 +55,7 @@ runner(){
     rm -f "$Q/queue/$q"
     [ -d "$J" ] && [ ! -f "$J/status" ] || continue
     touch "$J/started"
-    root=$(cat "$J/root"); rel=$(cat "$J/rel"); W=$(wdir "$root"); mkdir -p "$W"
+    root=$(cat "$J/root"); rel=$(cat "$J/rel")
     echo "$(date -u +%FT%TZ) start $root/$rel: $(tr '\0' ' ' < "$J/argv")" >> "$Q/runner.log"
     if python3 "$Q/bin/tree-sync.py" sync "$root" "$W" >> "$J/log" 2>&1 && python3 "$Q/bin/tree-sync.py" snap "$W" "$J/snap"; then
       args=()
@@ -107,7 +111,7 @@ fi
 rm -f "$envf"; flock -u 8; exec 8>&-
 (setsid nohup bash "$Q/bin/cargo-queue.sh" --runner >> "$Q/runner.out" 2>&1 < /dev/null &)
 sleep infinity & sp=$!
-tail -c +1 -f --pid="$sp" "$J/log" | sed -u "s|$(wdir "$root")|$root|g" & tp=$!
+tail -c +1 -f --pid="$sp" "$J/log" | sed -u "s|$W|$root|g" & tp=$!
 while [ ! -f "$J/status" ]; do
   sleep 1
   [ $((SECONDS % 30)) = 0 ] && (setsid nohup bash "$Q/bin/cargo-queue.sh" --runner >> "$Q/runner.out" 2>&1 < /dev/null &)
