@@ -29,9 +29,9 @@ setup)
 sync)
   git fetch -q origin main || { echo "FAIL: fetch"; exit 1; }
   if [ -n "$(git status --porcelain)" ]; then
-    # An interrupted story left work in the tree; keep it (the story resumes) and only check ancestry.
-    git merge-base --is-ancestor HEAD origin/main || git merge-base --is-ancestor origin/main HEAD || { echo "FAIL: lane has unmerged commits and a dirty tree"; exit 1; }
-    echo "dirty tree kept"; exit 0
+    # An interrupted story left work in the tree; keep it as it is (the story resumes). Its commits reach main
+    # through lane.sh merge, which rebases them once the story is committed.
+    echo "dirty tree kept"; git log --oneline -1; exit 0
   fi
   if git merge-base --is-ancestor HEAD origin/main; then git merge -q --ff-only origin/main
   elif ! git merge-base --is-ancestor origin/main HEAD; then
