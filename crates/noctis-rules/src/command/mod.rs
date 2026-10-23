@@ -157,10 +157,10 @@ pub use merge::validate_merge;
 pub use meta::{
     CommandMeta, IntegrationType, InteractionContext, PERMISSIONS, permission, validate_meta,
 };
-pub use name::{LocalizedField, validate_context_menu_name, validate_localized, validate_name};
+pub use name::{validate_context_menu_name, validate_name};
 pub use option::{
     CHANNEL_TYPES, Choice, ChoiceValue, NumericValue, OptionDecl, OptionType, channel_type,
-    measure_options, validate_autocomplete, validate_localized_option_names, validate_options,
+    measure_options, validate_autocomplete, validate_options,
 };
 pub(crate) use option::{FILE_TYPE, is_file_type};
 pub use pattern::{expand, validate_pattern_spacing};

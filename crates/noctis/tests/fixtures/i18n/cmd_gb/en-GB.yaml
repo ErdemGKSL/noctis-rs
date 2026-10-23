@@ -1,4 +1,0 @@
-# Story 11.4: an en-GB file that overrides its sibling's text (row 7).
-cmd:
-  ping:
-    description: Pong (GB)

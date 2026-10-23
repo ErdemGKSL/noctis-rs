@@ -1,6 +1,0 @@
-# Story 11.4: `reason`'s Turkish name equals the other option's default.
-cmd:
-  clash:
-    opt:
-      reason:
-        name: user

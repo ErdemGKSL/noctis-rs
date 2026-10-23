@@ -1,8 +1,0 @@
-error: [CMD-04] ping: limit the locale file's text, actual `Ping`
-         = note: description differs from `cmd.ping.description` in `../../fixtures/i18n/cmdkeys/en-US.yaml`
-         = note: the file has `Pong`
-         = help: remove the `description` literal or make it equal to the file's text
- --> tests/ui-i18n/cmd/CMD-04_literal_differs_from_locale_file.rs:7:19
-  |
-7 |     description = "Ping",
-  |                   ^^^^^^

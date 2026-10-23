@@ -2224,14 +2224,12 @@ impl AppBuilder {
     /// Modules into the Registry (deriving the gateway filter and intents, GW-05,
     /// and merging every Module's Commands and context menus: the command
     /// rules run once on the merged set, per scope, and an undescribed base or
-    /// group takes `cmd.<path>.description` from its catalog's default-locale
-    /// file, else a handler's description with a warning; every command text
-    /// is localized from the merged catalogs and checked), the rustls
+    /// group takes a handler's description with a warning), the rustls
     /// crypto provider (installing `ring`'s when none is set) and the tokio
     /// runtime (any flavor). The edge then starts serving on the current
     /// runtime, and every byte-store port is namespaced under the App id.
-    /// The App's locale catalogs and then every mounted Module's merge (before
-    /// the fold) into one App-wide string set that no Module state filters.
+    /// The App's locale catalogs and then every mounted Module's merge into
+    /// one App-wide string set that no Module state filters.
     /// The builder is left empty, attached to the same Runtime.
     ///
     /// # Errors
@@ -2239,9 +2237,7 @@ impl AppBuilder {
     /// One [`BuildError`] with every violation: setters', plugins' reports
     /// and the checks', in that order; among the checks, missing intents
     /// (GW-05), then every [`BuildViolation::Command`] (in the rule engine's
-    /// order), then every [`BuildViolation::CommandLocalization`] (sorted by
-    /// key, locale and rule; skipped when the catalogs do not merge), then
-    /// every [`BuildViolation::DuplicateLocaleKey`], then the
+    /// order), then every [`BuildViolation::DuplicateLocaleKey`], then the
     /// crypto provider and the runtime.
     ///
     /// ```no_run
@@ -2352,12 +2348,15 @@ impl AppBuilder {
             }
         };
         let edge_listener = self.check_http();
-        // The catalogs merge before the fold, which localizes the commands
-        // with them; their violations follow the fold's.
+        let (registry, missing) = Registry::fold(&self.modules, self.intents);
+        let registry = Arc::new(registry);
+        self.violations.extend(missing);
+        self.register_templates(&registry);
+        let payload_keys = self.key_ring(&registry);
         let sources = locale_sources(&self.catalogs, &self.modules);
         let catalogs: Vec<noctis_i18n::Catalog> = sources.iter().map(|(c, _)| *c).collect();
-        let (strings, duplicate_keys) = match noctis_i18n::AppStrings::new(&catalogs) {
-            Ok(strings) => (Some(strings), Vec::new()),
+        let strings = match noctis_i18n::AppStrings::new(&catalogs) {
+            Ok(strings) => Some(strings),
             Err(duplicates) => {
                 // `AppStrings` keeps the first catalog of an origin, so the
                 // first source with that origin owns it.
@@ -2367,25 +2366,18 @@ impl AppBuilder {
                         .find(|(c, _)| c.origin() == origin)
                         .map_or(LocaleOwner::App, |(_, o)| *o)
                 };
-                let violations = duplicates
-                    .into_iter()
-                    .map(|d| BuildViolation::DuplicateLocaleKey {
+                self.violations.extend(duplicates.into_iter().map(|d| {
+                    BuildViolation::DuplicateLocaleKey {
                         key: d.key,
                         first: d.first,
                         second: d.second,
                         first_owner: owner(d.first),
                         second_owner: owner(d.second),
-                    })
-                    .collect();
-                (None, violations)
+                    }
+                }));
+                None
             }
         };
-        let (registry, missing) = Registry::fold(&self.modules, self.intents, strings.as_ref());
-        let registry = Arc::new(registry);
-        self.violations.extend(missing);
-        self.register_templates(&registry);
-        let payload_keys = self.key_ring(&registry);
-        self.violations.extend(duplicate_keys);
         if ensure_crypto_provider().is_err() {
             self.violations.push(BuildViolation::CryptoProvider);
         }

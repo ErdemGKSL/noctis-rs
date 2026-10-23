@@ -349,49 +349,6 @@ pub enum BuildViolation {
     /// last, the scope (`scope: global` or `scope: guild <id>`).
     #[error("{0}")]
     Command(noctis_rules::Violation),
-    /// A localized command text from the merged locale catalogs breaks a
-    /// Discord rule (LOC-02: the base rules of its field; LOC-03: a
-    /// localized option, subcommand or group name collides). Each `(key,
-    /// locale, rule)` is reported once, naming the locale whose file holds
-    /// the value.
-    ///
-    /// ```
-    /// use noctis_core::BuildViolation;
-    /// use noctis_rules::command::{LocalizedField, validate_localized};
-    /// use noctis_rules::{Limits, Locale, RuleId};
-    ///
-    /// let violation = validate_localized(LocalizedField::Name, "Yasakla", &Limits::default())
-    ///     .remove(0);
-    /// let v = BuildViolation::CommandLocalization {
-    ///     rule: RuleId::LOC_02,
-    ///     locale: Locale::Tr,
-    ///     key: "cmdword.ban",
-    ///     origin: "bot/locales",
-    ///     violation,
-    /// };
-    /// assert_eq!(
-    ///     v.to_string(),
-    ///     "[LOC-02] locale `tr`, key `cmdword.ban` (catalog `bot/locales`): \
-    ///      [CMD-03] limit lowercase, actual `Yasakla`\n  = help: use `yasakla`"
-    /// );
-    /// ```
-    #[error("[{rule}] locale `{locale}`, key `{key}` (catalog `{origin}`): {violation}")]
-    CommandLocalization {
-        /// `LOC-02` (a value breaks its field's base rule) or `LOC-03` (a
-        /// localized name collides within one options or children array).
-        rule: noctis_rules::RuleId,
-        /// The locale whose file holds the value (never a sibling-derived
-        /// code).
-        locale: noctis_rules::Locale,
-        /// The locale key, such as `cmdword.ban` or `cmd.ban.opt.user.name`.
-        key: &'static str,
-        /// The [`Catalog::origin`](noctis_i18n::Catalog::origin) of the
-        /// catalog that defines the key (`<crate>/<dir>`).
-        origin: &'static str,
-        /// The broken base rule (CMD-01..04, CMD-06, OPT-09 or CTX-01) with
-        /// an empty path, or for LOC-03 the colliding name as its path.
-        violation: noctis_rules::Violation,
-    },
     /// Two handlers share one Route id (CID-04): the first registration in
     /// fold order is kept, and each later one gives one violation.
     ///

@@ -16,21 +16,13 @@ use crate::test_support::{Capture, command, command_with, message_menu, noop, us
 /// Folds `modules` and returns the rendered tree, the warnings and the
 /// violations.
 fn fold(modules: &[Module]) -> (String, Vec<String>, Vec<BuildViolation>) {
-    fold_with(modules, None)
-}
-
-/// [`fold`] with the merged `strings`.
-fn fold_with(
-    modules: &[Module],
-    strings: Option<&AppStrings>,
-) -> (String, Vec<String>, Vec<BuildViolation>) {
     let capture = Capture::default();
     let (registry, violations) = {
         let _guard = tracing::subscriber::set_default(capture.subscriber());
         // Parallel tests may register the `warn!` callsite with no subscriber,
         // caching `Interest::never`; rebuild it.
         tracing::callsite::rebuild_interest_cache();
-        Registry::fold(modules, Intents::empty(), strings)
+        Registry::fold(modules, Intents::empty())
     };
     let warnings = capture.lines_with(&["noctis::registry", "WARN"]);
     (registry.commands().render(), warnings, violations)
@@ -243,7 +235,7 @@ fn reg_02_two_guilds() {
         &["ping"],
         CommandMetadata::new().guilds(GUILDS),
     ));
-    let (registry, violations) = Registry::fold(&[a], Intents::empty(), None);
+    let (registry, violations) = Registry::fold(&[a], Intents::empty());
     assert_eq!(violations, []);
     assert_eq!(
         registry.commands().render(),
@@ -315,7 +307,7 @@ fn reg_03_menu_types_and_chat_input() {
         CommandMetadata::new().nsfw(true),
     ));
     let c = Module::new("c").__add(command("c::show", &["show profile"], "Show"));
-    let (registry, violations) = Registry::fold(&[a, b, c], Intents::empty(), None);
+    let (registry, violations) = Registry::fold(&[a, b, c], Intents::empty());
     assert_eq!(violations, []);
     assert_eq!(
         registry.commands().render(),
@@ -353,7 +345,7 @@ fn reg_04_entries_carry_ancestors() {
         .__add(command("c::ping", &["ping"], "d"))
         .__add(user_menu("c::show", "Show", CommandMetadata::new()));
     let root = Module::new("p").module(child);
-    let (registry, violations) = Registry::fold(&[root], Intents::empty(), None);
+    let (registry, violations) = Registry::fold(&[root], Intents::empty());
     assert_eq!(violations, []);
     let global = registry.commands().scope(Scope::Global).unwrap();
     assert_eq!(&*global.command("ping").unwrap().ancestors, ["p"]);
@@ -425,56 +417,4 @@ fn meta_01_base_meta_in_two_scopes() {
         !warnings.iter().any(|line| line.contains("`config`")),
         "{warnings:#?}"
     );
-}
-
-/// Story 11.4 Matrix 20-22: an undescribed base or group takes
-/// `cmd.<path>.description` from its catalog's default-locale file without
-/// a warning; a declared description wins; with neither, the handler
-/// fallback warns as before.
-#[test]
-fn cmd_04_catalog_description_before_the_fallback() {
-    static BOT: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
-        "bot/locales",
-        noctis_rules::Locale::EnUs,
-        &[
-            (
-                noctis_rules::Locale::EnUs,
-                &[
-                    ("cmd.config.get.description", "Show settings"),
-                    ("cmd.setup.description", "Set the bot up"),
-                ],
-            ),
-            (
-                noctis_rules::Locale::Tr,
-                &[("cmd.config.description", "Ayarlar")],
-            ),
-        ],
-        &[],
-    );
-    let strings = AppStrings::new(&[BOT]).unwrap();
-    let modules = [Module::new("m")
-        .__add(command("m::start", &["setup start"], "Start"))
-        .__add(command("m::prefix", &["config get prefix"], "Prefix"))];
-    let (tree, warnings, violations) = fold_with(&modules, Some(&strings));
-    assert_eq!(violations, []);
-    assert_eq!(
-        tree,
-        "global\n  \
-         /setup \"Set the bot up\"\n    \
-         start \"Start\" -> m::start (m)\n  \
-         /config \"Prefix\"\n    \
-         get \"Show settings\"\n      \
-         prefix \"Prefix\" -> m::prefix (m)"
-    );
-    // Only `config` (whose key is in no default-locale file) falls back.
-    assert_warnings(
-        &warnings,
-        &[warning("config", "scope: global", "config get prefix", "m")],
-    );
-    let declared = [Module::new("m")
-        .__add(command("m::start", &["setup start"], "Start"))
-        .base("setup", BaseMeta::new().description("X"))];
-    let (tree, warnings, _) = fold_with(&declared, Some(&strings));
-    assert!(tree.contains("/setup \"X\""), "{tree}");
-    assert_eq!(warnings, Vec::<String>::new());
 }

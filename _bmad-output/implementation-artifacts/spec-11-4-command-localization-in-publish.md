@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-10-23'
 status: 'in-progress'
 baseline_revision: '3112448dddd819d1d872649dcbd1b2dac8c8060c'
-review_loop_iteration: 0
+review_loop_iteration: 1
 followup_review_recommended: false
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-11-context.md'
@@ -16,7 +16,29 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized', 'multiple-goals']
-deferred: []
+deferred:
+  - summary: >-
+      App-build LOC-03 does not compare localized names of top-level bases (per scope) or of same-kind keyed context menus against each other.
+    evidence: |-
+      Unverified (maybe-false). children_arrays only builds arrays under a parent node and Table::check never groups menus.
+      Discord documents the distinctness constraint only for option names of one command; settle by checking whether a bulk PUT with two commands (or two USER menus) sharing a localized name in one locale is rejected.
+    location: >-
+      crates/noctis-core/src/registry/commands.rs children_arrays / Table::check
+    severity: medium (unverified)
+  - summary: >-
+      tools/story-loop/gates.sh skips cargo hack except for an epic's last unfinished story, while AGENTS.md still requires cargo hack before every Rust change is done.
+    evidence: |-
+      gates.sh:28-42 (2026-10-23 loop change bundled into the Story 11.4 implementation commit) contradicts AGENTS.md "Running and verifying"; the decision is not logged in a memlog and the ui_i18n trybuild suite only runs under hack. Fix edits AGENTS.md (agent-context file).
+    location: >-
+      tools/story-loop/gates.sh:28-42, AGENTS.md
+    severity: medium
+  - summary: >-
+      The gates.sh last-story test misfires when two lanes run an epic's last two stories, so cargo hack may never run for that epic.
+    evidence: |-
+      The inline Python treats any sibling story of the in-progress epic not in done/in-progress (e.g. review) as unfinished, so a lane whose sibling is in review skips hack, and the sibling has already passed its gates.
+    location: >-
+      tools/story-loop/gates.sh:31-41
+    severity: medium
 ---
 
 <intent-contract>
@@ -193,10 +215,12 @@ deferred: []
   - `:174` `Commands::fold`: build the variant table, then `lower`, LOC-02/03, `validate_merge`, `build`;
   - `:263` `lower`: give the decls the variants;
   - `:355` `add_fallbacks`: catalog description first;
+  - `localize.rs` (variant-table build, called from `Commands::fold`): the declared-description consistency check (CMD-04, Design Notes "Declared description equals the catalog"); its violations join `validate_merge`'s `BuildViolation::Command` group;
+  - `lower`: measure options with `fold`'s `limits` (the `Limits` passed to `Commands::fold`), never `Limits::default()`, as the baseline did;
   - `:425` `build_scope`.
   - Put the resolution and validation in a new `registry/commands/localize.rs`.
 - `crates/noctis-core/src/publish/json.rs`: emit the maps (`node`, `option`, menus). Update the module doc ("localizations are never sent").
-- `crates/noctis-core/src/error.rs:~295`: add `CommandLocalization` after `Command`.
+- `crates/noctis-core/src/error.rs:~295`: add `CommandLocalization` after `Command`. Its docs (and the LOC-02 docs cell) say a violation is reported once per key, file locale, rule and base rule (one key can break two base rules, e.g. CMD-02 and CMD-03).
 - `crates/noctis-core/src/command.rs:520-620` (constructors, `description()`) and `kind.rs:111-123` `__SlashCommand`: replace `DESCRIPTION` with `DESCRIPTIONS`. Internally the handler holds one description for all paths or one per path. `crate::test_support::command(.., "Pong")` keeps working.
 - `crates/noctis-core/src/menu.rs:140-240` `ContextMenuHandler`: add a `key` field, `__with_key` (hidden) and `key()`, and add it to `Debug`.
 - `crates/noctis-core/src/lib.rs:355-382` `AppProbe::commands()`: this is Publish's exact JSON, the integration tests' surface.
@@ -237,12 +261,18 @@ deferred: []
 - [ ] `crates/noctis-core/src/error.rs` (+ `lib.rs` docs): add `BuildViolation::CommandLocalization`, with a doctest of its Display. This is the typed error naming the Locale, key and rule.
 - [ ] `crates/noctis-core/src/{command,kind,menu}.rs`: add `DESCRIPTIONS` / `descriptions()` and the menu `key`. These carry the macro output.
 - [ ] `crates/noctis-core/src/registry/commands.rs` + new `registry/commands/localize.rs`, `registry.rs`, `app.rs`: the variant table, LOC-02/03, LOC-05 via the decls, the catalog description fallback, and the merge moved before the fold. This is the App-build half.
+- [ ] `crates/noctis-core/src/registry/commands/localize.rs` + `registry/commands.rs`: the declared-description consistency check (Design Notes "Declared description equals the catalog"), reported as `BuildViolation::Command` CMD-04. `lower` measures options with `fold`'s `limits`. This closes review pass 1's root cause (en-US users seeing the file text while `description` is the declared one).
 - [ ] `crates/noctis-core/src/publish/json.rs`: emit the maps. This is the Publish half.
-- [ ] `crates/noctis-core/src/{registry/tests.rs,publish/tests.rs,app/tests.rs}`: add tests for Matrix 1-41 with `Catalog::__new` statics. Name each test after its scenario, with a `/// Story 11.4 Matrix N` doc comment. The names cover `loc_02_*`, `loc_03_*`, `cmd_05_*_localization` and `ctx_01_*`. Add one `TestServer` dry-run test asserting `TargetReport::json()` contains the maps (row 1/6). This covers the I/O matrix and the rules-catalog unit evidence.
+- [ ] `crates/noctis-core/src/{registry/tests.rs,publish/tests.rs,app/tests.rs}`: add tests for Matrix 1-41 with `Catalog::__new` statics. Name each test after its scenario, with a `/// Story 11.4 Matrix N` doc comment. The names cover `loc_02_*`, `loc_03_*`, `cmd_05_*_localization` and `ctx_01_*`. Add one `TestServer` dry-run test asserting `TargetReport::json()` contains the maps (row 1/6). This covers the I/O matrix and the rules-catalog unit evidence. Also add, in `publish/tests/localize.rs` (or `registry/tests.rs`):
+  - `cmd_04_declared_description_differs_from_catalog`: one case each for a `Module::base` description, a `Module::group` description, a file-less handler literal (non-Pattern), one path of a Pattern handler built with per-path descriptions, and a runtime option description vs `cmd.<P>.opt.<o>.description`; each gives exactly one `BuildViolation::Command` CMD-04 with the note/help below; the same node registered in the global and a guild scope gives one violation; an equal declaration (Matrix 21) and a key present only in a non-default locale give none; a failing catalog merge (`DuplicateLocaleKey`) gives none;
+  - change `loc_dry_run_reports_localizations` so the handler literal equals its en-US `cmd.<P>.description` value;
+  - `cmd_05_counts_localized_names_and_options`: with the 8000-at-the-limit fixture, CMD-05 fails once through a 32-character `tr` `cmdword.*` name only, and once through a localized option description or choice name on an options-bearing handler; a third case where an over-long, LOC-02-invalid value gives only the LOC-02 violation and no CMD-05;
+  - LOC-03 on a subcommand group's children array, and on a child that exists only in a guild scope;
+  - a Pattern handler's per-path `DESCRIPTIONS` reach the Registry and the Publish JSON as distinct descriptions per path.
 - [ ] `crates/noctis-macros/{Cargo.toml,src/command.rs,src/options.rs,src/menu.rs,src/i18n/*}`, plus a new pure resolution module, and `crates/noctis/Cargo.toml`: the compile-time half (Matrix M1-M19, K1, Y1-Y4), with unit tests over in-memory entries and YAML. This is the macro half.
 - [ ] `crates/noctis/tests/ui-i18n/`:
   - `loc/LOC-02_localized_word_uppercase.rs`, `loc/LOC-03_localized_option_name_collides.rs` (`i18n!` over `tests/fixtures/i18n/loc02`, `loc03`);
-  - `cmd/CMD-04_description_missing_in_locale_file.rs`, `cmd/CMD-04_literal_differs_from_locale_file.rs`, `cmd/CMD-01_reserved_locale_word.rs` (`#[command(.., locales = "../../fixtures/i18n/cmdkeys", __locales_from_source_file)]`);
+  - `cmd/CMD-04_description_missing_in_locale_file.rs`, `cmd/CMD-04_literal_differs_from_locale_file.rs`, `cmd/CMD-01_reserved_locale_word.rs` (path word `opt`) and `cmd/CMD-01_reserved_locale_word_name.rs` (path word `name`) (`#[command(.., locales = "../../fixtures/i18n/cmdkeys", __locales_from_source_file)]`);
   - each with a blessed `.stderr`. Every fixture YAML starts with a `#` comment naming Story 11.4.
   This is the rules-catalog diagnosed evidence.
 - [ ] `crates/noctis/tests/i18n_commands.rs` (`#![cfg(all(feature = "i18n", feature = "testkit"))]`) + `tests/fixtures/i18n/{cmd,cmd_gb}/`:
@@ -253,13 +283,14 @@ deferred: []
   - `TestApp` dispatch by default name, while the localized name is refused (row 42).
   This is the outermost surface.
 - [ ] `.github/workflows-disabled/ci.yml:65`: add `--test i18n_commands`. Keeps the gate in sync.
-- [ ] `docs/discord-rules.md`, `xtask/rules-pending.toml`: update the rule cells and drop the 4 pending entries. Keeps the catalog in sync.
+- [ ] `docs/discord-rules.md`, `xtask/rules-pending.toml`: update the rule cells and drop the 4 pending entries. The CMD-04 cell also states: a `Module::base`/`Module::group` description, a file-less or runtime handler description, or a runtime option description that differs from its owner catalog's default-locale `cmd.<path>.description` / `cmd.<path>.opt.<o>.description` fails `App::build` (CMD-04, `declared by` note). Keeps the catalog in sync.
 - [ ] Template:
   - drop the `description` literals from the template's `#[command]`/`#[option]`, and the `.base("setup", ..)` description (the catalog supplies it);
   - remove `// [planned]` from `key`;
   - `AGENTS.md`: the files are the source of command texts.
   This reconciles the template.
 - [ ] Skill:
+  - `i18n.md` §3-§4 and `commands.md` (`Module::base`/`Module::group` text): a declared description must equal the default-locale file's value or be omitted (App-build CMD-04 otherwise);
   - `i18n.md` §3-§4: exact key layout and resolution chain, menus, `locales`/`default_locale`, Matrix M-rules, `CommandLocalization` example, unkeyable words/values, dispatch by default names;
   - `commands.md`: drop the "[planned]" lines at 91/570/738/831;
   - `app-and-sharding.md:365`: localizations are sent;
@@ -277,7 +308,56 @@ deferred: []
 
 ## Spec Change Log
 
+### 2026-10-23 — Review pass 1 loopback (bad_spec)
+- Trigger: review pass 1 (blind #1, edge #1, medium): a declared description (`Module::base`/`Module::group`, a runtime or file-less handler literal) differing from the owner catalog's default-locale `cmd.<path>.description` was accepted silently; Publish sent `description = "X"` next to `description_localizations["en-US"] = <file text>` (`loc_dry_run_reports_localizations` locked in "Pong" vs "Pong!").
+- Amended (outside `<intent-contract>`): Design Notes (new "Declared description equals the catalog" rule covering node, handler-per-path and option descriptions, with lookup, exact comparison, report shape, per-key dedup across scopes, placement; dedup identity refined to include the base rule), Code Map (`localize.rs` check, `lower` uses `fold`'s `limits`, `CommandLocalization` doc wording), Tasks (the check; tests `cmd_04_declared_description_differs_from_catalog`, `cmd_05_counts_localized_names_and_options`, LOC-03 on group children and guild-only children, Pattern per-path descriptions end to end; `loc_dry_run_reports_localizations` literal equals en-US; `CMD-01_reserved_locale_word_name.rs` fixture; CMD-04 docs cell; skill text), Verification (explicit trybuild and featureless `noctis-macros` runs).
+- Folded-in patches: `lower` used `Limits::default()` instead of `fold`'s limits; `CommandLocalization` docs said "once per (key, locale, rule)"; missing CMD-05 localized-name/option tests; missing LOC-03 group/guild-only and Pattern per-path tests; missing `name` reserved-word fixture; trybuild/macro tests not run when `cargo hack` was skipped.
+- Known-bad state avoided: mismatched `description` vs default-locale `description_localizations` with no error; options measured with default limits; doc claiming a dedup the code does not do.
+- KEEP: rebuild from the code of commit `fd16a95` (Story 11.4: implementation (review pass 1)), the latest commit, changing only what the amendments require. Keep the whole localization pipeline (`Resolver` per-locale `[L, L.sibling()]` chain with full path before `cmdword`, `is_segment`/`key_path`/`choice_segment`; `Variants`/`NodeTexts`/`OptionTexts`; `Problems` with LOC-02 per value, LOC-03 via `validate_localized_option_names`, dedup and sort order; `Table` `new`/`check`/`budget`/`decls`, `measure_localized` over loop-local copies, no `Box::leak`); the `fold` ordering (catalogs merged before the Registry fold; Command, then CommandLocalization, then DuplicateLocaleKey; localization skipped when the merge fails); `add_fallbacks` taking the owner default-locale `cmd.<path>.description` with the catalog origin and no warning before the handler fallback; the Publish JSON emission (maps right after `name`/`description`, omitted when empty, byte-identical without catalogs, kept in the guild mirror); `validate_localized`/`validate_localized_option_names`/`LocalizedField`, `AppStrings::{get, owner}`, `BuildViolation::CommandLocalization` with Display and doctest, `ContextMenuHandler::key()`, `CommandHandler::descriptions()`/`__with_descriptions`; the macro half (`command/locale.rs` `load`/`descriptions`/`reserved_words`/`conflict` with M1-M19 unit tests, `locales`/`default_locale`/`__locales_from_source_file`, `include_bytes!`, menu `key`, `i18n!` reserved-layout/LOC-02/LOC-03 checks and fixtures); the tests in `publish/tests/localize.rs` (Matrix 1-41), `crates/noctis/tests/i18n_commands.rs` and fixtures, the trybuild fixtures, the template/skill/docs/rules-pending updates, and the API snapshot plus hash workflow.
+
 ## Review Triage Log
+
+### 2026-10-23 — Review pass
+- verdicts: 38 findings — high 0, medium 6, low 12, false 17, maybe-false 3
+- findings:
+  - `[medium]` `[bad_spec]` (blind) No App-build check that a declared description (`Module::base`/`Module::group`, a runtime or file-less handler literal) equals the owner catalog's default-locale `cmd.<path>.description` — verified: `add_fallbacks` skips described nodes and `Resolver::node` still emits the file text as the default locale's `description_localizations`, so en-US users see the file text while `description` is the declared one (`loc_dry_run_reports_localizations` locks in "Pong" vs "Pong!"). Amendment A1 (proposed in `target/story-loop/patches-11-4-p1.md`): a differing declared description is a CMD-04 `BuildViolation::Command` at App-build; Matrix 21 holds only when equal.
+  - `[maybe-false]` `[defer]` (blind) LOC-03 does not check top-level bases or same-kind menus against each other's localized names — `children_arrays` only builds arrays under a parent; Discord documents the distinctness constraint only for option names of one command, so whether the PUT fails is unverified; deferred.
+  - `[low]` `[reject]` (blind) An over-long catalog default description is reported both as CMD-04 (`validate_merge`) and LOC-02 — real, but `i18n!` already rejects that value at compile time (LOC-02 per file), so App-build rarely meets it; the fix needs a new skip branch.
+  - `[low]` `[reject]` (blind) `#[command]` emits no rebuild dependency when the implicit default-locale file is missing — real only until the file is created once (then `include_bytes!` tracks it); the fix needs tracked paths or a build script.
+  - `[low]` `[reject]` (blind) `#[command]` re-parses the default-locale YAML per invocation — compile-time cost only; the spec mandates the one file-error message; a process-wide cache adds complexity.
+  - `[false]` `[reject]` (blind) Nothing ties `#[command]`'s `locales`/`default_locale` to `i18n!` — the spec settles mirrored defaults (a proc macro cannot see the `i18n!` call) and `commands.md:113` / `i18n.md:198-200` tell authors to mirror non-default settings.
+  - `[false]` `[reject]` (blind) `__with_descriptions` silently ignores a non-parallel slice — the only caller is the derive, which emits `DESCRIPTIONS` parallel to `PATHS`; no reachable mismatch.
+  - `[false]` `[reject]` (blind) `Problems::finish` silently drops problems — every problem comes from an `AppStrings::get` hit, so `owner` exists and `Catalog::keys()` (every key of every file) contains the key.
+  - `[low]` `[reject]` (blind) Quadratic dedup and per-scope re-resolution of option texts — compile-of-App cost only for realistic sizes; the fix restructures the table.
+  - `[false]` `[reject]` (blind) `validate_localized_option_names` rejects swaps — Discord's documented rule is "distinct from all other default option names of that command", which is exactly the spec's rule.
+  - `[low]` `[patch]` (blind) `lower` measures options with `Limits::default()` instead of `fold`'s `limits` — the value is overwritten in `Table::decls` today; restore the `limits` parameter.
+  - `[low]` `[reject]` (blind) `CommandHandler` allocates description storage twice — negligible one-time allocation; a `Cow` adds surface complexity.
+  - `[false]` `[reject]` (blind) `description()` only returns the first path's description — the spec defines it so, and no non-test caller exists (grep).
+  - `[false]` `[reject]` (blind) Default-locale and sibling entries are emitted — the AC ("`en-US` values are emitted for both `en-US` and `en-GB`") and the spec's Design Notes settle it.
+  - `[medium]` `[defer]` (blind) `gates.sh` now skips `cargo hack` except for an epic's last story while AGENTS.md still requires it per story — real tooling/doc mismatch from the loop, not this story's code; the fix edits AGENTS.md.
+  - `[low]` `[patch]` (blind) Test gaps: LOC-03 on a group's children and across scopes, Pattern per-path descriptions reaching the Registry/Publish JSON — real; add the tests.
+  - `[medium]` `[bad_spec]` (edge) Declared description differing from catalog text gives mismatched `description` and en-US localization — same root cause as the first finding; amendment A1.
+  - `[maybe-false]` `[defer]` (edge) Two bases localized to one name in a locale are not detected — same root cause as the LOC-03 top-level finding; unverified against Discord; deferred.
+  - `[maybe-false]` `[defer]` (edge) Two same-kind keyed menus sharing a localized name are not detected — same group; deferred.
+  - `[false]` `[reject]` (edge) `default_locale` default mismatch with a non-en-US `i18n!` — settled and documented (see the `locales`/`default_locale` row above).
+  - `[low]` `[reject]` (edge) Stale expansion when `locales/en-US.yaml` is created later — same as the rebuild-dependency row; rejected.
+  - `[low]` `[reject]` (edge) A non-UTF-8 locale path drops the `include_bytes!` — real but practically unreachable for crate paths; rejected.
+  - `[false]` `[reject]` (edge) A non-segment word like `çay` takes its description from the file — `i18n::file_entries` rejects any non-`[A-Za-z0-9_-]` key segment (`model.rs:300`), so `cmd.çay.description` cannot exist in a readable file.
+  - `[medium]` `[defer]` (edge) `gates.sh` hack skip misfires when two lanes run an epic's last two stories — the Python counts a sibling in `review` as unfinished; loop tooling, not this story.
+  - `[low]` `[patch]` (edge) `CommandLocalization` doc says "once per (key, locale, rule)" but one key can yield two LOC-02 violations with different base rules — correct the doc to "(key, file locale, rule, base rule)".
+  - `[medium]` `[patch]` (vgap) LOC-05 wiring for localized names, option texts and choice names, and the `valid_values` filter, have no App-build test — pre-verified; add `cmd_05_counts_localized_names_and_options`.
+  - `[medium]` `[patch]` (vgap) The new trybuild fixtures and feature-off macro branch run in no gate this story (hack skipped) — pre-verified; run `ui` with and without `i18n` and the featureless `noctis-macros` tests once.
+  - `[low]` `[patch]` (vgap) `lower` ignores `fold`'s `limits` — same root cause as the blind `Limits::default()` row.
+  - `[false]` `[reject]` (intent D1) `dir`/`default` coupling read as mirrored defaults — the spec settles it (Design Notes) and the skill documents it.
+  - `[false]` `[reject]` (intent D2) Full-path precedence is per chain locale — the spec settles it (Matrix 5, memlog); the AC's override holds within each locale.
+  - `[low]` `[patch]` (intent D3) Reserved words `name`/`description` and the implicit-default missing-key case have no trybuild fixture — add a fixture for `name`.
+  - `[false]` `[reject]` (intent D4) One option description across expansions — settled ("No per-path option arrays", Matrix M14).
+  - `[false]` `[reject]` (intent D5) Template drops description literals — settled in the spec's template task; the AC allows omission.
+  - `[false]` `[reject]` (intent D6) Maintainer decision §9 tension — a literal is never read as a key; the feature only adds a consistency check, as AD-16 and the epic AC prescribe.
+  - `[false]` `[reject]` (intent D7) `key` on both menu kinds, unkeyed menus unlocalized — the AC lists both macros; the spec settles it (Matrix 16).
+  - `[false]` `[reject]` (intent D8) Float/non-segment choices unlocalized — settled (Matrix 14); such values cannot be key segments.
+  - `[false]` `[reject]` (intent D9) Compile-time `i18n!` LOC checks in addition to App-build — settled by the spec and maintainer decision §4 (compile time first).
+  - `[false]` `[reject]` (intent D10) Default-locale entry in the maps — settled by the AC and Design Notes.
 
 ## Design Notes
 
@@ -285,7 +365,12 @@ These decisions are logged in the architecture memlog.
 
 - **Per-key sibling chain, own locale first.** The AC ("a sibling's values for a code without its own file") is satisfied, and an en-GB file that lacks a key still serves en-US's text, which is what the runtime `Catalog` chain does. The default locale is not part of the chain, because Discord already falls back to the default.
 - **The default locale's entries are emitted too** (AC: "`en-US` values are emitted for both"). Values are verbatim, even when they equal the default.
-- **Typed error shape.** `rule` is LOC-02/LOC-03 and `violation` is the base rule. LOC-03 maps to CMD-06, because a duplicate option name is CMD-06's rule. One violation per `(key, file locale, rule)` keeps sibling and shared-word reports from multiplying.
+- **Typed error shape.** `rule` is LOC-02/LOC-03 and `violation` is the base rule. LOC-03 maps to CMD-06, because a duplicate option name is CMD-06's rule. One violation per `(key, file locale, rule, base rule)` keeps sibling and shared-word reports from multiplying; the base rule is part of the identity because one value can break two base rules (e.g. an empty name breaks CMD-02, a 33-char uppercase one CMD-02 and CMD-03), and each is reported.
+- **Declared description equals the catalog (CMD-04 at App-build).** Matrix 21 ("declared wins") holds when the declared text equals the file's; Publish emits the default-locale value verbatim, so a differing pair would show en-US (and en-GB via the sibling) users the file text while `description` is the declared one. The rule, per epic AC 2 and FR-57 and ordered by maintainer decision §4 (compile time first, App-build for merged Modules):
+  - Covered fields: every node description at path `P` that is declared (a `Module::base` / `Module::group` description, or a handler's description for path `P`, per path for Pattern handlers; a synthetic decl from the catalog fallback (Matrix 20) is equal by construction and the handler fallback (Matrix 22) only runs when the key is absent), compared with `cmd.<P>.description`; and every option description on a registered leaf `P`, compared with `cmd.<P>.opt.<o>.description`. Names, per-word `cmdword.*`, choice names and menu names are not covered: their default is the word/value/literal itself and a default-locale localization is a deliberate display text.
+  - Lookup: `AppStrings::owner(key)`, then `AppStrings::get(owner.default_locale(), key)` (the owner's own default-locale file, no sibling). No owner, or no value in that file, means no check. Comparison is exact (bytes).
+  - Report: one `BuildViolation::Command` with rule CMD-04, path `P` (option: `P` and the option name, as existing option CMD-04 violations carry it), note ``description differs from `<key>` in catalog `<origin>` (<default locale>)`` plus the file's text and the `declared by` Module (as the existing CMD-04 App-build notes), help ``make them equal or remove the declaration``. Once per key across all scopes (global and guild), first occurrence in fold order.
+  - Placement: computed in `localize.rs` while building the variant table, appended after `validate_merge`'s own `Command` violations, sorted by key bytes, before every `CommandLocalization`. Skipped, like all localization, when the catalog merge fails. Macro-built handlers with a locale file never trigger it (the macro already enforces equality, M3/M4), so it only catches runtime, file-less or `Module`-level declarations.
 - **`default_locale` argument.** A proc macro cannot see another `i18n!` call, so `#[command]` mirrors `i18n!`'s defaults (`locales`, `en-US`). A Module crate with other settings states them. `locales` is the AC's name; `default_locale` is the minimal addition for a non-en-US default.
 - **Reserved words are CMD-01.** Every trybuild fixture needs a catalog rule id with a Compile-time tier. The restriction is a word-charset constraint, documented in the CMD-01 cell.
 - **Per-path descriptions.** Pattern expansions have distinct `cmd.<path>.description` keys, so `DESCRIPTIONS` parallels `PATHS`. Options stay one array per struct, so their default description must agree across expansions. Non-default option texts are still per path at Publish.
@@ -302,6 +387,7 @@ These decisions are logged in the architecture memlog.
 - `cargo test --release -p noctis --features i18n --test ui`: expected pass (the `ui_i18n` suite). Bless new `.stderr` files with `TRYBUILD=overwrite`, then rerun without it.
 - `cargo test --release -p noctis --test ui`: expected pass (the featureless suite, unchanged).
 - `cargo hack test --release --workspace --each-feature`: expected pass.
+- Even when a gate run skips `cargo hack`, run explicitly: `cargo test --release -p noctis --features i18n --test ui`, `cargo test --release -p noctis --test ui` and `cargo test --release -p noctis-macros` (no features); fix any `.stderr` drift.
 - `cargo run --release -p xtask -- deps-check`, `-- rules-catalog`, `-- skill-check`: expected ok.
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`: expected a match. Install `nightly-2026-10-15` and `cargo-public-api` 0.52.0 first if they are missing.
 - `cargo deny check`: expected ok.

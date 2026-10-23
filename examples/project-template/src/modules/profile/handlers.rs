@@ -23,11 +23,13 @@ const XP_PER_LEVEL: u64 = 100;
 #[derive(SlashCommand, Debug)]
 #[command(
     "profile",
+    description = "Show a member's profile card",
     contexts = [Guild],
     rate_limit(user, 3, per = "10s"),      // [planned]: rejected until its release
 )]
 pub struct Profile {
-    /// The description is `cmd.profile.opt.user.description` in `locales/en-US.yaml`.
+    /// The literal equals `cmd.profile.opt.user.description` in `locales/en-US.yaml`.
+    #[option(description = "Whose profile to show (default you)")]
     pub user: Option<ResolvedUser>,
 }
 
@@ -45,7 +47,7 @@ impl Profile {
 /// modal must be the first response, INT-05), so the handler takes the `Manual`
 /// responder, the only one with `show_modal()`, and opens it before any slow work.
 #[derive(SlashCommand, Debug)]
-#[command("bio", auto_defer = false, contexts = [Guild])]
+#[command("bio", description = "Edit your profile bio", auto_defer = false, contexts = [Guild])]
 pub struct Bio;
 
 impl Bio {
@@ -80,10 +82,10 @@ const BADGES: &[&str] = &["Early supporter", "Helper", "Night owl", "Artist", "B
 /// `#[autocomplete(name)]` method. The command re-checks the value, because Discord
 /// sends whatever the user typed (OPT-12).
 #[derive(SlashCommand, Debug)]
-#[command("badge", contexts = [Guild])]
+#[command("badge", description = "Show a badge", contexts = [Guild])]
 pub struct Badge {
-    /// The description is `cmd.badge.opt.name.description` in `locales/en-US.yaml`.
-    #[option(autocomplete)]
+    /// The literal equals `cmd.badge.opt.name.description` in `locales/en-US.yaml`.
+    #[option(description = "Badge name", autocomplete)]
     pub name: String,
 }
 
@@ -121,7 +123,7 @@ impl Badge {
 #[derive(UserCommand, Debug)]
 #[user_command(
     "Show profile",
-    key = "show_profile",
+    key = "show_profile", // [planned]: rejected until its release
     contexts = [Guild],
 )]
 pub struct ShowProfile;

@@ -15,8 +15,6 @@ default = []
 # `#[derive(Template)]`, `view!`, `tw!` and `theme!` (noctis-image's `tw`
 # module only; its `render` feature stays off).
 image = ["dep:noctis-image"]
-# `#[command]` reads descriptions from the default-locale file (Story 11.4).
-i18n = []
 
 [dependencies]
 noctis-image = { workspace = true, optional = true }

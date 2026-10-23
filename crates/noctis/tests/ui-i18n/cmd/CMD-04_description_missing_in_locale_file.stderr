@@ -1,8 +1,0 @@
-error: [CMD-04] pong: limit between 1 and 100, actual 0
-         = note: missing description
-         = note: not found as `cmd.pong.description` in `../../fixtures/i18n/cmdkeys/en-US.yaml`
-         = help: add `description = "…"` with 1 to 100 characters (doc comments are rustdoc only)
- --> tests/ui-i18n/cmd/CMD-04_description_missing_in_locale_file.rs:6:11
-  |
-6 | #[command("pong", locales = "../../fixtures/i18n/cmdkeys", __locales_from_source_file)]
-  |           ^^^^^^
