@@ -109,7 +109,10 @@ a time, oldest first:
    content differs, so cargo's mtime-based freshness never sees a stale file. Do not split the
    work dir per lane: cargo hashes workspace crates by their path relative to the workspace root,
    so lanes would overwrite each other's artifacts while their files keep old mtimes.
-2. It runs the command there with `CARGO_TARGET_DIR` set to the main checkout's `target/`. That is
+2. It runs the command there with `CARGO_TARGET_DIR` set to the main checkout's `target/`, on 3 of
+   the 4 CPUs, with rustc's incremental cache on for release builds. `incremental-guard.sh` (start it detached, like
+   the runner, after a container restart) logs the cache size every 15 minutes and turns
+   incremental off and deletes the cache when less than 4 GiB is free. That is
    one warm target dir for everyone, so there is no per-lane target dir and no trybuild clash.
 3. It copies back the files the command changed (`cargo fmt`, `--bless`, `Cargo.lock`).
 

@@ -37,6 +37,10 @@ runner(){
   # Builds get NOCTIS_CARGO_CPUS of the machine's CPUs (default 3), so the coding agents keep a core to work on.
   local cpus=${NOCTIS_CARGO_CPUS:-3} pin=()
   export CARGO_BUILD_JOBS=$cpus RUST_TEST_THREADS=$cpus
+  # Release builds keep rustc's incremental cache for workspace crates, so a crate whose files changed recompiles
+  # only what changed (cargo already skips crates whose files tree-sync.py left untouched).
+  # incremental-guard.sh turns it off (touches $Q/no-incremental) when the disk runs low.
+  export CARGO_PROFILE_RELEASE_INCREMENTAL=${CARGO_PROFILE_RELEASE_INCREMENTAL:-true}
   command -v taskset >/dev/null && [ "$(nproc)" -gt "$cpus" ] && pin=(taskset -c "0-$((cpus - 1))")
   for j in "$Q"/jobs/*/; do  # jobs a dead runner left behind
     [ -f "$j/started" ] && [ ! -f "$j/status" ] && { echo "cargo-queue: the runner restarted; run the command again" >> "$j/log"; echo 125 > "$j/status"; }
@@ -61,6 +65,7 @@ runner(){
       args=()
       while IFS= read -r -d '' a; do args+=("${a//$root/$W}"); done < "$J/argv"
       ( cd "$W/$rel" || exit 125
+        [ -f "$Q/no-incremental" ] && export CARGO_PROFILE_RELEASE_INCREMENTAL=false
         while IFS= read -r -d '' a; do export "$a"; done < "$J/env"
         exec "${pin[@]}" bash -c 'exec -a cargo "$0" "$@"' "$CH/bin/rustup" "${args[@]}" ) >> "$J/log" 2>&1 < /dev/null
       rc=$?
