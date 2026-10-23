@@ -419,7 +419,9 @@ where
 pub struct CommandHandler {
     name: &'static str,
     pattern: &'static str,
-    description: &'static str,
+    /// One description per path, parallel to `paths` (one entry when
+    /// `paths` is empty).
+    descriptions: Arc<[&'static str]>,
     paths: &'static [&'static str],
     options: &'static [OptionDecl<'static>],
     metadata: CommandMetadata,
@@ -441,10 +443,15 @@ impl CommandHandler {
         options: &'static [OptionDecl<'static>],
         call: Arc<ErasedCommand>,
     ) -> Self {
+        let descriptions: Arc<[&'static str]> = if paths.is_empty() {
+            Arc::from([description])
+        } else {
+            paths.iter().map(|_| description).collect()
+        };
         Self {
             name,
             pattern,
-            description,
+            descriptions,
             paths,
             options,
             metadata: CommandMetadata::new(),
@@ -600,10 +607,33 @@ impl CommandHandler {
         self.pattern
     }
 
-    /// The literal `description = "…"` (empty when none was given, which
-    /// does not compile).
+    /// The description of the first path: the literal `description = "…"`
+    /// or, with the `i18n` feature, `cmd.<path>.description` from the
+    /// default-locale file (empty when there is neither, which does not
+    /// compile).
     pub fn description(&self) -> &'static str {
-        self.description
+        self.descriptions.first().copied().unwrap_or_default()
+    }
+
+    /// The description of every path, parallel to [`paths`](Self::paths).
+    pub fn descriptions(&self) -> &[&'static str] {
+        &self.descriptions
+    }
+
+    /// Replaces the per-path descriptions; what `#[derive(SlashCommand)]`
+    /// binds from `DESCRIPTIONS`. A slice that is not parallel to the
+    /// paths is ignored.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __with_descriptions(self, descriptions: &'static [&'static str]) -> Self {
+        if descriptions.len() == self.paths.len() && !descriptions.is_empty() {
+            Self {
+                descriptions: Arc::from(descriptions),
+                ..self
+            }
+        } else {
+            self
+        }
     }
 
     /// Every Command Path the handler serves, in expansion order.

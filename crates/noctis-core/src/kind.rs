@@ -115,8 +115,10 @@ pub trait __SlashCommand:
     const PATTERN: &'static str;
     /// Every Command Path, in expansion order.
     const PATHS: &'static [&'static str];
-    /// The literal `description = "…"`.
-    const DESCRIPTION: &'static str;
+    /// The description of every path, parallel to `PATHS`: the literal
+    /// `description = "…"` or `cmd.<path>.description` from the
+    /// default-locale file.
+    const DESCRIPTIONS: &'static [&'static str];
     /// The declared metadata.
     const METADATA: CommandMetadata;
     /// The declared `response`.
@@ -143,8 +145,14 @@ pub trait __PatternPaths: __SlashCommand {
     type Path: CommandPath;
 }
 
+/// The first path's description, which the constructors take.
+fn first_description<S: __SlashCommand>() -> &'static str {
+    S::DESCRIPTIONS.first().copied().unwrap_or_default()
+}
+
 fn slash<S: __SlashCommand>(handler: CommandHandler) -> CommandHandler {
     handler
+        .__with_descriptions(S::DESCRIPTIONS)
         .__with_metadata(S::METADATA)
         .__with_ephemerality(S::EPHEMERALITY)
 }
@@ -166,7 +174,7 @@ where
         >(
             name,
             S::PATHS,
-            S::DESCRIPTION,
+            first_description::<S>(),
             move |ctx: CommandCtx, _: Responder<Command, Pending, S::Defer>, s: S| f(s, ctx),
         ))
     }
@@ -184,7 +192,7 @@ where
         slash::<S>(CommandHandler::__new_plain_with_options::<S, D, _, _, _>(
             name,
             S::PATHS,
-            S::DESCRIPTION,
+            first_description::<S>(),
             move |ctx, r, s| f(s, ctx, r),
         ))
     }
@@ -203,7 +211,7 @@ where
             CommandHandler::__new_with_options::<P, S, S::Defer, _, _, _>(
                 name,
                 S::PATTERN,
-                S::DESCRIPTION,
+                first_description::<S>(),
                 move |ctx: CommandCtx, path: P, _: Responder<Command, Pending, S::Defer>, s: S| {
                     f(s, ctx, path)
                 },
@@ -225,7 +233,7 @@ where
         slash::<S>(CommandHandler::__new_with_options::<P, S, D, _, _, _>(
             name,
             S::PATTERN,
-            S::DESCRIPTION,
+            first_description::<S>(),
             move |ctx, path, r, s| f(s, ctx, path, r),
         ))
     }
@@ -244,6 +252,9 @@ pub trait __ContextMenu: __Kind<Kind = __MenuKind, Descriptor = ContextMenuHandl
     const METADATA: CommandMetadata;
     /// The declared `response`.
     const EPHEMERALITY: Ephemerality;
+    /// The declared `key = "…"`: the `ctxcmd.<key>.name` locale key
+    /// segment, if any.
+    const KEY: Option<&'static str> = None;
     /// The unit struct.
     fn __new() -> Self;
 }
@@ -343,6 +354,7 @@ where
             },
         )
         .__with_ephemerality(S::EPHEMERALITY)
+        .__with_key_opt(S::KEY)
     }
 }
 
@@ -360,6 +372,7 @@ where
             f(S::__new(), ctx, target, r)
         })
         .__with_ephemerality(S::EPHEMERALITY)
+        .__with_key_opt(S::KEY)
     }
 }
 

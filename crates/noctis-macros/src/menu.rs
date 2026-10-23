@@ -52,9 +52,13 @@ impl Menu {
 }
 
 /// Arguments later stories add.
-const PLANNED: [&str; 4] = ["key", "rate_limit", "flags", "apps"];
+const PLANNED: [&str; 3] = ["rate_limit", "flags", "apps"];
 
-const EXPECTED: &str = "expected `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+const EXPECTED: &str = "expected `key`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw` or `guilds`";
+
+const KEY_LITERAL: &str = "`key` takes a string literal";
+
+const KEY_SEGMENT: &str = "`key` is one locale key segment (ASCII letters, digits, `_`, `-`)";
 
 const NO_DESCRIPTION: &str = "[CTX-02] context-menu commands have no description";
 
@@ -63,6 +67,8 @@ struct Args {
     name: LitStr,
     handler: HandlerArgs,
     meta: MetaArgs,
+    /// `key = "…"`: the `ctxcmd.<key>.name` segment.
+    key: Option<String>,
 }
 
 /// The error of a menu attribute without its name.
@@ -94,6 +100,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         name,
         handler: HandlerArgs::default(),
         meta: MetaArgs::default(),
+        key: None,
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -110,7 +117,7 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         }
         match name.as_str() {
             "description" => return Err(syn::Error::new(span, NO_DESCRIPTION)),
-            "response" | "auto_defer" => {}
+            "response" | "auto_defer" | "key" => {}
             other if meta::is_meta(other) => {}
             planned if PLANNED.contains(&planned) => {
                 return Err(syn::Error::new(
@@ -132,6 +139,10 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
             ));
         }
         seen.push(name.clone());
+        if name == "key" {
+            parsed.key = Some(parse_key(&segment)?);
+            continue;
+        }
         if let Some(result) = parsed.handler.parse(&name, &segment) {
             result?;
             continue;
@@ -141,6 +152,24 @@ fn parse_args(menu: Menu, args: TokenStream) -> syn::Result<Args> {
         }
     }
     Ok(parsed)
+}
+
+/// `key = "<segment>"`.
+fn parse_key(segment: &[TokenTree]) -> syn::Result<String> {
+    let span = span_of(segment);
+    let lit = match segment {
+        [_, TokenTree::Punct(eq), rest @ ..] if eq.as_char() == '=' => {
+            syn::parse2::<LitStr>(rest.iter().cloned().collect()).ok()
+        }
+        _ => None,
+    }
+    .ok_or_else(|| syn::Error::new(span, KEY_LITERAL))?;
+    let key = lit.value();
+    if crate::common::is_key_segment(&key) {
+        Ok(key)
+    } else {
+        Err(syn::Error::new(lit.span(), KEY_SEGMENT))
+    }
 }
 
 /// CTX-01 on the name literal, then META-03, as one error.
@@ -217,6 +246,10 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
         args.meta.tokens()
     };
     let ephemerality = args.handler.ephemerality();
+    let key = args.key.as_ref().map_or_else(
+        || quote!(::core::option::Option::None),
+        |key| quote!(::core::option::Option::Some(#key)),
+    );
     let scaffolding =
         crate::kind::scaffolding(ident, crate::kind::Family::Menu, args.handler.manual);
     Ok(quote! {
@@ -226,6 +259,7 @@ pub(crate) fn derive(menu: Menu, input: &DeriveInput) -> syn::Result<TokenStream
             const MENU_NAME: &'static ::core::primitive::str = #menu_name;
             const METADATA: #core::CommandMetadata = #metadata;
             const EPHEMERALITY: #core::Ephemerality = #ephemerality;
+            const KEY: ::core::option::Option<&'static ::core::primitive::str> = #key;
 
             fn __new() -> Self {
                 Self
@@ -329,6 +363,24 @@ mod tests {
             .collect()
     }
 
+    /// Story 11.4 Matrix K1: `key = "…"` declares the locale key segment.
+    #[test]
+    fn key_declares_the_locale_key() {
+        let out = expand(
+            Menu::User,
+            quote!("Show profile", key = "show_profile"),
+            item(SHOW),
+        )
+        .unwrap()
+        .to_string();
+        assert!(out.contains("Option :: Some (\"show_profile\")"), "{out}");
+        let out = expand(Menu::User, quote!("Show profile"), item(SHOW))
+            .unwrap()
+            .to_string();
+        assert!(out.contains("const KEY"), "{out}");
+        assert!(out.contains("Option :: None"), "{out}");
+    }
+
     /// Matrix 36: metadata on menus.
     #[test]
     fn metadata_on_menus() {
@@ -420,6 +472,14 @@ mod tests {
                 quote!("X", dm_permission = false),
                 "[META-05] `dm_permission` is deprecated by Discord and not supported; use `contexts = [Guild]` to keep a command out of DMs".to_owned(),
             ),
+        ] {
+            assert_eq!(error(Menu::User, args.clone(), SHOW), expected, "{args}");
+        }
+        for (args, expected) in [
+            (quote!("X", key = x), KEY_LITERAL),
+            (quote!("X", key = "a.b"), KEY_SEGMENT),
+            (quote!("X", key = ""), KEY_SEGMENT),
+            (quote!("X", key), KEY_LITERAL),
         ] {
             assert_eq!(error(Menu::User, args.clone(), SHOW), expected, "{args}");
         }

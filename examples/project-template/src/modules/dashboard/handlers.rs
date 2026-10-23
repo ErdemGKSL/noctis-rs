@@ -24,15 +24,14 @@ use crate::strings::Strings;
 #[derive(SlashCommand, Debug)]
 #[command(
     "dashboard",
-    description = "Open the server dashboard",
     permissions = MANAGE_GUILD,
     contexts = [Guild],
 )]
 pub struct Dashboard {
-    /// The literal equals `cmd.dashboard.opt.module.description` in `locales/en-US.yaml`.
+    /// The description is `cmd.dashboard.opt.module.description` in `locales/en-US.yaml`.
     /// `autocomplete` pairs with the `#[autocomplete(module)]` method below (one without
     /// the other is an `[OPT-11]` error).
-    #[option(description = "Jump to a module's settings", autocomplete)]
+    #[option(autocomplete)]
     pub module: Option<String>,
 }
 

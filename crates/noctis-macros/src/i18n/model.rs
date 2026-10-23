@@ -4,13 +4,21 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
-use noctis_rules::{FRAMEWORK_KEYS, Locale, RuleId, placeholder_names};
+use noctis_rules::command::{LocalizedField, validate_localized, validate_localized_option_names};
+use noctis_rules::{FRAMEWORK_KEYS, Limits, Locale, RuleId, Violation, placeholder_names};
 use yaml_rust2::Yaml;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser, Tag};
 use yaml_rust2::scanner::{Marker, TScalarStyle};
 
 /// The root maps reserved for command and framework localization.
 const RESERVED: [&str; 4] = ["cmd", "cmdword", "ctxcmd", "noctis"];
+
+/// The `cmd.*` segments that end a Command Path (a Command word cannot be
+/// one of them when locale files are read).
+pub(crate) const COMMAND_KEY_WORDS: [&str; 3] = ["name", "description", "opt"];
+
+/// The most Command Path words a `cmd.*` key holds.
+const MAX_PATH_WORDS: usize = 3;
 
 /// Segments that cannot be accessor or parameter names.
 const FORBIDDEN: [&str; 3] = ["self", "super", "crate"];
@@ -390,6 +398,165 @@ fn is_reserved(key: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Command keys (Story 11.4)
+// ---------------------------------------------------------------------------
+
+/// What one `cmd.*`, `cmdword.*` or `ctxcmd.*` key localizes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandKey {
+    /// The field, which picks the LOC-02 rules.
+    field: LocalizedField,
+    /// For `cmd.<path>.opt.<o>.*`: `(cmd.<path>.opt, o)`.
+    option: Option<(String, String)>,
+    /// Whether it is `cmd.<path>.opt.<o>.name`.
+    option_name: bool,
+}
+
+/// The layout of a reserved command key: `Ok(None)` for content and
+/// `noctis.*` keys, the problem (naming the full key) for a key that does
+/// not fit its family.
+fn command_key(key: &str) -> Result<Option<CommandKey>, String> {
+    let segments: Vec<&str> = key.split('.').collect();
+    let plain = |field| {
+        Ok(Some(CommandKey {
+            field,
+            option: None,
+            option_name: false,
+        }))
+    };
+    match segments.first().copied() {
+        Some("cmdword") if segments.len() == 2 => plain(LocalizedField::Name),
+        Some("cmdword") => Err(format!(
+            "`{key}`: `cmdword.<word>` is a string (one Command word's translation)"
+        )),
+        Some("ctxcmd") if segments.len() == 3 && segments[2] == "name" => {
+            plain(LocalizedField::ContextMenuName)
+        }
+        Some("ctxcmd") => Err(format!(
+            "`{key}`: `ctxcmd.<key>` holds only `name` (a string)"
+        )),
+        Some("cmd") => {
+            let rest = &segments[1..];
+            let words = rest
+                .iter()
+                .take_while(|s| !COMMAND_KEY_WORDS.contains(s))
+                .count();
+            let layout = || {
+                format!(
+                    "`{key}` does not fit the `cmd` layout: a Command Path of 1 to {MAX_PATH_WORDS} words as nested maps, then `name`, `description`, `opt.<option>.name`, `opt.<option>.description` or `opt.<option>.choice.<value>`"
+                )
+            };
+            if words == 0 || words > MAX_PATH_WORDS {
+                return Err(layout());
+            }
+            let map = segments[..=words].join(".");
+            let option = |o: &str| Some((format!("{map}.opt"), o.to_owned()));
+            match &rest[words..] {
+                ["name"] => plain(LocalizedField::Name),
+                ["description"] => plain(LocalizedField::Description),
+                ["opt", o, "name"] => Ok(Some(CommandKey {
+                    field: LocalizedField::Name,
+                    option: option(o),
+                    option_name: true,
+                })),
+                ["opt", o, "description"] => Ok(Some(CommandKey {
+                    field: LocalizedField::Description,
+                    option: option(o),
+                    option_name: false,
+                })),
+                ["opt", o, "choice", _] => Ok(Some(CommandKey {
+                    field: LocalizedField::ChoiceName,
+                    option: option(o),
+                    option_name: false,
+                })),
+                _ => Err(layout()),
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+/// The command-key checks of one file: the layout problems (unprefixed)
+/// and the LOC-02 violations `(key, violation)`, in key order.
+fn command_checks(entries: &BTreeMap<String, String>) -> (Vec<String>, Vec<(String, Violation)>) {
+    let limits = Limits::default();
+    let mut layout = Vec::new();
+    let mut loc_02 = Vec::new();
+    for (key, value) in entries {
+        match command_key(key) {
+            Ok(None) => {}
+            Err(problem) => layout.push(problem),
+            Ok(Some(found)) => {
+                for violation in validate_localized(found.field, value, &limits) {
+                    loc_02.push((key.clone(), violation));
+                }
+            }
+        }
+    }
+    (layout, loc_02)
+}
+
+/// LOC-03 over every file: per `cmd.<path>.opt` map, the defaults are the
+/// sorted union of its option segments in every file, the localized names
+/// a file's `cmd.<path>.opt.<o>.name`.
+fn loc_03(parsed: &[Parsed], errors: &mut Vec<String>) {
+    let mut maps: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (_, _, entries) in parsed {
+        for key in entries.iter().flat_map(BTreeMap::keys) {
+            if let Ok(Some(CommandKey {
+                option: Some((map, option)),
+                ..
+            })) = command_key(key)
+            {
+                maps.entry(map).or_default().insert(option);
+            }
+        }
+    }
+    for (_, shown, entries) in parsed {
+        let Some(entries) = entries else { continue };
+        for (map, options) in &maps {
+            let defaults: Vec<&str> = options.iter().map(String::as_str).collect();
+            let keys: Vec<String> = defaults.iter().map(|o| format!("{map}.{o}.name")).collect();
+            let localized: Vec<Option<&str>> = keys
+                .iter()
+                .map(|k| entries.get(k).map(String::as_str))
+                .collect();
+            for (i, violation) in validate_localized_option_names(&defaults, &localized) {
+                errors.push(format!(
+                    "[{}] `{shown}`: `{}`: {violation}",
+                    RuleId::LOC_03,
+                    keys[i]
+                ));
+            }
+        }
+    }
+}
+
+/// Parses one locale file and runs every per-file `i18n!` check (YAML,
+/// keys, `noctis.*`, the command-key layout and LOC-02); its entries, or
+/// the first problem. What `#[command]` reads its default-locale file with.
+pub(crate) fn file_entries(text: &str) -> Result<BTreeMap<String, String>, String> {
+    let root = parse_yaml(text)?;
+    let mut walk = Walk {
+        entries: BTreeMap::new(),
+        errors: Vec::new(),
+    };
+    walk.map("", root, true);
+    framework_checks(&walk.entries, &mut walk.errors);
+    let (layout, loc_02) = command_checks(&walk.entries);
+    walk.errors.extend(layout);
+    walk.errors.extend(
+        loc_02
+            .into_iter()
+            .map(|(key, v)| format!("[{}] `{key}`: {v}", RuleId::LOC_02)),
+    );
+    match walk.errors.into_iter().next() {
+        Some(problem) => Err(problem),
+        None => Ok(walk.entries),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Placeholders
 // ---------------------------------------------------------------------------
 
@@ -514,17 +681,25 @@ pub(crate) fn compile(
                 };
                 walk.map("", root, true);
                 framework_checks(&walk.entries, &mut walk.errors);
+                let (layout, loc_02) = command_checks(&walk.entries);
+                walk.errors.extend(layout);
                 let ok = walk.errors.is_empty();
                 errors.extend(
                     walk.errors
                         .into_iter()
                         .map(|e| format!("i18n!: `{shown}`: {e}")),
                 );
+                errors.extend(
+                    loc_02
+                        .into_iter()
+                        .map(|(key, v)| format!("[{}] `{shown}`: `{key}`: {v}", RuleId::LOC_02)),
+                );
                 parsed.push((locale, shown, ok.then_some(walk.entries)));
             }
         }
     }
     parsed.sort_by_key(|(locale, ..)| Locale::ALL.iter().position(|l| l == locale));
+    loc_03(&parsed, &mut errors);
     let Some(default_index) = parsed.iter().position(|(l, ..)| *l == default) else {
         errors.push(format!(
             "i18n!: the default locale `{default}` has no file `{dir}/{default}.yaml`"
@@ -1196,6 +1371,127 @@ mod tests {
             [
                 "[LOC-04] `l/en-US.yaml` lacks 1 key(s) of the default locale `tr.yaml`: `a`; they fall back at runtime"
             ]
+        );
+    }
+
+    /// Story 11.4 Matrix Y1: the reserved command-key layout.
+    #[test]
+    fn command_key_layout() {
+        let p = "i18n!: `locales/en-US.yaml`: ";
+        let cmd = |key: &str| {
+            format!(
+                "{p}`{key}` does not fit the `cmd` layout: a Command Path of 1 to 3 words as nested maps, then `name`, `description`, `opt.<option>.name`, `opt.<option>.description` or `opt.<option>.choice.<value>`"
+            )
+        };
+        assert_eq!(err("cmd: {ban: {foo: x}}"), cmd("cmd.ban.foo"));
+        assert_eq!(
+            err("cmd: {a: {b: {c: {d: {description: x}}}}}"),
+            cmd("cmd.a.b.c.d.description")
+        );
+        assert_eq!(err("cmd: {name: x}"), cmd("cmd.name"));
+        assert_eq!(
+            err("cmd: {ban: {opt: {u: {min: x}}}}"),
+            cmd("cmd.ban.opt.u.min")
+        );
+        assert_eq!(
+            err("cmd: {ban: {opt: {u: {choice: x}}}}"),
+            cmd("cmd.ban.opt.u.choice")
+        );
+        assert_eq!(
+            err("cmdword: {x: {y: z}}"),
+            format!(
+                "{p}`cmdword.x.y`: `cmdword.<word>` is a string (one Command word's translation)"
+            )
+        );
+        assert_eq!(
+            err("ctxcmd: {k: {label: x}}"),
+            format!("{p}`ctxcmd.k.label`: `ctxcmd.<key>` holds only `name` (a string)")
+        );
+        // Y4: an option named `name` is legal.
+        let m = ok(&[(
+            "en-US.yaml",
+            "cmd: {profile: {description: P, opt: {name: {name: name, description: N}, c: {choice: {Red: Red, \"-1\": Minus}}}}}",
+        )]);
+        assert_eq!(m.files[0].entries["cmd.profile.opt.name.name"], "name");
+        assert!(
+            m.files[0]
+                .entries
+                .contains_key("cmd.profile.opt.c.choice.-1")
+        );
+    }
+
+    /// Story 11.4 Matrix Y2: LOC-02 over every reserved value.
+    #[test]
+    fn loc_02_reserved_values() {
+        let e = errs(&[("en-US.yaml", ""), ("tr.yaml", "cmdword: {ban: Yasakla}")]);
+        assert_eq!(
+            e,
+            [
+                "[LOC-02] `locales/tr.yaml`: `cmdword.ban`: [CMD-03] limit lowercase, actual `Yasakla`\n  = help: use `yasakla`"
+            ]
+        );
+        assert_eq!(
+            err("cmd: {ban: {description: \"\"}}"),
+            "[LOC-02] `locales/en-US.yaml`: `cmd.ban.description`: [CMD-04] limit between 1 and 100, actual 0"
+        );
+        let long = "a".repeat(33);
+        assert!(err(&format!("ctxcmd: {{show: {{name: {long}}}}}")).contains("[CTX-01]"),);
+        assert!(
+            err(&format!(
+                "cmd: {{c: {{opt: {{x: {{choice: {{a: \"{}\"}}}}}}}}}}",
+                "a".repeat(101)
+            ))
+            .contains("[OPT-09]")
+        );
+        assert!(
+            ok(&[("en-US.yaml", "ctxcmd: {show: {name: Show profile}}")])
+                .warnings
+                .is_empty()
+        );
+    }
+
+    /// Story 11.4 Matrix Y3: LOC-03 against the union of option segments.
+    #[test]
+    fn loc_03_localized_option_names() {
+        let e = errs(&[
+            (
+                "en-US.yaml",
+                "cmd: {ban: {opt: {user: {description: Who}}}}",
+            ),
+            ("tr.yaml", "cmd: {ban: {opt: {reason: {name: user}}}}"),
+        ]);
+        assert_eq!(
+            e,
+            [
+                "[LOC-03] `locales/tr.yaml`: `cmd.ban.opt.reason.name`: [CMD-06] user: limit unique option names, actual `user`\n  = note: equals the default name of the option at position 1"
+            ]
+        );
+        assert!(
+            errs(&[
+                ("en-US.yaml", "cmd: {ban: {opt: {user: {name: user}}}}"),
+                (
+                    "tr.yaml",
+                    "cmd: {ban: {opt: {user: {name: kullanici}, reason: {name: neden}}}}"
+                ),
+            ])
+            .is_empty()
+        );
+    }
+
+    /// Story 11.4: the single-file parse `#[command]` uses.
+    #[test]
+    fn single_file_entries() {
+        let entries = file_entries("cmd: {ping: {description: Pong}}").unwrap();
+        assert_eq!(entries["cmd.ping.description"], "Pong");
+        assert!(
+            file_entries("a: x\na: y")
+                .unwrap_err()
+                .contains("duplicated key in mapping at line 2")
+        );
+        assert!(
+            file_entries("cmdword: {ban: Yasakla}")
+                .unwrap_err()
+                .starts_with("[LOC-02] `cmdword.ban`")
         );
     }
 }

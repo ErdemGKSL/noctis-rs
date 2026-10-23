@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `979fbc7d51878f29f2daa23463728b408e22b1c36b8ae932c55efe1d9f705f07` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `d7e59c11f87d4536dc905bf15f8dfbcbcf2d23c307302326bd7fbed2a10a791f` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -123,7 +123,7 @@ pub fn render_dashboard(d: &DashData, s: &Strings, tab: DashTab, page: u16, limi
 
 // handlers.rs: the command is a struct (unit: no options); its handler is a method.
 #[derive(SlashCommand)]
-#[command("dashboard", description = "Open the server dashboard", permissions = MANAGE_GUILD, contexts = [Guild])]
+#[command("dashboard", permissions = MANAGE_GUILD, contexts = [Guild])]   // description: locales/en-US.yaml
 pub struct Dashboard;
 
 impl Dashboard {
@@ -150,7 +150,8 @@ modal handler, and `ctx.reply_text(key)` for a one-line ephemeral notice; each r
 Returning the `V2Message` still works. With the `i18n` feature the
 description comes from `cmd.dashboard.description` in `locales/en-US.yaml`; without it,
 write `description = "…"` in the attribute. A missing one is a compile error (CMD-04),
-and a literal that differs from the locale file is a compile error too.
+and a literal that differs from the locale file is a compile error too. Publish sends
+every locale file's names and descriptions as Discord localizations (`references/i18n.md` §4).
 
 ### 3.2 A button: struct, defaults, handler
 
