@@ -2,7 +2,8 @@
 title: 'Story 10.5: Per-job caps and admission control'
 type: 'feature'
 created: '2026-10-23'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '838a3815611456132544c5dcaa8bc7ec4d66d931'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
