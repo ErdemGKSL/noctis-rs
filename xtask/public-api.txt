@@ -2559,6 +2559,8 @@ pub noctis::image::AnimatedFormat::Apng
 pub noctis::image::AnimatedFormat::Gif
 pub noctis::image::AnimatedFormat::Webp
 pub noctis::image::AnimatedFormat::Webp::quality: u8
+impl noctis::image::AnimatedFormat
+pub const noctis::image::AnimatedFormat::DEFAULT: Self
 impl core::clone::Clone for noctis::image::AnimatedFormat
 pub fn noctis::image::AnimatedFormat::clone(&self) -> Self
 impl core::cmp::Eq for noctis::image::AnimatedFormat
@@ -2605,6 +2607,22 @@ pub fn noctis::image::Classes::default() -> Self
 impl core::fmt::Debug for noctis::image::Classes
 pub fn noctis::image::Classes::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::Classes
+pub struct noctis::image::EncodeSettings
+pub noctis::image::EncodeSettings::fps: core::option::Option<u16>
+pub noctis::image::EncodeSettings::frames: u32
+pub noctis::image::EncodeSettings::quality: core::option::Option<u8>
+pub noctis::image::EncodeSettings::size: noctis::image::Size
+impl core::clone::Clone for noctis::image::EncodeSettings
+pub fn noctis::image::EncodeSettings::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::EncodeSettings
+impl core::cmp::PartialEq for noctis::image::EncodeSettings
+pub fn noctis::image::EncodeSettings::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::EncodeSettings
+pub fn noctis::image::EncodeSettings::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::EncodeSettings
+pub fn noctis::image::EncodeSettings::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::EncodeSettings
+impl core::marker::StructuralPartialEq for noctis::image::EncodeSettings
 pub enum noctis::image::Format
 pub noctis::image::Format::Jpeg
 pub noctis::image::Format::Jpeg::quality: u8
@@ -2643,6 +2661,8 @@ pub struct noctis::image::ImageConfig
 impl noctis::image::ImageConfig
 pub fn noctis::image::ImageConfig::new() -> Self
 pub fn noctis::image::ImageConfig::queue_capacity(self, usize) -> Self
+pub fn noctis::image::ImageConfig::size_target(self, u64) -> Self
+pub fn noctis::image::ImageConfig::still_fallback(self, bool) -> Self
 pub fn noctis::image::ImageConfig::threads(self, usize) -> Self
 impl core::clone::Clone for noctis::image::ImageConfig
 pub fn noctis::image::ImageConfig::clone(&self) -> Self
@@ -2690,9 +2710,39 @@ pub fn noctis::image::Node::eq(&self, &Self) -> bool
 impl core::fmt::Debug for noctis::image::Node
 pub fn noctis::image::Node::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::Node
+impl core::convert::From<noctis::image::AnimatedFormat> for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::from(noctis::image::AnimatedFormat) -> Self
+impl core::convert::From<noctis::image::Format> for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::from(noctis::image::Format) -> Self
+pub enum noctis::image::OutputFormat
+pub noctis::image::OutputFormat::Apng
+pub noctis::image::OutputFormat::Gif
+pub noctis::image::OutputFormat::Jpeg
+pub noctis::image::OutputFormat::Png
+pub noctis::image::OutputFormat::Webp
+impl noctis::image::OutputFormat
+pub const fn noctis::image::OutputFormat::extension(self) -> &'static str
+impl core::clone::Clone for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::OutputFormat
+impl core::cmp::PartialEq for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::eq(&self, &Self) -> bool
+impl core::convert::From<noctis::image::AnimatedFormat> for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::from(noctis::image::AnimatedFormat) -> Self
+impl core::convert::From<noctis::image::Format> for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::from(noctis::image::Format) -> Self
+impl core::fmt::Debug for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::OutputFormat
+pub fn noctis::image::OutputFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::OutputFormat
+impl core::marker::StructuralPartialEq for noctis::image::OutputFormat
 #[non_exhaustive] pub enum noctis::image::RenderError
 pub noctis::image::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
 pub noctis::image::RenderError::NoRenderer
+pub noctis::image::RenderError::OverBudget
+pub noctis::image::RenderError::OverBudget::budget: u64
+pub noctis::image::RenderError::OverBudget::smallest: u64
 pub noctis::image::RenderError::Panicked
 pub noctis::image::RenderError::Panicked::message: alloc::string::String
 pub noctis::image::RenderError::QueueFull
@@ -2710,6 +2760,38 @@ impl core::fmt::Debug for noctis::image::RenderError
 pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::image::RenderError
 pub fn noctis::image::RenderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::image::RenderJob
+pub noctis::image::RenderJob::animation: core::option::Option<noctis::image::AnimationSpec>
+pub noctis::image::RenderJob::data: bytes::bytes::Bytes
+pub noctis::image::RenderJob::format: noctis::image::Format
+pub noctis::image::RenderJob::size: noctis::image::Size
+pub noctis::image::RenderJob::template_id: &'static str
+pub noctis::image::RenderJob::template_version: u32
+pub noctis::image::RenderJob::upload_budget: u64
+impl noctis::image::RenderJob
+pub const noctis::image::RenderJob::DEFAULT_UPLOAD_BUDGET: u64
+pub fn noctis::image::RenderJob::of<T: noctis::image::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
+impl core::clone::Clone for noctis::image::RenderJob
+pub fn noctis::image::RenderJob::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RenderJob
+impl core::cmp::PartialEq for noctis::image::RenderJob
+pub fn noctis::image::RenderJob::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::RenderJob
+pub fn noctis::image::RenderJob::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::RenderJob
+pub struct noctis::image::RenderOutput
+pub noctis::image::RenderOutput::bytes: bytes::bytes::Bytes
+pub noctis::image::RenderOutput::digest: [u8; 32]
+pub noctis::image::RenderOutput::format: noctis::image::OutputFormat
+pub noctis::image::RenderOutput::settings_used: noctis::image::EncodeSettings
+impl core::clone::Clone for noctis::image::RenderOutput
+pub fn noctis::image::RenderOutput::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RenderOutput
+impl core::cmp::PartialEq for noctis::image::RenderOutput
+pub fn noctis::image::RenderOutput::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::RenderOutput
+pub fn noctis::image::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::image::RenderOutput
 pub struct noctis::image::Size
 impl noctis::image::Size
 pub const fn noctis::image::Size::height(self) -> u32
@@ -3033,6 +3115,8 @@ pub noctis::ports::AnimatedFormat::Apng
 pub noctis::ports::AnimatedFormat::Gif
 pub noctis::ports::AnimatedFormat::Webp
 pub noctis::ports::AnimatedFormat::Webp::quality: u8
+impl noctis::ports::AnimatedFormat
+pub const noctis::ports::AnimatedFormat::DEFAULT: Self
 impl core::clone::Clone for noctis::ports::AnimatedFormat
 pub fn noctis::ports::AnimatedFormat::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::AnimatedFormat
@@ -3305,6 +3389,9 @@ pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, 
 #[non_exhaustive] pub enum noctis::ports::RenderError
 pub noctis::ports::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
 pub noctis::ports::RenderError::NoRenderer
+pub noctis::ports::RenderError::OverBudget
+pub noctis::ports::RenderError::OverBudget::budget: u64
+pub noctis::ports::RenderError::OverBudget::smallest: u64
 pub noctis::ports::RenderError::Panicked
 pub noctis::ports::RenderError::Panicked::message: alloc::string::String
 pub noctis::ports::RenderError::QueueFull
@@ -3329,7 +3416,9 @@ pub noctis::ports::RenderJob::format: noctis::image::Format
 pub noctis::ports::RenderJob::size: noctis::image::Size
 pub noctis::ports::RenderJob::template_id: &'static str
 pub noctis::ports::RenderJob::template_version: u32
+pub noctis::ports::RenderJob::upload_budget: u64
 impl noctis::ports::RenderJob
+pub const noctis::ports::RenderJob::DEFAULT_UPLOAD_BUDGET: u64
 pub fn noctis::ports::RenderJob::of<T: noctis::image::Template>(&T) -> core::result::Result<Self, noctis::ports::ValueError>
 impl core::clone::Clone for noctis::ports::RenderJob
 pub fn noctis::ports::RenderJob::clone(&self) -> Self
@@ -3342,8 +3431,8 @@ impl core::marker::StructuralPartialEq for noctis::ports::RenderJob
 pub struct noctis::ports::RenderOutput
 pub noctis::ports::RenderOutput::bytes: bytes::bytes::Bytes
 pub noctis::ports::RenderOutput::digest: [u8; 32]
-pub noctis::ports::RenderOutput::format: noctis::ports::OutputFormat
-pub noctis::ports::RenderOutput::settings_used: noctis::ports::EncodeSettings
+pub noctis::ports::RenderOutput::format: noctis::image::OutputFormat
+pub noctis::ports::RenderOutput::settings_used: noctis::image::EncodeSettings
 impl core::clone::Clone for noctis::ports::RenderOutput
 pub fn noctis::ports::RenderOutput::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::RenderOutput
@@ -3354,7 +3443,7 @@ pub fn noctis::ports::RenderOutput::fmt(&self, &mut core::fmt::Formatter<'_>) ->
 impl core::marker::StructuralPartialEq for noctis::ports::RenderOutput
 pub trait noctis::ports::Renderer: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescriptor]) -> core::result::Result<(), noctis::image::RenderError>
-pub fn noctis::ports::Renderer::render(&self, noctis::ports::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::RenderOutput, noctis::image::RenderError>>
+pub fn noctis::ports::Renderer::render(&self, noctis::image::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::RenderOutput, noctis::image::RenderError>>
 pub trait noctis::ports::SessionStore: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::SessionStore::delete<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::SessionStore::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>

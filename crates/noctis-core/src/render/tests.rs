@@ -16,6 +16,7 @@ use super::*;
 use crate::responder::Ephemerality;
 use crate::test_support::{Capture, Recording};
 use crate::{App, Runtime};
+use noctis_rules::Limits;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Card {
@@ -49,6 +50,7 @@ enum Answer {
     Unsupported,
     Failed,
     Panicked,
+    OverBudget,
 }
 
 /// A Renderer answering `answer` at once; it snapshots the metrics and
@@ -58,6 +60,8 @@ struct Fake {
     snapshotter: Option<Snapshotter>,
     /// `noctis_render_queue_depth` while rendering.
     depth: Mutex<Option<f64>>,
+    /// The `upload_budget` of the last job it received.
+    budget: Mutex<Option<u64>>,
 }
 
 impl Fake {
@@ -66,6 +70,7 @@ impl Fake {
             answer,
             snapshotter: None,
             depth: Mutex::new(None),
+            budget: Mutex::new(None),
         })
     }
 }
@@ -73,6 +78,7 @@ impl Fake {
 impl Renderer for Fake {
     fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
         tracing::info!(template = job.template_id, "fake renders");
+        *self.budget.lock().unwrap() = Some(job.upload_budget);
         if let Some(snapshotter) = &self.snapshotter {
             *self.depth.lock().unwrap() = gauge(snapshotter, "noctis_render_queue_depth");
         }
@@ -104,6 +110,10 @@ impl Renderer for Fake {
             Answer::Panicked => Err(RenderError::Panicked {
                 message: "boom".to_owned(),
             }),
+            Answer::OverBudget => Err(RenderError::OverBudget {
+                budget: 10,
+                smallest: 20,
+            }),
         };
         Box::pin(async move { result })
     }
@@ -115,7 +125,13 @@ impl Renderer for Fake {
 
 /// A test App with `renderer` and a recording Render sink.
 fn app(renderer: Option<Arc<Fake>>, sink: &Arc<Recording>) -> App {
+    app_with(renderer, sink, Limits::default())
+}
+
+/// [`app`] with `limits`.
+fn app_with(renderer: Option<Arc<Fake>>, sink: &Arc<Recording>, limits: Limits) -> App {
     let mut builder = App::builder();
+    builder.limits(limits);
     builder
         .runtime(&Runtime::for_test())
         .error_sink(ErrorOrigin::Render, Arc::clone(sink));
@@ -196,6 +212,7 @@ async fn ok_records_the_duration_and_the_depth() {
         answer: Answer::Ok,
         snapshotter: Some(snapshotter.clone()),
         depth: Mutex::new(None),
+        budget: Mutex::new(None),
     });
     let sink = Arc::new(Recording::default());
     let app = app(Some(Arc::clone(&fake)), &sink);
@@ -328,4 +345,47 @@ async fn renders_run_in_one_noctis_render_span() {
         "{}",
         lines[0]
     );
+}
+
+#[tokio::test]
+async fn a_detached_render_gets_the_app_attachment_limit() {
+    let sink = Arc::new(Recording::default());
+    let fake = Fake::new(Answer::Ok);
+    let app = app(Some(Arc::clone(&fake)), &sink);
+    render(&parts(&app), card()).await.unwrap();
+    assert_eq!(*fake.budget.lock().unwrap(), Some(20_971_520));
+
+    let fake = Fake::new(Answer::Ok);
+    let mut limits = Limits::default();
+    limits.attachment_bytes = 1000;
+    let app = app_with(Some(Arc::clone(&fake)), &sink, limits);
+    render(&parts(&app), card()).await.unwrap();
+    assert_eq!(*fake.budget.lock().unwrap(), Some(1000));
+}
+
+#[tokio::test]
+async fn over_budget_is_reported_without_a_rejected_reason() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _guard = metrics::set_default_local_recorder(&recorder);
+    let sink = Arc::new(Recording::default());
+    let app = app(Some(Fake::new(Answer::OverBudget)), &sink);
+    let err = render(&parts(&app), card()).await.unwrap_err();
+    assert!(matches!(
+        render_error(&err),
+        RenderError::OverBudget {
+            budget: 10,
+            smallest: 20
+        }
+    ));
+    let snapshot = snapshot_of(&snapshotter);
+    assert!(
+        !snapshot
+            .iter()
+            .any(|(n, ..)| n == "noctis_render_rejected_total")
+    );
+    let seen = sink.seen();
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0].origin, ErrorOrigin::Render);
+    assert_eq!(seen[0].kind, format!("error:{err}"));
 }

@@ -433,6 +433,7 @@ fn every_signature_is_callable_through_arc_dyn() {
         size: noctis_ports::Size::new(1, 1),
         format: noctis_ports::Format::Png,
         animation: None,
+        upload_budget: RenderJob::DEFAULT_UPLOAD_BUDGET,
     };
     assert!(matches!(
         now(renderer.render(job)),

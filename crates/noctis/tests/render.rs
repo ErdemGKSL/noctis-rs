@@ -1,5 +1,6 @@
-//! Story 10.3: `ImagePlugin`, `ImageConfig`, the render pool and the takumi
-//! Renderer through the facade, with derived Templates. The macros validate
+//! Stories 10.3 and 10.4: `ImagePlugin`, `ImageConfig`, the render pool, the
+//! takumi Renderer, animated output and the size budget through the facade,
+//! with derived Templates. The macros validate
 //! against this crate's `noctis-theme.css` (`--color-brand: #5865f2`).
 
 #![cfg(feature = "image")]
@@ -14,8 +15,8 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use noctis::image::{
-    AppBuilderImageExt, Classes, Format, Frame, ImageConfig, ImagePlugin, Node, RenderError, Style,
-    Template, TemplateView, Theme, div, theme, view,
+    AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Format, Frame, ImageConfig,
+    ImagePlugin, Node, RenderError, Style, Template, TemplateView, Theme, div, theme, view,
 };
 use noctis::ports::{EncodeSettings, ErasedView, OutputFormat, RenderJob, Size, ValueError};
 use noctis::{App, AppBuilder, BuildError, BuildViolation, Module, Runtime};
@@ -135,12 +136,36 @@ impl TemplateView for Gated {
 
 #[derive(Template, Serialize, Deserialize, Debug, Clone)]
 #[template(id = "spinner", version = 1, size = (2, 2), format = Png,
-           animation(duration_ms = 1000, fps = 10, format = Gif))]
+           animation(duration_ms = 500, fps = 10))]
 struct Spinner;
 
 impl TemplateView for Spinner {
     fn view(&self, _: Frame) -> Node {
         view! { <div /> }
+    }
+}
+
+/// 64×64 cells of 1 px in pseudo-random colors: incompressible output (its
+/// 32×32 PNG is well over 1024 bytes).
+#[derive(Template, Serialize, Deserialize, Debug, Clone)]
+#[template(id = "noise", version = 1, size = (64, 64), format = Png)]
+struct Noise;
+
+impl TemplateView for Noise {
+    fn view(&self, frame: Frame) -> Node {
+        let mut state = 0x2545_F491_u32 ^ frame.index;
+        let cells = (0..64 * 64).map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            div(Classes::default()).style(
+                Style::new()
+                    .width_px(1)
+                    .height_px(1)
+                    .bg_rgb(state & 0x00FF_FFFF),
+            )
+        });
+        view! { <div tw="flex flex-wrap w-full h-full">{cells.collect::<Vec<_>>()}</div> }
     }
 }
 
@@ -153,7 +178,7 @@ impl Template for Foreign {
     const VERSION: u32 = 1;
     const SIZE: Size = Size::new(2, 2);
     const FORMAT: Format = Format::Png;
-    const ANIMATION: Option<noctis::image::AnimationSpec> = None;
+    const ANIMATION: Option<AnimationSpec> = None;
 
     fn view() -> ErasedView {
         ErasedView::new(())
@@ -171,6 +196,8 @@ fn cards() -> Module {
         .template::<Dynamic>()
         .template::<Where>()
         .template::<Gated>()
+        .template::<Spinner>()
+        .template::<Noise>()
 }
 
 /// A builder on `runtime` with the test theme, `config` and [`cards`].
@@ -348,7 +375,7 @@ async fn apps_on_one_runtime_share_the_pool_and_conflict_on_another_config() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn register_rejects_foreign_and_animated_templates() {
+async fn register_rejects_foreign_templates() {
     let mut foreign = builder(&Runtime::for_test(), ImageConfig::new().threads(1));
     foreign.module(Module::new("foreign").template::<Foreign>());
     let err = foreign.build().unwrap_err();
@@ -357,17 +384,6 @@ async fn register_rejects_foreign_and_animated_templates() {
     };
     assert!(message.contains("`x`"), "{message}");
     assert!(message.contains("#[derive(Template)]"), "{message}");
-
-    let mut animated = builder(&Runtime::for_test(), ImageConfig::new().threads(1));
-    animated.module(Module::new("anim").template::<Spinner>());
-    let err = animated.build().unwrap_err();
-    let [BuildViolation::TemplateRejected { message }] = err.violations() else {
-        panic!("{err}");
-    };
-    assert!(
-        message.contains("animated Templates are not rendered yet"),
-        "{message}"
-    );
 }
 
 // ---- rendering ----
@@ -455,7 +471,7 @@ async fn min_size_canvas_limit_style_and_unicode() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn unknown_skewed_animated_and_bad_jobs_fail() {
+async fn unknown_skewed_frameless_and_bad_jobs_fail() {
     let app = app();
     let renderer = app.renderer().unwrap();
     let job = || RenderJob::of(&ada()).unwrap();
@@ -476,13 +492,17 @@ async fn unknown_skewed_animated_and_bad_jobs_fail() {
         skew,
         Err(RenderError::UnknownTemplate { version: 2, .. })
     ));
-    let animated = renderer
+    let frameless = renderer
         .render(RenderJob {
-            animation: Spinner::ANIMATION,
+            animation: Some(AnimationSpec::new(
+                Duration::from_secs(1),
+                0,
+                AnimatedFormat::DEFAULT,
+            )),
             ..job()
         })
         .await;
-    assert!(matches!(animated, Err(RenderError::Unsupported { .. })));
+    assert!(matches!(frameless, Err(RenderError::Unsupported { .. })));
 
     let mut trailing = job().data.to_vec();
     trailing.push(0);
@@ -586,4 +606,163 @@ async fn the_global_runtime_warns_on_unknown_dynamic_classes() {
         classes: "flx".to_owned(),
     };
     assert!(render(&app, &flx).await.is_ok());
+}
+
+// ---- Story 10.4: formats and the size budget ----
+
+#[tokio::test(flavor = "multi_thread")]
+async fn size_target_bounds() {
+    for target in [1024, u64::MAX] {
+        app_with(ImageConfig::new().threads(1).size_target(target));
+    }
+    let messages = plugin_messages(&build_err(ImageConfig::new().threads(1).size_target(1023)));
+    assert_eq!(
+        messages,
+        ["render size target 1023 is out of range: use at least 1024 bytes"]
+    );
+}
+
+#[test]
+fn budget_config_defaults() {
+    let debug = format!("{:?}", ImageConfig::new());
+    assert!(debug.contains("size_target: 2097152"), "{debug}");
+    assert!(debug.contains("still_fallback: true"), "{debug}");
+    assert_ne!(
+        ImageConfig::new().still_fallback(false),
+        ImageConfig::default()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn apps_differing_only_in_the_budget_share_one_pool() {
+    let runtime = Runtime::for_test();
+    let config = ImageConfig::new().threads(2).queue_capacity(8);
+    builder(&runtime, config.clone()).build().unwrap();
+    builder(
+        &runtime,
+        config.clone().size_target(4096).still_fallback(false),
+    )
+    .build()
+    .unwrap();
+    // A different pool config still conflicts, so the pool is the same one.
+    assert!(builder(&runtime, config.threads(3)).build().is_err());
+}
+
+#[test]
+fn the_animated_format_defaults_to_webp_80() {
+    let spec = Spinner::ANIMATION.unwrap();
+    assert_eq!(spec.format, AnimatedFormat::DEFAULT);
+    assert_eq!(spec.format, AnimatedFormat::Webp { quality: 80 });
+    assert_eq!((spec.duration, spec.fps), (Duration::from_millis(500), 10));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_derived_animation_renders_animated_webp() {
+    let app = app();
+    let out = render(&app, &Spinner).await.unwrap();
+    assert_eq!(&out.bytes[..4], b"RIFF");
+    assert_eq!(&out.bytes[8..12], b"WEBP");
+    assert!(out.bytes.windows(4).any(|w| w == b"ANIM"));
+    assert_eq!(out.format, OutputFormat::Webp);
+    assert_eq!(out.format.extension(), "webp");
+    assert_eq!(
+        out.settings_used,
+        EncodeSettings {
+            size: Size::new(2, 2),
+            quality: Some(80),
+            fps: Some(10),
+            frames: 5,
+        }
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_still_over_budget_is_resampled() {
+    let app = app();
+    let renderer = app.renderer().unwrap();
+    let full = render(&app, &Noise).await.unwrap();
+    let budget = full.bytes.len() as u64 - 1;
+    let out = renderer
+        .render(RenderJob {
+            upload_budget: budget,
+            ..RenderJob::of(&Noise).unwrap()
+        })
+        .await
+        .unwrap();
+    assert!(out.bytes.len() as u64 <= budget);
+    let size = out.settings_used.size;
+    assert!(
+        [Size::new(48, 48), Size::new(32, 32)].contains(&size),
+        "{size:?}"
+    );
+    let (w, h, _) = decode_png(&out.bytes);
+    assert_eq!(Size::new(w, h), size);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_size_target_wins_over_a_larger_upload_budget() {
+    let app = app_with(ImageConfig::new().threads(1).size_target(1024));
+    let job = RenderJob::of(&Noise).unwrap();
+    assert_eq!(job.upload_budget, RenderJob::DEFAULT_UPLOAD_BUDGET);
+    let err = app.renderer().unwrap().render(job).await.unwrap_err();
+    assert!(
+        matches!(err, RenderError::OverBudget { budget: 1024, smallest } if smallest > 1024),
+        "{err}"
+    );
+}
+
+#[cfg(feature = "image-gif")]
+mod gif {
+    use super::*;
+
+    #[derive(Template, Serialize, Deserialize, Debug, Clone)]
+    #[template(id = "gif", version = 1, size = (4, 4), format = Png,
+               animation(duration_ms = 500, fps = 10, format = Gif))]
+    struct Blink;
+
+    impl TemplateView for Blink {
+        fn view(&self, frame: Frame) -> Node {
+            let rgb = if frame.index.is_multiple_of(2) {
+                0xFF_0000
+            } else {
+                0x00_00FF
+            };
+            div(Classes::default())
+                .style(Style::new().width_pct(100.0).height_pct(100.0).bg_rgb(rgb))
+        }
+    }
+
+    #[derive(Template, Serialize, Deserialize, Debug, Clone)]
+    #[template(id = "apng", version = 1, size = (4, 4), format = Png,
+               animation(duration_ms = 500, fps = 10, format = Apng))]
+    struct Pulse;
+
+    impl TemplateView for Pulse {
+        fn view(&self, frame: Frame) -> Node {
+            Blink.view(frame)
+        }
+    }
+
+    fn gif_app() -> App {
+        let mut builder = builder(&Runtime::for_test(), ImageConfig::new().threads(1));
+        builder.module(Module::new("gif").template::<Blink>().template::<Pulse>());
+        builder.build().unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn gif_and_apng_render_with_image_gif() {
+        let app = gif_app();
+        let gif = render(&app, &Blink).await.unwrap();
+        assert_eq!(&gif.bytes[..6], b"GIF89a");
+        assert_eq!(gif.format, OutputFormat::Gif);
+        assert_eq!(gif.format.extension(), "gif");
+        assert_eq!(gif.settings_used.quality, None);
+        assert_eq!(gif.settings_used.frames, 5);
+
+        let apng = render(&app, &Pulse).await.unwrap();
+        assert_eq!(&apng.bytes[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(apng.bytes.windows(4).any(|w| w == b"acTL"));
+        assert_eq!(apng.format, OutputFormat::Apng);
+        assert_eq!(apng.format.extension(), "png");
+    }
 }

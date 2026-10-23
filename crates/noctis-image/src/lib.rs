@@ -7,8 +7,14 @@
 //!     [`IntoNodes`]), [`TemplateView`] and its [`ViewFn`] decoder, and the
 //!     runtime class check ([`ClassCheck`]);
 //!   - the takumi Renderer, which lowers a view's tree into takumi nodes,
-//!     applies the App's Theme and encodes the Template's still format, on
-//!     a process-scoped, bounded rayon render pool;
+//!     applies the App's Theme and encodes the Template's still format (PNG,
+//!     JPEG, WebP, lossless WebP) or its animation (animated WebP; GIF and
+//!     APNG with the `gif` feature), on a process-scoped, bounded rayon
+//!     render pool;
+//!   - the size budget: every output is fitted under
+//!     `min(RenderJob::upload_budget, ImageConfig::size_target)` by degrading
+//!     fps, then size, then quality, then (optionally) falling back to a
+//!     still frame; `RenderError::OverBudget` when nothing fits;
 //!   - [`ImageConfig`], [`ImagePlugin`] and [`AppBuilderImageExt`]
 //!     (`.image(..)`, `.theme(..)`), which install that Renderer.
 //!
@@ -17,6 +23,8 @@
 
 pub mod tw;
 
+#[cfg(feature = "render")]
+mod budget;
 #[cfg(feature = "render")]
 mod check;
 #[cfg(feature = "render")]
@@ -39,4 +47,6 @@ pub use node::{Classes, IntoNodes, Node, Style, Tag, div, span, text};
 #[cfg(feature = "render")]
 pub use plugin::{AppBuilderImageExt, ImageConfig, ImagePlugin};
 #[cfg(feature = "render")]
-pub use template::{TemplateView, ViewFn, decode_view, erased_view};
+pub use template::{
+    GifOutput, GifOutputFormat, TemplateView, ViewFn, decode_view, erased_view, require_gif_output,
+};

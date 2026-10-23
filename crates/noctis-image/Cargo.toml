@@ -20,13 +20,19 @@ render = [
   "dep:rayon",
   "dep:tokio",
   "dep:bytes",
+  "dep:image",
 ]
+# GIF and APNG output (the facade's `image-gif`). takumi-raster always links
+# its GIF/PNG encoders, so this gates Noctis code only.
+gif = ["render"]
 
 [dependencies]
 # `tw` and `tw::theme` (takumi-free, ungated): the theme parser and its digest.
 blake3.workspace = true
 bytes = { workspace = true, optional = true }
 cssparser.workspace = true
+# `render`: resamples rendered frames for the size budget's size steps.
+image = { workspace = true, optional = true }
 noctis-core = { workspace = true, optional = true }
 noctis-ports = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }

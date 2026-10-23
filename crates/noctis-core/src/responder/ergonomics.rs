@@ -461,7 +461,9 @@ macro_rules! ctx_methods {
             /// digest, to show in a Media Gallery or a Thumbnail. The
             /// render runs on the render pool, never on a tokio worker; a
             /// render slower than the ack deadline is covered by the
-            /// auto-defer.
+            /// auto-defer. The job's `upload_budget` is this interaction's
+            /// Upload Budget (its `attachment_size_limit`, else
+            /// `Limits::attachment_bytes`; ATT-01), which the Renderer fits.
             ///
             /// It runs in the `noctis.render{app, template}` span and
             /// records `noctis_render_duration_seconds`,
@@ -505,7 +507,8 @@ macro_rules! ctx_methods {
             /// `err.as_error().downcast_ref::<RenderError>()`): `NoRenderer`
             /// without a Renderer; `QueueFull` when the render queue is full
             /// (show a "busy" notice and retry later); `UnknownTemplate` for
-            /// a Template the App did not register; `Unsupported`; `Failed`
+            /// a Template the App did not register; `Unsupported`;
+            /// `OverBudget` when no encoding fits the Upload Budget; `Failed`
             /// for a render, encode or class-check failure; `Panicked` when
             /// the view panicked. Every one except `NoRenderer` and
             /// `QueueFull` is also reported to the Render Error Sink.

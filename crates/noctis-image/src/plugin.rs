@@ -16,9 +16,15 @@ const THREADS: std::ops::RangeInclusive<usize> = 1..=256;
 const QUEUE_CAPACITY: std::ops::RangeInclusive<usize> = 1..=4096;
 /// The default render queue capacity.
 const DEFAULT_QUEUE_CAPACITY: usize = 64;
+/// The smallest accepted size target in bytes.
+const MIN_SIZE_TARGET: u64 = 1024;
+/// The default size target: 2 MiB.
+pub(crate) const DEFAULT_SIZE_TARGET: u64 = 2_097_152;
 
-/// The render pool settings, frozen per process [`Runtime`]: every App on
-/// one Runtime must pass an equal config (another one is a
+/// The render settings of an App.
+///
+/// The render pool settings are frozen per process [`Runtime`]: every App on
+/// one Runtime must pass equal ones (another one is a
 /// `BuildViolation::ResourceConflict` naming the pool).
 ///
 /// - `threads` (1..=256): the pool's thread count; by default half the
@@ -27,6 +33,16 @@ const DEFAULT_QUEUE_CAPACITY: usize = 64;
 ///   once, queued plus running; one more fails at once with
 ///   `RenderError::QueueFull`.
 ///
+/// The size budget settings are per App; Apps differing only in them share
+/// one pool.
+///
+/// - `size_target` (at least 1024 bytes, default 2 MiB): every output fits
+///   `min(Upload Budget, size_target)`, degrading fps, then size, then
+///   quality, then (optionally) falling back to a still frame;
+///   `RenderError::OverBudget` when nothing fits.
+/// - `still_fallback` (default `true`): whether an animation that does not
+///   fit may fall back to a still frame as the ladder's last step.
+///
 /// Out-of-range values fail `App::build` with a plugin violation.
 ///
 /// [`Runtime`]: noctis_core::Runtime
@@ -34,7 +50,11 @@ const DEFAULT_QUEUE_CAPACITY: usize = 64;
 /// ```
 /// use noctis_image::ImageConfig;
 ///
-/// let config = ImageConfig::new().threads(2).queue_capacity(16);
+/// let config = ImageConfig::new()
+///     .threads(2)
+///     .queue_capacity(16)
+///     .size_target(1_048_576)
+///     .still_fallback(false);
 /// assert_ne!(config, ImageConfig::default());
 /// assert_eq!(ImageConfig::new(), ImageConfig::default());
 /// ```
@@ -42,11 +62,13 @@ const DEFAULT_QUEUE_CAPACITY: usize = 64;
 pub struct ImageConfig {
     threads: usize,
     queue_capacity: usize,
+    size_target: u64,
+    still_fallback: bool,
 }
 
 impl ImageConfig {
-    /// The defaults: half the available parallelism (at least 1) threads
-    /// and a queue of 64.
+    /// The defaults: half the available parallelism (at least 1) threads,
+    /// a queue of 64, a 2 MiB size target and the still fallback on.
     pub fn new() -> Self {
         // Clamped so a very large host never builds an out-of-range default.
         let threads = std::thread::available_parallelism()
@@ -54,6 +76,8 @@ impl ImageConfig {
         Self {
             threads,
             queue_capacity: DEFAULT_QUEUE_CAPACITY,
+            size_target: DEFAULT_SIZE_TARGET,
+            still_fallback: true,
         }
     }
 
@@ -68,6 +92,22 @@ impl ImageConfig {
     #[must_use]
     pub fn queue_capacity(mut self, queue_capacity: usize) -> Self {
         self.queue_capacity = queue_capacity;
+        self
+    }
+
+    /// The largest output in bytes, at least 1024 (default 2 MiB); a render
+    /// fits the smaller of it and the interaction's Upload Budget.
+    #[must_use]
+    pub fn size_target(mut self, bytes: u64) -> Self {
+        self.size_target = bytes;
+        self
+    }
+
+    /// Whether an animation that does not fit the size budget may fall back
+    /// to a still frame (default `true`).
+    #[must_use]
+    pub fn still_fallback(mut self, enabled: bool) -> Self {
+        self.still_fallback = enabled;
         self
     }
 
@@ -104,6 +144,8 @@ impl Plugin for ImagePlugin {
         let ImageConfig {
             threads,
             queue_capacity,
+            size_target,
+            still_fallback,
         } = self.config;
         let mut in_range = true;
         if !THREADS.contains(&threads) {
@@ -116,6 +158,12 @@ impl Plugin for ImagePlugin {
             in_range = false;
             app.report(BuildViolation::plugin::<Self>(format!(
                 "render pool queue capacity {queue_capacity} is out of range: use 1..=4096"
+            )));
+        }
+        if size_target < MIN_SIZE_TARGET {
+            in_range = false;
+            app.report(BuildViolation::plugin::<Self>(format!(
+                "render size target {size_target} is out of range: use at least 1024 bytes"
             )));
         }
         if !in_range {
@@ -156,6 +204,8 @@ impl Plugin for ImagePlugin {
             self.theme.clone(),
             stylesheet,
             mode,
+            size_target,
+            still_fallback,
         )));
     }
 }
@@ -184,7 +234,7 @@ mod sealed {
 /// # Ok::<(), noctis_image::tw::ThemeError>(())
 /// ```
 pub trait AppBuilderImageExt: sealed::Sealed {
-    /// Sets the render pool config of the App's [`ImagePlugin`].
+    /// Sets the render config of the App's [`ImagePlugin`].
     fn image(&mut self, config: ImageConfig) -> &mut Self;
 
     /// Sets the Theme the App's Renderer draws with.

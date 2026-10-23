@@ -16,8 +16,9 @@ default = []
 # Renderer and its render pool (noctis-image `render`); off by default. Needs a
 # C compiler: the WebP encoder (libwebp) is built from source.
 image = ["dep:noctis-image", "noctis-image/render", "noctis-macros/image"]
-# GIF/APNG output for rendered images.
-image-gif = []
+# GIF/APNG output for rendered images (implies `image`); without it a Template
+# declaring `Gif`/`Apng` is a compile error.
+image-gif = ["image", "noctis-image/gif"]
 # Twemoji colour emoji in image Templates.
 image-emoji = []
 # Bundled default font for image Templates.

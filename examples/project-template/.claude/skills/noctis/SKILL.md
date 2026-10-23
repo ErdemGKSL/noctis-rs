@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `47fac0071dbbc8622ab4865bbbce5b94e90e9017df2a90bf6d7eb2079a10c47c` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `21f1603608e134caf40c093074a5c8e03fff895686956d50a9ed6ba5c09b4b69` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -268,14 +268,23 @@ impl TemplateView for ProfileCard {
 // classes are checked at `cargo check` ([TW-01]) against noctis-theme.css ([TW-02]);
 // `<img>` and `#[asset] avatar: RemoteImage` are [planned, Stories 10.7-10.8].
 
+// animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
+// AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);
+// the view is then called once per Frame { index, count }.
+
 // the App needs a Renderer: `.theme(noctis::image::theme!())` and/or `.image(ImageConfig::new())`
-// (AppBuilderImageExt, in the prelude); with that takumi Renderer a hand-written or
-// animated Template fails the build with BuildViolation::TemplateRejected (a custom
+// (AppBuilderImageExt, in the prelude); with that takumi Renderer a hand-written
+// Template fails the build with BuildViolation::TemplateRejected (a custom
 // `.renderer(..)` decides itself; with no Renderer it only warns).
+// size budget: every render fits min(interaction's attachment_size_limit, which ctx.render
+// writes into RenderJob::upload_budget, ImageConfig::size_target (default 2 MiB)), lowering
+// fps, size, quality, then (ImageConfig::still_fallback, default on) a still frame;
+// RenderOutput::settings_used (EncodeSettings, through app.renderer()) says what was encoded.
 // in a handler (rendering is awaited in the handler, so auto-defer covers it):
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;
 // errors: err.as_error().downcast_ref::<RenderError>(): QueueFull (show a busy notice),
-// NoRenderer, UnknownTemplate, Unsupported, Failed, Panicked (see references/images.md §8).
+// NoRenderer, UnknownTemplate, Unsupported, OverBudget { budget, smallest } (cannot shrink
+// enough), Failed, Panicked (see references/images.md §8).
 // in the render function:
 let mut files = AttachmentSet::new();
 let card = files.add(data.card.clone());

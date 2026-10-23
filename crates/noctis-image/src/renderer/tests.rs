@@ -10,6 +10,7 @@ use noctis_ports::{AnimatedFormat, AnimationSpec, ErasedView, Size, Template};
 use serde::{Deserialize, Serialize};
 
 use super::*;
+use crate::budget::Attempt;
 use crate::pool::PoolConfig;
 use crate::{Classes, Node, Style, TemplateView, div, erased_view};
 
@@ -164,6 +165,15 @@ fn theme() -> Theme {
 }
 
 fn renderer_with(threads: usize, queue_capacity: usize, mode: ClassCheckMode) -> TakumiRenderer {
+    renderer_budget(threads, queue_capacity, mode, true)
+}
+
+fn renderer_budget(
+    threads: usize,
+    queue_capacity: usize,
+    mode: ClassCheckMode,
+    still_fallback: bool,
+) -> TakumiRenderer {
     let pool = Runtime::for_test()
         .resource_or_init::<RenderPool>(PoolConfig {
             threads,
@@ -172,7 +182,14 @@ fn renderer_with(threads: usize, queue_capacity: usize, mode: ClassCheckMode) ->
         .unwrap();
     let theme = theme();
     let stylesheet = theme_stylesheet(&theme).unwrap();
-    let renderer = TakumiRenderer::new(pool, theme, stylesheet, mode);
+    let renderer = TakumiRenderer::new(
+        pool,
+        theme,
+        stylesheet,
+        mode,
+        crate::plugin::DEFAULT_SIZE_TARGET,
+        still_fallback,
+    );
     renderer
         .register(&[
             TemplateDescriptor::of::<Card>(),
@@ -183,6 +200,9 @@ fn renderer_with(threads: usize, queue_capacity: usize, mode: ClassCheckMode) ->
             TemplateDescriptor::of::<Dynamic>(),
             TemplateDescriptor::of::<Where>(),
             TemplateDescriptor::of::<Gated>(),
+            TemplateDescriptor::of::<Noise>(),
+            TemplateDescriptor::of::<Recorder>(),
+            TemplateDescriptor::of::<Spinner>(),
         ])
         .unwrap();
     renderer
@@ -236,7 +256,7 @@ fn register_accepts_derived_still_templates() {
 }
 
 #[test]
-fn register_rejects_foreign_and_animated_views() {
+fn register_rejects_foreign_views_and_accepts_animated_ones() {
     let r = renderer();
     let foreign = r
         .register(&[
@@ -248,13 +268,7 @@ fn register_rejects_foreign_and_animated_views() {
         matches!(&foreign, RenderError::Unsupported { id, why } if id == "x" && why.contains("#[derive(Template)]")),
         "{foreign}"
     );
-    let animated = r
-        .register(&[TemplateDescriptor::of::<Spinner>()])
-        .unwrap_err();
-    assert!(
-        matches!(&animated, RenderError::Unsupported { id, why } if id == "spinner" && why.contains("not rendered yet")),
-        "{animated}"
-    );
+    assert!(r.register(&[TemplateDescriptor::of::<Spinner>()]).is_ok());
 }
 
 #[tokio::test]
@@ -345,7 +359,7 @@ async fn unicode_text_renders() {
 }
 
 #[tokio::test]
-async fn unknown_ids_versions_and_animated_jobs_fail() {
+async fn unknown_ids_and_versions_fail() {
     let r = renderer();
     let unknown = RenderJob {
         template_id: "nope",
@@ -362,14 +376,6 @@ async fn unknown_ids_versions_and_animated_jobs_fail() {
     assert!(matches!(
         r.render(skew).await,
         Err(RenderError::UnknownTemplate { id, version: 2 }) if id == "card"
-    ));
-    let animated = RenderJob {
-        animation: Spinner::ANIMATION,
-        ..card("Ada")
-    };
-    assert!(matches!(
-        r.render(animated).await,
-        Err(RenderError::Unsupported { id, .. }) if id == "card"
     ));
 }
 
@@ -494,4 +500,340 @@ fn the_theme_stylesheet_declares_every_token() {
         );
     }
     assert!(theme_stylesheet(&theme).is_ok());
+}
+
+/// A 64×64 Template of 1 px cells in pseudo-random colors: incompressible
+/// output. The colors also depend on the frame index, so every frame of an
+/// animated job differs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Noise {
+    seed: u32,
+}
+
+impl Template for Noise {
+    const ID: &'static str = "noise";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(64, 64);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = None;
+
+    fn view() -> ErasedView {
+        erased_view::<Self>()
+    }
+}
+
+impl TemplateView for Noise {
+    fn view(&self, frame: Frame) -> Node {
+        // xorshift32 with a fixed, never-zero seed.
+        let mut state = (self.seed ^ frame.index.wrapping_mul(0x9E37_79B9)) | 1;
+        let cells = (0..64 * 64).map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            div(Classes::default()).style(
+                Style::new()
+                    .width_px(1)
+                    .height_px(1)
+                    .bg_rgb(state & 0x00FF_FFFF),
+            )
+        });
+        div(Classes::__literal("flex flex-wrap w-full h-full")).children(cells)
+    }
+}
+
+/// Every frame the `Recorder` view saw, with its thread name.
+static FRAMES: Mutex<Vec<(Frame, String)>> = Mutex::new(Vec::new());
+
+/// A Template recording each [`Frame`] it is drawn with.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Recorder;
+
+impl Template for Recorder {
+    const ID: &'static str = "recorder";
+    const VERSION: u32 = 1;
+    const SIZE: Size = Size::new(2, 2);
+    const FORMAT: Format = Format::Png;
+    const ANIMATION: Option<AnimationSpec> = None;
+
+    fn view() -> ErasedView {
+        erased_view::<Self>()
+    }
+}
+
+impl TemplateView for Recorder {
+    fn view(&self, frame: Frame) -> Node {
+        let name = std::thread::current().name().unwrap_or("").to_owned();
+        FRAMES.lock().unwrap().push((frame, name));
+        div(Classes::__literal("w-full h-full bg-brand"))
+    }
+}
+
+const WEBP80: AnimatedFormat = AnimatedFormat::Webp { quality: 80 };
+
+fn noise(format: Format) -> RenderJob {
+    RenderJob {
+        format,
+        ..RenderJob::of(&Noise { seed: 0x2545_F491 }).unwrap()
+    }
+}
+
+/// Noise animated at `fps` for `ms` milliseconds as `format`.
+fn anim(fps: u16, ms: u64, format: AnimatedFormat) -> RenderJob {
+    RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_millis(ms), fps, format)),
+        ..noise(Format::Png)
+    }
+}
+
+fn with_budget(job: RenderJob, upload_budget: u64) -> RenderJob {
+    RenderJob {
+        upload_budget,
+        ..job
+    }
+}
+
+/// The length the renderer's per-attempt encoder gives `attempt` of `job`.
+fn encoded_len(r: &TakumiRenderer, job: &RenderJob, attempt: &Attempt) -> u64 {
+    let view = r.view_of(job).unwrap();
+    let bytes = r.shared.encoder(view, job).encode(attempt).unwrap();
+    bytes.len() as u64
+}
+
+fn attempt(fps: Option<u16>, side: u32, quality: Option<u8>, still: bool) -> Attempt {
+    Attempt {
+        fps,
+        size: Size::new(side, side),
+        quality,
+        still,
+    }
+}
+
+/// Whether `bytes` hold a RIFF chunk named `fourcc`.
+fn has_chunk(bytes: &[u8], fourcc: [u8; 4]) -> bool {
+    bytes.windows(4).any(|w| w == fourcc)
+}
+
+#[tokio::test]
+async fn a_still_over_budget_steps_down_its_size() {
+    let r = renderer();
+    let full = r.render(noise(Format::Png)).await.unwrap();
+    assert_eq!(full.settings_used.size, Size::new(64, 64));
+    let budget = full.bytes.len() as u64 - 1;
+    let out = r
+        .render(with_budget(noise(Format::Png), budget))
+        .await
+        .unwrap();
+    assert!(out.bytes.len() as u64 <= budget);
+    let size = out.settings_used.size;
+    assert!(
+        [Size::new(48, 48), Size::new(32, 32)].contains(&size),
+        "{size:?}"
+    );
+    let (w, h, _) = decode_png(&out.bytes);
+    assert_eq!((w, h), (size.width(), size.height()));
+    assert_eq!(out.settings_used.frames, 1);
+    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+}
+
+#[tokio::test]
+async fn a_lossy_still_steps_down_its_quality_after_its_size() {
+    let r = renderer();
+    let job = noise(Format::Jpeg { quality: 90 });
+    let smallest_q90 = encoded_len(&r, &job, &attempt(None, 32, Some(90), false));
+    let out = r.render(with_budget(job, smallest_q90 - 1)).await.unwrap();
+    assert!((out.bytes.len() as u64) < smallest_q90);
+    assert_eq!(out.settings_used.size, Size::new(32, 32));
+    let quality = out.settings_used.quality.unwrap();
+    assert!([75, 50, 25].contains(&quality), "{quality}");
+    assert_eq!(&out.bytes[..2], b"\xFF\xD8");
+}
+
+#[tokio::test]
+async fn nothing_fitting_is_over_budget() {
+    let r = renderer();
+    let err = r
+        .render(with_budget(noise(Format::Png), 10))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, RenderError::OverBudget { budget: 10, smallest } if smallest > 10),
+        "{err}"
+    );
+    // The smaller of the upload budget and the 2 MiB target wins.
+    let err = r
+        .render(with_budget(noise(Format::Png), 1024))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, RenderError::OverBudget { budget: 1024, smallest } if smallest > 1024),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+async fn renders_an_animated_webp() {
+    let r = renderer();
+    let out = r.render(anim(10, 500, WEBP80)).await.unwrap();
+    assert_eq!(&out.bytes[..4], b"RIFF");
+    assert_eq!(&out.bytes[8..12], b"WEBP");
+    assert!(has_chunk(&out.bytes, *b"ANIM"));
+    assert_eq!(out.format, noctis_ports::OutputFormat::Webp);
+    assert_eq!(out.format.extension(), "webp");
+    assert_eq!(
+        out.settings_used,
+        EncodeSettings {
+            size: Size::new(64, 64),
+            quality: Some(80),
+            fps: Some(10),
+            frames: 5,
+        }
+    );
+    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+}
+
+#[tokio::test]
+async fn the_view_is_called_once_per_frame_on_the_pool() {
+    let r = renderer();
+    FRAMES.lock().unwrap().clear();
+    let job = RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_millis(500), 10, WEBP80)),
+        ..RenderJob::of(&Recorder).unwrap()
+    };
+    r.render(job).await.unwrap();
+    let frames = std::mem::take(&mut *FRAMES.lock().unwrap());
+    let seen: Vec<Frame> = frames.iter().map(|(f, _)| *f).collect();
+    let expected: Vec<Frame> = (0..5).map(|index| Frame { index, count: 5 }).collect();
+    assert_eq!(seen, expected);
+    assert!(
+        frames.iter().all(|(_, n)| n.starts_with("noctis-render-")),
+        "{frames:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_animation_needs_frames() {
+    let r = renderer();
+    for (fps, duration) in [
+        (0, Duration::from_secs(1)),
+        (10, Duration::ZERO),
+        (10, Duration::from_micros(500)),
+    ] {
+        let job = RenderJob {
+            animation: Some(AnimationSpec::new(duration, fps, WEBP80)),
+            ..noise(Format::Png)
+        };
+        let err = r.render(job).await.unwrap_err();
+        assert!(
+            matches!(&err, RenderError::Unsupported { why, .. } if why.contains("fps >= 1")),
+            "{err}"
+        );
+    }
+}
+
+#[cfg(not(feature = "gif"))]
+#[tokio::test]
+async fn gif_and_apng_need_the_feature() {
+    let r = renderer();
+    for format in [AnimatedFormat::Gif, AnimatedFormat::Apng] {
+        let before = r.pool.admitted();
+        let future = r.render(anim(10, 500, format));
+        assert_eq!(r.pool.admitted(), before, "rejected before admission");
+        let err = future.await.unwrap_err();
+        assert!(
+            matches!(&err, RenderError::Unsupported { why, .. } if why.contains("image-gif")),
+            "{err}"
+        );
+    }
+}
+
+#[cfg(feature = "gif")]
+#[tokio::test]
+async fn renders_gif_and_apng() {
+    let r = renderer();
+    let gif = r.render(anim(10, 500, AnimatedFormat::Gif)).await.unwrap();
+    assert_eq!(&gif.bytes[..6], b"GIF89a");
+    assert_eq!(gif.format, noctis_ports::OutputFormat::Gif);
+    assert_eq!(gif.format.extension(), "gif");
+    assert_eq!(gif.settings_used.quality, None);
+    assert_eq!(gif.settings_used.frames, 5);
+
+    let apng = r.render(anim(10, 500, AnimatedFormat::Apng)).await.unwrap();
+    assert_eq!(&apng.bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert!(has_chunk(&apng.bytes, *b"acTL"));
+    assert_eq!(apng.format, noctis_ports::OutputFormat::Apng);
+    assert_eq!(apng.format.extension(), "png");
+    assert_eq!(apng.settings_used.quality, None);
+}
+
+#[tokio::test]
+async fn an_animation_over_budget_steps_down_its_fps() {
+    let r = renderer();
+    let full = r.render(anim(20, 1000, WEBP80)).await.unwrap();
+    assert_eq!(full.settings_used.fps, Some(20));
+    assert_eq!(full.settings_used.frames, 20);
+    let budget = full.bytes.len() as u64 - 1;
+    let out = r
+        .render(with_budget(anim(20, 1000, WEBP80), budget))
+        .await
+        .unwrap();
+    assert!(out.bytes.len() as u64 <= budget);
+    let fps = out.settings_used.fps.unwrap();
+    assert!(fps <= 10, "{fps}");
+    let frames = u32::try_from(budget::spans(Duration::from_secs(1), fps).len()).unwrap();
+    assert_eq!(out.settings_used.frames, frames);
+}
+
+/// The animation of the still-fallback rows. It runs 5 s rather than 1 s:
+/// at 1 s its smallest animated attempt (5 lossy frames of 32×32) is smaller
+/// than the lossless 32×32 PNG still, so no budget lies between them.
+fn long_anim() -> RenderJob {
+    anim(20, 5000, WEBP80)
+}
+
+/// The budget between the still fallback and the smallest animated attempt.
+fn still_only_budget(r: &TakumiRenderer, job: &RenderJob) -> u64 {
+    let attempts = budget::ladder(job, true);
+    let (still, animated) = attempts.split_last().unwrap();
+    assert!(still.still);
+    let smallest = animated
+        .iter()
+        .map(|a| encoded_len(r, job, a))
+        .min()
+        .unwrap();
+    // Draw at the fps the fallback follows (the last animated attempt's).
+    let view = r.view_of(job).unwrap();
+    let mut encoder = r.shared.encoder(view, job);
+    encoder.encode(animated.last().unwrap()).unwrap();
+    let still_len = encoder.encode(still).unwrap().len() as u64;
+    assert!(
+        still_len < smallest,
+        "still {still_len} vs animated {smallest}"
+    );
+    still_len
+}
+
+#[tokio::test]
+async fn an_animation_falls_back_to_a_still() {
+    let r = renderer();
+    let job = long_anim();
+    let budget = still_only_budget(&r, &job);
+    let out = r.render(with_budget(job, budget)).await.unwrap();
+    assert_eq!(out.settings_used.frames, 1);
+    assert_eq!(out.settings_used.fps, None);
+    assert_eq!(out.format, noctis_ports::OutputFormat::Png);
+    assert_eq!(out.format.extension(), "png");
+    let (w, h, _) = decode_png(&out.bytes);
+    assert_eq!(Size::new(w, h), out.settings_used.size);
+}
+
+#[tokio::test]
+async fn without_the_fallback_it_is_over_budget() {
+    let r = renderer_budget(2, 64, ClassCheckMode::Deny, false);
+    let job = long_anim();
+    let budget = still_only_budget(&renderer(), &job);
+    let err = r.render(with_budget(job, budget)).await.unwrap_err();
+    assert!(
+        matches!(err, RenderError::OverBudget { budget: b, .. } if b == budget),
+        "{err}"
+    );
 }

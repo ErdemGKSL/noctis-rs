@@ -97,10 +97,17 @@ pub struct RenderJob {
     pub format: Format,
     /// The animation, if any.
     pub animation: Option<AnimationSpec>,
+    /// The largest output in bytes the upload accepts (ATT-01).
+    pub upload_budget: u64,
 }
 
 impl RenderJob {
-    /// The job that renders `template`.
+    /// The [`upload_budget`](Self::upload_budget) [`RenderJob::of`] sets:
+    /// 20 MiB, Discord's default attachment limit.
+    pub const DEFAULT_UPLOAD_BUDGET: u64 = 20_971_520;
+
+    /// The job that renders `template`, with the
+    /// [`DEFAULT_UPLOAD_BUDGET`](Self::DEFAULT_UPLOAD_BUDGET).
     ///
     /// # Errors
     ///
@@ -114,6 +121,7 @@ impl RenderJob {
             size: T::SIZE,
             format: T::FORMAT,
             animation: T::ANIMATION,
+            upload_budget: Self::DEFAULT_UPLOAD_BUDGET,
         })
     }
 }
@@ -199,6 +207,11 @@ pub enum AnimatedFormat {
     Gif,
     /// Animated PNG.
     Apng,
+}
+
+impl AnimatedFormat {
+    /// The default animated format: animated WebP at quality 80.
+    pub const DEFAULT: Self = Self::Webp { quality: 80 };
 }
 
 /// How a Template animates.
@@ -329,6 +342,18 @@ pub enum RenderError {
         id: String,
         /// Why it is unsupported.
         why: Cow<'static, str>,
+    },
+    /// No encoding of the image fits the size budget, even after degrading
+    /// fps, size, quality and (when enabled) falling back to a still frame.
+    #[error(
+        "the rendered image does not fit the size budget: the smallest encoding is {smallest} \
+         bytes, the budget {budget} bytes"
+    )]
+    OverBudget {
+        /// The budget in bytes.
+        budget: u64,
+        /// The length of the smallest encoding tried, in bytes.
+        smallest: u64,
     },
     /// The render queue is full; retry later.
     #[error("render queue is full")]
@@ -546,6 +571,35 @@ mod tests {
         };
         assert_eq!(panicked.to_string(), "render panicked: boom");
         assert!(panicked.source().is_none());
+    }
+
+    #[test]
+    fn job_of_sets_the_default_upload_budget() {
+        let job = RenderJob::of(&card()).unwrap();
+        assert_eq!(job.upload_budget, RenderJob::DEFAULT_UPLOAD_BUDGET);
+        assert_eq!(RenderJob::DEFAULT_UPLOAD_BUDGET, 20_971_520);
+    }
+
+    #[test]
+    fn animated_format_default() {
+        assert_eq!(
+            AnimatedFormat::DEFAULT,
+            AnimatedFormat::Webp { quality: 80 }
+        );
+    }
+
+    #[test]
+    fn render_error_over_budget() {
+        let err = RenderError::OverBudget {
+            budget: 10,
+            smallest: 20,
+        };
+        assert_eq!(
+            err.to_string(),
+            "the rendered image does not fit the size budget: the smallest encoding is 20 bytes, \
+             the budget 10 bytes"
+        );
+        assert!(err.source().is_none());
     }
 
     #[test]

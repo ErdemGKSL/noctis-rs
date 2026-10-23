@@ -282,10 +282,12 @@ pub fn on_expired(args: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 /// `#[derive(Template)]` with `#[template(id = "..", version = N, size = (w,
-/// h), format = ..[, animation(duration_ms = .., fps = .., format = ..)])]`:
+/// h), format = ..[, animation(duration_ms = .., fps = ..[, format = ..])])]`:
 /// implements `noctis::image::Template` (AD-22). Keys, forms and ranges are
-/// checked at expansion (an animated format in `format` is ATT-07); generic
-/// structs, `HashMap`/`HashSet` fields and `#[asset]` fields are errors.
+/// checked at expansion (an animated format in `format` is ATT-07); the
+/// animated `format` defaults to `Webp { quality: 80 }`, and `Gif`/`Apng`
+/// compile only with the `image-gif` feature. Generic structs,
+/// `HashMap`/`HashSet` fields and `#[asset]` fields are errors.
 #[cfg(feature = "image")]
 #[proc_macro_derive(Template, attributes(template, asset))]
 pub fn derive_template(input: TokenStream) -> TokenStream {

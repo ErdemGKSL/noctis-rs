@@ -25,3 +25,15 @@ fn setters_replace_one_field() {
     );
     assert_eq!(config.clone().threads(3), config);
 }
+
+#[test]
+fn budget_defaults_and_setters() {
+    let config = ImageConfig::new();
+    assert_eq!(config.size_target, DEFAULT_SIZE_TARGET);
+    assert_eq!(DEFAULT_SIZE_TARGET, 2_097_152);
+    assert!(config.still_fallback);
+    let changed = ImageConfig::new().size_target(4096).still_fallback(false);
+    assert_eq!((changed.size_target, changed.still_fallback), (4096, false));
+    // The size budget is not part of the pool config, so such Apps share a pool.
+    assert_eq!(changed.pool_config(), config.pool_config());
+}

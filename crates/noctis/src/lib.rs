@@ -563,7 +563,10 @@
 //!   the Theme (`theme!`), and the takumi Renderer with its bounded render
 //!   pool (`.theme(..)`/`.image(..)`, `ctx.render`). It needs a C compiler:
 //!   the WebP encoder (libwebp) is built from source.
-//! - `image-gif`: GIF/APNG output for rendered images.
+//! - `image-gif` (implies `image`): GIF and APNG output for animated
+//!   Templates. Without it, `animation(.., format = Gif)` or `Apng` is a
+//!   compile error naming the feature; the default animated format,
+//!   animated WebP, needs only `image`.
 //! - `image-emoji`: Twemoji colour emoji in image Templates.
 //! - `default-font`: a bundled default font for image Templates.
 //! - `i18n`: typed locale files: the `i18n!` macro and the `i18n` module
@@ -2014,8 +2017,10 @@ pub mod image {
 
     /// `#[derive(Template)]`: implements [`Template`] from
     /// `#[template(id = "..", version = N, size = (w, h), format = ..[,
-    /// animation(duration_ms = .., fps = .., format = ..)])]`, checked at
-    /// `cargo check`. `Serialize` and `Deserialize` are required too.
+    /// animation(duration_ms = .., fps = ..[, format = ..])])]`, checked at
+    /// `cargo check`; the animated `format` defaults to
+    /// [`AnimatedFormat::DEFAULT`], and `Gif`/`Apng` need `image-gif`.
+    /// `Serialize` and `Deserialize` are required too.
     pub use noctis_macros::Template;
     /// `theme!()`: the crate's `noctis-theme.css` as a [`Theme`], validated
     /// at `cargo check` (`[TW-02]`); `theme!("path")` reads a file relative
@@ -2035,8 +2040,8 @@ pub mod image {
     pub use noctis_image::{AppBuilderImageExt, ImageConfig, ImagePlugin};
     pub use noctis_image::{Classes, IntoNodes, Node, Style, Tag, TemplateView, div, span, text};
     pub use noctis_ports::{
-        AnimatedFormat, AnimationSpec, Format, Frame, RenderError, Size, Template,
-        TemplateDescriptor,
+        AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderError,
+        RenderJob, RenderOutput, Size, Template, TemplateDescriptor,
     };
 
     pub mod unstable {

@@ -369,8 +369,7 @@ pub enum BuildViolation {
     },
     /// The App's Renderer rejected the registered Templates at `App::build`
     /// (`Renderer::register`): for the takumi Renderer, a Template whose view
-    /// was not made by `#[derive(Template)]`, or an animated one (not
-    /// rendered yet).
+    /// was not made by `#[derive(Template)]`.
     ///
     /// ```
     /// use noctis_core::BuildViolation;

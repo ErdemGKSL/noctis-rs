@@ -43,7 +43,8 @@ pub(crate) enum Animated {
     Apng,
 }
 
-/// `animation(duration_ms = .., fps = .., format = ..)`.
+/// `animation(duration_ms = .., fps = ..[, format = ..])`; `format`
+/// defaults to `Webp { quality: 80 }`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Animation {
     pub(crate) duration_ms: u32,
@@ -159,6 +160,19 @@ fn emit(ident: &Ident, settings: &Settings) -> TokenStream {
         }
         Still::WebpLossless => quote!(#ports::Format::WebpLossless),
     };
+    // `Gif`/`Apng` compile only with `image-gif`: the gate trait is
+    // implemented only then, and its `on_unimplemented` names the feature.
+    let gif_gate = match settings.animation {
+        Some(Animation {
+            format: Animated::Gif | Animated::Apng,
+            ..
+        }) => quote! {
+            const _: () = ::noctis::__private::image::require_gif_output::<
+                ::noctis::__private::image::GifOutputFormat,
+            >();
+        },
+        _ => TokenStream::new(),
+    };
     let animation = match settings.animation {
         None => quote!(::core::option::Option::None),
         Some(a) => {
@@ -191,6 +205,7 @@ fn emit(ident: &Ident, settings: &Settings) -> TokenStream {
                 ::noctis::__private::image::erased_view::<Self>()
             }
         }
+        #gif_gate
     }
 }
 
@@ -352,7 +367,6 @@ fn parse_animation(
     for (name, form) in [
         ("duration_ms", "duration_ms = <milliseconds>"),
         ("fps", "fps = <frames per second>"),
-        ("format", "format = Webp { quality: 80 }"),
     ] {
         if !seen.iter().any(|s| s == name) {
             errors.push(syn::Error::new(
@@ -373,10 +387,11 @@ fn parse_animation(
         return Ok(Err(errors));
     }
     match (duration, fps, format) {
-        (Some(duration_ms), Some((fps, _)), Some(format)) => Ok(Ok(Animation {
+        // `format` defaults to `AnimatedFormat::DEFAULT` (animated WebP, 80).
+        (Some(duration_ms), Some((fps, _)), format) => Ok(Ok(Animation {
             duration_ms,
             fps,
-            format,
+            format: format.unwrap_or(Animated::Webp(80)),
         })),
         _ => Ok(Err(vec![syn::Error::new(
             key.span(),

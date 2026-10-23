@@ -2986,6 +2986,71 @@ mod locales;
 mod middleware;
 mod refs;
 
+/// Story 10.4: `ctx.render` hands the Renderer the interaction's
+/// `attachment_size_limit` as the job's Upload Budget (ATT-01).
+#[tokio::test]
+async fn render_gets_the_interaction_upload_budget() {
+    use noctis_ports::{
+        AnimationSpec, BoxFuture, ErasedView, Format, RenderError, RenderJob, RenderOutput,
+        Renderer, Size, Template, TemplateDescriptor,
+    };
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Dot;
+
+    impl Template for Dot {
+        const ID: &'static str = "dot";
+        const VERSION: u32 = 1;
+        const SIZE: Size = Size::new(1, 1);
+        const FORMAT: Format = Format::Png;
+        const ANIMATION: Option<AnimationSpec> = None;
+
+        fn view() -> ErasedView {
+            ErasedView::new(())
+        }
+    }
+
+    /// Records each job's budget and answers `QueueFull` (never reported).
+    #[derive(Default)]
+    struct Budgets(Mutex<Vec<u64>>);
+
+    impl Renderer for Budgets {
+        fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+            self.0.lock().unwrap().push(job.upload_budget);
+            Box::pin(async { Err(RenderError::QueueFull) })
+        }
+
+        fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+            Ok(())
+        }
+    }
+
+    let budgets = Arc::new(Budgets::default());
+    let handler = CommandHandler::__new_plain(
+        "m::dot",
+        &["dot"],
+        "d",
+        |ctx: CommandCtx, _: CommandResponder| async move {
+            assert!(ctx.render(Dot).await.is_err());
+            Ok(v2("ok"))
+        },
+    );
+    let renderer = Arc::clone(&budgets);
+    let p = Pipeline::start_with(Module::new("m").__add(handler), move |b| {
+        b.renderer(renderer);
+    })
+    .await;
+    p.run(inbound(&interaction(
+        slash("dot", json!([])),
+        json!({ "attachment_size_limit": 10_485_760 }),
+    )))
+    .await;
+    p.run(inbound(&interaction(slash("dot", json!([])), json!({}))))
+        .await;
+    assert_eq!(*budgets.0.lock().unwrap(), [10_485_760, 20_971_520]);
+    assert!(p.reports().is_empty());
+}
+
 /// Story 9.1 Matrix 22 through the pipeline: the raw interaction's
 /// `attachment_size_limit` becomes the Upload Budget, and a file over it
 /// fails ATT-01 with that bound before any request carries it.

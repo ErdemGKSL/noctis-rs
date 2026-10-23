@@ -91,3 +91,25 @@ pub fn decode_view<T: Template + TemplateView>(
     let value = decode_template::<T>(data).map_err(RenderError::failed)?;
     Ok(value.view(frame))
 }
+
+/// The marker type the GIF/APNG gate of `#[derive(Template)]` checks.
+#[doc(hidden)]
+#[derive(Debug)]
+pub enum GifOutputFormat {}
+
+/// Implemented only with the `gif` feature (the facade's `image-gif`), so a
+/// Template declaring `Gif`/`Apng` output fails to compile without it.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "GIF and APNG output need the `image-gif` feature of `noctis`",
+    label = "animated format `Gif`/`Apng`",
+    note = "enable it: noctis = {{ version = \"..\", features = [\"image-gif\"] }}; or use `format = Webp {{ quality: 80 }}` (the default)"
+)]
+pub trait GifOutput {}
+
+#[cfg(feature = "gif")]
+impl GifOutput for GifOutputFormat {}
+
+/// Compiles only when `T` is [`GifOutput`]; the derive calls it in a `const`.
+#[doc(hidden)]
+pub const fn require_gif_output<T: GifOutput>() {}

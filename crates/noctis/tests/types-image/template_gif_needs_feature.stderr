@@ -1,0 +1,14 @@
+error[E0277]: GIF and APNG output need the `image-gif` feature of `noctis`
+ --> tests/types-image/template_gif_needs_feature.rs:6:10
+  |
+6 | #[derive(Template, Serialize, Deserialize)]
+  |          ^^^^^^^^ animated format `Gif`/`Apng`
+  |
+  = help: the trait `noctis::__private::noctis_image::template::GifOutput` is not implemented for `noctis::__private::noctis_image::template::GifOutputFormat`
+  = note: enable it: noctis = { version = "..", features = ["image-gif"] }; or use `format = Webp { quality: 80 }` (the default)
+note: required by a bound in `noctis::__private::noctis_image::template::require_gif_output`
+ --> $WORKSPACE/crates/noctis-image/src/template.rs
+  |
+  | pub const fn require_gif_output<T: GifOutput>() {}
+  |                                    ^^^^^^^^^ required by this bound in `require_gif_output`
+  = note: this error originates in the derive macro `Template` (in Nightly builds, run with -Z macro-backtrace for more info)

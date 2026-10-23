@@ -1599,6 +1599,13 @@ impl Shared {
         }
     }
 
+    /// The Upload Budget of one file (ATT-01): the interaction's
+    /// `attachment_size_limit`, else `Limits::attachment_bytes`; the rule
+    /// `Files::finish` checks.
+    pub(crate) fn upload_budget(&self) -> usize {
+        self.file_limit().unwrap_or(self.limits.attachment_bytes)
+    }
+
     /// Builds one send of the prepared `msg`: `json` is its message object
     /// (callback `data`, a follow-up, or a Create or Edit body), `known`
     /// the edit target's attachments (`None` for a new message) and

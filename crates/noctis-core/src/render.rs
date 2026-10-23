@@ -39,7 +39,15 @@ pub(crate) async fn render<T: Template>(
     let span = tracing::info_span!("noctis.render", app = %app.app, template = T::ID);
     async {
         let result = match RenderJob::of(&template) {
-            Ok(job) => render_job(&app.app, renderer.as_ref(), T::ID, job).await,
+            Ok(mut job) => {
+                // The render fits what this interaction's upload accepts (ATT-01).
+                let budget = inner
+                    .shared
+                    .as_ref()
+                    .map_or(app.limits.attachment_bytes, |s| s.upload_budget());
+                job.upload_budget = u64::try_from(budget).unwrap_or(u64::MAX);
+                render_job(&app.app, renderer.as_ref(), T::ID, job).await
+            }
             Err(error) => Err(RenderError::failed(error)),
         };
         result.map_err(|error| fail(inner, app, error))
@@ -87,7 +95,8 @@ impl Drop for InFlight {
     }
 }
 
-/// Counts and reports `error`, then wraps it for the handler.
+/// Counts and reports `error`, then wraps it for the handler. `OverBudget`
+/// is handled like `Failed`: reported, with no rejected-metric reason.
 fn fail(inner: &CtxInner, app: &AppShared, error: RenderError) -> HandlerError {
     let reason = match &error {
         RenderError::QueueFull => Some("queue_full"),

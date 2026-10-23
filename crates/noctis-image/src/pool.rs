@@ -78,6 +78,12 @@ impl Drop for Release {
 }
 
 impl RenderPool {
+    /// The jobs admitted now, queued plus running.
+    #[cfg(all(test, not(feature = "gif")))]
+    pub(crate) fn admitted(&self) -> usize {
+        self.admitted.load(Ordering::Acquire)
+    }
+
     /// rayon's error when the pool could not be built.
     pub(crate) fn build_error(&self) -> Option<&str> {
         self.pool.as_ref().err().map(String::as_str)

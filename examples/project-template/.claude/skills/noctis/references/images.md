@@ -75,7 +75,7 @@ compile.
 | `version` | an integer literal `0..=4294967295` (`u32`, suffix `u32` allowed); **bump whenever the data or `view` changes**, or cached images go stale |
 | `size` | `(width, height)` integer literals, each `1..=4294967295` px |
 | `format` | the still encoding: `Png`, `Jpeg { quality: 1..=100 }`, `Webp { quality: 1..=100 }` or `WebpLossless` (`Gif`/`Apng` are not still formats) |
-| `animation(..)` | optional: `duration_ms = 1..`, `fps = 1..=90` (`1..=50` for `Gif`), `format = Webp { quality } \| Gif \| Apng`; renders animated by default |
+| `animation(..)` | optional: `duration_ms = 1..`, `fps = 1..=90` (`1..=50` for `Gif`), optional `format = Webp { quality } \| Gif \| Apng` (default `Webp { quality: 80 }`, `AnimatedFormat::DEFAULT`); `Gif`/`Apng` need the `image-gif` feature, else a compile error naming it; renders animated by default |
 
 The item must be a struct (named, tuple or unit) without generics or lifetimes. Data
 must serialize deterministically (it is part of the render cache key): a field whose
@@ -260,7 +260,10 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
 
 - `ctx.render(t).await?` (on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx` and
   `ExpiredCtx`) returns an `Attachment` named by the output digest
-  (`<16 hex>.png`/`.jpg`/`.webp`) in the Template's still `format`. Always render **in
+  (`<16 hex>.png`/`.jpg`/`.webp`) in the Template's still `format`; an animated
+  Template (`animation(..)`) renders animated, ext `webp` (default), `gif` or `png`
+  (APNG). The output always fits the size budget (below), so it never fails ATT-01 at
+  upload. Always render **in
   the handler**, never in a render function; the auto-defer covers a render slower
   than the ack deadline (type 5, then the edit carrying the file).
 - Errors are a `HandlerError` wrapping a `RenderError`, found with
@@ -269,7 +272,12 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   - `NoRenderer`: no `.theme(..)`/`.image(..)` on the builder;
   - `UnknownTemplate { id, version }`: not registered with `Module::template` (or a
     version skew);
-  - `Unsupported { id, why }`: animated Templates are not rendered yet;
+  - `Unsupported { id, why }`: an animation with `fps` 0 or a duration under 1 ms, or
+    GIF/APNG output without `image-gif` (a hand-built `RenderJob`; the derive already
+    refuses both at compile time);
+  - `OverBudget { budget, smallest }`: even the smallest encoding of the size budget's
+    ladder (`smallest` bytes) is over `budget`; shrink the Template, lower its size or
+    quality, or keep `still_fallback` on;
   - `Failed(source)`: decode, class check (Deny), takumi or encode failure (a canvas
     over 64 MP fails here);
   - `Panicked { message }`: the view panicked; the pool survives.
@@ -279,16 +287,21 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   out-of-range values fail `App::build` with a plugin violation. Renders run on this
   dedicated rayon pool (`noctis-render-<i>` threads), never on tokio workers or rayon's
   global pool.
+- The size budget per App: `ImageConfig::new().size_target(1_048_576)` (bytes, at
+  least 1024, default 2 MiB = 2_097_152; below 1024 `App::build` fails with the plugin
+  violation `render size target {n} is out of range: use at least 1024 bytes`) and
+  `.still_fallback(false)` (default `true`). These two are not pool settings: Apps
+  differing only in them share one pool.
 - The pool is **process-scoped**: every App on one `Runtime` shares it, so they must
-  pass an equal `ImageConfig`; another one fails `build` with
+  pass equal `threads` and `queue_capacity`; another one fails `build` with
   `BuildViolation::ResourceConflict` naming `RenderPool`. Each `Runtime::for_test()`
   has its own pool.
 - `ImagePlugin` is added by `AppBuilderImageExt::image`/`theme` (each call updates
   the one plugin; the last call of each kind wins, order does not matter, never a
   `DuplicatePlugin`). `app.has_renderer()` / `app.renderer()` expose the result.
 - At `App::build` the Renderer receives every `Module::template` registration; a
-  hand-written `Template` (view not from `#[derive(Template)]`) or an animated one fails
-  the build with `BuildViolation::TemplateRejected`. Templates registered without any
+  hand-written `Template` (view not from `#[derive(Template)]`) fails the build with
+  `BuildViolation::TemplateRejected`. Templates registered without any
   Renderer only log a warning on target `noctis::render`.
 - The Render Error Sink (`error_sink(ErrorOrigin::Render, ..)`) gets every render
   failure (`ReportKind::Error`) and panic (`ReportKind::Panic`), except `QueueFull` and
@@ -304,8 +317,8 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
 - Planned: `ctx.render_with(t, RenderOptions::new().animation(..))` and
   `render_report()` [planned, Story 10.6]; per-job caps (≤ 4 MP per job, ≤ 1 MP per
   frame, ≤ 90 frames, ≤ 6 s; fps ≤ 50 GIF, ≤ 90 WebP/APNG), admission weighting and
-  skipping a job whose interaction is gone [planned, Story 10.5]; the size budget
-  [planned, Story 10.4].
+  skipping a job whose interaction is gone [planned, Story 10.5]. Until 10.5, a
+  Template with a large `duration_ms × fps` draws every frame in memory.
 
 ### Animation
 
@@ -314,18 +327,55 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   theme. Render with an animated `format`, `fps` and `duration`.
 - Code-driven: one data value, one Template state per frame. The view receives
   `Frame { index, count }` and computes that frame's state, for example
-  `let value = self.target * (frame.index + 1) / frame.count;`. Render it animated with
-  `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::Webp { quality: 80 })))`
-  [planned]. Every frame has the job's size; a root node with a different explicit
-  size is a typed error.
+  `let value = self.target * (frame.index + 1) / frame.count;`. Declare
+  `animation(duration_ms = 2000, fps = 20)` on the Template and render it with
+  `ctx.render(card).await?` as usual: the view is called once per frame, on the
+  render pool. Frame `i` starts at `i*1000/fps` ms and lasts until the next one (the
+  last ends at `duration_ms`); `count` is `ceil(duration_ms * fps / 1000)` (2000 ms at
+  20 fps: 40 frames). Overriding the animation per call,
+  `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::DEFAULT)))`,
+  is [planned, Story 10.6]. Every frame has the job's size; a root node with a
+  different explicit size will be a typed error [planned, Story 10.6].
 - Default animated format: animated WebP (smaller and ~3× faster than GIF); GIF with
   `image-gif` for maximum compatibility. Design GIF Templates with flat colours.
 
 ### Size budget
 
-Budget = min(Upload Budget, target ≈ 2 MB). Over budget, Noctis lowers fps, then size,
-then quality, then falls back to a still frame; still too big → typed error. The
-settings used are in `render_report()`. [planned, Story 10.4]
+Every render fits `budget = min(Upload Budget, ImageConfig::size_target)`. The Upload
+Budget is the interaction's `attachment_size_limit` (what Discord says this upload
+accepts), else `Limits::attachment_bytes` (20 MiB); `ctx.render` writes it into
+`RenderJob::upload_budget` for you (`RenderJob::of` alone sets
+`RenderJob::DEFAULT_UPLOAD_BUDGET`, 20_971_520). When the requested encoding is over
+budget, the Renderer walks one fixed, cumulative ladder and returns the first attempt
+that fits (each step keeps the earlier steps' most degraded values):
+
+1. the requested settings (quality `q` of `Jpeg`/`Webp`/animated `Webp`; none for
+   `Png`, `WebpLossless`, `Gif`, `Apng`);
+2. fps (animated only): `F/2`, then `F/4`, each kept only when it is ≥ 5 and lower
+   than the current fps (20 → 10 → 5; 90 → 45 → 22; 9 stays 9);
+3. size: 3/4, then 1/2 of the Template size (floored, each side ≥ 1; the frames are
+   resampled, not re-laid out, so the layout never changes);
+4. quality (lossy only): 75, 50, 25, each kept only when lower than the current one;
+5. a still frame (animated only, when `still_fallback` is on): frame 0 at the last
+   size, in the Template's still `format` (quality `min(q, 25)` for a lossy one).
+
+If no attempt fits, the render fails with `RenderError::OverBudget { budget, smallest
+}`. What was actually encoded is in `RenderOutput::settings_used`
+(`EncodeSettings { size, quality, fps, frames }`; `frames` is 1 for a still or the
+still fallback, whose `RenderOutput::format` is the still format), read through
+`app.renderer()`:
+
+```rust
+use noctis::image::RenderJob;
+
+let job = RenderJob::of(&card)?;                                 // upload_budget 20 MiB
+let out = app.renderer().expect("a Renderer").render(job).await?;
+assert!(out.bytes.len() as u64 <= 2_097_152);                    // default size_target
+println!("{:?} {}", out.settings_used, out.format.extension());
+```
+
+`ctx.render` returns only the `Attachment`; a per-call `render_report()` is
+[planned, Story 10.6].
 
 ## 9. Cache
 

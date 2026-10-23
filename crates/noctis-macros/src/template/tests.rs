@@ -92,6 +92,12 @@ fn template_animation() {
 }
 
 #[test]
+fn template_animation_format_defaults_to_webp_80() {
+    let s = settings(&base(quote!(, animation(duration_ms = 1000, fps = 10)))).unwrap();
+    assert_eq!(s.animation.map(|a| a.format), Some(Animated::Webp(80)));
+}
+
+#[test]
 fn template_id_bounds() {
     let long = "a".repeat(64);
     let too_long = "a".repeat(65);
@@ -366,4 +372,28 @@ fn template_ids() {
     assert!(is_template_id("profile.card_v2-x"));
     assert!(!is_template_id(""));
     assert!(!is_template_id("A"));
+}
+
+#[test]
+fn gif_and_apng_emit_the_feature_gate() {
+    let expanded = |anim: TokenStream| {
+        let input: DeriveInput = syn::parse2(quote! {
+            #[template(id = "card", version = 1, size = (10, 20), format = Png #anim)]
+            struct Card { name: String }
+        })
+        .unwrap();
+        derive(&input).to_string()
+    };
+    for format in [quote!(Gif), quote!(Apng)] {
+        let out = expanded(quote!(, animation(duration_ms = 1, fps = 10, format = #format)));
+        assert!(out.contains("require_gif_output"), "{out}");
+    }
+    for anim in [
+        quote!(),
+        quote!(, animation(duration_ms = 1, fps = 10)),
+        quote!(, animation(duration_ms = 1, fps = 10, format = Webp { quality: 50 })),
+    ] {
+        let out = expanded(anim);
+        assert!(!out.contains("require_gif_output"), "{out}");
+    }
 }
