@@ -92,6 +92,11 @@ sub=$1; [[ $sub == +* ]] && sub=$2
 case "$sub" in
 ''|metadata|locate-project|pkgid|tree|search|read-manifest|version|help|--version|-V|--help|-h|--list|-vV) real "$@" ;;
 esac
+# cargo hack (about 45 minutes in the queue) runs only from gates.sh, which runs it once per epic.
+if [ "$sub" = hack ] && [ -z "$NOCTIS_GATES" ]; then
+  echo "cargo-queue: skipped: cargo hack runs only in tools/story-loop/gates.sh, once per epic (maintainer rule); the story loop runs it" >&2
+  exit 0
+fi
 rel=${cwd#"$root"}; rel=${rel#/}
 idx=$(mktemp); trap 'rm -f "$idx"; [ -n "$sp" ] && kill "$sp" 2>/dev/null' EXIT
 cp "$(git -C "$root" rev-parse --path-format=absolute --git-path index)" "$idx" 2>/dev/null

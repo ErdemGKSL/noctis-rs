@@ -5,6 +5,7 @@
 # Every cargo command here goes through the cargo queue (cargo-queue.sh) when it is installed.
 # In a lane after its finished story was rebased onto main, hack and msrv are skipped (see below).
 source "$(dirname "$0")/env.sh"
+export NOCTIS_GATES=1  # lets the cargo queue run cargo hack
 idx=$(mktemp); trap 'rm -f "$idx"' EXIT
 cp "$(git rev-parse --git-path index)" "$idx" 2>/dev/null
 TREE=$(GIT_INDEX_FILE=$idx git add -A >/dev/null 2>&1 && GIT_INDEX_FILE=$idx git write-tree)
