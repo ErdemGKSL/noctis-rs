@@ -146,7 +146,7 @@ development_status:
   epic-11-retrospective: optional
 
   epic-12: backlog
-  12-1-shard-ranges-and-cluster-wide-identify: backlog
+  12-1-shard-ranges-and-cluster-wide-identify: in-progress
   12-2-session-resume-through-the-sessionstore: backlog
   12-3-resumable-shutdown: backlog
   12-4-shared-http-rate-limiting-through-a-proxy: backlog

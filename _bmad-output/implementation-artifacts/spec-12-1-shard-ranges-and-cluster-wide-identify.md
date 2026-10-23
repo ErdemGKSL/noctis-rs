@@ -2,7 +2,8 @@
 title: 'Story 12.1: Shard Ranges and Cluster-wide identify'
 type: 'feature'
 created: '2026-10-23'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'bac31939debd24efd45f52ffb56cda814a75d1b1'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
