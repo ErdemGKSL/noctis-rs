@@ -2,7 +2,7 @@
 title: 'Story 11.2: Module-scoped Locale catalogs'
 type: 'feature'
 created: '2026-10-22'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '2818c396c94fa49fb44fa61e1bf754a289129d15'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -13,7 +13,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The `i18n,testkit` integration suites (`i18n_modules`, like the pre-existing `i18n_app`) run in none of AGENTS.md's local gates while CI is paused.
+    evidence: |-
+      AGENTS.md's gates are `cargo test --release --workspace` (noctis default features are empty) and `cargo hack test --each-feature` (one feature at a time); only `.github/workflows-disabled/ci.yml` passes `--features i18n,testkit`. The fix edits the agent-context file AGENTS.md (add a combined-feature gate), so it is deferred; the merge itself is pinned by noctis-core unit tests.
+    location: >-
+      crates/noctis/tests/i18n_modules.rs; AGENTS.md "Running and verifying"
+    severity: medium
 ---
 
 <intent-contract>
@@ -162,6 +169,34 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 24 findings — high 0, medium 1, low 11, false 12, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `locale_sources` inserted between `default_app_id`'s doc comment and its fn — confirmed at app.rs:2328-2334: the "The App id when none is set" lines now head `locale_sources`'s doc and `default_app_id` has none; patch: move those lines back directly above `fn default_app_id`.
+  - `[false]` `[reject]` (blind) owner closure silently falls back to `LocaleOwner::App` — every `DuplicateKey` origin comes from `catalogs`, which is built from `sources`, so `find` always succeeds; the fallback is unreachable and cannot misattribute.
+  - `[low]` `[reject]` (blind) `locale_sources` mirrors `Registry::fold` pre-order by convention only — the spec mandates a separate traversal without touching `fold`; Matrix 12/13 pin the order; no fold change is planned, and deriving order from the fold adds complexity.
+  - `[false]` `[reject]` (blind) new fields on `DuplicateLocaleKey` break downstream patterns; variant should be `#[non_exhaustive]` — the crate is 0.1.0 and unreleased, no other `BuildViolation` variant is variant-level non_exhaustive, and the spec prescribes the fields; no existing caller breaks.
+  - `[false]` `[reject]` (blind) `Module::locales` ungated while `Catalog` is re-exported only under `i18n` — the spec requires it ungated "like `AppBuilder::locales`" (the 11.1 pattern); without the feature no `i18n!` exists to produce a catalog, so no user meets an unusable call.
+  - `[false]` `[reject]` (blind) docs promise "disabling a Module never removes its strings" before disable exists — AC 3 and the spec require that sentence; it is true by construction (lookup never consults Module state); Boot Flags (13.2) concern unselected Modules, not disabled ones.
+  - `[low]` `[patch]` (blind) integration test never resolves `admin.done` through `TestApp` — confirmed: `module_catalogs_resolve_app_wide` checks only admin->shop and shop's own key, so AC 1's "either Module resolves both Modules' keys" is half-proved; patch: add an assertion that a handler resolves `admin.done` ("Done", incl. tr->en-US fallback).
+  - `[false]` `[reject]` (blind) no test that command localization reads Module catalogs' `cmd.*`/`cmdword.*` — no code in noctis-core consumes `cmd.*`/`cmdword.*` keys yet (Story 11.4); nothing to localize from any catalog.
+  - `[false]` `[reject]` (blind) template lacks a compile-checked `Module::locales` example — the spec deliberately keeps one App-level catalog in the template; `Module::locales` has a doctest in core.
+  - `[false]` `[reject]` (blind) Matrix 4 does not check non-clash App-first ordering — `build()` always passes `self.catalogs` (App) before Modules into `locale_sources` regardless of call order, and Matrix 13 pins `locale_sources`' order; no ordering defect exists.
+  - `[low]` `[reject]` (blind) Matrix 22 leaks allocations and lacks a nested variant — test-only leaks of a few hundred bytes; readability nit, not worth the churn.
+  - `[low]` `[patch]` (blind) `i18n.md` §2 has an over-wide line; example origins differ from tests — confirmed wrap overflow at i18n.md:104; the example message follows the exact `Display` format with illustrative origins (that part is false); patch: re-wrap the paragraph only.
+  - `[low]` `[patch]` (edge) doc comment of `default_app_id` displaced — same defect as the first row; grouped, same patch.
+  - `[low]` `[reject]` (edge) two Modules sharing one id clash with an ambiguous owner — real only with duplicate ids, which Story 13.1's uniqueness check forbids (spec Never: no id uniqueness check here); unlikely and the fix adds surface.
+  - `[low]` `[reject]` (edge) nested Modules with equal leaf ids give ambiguous owners — ids are user-given full strings (e.g. `ops/audit`), so equality is the duplicate-id case of the previous row; 13.1 covers it.
+  - `[low]` `[patch]` (edge) template AGENTS.md says a clash "naming both Modules" when one side may be the App — confirmed at examples/project-template/AGENTS.md:42; the template's own App catalog vs a Module names `AppBuilder::locales`; patch: say it names both catalogs and their owners (a Module or `AppBuilder::locales`).
+  - `[low]` `[patch]` (vgap other) `default_app_id` doc comment displaced — same defect as the first row; grouped, same patch.
+  - `[medium]` `[defer]` (vgap other) `i18n_modules` (like `i18n_app`) runs in no local gate while CI is paused — confirmed: noctis default features are empty and `--each-feature` never combines `i18n,testkit`; pre-existing gate gap and the fix edits AGENTS.md, so deferred.
+  - `[false]` `[reject]` (intent D1) AC 3 tested without a disabled Module — the spec's Design Notes deliberately settle AC 3 by construction and hand the disabled-state test to Story 13.3 via a memlog decision; no disable API exists to test.
+  - `[false]` `[reject]` (intent D2) no per-language merged table; each catalog keeps its own fallback chain — the spec deliberately reuses `AppStrings` unchanged (Never: no noctis-i18n API change) and Matrix 16 makes per-catalog chains the specified behavior.
+  - `[false]` `[reject]` (intent D3) clashes also cover App-vs-Module and intra-Module — the spec's Matrix 4/10 deliberately extend AC 2; Module-vs-Module still names both Modules.
+  - `[false]` `[reject]` (intent D4) separate traversal, no Boot Flags filtering — spec settles both (private `locale_sources`, Boot Flags deferred to 13.2).
+  - `[false]` `[reject]` (intent D5) AC 2 covered by unit and integration tests — the reviewer states no divergence in substance.
+  - `[low]` `[patch]` (intent incidental) `default_app_id` lost its doc comment — same defect as the first row; grouped, same patch.
+
 ## Design Notes
 
 - **AC 3 holds by construction today.** Runtime enable/disable (FR-45) ships in Story 13.3, so no "disabled" state exists yet to test. The merged `AppStrings` is built once at `build()` from every mounted Module and is held in `AppShared::strings`. Lookup is by key only. Story 13.3 must keep it that way and add a test that a disabled Module's key still resolves from another Module. Log this as a `(decision)` for 13.3.
@@ -195,3 +230,12 @@ deferred: []
 - `cargo deny check`: expected ok.
 - `cargo +1.91 check --release --workspace`: expected ok.
 - `test ! -d target/debug`: expected no debug profile.
+
+## Auto Run Result
+
+- Summary: `Module::locales(catalog)` attaches i18n catalogs to Modules; `build()` merges App catalogs first, then every mounted Module in Registry fold pre-order, into one app-wide `AppStrings`, so any handler resolves any Module's keys. A key defined by two catalogs fails `build()` with `BuildViolation::DuplicateLocaleKey` naming both origins and owners (`LocaleOwner::App` or a Module id). The same catalog mounted twice is not a clash.
+- Files changed: `crates/noctis-core/src/module.rs` (`Module::locales`); `crates/noctis-core/src/app.rs` (private `locale_sources` traversal, owner mapping); `crates/noctis-core/src/error.rs` (`DuplicateLocaleKey` owners, `LocaleOwner`); `crates/noctis-core/src/lib.rs`, `crates/noctis/src/lib.rs` (re-exports); `crates/noctis-core/src/app/tests.rs` (Matrix unit tests); `crates/noctis/tests/i18n_modules.rs` + `tests/fixtures/i18n/mod_*` (integration); `examples/project-template/` (AGENTS.md, usage skill, i18n reference, strings.rs); `xtask/public-api.txt` re-blessed; `.github/workflows-disabled/ci.yml`; architecture memlog decision for Story 13.3.
+- Review findings: 24 total (high 0, medium 1, low 11, false 12). Patched 7 entries (4 grouped into one fix: `default_app_id` doc comment restored; also integration test now resolves `admin.done` incl. tr->en-US fallback; i18n.md paragraph re-wrapped; template AGENTS.md clash wording now "both catalogs and their owners"). Deferred 1 (medium): `i18n_modules`/`i18n_app` tests run in no local gate while CI is paused (no `i18n,testkit` feature combo). Rejected 16: unreachable owner fallback; fold order by convention (pinned by Matrix 12/13); `#[non_exhaustive]` on variant (unreleased 0.1.0); ungated `Module::locales` (11.1 pattern); disable-sentence true by construction; `cmd.*` localization is 11.4; template keeps one App catalog; App-first ordering already deterministic; test leaks nit; duplicate Module ids are 13.1's check (2 rows); intent D1-D5 all match deliberate spec decisions.
+- Follow-up review recommended: false (patched counts: high 0, medium 0, low 7).
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- Residual risks: integration suites needing `i18n,testkit` are not exercised by local gates (deferred); Boot Flags filtering of Module catalogs left to Story 13.2; disabled-Module resolution test owed by Story 13.3; equal-value `cmdword.*` clashes may be revisited in 11.4.

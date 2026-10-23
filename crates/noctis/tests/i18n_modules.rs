@@ -49,14 +49,28 @@ impl AdminCmd {
     }
 }
 
+/// Sends a key that only the `admin` Module's catalog defines.
+#[derive(SlashCommand)]
+#[command("done", description = "Mark done")]
+struct DoneCmd;
+
+impl DoneCmd {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        ctx.reply_text(admin_strings::keys::ADMIN_DONE).await
+    }
+}
+
 fn shop() -> Module {
     Module::new("shop")
         .add::<ShopCmd>()
+        .add::<DoneCmd>()
         .locales(shop_strings::catalog())
 }
 
 /// Matrix 1 and 15 (AC 1, 3): the `admin` Module's handler resolves the
-/// `shop` Module's key in the response locale.
+/// `shop` Module's key in the response locale, and the `shop` Module's
+/// handler resolves the `admin` Module's key.
 #[tokio::test(flavor = "multi_thread")]
 async fn module_catalogs_resolve_app_wide() {
     let mut builder = App::builder();
@@ -72,6 +86,10 @@ async fn module_catalogs_resolve_app_wide() {
     assert!(en.text().contains("Shop"), "{}", en.text());
     let own = app.command("shop").locale("tr").run().await.unwrap();
     assert!(own.text().contains("Dükkan"), "{}", own.text());
+    let done_tr = app.command("done").locale("tr").run().await.unwrap();
+    assert!(done_tr.text().contains("Done"), "{}", done_tr.text());
+    let done = app.command("done").run().await.unwrap();
+    assert!(done.text().contains("Done"), "{}", done.text());
     app.stop().await.unwrap();
 }
 

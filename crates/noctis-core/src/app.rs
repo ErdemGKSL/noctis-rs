@@ -2325,8 +2325,6 @@ impl fmt::Debug for AppBuilder {
     }
 }
 
-/// The App id when none is set: the token's bot user id in base36, else
-/// `default` (with a warning when a token was given).
 /// The merge input of the App's strings: the App's catalogs in
 /// `AppBuilder::locales` call order, then every mounted Module's in
 /// `Module::locales` call order, Modules in `Registry::fold`'s pre-order
@@ -2345,6 +2343,8 @@ fn locale_sources(
     sources
 }
 
+/// The App id when none is set: the token's bot user id in base36, else
+/// `default` (with a warning when a token was given).
 fn default_app_id(token: Option<&Token>) -> AppId {
     let Some(token) = token else {
         return fallback_app_id();
