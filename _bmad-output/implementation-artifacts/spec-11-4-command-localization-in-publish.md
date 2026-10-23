@@ -2,7 +2,8 @@
 title: 'Story 11.4: Command localization in Publish'
 type: 'feature'
 created: '2026-10-23'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '3112448dddd819d1d872649dcbd1b2dac8c8060c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
