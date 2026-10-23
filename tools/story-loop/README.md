@@ -85,6 +85,8 @@ args: { root, w, date, lanes: [
 - After a story's finalize, its lane rebases onto `origin/main` (`lane.sh merge`), an agent
   resolves conflicts (sprint-status union, `public-api.txt` re-bless and the Usage Skill hash,
   both sides' docs), the gates run on the merged tree, and `lane.sh push-main` lands it.
+  These post-merge gates skip `cargo hack` and the MSRV check: both sides already passed them,
+  and the next story's full gates on main run them again.
   Merges are serialized across lanes.
 - Pick lanes from story dependencies: stories in one lane may depend on each other; stories
   in different lanes must not (they may touch the same files; the merge step handles that).
