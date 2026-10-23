@@ -2,7 +2,8 @@
 title: 'Story 10.3: Renderer and bounded render pool'
 type: 'feature'
 created: '2026-10-23'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '326070f92563f0fa59323b7b92743eb1e846e6ba'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
