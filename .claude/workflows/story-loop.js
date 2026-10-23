@@ -51,9 +51,11 @@ async function ops(cmd, label, phase) {
 
 const implPrompt = (spec) => `${LAUNCH}\n\nRead ${spec} fully and implement it — the spec is the sole source of truth. Load every file listed in its frontmatter \`context:\` before you start.\n\nWhen done, report what you changed, how you verified it, and anything left incomplete or risky.\n\n(Repository rules: follow AGENTS.md — release-only builds, rust-best-practices skill for Rust. Do not commit; the orchestrator commits. Do not edit the spec's frontmatter or \`<intent-contract>\`. Keep your final report under 300 words.)`
 
-async function gateLoop(st, spec, phase) {
+// light: skip cargo hack and the MSRV check (gates between implementation and review rounds); the full gates run
+// once before a story is finalized, and steps already passed on the same tree are skipped there.
+async function gateLoop(st, spec, phase, light = false) {
   for (let i = 0; i < 4; i++) {
-    const g = await ops(`${S}/gates.sh`, `gates ${st.num}`, phase)
+    const g = await ops(`${light ? 'NOCTIS_GATES_LIGHT=1 ' : ''}${S}/gates.sh`, `gates${light ? ' (light)' : ''} ${st.num}`, phase)
     if (g && g.ok) return true
     await agent(`${LAUNCH}\n\nYou are fixing local verification failures for the implementation of ${spec} (noctis-rs, ${R}). The spec is the sole source of truth; read it first. The gate script ${S}/gates.sh failed; its output tail:\n\n${g ? g.output : 'unknown (operator died) — run the gates yourself'}\n\nFull logs: ${O}/gate-*.log. Fix the root cause with the smallest correct change (never weaken a gate, never skip or delete a test, never edit .cargo/config.toml profiles). Re-run the failing gate command until it passes. Do not commit. Reply under 150 words.`,
       { label: `gate-fix ${st.num}`, phase })
@@ -124,7 +126,7 @@ for (const st of STORIES) {
       if (tri.route === 'patch') {
         await agent(`${LAUNCH}\n\nYou are continuing the implementation of ${spec} (noctis-rs, ${R}); read the spec first — it is the sole source of truth.\n\nReview of your implementation found problems. Fix each one below with the smallest change that does the job.\n\nRun only the tests that cover the files you edit — nothing wider. Full verification runs on my side after you return. Reply with what you changed.\n\nThe findings (one per line: file — what is wrong — what the smallest fix must do) are in ${O}/patches-${tag}.md — read that file and fix every line. Do not commit. Do not edit the spec. Reply under 200 words.`,
           { label: `patch ${st.num}`, phase: 'Implement' })
-        if (!(await gateLoop(st, spec, 'Implement'))) { ok = false; break }
+        if (!(await gateLoop(st, spec, 'Implement', true))) { ok = false; break }
         if (tri.patched_high > 0 && pass < 3) {
           pass++
           const t2 = `${st.id}-p${pass}`
@@ -153,7 +155,7 @@ for (const st of STORIES) {
   phase('Implement')
   await agent(implPrompt(spec), { label: `implement ${st.num}`, phase: 'Implement' })
   while (true) {
-    if (!(await gateLoop(st, spec, 'Implement'))) { ok = false; break }
+    if (!(await gateLoop(st, spec, 'Implement', true))) { ok = false; break }
     pass++
     const tag = `${st.id}-p${pass}`
     await ops(`${S}/diff.sh ${st.key} ${tag} && ${S}/cp.sh "Story ${st.num}: implementation (review pass ${pass})"`, `diff+commit ${st.num}`, 'Implement')
@@ -172,7 +174,7 @@ for (const st of STORIES) {
     if (tri.route === 'patch') {
       await agent(`${LAUNCH}\n\nYou are continuing the implementation of ${spec} (noctis-rs, ${R}); read the spec first — it is the sole source of truth.\n\nReview of your implementation found problems. Fix each one below with the smallest change that does the job.\n\nRun only the tests that cover the files you edit — nothing wider. Full verification runs on my side after you return. Reply with what you changed.\n\nThe findings (one per line: file — what is wrong — what the smallest fix must do) are in ${O}/patches-${tag}.md — read that file and fix every line. Do not commit. Do not edit the spec. Reply under 200 words.`,
         { label: `patch ${st.num}`, phase: 'Implement' })
-      if (!(await gateLoop(st, spec, 'Implement'))) { ok = false; break }
+      if (!(await gateLoop(st, spec, 'Implement', true))) { ok = false; break }
       if (tri.patched_high > 0 && pass < 3) {
         // follow-up review only when a high was patched
         continue
@@ -183,6 +185,7 @@ for (const st of STORIES) {
   }
 
   phase('Finalize')
+  if (ok && !(await gateLoop(st, spec, 'Finalize'))) ok = false
   const followup = tri && (tri.patched_high > 0 || tri.patched_medium >= 2)
   if (!ok) {
     await agent(`${LAUNCH}\n\nStory ${st.num} of noctis-rs could not complete (route: ${tri ? tri.route : 'gate failure'}; loops: ${loop}). Follow the HALT protocol in ${W}/workflow.md for spec file ${spec}: set status blocked, append ## Auto Run Result with the blocking condition and evidence (see ${O}/patches-*${st.id}*.md and the spec's triage log). Then run ${S}/cp.sh "Story ${st.num}: blocked". Reply under 80 words.`,

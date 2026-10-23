@@ -64,6 +64,10 @@ Run about one or two epics per invocation, then check the results, `git log` and
 - Before the Epic 14 launch stories, move `.github/workflows-disabled/*` back to
   `.github/workflows/` and fix every CI failure.
 
+Gates between implementation and review rounds are light (`NOCTIS_GATES_LIGHT=1`: no
+`cargo hack`, no MSRV check); the full gates run once before a story is finalized, skipping
+every step that already passed on the same tree.
+
 ## Parallel lanes
 
 Independent stories can run at the same time in separate git worktrees. Pass `lanes`

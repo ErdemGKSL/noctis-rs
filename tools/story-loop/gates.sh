@@ -20,7 +20,9 @@ run clippy cargo clippy --release --workspace --all-targets --all-features -- -D
 run test cargo test --release --workspace --all-features
 # After a finished lane story is rebased onto main (a "mark done" commit is not yet in origin/main), both sides
 # already passed every gate; the slow per-feature and MSRV builds are left to the next story's full gates on main.
-merged=
+# NOCTIS_GATES_LIGHT=1 (the story loop's gates between implementation and review rounds) skips them too; the loop
+# runs the full gates once before it finalizes a story.
+merged=$NOCTIS_GATES_LIGHT
 git rev-parse --abbrev-ref HEAD | grep -q '^story-loop/' && git log --format=%s origin/main..HEAD 2>/dev/null | grep -q 'review patches; mark done' && merged=1
 [ -z "$merged" ] && run hack cargo hack test --release --workspace --each-feature
 [ -z "$merged" ] && run msrv cargo +1.91 check --release --workspace
