@@ -2,7 +2,8 @@
 title: 'Story 10.4: Output formats and size budget'
 type: 'feature'
 created: '2026-10-23'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '30171b9b5f23873b216f9125dc1b8e80ba519cc3'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
