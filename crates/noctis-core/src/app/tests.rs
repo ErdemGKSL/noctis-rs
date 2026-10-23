@@ -276,12 +276,15 @@ async fn duplicate_locale_key() {
                 key: "common.ok",
                 first: "shop/locales",
                 second: "other/locales",
+                first_owner: LocaleOwner::App,
+                second_owner: LocaleOwner::App,
             },
         ]
     );
     assert_eq!(
         err.violations()[1].to_string(),
-        "locale key `common.ok` is defined by two catalogs: `shop/locales` and `other/locales`"
+        "locale key `common.ok` is defined by two catalogs: `shop/locales` (AppBuilder::locales) \
+         and `other/locales` (AppBuilder::locales)"
     );
 }
 
@@ -301,6 +304,596 @@ async fn locales_are_idempotent() {
         assert_eq!(
             app.shared().strings.translate(Locale::Tr, key, &[]),
             noctis_i18n::Builtin.translate(Locale::Tr, key, &[])
+        );
+    }
+}
+
+mod module_locales {
+    //! Story 11.2: Module-scoped locale catalogs.
+
+    use noctis_i18n::Catalog;
+    use noctis_rules::{Locale, MessageKey, Translate};
+
+    use super::*;
+
+    /// `S`: `shop.title` (en-US "Shop", tr "Dükkan").
+    static S: Catalog = Catalog::__new(
+        "bot/mod_shop",
+        Locale::EnUs,
+        &[
+            (Locale::EnUs, &[("shop.title", "Shop")]),
+            (Locale::Tr, &[("shop.title", "Dükkan")]),
+        ],
+        &[("shop.title", &[])],
+    );
+    /// `A`: `admin.done`.
+    static A: Catalog = Catalog::__new(
+        "bot/mod_admin",
+        Locale::EnUs,
+        &[(Locale::EnUs, &[("admin.done", "Done")])],
+        &[("admin.done", &[])],
+    );
+    /// `C`: `shop.title` again.
+    static C: Catalog = Catalog::__new(
+        "bot/mod_clash",
+        Locale::EnUs,
+        &[(Locale::EnUs, &[("shop.title", "Store")])],
+        &[("shop.title", &[])],
+    );
+    /// `P`: the App-level `common.ok`.
+    static P: Catalog = Catalog::__new(
+        "bot/app",
+        Locale::EnUs,
+        &[(Locale::EnUs, &[("common.ok", "OK")])],
+        &[("common.ok", &[])],
+    );
+    /// A third catalog with `shop.title`.
+    static X: Catalog = Catalog::__new(
+        "bot/mod_extra",
+        Locale::EnUs,
+        &[(Locale::EnUs, &[("shop.title", "Market")])],
+        &[("shop.title", &[])],
+    );
+
+    fn text(app: &App, locale: Locale, key: &'static str) -> Option<String> {
+        app.shared()
+            .strings
+            .translate(locale, MessageKey::new(key), &[])
+    }
+
+    fn clash(
+        key: &'static str,
+        first: &'static str,
+        second: &'static str,
+        first_owner: LocaleOwner,
+        second_owner: LocaleOwner,
+    ) -> BuildViolation {
+        BuildViolation::DuplicateLocaleKey {
+            key,
+            first,
+            second,
+            first_owner,
+            second_owner,
+        }
+    }
+
+    /// How many catalogs survive the origin dedup of the merge.
+    fn merged_catalogs(app: &[Catalog], roots: &[Module]) -> usize {
+        let catalogs: Vec<Catalog> = locale_sources(app, roots)
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect();
+        noctis_i18n::AppStrings::new(&catalogs)
+            .unwrap()
+            .catalogs()
+            .len()
+    }
+
+    fn build(builder: &mut AppBuilder) -> Result<App, BuildError> {
+        builder.build()
+    }
+
+    /// Story 11.2 Matrix 1
+    #[tokio::test]
+    async fn two_modules_with_disjoint_keys() {
+        let app = build(
+            App::builder()
+                .module(Module::new("shop").locales(S))
+                .module(Module::new("admin").locales(A)),
+        )
+        .unwrap();
+        assert_eq!(
+            text(&app, Locale::Tr, "shop.title").as_deref(),
+            Some("Dükkan")
+        );
+        assert_eq!(
+            text(&app, Locale::EnUs, "shop.title").as_deref(),
+            Some("Shop")
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "admin.done").as_deref(),
+            Some("Done")
+        );
+    }
+
+    /// Story 11.2 Matrix 2
+    #[tokio::test]
+    async fn app_and_module_catalogs_together() {
+        let app = build(
+            App::builder()
+                .locales(P)
+                .module(Module::new("shop").locales(S)),
+        )
+        .unwrap();
+        assert_eq!(text(&app, Locale::EnUs, "common.ok").as_deref(), Some("OK"));
+        assert_eq!(
+            text(&app, Locale::EnUs, "shop.title").as_deref(),
+            Some("Shop")
+        );
+    }
+
+    /// Story 11.2 Matrix 3
+    #[tokio::test]
+    async fn module_vs_module_clash() {
+        let err = build(
+            App::builder()
+                .module(Module::new("shop").locales(S))
+                .module(Module::new("admin").locales(C)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [clash(
+                "shop.title",
+                "bot/mod_shop",
+                "bot/mod_clash",
+                LocaleOwner::Module("shop"),
+                LocaleOwner::Module("admin"),
+            )]
+        );
+        assert_eq!(
+            err.violations()[0].to_string(),
+            "locale key `shop.title` is defined by two catalogs: `bot/mod_shop` (Module `shop`) \
+             and `bot/mod_clash` (Module `admin`)"
+        );
+    }
+
+    /// Story 11.2 Matrix 4
+    #[tokio::test]
+    async fn app_catalogs_come_first_whatever_the_call_order() {
+        let err = build(
+            App::builder()
+                .module(Module::new("shop").locales(C))
+                .locales(S),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [clash(
+                "shop.title",
+                "bot/mod_shop",
+                "bot/mod_clash",
+                LocaleOwner::App,
+                LocaleOwner::Module("shop"),
+            )]
+        );
+        assert!(
+            err.violations()[0].to_string().contains(
+                "`bot/mod_shop` (AppBuilder::locales) and `bot/mod_clash` (Module `shop`)"
+            )
+        );
+    }
+
+    /// Story 11.2 Matrix 5
+    #[tokio::test]
+    async fn three_way_clash() {
+        let err = build(
+            App::builder()
+                .module(Module::new("shop").locales(S))
+                .module(Module::new("admin").locales(C))
+                .module(Module::new("extra").locales(X)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [
+                clash(
+                    "shop.title",
+                    "bot/mod_shop",
+                    "bot/mod_clash",
+                    LocaleOwner::Module("shop"),
+                    LocaleOwner::Module("admin"),
+                ),
+                clash(
+                    "shop.title",
+                    "bot/mod_shop",
+                    "bot/mod_extra",
+                    LocaleOwner::Module("shop"),
+                    LocaleOwner::Module("extra"),
+                ),
+            ]
+        );
+    }
+
+    /// Story 11.2 Matrix 6
+    #[tokio::test]
+    async fn several_clashing_keys_in_key_order() {
+        static ONE: Catalog = Catalog::__new(
+            "bot/one",
+            Locale::EnUs,
+            &[(Locale::EnUs, &[("a.x", "x"), ("a.y", "y")])],
+            &[("a.x", &[]), ("a.y", &[])],
+        );
+        static TWO: Catalog = Catalog::__new(
+            "bot/two",
+            Locale::EnUs,
+            &[(Locale::EnUs, &[("a.x", "x"), ("a.y", "y")])],
+            &[("a.x", &[]), ("a.y", &[])],
+        );
+        let err = build(
+            App::builder()
+                .module(Module::new("one").locales(ONE))
+                .module(Module::new("two").locales(TWO)),
+        )
+        .unwrap_err();
+        let one = LocaleOwner::Module("one");
+        let two = LocaleOwner::Module("two");
+        assert_eq!(
+            err.violations(),
+            [
+                clash("a.x", "bot/one", "bot/two", one, two),
+                clash("a.y", "bot/one", "bot/two", one, two),
+            ]
+        );
+    }
+
+    /// Story 11.2 Matrix 7
+    #[tokio::test]
+    async fn same_catalog_in_two_modules_is_deduplicated() {
+        let app = build(
+            App::builder()
+                .module(Module::new("shop").locales(S))
+                .module(Module::new("admin").locales(S)),
+        )
+        .unwrap();
+        assert_eq!(
+            text(&app, Locale::Tr, "shop.title").as_deref(),
+            Some("Dükkan")
+        );
+        let roots = [
+            Module::new("shop").locales(S),
+            Module::new("admin").locales(S),
+        ];
+        assert_eq!(merged_catalogs(&[], &roots), 1);
+        assert_eq!(
+            locale_sources(&[], &roots)[0].1,
+            LocaleOwner::Module("shop")
+        );
+    }
+
+    /// Story 11.2 Matrix 8
+    #[tokio::test]
+    async fn same_catalog_in_app_and_module_is_deduplicated() {
+        let app = build(
+            App::builder()
+                .locales(S)
+                .module(Module::new("shop").locales(S)),
+        )
+        .unwrap();
+        assert_eq!(
+            text(&app, Locale::Tr, "shop.title").as_deref(),
+            Some("Dükkan")
+        );
+    }
+
+    /// Story 11.2 Matrix 9
+    #[tokio::test]
+    async fn one_catalog_twice_in_one_module_is_deduplicated() {
+        let shop = Module::new("shop").locales(S).locales(S);
+        assert_eq!(merged_catalogs(&[], std::slice::from_ref(&shop)), 1);
+        let app = build(App::builder().module(shop)).unwrap();
+        assert_eq!(
+            text(&app, Locale::Tr, "shop.title").as_deref(),
+            Some("Dükkan")
+        );
+    }
+
+    /// Story 11.2 Matrix 10
+    #[tokio::test]
+    async fn two_clashing_catalogs_in_one_module() {
+        let err =
+            build(App::builder().module(Module::new("shop").locales(S).locales(C))).unwrap_err();
+        let shop = LocaleOwner::Module("shop");
+        assert_eq!(
+            err.violations(),
+            [clash(
+                "shop.title",
+                "bot/mod_shop",
+                "bot/mod_clash",
+                shop,
+                shop
+            )]
+        );
+    }
+
+    /// Story 11.2 Matrix 11
+    #[tokio::test]
+    async fn nested_child_module_contributes() {
+        let app = build(
+            App::builder().module(Module::new("ops").module(Module::new("ops/audit").locales(A))),
+        )
+        .unwrap();
+        assert_eq!(
+            text(&app, Locale::EnUs, "admin.done").as_deref(),
+            Some("Done")
+        );
+    }
+
+    /// Story 11.2 Matrix 12
+    #[tokio::test]
+    async fn child_clashes_with_parent() {
+        let err = build(
+            App::builder().module(
+                Module::new("ops")
+                    .module(Module::new("ops/audit").locales(C))
+                    .locales(S),
+            ),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [clash(
+                "shop.title",
+                "bot/mod_shop",
+                "bot/mod_clash",
+                LocaleOwner::Module("ops"),
+                LocaleOwner::Module("ops/audit"),
+            )]
+        );
+    }
+
+    /// Story 11.2 Matrix 13
+    #[tokio::test]
+    async fn modules_merge_in_pre_order() {
+        let err = build(
+            App::builder()
+                .module(Module::new("r1").module(Module::new("c1").locales(C)))
+                .module(Module::new("r2").locales(S)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [clash(
+                "shop.title",
+                "bot/mod_clash",
+                "bot/mod_shop",
+                LocaleOwner::Module("c1"),
+                LocaleOwner::Module("r2"),
+            )]
+        );
+        let roots = [
+            Module::new("r1").locales(P).module(
+                Module::new("c1")
+                    .locales(C)
+                    .module(Module::new("g1").locales(A)),
+            ),
+            Module::new("r2").locales(S),
+        ];
+        let owners: Vec<LocaleOwner> = locale_sources(&[X], &roots)
+            .into_iter()
+            .map(|(_, o)| o)
+            .collect();
+        assert_eq!(
+            owners,
+            [
+                LocaleOwner::App,
+                LocaleOwner::Module("r1"),
+                LocaleOwner::Module("c1"),
+                LocaleOwner::Module("g1"),
+                LocaleOwner::Module("r2"),
+            ]
+        );
+    }
+
+    /// Story 11.2 Matrix 14
+    #[tokio::test]
+    async fn strings_only_module() {
+        let app = build(App::builder().module(Module::new("strings").locales(S))).unwrap();
+        assert_eq!(
+            text(&app, Locale::EnUs, "shop.title").as_deref(),
+            Some("Shop")
+        );
+    }
+
+    /// Story 11.2 Matrix 16
+    #[tokio::test]
+    async fn module_catalog_keeps_its_own_default_locale() {
+        static TR_ONLY: Catalog = Catalog::__new(
+            "bot/mod_tr",
+            Locale::Tr,
+            &[(Locale::Tr, &[("tr.only", "Merhaba")])],
+            &[("tr.only", &[])],
+        );
+        let app = build(
+            App::builder()
+                .locales(P)
+                .module(Module::new("tr").locales(TR_ONLY)),
+        )
+        .unwrap();
+        assert_eq!(
+            text(&app, Locale::De, "tr.only").as_deref(),
+            Some("Merhaba")
+        );
+    }
+
+    static EXPIRED_TR: Catalog = Catalog::__new(
+        "bot/mod_expired",
+        Locale::EnUs,
+        &[(Locale::Tr, &[("noctis.expired", "Süresi doldu")])],
+        &[],
+    );
+
+    /// Story 11.2 Matrix 17
+    #[tokio::test]
+    async fn module_noctis_override_applies_app_wide() {
+        let app = build(
+            App::builder()
+                .module(Module::new("other"))
+                .module(Module::new("overrides").locales(EXPIRED_TR)),
+        )
+        .unwrap();
+        let strings = &app.shared().strings;
+        assert_eq!(
+            strings
+                .translate(Locale::Tr, noctis_i18n::keys::EXPIRED, &[])
+                .as_deref(),
+            Some("Süresi doldu")
+        );
+        assert_eq!(
+            strings.translate(Locale::De, noctis_i18n::keys::EXPIRED, &[]),
+            noctis_i18n::Builtin.translate(Locale::De, noctis_i18n::keys::EXPIRED, &[])
+        );
+    }
+
+    /// Story 11.2 Matrix 18
+    #[tokio::test]
+    async fn two_modules_overriding_one_noctis_key_clash() {
+        static EXPIRED_TR2: Catalog = Catalog::__new(
+            "bot/mod_expired2",
+            Locale::EnUs,
+            &[(Locale::Tr, &[("noctis.expired", "Süresi doldu")])],
+            &[],
+        );
+        let err = build(
+            App::builder()
+                .module(Module::new("a").locales(EXPIRED_TR))
+                .module(Module::new("b").locales(EXPIRED_TR2)),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [clash(
+                "noctis.expired",
+                "bot/mod_expired",
+                "bot/mod_expired2",
+                LocaleOwner::Module("a"),
+                LocaleOwner::Module("b"),
+            )]
+        );
+    }
+
+    /// Story 11.2 Matrix 19
+    #[tokio::test]
+    async fn empty_catalog_has_no_effect() {
+        static EMPTY: Catalog = Catalog::__new("bot/empty", Locale::EnUs, &[], &[]);
+        let app = build(
+            App::builder()
+                .module(Module::new("empty").locales(EMPTY))
+                .module(Module::new("shop").locales(S)),
+        )
+        .unwrap();
+        assert_eq!(
+            text(&app, Locale::EnUs, "shop.title").as_deref(),
+            Some("Shop")
+        );
+    }
+
+    /// Story 11.2 Matrix 20
+    #[tokio::test]
+    async fn no_catalogs_anywhere_is_builtin() {
+        let app =
+            build(App::builder().module(Module::new("a").module(Module::new("a/b")))).unwrap();
+        for key in noctis_i18n::keys::ALL {
+            assert_eq!(
+                app.shared().strings.translate(Locale::Tr, key, &[]),
+                noctis_i18n::Builtin.translate(Locale::Tr, key, &[])
+            );
+        }
+    }
+
+    /// Story 11.2 Matrix 21
+    #[tokio::test]
+    async fn unicode_module_id_in_the_message() {
+        let err = build(
+            App::builder()
+                .module(Module::new("çay/ölç").locales(S))
+                .module(Module::new("x").locales(C)),
+        )
+        .unwrap_err();
+        assert!(
+            err.violations()[0]
+                .to_string()
+                .contains("(Module `çay/ölç`)")
+        );
+    }
+
+    /// Story 11.2 Matrix 22
+    #[tokio::test]
+    async fn many_modules_each_with_a_catalog() {
+        let mut builder = App::builder();
+        let mut keys = Vec::new();
+        for i in 0..64 {
+            let key: &'static str = Box::leak(format!("m{i}.key").into_boxed_str());
+            let origin: &'static str = Box::leak(format!("bot/m{i}").into_boxed_str());
+            let value: &'static str = Box::leak(format!("value {i}").into_boxed_str());
+            let entries: &'static [(&'static str, &'static str)] =
+                Box::leak(Box::new([(key, value)]));
+            let files: &'static [(Locale, &'static [(&'static str, &'static str)])] =
+                Box::leak(Box::new([(Locale::EnUs, entries)]));
+            let placeholders: &'static [(&'static str, &'static [&'static str])] =
+                Box::leak(Box::new([(key, &[] as &'static [&'static str])]));
+            let id: &'static str = Box::leak(format!("m{i}").into_boxed_str());
+            builder.module(Module::new(id).locales(Catalog::__new(
+                origin,
+                Locale::EnUs,
+                files,
+                placeholders,
+            )));
+            keys.push((key, value));
+        }
+        let app = builder.build().unwrap();
+        for (key, value) in keys {
+            assert_eq!(text(&app, Locale::Tr, key).as_deref(), Some(value));
+        }
+    }
+
+    /// Story 11.2 Matrix 23
+    #[test]
+    fn debug_lists_catalog_origins() {
+        let debug = format!("{:?}", Module::new("m").locales(S));
+        assert!(debug.contains(r#"locales: ["bot/mod_shop"]"#), "{debug}");
+    }
+
+    /// Story 11.2 Matrix 24
+    #[test]
+    fn locale_owner_display() {
+        assert_eq!(LocaleOwner::App.to_string(), "AppBuilder::locales");
+        assert_eq!(LocaleOwner::Module("x").to_string(), "Module `x`");
+    }
+
+    /// Story 11.2 Matrix 25
+    #[tokio::test]
+    async fn clash_reported_with_other_violations() {
+        let err = build(
+            App::builder()
+                .module(Module::new("shop").locales(S))
+                .module(Module::new("admin").locales(C))
+                .state(1_u16)
+                .state(2_u16),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [
+                BuildViolation::DuplicateState { type_name: "u16" },
+                clash(
+                    "shop.title",
+                    "bot/mod_shop",
+                    "bot/mod_clash",
+                    LocaleOwner::Module("shop"),
+                    LocaleOwner::Module("admin"),
+                ),
+            ]
         );
     }
 }

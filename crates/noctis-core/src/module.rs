@@ -116,6 +116,11 @@ pub(crate) enum NodeDecl {
 /// [`group`](Self::group) declare the descriptions (and base metadata) of
 /// the nodes no single handler owns.
 ///
+/// Locale catalogs added with [`locales`](Self::locales) merge with the
+/// App's (`AppBuilder::locales`) at `build()` into one App-wide set: every
+/// Module resolves every key, and disabling a Module never removes its
+/// strings.
+///
 /// ```
 /// # use noctis_core::events::{EventCtx, EventHandler, MessageCreate};
 /// # use noctis_core::{HandlerResult, Module, Register};
@@ -148,6 +153,7 @@ pub struct Module {
     before: Vec<BeforeMiddleware>,
     after: Vec<AfterMiddleware>,
     templates: Vec<(TemplateDescriptor, &'static str)>,
+    locales: Vec<noctis_i18n::Catalog>,
     children: Vec<Module>,
 }
 
@@ -180,6 +186,7 @@ impl Module {
             before: Vec::new(),
             after: Vec::new(),
             templates: Vec::new(),
+            locales: Vec::new(),
             children: Vec::new(),
         }
     }
@@ -388,6 +395,40 @@ impl Module {
         self
     }
 
+    /// Adds the locale catalog of an `i18n!` invocation (its `catalog()`),
+    /// so a reusable Module ships its own strings.
+    ///
+    /// At `build()` the App's catalogs (`AppBuilder::locales`, in call
+    /// order) and then every mounted Module's (in fold order: parent before
+    /// children, each Module's in call order) merge into one App-wide set.
+    /// A key resolves App-wide: any Module's handler can send another
+    /// Module's keys, `noctis.*` overrides apply to every Module, and
+    /// disabling a Module never removes its strings. Catalogs with one
+    /// `origin()` count once; a key that two catalogs define is a
+    /// `BuildViolation::DuplicateLocaleKey` naming both owners.
+    ///
+    /// ```
+    /// use noctis_core::Module;
+    /// use noctis_i18n::Catalog;
+    /// use noctis_rules::Locale;
+    ///
+    /// // What `i18n!` generates as `catalog()`.
+    /// static CATALOG: Catalog = Catalog::__new(
+    ///     "shop/locales",
+    ///     Locale::EnUs,
+    ///     &[(Locale::EnUs, &[("shop.title", "Shop")])],
+    ///     &[("shop.title", &[])],
+    /// );
+    ///
+    /// let shop = Module::new("shop").locales(CATALOG);
+    /// assert!(format!("{shop:?}").contains("shop/locales"));
+    /// ```
+    #[must_use = "Module::locales returns the Module with the catalog added"]
+    pub fn locales(mut self, catalog: noctis_i18n::Catalog) -> Self {
+        self.locales.push(catalog);
+        self
+    }
+
     /// The Module's id.
     pub fn id(&self) -> &'static str {
         self.id
@@ -443,6 +484,11 @@ impl Module {
         &self.templates
     }
 
+    /// Its locale catalogs, in `locales` call order.
+    pub(crate) fn catalogs(&self) -> &[noctis_i18n::Catalog] {
+        &self.locales
+    }
+
     /// Its children, in `module` order.
     pub(crate) fn children(&self) -> &[Module] {
         &self.children
@@ -468,6 +514,11 @@ impl fmt::Debug for Module {
         let before: Vec<&str> = self.before.iter().map(BeforeMiddleware::name).collect();
         let after: Vec<&str> = self.after.iter().map(AfterMiddleware::name).collect();
         let templates: Vec<&str> = self.templates.iter().map(|(t, _)| t.id).collect();
+        let locales: Vec<&str> = self
+            .locales
+            .iter()
+            .map(noctis_i18n::Catalog::origin)
+            .collect();
         f.debug_struct("Module")
             .field("id", &self.id)
             .field("handlers", &handlers)
@@ -480,6 +531,7 @@ impl fmt::Debug for Module {
             .field("before", &before)
             .field("after", &after)
             .field("templates", &templates)
+            .field("locales", &locales)
             .field("children", &self.children)
             .finish()
     }

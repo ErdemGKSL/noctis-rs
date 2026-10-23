@@ -20,7 +20,7 @@ pub fn module() -> Module {
         .add::<OpenProfile>()              // #[derive(Button)]: this Module handles its clicks
         .uses::<ToggleModule>()            // a Route its Views render, handled by another Module
         .template::<ProfileCard>()         // image Templates [planned]
-        .locales(profile_strings::catalog())   // Module-scoped strings [planned]
+        .locales(profile_strings::catalog())   // Module-scoped strings (App-wide keys)
         .before(Middleware::before(load_settings).provides::<GuildSettings>())   // Middleware (§5)
         .after(Middleware::after(audit))
         .module(sub_module())              // nesting
@@ -33,7 +33,8 @@ builder.module(profile::module()).module(ops::module());
 
 Implemented: `Module::new(id)`, `.add::<X>()`, `.uses::<R>()`, `.module(child)`,
 `.base(name, BaseMeta)`, `.group(path, description)`, `.before(BeforeMiddleware)`,
-`.after(AfterMiddleware)` (§5), `.id()`, `Clone`, `Debug`, and
+`.after(AfterMiddleware)` (§5), `.locales(Catalog)` (merged App-wide at build; see
+`i18n.md` §5), `.id()`, `Clone`, `Debug`, and
 `AppBuilder::module(Module)`. `.add::<X>()` registers a struct by type: any struct with a
 kind derive (`SlashCommand`, `UserCommand`, `MessageCommand`, `EventHandler`, `Button`,
 the select kinds, `Modal`) and a `#[handler]` method (the `noctis::Register` trait the

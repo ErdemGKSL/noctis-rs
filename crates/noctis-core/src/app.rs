@@ -49,7 +49,7 @@ use crate::state::StateMap;
 use crate::worker::{AbortOnDrop, Shutdown, Workers, drain};
 use crate::{
     BuildError, BuildViolation, Component, EnvError, Error, ErrorOrigin, ErrorSink, HandlerResult,
-    IntoResponse, ModalSubmit, Plugin, RunError, Runtime, StartError, State, Token,
+    IntoResponse, LocaleOwner, ModalSubmit, Plugin, RunError, Runtime, StartError, State, Token,
 };
 
 /// The environment variable [`App::from_env`] reads the token from.
@@ -1534,8 +1534,14 @@ impl AppBuilder {
     /// the catalog's default locale), and keys no catalog has fall back to
     /// the built-in `noctis.*` texts.
     ///
-    /// Catalogs with one `origin()` count once. A key that two catalogs
-    /// define is a [`BuildViolation::DuplicateLocaleKey`] at `build`.
+    /// These catalogs merge with every mounted Module's
+    /// ([`Module::locales`]) at `build`: the App's first, in call order
+    /// (whatever the order of `locales` and [`module`](Self::module) calls),
+    /// then each Module's in fold order. The merged strings are App-wide:
+    /// every Module resolves every key, and disabling a Module never
+    /// removes its strings. Catalogs with one `origin()` count once. A key
+    /// that two catalogs define is a [`BuildViolation::DuplicateLocaleKey`]
+    /// at `build`, naming both catalogs and their owners.
     ///
     /// ```
     /// use noctis_i18n::Catalog;
@@ -1780,7 +1786,8 @@ impl AppBuilder {
     /// types become the gateway filter, and their non-privileged intents
     /// are added to the requested set. A handler needing a privileged
     /// intent that was not requested is a [`BuildViolation::MissingIntent`]
-    /// (GW-05).
+    /// (GW-05). The trees' locale catalogs ([`Module::locales`]) merge
+    /// after the App's own ([`locales`](Self::locales)).
     ///
     /// ```
     /// use noctis_core::{App, Module};
@@ -2049,6 +2056,8 @@ impl AppBuilder {
     /// crypto provider (installing `ring`'s when none is set) and the tokio
     /// runtime (any flavor). The edge then starts serving on the current
     /// runtime, and every byte-store port is namespaced under the App id.
+    /// The App's locale catalogs and then every mounted Module's merge into
+    /// one App-wide string set that no Module state filters.
     /// The builder is left empty, attached to the same Runtime.
     ///
     /// # Errors
@@ -2146,14 +2155,26 @@ impl AppBuilder {
         let registry = Arc::new(registry);
         self.violations.extend(missing);
         let payload_keys = self.key_ring(&registry);
-        let strings = match noctis_i18n::AppStrings::new(&self.catalogs) {
+        let sources = locale_sources(&self.catalogs, &self.modules);
+        let catalogs: Vec<noctis_i18n::Catalog> = sources.iter().map(|(c, _)| *c).collect();
+        let strings = match noctis_i18n::AppStrings::new(&catalogs) {
             Ok(strings) => Some(strings),
             Err(duplicates) => {
+                // `AppStrings` keeps the first catalog of an origin, so the
+                // first source with that origin owns it.
+                let owner = |origin: &str| {
+                    sources
+                        .iter()
+                        .find(|(c, _)| c.origin() == origin)
+                        .map_or(LocaleOwner::App, |(_, o)| *o)
+                };
                 self.violations.extend(duplicates.into_iter().map(|d| {
                     BuildViolation::DuplicateLocaleKey {
                         key: d.key,
                         first: d.first,
                         second: d.second,
+                        first_owner: owner(d.first),
+                        second_owner: owner(d.second),
                     }
                 }));
                 None
@@ -2306,6 +2327,24 @@ impl fmt::Debug for AppBuilder {
 
 /// The App id when none is set: the token's bot user id in base36, else
 /// `default` (with a warning when a token was given).
+/// The merge input of the App's strings: the App's catalogs in
+/// `AppBuilder::locales` call order, then every mounted Module's in
+/// `Module::locales` call order, Modules in `Registry::fold`'s pre-order
+/// (roots in mount order, each parent before its children).
+fn locale_sources(
+    app: &[noctis_i18n::Catalog],
+    roots: &[Module],
+) -> Vec<(noctis_i18n::Catalog, LocaleOwner)> {
+    let mut sources: Vec<_> = app.iter().map(|&c| (c, LocaleOwner::App)).collect();
+    let mut stack: Vec<&Module> = roots.iter().rev().collect();
+    while let Some(module) = stack.pop() {
+        let owner = LocaleOwner::Module(module.id());
+        sources.extend(module.catalogs().iter().map(|&c| (c, owner)));
+        stack.extend(module.children().iter().rev());
+    }
+    sources
+}
+
 fn default_app_id(token: Option<&Token>) -> AppId {
     let Some(token) = token else {
         return fallback_app_id();

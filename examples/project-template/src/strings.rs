@@ -14,7 +14,11 @@
 //!   and per-render overrides.
 //! - `pub fn catalog()`: this crate's catalog; `AppBuilder::locales(strings::catalog())`
 //!   (in `lib.rs`) installs it, so every key and `noctis.*` override resolves from these
-//!   files. `Module::locales` (per-Module catalogs) is [planned, Story 11.2].
+//!   files. This bot keeps one App-level catalog, the recommended shape for a single-crate
+//!   bot; a Module shipped as its own crate (or with its own `dir`) adds its own `i18n!`
+//!   catalog with `Module::locales(catalog)` instead. Every catalog merges App-wide at
+//!   `build()` (App's first, then each Module's), and a key two catalogs define fails the
+//!   build naming both owners.
 //!
 //! File names are Discord locale codes (`en-US.yaml`, `tr.yaml`). A key missing from
 //! `en-US.yaml` (the default locale) or a call with the wrong arguments is a compile

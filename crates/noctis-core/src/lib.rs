@@ -225,7 +225,8 @@ pub use component::{
 };
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
-    AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, RunError, StartError,
+    AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, LocaleOwner, RunError,
+    StartError,
 };
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;

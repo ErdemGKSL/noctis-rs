@@ -322,8 +322,10 @@ pub noctis::BuildViolation::Command(noctis::rules::Violation)
 pub noctis::BuildViolation::CryptoProvider
 pub noctis::BuildViolation::DuplicateLocaleKey
 pub noctis::BuildViolation::DuplicateLocaleKey::first: &'static str
+pub noctis::BuildViolation::DuplicateLocaleKey::first_owner: noctis::LocaleOwner
 pub noctis::BuildViolation::DuplicateLocaleKey::key: &'static str
 pub noctis::BuildViolation::DuplicateLocaleKey::second: &'static str
+pub noctis::BuildViolation::DuplicateLocaleKey::second_owner: noctis::LocaleOwner
 pub noctis::BuildViolation::DuplicatePlugin
 pub noctis::BuildViolation::DuplicatePlugin::type_name: &'static str
 pub noctis::BuildViolation::DuplicateRoute
@@ -1094,6 +1096,20 @@ impl core::clone::Clone for noctis::Kv
 pub fn noctis::Kv::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Kv
 pub fn noctis::Kv::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::LocaleOwner
+pub noctis::LocaleOwner::App
+pub noctis::LocaleOwner::Module(&'static str)
+impl core::clone::Clone for noctis::LocaleOwner
+pub fn noctis::LocaleOwner::clone(&self) -> Self
+impl core::cmp::Eq for noctis::LocaleOwner
+impl core::cmp::PartialEq for noctis::LocaleOwner
+pub fn noctis::LocaleOwner::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::LocaleOwner
+pub fn noctis::LocaleOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::LocaleOwner
+pub fn noctis::LocaleOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::LocaleOwner
+impl core::marker::StructuralPartialEq for noctis::LocaleOwner
 pub struct noctis::LogSink
 impl core::clone::Clone for noctis::LogSink
 pub fn noctis::LogSink::clone(&self) -> Self
@@ -1234,6 +1250,7 @@ pub fn noctis::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::Module::before(self, noctis::BeforeMiddleware) -> Self
 pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
+pub fn noctis::Module::locales(self, noctis::i18n::Catalog) -> Self
 pub fn noctis::Module::module(self, noctis::Module) -> Self
 pub fn noctis::Module::new(&'static str) -> Self
 pub fn noctis::Module::template<T: noctis::image::Template>(self) -> Self
@@ -4132,6 +4149,7 @@ pub fn noctis::prelude::Module::base(self, &'static str, noctis::BaseMeta) -> Se
 pub fn noctis::prelude::Module::before(self, noctis::BeforeMiddleware) -> Self
 pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
+pub fn noctis::prelude::Module::locales(self, noctis::i18n::Catalog) -> Self
 pub fn noctis::prelude::Module::module(self, noctis::prelude::Module) -> Self
 pub fn noctis::prelude::Module::new(&'static str) -> Self
 pub fn noctis::prelude::Module::template<T: noctis::image::Template>(self) -> Self

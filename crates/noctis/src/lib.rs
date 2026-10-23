@@ -566,7 +566,9 @@
 //! - `image-emoji`: Twemoji colour emoji in image Templates.
 //! - `default-font`: a bundled default font for image Templates.
 //! - `i18n`: typed locale files: the `i18n!` macro and the `i18n` module
-//!   (`Catalog`, `format`).
+//!   (`Catalog`, `format`). Register a catalog App-wide with
+//!   `AppBuilder::locales` or ship it with a Module through
+//!   `Module::locales`; every catalog merges into one App-wide set.
 //! - `prefix`: opt-in prefix commands.
 //! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
 //!   simulated interactions, message snapshots and the memory check;
@@ -584,10 +586,10 @@ pub use noctis_core::{
     ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
     FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
     HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
-    Invocation, Kv, LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler,
-    ModalResponder, ModalSubmit, ModalSubmitCtx, Module, NoticeText, OptionError, OptionValue,
-    Options, OutgoingMessage, Partial, PartialOptions, Pending, Permissions, Plugin, RefOps,
-    Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    Invocation, Kv, LocaleOwner, LogSink, Manual, MenuKind, MenuTargetError, Middleware,
+    ModalHandler, ModalResponder, ModalSubmit, ModalSubmitCtx, Module, NoticeText, OptionError,
+    OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending, Permissions, Plugin,
+    RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
     ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
     StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
     UnknownCommandPath, Visibility,

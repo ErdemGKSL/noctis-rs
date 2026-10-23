@@ -159,15 +159,23 @@ pub enum BuildViolation {
         /// The state's type name.
         type_name: &'static str,
     },
-    /// Two catalogs passed to `AppBuilder::locales` define one locale key.
-    #[error("locale key `{key}` is defined by two catalogs: `{first}` and `{second}`")]
+    /// Two catalogs (from `AppBuilder::locales` or `Module::locales`) define
+    /// one locale key.
+    #[error(
+        "locale key `{key}` is defined by two catalogs: `{first}` ({first_owner}) and \
+         `{second}` ({second_owner})"
+    )]
     DuplicateLocaleKey {
         /// The key.
         key: &'static str,
-        /// The origin of the catalog registered first (`<crate>/<dir>`).
+        /// The origin of the catalog merged first (`<crate>/<dir>`).
         first: &'static str,
         /// The origin of the other catalog.
         second: &'static str,
+        /// Who registered the `first` catalog.
+        first_owner: LocaleOwner,
+        /// Who registered the `second` catalog.
+        second_owner: LocaleOwner,
     },
     /// Two plugins of one type; the first is kept.
     #[error(
@@ -472,6 +480,36 @@ impl BuildViolation {
         Self::Plugin {
             plugin: type_name::<P>(),
             message: message.into(),
+        }
+    }
+}
+
+/// Who registered a locale catalog, named by
+/// [`BuildViolation::DuplicateLocaleKey`].
+///
+/// ```
+/// use noctis_core::LocaleOwner;
+///
+/// assert_eq!(LocaleOwner::App.to_string(), "AppBuilder::locales");
+/// assert_eq!(LocaleOwner::Module("shop").to_string(), "Module `shop`");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LocaleOwner {
+    /// The App, through `AppBuilder::locales`.
+    App,
+    /// A mounted Module, through `Module::locales`.
+    Module(
+        /// The Module's id.
+        &'static str,
+    ),
+}
+
+impl fmt::Display for LocaleOwner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::App => f.write_str("AppBuilder::locales"),
+            Self::Module(id) => write!(f, "Module `{id}`"),
         }
     }
 }
