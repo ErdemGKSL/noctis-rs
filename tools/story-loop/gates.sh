@@ -3,12 +3,11 @@
 # A step that already passed on the identical working tree (same tracked + untracked, non-ignored content) is skipped,
 # so a run cut off by a caller's timeout resumes where it stopped. Stamps: target/story-loop/gate-<step>.ok
 source "$(dirname "$0")/env.sh"
-# Disk guard: lanes each have a cargo target dir and the session disk is small. Below 8 GiB free, drop whole build
-# units untouched for 6 h (cargo rebuilds anything it still needs) and hardlink identical files across the lane
-# target dirs (registry dependencies build to the same bytes in every lane).
-T=$(cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
-if [ -n "$T" ] && [ "$(df --output=avail -k "$ROOT" | tail -1)" -lt 8388608 ]; then
-  bash "$(dirname "$0")/prune-target.sh" "$T" 360 >/dev/null
+# Disk guard: lanes each have a cargo target dir and the session disk is small. Below 8 GiB free, hardlink identical
+# files across the lane target dirs (registry dependencies build to the same bytes in every lane). Nothing is pruned
+# here: an old artifact is usually still fresh, so deleting it only forces a rebuild; prune-target.sh is for a
+# near-full disk.
+if [ "$(df --output=avail -k "$ROOT" | tail -1)" -lt 8388608 ]; then
   main=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
   command -v hardlink >/dev/null && hardlink -q "$main/target/release/deps" "$(dirname "$main")"/lanes/*/noctis-rs/target/release/deps 2>/dev/null
 fi
