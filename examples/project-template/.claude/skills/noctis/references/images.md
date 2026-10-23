@@ -263,7 +263,8 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   (`<16 hex>.png`/`.jpg`/`.webp`) in the Template's still `format`; an animated
   Template (`animation(..)`) renders animated, ext `webp` (default), `gif` or `png`
   (APNG). The output always fits the size budget (below), so it never fails ATT-01 at
-  upload. Always render **in
+  upload. The budget is per file (ATT-01); ATT-02 (25 MiB per request) still limits a
+  whole message, and the 2 MiB default keeps up to 10 renders under it. Always render **in
   the handler**, never in a render function; the auto-defer covers a render slower
   than the ack deadline (type 5, then the edit carrying the file).
 - Errors are a `HandlerError` wrapping a `RenderError`, found with

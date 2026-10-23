@@ -88,6 +88,19 @@ template!(Where {}, "where", Size::new(2, 2), Format::Png, |_| {
     div(Classes::default())
 });
 
+template!(Edge {}, "edge", Size::new(4, 1), Format::Png, |_| {
+    div(Classes::__literal("flex w-full h-full")).children([
+        div(Classes::default()).style(Style::new().width_px(2).height_px(1)),
+        div(Classes::default()).style(
+            Style::new()
+                .width_px(2)
+                .height_px(1)
+                .bg_rgb(0xFF_0000)
+                .opacity(0.5),
+        ),
+    ])
+});
+
 /// Where the `Where` view last ran: (thread name, outside tokio).
 static WHERE: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
@@ -203,6 +216,7 @@ fn renderer_budget(
             TemplateDescriptor::of::<Noise>(),
             TemplateDescriptor::of::<Recorder>(),
             TemplateDescriptor::of::<Spinner>(),
+            TemplateDescriptor::of::<Edge>(),
         ])
         .unwrap();
     renderer
@@ -834,6 +848,92 @@ async fn without_the_fallback_it_is_over_budget() {
     let err = r.render(with_budget(job, budget)).await.unwrap_err();
     assert!(
         matches!(err, RenderError::OverBudget { budget: b, .. } if b == budget),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_size_step_keeps_translucent_edges_their_colour() {
+    let r = renderer();
+    let job = RenderJob::of(&Edge {}).unwrap();
+    let view = r.view_of(&job).unwrap();
+    let full = r.shared.frame(view, &job, Frame::STILL, 0).unwrap();
+    let small = resized(&full, Size::new(2, 1)).unwrap();
+    let edges: Vec<&[u8]> = small
+        .as_raw()
+        .chunks_exact(4)
+        .filter(|px| px[3] > 0 && px[3] < 255)
+        .collect();
+    assert!(!edges.is_empty(), "{:?}", small.as_raw());
+    for px in edges {
+        assert!(px[0] >= 250 && px[1] <= 5 && px[2] <= 5, "{px:?}");
+    }
+}
+
+/// The canvas size of a VP8X (extended) WebP.
+fn webp_canvas(bytes: &[u8]) -> Size {
+    assert_eq!(&bytes[12..16], b"VP8X");
+    let side = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], 0]) + 1;
+    Size::new(side(24), side(27))
+}
+
+#[tokio::test]
+async fn an_animation_over_budget_steps_down_its_size() {
+    let r = renderer();
+    let job = anim(5, 1000, WEBP80);
+    let full_len = encoded_len(&r, &job, &attempt(Some(5), 64, Some(80), false));
+    let out = r.render(with_budget(job, full_len - 1)).await.unwrap();
+    assert!((out.bytes.len() as u64) < full_len);
+    let size = out.settings_used.size;
+    assert_ne!(size, Size::new(64, 64));
+    assert_eq!(webp_canvas(&out.bytes), size);
+    assert_eq!(out.settings_used.frames, 5);
+}
+
+#[tokio::test]
+async fn an_animation_over_budget_steps_down_its_quality_after_its_size() {
+    let r = renderer();
+    let job = anim(5, 1000, WEBP80);
+    let smallest_q80 = encoded_len(&r, &job, &attempt(Some(5), 32, Some(80), false));
+    let out = r.render(with_budget(job, smallest_q80 - 1)).await.unwrap();
+    assert!((out.bytes.len() as u64) < smallest_q80);
+    assert_eq!(out.settings_used.size, Size::new(32, 32));
+    assert!(
+        out.settings_used.quality < Some(80),
+        "{:?}",
+        out.settings_used
+    );
+    assert_eq!(webp_canvas(&out.bytes), Size::new(32, 32));
+}
+
+#[tokio::test]
+async fn a_lossy_still_fallback_takes_the_still_quality() {
+    let r = renderer();
+    let job = RenderJob {
+        format: Format::Jpeg { quality: 90 },
+        ..long_anim()
+    };
+    let budget = still_only_budget(&r, &job);
+    let out = r.render(with_budget(job, budget)).await.unwrap();
+    assert_eq!(out.settings_used.quality, Some(25));
+    assert_eq!(out.settings_used.frames, 1);
+    assert_eq!(&out.bytes[..2], b"\xFF\xD8");
+}
+
+#[cfg(not(feature = "gif"))]
+#[tokio::test]
+async fn more_than_u32_max_frames_is_rejected_before_admission() {
+    let r = renderer();
+    let job = RenderJob {
+        animation: Some(AnimationSpec::new(Duration::MAX, 1000, WEBP80)),
+        ..noise(Format::Png)
+    };
+    let before = r.pool.admitted();
+    let future = r.render(job);
+    assert_eq!(r.pool.admitted(), before, "rejected before admission");
+    let err = future.await.unwrap_err();
+    assert!(
+        matches!(&err, RenderError::Unsupported { why, .. } if why.contains("u32::MAX frames")),
         "{err}"
     );
 }

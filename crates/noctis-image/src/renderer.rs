@@ -211,10 +211,9 @@ impl Shared {
         let (bytes, attempt) = budget::fit(&attempts, budget, |a| encoder.encode(a))?;
         let (format, frames) = match job.animation {
             Some(spec) if !attempt.still => {
-                let fps = attempt.fps.unwrap_or(spec.fps);
-                let frames = u32::try_from(budget::span_count(spec.duration, fps))
-                    .map_err(|_| too_many_frames(job))?;
-                (spec.format.into(), frames)
+                // `Encoder::draw` already bounded the count to `u32`.
+                let count = encoder.frames.as_ref().map_or(0, |f| f.full.len());
+                (spec.format.into(), u32::try_from(count).unwrap_or(u32::MAX))
             }
             _ => (job.format.into(), 1),
         };
@@ -273,10 +272,12 @@ fn too_many_frames(job: &RenderJob) -> RenderError {
     }
 }
 
-/// The full-size frames of one fps; `fps` is `None` for a still Template.
+/// The full-size frames of one fps (`None` for a still Template), plus the
+/// frames last resampled from them, so quality steps at one size reuse them.
 struct Frames {
     fps: Option<u16>,
-    frames: Vec<AnimationFrame>,
+    full: Vec<AnimationFrame>,
+    resampled: Option<(Size, Vec<AnimationFrame>)>,
 }
 
 /// Encodes one job's [`Attempt`]s. Frames are drawn at full size once per
@@ -302,14 +303,20 @@ impl Encoder<'_> {
             // A still fallback takes frame 0 of whatever was drawn last.
             Some(spec) => self.frames.as_ref().map_or(Some(spec.fps), |f| f.fps),
         };
-        let frames = self.frames_at(fps)?;
         let mut bytes = Vec::new();
         match job.animation {
             Some(spec) if !attempt.still => {
-                let frames = resized_frames(frames, attempt.size)?;
-                write_animated(spec.format, attempt.quality, frames, &mut bytes, job)?;
+                let frames = self.frames_sized(fps, attempt.size)?;
+                write_animated(
+                    spec.format,
+                    attempt.quality,
+                    Cow::Borrowed(frames),
+                    &mut bytes,
+                    job,
+                )?;
             }
             _ => {
+                let frames = self.frames_at(fps)?;
                 let first = &frames[0].image;
                 let image = resized(first, attempt.size)?;
                 let format = still_encoding(job.format, attempt.quality);
@@ -324,9 +331,44 @@ impl Encoder<'_> {
     fn frames_at(&mut self, fps: Option<u16>) -> Result<&[AnimationFrame], RenderError> {
         if self.frames.as_ref().is_none_or(|f| f.fps != fps) {
             let frames = self.draw(fps)?;
-            self.frames = Some(Frames { fps, frames });
+            self.frames = Some(Frames {
+                fps,
+                full: frames,
+                resampled: None,
+            });
         }
-        Ok(self.frames.as_ref().map_or(&[], |f| &f.frames))
+        Ok(self.frames.as_ref().map_or(&[], |f| &f.full))
+    }
+
+    /// The frames at `fps` resampled to `size`, cached for the last size.
+    fn frames_sized(
+        &mut self,
+        fps: Option<u16>,
+        size: Size,
+    ) -> Result<&[AnimationFrame], RenderError> {
+        self.frames_at(fps)?;
+        let Some(cache) = self.frames.as_mut() else {
+            return Ok(&[]);
+        };
+        let full = cache
+            .full
+            .first()
+            .is_none_or(|f| (f.image.width(), f.image.height()) == (size.width(), size.height()));
+        if full {
+            return Ok(&cache.full);
+        }
+        if cache.resampled.as_ref().is_none_or(|(s, _)| *s != size) {
+            let frames = cache
+                .full
+                .iter()
+                .map(|f| {
+                    resized(&f.image, size)
+                        .map(|b| AnimationFrame::new(b.into_owned(), f.duration_ms))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            cache.resampled = Some((size, frames));
+        }
+        Ok(cache.resampled.as_ref().map_or(&[], |(_, f)| f))
     }
 
     /// Draws every frame at `fps` (one still frame for `None`).
@@ -362,33 +404,42 @@ fn resized(bitmap: &Bitmap, size: Size) -> Result<Cow<'_, Bitmap>, RenderError> 
     if (bitmap.width(), bitmap.height()) == (width, height) {
         return Ok(Cow::Borrowed(bitmap));
     }
-    let source =
-        image::RgbaImage::from_raw(bitmap.width(), bitmap.height(), bitmap.as_raw().to_vec())
-            .ok_or_else(|| RenderError::failed("a rendered frame has an invalid pixel buffer"))?;
-    let scaled = image::imageops::resize(&source, width, height, FilterType::Triangle);
-    Bitmap::from_raw(width, height, scaled.into_raw())
+    // takumi's pixels are straight RGBA; resampling them as-is would bleed
+    // the black of clear pixels into translucent edges.
+    let mut raw = bitmap.as_raw().to_vec();
+    premultiply(&mut raw);
+    let source = image::RgbaImage::from_raw(bitmap.width(), bitmap.height(), raw)
+        .ok_or_else(|| RenderError::failed("a rendered frame has an invalid pixel buffer"))?;
+    let mut scaled =
+        image::imageops::resize(&source, width, height, FilterType::Triangle).into_raw();
+    demultiply(&mut scaled);
+    Bitmap::from_raw(width, height, scaled)
         .map(Cow::Owned)
         .ok_or_else(|| RenderError::failed("a resampled frame has an invalid pixel buffer"))
 }
 
-/// `frames` resampled to `size`, or borrowed when they already are.
-fn resized_frames(
-    frames: &[AnimationFrame],
-    size: Size,
-) -> Result<Cow<'_, [AnimationFrame]>, RenderError> {
-    let full = frames
-        .first()
-        .is_none_or(|f| (f.image.width(), f.image.height()) == (size.width(), size.height()));
-    if full {
-        return Ok(Cow::Borrowed(frames));
+/// Premultiplies straight RGBA pixels by their alpha, in place.
+fn premultiply(pixels: &mut [u8]) {
+    for px in pixels.chunks_exact_mut(4) {
+        let alpha = u16::from(px[3]);
+        for c in &mut px[..3] {
+            // At most 255 * 255 + 127, so the quotient fits a byte.
+            *c = u8::try_from((u16::from(*c) * alpha + 127) / 255).unwrap_or(u8::MAX);
+        }
     }
-    frames
-        .iter()
-        .map(|f| {
-            resized(&f.image, size).map(|b| AnimationFrame::new(b.into_owned(), f.duration_ms))
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Cow::Owned)
+}
+
+/// Turns premultiplied RGBA pixels back into straight ones, in place.
+fn demultiply(pixels: &mut [u8]) {
+    for px in pixels.chunks_exact_mut(4) {
+        let alpha = u32::from(px[3]);
+        for c in &mut px[..3] {
+            // A clear pixel (alpha 0) has no colour left: 0.
+            *c = (u32::from(*c) * 255 + alpha / 2)
+                .checked_div(alpha)
+                .map_or(0, |v| u8::try_from(v).unwrap_or(u8::MAX));
+        }
+    }
 }
 
 /// Encodes `frames` as `format` into `out`.

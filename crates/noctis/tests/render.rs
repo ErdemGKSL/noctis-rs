@@ -169,6 +169,19 @@ impl TemplateView for Noise {
     }
 }
 
+/// [`Noise`] animated for 5 s: its smallest animated encoding is larger than
+/// its still fallback, so a budget between them exists.
+#[derive(Template, Serialize, Deserialize, Debug, Clone)]
+#[template(id = "noise-reel", version = 1, size = (64, 64), format = Png,
+           animation(duration_ms = 5000, fps = 20))]
+struct NoiseReel;
+
+impl TemplateView for NoiseReel {
+    fn view(&self, frame: Frame) -> Node {
+        Noise.view(frame)
+    }
+}
+
 /// A hand-written Template whose view the derive did not make.
 #[derive(Serialize, Deserialize)]
 struct Foreign;
@@ -198,6 +211,7 @@ fn cards() -> Module {
         .template::<Gated>()
         .template::<Spinner>()
         .template::<Noise>()
+        .template::<NoiseReel>()
 }
 
 /// A builder on `runtime` with the test theme, `config` and [`cards`].
@@ -709,6 +723,40 @@ async fn the_size_target_wins_over_a_larger_upload_budget() {
         matches!(err, RenderError::OverBudget { budget: 1024, smallest } if smallest > 1024),
         "{err}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn still_fallback_false_is_over_budget_where_the_default_falls_back() {
+    let strict = app_with(ImageConfig::new().threads(1).still_fallback(false));
+    let job = |upload_budget| RenderJob {
+        upload_budget,
+        ..RenderJob::of(&NoiseReel).unwrap()
+    };
+    let err = strict.renderer().unwrap().render(job(1)).await.unwrap_err();
+    let RenderError::OverBudget { smallest, .. } = err else {
+        panic!("{err}");
+    };
+    // Below every animated encoding: only the still fallback fits.
+    let budget = smallest - 1;
+    let err = strict
+        .renderer()
+        .unwrap()
+        .render(job(budget))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, RenderError::OverBudget { budget: b, .. } if b == budget),
+        "{err}"
+    );
+    let out = app_with(ImageConfig::new().threads(1))
+        .renderer()
+        .unwrap()
+        .render(job(budget))
+        .await
+        .unwrap();
+    assert_eq!(out.settings_used.frames, 1);
+    assert_eq!(out.format, OutputFormat::Png);
+    assert_eq!(&out.bytes[..8], b"\x89PNG\r\n\x1a\n");
 }
 
 #[cfg(feature = "image-gif")]

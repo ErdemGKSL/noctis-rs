@@ -2,10 +2,10 @@
 title: 'Story 10.4: Output formats and size budget'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '30171b9b5f23873b216f9125dc1b8e80ba519cc3'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -15,7 +15,21 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/macros.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      A derived or hand-built animation with a huge duration_ms x fps (up to u32::MAX ms at 90 fps) draws every full-size frame into memory before any budget check, which can exhaust memory on a pool thread.
+    evidence: |-
+      view_of only rejects more than u32::MAX frames; Encoder::draw collects all spans as full-size bitmaps (renderer.rs draw). 60 s at 90 fps on 800x400 is about 6.9 GB of RGBA. The intent-contract's Never list assigns per-job caps to Story 10.5, and the spec's Design Notes record it as a known residual.
+    location: >-
+      crates/noctis-image/src/renderer.rs (view_of, Encoder::draw)
+    severity: high
+  - summary: >-
+      A GIF animation with fps above 50 gets sub-20 ms frame delays, which viewers clamp, so it plays slower than declared.
+    evidence: |-
+      GIF delays are centiseconds; the derive accepts fps up to 90 for every format and view_of has no GIF fps check, so fps 60 yields 1-2 cs delays that browsers clamp to about 10 cs. The intent-contract's Never list assigns the fps-cap check to Story 10.6.
+    location: >-
+      crates/noctis-image/src/renderer.rs (view_of); crates/noctis-macros/src/template.rs:349
+    severity: medium
 ---
 
 <intent-contract>
@@ -223,6 +237,38 @@ R is a `TakumiRenderer` from `renderer/tests.rs` (`threads 2`, Deny). Unless a r
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 28 findings — high 2, medium 4, low 12, false 10, maybe-false 0
+- findings:
+  - `low` `patch` (blind) Animated quality steps resample the full-size frames again at every quality step — real: resized_frames runs per encode with no cache; patch: cache the frames resampled at the last size next to `Frames`.
+  - `low` `reject` (blind) `resized` copies the pixel buffer with `to_vec()` — real, but the premultiplied-alpha patch below needs that working copy (it premultiplies into it), so there is nothing left to remove.
+  - `medium` `patch` (blind) Resampling assumes straight RGBA and can bleed transparent-pixel colour into edges — verified: takumi's canvas demultiplies on output (takumi-raster canvas.rs:383), so `Bitmap` is straight alpha and clear pixels are (0,0,0,0); Triangle on straight alpha darkens translucent edges. Grouped with the edge-hunter premultiply finding; patch: premultiply before `imageops::resize`, demultiply after, plus a test.
+  - `low` `reject` (blind) A lossless PNG still fallback rarely beats the last lossy animated attempt — real cost in some cases, but it does help long animations (the 5 s rows), and the fix changes the documented ladder (new sub-steps or a different format), more than a direct correction.
+  - `high` `defer` (blind) No interim frame cap; huge duration_ms x fps can OOM a pool thread — real; the intent-contract's Never list assigns per-job caps to Story 10.5. Deferred (grouped with the edge-hunter OOM finding).
+  - `low` `patch` (blind) `settings_used.frames` is recomputed with `span_count` instead of taken from the encoded frames — two sources of truth held equal only by a test; patch: take the count from the encoder's cached `Frames` and drop the second `too_many_frames` path in `draw`.
+  - `low` `patch` (blind) Docs say output "never fails ATT-01 at upload" without naming ATT-02 (25 MiB per request) — authors may read it as "uploads never fail on size"; patch: one sentence next to that claim and in the `size_target` docs.
+  - `low` `reject` (blind) Public `RenderJob::upload_budget` without `#[non_exhaustive]` breaks struct literals — the spec deliberately adds a public field and `RenderJob::of` is the constructor; the proposed fix adds public surface (setter) for a pre-1.0 crate, more than a direct correction.
+  - `low` `patch` (blind) Test gaps: animated quality steps, lossy still fallback quality, GIF/APNG over budget, non-command ctx budgets — real for the animated steps and the lossy still fallback (grouped with the verification-gap animated-step finding); the ctx kinds share one `CtxInner` code path in `noctis-core/src/render.rs`, and the lossless-animated skip is ladder-tested.
+  - `false` `reject` (blind) The gate diagnostic's help line exposes `__private` paths and the ui.rs comment is misleading — the `help` line is rustc's own trait-not-implemented text, which `on_unimplemented` cannot suppress; ui.rs already gates `ui_image` to exclude `image-gif` (ui.rs:89-92), so the fixture cannot run with it.
+  - `false` `reject` (blind) fps steps come before size steps with no recorded rationale — the order fps, size, quality is the story's acceptance criterion in epics.md, not an implementation choice.
+  - `low` `reject` (blind) The spec's Matrix and tasks do not record the 5 s renderer-row deviation — the fix is to edit this build's spec; the deviation is logged in the memlog.
+  - `high` `defer` (edge) Huge duration x fps holds every full-size frame in memory — same root cause as the blind OOM finding; deferred to Story 10.5.
+  - `medium` `patch` (edge) Triangle resize on straight alpha bleeds hidden RGB into edges — same root cause as the blind premultiply finding; same patch.
+  - `medium` `defer` (edge) GIF with fps above 50 gets sub-20 ms delays that viewers clamp — real; the intent-contract's Never list assigns the fps-cap check to Story 10.6. Deferred.
+  - `low` `reject` (edge) `settings_used.frames` overstates frames when takumi merges identical consecutive WebP frames — true (webp/mod.rs `UniqueFrame::push` lengthens duplicates), but playback timing and the rendered frames are unchanged, and the fix would have to mirror takumi's dedupe, more than a direct correction.
+  - `low` `patch` (vgap) `ImageConfig::still_fallback(false)` is never observed through `ImagePlugin` — pre-verified regression gap; patch: facade test asserting `OverBudget` with the fallback off and a 1-frame PNG with the default.
+  - `medium` `patch` (vgap) Animated size and quality steps are never checked against the encoded output — pre-verified regression gap; patch: renderer rows asserting the WebP canvas equals `settings_used.size` and a quality-stepped output below q80 (grouped with the blind test-gap finding, plus a lossy still-fallback quality check).
+  - `low` `patch` (vgap) The pre-admission u32::MAX-frames rejection has no renderer test — pre-verified regression gap; patch: a renderer row with `Duration::MAX` at 1000 fps asserting `Unsupported` and an unchanged admitted counter.
+  - `false` `reject` (intent D1) The animated format is configurable per Template only — the epics AC1 asks for GIF/APNG configurable as the animated format, which `animation(format = ..)` satisfies; per-call overrides (`render_with`) are Story 10.6 in epics.md.
+  - `false` `reject` (intent D2) `image-gif` does not gate the GIF/PNG encoder dependencies — takumi-raster links them unconditionally and offers no feature to drop them; the spec deliberately settled a code-and-API gate.
+  - `false` `reject` (intent D3) Core does not re-check a custom Renderer's output length — the AC binds the Renderer ("the Renderer returns the first attempt that fits"); the port documents `upload_budget` as the limit, and an oversize custom output still fails with a typed ATT-01 error at the Responder.
+  - `false` `reject` (intent D4) The budget is per file, not per request (ATT-02) — the AC defines the budget as min(Upload Budget, target) per render; the documentation side is handled by the ATT-02 doc patch above.
+  - `low` `reject` (intent D5) No end-to-end test of ctx.render with an interaction budget through the takumi Renderer — both halves are tested, and the join is one field write (`job.upload_budget`) that the core test asserts reaches the Renderer; a full interaction-plus-takumi harness is more than a direct correction.
+  - `false` `reject` (intent D6) `settings_used` is only on `RenderOutput` — AC3 names `RenderOutput.settings_used` literally; `render_report()` is Story 10.6.
+  - `false` `reject` (intent D7) Size steps resample instead of re-laying out — the spec settled this with a recorded reason (fixed-px layouts would crop) and the skill documents it.
+  - `false` `reject` (intent D8) The still fallback is an App-wide switch — "optionally" names no location; the spec settled `ImageConfig::still_fallback`.
+  - `false` `reject` (intent D9) Fixed ladder granularity ends in `OverBudget` after at most 9 encodes — the AC requires a typed error when nothing fits; the steps are documented in the skill and the spec.
+
 ## Design Notes
 
 - **Animated rendering moves into 10.4.** The animated encoders and the fps step both need real frames, so the per-frame view loop ships here, which makes animated Templates renderable through `ctx.render`. Story 10.6 keeps keyframe and `animate-*` validation, the root-size-mismatch error, fps caps at job creation, `render_with` and `render_report`.
@@ -244,3 +290,12 @@ R is a `TakumiRenderer` from `renderer/tests.rs` (`threads 2`, Deny). Unless a r
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `cargo tree -p noctis -e normal | grep -E 'noctis-image|takumi|rayon| image v'` -- no output
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- **Summary:** Output formats (PNG/WebP/JPEG stills; WebP/GIF/APNG animated, GIF gated by `image-gif` at compile time and render time) and a size-budget ladder (fps -> size -> quality -> optional still fallback, max 9 encodes) fitting each render within min(Upload Budget, `size_target`); `RenderOutput.settings_used` reports the settings that fit; typed `OverBudget` when nothing fits. Animated per-frame rendering moved into this story.
+- **Files changed:** `noctis-ports/src/render.rs` (job `upload_budget`, `settings_used`, `OverBudget`); `noctis-image/src/budget.rs` (pure ladder/fit); `noctis-image/src/renderer.rs` (encoders, frame loop, premultiplied resampling, frame cache); `noctis-image/src/plugin.rs`, `template.rs` (`still_fallback`, GIF gate); `noctis-core/src/render.rs`, `responder*.rs` (budget written into job); `noctis-macros/src/template.rs` (animation format, gate diagnostic); tests and trybuild fixture; `docs/discord-rules.md`; project-template skill, `images.md`, `AGENTS.md`; `xtask/public-api.txt`.
+- **Review findings:** 28 total (high 2, medium 4, low 12, false 10). Patched (by verdict): medium 3 (premultiplied-alpha resize, x2 grouped; animated size/quality output checks), low 6 (frame cache, single frames source, ATT-02 doc note, test gaps, still_fallback facade test, u32::MAX-frames test). Deferred: high 2 (frame-count OOM -> Story 10.5), medium 1 (GIF fps>50 -> Story 10.6). Rejected: 16 with recorded reasons in the triage log (`to_vec` copy needed; PNG fallback ladder change; non_exhaustive; 5 s row deviation logged in memlog; WebP dedupe frame count; e2e harness; 10 intent/false items).
+- **Follow-up review recommended: true** — three medium patches; unverified risk: premultiply/demultiply rounding on near-transparent edge pixels and the new per-size frame cache interacting with fps re-renders could yield wrong canvas or stale frames.
+- **Verification:** `tools/story-loop/gates.sh` ALL-OK (fmt, clippy -D warnings, workspace tests incl. all-features and ui_image, cargo hack each-feature, api-snapshot, deps-check, rules-catalog, skill-check, tw-grammar, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** huge `duration_ms x fps` can still allocate many frames until Story 10.5 caps; GIF delays below 20 ms clamped by viewers until Story 10.6 fps caps; budget is per file, ATT-02 per-request 25 MiB is documented, not enforced here.

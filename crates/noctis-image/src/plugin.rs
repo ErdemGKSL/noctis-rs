@@ -96,7 +96,9 @@ impl ImageConfig {
     }
 
     /// The largest output in bytes, at least 1024 (default 2 MiB); a render
-    /// fits the smaller of it and the interaction's Upload Budget.
+    /// fits the smaller of it and the interaction's Upload Budget. The budget
+    /// is per file (ATT-01); ATT-02 (25 MiB per request) still limits a whole
+    /// message, and the 2 MiB default keeps up to 10 renders under it.
     #[must_use]
     pub fn size_target(mut self, bytes: u64) -> Self {
         self.size_target = bytes;
