@@ -24,7 +24,21 @@ run test cargo test --release --workspace --all-features
 # runs the full gates once before it finalizes a story.
 merged=$NOCTIS_GATES_LIGHT
 git rev-parse --abbrev-ref HEAD | grep -q '^story-loop/' && git log --format=%s origin/main..HEAD 2>/dev/null | grep -q 'review patches; mark done' && merged=1
-[ -z "$merged" ] && run hack cargo hack test --release --workspace --each-feature
+# cargo hack runs once per epic (maintainer decision, 2026-10-23): only when the story in progress is the last story
+# of its epic that is not done yet. Without a story in progress (a manual run) it always runs.
+nohack=$merged
+[ -z "$nohack" ] && nohack=$(python3 - "$ROOT/_bmad-output/implementation-artifacts/sprint-status.yaml" <<'PY'
+import re, sys
+st = {}
+for line in open(sys.argv[1]):
+    m = re.match(r"\s+((\d+)-\d+-[\w-]+):\s*(\S+)", line)
+    if m:
+        st[m.group(1)] = (m.group(2), m.group(3))
+epics = {e for e, s in st.values() if s == "in-progress"}
+print(1 if any(e in epics and s not in ("done", "in-progress") for e, s in st.values()) else "")
+PY
+)
+[ -z "$nohack" ] && run hack cargo hack test --release --workspace --each-feature
 [ -z "$merged" ] && run msrv cargo +1.91 check --release --workspace
 run deny cargo deny check
 run cfg bash .github/scripts/check-build-config.sh

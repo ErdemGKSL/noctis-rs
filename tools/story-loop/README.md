@@ -66,7 +66,8 @@ Run about one or two epics per invocation, then check the results, `git log` and
 
 Gates between implementation and review rounds are light (`NOCTIS_GATES_LIGHT=1`: no
 `cargo hack`, no MSRV check); the full gates run once before a story is finalized, skipping
-every step that already passed on the same tree.
+every step that already passed on the same tree. `cargo hack` itself runs only for the last story of an epic
+(the in-progress story's epic has no other story left that is not done in `sprint-status.yaml`).
 
 ## Parallel lanes
 
