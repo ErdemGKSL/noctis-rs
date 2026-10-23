@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::future::Future;
 use std::num::{NonZeroU32, NonZeroUsize};
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
 use std::pin::pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,7 +42,7 @@ use crate::ports::{PortOverrides, PortSlot, Ports};
 use crate::proxy::normalize_http_proxy;
 use crate::publish::{Publish, PublishScope};
 use crate::registry::Registry;
-use crate::sharding::{GatewayInfo, plan};
+use crate::sharding::{GatewayInfo, ShardPlan, plan};
 use crate::sink::{ErrorSinks, EventDropObserver};
 use crate::startup::{Signals, check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
@@ -60,6 +60,8 @@ const HTTP_PROXY_VAR: &str = "NOCTIS_HTTP_PROXY";
 const GATEWAY_URL_VAR: &str = "NOCTIS_GATEWAY_URL";
 /// The environment variable [`App::from_env`] reads the fixed shard total from.
 const SHARD_TOTAL_VAR: &str = "NOCTIS_SHARD_TOTAL";
+/// The environment variable [`App::from_env`] reads the Shard Range from.
+const SHARD_RANGE_VAR: &str = "NOCTIS_SHARD_RANGE";
 /// The environment variable [`App::from_env`] reads the shutdown grace from.
 const SHUTDOWN_GRACE_VAR: &str = "NOCTIS_SHUTDOWN_GRACE";
 /// The environment variable [`App::from_env`] reads the publisher switch from.
@@ -135,6 +137,8 @@ pub struct App {
     http_config: HttpConfig,
     gateway_url: Option<String>,
     shard_total: Option<NonZeroU32>,
+    /// The Shard Range, validated against `shard_total` by `build`.
+    shard_range: Option<Range<u32>>,
     intents: Intents,
     ports: Ports,
     registry: Arc<Registry>,
@@ -174,13 +178,16 @@ impl App {
     /// [`App::builder`] plus the `NOCTIS_*` environment variables.
     ///
     /// Reads `NOCTIS_TOKEN`, `NOCTIS_HTTP_PROXY`, `NOCTIS_GATEWAY_URL`,
-    /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHUTDOWN_GRACE`, `NOCTIS_PUBLISHER`,
+    /// `NOCTIS_SHARD_TOTAL`, `NOCTIS_SHARD_RANGE`, `NOCTIS_SHUTDOWN_GRACE`,
+    /// `NOCTIS_PUBLISHER`,
     /// `NOCTIS_DEV_GUILD`, `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS`
     /// and then `NOCTIS_APP_ID`, each trimmed of ASCII whitespace; an empty
     /// value counts as unset. The proxy and the gateway URL are passed to
     /// [`AppBuilder::http_proxy`] and [`AppBuilder::gateway_url`] and
     /// validated by `build()`; the shard total (1-10 ASCII digits) is passed
-    /// to [`AppBuilder::shard_total`]; the shutdown grace (1-4 ASCII digits
+    /// to [`AppBuilder::shard_total`]; the Shard Range (`start..end`, each
+    /// side 1-10 ASCII digits) to [`AppBuilder::shard_range`], whose bounds
+    /// `build()` checks; the shutdown grace (1-4 ASCII digits
     /// of whole seconds) is passed to [`AppBuilder::shutdown_grace`], so
     /// 901-9999 fail at `build()`; the publisher switch (`true`, `false`,
     /// `1` or `0`, any ASCII case) is passed to [`AppBuilder::publisher`];
@@ -193,7 +200,8 @@ impl App {
     /// # Errors
     ///
     /// [`Error::Env`] when a variable is not Unicode, holds an invalid token,
-    /// an invalid shard total, an invalid shutdown grace, an invalid
+    /// an invalid shard total, an invalid Shard Range
+    /// ([`EnvError::InvalidShardRange`]), an invalid shutdown grace, an invalid
     /// publisher switch, an invalid dev guild or an invalid payload key
     /// ([`EnvError::InvalidPayloadKey`]); the message never shows the
     /// value.
@@ -446,6 +454,25 @@ impl App {
         self.shard_total.map(NonZeroU32::get)
     }
 
+    /// The Shard Range this process runs ([`AppBuilder::shard_range`] or
+    /// `NOCTIS_SHARD_RANGE`), if one was set; `None` runs every shard
+    /// `0..total`.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder()
+    ///     .shard_total(128)
+    ///     .shard_range(32..64)
+    ///     .build()
+    ///     .unwrap();
+    /// assert_eq!(app.shard_range(), Some(32..64));
+    /// assert_eq!(noctis_core::App::builder().build().unwrap().shard_range(), None);
+    /// # }
+    /// ```
+    pub fn shard_range(&self) -> Option<Range<u32>> {
+        self.shard_range.clone()
+    }
+
     /// The gateway intents the App identifies with: the requested ones (at
     /// least `GUILDS`) plus the non-privileged intents its event handlers
     /// derive.
@@ -676,7 +703,9 @@ impl App {
     /// the App's HTTP client, plans the shard total (the fixed
     /// [`shard_total`](AppBuilder::shard_total) or Discord's recommendation)
     /// and the identify buckets (`max_concurrency`), and starts one task per
-    /// shard. Each shard identifies through the `IdentifyQueue` port in
+    /// shard of the [`shard_range`](AppBuilder::shard_range) (every shard
+    /// `0..total` without one; a range not aligned to `max_concurrency` logs a
+    /// warning). Each shard identifies through the `IdentifyQueue` port in
     /// bucket `shard_id % max_concurrency` (GW-01). Shard tasks push every
     /// parsed item into the lanes without waiting: interactions into the
     /// never-dropped Interaction Lane, other events into the bounded event
@@ -686,7 +715,7 @@ impl App {
     /// [`handler_concurrency`](AppBuilder::handler_concurrency) worker
     /// permits (interactions never do) and runs its ordered handlers in
     /// per-guild order, then its concurrent handlers together. Startup
-    /// finishes once every shard has received READY.
+    /// finishes once every shard of this process has received READY.
     ///
     /// A shard that closes fatally after startup is logged at `error`
     /// (`"shard closed fatally"`, with the typed cause) and its
@@ -710,7 +739,8 @@ impl App {
     /// the checks above, [`StartError::InvalidToken`] (HTTP 401 or close
     /// 4004), [`StartError::GatewayInfo`], [`StartError::InvalidGatewayInfo`],
     /// [`StartError::ShardTotalTooSmall`] (GW-03),
-    /// [`StartError::SessionStartLimit`] (GW-02), or a fatal close during
+    /// [`StartError::SessionStartLimit`] (GW-02: `remaining` below the
+    /// number of shards this process identifies), or a fatal close during
     /// startup ([`StartError::InvalidIntents`],
     /// [`StartError::DisallowedIntents`], [`StartError::FatalClose`],
     /// [`StartError::ShardEnded`], [`StartError::GatewayStopped`]).
@@ -771,16 +801,10 @@ impl App {
                 self.gateway_info().await
             } => info?,
         };
-        let plan = plan(info, self.shard_total)?;
+        let plan = plan(info, self.shard_total, self.shard_range.clone())?;
         let total = plan.total.get();
-        if plan.misaligned {
-            tracing::warn!(
-                target: "noctis::app",
-                total,
-                max_concurrency = plan.max_concurrency.get(),
-                "shard total is not a multiple of max_concurrency; identify buckets are uneven"
-            );
-        }
+        let shards = plan.shards.clone();
+        log_plan(&plan);
         let identify_queue: Arc<dyn IdentifyQueue> =
             if self.ports().is_default(PortSlot::IdentifyQueue) {
                 Arc::new(MemoryIdentifyQueue::new(plan.max_concurrency))
@@ -794,6 +818,7 @@ impl App {
             gateway_url: self.gateway_url.clone(),
             event_types: self.registry.event_types(),
             identify_queue,
+            shards: shards.clone(),
             total: plan.total,
             max_concurrency: plan.max_concurrency,
             close_timeout: SHARD_CLOSE_TIMEOUT,
@@ -810,6 +835,7 @@ impl App {
         })?;
         let status = ShardStatus {
             app: Arc::clone(&self.shared.app),
+            shards,
             total,
         };
         status.init();
@@ -821,7 +847,7 @@ impl App {
         let stop = match started {
             Some(result) => {
                 result?;
-                tracing::info!(target: "noctis::app", "all {total} shards ready");
+                tracing::info!(target: "noctis::app", "all {} shards ready", status.count());
                 supervise(
                     &mut events,
                     &status,
@@ -943,6 +969,35 @@ impl App {
     }
 }
 
+/// Logs the plan's alignment warnings and the shards this process starts.
+fn log_plan(plan: &ShardPlan) {
+    let total = plan.total.get();
+    let shards = &plan.shards;
+    if plan.total_misaligned {
+        tracing::warn!(
+            target: "noctis::app",
+            total,
+            max_concurrency = plan.max_concurrency.get(),
+            "shard total is not a multiple of max_concurrency; identify buckets are uneven"
+        );
+    }
+    if plan.range_misaligned {
+        tracing::warn!(
+            target: "noctis::app",
+            start = shards.start,
+            end = shards.end,
+            max_concurrency = plan.max_concurrency.get(),
+            "shard range is not aligned to max_concurrency; identify buckets are split across processes"
+        );
+    }
+    tracing::info!(
+        target: "noctis::app",
+        "starting shards {}..{} of {total}",
+        shards.start,
+        shards.end
+    );
+}
+
 /// The [`StartError`] for shard `shard` ending during startup with
 /// `close_code`.
 fn start_error(shard: u32, close_code: Option<u16>) -> StartError {
@@ -955,16 +1010,34 @@ fn start_error(shard: u32, close_code: Option<u16>) -> StartError {
     }
 }
 
-/// Keeps `noctis_shard_status{app, shard}` for shards `0..total`.
+/// Keeps `noctis_shard_status{app, shard}` for this process's shards.
 pub(crate) struct ShardStatus {
     pub(crate) app: Arc<str>,
+    /// The shards this process runs (its Shard Range, or `0..total`).
+    pub(crate) shards: Range<u32>,
     pub(crate) total: u32,
 }
 
 impl ShardStatus {
+    /// The number of shards this process runs.
+    pub(crate) fn count(&self) -> usize {
+        usize::try_from(self.shards.end.saturating_sub(self.shards.start)).unwrap_or(usize::MAX)
+    }
+
+    /// The flag of `shard` in `flags` (one per shard of the range), if
+    /// `shard` is in the range.
+    fn slot<'a>(&self, flags: &'a mut [bool], shard: u32) -> Option<&'a mut bool> {
+        if !self.shards.contains(&shard) {
+            return None;
+        }
+        usize::try_from(shard - self.shards.start)
+            .ok()
+            .and_then(|index| flags.get_mut(index))
+    }
+
     /// Sets every shard's gauge to 0 (down).
     pub(crate) fn init(&self) {
-        for shard in 0..self.total {
+        for shard in self.shards.clone() {
             set_shard_status(&self.app, shard, self.total, false);
         }
     }
@@ -979,7 +1052,9 @@ impl ShardStatus {
             | ShardEvent::Closed { shard } => (shard, false),
             _ => return,
         };
-        set_shard_status(&self.app, shard, self.total, up);
+        if self.shards.contains(&shard) {
+            set_shard_status(&self.app, shard, self.total, up);
+        }
     }
 }
 
@@ -991,14 +1066,15 @@ impl Drop for ShardStatus {
     }
 }
 
-/// Waits until every shard in `0..total` has sent `Ready` at least once,
-/// broadcasting each shard event.
+/// Waits until every shard of `status.shards` has sent `Ready` at least
+/// once, broadcasting each shard event; a `Ready` for a shard outside the
+/// range counts for nothing.
 pub(crate) async fn await_startup(
     events: &mut mpsc::UnboundedReceiver<ShardEvent>,
     status: &ShardStatus,
     lifecycle: &Lifecycle,
 ) -> Result<(), StartError> {
-    let mut ready = vec![false; usize::try_from(status.total).unwrap_or(usize::MAX)];
+    let mut ready = vec![false; status.count()];
     let mut missing = ready.len();
     while missing > 0 {
         let Some(event) = events.recv().await else {
@@ -1009,7 +1085,7 @@ pub(crate) async fn await_startup(
         match event {
             ShardEvent::Ready { shard } => {
                 tracing::debug!(target: "noctis::app", shard, "shard ready");
-                if let Some(seen) = slot(&mut ready, shard)
+                if let Some(seen) = status.slot(&mut ready, shard)
                     && !*seen
                 {
                     *seen = true;
@@ -1041,13 +1117,6 @@ pub(crate) async fn await_startup(
     Ok(())
 }
 
-/// The flag of `shard`, if it is in range.
-fn slot(flags: &mut [bool], shard: u32) -> Option<&mut bool> {
-    usize::try_from(shard)
-        .ok()
-        .and_then(|index| flags.get_mut(index))
-}
-
 /// Watches the shard events after startup until `shutdown` resolves
 /// ([`Stop::Requested`]) or every shard has ended ([`Stop::AllEnded`]).
 pub(crate) async fn supervise(
@@ -1058,7 +1127,7 @@ pub(crate) async fn supervise(
     shutdown: impl Future<Output = ()>,
 ) -> Stop {
     let mut shutdown = pin!(shutdown);
-    let mut ended = vec![false; usize::try_from(status.total).unwrap_or(usize::MAX)];
+    let mut ended = vec![false; status.count()];
     let mut running = ended.len();
     loop {
         let event = tokio::select! {
@@ -1082,7 +1151,7 @@ pub(crate) async fn supervise(
             keeper.request_redial();
         }
         if let ShardEvent::Ended { shard, .. } = event
-            && let Some(seen) = slot(&mut ended, shard)
+            && let Some(seen) = status.slot(&mut ended, shard)
             && !*seen
         {
             *seen = true;
@@ -1221,6 +1290,7 @@ impl fmt::Debug for App {
             .field("http_config", &self.http_config)
             .field("gateway_url", &self.gateway_url)
             .field("shard_total", &self.shard_total)
+            .field("shard_range", &self.shard_range)
             .field("intents", &self.intents)
             .field("states", &self.shared.states)
             .field("default_ports", self.ports.default_slots())
@@ -1279,6 +1349,8 @@ pub struct AppBuilder {
     gateway_url: Option<String>,
     /// The raw fixed shard total; `build` rejects 0.
     shard_total: Option<u32>,
+    /// The raw Shard Range; `build` checks it against `shard_total`.
+    shard_range: Option<Range<u32>>,
     states: StateMap,
     ports: PortOverrides,
     renderer: Option<Arc<dyn Renderer>>,
@@ -1380,6 +1452,7 @@ impl AppBuilder {
             http_config: HttpConfig::default(),
             gateway_url: None,
             shard_total: None,
+            shard_range: None,
             states: StateMap::default(),
             ports: PortOverrides::default(),
             renderer: None,
@@ -1450,6 +1523,12 @@ impl AppBuilder {
                 var: SHARD_TOTAL_VAR,
             })?;
             builder.shard_total(total);
+        }
+        if let Some(raw) = read_var(&lookup, SHARD_RANGE_VAR)? {
+            let range = parse_shard_range(&raw).ok_or(EnvError::InvalidShardRange {
+                var: SHARD_RANGE_VAR,
+            })?;
+            builder.shard_range(range);
         }
         if let Some(raw) = read_var(&lookup, SHUTDOWN_GRACE_VAR)? {
             let secs = parse_grace_secs(&raw).ok_or(EnvError::InvalidShutdownGrace {
@@ -1831,6 +1910,35 @@ impl AppBuilder {
         self
     }
 
+    /// Runs only the shards `shards` of the fixed [`shard_total`](Self::shard_total)
+    /// in this process: one process's Shard Range in a Cluster. The last
+    /// call wins; without it the process runs every shard `0..total`.
+    ///
+    /// The range is half-open (`32..64` runs shards 32 to 63) and shard ids
+    /// are global: each shard identifies as `[id, total]` in bucket
+    /// `id % max_concurrency` (GW-01), so every process must set the same
+    /// total and share one `IdentifyQueue` ([`identify_queue`](Self::identify_queue),
+    /// an `Arc` for Apps in one process). `NOCTIS_SHARD_RANGE=start..end`
+    /// sets it from the environment.
+    ///
+    /// `build()` records [`BuildViolation::EmptyShardRange`] when `start`
+    /// is not below `end`, [`BuildViolation::ShardRangeWithoutTotal`]
+    /// without a fixed total, and [`BuildViolation::ShardRangeOutOfBounds`]
+    /// when `end` exceeds the total. At [`App::run`], the session start
+    /// limit must cover the range's shards (GW-02), and a range whose start,
+    /// or whose end below the total, is not a multiple of Discord's
+    /// `max_concurrency` logs a warning (its buckets are split across
+    /// processes).
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.shard_total(128).shard_range(32..64);
+    /// ```
+    pub fn shard_range(&mut self, shards: Range<u32>) -> &mut Self {
+        self.shard_range = Some(shards);
+        self
+    }
+
     /// Mounts a [`Module`] tree. Trees fold in mount order (plugins
     /// included), each parent before its children; the handlers' event
     /// types become the gateway filter, and their non-privileged intents
@@ -2162,6 +2270,31 @@ impl AppBuilder {
                 total
             }
         };
+        let shard_range = self.shard_range.clone().filter(|range| {
+            let violation = if range.is_empty() {
+                BuildViolation::EmptyShardRange {
+                    start: range.start,
+                    end: range.end,
+                }
+            } else {
+                match self.shard_total {
+                    None => BuildViolation::ShardRangeWithoutTotal {
+                        start: range.start,
+                        end: range.end,
+                    },
+                    // A total of 0 is already an InvalidShardTotal.
+                    Some(0) => return false,
+                    Some(total) if range.end > total => BuildViolation::ShardRangeOutOfBounds {
+                        start: range.start,
+                        end: range.end,
+                        total,
+                    },
+                    Some(_) => return true,
+                }
+            };
+            self.violations.push(violation);
+            false
+        });
         let (capacity, overflow) = self.event_lane;
         let event_capacity = NonZeroUsize::new(capacity)
             .filter(|_| EVENT_CAPACITY_RANGE.contains(&capacity))
@@ -2282,6 +2415,7 @@ impl AppBuilder {
             http_config: config.http_config,
             gateway_url,
             shard_total,
+            shard_range,
             intents: config.intents | registry.intents(),
             ports,
             registry,
@@ -2377,6 +2511,7 @@ impl fmt::Debug for AppBuilder {
             .field("http_config", &self.http_config)
             .field("gateway_url", &self.gateway_url.is_some())
             .field("shard_total", &self.shard_total)
+            .field("shard_range", &self.shard_range)
             .field("states", &self.states)
             .field("ports", &self.ports.set_slots())
             .field("has_renderer", &self.renderer.is_some())
@@ -2455,6 +2590,14 @@ fn http_client(config: &AppBuilder, edge: &Edge, proxied: bool) -> twilight_http
 fn parse_shard_total(raw: &str) -> Option<u32> {
     let digits = (1..=10).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit());
     digits.then(|| raw.parse().ok()).flatten()
+}
+
+/// A Shard Range `start..end`, each side 1-10 ASCII digits that fit a `u32`
+/// (leading zeros accepted, nothing else: no `..=`, signs or spaces). An
+/// empty range parses; `build()` rejects it.
+fn parse_shard_range(raw: &str) -> Option<Range<u32>> {
+    let (start, end) = raw.split_once("..")?;
+    Some(parse_shard_total(start)?..parse_shard_total(end)?)
 }
 
 /// A shutdown grace in whole seconds from 1-4 ASCII digits (leading zeros

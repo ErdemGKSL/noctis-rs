@@ -1,5 +1,5 @@
 //! Publish end to end (Story 6.9, Matrix 6, 7, 10, 15-17, 19-21, 23, 25,
-//! 28-30 and 32): the App publishes against a `FakeDiscordHttp` whose
+//! 28-30 and 32; Story 12.1 C1): the App publishes against a `FakeDiscordHttp` whose
 //! command routes keep state, so a `PUT` is visible to the next `GET`. Its
 //! own test binary, because it installs a global capturing tracing
 //! subscriber.
@@ -785,6 +785,40 @@ async fn publish_never_runs_on_shard_ready() {
         requests(&http)
     );
     run.abort();
+}
+
+/// Story 12.1 C1: in a Cluster of two Apps (Shard Ranges `0..1` and `1..2`
+/// of 2), only the one publisher publishes, before its `GET /gateway/bot`;
+/// the other sends no `/applications` request, before or after READY.
+#[tokio::test(flavor = "multi_thread")]
+async fn cluster_has_exactly_one_publisher() {
+    let (http_a, _) = fake().await;
+    let (http_b, _) = fake().await;
+    let (_gw_a, run_a) = start_run(&http_a, |b| {
+        b.publisher(true).shard_total(2).shard_range(0..1);
+    })
+    .await;
+    let (_gw_b, run_b) = start_run(&http_b, |b| {
+        b.publisher(false).shard_total(2).shard_range(1..2);
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let seen = requests(&http_a);
+    let position = |needle: &str| {
+        seen.iter()
+            .position(|r| r == needle)
+            .unwrap_or_else(|| panic!("no {needle} in {seen:?}"))
+    };
+    assert!(position(&format!("GET {APP}")) < position("GET /gateway/bot"));
+    assert!(position(&format!("PUT {GLOBAL}")) < position("GET /gateway/bot"));
+    let seen_b = requests(&http_b);
+    assert!(seen_b.iter().any(|r| r == "GET /gateway/bot"), "{seen_b:?}");
+    assert!(
+        !seen_b.iter().any(|r| r.contains("/applications")),
+        "{seen_b:?}"
+    );
+    run_a.abort();
+    run_b.abort();
 }
 
 /// Matrix 32: one `noctis.publish` span per Publish.

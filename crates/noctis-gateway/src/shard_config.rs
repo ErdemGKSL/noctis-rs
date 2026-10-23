@@ -24,6 +24,10 @@ pub enum ShardConfigError {
          `AppBuilder::gateway_url`"
     )]
     InvalidGatewayUrl,
+    /// [`GatewayOptions::shards`](crate::GatewayOptions::shards) is empty or
+    /// ends past the shard total.
+    #[error("invalid shard range: it must be non-empty and lie within the shard total")]
+    InvalidShardRange,
     /// The TLS connector could not be created.
     #[error("the gateway TLS connector could not be created: check the platform's certificates")]
     Tls(#[source] tokio_websockets::Error),

@@ -218,6 +218,62 @@ pub enum BuildViolation {
     /// `shard_total(0)`: a fixed shard total must be at least 1.
     #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]
     InvalidShardTotal,
+    /// `shard_range(start..end)` with `start` not below `end`: the range
+    /// holds no shard.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let violation = BuildViolation::EmptyShardRange { start: 5, end: 5 };
+    /// assert!(violation.to_string().contains("5..5 is empty"));
+    /// ```
+    #[error("shard range {start}..{end} is empty: use start..end with start below end, e.g. 0..16")]
+    EmptyShardRange {
+        /// The range's first shard id.
+        start: u32,
+        /// The range's end (exclusive).
+        end: u32,
+    },
+    /// `shard_range` without a fixed `shard_total`: every process of a
+    /// Cluster must agree on the total, and Discord's recommendation can
+    /// change between process starts.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let violation = BuildViolation::ShardRangeWithoutTotal { start: 0, end: 4 };
+    /// assert!(violation.to_string().contains("NOCTIS_SHARD_TOTAL"));
+    /// ```
+    #[error(
+        "shard range {start}..{end} needs a fixed shard total: set shard_total \
+         (NOCTIS_SHARD_TOTAL) to the same value on every process"
+    )]
+    ShardRangeWithoutTotal {
+        /// The range's first shard id.
+        start: u32,
+        /// The range's end (exclusive).
+        end: u32,
+    },
+    /// `shard_range(start..end)` with `end` above the fixed shard total.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let violation = BuildViolation::ShardRangeOutOfBounds { start: 2, end: 5, total: 4 };
+    /// assert!(violation.to_string().contains("exceeds the shard total 4"));
+    /// ```
+    #[error(
+        "shard range {start}..{end} exceeds the shard total {total}: shard ids run from 0 to \
+         {total}-1"
+    )]
+    ShardRangeOutOfBounds {
+        /// The range's first shard id.
+        start: u32,
+        /// The range's end (exclusive).
+        end: u32,
+        /// The fixed shard total.
+        total: u32,
+    },
     /// `event_lane(capacity, overflow)` is out of range: the capacity must be
     /// in 1..=1048576 and the overflow in 0..=4194304.
     #[error(
@@ -758,6 +814,20 @@ pub enum EnvError {
         "environment variable `{var}` is not a shard total: set a whole number of shards such as 16"
     )]
     InvalidShardTotal {
+        /// The variable's name.
+        var: &'static str,
+    },
+    /// The variable is not a Shard Range (`start..end`, each side 1-10 ASCII
+    /// digits fitting a `u32`).
+    ///
+    /// ```
+    /// use noctis_core::EnvError;
+    ///
+    /// let err = EnvError::InvalidShardRange { var: "NOCTIS_SHARD_RANGE" };
+    /// assert!(err.to_string().contains("start..end, e.g. 0..16"));
+    /// ```
+    #[error("environment variable `{var}` is not a shard range: set start..end, e.g. 0..16")]
+    InvalidShardRange {
         /// The variable's name.
         var: &'static str,
     },

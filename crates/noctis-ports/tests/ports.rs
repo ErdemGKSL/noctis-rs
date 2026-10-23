@@ -441,6 +441,40 @@ fn every_signature_is_callable_through_arc_dyn() {
     ));
 }
 
+/// Fails every acquire, to check that `Arc<P>` forwards errors unchanged.
+struct Refusing;
+
+impl IdentifyQueue for Refusing {
+    fn acquire(&self, _bucket: u32) -> BoxFuture<'_, Result<Lease, PortError>> {
+        Box::pin(ready(Err(PortError::backend("refused"))))
+    }
+}
+
+/// G8: `Arc<P>` and `Arc<dyn IdentifyQueue>` are themselves identify queues
+/// and forward `acquire` (result and error) unchanged.
+#[test]
+fn identify_queue_is_implemented_for_arc() {
+    fn as_port<Q: IdentifyQueue>(queue: Q) -> Q {
+        queue
+    }
+
+    let concrete = as_port(Arc::new(Stub));
+    assert_eq!(now(concrete.acquire(3)).unwrap().bucket(), 3);
+
+    let dynamic: Arc<dyn IdentifyQueue> = Arc::new(Stub);
+    let shared = as_port(Arc::clone(&dynamic));
+    assert_eq!(now(shared.acquire(9)).unwrap().bucket(), 9);
+
+    let nested: Arc<dyn IdentifyQueue> = Arc::new(Arc::clone(&dynamic));
+    assert_eq!(now(nested.acquire(u32::MAX)).unwrap().bucket(), u32::MAX);
+
+    let refusing = as_port(Arc::new(Refusing));
+    assert!(matches!(
+        now(refusing.acquire(0)),
+        Err(PortError::Backend(_))
+    ));
+}
+
 #[test]
 fn lease_echoes_its_bucket() {
     assert_eq!(Lease::new(0).bucket(), 0);

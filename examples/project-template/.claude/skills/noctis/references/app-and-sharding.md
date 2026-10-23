@@ -84,6 +84,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.http_proxy()` (`Option<&str>`: the normalized proxy authority, e.g. `Some("proxy:3000")`),
 `app.gateway_url()` (`Option<&str>`: the normalized gateway URL, e.g. `Some("ws://127.0.0.1:3000")`),
 `app.shard_total()` (`Option<u32>`: the fixed shard total, `None` = Discord's recommendation),
+`app.shard_range()` (`Option<std::ops::Range<u32>>`: this process's Shard Range, `None` = every shard `0..total`),
 `app.intents()` (the requested intents plus the ones your event handlers derive),
 `app.shutdown_grace()` (`Duration`, default 10 s),
 `app.http_config()` (`HttpConfig`, §5),
@@ -110,6 +111,7 @@ Implemented:
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
 | `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
 | `.shard_total(u32)` | env `NOCTIS_SHARD_TOTAL`, else Discord's recommendation | fix the shard total; the last call wins. `0` is `BuildViolation::InvalidShardTotal`; too small for Discord is `StartError::ShardTotalTooSmall` at `run()`; see §4 |
+| `.shard_range(start..end)` | env `NOCTIS_SHARD_RANGE`, else every shard `0..total` | run only these shards in this process (a Cluster's Shard Range): a half-open `std::ops::Range<u32>`, so `32..64` runs shards 32-63; ids are global (`[id, total]`, bucket `id % max_concurrency`); needs a fixed `.shard_total(..)`, the same on every process. `build()` records `BuildViolation::EmptyShardRange { start, end }` (start not below end), `ShardRangeWithoutTotal { start, end }` (no fixed total) or `ShardRangeOutOfBounds { start, end, total }` (end above the total); a range not aligned to `max_concurrency` only warns at `run()`; the last call wins; see §4 |
 | `.shutdown_grace(Duration)` | env `NOCTIS_SHUTDOWN_GRACE`, else 10 s | how long the shutdown waits for queued events and running handlers before it cancels them; `Duration::ZERO..=Duration::from_mins(15)` (else `BuildViolation::InvalidShutdownGrace`); the last call wins; see §8 |
 | `.runtime(&Runtime)` | `Runtime::global()` | attach to another process `Runtime` (§10) |
 | `.current_runtime()` | — | the Runtime the App attaches to; plugins request resources from it |
@@ -132,7 +134,6 @@ Planned (signatures may change):
 
 | Method | Default | Notes |
 | --- | --- | --- |
-| `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
 | `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
 | `.locales(Catalog)` | none: available `{en-US}`, default `en-US` | the first catalog's `default` is the App default; see `i18n.md` |
 | `.locale_resolver(impl LocaleResolver)` | none | sync `Fn(&LocaleRequest) -> Locales`, called once per run at pipeline stage 4, result used verbatim; a panic keeps the built-in resolution; see `i18n.md` §7 |
@@ -164,7 +165,11 @@ token.
   `InvalidHttpTimeout { actual }`, `InvalidHttpProxy { reason: HttpProxyError }`
   (message `"invalid HTTP proxy: {reason}"`, never the value), `InvalidGatewayUrl {
   reason: GatewayUrlError }` (message `"invalid gateway URL: {reason}"`, never the
-  value), `InvalidShardTotal` (`.shard_total(0)`), `InvalidShutdownGrace { actual }` (message
+  value), `InvalidShardTotal` (`.shard_total(0)`), `EmptyShardRange { start, end }`
+  (`"shard range {start}..{end} is empty: use start..end with start below end, e.g. 0..16"`),
+  `ShardRangeWithoutTotal { start, end }` (`.shard_range(..)` without `.shard_total(..)`),
+  `ShardRangeOutOfBounds { start, end, total }` (end above the total; a total of 0 reports
+  only `InvalidShardTotal`), `InvalidShutdownGrace { actual }` (message
   `"shutdown grace {actual:?} is out of range: use a value in 0 s..=900 s"`),
   `InvalidHttpConfig { reason: HttpConfigError }` (message `"invalid HTTP config:
   {reason}"`, one per bad field, in field order), `HttpEdge { kind: std::io::ErrorKind }`
@@ -200,6 +205,8 @@ token.
     runtime has no IO driver: build it with `enable_all()`, as `#[tokio::main]` does).
 - `EnvError`: `NotUnicode { var }`, `InvalidToken { var, source: TokenError }`,
   `InvalidShardTotal { var }` (not 1-10 ASCII digits fitting a `u32`),
+  `InvalidShardRange { var }` (not `start..end` of two 1-10 ASCII digit numbers fitting a
+  `u32`; message names the variable and the format `start..end`, e.g. `0..16`),
   `InvalidShutdownGrace { var }` (not 1-4 ASCII digits of whole seconds),
   `InvalidPublisher { var }` (not `true`/`false`/`1`/`0`, any ASCII case),
   `InvalidDevGuild { var }` (not 1-20 ASCII digits of a non-zero `u64`); the value is
@@ -277,9 +284,9 @@ Memory rules for embedded data:
 | `NOCTIS_PAYLOAD_KEY`, `NOCTIS_PAYLOAD_KEY_PREVIOUS` | the payload key and the previous key of a rotation, read by `App::from_env()` after `NOCTIS_DEV_GUILD` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`): exactly **64 hex digits** (upper or lower case, no `0x`; generate with `openssl rand -hex 32`), else `EnvError::InvalidPayloadKey { var, source: KeyError }`, whose text names the variable and never the value; passed to `.payload_key(..)` / `.previous_payload_key(..)` |
 | `NOCTIS_APP_ID` | the App id, read by `App::from_env()` last (after `NOCTIS_PAYLOAD_KEY_PREVIOUS`) with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`) and passed raw to `.app_id(..)`, so an invalid id (`PROD`) fails at `build()` with `BuildViolation::InvalidAppId`; a later `.app_id(..)` wins |
 | `NOCTIS_DEV_GUILD` | default for `--publish-guild` without an id, read by `App::from_env()` last (after `NOCTIS_PUBLISHER`) with the same rules (trimmed; empty = unset); 1-20 ASCII digits of a non-zero `u64` (leading zeros allowed), else `EnvError::InvalidDevGuild`; passed to `.dev_guild(..)` |
-| `NOCTIS_SHARDS` [planned, Story 12.1] | Shard Range, `start..end` (end exclusive), e.g. `32..64` |
 | `NOCTIS_SHARD_TOTAL` | fixed shard total, read by `App::from_env()` after `NOCTIS_GATEWAY_URL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-10 ASCII digits that fit a `u32`, and leading zeros are allowed (`"007"` = 7). Anything else (`-1`, `+5`, `1e3`, `1_000`, over `4294967295`) → `EnvError::InvalidShardTotal`. It is then passed to `.shard_total(..)`, so `0` fails at `build()` |
-| `NOCTIS_SHUTDOWN_GRACE` | shutdown grace in whole seconds, read by `App::from_env()` after `NOCTIS_SHARD_TOTAL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-4 ASCII digits (`"30"`, `"0900"`); anything else (`1.5`, `-1`, `+1`, `10s`, `1e3`, `10000`) → `EnvError::InvalidShutdownGrace`. It is then passed to `.shutdown_grace(..)`, so 901-9999 fail at `build()` |
+| `NOCTIS_SHARD_RANGE` | this process's Shard Range, read by `App::from_env()` after `NOCTIS_SHARD_TOTAL` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). Exactly `start..end` (half-open: `32..64` is shards 32-63), each side 1-10 ASCII digits fitting a `u32` (leading zeros allowed). Anything else (`32..=63`, `32-63`, `32..`, `32 .. 64`, `+1..2`, `0x1..2`, `32..64/128`) → `EnvError::InvalidShardRange`. It is then passed to `.shard_range(..)`, so an empty range, a missing `NOCTIS_SHARD_TOTAL` or an end above the total fails at `build()` |
+| `NOCTIS_SHUTDOWN_GRACE` | shutdown grace in whole seconds, read by `App::from_env()` after `NOCTIS_SHARD_RANGE` with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`). It must be 1-4 ASCII digits (`"30"`, `"0900"`); anything else (`1.5`, `-1`, `+1`, `10s`, `1e3`, `10000`) → `EnvError::InvalidShutdownGrace`. It is then passed to `.shutdown_grace(..)`, so 901-9999 fail at `build()` |
 | `NOCTIS_HTTP_PROXY` | HTTP rate-limit proxy, read by `App::from_env()` after the token with the same rules (trimmed; empty = unset; not Unicode → `EnvError::NotUnicode`), then passed to `.http_proxy(..)`; its content is checked by `build()` (`BuildViolation::InvalidHttpProxy`) |
 | `NOCTIS_GATEWAY_URL` | gateway URL, read by `App::from_env()` after `NOCTIS_HTTP_PROXY` with the same rules, then passed to `.gateway_url(..)`; its content is checked by `build()` (`BuildViolation::InvalidGatewayUrl`) |
 | `NOCTIS_PUBLISHER` | `true` on the one publishing process; read by `App::from_env()` after `NOCTIS_SHUTDOWN_GRACE` with the same rules; `true`/`false`/`1`/`0` in any ASCII case, else `EnvError::InvalidPublisher`; passed to `.publisher(..)` |
@@ -424,7 +431,13 @@ different buckets identify in parallel, and each bucket identifies once per 5 s.
 `MemoryIdentifyQueue` sized to Discord's `max_concurrency`. If you did, your port gets
 every bucket. Shards connect to `.gateway_url(..)` if it is set, and to Discord's
 gateway otherwise. They never use the URL that `/gateway/bot` returns. Startup is done
-when every shard has received READY.
+when every shard of this process has received READY.
+
+With `.shard_range(start..end)` (or `NOCTIS_SHARD_RANGE`), the process starts only the
+shards `start..end` of the fixed total, logs `starting shards {start}..{end} of {total}`,
+and its readiness, `noctis_shard_status` gauges and `RunError::AllShardsEnded` cover
+only those shards. Ids stay global, so shard 40 of 128 is in bucket `40 %
+max_concurrency` on every process.
 
 - `.shard_total(0)` is `BuildViolation::InvalidShardTotal`. At `run()`, a fixed total
   below ⌈recommended × 2 / 5⌉ is `StartError::ShardTotalTooSmall { total, minimum }`
@@ -433,9 +446,16 @@ when every shard has received READY.
   fails this check.
 - A fixed total that isn't a multiple of `max_concurrency` (when it is above 1) only
   logs a warning (`total`, `max_concurrency` fields), and startup continues.
+- A Shard Range is aligned when its start, and its end unless it equals the total, are
+  multiples of `max_concurrency` (always, when it is 1). A range not aligned only logs
+  one warning (target `noctis::app`, fields `start`, `end`, `max_concurrency`: `shard
+  range is not aligned to max_concurrency; identify buckets are split across
+  processes`), and startup continues.
 - Startup refuses with `StartError::SessionStartLimit { required, remaining,
-  reset_after }` when `session_start_limit.remaining` can't cover the shards (GW-02).
-  It is returned before any connection opens.
+  reset_after }` when `session_start_limit.remaining` can't cover the shards this
+  process identifies (its Shard Range, or the whole total; GW-02). It is returned
+  before any connection opens. GW-03 (`ShardTotalTooSmall`) still checks the total,
+  and runs first.
 - Each Shard is its own task: it reads, parses, filters and enqueues; it never awaits a
   handler. Interactions go to the never-dropped, unbounded **interaction lane**, and the
   App always takes interactions before any event, so a full event lane never delays
@@ -464,19 +484,41 @@ when every shard has received READY.
 ### Clusters (several processes)
 
 ```text
-process 0: NOCTIS_SHARDS=0..32   NOCTIS_SHARD_TOTAL=128  NOCTIS_PUBLISHER=true
-process 1: NOCTIS_SHARDS=32..64  NOCTIS_SHARD_TOTAL=128
+process 0: NOCTIS_SHARD_RANGE=0..32   NOCTIS_SHARD_TOTAL=128  NOCTIS_PUBLISHER=true
+process 1: NOCTIS_SHARD_RANGE=32..64  NOCTIS_SHARD_TOTAL=128
 ...
 all:       NOCTIS_HTTP_PROXY=http://proxy:3000  NOCTIS_PAYLOAD_KEY=<same>  NOCTIS_APP_ID=<same>
 ```
 
+Every process identifies through one shared `IdentifyQueue` (`.identify_queue(..)`), so
+each bucket identifies once per 5 s across the whole Cluster. Across processes that is
+an Adapter backed by a shared store (`adapters.md`); for several Apps in one process,
+hand each the same instance behind an `Arc`:
+
+```rust
+use std::sync::Arc;
+use noctis::ports::memory::MemoryIdentifyQueue;
+
+let queue = Arc::new(MemoryIdentifyQueue::new(std::num::NonZeroU16::new(16).unwrap()));
+let a = App::from_env()?.shard_total(128).shard_range(0..64)
+    .identify_queue(Arc::clone(&queue)).publisher(true).build()?;
+let b = App::from_env()?.shard_total(128).shard_range(64..128)
+    .identify_queue(queue).build()?;
+```
+
+`.identify_queue(..)` never takes `Shared::new(..)`: the queue is keyed by bucket, not
+namespaced.
+
 Checklist:
-1. Ranges consecutive, aligned to `max_concurrency` (misaligned only warns).
+1. Ranges consecutive, the same `NOCTIS_SHARD_TOTAL` everywhere, aligned to
+   `max_concurrency` (start and end multiples of it, or the end equal to the total;
+   misaligned only warns).
 2. One shared HTTP proxy (§5); without it, startup logs a warning (RL-02).
 3. Shared Adapters: `RefStore`, `RateLimitStore`, `ModuleStateStore`, `IdentifyQueue`,
    `SessionStore` (per process key space is automatic), `CacheStore`. See `adapters.md`.
 4. Same `NOCTIS_PAYLOAD_KEY` and `app_id` everywhere.
-5. Exactly one publisher.
+5. Exactly one publisher (`NOCTIS_PUBLISHER=true` / `.publisher(true)`): it publishes
+   once at startup, before its `GET /gateway/bot`; the others send no Publish request.
 
 Handlers do not change.
 

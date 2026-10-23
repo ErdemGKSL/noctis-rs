@@ -73,8 +73,8 @@ generated key, is zeroized when it's dropped (`src/bootstrap.rs`).
 | `NOCTIS_PAYLOAD_KEY_PREVIOUS` | no | Previous key (64 hex digits), accepted for verification while you rotate. |
 | `NOCTIS_APP_ID` | no | Key namespace for Adapters (`[a-z0-9-]{1,32}`); `configure` sets `noctis-template`. |
 | `NOCTIS_DEV_GUILD` | no | Default guild for `--publish-guild` with no id (your test guild's numeric id). |
-| `NOCTIS_SHARDS` | no | Shard Range for this process, e.g. `0..32`. Default: all shards. |
-| `NOCTIS_SHARD_TOTAL` | no | Fixed shard total, a whole number of at least 1 (e.g. `16`). Default: Discord's recommendation. |
+| `NOCTIS_SHARD_TOTAL` | for Clusters | Fixed shard total, a whole number of at least 1 (e.g. `16`), the same on every process. Default: Discord's recommendation. |
+| `NOCTIS_SHARD_RANGE` | for Clusters | This process's Shard Range, half-open `start..end` (e.g. `0..32` runs shards 0-31). Needs `NOCTIS_SHARD_TOTAL`. Default: all shards. |
 | `NOCTIS_HTTP_PROXY` | for Clusters | Shared HTTP rate-limit proxy (twilight-http-proxy, nirn-proxy) as `host:port` or `http://host:port` (plain HTTP; HTTPS is not supported). |
 | `NOCTIS_GATEWAY_URL` | no | Gateway URL shards connect to instead of Discord's, as `ws://host:port` or `wss://host:port` (a gateway proxy; it must rewrite READY's `resume_gateway_url`). |
 | `NOCTIS_PUBLISHER` | no | `true` (or `1`) on the one process that publishes commands globally at startup, before its shards connect. |

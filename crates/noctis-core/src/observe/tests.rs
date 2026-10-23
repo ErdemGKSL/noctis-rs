@@ -300,6 +300,7 @@ async fn recorded_set_core() {
 
     let status = ShardStatus {
         app: Arc::from("default"),
+        shards: 0..2,
         total: 2,
     };
     status.init();
@@ -364,6 +365,7 @@ fn shard_status_gauges() {
     metrics::with_local_recorder(&recorder, || {
         let status = ShardStatus {
             app: Arc::from("default"),
+            shards: 0..2,
             total: 2,
         };
         let mut state = [Some(0.0), Some(0.0)];
@@ -429,6 +431,7 @@ fn shard_status_drop_marks_down() {
     metrics::with_local_recorder(&recorder, || {
         let status = ShardStatus {
             app: Arc::from("default"),
+            shards: 0..2,
             total: 2,
         };
         status.update(&noctis_gateway::ShardEvent::Ready { shard: 0 });

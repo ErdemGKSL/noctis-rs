@@ -5,7 +5,9 @@
 //!
 //! # Gateway
 //!
-//! [`Gateway::start`] spawns one tokio task per shard. Every shard identifies
+//! [`Gateway::start`] spawns one tokio task per shard in
+//! [`GatewayOptions::shards`] (the whole `0..total`, or one Cluster process's
+//! Shard Range; ids stay global). Every shard identifies
 //! through the `IdentifyQueue` port in bucket `shard_id % max_concurrency`
 //! (GW-01). Each task reads raw gateway messages, parses them with
 //! `twilight_gateway::parse`, pushes [`Inbound`] items into a non-blocking

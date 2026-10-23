@@ -1,5 +1,6 @@
 //! `App::run` sharding against `FakeDiscordHttp` and `FakeGateway`, and
-//! `noctis_gateway::Gateway` directly (Story 5.4, Matrix 19-22 and 24-30).
+//! `noctis_gateway::Gateway` directly (Story 5.4, Matrix 19-22 and 24-30;
+//! Story 12.1 Shard Ranges).
 //! Matrix 23 (the misalignment warning) lives in `sharding_warning.rs`, which
 //! installs a global subscriber.
 
@@ -428,6 +429,145 @@ async fn fatal_close_after_startup_ends_run() {
     ));
 }
 
+// ---- Story 12.1: Shard Ranges ----
+
+/// The `GatewayBot` of 4 recommended shards with `remaining` session starts.
+fn four_shards(remaining: u32) -> GatewayBot {
+    GatewayBot {
+        shards: 4,
+        session_start_limit: SessionStartLimit {
+            remaining,
+            max_concurrency: 2,
+            ..SessionStartLimit::default()
+        },
+        ..GatewayBot::default()
+    }
+}
+
+/// G1, G3, P7: an App with range `2..4` of 4 opens two connections,
+/// identifies only `[2, 4]` and `[3, 4]`, finishes startup on their READY
+/// (the run keeps going) and needs only 2 session starts.
+#[tokio::test(flavor = "multi_thread")]
+async fn shard_range_runs_only_its_shards() {
+    let fakes = Fakes::start_with(four_shards(2)).await;
+    let app = fakes
+        .builder()
+        .shard_total(4)
+        .shard_range(2..4)
+        .build()
+        .unwrap();
+    let run = spawn(app);
+    let frames = fakes.wait_identifies(2).await;
+    // Startup is done once both are READY; give the shards a moment.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let mut shards: Vec<(u64, u64)> = fakes.identifies().iter().map(shard_of).collect();
+    shards.sort_unstable();
+    assert_eq!(shards, [(2, 4), (3, 4)], "{frames:?}");
+    assert_eq!(fakes.gw.connections().len(), 2);
+    assert!(!run.is_finished());
+    run.abort();
+}
+
+/// P8: the session start limit is checked against the range's 2 shards.
+#[tokio::test(flavor = "multi_thread")]
+async fn gw_02_session_start_limit_counts_the_range() {
+    let fakes = Fakes::start_with(four_shards(1)).await;
+    let app = fakes
+        .builder()
+        .shard_total(4)
+        .shard_range(2..4)
+        .build()
+        .unwrap();
+    let error = start_error(app).await;
+    assert!(
+        matches!(
+            error,
+            StartError::SessionStartLimit {
+                required: 2,
+                remaining: 1,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert!(fakes.gw.connections().is_empty());
+}
+
+/// G5: once both shards of the range end after startup, the run fails with
+/// `AllShardsEnded`.
+#[tokio::test(flavor = "multi_thread")]
+async fn shard_range_all_ended_ends_run() {
+    let fakes = Fakes::start_with(four_shards(1000)).await;
+    let app = fakes
+        .builder()
+        .shard_total(4)
+        .shard_range(2..4)
+        .build()
+        .unwrap();
+    let run = spawn(app);
+    fakes.wait_identifies(2).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(!run.is_finished());
+    assert_eq!(fakes.gw.close(4014, ""), Ok(2));
+    assert!(matches!(
+        finished(run, Duration::from_secs(5)).await,
+        Err(Error::Run(RunError::AllShardsEnded))
+    ));
+}
+
+/// G1, G2: `Gateway::start` with `shards: 2..4` runs exactly those two
+/// shards as `[2, 4]` and `[3, 4]`; an invalid range starts nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn gateway_starts_only_its_shard_range() {
+    let gw = FakeGateway::start().await.unwrap();
+    App::builder()
+        .runtime(&Runtime::for_test())
+        .build()
+        .unwrap();
+    let options = |shards: std::ops::Range<u32>| GatewayOptions {
+        app: Arc::from("default"),
+        token: "fake-token".to_owned(),
+        intents: Intents::GUILDS,
+        gateway_url: Some(gw.url()),
+        event_types: EventTypeFlags::INTERACTION_CREATE,
+        identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::new(2).unwrap())),
+        shards,
+        total: NonZeroU32::new(4).unwrap(),
+        max_concurrency: NonZeroU16::new(2).unwrap(),
+        close_timeout: Duration::from_secs(5),
+    };
+    let (tx, _inbound) = mpsc::unbounded_channel();
+    let sink = Arc::new(ChannelSink(tx));
+    for bad in [2..2, 3..5] {
+        assert!(matches!(
+            Gateway::start(options(bad), sink.clone()),
+            Err(noctis_gateway::ShardConfigError::InvalidShardRange)
+        ));
+    }
+    assert!(gw.connections().is_empty());
+    let (gateway, mut events) = Gateway::start(options(2..4), sink).unwrap();
+    assert_eq!(gateway.shard_range(), 2..4);
+    assert_eq!(gateway.shard_total(), 4);
+    let mut ready = Vec::new();
+    while ready.len() < 2 {
+        if let Some(ShardEvent::Ready { shard }) = recv(&mut events).await {
+            ready.push(shard);
+        }
+    }
+    ready.sort_unstable();
+    assert_eq!(ready, [2, 3]);
+    let mut shards: Vec<(u64, u64)> = gw
+        .frames()
+        .iter()
+        .filter(|f| f.op() == Some(2))
+        .map(shard_of)
+        .collect();
+    shards.sort_unstable();
+    assert_eq!(shards, [(2, 4), (3, 4)]);
+    assert_eq!(gw.connections().len(), 2);
+    drop(gateway);
+}
+
 // ---- Matrix 29: missing token ----
 
 #[tokio::test(flavor = "multi_thread")]
@@ -477,6 +617,7 @@ async fn gateway_start_parses_into_the_sink() {
         gateway_url: Some(gw.url()),
         event_types: EventTypeFlags::all(),
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
+        shards: 0..1,
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,
         close_timeout: Duration::from_secs(5),

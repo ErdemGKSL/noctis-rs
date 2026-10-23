@@ -53,6 +53,7 @@ async fn heartbeats_unaffected_by_a_stalled_consumer() {
         gateway_url: Some(gw.url()),
         event_types: EventTypeFlags::all(),
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
+        shards: 0..1,
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,
         close_timeout: Duration::from_secs(5),

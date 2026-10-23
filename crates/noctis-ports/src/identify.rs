@@ -19,6 +19,27 @@ pub trait IdentifyQueue: Send + Sync + 'static {
     fn acquire(&self, bucket: u32) -> BoxFuture<'_, Result<Lease, PortError>>;
 }
 
+/// Forwards [`acquire`](IdentifyQueue::acquire) to the shared instance, so one
+/// queue can serialize identifies for several Apps of one Cluster
+/// (`Arc::clone` per App); results and errors pass through unchanged.
+///
+/// ```
+/// use std::{num::NonZeroU16, sync::Arc};
+///
+/// use noctis_ports::{IdentifyQueue, memory::MemoryIdentifyQueue};
+///
+/// fn takes_queue(_queue: impl IdentifyQueue) {}
+///
+/// let shared = Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN));
+/// takes_queue(Arc::clone(&shared));
+/// takes_queue(shared);
+/// ```
+impl<P: IdentifyQueue + ?Sized> IdentifyQueue for std::sync::Arc<P> {
+    fn acquire(&self, bucket: u32) -> BoxFuture<'_, Result<Lease, PortError>> {
+        (**self).acquire(bucket)
+    }
+}
+
 /// Permission for one identify in its bucket.
 ///
 /// A Cluster implementation of [`IdentifyQueue`] serializes leases per bucket

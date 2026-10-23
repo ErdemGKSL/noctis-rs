@@ -6,11 +6,16 @@ error[E0277]: the trait bound `Shared<MemoryIdentifyQueue>: IdentifyQueue` is no
   |             |
   |             required by a bound introduced by this call
   |
-help: the trait `IdentifyQueue` is implemented for `MemoryIdentifyQueue`
- --> $WORKSPACE/crates/noctis-ports/src/memory/identify.rs
+help: the following other types implement trait `IdentifyQueue`
+ --> $WORKSPACE/crates/noctis-ports/src/identify.rs
+  |
+  | impl<P: IdentifyQueue + ?Sized> IdentifyQueue for std::sync::Arc<P> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Arc<P>`
+  |
+ ::: $WORKSPACE/crates/noctis-ports/src/memory/identify.rs
   |
   | impl IdentifyQueue for MemoryIdentifyQueue {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MemoryIdentifyQueue`
 note: required by a bound in `AppBuilder::identify_queue`
  --> $WORKSPACE/crates/noctis-core/src/app.rs
   |

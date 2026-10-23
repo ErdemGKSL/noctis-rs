@@ -48,8 +48,9 @@
 //! namespace, or `_shared:<port>:` for a port passed as
 //! `noctis::ports::Shared::new(adapter)`.
 //!
-//! Every byte-store port is also implemented for `Arc<P>`, forwarding each
-//! op, so one instance can be handed to several Apps with `Arc::clone`.
+//! Every byte-store port and [`IdentifyQueue`] is also implemented for
+//! `Arc<P>`, forwarding each op, so one instance can be handed to several
+//! Apps with `Arc::clone`.
 //!
 //! # Typed values
 //!

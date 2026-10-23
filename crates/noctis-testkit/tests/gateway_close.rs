@@ -62,6 +62,7 @@ fn options(url: String, total: u32, close_timeout: Duration) -> GatewayOptions {
         gateway_url: Some(url),
         event_types: EventTypeFlags::all(),
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::new(16).unwrap())),
+        shards: 0..total,
         total: NonZeroU32::new(total).unwrap(),
         max_concurrency: NonZeroU16::new(16).unwrap(),
         close_timeout,

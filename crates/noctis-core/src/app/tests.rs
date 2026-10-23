@@ -33,6 +33,7 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
                     | "NOCTIS_HTTP_PROXY"
                     | "NOCTIS_GATEWAY_URL"
                     | "NOCTIS_SHARD_TOTAL"
+                    | "NOCTIS_SHARD_RANGE"
                     | "NOCTIS_SHUTDOWN_GRACE"
                     | "NOCTIS_PUBLISHER"
                     | "NOCTIS_DEV_GUILD"
@@ -1524,6 +1525,7 @@ fn from_env_reads_token_first() {
             "NOCTIS_HTTP_PROXY",
             "NOCTIS_GATEWAY_URL",
             "NOCTIS_SHARD_TOTAL",
+            "NOCTIS_SHARD_RANGE",
             "NOCTIS_SHUTDOWN_GRACE",
             "NOCTIS_PUBLISHER",
             "NOCTIS_DEV_GUILD",
@@ -1949,8 +1951,14 @@ fn start_error_messages_name_cause_and_fix() {
 
 /// A `ShardStatus` of App `"default"` over `total` shards.
 fn status(total: u32) -> ShardStatus {
+    ranged_status(0..total, total)
+}
+
+/// A `ShardStatus` of App `"default"` over the shards `shards` of `total`.
+fn ranged_status(shards: Range<u32>, total: u32) -> ShardStatus {
     ShardStatus {
         app: Arc::from("default"),
+        shards,
         total,
     }
 }
@@ -2509,6 +2517,7 @@ async fn shutdown_sequence_order() {
         gateway_url: Some("ws://127.0.0.1:1".to_owned()),
         event_types: EventTypeFlags::INTERACTION_CREATE,
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
+        shards: 0..2,
         total: NonZeroU32::new(2).unwrap(),
         max_concurrency: NonZeroU16::MIN,
         close_timeout: SHARD_CLOSE_TIMEOUT,
@@ -3345,6 +3354,7 @@ fn app_label_is_the_metric_label() {
         let _metrics = metrics::set_default_local_recorder(&recorder);
         ShardStatus {
             app: Arc::clone(&app.shared().app),
+            shards: 0..1,
             total: 1,
         }
         .init();
@@ -3363,4 +3373,326 @@ fn app_label_is_the_metric_label() {
         .collect();
     assert!(!labels.is_empty());
     assert!(labels.iter().all(|l| l == "bot-a"), "{labels:?}");
+}
+
+// ---- shard_range (Story 12.1 E1-E9, B1-B11, G3-G5) ----
+
+/// `NOCTIS_SHARD_RANGE` read through `from_lookup`.
+fn read_range(raw: impl Into<OsString>) -> Result<Option<Range<u32>>, EnvError> {
+    AppBuilder::from_lookup(lookup_var("NOCTIS_SHARD_RANGE", Some(raw.into())))
+        .map(|b| b.shard_range)
+}
+
+#[test]
+fn from_env_shard_range_parses() {
+    assert_eq!(
+        AppBuilder::from_lookup(lookup_var("NOCTIS_SHARD_RANGE", None))
+            .unwrap()
+            .shard_range,
+        None,
+        "E3 absent"
+    );
+    #[expect(
+        clippy::reversed_empty_ranges,
+        reason = "E8: an empty range parses and fails at build()"
+    )]
+    let reversed = 9..3;
+    for (raw, expected) in [
+        ("32..64", Some(32..64)),                                 // E1
+        ("  0007..0010\n", Some(7..10)),                          // E2
+        ("", None),                                               // E3
+        ("   ", None),                                            // E3
+        ("4294967294..4294967295", Some(u32::MAX - 1..u32::MAX)), // E4
+        ("5..5", Some(5..5)),                                     // E8
+        ("9..3", Some(reversed)),                                 // E8
+        ("0000000000..0000000001", Some(0..1)),
+    ] {
+        assert_eq!(read_range(raw), Ok(expected), "{raw:?}");
+    }
+}
+
+#[test]
+fn from_env_shard_range_rejects() {
+    for raw in [
+        "0..4294967296",  // E5
+        "00000000001..2", // E5: 11 digits
+        "32..=63",        // E6
+        "32-63",
+        "32..",
+        "..64",
+        "..",
+        "32",
+        "32...64",
+        "32..64..96",
+        "32 .. 64",
+        "+1..2",
+        "-1..2",
+        "0x1..2",
+        "1_0..20",
+        "32..64/128",
+        "\u{663}..\u{664}",   // E7: Arabic-Indic digits
+        "\u{ff13}..\u{ff14}", // E7: full-width digits
+        "SECRET..x",          // E9
+    ] {
+        let err = read_range(raw).unwrap_err();
+        assert_eq!(
+            err,
+            EnvError::InvalidShardRange {
+                var: "NOCTIS_SHARD_RANGE"
+            },
+            "{raw:?}"
+        );
+        let text = err.to_string();
+        assert_eq!(
+            text,
+            "environment variable `NOCTIS_SHARD_RANGE` is not a shard range: set start..end, \
+             e.g. 0..16"
+        );
+        assert!(!text.contains("SECRET"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn from_env_shard_range_not_unicode() {
+    use std::os::unix::ffi::OsStringExt;
+    let err = read_range(OsString::from_vec(vec![b'0', b'.', b'.', 0xff])).unwrap_err();
+    assert_eq!(
+        err,
+        EnvError::NotUnicode {
+            var: "NOCTIS_SHARD_RANGE"
+        }
+    );
+}
+
+#[tokio::test]
+async fn from_env_shard_range_reaches_the_app() {
+    let mut builder = AppBuilder::from_lookup(|var| match var {
+        "NOCTIS_SHARD_TOTAL" => Some("128".into()),
+        "NOCTIS_SHARD_RANGE" => Some("32..64".into()),
+        _ => None,
+    })
+    .unwrap();
+    let app = builder.build().unwrap();
+    assert_eq!(app.shard_range(), Some(32..64));
+    assert_eq!(app.shard_total(), Some(128));
+}
+
+/// The violations `build()` records for `total` and `range`.
+fn range_violations(total: Option<u32>, range: Range<u32>) -> Vec<BuildViolation> {
+    let mut builder = App::builder();
+    if let Some(total) = total {
+        builder.shard_total(total);
+    }
+    builder.shard_range(range);
+    match builder.build() {
+        Ok(_) => Vec::new(),
+        Err(err) => err.violations().to_vec(),
+    }
+}
+
+#[tokio::test]
+async fn shard_range_builder_accepts() {
+    let app = App::builder()
+        .shard_total(128)
+        .shard_range(32..64)
+        .build()
+        .unwrap();
+    assert_eq!(app.shard_range(), Some(32..64), "B1");
+    assert_eq!(app.shard_total(), Some(128), "B1");
+    for (total, range) in [
+        (4, 2..4),               // B4
+        (4, 0..4),               // B4
+        (1, 0..1),               // B6
+        (128, 127..128),         // B6
+        (u32::MAX, 0..u32::MAX), // B7
+    ] {
+        let app = App::builder()
+            .shard_total(total)
+            .shard_range(range.clone())
+            .build()
+            .unwrap();
+        assert_eq!(app.shard_range(), Some(range));
+    }
+    let app = App::builder()
+        .shard_total(4)
+        .shard_range(0..2)
+        .shard_range(2..4)
+        .build()
+        .unwrap();
+    assert_eq!(app.shard_range(), Some(2..4), "B10 last call wins");
+    assert_eq!(App::builder().build().unwrap().shard_range(), None, "B11");
+}
+
+#[tokio::test]
+async fn shard_range_builder_rejects() {
+    #[expect(clippy::reversed_empty_ranges, reason = "B2: the input under test")]
+    let reversed = 9..3;
+    for (start, end, range) in [(0, 0, 0..0), (5, 5, 5..5), (9, 3, reversed)] {
+        assert_eq!(
+            range_violations(Some(16), range),
+            [BuildViolation::EmptyShardRange { start, end }],
+            "B2"
+        );
+    }
+    assert_eq!(
+        range_violations(None, 0..4),
+        [BuildViolation::ShardRangeWithoutTotal { start: 0, end: 4 }],
+        "B3"
+    );
+    for (start, end) in [(2, 5), (4, 5), (u32::MAX - 1, u32::MAX)] {
+        assert_eq!(
+            range_violations(Some(4), start..end),
+            [BuildViolation::ShardRangeOutOfBounds {
+                start,
+                end,
+                total: 4
+            }],
+            "B5"
+        );
+    }
+    assert_eq!(
+        range_violations(Some(0), 0..1),
+        [BuildViolation::InvalidShardTotal],
+        "B8"
+    );
+    assert_eq!(
+        range_violations(None, 3..3),
+        [BuildViolation::EmptyShardRange { start: 3, end: 3 }],
+        "B9"
+    );
+}
+
+#[test]
+fn shard_range_violation_messages() {
+    assert_eq!(
+        BuildViolation::EmptyShardRange { start: 5, end: 5 }.to_string(),
+        "shard range 5..5 is empty: use start..end with start below end, e.g. 0..16"
+    );
+    assert_eq!(
+        BuildViolation::ShardRangeWithoutTotal { start: 0, end: 4 }.to_string(),
+        "shard range 0..4 needs a fixed shard total: set shard_total (NOCTIS_SHARD_TOTAL) to the \
+         same value on every process"
+    );
+    assert_eq!(
+        BuildViolation::ShardRangeOutOfBounds {
+            start: 2,
+            end: 5,
+            total: 4
+        }
+        .to_string(),
+        "shard range 2..5 exceeds the shard total 4: shard ids run from 0 to 4-1"
+    );
+}
+
+#[tokio::test]
+async fn shard_range_debug() {
+    let mut builder = App::builder();
+    builder.shard_total(4).shard_range(2..4);
+    assert!(format!("{builder:?}").contains("shard_range: Some(2..4)"));
+    let app = builder.build().unwrap();
+    assert!(format!("{app:?}").contains("shard_range: Some(2..4)"));
+}
+
+/// `ShardEvent::Ready` for each of `shards`, on a channel kept open.
+fn readies(shards: &[u32]) -> mpsc::UnboundedReceiver<ShardEvent> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    for &shard in shards {
+        tx.send(ShardEvent::Ready { shard }).unwrap();
+    }
+    std::mem::forget(tx);
+    rx
+}
+
+/// `ShardEvent::Ended` for each of `shards`, on a channel kept open.
+fn endings(shards: &[u32]) -> mpsc::UnboundedReceiver<ShardEvent> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    for &shard in shards {
+        tx.send(ShardEvent::Ended {
+            shard,
+            close_code: Some(4004),
+        })
+        .unwrap();
+    }
+    std::mem::forget(tx);
+    rx
+}
+
+/// G3: startup is done once every shard of the range is READY; shards
+/// outside it count for nothing.
+#[tokio::test]
+async fn startup_waits_only_for_the_shard_range() {
+    let status = ranged_status(2..4, 4);
+    let lifecycle = Lifecycle::new();
+    let waited = tokio::time::timeout(
+        Duration::from_millis(100),
+        await_startup(&mut readies(&[0, 1, 4, 2, 2]), &status, &lifecycle),
+    )
+    .await;
+    assert!(waited.is_err(), "shard 3 is not ready yet");
+    assert_eq!(
+        await_startup(&mut readies(&[0, 1, 4, 2, 3]), &status, &lifecycle).await,
+        Ok(())
+    );
+}
+
+/// G5: once both shards of the range ended, `supervise` stops with
+/// `AllEnded`; an end outside the range, or a repeated one, counts for
+/// nothing.
+#[tokio::test]
+async fn supervise_ends_when_the_range_ended() {
+    let status = ranged_status(2..4, 4);
+    let lifecycle = Lifecycle::new();
+    let pending = tokio::time::timeout(
+        Duration::from_millis(100),
+        supervise(
+            &mut endings(&[0, 1, 2, 2]),
+            &status,
+            &lifecycle,
+            None,
+            std::future::pending::<()>(),
+        ),
+    )
+    .await;
+    assert!(pending.is_err(), "shard 3 is still running");
+    let stop = supervise(
+        &mut endings(&[0, 2, 3]),
+        &status,
+        &lifecycle,
+        None,
+        std::future::pending::<()>(),
+    )
+    .await;
+    assert_eq!(stop, Stop::AllEnded);
+}
+
+/// G4: `noctis_shard_status{shard}` exists only for the range's shards.
+#[test]
+fn shard_gauges_cover_only_the_range() {
+    use metrics_util::debugging::DebuggingRecorder;
+
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    metrics::with_local_recorder(&recorder, || {
+        let status = ranged_status(2..4, 4);
+        status.init();
+        status.update(&ShardEvent::Ready { shard: 0 });
+        status.update(&ShardEvent::Ready { shard: 3 });
+        std::mem::forget(status);
+    });
+    let mut shards: Vec<String> = snapshotter
+        .snapshot()
+        .into_vec()
+        .into_iter()
+        .filter(|(key, ..)| key.key().name() == "noctis_shard_status")
+        .flat_map(|(key, ..)| {
+            key.key()
+                .labels()
+                .filter(|l| l.key() == "shard")
+                .map(|l| l.value().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    shards.sort();
+    assert_eq!(shards, ["2", "3"]);
 }

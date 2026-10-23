@@ -231,4 +231,76 @@ mod tests {
         assert_eq!(port.calls.load(Ordering::SeqCst), 1);
         assert_eq!(Arc::strong_count(&port), 1);
     }
+
+    /// Waits for every receiver and returns, per shard id, the time since
+    /// `start` at which its identify was granted.
+    async fn grant_times(
+        start: Instant,
+        grants: Vec<(u32, oneshot::Receiver<()>)>,
+    ) -> Vec<(u32, Duration)> {
+        futures_util::future::join_all(grants.into_iter().map(|(id, rx)| async move {
+            rx.await.unwrap();
+            (id, start.elapsed())
+        }))
+        .await
+    }
+
+    /// The grant times of `ids`, sorted.
+    fn bucket_times(times: &[(u32, Duration)], ids: &[u32]) -> Vec<Duration> {
+        let mut bucket: Vec<Duration> = times
+            .iter()
+            .filter(|(id, _)| ids.contains(id))
+            .map(|(_, at)| *at)
+            .collect();
+        bucket.sort();
+        bucket
+    }
+
+    /// G6: two processes (one `PortQueue` each, as each process's twilight
+    /// `Queue`) share one `IdentifyQueue`: per bucket, one grant at t0 and
+    /// the other exactly 5 s later; buckets run in parallel.
+    #[tokio::test(start_paused = true)]
+    async fn gw_01_shared_queue_serializes_buckets_across_processes() {
+        let port: Arc<dyn IdentifyQueue> = Arc::new(MemoryIdentifyQueue::new(nz(2)));
+        let a = PortQueue::new(Arc::clone(&port), nz(2));
+        let b = PortQueue::new(port, nz(2));
+        let start = Instant::now();
+        let times = grant_times(
+            start,
+            vec![
+                (0, a.enqueue(0)),
+                (1, a.enqueue(1)),
+                (2, b.enqueue(2)),
+                (3, b.enqueue(3)),
+            ],
+        )
+        .await;
+        let five = MemoryIdentifyQueue::IDENTIFY_INTERVAL;
+        assert_eq!(bucket_times(&times, &[0, 2]), [Duration::ZERO, five]);
+        assert_eq!(bucket_times(&times, &[1, 3]), [Duration::ZERO, five]);
+    }
+
+    /// G7: three processes in one bucket are granted 5 s apart.
+    #[tokio::test(start_paused = true)]
+    async fn gw_01_three_processes_one_bucket() {
+        let port = Arc::new(MemoryIdentifyQueue::new(nz(1)));
+        let queues: Vec<PortQueue> = (0..3)
+            .map(|_| PortQueue::new(Arc::clone(&port) as Arc<dyn IdentifyQueue>, nz(1)))
+            .collect();
+        let start = Instant::now();
+        let grants = queues
+            .iter()
+            .zip(0..)
+            .map(|(queue, id)| (id, queue.enqueue(id)))
+            .collect();
+        let times = grant_times(start, grants).await;
+        assert_eq!(
+            bucket_times(&times, &[0, 1, 2]),
+            [
+                Duration::ZERO,
+                Duration::from_secs(5),
+                Duration::from_secs(10)
+            ]
+        );
+    }
 }

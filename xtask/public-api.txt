@@ -90,6 +90,7 @@ pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core
 pub async fn noctis::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
 pub fn noctis::App::runtime(&self) -> &noctis::Runtime
+pub fn noctis::App::shard_range(&self) -> core::option::Option<core::ops::range::Range<u32>>
 pub fn noctis::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::App::shutdown_grace(&self) -> core::time::Duration
 pub fn noctis::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -136,6 +137,7 @@ pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::
 pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
 pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::SessionStore>) -> &mut Self
+pub fn noctis::AppBuilder::shard_range(&mut self, core::ops::range::Range<u32>) -> &mut Self
 pub fn noctis::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::AppBuilder::shutdown_grace(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self
@@ -351,6 +353,9 @@ pub noctis::BuildViolation::DuplicateTemplate::first_type: &'static str
 pub noctis::BuildViolation::DuplicateTemplate::id: &'static str
 pub noctis::BuildViolation::DuplicateTemplate::second_module: &'static str
 pub noctis::BuildViolation::DuplicateTemplate::second_type: &'static str
+pub noctis::BuildViolation::EmptyShardRange
+pub noctis::BuildViolation::EmptyShardRange::end: u32
+pub noctis::BuildViolation::EmptyShardRange::start: u32
 pub noctis::BuildViolation::HttpEdge
 pub noctis::BuildViolation::HttpEdge::kind: core::io::error::ErrorKind
 pub noctis::BuildViolation::InvalidAckDeadline
@@ -392,6 +397,13 @@ pub noctis::BuildViolation::Plugin::message: alloc::string::String
 pub noctis::BuildViolation::Plugin::plugin: &'static str
 pub noctis::BuildViolation::PreviousKeyWithoutKey
 pub noctis::BuildViolation::ResourceConflict(noctis::ResourceConflict)
+pub noctis::BuildViolation::ShardRangeOutOfBounds
+pub noctis::BuildViolation::ShardRangeOutOfBounds::end: u32
+pub noctis::BuildViolation::ShardRangeOutOfBounds::start: u32
+pub noctis::BuildViolation::ShardRangeOutOfBounds::total: u32
+pub noctis::BuildViolation::ShardRangeWithoutTotal
+pub noctis::BuildViolation::ShardRangeWithoutTotal::end: u32
+pub noctis::BuildViolation::ShardRangeWithoutTotal::start: u32
 pub noctis::BuildViolation::TemplateRejected
 pub noctis::BuildViolation::TemplateRejected::message: alloc::string::String
 pub noctis::BuildViolation::UnmountedRoute
@@ -681,6 +693,8 @@ pub noctis::EnvError::InvalidPayloadKey::source: noctis::codec::KeyError
 pub noctis::EnvError::InvalidPayloadKey::var: &'static str
 pub noctis::EnvError::InvalidPublisher
 pub noctis::EnvError::InvalidPublisher::var: &'static str
+pub noctis::EnvError::InvalidShardRange
+pub noctis::EnvError::InvalidShardRange::var: &'static str
 pub noctis::EnvError::InvalidShardTotal
 pub noctis::EnvError::InvalidShardTotal::var: &'static str
 pub noctis::EnvError::InvalidShutdownGrace
@@ -3281,6 +3295,8 @@ pub trait noctis::ports::GuildAccessList: core::marker::Send + core::marker::Syn
 pub fn noctis::ports::GuildAccessList::allows(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> bool
 pub trait noctis::ports::IdentifyQueue: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::ports::IdentifyQueue::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
+impl<P: noctis::ports::IdentifyQueue + ?core::marker::Sized> noctis::ports::IdentifyQueue for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::acquire(&self, u32) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::ports::Lease, noctis::ports::PortError>>
 pub trait noctis::ports::IntoPort<P: ?core::marker::Sized>: noctis::__private::core::namespace::sealed::PortInput<P>
 impl<T: noctis::ports::AssetStore> noctis::ports::IntoPort<dyn noctis::ports::AssetStore> for T
 impl<T: noctis::ports::CacheStore> noctis::ports::IntoPort<dyn noctis::ports::CacheStore> for T
@@ -3940,6 +3956,7 @@ pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Outp
 pub async fn noctis::prelude::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::prelude::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
 pub fn noctis::prelude::App::runtime(&self) -> &noctis::Runtime
+pub fn noctis::prelude::App::shard_range(&self) -> core::option::Option<core::ops::range::Range<u32>>
 pub fn noctis::prelude::App::shard_total(&self) -> core::option::Option<u32>
 pub fn noctis::prelude::App::shutdown_grace(&self) -> core::time::Duration
 pub fn noctis::prelude::App::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -3986,6 +4003,7 @@ pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn
 pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
 pub fn noctis::prelude::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
 pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::SessionStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::shard_range(&mut self, core::ops::range::Range<u32>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shard_total(&mut self, u32) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shutdown_grace(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::state<T: core::marker::Send + core::marker::Sync + 'static>(&mut self, T) -> &mut Self

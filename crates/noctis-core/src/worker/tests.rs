@@ -1333,6 +1333,7 @@ mod shutdown {
             let (_tx, mut events) = mpsc::unbounded_channel();
             let status = ShardStatus {
                 app: Arc::from("default"),
+                shards: 0..1,
                 total: 1,
             };
             let lifecycle = Lifecycle::new();
