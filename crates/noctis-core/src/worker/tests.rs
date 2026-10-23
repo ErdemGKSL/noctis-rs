@@ -1870,3 +1870,202 @@ async fn run_observer_fires_on_a_panicking_run() {
     assert!(task.await.is_err());
     assert_eq!(*seen.lock().unwrap(), [21]);
 }
+
+mod guild_locales {
+    //! Story 11.3 rows 20-24, 27 and 44: the guild record and event
+    //! resolution through the worker set.
+
+    use noctis_i18n::Catalog;
+    use noctis_rules::Locale;
+
+    use super::*;
+    use crate::test_support::{guild_create, guild_create_unavailable, guild_delete, guild_update};
+    use crate::{BeforeCtx, Flow, Middleware};
+
+    /// en-US (default) and tr files.
+    static EN_TR: Catalog = Catalog::__new(
+        "bot/en_tr",
+        Locale::EnUs,
+        &[(Locale::EnUs, &[]), (Locale::Tr, &[])],
+        &[],
+    );
+    /// en-US (default), de and tr files.
+    static EN_DE_TR: Catalog = Catalog::__new(
+        "bot/en_de_tr",
+        Locale::EnUs,
+        &[(Locale::De, &[]), (Locale::EnUs, &[]), (Locale::Tr, &[])],
+        &[],
+    );
+
+    /// A `MESSAGE_CREATE` handler logging `guild_locale()` and the event's
+    /// guild.
+    fn recorder(log: &Log) -> EventHandler {
+        let log = log.clone();
+        handler("h", false, move |ctx: EventCtx, e: MessageCreate| {
+            let log = log.clone();
+            async move {
+                log.push(format!(
+                    "{:?}:{}",
+                    e.guild_id.map(Id::get),
+                    ctx.guild_locale()
+                ));
+                Ok(())
+            }
+        })
+    }
+
+    /// A `MESSAGE_CREATE` without a guild.
+    fn dm_message() -> Event {
+        let Event::MessageCreate(mut message) = message_create(1) else {
+            unreachable!()
+        };
+        message.0.guild_id = None;
+        Event::MessageCreate(message)
+    }
+
+    /// Pushes `events`, then one `MESSAGE_CREATE` per guild (`None`: a
+    /// DM), and returns the logged lines.
+    async fn run(
+        catalog: Catalog,
+        module: Module,
+        events: Vec<Event>,
+        guilds: &[Option<u64>],
+        log: &Log,
+    ) -> Vec<String> {
+        let h = Harness::start(App::builder().locales(catalog).module(module));
+        for event in events {
+            h.push(event);
+        }
+        for guild in guilds {
+            h.push(guild.map_or_else(dm_message, message_create));
+        }
+        until("every message", || log.lines().len() == guilds.len()).await;
+        h.close().await;
+        log.lines()
+    }
+
+    /// Rows 20 and 21: a recorded guild's locale; no record or a DM is the
+    /// default.
+    #[tokio::test]
+    async fn event_reads_the_guild_record() {
+        let log = Log::default();
+        let module = Module::new("m").__add(recorder(&log));
+        let lines = run(
+            EN_TR,
+            module,
+            vec![guild_create(9, "tr")],
+            &[Some(9), Some(8), None],
+            &log,
+        )
+        .await;
+        assert_eq!(lines, ["Some(9):tr", "Some(8):en-US", "None:en-US"]);
+    }
+
+    /// Row 22: `GUILD_UPDATE` to a code without a file is the default; with
+    /// a file it is that code.
+    #[tokio::test]
+    async fn guild_update_changes_the_record() {
+        let events = || vec![guild_create(9, "tr"), guild_update(9, "de")];
+        let log = Log::default();
+        let lines = run(
+            EN_TR,
+            Module::new("m").__add(recorder(&log)),
+            events(),
+            &[Some(9)],
+            &log,
+        )
+        .await;
+        assert_eq!(lines, ["Some(9):en-US"]);
+        let log = Log::default();
+        let lines = run(
+            EN_DE_TR,
+            Module::new("m").__add(recorder(&log)),
+            events(),
+            &[Some(9)],
+            &log,
+        )
+        .await;
+        assert_eq!(lines, ["Some(9):de"]);
+    }
+
+    /// Rows 23 and 24: an outage keeps the record, a removal drops it; an
+    /// unavailable or unparseable create records nothing.
+    #[tokio::test]
+    async fn deletes_and_unavailable_creates() {
+        let log = Log::default();
+        let events = vec![
+            guild_create(9, "tr"),
+            guild_delete(9, Some(true)),
+            guild_create(10, "tr"),
+            guild_delete(10, None),
+            guild_create_unavailable(11),
+            guild_create(12, "en-us"),
+        ];
+        let lines = run(
+            EN_TR,
+            Module::new("m").__add(recorder(&log)),
+            events,
+            &[Some(9), Some(10), Some(11), Some(12)],
+            &log,
+        )
+        .await;
+        assert_eq!(
+            lines,
+            [
+                "Some(9):tr",
+                "Some(10):en-US",
+                "Some(11):en-US",
+                "Some(12):en-US"
+            ]
+        );
+    }
+
+    /// Row 44: an event before-Middleware overrides the Guild Locale.
+    #[tokio::test]
+    async fn event_middleware_overrides() {
+        let log = Log::default();
+        let module = Module::new("m")
+            .before(Middleware::before(|ctx: BeforeCtx| async move {
+                assert_eq!(ctx.guild_locale(), Locale::EnUs);
+                ctx.set_guild_locale(Locale::Tr);
+                Ok(Flow::Continue)
+            }))
+            .__add(recorder(&log));
+        let lines = run(EN_TR, module, Vec::new(), &[Some(8)], &log).await;
+        assert_eq!(lines, ["Some(8):tr"]);
+    }
+
+    /// Row 32 (events): the resolver runs once per event handler run and
+    /// sees the record.
+    #[tokio::test]
+    async fn resolver_once_per_event_run() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&calls);
+        let log = Log::default();
+        let mut builder = App::builder();
+        builder
+            .locales(EN_TR)
+            .locale_resolver(move |r: &crate::LocaleRequest| {
+                seen.lock()
+                    .unwrap()
+                    .push((r.invocation, r.discord_user, r.discord_guild));
+                r.resolved
+            })
+            .module(Module::new("m").__add(recorder(&log)));
+        let h = Harness::start(&mut builder);
+        h.push(guild_create(9, "tr"));
+        h.push(message_create(9));
+        until("the message", || log.lines().len() == 1).await;
+        h.close().await;
+        assert_eq!(
+            *calls.lock().unwrap(),
+            [(
+                Invocation::Event {
+                    event_type: "MESSAGE_CREATE"
+                },
+                None,
+                Some(Locale::Tr)
+            )]
+        );
+    }
+}

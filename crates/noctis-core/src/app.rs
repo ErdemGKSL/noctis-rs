@@ -1308,6 +1308,8 @@ pub struct AppBuilder {
     previous_payload_key: Option<PayloadKey>,
     /// The App-level Expired Handler (`expired_handler`).
     expired_handler: Option<Arc<AppExpiredFn>>,
+    /// The App's locale override (`locale_resolver`).
+    locale_resolver: Option<Arc<dyn crate::LocaleResolver>>,
     /// The hidden run-end observer (`__testing::observe_runs`).
     run_observer: Option<crate::handler::RunObserver>,
     /// The locale catalogs, in registration order (`locales`).
@@ -1394,6 +1396,7 @@ impl AppBuilder {
             payload_key: None,
             previous_payload_key: None,
             expired_handler: None,
+            locale_resolver: None,
             run_observer: None,
             catalogs: Vec::new(),
             plugins: Vec::new(),
@@ -1555,6 +1558,13 @@ impl AppBuilder {
     /// that two catalogs define is a [`BuildViolation::DuplicateLocaleKey`]
     /// at `build`, naming both catalogs and their owners.
     ///
+    /// The merged catalogs also drive locale resolution (FR-43): a locale
+    /// "has a file" when any merged catalog ships one, and the App's
+    /// default locale is the `default_locale()` of the first catalog in
+    /// merge order (`en-US` without catalogs). Every run's
+    /// `ctx.user_locale()` and `ctx.guild_locale()` resolve against them
+    /// (see [`locale_resolver`](Self::locale_resolver)).
+    ///
     /// ```
     /// use noctis_i18n::Catalog;
     /// use noctis_rules::Locale;
@@ -1707,6 +1717,34 @@ impl AppBuilder {
         R: IntoResponse<Component> + IntoResponse<ModalSubmit>,
     {
         self.expired_handler = Some(app_expired(f));
+        self
+    }
+
+    /// Sets the App's [`LocaleResolver`](crate::LocaleResolver) (FR-43):
+    /// stage 4 of every run calls it exactly once, once the handler is
+    /// known and before its context is built (slash Commands, context
+    /// menus, components, modal submits, the Expired Handler chain,
+    /// autocomplete, events and `Dispatcher::run_command`), with the
+    /// built-in resolution in [`LocaleRequest::resolved`](crate::LocaleRequest::resolved).
+    /// Its return value is used verbatim; a before-Middleware may still
+    /// override it (`BeforeCtx::set_locale`). A panic is caught: one `error`
+    /// on `noctis::i18n` naming the handler, and the run keeps the built-in
+    /// resolution. Notices sent before stage 4 (a malformed or unknown
+    /// `custom_id`, a kind mismatch, a missing author) never call it. The
+    /// last call wins.
+    ///
+    /// ```
+    /// use noctis_core::{LocaleRequest, Locales};
+    /// use noctis_rules::Locale;
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.locale_resolver(|request: &LocaleRequest| match request.guild_id {
+    ///     Some(id) if id.get() == 7 => Locales { guild: Locale::PtBr, ..request.resolved },
+    ///     _ => request.resolved,
+    /// });
+    /// ```
+    pub fn locale_resolver(&mut self, resolver: impl crate::LocaleResolver) -> &mut Self {
+        self.locale_resolver = Some(Arc::new(resolver));
         self
     }
 
@@ -2232,6 +2270,7 @@ impl AppBuilder {
                 ack_deadline: config.ack_deadline,
                 refs,
                 ref_ttl: config.ref_ttl,
+                locales: crate::locale::AppLocales::new(strings.catalogs(), config.locale_resolver),
                 strings: Arc::new(strings),
                 payload_keys,
                 renderer: config.renderer,
@@ -2354,6 +2393,7 @@ impl fmt::Debug for AppBuilder {
             .field("payload_key", &self.payload_key.is_some())
             .field("previous_payload_key", &self.previous_payload_key.is_some())
             .field("expired_handler", &self.expired_handler.is_some())
+            .field("locale_resolver", &self.locale_resolver.is_some())
             .field("catalogs", &catalogs)
             .field("plugins", &plugins)
             .field("violations", &self.violations)

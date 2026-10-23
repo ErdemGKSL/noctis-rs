@@ -570,6 +570,9 @@
 //!   (`Catalog`, `format`). Register a catalog App-wide with
 //!   `AppBuilder::locales` or ship it with a Module through
 //!   `Module::locales`; every catalog merges into one App-wide set.
+//!   Its locales drive the resolution of every run's
+//!   `ctx.user_locale()`/`ctx.guild_locale()` ([`Locales`]; override it
+//!   with a [`LocaleResolver`] or a before-Middleware).
 //! - `prefix`: opt-in prefix commands.
 //! - `testkit`: [`testkit`], the bot's App on local Discord fakes with
 //!   simulated interactions, message snapshots and the memory check;
@@ -587,13 +590,13 @@ pub use noctis_core::{
     ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
     FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
     HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
-    Invocation, Kv, LocaleOwner, LogSink, Manual, MenuKind, MenuTargetError, Middleware,
-    ModalHandler, ModalResponder, ModalSubmit, ModalSubmitCtx, Module, NoticeText, OptionError,
-    OptionValue, Options, OutgoingMessage, Partial, PartialOptions, Pending, Permissions, Plugin,
-    RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
-    StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
-    UnknownCommandPath, Visibility,
+    Invocation, Kv, LocaleOwner, LocaleRequest, LocaleResolver, Locales, LogSink, Manual, MenuKind,
+    MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit, ModalSubmitCtx, Module,
+    NoticeText, OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions,
+    Pending, Permissions, Plugin, RefOps, Register, ReplyText, ReportKind, Resource,
+    ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
+    RunError, RunOutcome, Runtime, SelectedValues, StartError, State, SuggestionLabel,
+    SuggestionValue, Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -2173,6 +2176,18 @@ pub mod prelude {
 /// and falls back at run time. The reserved root maps `cmd`, `cmdword`,
 /// `ctxcmd` and `noctis` get no accessors; `noctis.*` keys override the
 /// built-in notices.
+///
+/// At run time the merged catalogs decide each run's [`Locales`] (FR-43):
+/// a locale "has a file" when any catalog ships one, and the App's default
+/// is the first catalog's `default`. An interaction's User Locale is
+/// Discord's `locale`, then its `guild_locale`, then the default; its
+/// Guild Locale is `guild_locale`, then (in a DM) `locale`, then the
+/// default; a guild event uses the guild's recorded `preferred_locale`,
+/// then the default. Each step takes the code's own file or its sibling's
+/// (`en-GB` → `en-US`). A [`LocaleResolver`]
+/// ([`AppBuilder::locale_resolver`]) and a before-Middleware
+/// (`BeforeCtx::set_locale`) may override the result; pass
+/// `ctx.response_locale()` to `Strings::of`.
 ///
 /// ```
 /// use noctis::rules::Locale;

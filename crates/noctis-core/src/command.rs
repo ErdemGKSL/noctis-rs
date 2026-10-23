@@ -7,14 +7,15 @@ use std::future::Future;
 use std::sync::{Arc, LazyLock, OnceLock};
 
 use futures_util::future::BoxFuture;
-use noctis_rules::Limits;
 use noctis_rules::command::OptionDecl;
+use noctis_rules::{Limits, Locale};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::State;
 use crate::autocomplete::{__AutocompleteMethod, erased_for};
 use crate::handler::{AppShared, HandlerError, HandlerResult};
+use crate::locale::{LocaleCell, Locales};
 use crate::metadata::CommandMetadata;
 use crate::options::{CommandInput, Options};
 use crate::responder::{
@@ -105,8 +106,9 @@ pub(crate) struct CtxInner {
     pub(crate) guild_id: Option<Id<GuildMarker>>,
     pub(crate) channel_id: Option<Id<ChannelMarker>>,
     pub(crate) user_id: Id<UserMarker>,
-    pub(crate) user_locale: Option<String>,
-    pub(crate) guild_locale: Option<String>,
+    /// The run's resolved locales (stage 4, then the Middleware
+    /// overrides); shared with the Responder, the notices and the run.
+    pub(crate) locales: Arc<LocaleCell>,
     pub(crate) ephemerality: Ephemerality,
     /// `None` for the detached `__testing` seams.
     pub(crate) app: Option<Arc<AppShared>>,
@@ -141,18 +143,19 @@ impl CtxInner {
         }
     }
 
-    /// The response locale (FR-43): for an ephemeral response the User
-    /// Locale, then the Guild Locale; for a public one the Guild Locale,
-    /// then the User Locale; `"en-US"` when neither is known.
-    pub(crate) fn response_locale(&self) -> &str {
-        let (first, second) = match self.ephemerality {
-            Ephemerality::Ephemeral => (&self.user_locale, &self.guild_locale),
-            Ephemerality::Public => (&self.guild_locale, &self.user_locale),
-        };
-        first
-            .as_deref()
-            .or(second.as_deref())
-            .unwrap_or(DEFAULT_LOCALE)
+    /// The run's current locales.
+    pub(crate) fn locales(&self) -> Locales {
+        self.locales.get()
+    }
+
+    /// The response locale (FR-43): the User Locale for an ephemeral
+    /// response, the Guild Locale for a public one.
+    pub(crate) fn response_locale(&self) -> Locale {
+        let locales = self.locales();
+        match self.ephemerality {
+            Ephemerality::Ephemeral => locales.user,
+            Ephemerality::Public => locales.guild,
+        }
     }
 }
 
@@ -167,8 +170,7 @@ impl CtxInner {
             guild_id: None,
             channel_id: None,
             user_id: DETACHED_USER,
-            user_locale: None,
-            guild_locale: None,
+            locales: LocaleCell::new(Locales::both(Locale::EnUs)),
             ephemerality,
             app: None,
             current_ref: None,
@@ -180,9 +182,6 @@ impl CtxInner {
         }
     }
 }
-
-/// The fallback locale (FR-43).
-const DEFAULT_LOCALE: &str = "en-US";
 
 /// The placeholder user of a detached context.
 const DETACHED_USER: Id<UserMarker> = Id::new(1);
@@ -256,21 +255,27 @@ impl CommandCtx {
         self.0.user_id
     }
 
-    /// The invoking user's client locale (`locale`), such as `"tr"`.
-    pub fn user_locale(&self) -> Option<&str> {
-        self.0.user_locale.as_deref()
+    /// The resolved User Locale (FR-43): Discord's `locale`, then the
+    /// Guild Locale, then the App's default, each step taking the code's
+    /// own locale file or its sibling's (`en-GB` → `en-US`); then the App's
+    /// `LocaleResolver` and any before-Middleware override. Use it for
+    /// ephemeral, single-user UI.
+    pub fn user_locale(&self) -> Locale {
+        self.0.locales().user
     }
 
-    /// The guild's preferred locale (`guild_locale`), outside DMs.
-    pub fn guild_locale(&self) -> Option<&str> {
-        self.0.guild_locale.as_deref()
+    /// The resolved Guild Locale (FR-43): Discord's `guild_locale`, then
+    /// (in a DM) the User Locale, then the App's default, resolved like
+    /// [`user_locale`](Self::user_locale) and overridable the same way. Use
+    /// it for shared content.
+    pub fn guild_locale(&self) -> Locale {
+        self.0.locales().guild
     }
 
-    /// The locale the response should use: for an ephemeral Command the
-    /// User Locale, then the Guild Locale; for a public one the Guild
-    /// Locale, then the User Locale; `"en-US"` when neither is known
-    /// (FR-43).
-    pub fn response_locale(&self) -> &str {
+    /// The locale the response uses (FR-43): the User Locale for a Command
+    /// declared `response = ephemeral`, the Guild Locale for a public one.
+    /// Pass it to `Strings::of`.
+    pub fn response_locale(&self) -> Locale {
         self.0.response_locale()
     }
 
@@ -356,8 +361,8 @@ impl fmt::Debug for CommandCtx {
             .field("guild_id", &self.0.guild_id)
             .field("channel_id", &self.0.channel_id)
             .field("user_id", &self.0.user_id)
-            .field("user_locale", &self.0.user_locale)
-            .field("guild_locale", &self.0.guild_locale)
+            .field("user_locale", &self.0.locales().user)
+            .field("guild_locale", &self.0.locales().guild)
             .field("ephemerality", &self.0.ephemerality)
             .finish_non_exhaustive()
     }
@@ -904,7 +909,7 @@ pub(crate) mod tests {
         let ctx = CommandCtx::new("a b");
         assert_eq!(
             format!("{ctx:?}"),
-            "CommandCtx { command_path: \"a b\", module: \"\", shard: 0, guild_id: None, channel_id: None, user_id: Id<UserMarker>(1), user_locale: None, guild_locale: None, ephemerality: Public, .. }"
+            "CommandCtx { command_path: \"a b\", module: \"\", shard: 0, guild_id: None, channel_id: None, user_id: Id<UserMarker>(1), user_locale: EnUs, guild_locale: EnUs, ephemerality: Public, .. }"
         );
     }
 
@@ -917,42 +922,26 @@ pub(crate) mod tests {
         assert!(format!("{handler:?}").contains("ephemerality: Ephemeral"));
     }
 
-    /// Matrix 8 and 9: the locale default follows the ephemerality.
+    /// Matrix 8 and 9 (Story 11.3 rows 6 and 48): the response locale
+    /// follows the ephemerality, and every accessor reads the run's cell.
     #[test]
     fn response_locale_follows_visibility() {
-        let ctx = |user: Option<&str>, guild: Option<&str>, ephemerality| {
+        use noctis_rules::Locale::{De, Tr};
+        let ctx = |user, guild, ephemerality| {
             CommandCtx::from_parts(CtxInner {
-                user_locale: user.map(str::to_owned),
-                guild_locale: guild.map(str::to_owned),
+                locales: LocaleCell::new(Locales { user, guild }),
                 ..CtxInner::detached_parts(ephemerality)
             })
         };
-        let public = ctx(Some("tr"), Some("de"), Ephemerality::Public);
-        assert_eq!(
-            (public.user_locale(), public.guild_locale()),
-            (Some("tr"), Some("de"))
-        );
-        assert_eq!(public.response_locale(), "de");
-        assert_eq!(
-            ctx(Some("tr"), Some("de"), Ephemerality::Ephemeral).response_locale(),
-            "tr"
-        );
-        assert_eq!(
-            ctx(None, None, Ephemerality::Public).response_locale(),
-            "en-US"
-        );
-        assert_eq!(
-            ctx(None, None, Ephemerality::Ephemeral).response_locale(),
-            "en-US"
-        );
-        assert_eq!(
-            ctx(Some("tr"), None, Ephemerality::Public).response_locale(),
-            "tr"
-        );
-        assert_eq!(
-            ctx(None, Some("de"), Ephemerality::Ephemeral).response_locale(),
-            "de"
-        );
+        let public = ctx(Tr, De, Ephemerality::Public);
+        assert_eq!((public.user_locale(), public.guild_locale()), (Tr, De));
+        assert_eq!(public.response_locale(), De);
+        assert_eq!(ctx(Tr, De, Ephemerality::Ephemeral).response_locale(), Tr);
+        assert!(format!("{public:?}").contains("user_locale: Tr, guild_locale: De"));
+        public.0.locales.update(|_| Locales::both(Tr));
+        assert_eq!(public.response_locale(), Tr);
+        let detached = CommandCtx::new("a");
+        assert_eq!(detached.response_locale(), Locale::EnUs);
         assert!(public.state::<u8>().is_none());
         let _ = public.http();
     }

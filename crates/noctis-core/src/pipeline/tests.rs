@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use hyper::Method;
 use noctis_gateway::RawJson;
+use noctis_rules::Locale;
 use noctis_rules::command::{OptionDecl, OptionType};
 use noctis_ui::{ActionRow, Components, LinkButton, ResolvedMessage, ResolvedUser, V2Message};
 use serde_json::{Value, json};
@@ -41,6 +42,15 @@ impl Log {
         self.0.lock().unwrap().clone()
     }
 }
+
+/// A catalog with (empty) `de`, `en-US` and `tr` files: those locales
+/// resolve to themselves (Story 11.3).
+pub(super) static LOCALES: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+    "noctis-core/test-locales",
+    Locale::EnUs,
+    &[(Locale::De, &[]), (Locale::EnUs, &[]), (Locale::Tr, &[])],
+    &[],
+);
 
 /// A running App with `module`, a recording Command sink and a recording
 /// upstream.
@@ -369,7 +379,10 @@ async fn loc_06_dispatch_resolves_default_names() {
             CommandHandler::__new_plain("m::e", &["private"], "d", record(&log, "private"))
                 .__with_ephemerality(Ephemerality::Ephemeral),
         );
-    let p = Pipeline::start(module).await;
+    let p = Pipeline::start_with(module, |b| {
+        b.locales(LOCALES);
+    })
+    .await;
     let locales = json!({ "locale": "tr", "guild_locale": "de" });
     for name in ["public", "private"] {
         p.run(inbound(&interaction(
@@ -388,10 +401,10 @@ async fn loc_06_dispatch_resolves_default_names() {
     assert_eq!(
         log.lines(),
         [
-            "public:Some(\"tr\"):Some(\"de\"):de",
-            "private:Some(\"tr\"):Some(\"de\"):tr",
-            "public:None:None:en-US",
-            "public:Some(\"tr\"):None:tr",
+            "public:Tr:De:de",
+            "private:Tr:De:tr",
+            "public:EnUs:EnUs:en-US",
+            "public:Tr:Tr:tr",
         ]
     );
 }
@@ -794,7 +807,7 @@ async fn dispatcher_runs_commands() {
             "m::ping:ping",
             "m::gping:ping",
             "m::ping:ping",
-            "warn:3:Some(\"tr\"):2"
+            "warn:3:EnUs:2"
         ]
     );
     let reports = p.reports();
@@ -835,7 +848,8 @@ async fn event_handler_dispatches() {
         }))
         .unwrap(),
     );
-    let ctx = EventCtx::new(0, None, "m", Arc::clone(p.fx.app.shared()), None);
+    let locales = LocaleCell::new(Locales::both(Locale::EnUs));
+    let ctx = EventCtx::new(0, None, "m", Arc::clone(p.fx.app.shared()), None, locales);
     handler
         .call(ctx, Event::MessageCreate(Box::new(message)))
         .unwrap()
@@ -893,13 +907,16 @@ async fn ephemeral_user_menu() {
             "Show",
             CommandMetadata::new(),
             move |ctx: CommandCtx, _: ResolvedUser, _: CommandResponder| {
-                log.push(ctx.response_locale());
+                log.push(ctx.response_locale().to_string());
                 async { Ok(v2("u")) }
             },
         )
         .__with_ephemerality(Ephemerality::Ephemeral)
     };
-    let p = Pipeline::start(Module::new("m").__add(menu)).await;
+    let p = Pipeline::start_with(Module::new("m").__add(menu), |b| {
+        b.locales(LOCALES);
+    })
+    .await;
     let data = json!({
         "id": "9", "name": "Show", "type": 2, "target_id": "11",
         "resolved": { "users": { "11": user("11") } }
@@ -2107,6 +2124,43 @@ mod autocomplete {
         );
     }
 
+    /// Story 11.3 rows 32 and 46: the resolver runs once for an
+    /// autocomplete run (`Invocation::Autocomplete`), and a `MessageKey`
+    /// label renders in the resolved User Locale.
+    #[tokio::test]
+    async fn labels_follow_the_resolved_user_locale() {
+        static TR_OWNER: noctis_i18n::Catalog = noctis_i18n::Catalog::__new(
+            "noctis-core/ac-labels",
+            Locale::EnUs,
+            &[
+                (Locale::EnUs, &[]),
+                (Locale::Tr, &[("noctis.guard.owner", "Sadece sahibi")]),
+            ],
+            &[("noctis.guard.owner", &[])],
+        );
+        let calls: Arc<Mutex<Vec<Invocation>>> = Arc::default();
+        let seen = Arc::clone(&calls);
+        let module = Module::new("m").__add(config());
+        let p = Pipeline::start_with(module, move |b| {
+            b.locales(TR_OWNER)
+                .locale_resolver(move |r: &crate::LocaleRequest| {
+                    seen.lock().unwrap().push(r.invocation);
+                    r.resolved
+                });
+        })
+        .await;
+        let mut d = ac_json("labels", "x");
+        d["locale"] = json!("tr");
+        run(&p, inbound(&d)).await;
+        assert_eq!(choices(&p)[0]["name"], "Sadece sahibi");
+        assert_eq!(
+            *calls.lock().unwrap(),
+            [Invocation::Autocomplete {
+                path: "config set prefix"
+            }]
+        );
+    }
+
     /// Story 6.11 Matrix 28: `guild_id()?` in a DM and an unregistered
     /// state answer an empty list and reach the sink.
     #[tokio::test]
@@ -2921,6 +2975,7 @@ async fn int_05_manual_menu() {
 mod components;
 mod expired;
 mod guards;
+mod locales;
 mod middleware;
 mod refs;
 

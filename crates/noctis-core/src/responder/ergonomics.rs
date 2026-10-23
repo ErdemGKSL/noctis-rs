@@ -20,6 +20,7 @@ use super::{
 };
 use crate::command::CtxInner;
 use crate::handler::{HandlerError, HandlerResult};
+use crate::locale::Locales;
 use crate::notice;
 
 /// The text of a [`ReplyText`] notice: what `ctx.reply_text(text)`
@@ -30,9 +31,9 @@ use crate::notice;
 /// - a `String`, sent as is;
 /// - a `&'static str`, sent as is;
 /// - a [`MessageKey`], resolved in the response locale of the reply
-///   (the User Locale first for an ephemeral reply, the Guild Locale first
-///   for a public one, `en-US` when neither is known). A key no catalog
-///   has renders the generic error text, with one `warn`.
+///   (the run's resolved User Locale for an ephemeral reply, its Guild
+///   Locale for a public one, read when the reply is sent). A key no
+///   catalog has renders the generic error text, with one `warn`.
 ///
 /// ```
 /// use noctis_core::NoticeText;
@@ -161,16 +162,14 @@ fn resolve(ctx: &CtxInner, text: NoticeText, visibility: Ephemerality) -> String
         Some(app) => &*app.strings,
         None => &Builtin,
     };
-    let locales = (ctx.user_locale.as_deref(), ctx.guild_locale.as_deref());
-    text_in(strings, locales, text, visibility)
+    text_in(strings, ctx.locales(), text, visibility)
 }
 
-/// The text of `text` from `strings`: a key in the User Locale first for an
-/// ephemeral notice, in the Guild Locale first for a public one, `en-US`
-/// when neither is known or the first known code does not parse (LOC-04).
+/// The text of `text` from `strings`: a key in the User Locale for an
+/// ephemeral notice, in the Guild Locale for a public one (LOC-04).
 pub(super) fn text_in(
     strings: &dyn Translate,
-    (user, guild): (Option<&str>, Option<&str>),
+    locales: Locales,
     text: NoticeText,
     visibility: Ephemerality,
 ) -> String {
@@ -178,8 +177,8 @@ pub(super) fn text_in(
         NoticeText::Text(text) => text.into_owned(),
         NoticeText::Key(key) => {
             let locale = match visibility {
-                Ephemerality::Ephemeral => notice::locale(user, guild),
-                Ephemerality::Public => notice::locale(guild, user),
+                Ephemerality::Ephemeral => locales.user,
+                Ephemerality::Public => locales.guild,
             };
             notice::text(strings, locale, key)
         }

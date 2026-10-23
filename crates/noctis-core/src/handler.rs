@@ -227,6 +227,9 @@ pub(crate) struct AppShared {
     /// from: the `AppBuilder::locales` catalogs over `noctis-i18n`'s
     /// `Builtin` (`AppStrings`).
     pub(crate) strings: Arc<dyn Translate>,
+    /// Which locales the merged catalogs ship, the App's default locale,
+    /// its `LocaleResolver` and the per-guild locale record (FR-43).
+    pub(crate) locales: crate::locale::AppLocales,
     /// The payload key ring that signs and verifies `signed` Routes
     /// (`NOCTIS_PAYLOAD_KEY`, AD-5): never logged, never in a span field,
     /// never handed to a port or adapter (AD-29).
@@ -246,8 +249,8 @@ pub(crate) struct AppShared {
 pub(crate) type RunObserver = Arc<dyn Fn(Id<InteractionMarker>) + Send + Sync>;
 
 /// The context an event handler receives: the shard, the guild, the
-/// handler's Module, the App's typed state, its HTTP client and its
-/// Command [`Dispatcher`].
+/// handler's Module, the resolved Guild Locale, the App's typed state, its
+/// HTTP client and its Command [`Dispatcher`].
 ///
 /// Cheap to clone (one `Arc`). `Debug` leaves the HTTP client out.
 ///
@@ -272,6 +275,9 @@ struct CtxInner {
     /// The run whose frozen Extensions the handler's `Ext<T>` parameters
     /// read; `None` without Middleware.
     run: Option<Arc<crate::middleware::Run>>,
+    /// The run's resolved locales (stage 4, then the Middleware
+    /// overrides).
+    locales: Arc<crate::locale::LocaleCell>,
 }
 
 impl EventCtx {
@@ -281,6 +287,7 @@ impl EventCtx {
         module: &'static str,
         app: Arc<AppShared>,
         run: Option<Arc<crate::middleware::Run>>,
+        locales: Arc<crate::locale::LocaleCell>,
     ) -> Self {
         let dispatcher = Dispatcher::new(Arc::clone(&app));
         Self(Arc::new(CtxInner {
@@ -290,6 +297,7 @@ impl EventCtx {
             app,
             dispatcher,
             run,
+            locales,
         }))
     }
 
@@ -306,6 +314,15 @@ impl EventCtx {
     /// The id of the Module the handler was added to.
     pub fn module(&self) -> &'static str {
         self.0.module
+    }
+
+    /// The resolved Guild Locale (FR-43): the guild's `preferred_locale`
+    /// (recorded from `GUILD_CREATE` and `GUILD_UPDATE`), taking its own
+    /// locale file or its sibling's, else the App's default (also for a DM
+    /// or a guild without a record); then the App's `LocaleResolver` and
+    /// any before-Middleware override.
+    pub fn guild_locale(&self) -> noctis_rules::Locale {
+        self.0.locales.get().guild
     }
 
     /// The state registered for `T` with `AppBuilder::state`, if any.
@@ -352,6 +369,7 @@ impl fmt::Debug for EventCtx {
             .field("shard", &self.0.shard)
             .field("guild_id", &self.0.guild_id)
             .field("module", &self.0.module)
+            .field("guild_locale", &self.0.locales.get().guild)
             .field("states", &self.0.app.states)
             .finish_non_exhaustive()
     }

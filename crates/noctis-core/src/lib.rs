@@ -179,6 +179,7 @@ mod handler;
 mod kind;
 mod kv;
 mod lifecycle;
+mod locale;
 mod menu;
 mod metadata;
 mod middleware;
@@ -254,6 +255,7 @@ pub use kind::{
 #[doc(hidden)]
 pub use kind::{__ExtType, __Extensions, __RequireExtensions, __ext, __ext_opt};
 pub use kv::Kv;
+pub use locale::{LocaleRequest, LocaleResolver, Locales};
 pub use menu::{ContextMenuHandler, MenuTargetError};
 pub use metadata::{BaseMeta, CommandMetadata};
 pub use middleware::{
@@ -380,8 +382,9 @@ pub mod __testing {
         }
 
         /// The text of the built-in notice `key` (a `noctis.*` key) in the
-        /// locale a failed run's notice uses: the User Locale, then the
-        /// Guild Locale, else `en-US`. A key no catalog has renders the
+        /// locale a failed run's notice uses: the User Locale the App's
+        /// built-in resolution gives the raw codes (no `LocaleResolver` and
+        /// no Middleware override). A key no catalog has renders the
         /// generic error text, as at run time.
         pub fn notice(
             &self,
@@ -391,7 +394,10 @@ pub mod __testing {
         ) -> String {
             crate::notice::text(
                 &*self.shared.strings,
-                crate::notice::locale(user_locale, guild_locale),
+                self.shared
+                    .locales
+                    .builtin_raw(user_locale, guild_locale)
+                    .user,
                 noctis_rules::MessageKey::new(key),
             )
         }

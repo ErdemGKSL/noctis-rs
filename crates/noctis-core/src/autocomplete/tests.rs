@@ -46,8 +46,7 @@ fn ctx() -> AutocompleteCtx {
         guild_id: None,
         channel_id: None,
         user_id: Id::new(1),
-        user_locale: Some("tr".to_owned()),
-        guild_locale: None,
+        locales: crate::locale::LocaleCell::new(crate::Locales::both(noctis_rules::Locale::Tr)),
         focused: focused(3, &json!("")),
         app: None,
     })

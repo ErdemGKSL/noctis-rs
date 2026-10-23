@@ -23,6 +23,7 @@ use twilight_model::id::marker::{GuildMarker, InteractionMarker};
 
 use crate::events::EventCtx;
 use crate::handler::{AppShared, HandlerResult};
+use crate::locale::Stage4;
 use crate::middleware::{Around, Before, Invocation, RunInfo, RunOutcome};
 use crate::pipeline::component::run_component;
 use crate::pipeline::{run_autocomplete, run_interaction};
@@ -262,6 +263,8 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
         let shard = inbound.shard.number();
         match inbound.kind {
             InboundKind::Event(event) => {
+                // The guild record follows every event, handled or not.
+                workers.app.locales.observe(&event);
                 let permit = loop {
                     tokio::select! {
                         biased;
@@ -436,10 +439,23 @@ pub(crate) async fn run_handler(
         handler = handler.name(),
         event_type,
     );
+    let invocation = Invocation::Event { event_type };
+    // Stage 4: the guild's recorded locale, then the App's default.
+    let locales = crate::pipeline::stage4(
+        app,
+        Stage4 {
+            invocation,
+            guild_id,
+            user_id: None,
+            discord_user: None,
+            discord_guild: app.locales.guild(guild_id),
+        },
+        handler.name(),
+    );
     let around = Around::new(
         &entry.chain,
         || RunInfo {
-            invocation: Invocation::Event { event_type },
+            invocation,
             module: entry.module,
             handler: handler.name(),
             shard,
@@ -447,6 +463,7 @@ pub(crate) async fn run_handler(
             channel_id: None,
             user_id: None,
             app: Some(Arc::clone(app)),
+            locales: Arc::clone(&locales),
         },
         true,
     );
@@ -456,7 +473,14 @@ pub(crate) async fn run_handler(
     let outcome = if cancel.is_cancelled() {
         Outcome::Cancelled
     } else {
-        let ctx = EventCtx::new(shard, guild_id, entry.module, Arc::clone(app), around.run());
+        let ctx = EventCtx::new(
+            shard,
+            guild_id,
+            entry.module,
+            Arc::clone(app),
+            around.run(),
+            locales,
+        );
         let started_at = Instant::now();
         let started = span
             .in_scope(|| std::panic::catch_unwind(AssertUnwindSafe(|| handler.call(ctx, event))));

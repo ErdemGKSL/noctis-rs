@@ -7,6 +7,7 @@ use noctis_ui::{Modal, ModalLabel, TextInput, TextInputStyle};
 
 use super::*;
 use crate::command::CtxInner;
+use crate::locale::{LocaleCell, Locales};
 use crate::test_support::{Capture, test_route};
 use crate::{
     CommandCtx, ComponentCtx, ComponentResponder, ExpiredCtx, HandlerError, HandlerResult,
@@ -38,12 +39,12 @@ fn cmd(shared: &Arc<Shared>) -> CommandCtx {
     })
 }
 
-/// A Command context bound to `shared`, with the user and guild locales.
-fn cmd_in(shared: &Arc<Shared>, user: &str, guild: &str) -> CommandCtx {
+/// A Command context bound to `shared`, with the resolved user and guild
+/// locales.
+fn cmd_in(shared: &Arc<Shared>, user: Locale, guild: Locale) -> CommandCtx {
     CommandCtx::from_parts(CtxInner {
         shared: Some(Arc::clone(shared)),
-        user_locale: Some(user.to_owned()),
-        guild_locale: Some(guild.to_owned()),
+        locales: LocaleCell::new(Locales { user, guild }),
         ..CtxInner::detached_parts(Ephemerality::Public)
     })
 }
@@ -858,8 +859,8 @@ impl Translate for Catalog {
     }
 }
 
-/// Row 32: a key resolves in the User Locale first (ephemeral) or the
-/// Guild Locale first (public); `en-US` without a known, parsable code.
+/// Row 32: a key resolves in the User Locale (ephemeral) or the Guild
+/// Locale (public) of the run's resolved pair.
 #[test]
 fn reply_text_key_locale() {
     let key = || NoticeText::from(MessageKey::new("shop.saved"));
@@ -867,12 +868,15 @@ fn reply_text_key_locale() {
         super::super::ergonomics::text_in(&Catalog, locales, key(), visibility)
     };
     let (eph, public) = (Ephemerality::Ephemeral, Ephemerality::Public);
-    assert_eq!(text((Some("tr"), Some("de")), eph), "Tr");
-    assert_eq!(text((Some("tr"), Some("de")), public), "De");
-    assert_eq!(text((None, None), eph), "EnUs");
-    assert_eq!(text((Some("xx-YY"), Some("de")), eph), "EnUs");
+    let tr_de = Locales {
+        user: Locale::Tr,
+        guild: Locale::De,
+    };
+    assert_eq!(text(tr_de, eph), "Tr");
+    assert_eq!(text(tr_de, public), "De");
+    assert_eq!(text(Locales::both(Locale::EnUs), eph), "EnUs");
     assert_eq!(
-        super::super::ergonomics::text_in(&Catalog, (None, None), "lit".into(), eph),
+        super::super::ergonomics::text_in(&Catalog, tr_de, "lit".into(), eph),
         "lit"
     );
 }
@@ -883,7 +887,7 @@ fn reply_text_key_locale() {
 async fn reply_text_keys_on_the_wire() {
     let fx = Fixture::start(discord()).await;
     let shared = fx.interaction("tok", Ephemerality::Public);
-    let _ = cmd_in(&shared, "tr", "de")
+    let _ = cmd_in(&shared, Locale::Tr, Locale::De)
         .reply_text(keys::GUARD_OWNER)
         .await
         .unwrap();
@@ -1067,20 +1071,26 @@ async fn component_response_locale() {
     let fx = Fixture::start(discord()).await;
     let ephemeral_source = source(MessageFormat::V2, Ephemerality::Ephemeral);
     for (declared, src, expected) in [
-        (Declared::Reply(Ephemerality::Ephemeral), v2_source(), "tr"),
+        (
+            Declared::Reply(Ephemerality::Ephemeral),
+            v2_source(),
+            Locale::Tr,
+        ),
         (
             Declared::Reply(Ephemerality::Public),
             ephemeral_source.clone(),
-            "de",
+            Locale::De,
         ),
-        (Declared::Update, ephemeral_source, "tr"),
-        (Declared::Update, v2_source(), "de"),
-        (Declared::Update, None, "de"),
+        (Declared::Update, ephemeral_source, Locale::Tr),
+        (Declared::Update, v2_source(), Locale::De),
+        (Declared::Update, None, Locale::De),
     ] {
         let shared = fx.component(declared, src);
         let parts = Arc::new(CtxInner {
-            user_locale: Some("tr".to_owned()),
-            guild_locale: Some("de".to_owned()),
+            locales: LocaleCell::new(Locales {
+                user: Locale::Tr,
+                guild: Locale::De,
+            }),
             ephemerality: shared.response_ephemerality(),
             shared: Some(Arc::clone(&shared)),
             ..CtxInner::detached_parts(Ephemerality::Public)
@@ -1095,7 +1105,7 @@ async fn component_response_locale() {
         );
         assert_eq!(ExpiredCtx::from_inner(parts).response_locale(), expected);
     }
-    assert_eq!(ComponentCtx::detached().response_locale(), "en-US");
+    assert_eq!(ComponentCtx::detached().response_locale(), Locale::EnUs);
 }
 
 const fn assert_send<T: Send>() {}

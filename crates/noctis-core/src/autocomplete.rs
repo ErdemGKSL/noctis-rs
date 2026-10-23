@@ -195,8 +195,9 @@ pub(crate) struct AutocompleteParts {
     pub(crate) guild_id: Option<Id<GuildMarker>>,
     pub(crate) channel_id: Option<Id<ChannelMarker>>,
     pub(crate) user_id: Id<UserMarker>,
-    pub(crate) user_locale: Option<String>,
-    pub(crate) guild_locale: Option<String>,
+    /// The run's resolved locales (stage 4 and the App's
+    /// `LocaleResolver`; autocomplete runs no Middleware).
+    pub(crate) locales: Arc<crate::locale::LocaleCell>,
     pub(crate) focused: Focused,
     /// `None` in unit tests and the detached seam.
     pub(crate) app: Option<Arc<AppShared>>,
@@ -233,14 +234,11 @@ impl AutocompleteCtx {
     }
 
     /// How labels given as a `MessageKey` render: the App's strings in the
-    /// user's locale (then the guild's, then `en-US`).
+    /// run's resolved User Locale.
     pub(crate) fn labels(&self) -> Labels {
         Labels {
             strings: self.parts.app.as_ref().map(|app| Arc::clone(&app.strings)),
-            locale: crate::notice::locale(
-                self.parts.user_locale.as_deref(),
-                self.parts.guild_locale.as_deref(),
-            ),
+            locales: Arc::clone(&self.parts.locales),
         }
     }
 
@@ -282,14 +280,19 @@ impl AutocompleteCtx {
         self.parts.user_id
     }
 
-    /// The user's client locale (`locale`), such as `"tr"`.
-    pub fn user_locale(&self) -> Option<&str> {
-        self.parts.user_locale.as_deref()
+    /// The resolved User Locale (FR-43): Discord's `locale`, then the
+    /// Guild Locale, then the App's default, each step taking the code's
+    /// own locale file or its sibling's; then the App's `LocaleResolver`.
+    /// `MessageKey` labels render in it.
+    pub fn user_locale(&self) -> noctis_rules::Locale {
+        self.parts.locales.get().user
     }
 
-    /// The guild's preferred locale (`guild_locale`), outside DMs.
-    pub fn guild_locale(&self) -> Option<&str> {
-        self.parts.guild_locale.as_deref()
+    /// The resolved Guild Locale (FR-43): Discord's `guild_locale`, then
+    /// (in a DM) the User Locale, then the App's default; then the App's
+    /// `LocaleResolver`.
+    pub fn guild_locale(&self) -> noctis_rules::Locale {
+        self.parts.locales.get().guild
     }
 
     /// The option being typed in.
@@ -343,8 +346,8 @@ impl fmt::Debug for AutocompleteCtx {
             .field("guild_id", &p.guild_id)
             .field("channel_id", &p.channel_id)
             .field("user_id", &p.user_id)
-            .field("user_locale", &p.user_locale)
-            .field("guild_locale", &p.guild_locale)
+            .field("user_locale", &p.locales.get().user)
+            .field("guild_locale", &p.locales.get().guild)
             .field("focused", &p.focused.name)
             .finish_non_exhaustive()
     }
@@ -353,7 +356,7 @@ impl fmt::Debug for AutocompleteCtx {
 /// How `MessageKey` labels render for one interaction.
 pub(crate) struct Labels {
     strings: Option<Arc<dyn Translate>>,
-    locale: noctis_rules::Locale,
+    locales: Arc<crate::locale::LocaleCell>,
 }
 
 impl Labels {
@@ -361,10 +364,13 @@ impl Labels {
     fn text(&self, label: SuggestionLabel) -> String {
         match label.0 {
             LabelKind::Text(text) => text,
-            LabelKind::Key(key) => match &self.strings {
-                Some(strings) => crate::notice::text(&**strings, self.locale, key),
-                None => crate::notice::text(&Builtin, self.locale, key),
-            },
+            LabelKind::Key(key) => {
+                let locale = self.locales.get().user;
+                match &self.strings {
+                    Some(strings) => crate::notice::text(&**strings, locale, key),
+                    None => crate::notice::text(&Builtin, locale, key),
+                }
+            }
         }
     }
 }
@@ -993,8 +999,7 @@ pub(crate) fn call_autocomplete(
         guild_id: None,
         channel_id: None,
         user_id: Id::new(1),
-        user_locale: None,
-        guild_locale: None,
+        locales: crate::locale::LocaleCell::new(crate::Locales::both(noctis_rules::Locale::EnUs)),
         focused,
         app: None,
     };

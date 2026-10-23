@@ -8,7 +8,12 @@
 //! 2. Ref resolution: none, since a Command has no Ref (components and
 //!    modals resolve theirs, `pipeline::component`);
 //! 3. *Module enablement checks: absent until Stories 13.2 and 13.3;*
-//! 4. resolve the locale default (User and Guild Locale, FR-43);
+//! 4. resolve the locales (FR-43): the User Locale as Discord's `locale`,
+//!    then `guild_locale`, then the App's default; the Guild Locale as
+//!    `guild_locale`, then `locale`, then the default (each step the
+//!    code's own locale file or its sibling's), then the App's
+//!    `LocaleResolver` once. The run's one locale cell is shared by the
+//!    context, the Responder, the notices and the Middleware;
 //! 5. *rate limits: absent until Story 13.4;*
 //! 6. arm the auto-defer (INT-01): a task that acknowledges the interaction
 //!    with a type-5 callback at `received_at + ack_deadline` unless the
@@ -18,7 +23,8 @@
 //! 7. run the before-Middleware of the handler's Module path (parent's
 //!    first, each Module's in registration order) under `catch_unwind`,
 //!    raced against the cancel token, in a `noctis.middleware` span: each
-//!    may insert typed Extensions; a `Flow::Stop` skips the rest and the
+//!    may insert typed Extensions and override the run's locales; a
+//!    `Flow::Stop` skips the rest and the
 //!    handler (its key's ephemeral notice, or nothing for `Stop(None)`,
 //!    which deletes a type-5 deferred original); an error or a panic is
 //!    handled like the handler's, naming the Middleware. The Extensions are
@@ -88,8 +94,8 @@ use std::time::Instant;
 use futures_util::FutureExt;
 use noctis_gateway::{Inbound, InboundKind};
 use noctis_i18n::keys;
+use noctis_rules::MessageKey;
 use noctis_rules::command::{MenuKind, Scope};
-use noctis_rules::{Locale, MessageKey};
 use tokio_util::sync::CancellationToken;
 use tracing::field::Empty;
 use tracing::{Instrument, Span};
@@ -110,6 +116,7 @@ use crate::command::{CommandCtx, CtxInner, HandlerFuture, failed};
 use crate::edge::callback::ACK_DEADLINE;
 use crate::guard::GuardDenied;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
+use crate::locale::{self, LocaleCell, Locales, Stage4};
 use crate::menu::MenuInput;
 use crate::middleware::{Around, Before, Chain, Invocation, RunInfo, RunOutcome};
 use crate::notice;
@@ -182,6 +189,7 @@ impl Resolved {
         guild_id: Option<Id<GuildMarker>>,
         channel_id: Option<Id<ChannelMarker>>,
         user_id: Id<UserMarker>,
+        locales: &Arc<LocaleCell>,
     ) -> Around {
         Around::new(
             self.chain(),
@@ -194,6 +202,7 @@ impl Resolved {
                 channel_id,
                 user_id: Some(user_id),
                 app: Some(Arc::clone(app)),
+                locales: Arc::clone(locales),
             },
             false,
         )
@@ -350,8 +359,9 @@ pub(crate) struct Report<'a> {
     pub(crate) module: &'static str,
     pub(crate) handler: &'static str,
     pub(crate) event_type: Option<&'static str>,
-    /// The locale of the user-facing notice (User, then Guild Locale).
-    pub(crate) locale: Locale,
+    /// The run's locale cell: its notices use the User Locale, read when
+    /// they are sent (a Middleware override reaches them).
+    pub(crate) locales: Arc<LocaleCell>,
     /// The handler run's Middleware; `None` for the Expired Handler chain
     /// and autocomplete (no Middleware, no Extensions in the report).
     pub(crate) around: Option<Around>,
@@ -727,6 +737,17 @@ impl<'a> Report<'a> {
     }
 }
 
+/// Stage 4 (FR-43, AD-23): the run's locale cell: the built-in resolution
+/// of `request`, then the App's `LocaleResolver` once (for `handler`); an
+/// interaction's parseable `guild_locale` also refreshes an existing guild
+/// record.
+pub(crate) fn stage4(app: &AppShared, request: Stage4, handler: &'static str) -> Arc<LocaleCell> {
+    if request.user_id.is_some() {
+        app.locales.refresh(request.guild_id, request.discord_guild);
+    }
+    LocaleCell::new(app.locales.resolve_run(request, handler))
+}
+
 /// The notice key of a failed run: an error's key (see
 /// `notice::key_for`), the generic key for a panic, none for a success or
 /// a cancellation.
@@ -749,7 +770,8 @@ pub(crate) async fn send_notice(
     report: &Report<'_>,
     key: MessageKey,
 ) {
-    let text = span.in_scope(|| notice::text(&*report.app.strings, report.locale, key));
+    let locale = report.locales.get().user;
+    let text = span.in_scope(|| notice::text(&*report.app.strings, locale, key));
     if let Err(error) = shared.notice(text).instrument(span.clone()).await {
         span.in_scope(|| {
             tracing::warn!(
@@ -818,6 +840,10 @@ fn start(
 
 /// Runs one `APPLICATION_COMMAND` interaction through the pipeline (see
 /// the module docs) in span `noctis.interaction`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one linear pass over the stages, stage 4 included"
+)]
 pub(crate) async fn run_interaction(
     registry: Arc<Registry>,
     app: Arc<AppShared>,
@@ -861,7 +887,7 @@ pub(crate) async fn run_interaction(
     };
     // Stage 2 (Ref resolution) has nothing to do: a Command has no Ref.
     // Stage 3 (Module enablement) lands with Stories 13.2 and 13.3.
-    // Stage 4: the locale default.
+    // Stage 4: resolve the locales.
     let Interaction {
         application_id,
         id: interaction_id,
@@ -875,16 +901,25 @@ pub(crate) async fn run_interaction(
     } = *interaction;
     let ephemerality = resolved.ephemerality();
     let channel_id = channel.as_ref().map(|c| c.id);
-    let notice_locale = notice::locale(locale.as_deref(), guild_locale.as_deref());
-    let around = resolved.around(&app, shard, guild_id, channel_id, user_id);
+    let locales = stage4(
+        &app,
+        Stage4 {
+            invocation: resolved.invocation(),
+            guild_id,
+            user_id: Some(user_id),
+            discord_user: locale::parse(locale.as_deref()),
+            discord_guild: locale::parse(guild_locale.as_deref()),
+        },
+        resolved.handler(),
+    );
+    let around = resolved.around(&app, shard, guild_id, channel_id, user_id, &locales);
     let parts = CtxInner {
         module: resolved.module(),
         shard,
         guild_id,
         channel_id,
         user_id,
-        user_locale: locale,
-        guild_locale,
+        locales: Arc::clone(&locales),
         app: Some(Arc::clone(&app)),
         run: around.run(),
         ..CtxInner::detached_parts(ephemerality)
@@ -902,11 +937,7 @@ pub(crate) async fn run_interaction(
     // A user-install-only interaction may send 5 follow-ups (INT-11).
     let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
     let state = Shared::with_followup_cap(transport, ephemerality, app.limits.clone(), cap);
-    state.set_i18n(
-        Arc::clone(&app.strings),
-        parts.user_locale.clone(),
-        parts.guild_locale.clone(),
-    );
+    state.set_i18n(Arc::clone(&app.strings), Arc::clone(&locales));
     // Stage 6: the auto-defer.
     let armed = Armed {
         handler: resolved.handler(),
@@ -924,7 +955,7 @@ pub(crate) async fn run_interaction(
         module: resolved.module(),
         handler: resolved.handler(),
         event_type: Some(INTERACTION_CREATE),
-        locale: notice_locale,
+        locales,
         around: Some(around),
         restore: None,
     };
@@ -992,6 +1023,10 @@ fn log_warnings(warnings: &Warnings, handler: &'static str) {
 
 /// Runs one `APPLICATION_COMMAND_AUTOCOMPLETE` interaction (see the module
 /// docs, "Autocomplete") in span `noctis.interaction`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one linear pass over the stages, stage 4 included"
+)]
 pub(crate) async fn run_autocomplete(
     registry: Arc<Registry>,
     app: Arc<AppShared>,
@@ -1038,7 +1073,7 @@ pub(crate) async fn run_autocomplete(
         // Autocomplete answers with choices, never files.
         file_limit: None,
     };
-    let report_for = |module, handler| Report {
+    let report_for = |module, handler, locales| Report {
         app: &app,
         origin: ErrorOrigin::Autocomplete,
         shard: Some(shard),
@@ -1047,7 +1082,7 @@ pub(crate) async fn run_autocomplete(
         handler,
         event_type: Some(INTERACTION_CREATE),
         // Autocomplete sends no notice.
-        locale: Locale::EnUs,
+        locales,
         // Autocomplete runs no Middleware.
         around: None,
         restore: None,
@@ -1062,13 +1097,30 @@ pub(crate) async fn run_autocomplete(
                 });
             }
             if let Some((module, handler, error)) = &skip {
-                let report = report_for(module, handler);
+                let locales = LocaleCell::new(Locales::both(app.locales.default_locale()));
+                let report = report_for(module, handler, locales);
                 report_autocomplete(&span, &report, ReportKind::Error(error));
             }
             return;
         }
     };
-    let report = report_for(found.entry.module, found.handler.name());
+    // Stage 4: resolve the locales.
+    let locales = stage4(
+        &app,
+        Stage4 {
+            invocation: Invocation::Autocomplete { path: found.path },
+            guild_id,
+            user_id: Some(found.user_id),
+            discord_user: locale::parse(locale.as_deref()),
+            discord_guild: locale::parse(guild_locale.as_deref()),
+        },
+        found.handler.name(),
+    );
+    let report = report_for(
+        found.entry.module,
+        found.handler.name(),
+        Arc::clone(&locales),
+    );
     let kind = found.focused.kind();
     let ctx = AutocompleteCtx::new(AutocompleteParts {
         path: found.path,
@@ -1077,8 +1129,7 @@ pub(crate) async fn run_autocomplete(
         guild_id,
         channel_id,
         user_id: found.user_id,
-        user_locale: locale,
-        guild_locale,
+        locales,
         focused: found.focused,
         app: Some(Arc::clone(&app)),
     });
@@ -1445,7 +1496,10 @@ impl CommandInvocation {
         self
     }
 
-    /// Sets the User Locale (`ctx.user_locale()`).
+    /// Sets the user's raw locale code, as Discord would send it (`"tr"`,
+    /// `"en-GB"`): stage 4 parses it exactly and resolves it like an
+    /// interaction's `locale` (an unknown code counts as absent). The Guild
+    /// Locale comes from the guild's recorded `preferred_locale`.
     #[must_use]
     pub fn locale(mut self, locale: impl Into<String>) -> Self {
         self.locale = Some(locale.into());
@@ -1467,12 +1521,12 @@ impl Dispatcher {
     }
 
     /// The responder state of a message-transport run on `target` (channel,
-    /// message), whose locale keys resolve in `user_locale`.
+    /// message), whose locale keys resolve in the run's `locales`.
     fn message_shared(
         &self,
         (channel_id, message_id): (Id<ChannelMarker>, Id<MessageMarker>),
         ephemerality: Ephemerality,
-        user_locale: Option<String>,
+        locales: Arc<LocaleCell>,
     ) -> Arc<Shared> {
         let transport = Transport::Message(MessageTarget {
             app: Arc::clone(&self.app),
@@ -1480,7 +1534,7 @@ impl Dispatcher {
             message_id,
         });
         let shared = Shared::new(transport, ephemerality, self.app.limits.clone());
-        shared.set_i18n(Arc::clone(&self.app.strings), user_locale, None);
+        shared.set_i18n(Arc::clone(&self.app.strings), locales);
         shared
     }
 
@@ -1492,6 +1546,10 @@ impl Dispatcher {
     /// [`DispatchError::UnknownCommand`] when no Command is registered at
     /// the path in the guild's scope or globally. A failed handler is not
     /// an error here: it goes to the Command Error Sink.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one linear pass over the stages, stage 4 included"
+    )]
     pub async fn run_command(&self, invocation: CommandInvocation) -> Result<(), DispatchError> {
         let CommandInvocation {
             input,
@@ -1525,7 +1583,18 @@ impl Dispatcher {
             return Ok(());
         };
         let ephemerality = entry.handler.ephemerality();
-        let notice_locale = notice::locale(locale.as_deref(), None);
+        // Stage 4: the User Locale the caller gave, the guild's recorded one.
+        let locales = stage4(
+            &self.app,
+            Stage4 {
+                invocation: Invocation::Command { path },
+                guild_id,
+                user_id: Some(user_id),
+                discord_user: locale::parse(locale.as_deref()),
+                discord_guild: self.app.locales.guild(guild_id),
+            },
+            entry.handler.name(),
+        );
         let around = Around::new(
             &entry.chain,
             || RunInfo {
@@ -1537,6 +1606,7 @@ impl Dispatcher {
                 channel_id: Some(channel_id),
                 user_id: Some(user_id),
                 app: Some(Arc::clone(&self.app)),
+                locales: Arc::clone(&locales),
             },
             false,
         );
@@ -1548,8 +1618,7 @@ impl Dispatcher {
             guild_id,
             channel_id: Some(channel_id),
             user_id,
-            user_locale: locale,
-            guild_locale: None,
+            locales: Arc::clone(&locales),
             ephemerality,
             app: Some(Arc::clone(&self.app)),
             current_ref: None,
@@ -1560,7 +1629,7 @@ impl Dispatcher {
             unknown: Vec::new(),
         };
         let target = (channel_id, message_id);
-        let shared = self.message_shared(target, ephemerality, parts.user_locale.clone());
+        let shared = self.message_shared(target, ephemerality, Arc::clone(&locales));
         let report = Report {
             app: &self.app,
             origin: ErrorOrigin::Command,
@@ -1569,7 +1638,7 @@ impl Dispatcher {
             module: entry.module,
             handler: entry.handler.name(),
             event_type: None,
-            locale: notice_locale,
+            locales,
             around: Some(around),
             restore: None,
         };

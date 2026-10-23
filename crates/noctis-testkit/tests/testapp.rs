@@ -1183,9 +1183,10 @@ async fn defaults_dms_and_locales() -> Result<(), TestError> {
     assert_eq!(
         log.lines(),
         [
-            "whoami 1 None Some(1) Some(\"en-US\") None",
-            "whoami 40 Some(10) Some(20) Some(\"tr\") Some(\"en-US\")",
-            "whoami 1 Some(11) Some(11) Some(\"en-US\") Some(\"fr\")",
+            // No locale files: every run resolves to the en-US default.
+            "whoami 1 None Some(1) EnUs EnUs",
+            "whoami 40 Some(10) Some(20) EnUs EnUs",
+            "whoami 1 Some(11) Some(11) EnUs EnUs",
         ]
     );
     Ok(())

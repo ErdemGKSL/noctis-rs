@@ -42,6 +42,15 @@ fn info() -> RunInfo {
         channel_id: None,
         user_id: None,
         app: None,
+        locales: LocaleCell::new(Locales::both(Locale::EnUs)),
+    }
+}
+
+/// [`info`] sharing the locale cell `locales`.
+fn info_with(locales: &Arc<LocaleCell>) -> impl FnOnce() -> RunInfo + '_ {
+    move || RunInfo {
+        locales: Arc::clone(locales),
+        ..info()
     }
 }
 
@@ -283,4 +292,111 @@ fn empty_chain_and_outcomes() {
         assert!(!outcome.is_completed());
     }
     assert!(RunOutcome::Completed.is_completed());
+}
+
+/// Story 11.3 rows 37 and 38: `set_locale` sets both; a later Middleware
+/// reads an earlier one's write, and the last write wins for the handler.
+#[tokio::test]
+async fn locale_setters_chain() {
+    let parent = Middleware::before(|ctx: BeforeCtx| async move {
+        assert_eq!(ctx.guild_locale(), Locale::EnUs);
+        ctx.set_guild_locale(Locale::Tr);
+        Ok(Flow::Continue)
+    });
+    let child = Middleware::before(|ctx: BeforeCtx| async move {
+        assert_eq!(
+            (ctx.user_locale(), ctx.guild_locale()),
+            (Locale::EnUs, Locale::Tr)
+        );
+        ctx.set_guild_locale(Locale::De);
+        ctx.set_user_locale(Locale::Tr);
+        Ok(Flow::Continue)
+    });
+    let locales = LocaleCell::new(Locales::both(Locale::EnUs));
+    let around = Around::new(&chain(&[parent, child]), info_with(&locales), false);
+    let ctx = CommandCtx::from_parts(CtxInner {
+        run: around.run(),
+        locales: Arc::clone(&locales),
+        ..CtxInner::detached_parts(Ephemerality::Public)
+    });
+    assert!(matches!(
+        around.before(&Span::none(), None).await,
+        Before::Continue
+    ));
+    assert_eq!(
+        (ctx.user_locale(), ctx.guild_locale()),
+        (Locale::Tr, Locale::De)
+    );
+    assert_eq!(ctx.response_locale(), Locale::De);
+
+    let both = Middleware::before(|ctx: BeforeCtx| async move {
+        ctx.set_locale(Locale::De);
+        Ok(Flow::Continue)
+    });
+    let locales = LocaleCell::new(Locales::both(Locale::EnUs));
+    let around = Around::new(&chain(&[both]), info_with(&locales), false);
+    around.before(&Span::none(), None).await;
+    assert_eq!(locales.get(), Locales::both(Locale::De));
+}
+
+/// Story 11.3 row 40: a setter called from a clone kept past the before
+/// chain is ignored with one `debug`.
+#[tokio::test]
+async fn late_locale_set_is_ignored() {
+    let kept: Arc<Mutex<Option<BeforeCtx>>> = Arc::default();
+    let keep = Arc::clone(&kept);
+    let mw = Middleware::before(move |ctx: BeforeCtx| {
+        let keep = Arc::clone(&keep);
+        async move {
+            *keep.lock().unwrap() = Some(ctx);
+            Ok(Flow::Continue)
+        }
+    });
+    let locales = LocaleCell::new(Locales::both(Locale::EnUs));
+    let around = Around::new(&chain(&[mw]), info_with(&locales), false);
+    around.before(&Span::none(), None).await;
+    let capture = Capture::default();
+    let _guard = tracing::subscriber::set_default(capture.subscriber());
+    let late = kept.lock().unwrap().take().unwrap();
+    tokio::spawn(async move { late.set_locale(Locale::Tr) })
+        .await
+        .unwrap();
+    assert_eq!(locales.get(), Locales::both(Locale::EnUs));
+    assert_eq!(
+        capture
+            .lines_with(&[
+                "DEBUG",
+                "noctis::middleware",
+                "locale set after the before-Middleware ended"
+            ])
+            .len(),
+        1,
+        "{}",
+        capture.text()
+    );
+}
+
+/// Story 11.3 row 41: the after-Middleware read the overridden pair.
+#[tokio::test]
+async fn after_middleware_reads_overrides() {
+    let seen: Arc<Mutex<Option<(Locale, Locale)>>> = Arc::default();
+    let before = Middleware::before(|ctx: BeforeCtx| async move {
+        ctx.set_user_locale(Locale::Tr);
+        Ok(Flow::Continue)
+    });
+    let record = Arc::clone(&seen);
+    let after = Middleware::after(move |ctx: AfterCtx| {
+        let record = Arc::clone(&record);
+        async move {
+            *record.lock().unwrap() = Some((ctx.user_locale(), ctx.guild_locale()));
+        }
+    });
+    let locales = LocaleCell::new(Locales::both(Locale::De));
+    let chain = Chain::default().extend(&[before], &[after]);
+    let around = Around::new(&chain, info_with(&locales), false);
+    around.before(&Span::none(), None).await;
+    around
+        .after(&Span::none(), None, RunOutcome::Completed, |_, _| {})
+        .await;
+    assert_eq!(*seen.lock().unwrap(), Some((Locale::Tr, Locale::De)));
 }

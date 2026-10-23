@@ -40,6 +40,7 @@ pub struct noctis::AfterCtx
 impl noctis::AfterCtx
 pub fn noctis::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::AfterCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::AfterCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::AfterCtx::handler(&self) -> &'static str
 pub fn noctis::AfterCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::AfterCtx::invocation(&self) -> noctis::Invocation
@@ -48,6 +49,7 @@ pub fn noctis::AfterCtx::module(&self) -> &'static str
 pub fn noctis::AfterCtx::shard(&self) -> u32
 pub fn noctis::AfterCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::AfterCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+pub fn noctis::AfterCtx::user_locale(&self) -> noctis::rules::Locale
 impl noctis::AfterCtx
 pub fn noctis::AfterCtx::extensions(&self) -> &noctis::Extensions
 pub fn noctis::AfterCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
@@ -116,6 +118,7 @@ pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut
 pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
+pub fn noctis::AppBuilder::locale_resolver(&mut self, impl noctis::LocaleResolver) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
 pub fn noctis::AppBuilder::locales(&mut self, noctis::i18n::Catalog) -> &mut Self
 pub fn noctis::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
@@ -209,14 +212,14 @@ pub fn noctis::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilig
 pub fn noctis::AutocompleteCtx::command_path(&self) -> &'static str
 pub fn noctis::AutocompleteCtx::focused(&self) -> &noctis::Focused
 pub fn noctis::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
-pub fn noctis::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::AutocompleteCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::AutocompleteCtx::kv(&self) -> noctis::Kv
 pub fn noctis::AutocompleteCtx::module(&self) -> &'static str
 pub fn noctis::AutocompleteCtx::shard(&self) -> u32
 pub fn noctis::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> noctis::State<T>
 pub fn noctis::AutocompleteCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::AutocompleteCtx::user_locale(&self) -> noctis::rules::Locale
 impl core::fmt::Debug for noctis::AutocompleteCtx
 pub fn noctis::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::AutocompleteError
@@ -277,6 +280,7 @@ pub struct noctis::BeforeCtx
 impl noctis::BeforeCtx
 pub fn noctis::BeforeCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::BeforeCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::BeforeCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::BeforeCtx::handler(&self) -> &'static str
 pub fn noctis::BeforeCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::BeforeCtx::invocation(&self) -> noctis::Invocation
@@ -285,10 +289,14 @@ pub fn noctis::BeforeCtx::module(&self) -> &'static str
 pub fn noctis::BeforeCtx::shard(&self) -> u32
 pub fn noctis::BeforeCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::BeforeCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+pub fn noctis::BeforeCtx::user_locale(&self) -> noctis::rules::Locale
 impl noctis::BeforeCtx
 pub fn noctis::BeforeCtx::contains<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> bool
 pub fn noctis::BeforeCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
 pub fn noctis::BeforeCtx::insert<T: core::marker::Send + core::marker::Sync + 'static>(&self, T)
+pub fn noctis::BeforeCtx::set_guild_locale(&self, noctis::rules::Locale)
+pub fn noctis::BeforeCtx::set_locale(&self, noctis::rules::Locale)
+pub fn noctis::BeforeCtx::set_user_locale(&self, noctis::rules::Locale)
 impl core::clone::Clone for noctis::BeforeCtx
 pub fn noctis::BeforeCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::BeforeCtx
@@ -439,16 +447,16 @@ pub fn noctis::CommandCtx::channel_id(&self) -> core::option::Option<twilight_mo
 pub fn noctis::CommandCtx::command_path(&self) -> &'static str
 pub fn noctis::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::CommandCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::CommandCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::CommandCtx::module(&self) -> &'static str
-pub fn noctis::CommandCtx::response_locale(&self) -> &str
+pub fn noctis::CommandCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::shard(&self) -> u32
 pub fn noctis::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::CommandCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::CommandCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::CommandCtx
 pub fn noctis::CommandCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -584,16 +592,16 @@ impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ComponentCtx::module(&self) -> &'static str
-pub fn noctis::ComponentCtx::response_locale(&self) -> &str
+pub fn noctis::ComponentCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::shard(&self) -> u32
 pub fn noctis::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ComponentCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
@@ -811,16 +819,16 @@ impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ExpiredCtx::module(&self) -> &'static str
-pub fn noctis::ExpiredCtx::response_locale(&self) -> &str
+pub fn noctis::ExpiredCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ExpiredCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ExpiredCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -1070,6 +1078,8 @@ pub fn noctis::InvalidOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core:
 impl core::fmt::Display for noctis::InvalidOption
 pub fn noctis::InvalidOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::Invocation
+pub noctis::Invocation::Autocomplete
+pub noctis::Invocation::Autocomplete::path: &'static str
 pub noctis::Invocation::Command
 pub noctis::Invocation::Command::path: &'static str
 pub noctis::Invocation::Component
@@ -1116,6 +1126,40 @@ impl core::fmt::Display for noctis::LocaleOwner
 pub fn noctis::LocaleOwner::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for noctis::LocaleOwner
 impl core::marker::StructuralPartialEq for noctis::LocaleOwner
+#[non_exhaustive] pub struct noctis::LocaleRequest
+pub noctis::LocaleRequest::discord_guild: core::option::Option<noctis::rules::Locale>
+pub noctis::LocaleRequest::discord_user: core::option::Option<noctis::rules::Locale>
+pub noctis::LocaleRequest::guild_id: core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub noctis::LocaleRequest::invocation: noctis::Invocation
+pub noctis::LocaleRequest::resolved: noctis::Locales
+pub noctis::LocaleRequest::user_id: core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+impl core::clone::Clone for noctis::LocaleRequest
+pub fn noctis::LocaleRequest::clone(&self) -> Self
+impl core::fmt::Debug for noctis::LocaleRequest
+pub fn noctis::LocaleRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::LocaleRequest
+impl<F> noctis::LocaleResolver for F where F: core::ops::function::Fn(&noctis::LocaleRequest) -> noctis::Locales + core::marker::Send + core::marker::Sync + 'static
+pub fn F::resolve(&self, &noctis::LocaleRequest) -> noctis::Locales
+pub trait noctis::LocaleResolver: core::marker::Send + core::marker::Sync + 'static
+pub fn noctis::LocaleResolver::resolve(&self, &noctis::LocaleRequest) -> noctis::Locales
+impl<F> noctis::LocaleResolver for F where F: core::ops::function::Fn(&noctis::LocaleRequest) -> noctis::Locales + core::marker::Send + core::marker::Sync + 'static
+pub fn F::resolve(&self, &noctis::LocaleRequest) -> noctis::Locales
+pub struct noctis::Locales
+pub noctis::Locales::guild: noctis::rules::Locale
+pub noctis::Locales::user: noctis::rules::Locale
+impl core::clone::Clone for noctis::Locales
+pub fn noctis::Locales::clone(&self) -> Self
+impl core::cmp::Eq for noctis::Locales
+impl core::cmp::PartialEq for noctis::Locales
+pub fn noctis::Locales::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::Locales
+pub fn noctis::Locales::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::Locales
+pub fn noctis::Locales::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::Locales
+impl core::marker::StructuralPartialEq for noctis::Locales
+impl<F> noctis::LocaleResolver for F where F: core::ops::function::Fn(&noctis::LocaleRequest) -> noctis::Locales + core::marker::Send + core::marker::Sync + 'static
+pub fn F::resolve(&self, &noctis::LocaleRequest) -> noctis::Locales
 pub struct noctis::LogSink
 impl core::clone::Clone for noctis::LogSink
 pub fn noctis::LogSink::clone(&self) -> Self
@@ -1225,16 +1269,16 @@ impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::ModalSubmitCtx::module(&self) -> &'static str
-pub fn noctis::ModalSubmitCtx::response_locale(&self) -> &str
+pub fn noctis::ModalSubmitCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::ModalSubmitCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
@@ -2227,6 +2271,7 @@ pub use noctis::events::EntitlementUpdate
 impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
@@ -2241,6 +2286,7 @@ pub struct noctis::events::EventCtx(_)
 impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::events::EventCtx::kv(&self) -> noctis::Kv
 pub fn noctis::events::EventCtx::module(&self) -> &'static str
@@ -3695,6 +3741,7 @@ pub struct noctis::prelude::AfterCtx
 impl noctis::prelude::AfterCtx
 pub fn noctis::prelude::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::AfterCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::AfterCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::AfterCtx::handler(&self) -> &'static str
 pub fn noctis::prelude::AfterCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::AfterCtx::invocation(&self) -> noctis::Invocation
@@ -3703,6 +3750,7 @@ pub fn noctis::prelude::AfterCtx::module(&self) -> &'static str
 pub fn noctis::prelude::AfterCtx::shard(&self) -> u32
 pub fn noctis::prelude::AfterCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::AfterCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+pub fn noctis::prelude::AfterCtx::user_locale(&self) -> noctis::rules::Locale
 impl noctis::prelude::AfterCtx
 pub fn noctis::prelude::AfterCtx::extensions(&self) -> &noctis::Extensions
 pub fn noctis::prelude::AfterCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
@@ -3762,6 +3810,7 @@ pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration
 pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
 pub fn noctis::prelude::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
+pub fn noctis::prelude::AppBuilder::locale_resolver(&mut self, impl noctis::LocaleResolver) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locales(&mut self, noctis::i18n::Catalog) -> &mut Self
 pub fn noctis::prelude::AppBuilder::module(&mut self, noctis::Module) -> &mut Self
@@ -3792,20 +3841,21 @@ pub fn noctis::prelude::AutocompleteCtx::channel_id(&self) -> core::option::Opti
 pub fn noctis::prelude::AutocompleteCtx::command_path(&self) -> &'static str
 pub fn noctis::prelude::AutocompleteCtx::focused(&self) -> &noctis::Focused
 pub fn noctis::prelude::AutocompleteCtx::guild_id(&self) -> core::result::Result<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, noctis::HandlerError>
-pub fn noctis::prelude::AutocompleteCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::AutocompleteCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::AutocompleteCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::AutocompleteCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::AutocompleteCtx::module(&self) -> &'static str
 pub fn noctis::prelude::AutocompleteCtx::shard(&self) -> u32
 pub fn noctis::prelude::AutocompleteCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> noctis::State<T>
 pub fn noctis::prelude::AutocompleteCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::prelude::AutocompleteCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::AutocompleteCtx::user_locale(&self) -> noctis::rules::Locale
 impl core::fmt::Debug for noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::BeforeCtx
 impl noctis::prelude::BeforeCtx
 pub fn noctis::prelude::BeforeCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::BeforeCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::BeforeCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::BeforeCtx::handler(&self) -> &'static str
 pub fn noctis::prelude::BeforeCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::BeforeCtx::invocation(&self) -> noctis::Invocation
@@ -3814,10 +3864,14 @@ pub fn noctis::prelude::BeforeCtx::module(&self) -> &'static str
 pub fn noctis::prelude::BeforeCtx::shard(&self) -> u32
 pub fn noctis::prelude::BeforeCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::BeforeCtx::user_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+pub fn noctis::prelude::BeforeCtx::user_locale(&self) -> noctis::rules::Locale
 impl noctis::prelude::BeforeCtx
 pub fn noctis::prelude::BeforeCtx::contains<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> bool
 pub fn noctis::prelude::BeforeCtx::get<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::Ext<T>>
 pub fn noctis::prelude::BeforeCtx::insert<T: core::marker::Send + core::marker::Sync + 'static>(&self, T)
+pub fn noctis::prelude::BeforeCtx::set_guild_locale(&self, noctis::rules::Locale)
+pub fn noctis::prelude::BeforeCtx::set_locale(&self, noctis::rules::Locale)
+pub fn noctis::prelude::BeforeCtx::set_user_locale(&self, noctis::rules::Locale)
 impl core::clone::Clone for noctis::prelude::BeforeCtx
 pub fn noctis::prelude::BeforeCtx::clone(&self) -> Self
 impl core::fmt::Debug for noctis::prelude::BeforeCtx
@@ -3862,16 +3916,16 @@ pub fn noctis::prelude::CommandCtx::channel_id(&self) -> core::option::Option<tw
 pub fn noctis::prelude::CommandCtx::command_path(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
 pub fn noctis::prelude::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::prelude::CommandCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::CommandCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::CommandCtx::module(&self) -> &'static str
-pub fn noctis::prelude::CommandCtx::response_locale(&self) -> &str
+pub fn noctis::prelude::CommandCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
 pub fn noctis::prelude::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::CommandCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::prelude::CommandCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::CommandCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::CommandCtx
 pub fn noctis::prelude::CommandCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -3927,16 +3981,16 @@ impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ComponentCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ComponentCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ComponentCtx::module(&self) -> &'static str
-pub fn noctis::prelude::ComponentCtx::response_locale(&self) -> &str
+pub fn noctis::prelude::ComponentCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ComponentCtx::shard(&self) -> u32
 pub fn noctis::prelude::ComponentCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ComponentCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
@@ -4018,16 +4072,16 @@ impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ExpiredCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ExpiredCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ExpiredCtx::module(&self) -> &'static str
-pub fn noctis::prelude::ExpiredCtx::response_locale(&self) -> &str
+pub fn noctis::prelude::ExpiredCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ExpiredCtx::shard(&self) -> u32
 pub fn noctis::prelude::ExpiredCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ExpiredCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::prelude::ExpiredCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ExpiredCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ExpiredCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -4177,16 +4231,16 @@ impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
-pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
 pub fn noctis::prelude::ModalSubmitCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::ModalSubmitCtx::member_permissions(&self) -> core::option::Option<twilight_model::guild::permissions::Permissions>
 pub fn noctis::prelude::ModalSubmitCtx::module(&self) -> &'static str
-pub fn noctis::prelude::ModalSubmitCtx::response_locale(&self) -> &str
+pub fn noctis::prelude::ModalSubmitCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ModalSubmitCtx::shard(&self) -> u32
 pub fn noctis::prelude::ModalSubmitCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
 pub fn noctis::prelude::ModalSubmitCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
-pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> core::option::Option<&str>
+pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits

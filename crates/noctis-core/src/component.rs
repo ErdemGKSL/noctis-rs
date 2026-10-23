@@ -29,7 +29,7 @@ use noctis_codec::{
     DeclaredRuntime, DecodeError, Decoded, PayloadDecode, PayloadSource, Ref, RefRecord, Route,
     Verify, decode_record,
 };
-use noctis_rules::Limits;
+use noctis_rules::{Limits, Locale};
 use noctis_ui::__macro::ModalFromPayload;
 use noctis_ui::{MessageFormat, ModalSubmission, SubmitError};
 use twilight_model::application::interaction::InteractionDataResolved;
@@ -189,23 +189,31 @@ macro_rules! ctx_accessors {
                 self.0.member_permissions
             }
 
-            /// The user's client locale (`locale`), such as `"tr"`.
-            pub fn user_locale(&self) -> Option<&str> {
-                self.0.user_locale.as_deref()
+            /// The resolved User Locale (FR-43): Discord's `locale`, then
+            /// the Guild Locale, then the App's default, each step taking
+            /// the code's own locale file or its sibling's (`en-GB` →
+            /// `en-US`); then the App's `LocaleResolver` and any
+            /// before-Middleware override. Use it for ephemeral,
+            /// single-user UI.
+            pub fn user_locale(&self) -> Locale {
+                self.0.locales().user
             }
 
-            /// The guild's preferred locale (`guild_locale`), outside DMs.
-            pub fn guild_locale(&self) -> Option<&str> {
-                self.0.guild_locale.as_deref()
+            /// The resolved Guild Locale (FR-43): Discord's
+            /// `guild_locale`, then (in a DM) the User Locale, then the
+            /// App's default, resolved and overridable like
+            /// [`user_locale`](Self::user_locale). Use it for shared
+            /// content.
+            pub fn guild_locale(&self) -> Locale {
+                self.0.locales().guild
             }
 
-            /// The locale the response should use (FR-43): for a handler
-            /// declared `response = ephemeral`, or one updating an
-            /// ephemeral message under `response = update`, the User
-            /// Locale, then the Guild Locale; for a public response (or no
-            /// source message) the Guild Locale, then the User Locale;
-            /// `"en-US"` when neither is known.
-            pub fn response_locale(&self) -> &str {
+            /// The locale the response uses (FR-43): the User Locale for a
+            /// handler declared `response = ephemeral`, or one updating an
+            /// ephemeral message under `response = update`; the Guild
+            /// Locale for a public response (or an update without a source
+            /// message). Pass it to `Strings::of`.
+            pub fn response_locale(&self) -> Locale {
                 self.0.response_locale()
             }
 
@@ -280,8 +288,8 @@ macro_rules! ctx_accessors {
                     .field("guild_id", &self.0.guild_id)
                     .field("channel_id", &self.0.channel_id)
                     .field("user_id", &self.0.user_id)
-                    .field("user_locale", &self.0.user_locale)
-                    .field("guild_locale", &self.0.guild_locale)
+                    .field("user_locale", &self.0.locales().user)
+                    .field("guild_locale", &self.0.locales().guild)
                     $(.field(stringify!($extra), &self.0.$field))*
                     .finish_non_exhaustive()
             }
@@ -1482,7 +1490,10 @@ mod tests {
             (ctx.shard(), ctx.guild_id(), ctx.channel_id()),
             (0, None, None)
         );
-        assert_eq!((ctx.user_locale(), ctx.guild_locale()), (None, None));
+        assert_eq!(
+            (ctx.user_locale(), ctx.guild_locale()),
+            (Locale::EnUs, Locale::EnUs)
+        );
         assert!(ctx.state::<u8>().is_none());
         assert!(format!("{ctx:?}").starts_with("ModalSubmitCtx"));
     }

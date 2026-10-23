@@ -898,6 +898,112 @@ mod module_locales {
     }
 }
 
+mod locale_resolution {
+    //! Story 11.3 rows 14, 17-19 and 35: the App's available locales,
+    //! default and resolver.
+
+    use noctis_i18n::Catalog;
+    use noctis_rules::Locale;
+
+    use super::*;
+    use crate::locale::{LocaleSet, Stage4};
+    use crate::{Invocation, LocaleRequest, Locales};
+
+    /// An App catalog: en-US default, en-US and tr files.
+    static APP: Catalog = Catalog::__new(
+        "bot/app_loc",
+        Locale::EnUs,
+        &[(Locale::EnUs, &[]), (Locale::Tr, &[])],
+        &[],
+    );
+    /// A Module catalog: de default, de file.
+    static DE: Catalog = Catalog::__new("bot/mod_de", Locale::De, &[(Locale::De, &[])], &[]);
+    /// A tr-only catalog with a tr default.
+    static TR: Catalog = Catalog::__new("bot/tr_only", Locale::Tr, &[(Locale::Tr, &[])], &[]);
+
+    fn table(builder: &mut AppBuilder) -> App {
+        builder.build().unwrap()
+    }
+
+    fn request(user: Option<Locale>) -> Stage4 {
+        Stage4 {
+            invocation: Invocation::Command { path: "where" },
+            guild_id: None,
+            user_id: Some(Id::new(1)),
+            discord_user: user,
+            discord_guild: None,
+        }
+    }
+
+    /// Row 14: no catalogs is `{en-US}` and `en-US`.
+    #[tokio::test]
+    async fn no_catalogs() {
+        let app = table(&mut App::builder());
+        let locales = &app.shared().locales;
+        assert_eq!(locales.available(), LocaleSet::of([Locale::EnUs]));
+        assert_eq!(locales.default_locale(), Locale::EnUs);
+        assert_eq!(
+            locales.builtin_raw(Some("tr"), Some("de")),
+            Locales::both(Locale::EnUs)
+        );
+    }
+
+    /// Row 17: a default without en-US.
+    #[tokio::test]
+    async fn default_without_en_us() {
+        let app = table(App::builder().locales(TR));
+        let locales = &app.shared().locales;
+        assert_eq!(locales.default_locale(), Locale::Tr);
+        assert_eq!(locales.builtin_raw(Some("en-US"), None).user, Locale::Tr);
+    }
+
+    /// Row 18: availability is the union of the merged catalogs; the
+    /// default is the first catalog's (App catalogs first).
+    #[tokio::test]
+    async fn merged_availability() {
+        let app = table(
+            App::builder()
+                .module(Module::new("de").locales(DE))
+                .locales(APP),
+        );
+        let locales = &app.shared().locales;
+        assert_eq!(
+            locales.available(),
+            LocaleSet::of([Locale::EnUs, Locale::Tr, Locale::De])
+        );
+        assert_eq!(locales.default_locale(), Locale::EnUs);
+        assert_eq!(locales.builtin_raw(Some("de"), None).user, Locale::De);
+    }
+
+    /// Row 19: a Module-only catalog sets the default.
+    #[tokio::test]
+    async fn module_only_catalog() {
+        let app = table(App::builder().module(Module::new("de").locales(DE)));
+        assert_eq!(app.shared().locales.default_locale(), Locale::De);
+    }
+
+    /// Row 35: the last `locale_resolver` call wins.
+    #[tokio::test]
+    async fn last_resolver_wins() {
+        let app = table(
+            App::builder()
+                .locale_resolver(|_: &LocaleRequest| Locales::both(Locale::Fr))
+                .locale_resolver(|_: &LocaleRequest| Locales::both(Locale::Ja)),
+        );
+        assert_eq!(
+            app.shared()
+                .locales
+                .resolve_run(request(Some(Locale::Tr)), "h"),
+            Locales::both(Locale::Ja)
+        );
+        let debug = format!(
+            "{:?}",
+            App::builder().locale_resolver(|r: &LocaleRequest| r.resolved)
+        );
+        assert!(debug.contains("locale_resolver: true"), "{debug}");
+    }
+}
+
 #[test]
 fn build_outside_runtime() {
     let err = App::builder().build().unwrap_err();

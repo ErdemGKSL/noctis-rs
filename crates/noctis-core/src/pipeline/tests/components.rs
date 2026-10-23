@@ -1147,7 +1147,10 @@ mod responses {
             .__add(mp)
             .__add(cu)
             .__add(mu);
-        let p = Pipeline::start(module).await;
+        let p = Pipeline::start_with(module, |b| {
+            b.locales(LOCALES);
+        })
+        .await;
         let localized = |mut json: Value| {
             json["locale"] = json!("tr");
             json["guild_locale"] = json!("de");
@@ -1221,7 +1224,10 @@ mod responses {
                 __Response::Update,
                 |_: KeyUpd, _: ComponentCtx, _: ComponentResponder| async { Ok(keyed()) },
             ));
-        let mut p = Pipeline::start(module).await;
+        let mut p = Pipeline::start_with(module, |b| {
+            b.locales(LOCALES);
+        })
+        .await;
         p.fx.app.set_strings(Arc::new(Shop));
         let localized = |mut json: Value| {
             json["locale"] = json!("tr");
@@ -1973,4 +1979,60 @@ mod raw_escape {
             [json!({ "type": 99, "custom_id": "x" })]
         );
     }
+}
+
+/// Story 11.3 rows 32, 33 and 47: the `LocaleResolver` runs once per
+/// component, modal and Expired Handler chain run (with the built-in
+/// resolution: `en-GB` → `en-US` without catalogs), and never for a
+/// rejection before stage 3.
+#[tokio::test]
+async fn resolver_once_per_component_run() {
+    let calls: Arc<Mutex<Vec<(Invocation, Locales)>>> = Arc::default();
+    let seen = Arc::clone(&calls);
+    let expired = Log::default();
+    let expired_log = expired.clone();
+    let c = Components::start_with(discord(), move |b| {
+        b.payload_key(key_a())
+            .locale_resolver(move |r: &crate::LocaleRequest| {
+                seen.lock().unwrap().push((r.invocation, r.resolved));
+                r.resolved
+            })
+            .expired_handler(move |ctx: crate::ExpiredCtx, _: crate::Expired| {
+                expired_log.push(format!("{:?}", ctx.user_locale()));
+                async { Ok(v2("expired")) }
+            });
+    })
+    .await;
+    let en_gb = |mut d: Value| {
+        d["locale"] = json!("en-GB");
+        d
+    };
+    c.run(inbound(&en_gb(click("0shop.buy:47", 2)))).await;
+    c.run(inbound(&en_gb(submit("0bio:47", true)))).await;
+    c.run(inbound(&en_gb(click("1shop.buy:147", 2)))).await;
+    let en_us = Locales::both(Locale::EnUs);
+    assert_eq!(
+        *calls.lock().unwrap(),
+        [
+            (Invocation::Component { route: "shop.buy" }, en_us),
+            (Invocation::Modal { route: "bio" }, en_us),
+            (Invocation::Component { route: "shop.buy" }, en_us),
+        ]
+    );
+    assert_eq!(expired.lines(), ["EnUs"]);
+    calls.lock().unwrap().clear();
+    c.log.0.lock().unwrap().clear();
+    c.clear();
+    for id in ["", "0nope:1"] {
+        c.rejects(
+            inbound(&click(id, 2)),
+            if id.is_empty() {
+                "malformed"
+            } else {
+                "unknown_route"
+            },
+        )
+        .await;
+    }
+    assert!(calls.lock().unwrap().is_empty());
 }

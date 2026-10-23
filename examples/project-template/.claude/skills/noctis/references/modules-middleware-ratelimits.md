@@ -198,9 +198,10 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
   added to), `state::<T>() -> Option<State<T>>`, `http() -> &Arc<Client>` (the App's
   one client), `dispatcher() -> &Dispatcher` (runs a registered Command and replies to
   a message, e.g. a prefix command; `responder.md` §4.1), `kv() -> Kv` (your typed
-  key-value data, namespaced per App; `adapters.md` §3). No Responder. Planned:
-  `guild_locale()`, `cache()`,
-  `modules()` [planned].
+  key-value data, namespaced per App; `adapters.md` §3), `guild_locale() -> Locale`
+  (the resolved Guild Locale: the guild's recorded `preferred_locale`, its sibling,
+  then the default; `i18n.md` §7). No Responder. Planned: `cache()`, `modules()`
+  [planned].
 - **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
   'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the
   inner `&(dyn Error + Send + Sync)` to downcast. `Display`/`Debug` print the inner
@@ -395,8 +396,12 @@ impl Boost {                                       // #[derive(Button)] #[button
 - **Extensions never reach a port**: they are not serialized or stored, and live for one
   run. Each Middleware call is in span `noctis.middleware{app, middleware, phase}`
   (`phase` = `before` | `after`).
-- Overriding the resolved locale from a Middleware (`ctx.set_locale(..)`) is
-  [planned, Story 11.3].
+- **Locale override:** a before-Middleware's `ctx.set_user_locale(Locale)`,
+  `ctx.set_guild_locale(Locale)` and `ctx.set_locale(Locale)` (both) replace the
+  run's resolved locales; later Middleware, the handler, `reply_text`, notices and
+  autocomplete labels see the new value. `BeforeCtx`/`AfterCtx` read them with
+  `user_locale()` / `guild_locale()`. A set after the before-chain ended is ignored
+  (one `debug`). See `i18n.md` §7.
 
 ## 6. Error Sinks (FR-22)
 

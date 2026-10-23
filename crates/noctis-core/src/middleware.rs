@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use futures_util::FutureExt;
 use futures_util::future::BoxFuture;
-use noctis_rules::MessageKey;
+use noctis_rules::{Locale, MessageKey};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Span};
 use twilight_model::id::Id;
@@ -41,6 +41,7 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker, UserMarker};
 
 use crate::State;
 use crate::handler::{AppShared, HandlerError, HandlerResult};
+use crate::locale::{LocaleCell, Locales};
 
 /// The host of the Middleware constructors; it has no values.
 ///
@@ -154,6 +155,12 @@ pub enum Invocation {
     Event {
         /// The Discord event name (`"MESSAGE_CREATE"`).
         event_type: &'static str,
+    },
+    /// An autocomplete interaction; seen only by a `LocaleResolver`
+    /// (autocomplete runs no Middleware).
+    Autocomplete {
+        /// The Command Path whose option is autocompleted.
+        path: &'static str,
     },
 }
 
@@ -642,6 +649,9 @@ pub(crate) struct RunInfo {
     pub(crate) channel_id: Option<Id<ChannelMarker>>,
     pub(crate) user_id: Option<Id<UserMarker>>,
     pub(crate) app: Option<Arc<AppShared>>,
+    /// The run's locale cell, shared with the handler's context, the
+    /// Responder and the notices.
+    pub(crate) locales: Arc<LocaleCell>,
 }
 
 /// The mutable part of a run: the Extensions being inserted and the
@@ -698,6 +708,23 @@ impl Run {
                 extension = std::any::type_name::<T>(),
                 handler = self.info.handler,
                 "extension inserted after the before-Middleware ended; ignored"
+            );
+        }
+    }
+
+    /// Applies `f` to the run's locales while the before chain runs; a
+    /// later call is ignored with one `debug`.
+    fn set_locales(&self, f: impl Fn(Locales) -> Locales) {
+        let guard = self.building();
+        if guard.is_some() {
+            // Under the lock: the freeze cannot slip in between.
+            self.info.locales.update(f);
+        } else {
+            drop(guard);
+            tracing::debug!(
+                target: "noctis::middleware",
+                handler = self.info.handler,
+                "locale set after the before-Middleware ended; ignored"
             );
         }
     }
@@ -759,6 +786,20 @@ macro_rules! run_accessors {
                 self.run.info.user_id
             }
 
+            /// The run's resolved User Locale (FR-43): stage 4's
+            /// resolution (and the App's `LocaleResolver`), with every
+            /// before-Middleware override so far. An event's User Locale is
+            /// its Guild Locale.
+            pub fn user_locale(&self) -> Locale {
+                self.run.info.locales.get().user
+            }
+
+            /// The run's resolved Guild Locale (FR-43), with every
+            /// before-Middleware override so far.
+            pub fn guild_locale(&self) -> Locale {
+                self.run.info.locales.get().guild
+            }
+
             /// The state registered for `T` with `AppBuilder::state`, if any.
             pub fn state<T: Send + Sync + 'static>(&self) -> Option<State<T>> {
                 self.run.info.app.as_ref()?.states.get::<T>()
@@ -782,8 +823,10 @@ macro_rules! run_accessors {
 }
 
 /// The context a before-Middleware receives: the run's invocation, handler,
-/// shard, guild, channel and user, the App's state, key-value handle and
-/// HTTP client, and the run's Extensions to insert into.
+/// shard, guild, channel and user, its resolved locales (to read and
+/// override with [`set_locale`](Self::set_locale) and friends), the App's
+/// state, key-value handle and HTTP client, and the run's Extensions to
+/// insert into.
 ///
 /// An owned, cheap clone (one `Arc`). An insert after the run's
 /// before-Middleware ended (from a clone kept in a spawned task) is
@@ -824,6 +867,41 @@ impl BeforeCtx {
     /// Whether an Extension of type `T` was inserted so far.
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
         self.get::<T>().is_some()
+    }
+
+    /// Overrides the run's User Locale: the handler's `user_locale()`, its
+    /// ephemeral responses and its notices use `locale`. The last write
+    /// wins and a later Middleware reads it; a call after the before chain
+    /// ended is ignored with one `debug`.
+    pub fn set_user_locale(&self, locale: Locale) {
+        self.run.set_locales(|l| Locales { user: locale, ..l });
+    }
+
+    /// Overrides the run's Guild Locale: the handler's `guild_locale()`
+    /// and its public responses use `locale` (see
+    /// [`set_user_locale`](Self::set_user_locale) for the write rules).
+    ///
+    /// ```
+    /// use noctis_core::{BeforeCtx, Flow, HandlerResult};
+    /// use noctis_rules::Locale;
+    ///
+    /// // A per-guild language setting read from a store would go here.
+    /// async fn turkish_guilds(ctx: BeforeCtx) -> HandlerResult<Flow> {
+    ///     if ctx.guild_id().is_some_and(|id| id.get() == 42) {
+    ///         ctx.set_guild_locale(Locale::Tr);
+    ///     }
+    ///     Ok(Flow::Continue)
+    /// }
+    /// # let _ = turkish_guilds;
+    /// ```
+    pub fn set_guild_locale(&self, locale: Locale) {
+        self.run.set_locales(|l| Locales { guild: locale, ..l });
+    }
+
+    /// Overrides both of the run's locales with `locale` (see
+    /// [`set_user_locale`](Self::set_user_locale) for the write rules).
+    pub fn set_locale(&self, locale: Locale) {
+        self.run.set_locales(|_| Locales::both(locale));
     }
 }
 

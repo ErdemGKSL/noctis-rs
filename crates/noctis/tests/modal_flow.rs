@@ -43,7 +43,7 @@ mod keys {
 struct Strings;
 
 impl Strings {
-    fn of(_locale: &str) -> Self {
+    fn of(_locale: noctis::rules::Locale) -> Self {
         Self
     }
 }
@@ -52,7 +52,7 @@ impl Strings {
 trait Ctx {
     fn guild_id(&self) -> Option<Id<GuildMarker>>;
     fn kv(&self) -> Kv;
-    fn response_locale(&self) -> &str;
+    fn response_locale(&self) -> noctis::rules::Locale;
 }
 
 macro_rules! ctx {
@@ -64,7 +64,7 @@ macro_rules! ctx {
             fn kv(&self) -> Kv {
                 <$t>::kv(self)
             }
-            fn response_locale(&self) -> &str {
+            fn response_locale(&self) -> noctis::rules::Locale {
                 <$t>::response_locale(self)
             }
         }

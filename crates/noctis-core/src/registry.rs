@@ -195,7 +195,7 @@ impl Registry {
         // Keyed by dispatch type, never by `KIND`: an `UnavailableGuild`
         // handler shares the `GUILD_DELETE` slot with `GuildDelete` handlers.
         let mut by_dispatch: HashMap<EventType, Handlers> = HashMap::new();
-        let mut event_types = EventTypeFlags::INTERACTION_CREATE;
+        let mut event_types = base_event_types(!entries.is_empty());
         let mut intents = Intents::empty();
         let mut violations = Vec::new();
         for entry in &entries {
@@ -439,6 +439,21 @@ fn check_extensions(folded: &[Folded<'_>], violations: &mut Vec<BuildViolation>)
                 }
             }
         }
+    }
+}
+
+/// The event types every App parses: interactions, plus the guild
+/// lifecycle (`GUILD_CREATE`, `GUILD_UPDATE`, `GUILD_DELETE`) that feeds the
+/// guild locale record (FR-43) whenever an event handler may read
+/// `EventCtx::guild_locale`.
+fn base_event_types(has_event_handlers: bool) -> EventTypeFlags {
+    if has_event_handlers {
+        EventTypeFlags::INTERACTION_CREATE
+            | EventTypeFlags::GUILD_CREATE
+            | EventTypeFlags::GUILD_UPDATE
+            | EventTypeFlags::GUILD_DELETE
+    } else {
+        EventTypeFlags::INTERACTION_CREATE
     }
 }
 

@@ -69,8 +69,27 @@ async fn one_handler() {
     assert_eq!(app.intents(), Intents::GUILDS | Intents::GUILD_MESSAGES);
     assert_eq!(
         app.registry().event_types(),
-        EventTypeFlags::INTERACTION_CREATE | EventTypeFlags::MESSAGE_CREATE
+        EventTypeFlags::INTERACTION_CREATE | GUILD_LIFECYCLE | EventTypeFlags::MESSAGE_CREATE
     );
+}
+
+/// What every App with an event handler parses for the guild locale
+/// record (Story 11.3).
+const GUILD_LIFECYCLE: EventTypeFlags = EventTypeFlags::GUILD_CREATE
+    .union(EventTypeFlags::GUILD_UPDATE)
+    .union(EventTypeFlags::GUILD_DELETE);
+
+/// Story 11.3 row 27: the guild lifecycle events are parsed whenever an
+/// event handler is registered, and only then.
+#[tokio::test]
+async fn guild_lifecycle_follows_event_handlers() {
+    let with = builder()
+        .module(Module::new("m").__add(noop::<MessageCreate>("h")))
+        .build()
+        .unwrap();
+    assert!(with.registry().event_types().contains(GUILD_LIFECYCLE));
+    let without = builder().module(Module::new("m")).build().unwrap();
+    assert!(!without.registry().event_types().intersects(GUILD_LIFECYCLE));
 }
 
 /// Matrix 4: pre-order fold with ancestor paths.
@@ -307,7 +326,7 @@ async fn full_payload_table() {
                 assert_eq!(app.intents(), Intents::GUILDS | intent, stringify!($ty));
                 assert_eq!(
                     app.registry().event_types(),
-                    EventTypeFlags::INTERACTION_CREATE | EventTypeFlags::$flag,
+                    EventTypeFlags::INTERACTION_CREATE | GUILD_LIFECYCLE | EventTypeFlags::$flag,
                     stringify!($ty)
                 );
                 assert!(<$ty as sealed::Sealed>::KIND.name().is_some());

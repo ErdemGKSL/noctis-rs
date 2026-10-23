@@ -1150,12 +1150,13 @@ fn sent_label(body: &Value) -> Value {
     body["data"]["components"][0]["components"][0]["label"].clone()
 }
 
+/// `shared` with the `Shop` strings and the locales stage 4 resolves for
+/// the raw codes when every locale has a file.
 fn with_locales(shared: Arc<Shared>, user: Option<&str>, guild: Option<&str>) -> Arc<Shared> {
-    shared.set_i18n(
-        Arc::new(Shop),
-        user.map(str::to_owned),
-        guild.map(str::to_owned),
-    );
+    use crate::locale::{LocaleCell, LocaleSet, parse, resolve};
+    let all = LocaleSet::of(noctis_rules::Locale::ALL);
+    let locales = resolve(all, noctis_rules::Locale::EnUs, parse(user), parse(guild));
+    shared.set_i18n(Arc::new(Shop), LocaleCell::new(locales));
     shared
 }
 

@@ -134,8 +134,8 @@ Planned (signatures may change):
 | --- | --- | --- |
 | `.shards(ShardRange)` [planned, Story 12.1] | all | this process's Shard Range; see §4 |
 | `.app_id(impl Into<String>)` | env `NOCTIS_APP_ID`, else the bot user id read from the token in lowercase base36 (≤ 13 chars; equal to the application id for most bots, call `.app_id` explicitly when it differs), else `default` (with one `warn!` when a token was given but does not decode) | `[a-z0-9-]{1,32}` (`AppId`; not trimmed), validated by `build()` (else `BuildViolation::InvalidAppId { reason: AppIdError }`, listed with every other violation); the last call wins; the same on every process of a Cluster. It is the `app` label of spans, metrics and reports and prefixes every byte-store key with `<app_id>:<port>:` (`adapters.md` §6); read it with `app.app_id()` |
-| `.locales(Catalog)` / `.default_locale(Locale)` [planned] | — / `Locale::EnUs` (`en-US`) | see `i18n.md` |
-| `.locale_resolver(impl LocaleResolver)` [planned] | none | per-guild language overrides (pipeline stage 4) |
+| `.locales(Catalog)` | none: available `{en-US}`, default `en-US` | the first catalog's `default` is the App default; see `i18n.md` |
+| `.locale_resolver(impl LocaleResolver)` | none | sync `Fn(&LocaleRequest) -> Locales`, called once per run at pipeline stage 4, result used verbatim; a panic keeps the built-in resolution; see `i18n.md` §7 |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` | none | from `AppBuilderImageExt` (`image` feature, in the prelude); installs the `ImagePlugin` and with it the Renderer; the last call of each kind wins (see `images.md` §8) |
 | `.limits(Limits)` | `Limits::default()` (Strict) | the Limits every Responder validates outgoing messages against before any request; `LimitMode::Lenient` truncates over-long texts with `…` instead of failing with `ResponderError::Invalid`; the last call wins. Read back with `app.limits() -> &Limits`; see `limits-cheatsheet.md` |
 | `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |

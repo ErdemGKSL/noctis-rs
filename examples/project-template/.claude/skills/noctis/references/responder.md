@@ -147,10 +147,12 @@ What each sends, by the interaction's state:
 - **Errors** come back as a `HandlerError` wrapping the `ResponderError`: find it with
   `err.as_error().downcast_ref::<ResponderError>()`. Propagate them with `?`; the
   user gets the usual error notice (§5).
-- **`response_locale()`** exists on every interactive context. On component and modal
-  contexts it follows who sees the response: the User Locale first for `response =
-  ephemeral` or when `update`-ing an ephemeral message, the Guild Locale first for a
-  public response (or no source message), `en-US` when neither is known.
+- **`response_locale()`** (a resolved `noctis::rules::Locale`) exists on every
+  interactive context. On component and modal contexts it follows who sees the
+  response: the User Locale for `response = ephemeral` or when `update`-ing an
+  ephemeral message, the Guild Locale for a public response (or no source message).
+  Keys in a send (`Text::Key`, `ctx.reply_text(key)`) resolve the same way, read when
+  the send happens, so a before-Middleware override (`i18n.md` §7) reaches them.
 - **`limits()`** (`&Limits`) exists on `CommandCtx`, `ComponentCtx` and
   `ModalSubmitCtx`: the App's Limits (`AppBuilder::limits`), the same ones `respond` and
   `update` validate against. Pass it to a render function that sizes a page with
@@ -320,10 +322,10 @@ Declared at registration, never toggled later:
 After the auto-defer, `reply`/`reply_as` edit the deferred reply, which keeps the
 auto-defer's (declared) ephemerality.
 
-Locale follows visibility: `ctx.response_locale()` gives the User Locale (then the Guild
-Locale) for ephemeral Commands and the Guild Locale (then the User Locale) for public
-ones, `"en-US"` when Discord sent neither. Pass `Strings::of(ctx.response_locale())` to
-your render function.
+Locale follows visibility: `ctx.response_locale()` gives the resolved User Locale for
+ephemeral Commands and the resolved Guild Locale for public ones (resolution, DMs and
+overrides: `i18n.md` §7). Pass `Strings::of(ctx.response_locale())` to your render
+function.
 
 ## 3b. Interaction-response flows at a glance (discord.js names)
 

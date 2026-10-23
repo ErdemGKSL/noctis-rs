@@ -88,6 +88,7 @@ use twilight_model::id::Id;
 
 use super::{
     Armed, INTERACTION_CREATE, Report, Restore, Started, USER_INSTALL_FOLLOWUPS, arm, run_started,
+    stage4,
 };
 use crate::command::CtxInner;
 use crate::component::{
@@ -95,6 +96,7 @@ use crate::component::{
     HandlerFuture, ModalHandler, ModalSubmitCtx, SelectedValues,
 };
 use crate::handler::AppShared;
+use crate::locale::{self, LocaleCell, Stage4};
 use crate::middleware::{Around, Invocation, RunInfo};
 use crate::notice;
 use crate::registry::{Registry, RouteEntry, RouteHandler};
@@ -592,11 +594,17 @@ pub(crate) async fn run_component_over(
         ..
     } = *interaction;
     let channel_id = channel.as_ref().map(|c| c.id);
+    let (discord_user, discord_guild) = (
+        locale::parse(locale.as_deref()),
+        locale::parse(guild_locale.as_deref()),
+    );
+    // Notices before stage 3 use the built-in resolution (no resolver).
+    let builtin = LocaleCell::new(app.locales.builtin(discord_user, discord_guild));
     let answer = Rejecter {
         span: &span,
         shard,
         app: &app,
-        locale: notice::locale(locale.as_deref(), guild_locale.as_deref()),
+        locale: builtin.get().user,
     };
     let transport = match wire {
         Wire::Interaction => Transport::Interaction(InteractionTarget {
@@ -615,8 +623,7 @@ pub(crate) async fn run_component_over(
     // A modal submit (`Input::Modal`) never shows a modal: its state refuses
     // `show_modal` for the handler, the hooks and the notices (INT-04).
     let submit = kind == InteractionType::ModalSubmit;
-    let locales = (locale.clone(), guild_locale.clone());
-    let shared_for = |transport, declared| {
+    let shared_for = |transport, declared, locales: &Arc<LocaleCell>| {
         let build = if submit {
             Shared::declared_submit
         } else {
@@ -629,14 +636,16 @@ pub(crate) async fn run_component_over(
             app.limits.clone(),
             cap,
         );
-        state.set_i18n(
-            Arc::clone(&app.strings),
-            locales.0.clone(),
-            locales.1.clone(),
-        );
+        state.set_i18n(Arc::clone(&app.strings), Arc::clone(locales));
         state
     };
-    let notice_state = |transport| shared_for(transport, Declared::Reply(Ephemerality::Ephemeral));
+    let notice_state = |transport| {
+        shared_for(
+            transport,
+            Declared::Reply(Ephemerality::Ephemeral),
+            &builtin,
+        )
+    };
     // Stage 1: read the input.
     let input = match read_input(kind, data, raw.as_bytes()) {
         None => return,
@@ -688,7 +697,8 @@ pub(crate) async fn run_component_over(
             .reject(Some(route), Rejection::NoAuthor, &notice_state(transport))
             .await;
     };
-    // Stage 3: build the context and the responder state.
+    // Stage 3: resolve the locales (once, before the Expired Handler chain
+    // branch), then build the context and the responder state.
     let invocation = match &target {
         Target::Component(_) => Invocation::Component {
             route: entry.handler.route(),
@@ -696,6 +706,21 @@ pub(crate) async fn run_component_over(
         Target::Modal(..) => Invocation::Modal {
             route: entry.handler.route(),
         },
+    };
+    let locales = stage4(
+        &app,
+        Stage4 {
+            invocation,
+            guild_id,
+            user_id: Some(user_id),
+            discord_user,
+            discord_guild,
+        },
+        entry.handler.name(),
+    );
+    let answer = Rejecter {
+        locale: locales.get().user,
+        ..answer
     };
     let around = Around::new(
         &entry.chain,
@@ -708,6 +733,7 @@ pub(crate) async fn run_component_over(
             channel_id,
             user_id: Some(user_id),
             app: Some(Arc::clone(&app)),
+            locales: Arc::clone(&locales),
         },
         false,
     );
@@ -720,8 +746,7 @@ pub(crate) async fn run_component_over(
         guild_id,
         channel_id,
         user_id,
-        user_locale: locale,
-        guild_locale,
+        locales: Arc::clone(&locales),
         app: Some(Arc::clone(&app)),
         current_ref: match decoded.body() {
             RawBody::Ref(r) => Some(r),
@@ -739,7 +764,7 @@ pub(crate) async fn run_component_over(
         },
         ..CtxInner::detached_parts(Ephemerality::Public)
     };
-    let state = shared_for(transport, target.response());
+    let state = shared_for(transport, target.response(), &locales);
     // The response locale follows who sees the response (FR-43).
     parts.ephemerality = state.response_ephemerality();
     parts.shared = Some(Arc::clone(&state));
@@ -752,7 +777,7 @@ pub(crate) async fn run_component_over(
         module: entry.module,
         handler: entry.handler.name(),
         event_type: Some(INTERACTION_CREATE),
-        locale: answer.locale,
+        locales,
         around: Some(around),
         restore: None,
     };

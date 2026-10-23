@@ -153,6 +153,7 @@ pub(crate) type ScriptedFill = Box<dyn FnMut(&mut [u8; 2]) -> Result<(), getrand
 pub(crate) use self::transport::{InteractionTarget, MessageTarget, Transport};
 use crate::AckDeadlineMissed;
 use crate::handler::AppShared;
+use crate::locale::{LocaleCell, Locales};
 use crate::refs::RefOps;
 
 pub(crate) mod sealed {
@@ -1325,33 +1326,31 @@ pub(crate) struct Shared {
 }
 
 /// What resolves the [`noctis_ui::Text::Key`]s of a send: the App's
-/// strings and the run's User and Guild Locale codes.
+/// strings and the run's locale cell (read at send time, so a Middleware
+/// override reaches every send).
 pub(crate) struct I18n {
     pub(crate) strings: Arc<dyn Translate>,
-    pub(crate) user_locale: Option<String>,
-    pub(crate) guild_locale: Option<String>,
+    pub(crate) locales: Arc<LocaleCell>,
 }
 
 impl I18n {
-    /// The built-in strings and no locale (`en-US`).
+    /// The built-in strings in `en-US`.
     fn detached() -> Self {
         Self {
             strings: Arc::new(noctis_i18n::Builtin),
-            user_locale: None,
-            guild_locale: None,
+            locales: LocaleCell::new(Locales::both(noctis_rules::Locale::EnUs)),
         }
     }
 
-    /// The text of `key` for a send of `visibility`: the User Locale first
-    /// for an ephemeral send (and a modal), the Guild Locale first for a
-    /// public one, `en-US` when the first known code does not parse (as
-    /// `ergonomics::text_in`). A key with no translation is its own key
-    /// string, with one `warn` on target `noctis::i18n`.
+    /// The text of `key` for a send of `visibility`: in the User Locale
+    /// for an ephemeral send (and a modal), in the Guild Locale for a
+    /// public one. A key with no translation is its own key string, with
+    /// one `warn` on target `noctis::i18n`.
     fn text(&self, key: MessageKey, visibility: Ephemerality) -> String {
-        let (user, guild) = (self.user_locale.as_deref(), self.guild_locale.as_deref());
+        let locales = self.locales.get();
         let locale = match visibility {
-            Ephemerality::Ephemeral => crate::notice::locale(user, guild),
-            Ephemerality::Public => crate::notice::locale(guild, user),
+            Ephemerality::Ephemeral => locales.user,
+            Ephemerality::Public => locales.guild,
         };
         if let Some(text) = self.strings.translate(locale, key, &[]) {
             return text;
@@ -1364,8 +1363,7 @@ impl I18n {
 impl fmt::Debug for I18n {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("I18n")
-            .field("user_locale", &self.user_locale)
-            .field("guild_locale", &self.guild_locale)
+            .field("locales", &self.locales)
             .finish_non_exhaustive()
     }
 }
@@ -1466,7 +1464,7 @@ impl Shared {
 
     /// The state of one webhook send of the App behind `app` (see
     /// `crate::webhook`): its signer, `RefStore` and Limits; its strings
-    /// with no locale (`en-US`); visibility public. Only [`prepare`] and
+    /// in the App's default locale; visibility public. Only [`prepare`] and
     /// [`body`] are used on it.
     ///
     /// [`prepare`]: Self::prepare
@@ -1474,6 +1472,7 @@ impl Shared {
     pub(crate) fn webhook(app: Arc<AppShared>) -> Arc<Self> {
         let limits = app.limits.clone();
         let strings = Arc::clone(&app.strings);
+        let locales = LocaleCell::new(Locales::both(app.locales.default_locale()));
         let shared = Self::build(
             Transport::Webhook(app),
             Declared::Reply(Ephemerality::Public),
@@ -1482,23 +1481,14 @@ impl Shared {
             None,
             true,
         );
-        shared.set_i18n(strings, None, None);
+        shared.set_i18n(strings, locales);
         shared
     }
 
-    /// Sets the strings and locales that resolve the locale keys of this
-    /// run's sends; the first call wins.
-    pub(crate) fn set_i18n(
-        &self,
-        strings: Arc<dyn Translate>,
-        user_locale: Option<String>,
-        guild_locale: Option<String>,
-    ) {
-        let _ = self.i18n.set(I18n {
-            strings,
-            user_locale,
-            guild_locale,
-        });
+    /// Sets the strings and the locale cell that resolve the locale keys of
+    /// this run's sends; the first call wins.
+    pub(crate) fn set_i18n(&self, strings: Arc<dyn Translate>, locales: Arc<LocaleCell>) {
+        let _ = self.i18n.set(I18n { strings, locales });
     }
 
     fn i18n(&self) -> &I18n {

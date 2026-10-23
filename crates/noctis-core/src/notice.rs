@@ -1,19 +1,12 @@
 //! The localized notice a failed handler run shows its user (FR-22,
-//! AD-16, LOC-04): which key, which locale, which text.
+//! AD-16, LOC-04): which key and which text (the locale comes from the
+//! run's locale cell, `crate::locale`).
 
 use noctis_i18n::{Builtin, keys};
 use noctis_rules::{Locale, MessageKey, Translate};
 
 use crate::HandlerError;
 use crate::options::OptionError;
-
-/// The locale of an ephemeral notice: the User Locale, then the Guild
-/// Locale; `en-US` when neither is known or the code does not parse.
-pub(crate) fn locale(user: Option<&str>, guild: Option<&str>) -> Locale {
-    user.or(guild)
-        .and_then(|code| code.parse().ok())
-        .unwrap_or(Locale::EnUs)
-}
 
 /// The text of `key` in `locale`. A key no catalog has renders the generic
 /// error text, with one `warn` on target `noctis::i18n`.
@@ -50,15 +43,6 @@ mod tests {
     use crate::test_support::Capture;
 
     const GENERIC: &str = "Something went wrong. Please try again later.";
-
-    #[test]
-    fn locale_is_user_then_guild_then_en_us() {
-        assert_eq!(locale(Some("tr"), Some("de")), Locale::Tr);
-        assert_eq!(locale(None, Some("de")), Locale::De);
-        assert_eq!(locale(None, None), Locale::EnUs);
-        assert_eq!(locale(Some("xx-YY"), Some("de")), Locale::EnUs);
-        assert_eq!(locale(Some("en-us"), None), Locale::EnUs);
-    }
 
     #[test]
     fn known_key_renders_its_text() {

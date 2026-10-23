@@ -616,7 +616,8 @@ The method's parameters, always these three, in this order:
   error, `AutocompleteError::NotInGuild`, outside a guild, so `?` answers an empty list), `state::<T>()` returns `State<T>`
   (registered with `.state(..)`; an unregistered type panics with its name, which sends
   an empty list), plus `command_path()`, `module()`, `shard()`, `channel_id()`,
-  `user_id()`, `user_locale()`, `guild_locale()`, `focused()` (the `Focused` option:
+  `user_id()`, `user_locale()` / `guild_locale()` (the resolved `Locale`s; `MessageKey`
+  labels render in the User Locale, `i18n.md` §7), `focused()` (the `Focused` option:
   `name()`, `kind()`, `value()`, `as_integer()`, `as_number()`), `kv()` and `http()`. No
   `respond`, no `defer`, no Responder (INT-04, INT-06).
 - `typed: &str`: the raw focused input. Discord sends it as a string even for INTEGER and
@@ -846,8 +847,8 @@ commands are left out of a guild publish; global commands stay published and ans
 | `guild_id()` | `Option<Id<GuildMarker>>` |
 | `channel_id()` | `Option<Id<ChannelMarker>>` |
 | `user_id()` | `Id<UserMarker>`: the invoking user |
-| `user_locale()` / `guild_locale()` | `Option<&str>`: Discord's `locale` / `guild_locale` |
-| `response_locale()` | `&str`: ephemeral → User, then Guild Locale; public → Guild, then User Locale; else `"en-US"` (`responder.md` §3) |
+| `user_locale()` / `guild_locale()` | `noctis::rules::Locale`: the resolved User / Guild Locale (Discord's codes against your locale files, then any `LocaleResolver` or Middleware override; `i18n.md` §7) |
+| `response_locale()` | `Locale`: the User Locale for `response = ephemeral`, the Guild Locale for a public Command (`responder.md` §3); pass it to `Strings::of` |
 | `ephemerality()` | `Ephemerality`: the declared one |
 | `respond(msg)` | `impl Future<Output = HandlerResult<Responded>>`: a new message (type 4), the edit of the loading message after the auto-defer, a follow-up once answered (`responder.md` §1b) |
 | `reply_text(text)` | `ReplyText` (`.public()`, then `.await` → `HandlerResult<Responded>`): a one-Text-Display notice, ephemeral by default |
@@ -869,9 +870,10 @@ every other handler context.
 
 `ComponentCtx`, `ModalSubmitCtx` and `ExpiredCtx` have `respond(msg)`,
 `reply_text(text)`, `update(msg)` (type 7, or `PATCH @original` after the auto-defer;
-`UpdateUnavailable` on a slash-opened modal's submit) and `response_locale()` (User
-Locale first for `response = ephemeral` or an update of an ephemeral message, Guild
-Locale first otherwise, `"en-US"` when neither is known). `ComponentCtx` and
+`UpdateUnavailable` on a slash-opened modal's submit), `user_locale()` /
+`guild_locale()` (resolved `Locale`s, as on `CommandCtx`) and `response_locale()` (the
+User Locale for `response = ephemeral` or an update of an ephemeral message, the Guild
+Locale otherwise). `ComponentCtx` and
 `ModalSubmitCtx` also have `limits() -> &Limits`, the App's Limits, like `CommandCtx`.
 All three have `http() -> &Arc<twilight_http::Client>`, the App's one client, like
 `CommandCtx` (`.raw(method, path)` for endpoints twilight does not model,

@@ -48,6 +48,64 @@ pub(crate) fn message_delete(id: u64, guild: Option<u64>) -> Event {
     })
 }
 
+/// The JSON of guild `id` whose `preferred_locale` is `locale`.
+fn guild_json(id: u64, locale: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id.to_string(),
+        "name": "g",
+        "afk_timeout": 300,
+        "default_message_notifications": 0,
+        "explicit_content_filter": 0,
+        "features": [],
+        "emojis": [],
+        "mfa_level": 0,
+        "nsfw_level": 0,
+        "owner_id": "1",
+        "preferred_locale": locale,
+        "premium_progress_bar_enabled": false,
+        "premium_tier": 0,
+        "roles": [],
+        "system_channel_flags": 0,
+        "verification_level": 0,
+    })
+}
+
+/// An available `GUILD_CREATE` of guild `id` with `preferred_locale`.
+pub(crate) fn guild_create(id: u64, locale: &str) -> Event {
+    let guild = serde_json::from_value(guild_json(id, locale)).expect("a valid guild");
+    Event::GuildCreate(Box::new(
+        twilight_model::gateway::payload::incoming::GuildCreate::Available(guild),
+    ))
+}
+
+/// An unavailable `GUILD_CREATE` of guild `id`.
+pub(crate) fn guild_create_unavailable(id: u64) -> Event {
+    Event::GuildCreate(Box::new(
+        twilight_model::gateway::payload::incoming::GuildCreate::Unavailable(
+            twilight_model::guild::UnavailableGuild {
+                id: Id::new(id),
+                unavailable: true,
+            },
+        ),
+    ))
+}
+
+/// A `GUILD_UPDATE` of guild `id` with `preferred_locale`.
+pub(crate) fn guild_update(id: u64, locale: &str) -> Event {
+    let guild = serde_json::from_value(guild_json(id, locale)).expect("a valid guild");
+    Event::GuildUpdate(Box::new(
+        twilight_model::gateway::payload::incoming::GuildUpdate(guild),
+    ))
+}
+
+/// A `GUILD_DELETE` of guild `id`.
+pub(crate) fn guild_delete(id: u64, unavailable: Option<bool>) -> Event {
+    Event::GuildDelete(twilight_model::gateway::payload::incoming::GuildDelete {
+        id: Id::new(id),
+        unavailable,
+    })
+}
+
 /// Appends every log line to a shared buffer.
 #[derive(Clone, Default)]
 pub(crate) struct Capture(Arc<Mutex<Vec<u8>>>);

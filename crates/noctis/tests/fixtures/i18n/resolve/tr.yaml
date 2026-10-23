@@ -1,0 +1,3 @@
+# Story 11.3: the default (tr) file of tests/i18n_locales.rs.
+greet:
+  hi: Selam

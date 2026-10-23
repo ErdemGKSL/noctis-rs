@@ -760,7 +760,7 @@ async fn clicks_and_submits_reach_their_handlers() {
     assert_eq!(
         lines,
         [
-            "buy 255 module=shop user=3 guild=Some(9) channel=Some(Id<ChannelMarker>(55)) shard=0 locale=Some(\"tr\")/Some(\"de\")"
+            "buy 255 module=shop user=3 guild=Some(9) channel=Some(Id<ChannelMarker>(55)) shard=0 locale=EnUs/EnUs"
         ]
     );
     running.dispatch(click(101, "4pick:0147", 3));

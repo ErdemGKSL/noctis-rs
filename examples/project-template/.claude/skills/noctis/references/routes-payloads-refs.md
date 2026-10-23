@@ -729,7 +729,8 @@ pub struct ConfirmBan {
 - **App-wide:** `.expired_handler(f)` on the `AppBuilder`, with
   `f: async fn(ctx: ExpiredCtx, expired: Expired) -> HandlerResult<R>`. `ExpiredCtx`
   has the `ComponentCtx` accessors (`module`, `shard`, `guild_id`, `channel_id`,
-  `user_id`, `member_permissions`, `user_locale`, `guild_locale`, `current_ref`,
+  `user_id`, `member_permissions`, `user_locale`, `guild_locale` (resolved `Locale`s),
+  `current_ref`,
   `state::<T>()`, `kv()`) plus `route()`, the Route
   id. It takes no responder and is always auto-deferred, even on an
   `auto_defer = false` Route. The last call wins.
@@ -746,21 +747,21 @@ impl SetupState {
     #[on_stale]
     async fn restart(ctx: ComponentCtx) -> HandlerResult<V2Message> {
         let first = SetupState { owner: ctx.user_id(), step: SetupStep::Channel, log_channel: None, mod_role: None };
-        Ok(render_setup(first, &Strings::of(ctx.user_locale().unwrap_or("en-US"))))
+        Ok(render_setup(first, &Strings::of(ctx.user_locale())))
     }
 
     /// A missing Ref (or a stale id without `#[on_stale]`): the same restart.
     #[on_expired]
     async fn expired(ctx: ComponentCtx, _expired: Expired) -> HandlerResult<V2Message> {
         let first = SetupState { owner: ctx.user_id(), step: SetupStep::Channel, log_channel: None, mod_role: None };
-        Ok(render_setup(first, &Strings::of(ctx.user_locale().unwrap_or("en-US"))))
+        Ok(render_setup(first, &Strings::of(ctx.user_locale())))
     }
 }
 
 // App-wide fallback for Routes without hooks.
 async fn expired(ctx: ExpiredCtx, why: Expired) -> HandlerResult<V2Message> {
     tracing::debug!(route = ctx.route(), why = why.as_str(), "expired click");
-    Ok(render_start_over(&Strings::of(ctx.user_locale().unwrap_or("en-US"))))
+    Ok(render_start_over(&Strings::of(ctx.user_locale())))
 }
 builder.expired_handler(expired);
 ```
@@ -816,4 +817,5 @@ split into users and roles); resolved entities: `ctx.resolved()` [planned].
 Module enabled ("disabled here") → 4. locale resolution → 5. rate limit → 6. arm
 auto-defer (unless `auto_defer = false`; shaped by `response`) → 7. before-Middleware → 8. Route Guards → 9. your
 handler → 10. after-Middleware, Error Sinks. Stages 1–5 run none of your code (except a
-`LocaleResolver`).
+`LocaleResolver`, once per run; `i18n.md` §7). A before-Middleware may override the
+locales stage 4 resolved (`ctx.set_locale(..)`).
