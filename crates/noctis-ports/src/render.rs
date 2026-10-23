@@ -323,6 +323,41 @@ pub struct RenderOutput {
     pub settings_used: EncodeSettings,
 }
 
+/// One of the Renderer's per-job caps (FR-70), named by
+/// [`RenderError::OverCap`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RenderCap {
+    /// The canvas of every job, in pixels (`w*h`).
+    JobPixels,
+    /// Each frame of an animation, in pixels (`w*h`).
+    FramePixels,
+    /// The number of frames of an animation.
+    Frames,
+    /// The duration of an animation, in whole milliseconds.
+    Duration,
+}
+
+impl RenderCap {
+    /// The cap's stable name: `job_pixels`, `frame_pixels`, `frames` or
+    /// `duration_ms`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::JobPixels => "job_pixels",
+            Self::FramePixels => "frame_pixels",
+            Self::Frames => "frames",
+            Self::Duration => "duration_ms",
+        }
+    }
+}
+
+impl fmt::Display for RenderCap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Why a render failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -354,6 +389,19 @@ pub enum RenderError {
         budget: u64,
         /// The length of the smallest encoding tried, in bytes.
         smallest: u64,
+    },
+    /// The job is over one of the Renderer's per-job caps (FR-70); it never
+    /// entered the queue.
+    #[error("template `{id}` exceeds the {cap} cap: {actual} is over the limit {limit}")]
+    OverCap {
+        /// The Template id.
+        id: String,
+        /// The cap exceeded first.
+        cap: RenderCap,
+        /// The cap's limit: pixels, frames or whole milliseconds.
+        limit: u64,
+        /// The job's value, in the same unit.
+        actual: u64,
     },
     /// The render queue is full; retry later.
     #[error("render queue is full")]
@@ -600,6 +648,30 @@ mod tests {
              the budget 10 bytes"
         );
         assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn render_error_over_cap_and_cap_names() {
+        let err = RenderError::OverCap {
+            id: "card".to_owned(),
+            cap: RenderCap::Frames,
+            limit: 90,
+            actual: 91,
+        };
+        assert_eq!(
+            err.to_string(),
+            "template `card` exceeds the frames cap: 91 is over the limit 90"
+        );
+        assert!(err.source().is_none());
+        for (cap, name) in [
+            (RenderCap::JobPixels, "job_pixels"),
+            (RenderCap::FramePixels, "frame_pixels"),
+            (RenderCap::Frames, "frames"),
+            (RenderCap::Duration, "duration_ms"),
+        ] {
+            assert_eq!(cap.as_str(), name);
+            assert_eq!(cap.to_string(), name);
+        }
     }
 
     #[test]

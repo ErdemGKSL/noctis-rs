@@ -94,8 +94,8 @@ const fn row(
 /// | `noctis_http_ping_timeouts_total` | counter | `app` |
 /// | `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won`, `lost`, `40060`) |
 /// | `noctis_render_duration_seconds` | histogram | `app`, `template` (the Template id) |
-/// | `noctis_render_queue_depth` | gauge | `app` (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting although its admitted job still runs until Story 10.5) |
-/// | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full`, `unknown_template`, `unsupported`) |
+/// | `noctis_render_queue_depth` | gauge | `app` (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and its job is skipped while queued or stops before its next frame) |
+/// | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full`, `unknown_template`, `unsupported`, `over_cap`) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -208,13 +208,13 @@ pub const METRICS: &[MetricInfo] = &[
         "noctis_render_queue_depth",
         MetricType::Gauge,
         &["app"],
-        "This App's ctx.render calls awaiting a render; a cancelled call stops counting although its admitted job still runs until Story 10.5.",
+        "This App's ctx.render calls awaiting a render; a cancelled call stops counting, and its job is skipped while queued or stops before its next frame.",
     ),
     row(
         "noctis_render_rejected_total",
         MetricType::Counter,
         &["app", "reason"],
-        "Renders rejected by reason: queue_full, unknown_template or unsupported.",
+        "Renders rejected by reason: queue_full, unknown_template, unsupported or over_cap.",
     ),
 ];
 

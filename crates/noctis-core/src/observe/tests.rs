@@ -138,7 +138,8 @@ fn check_value(metric: &str, label: &str, value: &str, total: u32) {
                 "demand",
                 "queue_full",
                 "unknown_template",
-                "unsupported"
+                "unsupported",
+                "over_cap"
             ]
             .contains(&value),
             "{metric}: {value}"

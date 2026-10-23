@@ -37,3 +37,13 @@ fn budget_defaults_and_setters() {
     // The size budget is not part of the pool config, so such Apps share a pool.
     assert_eq!(changed.pool_config(), config.pool_config());
 }
+
+#[test]
+fn caps_default_and_stay_out_of_the_pool_config() {
+    let config = ImageConfig::new();
+    assert_eq!(config.caps, RenderCaps::new());
+    let changed = ImageConfig::new().caps(RenderCaps::new().frames(200));
+    assert_eq!(changed.caps, RenderCaps::new().frames(200));
+    assert_ne!(changed, config);
+    assert_eq!(changed.pool_config(), config.pool_config());
+}

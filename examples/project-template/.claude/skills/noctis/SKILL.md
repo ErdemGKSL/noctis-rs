@@ -20,7 +20,7 @@ description: >-
 > **Status: v0.** This skill documents the **planned** Noctis API from the architecture
 > spine. Sections and signatures marked **[planned]** may change as the crates land; the
 > skill is updated in the same commit as any public API change.
-> **API hash:** `364aa89c9e2aa815f91a9cee31b3b54f8e556cbc6655d2980f48351de5a80171` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
+> **API hash:** `e4d73c43c7bd481e97b44b994e0a08d505ee71bcd9da59627ca9a99f3c3422ed` (blake3 of noctis-rs `xtask/public-api.txt`; updated in the same commit as every public API change, together with this skill).
 
 This skill is the whole public API of `noctis`, explained for bot authors and coding
 agents. **Learn Noctis only from here.** Do not read Noctis source (the monorepo crates,
@@ -280,11 +280,17 @@ impl TemplateView for ProfileCard {
 // writes into RenderJob::upload_budget, ImageConfig::size_target (default 2 MiB)), lowering
 // fps, size, quality, then (ImageConfig::still_fallback, default on) a still frame;
 // RenderOutput::settings_used (EncodeSettings, through app.renderer()) says what was encoded.
+// per-job caps, checked before the job is queued: `.image(ImageConfig::new().caps(
+// RenderCaps::new().frames(120)))`; defaults 4 MP per job, 1 MP per frame, 90 frames, 6 s.
+// queue_capacity counts units: a still 1, an animation ceil(frames / 8); a quarter is
+// reserved for stills, which run first. Dropping the ctx.render future cancels the render
+// (wrap it in tokio::time::timeout for a deadline; token expiry does not cancel it).
 // in a handler (rendering is awaited in the handler, so auto-defer covers it):
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;
 // errors: err.as_error().downcast_ref::<RenderError>(): QueueFull (show a busy notice),
-// NoRenderer, UnknownTemplate, Unsupported, OverBudget { budget, smallest } (cannot shrink
-// enough), Failed, Panicked (see references/images.md §8).
+// NoRenderer, UnknownTemplate, Unsupported, OverCap { id, cap: RenderCap, limit, actual }
+// (over a per-job cap), OverBudget { budget, smallest } (cannot shrink enough), Failed,
+// Panicked (see references/images.md §8).
 // in the render function:
 let mut files = AttachmentSet::new();
 let card = files.add(data.card.clone());

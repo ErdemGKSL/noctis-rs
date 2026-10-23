@@ -15,6 +15,9 @@
 //!     `min(RenderJob::upload_budget, ImageConfig::size_target)` by degrading
 //!     fps, then size, then quality, then (optionally) falling back to a
 //!     still frame; `RenderError::OverBudget` when nothing fits;
+//!   - the per-job caps ([`RenderCaps`]), checked before admission
+//!     (`RenderError::OverCap`), and the pool's weighted, still-first
+//!     admission, which skips jobs whose requester is gone;
 //!   - [`ImageConfig`], [`ImagePlugin`] and [`AppBuilderImageExt`]
 //!     (`.image(..)`, `.theme(..)`), which install that Renderer.
 //!
@@ -25,6 +28,8 @@ pub mod tw;
 
 #[cfg(feature = "render")]
 mod budget;
+#[cfg(feature = "render")]
+mod caps;
 #[cfg(feature = "render")]
 mod check;
 #[cfg(feature = "render")]
@@ -40,6 +45,8 @@ mod renderer;
 #[cfg(feature = "render")]
 mod template;
 
+#[cfg(feature = "render")]
+pub use caps::RenderCaps;
 #[cfg(feature = "render")]
 pub use check::{ClassCheck, ClassCheckMode};
 #[cfg(feature = "render")]

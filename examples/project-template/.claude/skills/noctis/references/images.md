@@ -276,18 +276,45 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   - `Unsupported { id, why }`: an animation with `fps` 0 or a duration under 1 ms, or
     GIF/APNG output without `image-gif` (a hand-built `RenderJob`; the derive already
     refuses both at compile time);
+  - `OverCap { id, cap, limit, actual }`: the job is over one of the App's per-job
+    caps (below); `cap` is a `RenderCap` (`JobPixels`, `FramePixels`, `Frames`,
+    `Duration`; `cap.as_str()` is `job_pixels`/`frame_pixels`/`frames`/`duration_ms`),
+    `limit` and `actual` are pixels, frames or whole milliseconds. It never entered the
+    queue; make the Template smaller or shorter, or raise the cap;
   - `OverBudget { budget, smallest }`: even the smallest encoding of the size budget's
     ladder (`smallest` bytes) is over `budget`; shrink the Template, lower its size or
     quality, or keep `still_fallback` on;
-  - `Failed(source)`: decode, class check (Deny), takumi or encode failure (a canvas
-    over 64 MP fails here);
+  - `Failed(source)`: decode, class check (Deny), takumi or encode failure;
   - `Panicked { message }`: the view panicked; the pool survives.
 - The pool: `builder.image(ImageConfig::new().threads(4).queue_capacity(128))`.
   `threads` is 1..=256 (default half the available parallelism, at least 1),
-  `queue_capacity` 1..=4096 (default 64), counting queued plus running renders;
-  out-of-range values fail `App::build` with a plugin violation. Renders run on this
-  dedicated rayon pool (`noctis-render-<i>` threads), never on tokio workers or rayon's
-  global pool.
+  `queue_capacity` 1..=4096 (default 64), counting admission units of queued plus
+  running renders; out-of-range values fail `App::build` with a plugin violation.
+  Renders run on this dedicated rayon pool (`noctis-render-<i>` threads), never on
+  tokio workers or rayon's global pool.
+- Admission is weighted: a still weighs 1 unit, an animation `ceil(frames / 8)` units
+  (at least 1, at most the animation share). A quarter of `queue_capacity`, floored, is
+  reserved for stills, so animations hold at most the other three quarters (default 64:
+  16 reserved, 48 for animations, so a 90-frame animation weighs 12 and four run at
+  once). A free pool thread always takes a queued still before any animation. A job
+  that does not fit fails at once with `QueueFull`; there is no waiting queue.
+- Per-job caps per App: `ImageConfig::new().caps(RenderCaps::new().frames(120))`.
+  `RenderCaps::new()` (= `default()`) is 4 MP (`job_pixels`, 4_000_000, `w*h` of every
+  job), 1 MP per frame (`frame_pixels`, 1_000_000, animations only), 90 `frames` and 6 s
+  `duration` (whole ms); setters `.job_pixels(u64)`, `.frame_pixels(u64)`,
+  `.frames(u32)`, `.duration(Duration)`. Limits are inclusive and checked before
+  admission in that order (pixels, then duration, then frames), after the fps/duration
+  and `image-gif` checks; the first exceeded is the `OverCap`. Out-of-range caps fail
+  `App::build`: `render cap job_pixels {n} is out of range: use 1..=67108864` (same for
+  `frame_pixels`), `render cap frames 0 is out of range: use at least 1`,
+  `render cap duration {d:?} is out of range: use at least 1 ms`. Caps are not pool
+  settings: Apps differing only in them share one pool.
+- Giving up: dropping the `ctx.render` future (a cancelled handler, the shutdown grace,
+  your own `tokio::time::timeout` or `select!`) cancels the render: a queued job is
+  skipped and frees its units, and a running one stops before its next frame or encode
+  attempt. An expired interaction token does **not** cancel a render (public messages
+  fall back to bot-token routes); wrap `ctx.render` in `tokio::time::timeout` when you
+  want a deadline.
 - The size budget per App: `ImageConfig::new().size_target(1_048_576)` (bytes, at
   least 1024, default 2 MiB = 2_097_152; below 1024 `App::build` fails with the plugin
   violation `render size target {n} is out of range: use at least 1024 bytes`) and
@@ -310,16 +337,14 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   by the handler's own origin.
 - Observability: span `noctis.render{app, template}`; metrics
   `noctis_render_duration_seconds{app, template}`, `noctis_render_queue_depth{app}`
-  (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting
-  although its admitted job still runs until Story 10.5) and `noctis_render_rejected_total{app, reason}`
-  (`queue_full`, `unknown_template`, `unsupported`).
+  (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and
+  its job is skipped while queued or stops before its next frame) and
+  `noctis_render_rejected_total{app, reason}` (`queue_full`, `unknown_template`,
+  `unsupported`, `over_cap`). `OverCap` is also reported to the Render Error Sink.
 - On `Runtime::for_test()` Apps an unknown `Classes::dynamic` class fails the render
   (Deny, §4).
-- Planned: `ctx.render_with(t, RenderOptions::new().animation(..))` and
-  `render_report()` [planned, Story 10.6]; per-job caps (≤ 4 MP per job, ≤ 1 MP per
-  frame, ≤ 90 frames, ≤ 6 s; fps ≤ 50 GIF, ≤ 90 WebP/APNG), admission weighting and
-  skipping a job whose interaction is gone [planned, Story 10.5]. Until 10.5, a
-  Template with a large `duration_ms × fps` draws every frame in memory.
+- Planned: `ctx.render_with(t, RenderOptions::new().animation(..))`, `render_report()`
+  and the fps caps (≤ 50 GIF, ≤ 90 WebP/APNG) [planned, Story 10.6].
 
 ### Animation
 
@@ -333,7 +358,10 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   `ctx.render(card).await?` as usual: the view is called once per frame, on the
   render pool. Frame `i` starts at `i*1000/fps` ms and lasts until the next one (the
   last ends at `duration_ms`); `count` is `ceil(duration_ms * fps / 1000)` (2000 ms at
-  20 fps: 40 frames). Overriding the animation per call,
+  20 fps: 40 frames). Keep `count` within the frames cap (default 90) and
+  `duration_ms` within the duration cap (default 6000), and each frame within 1 MP,
+  or the render fails before it is queued with `RenderError::OverCap` (§8, "Per-job
+  caps"). Overriding the animation per call,
   `ctx.render_with(card, RenderOptions::new().animation(AnimationSpec::new(Duration::from_secs(2), 20, AnimatedFormat::DEFAULT)))`,
   is [planned, Story 10.6]. Every frame has the job's size; a root node with a
   different explicit size will be a typed error [planned, Story 10.6].

@@ -1881,8 +1881,8 @@ pub mod ports {
         AnimatedFormat, AnimationSpec, AssetStore, BoxFuture, CacheStore, DiscordCache,
         EncodeSettings, ErasedView, Format, Frame, GuildAccessList, IdentifyQueue, Lease,
         LocaleSource, ModuleStateStore, OutputFormat, PortError, RateLimitStore, RefStore,
-        RenderCache, RenderError, RenderJob, RenderOutput, Renderer, SessionStore, Size, Template,
-        TemplateDescriptor, ValueError, decode_template, decode_value, encode_value,
+        RenderCache, RenderCap, RenderError, RenderJob, RenderOutput, Renderer, SessionStore, Size,
+        Template, TemplateDescriptor, ValueError, decode_template, decode_value, encode_value,
     };
 
     pub use noctis_core::{IntoPort, Namespaced, NamespacedPort, Shared};
@@ -1985,6 +1985,14 @@ pub mod image {
     //!   with `ctx.render(template).await?`, which returns an
     //!   [`Attachment`](crate::ui::Attachment) or a [`RenderError`]
     //!   (`QueueFull` when the queue is full).
+    //! - Per-job caps: [`RenderCaps`] (`ImageConfig::caps`; defaults 4 MP per
+    //!   job, 1 MP per frame, 90 frames, 6 s) are checked before a job enters
+    //!   the queue; a job over one fails with `RenderError::OverCap`, naming
+    //!   the [`RenderCap`]. Admission is weighted: a still counts 1 unit of
+    //!   the queue capacity, an animation `ceil(frames / 8)`; a quarter of
+    //!   the capacity is reserved for stills, which also run before queued
+    //!   animations. Dropping the `ctx.render` future gives the render up:
+    //!   a queued job is skipped, a running animation stops between frames.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```
@@ -2037,11 +2045,11 @@ pub mod image {
         InvalidClasses, Suggestion, Theme, ThemeError, ThemeErrorKind, ThemeNamespace, ThemeTokens,
         UnknownClass,
     };
-    pub use noctis_image::{AppBuilderImageExt, ImageConfig, ImagePlugin};
+    pub use noctis_image::{AppBuilderImageExt, ImageConfig, ImagePlugin, RenderCaps};
     pub use noctis_image::{Classes, IntoNodes, Node, Style, Tag, TemplateView, div, span, text};
     pub use noctis_ports::{
-        AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderError,
-        RenderJob, RenderOutput, Size, Template, TemplateDescriptor,
+        AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderCap,
+        RenderError, RenderJob, RenderOutput, Size, Template, TemplateDescriptor,
     };
 
     pub mod unstable {

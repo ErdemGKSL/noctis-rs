@@ -95,13 +95,17 @@ impl Drop for InFlight {
     }
 }
 
-/// Counts and reports `error`, then wraps it for the handler. `OverBudget`
-/// is handled like `Failed`: reported, with no rejected-metric reason.
+/// Counts and reports `error`, then wraps it for the handler. The rejected
+/// reasons are `queue_full`, `unknown_template`, `unsupported` and
+/// `over_cap`; every error but `QueueFull` and `NoRenderer` is reported.
+/// `OverBudget` is handled like `Failed`: reported, with no rejected-metric
+/// reason.
 fn fail(inner: &CtxInner, app: &AppShared, error: RenderError) -> HandlerError {
     let reason = match &error {
         RenderError::QueueFull => Some("queue_full"),
         RenderError::UnknownTemplate { .. } => Some("unknown_template"),
         RenderError::Unsupported { .. } => Some("unsupported"),
+        RenderError::OverCap { .. } => Some("over_cap"),
         _ => None,
     };
     if let Some(reason) = reason {

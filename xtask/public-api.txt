@@ -2659,6 +2659,7 @@ impl core::marker::Copy for noctis::image::Frame
 impl core::marker::StructuralPartialEq for noctis::image::Frame
 pub struct noctis::image::ImageConfig
 impl noctis::image::ImageConfig
+pub fn noctis::image::ImageConfig::caps(self, noctis::image::RenderCaps) -> Self
 pub fn noctis::image::ImageConfig::new() -> Self
 pub fn noctis::image::ImageConfig::queue_capacity(self, usize) -> Self
 pub fn noctis::image::ImageConfig::size_target(self, u64) -> Self
@@ -2737,12 +2738,55 @@ impl core::hash::Hash for noctis::image::OutputFormat
 pub fn noctis::image::OutputFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::OutputFormat
 impl core::marker::StructuralPartialEq for noctis::image::OutputFormat
+#[non_exhaustive] pub enum noctis::image::RenderCap
+pub noctis::image::RenderCap::Duration
+pub noctis::image::RenderCap::FramePixels
+pub noctis::image::RenderCap::Frames
+pub noctis::image::RenderCap::JobPixels
+impl noctis::image::RenderCap
+pub const fn noctis::image::RenderCap::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::image::RenderCap
+pub fn noctis::image::RenderCap::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RenderCap
+impl core::cmp::PartialEq for noctis::image::RenderCap
+pub fn noctis::image::RenderCap::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::RenderCap
+pub fn noctis::image::RenderCap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::image::RenderCap
+pub fn noctis::image::RenderCap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::image::RenderCap
+pub fn noctis::image::RenderCap::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::image::RenderCap
+impl core::marker::StructuralPartialEq for noctis::image::RenderCap
+pub struct noctis::image::RenderCaps
+impl noctis::image::RenderCaps
+pub const fn noctis::image::RenderCaps::duration(self, core::time::Duration) -> Self
+pub const fn noctis::image::RenderCaps::frame_pixels(self, u64) -> Self
+pub const fn noctis::image::RenderCaps::frames(self, u32) -> Self
+pub const fn noctis::image::RenderCaps::job_pixels(self, u64) -> Self
+pub const fn noctis::image::RenderCaps::new() -> Self
+impl core::clone::Clone for noctis::image::RenderCaps
+pub fn noctis::image::RenderCaps::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::RenderCaps
+impl core::cmp::PartialEq for noctis::image::RenderCaps
+pub fn noctis::image::RenderCaps::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::image::RenderCaps
+pub fn noctis::image::RenderCaps::default() -> Self
+impl core::fmt::Debug for noctis::image::RenderCaps
+pub fn noctis::image::RenderCaps::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::image::RenderCaps
+impl core::marker::StructuralPartialEq for noctis::image::RenderCaps
 #[non_exhaustive] pub enum noctis::image::RenderError
 pub noctis::image::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
 pub noctis::image::RenderError::NoRenderer
 pub noctis::image::RenderError::OverBudget
 pub noctis::image::RenderError::OverBudget::budget: u64
 pub noctis::image::RenderError::OverBudget::smallest: u64
+pub noctis::image::RenderError::OverCap
+pub noctis::image::RenderError::OverCap::actual: u64
+pub noctis::image::RenderError::OverCap::cap: noctis::image::RenderCap
+pub noctis::image::RenderError::OverCap::id: alloc::string::String
+pub noctis::image::RenderError::OverCap::limit: u64
 pub noctis::image::RenderError::Panicked
 pub noctis::image::RenderError::Panicked::message: alloc::string::String
 pub noctis::image::RenderError::QueueFull
@@ -3386,12 +3430,37 @@ pub fn noctis::ports::RenderCache::put<'a>(&'a self, &'a str, bytes::bytes::Byte
 impl<P: noctis::ports::RenderCache + ?core::marker::Sized> noctis::ports::RenderCache for alloc::rcs::arc::Arc<P>
 pub fn alloc::rcs::arc::Arc<P>::get<'a>(&'a self, &'a str) -> noctis::ports::BoxFuture<'a, core::result::Result<core::option::Option<bytes::bytes::Bytes>, noctis::ports::PortError>>
 pub fn alloc::rcs::arc::Arc<P>::put<'a>(&'a self, &'a str, bytes::bytes::Bytes, core::option::Option<core::time::Duration>) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+#[non_exhaustive] pub enum noctis::ports::RenderCap
+pub noctis::ports::RenderCap::Duration
+pub noctis::ports::RenderCap::FramePixels
+pub noctis::ports::RenderCap::Frames
+pub noctis::ports::RenderCap::JobPixels
+impl noctis::ports::RenderCap
+pub const fn noctis::ports::RenderCap::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::ports::RenderCap
+pub fn noctis::ports::RenderCap::clone(&self) -> Self
+impl core::cmp::Eq for noctis::ports::RenderCap
+impl core::cmp::PartialEq for noctis::ports::RenderCap
+pub fn noctis::ports::RenderCap::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::ports::RenderCap
+pub fn noctis::ports::RenderCap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ports::RenderCap
+pub fn noctis::ports::RenderCap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::ports::RenderCap
+pub fn noctis::ports::RenderCap::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::ports::RenderCap
+impl core::marker::StructuralPartialEq for noctis::ports::RenderCap
 #[non_exhaustive] pub enum noctis::ports::RenderError
 pub noctis::ports::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
 pub noctis::ports::RenderError::NoRenderer
 pub noctis::ports::RenderError::OverBudget
 pub noctis::ports::RenderError::OverBudget::budget: u64
 pub noctis::ports::RenderError::OverBudget::smallest: u64
+pub noctis::ports::RenderError::OverCap
+pub noctis::ports::RenderError::OverCap::actual: u64
+pub noctis::ports::RenderError::OverCap::cap: noctis::image::RenderCap
+pub noctis::ports::RenderError::OverCap::id: alloc::string::String
+pub noctis::ports::RenderError::OverCap::limit: u64
 pub noctis::ports::RenderError::Panicked
 pub noctis::ports::RenderError::Panicked::message: alloc::string::String
 pub noctis::ports::RenderError::QueueFull

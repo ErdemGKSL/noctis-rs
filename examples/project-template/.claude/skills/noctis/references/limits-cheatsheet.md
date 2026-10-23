@@ -334,8 +334,9 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 
 | Limit | Default |
 | --- | --- |
-| pixels per job / per frame | 4 MP / 1 MP |
+| pixels per job / per frame | 4 MP / 1 MP (`RenderCaps`, `RenderError::OverCap`) |
 | frames / duration | 90 / 6 s |
+| admission weight | still 1, animation `ceil(frames / 8)`; ¼ of `queue_capacity` reserved for stills |
 | fps | GIF ≤ 50, WebP/APNG ≤ 90 |
 | size target | ≈ 2 MB (and ≤ Upload Budget) |
 | auto-defer deadline | 2000 ms |

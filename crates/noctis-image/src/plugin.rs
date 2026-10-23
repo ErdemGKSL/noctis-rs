@@ -2,10 +2,12 @@
 //! gets its Renderer.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use noctis_core::{AppBuilder, BuildViolation, Plugin};
 
 use crate::ClassCheckMode;
+use crate::caps::RenderCaps;
 use crate::pool::{PoolConfig, RenderPool};
 use crate::renderer::{TakumiRenderer, theme_stylesheet};
 use crate::tw::Theme;
@@ -20,6 +22,8 @@ const DEFAULT_QUEUE_CAPACITY: usize = 64;
 const MIN_SIZE_TARGET: u64 = 1024;
 /// The default size target: 2 MiB.
 pub(crate) const DEFAULT_SIZE_TARGET: u64 = 2_097_152;
+/// The accepted pixel caps, up to takumi's canvas limit (`64 << 20` pixels).
+const CAP_PIXELS: std::ops::RangeInclusive<u64> = 1..=67_108_864;
 
 /// The render settings of an App.
 ///
@@ -29,12 +33,16 @@ pub(crate) const DEFAULT_SIZE_TARGET: u64 = 2_097_152;
 ///
 /// - `threads` (1..=256): the pool's thread count; by default half the
 ///   available parallelism, at least 1 (1 when it is unknown).
-/// - `queue_capacity` (1..=4096, default 64): the most renders admitted at
-///   once, queued plus running; one more fails at once with
+/// - `queue_capacity` (1..=4096, default 64): the admission units admitted
+///   at once, queued plus running. A still weighs 1 unit, an animation
+///   `ceil(frames / 8)` units (at most its share). A quarter of the capacity,
+///   floored, is reserved for stills, so animations hold at most the other
+///   three quarters, and a free pool thread always takes a queued still
+///   before any animation. A job that does not fit fails at once with
 ///   `RenderError::QueueFull`.
 ///
-/// The size budget settings are per App; Apps differing only in them share
-/// one pool.
+/// The size budget settings and the caps are per App; Apps differing only in
+/// them share one pool.
 ///
 /// - `size_target` (at least 1024 bytes, default 2 MiB): every output fits
 ///   `min(Upload Budget, size_target)`, degrading fps, then size, then
@@ -42,19 +50,24 @@ pub(crate) const DEFAULT_SIZE_TARGET: u64 = 2_097_152;
 ///   `RenderError::OverBudget` when nothing fits.
 /// - `still_fallback` (default `true`): whether an animation that does not
 ///   fit may fall back to a still frame as the ladder's last step.
+/// - `caps` (default [`RenderCaps::new`]: 4 MP per job, 1 MP per frame, 90
+///   frames, 6 s): the per-job caps; a job over one fails before admission
+///   with `RenderError::OverCap`. The pixel caps accept 1..=67108864, the
+///   frame cap at least 1 and the duration cap at least 1 ms.
 ///
 /// Out-of-range values fail `App::build` with a plugin violation.
 ///
 /// [`Runtime`]: noctis_core::Runtime
 ///
 /// ```
-/// use noctis_image::ImageConfig;
+/// use noctis_image::{ImageConfig, RenderCaps};
 ///
 /// let config = ImageConfig::new()
 ///     .threads(2)
 ///     .queue_capacity(16)
 ///     .size_target(1_048_576)
-///     .still_fallback(false);
+///     .still_fallback(false)
+///     .caps(RenderCaps::new().frames(120));
 /// assert_ne!(config, ImageConfig::default());
 /// assert_eq!(ImageConfig::new(), ImageConfig::default());
 /// ```
@@ -64,11 +77,13 @@ pub struct ImageConfig {
     queue_capacity: usize,
     size_target: u64,
     still_fallback: bool,
+    caps: RenderCaps,
 }
 
 impl ImageConfig {
     /// The defaults: half the available parallelism (at least 1) threads,
-    /// a queue of 64, a 2 MiB size target and the still fallback on.
+    /// a queue of 64 units, a 2 MiB size target, the still fallback on and
+    /// the default [`RenderCaps`].
     pub fn new() -> Self {
         // Clamped so a very large host never builds an out-of-range default.
         let threads = std::thread::available_parallelism()
@@ -78,6 +93,7 @@ impl ImageConfig {
             queue_capacity: DEFAULT_QUEUE_CAPACITY,
             size_target: DEFAULT_SIZE_TARGET,
             still_fallback: true,
+            caps: RenderCaps::new(),
         }
     }
 
@@ -88,7 +104,9 @@ impl ImageConfig {
         self
     }
 
-    /// The most renders admitted at once (queued plus running), 1..=4096.
+    /// The admission units admitted at once (queued plus running),
+    /// 1..=4096: a still weighs 1, an animation `ceil(frames / 8)`, and a
+    /// quarter (floored) is reserved for stills.
     #[must_use]
     pub fn queue_capacity(mut self, queue_capacity: usize) -> Self {
         self.queue_capacity = queue_capacity;
@@ -110,6 +128,14 @@ impl ImageConfig {
     #[must_use]
     pub fn still_fallback(mut self, enabled: bool) -> Self {
         self.still_fallback = enabled;
+        self
+    }
+
+    /// The per-job caps (default [`RenderCaps::new`]); a job over one fails
+    /// before admission with `RenderError::OverCap`.
+    #[must_use]
+    pub fn caps(mut self, caps: RenderCaps) -> Self {
+        self.caps = caps;
         self
     }
 
@@ -148,6 +174,7 @@ impl Plugin for ImagePlugin {
             queue_capacity,
             size_target,
             still_fallback,
+            caps,
         } = self.config;
         let mut in_range = true;
         if !THREADS.contains(&threads) {
@@ -166,6 +193,30 @@ impl Plugin for ImagePlugin {
             in_range = false;
             app.report(BuildViolation::plugin::<Self>(format!(
                 "render size target {size_target} is out of range: use at least 1024 bytes"
+            )));
+        }
+        for (name, pixels) in [
+            ("job_pixels", caps.job_pixels),
+            ("frame_pixels", caps.frame_pixels),
+        ] {
+            if !CAP_PIXELS.contains(&pixels) {
+                in_range = false;
+                app.report(BuildViolation::plugin::<Self>(format!(
+                    "render cap {name} {pixels} is out of range: use 1..=67108864"
+                )));
+            }
+        }
+        if caps.frames == 0 {
+            in_range = false;
+            app.report(BuildViolation::plugin::<Self>(
+                "render cap frames 0 is out of range: use at least 1",
+            ));
+        }
+        if caps.duration < Duration::from_millis(1) {
+            in_range = false;
+            app.report(BuildViolation::plugin::<Self>(format!(
+                "render cap duration {:?} is out of range: use at least 1 ms",
+                caps.duration
             )));
         }
         if !in_range {
@@ -208,6 +259,7 @@ impl Plugin for ImagePlugin {
             mode,
             size_target,
             still_fallback,
+            caps,
         )));
     }
 }

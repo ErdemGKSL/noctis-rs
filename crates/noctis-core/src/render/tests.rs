@@ -51,6 +51,7 @@ enum Answer {
     Failed,
     Panicked,
     OverBudget,
+    OverCap,
 }
 
 /// A Renderer answering `answer` at once; it snapshots the metrics and
@@ -113,6 +114,12 @@ impl Renderer for Fake {
             Answer::OverBudget => Err(RenderError::OverBudget {
                 budget: 10,
                 smallest: 20,
+            }),
+            Answer::OverCap => Err(RenderError::OverCap {
+                id: "card".to_owned(),
+                cap: noctis_ports::RenderCap::Frames,
+                limit: 90,
+                actual: 91,
             }),
         };
         Box::pin(async move { result })
@@ -254,6 +261,7 @@ async fn rejections_count_by_reason_and_queue_full_is_not_reported() {
         (Answer::QueueFull, "queue_full", false),
         (Answer::Unknown, "unknown_template", true),
         (Answer::Unsupported, "unsupported", true),
+        (Answer::OverCap, "over_cap", true),
     ] {
         let recorder = DebuggingRecorder::new();
         let snapshotter = recorder.snapshotter();

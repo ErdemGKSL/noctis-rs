@@ -154,7 +154,7 @@ pub(crate) struct Span {
 }
 
 /// `duration` in whole milliseconds, saturating.
-fn total_ms(duration: Duration) -> u64 {
+pub(crate) fn total_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 

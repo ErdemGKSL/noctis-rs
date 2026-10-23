@@ -1,6 +1,6 @@
 //! The takumi [`Renderer`]: one per App, bound to its Theme, rendering stills
-//! and animations, fitted to the size budget (`crate::budget`), on the
-//! process-scoped [`RenderPool`].
+//! and animations within its per-job caps ([`RenderCaps`]), fitted to the
+//! size budget (`crate::budget`), on the process-scoped [`RenderPool`].
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -21,8 +21,9 @@ use takumi::prelude::{
 };
 
 use crate::budget::{self, Attempt};
+use crate::caps::RenderCaps;
 use crate::lower::lower;
-use crate::pool::RenderPool;
+use crate::pool::{Lane, RenderPool, Requester};
 use crate::tw::Theme;
 use crate::{ClassCheck, ClassCheckMode, ViewFn};
 
@@ -48,6 +49,8 @@ struct Shared {
     size_target: u64,
     /// Whether an animation that does not fit may fall back to a still.
     still_fallback: bool,
+    /// The App's `ImageConfig::caps`, checked before admission.
+    caps: RenderCaps,
 }
 
 /// Why an animation with fps 0 or a duration under 1 ms is unsupported.
@@ -92,7 +95,8 @@ impl TakumiRenderer {
     /// A Renderer drawing with `theme` (already parsed into `stylesheet`)
     /// on `pool`; `mode` is Deny on test Runtimes, Warn otherwise. Each
     /// output fits `min(job.upload_budget, size_target)`, an animation
-    /// falling back to a still frame when `still_fallback` is on.
+    /// falling back to a still frame when `still_fallback` is on; a job
+    /// over one of `caps` fails before admission.
     pub(crate) fn new(
         pool: Arc<RenderPool>,
         theme: Theme,
@@ -100,6 +104,7 @@ impl TakumiRenderer {
         mode: ClassCheckMode,
         size_target: u64,
         still_fallback: bool,
+        caps: RenderCaps,
     ) -> Self {
         Self {
             pool,
@@ -110,13 +115,14 @@ impl TakumiRenderer {
                 fonts: Fonts::default(),
                 size_target,
                 still_fallback,
+                caps,
             }),
             views: RwLock::new(HashMap::new()),
         }
     }
 
-    /// The view of `job`, checked against the registered version and the
-    /// animations this Renderer can encode.
+    /// The view of `job`, checked against the registered version, the
+    /// animations this Renderer can encode and then its per-job caps.
     fn view_of(&self, job: &RenderJob) -> Result<ViewFn, RenderError> {
         let views = self.views.read().unwrap_or_else(PoisonError::into_inner);
         let view = match views.get(job.template_id) {
@@ -140,10 +146,8 @@ impl TakumiRenderer {
             if matches!(spec.format, AnimatedFormat::Gif | AnimatedFormat::Apng) {
                 return Err(unsupported(GIF_FEATURE));
             }
-            if u32::try_from(budget::span_count(spec.duration, spec.fps)).is_err() {
-                return Err(too_many_frames(job));
-            }
         }
+        self.shared.caps.check(job)?;
         Ok(view)
     }
 }
@@ -161,12 +165,21 @@ impl std::fmt::Debug for TakumiRenderer {
 }
 
 impl Renderer for TakumiRenderer {
-    /// Looks the Template up, then admits the job to the pool before it
-    /// returns the future, so admission order is call order.
+    /// Looks the Template up and checks the caps, then admits the job to
+    /// the pool before it returns the future, so admission order is call
+    /// order. Dropping the future gives the job up: a queued job is skipped,
+    /// a running one stops before its next frame or encode attempt.
     fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
         let admitted = self.view_of(&job).and_then(|view| {
             let shared = Arc::clone(&self.shared);
-            self.pool.try_submit(move || shared.draw(view, &job))
+            let lane = match job.animation {
+                None => Lane::Still,
+                Some(spec) => Lane::Animated {
+                    frames: budget::span_count(spec.duration, spec.fps),
+                },
+            };
+            self.pool
+                .try_submit(lane, move |requester| shared.draw(view, &job, requester))
         });
         Box::pin(async move {
             admitted?
@@ -192,23 +205,40 @@ impl Renderer for TakumiRenderer {
 }
 
 impl Shared {
-    /// The per-attempt encoder of `job`, drawing with `view`.
-    fn encoder<'a>(&'a self, view: ViewFn, job: &'a RenderJob) -> Encoder<'a> {
+    /// The per-attempt encoder of `job`, drawing with `view` for
+    /// `requester`.
+    fn encoder<'a>(
+        &'a self,
+        view: ViewFn,
+        job: &'a RenderJob,
+        requester: &'a Requester<'a>,
+    ) -> Encoder<'a> {
         Encoder {
             shared: self,
             view,
             job,
+            requester,
             frames: None,
         }
     }
 
     /// Renders `job` with `view` and fits it to the size budget; runs on a
-    /// pool thread.
-    fn draw(&self, view: ViewFn, job: &RenderJob) -> Result<RenderOutput, RenderError> {
+    /// pool thread and stops once `requester` is gone.
+    fn draw(
+        &self,
+        view: ViewFn,
+        job: &RenderJob,
+        requester: &Requester<'_>,
+    ) -> Result<RenderOutput, RenderError> {
         let budget = job.upload_budget.min(self.size_target);
         let attempts = budget::ladder(job, self.still_fallback);
-        let mut encoder = self.encoder(view, job);
-        let (bytes, attempt) = budget::fit(&attempts, budget, |a| encoder.encode(a))?;
+        let mut encoder = self.encoder(view, job, requester);
+        let (bytes, attempt) = budget::fit(&attempts, budget, |a| {
+            if requester.gone() {
+                return Err(requester_gone());
+            }
+            encoder.encode(a)
+        })?;
         let (format, frames) = match job.animation {
             Some(spec) if !attempt.still => {
                 // `Encoder::draw` already bounded the count to `u32`.
@@ -264,6 +294,11 @@ impl Shared {
     }
 }
 
+/// The error a run stops with once its requester is gone; nobody sees it.
+fn requester_gone() -> RenderError {
+    RenderError::failed("the requester is gone")
+}
+
 /// The `Unsupported` error of an animation with more than `u32::MAX` frames.
 fn too_many_frames(job: &RenderJob) -> RenderError {
     RenderError::Unsupported {
@@ -286,6 +321,8 @@ pub(crate) struct Encoder<'a> {
     shared: &'a Shared,
     view: ViewFn,
     job: &'a RenderJob,
+    /// Asked before each frame: a gone requester stops the draw.
+    requester: &'a Requester<'a>,
     frames: Option<Frames>,
 }
 
@@ -371,9 +408,13 @@ impl Encoder<'_> {
         Ok(cache.resampled.as_ref().map_or(&[], |(_, f)| f))
     }
 
-    /// Draws every frame at `fps` (one still frame for `None`).
+    /// Draws every frame at `fps` (one still frame for `None`), stopping
+    /// before a frame once the requester is gone.
     fn draw(&self, fps: Option<u16>) -> Result<Vec<AnimationFrame>, RenderError> {
         let (shared, view, job) = (self.shared, self.view, self.job);
+        if self.requester.gone() {
+            return Err(requester_gone());
+        }
         let (Some(fps), Some(spec)) = (fps, job.animation) else {
             let still = shared.frame(view, job, Frame::STILL, 0)?;
             return Ok(vec![AnimationFrame::new(still, 0)]);
@@ -390,6 +431,9 @@ impl Encoder<'_> {
             .iter()
             .zip(0..count)
             .map(|(span, index)| {
+                if self.requester.gone() {
+                    return Err(requester_gone());
+                }
                 let frame = Frame { index, count };
                 let bitmap = shared.frame(view, job, frame, span.start_ms)?;
                 Ok(AnimationFrame::new(bitmap, span.duration_ms))

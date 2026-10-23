@@ -202,6 +202,7 @@ fn renderer_budget(
         mode,
         crate::plugin::DEFAULT_SIZE_TARGET,
         still_fallback,
+        RenderCaps::new(),
     );
     renderer
         .register(&[
@@ -217,6 +218,9 @@ fn renderer_budget(
             TemplateDescriptor::of::<Recorder>(),
             TemplateDescriptor::of::<Spinner>(),
             TemplateDescriptor::of::<Edge>(),
+            TemplateDescriptor::of::<FirstProbe>(),
+            TemplateDescriptor::of::<StopProbe>(),
+            TemplateDescriptor::of::<DropProbe>(),
         ])
         .unwrap();
     renderer
@@ -354,16 +358,24 @@ async fn smallest_size_and_style_over_classes() {
 }
 
 #[tokio::test]
-async fn an_oversized_canvas_fails_and_the_pool_survives() {
+async fn an_oversized_canvas_is_over_cap_and_the_pool_survives() {
     let r = renderer();
-    let err = r
-        .render(RenderJob::of(&Huge {}).unwrap())
-        .await
-        .unwrap_err();
-    let RenderError::Failed(source) = &err else {
-        panic!("{err}");
-    };
-    assert!(source.to_string().contains("megapixels"), "{source}");
+    let before = r.pool.admitted();
+    let future = r.render(RenderJob::of(&Huge {}).unwrap());
+    assert_eq!(r.pool.admitted(), before, "rejected before admission");
+    let err = future.await.unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            RenderError::OverCap {
+                id,
+                cap: noctis_ports::RenderCap::JobPixels,
+                limit: 4_000_000,
+                actual: 100_000_000,
+            } if id == "huge"
+        ),
+        "{err}"
+    );
     assert!(r.render(card("Ada")).await.is_ok());
 }
 
@@ -609,7 +621,12 @@ fn with_budget(job: RenderJob, upload_budget: u64) -> RenderJob {
 /// The length the renderer's per-attempt encoder gives `attempt` of `job`.
 fn encoded_len(r: &TakumiRenderer, job: &RenderJob, attempt: &Attempt) -> u64 {
     let view = r.view_of(job).unwrap();
-    let bytes = r.shared.encoder(view, job).encode(attempt).unwrap();
+    let requester = present();
+    let bytes = r
+        .shared
+        .encoder(view, job, &requester)
+        .encode(attempt)
+        .unwrap();
     bytes.len() as u64
 }
 
@@ -797,11 +814,12 @@ async fn an_animation_over_budget_steps_down_its_fps() {
     assert_eq!(out.settings_used.frames, frames);
 }
 
-/// The animation of the still-fallback rows. It runs 5 s rather than 1 s:
+/// The animation of the still-fallback rows: 90 frames, the default cap.
+/// It runs 5 s rather than 1 s:
 /// at 1 s its smallest animated attempt (5 lossy frames of 32×32) is smaller
 /// than the lossless 32×32 PNG still, so no budget lies between them.
 fn long_anim() -> RenderJob {
-    anim(20, 5000, WEBP80)
+    anim(18, 5000, WEBP80)
 }
 
 /// The budget between the still fallback and the smallest animated attempt.
@@ -816,7 +834,8 @@ fn still_only_budget(r: &TakumiRenderer, job: &RenderJob) -> u64 {
         .unwrap();
     // Draw at the fps the fallback follows (the last animated attempt's).
     let view = r.view_of(job).unwrap();
-    let mut encoder = r.shared.encoder(view, job);
+    let requester = present();
+    let mut encoder = r.shared.encoder(view, job, &requester);
     encoder.encode(animated.last().unwrap()).unwrap();
     let still_len = encoder.encode(still).unwrap().len() as u64;
     assert!(
@@ -920,9 +939,8 @@ async fn a_lossy_still_fallback_takes_the_still_quality() {
     assert_eq!(&out.bytes[..2], b"\xFF\xD8");
 }
 
-#[cfg(not(feature = "gif"))]
 #[tokio::test]
-async fn more_than_u32_max_frames_is_rejected_before_admission() {
+async fn a_huge_duration_is_over_cap_before_admission() {
     let r = renderer();
     let job = RenderJob {
         animation: Some(AnimationSpec::new(Duration::MAX, 1000, WEBP80)),
@@ -933,7 +951,192 @@ async fn more_than_u32_max_frames_is_rejected_before_admission() {
     assert_eq!(r.pool.admitted(), before, "rejected before admission");
     let err = future.await.unwrap_err();
     assert!(
-        matches!(&err, RenderError::Unsupported { why, .. } if why.contains("u32::MAX frames")),
+        matches!(
+            &err,
+            RenderError::OverCap {
+                cap: noctis_ports::RenderCap::Duration,
+                limit: 6000,
+                ..
+            }
+        ),
         "{err}"
     );
+}
+
+#[tokio::test]
+async fn the_bounds_are_checked_before_the_caps() {
+    let r = renderer();
+    let seven = Duration::from_secs(7);
+    let job = RenderJob {
+        animation: Some(AnimationSpec::new(seven, 0, WEBP80)),
+        ..noise(Format::Png)
+    };
+    let err = r.render(job).await.unwrap_err();
+    assert!(
+        matches!(&err, RenderError::Unsupported { why, .. } if why.contains("fps >= 1")),
+        "{err}"
+    );
+    #[cfg(not(feature = "gif"))]
+    {
+        let job = RenderJob {
+            animation: Some(AnimationSpec::new(seven, 10, AnimatedFormat::Gif)),
+            ..noise(Format::Png)
+        };
+        let err = r.render(job).await.unwrap_err();
+        assert!(
+            matches!(&err, RenderError::Unsupported { why, .. } if why.contains("image-gif")),
+            "{err}"
+        );
+    }
+    let err = r.render(anim(10, 7000, WEBP80)).await.unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            RenderError::OverCap {
+                cap: noctis_ports::RenderCap::Duration,
+                limit: 6000,
+                actual: 7000,
+                ..
+            }
+        ),
+        "{err}"
+    );
+}
+
+/// A requester that never leaves, for driving an [`Encoder`] directly.
+fn present() -> Requester<'static> {
+    fn never() -> bool {
+        false
+    }
+    Requester::new(&never)
+}
+
+/// Defines a 2×2 probe Template `$name`: its view logs `(tag, frame index)`
+/// to `$log`, and on frame 0 of tag 0 it signals `$started` and blocks on
+/// `$gate` (when set).
+macro_rules! probe {
+    ($name:ident, $id:literal, $log:ident, $started:ident, $gate:ident) => {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct $name {
+            tag: u8,
+        }
+
+        static $log: Mutex<Vec<(u8, u32)>> = Mutex::new(Vec::new());
+        static $started: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
+        static $gate: Mutex<Option<mpsc::Receiver<()>>> = Mutex::new(None);
+
+        impl Template for $name {
+            const ID: &'static str = $id;
+            const VERSION: u32 = 1;
+            const SIZE: Size = Size::new(2, 2);
+            const FORMAT: Format = Format::Png;
+            const ANIMATION: Option<AnimationSpec> = None;
+
+            fn view() -> ErasedView {
+                erased_view::<Self>()
+            }
+        }
+
+        impl TemplateView for $name {
+            fn view(&self, frame: Frame) -> Node {
+                $log.lock().unwrap().push((self.tag, frame.index));
+                if self.tag == 0 && frame.index == 0 {
+                    if let Some(started) = $started.lock().unwrap().as_ref() {
+                        started.send(()).unwrap();
+                    }
+                    if let Some(gate) = $gate.lock().unwrap().as_ref() {
+                        gate.recv_timeout(Duration::from_secs(10)).unwrap();
+                    }
+                }
+                div(Classes::default())
+            }
+        }
+    };
+}
+
+probe!(
+    FirstProbe,
+    "first-probe",
+    FIRST_LOG,
+    FIRST_STARTED,
+    FIRST_GATE
+);
+probe!(StopProbe, "stop-probe", STOP_LOG, STOP_STARTED, STOP_GATE);
+probe!(DropProbe, "drop-probe", DROP_LOG, DROP_STARTED, DROP_GATE);
+
+/// Arms a probe: returns (open the gate, wait for frame 0 of tag 0).
+fn arm(
+    started: &Mutex<Option<mpsc::Sender<()>>>,
+    gate: &Mutex<Option<mpsc::Receiver<()>>>,
+) -> (mpsc::Sender<()>, mpsc::Receiver<()>) {
+    let (open, gate_rx) = mpsc::channel();
+    let (started_tx, started_rx) = mpsc::channel();
+    *gate.lock().unwrap() = Some(gate_rx);
+    *started.lock().unwrap() = Some(started_tx);
+    (open, started_rx)
+}
+
+/// Waits (up to 5 s) until `r`'s pool has no admitted units.
+async fn drained(r: &TakumiRenderer) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while r.pool.admitted() != 0 {
+        assert!(std::time::Instant::now() < deadline, "{:?}", r.pool);
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// `job` animated for 100 ms at 10 fps: one frame.
+fn one_frame(job: RenderJob) -> RenderJob {
+    RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_millis(100), 10, WEBP80)),
+        ..job
+    }
+}
+
+#[tokio::test]
+async fn a_still_renders_before_animations_queued_earlier() {
+    let r = renderer_with(1, 16, ClassCheckMode::Deny);
+    let (open, started) = arm(&FIRST_STARTED, &FIRST_GATE);
+    let job = |tag| RenderJob::of(&FirstProbe { tag }).unwrap();
+    let first = r.render(one_frame(job(0)));
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    let animations = [1, 2, 3].map(|tag| r.render(one_frame(job(tag))));
+    let still = r.render(job(9));
+    open.send(()).unwrap();
+    first.await.unwrap();
+    still.await.unwrap();
+    for animation in animations {
+        animation.await.unwrap();
+    }
+    let tags: Vec<u8> = FIRST_LOG.lock().unwrap().iter().map(|(t, _)| *t).collect();
+    assert_eq!(tags, [0, 9, 1, 2, 3]);
+}
+
+#[tokio::test]
+async fn a_dropped_future_stops_an_animation_between_frames() {
+    let r = renderer_with(1, 16, ClassCheckMode::Deny);
+    let (open, started) = arm(&STOP_STARTED, &STOP_GATE);
+    let job = RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_secs(1), 10, WEBP80)),
+        ..RenderJob::of(&StopProbe { tag: 0 }).unwrap()
+    };
+    let future = r.render(job);
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    drop(future);
+    open.send(()).unwrap();
+    drained(&r).await;
+    assert_eq!(*STOP_LOG.lock().unwrap(), [(0, 0)]);
+}
+
+#[tokio::test]
+async fn a_future_dropped_before_its_job_runs_is_skipped() {
+    let r = renderer_with(1, 16, ClassCheckMode::Deny);
+    let (open, started) = arm(&DROP_STARTED, &DROP_GATE);
+    let blocker = r.render(RenderJob::of(&DropProbe { tag: 0 }).unwrap());
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    drop(r.render(RenderJob::of(&DropProbe { tag: 1 }).unwrap()));
+    open.send(()).unwrap();
+    blocker.await.unwrap();
+    drained(&r).await;
+    assert_eq!(*DROP_LOG.lock().unwrap(), [(0, 0)]);
 }

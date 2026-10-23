@@ -1,6 +1,6 @@
-//! Stories 10.3 and 10.4: `ImagePlugin`, `ImageConfig`, the render pool, the
-//! takumi Renderer, animated output and the size budget through the facade,
-//! with derived Templates. The macros validate
+//! Stories 10.3, 10.4 and 10.5: `ImagePlugin`, `ImageConfig`, the render
+//! pool, the takumi Renderer, animated output, the size budget and the
+//! per-job caps through the facade, with derived Templates. The macros validate
 //! against this crate's `noctis-theme.css` (`--color-brand: #5865f2`).
 
 #![cfg(feature = "image")]
@@ -16,7 +16,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use noctis::image::{
     AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Format, Frame, ImageConfig,
-    ImagePlugin, Node, RenderError, Style, Template, TemplateView, Theme, div, theme, view,
+    ImagePlugin, Node, RenderCap, RenderCaps, RenderError, Style, Template, TemplateView, Theme,
+    div, theme, view,
 };
 use noctis::ports::{EncodeSettings, ErasedView, OutputFormat, RenderJob, Size, ValueError};
 use noctis::{App, AppBuilder, BuildError, BuildViolation, Module, Runtime};
@@ -169,11 +170,12 @@ impl TemplateView for Noise {
     }
 }
 
-/// [`Noise`] animated for 5 s: its smallest animated encoding is larger than
-/// its still fallback, so a budget between them exists.
+/// [`Noise`] animated for 5 s (90 frames, the default cap): its smallest
+/// animated encoding is larger than its still fallback, so a budget between
+/// them exists.
 #[derive(Template, Serialize, Deserialize, Debug, Clone)]
 #[template(id = "noise-reel", version = 1, size = (64, 64), format = Png,
-           animation(duration_ms = 5000, fps = 20))]
+           animation(duration_ms = 5000, fps = 18))]
 struct NoiseReel;
 
 impl TemplateView for NoiseReel {
@@ -324,6 +326,104 @@ async fn queue_bounds() {
     assert_eq!(both.len(), 2, "{both:?}");
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn caps_bounds() {
+    let ok = |caps: RenderCaps| app_with(ImageConfig::new().threads(1).caps(caps));
+    let messages =
+        |caps: RenderCaps| plugin_messages(&build_err(ImageConfig::new().threads(1).caps(caps)));
+    for pixels in [1, 67_108_864] {
+        ok(RenderCaps::new().job_pixels(pixels));
+        ok(RenderCaps::new().frame_pixels(pixels));
+    }
+    for pixels in [0, 67_108_865] {
+        assert_eq!(
+            messages(RenderCaps::new().job_pixels(pixels)),
+            [format!(
+                "render cap job_pixels {pixels} is out of range: use 1..=67108864"
+            )]
+        );
+        assert_eq!(
+            messages(RenderCaps::new().frame_pixels(pixels)),
+            [format!(
+                "render cap frame_pixels {pixels} is out of range: use 1..=67108864"
+            )]
+        );
+    }
+    for frames in [1, u32::MAX] {
+        ok(RenderCaps::new().frames(frames));
+    }
+    assert_eq!(
+        messages(RenderCaps::new().frames(0)),
+        ["render cap frames 0 is out of range: use at least 1"]
+    );
+    ok(RenderCaps::new().duration(Duration::from_millis(1)));
+    for duration in [Duration::ZERO, Duration::from_micros(999)] {
+        assert_eq!(
+            messages(RenderCaps::new().duration(duration)),
+            [format!(
+                "render cap duration {duration:?} is out of range: use at least 1 ms"
+            )]
+        );
+    }
+}
+
+/// A 1×1 [`Dot`] animated at 20 fps for 5 s: 100 frames.
+fn hundred_frames() -> RenderJob {
+    RenderJob {
+        animation: Some(AnimationSpec::new(
+            Duration::from_secs(5),
+            20,
+            AnimatedFormat::DEFAULT,
+        )),
+        ..RenderJob::of(&Dot).unwrap()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn custom_caps_admit_what_the_defaults_reject() {
+    let default = app();
+    let err = default
+        .renderer()
+        .unwrap()
+        .render(hundred_frames())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            RenderError::OverCap {
+                cap: RenderCap::Frames,
+                limit: 90,
+                actual: 100,
+                ..
+            }
+        ),
+        "{err}"
+    );
+    let more = app_with(
+        ImageConfig::new()
+            .threads(2)
+            .caps(RenderCaps::new().frames(200)),
+    );
+    let out = more
+        .renderer()
+        .unwrap()
+        .render(hundred_frames())
+        .await
+        .unwrap();
+    assert_eq!(out.settings_used.frames, 100);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn apps_differing_only_in_caps_share_one_pool() {
+    let runtime = Runtime::for_test();
+    let config = ImageConfig::new().threads(1).queue_capacity(8);
+    builder(&runtime, config.clone()).build().unwrap();
+    builder(&runtime, config.caps(RenderCaps::new().frames(1)))
+        .build()
+        .unwrap();
+}
+
 #[test]
 fn config_defaults() {
     assert_eq!(ImageConfig::new(), ImageConfig::default());
@@ -468,10 +568,18 @@ async fn min_size_canvas_limit_style_and_unicode() {
     assert_eq!(pixel(&rgba, w, 0, 0), BRAND);
 
     let err = render(&app, &Huge).await.unwrap_err();
-    let RenderError::Failed(source) = &err else {
-        panic!("{err}");
-    };
-    assert!(source.to_string().contains("megapixels"), "{source}");
+    assert!(
+        matches!(
+            &err,
+            RenderError::OverCap {
+                id,
+                cap: RenderCap::JobPixels,
+                limit: 4_000_000,
+                actual: 100_000_000,
+            } if id == "huge"
+        ),
+        "{err}"
+    );
     assert!(render(&app, &ada()).await.is_ok(), "the pool still renders");
 
     let styled = render(&app, &Styled).await.unwrap();
