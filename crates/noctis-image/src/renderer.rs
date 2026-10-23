@@ -51,6 +51,11 @@ const _: () = {
 pub(crate) fn theme_stylesheet(
     theme: &Theme,
 ) -> Result<StyleSheet, takumi_core::error::StyleSheetParseError> {
+    StyleSheet::parse_list([theme_css(theme)])
+}
+
+/// The `@theme { … }` CSS text [`theme_stylesheet`] parses.
+fn theme_css(theme: &Theme) -> String {
     let mut css = String::from("@theme {\n");
     for (name, value) in theme.custom_properties() {
         css.push_str("  ");
@@ -60,7 +65,7 @@ pub(crate) fn theme_stylesheet(
         css.push_str(";\n");
     }
     css.push('}');
-    StyleSheet::parse_list([css])
+    css
 }
 
 impl TakumiRenderer {

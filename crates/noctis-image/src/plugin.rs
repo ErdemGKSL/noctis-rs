@@ -48,7 +48,9 @@ impl ImageConfig {
     /// The defaults: half the available parallelism (at least 1) threads
     /// and a queue of 64.
     pub fn new() -> Self {
-        let threads = std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1));
+        // Clamped so a very large host never builds an out-of-range default.
+        let threads = std::thread::available_parallelism()
+            .map_or(1, |n| (n.get() / 2).clamp(1, *THREADS.end()));
         Self {
             threads,
             queue_capacity: DEFAULT_QUEUE_CAPACITY,

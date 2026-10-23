@@ -126,7 +126,7 @@ development_status:
   epic-10: in-progress
   10-1-strict-tailwind-v4-grammar-and-takumi-cross-check: done
   10-2-templates-with-compile-time-class-validation-and-a-theme: done
-  10-3-renderer-and-bounded-render-pool: in-progress
+  10-3-renderer-and-bounded-render-pool: done
   10-4-output-formats-and-size-budget: backlog
   10-5-per-job-caps-and-admission-control: backlog
   10-6-animated-templates: backlog

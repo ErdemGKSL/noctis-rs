@@ -730,7 +730,7 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_http_ping_timeouts_total` | counter | `app` | connections dropped because a PING went unanswered |
 | `noctis_interaction_ack_hedges_total` | counter | `app`, `outcome` (`won` \| `lost` \| `40060`) | hedged interaction callbacks, and callbacks Discord answered "already acknowledged" |
 | `noctis_render_duration_seconds` | histogram | `app`, `template` | successful `ctx.render` time, queue wait included, by Template id |
-| `noctis_render_queue_depth` | gauge | `app` | this App's renders in flight (queued or running on the render pool) |
+| `noctis_render_queue_depth` | gauge | `app` | this App's `ctx.render` calls awaiting a render; a cancelled call stops counting although its admitted job still runs until Story 10.5 |
 | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full` \| `unknown_template` \| `unsupported`) | renders rejected before drawing |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and

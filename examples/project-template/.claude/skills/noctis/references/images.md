@@ -296,7 +296,8 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   by the handler's own origin.
 - Observability: span `noctis.render{app, template}`; metrics
   `noctis_render_duration_seconds{app, template}`, `noctis_render_queue_depth{app}`
-  (this App's renders in flight) and `noctis_render_rejected_total{app, reason}`
+  (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting
+  although its admitted job still runs until Story 10.5) and `noctis_render_rejected_total{app, reason}`
   (`queue_full`, `unknown_template`, `unsupported`).
 - On `Runtime::for_test()` Apps an unknown `Classes::dynamic` class fails the render
   (Deny, §4).

@@ -46,6 +46,16 @@ impl TemplateView for Dot {
 }
 
 #[derive(Template, Serialize, Deserialize, Debug, Clone)]
+#[template(id = "surface", version = 1, size = (1, 1), format = Png)]
+struct Surface;
+
+impl TemplateView for Surface {
+    fn view(&self, _: Frame) -> Node {
+        view! { <div tw="w-full h-full bg-surface" /> }
+    }
+}
+
+#[derive(Template, Serialize, Deserialize, Debug, Clone)]
 #[template(id = "huge", version = 1, size = (10000, 10000), format = Png)]
 struct Huge;
 
@@ -154,6 +164,7 @@ fn cards() -> Module {
     Module::new("cards")
         .template::<Card>()
         .template::<Dot>()
+        .template::<Surface>()
         .template::<Huge>()
         .template::<Styled>()
         .template::<Boom>()
@@ -382,6 +393,13 @@ async fn renders_a_themed_png_deterministically() {
     assert_eq!(pixel(&rgba, w, 0, 0), BRAND);
     assert_eq!(pixel(&rgba, w, 63, 31), BRAND);
     assert_eq!(render(&app, &ada()).await.unwrap().bytes, out.bytes);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_later_theme_token_reaches_the_stylesheet() {
+    let out = render(&app(), &Surface).await.unwrap();
+    let (w, _, rgba) = decode_png(&out.bytes);
+    assert_eq!(pixel(&rgba, w, 0, 0), [0x11, 0x13, 0x1A, 0xFF]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

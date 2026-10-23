@@ -269,8 +269,9 @@ impl TemplateView for ProfileCard {
 // `<img>` and `#[asset] avatar: RemoteImage` are [planned, Stories 10.7-10.8].
 
 // the App needs a Renderer: `.theme(noctis::image::theme!())` and/or `.image(ImageConfig::new())`
-// (AppBuilderImageExt, in the prelude); a hand-written or animated Template fails the
-// build with BuildViolation::TemplateRejected.
+// (AppBuilderImageExt, in the prelude); with that takumi Renderer a hand-written or
+// animated Template fails the build with BuildViolation::TemplateRejected (a custom
+// `.renderer(..)` decides itself; with no Renderer it only warns).
 // in a handler (rendering is awaited in the handler, so auto-defer covers it):
 let card: Attachment = ctx.render(ProfileCard { .. }).await?;
 // errors: err.as_error().downcast_ref::<RenderError>(): QueueFull (show a busy notice),

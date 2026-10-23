@@ -478,5 +478,20 @@ async fn deny_fails_unknown_dynamic_classes_and_warn_renders() {
 #[test]
 fn the_theme_stylesheet_declares_every_token() {
     assert!(theme_stylesheet(&Theme::empty()).is_ok());
-    assert!(theme_stylesheet(&theme()).is_ok());
+    let theme = Theme::parse(
+        "@theme { --color-brand: #5865f2; --color-surface: #11131a; \
+         --font-display: \"Inter\", sans-serif; --radius-card: 12px; }",
+    )
+    .unwrap();
+    let props: Vec<(String, &str)> = theme.custom_properties().collect();
+    assert_eq!(props.len(), 4, "{props:?}");
+    let css = theme_css(&theme);
+    for (name, value) in props {
+        let declaration = format!("{name}: {value};");
+        assert!(
+            css.contains(&declaration),
+            "{declaration} missing from {css}"
+        );
+    }
+    assert!(theme_stylesheet(&theme).is_ok());
 }

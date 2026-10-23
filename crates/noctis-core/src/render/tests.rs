@@ -277,9 +277,21 @@ async fn failures_and_panics_reach_the_render_sink() {
         (Answer::Failed, "error:render failed"),
         (Answer::Panicked, "panic:boom"),
     ] {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let _guard = metrics::set_default_local_recorder(&recorder);
         let sink = Arc::new(Recording::default());
         let app = app(Some(Fake::new(answer)), &sink);
         let err = render(&parts(&app), card()).await.unwrap_err();
+        let snapshot = snapshot_of(&snapshotter);
+        assert!(!snapshot.iter().any(|(n, ..)| {
+            n == "noctis_render_rejected_total" || n == "noctis_render_duration_seconds"
+        }));
+        let depth = snapshot
+            .iter()
+            .find(|(n, ..)| n == "noctis_render_queue_depth")
+            .unwrap();
+        assert!(matches!(depth.2, DebugValue::Gauge(v) if v.0.abs() < f64::EPSILON));
         match answer {
             Answer::Panicked => assert!(matches!(
                 render_error(&err),

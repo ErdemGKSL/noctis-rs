@@ -2,7 +2,7 @@
 title: 'Story 10.3: Renderer and bounded render pool'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '326070f92563f0fa59323b7b92743eb1e846e6ba'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -15,7 +15,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/error-handling.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Nested rayon work-stealing inside takumi's parallel paths (blur for_each, WebP/GIF frame par_iter) can run other admitted render jobs on a waiting pool thread's stack, reordering completion and growing stack depth with queue depth.
+    evidence: |-
+      takumi-core blur.rs:92 uses into_par_iter().for_each_init and takumi is built with its rayon feature, so a still render with a blur waits in a rayon join on the bounded pool and may steal top-level spawned renders. Unverified whether stack depth can overflow: settle with a stress test of queue_capacity concurrent blurred (shadow/filter) renders on threads(1), or bound it with ThreadPoolBuilder::stack_size or an in_place_scope boundary (Story 10.5 owns admission).
+    location: >-
+      crates/noctis-image/src/pool.rs (try_submit / pool.spawn)
+    severity: high (unverified)
 ---
 
 <intent-contract>
@@ -261,6 +268,47 @@ Unless a row says otherwise, the setup is a `Runtime::for_test()` App with `.ima
 
 ## Review Triage Log
 
+### 2026-10-22 — Review pass
+- verdicts: 37 findings — high 0, medium 2, low 19, false 15, maybe-false 1
+- findings:
+  - `[low]` `[reject]` blind: Failed/Panicked renders appear in no metric — the spec fixes the three rejection reasons; failures and panics reach the Render sink with app/handler; a new catalog row is more than a direct correction.
+  - `[false]` `[reject]` blind: duration recorded before `Attachment::rendered` can fail — `Attachment::rendered` fails only on an invalid extension and `OutputFormat::extension()` returns fixed alphanumeric constants, so the wrap cannot fail.
+  - `[false]` `[reject]` blind: non-QueueFull errors reported twice — deliberately settled in Design Notes (AD-29, documented in images.md §8).
+  - `[low]` `[patch]` blind: `noctis_render_queue_depth` under-reports when a `ctx.render` future is dropped — real: `InFlight` follows the caller future while the admitted job keeps running, contradicting the catalog text "queued on or running in the render pool"; patch rewords the catalog/skill text (grouped with edge InFlight + edge claim + vgap other).
+  - `[low]` `[reject]` blind: `register` stops at the first rejected Template — spec-mandated ("returns the first such error"); several hand-written/animated Templates in one build is rare and collecting adds logic.
+  - `[false]` `[reject]` blind: pool created before stylesheet validation causes ResourceConflict on retry — a stylesheet failure is fixed by changing the Theme, not the ImageConfig, so a retry uses the same PoolConfig and reuses the pool; range errors already stop before the pool.
+  - `[low]` `[reject]` blind: rayon build error stored permanently, per-submit Failed path unreachable — spec-mandated storage; install already rejects; no user harm named.
+  - `[maybe-false]` `[defer]` blind: nested rayon work-stealing via takumi's rayon feature — takumi blur.rs uses par_iter in still renders, so stealing is plausible; whether stack depth can overflow is unverified (deferred, high unverified).
+  - `[medium]` `[patch]` blind: `the_theme_stylesheet_declares_every_token` only asserts `is_ok()` — same root cause as vgap gap 1; patch adds a non-first-token pixel test and inspects the CSS text.
+  - `[false]` `[reject]` blind: Warn mode not log-captured — warn-once per distinct string is covered by `check/tests.rs::tw_01_warn_once_per_distinct_string`; the renderer holds one `ClassCheck` and the render tests prove Warn renders.
+  - `[low]` `[reject]` blind: global-Runtime test relies on being alone in its binary — no current flake; the invariant is documented; moving binaries is more than a direct fix.
+  - `[low]` `[reject]` blind: `ctx.render` only tested via CommandCtx — the method is generated identically by `ctx_methods!` for every ctx; the deferred-update path is the existing auto-defer.
+  - `[low]` `[reject]` blind: QueueFull not driven through `ctx.render` in TestApp — counter and sink exclusion covered by core unit test, real pool fast-fail by pool/facade tests (spec matrix rows).
+  - `[false]` `[reject]` blind: `App::renderer()` exposes `&Arc` — the signature is mandated by the spec.
+  - `[low]` `[reject]` blind: `ImagePlugin` has no constructor, `ImageConfig` no getters — no constructor is mandated; no caller needing getters named.
+  - `[false]` `[reject]` blind: template `src/` lacks `.theme`/`ctx.render` — `examples/project-template/src/lib.rs:42` calls `.theme(noctis::image::theme!())` and `modules/profile/handlers.rs:215` calls `.render(ProfileCard{..})` with the `image` feature on.
+  - `[low]` `[patch]` blind: SKILL.md says hand-written/animated Templates always fail the build — true only with the takumi Renderer; patch qualifies the sentence.
+  - `[low]` `[reject]` blind: 64 MP limit and "megapixels" substring tie docs/tests to takumi — accurate for the pinned takumi; an upgrade fails the test loudly; a Noctis pre-check is Story 10.5 work.
+  - `[low]` `[patch]` edge: default `threads` exceeds 256 on hosts with >513 CPUs — `ImageConfig::new` uses `(n/2).max(1)` with no upper clamp, so the default config fails `App::build`; patch clamps to `THREADS.end()`.
+  - `[low]` `[reject]` edge: ImagePlugin silently replaces an explicit `.renderer(..)` — real but contradictory configuration is rare and a guard needs a new public AppBuilder accessor.
+  - `[low]` `[reject]` edge: one Renderer Arc reused by a second AppBuilder replaces the first App's views — requires passing `app.renderer()` into another builder, an unsupported pattern; spec says register replaces the map.
+  - `[low]` `[patch]` edge: `InFlight` guard scope — same root cause as the blind queue-depth finding; doc patch.
+  - `[low]` `[reject]` edge: quality above 100 misreported in `settings_used` — reachable only through the unstable `erased_view` in a hand-written Template; derived Templates validate quality.
+  - `[low]` `[reject]` edge: deep Node tree recursion can overflow the stack — needs a pathologically deep author-built tree; a depth guard adds branches.
+  - `[false]` `[reject]` edge: ci.yml gains a step the spec said was unneeded — the `all-features` job only builds (`cargo build --all-features`), so the dedicated `render_e2e` step is required and keeps CI in sync per AGENTS.md.
+  - `[low]` `[patch]` edge: queue-depth catalog claim — same root cause as the blind queue-depth finding; doc patch.
+  - `[medium]` `[patch]` vgap: only the first Theme token is ever drawn — pre-verified gap; patch adds a `bg-surface` pixel test on the facade theme and a CSS-text assertion.
+  - `[low]` `[patch]` vgap: Failed/Panicked not checked to stay out of rejected counter and duration histogram — pre-verified gap; patch extends the existing sink test with a local recorder.
+  - `[low]` `[patch]` vgap other: queue-depth gauge vs documented meaning — same root cause as the blind queue-depth finding; doc patch.
+  - `[false]` `[reject]` intent D1: slow render auto-defer shown only with a fake Renderer — the spec's "ctx slow" row deliberately uses a fake; the real path is covered by "ctx real".
+  - `[false]` `[reject]` intent D2: full-queue metric shown only with a fake — the spec's "metrics rejected" row is a core unit test by design.
+  - `[false]` `[reject]` intent D3: queue depth measures the App — settled in Design Notes ("Core owns observability").
+  - `[false]` `[reject]` intent D4: queue cap counts running jobs — the spec defines admission as queued plus running.
+  - `[false]` `[reject]` intent D5: typed error via downcast — settled in Design Notes ("Errors are HandlerResult").
+  - `[false]` `[reject]` intent D6: double report / sink only via ctx.render — settled in Design Notes (core reports; the Renderer port knows no App).
+  - `[false]` `[reject]` intent D7: default build checked by gates — the spec's Verification runs `cargo tree` and `deps-check`.
+  - `[false]` `[reject]` intent D8: rendering narrower than the full story — the spec's Never list assigns these to Stories 10.4-10.10.
+
 ## Design Notes
 
 - **Core owns observability.** The pool is shared across Apps, but every metric needs the `app` label, and the Renderer port knows no App. So core measures around `renderer.render(..)`. `noctis_render_queue_depth{app}` is therefore "this App's renders in flight (queued or running)". The Renderer stays App-agnostic, apart from its Theme.
@@ -280,3 +328,12 @@ Unless a row says otherwise, the setup is a `Runtime::for_test()` App with `.ima
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `cargo tree -p noctis -e normal | grep -E 'noctis-image|takumi|rayon'` -- no output
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- Summary: added the takumi-backed `Renderer` (Node lowering, Theme stylesheet via `@theme`, still formats PNG/JPEG/WebP/AVIF), a bounded shared rayon render pool with queue-plus-running admission (fast-fail `QueueFull`), `ImagePlugin`/`ImageConfig`, `ctx.render(..)` on every ctx with auto-defer, and core-owned render metrics (`noctis_render_queue_depth`, rejected counter, duration histogram) plus the Render sink.
+- Files changed: `crates/noctis-image/src/{renderer,pool,plugin,lower}.rs` (+tests) renderer, pool, plugin, Node lowering; `crates/noctis-image/src/tw/theme.rs` Theme stylesheet; `crates/noctis-ports/src/render.rs` Renderer port additions; `crates/noctis-core/src/observe.rs`, `render/tests.rs` metrics and sink; `crates/noctis/src/lib.rs`, `Cargo.toml`, `tests/render.rs`, `tests/render_e2e.rs` facade wiring and tests; `crates/noctis-testkit/tests/render.rs` TestApp coverage; `examples/project-template/` skill, references and AGENTS.md; `docs/discord-rules.md`; `xtask/public-api.txt`, `xtask/src/api_snapshot.rs` re-blessed snapshot.
+- Review findings: 37 (high 0, medium 2, low 19, false 15, maybe-false 1). Patched 10 entries (medium 2 sharing one root cause, low 8): non-first Theme token pixel test plus CSS-text assertion; Failed/Panicked kept out of rejected counter and duration histogram; queue-depth gauge wording fixed (four grouped entries); default `threads` clamped to 256; SKILL.md sentence on hand-written/animated Templates qualified to the takumi Renderer. Deferred 1: nested rayon work-stealing through takumi's par_iter (stack depth unverified). Rejected 26, each with its recorded reason in the Review Triage Log (spec-mandated behaviour, settled Design Notes, or work owned by Stories 10.4-10.10).
+- Follow-up review recommended: false. The two medium patches are one root cause (untested non-first Theme token) fixed by one direct test; no high was patched.
+- Verification: `tools/story-loop/gates.sh` ALL-OK (fmt, clippy -D warnings, workspace tests, cargo-hack each-feature, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); `cargo tree -p noctis -e normal` shows no noctis-image/takumi/rayon in the default build. CI is paused by the maintainer.
+- Residual risks: nested rayon work-stealing inside the pool (deferred); a dropped `ctx.render` future leaves its job running until Story 10.5; Failed/Panicked renders have no metric row; ImagePlugin silently replaces an explicit `.renderer(..)`.
