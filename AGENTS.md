@@ -35,6 +35,7 @@ Noctis: a Rust Discord bot framework on twilight-rs (tokio, built-in sharding, C
 ## Known pitfalls
 
 - A new cloud container lacks `nightly-2026-10-15` and `cargo-public-api` 0.52.0, which `api-snapshot` needs; install them with `rustup toolchain install nightly-2026-10-15 --profile minimal && cargo install cargo-public-api --version 0.52.0 --locked`.
+- A new cloud container also lacks the story loop's cargo queue; install it with `tools/story-loop/cargo-queue.sh --install` before running the loop (`tools/story-loop/README.md`, "Cargo queue").
 - The Codex CLI that `image-gen` needs does not survive a new cloud container; if `codex` is missing or logged out, ask the user before installing it or starting `codex login --device-auth`.
 
 <!-- /bmad:context -->
