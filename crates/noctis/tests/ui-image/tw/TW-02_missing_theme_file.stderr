@@ -1,4 +1,4 @@
-error: [TW-02] no noctis-theme.css at $WORKSPACE/target/tests/trybuild/noctis/noctis-theme.css
+error: [TW-02] no noctis-theme.css at noctis-theme.css
  --> tests/ui-image/tw/TW-02_missing_theme_file.rs:5:20
   |
 5 |     let _: Theme = theme!();

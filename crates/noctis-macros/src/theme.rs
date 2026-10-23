@@ -74,7 +74,8 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         relative_to_caller(&lit.value())
     };
     let Some(source) = read(&path, span)? else {
-        let shown = path.display();
+        let shown = shown_path(&path);
+        let shown = shown.display();
         return Err(syn::Error::new(
             span,
             if path.file_name().is_some_and(|name| name == THEME_FILE) {
@@ -91,6 +92,16 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
         #tracking
         ::noctis::__private::image::tw::Theme::__embedded(::core::include_str!(#lit))
     }})
+}
+
+/// `path` relative to rustc's working directory (the workspace root under
+/// cargo) when it lies inside it, else as is, so the diagnostic does not depend
+/// on where the checkout or its target directory sits.
+fn shown_path(path: &Path) -> PathBuf {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| path.strip_prefix(cwd).ok().map(Path::to_path_buf))
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 /// `const _: &[u8] = include_bytes!("<path>");`.
