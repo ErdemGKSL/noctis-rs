@@ -29,13 +29,20 @@ runner(){
   exec 9>>"$Q/runner.lock"
   flock -n 9 || exit 0
   export NOCTIS_CARGO_DIRECT=1 CARGO_TARGET_DIR=${NOCTIS_CARGO_TARGET:-/home/claude/noctis-rs/target}
+  # Builds get NOCTIS_CARGO_CPUS of the machine's CPUs (default 3), so the coding agents keep a core to work on.
+  local cpus=${NOCTIS_CARGO_CPUS:-3} pin=()
+  export CARGO_BUILD_JOBS=$cpus RUST_TEST_THREADS=$cpus
+  command -v taskset >/dev/null && [ "$(nproc)" -gt "$cpus" ] && pin=(taskset -c "0-$((cpus - 1))")
   mkdir -p "$W"
   for j in "$Q"/jobs/*/; do  # jobs a dead runner left behind
     [ -f "$j/started" ] && [ ! -f "$j/status" ] && { echo "cargo-queue: the runner restarted; run the command again" >> "$j/log"; echo 125 > "$j/status"; }
   done
   find "$Q/jobs" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf {} + 2>/dev/null
-  local idle=0 q key J root rel rc args a
+  local idle=0 q key J root rel rc args a me=$Q/bin/cargo-queue.sh born
+  born=$(stat -c %Y "$me")
   while true; do
+    # A reinstalled cargo-queue.sh takes over between commands.
+    [ "$(stat -c %Y "$me" 2>/dev/null)" = "$born" ] || { exec 9>&-; exec bash "$me" --runner; }
     q=$(ls "$Q/queue" 2>/dev/null | sort | head -1)
     if [ -z "$q" ]; then idle=$((idle + 1)); [ $idle -gt 3600 ] && exit 0; sleep 1; continue; fi
     idle=0; key=${q#*.}; J=$Q/jobs/$key
@@ -49,7 +56,7 @@ runner(){
       while IFS= read -r -d '' a; do args+=("${a//$root/$W}"); done < "$J/argv"
       ( cd "$W/$rel" || exit 125
         while IFS= read -r -d '' a; do export "$a"; done < "$J/env"
-        exec -a cargo "$CH/bin/rustup" "${args[@]}" ) >> "$J/log" 2>&1 < /dev/null
+        exec "${pin[@]}" bash -c 'exec -a cargo "$0" "$@"' "$CH/bin/rustup" "${args[@]}" ) >> "$J/log" 2>&1 < /dev/null
       rc=$?
       python3 "$Q/bin/tree-sync.py" back "$W" "$root" "$J/snap" >> "$J/log" 2>&1 || rc=125
     else
