@@ -2,7 +2,8 @@
 title: 'Story 11.3: User and Guild Locale resolution'
 type: 'feature'
 created: '2026-10-23'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '247385f5e22a855330fb07a5080b540084a09acd'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
