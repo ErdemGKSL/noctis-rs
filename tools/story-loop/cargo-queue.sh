@@ -2,7 +2,7 @@
 # cargo-queue: one queue for every building cargo command of the story-loop checkouts.
 # Installed as $CARGO_HOME/bin/cargo (`tools/story-loop/cargo-queue.sh --install`; again after a container restart),
 # it runs cargo directly outside the story-loop checkouts. A command started in the main checkout or a lane copies
-# that working tree into one shared work dir and runs there, one command at a time, against one cargo target dir:
+# that working tree into a work dir of its own and runs there, one command at a time, against one cargo target dir:
 # parallel lanes code side by side while their builds wait in line, instead of splitting the CPUs and each filling a
 # target dir. Output streams back with work-dir paths mapped to the caller's tree, and files the command changed
 # (cargo fmt, --bless, Cargo.lock) are copied back. A caller cut off by a timeout can rerun the same command: it
@@ -11,12 +11,15 @@
 CH=${CARGO_HOME:-$HOME/.cargo}
 Q=${NOCTIS_CARGO_QUEUE:-/home/claude/cargo-queue}
 ROOTS=${NOCTIS_QUEUE_ROOTS:-/home/claude/noctis-rs /home/claude/lanes/*/noctis-rs}
-W=$Q/work/noctis-rs
+# One work dir per caller tree: cargo keys workspace crates by path, so each lane keeps its own warm workspace
+# artifacts in the shared target dir (registry dependencies are shared) and lanes taking turns do not rebuild each
+# other's changes.
+wdir(){ echo "$Q/work/$(printf %s "$1" | md5sum | cut -c1-8)/noctis-rs"; }
 real(){ exec -a cargo "$CH/bin/rustup" "$@"; }
 
 install(){
   local here; here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-  mkdir -p "$Q/bin" "$Q/queue" "$Q/jobs" "$W"
+  mkdir -p "$Q/bin" "$Q/queue" "$Q/jobs" "$Q/work"
   cp "$here/cargo-queue.sh" "$Q/bin/cargo-queue.sh.tmp" && mv "$Q/bin/cargo-queue.sh.tmp" "$Q/bin/cargo-queue.sh"
   cp "$here/tree-sync.py" "$Q/bin/tree-sync.py.tmp" && mv "$Q/bin/tree-sync.py.tmp" "$Q/bin/tree-sync.py"
   chmod +x "$Q/bin/cargo-queue.sh"
@@ -33,7 +36,6 @@ runner(){
   local cpus=${NOCTIS_CARGO_CPUS:-3} pin=()
   export CARGO_BUILD_JOBS=$cpus RUST_TEST_THREADS=$cpus
   command -v taskset >/dev/null && [ "$(nproc)" -gt "$cpus" ] && pin=(taskset -c "0-$((cpus - 1))")
-  mkdir -p "$W"
   for j in "$Q"/jobs/*/; do  # jobs a dead runner left behind
     [ -f "$j/started" ] && [ ! -f "$j/status" ] && { echo "cargo-queue: the runner restarted; run the command again" >> "$j/log"; echo 125 > "$j/status"; }
   done
@@ -49,7 +51,7 @@ runner(){
     rm -f "$Q/queue/$q"
     [ -d "$J" ] && [ ! -f "$J/status" ] || continue
     touch "$J/started"
-    root=$(cat "$J/root"); rel=$(cat "$J/rel")
+    root=$(cat "$J/root"); rel=$(cat "$J/rel"); W=$(wdir "$root"); mkdir -p "$W"
     echo "$(date -u +%FT%TZ) start $root/$rel: $(tr '\0' ' ' < "$J/argv")" >> "$Q/runner.log"
     if python3 "$Q/bin/tree-sync.py" sync "$root" "$W" >> "$J/log" 2>&1 && python3 "$Q/bin/tree-sync.py" snap "$W" "$J/snap"; then
       args=()
@@ -105,7 +107,7 @@ fi
 rm -f "$envf"; flock -u 8; exec 8>&-
 (setsid nohup bash "$Q/bin/cargo-queue.sh" --runner >> "$Q/runner.out" 2>&1 < /dev/null &)
 sleep infinity & sp=$!
-tail -c +1 -f --pid="$sp" "$J/log" | sed -u "s|$W|$root|g" & tp=$!
+tail -c +1 -f --pid="$sp" "$J/log" | sed -u "s|$(wdir "$root")|$root|g" & tp=$!
 while [ ! -f "$J/status" ]; do
   sleep 1
   [ $((SECONDS % 30)) = 0 ] && (setsid nohup bash "$Q/bin/cargo-queue.sh" --runner >> "$Q/runner.out" 2>&1 < /dev/null &)

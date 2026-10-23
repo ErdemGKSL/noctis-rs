@@ -101,7 +101,8 @@ installed as `cargo`, a building command (`check`, `build`, `test`, `clippy`, `f
 a time, oldest first:
 
 1. It copies the caller's working tree (tracked and untracked, non-ignored files; no `target/`, no
-   `.git`) into `/home/claude/cargo-queue/work/noctis-rs`. A file is rewritten only when its
+   `.git`) into a work dir of that tree, `/home/claude/cargo-queue/work/<hash>/noctis-rs`, so each lane
+   keeps its own warm workspace artifacts while registry dependencies are shared. A file is rewritten only when its
    content differs, so cargo's mtime-based freshness never sees a stale file.
 2. It runs the command there with `CARGO_TARGET_DIR` set to the main checkout's `target/`. That is
    one warm target dir for everyone, so there is no per-lane target dir and no trybuild clash.
