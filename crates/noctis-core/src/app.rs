@@ -364,8 +364,10 @@ impl App {
     }
 
     /// Whether shards resume stored sessions at start and shut down
-    /// resumably ([`AppBuilder::resume_sessions`]; `true` when unset,
-    /// `false` for a run with `--no-resume`).
+    /// resumably: the [`AppBuilder::resume_sessions`] value, `true` when
+    /// unset. `--no-resume` overrides it inside
+    /// [`run_with_args`](Self::run_with_args) for that run only, so this
+    /// getter never reflects the flag.
     ///
     /// ```
     /// # #[tokio::main(flavor = "current_thread")] async fn main() {

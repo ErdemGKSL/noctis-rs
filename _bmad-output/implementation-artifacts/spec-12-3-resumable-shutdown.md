@@ -2,7 +2,7 @@
 title: 'Story 12.3: Resumable shutdown'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '7d8f16f1d9141989d3696b3e9654817bb4e385df'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -117,6 +117,34 @@ App level (new `crates/noctis-testkit/tests/resumable_shutdown.rs`, one ordered 
 
 ## Review Triage Log
 
+
+### 2026-10-24 — Review pass
+- verdicts: 23 findings — high 0, medium 0, low 11, false 12, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `App::resume_sessions()` rustdoc and Skill `app-and-sharding.md:95` promise `false` for a `--no-resume` run, which the getter can never show — `run_with_args` takes `self` by value and flips the field inside its own future; patch: reword both to "the builder value; `--no-resume` overrides it for that run only".
+  - `[low]` `[reject]` (blind) S5's `second_probe.lines().is_empty()` cannot fail because the fake never replays dispatches — true, but the property noctis controls (stored seq == last received == RESUME `d.seq` == 21 while events were dropped) is pinned by the two assertions before it; replay is Discord's server behaviour the fake does not model, and making it model it is new test infrastructure, not a direct correction.
+  - `[low]` `[reject]` (blind) no App-level test runs the shutdown half of `--no-resume` through `run_with_args` — the flip writes the same `App::resume_sessions` field `shut_down` reads (app.rs `run_with_args` -> `run_with` -> `shut_down`), and the Fresh shutdown is proven via S2; a testable CLI shutdown trigger would add a seam/API surface.
+  - `[low]` `[reject]` (blind) s6 installs process-wide signal handlers and aborts without awaiting — the per-test runtime is torn down right after the function returns, which drops the gateway's shard tasks; no stray journal line was shown, and awaiting the handle would not undo the signal registration (Ctrl-C annoyance only during the test binary).
+  - `[false]` `[reject]` (blind) "Every session write has finished when this returns" contradicts the 6 s cap — core fixes `close_timeout` to `SHARD_CLOSE_TIMEOUT` (5 s) and the gateway bounds close ack plus write within that same `close_timeout`, while core waits `SHARD_CLOSE_TIMEOUT + 1 s` after the close request (app.rs `shut_down`); `close_timeout` is not configurable through the App.
+  - `[false]` `[reject]` (blind) new required `GatewayOptions::resume` is an unrecorded semver break — the spec requires exactly `pub resume: bool`, the workspace is at unpublished 0.1.0 (launch is Epic 14), and the public-API snapshot is re-blessed as policy requires.
+  - `[false]` `[reject]` (blind) `resume` bool shadowed by `ResumeState` in `shard::run` — the bool is used only inside the select arm before the shadow; the types differ, so any later misuse fails to compile; no named harm.
+  - `[false]` `[reject]` (blind) lib.rs/Skill hard-code "5 s" instead of `STORE_TIMEOUT` — the constant is crate-private (cannot be linked from public docs), the existing "Read ... bounded by 5 s" line follows the same pattern, and F3 (`>= 4.9 s`) plus session.rs's `STORE_TIMEOUT` unit test tie the value to the prose.
+  - `[false]` `[reject]` (blind) `NoResumeWithPublish` does not name the conflicting publish flag — the spec deliberately defines it fieldless with the message "drop it or the publish flag"; the message names `--no-resume` and a fix.
+  - `[false]` `[reject]` (blind) F3's `elapsed <= WAIT` upper bound adds nothing — `WAIT` is 15 s, which is the spec's F3 bound ("within 15 s after start"), and `started` is taken before `start_mode`, so the check is not identical to the wait's own timeout; the 5 s wall time is what F3 specifies.
+  - `[low]` `[reject]` (blind) `Recording::put` unwraps the decode on the shard task — only reachable if the gateway writes a malformed entry; the panic message still prints in the test output, so the diagnostic is not lost; unlikely and not worth restructuring the helper.
+  - `[low]` `[reject]` (blind) `.claude/workflows/story-loop.js` change rides in the story diff — orchestrator tooling hardening committed by the loop itself, with no runtime effect on noctis; reverting it would undo deliberate loop behaviour; not worth splitting.
+  - `[false]` `[reject]` (blind) no `docs/discord-rules.md`/spine update or memlog note that none is needed — the spec's Never list states "no new rule id, no `docs/discord-rules.md` change", which is the recorded decision.
+  - `[low]` `[reject]` (edge) Resumable close or dropped close sender during the start-time delete drops the in-flight delete — through the App, resume off always pairs with `close_all(Fresh)`, whose arm clears the key again; only a Gateway dropped mid-start reaches it, and the surviving stale entry then just yields a resume attempt that falls back to IDENTIFY; extra guard not warranted.
+  - `[false]` `[reject]` (edge) `resume: false` with a later `close_all(Resumable)` still writes a session — by spec and the `GatewayOptions::resume` doc the field governs the start only and the caller picks the close mode; core always passes Fresh with resume off (app.rs `shut_down`).
+  - `[low]` `[reject]` (vgap, other) S5's handler-side check cannot fail — same root cause and disposition as the blind S5 row: the seq assertions carry the contract.
+  - `[false]` `[reject]` (intent 1) clear scope limited to this process's keys — the spec ("Only this process's shards ... other totals' or other ranges' entries are untouched") and the memlog planning decision settle it; F5 asserts it.
+  - `[false]` `[reject]` (intent 2) write-after-`GatewayClose` proven only up to the client frame — S1 is specified exactly that way; the write-after-ack order is the unchanged 12.2 `drive` code and its tests, which this diff does not touch.
+  - `[low]` `[reject]` (intent 3) at-most-once test cannot fail on replay — same root cause and disposition as the blind S5 row.
+  - `[low]` `[reject]` (intent 4) `--no-resume` exercised at start only — same root cause and disposition as the blind CLI-shutdown row.
+  - `[false]` `[reject]` (intent 5) public surface beyond the CLI flag — the builder knob, getter, accessor and `NoResumeWithPublish` are the spec's and memlog's deliberate decisions.
+  - `[false]` `[reject]` (intent 6) FR-54 order checked through the log line — `shut_down` sends `ShutdownStarted` on the line right after the `shutdown started` log and before `close_all` (app.rs), and the in-crate `shutdown_sequence_order` test (app/tests.rs, Matrix 34) asserts the event order.
+  - `[low]` `[reject]` (intent 7) out-of-scope `story-loop.js` change — same root cause and disposition as the blind tooling row.
+
 ## Design Notes
 
 - **Builder knob plus flag** (decision): `run_until` takes no args and the lifecycle API is crate-private, so a builder knob (`resume_sessions`) is the code-level switch embedders and tests use; `--no-resume` only flips it for one run. No env var (FR-55 names a mode, the CLI covers deploy scripts; can be added later without breaking).
@@ -145,3 +173,18 @@ Run from `/home/claude/lanes/c/noctis-rs`, release only:
 - `cargo run --release -p xtask -- deps-check` / `-- rules-catalog` / `-- skill-check` -- expected: exit 0
 - `cargo deny check` -- expected: exit 0
 - `cargo +1.91 check --release --workspace` -- expected: exit 0
+
+## Auto Run Result
+
+- **Summary:** Resumable shutdown (FR-54/FR-55): on shutdown the gateway closes shards resumably and writes each session (bounded by 5 s) after the close ack; a new `resume_sessions` builder knob plus `--no-resume` CLI flag start fresh by deleting this process's stored session keys before IDENTIFY and close with `Fresh`; `--no-resume` with a publish mode is a `NoResumeWithPublish` error.
+- **Files changed:**
+  - `crates/noctis-core/src/app.rs`, `app/tests.rs`: `resume_sessions` knob/getter, shutdown picks Resumable/Fresh close.
+  - `crates/noctis-core/src/cli.rs`, `cli/tests.rs`: `--no-resume` flag and `NoResumeWithPublish` error.
+  - `crates/noctis-gateway/src/{gateway,lib,shard}.rs`: `GatewayOptions::resume`, start-time session clear instead of load.
+  - `crates/noctis-testkit/tests/resumable_shutdown.rs` (new), `session_resume.rs` and option updates in other tests.
+  - `examples/project-template/` (skill, references, AGENTS.md, README, main.rs) and `xtask/public-api.txt` re-blessed.
+  - Architecture memlog decision line; `.claude/workflows/story-loop.js` loop tooling tweak.
+- **Review findings:** 23 total (high 0, medium 0, low 11, false 12). Patched 1 (low): `resume_sessions()` rustdoc and Skill wording now say the getter shows the builder value and `--no-resume` overrides it for that run only. Deferred 0. Rejected 22, each with its reason in the Review Triage Log (S5 replay not modelled by the fake; CLI shutdown path shares the field already proven via S2; semver break acceptable pre-0.1 publish; scope decisions settled by spec/memlog; tooling change out of scope but harmless).
+- **Follow-up review recommended:** false (patched by verdict: high 0, medium 0, low 1).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, tests, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** at-most-once handling relies on Discord replay behaviour the fake gateway does not model; `--no-resume` shutdown path is not exercised end to end through `run_with_args`; a Gateway dropped mid-start can leave a stale session entry (falls back to IDENTIFY).

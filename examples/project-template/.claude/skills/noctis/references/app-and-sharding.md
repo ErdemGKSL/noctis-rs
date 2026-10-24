@@ -92,7 +92,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`), `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`), `app.renderer()`
 (`Option<&Arc<dyn Renderer>>`, the one `ctx.render` uses), `app.is_publisher()`,
-`app.resume_sessions()` (`bool`, default `true`; `false` for a `--no-resume` run),
+`app.resume_sessions()` (`bool`, the builder value, default `true`; `--no-resume` overrides it for that run only, never through this getter),
 `app.dev_guild()` (`Option<Id<GuildMarker>>`) and `app.publish(scope)` (§3).
 
 ### AppBuilder methods
