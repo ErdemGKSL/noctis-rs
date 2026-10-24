@@ -78,8 +78,12 @@ replaces the earlier one.
 A guild run (`.in_guild(G)`) carries the member (permissions, roles), the Guild Locale
 and a channel: `.in_channel(C)`, else the guild's first text channel, else a text
 channel whose id is the guild id. A run without `.in_guild` is a DM (no member; the DM
-channel id equals the user id). Seeding the Discord cache behind `ctx.cache()` from
-`TestGuild` is [planned, Story 12.5].
+channel id equals the user id). Each `TestGuild` seed is fed to the App's Discord
+cache (as an available `GUILD_CREATE`: name, Guild Locale, channels, roles) before the
+next run, so `ctx.cache().guild(G)`, `.channel(..)` and `.roles(G)` read it under the
+configured resources (`adapters.md` §1.2); a re-seeded id is fed again, and with
+`DiscordCacheConfig::none()` nothing is fed. Users reach a `USER` cache from the
+interactions themselves (a DM run's invoker, resolved user options).
 
 ## 3. Driving interactions
 

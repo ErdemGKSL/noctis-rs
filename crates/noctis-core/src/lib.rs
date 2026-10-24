@@ -179,6 +179,7 @@ mod autocomplete;
 pub mod cli;
 mod command;
 mod component;
+mod discord_cache;
 mod edge;
 mod error;
 pub mod events;
@@ -275,6 +276,7 @@ pub use component::{
     ComponentCtx, ComponentHandler, ComponentKind, Expired, ExpiredCtx, ModalHandler,
     ModalSubmitCtx, SelectedValues,
 };
+pub use discord_cache::{CacheDisabled, CacheError, DiscordCacheConfig, DiscordCacheReader};
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
     AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, LocaleOverlayError,
@@ -317,6 +319,7 @@ pub use module::Descriptor;
 pub use module::{Module, ModuleIdError, Register};
 pub use namespace::{AppId, AppIdError, IntoPort, Namespaced, NamespacedPort, Shared};
 pub use noctis_i18n::OverlayViolation;
+pub use noctis_ports::memory::DiscordCacheResources;
 #[doc(hidden)]
 pub use options::__options;
 pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, OptionValue, Options};
@@ -432,6 +435,16 @@ pub mod __testing {
                 );
             }
             out
+        }
+
+        /// Applies `event` to the App's Discord cache through the same path
+        /// and event-type filter as the drain (a no-op for an event type the
+        /// configuration does not feed, and with `DiscordCacheConfig::none()`).
+        pub fn feed_discord_cache<'a>(
+            &'a self,
+            event: &'a twilight_model::gateway::event::Event,
+        ) -> BoxFuture<'a, ()> {
+            Box::pin(self.shared.discord_cache.event(&self.shared.app, event))
         }
 
         /// The text of the built-in notice `key` (a `noctis.*` key) in the

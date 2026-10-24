@@ -236,8 +236,9 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
   a message, e.g. a prefix command; `responder.md` §4.1), `kv() -> Kv` (your typed
   key-value data, namespaced per App; `adapters.md` §3), `guild_locale() -> Locale`
   (the resolved Guild Locale: the guild's recorded `preferred_locale`, its sibling,
-  then the default; `i18n.md` §7). No Responder. Planned: `cache()`, `modules()`
-  [planned].
+  then the default; `i18n.md` §7), `cache() -> DiscordCacheReader` (the Discord
+  resource cache, already updated with this event; `adapters.md` §1.2; also on
+  `BeforeCtx`/`AfterCtx`). No Responder. Planned: `modules()` [planned].
 - **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
   'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the
   inner `&(dyn Error + Send + Sync)` to downcast. `Display`/`Debug` print the inner

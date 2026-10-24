@@ -66,9 +66,21 @@ impl DiscordCacheResources {
         self.0 == 0
     }
 
-    const fn without(self, other: Self) -> Self {
+    /// The resources in `self` but not in `other`.
+    #[must_use]
+    pub const fn without(self, other: Self) -> Self {
         Self(self.0 & !other.0)
     }
+
+    /// Every single resource, in bit order, with its display name.
+    const NAMES: [(Self, &'static str); 6] = [
+        (Self::GUILD, "GUILD"),
+        (Self::CHANNEL, "CHANNEL"),
+        (Self::ROLE, "ROLE"),
+        (Self::MEMBER, "MEMBER"),
+        (Self::USER, "USER"),
+        (Self::MESSAGE, "MESSAGE"),
+    ];
 
     fn resource_types(self) -> ResourceType {
         const MAP: [(DiscordCacheResources, ResourceType); 6] = [
@@ -86,6 +98,27 @@ impl DiscordCacheResources {
         MAP.iter()
             .filter(|(resource, _)| self.contains(*resource))
             .fold(ResourceType::empty(), |types, (_, ty)| types | *ty)
+    }
+}
+
+/// The resources in bit order (`GUILD | CHANNEL | ROLE | MEMBER | USER |
+/// MESSAGE`), joined by ` | `; the empty set is `none`.
+impl fmt::Display for DiscordCacheResources {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_empty() {
+            return f.write_str("none");
+        }
+        let mut first = true;
+        for (resource, name) in Self::NAMES {
+            if self.contains(resource) {
+                if !first {
+                    f.write_str(" | ")?;
+                }
+                f.write_str(name)?;
+                first = false;
+            }
+        }
+        Ok(())
     }
 }
 

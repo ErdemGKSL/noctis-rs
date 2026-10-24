@@ -461,6 +461,21 @@ pub enum BuildViolation {
         /// The missing privileged intent.
         intent: Intents,
     },
+    /// A configured Discord cache resource needs a privileged intent the App
+    /// did not request (GW-05), one violation per intent. Non-privileged
+    /// intents a cache resource needs are added automatically.
+    #[error(
+        "[GW-05] Discord cache resource {resource} needs the privileged intent {name}: add \
+         `.intents(Intents::{name})` and enable it in the Discord Developer Portal, or remove \
+         {resource} from `.discord_cache(..)`",
+        name = IntentName(*intent)
+    )]
+    MissingCacheIntent {
+        /// The configured resource (or resources) needing the intent.
+        resource: noctis_ports::memory::DiscordCacheResources,
+        /// The missing privileged intent.
+        intent: Intents,
+    },
     /// A chat-input or context-menu command rule broken after merging the
     /// commands of every mounted Module (FR-9, FR-56, FR-57): duplicate
     /// paths, conflicting descriptions or base metadata, tree shape, size and

@@ -7,7 +7,7 @@ mod outcome;
 mod runs;
 mod wire;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -88,6 +88,8 @@ pub struct TestApp {
     run_lock: tokio::sync::Mutex<()>,
     runs: AtomicU64,
     seeds: Seeds,
+    /// The guild seeds already fed to the App's Discord cache.
+    fed: Mutex<HashSet<Id<GuildMarker>>>,
     timeout: Duration,
 }
 
@@ -201,6 +203,7 @@ impl TestApp {
             run_lock: tokio::sync::Mutex::new(()),
             runs: AtomicU64::new(0),
             seeds,
+            fed: Mutex::new(HashSet::new()),
             timeout: DEFAULT_TIMEOUT,
         };
         test_app.wait_ready().await?;
@@ -237,8 +240,14 @@ impl TestApp {
     }
 
     /// Seeds a guild; a later seed with the same id replaces it.
+    ///
+    /// The next run feeds the seed to the App's Discord cache as an
+    /// available `GUILD_CREATE` (so `ctx.cache()` reads its name, channels
+    /// and roles under the configured resources); a replaced seed is fed
+    /// again.
     #[must_use]
     pub fn guild(mut self, guild: TestGuild) -> Self {
+        lock(&self.fed).remove(&guild.id);
         self.seeds.guilds.insert(guild.id, guild);
         self
     }
@@ -389,6 +398,7 @@ impl TestApp {
             d["message"] = source.json.clone();
         }
         let _serial = self.run_lock.lock().await;
+        self.feed_guild_seeds().await?;
         // Requests of an earlier, timed-out run are not this run's.
         drop(self.http.take_requests());
         let n = self.runs.fetch_add(1, Ordering::Relaxed) + 1;
@@ -438,6 +448,34 @@ impl TestApp {
             source: dispatch.source.as_ref(),
         };
         Ok(run.fold(events, &requests))
+    }
+}
+
+impl TestApp {
+    /// Feeds every guild seed not yet fed to the App's Discord cache, as
+    /// an available `GUILD_CREATE` (a no-op with the cache off). Runs under
+    /// the run lock.
+    ///
+    /// # Errors
+    ///
+    /// [`TestError::Unsupported`] when a seed does not deserialize as a
+    /// `Guild` (a testkit bug).
+    async fn feed_guild_seeds(&self) -> Result<(), TestError> {
+        let pending: Vec<&TestGuild> = {
+            let mut fed = lock(&self.fed);
+            self.seeds
+                .guilds
+                .values()
+                .filter(|guild| fed.insert(guild.id))
+                .collect()
+        };
+        for guild in pending {
+            let event = guild.create_event().map_err(|_| {
+                TestError::Unsupported("a guild seed did not deserialize as a Discord guild")
+            })?;
+            self.probe.feed_discord_cache(&event).await;
+        }
+        Ok(())
     }
 }
 

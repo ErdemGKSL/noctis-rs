@@ -593,21 +593,22 @@ pub use noctis_core::{
     Access, AckDeadlineMissed, Acked, AfterCtx, AfterMiddleware, App, AppBuilder, AppId,
     AppIdError, AutoDefer, AutocompleteChoice, AutocompleteCtx, AutocompleteError,
     AutocompleteValue, BaseMeta, BeforeCtx, BeforeMiddleware, BuildError, BuildViolation,
-    CallbackResource, CanShowModal, Command, CommandCtx, CommandHandler, CommandInput,
-    CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder, Component,
-    ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder, ContextMenuHandler,
-    DeferMode, DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport,
-    ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
-    FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
-    HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
-    Invocation, Kv, LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales,
-    LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder,
-    ModalSubmit, ModalSubmitCtx, Module, ModuleIdError, NoticeText, OptionError, OptionValue,
-    Options, OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions,
-    Plugin, RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded,
-    Responder, ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime,
-    SelectedValues, StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token,
-    TokenError, UnknownCommandPath, Visibility,
+    CacheDisabled, CacheError, CallbackResource, CanShowModal, Command, CommandCtx, CommandHandler,
+    CommandInput, CommandInvocation, CommandMetadata, CommandOption, CommandPath, CommandResponder,
+    Component, ComponentCtx, ComponentHandler, ComponentKind, ComponentResponder,
+    ContextMenuHandler, DeferMode, DiscordCacheConfig, DiscordCacheReader, DiscordCacheResources,
+    DispatchError, Dispatcher, EnvError, Ephemerality, Error, ErrorOrigin, ErrorReport, ErrorSink,
+    Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused, FollowupHandle,
+    GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError, HttpProxyError,
+    IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption, Invocation, Kv,
+    LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales, LogSink, Manual,
+    MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit,
+    ModalSubmitCtx, Module, ModuleIdError, NoticeText, OptionError, OptionValue, Options,
+    OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions, Plugin,
+    RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
+    StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
+    UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -1937,7 +1938,14 @@ pub mod ports {
     //!   `version`), [`RateLimitStore`], [`CacheStore`], [`RenderCache`] and
     //!   [`AssetStore`].
     //! - [`IdentifyQueue`] and [`Lease`]: identify coordination per bucket.
-    //! - [`DiscordCache`]: the typed Discord resource cache.
+    //! - [`DiscordCache`]: the typed Discord resource cache (owned
+    //!   `twilight_model` values, never a guard). Handlers read it with
+    //!   `ctx.cache()` ([`DiscordCacheReader`](crate::DiscordCacheReader));
+    //!   [`AppBuilder::discord_cache`](crate::AppBuilder::discord_cache) takes a
+    //!   [`DiscordCacheConfig`](crate::DiscordCacheConfig) (default
+    //!   `GUILD | CHANNEL | ROLE`, or `none()`), and core feeds the backend
+    //!   before handlers see an event. It is implemented for `Arc<P>`, so one
+    //!   backend can serve several Apps; it is never namespaced.
     //! - [`LocaleSource`]: runtime overlays of content strings.
     //! - [`GuildAccessList`]: per-App guild allow and deny lists (sync).
     //! - [`PortError`], [`ValueError`] and [`BoxFuture`]: what every port

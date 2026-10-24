@@ -316,7 +316,7 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | GW-02 | daily identify budget (1000+) | B / R |
 | GW-03 | ≤ 2500 guilds per shard | B |
 | GW-04 | 120 gateway sends / 60 s / shard | R |
-| GW-05 | privileged intents enabled in the portal and requested | B |
+| GW-05 | privileged intents enabled in the portal and requested: an event handler's (`BuildViolation::MissingIntent`) and a Discord cache resource's (`MEMBER` → `GUILD_MEMBERS`, `BuildViolation::MissingCacheIntent`); non-privileged ones are added | B |
 | GW-06 | `large_threshold` 50–250 | C |
 | GW-07 | request members: one guild, ≤ 100 user ids | C / R |
 | RL-01 | per-route buckets, obey `Retry-After` (twilight's limiter, direct mode, `user` 429s) | R |

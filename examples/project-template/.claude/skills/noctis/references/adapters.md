@@ -16,7 +16,7 @@ data that must outlive one call goes through a port, never a `static` map.
 | `ModuleStateStore` | Module enabled/disabled, global and per guild | `get`, `put`, `version() -> u64` (polled, default 5 s) | memory | `.module_state_store(..)` |
 | `RateLimitStore` | your declared rate-limit counters | `incr_with_ttl`, `get`, `put` | memory | `.rate_limit_store(..)` |
 | `CacheStore` | general key-value data with TTL for bots and Modules (`ctx.kv()`) | `get`, `put`, `put_if_absent`, `delete`, `incr_with_ttl` | bounded memory | `.cache_store(..)` |
-| `DiscordCache` | Discord resources: guilds, channels, roles, members, users, messages (`ctx.cache()`) | `update(&Event)`, typed owned getters | wraps `twilight-cache-inmemory`, only the resources the App needs | `.discord_cache_backend(..)` |
+| `DiscordCache` | Discord resources: guilds, channels, roles, members, users, messages (`ctx.cache()`, §1.2) | `update(&Event)`, typed owned getters | `MemoryDiscordCache` of the `.discord_cache(..)` resources (default `GUILD \| CHANNEL \| ROLE`) | `.discord_cache_backend(..)` (never namespaced) |
 | `RenderCache` | encoded images by render key | `get`, `put` | byte-bounded memory | `.render_cache(..)` |
 | `AssetStore` | fetched remote images (avatars, icons, emoji) | `get`, `put` | byte-bounded memory | `.asset_store(..)` |
 | `LocaleSource` | runtime overlays of content strings, loaded once at startup (one `load` per locale with a file, content keys only; a failure or a rejected pair stops startup with `Error::LocaleOverlay`; see i18n §8) | `load(locale)` | none | `.locale_source(..)` |
@@ -129,16 +129,91 @@ let lease = queue.acquire(bucket).await?;       // waits for its bucket's turn
 Wiring a default or your own Adapter into the App (`.cache_store(..)` etc. in the table
 above) is [planned].
 
-### 1.2 The Discord resource cache
+### 1.2 The Discord resource cache (`ctx.cache()`)
 
 The Discord resource cache is its own port, `DiscordCache`, separate from
-`CacheStore`. Read it through `ctx.cache()` [planned] (`ctx.cache().guild(id).await?`,
-`.roles(guild)`, `.member(guild, user)`, `.user(id)`, …); choose which resources are
-cached with `.discord_cache(DiscordCacheConfig::…)` [planned] (`none()` disables it),
-and replace its storage with `.discord_cache_backend(impl DiscordCache)` [planned].
-Until then, `MemoryDiscordCache` (§1.1) is the default. Reads return owned values;
-no guard can be held across `.await`. It is typed, not bytes: an out-of-process
-implementation serializes the twilight-model values itself.
+`CacheStore`. Every context has `ctx.cache()` (`CommandCtx`, `ComponentCtx`,
+`ModalSubmitCtx`, `AutocompleteCtx`, `EventCtx`, `BeforeCtx`, `AfterCtx`), which returns
+a `noctis::DiscordCacheReader` (cheap to clone). Its async getters return **owned**
+twilight-model values, never a guard or reference, so nothing can be held across an
+`.await`:
+
+| Getter | Returns | Resource |
+| --- | --- | --- |
+| `guild(guild)` | `Result<Option<Guild>, CacheError>` (its channel/role/member lists are empty: use the list getters) | `GUILD` |
+| `channel(channel)` | `Option<Channel>` (channels and threads) | `CHANNEL` |
+| `role(role)` | `Option<Role>` | `ROLE` |
+| `member(guild, user)` | `Option<Member>` | `MEMBER` |
+| `user(user)` | `Option<User>` | `USER` |
+| `message(message)` | `Option<Message>` | `MESSAGE` |
+| `channel_ids(guild)` / `role_ids(guild)` / `member_ids(guild)` | `Option<Vec<Id<_>>>` (`None` = guild not cached) | `CHANNEL` / `ROLE` / `MEMBER` |
+| `channels(guild)` / `roles(guild)` / `members(guild)` | `Option<Vec<T>>` in id order (ids, then one read per id; an id no longer cached is skipped, the first error is returned) | `CHANNEL` / `ROLE` / `MEMBER` |
+
+Also `resources()` and `is_enabled()`. Errors:
+
+- `Ok(None)`: not cached (yet). Fall back (`map_or_else`, `unwrap_or_default`), never
+  `unwrap`.
+- `Err(CacheError::Disabled(CacheDisabled { resource }))`: that resource is not
+  configured (or the cache is `none()`); decided before any backend call. A
+  configuration mistake, not a runtime condition.
+- `Err(CacheError::Port(PortError))`: the backend failed.
+- `?` turns a `CacheError` into a `HandlerError`.
+
+```rust
+use noctis::{DiscordCacheConfig, DiscordCacheResources};
+
+async fn guild_line(ctx: &CommandCtx, guild: Id<GuildMarker>) -> HandlerResult<String> {
+    let name = ctx.cache().guild(guild).await?.map_or_else(|| guild.to_string(), |g| g.name);
+    let roles = ctx.cache().roles(guild).await?.unwrap_or_default();
+    Ok(format!("{name}: {} roles", roles.len()))
+}
+
+builder.discord_cache(
+    DiscordCacheConfig::default().with_resources(DiscordCacheResources::USER),
+);
+```
+
+**Configuration** (`noctis::DiscordCacheConfig`, `noctis::DiscordCacheResources`; no
+env var): `.discord_cache(config)` on the builder (last call wins; `App::discord_cache()`
+reads it back).
+
+- `DiscordCacheConfig::default()` caches `DEFAULT_RESOURCES = GUILD | CHANNEL | ROLE`:
+  what the always-requested `GUILDS` intent delivers, no members, no messages.
+- `DiscordCacheConfig::new(resources)`, `.with_resources(r)` (adds),
+  `.without_resources(r)` (removes), `.with_message_cap(n)` (per channel, default
+  `MemoryDiscordCache::DEFAULT_MESSAGE_CAP` = 100; 0 removes `MESSAGE`); getters
+  `resources()`, `message_cap()`, `is_enabled()`.
+- `DiscordCacheConfig::none()` turns the cache off: nothing is fed or read and every
+  getter is `CacheError::Disabled`.
+- `DiscordCacheResources` prints as `GUILD | ROLE` (`none` when empty).
+
+Each resource adds the gateway event types that keep it current to the App's gateway
+filter (they are never dropped by the event lane) and its intents (app-and-sharding.md
+§ intents): `GUILD`, `CHANNEL`, `ROLE`, `USER` add `GUILDS`; `MESSAGE` adds
+`GUILD_MESSAGES | DIRECT_MESSAGES` (message **content** still needs the privileged
+`MESSAGE_CONTENT`); `MEMBER` needs the privileged `GUILD_MEMBERS`, which you must request
+with `.intents(Intents::GUILD_MEMBERS)` and enable in the Developer Portal, else
+`build()` fails with `BuildViolation::MissingCacheIntent` (`[GW-05]`). `USER` and
+`MEMBER` are also filled from interactions (the invoker in a DM, resolved users and
+members of options); users are never evicted, so `USER` grows with the users you see.
+
+**Feeding:** core applies each cached event type to the backend in the drain loop
+**before** any handler of that event runs (a `RoleCreate` handler already sees the role
+in `ctx.cache()`), and each interaction (when `MEMBER`, `USER` or `ROLE` is cached)
+inside its own task before the pipeline. An update is bounded by 1 s; a failed or
+timed-out update never stops the event or interaction: it counts in
+`noctis_discord_cache_update_errors_total{app}` and logs one `noctis::cache` warning per
+outage (one info when updates recover). The drain waits for each update, so use a fast
+backend.
+
+**Backend:** `.discord_cache_backend(impl DiscordCache)` replaces the storage; the
+configuration, not the backend, decides what is fed and read. The default is a
+`MemoryDiscordCache` of the configured resources and cap (§1.1). `DiscordCache` is
+implemented for `Arc<P>`, so one instance serves several Apps of a Cluster
+(`.discord_cache_backend(Arc::clone(&cache))` on each builder); it is never namespaced,
+and each process feeds only its own shards' guilds. An out-of-process backend
+serializes the twilight-model values itself. With `none()` and a custom backend,
+`build()` warns once that the backend is never used.
 
 ## 2. Port reference (`noctis::ports`)
 
@@ -235,7 +310,8 @@ pub trait DiscordCache: Send + Sync + 'static {
 - `GuildAccessList::allows` is **synchronous**: it runs on a pipeline stage that does
   no port I/O. Never block in it; a remote-backed implementation keeps a local snapshot
   and refreshes it in the background.
-- `DiscordCache` uses only `twilight_model` types (`gateway::event::Event`,
+- `DiscordCache` is implemented for `Arc<P>` (one backend, several Apps). It uses
+  only `twilight_model` types (`gateway::event::Event`,
   `guild::{Guild, Member, Role}`, `channel::{Channel, Message}`, `user::User`). Getters
   return owned values; `None` means not cached. `channel_ids`, `role_ids` and
   `member_ids` return ids only (`None` = guild not cached), so a large guild is never
@@ -382,11 +458,15 @@ futures are `Send` for any `T` (the value is encoded before the store call). A
 detached test context (no App) answers every op with `PortError::Unavailable`.
 `PortError` converts into `HandlerError`, so `?` works in handlers.
 
+Discord resources come from `ctx.cache()` (§1.2):
+
+```rust
+let guild = ctx.cache().guild(guild_id).await?;                  // Option<Guild>, owned value
+```
+
 [planned]:
 
 ```rust
-let guild = ctx.cache().guild(guild_id).await?;                  // DiscordCache, owned value
-
 ctx.modules().set_enabled("profile", ModuleScope::Guild(guild), false).await?;  // ModuleStateStore
 let on = ctx.modules().is_enabled("profile", Some(guild));       // cached snapshot, sync
 ```

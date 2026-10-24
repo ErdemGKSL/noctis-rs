@@ -42,6 +42,13 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         .theme(noctis::image::theme!())
         // Our own CacheStore Adapter replaces the in-memory default (FR-38).
         .cache_store(adapters::BoundedCacheStore::new(50_000))
+        // The Discord resource cache behind `ctx.cache()`: the default caches GUILD,
+        // CHANNEL and ROLE (what the `GUILDS` intent delivers); the profile card also
+        // reads users, so add USER. MEMBER would need `.intents(Intents::GUILD_MEMBERS)`.
+        .discord_cache(
+            noctis::DiscordCacheConfig::default()
+                .with_resources(noctis::DiscordCacheResources::USER),
+        )
         // On Ctrl-C/SIGTERM, running handlers get 15 s to finish before they are
         // cancelled (reported as `ReportKind::Cancelled`); keep it below the
         // orchestrator's kill timeout. `NOCTIS_SHUTDOWN_GRACE` sets it too.

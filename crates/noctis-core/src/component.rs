@@ -238,6 +238,13 @@ macro_rules! ctx_accessors {
                 crate::Kv::of(self.0.app.as_ref())
             }
 
+            /// The App's Discord resource cache (a cheap clone): owned values,
+            /// `Ok(None)` when not cached, [`CacheError::Disabled`](crate::CacheError::Disabled)
+            /// when the resource is not configured or without an App.
+            pub fn cache(&self) -> crate::DiscordCacheReader {
+                crate::DiscordCacheReader::of(self.0.app.as_ref())
+            }
+
             /// The App's webhook factory: create a webhook the App owns,
             /// or wrap stored credentials (a cheap clone); every request
             /// of a detached test seam's factory is

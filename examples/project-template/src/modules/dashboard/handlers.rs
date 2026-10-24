@@ -118,8 +118,9 @@ fn bot_meta(meta: Option<State<BotMeta>>) -> HandlerResult<State<BotMeta>> {
 
 /// All I/O happens here, before rendering.
 async fn load(ctx: &impl Ctx, guild: Id<GuildMarker>, meta: &BotMeta) -> HandlerResult<DashData> {
-    let guild_name = ctx.cache().guild(guild).await?.name;
-    let mut roles = ctx.cache().roles(guild).await?;
+    // `None` means not cached (yet): fall back instead of failing.
+    let guild_name = ctx.cache().guild(guild).await?.map_or_else(|| guild.to_string(), |g| g.name);
+    let mut roles = ctx.cache().roles(guild).await?.unwrap_or_default();
     roles.sort_unstable_by(|a, b| b.position.cmp(&a.position));
     let modules = ModuleKey::ALL
         .into_iter()

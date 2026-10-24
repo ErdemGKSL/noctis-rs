@@ -60,9 +60,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 21);
+    assert_eq!(METRICS.len(), 22);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 21);
+    assert_eq!(names.len(), 22);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -111,6 +111,7 @@ fn catalog_static() {
             ("noctis_render_duration_seconds", &["app", "template"][..]),
             ("noctis_render_queue_depth", &["app"][..]),
             ("noctis_render_rejected_total", &["app", "reason"][..]),
+            ("noctis_discord_cache_update_errors_total", &["app"][..]),
         ]
     );
 }
@@ -325,7 +326,8 @@ async fn recorded_set_core() {
     // `observability.rs` (Story 5.9 Matrix 49); the auto-defer and ack
     // latency rows in the pipeline tests (`int_01_auto_defer_at_deadline`);
     // the Ref lookups in `pipeline::tests::refs`; the render rows in
-    // `render::tests`.
+    // `render::tests`; the Discord cache update errors in
+    // `discord_cache::tests`.
     let all: HashSet<_> = METRICS
         .iter()
         .map(|m| m.name.to_owned())
@@ -336,6 +338,7 @@ async fn recorded_set_core() {
                 && name != "noctis_ack_latency_seconds"
                 && name != "noctis_ref_lookups_total"
                 && !name.starts_with("noctis_render_")
+                && name != "noctis_discord_cache_update_errors_total"
         })
         .collect();
     assert_eq!(seen, all, "{snapshot:?}");
