@@ -208,9 +208,14 @@ impl Look {
         r: ComponentResponder<Manual>,
     ) -> HandlerResult<Responded> {
         let line = guild_line(&ctx.cache()).await;
-        ctx.state::<Arc<Log>>()
-            .unwrap()
-            .push(format!("component {line}"));
+        let user = ctx.cache().user(ctx.user_id()).await;
+        let log = ctx.state::<Arc<Log>>().unwrap();
+        log.push(format!("component {line}"));
+        log.push(format!(
+            "component user {} {}",
+            ctx.user_id(),
+            matches!(user, Ok(Some(_)))
+        ));
         Ok(r.show_modal(Ask::blank()).await?.done())
     }
 }
@@ -254,7 +259,13 @@ impl Pick {
         _filled: Partial<Self>,
     ) -> HandlerResult<Suggestions<String>> {
         let line = guild_line(&ctx.cache()).await;
+        let user = ctx.cache().user(ctx.user_id()).await;
         ctx.state::<Arc<Log>>().push(format!("autocomplete {line}"));
+        ctx.state::<Arc<Log>>().push(format!(
+            "autocomplete user {} {}",
+            ctx.user_id(),
+            matches!(user, Ok(Some(_)))
+        ));
         Ok(Suggestions::default())
     }
 }
@@ -300,6 +311,23 @@ impl OnGuild {
     }
 }
 
+/// Reads guild 10 and channel 21 (lives in a Module with no event handlers).
+#[derive(SlashCommand)]
+#[command("chan", description = "Channel")]
+struct Chan;
+
+impl Chan {
+    #[handler]
+    async fn handle(self, ctx: CommandCtx) -> HandlerResult<Responded> {
+        let cache = ctx.cache();
+        let mut line = guild_line(&cache).await;
+        let channel = cache.channel(Id::new(21)).await;
+        let _ = write!(line, " channel21 {}", matches!(channel, Ok(Some(_))));
+        ctx.state::<Arc<Log>>().unwrap().push(line.clone());
+        ctx.respond(view(&line)).await
+    }
+}
+
 // --- Fixtures -------------------------------------------------------------------
 
 fn module() -> Module {
@@ -316,15 +344,21 @@ fn module() -> Module {
 }
 
 async fn start(extra: impl FnOnce(&mut AppBuilder)) -> (TestApp, Arc<Log>) {
+    start_with(module(), extra).await
+}
+
+async fn start_with(module: Module, extra: impl FnOnce(&mut AppBuilder)) -> (TestApp, Arc<Log>) {
     let log = Arc::new(Log::default());
     let mut builder = App::builder();
-    builder.state(Arc::clone(&log)).module(module());
+    builder.state(Arc::clone(&log)).module(module);
     extra(&mut builder);
     let app = TestApp::build(&mut builder)
         .await
         .unwrap()
         .user(TestUser::new(Id::new(40)).name("ana"))
-        .user(TestUser::new(Id::new(41)).name("mo"));
+        .user(TestUser::new(Id::new(41)).name("mo"))
+        .user(TestUser::new(Id::new(42)).name("ivo"))
+        .user(TestUser::new(Id::new(43)).name("lu"));
     (app, log)
 }
 
@@ -464,6 +498,56 @@ async fn e4_interactions_feed_users() -> Result<(), TestError> {
         "{:?}",
         log.lines()
     );
+    // A click and an autocomplete by users who never ran a command.
+    let panel = app.command("panel").by(Id::new(40)).run().await?;
+    app.click(panel.button("Look")?)
+        .by(Id::new(42))
+        .run()
+        .await?;
+    app.autocomplete("pick", "thing", "x")
+        .by(Id::new(43))
+        .run()
+        .await?;
+    for line in ["component user 42 true", "autocomplete user 43 true"] {
+        assert!(log.has(line), "{line}: {:?}", log.lines());
+    }
+    app.stop().await
+}
+
+/// Runs `chan` until it logs `want`.
+async fn chan_until(app: &TestApp, log: &Log, want: &str) -> Result<(), TestError> {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !log.has(want) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{want:?} never seen; saw {:?}",
+            log.lines()
+        );
+        app.command("chan").by(Id::new(40)).run().await?;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
+}
+
+/// E1 without handlers: cache-fed event types pass the gateway filter even
+/// when no handler registers them.
+#[tokio::test(flavor = "multi_thread")]
+async fn e1_cache_events_pass_the_filter_without_handlers() -> Result<(), TestError> {
+    let (app, log) = start_with(Module::new("bare").add::<Chan>(), |_| {}).await;
+    assert_eq!(
+        app.gateway_fake().dispatch("GUILD_CREATE", guild_create()),
+        1
+    );
+    chan_until(&app, &log, "guild G channel21 false").await?;
+    assert_eq!(
+        app.gateway_fake().dispatch(
+            "CHANNEL_CREATE",
+            json!({"id": "21", "guild_id": "10", "type": 0, "name": "new",
+                   "position": 1, "permission_overwrites": []}),
+        ),
+        1
+    );
+    chan_until(&app, &log, "guild G channel21 true").await?;
     app.stop().await
 }
 

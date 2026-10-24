@@ -2679,7 +2679,11 @@ impl AppBuilder {
                 `DiscordCacheConfig::none()` the backend is never fed nor read. The backend is \
                 never namespaced; one instance can serve several Apps of a Cluster as an `Arc` \
                 (`Arc::clone(&cache)`), and an out-of-process backend serializes the values \
-                itself.";
+                itself. A custom backend must cache every configured resource (e.g. \
+                `MemoryDiscordCache::with_message_cap(config.resources(), config.message_cap())`): \
+                getters report `Disabled` only for resources missing from the configuration, so \
+                a resource the backend skips silently reads `Ok(None)`. Its `update` must be \
+                cancel-safe: core drops it after 1 s and does not retry.";
         }
     }
 

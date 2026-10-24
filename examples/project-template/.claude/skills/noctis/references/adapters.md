@@ -213,7 +213,12 @@ implemented for `Arc<P>`, so one instance serves several Apps of a Cluster
 (`.discord_cache_backend(Arc::clone(&cache))` on each builder); it is never namespaced,
 and each process feeds only its own shards' guilds. An out-of-process backend
 serializes the twilight-model values itself. With `none()` and a custom backend,
-`build()` warns once that the backend is never used.
+`build()` warns once that the backend is never used. A custom backend must cache every
+configured resource (e.g. `MemoryDiscordCache::with_message_cap(config.resources(),
+config.message_cap())`): getters report `Disabled` only for resources missing from the
+configuration, so a resource the backend skips silently reads `Ok(None)`. `update` must
+be cancel-safe: core cancels it after 1 s (`CACHE_UPDATE_TIMEOUT`) and does not retry,
+so a multi-key store must not be left half-written.
 
 ## 2. Port reference (`noctis::ports`)
 

@@ -18,6 +18,9 @@ use crate::{BoxFuture, PortError};
 /// out-of-process implementation serializes the values itself.
 pub trait DiscordCache: Send + Sync + 'static {
     /// Applies a gateway event.
+    ///
+    /// Must be cancel-safe: core drops the future after 1 s and does not
+    /// retry, so a multi-key store must not be left half-written.
     fn update<'a>(&'a self, event: &'a Event) -> BoxFuture<'a, Result<(), PortError>>;
 
     /// The cached guild.

@@ -2,10 +2,10 @@
 title: 'Story 12.5: Discord cache wiring, `ctx.cache()`, configuration and minimal intents'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '1c9b9902fba93e808858f8109398cf495f5afc5a'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-12-context.md'
@@ -175,6 +175,45 @@ Compile-fail (`crates/noctis/tests/types/discord_cache_no_guard.rs` + `.stderr`)
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 35 findings — high 0, medium 2, low 24, false 9, maybe-false 0
+- findings:
+  - `[low]` `[reject]` (blind) Drain throughput drops to ~1 event/s while a backend hangs — real only for a hanging (not failing) backend; the spec's Design Notes deliberately accept that a slow backend throttles intake to keep gateway order before dispatch; a circuit breaker adds state and would drop ordered updates.
+  - `[low]` `[reject]` (blind) Interaction feed spends up to 1 s of the ack window — only with a slow backend; auto-defer still fires at 2000 ms from `received_at` as the spec requires; moving the feed changes the spec-settled order and adds branches.
+  - `[low]` `[patch]` (blind) A timed-out `update` is cancelled midway and can leave an out-of-process backend half-written — real for multi-key custom backends; patch documents that `DiscordCache::update` must be cancel-safe (dropped after 1 s).
+  - `[low]` `[patch]` (blind) A custom backend caching fewer resources than the config is not detected; getters return `Ok(None)` forever — real; patch adds a doc sentence on `discord_cache_backend` that a custom backend must cache every configured resource.
+  - `[false]` `[reject]` (blind) Cache memory not reported (NFR-1) — Story 12.6 (memory bench) owns reporting Discord cache bytes separately; the spine sentence is satisfied there, not by a gauge here.
+  - `[low]` `[reject]` (blind) `USER` row fed only by `GUILD_CREATE`, users go stale — spec-settled table; users are refreshed by every interaction they make, member events need privileged `GUILD_MEMBERS`; widening the row is not a direct correction.
+  - `[low]` `[reject]` (blind) `MESSAGE` row has no purge events and no `MESSAGE_CONTENT` warning — memory stays bounded by cap × channels seen, `MESSAGE` without `CHANNEL` is unusual, and the Usage Skill (bot authors' only source) already notes empty content; fix changes the spec table.
+  - `[low]` `[reject]` (blind) `READY` never fed, guilds left while disconnected stay cached — rare (non-resumed reconnect after leaving a guild), entries are unreachable by interactions; reconciliation logic is not a direct fix.
+  - `[low]` `[reject]` (blind) List getters make 1 + n sequential calls; rustdoc contradicts itself — 1 + n is the spec's design (port has no batch read); the rustdoc already says list getters "read the ids and then each value", so no contradiction.
+  - `[low]` `[reject]` (blind) Interaction feed deep-clones every interaction — negligible cost; a pre-check adds branches.
+  - `[low]` `[reject]` (blind) `DiscordCacheConfig` equality/Debug disagree with semantics — `PartialEq` on `(resources(), message_cap())` and P5 masking are spec-settled; only the derived `Debug` showing the raw field is real and cosmetic, and a manual impl is more than a direct correction.
+  - `[low]` `[reject]` (blind) `feeds_interactions` uses double `without` instead of `intersects` — readability only (commented); the suggested fix adds public surface.
+  - `[low]` `[reject]` (blind) TestApp seeds only guilds, not members/users — spec says no user seeding (interactions carry the user); a new seeding hook adds public surface.
+  - `[low]` `[patch]` (blind) Duplicate Display test and stale `discord_cache_backend` doc example — the doc half shares the backend-mismatch root cause and is fixed by that doc sentence; the duplicated test is negligible developer cost, not patched.
+  - `[low]` `[reject]` (edge) worker.rs drain 1 s per event while backend hangs — same as the blind drain-throughput row; deliberate spec trade-off.
+  - `[low]` `[reject]` (edge) Interaction feed concurrent with drain can overwrite a newer MEMBER/ROLE update with older interaction data — real but narrow race, self-heals on the next update; serialising through the drain is a design change.
+  - `[low]` `[patch]` (edge) Timeout drops `update` mid-write — grouped with the blind cancel-safety row; same doc patch.
+  - `[low]` `[reject]` (edge) Concurrent applies finishing out of order flap the healthy flag — affects logs only; a generation counter adds state.
+  - `[low]` `[reject]` (edge) Shutdown waits up to 1 s per in-flight interaction feed — bounded by the 1 s timeout and covered by the shutdown grace; a select adds branches.
+  - `[low]` `[patch]` (edge) Custom backend caching fewer resources silently returns `Ok(None)` — grouped with the blind backend-mismatch row; same doc patch.
+  - `[false]` `[reject]` (edge) `with_message_cap(0)` then `with_message_cap(n)` restores `MESSAGE` — the spec defines `resources()` as the stored set masked by cap 0, and the method doc speaks of `resources()`; restoring with a positive cap is the specified behavior.
+  - `[low]` `[reject]` (edge) `USER` excludes `USER_UPDATE`/member events — grouped with the blind `USER` row; `USER_UPDATE` concerns only the bot's own user in twilight.
+  - `[low]` `[reject]` (edge) `MESSAGE` without `MESSAGE_CONTENT` yields empty content — documented in the Usage Skill; a build warning adds a branch.
+  - `[false]` `[reject]` (edge) testkit marks seeds fed before `create_event` succeeds — `create_event` fails only on a testkit bug, and that run already fails loudly with `TestError::Unsupported`.
+  - `[low]` `[reject]` (edge) Re-seeded guild leaves old channels/roles readable by id — twilight resets the per-guild id sets, so lists are correct; only direct by-id reads of removed seed entries remain, rare in tests; feeding `GUILD_DELETE` first adds code.
+  - `[low]` `[reject]` (edge) Seeds not fed before a raw `gateway_fake().dispatch` — testing.md states seeds are fed "before the next run"; a second feed path adds code.
+  - `[medium]` `[patch]` (vgap) Gateway filter wiring of cache-fed types untested at the shard boundary — pre-verified; patch adds an E-style test with no `GuildCreate`/`ChannelCreate` handler that dispatches `GUILD_CREATE` and `CHANNEL_CREATE` and reads them back via `ctx.cache()`.
+  - `[medium]` `[patch]` (vgap) Interaction feed in autocomplete and component branches untested — pre-verified; patch extends E4 so a click and an autocomplete by a never-seen user read `cache().user(<invoker>)` as `Some`.
+  - `[low]` `[reject]` (vgap) TestApp re-seed refeed untested — pre-verified gap but a regression would be unlikely and visible quickly; a new test is more than a direct correction.
+  - `[false]` `[reject]` (intent) Default resources fixed, not derived from features — Story 12.6's "stated default cache configuration (no members, no messages)" measured against `none()` selects the fixed-set reading the spec settled.
+  - `[false]` `[reject]` (intent) GW-05 cache check covers only privileged intents — the sibling AC (default intents are the minimum required by handlers and cache resources) implies non-privileged ones are added, as for handlers in Story 5.6.
+  - `[false]` `[reject]` (intent) Out-of-process backend is an in-process serde stand-in — tests may not use the network (spec Never); the serde round-trip models the boundary, and the `Arc<P>` impl is what a Cluster uses.
+  - `[false]` `[reject]` (intent) `CacheDisabled` wrapped in `CacheError` — the typed `CacheDisabled` is returned (as `CacheError::Disabled`); backend failures need a variant too.
+  - `[false]` `[reject]` (intent) Template reconciled toward the API — "reconciled" admits either direction; the `Option` shape keeps the port's not-cached meaning.
+  - `[false]` `[reject]` (intent) No-guard check uses one method name; `shared_identify_queue.stderr` regenerated — the intent allows a compile-fail fixture and G9 asserts owned/`Send` outputs for every getter; the stderr change follows from the new facade re-exports changing rustc's printed paths.
+
 ## Design Notes
 
 - **Default resources = GUILD | CHANNEL | ROLE** (decision): exactly what the always-requested `GUILDS` intent delivers, nothing that needs another intent or grows per user or message — the "stated default cache configuration (no members, no messages)" that NFR-1 and Story 12.6 measure against `none()`. An interaction-only bot keeps `Intents::GUILDS` but now parses the guild/channel/role lifecycle events (FR-6: "or that the cache needs"); `none()` restores the bare interaction filter. USER is opt-in because users cached from interactions are never evicted.
@@ -201,3 +240,12 @@ pub async fn role(&self, id: Id<RoleMarker>) -> Result<Option<Role>, CacheError>
 - `cargo test --release -p noctis-image --features render --test tw_crosscheck` -- pass.
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass.
 - `cargo metadata --format-version 1 --manifest-path examples/project-template/Cargo.toml > /dev/null` -- resolves (template build stays tracking-only).
+
+## Auto Run Result
+
+- **Summary:** Wires the Discord cache port into the runtime: `ctx.cache()` on every context (owned, `Send` outputs, no guards), `DiscordCacheConfig` (resource set, message cap; default fixed set with no members/messages), gateway feed through the worker drain with a 1 s per-call timeout plus interaction feeding (commands, components, autocomplete), minimal default intents derived from handlers and cache resources (GW-05), custom/out-of-process backends via `discord_cache_backend`, and TestApp guild seeding fed into the cache.
+- **Files changed:** `crates/noctis-core/src/discord_cache.rs` (+tests) facade, config, feed; `worker.rs`/`app.rs` feed wiring and backend selection; context modules (`command`, `component`, `autocomplete`, `handler`, `middleware`) expose `cache()`; `error.rs` `CacheError`; `noctis-ports` port docs and memory impl; `noctis-testkit` seeding and `tests/discord_cache.rs`; `noctis` facade re-exports and compile-fail no-guard fixture; `docs/discord-rules.md`; project template code, AGENTS.md and Usage Skill references; `xtask/public-api.txt` re-blessed.
+- **Review findings (35: high 0, medium 2, low 24, false 9):** patched 2 medium (gateway-filter E-style test for cache-fed `GUILD_CREATE`/`CHANNEL_CREATE` without handlers; E4 extended so click and autocomplete by an unseen user populate `cache().user`) and 4 low grouped into 2 doc patches (`DiscordCache::update` must be cancel-safe; custom backend must cache every configured resource). Deferred: none. Rejected 29 with recorded reasons in the triage log (spec-settled design trade-offs such as drain throttling under a hanging backend, `USER`/`MESSAGE` row scope, 1+n list reads; 9 false positives).
+- **Follow-up review recommended:** true (patched: high 0, medium 2, low 4). Named risk: the new shard-boundary gateway-filter test and the extended interaction-feed test have not been independently reviewed for whether they truly exercise the intent filter and component/autocomplete feed paths rather than passing via seeding.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV); CI paused by maintainer.
+- **Residual risks:** a hanging backend throttles intake to ~1 event/s (accepted); narrow race where an interaction feed overwrites a newer member/role update until the next event; Discord cache memory reporting deferred to Story 12.6.
