@@ -2,7 +2,8 @@
 title: 'Story 12.6: Memory-per-guild benchmark'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '94952ba0b09759a4e9b1688de93c69f90f7d09ff'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

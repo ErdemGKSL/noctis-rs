@@ -151,7 +151,7 @@ development_status:
   12-3-resumable-shutdown: done
   12-4-shared-http-rate-limiting-through-a-proxy: done
   12-5-discord-cache-wiring-ctx-cache-configuration-and-minimal-int: done
-  12-6-memory-per-guild-benchmark: backlog
+  12-6-memory-per-guild-benchmark: in-progress
   epic-12-retrospective: optional
 
   epic-13: in-progress
