@@ -29,6 +29,11 @@
 //!   - static images ([`StaticImage`], IMG-02): PNG, JPEG or WebP
 //!     `&'static` bytes registered per App with `ImageConfig::image`,
 //!     decoded once, drawn with [`img`] (`<img src={..} />`);
+//!   - the render cache (FR-36): every request is keyed by blake3 over its
+//!     Template, data, Theme, assets, size, format, animation and encode
+//!     settings (AD-15); identical concurrent requests render once
+//!     (process-local single-flight), and results are stored in the App's
+//!     `RenderCache`, so an identical later request renders nothing;
 //!   - [`ImageConfig`], [`ImagePlugin`] and [`AppBuilderImageExt`]
 //!     (`.image(..)`, `.theme(..)`), which install that Renderer.
 //!
@@ -44,9 +49,13 @@ mod assets;
 #[cfg(feature = "render")]
 mod budget;
 #[cfg(feature = "render")]
+mod cache;
+#[cfg(feature = "render")]
 mod caps;
 #[cfg(feature = "render")]
 mod check;
+#[cfg(feature = "render")]
+mod flight;
 #[cfg(feature = "render")]
 mod fonts;
 #[cfg(feature = "render")]

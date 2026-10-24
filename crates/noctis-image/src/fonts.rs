@@ -264,6 +264,8 @@ pub(crate) struct FontRegistry {
     /// The first load error (reported at install, since
     /// [`Resource::init`](noctis_core::Resource::init) is infallible).
     error: Option<String>,
+    /// The `"fonts"` asset version of the render cache key ([`digest`](Self::digest)).
+    digest: [u8; 32],
 }
 
 impl noctis_core::Resource for FontRegistry {
@@ -302,8 +304,38 @@ impl noctis_core::Resource for FontRegistry {
             bundled,
             emoji,
             error,
+            digest: config_digest(config),
         }
     }
+}
+
+/// The blake3 digest of `config`: every font's digest, family and ranges in
+/// order, then the `bundled` and `emoji` flags. Variable-length fields are
+/// framed by their `u64` LE length.
+fn config_digest(config: &FontsConfig) -> [u8; 32] {
+    let len = |n: usize| u64::try_from(n).unwrap_or(u64::MAX).to_le_bytes();
+    let mut h = blake3::Hasher::new();
+    h.update(&len(config.fonts.len()));
+    for font in &config.fonts {
+        h.update(&font.digest);
+        match &font.family {
+            None => {
+                h.update(&[0]);
+            }
+            Some(family) => {
+                h.update(&[1]);
+                h.update(&len(family.len()));
+                h.update(family.as_bytes());
+            }
+        }
+        h.update(&len(font.ranges.len()));
+        for range in &font.ranges {
+            h.update(&u32::from(*range.start()).to_le_bytes());
+            h.update(&u32::from(*range.end()).to_le_bytes());
+        }
+    }
+    h.update(&[u8::from(config.bundled), u8::from(config.emoji)]);
+    *h.finalize().as_bytes()
 }
 
 /// Registers the bundled font as the last resort; whether it registered.
@@ -402,6 +434,12 @@ impl FontRegistry {
     /// The per-render fallback chain; `None` without author families.
     pub(crate) fn chain(&self) -> Option<&FontFamily> {
         self.chain.as_ref()
+    }
+
+    /// The digest of the registry's configuration: the `"fonts"` asset
+    /// version of the render cache key (FR-36).
+    pub(crate) fn digest(&self) -> [u8; 32] {
+        self.digest
     }
 }
 

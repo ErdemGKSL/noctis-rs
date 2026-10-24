@@ -109,9 +109,12 @@ template!(Edge {}, "edge", Size::new(4, 1), Format::Png, |_| {
 /// Where the `Where` view last ran: (thread name, outside tokio).
 static WHERE: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
-/// A Template whose view blocks until the test opens [`GATE`].
+/// A Template whose view blocks until the test opens [`GATE`]; distinct
+/// tags are distinct render keys, so their jobs are never deduplicated.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Gated;
+struct Gated {
+    tag: u8,
+}
 
 static GATE: Mutex<Option<mpsc::Receiver<()>>> = Mutex::new(None);
 
@@ -330,7 +333,11 @@ async fn renders_a_png_with_the_theme_color() {
     let out = r.render(card("Ada")).await.unwrap();
     assert_eq!(&out.bytes[..8], b"\x89PNG\r\n\x1a\n");
     assert_eq!(out.format, noctis_ports::OutputFormat::Png);
-    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+    assert_eq!(
+        out.digest,
+        r.key(&card("Ada")).0,
+        "the digest is the render key"
+    );
     assert_eq!(
         out.settings_used,
         EncodeSettings {
@@ -372,7 +379,14 @@ async fn encodes_every_still_format() {
         }
         assert_eq!(out.format.extension(), ext, "{format:?}");
         assert_eq!(out.settings_used.quality, quality, "{format:?}");
-        assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+        assert_eq!(
+            out.digest,
+            r.key(&RenderJob {
+                format,
+                ..card("Ada")
+            })
+            .0
+        );
     }
 }
 
@@ -488,12 +502,12 @@ async fn a_full_queue_fails_at_once() {
     let (open, gate) = mpsc::channel();
     *GATE.lock().unwrap() = Some(gate);
     let r = renderer_with(1, 2, ClassCheckMode::Deny);
-    let gated = || RenderJob::of(&Gated).unwrap();
+    let gated = |tag| RenderJob::of(&Gated { tag }).unwrap();
     // Admission happens at the call, before the futures are polled.
-    let a = r.render(gated());
-    let b = r.render(gated());
+    let a = r.render(gated(0));
+    let b = r.render(gated(1));
     assert!(matches!(
-        r.render(gated()).await,
+        r.render(gated(2)).await,
         Err(RenderError::QueueFull)
     ));
     open.send(()).unwrap();
@@ -501,7 +515,7 @@ async fn a_full_queue_fails_at_once() {
     assert!(a.await.is_ok());
     assert!(b.await.is_ok());
     *GATE.lock().unwrap() = None;
-    assert!(r.render(gated()).await.is_ok());
+    assert!(r.render(gated(3)).await.is_ok());
 }
 
 #[tokio::test]
@@ -707,7 +721,10 @@ async fn a_still_over_budget_steps_down_its_size() {
     let (w, h, _) = decode_png(&out.bytes);
     assert_eq!((w, h), (size.width(), size.height()));
     assert_eq!(out.settings_used.frames, 1);
-    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+    assert_eq!(
+        out.digest,
+        r.key(&with_budget(noise(Format::Png), budget)).0
+    );
 }
 
 #[tokio::test]
@@ -763,7 +780,7 @@ async fn renders_an_animated_webp() {
             frames: 5,
         }
     );
-    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+    assert_eq!(out.digest, r.key(&anim(10, 500, WEBP80)).0);
 }
 
 #[tokio::test]
@@ -1509,5 +1526,6 @@ fn img_01_register_without_font_fails() {
     );
 }
 
+mod cache;
 mod emoji;
 mod remote;

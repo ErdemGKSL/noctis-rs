@@ -342,3 +342,36 @@ fn img_04_emoji_off_registers_no_emoji_font() {
     });
     assert!(!registry.has_emoji());
 }
+
+#[test]
+fn fr_36_the_digest_follows_fonts_order_family_ranges_and_flags() {
+    let config = |fonts: Vec<Font>, bundled: bool, emoji: bool| FontsConfig {
+        fonts,
+        bundled,
+        emoji,
+    };
+    let digest = |c: &FontsConfig| config_digest(c);
+    let a = Font::from_static(JP400);
+    let b = Font::from_static(JP700);
+    let base = config(vec![a.clone(), b.clone()], false, false);
+    assert_eq!(digest(&base), digest(&base.clone()));
+    assert_eq!(
+        registry(vec![a.clone(), b.clone()]).digest(),
+        digest(&config(vec![a.clone(), b.clone()], false, false))
+    );
+    let variants = [
+        config(vec![b.clone(), a.clone()], false, false),
+        config(vec![a.clone()], false, false),
+        config(vec![a.clone().family("X"), b.clone()], false, false),
+        config(
+            vec![a.clone().unicode_range('a'..='z'), b.clone()],
+            false,
+            false,
+        ),
+        config(vec![a.clone(), b.clone()], true, false),
+        config(vec![a.clone(), b.clone()], false, true),
+    ];
+    for (i, variant) in variants.iter().enumerate() {
+        assert_ne!(digest(variant), digest(&base), "variant {i}");
+    }
+}

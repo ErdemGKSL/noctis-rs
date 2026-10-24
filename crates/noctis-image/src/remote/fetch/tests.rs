@@ -268,6 +268,12 @@ async fn img_03_resolve_draws_the_fallback_or_fails_required() {
         resolved.get(&missing).is_some(),
         "a failed image draws the fallback"
     );
+    assert!(resolved.degraded(), "FR-36: a fallback render is degraded");
+    let fine = fetcher
+        .resolve(None, "card", vec![declared("a", false, ok.clone())], false)
+        .await
+        .unwrap();
+    assert!(!fine.degraded());
     let error = fetcher
         .resolve(None, "card", vec![declared("b", true, missing)], false)
         .await
@@ -569,4 +575,35 @@ fn img_04_plan_emoji_skips_declared_ones_and_caps_the_rest() {
     assert_eq!(plan[1].field, "text");
     assert!(!plan[1].required);
     assert_eq!(over, [RemoteImage::custom_emoji(Id::new(9), false)]);
+}
+
+#[test]
+fn fr_36_emoji_over_the_cap_degrade_the_render() {
+    let fallback = builtin_fallback().unwrap();
+    let mut resolved = Resolved::empty(fallback);
+    assert!(!resolved.degraded());
+    resolved.fall_back(Vec::new());
+    assert!(!resolved.degraded());
+    resolved.fall_back(vec![RemoteImage::custom_emoji(Id::new(9), false)]);
+    assert!(resolved.degraded());
+}
+
+#[test]
+fn fr_36_key_pairs_follow_the_cdn_and_the_fallback() {
+    let fallback: &'static [u8] = png(1, 1, RED).leak();
+    let pairs = |config: RemoteConfig| AssetFetcher::new(&config).unwrap().key_pairs();
+    let default = pairs(RemoteConfig::new());
+    assert_eq!(default[0].0, "remote.cdn");
+    assert_eq!(
+        default[1],
+        ("remote.fallback", *blake3::hash(b"builtin").as_bytes())
+    );
+    assert_eq!(default, pairs(RemoteConfig::new()));
+    let cdn = pairs(RemoteConfig::new().discord_cdn("https://cdn.example.com"));
+    assert_ne!(cdn[0], default[0]);
+    assert_eq!(cdn[1], default[1]);
+    let image = crate::StaticImage::new("fallback", fallback);
+    let custom = pairs(RemoteConfig::new().fallback(image));
+    assert_eq!(custom[0], default[0]);
+    assert_eq!(custom[1].1, *blake3::hash(fallback).as_bytes());
 }

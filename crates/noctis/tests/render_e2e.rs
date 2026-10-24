@@ -171,9 +171,19 @@ async fn ctx_render_uploads_the_templates_png() -> Result<(), TestError> {
     let app = start(&reports).await;
     let response = app.command("card").run().await?;
     let (name, bytes) = uploaded(&response);
-    let digest = blake3::hash(&bytes);
-    let hex = digest.to_hex()[..16].to_owned();
-    assert_eq!(name, format!("{hex}.png"));
+    // FR-36: named by the render key, not by the bytes' hash.
+    let (hex, ext) = name.split_once('.').unwrap();
+    assert_eq!(ext, "png");
+    assert_eq!(hex.len(), 16);
+    assert!(
+        hex.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    );
+    assert_ne!(hex, &blake3::hash(&bytes).to_hex()[..16]);
+    // The identical render is served from the App's render cache under the
+    // same name.
+    let again = app.command("card").run().await?;
+    assert_eq!(uploaded(&again), (name.clone(), bytes.clone()));
     let decoder = png::Decoder::new(std::io::Cursor::new(&bytes[..]));
     let reader = decoder.read_info().unwrap();
     assert_eq!((reader.info().width, reader.info().height), (64, 32));

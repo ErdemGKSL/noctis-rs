@@ -1,6 +1,7 @@
 //! Stories 10.3 to 10.6: `ImagePlugin`, `ImageConfig`, the render pool, the
 //! takumi Renderer, animated output, the size budget, the per-job caps and
-//! CSS animations through the facade, with derived Templates. The macros validate
+//! CSS animations through the facade, with derived Templates, plus the render
+//! cache (Story 10.10). The macros validate
 //! against this crate's `noctis-theme.css` (`--color-brand: #5865f2`).
 
 #![cfg(feature = "image")]
@@ -122,9 +123,13 @@ impl TemplateView for Where {
 /// The gate `Gated` views block on while it is set.
 static GATE: Mutex<Option<mpsc::Receiver<()>>> = Mutex::new(None);
 
+/// Distinct tags are distinct render keys, so the jobs are never
+/// deduplicated (FR-36).
 #[derive(Template, Serialize, Deserialize, Debug, Clone)]
 #[template(id = "gated", version = 1, size = (2, 2), format = Png)]
-struct Gated;
+struct Gated {
+    tag: u8,
+}
 
 impl TemplateView for Gated {
     fn view(&self, _: Frame) -> Node {
@@ -529,7 +534,8 @@ async fn renders_a_themed_png_deterministically() {
     let out = render(&app, &ada()).await.unwrap();
     assert_eq!(&out.bytes[..8], b"\x89PNG\r\n\x1a\n");
     assert_eq!(out.format, OutputFormat::Png);
-    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+    // FR-36: the digest is the render key, not the bytes' hash.
+    assert_ne!(out.digest, *blake3::hash(&out.bytes).as_bytes());
     assert_eq!(
         out.settings_used,
         EncodeSettings {
@@ -689,9 +695,11 @@ async fn a_full_queue_fails_at_once_and_admitted_renders_finish() {
     *GATE.lock().unwrap() = Some(gate);
     let app = app_with(ImageConfig::new().threads(1).queue_capacity(2));
     let renderer = Arc::clone(app.renderer().unwrap());
-    let a = renderer.render(RenderJob::of(&Gated).unwrap());
-    let b = renderer.render(RenderJob::of(&Gated).unwrap());
-    let c = renderer.render(RenderJob::of(&Gated).unwrap()).await;
+    let a = renderer.render(RenderJob::of(&Gated { tag: 0 }).unwrap());
+    let b = renderer.render(RenderJob::of(&Gated { tag: 1 }).unwrap());
+    let c = renderer
+        .render(RenderJob::of(&Gated { tag: 2 }).unwrap())
+        .await;
     assert!(matches!(c, Err(RenderError::QueueFull)));
     open.send(()).unwrap();
     open.send(()).unwrap();
@@ -700,7 +708,7 @@ async fn a_full_queue_fails_at_once_and_admitted_renders_finish() {
     *GATE.lock().unwrap() = None;
     assert!(
         renderer
-            .render(RenderJob::of(&Gated).unwrap())
+            .render(RenderJob::of(&Gated { tag: 3 }).unwrap())
             .await
             .is_ok()
     );
@@ -962,5 +970,55 @@ mod gif {
         assert!(apng.bytes.windows(4).any(|w| w == b"acTL"));
         assert_eq!(apng.format, OutputFormat::Apng);
         assert_eq!(apng.format.extension(), "png");
+    }
+}
+
+// ---- render cache (FR-36) ----
+
+/// A `RenderCache` over a `MemoryRenderCache` that records every key it is
+/// asked to store.
+#[derive(Default)]
+struct CountingCache {
+    inner: noctis::ports::memory::MemoryRenderCache,
+    puts: Mutex<Vec<String>>,
+}
+
+impl noctis::ports::RenderCache for CountingCache {
+    fn get<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> noctis::ports::BoxFuture<'a, Result<Option<Bytes>, noctis::ports::PortError>> {
+        self.inner.get(key)
+    }
+
+    fn put<'a>(
+        &'a self,
+        key: &'a str,
+        value: Bytes,
+        ttl: Option<Duration>,
+    ) -> noctis::ports::BoxFuture<'a, Result<(), noctis::ports::PortError>> {
+        self.puts.lock().unwrap().push(key.to_owned());
+        self.inner.put(key, value, ttl)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fr_36_an_apps_render_cache_serves_identical_renders() {
+    let cache = Arc::new(CountingCache::default());
+    let mut builder = builder(&Runtime::for_test(), ImageConfig::new().threads(2));
+    builder.app_id("bot").render_cache(Arc::clone(&cache));
+    let app = builder.build().unwrap();
+    let miss = render(&app, &ada()).await.unwrap();
+    let hit = render(&app, &ada()).await.unwrap();
+    assert_eq!(hit, miss);
+    let puts = cache.puts.lock().unwrap().clone();
+    assert_eq!(puts.len(), 1, "{puts:?}");
+    let hex = blake3::Hash::from_bytes(miss.digest).to_hex();
+    assert_eq!(puts[0], format!("bot:render_cache:render:v1:{hex}"));
+    for out in [miss, hit] {
+        let attachment =
+            noctis::ui::Attachment::rendered(out.bytes.clone(), out.digest, out.format.extension())
+                .unwrap();
+        assert_eq!(attachment.name(), format!("{}.png", &hex[..16]));
     }
 }

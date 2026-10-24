@@ -2947,7 +2947,8 @@ impl AppBuilder {
         let discord_cache = discord_cache_feed(&mut ports, config.discord_cache);
         if let Some(renderer) = &config.renderer {
             let asset_store: Arc<dyn AssetStore> = ports.asset_store.clone();
-            renderer.bind(RendererPorts::new(asset_store));
+            let render_cache: Arc<dyn RenderCache> = ports.render_cache.clone();
+            renderer.bind(RendererPorts::new(asset_store).with_render_cache(render_cache));
         }
         let kv: Arc<dyn CacheStore> = ports.cache_store.clone();
         let refs: Arc<dyn RefStore> = ports.ref_store.clone();

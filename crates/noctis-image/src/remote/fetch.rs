@@ -38,6 +38,7 @@ use twilight_model::id::Id;
 
 use super::{Declared, Origin, ParsedUrl, RemoteConfig, RemoteImage};
 use crate::assets::{self, sniff};
+use crate::cache::version_of;
 use crate::emoji::CustomEmoji;
 
 /// The `user-agent` of every request; nothing personal goes in a header.
@@ -61,6 +62,8 @@ pub(crate) struct AssetFetcher {
     cache_ttl: Duration,
     permits: Arc<Semaphore>,
     fallback: ImageSource,
+    /// The blake3 of the configured fallback's bytes, or of `b"builtin"`.
+    fallback_version: [u8; 32],
 }
 
 impl fmt::Debug for AssetFetcher {
@@ -122,9 +125,9 @@ impl AssetFetcher {
     /// The `[IMG-02]` message of a bad fallback image, or `[IMG-03] the TLS
     /// verifier is unavailable: …`.
     pub(crate) fn new(config: &RemoteConfig) -> Result<Self, String> {
-        let fallback = match config.fallback_image() {
-            Some(image) => assets::decode(&image)?,
-            None => builtin_fallback()?,
+        let (fallback, fallback_version) = match config.fallback_image() {
+            Some(image) => (assets::decode(&image)?, version_of(image.bytes())),
+            None => (builtin_fallback()?, version_of(b"builtin")),
         };
         let tls = tls_config()
             .map_err(|err| format!("[IMG-03] the TLS verifier is unavailable: {err}"))?;
@@ -150,7 +153,18 @@ impl AssetFetcher {
             cache_ttl: config.cache_ttl_value(),
             permits: Arc::new(Semaphore::new(config.concurrency_value())),
             fallback,
+            fallback_version,
         })
+    }
+
+    /// The render cache key's asset pairs of this fetcher (FR-36):
+    /// `remote.cdn` (blake3 of the CDN base) and `remote.fallback` (blake3
+    /// of the configured fallback's bytes, or of `b"builtin"`).
+    pub(crate) fn key_pairs(&self) -> [(&'static str, [u8; 32]); 2] {
+        [
+            ("remote.cdn", version_of(self.cdn.as_bytes())),
+            ("remote.fallback", self.fallback_version),
+        ]
     }
 
     /// The fallback drawn for the placeholder and for every image that
@@ -258,6 +272,7 @@ impl AssetFetcher {
         .await;
         let mut images = HashMap::with_capacity(plan.len());
         let mut failure = None;
+        let mut degraded = false;
         for (item, result) in plan.into_iter().zip(results) {
             let source = match result {
                 Ok(source) => source,
@@ -278,6 +293,7 @@ impl AssetFetcher {
                         });
                         continue;
                     }
+                    degraded = true;
                     self.fallback.clone()
                 }
             };
@@ -288,6 +304,7 @@ impl AssetFetcher {
             None => Ok(Resolved {
                 images,
                 fallback: self.fallback.clone(),
+                degraded,
             }),
         }
     }
@@ -455,6 +472,9 @@ fn check_and_decode(bytes: &[u8], max_pixels: u64) -> Result<ImageSource, String
 pub(crate) struct Resolved {
     images: HashMap<RemoteImage, ImageSource>,
     fallback: ImageSource,
+    /// Whether an image draws the fallback because it failed or was over
+    /// the emoji cap: such a render is never cached (FR-36).
+    degraded: bool,
 }
 
 impl Resolved {
@@ -463,6 +483,7 @@ impl Resolved {
         Self {
             images: HashMap::new(),
             fallback,
+            degraded: false,
         }
     }
 
@@ -472,15 +493,23 @@ impl Resolved {
         Self {
             images: images.into_iter().collect(),
             fallback,
+            degraded: false,
         }
     }
 
     /// Makes each of `images` draw the fallback (custom emoji over the
     /// per-job cap).
     pub(crate) fn fall_back(&mut self, images: Vec<RemoteImage>) {
+        self.degraded |= !images.is_empty();
         for image in images {
             self.images.insert(image, self.fallback.clone());
         }
+    }
+
+    /// Whether an image draws the fallback after a failed fetch, or a
+    /// custom emoji over the per-job cap does: the render is not cached.
+    pub(crate) fn degraded(&self) -> bool {
+        self.degraded
     }
 
     /// The source `image` draws; `None` when the job did not declare it.
@@ -498,6 +527,7 @@ impl fmt::Debug for Resolved {
         images.sort_unstable();
         f.debug_struct("Resolved")
             .field("images", &images)
+            .field("degraded", &self.degraded)
             .finish_non_exhaustive()
     }
 }

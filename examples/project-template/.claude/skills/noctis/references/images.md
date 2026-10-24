@@ -545,7 +545,7 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
 ```
 
 - `ctx.render(t).await?` (on `CommandCtx`, `ComponentCtx`, `ModalSubmitCtx` and
-  `ExpiredCtx`) returns an `Attachment` named by the output digest
+  `ExpiredCtx`) returns an `Attachment` named by the render cache key (§9)
   (`<16 hex>.png`/`.jpg`/`.webp`) in the Template's still `format`; an animated
   Template (`animation(..)`) renders animated, ext `webp` (default), `gif` or `png`
   (APNG). The output always fits the size budget (below), so it never fails ATT-01 at
@@ -748,10 +748,42 @@ returns the same through a handler as a `RenderReport` (`report.attachment`,
 
 ## 9. Cache
 
-Identical requests hit the `RenderCache` port; N concurrent identical requests render
-once. The key covers Noctis + renderer version, template id + version, theme, data,
-asset versions, size, format and settings — so upgrades never serve stale images, but
-**you** must bump `version` when the view changes. Attachment names derive from the key.
+Every render request is keyed (blake3, AD-15) by:
+
+- the Noctis version and the pinned takumi version;
+- the Template `id` and `version`;
+- the Theme (`Theme::digest()`);
+- the Template's data (its postcard bytes);
+- the App's assets: the registered fonts (order, families, ranges), every
+  `ImageConfig::image` static image, and the remote-image CDN and fallback image;
+- `size`, `format`, the animation (duration, fps, animated format) and the effective
+  size budget (`min(upload budget, size_target)`) plus `still_fallback`.
+
+What that means for a bot:
+
+- **Identical concurrent requests render once.** Ten users clicking the same button at
+  once share one render and one queue slot (process-local: two processes of a Cluster
+  each render once).
+- **An identical later request is served from the App's `RenderCache`** (the bounded
+  `MemoryRenderCache` by default: 64 MiB, entries at most 1 day; swap it with
+  `AppBuilder::render_cache(..)`, e.g. a shared Redis Adapter, or size it with
+  `MemoryRenderCache::with_limits(MemoryLimits::new(max_bytes, max_ttl))` and watch it
+  with `usage()`). A hit fetches no remote image, takes no queue slot and draws nothing.
+  Remote images are keyed by identity (user id, avatar hash, URL, emoji id), never by
+  their bytes: a user's new avatar has a new hash, so it is a new key.
+- **Errors and degraded renders are never cached.** A render that drew the remote-image
+  fallback (a failed fetch, emoji over `max_emoji`) or failed is rendered again next
+  time; a transient 404 is never pinned for a day.
+- **Bump `version` when the look changes.** The view's code is not in the key: changing
+  `view` (classes, layout) without bumping the Template's `version` serves the old
+  image until the entry expires. Upgrading Noctis or takumi changes the key by itself.
+- **Registering another static image or font invalidates the App's whole render
+  cache** (every key changes), and so does a Theme change.
+- **Attachment names come from the key**: `ctx.render` names the file
+  `<first 16 hex of the key>.<ext>`, so the same request always uploads under the same
+  name, and `RenderOutput::digest` is the key (not a hash of the bytes).
+- A cache read or write failure (or an unreadable entry) logs one `noctis::image`
+  warning and renders as if there were no cache; it never fails a render.
 
 ## 10. Placing images (UD-2)
 

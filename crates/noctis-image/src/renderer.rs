@@ -5,17 +5,24 @@
 //! the process-scoped [`RenderPool`]. A Template with `#[asset]` fields, or
 //! whose data text holds Discord custom emoji (IMG-04), has its remote
 //! images resolved before its job is admitted.
+//!
+//! Every admitted request is keyed by its render key (AD-15, FR-36):
+//! identical concurrent requests share one flight (process-local
+//! single-flight), and a flight first looks its key up in the App's
+//! `RenderCache`, so a hit renders, fetches and admits nothing.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, PoisonError, RwLock};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures_util::FutureExt;
 use image::imageops::FilterType;
 use noctis_ports::{
-    AnimatedFormat, AssetStore, BoxFuture, EncodeSettings, Format, Frame, RenderError, RenderJob,
-    RenderOutput, Renderer, RendererPorts, Size, TemplateDescriptor,
+    AnimatedFormat, AssetStore, BoxFuture, EncodeSettings, Format, Frame, RenderCache, RenderError,
+    RenderJob, RenderOutput, Renderer, RendererPorts, Size, TemplateDescriptor,
 };
 #[cfg(feature = "gif")]
 use takumi::prelude::{AnimatedGifOptions, AnimatedPngOptions};
@@ -25,7 +32,9 @@ use takumi::prelude::{
 
 use crate::assets::StaticImages;
 use crate::budget::{self, Attempt};
+use crate::cache::{self, AssetPairs, KeyInputs, RenderKey};
 use crate::caps::RenderCaps;
+use crate::flight::{self, Flights};
 use crate::fonts::FontRegistry;
 use crate::lower::lower;
 use crate::pool::{Lane, RenderPool, Requester};
@@ -64,6 +73,16 @@ struct Shared {
     /// The App's namespaced `AssetStore`, set by `bind` (first call wins);
     /// unbound, nothing is cached.
     store: OnceLock<Arc<dyn AssetStore>>,
+    /// The App's namespaced `RenderCache`, set by `bind` (first call wins);
+    /// unbound, every flight renders.
+    render_cache: OnceLock<Arc<dyn RenderCache>>,
+    /// `theme.digest()`, computed once.
+    theme_digest: [u8; 32],
+    /// The render key's asset pairs (fonts, static images, remote CDN and
+    /// fallback), computed once.
+    assets: AssetPairs,
+    /// The in-flight renders by key.
+    flights: Flights,
 }
 
 /// Why an animation with fps 0 or a duration under 1 ms is unsupported.
@@ -159,9 +178,12 @@ impl TakumiRenderer {
             caps,
             remote,
         } = config;
+        let assets = asset_pairs(&fonts, &images, &remote);
         Self {
             pool,
             shared: Arc::new(Shared {
+                theme_digest: theme.digest(),
+                assets,
                 theme,
                 stylesheet: Arc::new(stylesheet),
                 check: ClassCheck::new(mode),
@@ -172,6 +194,8 @@ impl TakumiRenderer {
                 caps,
                 remote,
                 store: OnceLock::new(),
+                render_cache: OnceLock::new(),
+                flights: Flights::default(),
             }),
             views: RwLock::new(HashMap::new()),
         }
@@ -222,25 +246,55 @@ impl std::fmt::Debug for TakumiRenderer {
     }
 }
 
+/// The render key's asset pairs of a Renderer (FR-36): `fonts`,
+/// `image:<id>` for every static image, `remote.cdn` and `remote.fallback`.
+fn asset_pairs(fonts: &FontRegistry, images: &StaticImages, remote: &AssetFetcher) -> AssetPairs {
+    let mut pairs = vec![("fonts".to_owned(), fonts.digest())];
+    pairs.extend(
+        images
+            .versions()
+            .map(|(id, version)| (format!("image:{id}"), version)),
+    );
+    pairs.extend(
+        remote
+            .key_pairs()
+            .map(|(id, version)| (id.to_owned(), version)),
+    );
+    AssetPairs::new(pairs)
+}
+
+/// Submits `job` (with its `resolved` remote images) to `pool`.
+fn submit(
+    pool: &RenderPool,
+    shared: &Arc<Shared>,
+    view: ViewFn,
+    job: RenderJob,
+    resolved: Resolved,
+) -> Result<tokio::sync::oneshot::Receiver<Result<RenderOutput, RenderError>>, RenderError> {
+    let shared = Arc::clone(shared);
+    let lane = match job.animation {
+        None => Lane::Still,
+        Some(spec) => Lane::Animated {
+            frames: budget::span_count(spec.duration, spec.fps),
+        },
+    };
+    pool.try_submit(lane, move |requester| {
+        shared.draw(view, &job, &resolved, requester)
+    })
+}
+
 impl TakumiRenderer {
-    /// Submits `job` (with its `resolved` remote images) to the pool.
-    fn submit(
-        &self,
-        view: ViewFn,
-        job: RenderJob,
-        resolved: Resolved,
-    ) -> Result<tokio::sync::oneshot::Receiver<Result<RenderOutput, RenderError>>, RenderError>
-    {
-        let shared = Arc::clone(&self.shared);
-        let lane = match job.animation {
-            None => Lane::Still,
-            Some(spec) => Lane::Animated {
-                frames: budget::span_count(spec.duration, spec.fps),
-            },
-        };
-        self.pool.try_submit(lane, move |requester| {
-            shared.draw(view, &job, &resolved, requester)
-        })
+    /// The render key of `job` on this Renderer (AD-15).
+    fn key(&self, job: &RenderJob) -> RenderKey {
+        let shared = &self.shared;
+        KeyInputs::of(
+            job,
+            shared.theme_digest,
+            &shared.assets,
+            shared.size_target,
+            shared.still_fallback,
+        )
+        .key()
     }
 
     /// The deduplicated remote images `job` declares, checked against the
@@ -274,43 +328,127 @@ struct Plan {
     over: Vec<RemoteImage>,
 }
 
+/// One flight's work: everything its body owns.
+struct Flight {
+    pool: Arc<RenderPool>,
+    shared: Arc<Shared>,
+    view: ViewFn,
+    job: RenderJob,
+    key: RenderKey,
+    plan: Option<Plan>,
+}
+
+impl Flight {
+    /// Looks the key up in the render cache; on a miss resolves the remote
+    /// images, renders on the pool and stores the output unless it is
+    /// degraded. Cache port failures only warn.
+    async fn run(self) -> Result<RenderOutput, RenderError> {
+        let Self {
+            pool,
+            shared,
+            view,
+            job,
+            key,
+            plan,
+        } = self;
+        let template = job.template_id;
+        let cache = shared.render_cache.get().map(Arc::clone);
+        let store_key = key.store_key();
+        if let Some(cache) = &cache {
+            match cache.get(&store_key).await {
+                Ok(Some(entry)) => {
+                    if let Some(output) = cache::decode_entry(&entry, key) {
+                        return Ok(output);
+                    }
+                    tracing::warn!(
+                        target: "noctis::image",
+                        template,
+                        "render cache entry is not valid; rendering again"
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    target: "noctis::image",
+                    template,
+                    error = %error,
+                    "render cache read failed; rendering"
+                ),
+            }
+        }
+        let resolved = match plan {
+            None => Resolved::empty(shared.remote.fallback().clone()),
+            Some(Plan { fetch, over }) => {
+                let store = shared.store.get().map(|store| &**store);
+                let mut resolved = shared
+                    .remote
+                    .resolve(store, template, fetch, job.animation.is_some())
+                    .await?;
+                resolved.fall_back(over);
+                resolved
+            }
+        };
+        let degraded = resolved.degraded();
+        let mut output = submit(&pool, &shared, view, job, resolved)?
+            .await
+            .map_err(|_| RenderError::failed("render pool dropped the job"))??;
+        output.digest = key.0;
+        if let Some(cache) = &cache
+            && !degraded
+            && let Err(error) = cache
+                .put(&store_key, cache::encode_entry(&output), None)
+                .await
+        {
+            tracing::warn!(
+                target: "noctis::image",
+                template,
+                error = %error,
+                "render cache write failed"
+            );
+        }
+        Ok(output)
+    }
+}
+
 impl Renderer for TakumiRenderer {
-    /// Looks the Template up and checks the caps. A Template without
-    /// `#[asset]` fields whose data holds no custom emoji is admitted to the
-    /// pool before the future is returned, so admission order is call
-    /// order. Any other first resolves its remote images and custom emoji
-    /// (concurrently, through the App's `AssetFetcher` and `AssetStore`)
-    /// and is admitted after them.
-    /// Dropping the future gives the job up: pending fetches are aborted, a
-    /// queued job is skipped, a running one stops before its next frame or
-    /// encode attempt.
+    /// Looks the Template up, checks the caps and plans its remote images
+    /// (these errors are returned at once), then joins the flight of the
+    /// job's render key or starts one (FR-36). A flight looks the key up in
+    /// the App's render cache; on a miss it resolves the remote images and
+    /// custom emoji (concurrently, through the App's `AssetFetcher` and
+    /// `AssetStore`), renders and stores the result.
+    /// The flight is polled once before the future is returned, so a job
+    /// without remote images is admitted to the pool at the call (after the
+    /// lookup when the cache adapter pends), and admission order is call
+    /// order.
+    /// Dropping the future leaves the flight; once every caller has left,
+    /// pending fetches are aborted, a queued job is skipped and a running
+    /// one stops before its next frame or encode attempt.
     fn render(&self, job: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
         let planned = self
             .view_of(&job)
             .and_then(|view| Ok((view, self.declared(view, &job)?)));
-        match planned {
-            Err(error) => Box::pin(std::future::ready(Err(error))),
-            Ok((view, None)) => {
-                let fallback = self.shared.remote.fallback().clone();
-                let admitted = self.submit(view, job, Resolved::empty(fallback));
-                Box::pin(async move {
-                    admitted?
-                        .await
-                        .map_err(|_| RenderError::failed("render pool dropped the job"))?
-                })
-            }
-            Ok((view, Some(Plan { fetch, over }))) => Box::pin(async move {
-                let store = self.shared.store.get().map(|store| &**store);
-                let mut resolved = self
-                    .shared
-                    .remote
-                    .resolve(store, job.template_id, fetch, job.animation.is_some())
-                    .await?;
-                resolved.fall_back(over);
-                self.submit(view, job, resolved)?
-                    .await
-                    .map_err(|_| RenderError::failed("render pool dropped the job"))?
-            }),
+        let (view, plan) = match planned {
+            Ok(planned) => planned,
+            Err(error) => return Box::pin(std::future::ready(Err(error))),
+        };
+        let key = self.key(&job);
+        let mut flight = self.shared.flights.join(key, |guard| {
+            let flight = Flight {
+                pool: Arc::clone(&self.pool),
+                shared: Arc::clone(&self.shared),
+                view,
+                job,
+                key,
+                plan,
+            };
+            Box::pin(async move {
+                let _guard = guard;
+                flight.run().await.map_err(Arc::new)
+            })
+        });
+        match flight.poll_unpin(&mut Context::from_waker(Waker::noop())) {
+            Poll::Ready(result) => Box::pin(std::future::ready(flight::unshare(result))),
+            Poll::Pending => Box::pin(flight.map(flight::unshare)),
         }
     }
 
@@ -343,10 +481,14 @@ impl Renderer for TakumiRenderer {
         Ok(())
     }
 
-    /// Keeps the App's namespaced `AssetStore` for fetched remote images;
-    /// the first call wins.
+    /// Keeps the App's namespaced `AssetStore` for fetched remote images
+    /// and its `RenderCache` for rendered images; the first call wins for
+    /// each.
     fn bind(&self, ports: RendererPorts) {
         let _ = self.shared.store.set(ports.asset_store);
+        if let Some(cache) = ports.render_cache {
+            let _ = self.shared.render_cache.set(cache);
+        }
     }
 }
 
@@ -397,10 +539,10 @@ impl Shared {
             }
             _ => (job.format.into(), 1),
         };
-        let digest = *blake3::hash(&bytes).as_bytes();
+        // The flight sets the render key as the digest (FR-36).
         Ok(RenderOutput {
             bytes: Bytes::from(bytes),
-            digest,
+            digest: [0; 32],
             format,
             settings_used: EncodeSettings {
                 size: attempt.size,

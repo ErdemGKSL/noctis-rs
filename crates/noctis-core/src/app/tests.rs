@@ -1255,6 +1255,7 @@ async fn build_registers_templates_with_the_renderer() {
 #[derive(Default)]
 struct Binding {
     bound: Mutex<Vec<Arc<dyn AssetStore>>>,
+    caches: Mutex<Vec<Option<Arc<dyn RenderCache>>>>,
 }
 
 impl Renderer for Binding {
@@ -1268,21 +1269,39 @@ impl Renderer for Binding {
 
     fn bind(&self, ports: RendererPorts) {
         self.bound.lock().unwrap().push(ports.asset_store);
+        self.caches.lock().unwrap().push(ports.render_cache);
     }
 }
 
 #[tokio::test]
 async fn img_03_build_binds_the_namespaced_asset_store() {
-    use noctis_ports::memory::MemoryAssetStore;
+    use noctis_ports::memory::{MemoryAssetStore, MemoryRenderCache};
 
     let renderer = Arc::new(Binding::default());
     let backing = Arc::new(MemoryAssetStore::new());
+    let cache_backing = Arc::new(MemoryRenderCache::new());
     App::builder()
         .app_id("a")
         .asset_store(Arc::clone(&backing))
+        .render_cache(Arc::clone(&cache_backing))
         .renderer(Arc::clone(&renderer) as Arc<dyn Renderer>)
         .build()
         .unwrap();
+    // FR-36: the bound render cache is the App's namespaced one.
+    let caches = renderer.caches.lock().unwrap().clone();
+    assert_eq!(caches.len(), 1, "bind runs once per build");
+    let cache = caches[0].as_ref().expect("a render cache is bound");
+    cache
+        .put("render:v1:k", Bytes::from_static(b"entry"), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        cache_backing
+            .get("a:render_cache:render:v1:k")
+            .await
+            .unwrap(),
+        Some(Bytes::from_static(b"entry"))
+    );
     let bound = renderer.bound.lock().unwrap().clone();
     assert_eq!(bound.len(), 1, "bind runs once per build");
     bound[0]

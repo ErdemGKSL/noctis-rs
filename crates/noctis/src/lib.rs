@@ -2213,6 +2213,18 @@ pub mod image {
     //!   draw the fallback) and drawn inline as `1.375em` images; the markup
     //!   is never drawn. A token in literal `view!` text is a compile error;
     //!   one only the view writes is `RenderError::UndeclaredImage`.
+    //! - Cache (FR-36): every render is keyed by blake3 over the Noctis and
+    //!   takumi versions, the Template id and version, the Theme, the
+    //!   Template's data, the App's fonts, static images and remote-image
+    //!   CDN and fallback, the size, format, animation and the effective
+    //!   size budget. Identical concurrent renders run once (process-local
+    //!   single-flight), and results are stored in the App's `RenderCache`
+    //!   (`AppBuilder::render_cache`; `MemoryRenderCache`, 64 MiB and 1 day
+    //!   by default, `MemoryRenderCache::with_limits`), so an identical later
+    //!   render fetches, queues and draws nothing. Errors and renders that
+    //!   drew a remote-image fallback are never stored. The attachment is
+    //!   named by the key (`<first 16 hex>.<ext>`). The view's code is not in
+    //!   the key: bump the Template's `version` when its look changes.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```

@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::BoxFuture;
-use crate::store::AssetStore;
+use crate::store::{AssetStore, RenderCache};
 use crate::value::{ValueError, decode_postcard};
 
 /// An image Template: a typed value plus its fixed render settings.
@@ -347,7 +347,8 @@ pub struct EncodeSettings {
 pub struct RenderOutput {
     /// The encoded bytes.
     pub bytes: Bytes,
-    /// The blake3 digest of `bytes`.
+    /// The render's digest, which names the attachment; the takumi
+    /// Renderer uses its render cache key (AD-15, AD-22).
     pub digest: [u8; 32],
     /// The encoded format.
     pub format: OutputFormat,
@@ -540,12 +541,28 @@ impl RenderError {
 pub struct RendererPorts {
     /// The App's namespaced [`AssetStore`]: fetched remote images.
     pub asset_store: Arc<dyn AssetStore>,
+    /// The App's namespaced [`RenderCache`]: rendered images by render key
+    /// (FR-36); `None` renders every request.
+    pub render_cache: Option<Arc<dyn RenderCache>>,
 }
 
 impl RendererPorts {
-    /// The ports of an App whose asset store is `asset_store`.
+    /// The ports of an App whose asset store is `asset_store`, without a
+    /// render cache.
     pub fn new(asset_store: Arc<dyn AssetStore>) -> Self {
-        Self { asset_store }
+        Self {
+            asset_store,
+            render_cache: None,
+        }
+    }
+
+    /// These ports with `cache` as the render cache.
+    #[must_use]
+    pub fn with_render_cache(self, cache: Arc<dyn RenderCache>) -> Self {
+        Self {
+            render_cache: Some(cache),
+            ..self
+        }
     }
 }
 
@@ -926,5 +943,13 @@ mod tests {
         let err = RenderError::failed(fmt::Error);
         assert!(err.source().is_some());
         assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn fr_36_renderer_ports_carry_an_optional_render_cache() {
+        let ports = RendererPorts::new(Arc::new(crate::memory::MemoryAssetStore::new()));
+        assert!(ports.render_cache.is_none());
+        let ports = ports.with_render_cache(Arc::new(crate::memory::MemoryRenderCache::new()));
+        assert!(ports.render_cache.is_some());
     }
 }

@@ -205,3 +205,19 @@ fn img_02_debug_never_prints_bytes() {
         )
     );
 }
+
+#[test]
+fn fr_36_versions_are_the_blake3_of_each_image() {
+    let logo = StaticImage::new("logo", png());
+    let other = StaticImage::new("other", encoded(3, 3, OutputFormat::Png));
+    let images = StaticImages::decode(&[logo, other]).unwrap();
+    let mut versions: Vec<(&str, [u8; 32])> = images.versions().collect();
+    versions.sort_unstable();
+    assert_eq!(
+        versions,
+        [
+            ("logo", *blake3::hash(logo.bytes()).as_bytes()),
+            ("other", *blake3::hash(other.bytes()).as_bytes()),
+        ]
+    );
+}

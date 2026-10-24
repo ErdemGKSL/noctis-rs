@@ -87,6 +87,11 @@ impl StaticImage {
         self.id
     }
 
+    /// The image's bytes.
+    pub(crate) const fn bytes(&self) -> &'static [u8] {
+        self.bytes
+    }
+
     /// Whether `other` holds the same bytes (by address first).
     fn same_bytes(&self, other: &[u8]) -> bool {
         std::ptr::eq(self.bytes, other) || self.bytes == other
@@ -171,6 +176,14 @@ impl StaticImages {
             by_id.insert(image.id, (*image, decode(image)?));
         }
         Ok(Self { by_id })
+    }
+
+    /// Every image as `(id, blake3 of its bytes)`: the `image:<id>` asset
+    /// versions of the render cache key (FR-36).
+    pub(crate) fn versions(&self) -> impl Iterator<Item = (&'static str, [u8; 32])> + '_ {
+        self.by_id
+            .iter()
+            .map(|(id, (image, _))| (*id, *blake3::hash(image.bytes()).as_bytes()))
     }
 
     /// The decoded source of `image`; `None` when its id is not registered

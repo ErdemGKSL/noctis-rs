@@ -4337,8 +4337,10 @@ pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescrip
 pub fn noctis::ports::Renderer::render(&self, noctis::image::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::RenderOutput, noctis::image::RenderError>>
 #[non_exhaustive] pub struct noctis::ports::RendererPorts
 pub noctis::ports::RendererPorts::asset_store: alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>
+pub noctis::ports::RendererPorts::render_cache: core::option::Option<alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>>
 impl noctis::ports::RendererPorts
 pub fn noctis::ports::RendererPorts::new(alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>) -> Self
+pub fn noctis::ports::RendererPorts::with_render_cache(self, alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>) -> Self
 impl core::clone::Clone for noctis::ports::RendererPorts
 pub fn noctis::ports::RendererPorts::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ports::RendererPorts
