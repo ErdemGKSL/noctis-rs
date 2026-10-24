@@ -137,7 +137,10 @@ never from Noctis's source.
 ## Scale out later
 
 Nothing in the handlers changes when the bot grows. Split shards across processes with
-`NOCTIS_SHARDS`, point every process at one `NOCTIS_HTTP_PROXY`, and replace the
+`NOCTIS_SHARD_RANGE=start..end` and one `NOCTIS_SHARD_TOTAL`, point every process at one
+shared rate-limit proxy with `NOCTIS_HTTP_PROXY` (without it a Cluster process logs an
+RL-02 warning), and handle a Discord 429 as the typed `RateLimited` error (never retried in
+a loop; `RateLimited::from_http_error` for `ctx.http()` calls). Then replace the
 in-memory Adapters (RefStore, RateLimitStore, ModuleStateStore, IdentifyQueue,
 SessionStore, CacheStore) with shared ones, as `src/adapters/` shows. See
 `.claude/skills/noctis/references/app-and-sharding.md` and `adapters.md`.

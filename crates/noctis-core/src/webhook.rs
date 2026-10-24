@@ -127,6 +127,10 @@ pub enum WebhookError {
     /// nothing was sent.
     #[error("the webhook token is not 1-512 characters of [A-Za-z0-9._-]")]
     InvalidToken,
+    /// Discord rate limited the request and Noctis did not retry it
+    /// (RL-04).
+    #[error(transparent)]
+    RateLimited(crate::RateLimited),
     /// Discord answered with an error status.
     #[error("Discord rejected the webhook request with HTTP {status}{}", code.map(|c| format!(" (code {c})")).unwrap_or_default())]
     Rejected {
@@ -153,6 +157,7 @@ impl From<ResponderError> for WebhookError {
             ResponderError::RefCollision => Self::RefCollision,
             ResponderError::InvalidToken => Self::InvalidToken,
             ResponderError::Rejected { status, code } => Self::Rejected { status, code },
+            ResponderError::RateLimited(limited) => Self::RateLimited(limited),
             ResponderError::Transport => Self::Transport,
             other => {
                 tracing::debug!(target: "noctis::webhook", error = %other, "unexpected responder error");

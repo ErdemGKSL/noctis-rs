@@ -16,6 +16,8 @@ use tracing::Instrument;
 use super::connect::{DialError, Dialer, Sender};
 use super::metrics::{EdgeMetrics, Reason};
 
+/// The request timeout of a pool built without one.
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// The most idle HTTP/1.1 connections kept.
 const MAX_IDLE: usize = 32;
 /// How long a used HTTP/1.1 connection may take to become ready again
@@ -65,11 +67,22 @@ pub(crate) struct Pool {
     /// How many redials were requested from outside (shard network loss,
     /// a won hedge).
     redial_requests: AtomicUsize,
+    /// The bound on every forwarded request and every callback attempt
+    /// (`AppBuilder::http_timeout`).
+    pub(crate) request_timeout: Duration,
+    /// Whether the upstream is a shared rate-limit proxy (twilight's limiter
+    /// is off): no 429 is relayed to twilight then.
+    pub(crate) proxied: bool,
 }
 
 impl Pool {
+    /// A pool with the default 10 s request timeout; `proxied` follows the
+    /// upstream (plain HTTP is a proxy, TLS is Discord).
     pub(crate) fn new(dialer: Dialer, cancel: CancellationToken) -> Self {
+        let proxied = matches!(dialer.upstream, super::Upstream::Http { .. });
         Self {
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            proxied,
             dialer,
             cancel,
             next_id: AtomicU64::new(0),

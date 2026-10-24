@@ -421,6 +421,11 @@ fn check_value(metric: &str, label: &str, value: &str) {
             "{metric}: {value}"
         ),
         "reused" => assert!(["true", "false"].contains(&value), "{metric}: {value}"),
+        "scope" => assert!(
+            ["user", "global", "shared", "unknown"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "status" => assert!(["401", "403", "429"].contains(&value), "{metric}: {value}"),
         "outcome" => assert!(
             ["won", "lost", "40060"].contains(&value),
             "{metric}: {value}"
@@ -632,6 +637,20 @@ async fn recorded_set_matches_catalog() {
     let _ = running.run.await;
 }
 
+/// Sends one request the upstream answers with a scope-less (Cloudflare
+/// style) 429, which feeds `noctis_http_rate_limited_total` and
+/// `noctis_http_invalid_requests_total`.
+async fn send_scopeless_429(fake: &FakeDiscordHttp, app: &App) {
+    use noctis_testkit::fake::{FakeResponse, Method, StatusCode};
+
+    fake.route(
+        Method::GET,
+        "/channels/1",
+        FakeResponse::new(StatusCode::TOO_MANY_REQUESTS, "error code: 1015"),
+    );
+    let _ = app.http().channel(twilight_model::id::Id::new(1)).await;
+}
+
 /// Story 5.9 Matrix 49: the HTTP edge records only catalog metrics with
 /// fixed label values, every HTTP row is recorded, and no `noctis.http`
 /// span or label carries the token, the interaction id or a path.
@@ -674,6 +693,8 @@ async fn http_edge_recorded_set() {
     .await;
     // Row 26: a forwarded request.
     let _ = app.http().current_user().await;
+    // Story 12.4: the rate-limited and invalid-request counters.
+    send_scopeless_429(&fake, &app).await;
     let body = bytes::Bytes::from_static(br#"{"type":5}"#);
     let now = tokio::time::Instant::now();
     let ack = interaction_callback(&app, ID, SECRET, body.clone(), false, now).await;

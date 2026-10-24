@@ -1624,6 +1624,33 @@ pub mod http {
     //! [`RawHttpError::Status`]. The Responder never sees these requests:
     //! answer interactions with `ctx.respond`/`ctx.update`.
     //!
+    //! Every request is bounded by `AppBuilder::http_timeout` (default
+    //! 10 s), interaction callbacks included. A Discord 429 that twilight's
+    //! limiter cannot wait out (every 429 behind a shared rate-limit proxy,
+    //! and a `global`, `shared` or header-less one without) is never retried:
+    //! it is [`RateLimited`] with its [`RateLimitScope`], `retry_after` and
+    //! Discord `code`, typed on every Noctis surface
+    //! (`ResponderError::RateLimited`, `WebhookError::RateLimited`,
+    //! [`RawHttpError::RateLimited`]) and recovered from a raw twilight call
+    //! with [`RateLimited::from_http_error`]. Wait before sending it again;
+    //! never retry it in a loop.
+    //!
+    //! ```no_run
+    //! use noctis::http::RateLimited;
+    //! use noctis::prelude::*;
+    //!
+    //! /// `None` when Discord rate limited the read: try again later.
+    //! async fn channel_name(ctx: &CommandCtx, id: u64) -> Result<Option<String>, HandlerError> {
+    //!     let id = noctis::twilight::model::id::Id::new(id);
+    //!     match ctx.http().channel(id).await {
+    //!         Ok(response) => Ok(response.model().await?.name),
+    //!         Err(error) if RateLimited::from_http_error(&error).is_some() => Ok(None),
+    //!         Err(error) => Err(error.into()),
+    //!     }
+    //! }
+    //! # let _ = channel_name;
+    //! ```
+    //!
     //! ```no_run
     //! use noctis::http::{Method, RawHttp};
     //! use noctis::prelude::*;
@@ -1636,7 +1663,9 @@ pub mod http {
     //! # let _ = pin_count;
     //! ```
 
-    pub use noctis_core::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
+    pub use noctis_core::{
+        Method, RateLimitScope, RateLimited, RawHttp, RawHttpError, RawRequest, RawResponse,
+    };
 }
 
 pub mod gateway {

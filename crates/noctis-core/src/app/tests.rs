@@ -4179,3 +4179,54 @@ mod overlays {
         assert_eq!(C.__overlay_row(Locale::Tr), None);
     }
 }
+
+/// Story 12.4 R16 (RL-02): a Shard Range smaller than the total without a
+/// proxy is a Cluster at risk of the global limit.
+#[test]
+fn rl_02_cluster_without_proxy() {
+    for (range, total) in [(0..2, 4), (2..4, 4), (0..1, 2)] {
+        assert!(
+            cluster_without_proxy(Some(&range), Some(total), None),
+            "{range:?}/{total}"
+        );
+    }
+}
+
+/// Story 12.4 R17: the whole range, no Cluster or a proxy is not.
+#[test]
+fn cluster_with_proxy_or_whole_range() {
+    assert!(!cluster_without_proxy(Some(&(0..4)), Some(4), None));
+    assert!(!cluster_without_proxy(None, Some(4), None));
+    assert!(!cluster_without_proxy(None, None, None));
+    assert!(!cluster_without_proxy(Some(&(0..2)), Some(4), Some("p:1")));
+}
+
+/// Story 12.4 E13 (RL-02): exactly one warning naming the risk and the fix.
+#[test]
+fn rl_02_warning_text() {
+    let capture = crate::test_support::Capture::default();
+    tracing::subscriber::with_default(capture.subscriber(), || {
+        warn_cluster_without_proxy(Some(&(0..2)), Some(4));
+    });
+    let lines = capture.lines_with(&["WARN", "noctis::app", "RL-02"]);
+    assert_eq!(lines.len(), 1, "{}", capture.text());
+    let line = &lines[0];
+    for needle in [
+        "50 requests/s",
+        "NOCTIS_HTTP_PROXY",
+        "AppBuilder::http_proxy",
+        "start=0",
+        "end=2",
+        "total=4",
+    ] {
+        assert!(line.contains(needle), "{needle}: {line}");
+    }
+    assert_eq!(capture.text().lines().count(), 1);
+}
+
+/// Story 12.4 E11: the default request timeout is 10 s.
+#[tokio::test]
+async fn default_http_timeout_is_ten_seconds() {
+    let app = App::builder().build().unwrap();
+    assert_eq!(app.http_timeout(), Duration::from_secs(10));
+}

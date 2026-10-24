@@ -186,7 +186,9 @@ pub(crate) async fn interaction_callback(
         })
     };
     let now = Instant::now();
-    let deadline = received_at + ACK_DEADLINE;
+    // `http_timeout` bounds the callback too; missing it is still
+    // `AckDeadlineMissed`.
+    let deadline = (received_at + ACK_DEADLINE).min(now + pool.request_timeout);
     if now >= deadline {
         return Err(missed());
     }
@@ -358,6 +360,8 @@ fn attempt<'a>(
             metrics.phase(Phase::Ttfb, started.elapsed());
             let status = response.status();
             metrics.request(Some(status.as_u16()));
+            let limit_headers =
+                (status == StatusCode::TOO_MANY_REQUESTS).then(|| response.headers().clone());
             tracing::Span::current().record("status_class", status_class(Some(status.as_u16())));
             let retry_header = retry_after_header(response.headers());
             let cap = if status.is_success() {
@@ -367,6 +371,11 @@ fn attempt<'a>(
             };
             let body = read_capped(response.into_body(), cap).await;
             metrics.phase(Phase::Total, started.elapsed());
+            let scope = limit_headers.map(|headers| {
+                let read = body.as_ref().map_or(&[][..], |b| &b[..]);
+                super::rate_limit::classify_429(&headers, read).scope
+            });
+            metrics.upstream_status(status.as_u16(), scope);
             if conn == Conn::Pooled {
                 pool.release(sender);
             }
@@ -437,7 +446,7 @@ fn retry_after_header(headers: &HeaderMap) -> Option<Duration> {
 
 /// Reads at most about `cap` bytes of `body` (stops after the frame that
 /// reaches it) and keeps the first `cap`.
-async fn read_capped(mut body: Incoming, cap: usize) -> Result<Bytes, hyper::Error> {
+pub(crate) async fn read_capped(mut body: Incoming, cap: usize) -> Result<Bytes, hyper::Error> {
     let mut out = BytesMut::new();
     while out.len() < cap {
         let Some(frame) = body.frame().await else {

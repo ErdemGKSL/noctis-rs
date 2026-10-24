@@ -496,7 +496,8 @@ Every call returns `Result<_, ResponderError>` (`#[non_exhaustive]`; `?` convert
 | `RefCollision` | three freshly minted Refs in a row already existed in the `RefStore` |
 | `EphemeralUnsupported` | an ephemeral response over a Dispatcher message reply (§4.1) |
 | `InvalidToken` | the interaction token is not 1-512 characters of `[A-Za-z0-9._-]` |
-| `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01) |
+| `AckDeadlineMissed(AckDeadlineMissed)` | the initial response came after 2.9 s (INT-01), or the callback exceeded `.http_timeout(..)` |
+| `RateLimited(RateLimited)` | Discord rate limited a follow-up, edit or fetch (RL-04): `scope`, `retry_after`, `discord_code`; never retried, wait before trying again |
 | `Rejected { status, code }` | Discord answered an error (`code`: its JSON error code, e.g. `Some(10015)`); a callback answered 40060 (already acknowledged) counts as success |
 | `Transport` | no usable response (also a `fetch_reply` body that is not a message) |
 | `NoReply` | `fetch_reply()` with no reply message to fetch: a `Dispatcher` handler that has not replied yet (§4.1) |
@@ -853,6 +854,7 @@ mirror.send(render_notice(&s)).await?;             // render_notice -> StaticMes
 | `Encode { reason }` | a Route `custom_id` could not be resolved |
 | `RefStore(PortError)` / `RefCollision` | a Ref could not be stored or minted |
 | `InvalidToken` | the token is not 1–512 characters of `[A-Za-z0-9._-]` |
+| `RateLimited(RateLimited)` | Discord rate limited the request (RL-04); never retried, wait at least `retry_after` |
 | `Rejected { status, code }` | Discord refused (403 code 50013 without `MANAGE_WEBHOOKS`, 404 code 10015 for a deleted webhook: create a new one and store it) |
 | `Transport` | no usable answer |
 | `Detached` | a detached test context; nothing sent |

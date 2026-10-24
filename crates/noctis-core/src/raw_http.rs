@@ -191,8 +191,12 @@ async fn send(request: RawRequest<'_>) -> Result<RawResponse, RawHttpError> {
     })
 }
 
-/// A non-2xx status becomes [`RawHttpError::Status`].
+/// The edge's rate-limit response becomes [`RawHttpError::RateLimited`],
+/// another non-2xx status [`RawHttpError::Status`].
 fn from_twilight(error: twilight_http::Error) -> RawHttpError {
+    if let Some(limited) = crate::RateLimited::from_http_error(&error) {
+        return RawHttpError::RateLimited(limited);
+    }
     if !matches!(error.kind(), ErrorType::Response { .. }) {
         return RawHttpError::Http(error);
     }
@@ -306,6 +310,10 @@ pub enum RawHttpError {
     /// The [`RawRequest::json`] value did not serialize; nothing was sent.
     #[error("raw request: the JSON body could not be serialized")]
     Encode(#[source] serde_json::Error),
+    /// Discord rate limited the request and Noctis did not retry it
+    /// (RL-04).
+    #[error("raw request: rate limited by Discord")]
+    RateLimited(#[source] crate::RateLimited),
     /// Discord (or the proxy) answered with a status outside 2xx.
     #[error("raw request: status {status}")]
     Status {

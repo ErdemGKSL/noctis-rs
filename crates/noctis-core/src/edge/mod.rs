@@ -15,6 +15,7 @@ mod connect;
 mod dns;
 mod metrics;
 mod pool;
+pub(crate) mod rate_limit;
 mod sniff;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -27,6 +28,7 @@ use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
@@ -55,8 +57,20 @@ use self::pool::{Lease, Pool, start_keeper};
 /// prefix.
 pub(crate) const EDGE_ERROR_BODY: &str =
     r#"{"message":"noctis edge: upstream unavailable","code":0}"#;
+/// The edge's own error body when a forwarded request exceeds the request
+/// timeout (504).
+pub(crate) const EDGE_TIMEOUT_BODY: &str =
+    r#"{"message":"noctis edge: upstream timed out","code":0}"#;
 /// The prefix of every body the edge itself answers with.
 pub(crate) const EDGE_BODY_PREFIX: &str = r#"{"message":"noctis edge:"#;
+/// The most of an upstream 429 body the edge reads.
+const MAX_429_BODY: usize = 64 * 1024;
+
+/// Whether a response is the edge's own failure (502 upstream unavailable,
+/// 504 upstream timed out) rather than an answer from upstream.
+pub(crate) fn is_edge_failure(status: u16, body: &[u8]) -> bool {
+    matches!(status, 502 | 504) && body.starts_with(EDGE_BODY_PREFIX.as_bytes())
+}
 /// The 403 body for a target the edge does not forward.
 const FORBIDDEN_BODY: &str = r#"{"message":"noctis edge: forbidden path","code":0}"#;
 /// The 413 body (Discord's own shape and code).
@@ -68,6 +82,16 @@ const API_PREFIX: &str = "/api/v10/";
 
 /// The edge's response body: streamed upstream bytes or its own JSON.
 type EdgeBody = BoxBody<Bytes, hyper::Error>;
+
+/// How an [`Edge`] treats requests.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EdgeOptions {
+    pub(crate) config: HttpConfig,
+    /// The bound on every forwarded request and callback attempt.
+    pub(crate) request_timeout: Duration,
+    /// Whether the upstream is a shared rate-limit proxy.
+    pub(crate) proxied: bool,
+}
 
 /// The App's edge: owned by `AppShared`; dropping it stops the accept
 /// task, every connection task and the keeper.
@@ -87,32 +111,45 @@ impl Edge {
     }
 
     /// Starts serving `listener` on the current runtime, forwarding to
-    /// `upstream`.
+    /// `upstream`; every forwarded request and callback attempt is bounded
+    /// by `request_timeout`.
     pub(crate) fn start(
         (listener, addr): (std::net::TcpListener, SocketAddr),
         upstream: Upstream,
         config: HttpConfig,
+        request_timeout: Duration,
         app: &Arc<str>,
     ) -> Self {
+        let proxied = matches!(upstream, Upstream::Http { .. });
         Self::start_with(
             listener,
             addr,
             upstream,
-            config,
+            EdgeOptions {
+                config,
+                request_timeout,
+                proxied,
+            },
             Arc::clone(app),
             Arc::new(SystemResolver::default()),
         )
     }
 
-    /// [`start`](Self::start) with a custom resolver.
+    /// [`start`](Self::start) with a custom resolver and an explicit
+    /// `proxied` (tests: a TLS upstream cannot be faked).
     pub(crate) fn start_with(
         listener: std::net::TcpListener,
         addr: SocketAddr,
         upstream: Upstream,
-        config: HttpConfig,
+        options: EdgeOptions,
         app: Arc<str>,
         resolver: Arc<dyn Resolve>,
     ) -> Self {
+        let EdgeOptions {
+            config,
+            request_timeout,
+            proxied,
+        } = options;
         let cancel = CancellationToken::new();
         let dialer = Dialer {
             upstream,
@@ -120,7 +157,10 @@ impl Edge {
             config,
             metrics: EdgeMetrics::new(app),
         };
-        let pool = Arc::new(Pool::new(dialer, cancel.clone()));
+        let mut pool = Pool::new(dialer, cancel.clone());
+        pool.request_timeout = request_timeout;
+        pool.proxied = proxied;
+        let pool = Arc::new(pool);
         tokio::spawn(accept(listener, Arc::clone(&pool)));
         Self {
             pool,
@@ -192,7 +232,7 @@ async fn accept(listener: std::net::TcpListener, pool: Arc<Pool>) {
             }
             Err(error) => {
                 tracing::debug!(target: "noctis::http", %error, "edge accept failed");
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
     }
@@ -215,16 +255,20 @@ async fn serve(stream: TcpStream, pool: Arc<Pool>) {
 
 /// An edge-generated JSON response.
 fn edge_response(status: StatusCode, body: &'static str) -> Response<EdgeBody> {
-    let mut response = Response::new(
-        Full::new(Bytes::from_static(body.as_bytes()))
-            .map_err(|never| match never {})
-            .boxed(),
-    );
-    *response.status_mut() = status;
-    response.headers_mut().insert(
+    let mut headers = HeaderMap::with_capacity(1);
+    headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/json"),
     );
+    full_response(status, headers, Bytes::from_static(body.as_bytes()))
+}
+
+/// A buffered response; `content-length` comes from `body`.
+fn full_response(status: StatusCode, mut headers: HeaderMap, body: Bytes) -> Response<EdgeBody> {
+    headers.remove(header::CONTENT_LENGTH);
+    let mut response = Response::new(Full::new(body).map_err(|never| match never {}).boxed());
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
     response
 }
 
@@ -401,9 +445,15 @@ async fn forward(pool: &Arc<Pool>, request: Request<Incoming>) -> Response<EdgeB
         reused = Empty,
         status_class = Empty,
     );
-    upstream(pool, &outgoing, &span)
+    let bounded = tokio::time::timeout(pool.request_timeout, upstream(pool, &outgoing, &span))
         .instrument(span.clone())
-        .await
+        .await;
+    bounded.unwrap_or_else(|_| {
+        tracing::debug!(target: "noctis::http", "upstream request timed out");
+        span.record("status_class", "error");
+        metrics.request(None);
+        edge_response(StatusCode::GATEWAY_TIMEOUT, EDGE_TIMEOUT_BODY)
+    })
 }
 
 /// Sends a forwarded request with the retry rule; 502 when it fails.
@@ -436,6 +486,10 @@ async fn upstream(
                 span.record("status_class", status_class(Some(status)));
                 metrics.request(Some(status));
                 pool.release(sender);
+                if status == StatusCode::TOO_MANY_REQUESTS.as_u16() {
+                    return rate_limited(pool, response, metrics, started).await;
+                }
+                metrics.upstream_status(status, None);
                 return relay(response, metrics.clone(), started);
             }
             Err(SendFailure::RetrySafe) => {}
@@ -445,6 +499,48 @@ async fn upstream(
     span.record("status_class", "error");
     metrics.request(None);
     edge_response(StatusCode::BAD_GATEWAY, EDGE_ERROR_BODY)
+}
+
+/// An upstream 429 (AD-24): relayed unchanged when twilight's limiter can
+/// wait it out ([`rate_limit::relay_429`], RL-01), else answered as an edge
+/// rate-limit response (503, [`rate_limit::edge_body`], Discord's headers
+/// kept so the limiter still learns the bucket, RL-04).
+async fn rate_limited(
+    pool: &Pool,
+    response: Response<Incoming>,
+    metrics: &EdgeMetrics,
+    started: Instant,
+) -> Response<EdgeBody> {
+    let (parts, body) = response.into_parts();
+    let mut headers = end_to_end(&parts.headers);
+    let body = callback::read_capped(body, MAX_429_BODY)
+        .await
+        .unwrap_or_default();
+    metrics.phase(Phase::Total, started.elapsed());
+    let limited = rate_limit::classify_429(&headers, &body);
+    metrics.upstream_status(StatusCode::TOO_MANY_REQUESTS.as_u16(), Some(limited.scope));
+    let scope = limited.scope.as_str();
+    if rate_limit::relay_429(&headers, pool.proxied) {
+        tracing::debug!(target: "noctis::http", scope, "upstream 429 relayed to the rate limiter");
+        return full_response(parts.status, headers, body);
+    }
+    tracing::debug!(target: "noctis::http", scope, "upstream 429 surfaced as an edge rate-limit response");
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    // twilight's `Duration::from_secs_f32` panics on a negative, NaN or
+    // huge `x-ratelimit-reset-after`; such a header never reaches it.
+    if !rate_limit::valid_reset_after(&headers) {
+        headers.remove(rate_limit::RESET_AFTER);
+    }
+    // A body-level encoding would not match the edge's own body.
+    headers.remove(header::CONTENT_ENCODING);
+    full_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        headers,
+        rate_limit::edge_body(&limited),
+    )
 }
 
 /// The upstream response for twilight: hop-by-hop headers dropped, the body

@@ -529,7 +529,9 @@ Checklist:
 1. Ranges consecutive, the same `NOCTIS_SHARD_TOTAL` everywhere, aligned to
    `max_concurrency` (start and end multiples of it, or the end equal to the total;
    misaligned only warns).
-2. One shared HTTP proxy (§5); without it, startup logs a warning (RL-02).
+2. One shared HTTP rate-limit proxy (§5) for every process (`NOCTIS_HTTP_PROXY`); without
+   it, `run` logs one `noctis::app` warning: "this process runs a Shard Range of a Cluster
+   without an HTTP proxy: … (RL-02)" (50 requests/s per token is shared by all processes).
 3. Shared Adapters: `RefStore`, `RateLimitStore`, `ModuleStateStore`, `IdentifyQueue`,
    `SessionStore` (per process key space is automatic), `CacheStore`. See `adapters.md`.
 4. Same `NOCTIS_PAYLOAD_KEY` and `app_id` everywhere.
@@ -625,8 +627,33 @@ With `.http_proxy(..)` (or `NOCTIS_HTTP_PROXY`) set, the edge forwards to
 `http://{proxy}/api/v10/..` instead of Discord (HTTP/1.1, or h2c with `upstream_h2c`)
 and the App's local rate limiter is off (the proxy limits). Accepted forms: `host`, `host:port`, `[ipv6]`, `[ipv6]:port`, each
 optionally prefixed with `http://` (any case) and followed by one `/`; HTTPS proxies,
-paths and credentials are rejected (`HttpProxyError`). Request timeout defaults to 10 s. Raw requests (FR-31) for endpoints twilight does not
-model go through the same client:
+paths and credentials are rejected (`HttpProxyError`). Every request goes through the
+edge to the proxy: twilight calls, raw REST, webhooks, interaction callbacks and
+interaction webhooks (INT-13). `.http_timeout(..)` (default 10 s) bounds every request,
+interaction callbacks included (a callback slower than it is `AckDeadlineMissed`); a
+forwarded request over it fails as a twilight timeout.
+
+Discord 429s (RL-01, RL-04): without a proxy, twilight's limiter waits out a `user`-scope
+429 that carries valid bucket headers. Every other 429 (every one behind a proxy, and
+`shared`, `global` or scope-less ones) is never retried: it fails once as
+`RateLimited { scope: RateLimitScope, retry_after: Option<Duration>, discord_code }`
+(`noctis::http`), typed as `ResponderError::RateLimited`, `WebhookError::RateLimited` and
+`RawHttpError::RateLimited`; a `ctx.http()` twilight error converts with
+`RateLimited::from_http_error(&err)` (`Some` only for a rate limit). Publish reports
+`PublishError::Rejected { status: 429, .. }`, startup `StartError::GatewayInfo { status:
+Some(429) }`. Wait at least `retry_after` before retrying, never in a loop:
+
+```rust
+use noctis::http::RateLimited;
+
+match ctx.http().channel(id).await {
+    Ok(response) => { /* .. */ }
+    Err(err) if RateLimited::from_http_error(&err).is_some() => { /* try again later */ }
+    Err(err) => return Err(err.into()),
+}
+```
+
+Raw requests (FR-31) for endpoints twilight does not model go through the same client:
 `ctx.http().raw(Method::Get, "applications/@me").await?` (`noctis::http::Method`;
 `RawHttp` is in the prelude) — still rate limited / proxied, with the bot token and the
 timeout (`components-v2.md` §11b).
@@ -892,6 +919,8 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_ref_lookups_total` | counter | `app`, `result` (`hit` \| `miss` \| `stale` \| `forged`) | Ref lookups of clicked or submitted Ref ids (`routes-payloads-refs.md` §7); a `RefStore` error is not counted |
 | `noctis_shard_status` | gauge | `app`, `shard` | `1` after READY/RESUMED, `0` at start and after a disconnect or end; alert on `== 0` |
 | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx` \| `error`) | Discord HTTP upstream attempts by status class; `error` = no response |
+| `noctis_http_rate_limited_total` | counter | `app`, `scope` (`user` \| `global` \| `shared` \| `unknown`) | upstream 429 answers by `X-RateLimit-Scope` (RL-04) |
+| `noctis_http_invalid_requests_total` | counter | `app`, `status` (`401` \| `403` \| `429`) | upstream 401/403 and non-`shared` 429 answers, which count toward Discord's 10,000 per 10 min per IP ban (RL-03); alert on `increase(..[10m])` summed per egress IP |
 | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns` \| `connect` \| `tls` \| `ttfb` \| `total`) | dial phases per new connection, `ttfb`/`total` per attempt |
 | `noctis_http_connections_total` | counter | `app`, `reason` (`warmup` \| `redial` \| `hedge` \| `demand`) | upstream connections opened |
 | `noctis_http_conn_reused_total` | counter | `app`, `reused` (`true` \| `false`) | attempts on a warm vs a new connection |

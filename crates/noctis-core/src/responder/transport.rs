@@ -466,10 +466,14 @@ pub(crate) async fn send_built(
     })
 }
 
-/// Maps a twilight error: an error status to
+/// Maps a twilight error: the edge's rate-limit response to
+/// [`ResponderError::RateLimited`], another error status to
 /// [`ResponderError::Rejected`], anything else to
 /// [`ResponderError::Transport`].
 pub(crate) fn http_error(error: &twilight_http::Error) -> ResponderError {
+    if let Some(limited) = crate::RateLimited::from_http_error(error) {
+        return ResponderError::RateLimited(limited);
+    }
     if let ErrorType::Response { body, status, .. } = error.kind() {
         return ResponderError::Rejected {
             status: status.get(),

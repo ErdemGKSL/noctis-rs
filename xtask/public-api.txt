@@ -1628,6 +1628,7 @@ pub noctis::ResponderError::Invalid(noctis::ui::UiError)
 pub noctis::ResponderError::InvalidToken
 pub noctis::ResponderError::ModalUnavailable
 pub noctis::ResponderError::NoReply
+pub noctis::ResponderError::RateLimited(noctis::http::RateLimited)
 pub noctis::ResponderError::RefCollision
 pub noctis::ResponderError::RefStore(noctis::ports::PortError)
 pub noctis::ResponderError::Rejected
@@ -1638,6 +1639,8 @@ pub noctis::ResponderError::Transport
 pub noctis::ResponderError::UpdateUnavailable
 impl core::convert::From<noctis::AckDeadlineMissed> for noctis::ResponderError
 pub fn noctis::ResponderError::from(noctis::AckDeadlineMissed) -> Self
+impl core::convert::From<noctis::http::RateLimited> for noctis::ResponderError
+pub fn noctis::ResponderError::from(noctis::http::RateLimited) -> Self
 impl core::convert::From<noctis::ui::UiError> for noctis::ResponderError
 pub fn noctis::ResponderError::from(noctis::ui::UiError) -> Self
 impl core::error::Error for noctis::ResponderError
@@ -1648,6 +1651,8 @@ impl core::fmt::Display for noctis::ResponderError
 pub fn noctis::ResponderError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::convert::From<noctis::AckDeadlineMissed> for noctis::ResponderError
 pub fn noctis::ResponderError::from(noctis::AckDeadlineMissed) -> Self
+impl core::convert::From<noctis::http::RateLimited> for noctis::ResponderError
+pub fn noctis::ResponderError::from(noctis::http::RateLimited) -> Self
 pub trait noctis::ResponderKind: noctis::__private::core::responder::sealed::Kind + core::marker::Send + core::marker::Sync + 'static
 pub trait noctis::ResponderState: noctis::__private::core::responder::sealed::State + core::marker::Send + core::marker::Sync + 'static
 pub proc macro noctis::#[derive(RoleSelectMenu)]
@@ -2778,6 +2783,44 @@ impl core::marker::Copy for noctis::gateway::Status
 impl core::marker::StructuralPartialEq for noctis::gateway::Status
 pub mod noctis::http
 pub use noctis::http::Method
+#[non_exhaustive] pub enum noctis::http::RateLimitScope
+pub noctis::http::RateLimitScope::Global
+pub noctis::http::RateLimitScope::Shared
+pub noctis::http::RateLimitScope::Unknown
+pub noctis::http::RateLimitScope::User
+impl noctis::http::RateLimitScope
+pub fn noctis::http::RateLimitScope::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::http::RateLimitScope
+pub fn noctis::http::RateLimitScope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::http::RateLimitScope
+impl core::cmp::PartialEq for noctis::http::RateLimitScope
+pub fn noctis::http::RateLimitScope::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::http::RateLimitScope
+pub fn noctis::http::RateLimitScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::http::RateLimitScope
+pub fn noctis::http::RateLimitScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::http::RateLimitScope
+pub fn noctis::http::RateLimitScope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::http::RateLimitScope
+impl core::marker::StructuralPartialEq for noctis::http::RateLimitScope
+#[non_exhaustive] pub struct noctis::http::RateLimited
+pub noctis::http::RateLimited::discord_code: core::option::Option<u32>
+pub noctis::http::RateLimited::retry_after: core::option::Option<core::time::Duration>
+pub noctis::http::RateLimited::scope: noctis::http::RateLimitScope
+impl noctis::http::RateLimited
+pub fn noctis::http::RateLimited::from_http_error(&twilight_http::error::Error) -> core::option::Option<Self>
+pub fn noctis::http::RateLimited::new(noctis::http::RateLimitScope) -> Self
+impl core::clone::Clone for noctis::http::RateLimited
+pub fn noctis::http::RateLimited::clone(&self) -> Self
+impl core::cmp::Eq for noctis::http::RateLimited
+impl core::cmp::PartialEq for noctis::http::RateLimited
+pub fn noctis::http::RateLimited::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::http::RateLimited
+impl core::fmt::Debug for noctis::http::RateLimited
+pub fn noctis::http::RateLimited::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::http::RateLimited
+pub fn noctis::http::RateLimited::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::http::RateLimited
 pub trait noctis::http::RawHttp: noctis::__private::core::raw_http::sealed::Sealed
 pub fn noctis::http::RawHttp::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
 impl noctis::http::RawHttp for twilight_http::client::Client
@@ -2790,6 +2833,7 @@ pub noctis::http::RawHttpError::Http(twilight_http::error::Error)
 pub noctis::http::RawHttpError::InvalidPath
 pub noctis::http::RawHttpError::InvalidPath::path: alloc::string::String
 pub noctis::http::RawHttpError::InvalidPath::reason: &'static str
+pub noctis::http::RawHttpError::RateLimited(noctis::http::RateLimited)
 pub noctis::http::RawHttpError::Status
 pub noctis::http::RawHttpError::Status::body: bytes::bytes::Bytes
 pub noctis::http::RawHttpError::Status::status: u16
@@ -8904,6 +8948,7 @@ pub noctis::webhook::WebhookError::Encode
 pub noctis::webhook::WebhookError::Encode::reason: alloc::string::String
 pub noctis::webhook::WebhookError::Invalid(noctis::ui::UiError)
 pub noctis::webhook::WebhookError::InvalidToken
+pub noctis::webhook::WebhookError::RateLimited(noctis::http::RateLimited)
 pub noctis::webhook::WebhookError::RefCollision
 pub noctis::webhook::WebhookError::RefStore(noctis::ports::PortError)
 pub noctis::webhook::WebhookError::Rejected
