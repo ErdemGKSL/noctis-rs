@@ -850,10 +850,13 @@ follow each localized name and description, and choices carry `name_localization
 (`i18n.md` §4; empty maps are omitted).
 
 Boot Flags filter what is published: only selected and unflagged Commands are in the
-JSON and the diff (`modules-middleware-ratelimits.md` §2). [planned] Per-guild Module
-enablement (Story 13.3) and `apps = [...]` filter it further. Disabled Modules: only their guild-scoped
-commands are left out of a guild publish; global commands stay published and answer
-"disabled here".
+JSON and the diff (`modules-middleware-ratelimits.md` §2). Runtime Module state
+(`ctx.modules()`, `modules-middleware-ratelimits.md` §3) filters it further: Publish
+reloads the snapshot and leaves a Module's guild-scoped Commands out of each guild where
+it is disabled (an emptied base or group is dropped; `[REG-02]` is counted after that
+filter); global Commands stay published and answer the ephemeral
+`noctis.module.disabled` notice. A toggle never publishes by itself. [planned]
+`apps = [...]`.
 
 ## 8. Handler context (`CommandCtx`)
 
@@ -904,14 +907,15 @@ message's (or the submit's) components Noctis does not model, verbatim
 `AutocompleteCtx` has none of them: return `Suggestions<T>`.
 
 Every context also has `cache() -> DiscordCacheReader`, the Discord resource cache
-(owned values; `adapters.md` §1.2).
+(owned values; `adapters.md` §1.2), and `modules()` (runtime Module switches,
+`modules-middleware-ratelimits.md` §3).
 
 `ctx.rate_limits()` (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`): `hit`, `block`,
 `extend`, `reset` on a declared `rate_limit(..)` scope
 (`modules-middleware-ratelimits.md` §7).
 
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
-`modules()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
+`render(..)`, `gateway()`, `app_permissions()`, `member()`.
 Command-only: `attachment_size_limit()`.
 
 ## 9. Prefix commands (`prefix` feature, P2)

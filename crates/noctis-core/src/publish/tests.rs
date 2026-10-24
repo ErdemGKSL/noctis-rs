@@ -39,6 +39,11 @@ fn local_of(app: &App, scope: Scope) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+/// Every Module enabled everywhere.
+fn all(_: &'static str, _: Id<GuildMarker>) -> bool {
+    true
+}
+
 struct Opts;
 
 const CHOICES_STR: &[Choice<'static>] = &[Choice::new("Alpha", ChoiceValue::Str("a"))];
@@ -394,7 +399,7 @@ async fn targets_split_guild_scoped_commands() {
                 CommandMetadata::new().guilds(GUILDS),
             )),
     ]);
-    let global = targets(app.registry().commands(), PublishScope::Global, false).unwrap();
+    let global = targets(app.registry().commands(), PublishScope::Global, false, &all).unwrap();
     let summary: Vec<(PublishScope, Vec<&str>, bool)> = global
         .iter()
         .map(|t| {
@@ -409,7 +414,7 @@ async fn targets_split_guild_scoped_commands() {
             (PublishScope::Guild(Id::new(42)), vec!["admin"], false),
         ]
     );
-    let clear = targets(app.registry().commands(), PublishScope::Global, true).unwrap();
+    let clear = targets(app.registry().commands(), PublishScope::Global, true, &all).unwrap();
     assert_eq!(clear.len(), 1);
     assert!(clear[0].local.is_empty());
 }
@@ -434,6 +439,7 @@ async fn targets_dev_mirror() {
         app.registry().commands(),
         PublishScope::Guild(Id::new(42)),
         false,
+        &all,
     )
     .unwrap();
     assert_eq!(mirror.len(), 1);
@@ -454,7 +460,7 @@ fn reg_03_dev_mirror_name_clash() {
         json!({"type": 2, "name": "ping"}),
         json!({"type": 1, "name": "ping"}),
     ];
-    let error = check_mirror(Id::new(42), &local).unwrap_err();
+    let error = check_names(Id::new(42), &local).unwrap_err();
     assert_eq!(
         error,
         PublishError::NameClash {
@@ -472,10 +478,10 @@ fn reg_02_dev_mirror_counts() {
     let chat: Vec<Value> = (0..100)
         .map(|i| json!({"type": 1, "name": format!("c{i}")}))
         .collect();
-    assert!(check_mirror(Id::new(1), &chat).is_ok());
+    assert!(check_counts(Id::new(1), &chat).is_ok());
     let mut over = chat.clone();
     over.push(json!({"name": "extra"}));
-    let error = check_mirror(Id::new(1), &over).unwrap_err();
+    let error = check_counts(Id::new(1), &over).unwrap_err();
     assert_eq!(
         error,
         PublishError::TooManyCommands {
@@ -489,11 +495,11 @@ fn reg_02_dev_mirror_counts() {
     let users: Vec<Value> = (0..15)
         .map(|i| json!({"type": 2, "name": format!("u{i}")}))
         .collect();
-    assert!(check_mirror(Id::new(1), &users).is_ok());
+    assert!(check_counts(Id::new(1), &users).is_ok());
     let mut over = users;
     over.push(json!({"type": 2, "name": "u15"}));
     assert!(matches!(
-        check_mirror(Id::new(1), &over),
+        check_counts(Id::new(1), &over),
         Err(PublishError::TooManyCommands {
             kind: "user",
             count: 16,
@@ -542,3 +548,5 @@ fn errors_name_route_and_code() {
 }
 
 mod localize;
+
+mod modules;

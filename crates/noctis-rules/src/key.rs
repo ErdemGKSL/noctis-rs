@@ -120,7 +120,7 @@ pub const FRAMEWORK_KEYS: &[(&str, &[&str])] = &[
     ("noctis.validation.failed", &[]),
     ("noctis.expired", &[]),
     ("noctis.stale", &[]),
-    ("noctis.disabled_here", &[]),
+    ("noctis.module.disabled", &[]),
     ("noctis.rate_limited", &["retry"]),
     ("noctis.guard.failed", &[]),
     ("noctis.guard.owner", &[]),

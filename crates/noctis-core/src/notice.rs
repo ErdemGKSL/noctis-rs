@@ -105,8 +105,8 @@ mod tests {
             owner
         );
         assert_eq!(
-            key_for(&HandlerError::user(keys::DISABLED_HERE)),
-            keys::DISABLED_HERE
+            key_for(&HandlerError::user(keys::MODULE_DISABLED)),
+            keys::MODULE_DISABLED
         );
         let decode = OptionError::Missing {
             option: "member".into(),

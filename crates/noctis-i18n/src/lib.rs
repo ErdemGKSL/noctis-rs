@@ -55,8 +55,8 @@ pub mod keys {
     /// `noctis.stale`: reserved; v1 sends `noctis.expired` for stale ids
     /// too.
     pub const STALE: MessageKey = MessageKey::new("noctis.stale");
-    /// `noctis.disabled_here`: the Module is disabled in this guild.
-    pub const DISABLED_HERE: MessageKey = MessageKey::new("noctis.disabled_here");
+    /// `noctis.module.disabled`: the Module is disabled in this guild.
+    pub const MODULE_DISABLED: MessageKey = MessageKey::new("noctis.module.disabled");
     /// `noctis.rate_limited`: the rate-limit notice (`{retry}` is a relative timestamp).
     pub const RATE_LIMITED: MessageKey = MessageKey::new("noctis.rate_limited");
     /// `noctis.guard.failed`: a Guard refused the interaction.
@@ -72,7 +72,7 @@ pub mod keys {
         VALIDATION_FAILED,
         EXPIRED,
         STALE,
-        DISABLED_HERE,
+        MODULE_DISABLED,
         RATE_LIMITED,
         GUARD_FAILED,
         GUARD_OWNER,
@@ -111,7 +111,7 @@ impl Builtin {
             "noctis.validation.failed" => "That input isn't valid. Check it and try again.",
             "noctis.expired" => "This interaction has expired. Run the command again.",
             "noctis.stale" => "This message is out of date. Run the command again.",
-            "noctis.disabled_here" => "This feature is disabled here.",
+            "noctis.module.disabled" => "This feature is disabled here.",
             "noctis.rate_limited" => "You're doing that too often. Try again {retry}.",
             "noctis.guard.failed" => "You can't use this.",
             "noctis.guard.owner" => "Only the person who started this can use it.",
@@ -245,7 +245,7 @@ mod tests {
                 keys::STALE,
                 "This message is out of date. Run the command again.",
             ),
-            (keys::DISABLED_HERE, "This feature is disabled here."),
+            (keys::MODULE_DISABLED, "This feature is disabled here."),
             (
                 keys::RATE_LIMITED,
                 "You're doing that too often. Try again {retry}.",

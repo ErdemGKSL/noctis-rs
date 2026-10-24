@@ -335,6 +335,12 @@ impl AutocompleteCtx {
         crate::DiscordCacheReader::of(self.parts.app.as_ref())
     }
 
+    /// The App's runtime Module switches: `is_enabled` reads the cached
+    /// snapshot, writes go through the `ModuleStateStore` (a cheap clone).
+    pub fn modules(&self) -> crate::Modules {
+        crate::Modules::of(self.parts.app.as_ref())
+    }
+
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns).
     pub fn http(&self) -> &Arc<twilight_http::Client> {
         match &self.parts.app {

@@ -12,6 +12,11 @@
 //!    [`noctis_codec::decode`], look its Route up in the Registry's Route
 //!    map with the borrowed id and check the family (a click needs a
 //!    component handler of its component kind, a submit a modal handler).
+//!    Then the Route's Module (and every ancestor) must be enabled in the
+//!    interaction's guild (AD-23 stage 3, cached state only): a disabled
+//!    one answers the localized ephemeral `noctis.module.disabled` notice
+//!    (built-in locale resolution) before the struct or its Ref is decoded,
+//!    so no Guard, Middleware or handler runs and a `one_shot` Ref stays.
 //! 3. **Build the context and the responder state:** the [`ComponentCtx`]
 //!    or [`ModalSubmitCtx`] and the shared responder state with the
 //!    declared `response` (a component's attribute, or a submit's
@@ -722,6 +727,13 @@ pub(crate) async fn run_component_over(
             .reject(Some(route), Rejection::NoAuthor, &notice_state(transport))
             .await;
     };
+    // AD-23 stage 3: the Route's Module must be enabled here, checked
+    // before the struct (and any Ref) is decoded, so a `one_shot` Ref is
+    // not consumed.
+    if !crate::pipeline::stage3(&app, &span, entry.module, route, guild_id) {
+        let state = notice_state(transport);
+        return crate::pipeline::disabled_notice(&app, &span, &state, answer.locale).await;
+    }
     // Stage 3 (AD-23 stage 4): resolve the locales (once, before the
     // Expired Handler chain branch), then build the context and the
     // responder state.

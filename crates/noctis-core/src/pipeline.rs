@@ -7,7 +7,13 @@
 //!    (unlocalized) names, in the scope `data.guild_id` names (LOC-06);
 //! 2. Ref resolution: none, since a Command has no Ref (components and
 //!    modals resolve theirs, `pipeline::component`);
-//! 3. *Module enablement checks: absent until Stories 13.2 and 13.3;*
+//! 3. Module enablement (FR-45): Boot Flags already pruned unselected
+//!    registrations at build; the handler's Module and every ancestor must
+//!    be enabled in the interaction's guild (globally in a DM), read from
+//!    the cached Module-state snapshot with no port call. A disabled one
+//!    gets an immediate localized ephemeral type-4 `noctis.module.disabled`
+//!    notice in the built-in locale resolution, with one `debug`; nothing
+//!    later runs (no locale resolver, auto-defer, Middleware or handler);
 //! 4. resolve the locales (FR-43): the User Locale as Discord's `locale`,
 //!    then `guild_locale`, then the App's default; the Guild Locale as
 //!    `guild_locale`, then `locale`, then the default (each step the
@@ -59,14 +65,16 @@
 //!
 //! The [`Dispatcher`] runs stages 3 onward for a Command invoked from
 //! outside an interaction; it arms no auto-defer (a message has no ack
-//! deadline).
+//! deadline), and its stage-3 notice is a public reply to the message.
 //!
 //! # Autocomplete
 //!
 //! An `APPLICATION_COMMAND_AUTOCOMPLETE` interaction (INT-06, INT-07,
 //! OPT-12) resolves its Command like stage 1, decodes the partial options
 //! leniently and finds the focused option's `#[autocomplete(field)]`
-//! method through the Command's struct. The method runs under
+//! method through the Command's struct. A Module disabled where it runs
+//! (stage 3) answers an empty list without running the method, with one
+//! `debug`. The method runs under
 //! `catch_unwind`, a deadline of `received_at + 2.5 s` and the shutdown
 //! token; it never runs once the deadline has passed. Its suggestions are
 //! truncated to 25, their `MessageKey` labels rendered in the user's locale,
@@ -774,6 +782,45 @@ pub(crate) fn stage4(app: &AppShared, request: Stage4, handler: &'static str) ->
     LocaleCell::new(app.locales.resolve_run(request, handler))
 }
 
+/// Stage 3 (AD-23): whether `module` is enabled where the run happens
+/// (`guild_id`, else globally), read from the cached Module-state
+/// snapshot; a disabled one is one `debug`.
+pub(crate) fn stage3(
+    app: &AppShared,
+    span: &Span,
+    module: &'static str,
+    path: &str,
+    guild_id: Option<Id<GuildMarker>>,
+) -> bool {
+    if app.module_state.is_enabled(module, guild_id.into()) {
+        return true;
+    }
+    span.in_scope(|| {
+        tracing::debug!(target: "noctis::dispatch", module, path, "module disabled here");
+    });
+    false
+}
+
+/// Sends the stage-3 `noctis.module.disabled` notice in `locale` over
+/// `shared`; a failure to send it is one `warn`.
+pub(crate) async fn disabled_notice(
+    app: &AppShared,
+    span: &Span,
+    shared: &Arc<Shared>,
+    locale: noctis_rules::Locale,
+) {
+    let text = span.in_scope(|| notice::text(&*app.strings, locale, keys::MODULE_DISABLED));
+    if let Err(error) = shared.notice(text).instrument(span.clone()).await {
+        span.in_scope(|| {
+            tracing::warn!(
+                target: "noctis::dispatch",
+                %error,
+                "could not send the module-disabled notice"
+            );
+        });
+    }
+}
+
 /// The notice key of a failed run: an error's key (see
 /// `notice::key_for`), the generic key for a panic, none for a success or
 /// a cancellation.
@@ -1077,8 +1124,6 @@ pub(crate) async fn run_interaction(
         _ => None,
     };
     // Stage 2 (Ref resolution) has nothing to do: a Command has no Ref.
-    // Stage 3 (Module enablement) lands with Stories 13.2 and 13.3.
-    // Stage 4: resolve the locales.
     let Interaction {
         application_id,
         id: interaction_id,
@@ -1092,14 +1137,39 @@ pub(crate) async fn run_interaction(
     } = *interaction;
     let ephemerality = resolved.ephemerality();
     let channel_id = channel.as_ref().map(|c| c.id);
+    let transport = Transport::Interaction(InteractionTarget {
+        app: Arc::clone(&app),
+        application_id,
+        interaction_id,
+        token,
+        received_at,
+        channel_id,
+        file_limit: crate::responder::file_limit(raw.as_bytes()),
+    });
+    // A user-install-only interaction may send 5 follow-ups (INT-11).
+    let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
+    let (discord_user, discord_guild) = (
+        locale::parse(locale.as_deref()),
+        locale::parse(guild_locale.as_deref()),
+    );
+    // Stage 3: the Module must be enabled here (cached state only).
+    if !stage3(&app, &span, resolved.module(), resolved.path(), guild_id) {
+        // Before stage 4: the built-in locale resolution (no resolver).
+        let builtin = LocaleCell::new(app.locales.builtin(discord_user, discord_guild));
+        let state =
+            Shared::with_followup_cap(transport, Ephemerality::Ephemeral, app.limits.clone(), cap);
+        state.set_i18n(Arc::clone(&app.strings), Arc::clone(&builtin));
+        return disabled_notice(&app, &span, &state, builtin.get().user).await;
+    }
+    // Stage 4: resolve the locales.
     let locales = stage4(
         &app,
         Stage4 {
             invocation: resolved.invocation(),
             guild_id,
             user_id: Some(user_id),
-            discord_user: locale::parse(locale.as_deref()),
-            discord_guild: locale::parse(guild_locale.as_deref()),
+            discord_user,
+            discord_guild,
         },
         resolved.handler(),
     );
@@ -1128,17 +1198,6 @@ pub(crate) async fn run_interaction(
         rate: Some(Arc::clone(&rate)),
         ..CtxInner::detached_parts(ephemerality)
     };
-    let transport = Transport::Interaction(InteractionTarget {
-        app: Arc::clone(&app),
-        application_id,
-        interaction_id,
-        token,
-        received_at,
-        channel_id,
-        file_limit: crate::responder::file_limit(raw.as_bytes()),
-    });
-    // A user-install-only interaction may send 5 follow-ups (INT-11).
-    let cap = (owners.guild.is_none() && owners.user.is_some()).then_some(USER_INSTALL_FOLLOWUPS);
     let state = Shared::with_followup_cap(transport, ephemerality, app.limits.clone(), cap);
     state.set_i18n(Arc::clone(&app.strings), Arc::clone(&locales));
     let report = Report {
@@ -1319,6 +1378,15 @@ pub(crate) async fn run_autocomplete(
             return;
         }
     };
+    // Stage 3: a disabled Module's method never runs; empty choices.
+    if !stage3(&app, &span, found.entry.module, found.path, guild_id) {
+        if let Err(error) = send_choices(&target, &[]).instrument(span.clone()).await {
+            span.in_scope(|| {
+                tracing::warn!(target: "noctis::autocomplete", %error, "autocomplete callback failed");
+            });
+        }
+        return;
+    }
     // Stage 4: resolve the locales.
     let locales = stage4(
         &app,
@@ -1806,6 +1874,17 @@ impl Dispatcher {
             return Ok(());
         };
         let ephemerality = entry.handler.ephemerality();
+        // Stage 3: a disabled Module answers a public notice reply.
+        if !stage3(&self.app, &span, entry.module, path, guild_id) {
+            let builtin = LocaleCell::new(self.app.locales.builtin(
+                locale::parse(locale.as_deref()),
+                self.app.locales.guild(guild_id),
+            ));
+            let user = builtin.get().user;
+            let shared = self.message_shared((channel_id, message_id), ephemerality, builtin);
+            disabled_notice(&self.app, &span, &shared, user).await;
+            return Ok(());
+        }
         // Stage 4: the User Locale the caller gave, the guild's recorded one;
         // only interactions refresh the record.
         let locales = LocaleCell::new(self.app.locales.resolve_run(

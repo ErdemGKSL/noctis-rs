@@ -3007,6 +3007,40 @@ fn ack_deadline_missed_message() {
 mod commands;
 mod discord_cache;
 
+// ---- module_state_poll (Story 13.3 P5) ----
+
+#[tokio::test]
+async fn module_state_poll_builder() {
+    assert_eq!(
+        App::builder().build().unwrap().module_state_poll(),
+        Duration::from_secs(5)
+    );
+    let poll = |value: Duration| App::builder().module_state_poll(value).build();
+    for ok in [Duration::from_millis(10), Duration::from_hours(1)] {
+        assert_eq!(poll(ok).unwrap().module_state_poll(), ok, "{ok:?}");
+    }
+    for bad in [
+        Duration::ZERO,
+        Duration::from_millis(9),
+        Duration::from_hours(1) + Duration::from_nanos(1),
+    ] {
+        assert_eq!(
+            poll(bad).unwrap_err().violations(),
+            [BuildViolation::InvalidModuleStatePoll { actual: bad }],
+            "{bad:?}"
+        );
+    }
+    let mut builder = App::builder();
+    builder
+        .module_state_poll(Duration::from_secs(1))
+        .module_state_poll(Duration::from_millis(50));
+    assert!(format!("{builder:?}").contains("module_state_poll: 50ms"));
+    let app = builder.build().unwrap();
+    assert_eq!(app.module_state_poll(), Duration::from_millis(50));
+    assert!(format!("{app:?}").contains("module_state_poll: 50ms"));
+    assert!(!app.modules().is_enabled("anything-unknown", None));
+}
+
 // ---- ack_deadline (Story 6.6 Matrix 14 and 15) ----
 
 #[tokio::test]

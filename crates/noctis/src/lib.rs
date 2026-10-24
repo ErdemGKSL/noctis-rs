@@ -135,7 +135,10 @@
 //! every byte-store key is prefixed with `<app_id>:<port>:`, so Apps sharing
 //! one Adapter never see each other's data unless it is passed as
 //! [`ports::Shared::new`]. Handlers store bot data through `ctx.kv()`, a
-//! typed [`Kv`] over the App's `CacheStore`. [`App::run`] returns a typed
+//! typed [`Kv`] over the App's `CacheStore`, and switch Modules on and off
+//! at run time through `ctx.modules()` ([`Modules`], per [`ModuleScope`]:
+//! globally or in one guild, shared through the `ModuleStateStore`).
+//! [`App::run`] returns a typed
 //! [`StartError`] outside a multi-thread tokio runtime or without a token,
 //! and installs rustls's `ring` crypto provider when none is set.
 //!
@@ -618,13 +621,13 @@ pub use noctis_core::{
     IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption, Invocation, Kv,
     LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales, LogSink, Manual,
     MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit,
-    ModalSubmitCtx, Module, ModuleIdError, NoticeText, OptionError, OptionValue, Options,
-    OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions, Plugin,
-    RateLimit, RateLimitError, RateLimitHit, RateLimitedCtx, RateLimits, RateScope, RefOps,
-    Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
-    StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
-    UnknownCommandPath, Visibility,
+    ModalSubmitCtx, Module, ModuleIdError, ModuleScope, ModuleStateError, Modules, NoticeText,
+    OptionError, OptionValue, Options, OutgoingMessage, OverlayViolation, Partial, PartialOptions,
+    Pending, Permissions, Plugin, RateLimit, RateLimitError, RateLimitHit, RateLimitedCtx,
+    RateLimits, RateScope, RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict,
+    Responded, Responder, ResponderError, ResponderKind, ResponderState, RunError, RunOutcome,
+    Runtime, SelectedValues, StartError, State, SuggestionLabel, SuggestionValue, Suggestions,
+    Token, TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its
@@ -2363,6 +2366,8 @@ pub mod prelude {
     //!   Extensions handlers take as `Ext<T>` parameters.
     //! - [`Access`]: what a custom Route Guard (`guard = path::to::fn`)
     //!   returns.
+    //! - [`ModuleScope`]: where `ctx.modules().set_enabled(..)` switches a
+    //!   Module (globally or in one guild).
     //! - [`RawHttp`]: `.raw(method, path)` on `ctx.http()` and `app.http()`
     //!   ([`http`](crate::http)).
     //! - With the `image` feature, `AppBuilderImageExt`: `.theme(..)` and
@@ -2378,8 +2383,9 @@ pub mod prelude {
         Access, AfterCtx, App, AppBuilder, AutocompleteCtx, BeforeCtx, CommandCtx, CommandOption,
         CommandResponder, ComponentCtx, ComponentResponder, Ephemerality, ErrorOrigin, ErrorSink,
         Expired, ExpiredCtx, Ext, Flow, HandlerError, HandlerResult, IntoResponse, Manual,
-        Middleware, ModalResponder, ModalSubmitCtx, Module, Options, Partial, RateLimitHit,
-        RateLimitedCtx, RateScope, RawHttp, RefOps, Responded, State, Suggestions, Visibility,
+        Middleware, ModalResponder, ModalSubmitCtx, Module, ModuleScope, Options, Partial,
+        RateLimitHit, RateLimitedCtx, RateScope, RawHttp, RefOps, Responded, State, Suggestions,
+        Visibility,
     };
     pub use noctis_macros::{
         Button, ChannelSelectMenu, Choices, EventHandler, MentionableSelectMenu, MessageCommand,

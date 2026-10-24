@@ -197,16 +197,80 @@ struct CoreBeta;
 
 ## 3. Runtime enable/disable (FR-45)
 
+Switch a Module off (globally or in one guild) without a deploy. The handle is
+`ctx.modules()` on every context (`CommandCtx`, `ComponentCtx`, `ModalSubmitCtx`,
+`AutocompleteCtx`, `EventCtx`, Middleware's `BeforeCtx`/`AfterCtx`), or
+`app.modules()` outside a handler. It is a cheap `Clone` (`noctis::Modules`).
+
 ```rust
-ctx.modules().set_enabled("profile", ModuleScope::Guild(guild), false).await?;
-ctx.modules().set_enabled("profile", ModuleScope::Global, true).await?;
-let on: bool = ctx.modules().is_enabled("profile", Some(guild));
+use noctis::prelude::*; // ModuleScope is in the prelude
+
+ctx.modules().set_enabled("profile", ModuleScope::Guild(guild), false).await?; // guild override
+ctx.modules().set_enabled("profile", ModuleScope::Global, false).await?;       // own global state
+ctx.modules().reset("profile", ModuleScope::Guild(guild)).await?;  // remove the guild override
+ctx.modules().reset("profile", ModuleScope::Global).await?;        // global back to on (overrides kept)
+let on: bool = ctx.modules().is_enabled("profile", ctx.guild_id()); // snapshot, no I/O
+let ids: Vec<&'static str> = ctx.modules().ids().collect();        // kept Modules, pre-order
+ctx.modules().refresh().await?;                                     // reload the snapshot now
 ```
 
-Stored in the `ModuleStateStore`; every process picks changes up within the poll
-interval (default 5 s). A disabled Module's handlers don't run; its global commands
-answer a localized ephemeral "disabled here" (`noctis.disabled_here`). Hook:
-`ModuleToggled`.
+- **Scope.** Every method takes `impl Into<ModuleScope>`: `ModuleScope::Global`,
+  `ModuleScope::Guild(g)`, a bare `Id<GuildMarker>`, or an `Option` of one (`None` is
+  `Global`, so `ctx.guild_id()` works directly; DMs and guildless events use
+  `Global`). `ModuleScope` prints as `global` / `guild 42`.
+- **Semantics.** A Module's own state in `Guild(g)` is g's override if there is one,
+  else its global state (default: enabled). A Module is **enabled** only when it and
+  every ancestor are (AND over the tree, like Boot Flags): disabling `profile` also
+  disables `profile/badges`, and an override on `profile/badges` cannot lift a disabled
+  `profile`.
+- **Ids.** Exact, case-sensitive `Module::new(..)` ids of the Modules the Boot Flags
+  kept (plugins included). Anything else (another case, a pruned Module, a typo) makes
+  `set_enabled`/`reset` return `ModuleStateError::UnknownModule { id }` with no store
+  call, and `is_enabled` answer `false`. `ModuleStateError::Port(PortError)` is a store
+  failure. Both convert into `HandlerError` with `?`.
+- **Storage.** One record per Module in the App's `ModuleStateStore`, key = the Module
+  id (stored as `<app_id>:module_state:<id>`), value = postcard with schema byte 0:
+  `{ global: bool, guilds: [(guild id, bool)] }`, no TTL. Unreadable bytes read as "on,
+  no overrides" with one warning on `noctis::modules`. An unchanged record is not
+  written.
+- **Read-your-writes.** The writing App updates its own snapshot at once; one `info`
+  on `noctis::modules` (`module`, `scope`, `enabled`) per change.
+- **Other processes.** A running App polls the store's `version()` every
+  `.module_state_poll(..)` (default 5 s, allowed 10 ms..=1 h, else
+  `BuildViolation::InvalidModuleStatePoll`) and reloads the snapshot when it moved, so
+  the propagation delay is one poll interval (plus the store's latency). In a Cluster,
+  hand every process the same `ModuleStateStore` adapter under the same `app_id`.
+  `run` loads the snapshot once before the startup Publish; an unreadable store keeps
+  every Module enabled (one warning) and a failing poll keeps the last snapshot (one
+  warning per streak, one `info` on recovery). Before a run, `app.modules()` has
+  everything enabled at version 0 until `refresh()`.
+- **Lost updates.** The port has no compare-and-swap: two processes toggling the
+  *same* Module within one read-modify-write can lose one change. Writers in one
+  process are serialized. Toggles are operator-speed; re-check with `refresh()` if it
+  matters.
+- **What a disabled Module blocks** (pipeline stage 3, cached state only, before any
+  locale resolver, rate limit, auto-defer, Middleware, Guard or handler):
+  - its slash Commands and context menus (also global ones used in that guild): an
+    immediate ephemeral type-4 notice `noctis.module.disabled` ("This feature is
+    disabled here.", overridable in your locale files; `i18n.md` §6);
+  - its buttons, selects and modal submits: the same notice, before the Payload or its
+    Ref is decoded, so a `one_shot` Ref is **not** consumed;
+  - its autocomplete: an empty suggestion list;
+  - a prefix Command run through `ctx.dispatcher().run_command(..)`: the notice as a
+    public reply to the message;
+  - its Event Handlers: skipped silently (no Middleware, no Error Sink report).
+  Middleware, locale catalogs and Templates are never toggled on their own.
+- **Publish.** A toggle never publishes. Re-run `--publish` (or `--publish-guild <id>`)
+  after toggling: Publish reloads the snapshot and leaves the **guild-scoped**
+  Commands (`guilds = [..]`) of a disabled Module out of that guild's list (a base or
+  group left empty is dropped), counting `[REG-02]` after that filter. Global Commands
+  always stay published (they answer the notice instead). An unreadable store fails the
+  Publish with `PublishError::ModuleState` before any request; `--publish-clear` does
+  not read it.
+- **Detached contexts** (unit-test seams without an App): `is_enabled` is `true`,
+  `ids()` is empty, writes and `refresh()` return `ModuleStateError::Port(Unavailable)`.
+- The template's `/dashboard` Modules tab toggles `setup` and `profile` per guild
+  (`src/modules/dashboard/handlers.rs`, `ToggleModule`).
 
 ## 4. Gateway Event Handlers (FR-6)
 
@@ -316,7 +380,8 @@ Module::new("profile").add::<AwardXp>().add::<AuditJoin>().add::<OnReaction>();
   (the resolved Guild Locale: the guild's recorded `preferred_locale`, its sibling,
   then the default; `i18n.md` §7), `cache() -> DiscordCacheReader` (the Discord
   resource cache, already updated with this event; `adapters.md` §1.2; also on
-  `BeforeCtx`/`AfterCtx`). No Responder. Planned: `modules()` [planned].
+  `BeforeCtx`/`AfterCtx`), `modules() -> Modules` (runtime Module switches; §3).
+  No Responder.
 - **`HandlerError` / `HandlerResult<T>`:** `?` converts any `Error + Send + Sync +
   'static`; `HandlerError::new(e)` wraps one explicitly; `err.as_error()` returns the
   inner `&(dyn Error + Send + Sync)` to downcast. `Display`/`Debug` print the inner

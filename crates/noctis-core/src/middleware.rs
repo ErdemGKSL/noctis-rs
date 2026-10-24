@@ -818,6 +818,12 @@ macro_rules! run_accessors {
                 crate::DiscordCacheReader::of(self.run.info.app.as_ref())
             }
 
+            /// The App's runtime Module switches: `is_enabled` reads the cached
+            /// snapshot, writes go through the `ModuleStateStore` (a cheap clone).
+            pub fn modules(&self) -> crate::Modules {
+                crate::Modules::of(self.run.info.app.as_ref())
+            }
+
             /// The App's one Discord HTTP client.
             pub fn http(&self) -> &Arc<twilight_http::Client> {
                 match &self.run.info.app {

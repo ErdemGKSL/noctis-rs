@@ -1819,3 +1819,31 @@ mod boot_flags {
         assert!(text.contains("flagged: [(\"h\", [\"beta\"])]"), "{text}");
     }
 }
+
+/// Story 13.3: the Module index lists the kept Modules in pre-order with
+/// root-first paths; a Boot-Flag-pruned Module is absent.
+#[test]
+fn module_index_is_pre_order_of_the_kept_trees() {
+    let roots = [
+        Module::new("p")
+            .module(Module::new("p/c").module(Module::new("p/c/d")))
+            .module(Module::new("p/e").flags(["fun"])),
+        Module::new("q"),
+    ];
+    let (registry, violations) = Registry::fold(&roots, Intents::empty(), None, &BootFlags::all());
+    assert!(violations.is_empty(), "{violations:?}");
+    let index = registry.modules();
+    assert_eq!(index.ids(), ["p", "p/c", "p/c/d", "p/e", "q"]);
+    assert_eq!(index.path("p/c/d"), Some(&[0, 1, 2][..]));
+    assert_eq!(index.path("p/e"), Some(&[0, 3][..]));
+    assert_eq!(index.path("q"), Some(&[4][..]));
+    let only = BootFlags::only(["other"]).unwrap();
+    let roots = [
+        Module::new("p").module(Module::new("p/e").flags(["fun"])),
+        Module::new("q").flags(["other"]),
+    ];
+    let (registry, violations) = Registry::fold(&roots, Intents::empty(), None, &only);
+    assert!(violations.is_empty(), "{violations:?}");
+    assert_eq!(registry.modules().ids(), ["p", "q"]);
+    assert_eq!(registry.modules().path("p/e"), None);
+}

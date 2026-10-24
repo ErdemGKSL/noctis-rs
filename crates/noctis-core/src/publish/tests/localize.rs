@@ -377,6 +377,7 @@ async fn loc_guild_mirror_keeps_localizations() {
         app.registry().commands(),
         PublishScope::Guild(Id::new(42)),
         false,
+        &all,
     )
     .unwrap();
     assert_eq!(

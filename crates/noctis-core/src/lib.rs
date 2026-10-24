@@ -235,6 +235,7 @@ mod menu;
 mod metadata;
 mod middleware;
 mod module;
+mod module_state;
 mod namespace;
 mod notice;
 pub mod observe;
@@ -320,6 +321,7 @@ pub use middleware::{
 #[doc(hidden)]
 pub use module::Descriptor;
 pub use module::{Module, ModuleIdError, Register};
+pub use module_state::{ModuleScope, ModuleStateError, Modules};
 pub use namespace::{AppId, AppIdError, IntoPort, Namespaced, NamespacedPort, Shared};
 pub use noctis_i18n::OverlayViolation;
 pub use noctis_ports::memory::DiscordCacheResources;

@@ -21,6 +21,7 @@ use crate::events::EventHandler;
 use crate::kind::__ExtType;
 use crate::middleware::Chain;
 use crate::module::{self, Module, NodeDecl};
+use crate::module_state::ModuleIndex;
 
 use self::commands::{Commands, Folded};
 
@@ -129,6 +130,8 @@ pub(crate) struct Registry {
     /// The first registration of every Template id, in fold order (handed
     /// to `Renderer::register` at `App::build`).
     templates: Vec<TemplateDescriptor>,
+    /// The kept Modules in pre-order, behind the runtime Module state.
+    modules: Arc<ModuleIndex>,
 }
 
 impl Registry {
@@ -172,6 +175,7 @@ impl Registry {
         let mut entries = Vec::new();
         let mut folded = Vec::new();
         let mut route_entries = Vec::new();
+        let mut modules = ModuleIndex::default();
         let mut stack: Vec<(&Module, Arc<[&'static str]>, Chain)> = roots
             .iter()
             .rev()
@@ -179,6 +183,7 @@ impl Registry {
             .collect();
         while let Some((module, ancestors, parent_chain)) = stack.pop() {
             let chain = parent_chain.extend(module.before_middleware(), module.after_middleware());
+            modules.push(module.id(), &ancestors);
             folded.push(Folded {
                 module,
                 ancestors: Arc::clone(&ancestors),
@@ -265,8 +270,14 @@ impl Registry {
             event_types,
             droppable,
             intents,
+            modules: Arc::new(modules),
         };
         (registry, violations)
+    }
+
+    /// The kept Modules, in pre-order.
+    pub(crate) fn modules(&self) -> &Arc<ModuleIndex> {
+        &self.modules
     }
 
     /// The merged command Registry (empty when its checks failed).

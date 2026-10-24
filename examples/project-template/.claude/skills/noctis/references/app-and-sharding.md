@@ -52,6 +52,9 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   locale overlays of the `LocaleSource` port (one `load` per locale with a file, none
   without catalogs; a failed load or a rejected overlay returns
   `Err(noctis::Error::LocaleOverlay(..))` before any Discord request; see i18n §8),
+  loads the runtime Module state once from the `ModuleStateStore` (an unreadable store
+  is one warning and every Module stays enabled) and starts polling its version every
+  `.module_state_poll(..)` (`modules-middleware-ratelimits.md` §3),
   runs the startup Publish when `.publisher(true)` (§3), warms one upstream
   HTTP connection (§5; at most `connect_timeout` + 6 s, a failure only warns), reads
   `GET /gateway/bot`, plans the shard total and identify buckets (§4) and starts one
@@ -126,6 +129,7 @@ Implemented:
 | `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
 | `.discord_cache(DiscordCacheConfig)` | `DiscordCacheConfig::default()`: `GUILD \| CHANNEL \| ROLE` | which Discord resources are cached for `ctx.cache()` (`noctis::DiscordCacheConfig`/`DiscordCacheResources`; `none()` turns it off); adds their event types to the gateway filter and their intents; `MEMBER` needs `.intents(Intents::GUILD_MEMBERS)` (else `BuildViolation::MissingCacheIntent`, GW-05); no env variable; the last call wins; read back with `app.discord_cache()`; see `adapters.md` §1.2 |
+| `.module_state_poll(Duration)` | 5 s | how often a running App polls the `ModuleStateStore`'s `version()` and reloads the runtime Module state: the delay before another process's toggle applies here; 10 ms..=1 h (else `BuildViolation::InvalidModuleStatePoll`); the last call wins; `app.module_state_poll()` reads it; see `modules-middleware-ratelimits.md` §3 |
 | `.discord_cache_backend(impl DiscordCache)` | a `MemoryDiscordCache` of the `.discord_cache(..)` resources and message cap | replace the Discord cache's storage (an `Arc` shares one across the Apps of a Cluster; never namespaced); the configuration still decides what is fed and read |
 | `.publisher(bool)` | env `NOCTIS_PUBLISHER`, else `false` | a normal run publishes globally once at startup, before any shard connects (never on READY); a failed Publish is one `error` log (target `noctis::publish`) and the App keeps starting; set it on exactly one process; the last call wins; see §3 |
 | `.resume_sessions(bool)` | `true` | `true`: each shard resumes its stored session at start and a graceful shutdown closes with 4000 and stores it. `false`: each shard deletes its stored entry before it identifies, and the shutdown closes with 1000 and deletes it. `--no-resume` sets `false` for that run; no env variable; the last call wins; see §4 Session resume |
@@ -372,12 +376,16 @@ day per guild). One Publish:
 
 1. opens the `noctis.publish{app, scope, dry_run, clear}` span;
 2. needs a token (`PublishError::MissingToken`, no request);
-3. reads `GET /applications/@me` (application id and enabled install types);
-4. builds every target's JSON from the Registry alone and runs every check before any
-   write: on the dev mirror REG-03 (`NameClash`) and REG-02 (`TooManyCommands`), on the
-   global target META-04 (`IntegrationTypeNotEnabled`: an `integration_types` value the
+3. reloads the runtime Module state (not for `clear`; a store failure is
+   `PublishError::ModuleState`, no request; `modules-middleware-ratelimits.md` §3);
+4. reads `GET /applications/@me` (application id and enabled install types);
+5. builds every target's JSON from the Registry alone (each guild target without the
+   guild-scoped Commands of Modules disabled in that guild; global Commands are never
+   filtered) and runs every check before any write: on the dev mirror REG-03
+   (`NameClash`), on every guild target REG-02 (`TooManyCommands`, counted after that
+   filter), on the global target META-04 (`IntegrationTypeNotEnabled`: an `integration_types` value the
    app has not enabled under Installation in the Developer Portal);
-5. per target: `GET …/commands?with_localizations=true`, canonical diff, then one
+6. per target: `GET …/commands?with_localizations=true`, canonical diff, then one
    bulk-overwrite `PUT` only when the diff is not empty and this is not a dry run. The
    first HTTP error stops the rest.
 

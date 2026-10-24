@@ -476,7 +476,8 @@ Discord resources come from `ctx.cache()` (§1.2):
 let guild = ctx.cache().guild(guild_id).await?;                  // Option<Guild>, owned value
 ```
 
-[planned]:
+`ctx.modules()` writes the `ModuleStateStore` and reads a cached
+snapshot (`modules-middleware-ratelimits.md` §3):
 
 ```rust
 ctx.modules().set_enabled("profile", ModuleScope::Guild(guild), false).await?;  // ModuleStateStore

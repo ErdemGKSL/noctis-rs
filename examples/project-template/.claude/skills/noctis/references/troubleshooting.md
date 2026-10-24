@@ -152,6 +152,7 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | invalid HTTP config: HttpConfig.`<field>` … is out of range | set the field inside the range the message names (or keep `HttpConfig::default()`) |
 | the Discord HTTP edge could not bind 127.0.0.1:0 | the process may not open a loopback socket (sandbox, file-descriptor limit): allow loopback TCP |
 | > 100 global chat-input commands | merge into fewer bases (groups) |
+| `module state poll interval 9ms is out of range: use a value in 10 ms..=1 h` (`BuildViolation::InvalidModuleStatePoll`) | pass `.module_state_poll(..)` a value in 10 ms..=1 h (default 5 s) |
 
 ## Runtime
 
@@ -235,7 +236,12 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | `run()` returns `StartError::SessionStartLimit { .. }` | the daily identify budget can't cover every shard (GW-02) | wait `reset_after`, or run fewer shards |
 | warning "shard total is not a multiple of max_concurrency" | a fixed total misaligned with Discord's identify buckets | use a multiple of `max_concurrency`, or ignore it (startup is only slower) |
 | startup warning "Cluster without HTTP proxy" | several processes, no `NOCTIS_HTTP_PROXY` | configure a shared proxy |
-| two processes disagree on module state | different `ModuleStateStore`s | share one Adapter; propagation ≤ poll interval |
+| two processes disagree on module state | different `ModuleStateStore`s, or different `app_id`s over one store | share one Adapter under one `app_id`; propagation ≤ `.module_state_poll(..)` (default 5 s) |
+| ``unknown Module `Profile`: pass the id of a mounted Module (as written in `Module::new(..)`) that the Boot Flags select`` (`ModuleStateError::UnknownModule`) | `ctx.modules().set_enabled`/`reset` with an id in another case, a typo, or a Module the Boot Flags pruned (`is_enabled` answers `false` for it) | use the exact `Module::new(..)` id; list the valid ones with `ctx.modules().ids()` |
+| `the ModuleStateStore failed: …` (`ModuleStateError::Port`) | the `ModuleStateStore` Adapter errored (or a detached test context has no App) | check the store; the snapshot keeps its last state |
+| `could not read the Module state from the ModuleStateStore (…): check the store and retry; nothing was sent` (`PublishError::ModuleState`) | Publish reloads the Module state before any request and the store failed | fix the store and re-run `--publish`; `--publish-clear` does not need it |
+| a command, button or modal answers "This feature is disabled here." | its Module (or an ancestor) is disabled in this guild or globally (`ctx.modules()`) | `ctx.modules().set_enabled(id, scope, true)` or `reset(id, scope)`; re-run `--publish` to update guild-scoped Commands |
+| `WARN noctis::modules: could not read the Module state; keeping the last snapshot` | the `ModuleStateStore`'s `version()` or a record read failed during a poll | check the store; one `info` logs the recovery |
 | Ref minted on one process "expired" on another | memory `RefStore` in a Cluster | shared `RefStore` Adapter |
 
 ## Where to look

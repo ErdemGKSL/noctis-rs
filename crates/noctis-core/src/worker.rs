@@ -447,7 +447,8 @@ enum Outcome {
 /// cancel token (cancel first); records the handler's duration when it
 /// ran, and reports an error, a panic or a cancellation to the `Event`
 /// sink. Every run ends in exactly one outcome; a filtered event runs no
-/// Middleware.
+/// Middleware. A handler whose Module is disabled in the event's guild
+/// (globally for a guildless event) does not run at all (AD-23 stage 3).
 #[expect(
     clippy::too_many_lines,
     reason = "one linear pass over the stages of an event handler run"
@@ -471,6 +472,14 @@ pub(crate) async fn run_handler(
         handler = handler.name(),
         event_type,
     );
+    // Stage 3: a disabled Module's handler is skipped silently (cached
+    // state only): no Middleware, no report.
+    if !app.module_state.is_enabled(entry.module, guild_id.into()) {
+        span.in_scope(|| {
+            tracing::trace!(target: "noctis::dispatch", module = entry.module, "module disabled here");
+        });
+        return;
+    }
     let invocation = Invocation::Event { event_type };
     // Stage 4: the guild's recorded locale, then the App's default.
     let locales = crate::pipeline::stage4(

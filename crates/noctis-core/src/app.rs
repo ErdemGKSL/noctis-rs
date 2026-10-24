@@ -90,6 +90,12 @@ const DEFAULT_ACK_DEADLINE: Duration = Duration::from_secs(2);
 /// The allowed `ack_deadline` range: above 2500 ms a hedged type-5
 /// callback no longer fits Discord's 3 s.
 const ACK_DEADLINE_RANGE: RangeInclusive<Duration> = Duration::ZERO..=Duration::from_millis(2500);
+/// The Module-state poll interval when `module_state_poll` is not called:
+/// the propagation delay of a toggle across processes.
+const DEFAULT_MODULE_STATE_POLL: Duration = Duration::from_secs(5);
+/// The allowed `module_state_poll` range.
+const MODULE_STATE_POLL_RANGE: RangeInclusive<Duration> =
+    Duration::from_millis(10)..=Duration::from_hours(1);
 /// The Ref TTL when `ref_ttl` is not called (FR-17).
 const DEFAULT_REF_TTL: Duration = Duration::from_hours(24);
 /// The allowed `ref_ttl` range, the same as a Route's `ttl = ".."`.
@@ -167,6 +173,8 @@ pub struct App {
     dev_guild: Option<Id<GuildMarker>>,
     /// The Boot Flag selection the Registry was folded with.
     boot_flags: BootFlags,
+    /// How often a running App polls the `ModuleStateStore` version.
+    module_state_poll: Duration,
     /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
     lifecycle: Lifecycle,
 }
@@ -515,14 +523,52 @@ impl App {
         &self.boot_flags
     }
 
+    /// The App's runtime Module switches (the handle `ctx.modules()`
+    /// returns). Before a run refreshed it, the snapshot has every Module
+    /// enabled at version 0; [`Modules::refresh`](crate::Modules::refresh)
+    /// loads it.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// use noctis_core::{App, Module};
+    ///
+    /// let mut builder = App::builder();
+    /// builder.module(Module::new("eco"));
+    /// let app = builder.build().unwrap();
+    /// assert!(app.modules().is_enabled("eco", None));
+    /// assert_eq!(app.modules().ids().collect::<Vec<_>>(), ["eco"]);
+    /// # }
+    /// ```
+    pub fn modules(&self) -> crate::Modules {
+        crate::Modules::of(Some(&self.shared))
+    }
+
+    /// How often a running App polls the `ModuleStateStore` version
+    /// ([`AppBuilder::module_state_poll`]; 5 s when unset): the delay
+    /// before a toggle made by another process applies here.
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.module_state_poll(), std::time::Duration::from_secs(5));
+    /// # }
+    /// ```
+    pub fn module_state_poll(&self) -> Duration {
+        self.module_state_poll
+    }
+
     /// A Publish of the Registry's commands to `scope`; `.await` it. See
     /// [`crate::publish`].
     ///
-    /// Publish reads `GET /applications/@me`, builds the command JSON from
-    /// the Registry alone, runs every check (META-04, and REG-03/REG-02 on
-    /// the `Guild` dev mirror) before any write, then per target reads the
+    /// Publish reloads the Module-state snapshot (not for a clear), reads
+    /// `GET /applications/@me`, builds the command JSON from the Registry
+    /// alone (each guild target without the guild-scoped Commands of
+    /// Modules disabled in that guild; global Commands always stay), runs
+    /// every check (META-04, REG-03 on the `Guild` dev mirror, REG-02 on
+    /// every guild target) before any write, then per target reads the
     /// remote commands and sends one bulk-overwrite `PUT` only when they
-    /// differ. It never runs on its own on shard READY.
+    /// differ. It never runs on its own on shard READY or after a Module
+    /// toggle.
     ///
     /// ```no_run
     /// use noctis_core::publish::PublishScope;
@@ -868,7 +914,13 @@ impl App {
     /// that has a file (in `Locale::ALL` order, with codes such as
     /// `"en-US"`), validated against the compiled catalogs and installed
     /// process-wide, so `Text::Key`s, `reply_text` and `Strings::of(..)`
-    /// render them (Publish keeps the compiled command texts). Then, with
+    /// render them (Publish keeps the compiled command texts). It then
+    /// loads the runtime Module state once from the `ModuleStateStore` (a
+    /// failure is one warning and every Module stays enabled) and polls the
+    /// store's version every
+    /// [`module_state_poll`](AppBuilder::module_state_poll) until this
+    /// returns, reloading the snapshot when it moved (a failing poll keeps
+    /// the last snapshot). Then, with
     /// [`publisher`](AppBuilder::publisher), it runs the startup Publish,
     /// reads `GET /gateway/bot` with the App's HTTP client, plans the shard
     /// total (the fixed [`shard_total`](AppBuilder::shard_total) or Discord's
@@ -995,11 +1047,14 @@ impl App {
                 // Overlays first: a bad one stops startup before any
                 // Discord request.
                 self.load_locale_overlays().await?;
+                let poller = self.start_module_state().await;
                 self.publish_at_startup().await;
                 self.warm_up(warmed).await;
-                Ok::<_, Error>(self.gateway_info().await?)
+                Ok::<_, Error>((self.gateway_info().await?, poller))
             } => info?,
         };
+        // Polls the Module state until `run_with` returns.
+        let (info, _poller) = info;
         let plan = plan(info, self.shard_total, self.shard_range.clone())?;
         let total = plan.total.get();
         let shards = plan.shards.clone();
@@ -1161,6 +1216,24 @@ impl App {
             );
         }
         Ok(())
+    }
+
+    /// Loads the Module-state snapshot once (a failure warns and keeps every
+    /// Module enabled), then starts the version poller; dropping the
+    /// returned guard stops it.
+    async fn start_module_state(&self) -> AbortOnDrop {
+        let state = Arc::clone(&self.shared.module_state);
+        if let Err(error) = state.refresh().await {
+            tracing::warn!(
+                target: "noctis::modules",
+                %error,
+                "could not read the Module state at startup; every Module stays enabled"
+            );
+        }
+        AbortOnDrop(tokio::spawn(crate::module_state::poll(
+            state,
+            self.module_state_poll,
+        )))
     }
 
     /// The publisher's global Publish (only with `publisher`), before any
@@ -1606,6 +1679,7 @@ impl fmt::Debug for App {
             .field("limits", &self.shared.limits)
             .field("ack_deadline", &self.shared.ack_deadline)
             .field("ref_ttl", &self.shared.ref_ttl)
+            .field("module_state_poll", &self.module_state_poll)
             .field("payload_key", &self.shared.payload_keys.is_some())
             .field("publisher", &self.publisher)
             .field("resume_sessions", &self.resume_sessions)
@@ -1676,6 +1750,8 @@ pub struct AppBuilder {
     ack_deadline: Duration,
     /// The raw default Ref TTL; `build` checks it.
     ref_ttl: Duration,
+    /// The raw Module-state poll interval; `build` checks it.
+    module_state_poll: Duration,
     /// Whether a normal run publishes globally at startup.
     publisher: bool,
     /// Whether shards resume stored sessions and shut down resumably.
@@ -1796,6 +1872,7 @@ impl AppBuilder {
             limits: Limits::default(),
             ack_deadline: DEFAULT_ACK_DEADLINE,
             ref_ttl: DEFAULT_REF_TTL,
+            module_state_poll: DEFAULT_MODULE_STATE_POLL,
             publisher: false,
             resume_sessions: true,
             discord_cache: DiscordCacheConfig::default(),
@@ -2072,6 +2149,22 @@ impl AppBuilder {
     /// ```
     pub fn ack_deadline(&mut self, deadline: Duration) -> &mut Self {
         self.ack_deadline = deadline;
+        self
+    }
+
+    /// Sets how often a running App polls its `ModuleStateStore`'s version
+    /// and reloads the Module-state snapshot when it moved: 10 ms..=1 h,
+    /// default 5 s. It is the delay before a toggle written by another
+    /// process sharing the store applies here (plus the store's own
+    /// latency); the writing App sees its own toggles at once. Out of range
+    /// is a [`BuildViolation::InvalidModuleStatePoll`]. The last call wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.module_state_poll(std::time::Duration::from_secs(1));
+    /// ```
+    pub fn module_state_poll(&mut self, interval: Duration) -> &mut Self {
+        self.module_state_poll = interval;
         self
     }
 
@@ -2857,6 +2950,12 @@ impl AppBuilder {
                 actual: self.ack_deadline,
             });
         }
+        if !MODULE_STATE_POLL_RANGE.contains(&self.module_state_poll) {
+            self.violations
+                .push(BuildViolation::InvalidModuleStatePoll {
+                    actual: self.module_state_poll,
+                });
+        }
         if !REF_TTL_RANGE.contains(&self.ref_ttl) {
             self.violations.push(BuildViolation::InvalidRefTtl {
                 actual: self.ref_ttl,
@@ -2951,6 +3050,10 @@ impl AppBuilder {
             renderer.bind(RendererPorts::new(asset_store).with_render_cache(render_cache));
         }
         let kv: Arc<dyn CacheStore> = ports.cache_store.clone();
+        let module_state = Arc::new(crate::module_state::State::new(
+            ports.module_state_store.clone(),
+            Arc::clone(registry.modules()),
+        ));
         let refs: Arc<dyn RefStore> = ports.ref_store.clone();
         let rate_limits: Arc<dyn RateLimitStore> = ports.rate_limit_store.clone();
         Ok(App {
@@ -2961,6 +3064,7 @@ impl AppBuilder {
                 app,
                 kv,
                 discord_cache,
+                module_state,
                 sinks: config.error_sinks,
                 http: Arc::new(http),
                 states: config.states,
@@ -3002,6 +3106,7 @@ impl AppBuilder {
             large_threshold: config.large_threshold,
             dev_guild: config.dev_guild,
             boot_flags: config.boot_flags,
+            module_state_poll: config.module_state_poll,
             lifecycle: Lifecycle::new(),
         })
     }
@@ -3100,6 +3205,7 @@ impl fmt::Debug for AppBuilder {
             .field("limits", &self.limits)
             .field("ack_deadline", &self.ack_deadline)
             .field("ref_ttl", &self.ref_ttl)
+            .field("module_state_poll", &self.module_state_poll)
             .field("publisher", &self.publisher)
             .field("resume_sessions", &self.resume_sessions)
             .field("discord_cache", &self.discord_cache)

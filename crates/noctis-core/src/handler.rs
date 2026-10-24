@@ -208,6 +208,9 @@ pub(crate) struct AppShared {
     /// The App's Discord cache feed, behind every `ctx.cache()`: fed by the
     /// drain and the interaction tasks (`AppBuilder::discord_cache`).
     pub(crate) discord_cache: Arc<crate::discord_cache::CacheFeed>,
+    /// The runtime Module state over the App's namespaced
+    /// `ModuleStateStore`, behind every `ctx.modules()`.
+    pub(crate) module_state: Arc<crate::module_state::State>,
     pub(crate) sinks: ErrorSinks,
     pub(crate) http: Arc<twilight_http::Client>,
     pub(crate) states: StateMap,
@@ -371,6 +374,11 @@ impl EventCtx {
     /// is applied before its handlers run.
     pub fn cache(&self) -> crate::DiscordCacheReader {
         crate::DiscordCacheReader::of(Some(&self.0.app))
+    }
+
+    /// The App's runtime Module switches (a cheap clone).
+    pub fn modules(&self) -> crate::Modules {
+        crate::Modules::of(Some(&self.0.app))
     }
 
     /// The App's webhook factory: create a webhook the App owns, or wrap

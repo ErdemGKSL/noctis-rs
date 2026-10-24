@@ -2,8 +2,13 @@
 //! differ from what Discord holds (FR-11, FR-13, AD-7, AD-26, META-04,
 //! REG-05).
 //!
-//! One Publish reads the application (`GET /applications/@me`), builds the
-//! command JSON of every target from the Registry alone, runs every check,
+//! One Publish reloads the runtime Module state (FR-45; not for a clear),
+//! reads the application (`GET /applications/@me`), builds the command
+//! JSON of every target from the Registry alone (a guild target leaves out
+//! the guild-scoped Commands and menus of Modules disabled in that guild,
+//! and drops a base or group left empty; global Commands are never
+//! filtered), runs every check (REG-02 counted on each filtered guild
+//! target),
 //! then per target reads the remote commands, diffs both canonical forms
 //! and sends one bulk-overwrite `PUT` only when the diff is not empty (and
 //! this is not a dry run). It runs in the `noctis.publish` span.
@@ -146,6 +151,16 @@ pub enum PublishError {
         kind: &'static str,
         /// The shared name.
         name: String,
+    },
+    /// The Module state could not be read before the Publish (FR-45);
+    /// nothing was sent.
+    #[error(
+        "could not read the Module state from the ModuleStateStore ({reason}): check the store \
+         and retry; nothing was sent"
+    )]
+    ModuleState {
+        /// The store's error.
+        reason: String,
     },
     /// One guild would hold too many commands of one type (REG-02).
     #[error(
@@ -385,6 +400,18 @@ async fn execute(publish: Publish<'_>) -> Result<PublishReport, PublishError> {
     if !app.has_token() {
         return Err(PublishError::MissingToken);
     }
+    // FR-45: the guild targets leave out disabled Modules' guild-scoped
+    // Commands, read from a fresh snapshot.
+    let modules = app.modules();
+    if !clear {
+        modules
+            .refresh()
+            .await
+            .map_err(|error| PublishError::ModuleState {
+                reason: error.to_string(),
+            })?;
+    }
+    let enabled = |module: &'static str, guild: Id<GuildMarker>| modules.is_enabled(module, guild);
     let http = app.http();
     let route = Route::GetCurrentUserApplicationInfo;
     let label = "GET /applications/@me".to_owned();
@@ -393,7 +420,7 @@ async fn execute(publish: Publish<'_>) -> Result<PublishReport, PublishError> {
         route: label,
         reason,
     })?;
-    let targets = targets(app.registry().commands(), scope, clear)?;
+    let targets = targets(app.registry().commands(), scope, clear, &enabled)?;
     for target in targets.iter().filter(|t| t.meta_04) {
         check_meta_04(&target.local, &application.enabled)?;
     }
@@ -407,13 +434,22 @@ async fn execute(publish: Publish<'_>) -> Result<PublishReport, PublishError> {
     })
 }
 
-/// Every target of one Publish, with the dev-mirror checks (REG-03,
-/// REG-02) already run.
+/// Every target of one Publish, with the dev-mirror check (REG-03) and
+/// REG-02 on every guild target already run. A guild target `g` leaves out
+/// the guild-scoped Commands and menus whose Module `enabled` rejects in
+/// `g` (FR-45); global Commands are never filtered.
 fn targets(
     commands: &Commands,
     scope: PublishScope,
     clear: bool,
+    enabled: &dyn Fn(&'static str, Id<GuildMarker>) -> bool,
 ) -> Result<Vec<Target>, PublishError> {
+    let guild_local = |guild: Id<GuildMarker>| {
+        commands
+            .scope(Scope::Guild(guild.get()))
+            .map(|scoped| json::local_kept(scoped, &|module| enabled(module, guild)))
+            .unwrap_or_default()
+    };
     let local_of = |scope: Scope| commands.scope(scope).map(json::local).unwrap_or_default();
     if clear {
         return Ok(vec![Target {
@@ -433,9 +469,11 @@ fn targets(
                 if let Scope::Guild(id) = scoped.scope
                     && let Some(guild) = Id::new_checked(id)
                 {
+                    let local = guild_local(guild);
+                    check_counts(guild, &local)?;
                     targets.push(Target {
                         scope: PublishScope::Guild(guild),
-                        local: json::local(scoped),
+                        local,
                         meta_04: false,
                     });
                 }
@@ -447,8 +485,9 @@ fn targets(
             for command in &mut local {
                 json::strip_install(command);
             }
-            local.extend(local_of(Scope::Guild(guild.get())));
-            check_mirror(guild, &local)?;
+            local.extend(guild_local(guild));
+            check_names(guild, &local)?;
+            check_counts(guild, &local)?;
             Ok(vec![Target {
                 scope,
                 local,
@@ -476,8 +515,8 @@ fn kind_name(kind: u64) -> &'static str {
     }
 }
 
-/// REG-03 then REG-02 on the dev mirror's union.
-fn check_mirror(guild: Id<GuildMarker>, local: &[Value]) -> Result<(), PublishError> {
+/// REG-03 on the dev mirror's union.
+fn check_names(guild: Id<GuildMarker>, local: &[Value]) -> Result<(), PublishError> {
     let mut seen: HashSet<(u64, &str)> = HashSet::new();
     for command in local {
         let kind = command_type(command).unwrap_or(1);
@@ -490,6 +529,11 @@ fn check_mirror(guild: Id<GuildMarker>, local: &[Value]) -> Result<(), PublishEr
             });
         }
     }
+    Ok(())
+}
+
+/// REG-02 on one guild target's (filtered) list.
+fn check_counts(guild: Id<GuildMarker>, local: &[Value]) -> Result<(), PublishError> {
     let limits = Limits::default();
     for (kind, max) in [
         (1, limits.chat_input_commands),

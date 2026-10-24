@@ -15,20 +15,33 @@ use crate::registry::commands::{CommandNode, OptionTexts, ScopeCommands, Variant
 /// Every command object of one scope: the chat-input bases, then the
 /// context menus.
 pub(crate) fn local(scope: &ScopeCommands) -> Vec<Value> {
-    let bases = scope.bases.iter().map(|base| {
-        let mut object = node(base, 1);
-        add_metadata(&mut object, &base.metadata);
-        Value::Object(object)
-    });
-    let menus = scope.menus().map(|entry| {
-        let handler = &entry.handler;
-        let mut object = Map::new();
-        object.insert("type".into(), json!(handler.kind().value()));
-        object.insert("name".into(), json!(handler.menu_name()));
-        add_localizations(&mut object, "name_localizations", &entry.name_localizations);
-        add_metadata(&mut object, handler.metadata());
-        Value::Object(object)
-    });
+    local_kept(scope, &|_| true)
+}
+
+/// [`local`] with only the handlers whose Module `keep` accepts: a node
+/// without a kept handler left under it (a base or group) is dropped.
+pub(crate) fn local_kept(scope: &ScopeCommands, keep: &dyn Fn(&'static str) -> bool) -> Vec<Value> {
+    let bases = scope
+        .bases
+        .iter()
+        .filter(|base| kept(base, keep))
+        .map(|base| {
+            let mut object = node(base, 1, keep);
+            add_metadata(&mut object, &base.metadata);
+            Value::Object(object)
+        });
+    let menus = scope
+        .menus()
+        .filter(|entry| keep(entry.module))
+        .map(|entry| {
+            let handler = &entry.handler;
+            let mut object = Map::new();
+            object.insert("type".into(), json!(handler.kind().value()));
+            object.insert("name".into(), json!(handler.menu_name()));
+            add_localizations(&mut object, "name_localizations", &entry.name_localizations);
+            add_metadata(&mut object, handler.metadata());
+            Value::Object(object)
+        });
     bases.chain(menus).collect()
 }
 
@@ -54,9 +67,19 @@ pub(super) fn strip_install(command: &mut Value) {
     }
 }
 
+/// Whether `node` has a handler `keep` accepts (itself or below it).
+fn kept(node: &CommandNode, keep: &dyn Fn(&'static str) -> bool) -> bool {
+    if node.children.is_empty() {
+        node.handler.as_ref().is_none_or(|entry| keep(entry.module))
+    } else {
+        node.children.iter().any(|child| kept(child, keep))
+    }
+}
+
 /// A chat-input node as a command (`kind` 1 at the base), subcommand (1) or
-/// group (2). It always carries `options` (FR-61).
-fn node(node: &CommandNode, kind: u8) -> Map<String, Value> {
+/// group (2), with only its [`kept`] children. It always carries `options`
+/// (FR-61).
+fn node(node: &CommandNode, kind: u8, keep: &dyn Fn(&'static str) -> bool) -> Map<String, Value> {
     let options: Vec<Value> = if node.children.is_empty() {
         let texts = node.options.iter().map(Some).chain(std::iter::repeat(None));
         node.handler
@@ -68,9 +91,10 @@ fn node(node: &CommandNode, kind: u8) -> Map<String, Value> {
     } else {
         node.children
             .iter()
+            .filter(|child| kept(child, keep))
             .map(|child| {
                 let kind = if child.children.is_empty() { 1 } else { 2 };
-                Value::Object(self::node(child, kind))
+                Value::Object(self::node(child, kind, keep))
             })
             .collect()
     };

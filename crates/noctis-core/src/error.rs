@@ -475,6 +475,24 @@ pub enum BuildViolation {
         /// The rejected deadline.
         actual: Duration,
     },
+    /// `module_state_poll` is outside 10 ms..=1 h.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    ///
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::InvalidModuleStatePoll { actual: Duration::from_millis(9) };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "module state poll interval 9ms is out of range: use a value in 10 ms..=1 h",
+    /// );
+    /// ```
+    #[error("module state poll interval {actual:?} is out of range: use a value in 10 ms..=1 h")]
+    InvalidModuleStatePoll {
+        /// The rejected interval.
+        actual: Duration,
+    },
     /// `ref_ttl` is outside 1 s..=365 d (FR-17).
     #[error("ref TTL {actual:?} is out of range: use a value in 1 s..=365 d")]
     InvalidRefTtl {

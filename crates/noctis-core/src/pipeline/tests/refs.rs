@@ -581,3 +581,35 @@ async fn a_failed_delete_is_one_warning() {
 fn boom() -> HandlerResult<(V2Message, RefOps)> {
     panic!("handler")
 }
+
+/// Story 13.3 D3: a click on a disabled Module's `one_shot` Ref answers
+/// the notice before the Ref lookup, so the Ref stays.
+#[tokio::test]
+async fn disabled_module_keeps_a_one_shot_ref() {
+    let fx = Fx::start().await;
+    fx.p.fx
+        .app
+        .modules()
+        .set_enabled("t", Id::new(1), false)
+        .await
+        .unwrap();
+    fx.refs.insert(&key("default"), b"0t.once:7");
+    let mut raw = ref_click("t.once");
+    raw["guild_id"] = json!("1");
+    fx.run(&raw).await;
+    assert!(fx.lines().is_empty());
+    let requests = fx.take();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].2["type"], 4);
+    assert_eq!(requests[0].2["data"]["flags"], 32832);
+    assert_eq!(
+        requests[0].2["data"]["components"][0]["content"],
+        "This feature is disabled here."
+    );
+    assert!(fx.refs.calls().is_empty(), "no Ref lookup");
+    assert!(fx.refs.value(&key("default")).is_some());
+    raw["guild_id"] = json!("2");
+    fx.run(&raw).await;
+    assert_eq!(fx.lines(), ["once:7:true"]);
+    assert!(fx.sink.seen().is_empty());
+}

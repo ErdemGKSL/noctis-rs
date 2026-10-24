@@ -2010,6 +2010,30 @@ mod autocomplete {
         assert!(p.reports().is_empty());
     }
 
+    /// Story 13.3 D4: a disabled Module answers an empty list and never
+    /// runs the method.
+    #[tokio::test]
+    async fn disabled_module_answers_empty_choices() {
+        let (p, sink) = start(discord()).await;
+        p.fx.app
+            .modules()
+            .set_enabled("m", Id::new(1), false)
+            .await
+            .unwrap();
+        let mut raw = ac_json("value", "disabled-13-3");
+        raw["guild_id"] = json!("1");
+        run(&p, inbound(&raw)).await;
+        assert!(choices(&p).is_empty());
+        assert!(
+            !SEEN
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|seen| seen.starts_with("disabled-13-3"))
+        );
+        assert!(sink.seen().is_empty());
+    }
+
     /// INT-07 end to end: 30 choices, 25 sent, one warning.
     #[tokio::test]
     async fn int_07_thirty_choices_send_twenty_five() {
@@ -2422,13 +2446,13 @@ mod notices {
                 io("db down").with_message(keys::GUARD_OWNER)
             }))
             .__add(failing("m::user", &["user"], || {
-                HandlerError::user(keys::DISABLED_HERE)
+                HandlerError::user(keys::MODULE_DISABLED)
             }))
             .__add(failing("m::bot", &["bot"], || {
                 HandlerError::user(MessageKey::new("shop.missing"))
             }))
             .__add(failing("m::rekeyed", &["rekeyed"], || {
-                HandlerError::user(keys::DISABLED_HERE).with_message(keys::GUARD_OWNER)
+                HandlerError::user(keys::MODULE_DISABLED).with_message(keys::GUARD_OWNER)
             }));
         let p = Pipeline::start(module).await;
         p.run(run_slash("plain")).await;
@@ -2456,7 +2480,7 @@ mod notices {
         assert_eq!(debug.len(), 3, "{}", capture.text());
         assert!(
             debug[0].contains("handler=\"m::user\"")
-                && debug[0].contains("key=\"noctis.disabled_here\""),
+                && debug[0].contains("key=\"noctis.module.disabled\""),
             "{}",
             debug[0]
         );
@@ -3060,6 +3084,7 @@ mod expired;
 mod guards;
 mod locales;
 mod middleware;
+mod modules;
 mod refs;
 
 /// Story 10.4: `ctx.render` hands the Renderer the interaction's

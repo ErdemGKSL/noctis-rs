@@ -246,6 +246,12 @@ macro_rules! ctx_accessors {
                 crate::DiscordCacheReader::of(self.0.app.as_ref())
             }
 
+            /// The App's runtime Module switches: `is_enabled` reads the cached
+            /// snapshot, writes go through the `ModuleStateStore` (a cheap clone).
+            pub fn modules(&self) -> crate::Modules {
+                crate::Modules::of(self.0.app.as_ref())
+            }
+
             /// The App's webhook factory: create a webhook the App owns,
             /// or wrap stored credentials (a cheap clone); every request
             /// of a detached test seam's factory is
