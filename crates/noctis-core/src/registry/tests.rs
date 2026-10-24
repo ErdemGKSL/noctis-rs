@@ -1547,6 +1547,31 @@ mod boot_flags {
         assert!(registry.route("shop.buy").is_some());
     }
 
+    /// A flag declared only on a component, modal or menu registration
+    /// counts as declared: selecting it is no `UnknownBootFlag`.
+    #[test]
+    fn flags_declared_only_on_a_route_or_menu() {
+        let selection = only(&["shop"]);
+        let core = Module::new("core").__add_flagged(&["shop"], button("buy", "shop.buy"));
+        let (registry, violations) = fold(&[core], &selection);
+        assert_eq!(violations, []);
+        assert!(registry.route("shop.buy").is_some());
+
+        let core = Module::new("core").__add_flagged(&["shop"], modal("pay", "shop.pay"));
+        let (registry, violations) = fold(&[core], &selection);
+        assert_eq!(violations, []);
+        assert!(registry.route("shop.pay").is_some());
+
+        let core = Module::new("core").__add_flagged(
+            &["shop"],
+            user_menu("inspect", "Inspect", crate::CommandMetadata::new()),
+        );
+        let (registry, violations) = fold(&[core], &selection);
+        assert_eq!(violations, []);
+        let tree = registry.commands().render();
+        assert!(tree.contains("Inspect"), "{tree}");
+    }
+
     /// B7: a kept Module that `uses` a pruned Route is CID-04.
     #[test]
     fn uses_of_a_pruned_route() {

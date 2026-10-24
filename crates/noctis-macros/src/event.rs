@@ -16,8 +16,6 @@ struct Args {
     droppable: bool,
     /// `flags = [..]`: the Boot Flags.
     flags: Flags,
-    /// Whether `flags` was given.
-    has_flags: bool,
 }
 
 const EXPECTED: &str = "expected `ordered`, `droppable` or `flags = [\"beta\"]`";
@@ -33,14 +31,13 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
     for segment in segments {
         let tokens: TokenStream = segment.iter().cloned().collect();
         if matches!(segment.first(), Some(TokenTree::Ident(i)) if i == "flags") {
-            if parsed.has_flags {
+            if !parsed.flags.is_empty() {
                 return Err(syn::Error::new(
                     span_of(&segment),
                     "duplicate `#[event]` argument `flags`",
                 ));
             }
             parsed.flags = Flags::parse(&segment)?;
-            parsed.has_flags = true;
             continue;
         }
         let name = match segment.as_slice() {

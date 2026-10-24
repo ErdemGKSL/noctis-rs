@@ -993,7 +993,6 @@ impl fmt::Display for IntentName {
     }
 }
 
-/// `" (HTTP {status})"`, or nothing.
 /// `` `a`, `b` `` or `none`: the declared flags of
 /// [`BuildViolation::UnknownBootFlag`].
 struct DeclaredFlags<'a>(&'a [&'static str]);
@@ -1013,6 +1012,7 @@ impl fmt::Display for DeclaredFlags<'_> {
     }
 }
 
+/// `" (HTTP {status})"`, or nothing.
 struct StatusSuffix(Option<u16>);
 
 impl fmt::Display for StatusSuffix {

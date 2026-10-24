@@ -418,7 +418,13 @@ fn check_boot_flags(
                 });
             }
         }
-        declared.extend(module.boot_flags());
+        declared.extend(
+            module
+                .boot_flags()
+                .iter()
+                .copied()
+                .filter(|flag| noctis_rules::boot_flag::check(flag).is_ok()),
+        );
         declared.extend(module.registration_flags());
     }
     let unknown: Vec<&str> = selection
