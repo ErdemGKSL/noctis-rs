@@ -408,7 +408,10 @@ async fn execute(publish: Publish<'_>) -> Result<PublishReport, PublishError> {
             .refresh()
             .await
             .map_err(|error| PublishError::ModuleState {
-                reason: error.to_string(),
+                reason: match error {
+                    crate::ModuleStateError::Port(error) => error.to_string(),
+                    other => other.to_string(),
+                },
             })?;
     }
     let enabled = |module: &'static str, guild: Id<GuildMarker>| modules.is_enabled(module, guild);

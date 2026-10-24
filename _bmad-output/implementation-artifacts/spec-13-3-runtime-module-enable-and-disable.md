@@ -2,16 +2,23 @@
 title: 'Story 13.3: Runtime Module enable and disable'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '1b919f03e784dfda74056690fa928e149571edc0'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The template's dashboard `load(ctx: &impl Ctx, ..)` still calls the planned shared `Ctx` trait and `ctx.cache()`, so the file the Usage Skill now cites as the toggle example does not compile against the shipped API.
+    evidence: |-
+      No `trait Ctx` or `fn cache` exists in crates/; the `ctx.modules()` toggle calls themselves (handlers.rs L70, L103-105, L126) match the landed `Modules`/`ModuleScope` signatures. `load` and its `impl Ctx`/`cache()` use predate Story 13.3 (cache is Story 12.5 planned API), and the template crate runs in no gate (Story 13.2 deferred the template-test gate to the Story 14.2 CI restore).
+    location: >-
+      examples/project-template/src/modules/dashboard/handlers.rs:120
+    severity: medium
 ---
 
 <intent-contract>
@@ -180,6 +187,39 @@ Display strings (exact, tested):
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 29 findings — high 0, medium 8, low 15, false 6, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) `State::refresh` does not take the write mutex, so a refresh racing a local write can store its older snapshot after `write` swapped in the new record, undoing the writer's own toggle until the next version change (up to `module_state_poll`) — real: `refresh` (module_state.rs ~L354-364) swaps without `self.write`; grouped with the next two rows (unserialized snapshot swaps); fix: take `self.write` in `refresh`.
+  - `[medium]` `[patch]` (blind) `write` clones the snapshot then stores, so a refresh that swapped in between is overwritten with older state of other Modules — real (load/clone/store at ~L393-395 not atomic vs. the poller); same root cause and fix as above.
+  - `[low]` `[reject]` (blind) refresh reads N records sequentially — the cost is the spec's documented design decision (one record per Module, N gets per changed version); Module counts are small; concurrent reads add complexity for no everyday gain.
+  - `[low]` `[reject]` (blind) startup with `publisher(true)` refreshes twice — one extra N-get pass at boot only; skipping it needs a new flag/branch.
+  - `[low]` `[reject]` (blind) `Snapshot::apply`'s `retain` scans all guild overrides per Module during a refresh — O(Modules x overriding guilds) bit ops per changed version is negligible at realistic sizes; splitting `apply` adds a second code path.
+  - `[low]` `[reject]` (blind) `Dispatcher::run_command` returns `Ok(())` for a disabled Module — consistent with its contract (only `UnknownCommand` is an error; a refused run is answered with the notice as the spec settles); a new `DispatchError` variant adds public surface for a rare need.
+  - `[low]` `[reject]` (blind) disabled-Module log is `trace` for events and `debug` for interactions — the levels are the spec's choice (events are high-volume); negligible operator impact.
+  - `[low]` `[patch]` (blind) `PublishError::ModuleState`'s reason repeats "the ModuleStateStore failed" — real (`error.to_string()` of `ModuleStateError::Port` nested in the outer text, publish.rs ~L410); fix: format the inner `PortError` for `Port`; the typed-source part is rejected (spec fixes `reason: String`).
+  - `[medium]` `[patch]` (blind) no tests for the Publish context-menu filter, modal submits or context-menu stage-3 notice — real (grep finds no menu/modal case in publish/tests/modules.rs, pipeline/tests/modules.rs, module_toggle.rs); grouped with vgap gap 2 and intent D4; fix: add those tests.
+  - `[medium]` `[defer]` (blind) template dashboard code not updated, still "planned API" with `load(ctx: &impl Ctx)` — the toggle calls match the landed API (handlers.rs L70, L103, L126); the non-compiling `impl Ctx`/`cache()` in `load` predates this story and the template gate is already deferred (13.2); deferred.
+  - `[low]` `[patch]` (blind) `Record::decode` uses `sort_unstable_by_key` + `dedup_by_key`, so which duplicate guild entry survives is arbitrary — real for externally written records; fix: stable `sort_by_key` (first entry wins) and say so in the doc comment; grouped with edge 5 and vgap other.
+  - `[low]` `[patch]` (blind) spec still `in-progress`; skill dropped the `ModuleToggled` hook line — status part is false (the loop sets `done` at finalize); the dropped forward reference is real (old §3 ended "Hook: `ModuleToggled`", app-and-sharding §7 still lists it); fix: one `[planned, Story 13.5]` line in §3; grouped with intent D6.
+  - `[low]` `[reject]` (edge) poller hangs if `version()`/`get()` never resolves — a never-resolving store is an adapter defect, no other port call in core wraps a timeout; adding one is a new guard for an unshown state.
+  - `[low]` `[reject]` (edge) startup refresh has no timeout — same as above.
+  - `[false]` `[reject]` (edge) Publish's refresh racing a same-App `set_enabled` filters with stale state — two concurrent operations have no order; the Publish result equals Publish-before-toggle, and toggles never re-Publish by design; the persisting-stale-snapshot effect is the patched race entry.
+  - `[medium]` `[patch]` (edge) poller refresh swaps between `write`'s load and store — same defect as blind rows 1-2; same fix.
+  - `[low]` `[patch]` (edge) duplicate guild ids resolve nondeterministically (`sort_unstable`) — same as blind row 11.
+  - `[low]` `[reject]` (edge) autocomplete of a disabled Module with undecodable options reports to the Error Sink — stage 3 runs after `find_autocomplete`; a decode failure is a payload/framework mismatch whose report is a useful signal, rarely met; reordering touches the skip path.
+  - `[medium]` `[patch]` (vgap) startup Module-state load in `run_with` never observed by a test — pre-verified gap; fix: testkit test starting an App over a store that already disables `eco` in guild 1 (poll 1 h) and asserting the first `/balance` there is the notice.
+  - `[medium]` `[patch]` (vgap) Publish's context-menu filter has no test — pre-verified gap; grouped with blind row 9.
+  - `[low]` `[patch]` (vgap other) unstable sort in `Record::decode` — same as blind row 11.
+  - `[false]` `[reject]` (intent D1) propagation proven in-process only — the spec deliberately settles the proof (two `TestApp`s over one shared store, P1 with paused clock at 5 s); the shared-store code path is the same for any Adapter.
+  - `[false]` `[reject]` (intent D2) toggle does not re-Publish — spec decision (FR-13: Publish only in the designated process/CLI), documented.
+  - `[false]` `[reject]` (intent D3) notice uses built-in locale resolution — spec-settled: stage 3 precedes stage 4 (AD-23), like the existing pre-stage-4 rejections.
+  - `[low]` `[patch]` (intent D4) no modal-submit or select-menu test for a disabled Module — real (button only); grouped with blind row 9.
+  - `[medium]` `[defer]` (intent D5) template reconciled in docs only — same as blind row 10; deferred.
+  - `[low]` `[patch]` (intent D6) skill drops `ModuleToggled` from §3 while §7 lists it — same as blind row 12.
+  - `[false]` `[reject]` (intent D7) `impl Into<ModuleScope>` superset and unknown-id rules — spec-settled and source-compatible with the AC's call shape.
+  - `[false]` `[reject]` (intent D8) notice for guild-scoped Commands, autocomplete and public prefix reply — spec-settled (a message has no ephemeral form).
+
 ## Design Notes
 
 - (decision) One record per Module (key = id) instead of one key per (Module, guild): the store has no list op, so a refresh must know every key up front; the kept Module ids are known from the Registry. Cost: N `get`s per changed version, and concurrent writers in two processes toggling the same Module within one read-modify-write window can lose one change (no CAS in the port, AD-14). Documented in the Usage Skill; acceptable for operator-speed toggles.
@@ -214,3 +254,14 @@ Run from `/home/claude/lanes/b/noctis-rs`, release only (wrap workspace-wide run
 
 **Manual checks:**
 - `examples/project-template` is compiled by no gate (13.2 deferred item; it still calls the planned `ctx.cache()`): read `dashboard/handlers.rs` and confirm each `modules()` call matches the landed signatures.
+
+## Auto Run Result
+
+- Summary: runtime Module enable/disable. `ctx.modules().set_enabled(id, scope, bool)` / `reset` / `is_enabled` (snapshot, no I/O) over a `ModuleStateStore` port (one record per Module, versioned); a poller (`module_state_poll`, default 5 s) propagates toggles across processes; pipeline stage 3 refuses disabled Modules (localized `noctis.module.disabled` notice for commands/components/modals/context menus, empty autocomplete, silent event skip); Publish filters disabled Modules' Commands and fails closed with `PublishError::ModuleState`. Enablement is AND over the Module tree; unknown ids read disabled and fail writes; startup/poll failures fail open.
+- Files changed: `crates/noctis-core/src/module_state.rs` (+tests: store records, snapshot, poller, write/refresh serialization); `pipeline.rs`, `pipeline/component.rs` (stage-3 gate, before Ref decode); `publish.rs`, `publish/json.rs` (disabled-Module filter, `PublishError::ModuleState`); `registry.rs`, `worker.rs`, `notice.rs`; `noctis-i18n`, `noctis-rules` key rename; `noctis/src/lib.rs` re-exports; testkit `tests/module_toggle.rs`; `docs/discord-rules.md`; Usage Skill references + `API hash`; `xtask/public-api.txt`; template `AGENTS.md`.
+- Review findings: 29 (high 0, medium 8, low 15, false 6). Patched: 0 high, 6 medium, 6 low entries (grouped into 5 fixes): `refresh` now takes the write mutex (refresh/write race, 3 rows); tests added for Publish context-menu filter, modal-submit/select-menu/context-menu stage-3 notices and startup state load (4 rows); `PublishError::ModuleState` reason no longer repeats the inner text; `Record::decode` uses a stable sort (first duplicate guild entry wins, 3 rows); Usage Skill §3 regains a `[planned, Story 13.5]` `ModuleToggled` line (2 rows).
+- Deferred (2 medium rows, one item): template dashboard code still "planned API" (`load(ctx: &impl Ctx)`, `ctx.cache()`) and is compiled by no gate; toggle calls match the landed API; carried with the 13.2 template-gate deferral.
+- Rejected: sequential N gets per refresh (documented design); double refresh at boot with `publisher(true)` (one-off cost); `Snapshot::apply` retain scan (negligible); `run_command` Ok(()) for disabled Module (contract); trace/debug log levels (spec choice); poller/startup without timeouts (adapter defect, no other port call has one); Publish racing a same-App toggle (no order between concurrent ops); autocomplete decode error reported for a disabled Module (useful signal, rare); in-process-only propagation proof, no re-Publish on toggle, pre-stage-4 locale resolution, `impl Into<ModuleScope>` superset, notice for guild-scoped/prefix replies (all spec-settled).
+- Follow-up review recommended: true (first pass, 6 medium entries patched, 0 high). Named risk: the refresh/write serialization fix in `module_state.rs` changes lock ordering between the poller and `set_enabled`; no follow-up review has verified it cannot deadlock or still lose a toggle under concurrent cross-process writes.
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91 check); `cargo hack` not run (not the epic's last story). CI paused by the maintainer. Manual: template `dashboard/handlers.rs` `modules()` calls checked against the landed signatures.
+- Residual risks: no CAS in the store port, so two processes toggling the same Module within one read-modify-write window can lose one change (documented); propagation proven in-process only; the project template is not compiled by any gate.

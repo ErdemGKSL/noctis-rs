@@ -273,3 +273,18 @@ async fn a_toggle_reaches_both_apps() {
     a.stop().await.unwrap();
     b.stop().await.unwrap();
 }
+
+/// The startup refresh: an App started after the toggle reads it before
+/// its first poll (here an hour away).
+#[tokio::test(flavor = "multi_thread")]
+async fn startup_reads_the_stored_state() {
+    let store = Arc::new(MemoryModuleStateStore::new());
+    let (a, _) = start(&store, Duration::from_hours(1)).await;
+    assert_eq!(run(&a, "eco off", G1).await.text(), "off");
+    a.stop().await.unwrap();
+    let (b, b_seen) = start(&store, Duration::from_hours(1)).await;
+    assert_disabled(&run(&b, "balance", G1).await);
+    assert!(b_seen.lines().is_empty(), "{:?}", b_seen.lines());
+    assert_eq!(run(&b, "balance", G2).await.text(), "100 coins");
+    b.stop().await.unwrap();
+}

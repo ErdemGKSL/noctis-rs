@@ -182,6 +182,45 @@ async fn u4_every_module_disabled_drops_the_base() {
     assert_eq!(targets[1], (PublishScope::Guild(G1), Vec::new()));
 }
 
+/// U2 for menus: a disabled Module's guild-scoped user and message menus
+/// leave that guild's target only.
+#[tokio::test(flavor = "multi_thread")]
+async fn u2_disabled_menus() {
+    let server = server().await;
+    let mut builder = builder();
+    builder
+        .token(Token::new("SECRET123").unwrap())
+        .http_proxy(server.authority())
+        .module(
+            Module::new("p")
+                .__add(user_menu(
+                    "p::report",
+                    "Report",
+                    CommandMetadata::new().guilds(BOTH),
+                ))
+                .__add(message_menu(
+                    "p::quote",
+                    "Quote",
+                    CommandMetadata::new().guilds(BOTH),
+                )),
+        )
+        .module(Module::new("q").__add(command_with(
+            "q::admin",
+            &["admin"],
+            CommandMetadata::new().guilds(ONE),
+        )));
+    let app = builder.build().unwrap();
+    app.modules().set_enabled("p", G1, false).await.unwrap();
+    assert_eq!(
+        dry(&app, PublishScope::Global).await,
+        [
+            (PublishScope::Global, Vec::new()),
+            (PublishScope::Guild(G1), names(&["admin"])),
+            (PublishScope::Guild(G2), names(&["Report", "Quote"])),
+        ]
+    );
+}
+
 /// A store whose every call fails.
 struct Broken;
 
@@ -212,13 +251,13 @@ async fn u6_u7_a_failing_store_stops_publish_but_not_clear() {
     assert_eq!(
         error,
         PublishError::ModuleState {
-            reason: "the ModuleStateStore failed: port unavailable: down".into()
+            reason: "port unavailable: down".into()
         }
     );
     assert_eq!(
         error.to_string(),
-        "could not read the Module state from the ModuleStateStore (the ModuleStateStore \
-         failed: port unavailable: down): check the store and retry; nothing was sent"
+        "could not read the Module state from the ModuleStateStore (port unavailable: \
+         down): check the store and retry; nothing was sent"
     );
     assert!(server.seen().is_empty(), "no HTTP request");
     // U7: clear reads no Module state.

@@ -113,11 +113,12 @@ impl Default for Record {
 
 impl Record {
     /// Decodes the stored bytes of `module`: another schema reads as the
-    /// default, malformed bytes too, with one `warn`.
+    /// default, malformed bytes too, with one `warn`. Duplicate guild
+    /// entries keep the first stored entry for that guild.
     fn decode(module: &str, raw: &[u8]) -> Self {
         match decode_value::<Self>(0, raw) {
             Ok(Some(mut record)) => {
-                record.guilds.sort_unstable_by_key(|&(guild, _)| guild);
+                record.guilds.sort_by_key(|&(guild, _)| guild);
                 record.guilds.dedup_by_key(|&mut (guild, _)| guild);
                 record
             }
@@ -350,8 +351,10 @@ impl State {
     }
 
     /// Reloads the whole snapshot: `version()`, then every record in
-    /// pre-order, then the swap.
+    /// pre-order, then the swap, all under the write mutex so no swap
+    /// races a `write`.
     pub(crate) async fn refresh(&self) -> Result<(), PortError> {
+        let _serialized = self.write.lock().await;
         let version = self.store.version().await?;
         let words = self.index.words();
         let mut next = Snapshot::enabled(&self.index, version);

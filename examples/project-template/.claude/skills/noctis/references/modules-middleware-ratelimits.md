@@ -271,6 +271,8 @@ ctx.modules().refresh().await?;                                     // reload th
   `ids()` is empty, writes and `refresh()` return `ModuleStateError::Port(Unavailable)`.
 - The template's `/dashboard` Modules tab toggles `setup` and `profile` per guild
   (`src/modules/dashboard/handlers.rs`, `ToggleModule`).
+- **Hook.** [planned, Story 13.5] a toggle fires the `ModuleToggled { module, scope,
+  enabled }` Lifecycle Hook; today it only logs `info!` on `noctis::modules`.
 
 ## 4. Gateway Event Handlers (FR-6)
 

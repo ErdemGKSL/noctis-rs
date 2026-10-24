@@ -157,7 +157,7 @@ development_status:
   epic-13: in-progress
   13-1-module-trees-with-unique-path-ids: done
   13-2-boot-time-feature-flags: done
-  13-3-runtime-module-enable-and-disable: in-progress
+  13-3-runtime-module-enable-and-disable: done
   13-4-rate-limits-on-commands-and-routes: done
   13-5-lifecycle-hooks: backlog
   epic-13-retrospective: optional

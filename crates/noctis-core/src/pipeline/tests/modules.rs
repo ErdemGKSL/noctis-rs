@@ -137,3 +137,90 @@ async fn the_notice_is_localized() {
         "Bu özellik burada kapalı."
     );
 }
+
+mod kinds {
+    use noctis_codec::RouteShape;
+
+    use super::super::components::{click, submit};
+    use super::*;
+    use crate::pipeline::component::run_component;
+    use crate::test_support::test_route;
+    use crate::{ComponentCtx, ComponentHandler, ComponentKind, ModalHandler, ModalSubmitCtx};
+
+    test_route!(Pick, "pick", RouteShape::INLINE.select(), 0);
+    test_route!(Bio, "bio", RouteShape::INLINE, 0);
+
+    /// Module `m`: a select, a modal and a user menu, each logging.
+    fn module(log: &Log) -> Module {
+        let (pick, bio, menu) = (log.clone(), log.clone(), log.clone());
+        Module::new("m")
+            .__add(ComponentHandler::__new::<Pick, _, _>(
+                "m::Pick",
+                "pick",
+                ComponentKind::StringSelect,
+                move |_: Pick, _: ComponentCtx| {
+                    pick.push("pick".to_owned());
+                    async { Ok(Responded::new()) }
+                },
+            ))
+            .__add(ModalHandler::__new::<Bio, _, _>(
+                "m::Bio",
+                "bio",
+                move |_: Bio, _: ModalSubmitCtx| {
+                    bio.push("bio".to_owned());
+                    async { Ok(Responded::new()) }
+                },
+            ))
+            .__add(ContextMenuHandler::__new_user(
+                "m::show",
+                "Show",
+                CommandMetadata::new(),
+                move |_: CommandCtx, _: ResolvedUser, _: CommandResponder| {
+                    menu.push("show".to_owned());
+                    async { Ok(v2("u")) }
+                },
+            ))
+    }
+
+    fn in_guild_1(mut raw: Value) -> Inbound {
+        raw["guild_id"] = json!("1");
+        inbound(&raw)
+    }
+
+    /// A select, a modal submit and a context-menu Command of a disabled
+    /// Module each get the notice; no handler runs.
+    #[tokio::test]
+    async fn every_kind_gets_the_notice() {
+        let log = Log::default();
+        let p = Pipeline::start(module(&log)).await;
+        p.fx.app
+            .modules()
+            .set_enabled("m", Id::new(1), false)
+            .await
+            .unwrap();
+        let component = |inbound| {
+            run_component(
+                Arc::clone(p.fx.app.registry()),
+                Arc::clone(p.fx.app.shared()),
+                inbound,
+                CancellationToken::new(),
+            )
+        };
+        component(in_guild_1(click("4pick:0147", 3))).await;
+        component(in_guild_1(submit("0bio:47", true))).await;
+        let data = json!({
+            "id": "9", "name": "Show", "type": 2, "target_id": "11",
+            "resolved": { "users": { "11": user("11") } }
+        });
+        p.run(in_guild_1(interaction(data, json!({})))).await;
+        assert!(log.lines().is_empty(), "{:?}", log.lines());
+        let requests = p.requests();
+        assert_eq!(requests.len(), 3, "{requests:?}");
+        for request in &requests {
+            assert_eq!(request.1, CB);
+            assert_eq!(request.2["type"], 4);
+            assert_eq!(request.2["data"]["flags"], 32832);
+            assert_eq!(request.2["data"]["components"][0]["content"], DISABLED);
+        }
+    }
+}
