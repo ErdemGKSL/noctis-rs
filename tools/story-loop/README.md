@@ -13,7 +13,8 @@ follows the `bmad-build-auto` workflow and the maintainer workflow in `AGENTS.md
 | `stories.py` | Prints the workflow's `stories` argument: stories not done, in sprint order |
 | `planner.md`, `triage.md`, `rv-*.md` | Prompts for the planner, triage and the four review layers |
 | `gates.sh` | Every local gate from `AGENTS.md`; prints `ALL-OK` or `FAIL:<step>` |
-| `cargo-queue.sh`, `tree-sync.py` | The cargo queue: every building cargo command of the main checkout and the lanes runs in one shared build runner, one at a time |
+| `bg.sh` | Runs a long command (the gates, a workspace-wide test) detached; a caller cut off by a tool timeout reruns it and attaches |
+| `epic-last.py` | Tells `gates.sh` whether the gated story is the last open one of its epic (only then `cargo hack` runs) |
 | `prune-target.sh` | Frees disk by deleting whole cargo build units under cargo's build lock (for a near-full disk only) |
 | `cp.sh` | Commit everything and push to `main` (and the current branch) |
 | `start.sh`, `finish.sh`, `diff.sh` | Mark a spec started or done, write the review diff |
@@ -34,9 +35,8 @@ Diffs, review reports, patch lists and gate logs go to `target/story-loop/` (ign
 3. Commit trailers: write the session's own attribution lines (the `Co-Authored-By`
    and session lines your harness asks for) to `target/story-loop/trailers`, one per
    line. `cp.sh` always adds the maintainer as co-author before them.
-4. Install the cargo queue: `tools/story-loop/cargo-queue.sh --install` (it replaces
-   `$CARGO_HOME/bin/cargo` with a shim; undo with `ln -sf rustup ~/.cargo/bin/cargo`).
-   Repeat after every container restart.
+4. If an older container still has the cargo queue shim installed as `cargo`, remove it:
+   `ln -sf rustup ~/.cargo/bin/cargo`.
 5. If the harness has a stop hook that demands a commit on every turn, the loop
    commits only finished steps; never make WIP commits to satisfy it.
 
@@ -91,8 +91,8 @@ args: { root, w, date, lanes: [
 
 - `lane.sh setup <name> [target-dir]` creates the worktree `../lanes/<name>/noctis-rs` on
   branch `story-loop/<name>`; with a target dir it writes `../lanes/<name>/.cargo/config.toml`.
-  Lanes do not build in place: the cargo queue (below) builds for all of them. Leave the main
-  checkout idle while lanes run.
+  Run one lane per machine: a lane builds in place with its own `target/`. Leave the main
+  checkout idle while the lane runs.
 - Each lane runs its stories in order. Before a story it fast-forwards to `origin/main`
   (`lane.sh sync`); its commits go only to its own branch (`cp.sh` detects `story-loop/*`).
 - After a story's finalize, its lane rebases onto `origin/main` (`lane.sh merge`), an agent
@@ -113,29 +113,13 @@ args: { root, w, date, lanes: [
 - After a restart, rerun with the same lanes: `lane.sh setup` reuses the worktrees, and an
   interrupted story keeps its dirty tree (`stories.py` run inside the lane gives `resumeAt`).
 
-## Cargo queue
+## Cargo
 
-Lanes code in parallel, but their cargo commands never run in parallel: with `cargo-queue.sh`
-installed as `cargo`, a building command (`check`, `build`, `test`, `clippy`, `fmt`, `run`,
-`hack`, ...) started in the main checkout or a lane is queued. The runner takes one command at
-a time, oldest first:
+Each lane runs on its own machine (maintainer rule, 2026-10-24), so there is no shared build
+queue: agents run `cargo check` and `cargo test` themselves, scoped to the crates they touch,
+and wrap anything that may outlast a 10-minute tool timeout in `bg.sh` (a rerun of the identical
+command on the same tree attaches to the running one). The operator runs the gates through
+`bg.sh` too. `CARGO_INCREMENTAL=0` always (`env.sh`; the incremental cache filled the disk
+before). `cargo hack` runs only in `gates.sh`, and only while the last open story of an epic is
+gated (`epic-last.py`, which also counts stories other lanes merged into `origin/main`).
 
-1. It copies the caller's working tree (tracked and untracked, non-ignored files; no `target/`, no
-   `.git`) into the one work dir `/home/claude/cargo-queue/work/noctis-rs`. A file is rewritten only when its
-   content differs, so cargo's mtime-based freshness never sees a stale file. Do not split the
-   work dir per lane: cargo hashes workspace crates by their path relative to the workspace root,
-   so lanes would overwrite each other's artifacts while their files keep old mtimes.
-2. It runs the command there with `CARGO_TARGET_DIR` set to the main checkout's `target/`. That is
-   one warm target dir for everyone, so there is no per-lane target dir and no trybuild clash.
-3. It copies back the files the command changed (`cargo fmt`, `--bless`, `Cargo.lock`).
-
-The caller sees the output live, with work-dir paths mapped back to its own tree, and gets the
-command's exit code. A caller cut off by a timeout reruns the identical command and attaches to
-the queued or running run. A command that already succeeded on the identical tree replays its
-output. Commands that do not build (`metadata`, `tree`, `--version`, ...) and the runner's own
-nested cargo calls (`NOCTIS_CARGO_DIRECT=1`) run directly. The queue state lives in
-`/home/claude/cargo-queue/` (`runner.log`, `jobs/<key>/log`).
-
-Expensive agents do not run cargo themselves: the workflow tells them to hand cargo commands to
-a Haiku subagent, which waits in the queue and reports only exit codes, errors and failing
-tests.

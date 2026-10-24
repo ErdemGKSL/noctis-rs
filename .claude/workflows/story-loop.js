@@ -63,15 +63,15 @@ async function runLane(R, STORIES, lane) {
 const S = `${R}/tools/story-loop` // scripts and prompts
 const O = `${R}/target/story-loop` // diffs, reviews, patch lists, gate logs
 const IA = `${R}/_bmad-output/implementation-artifacts`
-// Every cargo command goes through tools/story-loop/cargo-queue.sh (one shared build runner), so a call can wait in
-// line; the expensive agents hand cargo to a Haiku subagent and read only its report.
-const CARGO = `Cargo: every cargo command (check, build, test, clippy, fmt, run, hack, ...) is queued for one shared build runner, so a call can wait for minutes. Do not run cargo yourself: hand the commands to a subagent with the Agent tool and model "haiku". Give it the exact commands and the directory, and tell it to run each with the Bash tool and timeout 600000. If a call times out, it reruns the identical command, which attaches to the queued run. It reports each exit code plus only what you need: compiler errors with file:line, failing test names with their assertion messages, at most 60 lines. Batch independent commands into one subagent. If the Agent tool is unavailable, run cargo yourself the same way.`
+// Each lane runs on its own machine, so agents run cargo themselves (maintainer rule, 2026-10-24); long commands go
+// through bg.sh, which survives a tool timeout. cargo hack runs only in gates.sh, for the last story of an epic.
+const CARGO = `Cargo: run cargo yourself with the Bash tool (timeout 600000), preferably scoped (\`cargo check --release -p <crate>\`, \`cargo test --release -p <crate>\`). Wrap any command that may take longer than 10 minutes (workspace-wide test or clippy) as \`${S}/bg.sh <command>\`: if the call times out, rerun the identical command and it attaches to the running one. Prefer --release; never set CARGO_INCREMENTAL or enable incremental builds (the disk is small). Do not run \`cargo hack\`: the gate script runs it when an epic's last story is gated.`
 const LAUNCH = (lane
   ? `Repository root: ${R} (git worktree of lane ${lane}; work only inside this directory: cd there first, never edit files under ${args.root}, which is another checkout)\nRendered bmad-build-auto directory (W): ${W}`
   : `Repository root: ${R}\nRendered bmad-build-auto directory (W): ${W}`) + `\n${CARGO}`
 
 const opsOnce = (cmd, label, phase, model) => A(
-  `You are a mechanical operator. Run exactly this shell command in ${R} with the Bash tool, using timeout 600000. If it times out, run the identical command again, up to 8 times: cargo commands wait in a shared queue, and a rerun attaches to the queued run or skips the steps that already passed:\n\n${cmd}; echo "EXIT_CODE=$?"\n\nThe last line of the output is EXIT_CODE=<n>; that is the command's exit status. Lines saying 'remote: This repository moved' are harmless git notices.\n\nDo not change any file yourself, and never call any mcp__hearthbot__ tool: nobody is chatting with you, so finish by returning the structured output. Return ok=true only if EXIT_CODE=0 and its output does not start with or contain a line beginning with "FAIL:" or "missing" or "not ready"; output = the last 40 lines of its output.`,
+  `You are a mechanical operator. Run exactly this shell command in ${R} with the Bash tool, using timeout 600000. If it times out, run the identical command again, up to 8 times: a rerun attaches to the still running command (bg.sh) or skips the steps that already passed:\n\n${cmd}; echo "EXIT_CODE=$?"\n\nThe last line of the output is EXIT_CODE=<n>; that is the command's exit status. Lines saying 'remote: This repository moved' are harmless git notices.\n\nDo not change any file yourself, and never call any mcp__hearthbot__ tool: nobody is chatting with you, so finish by returning the structured output. Return ok=true only if EXIT_CODE=0 and its output does not start with or contain a line beginning with "FAIL:" or "missing" or "not ready"; output = the last 40 lines of its output.`,
   model ? { label, phase, schema: OPS, model, effort: 'low' } : { label, phase, schema: OPS, effort: 'low' })
 async function ops(cmd, label, phase) {
   // A failed operator agent (e.g. one that ended its turn without the structured output) must not kill the lane.
@@ -86,7 +86,7 @@ const implPrompt = (spec) => `${LAUNCH}\n\nYour only task is the story below. An
 // once before a story is finalized, and steps already passed on the same tree are skipped there.
 async function gateLoop(st, spec, phase, light = false) {
   for (let i = 0; i < 4; i++) {
-    const g = await ops(`${light ? 'NOCTIS_GATES_LIGHT=1 ' : ''}${S}/gates.sh`, `gates${light ? ' (light)' : ''} ${st.num}`, phase)
+    const g = await ops(`${light ? 'NOCTIS_GATES_LIGHT=1 ' : ''}${S}/bg.sh ${S}/gates.sh`, `gates${light ? ' (light)' : ''} ${st.num}`, phase)
     if (g && g.ok) return true
     await A(`${LAUNCH}\n\nYou are fixing local verification failures for the implementation of ${spec} (noctis-rs, ${R}). The spec is the sole source of truth; read it first. The gate script ${S}/gates.sh failed; its output tail:\n\n${g ? g.output : 'unknown (operator died) — run the gates yourself'}\n\nFull logs: ${O}/gate-*.log. Fix the root cause with the smallest correct change (never weaken a gate, never skip or delete a test, never edit .cargo/config.toml profiles). Re-run the failing gate command until it passes. Do not commit. Reply under 150 words.`,
       { label: `gate-fix ${st.num}`, phase })

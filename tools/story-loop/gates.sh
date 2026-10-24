@@ -2,8 +2,8 @@
 # The local gates from AGENTS.md; prints FAIL:<step> plus the log tail, or ALL-OK. Logs: target/story-loop/gate-<step>.log
 # A step that already passed on the identical working tree (same tracked + untracked, non-ignored content) is skipped,
 # so a run cut off by a caller's timeout resumes where it stopped. Stamps: target/story-loop/gate-<step>.ok
-# Every cargo command here goes through the cargo queue (cargo-queue.sh) when it is installed.
 # In a lane after its finished story was rebased onto main, hack and msrv are skipped (see below).
+# cargo hack runs only while the last story of an epic is gated (maintainer rule, 2026-10-24; epic-last.py).
 source "$(dirname "$0")/env.sh"
 idx=$(mktemp); trap 'rm -f "$idx"' EXIT
 cp "$(git rev-parse --git-path index)" "$idx" 2>/dev/null
@@ -24,11 +24,10 @@ run test cargo test --release --workspace --all-features
 # runs the full gates once before it finalizes a story.
 merged=$NOCTIS_GATES_LIGHT
 git rev-parse --abbrev-ref HEAD | grep -q '^story-loop/' && git log --format=%s origin/main..HEAD 2>/dev/null | grep -q 'review patches; mark done' && merged=1
-[ -z "$merged" ] && run hack cargo hack test --release --workspace --each-feature
+[ -z "$merged" ] && python3 "$(dirname "$0")/epic-last.py" && run hack cargo hack test --release --workspace --each-feature
 [ -z "$merged" ] && run msrv cargo +1.91 check --release --workspace
 run deny cargo deny check
 run cfg bash .github/scripts/check-build-config.sh
 for t in deps-check rules-catalog api-snapshot skill-check; do run "$t" cargo run --release -q -p xtask -- "$t"; done
 run tw-grammar cargo run --release -q -p xtask -- tw-grammar --check
-test ! -d target/debug || { echo "FAIL:debug-dir"; exit 1; }
 echo ALL-OK
