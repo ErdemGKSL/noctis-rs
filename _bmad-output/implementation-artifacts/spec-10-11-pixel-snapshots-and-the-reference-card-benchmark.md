@@ -2,7 +2,8 @@
 title: 'Story 10.11: Pixel snapshots and the reference card benchmark'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '2b1cfce38cf2733733716233258cec3178d9b79f'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
