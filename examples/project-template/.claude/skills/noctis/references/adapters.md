@@ -11,7 +11,7 @@ data that must outlive one call goes through a port, never a `static` map.
 | Port | Stores | Ops it uses | Default | Swap with [planned] |
 | --- | --- | --- | --- | --- |
 | `RefStore` | Payloads behind Refs (by_ref/spill Routes) | `put_if_absent`, `get`, `take`, `delete`, `touch` | bounded memory, TTL | `.ref_store(..)` |
-| `SessionStore` | shard `(session_id, seq, resume_url)` for resume | `get`, `put`, `delete` | memory (resume only within one process life) | `.session_store(..)` |
+| `SessionStore` | shard `(session_id, seq, resume_url)` for resume, under `shard:<id>:<total>`; only the gateway calls it (read at shard start, written after an acknowledged resumable close, deleted on rejection or a fresh close); values are opaque bytes, return them verbatim | `get`, `put`, `delete` | memory (resumes only when the same instance reaches the next App) | `.session_store(..)` |
 | `IdentifyQueue` | identify coordination per bucket (Cluster-wide) | `acquire(bucket) -> Lease` | `MemoryIdentifyQueue` (built from `max_concurrency`) | `.identify_queue(..)` |
 | `ModuleStateStore` | Module enabled/disabled, global and per guild | `get`, `put`, `version() -> u64` (polled, default 5 s) | memory | `.module_state_store(..)` |
 | `RateLimitStore` | your declared rate-limit counters | `incr_with_ttl`, `get`, `put` | memory | `.rate_limit_store(..)` |
@@ -520,7 +520,10 @@ builder.ref_store(Arc::clone(&refs));                                  // bot-a:
 In a Cluster every process must share: `RefStore` (a Ref minted by process A is clicked
 on process B), `RateLimitStore`, `ModuleStateStore`, `IdentifyQueue`, and usually
 `CacheStore`/`RenderCache`/`AssetStore`. `SessionStore` must persist across restarts to
-resume. Official Redis/SQL adapters are planned for v1.x; until then write them as
+resume: the gateway reads each shard's entry at start, writes it after Discord
+acknowledges the shutdown's 4000 close and deletes it when Discord rejects it or on a
+fresh close; a crash leaves no entry. The stored bytes are opaque: return them verbatim
+(no TTL is set). Official Redis/SQL adapters are planned for v1.x; until then write them as
 above and run the conformance suites.
 
 `MemoryIdentifyQueue` does not cover several processes. A Cluster `IdentifyQueue` must

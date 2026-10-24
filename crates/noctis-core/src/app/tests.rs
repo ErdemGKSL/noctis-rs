@@ -1861,6 +1861,32 @@ fn startup_close_codes_map_to_start_errors() {
     assert_eq!(start_error(3, None), StartError::ShardEnded { shard: 3 });
 }
 
+/// Story 12.2: a shard that resumed a stored session counts as ready, so
+/// startup completes on RESUMED without a READY.
+#[tokio::test]
+async fn startup_completes_on_resumed() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    for event in [
+        ShardEvent::Resumed { shard: 1 },
+        ShardEvent::Resumed { shard: 1 },
+        ShardEvent::Ready { shard: 0 },
+    ] {
+        tx.send(event).unwrap();
+    }
+    assert_eq!(
+        await_startup(&mut rx, &status(2), &Lifecycle::new()).await,
+        Ok(())
+    );
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    tx.send(ShardEvent::Resumed { shard: 0 }).unwrap();
+    assert_eq!(
+        await_startup(&mut rx, &status(1), &Lifecycle::new()).await,
+        Ok(())
+    );
+    drop(tx);
+}
+
 #[tokio::test]
 async fn startup_waits_for_every_ready_and_maps_closed_channel() {
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -1871,7 +1897,7 @@ async fn startup_waits_for_every_ready_and_maps_closed_channel() {
             shard: 0,
             close_code: Some(4000),
         },
-        ShardEvent::Resumed { shard: 0 },
+        ShardEvent::Resumed { shard: 9 },
         ShardEvent::Ready { shard: 9 },
         ShardEvent::Ready { shard: 0 },
     ] {
@@ -2517,6 +2543,7 @@ async fn shutdown_sequence_order() {
         gateway_url: Some("ws://127.0.0.1:1".to_owned()),
         event_types: EventTypeFlags::INTERACTION_CREATE,
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
+        session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
         shards: 0..2,
         total: NonZeroU32::new(2).unwrap(),
         max_concurrency: NonZeroU16::MIN,

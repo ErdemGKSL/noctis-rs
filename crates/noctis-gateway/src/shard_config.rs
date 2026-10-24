@@ -78,7 +78,7 @@ pub fn shard_config<Q: Queue>(
 }
 
 /// Checks `url` the way twilight uses it at connect time.
-fn check_gateway_url(url: &str) -> Result<(), ShardConfigError> {
+pub(crate) fn check_gateway_url(url: &str) -> Result<(), ShardConfigError> {
     let has_scheme = ["ws://", "wss://"].iter().any(|scheme| {
         url.get(..scheme.len())
             .is_some_and(|head| head.eq_ignore_ascii_case(scheme))

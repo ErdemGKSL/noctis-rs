@@ -714,8 +714,12 @@ impl App {
     /// interactions first; each event waits for one of
     /// [`handler_concurrency`](AppBuilder::handler_concurrency) worker
     /// permits (interactions never do) and runs its ordered handlers in
-    /// per-guild order, then its concurrent handlers together. Startup
-    /// finishes once every shard of this process has received READY.
+    /// per-guild order, then its concurrent handlers together. A shard
+    /// whose session is stored in the `SessionStore` (left by a graceful,
+    /// resumable shutdown of a previous run sharing that store) resumes it
+    /// instead of identifying; a rejected stored session falls back to
+    /// IDENTIFY. Startup finishes once every shard of this process has
+    /// received READY or RESUMED.
     ///
     /// A shard that closes fatally after startup is logged at `error`
     /// (`"shard closed fatally"`, with the typed cause) and its
@@ -818,6 +822,7 @@ impl App {
             gateway_url: self.gateway_url.clone(),
             event_types: self.registry.event_types(),
             identify_queue,
+            session_store: Arc::clone(&self.ports().session_store) as Arc<dyn SessionStore>,
             shards: shards.clone(),
             total: plan.total,
             max_concurrency: plan.max_concurrency,
@@ -1066,9 +1071,9 @@ impl Drop for ShardStatus {
     }
 }
 
-/// Waits until every shard of `status.shards` has sent `Ready` at least
-/// once, broadcasting each shard event; a `Ready` for a shard outside the
-/// range counts for nothing.
+/// Waits until every shard of `status.shards` has sent `Ready` or
+/// `Resumed` at least once, broadcasting each shard event; one for a shard
+/// outside the range counts for nothing.
 pub(crate) async fn await_startup(
     events: &mut mpsc::UnboundedReceiver<ShardEvent>,
     status: &ShardStatus,
@@ -1083,8 +1088,12 @@ pub(crate) async fn await_startup(
         status.update(&event);
         lifecycle.shard(&event);
         match event {
-            ShardEvent::Ready { shard } => {
-                tracing::debug!(target: "noctis::app", shard, "shard ready");
+            ShardEvent::Ready { shard } | ShardEvent::Resumed { shard } => {
+                if matches!(event, ShardEvent::Ready { .. }) {
+                    tracing::debug!(target: "noctis::app", shard, "shard ready");
+                } else {
+                    tracing::debug!(target: "noctis::app", shard, "shard resumed");
+                }
                 if let Some(seen) = status.slot(&mut ready, shard)
                     && !*seen
                 {
@@ -1398,7 +1407,7 @@ pub struct AppBuilder {
 /// plain ones `impl Port`.
 macro_rules! port_setters {
     (
-        namespaced { $($ns_method:ident($ns_port:ident) = $ns_import:literal, $ns_example:literal;)* }
+        namespaced { $($ns_method:ident($ns_port:ident) = $ns_import:literal, $ns_example:literal $(, $ns_note:literal)?;)* }
         plain { $($method:ident($port:ident) = $import:literal, $example:literal;)* }
     ) => {
         $(
@@ -1409,6 +1418,7 @@ macro_rules! port_setters {
                 "Pass `Shared::new(adapter)` to share the entries with every other App ",
                 "that does the same: the prefix is then `_shared:<port>:`. One instance can ",
                 "be handed to several Apps as an `Arc` (`Arc::clone(&store)`).\n\n",
+                $($ns_note, "\n\n",)?
                 "```\n",
                 "use noctis_core::Shared;\n",
                 "use noctis_ports::memory::", $ns_import, ";\n\n",
@@ -2183,7 +2193,11 @@ impl AppBuilder {
     port_setters! {
         namespaced {
             ref_store(RefStore) = "MemoryRefStore", "MemoryRefStore::new()";
-            session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()";
+            session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()",
+                "Only the gateway reads and writes it: each shard's session is read at shard \
+                start and written after a graceful, resumable shutdown. To resume across \
+                restarts, the store must persist across restarts (the memory default only \
+                resumes when the same instance reaches the next App).";
             module_state_store(ModuleStateStore) = "MemoryModuleStateStore", "MemoryModuleStateStore::new()";
             rate_limit_store(RateLimitStore) = "MemoryRateLimitStore", "MemoryRateLimitStore::new()";
             cache_store(CacheStore) = "MemoryCacheStore", "MemoryCacheStore::new()";

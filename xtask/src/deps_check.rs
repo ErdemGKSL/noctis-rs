@@ -22,6 +22,13 @@
 //! `twilight-http`, and only `noctis-core` may construct a client, so the
 //! sources of `noctis-gateway` and the facade (`src/**/*.rs`) must not contain
 //! `Client::new(`, `Client::builder(` or `ClientBuilder`.
+//!
+//! The `session-store` rule (AD-21) keeps `noctis-gateway` the only reader and
+//! writer of shard sessions: the sources (`src/**/*.rs`) of every workspace
+//! member other than `noctis-gateway` and `noctis-ports` (which defines the
+//! port) must not call `get`, `put` or `delete` on a `session_store` field
+//! or through `SessionStore::`. Files named `tests.rs` and files under a
+//! `tests` directory are exempt.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -56,6 +63,25 @@ const HTTP_CLIENT_DEPENDENTS: [&str; 3] = ["noctis-core", "noctis-gateway", FACA
 const HTTP_CLIENT_SCANNED: [&str; 2] = ["noctis-gateway", FACADE];
 /// Source text that constructs a twilight HTTP client.
 const CLIENT_CONSTRUCTORS: [&str; 3] = ["Client::new(", "Client::builder(", "ClientBuilder"];
+
+/// The crates that may call the `SessionStore` (AD-21): the gateway, and the
+/// ports crate that defines it.
+const SESSION_STORE_CALLERS: [&str; 2] = ["noctis-gateway", "noctis-ports"];
+/// The receivers of a `SessionStore` call; joined with [`SESSION_STORE_OPS`]
+/// at scan time, so this file never holds a whole pattern.
+const SESSION_STORE_RECEIVERS: [&str; 2] = ["session_store.", "SessionStore::"];
+/// The `SessionStore` ops.
+const SESSION_STORE_OPS: [&str; 3] = ["get(", "put(", "delete("];
+
+/// Whether `line` calls the `SessionStore`.
+fn calls_session_store(line: &str) -> bool {
+    SESSION_STORE_RECEIVERS.iter().any(|receiver| {
+        line.match_indices(receiver).any(|(at, _)| {
+            let rest = &line[at + receiver.len()..];
+            SESSION_STORE_OPS.iter().any(|op| rest.starts_with(op))
+        })
+    })
+}
 
 /// The internal crates the spine's Invariants graph draws.
 const CRATES: [&str; 12] = [
@@ -228,7 +254,7 @@ struct Closure {
 
 /// A source line that constructs a twilight HTTP client.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ClientSite {
+pub(crate) struct SourceSite {
     /// The crate whose source holds the line.
     krate: String,
     /// `path:line`, relative to the workspace root.
@@ -240,7 +266,8 @@ pub(crate) struct ClientSite {
 #[derive(Debug, Clone)]
 pub(crate) struct Workspace {
     crates: Vec<Member>,
-    client_sites: Vec<ClientSite>,
+    client_sites: Vec<SourceSite>,
+    session_sites: Vec<SourceSite>,
 }
 
 impl Workspace {
@@ -262,6 +289,18 @@ impl Workspace {
                     .map(|dir| dir.as_std_path().join("src"))
                     .unwrap_or_default();
                 scan_client_sites(p.name.as_str(), &src, root)
+            })
+            .collect();
+        let session_sites = packages
+            .iter()
+            .filter(|p| !SESSION_STORE_CALLERS.contains(&p.name.as_str()))
+            .flat_map(|p| {
+                let src = p
+                    .manifest_path
+                    .parent()
+                    .map(|dir| dir.as_std_path().join("src"))
+                    .unwrap_or_default();
+                scan_session_sites(p.name.as_str(), &src, root)
             })
             .collect();
         let crates = packages
@@ -292,6 +331,7 @@ impl Workspace {
         Self {
             crates,
             client_sites,
+            session_sites,
         }
     }
 
@@ -331,6 +371,7 @@ pub(crate) enum Rule {
     MissingCrate,
     BotDependency,
     HttpClient,
+    SessionStore,
 }
 
 impl Rule {
@@ -346,6 +387,7 @@ impl Rule {
             Self::MissingCrate => "missing-crate",
             Self::BotDependency => "bot-dependency",
             Self::HttpClient => "http-client",
+            Self::SessionStore => "session-store",
         }
     }
 }
@@ -415,6 +457,7 @@ pub(crate) fn check(ws: &Workspace) -> Vec<Violation> {
         ));
     }
     check_http_client(ws, &mut out);
+    check_session_store(ws, &mut out);
     for member in &ws.crates {
         if !is_internal(&member.name) {
             check_non_internal(member, facade, &mut out);
@@ -478,11 +521,53 @@ fn check_http_client(ws: &Workspace, out: &mut BTreeSet<Violation>) {
     }
 }
 
+/// No scanned source calls the `SessionStore` (AD-21).
+fn check_session_store(ws: &Workspace, out: &mut BTreeSet<Violation>) {
+    for site in &ws.session_sites {
+        out.insert(Violation::krate(
+            Rule::SessionStore,
+            &site.krate,
+            format!(
+                "{} calls the SessionStore; only noctis-gateway reads and writes sessions (AD-21)",
+                site.location
+            ),
+        ));
+    }
+}
+
 /// Every line of `src/**/*.rs` under `src` that contains a client
 /// constructor. A missing directory has no sites.
-fn scan_client_sites(krate: &str, src: &Path, root: &Path) -> Vec<ClientSite> {
+fn scan_client_sites(krate: &str, src: &Path, root: &Path) -> Vec<SourceSite> {
     let mut files = Vec::new();
     collect_rs_files(src, &mut files);
+    scan_lines(krate, files, root, |line| {
+        CLIENT_CONSTRUCTORS.iter().any(|c| line.contains(c))
+    })
+}
+
+/// Every line of `src/**/*.rs` under `src` that calls the `SessionStore`,
+/// skipping test files (named `tests.rs`, or under a `tests` directory). A
+/// missing directory has no sites.
+fn scan_session_sites(krate: &str, src: &Path, root: &Path) -> Vec<SourceSite> {
+    let mut files = Vec::new();
+    collect_rs_files(src, &mut files);
+    files.retain(|file| {
+        let relative = file.strip_prefix(src).unwrap_or(file);
+        !relative
+            .components()
+            .any(|c| c.as_os_str() == "tests" || c.as_os_str() == "tests.rs")
+    });
+    scan_lines(krate, files, root, calls_session_store)
+}
+
+/// Every line of `files` for which `hit` holds, as `path:line` relative to
+/// `root`, in path order.
+fn scan_lines(
+    krate: &str,
+    mut files: Vec<PathBuf>,
+    root: &Path,
+    hit: impl Fn(&str) -> bool,
+) -> Vec<SourceSite> {
     files.sort();
     let mut sites = Vec::new();
     for file in files {
@@ -495,8 +580,8 @@ fn scan_client_sites(krate: &str, src: &Path, root: &Path) -> Vec<ClientSite> {
             .display()
             .to_string();
         for (index, line) in text.lines().enumerate() {
-            if CLIENT_CONSTRUCTORS.iter().any(|c| line.contains(c)) {
-                sites.push(ClientSite {
+            if hit(line) {
+                sites.push(SourceSite {
                     krate: krate.to_owned(),
                     location: format!("{shown}:{}", index + 1),
                 });
@@ -927,6 +1012,7 @@ mod tests {
                 .map(with_twilight_http)
                 .to_vec(),
             client_sites: Vec::new(),
+            session_sites: Vec::new(),
         };
         assert_eq!(
             http_rule(&ws),
@@ -947,10 +1033,11 @@ mod tests {
     fn client_construction_in_scanned_source_fails() {
         let ws = Workspace {
             crates: Vec::new(),
-            client_sites: vec![ClientSite {
+            client_sites: vec![SourceSite {
                 krate: "noctis-gateway".to_owned(),
                 location: "crates/noctis-gateway/src/lib.rs:3".to_owned(),
             }],
+            session_sites: Vec::new(),
         };
         assert_eq!(
             http_rule(&ws),
@@ -965,6 +1052,7 @@ mod tests {
         let ws = Workspace {
             crates: vec![image],
             client_sites: Vec::new(),
+            session_sites: Vec::new(),
         };
         check(&ws)
             .into_iter()
@@ -1077,6 +1165,95 @@ mod tests {
             vec![dep("takumi")],
         );
         assert_eq!(takumi_rule(by_default).len(), 1);
+    }
+
+    /// A `SessionStore` call `receiver` + `op`, assembled so this file never
+    /// holds the pattern it tests.
+    fn session_call(receiver: &str, op: &str) -> String {
+        format!("{receiver}{op}(\"k\")")
+    }
+
+    /// A7: a `SessionStore` call in a non-gateway source is reported; test
+    /// files are exempt.
+    #[test]
+    fn session_store_calls_outside_the_gateway_are_found() {
+        let root = std::env::temp_dir().join(format!("deps-check-session-{}", std::process::id()));
+        let src = root.join("src");
+        std::fs::create_dir_all(src.join("app")).unwrap();
+        std::fs::create_dir_all(src.join("tests")).unwrap();
+        let core_line = format!(
+            "let raw = self.ports().{}.await?;",
+            session_call("session_store.", "get")
+        );
+        std::fs::write(
+            src.join("lib.rs"),
+            format!(
+                "fn a() {{}}\n{core_line}\nlet store = ports.session_store.clone();\n{}\n",
+                session_call("SessionStore::", "delete")
+            ),
+        )
+        .unwrap();
+        let in_tests = session_call("SessionStore::", "get");
+        std::fs::write(src.join("app/tests.rs"), &in_tests).unwrap();
+        std::fs::write(src.join("tests/mod.rs"), &in_tests).unwrap();
+        std::fs::write(
+            src.join("app/put.rs"),
+            format!("x.{}", session_call("session_store.", "put")),
+        )
+        .unwrap();
+        let sites = scan_session_sites("noctis-core", &src, &root);
+        let _ = std::fs::remove_dir_all(&root);
+        let locations: Vec<&str> = sites.iter().map(|s| s.location.as_str()).collect();
+        assert_eq!(
+            locations,
+            ["src/app/put.rs:1", "src/lib.rs:2", "src/lib.rs:4"]
+        );
+
+        let ws = Workspace {
+            crates: Vec::new(),
+            client_sites: Vec::new(),
+            session_sites: vec![SourceSite {
+                krate: "noctis-core".to_owned(),
+                location: "crates/noctis-core/src/app.rs:7".to_owned(),
+            }],
+        };
+        let found: Vec<String> = check(&ws)
+            .into_iter()
+            .filter(|v| v.rule == Rule::SessionStore)
+            .map(|v| v.to_string())
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "deps-check: noctis-core: crates/noctis-core/src/app.rs:7 calls the SessionStore; \
+                 only noctis-gateway reads and writes sessions (AD-21) [session-store]"
+            ]
+        );
+    }
+
+    #[test]
+    fn session_store_call_patterns() {
+        for (receiver, op) in [
+            ("session_store.", "get"),
+            ("session_store.", "put"),
+            ("session_store.", "delete"),
+            ("SessionStore::", "get"),
+            ("SessionStore::", "put"),
+            ("SessionStore::", "delete"),
+        ] {
+            assert!(
+                calls_session_store(&session_call(receiver, op)),
+                "{receiver}{op}"
+            );
+        }
+        for line in [
+            "session_store: SessionStore = MemorySessionStore::new();",
+            "Arc::clone(&self.ports().session_store)",
+            "session_store.take(\"k\")",
+            "SessionStore::version(",
+        ] {
+            assert!(!calls_session_store(line), "{line}");
+        }
     }
 
     #[test]

@@ -109,7 +109,7 @@ Implemented:
 | `.http_timeout(Duration)` | 10 s | Discord HTTP request timeout, 1 ms..=300 s (else `BuildViolation::InvalidHttpTimeout`) |
 | `.http(HttpConfig)` | `HttpConfig::default()` | tune the Discord HTTP edge (§5): PING interval/timeout, callback hedge, connect timeout, DNS TTL bounds, `upstream_h2c`; one `BuildViolation::InvalidHttpConfig` per out-of-range field; the last call wins. No env variable |
 | `.http_proxy(impl Into<String>)` | env `NOCTIS_HTTP_PROXY`, else none | send every Discord request through a proxy over plain HTTP, local rate limiter off; `host[:port]` or `http://host[:port]`, validated by `build()` (else `BuildViolation::InvalidHttpProxy`); the last call wins; see §5 |
-| `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy; the testkit's `FakeGateway` is [planned, Story 8.6]) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
+| `.gateway_url(impl Into<String>)` | env `NOCTIS_GATEWAY_URL`, else Discord | connect every shard to this gateway (a gateway proxy, or the testkit's `FakeGateway`) instead of `wss://gateway.discord.gg`; `ws://host[:port]` or `wss://host[:port]`, validated by `build()` (else `BuildViolation::InvalidGatewayUrl`); the last call wins; see §4 Session resume |
 | `.shard_total(u32)` | env `NOCTIS_SHARD_TOTAL`, else Discord's recommendation | fix the shard total; the last call wins. `0` is `BuildViolation::InvalidShardTotal`; too small for Discord is `StartError::ShardTotalTooSmall` at `run()`; see §4 |
 | `.shard_range(start..end)` | env `NOCTIS_SHARD_RANGE`, else every shard `0..total` | run only these shards in this process (a Cluster's Shard Range): a half-open `std::ops::Range<u32>`, so `32..64` runs shards 32-63; ids are global (`[id, total]`, bucket `id % max_concurrency`); needs a fixed `.shard_total(..)`, the same on every process. `build()` records `BuildViolation::EmptyShardRange { start, end }` (start not below end), `ShardRangeWithoutTotal { start, end }` (no fixed total) or `ShardRangeOutOfBounds { start, end, total }` (end above the total); a range not aligned to `max_concurrency` only warns at `run()`; the last call wins; see §4 |
 | `.shutdown_grace(Duration)` | env `NOCTIS_SHUTDOWN_GRACE`, else 10 s | how long the shutdown waits for queued events and running handlers before it cancels them; `Duration::ZERO..=Duration::from_mins(15)` (else `BuildViolation::InvalidShutdownGrace`); the last call wins; see §8 |
@@ -528,15 +528,34 @@ Handlers do not change.
 
 ### Session resume
 
-Graceful shutdown closes each Shard resumably and writes `(session_id, seq,
-resume_url)` to the `SessionStore` after the final event; a restart within Discord's
-window resumes instead of re-identifying. A rejected session falls back to identify.
-Events dropped under back-pressure are not replayed (at-most-once).
+Only the gateway reads and writes the `SessionStore`. Each Shard's entry lives under
+`<app>:session:shard:<id>:<total>` (global id and the shard total, e.g.
+`default:session:shard:3:4`) and holds `(session_id, seq, resume_url)`, seq being the
+last event received.
+
+- **Read** once when the Shard starts (bounded by 5 s). A valid entry makes it send
+  RESUME instead of IDENTIFY, with no `IdentifyQueue` lease, and startup counts its
+  RESUMED like a READY (`LifecycleEvent::ShardResumed`). A miss, a store error or a
+  timeout makes it identify; an unreadable or invalid entry is deleted first.
+- **Written** after a graceful shutdown's 4000 close is acknowledged by Discord's close
+  frame, within the shard close timeout; no TTL. Nothing is written on READY, on
+  in-process reconnects or periodically, so a crash leaves no entry and the next start
+  identifies.
+- **Deleted** when Discord rejects the stored session (op 9 `d: false`, or a READY
+  replaces it): the Shard then identifies with no operator action. A fresh (1000) close
+  deletes it too.
+
+A different shard total never resumes an old layout's session (the total is in the
+key). GW-02's boot check still counts resumed Shards, because a rejected resume falls
+back to identify. The memory default resumes only when the same store instance reaches
+the next App (`Arc::clone(&store)` into both builders); to resume across process
+restarts, use a `SessionStore` that persists (see `adapters.md`). Events dropped under
+back-pressure are not replayed (at-most-once).
 
 With `.gateway_url(..)` (or `NOCTIS_GATEWAY_URL`) set, shards connect to that URL
 instead of Discord's gateway, but **resumes go to the `resume_gateway_url` that READY
 names**: a gateway proxy must rewrite that field to its own URL, or resumes bypass it.
-The testkit's `FakeGateway` [planned, Story 8.6] already names itself there.
+The testkit's `FakeGateway` already names itself there.
 
 ## 5. HTTP
 
@@ -634,9 +653,10 @@ resolves, and both also when every shard has ended (then they return
 
 1. `info` log `shutdown started` (`reason = "signal"` from `run()`,
    `"requested"` from `run_until` or `"all shards ended"`, `grace`). [planned, Story 13.5: the `ShutdownStarted` Lifecycle Hook fires here]
-2. Every shard closes with code 4000 (resumable; Discord keeps the session).
-   [planned, Story 12.3: `--no-resume` closes with 1000 and session writes to the
-   `SessionStore`] From here no new gateway event enters the lanes.
+2. Every shard closes with code 4000 (resumable; Discord keeps the session); once
+   Discord acknowledges the close, the shard's session is written to the
+   `SessionStore` (§4 Session resume). [planned, Story 12.3: `--no-resume` closes with
+   1000 and clears the stored sessions] From here no new gateway event enters the lanes.
 3. Both lanes drain (interactions first) and running handlers finish, for at most
    `shutdown_grace` (default 10 s). `ctx.http()` keeps working the whole time.
 4. At the deadline every handler still running, or queued behind one (ordered

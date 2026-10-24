@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::StreamExt;
+use noctis_ports::SessionStore;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use tokio::sync::mpsc::UnboundedSender;
@@ -13,15 +14,18 @@ use tokio::sync::watch;
 use tokio::time::Instant;
 use tracing::Instrument;
 use twilight_gateway::error::{ReceiveMessageError, ReceiveMessageErrorType};
-use twilight_gateway::{Event, EventTypeFlags, Message, Shard, ShardId};
+use twilight_gateway::{Config, ConfigBuilder, Event, EventTypeFlags, Message, Shard, ShardId};
 use twilight_model::gateway::event::{GatewayEvent, GatewayEventDeserializer};
 
 use crate::gateway::CloseMode;
 use crate::inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 use crate::queue::PortQueue;
+use crate::session::{self, ResumeState, STORE_TIMEOUT, Stale};
 
 /// The dispatch opcode.
 const DISPATCH: u8 = 0;
+/// The invalid session opcode.
+const INVALID_SESSION: u8 = 9;
 
 /// What one text frame produced.
 #[derive(Debug, Default)]
@@ -30,6 +34,16 @@ pub(crate) struct Classified {
     pub(crate) status: Option<ShardEvent>,
     /// An item for the sink.
     pub(crate) inbound: Option<Inbound>,
+    /// The `d` of an op 9 `INVALID_SESSION` (whether it is resumable);
+    /// `None` for any other frame, or when `d` is not a boolean.
+    pub(crate) invalid_session: Option<bool>,
+}
+
+/// An op 9 payload's `d`.
+#[derive(Deserialize)]
+struct InvalidSession {
+    #[serde(default)]
+    d: Option<bool>,
 }
 
 /// The `d` field of a gateway payload, borrowed as raw JSON.
@@ -65,6 +79,15 @@ pub(crate) fn classify(
         }),
         _ => None,
     };
+    if op == INVALID_SESSION {
+        let invalid_session = serde_json::from_str::<InvalidSession>(&text)
+            .ok()
+            .and_then(|payload| payload.d);
+        return Classified {
+            invalid_session,
+            ..Classified::default()
+        };
+    }
 
     let raw = if event_type.as_deref() == Some("INTERACTION_CREATE")
         && wanted.contains(EventTypeFlags::INTERACTION_CREATE)
@@ -77,7 +100,7 @@ pub(crate) fn classify(
             );
             return Classified {
                 status,
-                inbound: None,
+                ..Classified::default()
             };
         };
         Some(Bytes::copy_from_slice(envelope.d.get().as_bytes()))
@@ -113,6 +136,7 @@ pub(crate) fn classify(
             received_at,
             kind,
         }),
+        invalid_session: None,
     }
 }
 
@@ -148,33 +172,73 @@ fn interaction_without_components(raw: Bytes) -> Option<InboundKind> {
     ))
 }
 
-/// Runs one shard until its stream ends or a close is requested, in span
-/// `noctis.shard`.
-pub(crate) async fn run(
-    shard: Shard<PortQueue>,
-    app: Arc<str>,
-    wanted: EventTypeFlags,
-    sink: Arc<dyn InboundSink>,
-    events: UnboundedSender<ShardEvent>,
-    close: watch::Receiver<Option<CloseMode>>,
-    close_timeout: Duration,
-) {
-    let span = tracing::info_span!("noctis.shard", app = &*app, shard = shard.id().number());
-    let lane = Lane {
-        wanted,
-        sink,
-        events,
-    };
-    drive(shard, lane, close, close_timeout)
-        .instrument(span)
-        .await;
+/// Where a shard task sends what it reads.
+pub(crate) struct Lane {
+    /// The dispatch event types parsed into [`Inbound`] items.
+    pub(crate) wanted: EventTypeFlags,
+    /// Where parsed items go.
+    pub(crate) sink: Arc<dyn InboundSink>,
+    /// Where status changes go.
+    pub(crate) events: UnboundedSender<ShardEvent>,
 }
 
-/// Where a shard task sends what it reads.
-struct Lane {
-    wanted: EventTypeFlags,
-    sink: Arc<dyn InboundSink>,
-    events: UnboundedSender<ShardEvent>,
+/// The shard's entry in the `SessionStore`.
+struct Stored {
+    store: Arc<dyn SessionStore>,
+    key: String,
+}
+
+/// Runs shard `id` until its stream ends or a close is requested, in span
+/// `noctis.shard`.
+///
+/// It first loads the shard's stored session: a valid one makes twilight
+/// resume it (RESUME at HELLO, no IDENTIFY and no identify lease); otherwise
+/// the shard identifies. A close requested while loading stops the task
+/// before it connects.
+pub(crate) async fn run(
+    id: ShardId,
+    config: Config<PortQueue>,
+    store: Arc<dyn SessionStore>,
+    app: Arc<str>,
+    lane: Lane,
+    mut close: watch::Receiver<Option<CloseMode>>,
+    close_timeout: Duration,
+) {
+    let span = tracing::info_span!("noctis.shard", app = &*app, shard = id.number());
+    async move {
+        let stored = Stored {
+            key: session::key(id),
+            store,
+        };
+        let loaded = tokio::select! {
+            biased;
+            mode = close_requested(&mut close) => {
+                tracing::debug!(
+                    target: "noctis::gateway",
+                    "close requested before the shard connected"
+                );
+                if mode == CloseMode::Fresh {
+                    let deadline = Instant::now() + close_timeout;
+                    session::clear(&*stored.store, &stored.key, deadline).await;
+                }
+                let _ = lane.events.send(ShardEvent::Closed { shard: id.number() });
+                return;
+            }
+            loaded = session::load(&*stored.store, &stored.key) => loaded,
+        };
+        let resume = ResumeState::new(loaded.is_some());
+        let config = match loaded {
+            Some((session, resume_url)) => ConfigBuilder::from(config)
+                .session(session)
+                .resume_url(resume_url)
+                .build(),
+            None => config,
+        };
+        let shard = Shard::with_config(id, config);
+        drive(shard, lane, stored, resume, close, close_timeout).await;
+    }
+    .instrument(span)
+    .await;
 }
 
 /// Waits for a close request; a dropped sender counts as
@@ -189,6 +253,8 @@ async fn close_requested(close: &mut watch::Receiver<Option<CloseMode>>) -> Clos
 async fn drive(
     mut shard: Shard<PortQueue>,
     lane: Lane,
+    stored: Stored,
+    mut resume: ResumeState,
     mut close: watch::Receiver<Option<CloseMode>>,
     close_timeout: Duration,
 ) {
@@ -213,18 +279,35 @@ async fn drive(
             Ok(Message::Text(text)) => {
                 let received_at = Instant::now();
                 let classified = classify(text, lane.wanted, id, received_at);
+                let stale = resume.on_frame(classified.status.as_ref(), classified.invalid_session);
                 if let Some(status) = classified.status {
                     let _ = lane.events.send(status);
                 }
                 if let Some(inbound) = classified.inbound {
                     lane.sink.push(inbound);
                 }
+                if let Some(stale) = stale {
+                    match stale {
+                        Stale::Rejected => tracing::info!(
+                            target: "noctis::gateway",
+                            "stored session rejected; identifying"
+                        ),
+                        Stale::Superseded => tracing::info!(
+                            target: "noctis::gateway",
+                            "stored session superseded by a new session"
+                        ),
+                    }
+                    // Twilight reconnects only on the next poll, so the
+                    // entry is gone before any later IDENTIFY or write.
+                    let deadline = Instant::now() + STORE_TIMEOUT;
+                    session::clear(&*stored.store, &stored.key, deadline).await;
+                }
             }
         }
     };
     let event = match requested {
         Some(mode) => {
-            close_shard(&mut shard, mode, close_timeout).await;
+            close_shard(&mut shard, mode, close_timeout, &stored).await;
             ShardEvent::Closed { shard: id.number() }
         }
         None => ShardEvent::Ended {
@@ -239,18 +322,31 @@ async fn drive(
 /// reads until the gateway's close frame, the end of the stream or
 /// `close_timeout`; any other shard stops at once. Nothing read here reaches
 /// the sink.
-async fn close_shard(shard: &mut Shard<PortQueue>, mode: CloseMode, close_timeout: Duration) {
+///
+/// Then, within the same `close_timeout`: an acknowledged resumable close
+/// stores the shard's session, a fresh close deletes the stored entry
+/// (identified or not), anything else leaves the store alone.
+async fn close_shard(
+    shard: &mut Shard<PortQueue>,
+    mode: CloseMode,
+    close_timeout: Duration,
+    stored: &Stored,
+) {
+    let deadline = Instant::now() + close_timeout;
     if !shard.state().is_identified() {
         tracing::debug!(
             target: "noctis::gateway",
             state = ?shard.state(),
             "shard not identified; stopped without a close frame"
         );
+        if mode == CloseMode::Fresh {
+            session::clear(&*stored.store, &stored.key, deadline).await;
+        }
         return;
     }
     shard.close(mode.frame());
     let mut discarded = 0_usize;
-    let acked = tokio::time::timeout(close_timeout, async {
+    let acked = tokio::time::timeout_at(deadline, async {
         while let Some(item) = shard.next().await {
             match item {
                 // Never read past the close: twilight would reconnect.
@@ -276,6 +372,23 @@ async fn close_shard(shard: &mut Shard<PortQueue>, mode: CloseMode, close_timeou
         discarded,
         "shard closed on request; dispatches after the request discarded"
     );
+    match mode {
+        CloseMode::Resumable if !acked => tracing::debug!(
+            target: "noctis::gateway",
+            "close not acknowledged; session not stored"
+        ),
+        CloseMode::Resumable => {
+            if let (Some(current), Some(resume_url)) = (shard.session(), shard.resume_url()) {
+                session::save(&*stored.store, &stored.key, current, resume_url, deadline).await;
+            } else {
+                tracing::debug!(
+                    target: "noctis::gateway",
+                    "no session or resume URL; session not stored"
+                );
+            }
+        }
+        CloseMode::Fresh => session::clear(&*stored.store, &stored.key, deadline).await,
+    }
 }
 
 /// Logs a receive error; `Deserializing`'s `Display` carries the payload,
@@ -549,6 +662,24 @@ mod tests {
             let out = run(text, EventTypeFlags::all());
             assert!(out.status.is_none() && out.inbound.is_none(), "{text}");
         }
+    }
+
+    /// R6: op 9's `d` is read only when it is a boolean.
+    #[test]
+    fn invalid_session_flag() {
+        for (text, expected) in [
+            (r#"{"op":9,"d":false}"#, Some(false)),
+            (r#"{"op":9,"d":true}"#, Some(true)),
+            (r#"{"op":9,"d":null}"#, None),
+            (r#"{"op":9}"#, None),
+            (r#"{"op":7,"d":false}"#, None),
+        ] {
+            let out = run(text, EventTypeFlags::all());
+            assert_eq!(out.invalid_session, expected, "{text}");
+            assert!(out.status.is_none() && out.inbound.is_none(), "{text}");
+        }
+        let ready = dispatch("RESUMED", "null");
+        assert_eq!(run(&ready, EventTypeFlags::all()).invalid_session, None);
     }
 
     #[test]

@@ -23,6 +23,29 @@
 //! (a fatal close code) reports [`ShardEvent::Ended`].
 //! [`Gateway::closed`] waits until every shard task has ended.
 //!
+//! # Sessions
+//!
+//! This crate is the only reader and writer of the `SessionStore` port
+//! ([`GatewayOptions::session_store`], AD-21). A shard's entry lives under
+//! `shard:{id}:{total}` (the App's port adds its `<app>:session:` prefix)
+//! and holds the session id, the last received sequence and the resume URL.
+//!
+//! - **Read** once at shard start, bounded by 5 s. A valid entry makes the
+//!   shard send RESUME instead of IDENTIFY, without an `IdentifyQueue`
+//!   lease; a miss, a store error or a timeout makes it identify. An entry
+//!   that does not decode or fails validation is deleted.
+//! - **Written** only after a requested [`CloseMode::Resumable`] close of an
+//!   identified shard is acknowledged by the gateway's close frame, within
+//!   the same [`GatewayOptions::close_timeout`]; the entry has no TTL.
+//! - **Deleted** when the gateway rejects the stored session (op 9 with
+//!   `d: false`) or a READY replaces it, and on a [`CloseMode::Fresh`]
+//!   close.
+//!
+//! Nothing is written on READY, on in-process reconnects or periodically,
+//! so a crash leaves no entry. A resume replays only what Discord still
+//! holds; events dropped under back-pressure are not replayed
+//! (at-most-once).
+//!
 //! # Lanes
 //!
 //! [`lanes`] builds the two queues between the shard tasks and core
@@ -72,6 +95,7 @@ mod gateway;
 mod inbound;
 mod lanes;
 mod queue;
+mod session;
 mod shard;
 mod shard_config;
 

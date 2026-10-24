@@ -6,13 +6,14 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
-use noctis_ports::IdentifyQueue;
+use noctis_ports::{IdentifyQueue, SessionStore};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
-use twilight_gateway::{CloseFrame, EventTypeFlags, Intents, Shard, ShardId};
+use twilight_gateway::{CloseFrame, EventTypeFlags, Intents, ShardId};
 
 use crate::inbound::{InboundSink, ShardEvent};
 use crate::queue::PortQueue;
+use crate::shard::Lane;
 use crate::{ShardConfigError, shard, shard_config};
 
 /// How [`Gateway::close_all`] closes the shards.
@@ -51,7 +52,7 @@ impl CloseMode {
 /// use std::time::Duration;
 ///
 /// use noctis_gateway::{EventTypeFlags, GatewayOptions};
-/// use noctis_ports::memory::MemoryIdentifyQueue;
+/// use noctis_ports::memory::{MemoryIdentifyQueue, MemorySessionStore};
 /// use twilight_gateway::Intents;
 ///
 /// let options = GatewayOptions {
@@ -61,6 +62,7 @@ impl CloseMode {
 ///     gateway_url: None,
 ///     event_types: EventTypeFlags::INTERACTION_CREATE,
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
+///     session_store: Arc::new(MemorySessionStore::new()),
 ///     shards: 0..1,
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
@@ -82,6 +84,11 @@ pub struct GatewayOptions {
     pub event_types: EventTypeFlags,
     /// The identify coordination port.
     pub identify_queue: Arc<dyn IdentifyQueue>,
+    /// The session port: read at shard start (a valid entry makes the shard
+    /// resume instead of identifying), written after an acknowledged
+    /// resumable close, and deleted when the gateway rejects the stored
+    /// session or on a fresh close. Core passes the App's namespaced port.
+    pub session_store: Arc<dyn SessionStore>,
     /// The shard ids this process runs, within `0..total` (half-open, never
     /// empty): `0..total` for a single process, one Cluster process's Shard
     /// Range otherwise. Ids are global, so a shard's bucket is always
@@ -104,6 +111,7 @@ impl fmt::Debug for GatewayOptions {
             .field("intents", &self.intents)
             .field("gateway_url", &self.gateway_url)
             .field("event_types", &self.event_types)
+            .field("session_store", &"..")
             .field("shards", &self.shards)
             .field("total", &self.total)
             .field("max_concurrency", &self.max_concurrency)
@@ -123,7 +131,7 @@ impl fmt::Debug for GatewayOptions {
 /// use std::time::Duration;
 ///
 /// use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink};
-/// use noctis_ports::memory::MemoryIdentifyQueue;
+/// use noctis_ports::memory::{MemoryIdentifyQueue, MemorySessionStore};
 /// use twilight_gateway::Intents;
 ///
 /// struct Discard;
@@ -139,6 +147,7 @@ impl fmt::Debug for GatewayOptions {
 ///     gateway_url: None,
 ///     event_types: EventTypeFlags::INTERACTION_CREATE,
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
+///     session_store: Arc::new(MemorySessionStore::new()),
 ///     shards: 0..1,
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
@@ -187,6 +196,7 @@ impl Gateway {
     /// #     gateway_url: None,
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -223,13 +233,17 @@ impl Gateway {
             .clone()
             .filter_map(|number| ShardId::new_checked(number, total))
         {
-            let shard = Shard::with_config(id, config.clone());
+            let lane = Lane {
+                wanted: options.event_types,
+                sink: Arc::clone(&sink),
+                events: tx.clone(),
+            };
             tasks.spawn(shard::run(
-                shard,
+                id,
+                config.clone(),
+                Arc::clone(&options.session_store),
                 Arc::clone(&options.app),
-                options.event_types,
-                Arc::clone(&sink),
-                tx.clone(),
+                lane,
                 close_rx.clone(),
                 options.close_timeout,
             ));
@@ -261,6 +275,7 @@ impl Gateway {
     /// #     gateway_url: None,
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     shards: 2..4,
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -289,6 +304,7 @@ impl Gateway {
     /// #     gateway_url: None,
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     shards: 2..4,
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -327,6 +343,7 @@ impl Gateway {
     /// #     gateway_url: None,
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -369,6 +386,7 @@ impl Gateway {
     /// #     gateway_url: None,
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -398,7 +416,7 @@ impl fmt::Debug for Gateway {
 
 #[cfg(test)]
 mod tests {
-    use noctis_ports::memory::MemoryIdentifyQueue;
+    use noctis_ports::memory::{MemoryIdentifyQueue, MemorySessionStore};
 
     use super::*;
     use crate::Inbound;
@@ -417,6 +435,7 @@ mod tests {
             gateway_url: None,
             event_types: EventTypeFlags::INTERACTION_CREATE,
             identify_queue: Arc::new(MemoryIdentifyQueue::default()),
+            session_store: Arc::new(MemorySessionStore::new()),
             shards,
             total: NonZeroU32::new(total).unwrap(),
             max_concurrency: NonZeroU16::MIN,
