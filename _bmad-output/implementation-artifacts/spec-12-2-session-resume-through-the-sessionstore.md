@@ -2,7 +2,8 @@
 title: 'Story 12.2: Session resume through the SessionStore'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'a52191427b308cb41899738066968e35f3769e42'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:

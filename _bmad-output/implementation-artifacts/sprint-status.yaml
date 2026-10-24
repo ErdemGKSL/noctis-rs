@@ -147,7 +147,7 @@ development_status:
 
   epic-12: in-progress
   12-1-shard-ranges-and-cluster-wide-identify: done
-  12-2-session-resume-through-the-sessionstore: backlog
+  12-2-session-resume-through-the-sessionstore: in-progress
   12-3-resumable-shutdown: backlog
   12-4-shared-http-rate-limiting-through-a-proxy: backlog
   12-5-discord-cache-wiring-ctx-cache-configuration-and-minimal-int: backlog
