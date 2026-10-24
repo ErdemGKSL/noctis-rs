@@ -38,6 +38,7 @@ impl noctis::ResponderState for noctis::Acked
 impl noctis::ResponderState for noctis::Acked
 pub struct noctis::AfterCtx
 impl noctis::AfterCtx
+pub fn noctis::AfterCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::AfterCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::AfterCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -75,6 +76,7 @@ pub fn noctis::App::app_id(&self) -> &noctis::AppId
 pub fn noctis::App::boot_flags(&self) -> &noctis::BootFlags
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::App::discord_cache(&self) -> noctis::DiscordCacheConfig
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
@@ -114,6 +116,7 @@ pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App,
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::CacheStore>) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
+pub fn noctis::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) -> &mut Self
 pub fn noctis::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -141,6 +144,7 @@ pub fn noctis::AppBuilder::presence(&mut self, noctis::gateway::Presence) -> &mu
 pub fn noctis::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
+pub fn noctis::AppBuilder::rate_limited_handler<F, Fut>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::RateLimitedCtx, noctis::RateLimitHit) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::V2Message>> + core::marker::Send + 'static
 pub fn noctis::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
 pub fn noctis::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
@@ -222,6 +226,7 @@ pub fn noctis::AutocompleteChoice::fmt(&self, &mut core::fmt::Formatter<'_>) -> 
 impl core::marker::StructuralPartialEq for noctis::AutocompleteChoice
 pub struct noctis::AutocompleteCtx
 impl noctis::AutocompleteCtx
+pub fn noctis::AutocompleteCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::AutocompleteCtx::command_path(&self) -> &'static str
 pub fn noctis::AutocompleteCtx::focused(&self) -> &noctis::Focused
@@ -293,6 +298,7 @@ impl core::marker::Copy for noctis::BaseMeta
 impl core::marker::StructuralPartialEq for noctis::BaseMeta
 pub struct noctis::BeforeCtx
 impl noctis::BeforeCtx
+pub fn noctis::BeforeCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::BeforeCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::BeforeCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::BeforeCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -434,6 +440,9 @@ pub noctis::BuildViolation::InvalidRefTtl::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidShardTotal
 pub noctis::BuildViolation::InvalidShutdownGrace
 pub noctis::BuildViolation::InvalidShutdownGrace::actual: core::time::Duration
+pub noctis::BuildViolation::MissingCacheIntent
+pub noctis::BuildViolation::MissingCacheIntent::intent: twilight_model::gateway::intents::Intents
+pub noctis::BuildViolation::MissingCacheIntent::resource: noctis::DiscordCacheResources
 pub noctis::BuildViolation::MissingExtension
 pub noctis::BuildViolation::MissingExtension::extension: &'static str
 pub noctis::BuildViolation::MissingExtension::handler: &'static str
@@ -486,6 +495,35 @@ impl core::marker::StructuralPartialEq for noctis::BuildViolation
 impl core::convert::From<noctis::ResourceConflict> for noctis::BuildViolation
 pub fn noctis::BuildViolation::from(noctis::ResourceConflict) -> Self
 pub proc macro noctis::#[derive(Button)]
+#[non_exhaustive] pub struct noctis::CacheDisabled
+pub noctis::CacheDisabled::resource: noctis::DiscordCacheResources
+impl core::clone::Clone for noctis::CacheDisabled
+pub fn noctis::CacheDisabled::clone(&self) -> Self
+impl core::cmp::Eq for noctis::CacheDisabled
+impl core::cmp::PartialEq for noctis::CacheDisabled
+pub fn noctis::CacheDisabled::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::CacheDisabled
+impl core::fmt::Debug for noctis::CacheDisabled
+pub fn noctis::CacheDisabled::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::CacheDisabled
+pub fn noctis::CacheDisabled::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::CacheDisabled
+impl core::marker::StructuralPartialEq for noctis::CacheDisabled
+#[non_exhaustive] pub enum noctis::CacheError
+pub noctis::CacheError::Disabled(noctis::CacheDisabled)
+pub noctis::CacheError::Port(noctis::ports::PortError)
+impl core::convert::From<noctis::CacheDisabled> for noctis::CacheError
+pub fn noctis::CacheError::from(noctis::CacheDisabled) -> Self
+impl core::convert::From<noctis::ports::PortError> for noctis::CacheError
+pub fn noctis::CacheError::from(noctis::ports::PortError) -> Self
+impl core::error::Error for noctis::CacheError
+pub fn noctis::CacheError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::CacheError
+pub fn noctis::CacheError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::CacheError
+pub fn noctis::CacheError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::convert::From<noctis::CacheDisabled> for noctis::CacheError
+pub fn noctis::CacheError::from(noctis::CacheDisabled) -> Self
 #[non_exhaustive] pub struct noctis::CallbackResource
 impl noctis::CallbackResource
 pub fn noctis::CallbackResource::kind(&self) -> u8
@@ -512,6 +550,7 @@ impl noctis::ResponderKind for noctis::Command
 impl noctis::ResponderKind for noctis::Command
 pub struct noctis::CommandCtx(_)
 impl noctis::CommandCtx
+pub fn noctis::CommandCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::CommandCtx::command_path(&self) -> &'static str
 pub fn noctis::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
@@ -523,6 +562,7 @@ pub fn noctis::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::CommandCtx::module(&self) -> &'static str
 pub fn noctis::CommandCtx::modules(&self) -> noctis::Modules
+pub fn noctis::CommandCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::CommandCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::shard(&self) -> u32
 pub fn noctis::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -666,6 +706,7 @@ impl noctis::ResponderKind for noctis::Component
 impl noctis::ResponderKind for noctis::Component
 pub struct noctis::ComponentCtx(_)
 impl noctis::ComponentCtx
+pub fn noctis::ComponentCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ComponentCtx::gateway(&self) -> noctis::gateway::GatewayHandle
@@ -684,6 +725,7 @@ pub fn noctis::ComponentCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ComponentCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::ComponentCtx
@@ -740,6 +782,79 @@ pub fn noctis::ContextMenuHandler::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ContextMenuHandler
 pub fn noctis::ContextMenuHandler::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub trait noctis::DeferMode: noctis::__private::core::responder::sealed::Defer + core::marker::Send + core::marker::Sync + 'static
+pub struct noctis::DiscordCacheConfig
+impl noctis::DiscordCacheConfig
+pub const noctis::DiscordCacheConfig::DEFAULT_RESOURCES: noctis::DiscordCacheResources
+pub const fn noctis::DiscordCacheConfig::is_enabled(&self) -> bool
+pub const fn noctis::DiscordCacheConfig::message_cap(&self) -> usize
+pub const fn noctis::DiscordCacheConfig::new(noctis::DiscordCacheResources) -> Self
+pub const fn noctis::DiscordCacheConfig::none() -> Self
+pub const fn noctis::DiscordCacheConfig::resources(&self) -> noctis::DiscordCacheResources
+pub const fn noctis::DiscordCacheConfig::with_message_cap(self, usize) -> Self
+pub const fn noctis::DiscordCacheConfig::with_resources(self, noctis::DiscordCacheResources) -> Self
+pub const fn noctis::DiscordCacheConfig::without_resources(self, noctis::DiscordCacheResources) -> Self
+impl core::clone::Clone for noctis::DiscordCacheConfig
+pub fn noctis::DiscordCacheConfig::clone(&self) -> Self
+impl core::cmp::Eq for noctis::DiscordCacheConfig
+impl core::cmp::PartialEq for noctis::DiscordCacheConfig
+pub fn noctis::DiscordCacheConfig::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::DiscordCacheConfig
+pub fn noctis::DiscordCacheConfig::default() -> Self
+impl core::fmt::Debug for noctis::DiscordCacheConfig
+pub fn noctis::DiscordCacheConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::DiscordCacheConfig
+pub struct noctis::DiscordCacheReader
+impl noctis::DiscordCacheReader
+pub async fn noctis::DiscordCacheReader::channel(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> core::result::Result<core::option::Option<twilight_model::channel::Channel>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::channel_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::channels(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::channel::Channel>>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<twilight_model::guild::Guild>, noctis::CacheError>
+pub const fn noctis::DiscordCacheReader::is_enabled(&self) -> bool
+pub async fn noctis::DiscordCacheReader::member(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> core::result::Result<core::option::Option<twilight_model::guild::member::Member>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::member_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::members(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::guild::member::Member>>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::message(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> core::result::Result<core::option::Option<twilight_model::channel::message::Message>, noctis::CacheError>
+pub const fn noctis::DiscordCacheReader::resources(&self) -> noctis::DiscordCacheResources
+pub async fn noctis::DiscordCacheReader::role(&self, twilight_model::id::Id<twilight_model::id::marker::RoleMarker>) -> core::result::Result<core::option::Option<twilight_model::guild::role::Role>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::roles(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::guild::role::Role>>, noctis::CacheError>
+pub async fn noctis::DiscordCacheReader::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> core::result::Result<core::option::Option<twilight_model::user::User>, noctis::CacheError>
+impl core::clone::Clone for noctis::DiscordCacheReader
+pub fn noctis::DiscordCacheReader::clone(&self) -> Self
+impl core::fmt::Debug for noctis::DiscordCacheReader
+pub fn noctis::DiscordCacheReader::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::DiscordCacheResources(_)
+impl noctis::DiscordCacheResources
+pub const noctis::DiscordCacheResources::CHANNEL: Self
+pub const noctis::DiscordCacheResources::GUILD: Self
+pub const noctis::DiscordCacheResources::MEMBER: Self
+pub const noctis::DiscordCacheResources::MESSAGE: Self
+pub const noctis::DiscordCacheResources::ROLE: Self
+pub const noctis::DiscordCacheResources::USER: Self
+pub const fn noctis::DiscordCacheResources::all() -> Self
+pub const fn noctis::DiscordCacheResources::contains(self, Self) -> bool
+pub const fn noctis::DiscordCacheResources::empty() -> Self
+pub const fn noctis::DiscordCacheResources::is_empty(self) -> bool
+pub const fn noctis::DiscordCacheResources::union(self, Self) -> Self
+pub const fn noctis::DiscordCacheResources::without(self, Self) -> Self
+impl core::clone::Clone for noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::clone(&self) -> Self
+impl core::cmp::Eq for noctis::DiscordCacheResources
+impl core::cmp::PartialEq for noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::default() -> Self
+impl core::fmt::Debug for noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::DiscordCacheResources
+impl core::marker::StructuralPartialEq for noctis::DiscordCacheResources
+impl core::ops::bit::BitOr for noctis::DiscordCacheResources
+pub type noctis::DiscordCacheResources::Output = noctis::DiscordCacheResources
+pub fn noctis::DiscordCacheResources::bitor(self, Self) -> Self
 #[non_exhaustive] pub enum noctis::DispatchError
 pub noctis::DispatchError::UnknownCommand
 pub noctis::DispatchError::UnknownCommand::path: alloc::boxed::Box<str>
@@ -908,6 +1023,7 @@ impl core::marker::Copy for noctis::Expired
 impl core::marker::StructuralPartialEq for noctis::Expired
 pub struct noctis::ExpiredCtx(_)
 impl noctis::ExpiredCtx
+pub fn noctis::ExpiredCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ExpiredCtx::gateway(&self) -> noctis::gateway::GatewayHandle
@@ -1375,6 +1491,7 @@ impl noctis::ResponderKind for noctis::ModalSubmit
 impl noctis::ResponderKind for noctis::ModalSubmit
 pub struct noctis::ModalSubmitCtx(_)
 impl noctis::ModalSubmitCtx
+pub fn noctis::ModalSubmitCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::ModalSubmitCtx::gateway(&self) -> noctis::gateway::GatewayHandle
@@ -1393,6 +1510,7 @@ pub fn noctis::ModalSubmitCtx::user_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::ModalSubmitCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -1623,6 +1741,97 @@ impl noctis::ResponderState for noctis::Pending
 pub use noctis::Permissions
 pub trait noctis::Plugin: core::marker::Send + core::marker::Sync + 'static
 pub fn noctis::Plugin::install(&self, &mut noctis::AppBuilder)
+pub struct noctis::RateLimit
+impl noctis::RateLimit
+pub const fn noctis::RateLimit::is_manual(&self) -> bool
+pub const fn noctis::RateLimit::max_uses(&self) -> u32
+pub const fn noctis::RateLimit::scope(&self) -> noctis::RateScope
+pub const fn noctis::RateLimit::window(&self) -> core::time::Duration
+impl core::clone::Clone for noctis::RateLimit
+pub fn noctis::RateLimit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RateLimit
+impl core::cmp::PartialEq for noctis::RateLimit
+pub fn noctis::RateLimit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RateLimit
+pub fn noctis::RateLimit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::RateLimit
+impl core::marker::StructuralPartialEq for noctis::RateLimit
+#[non_exhaustive] pub enum noctis::RateLimitError
+pub noctis::RateLimitError::Detached
+pub noctis::RateLimitError::Store(noctis::ports::PortError)
+pub noctis::RateLimitError::Undeclared
+pub noctis::RateLimitError::Undeclared::scope: noctis::RateScope
+pub noctis::RateLimitError::Unkeyed
+pub noctis::RateLimitError::Unkeyed::scope: noctis::RateScope
+impl core::convert::From<noctis::ports::PortError> for noctis::RateLimitError
+pub fn noctis::RateLimitError::from(noctis::ports::PortError) -> Self
+impl core::error::Error for noctis::RateLimitError
+pub fn noctis::RateLimitError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::RateLimitError
+pub fn noctis::RateLimitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::RateLimitError
+pub fn noctis::RateLimitError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::RateLimitHit
+impl noctis::RateLimitHit
+pub fn noctis::RateLimitHit::limit(&self) -> noctis::RateLimit
+pub fn noctis::RateLimitHit::relative_timestamp(&self) -> alloc::string::String
+pub fn noctis::RateLimitHit::retry_after(&self) -> core::time::Duration
+pub fn noctis::RateLimitHit::retry_at_unix_secs(&self) -> u64
+pub fn noctis::RateLimitHit::scope(&self) -> noctis::RateScope
+impl core::clone::Clone for noctis::RateLimitHit
+pub fn noctis::RateLimitHit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RateLimitHit
+impl core::cmp::PartialEq for noctis::RateLimitHit
+pub fn noctis::RateLimitHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RateLimitHit
+pub fn noctis::RateLimitHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::RateLimitHit
+impl core::marker::StructuralPartialEq for noctis::RateLimitHit
+pub struct noctis::RateLimitedCtx(_)
+impl noctis::RateLimitedCtx
+pub fn noctis::RateLimitedCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::RateLimitedCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::RateLimitedCtx::guild_locale(&self) -> noctis::rules::Locale
+pub fn noctis::RateLimitedCtx::module(&self) -> &'static str
+pub fn noctis::RateLimitedCtx::path(&self) -> &'static str
+pub fn noctis::RateLimitedCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::RateLimitedCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::RateLimitedCtx::user_locale(&self) -> noctis::rules::Locale
+impl core::clone::Clone for noctis::RateLimitedCtx
+pub fn noctis::RateLimitedCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::RateLimitedCtx
+pub fn noctis::RateLimitedCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct noctis::RateLimits(_)
+impl noctis::RateLimits
+pub async fn noctis::RateLimits::block(&self, noctis::RateScope, core::time::Duration) -> core::result::Result<(), noctis::RateLimitError>
+pub async fn noctis::RateLimits::extend(&self, noctis::RateScope, core::time::Duration) -> core::result::Result<(), noctis::RateLimitError>
+pub async fn noctis::RateLimits::hit(&self, noctis::RateScope) -> core::result::Result<u64, noctis::RateLimitError>
+pub async fn noctis::RateLimits::reset(&self, noctis::RateScope) -> core::result::Result<(), noctis::RateLimitError>
+impl core::clone::Clone for noctis::RateLimits
+pub fn noctis::RateLimits::clone(&self) -> Self
+impl core::fmt::Debug for noctis::RateLimits
+pub fn noctis::RateLimits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::RateScope
+pub noctis::RateScope::Channel
+pub noctis::RateScope::Guild
+pub noctis::RateScope::Member
+pub noctis::RateScope::Message
+pub noctis::RateScope::User
+impl noctis::RateScope
+pub const fn noctis::RateScope::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::RateScope
+pub fn noctis::RateScope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::RateScope
+impl core::cmp::PartialEq for noctis::RateScope
+pub fn noctis::RateScope::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::RateScope
+pub fn noctis::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::RateScope
+pub fn noctis::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::RateScope
+pub fn noctis::RateScope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::RateScope
+impl core::marker::StructuralPartialEq for noctis::RateScope
 pub struct noctis::RefOps
 impl noctis::RefOps
 pub fn noctis::RefOps::delete(self, noctis::codec::Ref) -> Self
@@ -1945,6 +2154,7 @@ pub proc macro noctis::#[handler]
 pub proc macro noctis::i18n!()
 pub proc macro noctis::label!()
 pub proc macro noctis::#[on_expired]
+pub proc macro noctis::#[on_rate_limited]
 pub proc macro noctis::#[on_stale]
 pub proc macro noctis::placeholder!()
 pub proc macro noctis::rgb!()
@@ -2497,6 +2707,7 @@ pub use noctis::events::EntitlementCreate
 pub use noctis::events::EntitlementDelete
 pub use noctis::events::EntitlementUpdate
 impl noctis::events::EventCtx
+pub fn noctis::events::EventCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
 pub fn noctis::events::EventCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
@@ -2514,6 +2725,7 @@ impl core::fmt::Debug for noctis::events::EventCtx
 pub fn noctis::events::EventCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::events::EventCtx(_)
 impl noctis::events::EventCtx
+pub fn noctis::events::EventCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
 pub fn noctis::events::EventCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
@@ -3854,6 +4066,17 @@ pub fn noctis::ports::DiscordCache::role(&self, twilight_model::id::Id<twilight_
 pub fn noctis::ports::DiscordCache::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::ports::PortError>>
 pub fn noctis::ports::DiscordCache::update<'a>(&'a self, &'a twilight_model::gateway::event::Event) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
 pub fn noctis::ports::DiscordCache::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::user::User>, noctis::ports::PortError>>
+impl<P: noctis::ports::DiscordCache + ?core::marker::Sized> noctis::ports::DiscordCache for alloc::rcs::arc::Arc<P>
+pub fn alloc::rcs::arc::Arc<P>::channel(&self, twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::Channel>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::channel_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::Guild>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::member(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::member::Member>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::member_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::message(&self, twilight_model::id::Id<twilight_model::id::marker::MessageMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::channel::message::Message>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::role(&self, twilight_model::id::Id<twilight_model::id::marker::RoleMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::guild::role::Role>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::role_ids(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::RoleMarker>>>, noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::update<'a>(&'a self, &'a twilight_model::gateway::event::Event) -> noctis::ports::BoxFuture<'a, core::result::Result<(), noctis::ports::PortError>>
+pub fn alloc::rcs::arc::Arc<P>::user(&self, twilight_model::id::Id<twilight_model::id::marker::UserMarker>) -> noctis::ports::BoxFuture<'_, core::result::Result<core::option::Option<twilight_model::user::User>, noctis::ports::PortError>>
 pub struct noctis::ports::EncodeSettings
 pub noctis::ports::EncodeSettings::fps: core::option::Option<u16>
 pub noctis::ports::EncodeSettings::frames: u32
@@ -4171,8 +4394,10 @@ pub fn noctis::ports::Renderer::register(&self, &[noctis::image::TemplateDescrip
 pub fn noctis::ports::Renderer::render(&self, noctis::image::RenderJob) -> noctis::ports::BoxFuture<'_, core::result::Result<noctis::image::RenderOutput, noctis::image::RenderError>>
 #[non_exhaustive] pub struct noctis::ports::RendererPorts
 pub noctis::ports::RendererPorts::asset_store: alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>
+pub noctis::ports::RendererPorts::render_cache: core::option::Option<alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>>
 impl noctis::ports::RendererPorts
 pub fn noctis::ports::RendererPorts::new(alloc::rcs::arc::Arc<dyn noctis::ports::AssetStore>) -> Self
+pub fn noctis::ports::RendererPorts::with_render_cache(self, alloc::rcs::arc::Arc<dyn noctis::ports::RenderCache>) -> Self
 impl core::clone::Clone for noctis::ports::RendererPorts
 pub fn noctis::ports::RendererPorts::clone(&self) -> Self
 impl core::fmt::Debug for noctis::ports::RendererPorts
@@ -4294,6 +4519,7 @@ pub const fn noctis::ports::memory::DiscordCacheResources::contains(self, Self) 
 pub const fn noctis::ports::memory::DiscordCacheResources::empty() -> Self
 pub const fn noctis::ports::memory::DiscordCacheResources::is_empty(self) -> bool
 pub const fn noctis::ports::memory::DiscordCacheResources::union(self, Self) -> Self
+pub const fn noctis::ports::memory::DiscordCacheResources::without(self, Self) -> Self
 impl core::clone::Clone for noctis::ports::memory::DiscordCacheResources
 pub fn noctis::ports::memory::DiscordCacheResources::clone(&self) -> Self
 impl core::cmp::Eq for noctis::ports::memory::DiscordCacheResources
@@ -4302,6 +4528,8 @@ pub fn noctis::ports::memory::DiscordCacheResources::eq(&self, &Self) -> bool
 impl core::default::Default for noctis::ports::memory::DiscordCacheResources
 pub fn noctis::ports::memory::DiscordCacheResources::default() -> Self
 impl core::fmt::Debug for noctis::ports::memory::DiscordCacheResources
+pub fn noctis::ports::memory::DiscordCacheResources::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::ports::memory::DiscordCacheResources
 pub fn noctis::ports::memory::DiscordCacheResources::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::hash::Hash for noctis::ports::memory::DiscordCacheResources
 pub fn noctis::ports::memory::DiscordCacheResources::hash<__H: core::hash::Hasher>(&self, &mut __H)
@@ -4572,6 +4800,7 @@ impl core::marker::Copy for noctis::prelude::Access
 impl core::marker::StructuralPartialEq for noctis::prelude::Access
 pub struct noctis::prelude::AfterCtx
 impl noctis::prelude::AfterCtx
+pub fn noctis::prelude::AfterCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::AfterCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::AfterCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::AfterCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -4600,6 +4829,7 @@ pub fn noctis::prelude::App::app_id(&self) -> &noctis::AppId
 pub fn noctis::prelude::App::boot_flags(&self) -> &noctis::BootFlags
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::App::discord_cache(&self) -> noctis::DiscordCacheConfig
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
 pub fn noctis::prelude::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
@@ -4639,6 +4869,7 @@ pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noc
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::CacheStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
 pub fn noctis::prelude::AppBuilder::dev_guild(&mut self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::discord_cache(&mut self, noctis::DiscordCacheConfig) -> &mut Self
 pub fn noctis::prelude::AppBuilder::discord_cache_backend(&mut self, impl noctis::ports::DiscordCache) -> &mut Self
 pub fn noctis::prelude::AppBuilder::error_sink(&mut self, noctis::ErrorOrigin, impl noctis::ErrorSink) -> &mut Self
 pub fn noctis::prelude::AppBuilder::event_lane(&mut self, usize, usize) -> &mut Self
@@ -4666,6 +4897,7 @@ pub fn noctis::prelude::AppBuilder::presence(&mut self, noctis::gateway::Presenc
 pub fn noctis::prelude::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::rate_limited_handler<F, Fut>(&mut self, F) -> &mut Self where F: core::ops::function::Fn(noctis::RateLimitedCtx, noctis::RateLimitHit) -> Fut + core::marker::Send + core::marker::Sync + 'static, Fut: core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::V2Message>> + core::marker::Send + 'static
 pub fn noctis::prelude::AppBuilder::ref_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RefStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
@@ -4684,6 +4916,7 @@ pub fn noctis::prelude::AppBuilder::fmt(&self, &mut core::fmt::Formatter<'_>) ->
 pub use noctis::prelude::AppBuilderImageExt
 pub struct noctis::prelude::AutocompleteCtx
 impl noctis::prelude::AutocompleteCtx
+pub fn noctis::prelude::AutocompleteCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::AutocompleteCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::AutocompleteCtx::command_path(&self) -> &'static str
 pub fn noctis::prelude::AutocompleteCtx::focused(&self) -> &noctis::Focused
@@ -4701,6 +4934,7 @@ impl core::fmt::Debug for noctis::prelude::AutocompleteCtx
 pub fn noctis::prelude::AutocompleteCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub struct noctis::prelude::BeforeCtx
 impl noctis::prelude::BeforeCtx
+pub fn noctis::prelude::BeforeCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::BeforeCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::BeforeCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::BeforeCtx::guild_locale(&self) -> noctis::rules::Locale
@@ -4761,6 +4995,7 @@ pub fn noctis::prelude::Choices::label(&self) -> &'static str
 pub fn noctis::prelude::Choices::value(&self) -> &'static str
 pub struct noctis::prelude::CommandCtx(_)
 impl noctis::prelude::CommandCtx
+pub fn noctis::prelude::CommandCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::CommandCtx::command_path(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
@@ -4772,6 +5007,7 @@ pub fn noctis::prelude::CommandCtx::kv(&self) -> noctis::Kv
 pub fn noctis::prelude::CommandCtx::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::CommandCtx::module(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::modules(&self) -> noctis::Modules
+pub fn noctis::prelude::CommandCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::prelude::CommandCtx::response_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::shard(&self) -> u32
 pub fn noctis::prelude::CommandCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
@@ -4831,6 +5067,7 @@ pub fn twilight_model::id::Id<twilight_model::id::marker::UserMarker>::decode(&n
 pub type noctis::prelude::CommandResponder<D> = noctis::Responder<noctis::Command, noctis::Pending, D>
 pub struct noctis::prelude::ComponentCtx(_)
 impl noctis::prelude::ComponentCtx
+pub fn noctis::prelude::ComponentCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ComponentCtx::gateway(&self) -> noctis::gateway::GatewayHandle
@@ -4849,6 +5086,7 @@ pub fn noctis::prelude::ComponentCtx::user_locale(&self) -> noctis::rules::Local
 pub fn noctis::prelude::ComponentCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ComponentCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::prelude::ComponentCtx::unknown_components(&self) -> &[serde_json::value::Value]
 pub fn noctis::prelude::ComponentCtx::values(&self) -> &noctis::SelectedValues
 impl noctis::prelude::ComponentCtx
@@ -4926,6 +5164,7 @@ impl core::marker::Copy for noctis::prelude::Expired
 impl core::marker::StructuralPartialEq for noctis::prelude::Expired
 pub struct noctis::prelude::ExpiredCtx(_)
 impl noctis::prelude::ExpiredCtx
+pub fn noctis::prelude::ExpiredCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ExpiredCtx::gateway(&self) -> noctis::gateway::GatewayHandle
@@ -5089,6 +5328,7 @@ pub fn noctis::prelude::ModalForm::from_submission(&noctis::ui::ModalSubmission)
 pub type noctis::prelude::ModalResponder<D> = noctis::Responder<noctis::ModalSubmit, noctis::Pending, D>
 pub struct noctis::prelude::ModalSubmitCtx(_)
 impl noctis::prelude::ModalSubmitCtx
+pub fn noctis::prelude::ModalSubmitCtx::cache(&self) -> noctis::DiscordCacheReader
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
 pub fn noctis::prelude::ModalSubmitCtx::gateway(&self) -> noctis::gateway::GatewayHandle
@@ -5107,6 +5347,7 @@ pub fn noctis::prelude::ModalSubmitCtx::user_locale(&self) -> noctis::rules::Loc
 pub fn noctis::prelude::ModalSubmitCtx::webhooks(&self) -> noctis::webhook::Webhooks
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::ModalSubmitCtx::rate_limits(&self) -> noctis::RateLimits
 pub fn noctis::prelude::ModalSubmitCtx::unknown_components(&self) -> &[serde_json::value::Value]
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::render<T: noctis::image::Template>(&self, T) -> impl core::future::future::Future<Output = noctis::HandlerResult<noctis::ui::Attachment>> + core::marker::Send + '_
@@ -5169,6 +5410,57 @@ pub const noctis::prelude::Payload::MAX_ENCODED_LEN: core::option::Option<usize>
 pub fn noctis::prelude::Payload::encode_fields(&self, &mut noctis::codec::FieldWriter<'_>) -> core::fmt::Result
 pub proc macro noctis::prelude::#[derive(Payload)]
 pub proc macro noctis::prelude::#[derive(PayloadEnum)]
+pub struct noctis::prelude::RateLimitHit
+impl noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::limit(&self) -> noctis::RateLimit
+pub fn noctis::prelude::RateLimitHit::relative_timestamp(&self) -> alloc::string::String
+pub fn noctis::prelude::RateLimitHit::retry_after(&self) -> core::time::Duration
+pub fn noctis::prelude::RateLimitHit::retry_at_unix_secs(&self) -> u64
+pub fn noctis::prelude::RateLimitHit::scope(&self) -> noctis::RateScope
+impl core::clone::Clone for noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::RateLimitHit
+impl core::cmp::PartialEq for noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::RateLimitHit
+pub fn noctis::prelude::RateLimitHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::prelude::RateLimitHit
+impl core::marker::StructuralPartialEq for noctis::prelude::RateLimitHit
+pub struct noctis::prelude::RateLimitedCtx(_)
+impl noctis::prelude::RateLimitedCtx
+pub fn noctis::prelude::RateLimitedCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
+pub fn noctis::prelude::RateLimitedCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
+pub fn noctis::prelude::RateLimitedCtx::guild_locale(&self) -> noctis::rules::Locale
+pub fn noctis::prelude::RateLimitedCtx::module(&self) -> &'static str
+pub fn noctis::prelude::RateLimitedCtx::path(&self) -> &'static str
+pub fn noctis::prelude::RateLimitedCtx::state<T: core::marker::Send + core::marker::Sync + 'static>(&self) -> core::option::Option<noctis::State<T>>
+pub fn noctis::prelude::RateLimitedCtx::user_id(&self) -> twilight_model::id::Id<twilight_model::id::marker::UserMarker>
+pub fn noctis::prelude::RateLimitedCtx::user_locale(&self) -> noctis::rules::Locale
+impl core::clone::Clone for noctis::prelude::RateLimitedCtx
+pub fn noctis::prelude::RateLimitedCtx::clone(&self) -> Self
+impl core::fmt::Debug for noctis::prelude::RateLimitedCtx
+pub fn noctis::prelude::RateLimitedCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::prelude::RateScope
+pub noctis::prelude::RateScope::Channel
+pub noctis::prelude::RateScope::Guild
+pub noctis::prelude::RateScope::Member
+pub noctis::prelude::RateScope::Message
+pub noctis::prelude::RateScope::User
+impl noctis::prelude::RateScope
+pub const fn noctis::prelude::RateScope::as_str(self) -> &'static str
+impl core::clone::Clone for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::clone(&self) -> Self
+impl core::cmp::Eq for noctis::prelude::RateScope
+impl core::cmp::PartialEq for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::prelude::RateScope
+pub fn noctis::prelude::RateScope::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::prelude::RateScope
+impl core::marker::StructuralPartialEq for noctis::prelude::RateScope
 pub trait noctis::prelude::RawHttp: noctis::__private::core::raw_http::sealed::Sealed
 pub fn noctis::prelude::RawHttp::raw(&self, twilight_http_ratelimiting::Method, impl core::convert::Into<alloc::string::String>) -> noctis::http::RawRequest<'_>
 impl noctis::prelude::RawHttp for twilight_http::client::Client
@@ -5340,6 +5632,7 @@ pub proc macro noctis::prelude::content!()
 pub proc macro noctis::prelude::#[handler]
 pub proc macro noctis::prelude::label!()
 pub proc macro noctis::prelude::#[on_expired]
+pub proc macro noctis::prelude::#[on_rate_limited]
 pub proc macro noctis::prelude::#[on_stale]
 pub proc macro noctis::prelude::placeholder!()
 pub proc macro noctis::prelude::rgb!()
@@ -5730,6 +6023,7 @@ pub const noctis::rules::RuleId::INT_10: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_11: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_12: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_13: noctis::rules::RuleId
+pub const noctis::rules::RuleId::INT_14: noctis::rules::RuleId
 pub const noctis::rules::RuleId::LOC_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::LOC_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::LOC_03: noctis::rules::RuleId
@@ -6817,6 +7111,7 @@ pub fn noctis::testkit::Response::is_ephemeral(&self) -> bool
 pub fn noctis::testkit::Response::is_error(&self) -> bool
 pub fn noctis::testkit::Response::is_expired_notice(&self) -> bool
 pub fn noctis::testkit::Response::is_guard_notice(&self) -> bool
+pub fn noctis::testkit::Response::is_rate_limited(&self) -> bool
 pub fn noctis::testkit::Response::kind(&self) -> noctis::testkit::ResponseKind
 pub fn noctis::testkit::Response::message(&self) -> core::option::Option<&noctis::testkit::TestMessage>
 pub fn noctis::testkit::Response::message_json(&self) -> serde_json::value::Value
