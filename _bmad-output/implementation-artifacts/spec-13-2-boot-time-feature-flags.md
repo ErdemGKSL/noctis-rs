@@ -2,7 +2,8 @@
 title: 'Story 13.2: Boot-time feature flags'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '19a8f21e960babb05ac57c0f3fe722a1f984767f'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
