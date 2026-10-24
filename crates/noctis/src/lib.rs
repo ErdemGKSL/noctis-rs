@@ -1884,8 +1884,9 @@ pub mod ports {
         AnimatedFormat, AnimationSpec, AssetStore, BoxFuture, CacheStore, DiscordCache,
         EncodeSettings, ErasedView, Format, Frame, GuildAccessList, IdentifyQueue, Lease,
         LocaleSource, ModuleStateStore, OutputFormat, PortError, RateLimitStore, RefStore,
-        RenderCache, RenderCap, RenderError, RenderJob, RenderOutput, Renderer, SessionStore, Size,
-        Template, TemplateDescriptor, ValueError, decode_template, decode_value, encode_value,
+        RenderCache, RenderCap, RenderError, RenderJob, RenderOutput, Renderer, RendererPorts,
+        SessionStore, Size, Template, TemplateDescriptor, ValueError, decode_template,
+        decode_value, encode_value,
     };
 
     pub use noctis_core::{IntoPort, Namespaced, NamespacedPort, Shared};
@@ -2025,6 +2026,22 @@ pub mod image {
     //!   bytes, at most 16 MP) registered with `ImageConfig::image` and
     //!   drawn with `<img src={LOGO} tw=".." />` ([`img`]). An image the App
     //!   did not register fails the render with `RenderError::UnknownImage`.
+    //! - Remote images (FR-67, `[IMG-03]`): a Template declares them in
+    //!   `#[asset]` fields (`#[asset(required)]` to fail instead of drawing
+    //!   the fallback) of type [`RemoteImage`], `Option<RemoteImage>` or
+    //!   `Vec<RemoteImage>`, built with `RemoteImage::avatar(&user, 256)`,
+    //!   `RemoteImage::guild_icon(&guild, 128)`, `RemoteImage::url(..)`
+    //!   ([`RemoteUrlError`]) or `RemoteImage::placeholder()`, and draws them
+    //!   with `<img src={&self.avatar} />` ([`ImageSrc`]). Before the job is
+    //!   admitted the App fetches every declared image from an allow-listed
+    //!   origin (the Discord CDN by default; [`RemoteConfig`] via
+    //!   `ImageConfig::remote`), with a timeout, byte, pixel and per-job caps
+    //!   and bounded concurrency, decodes it off the async runtime and caches
+    //!   the bytes in the App's `AssetStore`. A failed image draws the
+    //!   fallback with a `noctis::image` warning; a required one fails with
+    //!   `RenderError::RemoteImage`. Drawing an undeclared remote image is
+    //!   `RenderError::UndeclaredImage`; more than `max_per_job` is
+    //!   `RenderError::OverCap` with `RenderCap::RemoteImages`.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```
@@ -2060,7 +2077,8 @@ pub mod image {
     /// animation(duration_ms = .., fps = ..[, format = ..])])]`, checked at
     /// `cargo check`; the animated `format` defaults to
     /// [`AnimatedFormat::DEFAULT`], and `Gif`/`Apng` need `image-gif`.
-    /// `Serialize` and `Deserialize` are required too.
+    /// `Serialize` and `Deserialize` are required too. `#[asset]` /
+    /// `#[asset(required)]` fields declare [`RemoteImage`]s (`[IMG-03]`).
     pub use noctis_macros::Template;
     /// `theme!()`: the crate's `noctis-theme.css` as a [`Theme`], validated
     /// at `cargo check` (`[TW-02]`); `theme!("path")` reads a file relative
@@ -2083,6 +2101,7 @@ pub mod image {
         Classes, IntoNodes, Node, Style, Tag, TemplateView, div, img, span, text,
     };
     pub use noctis_image::{Font, StaticImage};
+    pub use noctis_image::{ImageSrc, RemoteConfig, RemoteImage, RemoteUrlError};
     pub use noctis_ports::{
         AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderCap,
         RenderError, RenderJob, RenderOutput, Size, Template, TemplateDescriptor,

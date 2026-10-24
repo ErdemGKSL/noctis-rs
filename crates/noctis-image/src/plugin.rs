@@ -11,6 +11,7 @@ use crate::assets::{StaticImage, StaticImages};
 use crate::caps::RenderCaps;
 use crate::fonts::{self, Font, FontRegistry, FontsConfig};
 use crate::pool::{PoolConfig, RenderPool};
+use crate::remote::{AssetFetcher, RemoteConfig};
 use crate::renderer::{RendererConfig, TakumiRenderer, theme_stylesheet};
 use crate::tw::Theme;
 
@@ -69,6 +70,11 @@ const CAP_PIXELS: std::ops::RangeInclusive<u64> = 1..=67_108_864;
 /// Static images ([`image`](Self::image), IMG-02) are per App, decoded once
 /// when the App builds.
 ///
+/// Remote images ([`remote`](Self::remote), IMG-03) are per App too: the
+/// [`RemoteConfig`] sets the origin allow-list (the Discord CDN by default),
+/// the timeout, byte, pixel and per-job caps, the fetch concurrency, the
+/// `AssetStore` TTL and the fallback image.
+///
 /// [`Runtime`]: noctis_core::Runtime
 ///
 /// ```
@@ -97,12 +103,14 @@ pub struct ImageConfig {
     caps: RenderCaps,
     fonts: Vec<Font>,
     images: Vec<StaticImage>,
+    remote: RemoteConfig,
 }
 
 impl ImageConfig {
     /// The defaults: half the available parallelism (at least 1) threads,
     /// a queue of 64 units, a 2 MiB size target, the still fallback on,
-    /// the default [`RenderCaps`], and no fonts or static images.
+    /// the default [`RenderCaps`], no fonts or static images, and the
+    /// default [`RemoteConfig`].
     pub fn new() -> Self {
         // Clamped so a very large host never builds an out-of-range default.
         let threads = std::thread::available_parallelism()
@@ -115,6 +123,7 @@ impl ImageConfig {
             caps: RenderCaps::new(),
             fonts: Vec::new(),
             images: Vec::new(),
+            remote: RemoteConfig::new(),
         }
     }
 
@@ -187,6 +196,17 @@ impl ImageConfig {
         self
     }
 
+    /// How the App resolves the remote images its Templates declare in
+    /// `#[asset]` fields (default [`RemoteConfig::new`]: the Discord CDN
+    /// allow-list, 5 s, 8 MiB, 8 at once, 16 per job, 4 MP, a 1 day cache
+    /// TTL and the built-in fallback). Invalid origins and out-of-range
+    /// values fail `App::build` with `[IMG-03]`.
+    #[must_use]
+    pub fn remote(mut self, remote: RemoteConfig) -> Self {
+        self.remote = remote;
+        self
+    }
+
     fn pool_config(&self) -> PoolConfig {
         PoolConfig {
             threads: self.threads,
@@ -204,10 +224,11 @@ impl Default for ImageConfig {
 /// The plugin that installs the App's takumi Renderer; added by
 /// [`AppBuilderImageExt::image`] and [`AppBuilderImageExt::theme`].
 ///
-/// Its install checks the [`ImageConfig`] ranges and font list, gets the
-/// process-scoped render pool and font registry from the App's Runtime,
-/// decodes the App's static images, parses the Theme into the renderer's
-/// stylesheet and sets the Renderer. On a `Runtime::for_test()` App the
+/// Its install checks the [`ImageConfig`] ranges, font list and remote
+/// config, gets the process-scoped render pool and font registry from the
+/// App's Runtime, decodes the App's static images, builds its remote-image
+/// fetcher (and fallback), parses the Theme into the renderer's stylesheet
+/// and sets the Renderer. On a `Runtime::for_test()` App the
 /// runtime class check (TW-01) is Deny: an unknown `Classes::dynamic` class
 /// fails the render; elsewhere it warns once per distinct string.
 #[derive(Debug)]
@@ -228,6 +249,7 @@ impl ImagePlugin {
             caps,
             ref fonts,
             images: _,
+            ref remote,
         } = self.config;
         let mut in_range = true;
         if !THREADS.contains(&threads) {
@@ -272,7 +294,7 @@ impl ImagePlugin {
                 caps.duration
             )));
         }
-        for problem in fonts::validate(fonts) {
+        for problem in fonts::validate(fonts).into_iter().chain(remote.validate()) {
             in_range = false;
             app.report(BuildViolation::plugin::<Self>(problem));
         }
@@ -291,6 +313,7 @@ impl Plugin for ImagePlugin {
             caps,
             ref fonts,
             ref images,
+            ref remote,
             ..
         } = self.config;
         let pool = match app
@@ -332,6 +355,13 @@ impl Plugin for ImagePlugin {
                 return;
             }
         };
+        let remote = match AssetFetcher::new(remote) {
+            Ok(remote) => remote,
+            Err(error) => {
+                app.report(BuildViolation::plugin::<Self>(error));
+                return;
+            }
+        };
         let stylesheet = match theme_stylesheet(&self.theme) {
             Ok(stylesheet) => stylesheet,
             Err(error) => {
@@ -356,6 +386,7 @@ impl Plugin for ImagePlugin {
             size_target,
             still_fallback,
             caps,
+            remote,
         })));
     }
 }

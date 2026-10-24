@@ -75,7 +75,7 @@ rule_ids! {
     GW_01 = "GW-01", GW_02 = "GW-02", GW_03 = "GW-03", GW_04 = "GW-04",
     GW_05 = "GW-05", GW_06 = "GW-06", GW_07 = "GW-07",
     TW_01 = "TW-01", TW_02 = "TW-02",
-    IMG_01 = "IMG-01", IMG_02 = "IMG-02",
+    IMG_01 = "IMG-01", IMG_02 = "IMG-02", IMG_03 = "IMG-03",
 }
 
 impl RuleId {

@@ -1244,6 +1244,54 @@ async fn build_registers_templates_with_the_renderer() {
     assert_eq!(*renderer.seen.lock().unwrap(), [("tpl", 3)]);
 }
 
+/// A Renderer recording the ports `bind` received.
+#[derive(Default)]
+struct Binding {
+    bound: Mutex<Vec<Arc<dyn AssetStore>>>,
+}
+
+impl Renderer for Binding {
+    fn render(&self, _: RenderJob) -> BoxFuture<'_, Result<RenderOutput, RenderError>> {
+        Box::pin(async { Err(RenderError::QueueFull) })
+    }
+
+    fn register(&self, _: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    fn bind(&self, ports: RendererPorts) {
+        self.bound.lock().unwrap().push(ports.asset_store);
+    }
+}
+
+#[tokio::test]
+async fn img_03_build_binds_the_namespaced_asset_store() {
+    use noctis_ports::memory::MemoryAssetStore;
+
+    let renderer = Arc::new(Binding::default());
+    let backing = Arc::new(MemoryAssetStore::new());
+    App::builder()
+        .app_id("a")
+        .asset_store(Arc::clone(&backing))
+        .renderer(Arc::clone(&renderer) as Arc<dyn Renderer>)
+        .build()
+        .unwrap();
+    let bound = renderer.bound.lock().unwrap().clone();
+    assert_eq!(bound.len(), 1, "bind runs once per build");
+    bound[0]
+        .put("img:v1:k", Bytes::from_static(b"png"), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        backing.get("a:asset:img:v1:k").await.unwrap(),
+        Some(Bytes::from_static(b"png"))
+    );
+    assert_eq!(
+        bound[0].get("img:v1:k").await.unwrap().as_deref(),
+        Some(&b"png"[..])
+    );
+}
+
 #[tokio::test]
 async fn a_rejected_register_is_template_rejected() {
     let renderer = Arc::new(Registering {

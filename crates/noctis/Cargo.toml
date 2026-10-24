@@ -53,7 +53,7 @@ png.workspace = true
 proptest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time", "net", "io-util"] }
 trybuild.workspace = true
 
 [lints]

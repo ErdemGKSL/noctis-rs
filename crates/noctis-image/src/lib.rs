@@ -54,6 +54,8 @@ mod plugin;
 #[cfg(feature = "render")]
 mod pool;
 #[cfg(feature = "render")]
+mod remote;
+#[cfg(feature = "render")]
 mod renderer;
 #[cfg(feature = "render")]
 mod template;
@@ -67,9 +69,13 @@ pub use check::{ClassCheck, ClassCheckMode};
 #[cfg(feature = "render")]
 pub use fonts::Font;
 #[cfg(feature = "render")]
-pub use node::{Classes, IntoNodes, Node, Style, Tag, div, img, span, text};
+pub use node::{Classes, ImageSrc, IntoNodes, Node, Style, Tag, div, img, span, text};
 #[cfg(feature = "render")]
 pub use plugin::{AppBuilderImageExt, ImageConfig, ImagePlugin};
+#[cfg(feature = "render")]
+pub use remote::{AssetField, DeclaredImages, TemplateAssets};
+#[cfg(feature = "render")]
+pub use remote::{RemoteConfig, RemoteImage, RemoteUrlError};
 #[cfg(feature = "render")]
 pub use template::{
     GifOutput, GifOutputFormat, TemplateView, ViewFn, decode_view, erased_view, require_gif_output,

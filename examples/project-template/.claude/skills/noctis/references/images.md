@@ -65,7 +65,7 @@ second_type }` (registering the same type twice counts too). The derive implemen
 `view` is a `noctis::image::unstable::ViewFn` that decodes the data and calls your
 `view` (`ViewFn::call(&data, frame)`; a decode error is `RenderError::Failed` with a
 `ValueError`; `ViewFn::is_animated()` says whether the Template declares
-`animation(..)`). A struct that lacks `impl TemplateView` or `Deserialize` does not
+`animation(..)`, and `ViewFn::declares_assets()` whether it has `#[asset]` fields). A struct that lacks `impl TemplateView` or `Deserialize` does not
 compile.
 
 `#[template(..)]` keys (any order, each exactly once, unknown keys are errors):
@@ -84,8 +84,9 @@ type mentions `HashMap` or `HashSet` anywhere (`Vec<HashMap<..>>`, `Option<HashS
 is a compile error; use `BTreeMap`, `BTreeSet` or `Vec`. The check matches only path
 segments named `HashMap`/`HashSet`: type aliases, third-party maps (`FxHashMap`,
 `AHashMap`, `DashMap`) and nested structs holding a `HashMap` are not detected, so use
-`BTreeMap`/`BTreeSet`/`Vec` throughout Template data. `#[asset]` remote-image fields
-are [planned, Story 10.8] and rejected until then.
+`BTreeMap`/`BTreeSet`/`Vec` throughout Template data. `#[asset]` and
+`#[asset(required)]` fields declare remote images (§7); `#[asset]` takes no other
+argument and appears once per field.
 
 ## 3. `view!` syntax
 
@@ -315,16 +316,141 @@ custom emoji (`<:name:id>`) will render as fetched images.
 
 ## 7. Remote images
 
-- Declare them as `#[asset] field: RemoteImage` (or `#[asset(required)]` to fail the
-  render instead of using the fallback).
-- Constructors: `RemoteImage::avatar(&user, 256)` (keyed by user id + avatar hash +
-  size, so a changed avatar invalidates naturally; animated avatars animate in
-  animated output), `RemoteImage::guild_icon(&guild, 128)`, `RemoteImage::emoji(id,
-  animated)`, `RemoteImage::url(url)` (host must be allow-listed), `RemoteImage::placeholder()`.
-- Fetched only by Noctis's `AssetFetcher`: host allow-list (Discord CDN by default;
-  extend with `ImageConfig::allow_host("i.imgur.com")`), byte cap, timeout, bounded
-  concurrency, cached through the `AssetStore` port. Failures use the fallback image
-  and are logged.
+Avatars, guild icons and other remote pictures are **declared** by the Template and
+fetched by Noctis before the render; takumi never fetches, and Noctis never fetches an
+image no field declares.
+
+```rust
+use noctis::image::{Frame, Node, RemoteImage, Template, TemplateView, view};
+use serde::{Deserialize, Serialize};
+
+#[derive(Template, Serialize, Deserialize)]
+#[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
+pub struct ProfileCard {
+    pub name: String,
+    #[asset]                       // a failure draws the fallback and logs a warning
+    pub avatar: RemoteImage,
+    #[asset(required)]             // a failure fails the render instead
+    pub server: RemoteImage,
+    #[asset]
+    pub badge: Option<RemoteImage>,  // `None` declares nothing
+    #[asset]
+    pub friends: Vec<RemoteImage>,   // each element (`friends[0]`, ..) is declared
+}
+
+impl TemplateView for ProfileCard {
+    fn view(&self, _frame: Frame) -> Node {
+        view! {
+            <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface">
+                <img src={&self.avatar} tw="w-40 h-40 rounded-full" />
+                <span tw="text-5xl text-white">{&self.name}</span>
+            </div>
+        }
+    }
+}
+
+// in the handler:
+let card = ProfileCard {
+    name: user.name.clone(),
+    avatar: RemoteImage::avatar(&user, 256),
+    server: RemoteImage::guild_icon(&guild, 128),
+    badge: None,
+    friends: vec![],
+};
+```
+
+- **Field types.** An `#[asset]` field is `RemoteImage`, `Option<RemoteImage>` or
+  `Vec<RemoteImage>` (tuple-struct fields work too); anything else is the compile
+  error ``[IMG-03] `#[asset]` fields are `RemoteImage`, `Option<RemoteImage>` or
+  `Vec<RemoteImage>` ``. `#[asset(optional)]`, `#[asset = ..]` and
+  `#[asset(required, required)]` are ``[IMG-03] `#[asset]` takes no argument or
+  `required` ``; two `#[asset]` on one field are an error too.
+- **Drawing.** `<img src={&self.avatar} />` (or `img(&self.avatar, classes)`;
+  `img`/`Node::image` take `impl Into<ImageSrc>`: a `StaticImage` or a `RemoteImage`, by
+  value or by reference). Drawing a remote image that no `#[asset]` field holds fails
+  with `RenderError::UndeclaredImage { id, image }`
+  (``[IMG-03] template `<id>` draws remote image `<image>`, which no `#[asset]` field
+  declares``).
+- **Constructors.**
+  - `RemoteImage::avatar(&user, size)`: `<cdn>/avatars/<id>/<hash>.webp?size=<size>`, or
+    the default avatar `<cdn>/embed/avatars/<i>.png` when the user has none (`(id >> 22) % 6`
+    for discriminator 0, else `discriminator % 5`).
+  - `RemoteImage::guild_icon(&guild, size)`: `<cdn>/icons/<id>/<hash>.webp?size=<size>`;
+    a guild without an icon gives `RemoteImage::placeholder()`.
+  - `RemoteImage::url(text) -> Result<RemoteImage, RemoteUrlError>`: at most 2048
+    printable ASCII bytes, `https://` (or `http://` for a loopback host), no user info
+    or fragment (`RemoteUrlError::{Empty, TooLong, InvalidCharacter, Scheme, UserInfo,
+    Fragment, NoHost, Malformed, InvalidHost}`). The scheme and host are lowercased;
+    the path and query are kept. Its origin must be allow-listed when it renders.
+  - `RemoteImage::placeholder()`: always draws the fallback, with no fetch and no log,
+    even in a required field.
+  - `size` is normalized to a Discord CDN size: the next power of two, clamped to
+    16..=4096 (`200` → `256`, `0` → `16`, `5000` → `4096`).
+- **Animated avatars and icons.** An `a_` hash requests `&animated=true` only when the
+  job is animated (an `animation(..)` Template or `ctx.render_with(.., animation)`); the
+  avatar then animates with the frames (animated WebP is drawn at each frame's time).
+  A still render requests the still image. GIF avatars are never requested.
+- **Allow-list and limits** (`RemoteConfig`, set with `ImageConfig::remote(..)`; checked
+  at `App::build`, an invalid value is a plugin violation ``[IMG-03] remote <name> <v>
+  is out of range: use <range>`` or ``[IMG-03] remote origin `<s>` is invalid: <reason>``):
+
+  ```rust
+  use std::time::Duration;
+  use noctis::image::{ImageConfig, RemoteConfig, StaticImage};
+
+  const NO_AVATAR: StaticImage = StaticImage::new("no-avatar", include_bytes!("../assets/no-avatar.png"));
+
+  let config = ImageConfig::new().remote(
+      RemoteConfig::new()
+          .allow_origin("https://i.imgur.com")      // scheme://host[:port], optional trailing `/`
+          .timeout(Duration::from_secs(3))           // 100 ms..=60 s, default 5 s
+          .max_bytes(4 * 1024 * 1024)                // 1024..=67108864, default 8 MiB
+          .concurrency(8)                            // 1..=256, default 8 (per App)
+          .max_per_job(16)                           // 1..=64, default 16
+          .max_pixels(4_194_304)                     // 1..=16777216, default 4 MP
+          .cache_ttl(Duration::from_secs(86_400))    // 1 s..=30 days, default 1 day
+          .fallback(NO_AVATAR),                      // default: a 1x1 #475569 pixel
+  );
+  ```
+
+  The default allow-list is `https://cdn.discordapp.com` and
+  `https://media.discordapp.net`. An origin is `https`, or `http` only for `127.0.0.1`,
+  `[::1]` and `localhost` (else "plain http is only for loopback hosts"); a lowercase
+  `[a-z0-9.-]` host or an IP literal; no user info, path, query, fragment or wildcard.
+  Scheme, host and effective port must match exactly (`https://cdn.discordapp.com:444`
+  and `https://cdn.discordapp.com.evil.com` are not allowed). Redirects are never
+  followed (a 3xx is a failure). `RemoteConfig::discord_cdn(origin)` changes the origin
+  avatar and icon URLs are built on (a media proxy; a loopback server in tests); it is
+  always allow-listed. Duplicates are ignored. The fallback is checked with the IMG-02
+  rules at build.
+- **Resolution.** Before the job enters the render pool, every declared image (deduplicated)
+  is fetched with a `GET` (`user-agent: noctis/<version>`, no cookies, no proxy) under one
+  per-App concurrency permit; the timeout covers the permit wait, the request and the
+  body; a `content-length` over `max_bytes` fails before the body; the body must be PNG,
+  JPEG or WebP (GIF, SVG, BMP, ICO and HTML fail) with `width * height <= max_pixels`;
+  it is decoded on tokio's blocking pool. More than `max_per_job` distinct images is
+  `RenderError::OverCap { cap: RenderCap::RemoteImages, .. }` before any fetch.
+  Templates with `#[asset]` fields are admitted to the queue **after** their fetches,
+  so their `QueueFull` can arrive after fetch time; Templates without them are admitted
+  at the call. Dropping the `ctx.render` future aborts pending fetches.
+- **Failures.** A blocked or failed image (not allow-listed, timeout, `HTTP 404`,
+  `redirect not followed`, over the byte or pixel cap, unsupported format, not
+  decodable, I/O error) logs one warning (target `noctis::image`, fields `template`,
+  `field`, `image`, `reason`; the image is shown without its URL query) and draws the
+  fallback. In an `#[asset(required)]` field it fails the render with
+  `RenderError::RemoteImage { id, image, reason }`
+  (``[IMG-03] template `<id>` requires remote image `<image>`, which could not be used:
+  HTTP 404``), reported to the Render Error Sink like any render failure.
+- **Caching.** Fetched bytes go to the App's namespaced `AssetStore` (`App::builder()
+  .asset_store(..)`; the bounded in-memory default otherwise) with TTL `cache_ttl`,
+  under `img:v1:avatar:<user>:<hash>:<size>:<a|s>`, `img:v1:icon:<guild>:<hash>:<size>:<a|s>`,
+  `img:v1:default-avatar:<i>` or `img:v1:url:<blake3 of the URL>`. A changed avatar is a
+  new hash, so a new key. Cached bytes are checked again on read (bad bytes are
+  refetched); a store error logs a warning and never fails the render; failures are
+  never cached.
+- **Testing.** In unit tests, `RemoteImage::placeholder()` keeps a Template renderable
+  without network; for end-to-end tests point `RemoteConfig::discord_cdn("http://127.0.0.1:<port>")`
+  at a local server.
 
 ## 8. Rendering
 
@@ -361,9 +487,10 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
     refuses both at compile time);
   - `OverCap { id, cap, limit, actual }`: the job is over one of the App's per-job
     caps (below) or its animation over the format's fps cap; `cap` is a `RenderCap`
-    (`JobPixels`, `FramePixels`, `Frames`, `Duration`, `Fps`; `cap.as_str()` is
-    `job_pixels`/`frame_pixels`/`frames`/`duration_ms`/`fps`), `limit` and `actual`
-    are pixels, frames, whole milliseconds or frames per second. It never entered the
+    (`JobPixels`, `FramePixels`, `Frames`, `Duration`, `Fps`, `RemoteImages`;
+    `cap.as_str()` is `job_pixels`/`frame_pixels`/`frames`/`duration_ms`/`fps`/
+    `remote_images`), `limit` and `actual` are pixels, frames, whole milliseconds,
+    frames per second or distinct remote images (§7). It never entered the
     queue; make the Template smaller or shorter, lower the fps, or raise the cap (the
     fps cap is fixed: `AnimatedFormat::max_fps()`, GIF 50, WebP/APNG 90);
   - `SizeMismatch { id, frame, expected, declared }`: frame `frame` of an animation
@@ -374,6 +501,10 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
     quality, or keep `still_fallback` on;
   - `UnknownImage { id, image }`: the view drew a `StaticImage` the App did not
     register with `ImageConfig::image` (§6);
+  - `RemoteImage { id, image, reason }`: an `#[asset(required)]` remote image could
+    not be used (§7);
+  - `UndeclaredImage { id, image }`: the view drew a `RemoteImage` no `#[asset]` field
+    declares (§7);
   - `NoFont`: only from `App::build` (a Template with no font registered, §6);
   - `Failed(source)`: decode, class check (Deny), takumi or encode failure;
   - `Panicked { message }`: the view panicked; the pool survives.

@@ -44,7 +44,8 @@ pub(crate) struct View {
 struct Element {
     /// The tag's variant name in `Tag` (`Div`), or [`IMG`].
     tag: &'static str,
-    /// `<img>`'s `src={..}`, a `StaticImage`.
+    /// `<img>`'s `src={..}`: a `StaticImage` or a `RemoteImage` (by value or
+    /// by reference; `img` takes `impl Into<ImageSrc>`).
     src: Option<Box<Expr>>,
     tw: Option<Tw>,
     style: Option<Expr>,
@@ -207,7 +208,7 @@ fn parse_element(input: ParseStream<'_>) -> syn::Result<Element> {
         if src.is_none() {
             return Err(syn::Error::new(
                 name.span(),
-                "`<img>` needs `src={..}` (a `StaticImage`)",
+                "`<img>` needs `src={..}` (a `StaticImage` or `RemoteImage`)",
             ));
         }
     }
@@ -528,6 +529,7 @@ mod tests {
             <div>
                 <img src={LOGO} />
                 <img tw="w-4 h-4" src={assets::LOGO} style={Style::new().width_px(4)} />
+                <img src={&self.avatar} />
             </div>
         })
         .unwrap();
@@ -554,6 +556,15 @@ mod tests {
         })
         .to_string();
         assert!(bare.contains("Default > :: default ()"), "{bare}");
+        let remote = lower_element(match &view.root.children[2] {
+            Child::Element(e) => e,
+            _ => unreachable!(),
+        })
+        .to_string();
+        assert!(
+            remote.starts_with(":: noctis :: __private :: image :: img (& self . avatar ,"),
+            "{remote}"
+        );
     }
 
     #[test]
@@ -564,7 +575,7 @@ mod tests {
         );
         assert_eq!(
             err(quote!(<img tw="w-4" />)),
-            "`<img>` needs `src={..}` (a `StaticImage`)"
+            "`<img>` needs `src={..}` (a `StaticImage` or `RemoteImage`)"
         );
         assert_eq!(
             err(quote!(<img src="logo" />)),

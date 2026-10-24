@@ -19,7 +19,7 @@ use noctis_gateway::{
 use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_ports::{
     AssetStore, CacheStore, DiscordCache, GuildAccessList, IdentifyQueue, LocaleSource,
-    ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, SessionStore,
+    ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, RendererPorts, SessionStore,
 };
 use noctis_rules::Limits;
 use tokio::sync::mpsc;
@@ -2474,6 +2474,10 @@ impl AppBuilder {
         let edge = Edge::start((listener, edge_addr), upstream, config.http_config, &app);
         let http = http_client(&config, &edge, http_proxy.is_some());
         let ports = Ports::resolve(config.ports, &app_id);
+        if let Some(renderer) = &config.renderer {
+            let asset_store: Arc<dyn AssetStore> = ports.asset_store.clone();
+            renderer.bind(RendererPorts::new(asset_store));
+        }
         let kv: Arc<dyn CacheStore> = ports.cache_store.clone();
         let refs: Arc<dyn RefStore> = ports.ref_store.clone();
         Ok(App {

@@ -271,7 +271,9 @@ impl TemplateView for ProfileCard {
 // registered with `.image(ImageConfig::new().image(LOGO))`, drawn with `<img src={LOGO} tw="w-16 h-16" />`.
 // Text needs a font: the `default-font` feature (bundled Inter, last resort) and/or
 // `ImageConfig::new().font(Font::from_static(..))` in priority order ([IMG-01]).
-// `#[asset] avatar: RemoteImage` is [planned, Story 10.8].
+// remote images: `#[asset] avatar: RemoteImage` (or `#[asset(required)]`), built with
+// `RemoteImage::avatar(&user, 256)`, drawn with `<img src={&self.avatar} />`; fetched from
+// the Discord CDN allow-list before the render ([IMG-03], `references/images.md` §7).
 
 // animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
 // AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);

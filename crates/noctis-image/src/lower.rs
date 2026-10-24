@@ -1,8 +1,8 @@
 //! Lowering: a Noctis [`Node`] tree becomes a takumi node tree.
 //!
 //! An element becomes a container, a text node a takumi text node, an image
-//! node a takumi image node over the App's already decoded source (takumi
-//! never fetches). Tags set
+//! node a takumi image node over an already decoded source: the App's
+//! static image, or the job's resolved remote image (takumi never fetches). Tags set
 //! no tag name and no preset (tags carry no default styles). Non-blank
 //! classes become takumi Tailwind values; a non-default [`Style`] becomes
 //! inline style declarations, which takumi's cascade applies after the
@@ -18,35 +18,50 @@ use takumi_core::style::TailwindValues;
 use takumi::prelude::{ImageData, ImageSourceInput};
 
 use crate::assets::StaticImages;
-use crate::node::{Dimension, Kind};
+use crate::node::{Dimension, ImageSrc, Kind};
+use crate::remote::Resolved;
 use crate::{Classes, Node, Style};
 
 /// The takumi tree of `node`, a view of the Template `template` drawing the
-/// App's static `images`.
+/// App's static `images` and the job's resolved `remote` images.
 ///
 /// # Errors
 ///
 /// [`RenderError::Failed`] when takumi rejects the classes or style of a
-/// node; [`RenderError::UnknownImage`] for an image node whose image is not
-/// in `images` (or is, with other bytes).
+/// node; [`RenderError::UnknownImage`] for a static image that is not in
+/// `images` (or is, with other bytes); [`RenderError::UndeclaredImage`] for
+/// a remote image (other than the placeholder) that is not in `remote`.
 pub(crate) fn lower(
     node: &Node,
     images: &StaticImages,
+    remote: &Resolved,
     template: &str,
 ) -> Result<takumi::prelude::Node, RenderError> {
     let lowered = match node.kind() {
         Kind::Element { children, .. } => takumi::prelude::Node::container(
             children
                 .iter()
-                .map(|child| lower(child, images, template))
+                .map(|child| lower(child, images, remote, template))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         Kind::Text(text) => takumi::prelude::Node::text(text.as_ref()),
         Kind::Image(src) => {
-            let source = images.get(src).ok_or_else(|| RenderError::UnknownImage {
-                id: template.to_owned(),
-                image: src.id().to_owned(),
-            })?;
+            let source = match src {
+                ImageSrc::Static(image) => {
+                    images.get(image).ok_or_else(|| RenderError::UnknownImage {
+                        id: template.to_owned(),
+                        image: image.id().to_owned(),
+                    })?
+                }
+                ImageSrc::Remote(image) => {
+                    remote
+                        .get(image)
+                        .ok_or_else(|| RenderError::UndeclaredImage {
+                            id: template.to_owned(),
+                            image: image.to_string(),
+                        })?
+                }
+            };
             takumi::prelude::Node::image(ImageData {
                 src: ImageSourceInput::Loaded(source.clone()),
                 width: None,
