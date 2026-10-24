@@ -67,6 +67,7 @@ runner(){
       while IFS= read -r -d '' a; do args+=("${a//$root/$W}"); done < "$J/argv"
       ( cd "$W/$rel" || exit 125
         while IFS= read -r -d '' a; do export "$a"; done < "$J/env"
+        export CARGO_INCREMENTAL=0  # never incremental, whatever the caller set: the disk is small (maintainer, 2026-10-24)
         exec "${pin[@]}" bash -c 'exec -a cargo "$0" "$@"' "$CH/bin/rustup" "${args[@]}" ) >> "$J/log" 2>&1 < /dev/null
       rc=$?
       python3 "$Q/bin/tree-sync.py" back "$W" "$root" "$J/snap" >> "$J/log" 2>&1 || rc=125
