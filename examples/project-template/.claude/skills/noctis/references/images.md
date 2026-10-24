@@ -17,9 +17,10 @@ noctis = { version = "0.1", features = ["image", "default-font"] }
 encoder (libwebp) is built from source. With it, `noctis::prelude` brings in
 `AppBuilderImageExt`: calling `.image(ImageConfig)` or `.theme(Theme)` on your builder
 installs the `ImagePlugin`, which puts the Renderer on the App (`app.renderer()`).
-Without either call, `ctx.render` returns `RenderError::NoRenderer`. Fonts are not
-registered yet, so text draws no glyphs [planned, Story 10.7]; then a missing font
-without `default-font` fails startup [planned, Story 10.7].
+Without either call, `ctx.render` returns `RenderError::NoRenderer`. Text needs a font
+(§6): `default-font` (implies `image`) bundles Inter 4.1 (OFL-1.1) as the last-resort
+family `"Inter"`; without it, register one with `ImageConfig::font`, or an App that
+registers a Template fails `App::build` with `[IMG-01] no font is registered`.
 
 ## 2. A Template
 
@@ -102,8 +103,11 @@ view! {
 ```
 
 - Exactly one root element; `view!` is an expression of type `Node`.
-- Tags: `div`, `span`, `p`, `h1`, `h2`, `h3` (`Tag::{Div, Span, P, H1, H2, H3}`).
-  `<img>` and `<svg>` are [planned, Story 10.7] and rejected with that message.
+- Tags: `div`, `span`, `p`, `h1`, `h2`, `h3` (`Tag::{Div, Span, P, H1, H2, H3}`), and
+  `<img src={LOGO} tw=".." style={..} />` for a registered `StaticImage` (§6; it
+  expands to `img(LOGO, classes).style(..)`). `<img>` has no children (close it with
+  `/>`) and needs `src={..}` (an expression in braces, never `src="logo"`); `src` is
+  only for `<img>`. `<svg>` is not supported: use a PNG, JPEG or WebP `StaticImage`.
 - Attributes, each at most once: `tw="literal"` (checked like `tw!`, §4) or
   `tw={expr}` of type `Classes`, and `style={expr}` of type `Style`. `class=` is an
   error that points to `tw`; other attributes are errors.
@@ -236,24 +240,78 @@ one variant per namespace above (`Color`, `Spacing`, `Container`, `Text`, `Font`
 `FontWeight`, `Tracking`, `Leading`, `Radius`, `Aspect`, `Breakpoint`) and
 `css_prefix()` (`"--color-"`).
 
-## 6. Fonts and emoji
+## 6. Fonts, static images and emoji
 
 ```rust
+use noctis::image::{Font, ImageConfig, StaticImage};
+
+static INTER: &[u8] = include_bytes!("../assets/fonts/Inter.ttf");
+static KANA: &[u8] = include_bytes!("../assets/fonts/NotoSansJP-kana.woff2");
+const LOGO: StaticImage = StaticImage::new("logo", include_bytes!("../assets/logo.png"));
+
 builder.image(
     ImageConfig::new()
-        .font(FontSource::bytes(include_bytes!("../assets/fonts/Inter.ttf")))
-        .font(FontSource::file("assets/fonts/NotoSansJP.ttf").unicode_range("U+3000-9FFF"))
-        .fallback_order(["Inter", "Noto Sans JP"])
-        .emoji(EmojiFont::Twemoji)          // needs "image-emoji"
-        .image("logo", include_bytes!("../assets/logo.png")), // static images: <img src="logo">
-)
+        .font(Font::from_static(INTER))                       // first: the default text font
+        .font(
+            Font::from_static(KANA)
+                .family("Kana")                                // instead of the embedded name
+                .unicode_range('\u{3041}'..='\u{3096}')        // hiragana only
+                .unicode_range('\u{30A1}'..='\u{30FA}'),       // and katakana
+        )
+        .image(LOGO),                                         // <img src={LOGO} />
+);
 ```
 
-- TTF/OTF/WOFF/WOFF2; fallbacks by priority and Unicode range; no Template changes.
-- Without an emoji font, emoji render as boxes and startup warns. Discord custom emoji
-  (`<:name:id>`) in text render as images fetched like remote images.
-- Fonts, emoji and the render pool are **process-scoped**: the first App's config wins;
-  a conflicting second App config is a `BuildError`.
+**Fonts** (`[IMG-01]`):
+
+- `Font::from_static(&'static [u8])` (no copy; `include_bytes!`) or
+  `Font::from_bytes(impl Into<Arc<[u8]>>)` (a file you read yourself at startup;
+  Noctis never reads font paths). Formats: TTF, OTF, TTC, WOFF2 (not WOFF 1).
+- **Order is priority.** Text with no `font-*` family draws with the first font; any
+  glyph a font lacks, or its `unicode_range` excludes, falls back to the next family
+  (in order of first appearance), then to the bundled `"Inter"` (`default-font`, a last
+  resort that never outranks your fonts). Mixed-script text needs no Template change.
+  A Template's own family (`font-display` → the theme's `--font-display: "Inter",
+  sans-serif`) is tried first, and its missing glyphs walk the same chain.
+- `.family(name)` registers a font under another family name (1..=128 bytes, no
+  control characters; Unicode names are fine). `.unicode_range(a..=b)` adds a
+  `char` range (repeatable; none = every codepoint). Author fonts get no generic
+  family (`sans-serif`).
+- Startup errors (plugin violations, the App does not build): `[IMG-01] font #<i>:
+  unicode range U+0062..=U+0061 is inverted`, `[IMG-01] font #<i>: family name ..`,
+  `[IMG-01] font #<i> (<len> bytes) could not be loaded: <reason>` (`#<i>` counts the
+  `.font` calls from 0). An App that registers a Template with no font at all and
+  without `default-font` fails with `BuildViolation::TemplateRejected` holding
+  `RenderError::NoFont` (`[IMG-01] no font is registered: add one with
+  `ImageConfig::font(..)` or enable the `default-font` feature`).
+- Fonts are **process-scoped**: one font registry per `Runtime`, frozen by the first
+  App. Every App on that Runtime must register equal fonts in the same order (an equal
+  `Font` has the same bytes, family and ranges); another list, a reordered one or none
+  is `BuildViolation::ResourceConflict` naming `FontRegistry`. Each
+  `Runtime::for_test()` has its own registry.
+- `Font`'s `Debug` prints the family, ranges, byte length and a digest prefix, never
+  the bytes.
+
+**Static images** (`[IMG-02]`):
+
+- `StaticImage::new(id, &'static [u8])` is a `const fn`; the id matches
+  `[a-z0-9]([a-z0-9._-]*[a-z0-9])?`, at most 64 bytes. In a `const` item a bad id is a
+  compile error (`[IMG-02] static image id must match ..`); elsewhere it panics.
+- Register each with `ImageConfig::image(LOGO)` (per App; repeating the same handle is
+  a no-op). They are decoded once when the App builds: PNG, JPEG or WebP only (sniffed
+  by magic bytes; GIF, SVG, BMP, ICO are rejected), at most 16 MP (16777216 pixels).
+  Plugin violations: `[IMG-02] static image `<id>`: unsupported format: use PNG, JPEG
+  or WebP`, `.. could not be decoded: ..`, `.. is <w>x<h>: at most 16777216 pixels`,
+  `[IMG-02] static image id `<id>` is registered twice with different bytes`.
+- Draw it with `<img src={LOGO} />` or `noctis::image::img(LOGO, classes)`
+  (`Node::image(LOGO)`). Unsized it takes the image's own size; `tw`/`style` size it
+  like any node (`tw="w-40 h-40 rounded-full"`). Put it in an `items-start`/`items-center`
+  flex row or give it a size, or a flex parent stretches it.
+- An `<img>` whose image the App did not register (or registered with other bytes)
+  fails the render with `RenderError::UnknownImage { id, image }`.
+
+**Emoji** [planned, Story 10.9]: without an emoji font emoji render as boxes; Discord
+custom emoji (`<:name:id>`) will render as fetched images.
 
 ## 7. Remote images
 
@@ -314,6 +372,9 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
   - `OverBudget { budget, smallest }`: even the smallest encoding of the size budget's
     ladder (`smallest` bytes) is over `budget`; shrink the Template, lower its size or
     quality, or keep `still_fallback` on;
+  - `UnknownImage { id, image }`: the view drew a `StaticImage` the App did not
+    register with `ImageConfig::image` (§6);
+  - `NoFont`: only from `App::build` (a Template with no font registered, §6);
   - `Failed(source)`: decode, class check (Deny), takumi or encode failure;
   - `Panicked { message }`: the view panicked; the pool survives.
 - The pool: `builder.image(ImageConfig::new().threads(4).queue_capacity(128))`.

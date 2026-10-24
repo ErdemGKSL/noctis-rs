@@ -1,0 +1,19 @@
+error[E0080]: evaluation panicked: [IMG-02] static image id must match [a-z0-9]([a-z0-9._-]*[a-z0-9])? and be at most 64 bytes
+ --> tests/ui-image/img/IMG-02_invalid_image_id.rs:6:24
+  |
+6 | const L: StaticImage = StaticImage::new("Logo", b"");
+  |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `L` failed inside this call
+  |
+note: inside `StaticImage::new`
+ --> $RUST/core/src/panic.rs
+  |
+  = note: the failure occurred here
+  |
+ ::: $WORKSPACE/crates/noctis-image/src/assets.rs
+  |
+  | /         assert!(
+  | |             valid_image_id(id),
+  | |             "[IMG-02] static image id must match [a-z0-9]([a-z0-9._-]*[a-z0-9])? and be at most \
+  | |              64 bytes"
+  | |         );
+  | |_________- in this macro invocation

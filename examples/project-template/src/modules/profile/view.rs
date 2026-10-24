@@ -91,7 +91,7 @@ impl TemplateView for ProfileCard {
         // Gradient stops take palette colours only, never theme tokens.
         view! {
             <div tw="flex items-center gap-8 w-full h-full p-10 bg-surface rounded-3xl">
-                // [planned, Story 10.7] `<img>` (static and remote images).
+                // `<img>` ships for static images; `RemoteImage` is [planned, Story 10.8].
                 <img src={&self.avatar} tw="w-40 h-40 rounded-full border-4 border-brand" />
                 <div tw="flex flex-col gap-3 flex-1">
                     <span tw="text-5xl font-bold text-white">{&self.name}</span>

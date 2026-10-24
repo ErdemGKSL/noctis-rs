@@ -871,10 +871,10 @@ let app = builder.build()?;
   `runtime`, `current_runtime`, `report`, `state`); process resources come from
   `app.current_runtime().resource_or_init::<T>(config)` (§10). A panicking `install`
   panics `build()`.
-- `ImagePlugin` (`image` feature): installed by `.image(..)` or `.theme(..)`; gets the
-  process-scoped render pool from the Runtime (`RenderPool`, frozen per `ImageConfig`),
-  checks the config ranges and sets the takumi Renderer; fonts join in Story 10.7
-  [planned].
+- `ImagePlugin` (`image` feature): installed by `.image(..)` or `.theme(..)`; checks
+  the config ranges and font list, gets the process-scoped render pool (`RenderPool`)
+  and font registry (`FontRegistry`, frozen per font list) from the Runtime, decodes
+  the App's static images and sets the takumi Renderer (`images.md` §6).
 - `PrefixPlugin` (`prefix` feature, P2) [planned]: `.plugin(PrefixPlugin::new("!"))`
   mounts a `MESSAGE_CREATE` handler that runs your slash Commands from `!command`
   messages through `ctx.dispatcher()`; it requires the message-content intent.

@@ -1,0 +1,40 @@
+noctis-image
+============
+
+The noctis-image code is licensed under MIT OR Apache-2.0. The package also
+ships the font files below, which are licensed under the SIL Open Font
+License, Version 1.1 (OFL-1.1). Each is used as published, unmodified. The
+package's license expression is therefore `(MIT OR Apache-2.0) AND OFL-1.1`.
+
+Bundled font (the `default-font` feature)
+-----------------------------------------
+
+fonts/InterVariable.woff2
+  Font:      Inter 4.1 (variable)
+  Source:    https://registry.npmjs.org/inter-ui/-/inter-ui-4.1.1.tgz
+             (package/variable/InterVariable.woff2)
+  Version:   inter-ui 4.1.1
+  License:   OFL-1.1 (fonts/LICENSE-Inter.txt)
+  Copyright: Copyright (c) 2016-2018 The Inter Project Authors (me@rsms.me)
+  sha256:    693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3
+
+Test fixtures (not linked into any build)
+-----------------------------------------
+
+tests/fixtures/fonts/noto-sans-jp-119-400-normal.woff2
+  Font:      Noto Sans JP, weight 400, subset 119 (kana)
+  Source:    https://registry.npmjs.org/@fontsource/noto-sans-jp/-/noto-sans-jp-5.3.1.tgz
+             (package/files/noto-sans-jp-119-400-normal.woff2)
+  Version:   @fontsource/noto-sans-jp 5.3.1
+  License:   OFL-1.1 (tests/fixtures/fonts/LICENSE-NotoSansJP.txt)
+  Copyright: Google Inc.
+  sha256:    2258b057683e7040e5149a9469077fd8ed47e73ca656f84fc3c4f9bc86976a1e
+
+tests/fixtures/fonts/noto-sans-jp-119-700-normal.woff2
+  Font:      Noto Sans JP, weight 700, subset 119 (kana)
+  Source:    https://registry.npmjs.org/@fontsource/noto-sans-jp/-/noto-sans-jp-5.3.1.tgz
+             (package/files/noto-sans-jp-119-700-normal.woff2)
+  Version:   @fontsource/noto-sans-jp 5.3.1
+  License:   OFL-1.1 (tests/fixtures/fonts/LICENSE-NotoSansJP.txt)
+  Copyright: Google Inc.
+  sha256:    250d4554209267dafcdf9f045b70808de6157837663f7baa8090a2f425e0928a

@@ -267,7 +267,11 @@ impl TemplateView for ProfileCard {
 }
 // register: Module::new("profile").template::<ProfileCard>()  (same id twice: BuildViolation::DuplicateTemplate)
 // classes are checked at `cargo check` ([TW-01]) against noctis-theme.css ([TW-02]);
-// `<img>` and `#[asset] avatar: RemoteImage` are [planned, Stories 10.7-10.8].
+// static images: `const LOGO: StaticImage = StaticImage::new("logo", include_bytes!("logo.png"));`
+// registered with `.image(ImageConfig::new().image(LOGO))`, drawn with `<img src={LOGO} tw="w-16 h-16" />`.
+// Text needs a font: the `default-font` feature (bundled Inter, last resort) and/or
+// `ImageConfig::new().font(Font::from_static(..))` in priority order ([IMG-01]).
+// `#[asset] avatar: RemoteImage` is [planned, Story 10.8].
 
 // animated: add `animation(duration_ms = 2000, fps = 20)` (format defaults to
 // AnimatedFormat::DEFAULT = Webp { quality: 80 }; Gif/Apng need the `image-gif` feature);

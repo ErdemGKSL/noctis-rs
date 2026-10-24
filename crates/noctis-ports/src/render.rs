@@ -476,6 +476,24 @@ pub enum RenderError {
         /// The panic's `&str`/`String` message, or `"<non-string panic>"`.
         message: String,
     },
+    /// Templates are registered but no font is (IMG-01): their text would
+    /// draw nothing. Returned by `Renderer::register`, so `App::build` fails.
+    #[error(
+        "[IMG-01] no font is registered: add one with `ImageConfig::font(..)` or enable the \
+         `default-font` feature"
+    )]
+    NoFont,
+    /// A Template drew a static image the App did not register (IMG-02).
+    #[error(
+        "template `{id}` uses static image `{image}`, which is not registered: add it with \
+         `ImageConfig::image(..)`"
+    )]
+    UnknownImage {
+        /// The Template id.
+        id: String,
+        /// The static image id.
+        image: String,
+    },
 }
 
 impl RenderError {
@@ -770,6 +788,29 @@ mod tests {
         assert!(check(90, AnimatedFormat::Apng).is_ok());
         assert_eq!(over(91, AnimatedFormat::Apng), (90, 91));
         assert_eq!(over(u16::MAX, webp), (90, 65535));
+    }
+
+    #[test]
+    fn img_01_no_font_message() {
+        assert_eq!(
+            RenderError::NoFont.to_string(),
+            "[IMG-01] no font is registered: add one with `ImageConfig::font(..)` or enable the \
+             `default-font` feature"
+        );
+    }
+
+    #[test]
+    fn img_02_unknown_image_message() {
+        let err = RenderError::UnknownImage {
+            id: "card".into(),
+            image: "logo".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "template `card` uses static image `logo`, which is not registered: add it with \
+             `ImageConfig::image(..)`"
+        );
+        assert!(err.source().is_none());
     }
 
     #[test]

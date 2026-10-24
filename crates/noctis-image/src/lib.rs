@@ -18,6 +18,15 @@
 //!   - the per-job caps ([`RenderCaps`]), checked before admission
 //!     (`RenderError::OverCap`), and the pool's weighted, still-first
 //!     admission, which skips jobs whose requester is gone;
+//!   - fonts ([`Font`], IMG-01): registered in priority order with
+//!     `ImageConfig::font` into a process-scoped font registry, with
+//!     family overrides and Unicode ranges; the fallback chain is the
+//!     families in order, then the bundled last-resort `"Inter"` (feature
+//!     `default-font`, OFL-1.1, see `NOTICE`). Templates without any font
+//!     fail `App::build` with `RenderError::NoFont`;
+//!   - static images ([`StaticImage`], IMG-02): PNG, JPEG or WebP
+//!     `&'static` bytes registered per App with `ImageConfig::image`,
+//!     decoded once, drawn with [`img`] (`<img src={..} />`);
 //!   - [`ImageConfig`], [`ImagePlugin`] and [`AppBuilderImageExt`]
 //!     (`.image(..)`, `.theme(..)`), which install that Renderer.
 //!
@@ -27,11 +36,15 @@
 pub mod tw;
 
 #[cfg(feature = "render")]
+mod assets;
+#[cfg(feature = "render")]
 mod budget;
 #[cfg(feature = "render")]
 mod caps;
 #[cfg(feature = "render")]
 mod check;
+#[cfg(feature = "render")]
+mod fonts;
 #[cfg(feature = "render")]
 mod lower;
 #[cfg(feature = "render")]
@@ -46,11 +59,15 @@ mod renderer;
 mod template;
 
 #[cfg(feature = "render")]
+pub use assets::StaticImage;
+#[cfg(feature = "render")]
 pub use caps::RenderCaps;
 #[cfg(feature = "render")]
 pub use check::{ClassCheck, ClassCheckMode};
 #[cfg(feature = "render")]
-pub use node::{Classes, IntoNodes, Node, Style, Tag, div, span, text};
+pub use fonts::Font;
+#[cfg(feature = "render")]
+pub use node::{Classes, IntoNodes, Node, Style, Tag, div, img, span, text};
 #[cfg(feature = "render")]
 pub use plugin::{AppBuilderImageExt, ImageConfig, ImagePlugin};
 #[cfg(feature = "render")]

@@ -568,7 +568,10 @@
 //!   compile error naming the feature; the default animated format,
 //!   animated WebP, needs only `image`.
 //! - `image-emoji`: Twemoji colour emoji in image Templates.
-//! - `default-font`: a bundled default font for image Templates.
+//! - `default-font` (implies `image`): bundles Inter 4.1 (OFL-1.1) as the
+//!   last-resort font family `"Inter"` of image Templates, after every font
+//!   registered with `ImageConfig::font`. Without it, an App that registers
+//!   a Template must register a font, or `App::build` fails (`[IMG-01]`).
 //! - `i18n`: typed locale files: the `i18n!` macro and the `i18n` module
 //!   (`Catalog`, `format`). Register a catalog App-wide with
 //!   `AppBuilder::locales` or ship it with a Module through
@@ -2006,6 +2009,22 @@ pub mod image {
     //!   another pixel size (`Style::width_px`, `w-[Npx]`, …) fails with
     //!   `RenderError::SizeMismatch`. `ctx.render_report` returns a
     //!   [`RenderReport`] with the encoded `format` and `settings_used`.
+    //! - Fonts (FR-35, `[IMG-01]`): [`Font`] (`Font::from_static`,
+    //!   `Font::from_bytes`; TTF, OTF, TTC or WOFF2), registered with
+    //!   `ImageConfig::font` in priority order. Text with no `font-*` family
+    //!   draws with the first font; a glyph a font lacks (or its
+    //!   `Font::unicode_range` excludes) falls back to the next family, then
+    //!   to the bundled `"Inter"` (feature `default-font`), so mixed scripts
+    //!   need no Template change. `Font::family` renames a font. The fonts
+    //!   form the Runtime's font registry: every App on one Runtime must
+    //!   register the same list (else `BuildViolation::ResourceConflict`).
+    //!   A Template with no font at all fails `App::build` with
+    //!   `RenderError::NoFont`.
+    //! - Static images (`[IMG-02]`): a [`StaticImage`] (`const`, id
+    //!   `[a-z0-9]([a-z0-9._-]*[a-z0-9])?`, `&'static` PNG, JPEG or WebP
+    //!   bytes, at most 16 MP) registered with `ImageConfig::image` and
+    //!   drawn with `<img src={LOGO} tw=".." />` ([`img`]). An image the App
+    //!   did not register fails the render with `RenderError::UnknownImage`.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!
     //! ```
@@ -2060,7 +2079,10 @@ pub mod image {
         UnknownClass,
     };
     pub use noctis_image::{AppBuilderImageExt, ImageConfig, ImagePlugin, RenderCaps};
-    pub use noctis_image::{Classes, IntoNodes, Node, Style, Tag, TemplateView, div, span, text};
+    pub use noctis_image::{
+        Classes, IntoNodes, Node, Style, Tag, TemplateView, div, img, span, text,
+    };
+    pub use noctis_image::{Font, StaticImage};
     pub use noctis_ports::{
         AnimatedFormat, AnimationSpec, EncodeSettings, Format, Frame, OutputFormat, RenderCap,
         RenderError, RenderJob, RenderOutput, Size, Template, TemplateDescriptor,

@@ -5,6 +5,7 @@
 //! ```text
 //! view    := element                      (exactly one root)
 //! element := '<' tag attr* '/' '>' | '<' tag attr* '>' child* '<' '/' tag '>'
+//!          | '<' 'img' 'src' '=' '{' expr '}' attr* '/' '>'   (attributes in any order)
 //! tag     := div | span | p | h1 | h2 | h3
 //! attr    := 'tw' '=' (lit | '{' expr '}') | 'style' '=' '{' expr '}'
 //! child   := element | lit | '{' expr '}'
@@ -32,14 +33,19 @@ const TAGS: &[(&str, &str)] = &[
     ("h3", "H3"),
 ];
 
+/// The pseudo variant `tag_of` returns for `<img>`, which is not a `Tag`.
+const IMG: &str = "img";
+
 /// The parsed body: one root element.
 pub(crate) struct View {
     root: Element,
 }
 
 struct Element {
-    /// The tag's variant name in `Tag` (`Div`).
+    /// The tag's variant name in `Tag` (`Div`), or [`IMG`].
     tag: &'static str,
+    /// `<img>`'s `src={..}`, a `StaticImage`.
+    src: Option<Box<Expr>>,
     tw: Option<Tw>,
     style: Option<Expr>,
     children: Vec<Child>,
@@ -95,12 +101,90 @@ impl Parse for View {
     }
 }
 
+/// The attributes of one element, each at most once.
+#[derive(Default)]
+struct Attrs {
+    src: Option<Box<Expr>>,
+    tw: Option<Tw>,
+    style: Option<Expr>,
+}
+
+/// One `attr = value` of `<name>` into `attrs`.
+fn parse_attr(
+    input: ParseStream<'_>,
+    attr: &Ident,
+    is_img: bool,
+    attrs: &mut Attrs,
+) -> syn::Result<()> {
+    match attr.to_string().as_str() {
+        "src" => {
+            if !is_img {
+                return Err(syn::Error::new(attr.span(), "`src` is only for `<img>`"));
+            }
+            if attrs.src.is_some() {
+                return Err(duplicate(attr));
+            }
+            input.parse::<Token![=]>()?;
+            if !input.peek(token::Brace) {
+                return Err(input.error("`src` takes an expression in braces: `src={LOGO}`"));
+            }
+            attrs.src = Some(Box::new(braced_expr(input)?));
+        }
+        "tw" => {
+            if attrs.tw.is_some() {
+                return Err(duplicate(attr));
+            }
+            input.parse::<Token![=]>()?;
+            attrs.tw = Some(if input.peek(LitStr) {
+                Tw::Lit(input.parse()?)
+            } else if input.peek(token::Brace) {
+                Tw::Expr(braced_expr(input)?)
+            } else {
+                return Err(input.error(
+                    "`tw` takes a string literal (`tw=\"flex p-4\"`) or `{expr}` of type `Classes`",
+                ));
+            });
+        }
+        "style" => {
+            if attrs.style.is_some() {
+                return Err(duplicate(attr));
+            }
+            input.parse::<Token![=]>()?;
+            if !input.peek(token::Brace) {
+                return Err(input.error(
+                    "`style` takes `{expr}` of type `Style`, such as `style={Style::new().width_pct(50.0)}`",
+                ));
+            }
+            attrs.style = Some(braced_expr(input)?);
+        }
+        "class" => {
+            return Err(syn::Error::new(
+                attr.span(),
+                "unknown attribute `class`: use `tw` for classes (`tw=\"flex p-4\"`)",
+            ));
+        }
+        _ if is_img => {
+            return Err(syn::Error::new(
+                attr.span(),
+                format!("unknown attribute `{attr}`: `<img>` takes `src`, `tw` and `style`"),
+            ));
+        }
+        _ => {
+            return Err(syn::Error::new(
+                attr.span(),
+                format!("unknown attribute `{attr}`: elements take `tw` and `style`"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn parse_element(input: ParseStream<'_>) -> syn::Result<Element> {
     input.parse::<Token![<]>()?;
     let name = Ident::parse_any(input)?;
     let tag = tag_of(&name)?;
-    let mut tw = None;
-    let mut style = None;
+    let is_img = tag == IMG;
+    let mut attrs = Attrs::default();
     while !(input.peek(Token![>]) || input.peek(Token![/])) {
         if input.is_empty() {
             return Err(syn::Error::new(
@@ -113,46 +197,18 @@ fn parse_element(input: ParseStream<'_>) -> syn::Result<Element> {
                 "expected an attribute (`tw` or `style`) or `>` in `<{name}>`"
             ))
         })?;
-        match attr.to_string().as_str() {
-            "tw" => {
-                if tw.is_some() {
-                    return Err(duplicate(&attr));
-                }
-                input.parse::<Token![=]>()?;
-                tw = Some(if input.peek(LitStr) {
-                    Tw::Lit(input.parse()?)
-                } else if input.peek(token::Brace) {
-                    Tw::Expr(braced_expr(input)?)
-                } else {
-                    return Err(input.error(
-                        "`tw` takes a string literal (`tw=\"flex p-4\"`) or `{expr}` of type `Classes`",
-                    ));
-                });
-            }
-            "style" => {
-                if style.is_some() {
-                    return Err(duplicate(&attr));
-                }
-                input.parse::<Token![=]>()?;
-                if !input.peek(token::Brace) {
-                    return Err(input.error(
-                        "`style` takes `{expr}` of type `Style`, such as `style={Style::new().width_pct(50.0)}`",
-                    ));
-                }
-                style = Some(braced_expr(input)?);
-            }
-            "class" => {
-                return Err(syn::Error::new(
-                    attr.span(),
-                    "unknown attribute `class`: use `tw` for classes (`tw=\"flex p-4\"`)",
-                ));
-            }
-            _ => {
-                return Err(syn::Error::new(
-                    attr.span(),
-                    format!("unknown attribute `{attr}`: elements take `tw` and `style`"),
-                ));
-            }
+        parse_attr(input, &attr, is_img, &mut attrs)?;
+    }
+    let Attrs { src, tw, style } = attrs;
+    if is_img {
+        if !input.peek(Token![/]) {
+            return Err(input.error("`<img>` has no children: close it with `/>`"));
+        }
+        if src.is_none() {
+            return Err(syn::Error::new(
+                name.span(),
+                "`<img>` needs `src={..}` (a `StaticImage`)",
+            ));
         }
     }
     if input.peek(Token![/]) {
@@ -160,6 +216,7 @@ fn parse_element(input: ParseStream<'_>) -> syn::Result<Element> {
         input.parse::<Token![>]>()?;
         return Ok(Element {
             tag,
+            src,
             tw,
             style,
             children: Vec::new(),
@@ -191,6 +248,7 @@ fn parse_element(input: ParseStream<'_>) -> syn::Result<Element> {
     }
     Ok(Element {
         tag,
+        src,
         tw,
         style,
         children,
@@ -203,7 +261,10 @@ fn tag_of(name: &Ident) -> syn::Result<&'static str> {
         return Ok(variant);
     }
     let message = match text.as_str() {
-        "img" | "svg" => "`<img>`/`<svg>` are planned (Story 10.7)".to_owned(),
+        "img" => return Ok(IMG),
+        "svg" => "`<svg>` is not supported: use `<img src={..} />` with a PNG, JPEG or WebP \
+                  `StaticImage`"
+            .to_owned(),
         _ => format!("unknown tag `<{text}>`: use `div`, `span`, `p`, `h1`, `h2` or `h3`"),
     };
     Err(syn::Error::new(name.span(), message))
@@ -333,16 +394,29 @@ pub(crate) fn expand(input: TokenStream) -> syn::Result<TokenStream> {
 }
 
 fn lower_element(element: &Element) -> TokenStream {
-    let tag = format_ident!("{}", element.tag);
-    let mut out =
-        quote!(::noctis::__private::image::Node::element(::noctis::__private::image::Tag::#tag));
-    match &element.tw {
-        Some(Tw::Lit(lit)) => {
-            out.extend(quote!(.classes(::noctis::__private::image::Classes::__literal(#lit))));
+    let classes = match &element.tw {
+        Some(Tw::Lit(lit)) => Some(quote!(::noctis::__private::image::Classes::__literal(#lit))),
+        Some(Tw::Expr(expr)) => Some(quote!(#expr)),
+        None => None,
+    };
+    let mut out = match (&element.src, element.tag) {
+        (Some(src), _) => {
+            let classes = classes.unwrap_or_else(|| {
+                quote!(<::noctis::__private::image::Classes as ::std::default::Default>::default())
+            });
+            quote!(::noctis::__private::image::img(#src, #classes))
         }
-        Some(Tw::Expr(expr)) => out.extend(quote!(.classes(#expr))),
-        None => {}
-    }
+        (None, tag) => {
+            let tag = format_ident!("{}", tag);
+            let mut out = quote!(::noctis::__private::image::Node::element(
+                ::noctis::__private::image::Tag::#tag
+            ));
+            if let Some(classes) = classes {
+                out.extend(quote!(.classes(#classes)));
+            }
+            out
+        }
+    };
     if let Some(style) = &element.style {
         out.extend(quote!(.style(#style)));
     }
@@ -449,14 +523,70 @@ mod tests {
     }
 
     #[test]
-    fn view_tag_errors() {
+    fn view_img_grammar_ok() {
+        let view: View = syn::parse2(quote! {
+            <div>
+                <img src={LOGO} />
+                <img tw="w-4 h-4" src={assets::LOGO} style={Style::new().width_px(4)} />
+            </div>
+        })
+        .unwrap();
+        let mut lits = Vec::new();
+        literals(&view.root, &mut lits);
+        assert_eq!(lits.len(), 1);
+        let Child::Element(img) = &view.root.children[1] else {
+            panic!("expected an element");
+        };
+        assert_eq!(img.tag, IMG);
+        assert!(img.src.is_some() && img.style.is_some() && img.children.is_empty());
+        let lowered = lower_element(img).to_string();
+        assert!(
+            lowered.starts_with(":: noctis :: __private :: image :: img (assets :: LOGO ,"),
+            "{lowered}"
+        );
+        assert!(
+            lowered.ends_with(". style (Style :: new () . width_px (4))"),
+            "{lowered}"
+        );
+        let bare = lower_element(match &view.root.children[0] {
+            Child::Element(e) => e,
+            _ => unreachable!(),
+        })
+        .to_string();
+        assert!(bare.contains("Default > :: default ()"), "{bare}");
+    }
+
+    #[test]
+    fn view_img_errors() {
         assert_eq!(
-            err(quote!(<img/>)),
-            "`<img>`/`<svg>` are planned (Story 10.7)"
+            err(quote!(<img src={L}></img>)),
+            "`<img>` has no children: close it with `/>`"
         );
         assert_eq!(
+            err(quote!(<img tw="w-4" />)),
+            "`<img>` needs `src={..}` (a `StaticImage`)"
+        );
+        assert_eq!(
+            err(quote!(<img src="logo" />)),
+            "`src` takes an expression in braces: `src={LOGO}`"
+        );
+        assert_eq!(
+            err(quote!(<img src={a} src={b} />)),
+            "duplicate attribute `src`"
+        );
+        assert_eq!(err(quote!(<div src={a} />)), "`src` is only for `<img>`");
+        assert_eq!(
+            err(quote!(<img src={a} alt="x" />)),
+            "unknown attribute `alt`: `<img>` takes `src`, `tw` and `style`"
+        );
+    }
+
+    #[test]
+    fn view_tag_errors() {
+        assert_eq!(
             err(quote!(<svg/>)),
-            "`<img>`/`<svg>` are planned (Story 10.7)"
+            "`<svg>` is not supported: use `<img src={..} />` with a PNG, JPEG or WebP \
+             `StaticImage`"
         );
         assert_eq!(
             err(quote!(<button/>)),

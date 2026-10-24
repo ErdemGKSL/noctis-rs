@@ -330,6 +330,8 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | --- | --- | --- |
 | TW-01 | Template classes are Tailwind v4 in Noctis's strict grammar plus `noctis-theme.css` tokens (`tw!`, `tw="…"`; `Classes::dynamic` strings when rendered); `animate-<token>` needs `--animate-<token>`, `animate-[<keyframes>_1s_…]` needs `@keyframes <keyframes>` (or a built-in) | C / R |
 | TW-02 | `noctis-theme.css`: only `@theme` and `@keyframes`, known namespaces, valid tokens, no duplicates, no built-in animation names, `--animate-*` = one keyword-only animation whose `@keyframes` exist, `@keyframes` names `[a-z]([a-z0-9-]*[a-z0-9])?` ≤ 64 bytes and no CSS keyword, ≤ 256 KiB | C |
+| IMG-01 | fonts: TTF/OTF/TTC/WOFF2 via `ImageConfig::font` (priority = call order), `family` 1..=128 bytes without control characters, `unicode_range` not inverted; one font list per `Runtime` (`ResourceConflict` naming `FontRegistry`); a Template with no font and no `default-font` is `RenderError::NoFont` at `App::build` | B |
+| IMG-02 | `StaticImage` id `[a-z0-9]([a-z0-9._-]*[a-z0-9])?` ≤ 64 bytes (const); PNG/JPEG/WebP only, ≤ 16 MP (16777216 pixels), one set of bytes per id (`ImageConfig::image`); an unregistered `<img>` is `RenderError::UnknownImage` | C / B / R |
 
 ## Rendering (Noctis defaults, FR-70)
 

@@ -3,14 +3,19 @@
 use takumi::prelude::NodeKind;
 
 use super::*;
-use crate::{Tag, div, text};
+use crate::{StaticImage, Tag, div, img, text};
+
+/// `lower` without static images.
+fn plain(node: &Node) -> Result<takumi::prelude::Node, RenderError> {
+    lower(node, &StaticImages::default(), "t")
+}
 
 #[test]
 fn element_becomes_a_container_with_its_children() {
     let tree = Node::element(Tag::H1)
         .child("a")
         .child(Node::element(Tag::Span).child(1_u8));
-    let lowered = lower(&tree).unwrap();
+    let lowered = plain(&tree).unwrap();
     let NodeKind::Container { children } = &lowered.kind else {
         panic!("{:?}", lowered.kind);
     };
@@ -21,7 +26,7 @@ fn element_becomes_a_container_with_its_children() {
 
 #[test]
 fn text_becomes_a_text_node_never_parsed() {
-    let lowered = lower(&Node::text("<b tw=\"hidden\">")).unwrap();
+    let lowered = plain(&Node::text("<b tw=\"hidden\">")).unwrap();
     assert!(matches!(&lowered.kind, NodeKind::Text(t) if t.text == "<b tw=\"hidden\">"));
 }
 
@@ -30,13 +35,13 @@ fn lowered_trees_compare_equal_to_hand_built_takumi_trees() {
     let tree = div(Classes::dynamic("flex p-4")).child(text("x", Classes::default()));
     let expected = takumi::prelude::Node::container([takumi::prelude::Node::text("x")])
         .with_tw(TailwindValues::from_str("flex p-4").unwrap());
-    assert_eq!(lower(&tree).unwrap().to_html(), expected.to_html());
+    assert_eq!(plain(&tree).unwrap().to_html(), expected.to_html());
 }
 
 #[test]
 fn blank_classes_and_default_style_set_nothing() {
     for classes in ["", "  \t"] {
-        let lowered = lower(&div(Classes::dynamic(classes))).unwrap();
+        let lowered = plain(&div(Classes::dynamic(classes))).unwrap();
         assert_eq!(
             lowered.to_html(),
             takumi::prelude::Node::container([]).to_html()
@@ -75,7 +80,59 @@ fn style_lowers_to_declarations() {
     let parsed = inline_style(&style).unwrap().unwrap();
     assert!(!parsed.declarations.is_empty());
     assert!(inline_style(&Style::new()).unwrap().is_none());
-    assert!(lower(&div(Classes::default()).style(style)).is_ok());
+    assert!(plain(&div(Classes::default()).style(style)).is_ok());
     // Styles apply to text nodes too.
-    assert!(lower(&Node::text("t").style(Style::new().color_rgb(1))).is_ok());
+    assert!(plain(&Node::text("t").style(Style::new().color_rgb(1))).is_ok());
+}
+
+/// A 1x1 PNG.
+fn png() -> &'static [u8] {
+    png_of([255, 0, 0, 255])
+}
+
+/// A 1x1 PNG of `rgba`.
+fn png_of(rgba: [u8; 4]) -> &'static [u8] {
+    let bitmap = takumi::prelude::Bitmap::from_raw(1, 1, rgba.to_vec()).unwrap();
+    let mut out = Vec::new();
+    takumi::write_image(&bitmap, &mut out, takumi::prelude::OutputFormat::Png).unwrap();
+    out.leak()
+}
+
+#[test]
+fn img_02_image_becomes_an_image_node_over_the_decoded_source() {
+    let logo = StaticImage::new("logo", png());
+    let images = StaticImages::decode(&[logo]).unwrap();
+    let lowered = lower(&img(logo, Classes::dynamic("w-4")), &images, "card").unwrap();
+    assert!(matches!(
+        &lowered.kind,
+        NodeKind::Image(data) if matches!(data.src, ImageSourceInput::Loaded(_))
+            && data.width.is_none() && data.height.is_none()
+    ));
+    let source = images.get(&logo).unwrap().clone();
+    let expected = takumi::prelude::Node::image(ImageData {
+        src: ImageSourceInput::Loaded(source),
+        width: None,
+        height: None,
+    })
+    .with_tw(TailwindValues::from_str("w-4").unwrap());
+    assert_eq!(lowered.to_html(), expected.to_html());
+}
+
+#[test]
+fn img_02_unregistered_image_is_unknown_image() {
+    let logo = StaticImage::new("logo", png());
+    let other = StaticImage::new("logo", png_of([0, 0, 255, 255]));
+    let images = StaticImages::decode(&[logo]).unwrap();
+    for (missing, tree) in [
+        (StaticImage::new("other", png()), div(Classes::default())),
+        (other, div(Classes::default())),
+    ] {
+        let tree = tree.child(Node::image(missing));
+        match lower(&tree, &images, "card") {
+            Err(RenderError::UnknownImage { id, image }) => {
+                assert_eq!((id.as_str(), image.as_str()), ("card", missing.id()));
+            }
+            other => panic!("expected UnknownImage, got {other:?}"),
+        }
+    }
 }

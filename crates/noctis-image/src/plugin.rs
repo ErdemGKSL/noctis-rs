@@ -7,9 +7,11 @@ use std::time::Duration;
 use noctis_core::{AppBuilder, BuildViolation, Plugin};
 
 use crate::ClassCheckMode;
+use crate::assets::{StaticImage, StaticImages};
 use crate::caps::RenderCaps;
+use crate::fonts::{self, Font, FontRegistry, FontsConfig};
 use crate::pool::{PoolConfig, RenderPool};
-use crate::renderer::{TakumiRenderer, theme_stylesheet};
+use crate::renderer::{RendererConfig, TakumiRenderer, theme_stylesheet};
 use crate::tw::Theme;
 
 /// The accepted render pool thread counts.
@@ -57,17 +59,32 @@ const CAP_PIXELS: std::ops::RangeInclusive<u64> = 1..=67_108_864;
 ///
 /// Out-of-range values fail `App::build` with a plugin violation.
 ///
+/// Fonts ([`font`](Self::font), IMG-01) are process-scoped too: they form
+/// the Runtime's font registry, so every App on one Runtime must register
+/// equal fonts in the same order (another list, or none, is a
+/// `BuildViolation::ResourceConflict` naming `FontRegistry`). Order is
+/// priority. Registering a Template with no font at all (and `default-font`
+/// off) fails `App::build` with `[IMG-01] no font is registered`.
+///
+/// Static images ([`image`](Self::image), IMG-02) are per App, decoded once
+/// when the App builds.
+///
 /// [`Runtime`]: noctis_core::Runtime
 ///
 /// ```
-/// use noctis_image::{ImageConfig, RenderCaps};
+/// use noctis_image::{Font, ImageConfig, RenderCaps, StaticImage};
+///
+/// static INTER: &[u8] = b"..."; // include_bytes!("../fonts/Inter.ttf")
+/// const LOGO: StaticImage = StaticImage::new("logo", b"..."); // include_bytes!("logo.png")
 ///
 /// let config = ImageConfig::new()
 ///     .threads(2)
 ///     .queue_capacity(16)
 ///     .size_target(1_048_576)
 ///     .still_fallback(false)
-///     .caps(RenderCaps::new().frames(120));
+///     .caps(RenderCaps::new().frames(120))
+///     .font(Font::from_static(INTER))
+///     .image(LOGO);
 /// assert_ne!(config, ImageConfig::default());
 /// assert_eq!(ImageConfig::new(), ImageConfig::default());
 /// ```
@@ -78,12 +95,14 @@ pub struct ImageConfig {
     size_target: u64,
     still_fallback: bool,
     caps: RenderCaps,
+    fonts: Vec<Font>,
+    images: Vec<StaticImage>,
 }
 
 impl ImageConfig {
     /// The defaults: half the available parallelism (at least 1) threads,
-    /// a queue of 64 units, a 2 MiB size target, the still fallback on and
-    /// the default [`RenderCaps`].
+    /// a queue of 64 units, a 2 MiB size target, the still fallback on,
+    /// the default [`RenderCaps`], and no fonts or static images.
     pub fn new() -> Self {
         // Clamped so a very large host never builds an out-of-range default.
         let threads = std::thread::available_parallelism()
@@ -94,6 +113,8 @@ impl ImageConfig {
             size_target: DEFAULT_SIZE_TARGET,
             still_fallback: true,
             caps: RenderCaps::new(),
+            fonts: Vec::new(),
+            images: Vec::new(),
         }
     }
 
@@ -139,6 +160,33 @@ impl ImageConfig {
         self
     }
 
+    /// Registers `font` after the fonts already added: order is priority.
+    ///
+    /// Text with no `font-*` family draws with the first font, and every
+    /// glyph a font lacks (or a [`Font::unicode_range`] excludes) falls back
+    /// to the next family in order of first appearance, then to the bundled
+    /// `"Inter"` (`default-font`), so mixed-script text needs no Template
+    /// change. A Template's own family (`font-display`, …) is tried first.
+    /// A font that cannot be loaded, an inverted range or a family name
+    /// that is empty, over 128 bytes or has control characters fails
+    /// `App::build` with `[IMG-01]`.
+    #[must_use]
+    pub fn font(mut self, font: Font) -> Self {
+        self.fonts.push(font);
+        self
+    }
+
+    /// Registers the static image `image` for `<img src={..} />`: PNG, JPEG
+    /// or WebP, at most 16 MP (16777216 pixels). Its bytes are decoded once
+    /// when the App builds; another format, a corrupt file, a larger one or
+    /// one id registered with other bytes fails `App::build` with
+    /// `[IMG-02]`. Registering the same handle twice is a no-op.
+    #[must_use]
+    pub fn image(mut self, image: StaticImage) -> Self {
+        self.images.push(image);
+        self
+    }
+
     fn pool_config(&self) -> PoolConfig {
         PoolConfig {
             threads: self.threads,
@@ -156,8 +204,9 @@ impl Default for ImageConfig {
 /// The plugin that installs the App's takumi Renderer; added by
 /// [`AppBuilderImageExt::image`] and [`AppBuilderImageExt::theme`].
 ///
-/// Its install checks the [`ImageConfig`] ranges, gets the process-scoped
-/// render pool from the App's Runtime, parses the Theme into the renderer's
+/// Its install checks the [`ImageConfig`] ranges and font list, gets the
+/// process-scoped render pool and font registry from the App's Runtime,
+/// decodes the App's static images, parses the Theme into the renderer's
 /// stylesheet and sets the Renderer. On a `Runtime::for_test()` App the
 /// runtime class check (TW-01) is Deny: an unknown `Classes::dynamic` class
 /// fails the render; elsewhere it warns once per distinct string.
@@ -167,14 +216,18 @@ pub struct ImagePlugin {
     theme: Theme,
 }
 
-impl Plugin for ImagePlugin {
-    fn install(&self, app: &mut AppBuilder) {
+impl ImagePlugin {
+    /// Reports every out-of-range setting and font list problem; whether
+    /// there was none.
+    fn check_config(&self, app: &mut AppBuilder) -> bool {
         let ImageConfig {
             threads,
             queue_capacity,
             size_target,
-            still_fallback,
+            still_fallback: _,
             caps,
+            ref fonts,
+            images: _,
         } = self.config;
         let mut in_range = true;
         if !THREADS.contains(&threads) {
@@ -219,9 +272,27 @@ impl Plugin for ImagePlugin {
                 caps.duration
             )));
         }
-        if !in_range {
+        for problem in fonts::validate(fonts) {
+            in_range = false;
+            app.report(BuildViolation::plugin::<Self>(problem));
+        }
+        in_range
+    }
+}
+
+impl Plugin for ImagePlugin {
+    fn install(&self, app: &mut AppBuilder) {
+        if !self.check_config(app) {
             return;
         }
+        let ImageConfig {
+            size_target,
+            still_fallback,
+            caps,
+            ref fonts,
+            ref images,
+            ..
+        } = self.config;
         let pool = match app
             .current_runtime()
             .resource_or_init::<RenderPool>(self.config.pool_config())
@@ -238,6 +309,29 @@ impl Plugin for ImagePlugin {
             )));
             return;
         }
+        let registry = match app
+            .current_runtime()
+            .resource_or_init::<FontRegistry>(FontsConfig {
+                fonts: fonts.clone(),
+                bundled: cfg!(feature = "default-font"),
+            }) {
+            Ok(registry) => registry,
+            Err(conflict) => {
+                app.report(BuildViolation::ResourceConflict(conflict));
+                return;
+            }
+        };
+        if let Some(error) = registry.build_error() {
+            app.report(BuildViolation::plugin::<Self>(error.to_owned()));
+            return;
+        }
+        let images = match StaticImages::decode(images) {
+            Ok(images) => images,
+            Err(error) => {
+                app.report(BuildViolation::plugin::<Self>(error));
+                return;
+            }
+        };
         let stylesheet = match theme_stylesheet(&self.theme) {
             Ok(stylesheet) => stylesheet,
             Err(error) => {
@@ -252,15 +346,17 @@ impl Plugin for ImagePlugin {
         } else {
             ClassCheckMode::Warn
         };
-        app.renderer(Arc::new(TakumiRenderer::new(
+        app.renderer(Arc::new(TakumiRenderer::new(RendererConfig {
             pool,
-            self.theme.clone(),
+            fonts: registry,
+            images,
+            theme: self.theme.clone(),
             stylesheet,
             mode,
             size_target,
             still_fallback,
             caps,
-        )));
+        })));
     }
 }
 

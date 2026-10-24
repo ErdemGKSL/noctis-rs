@@ -96,7 +96,14 @@ Build, test and run with `--release` only (`cargo build --release`, `cargo test
 | ``[TW-01] unknown Tailwind class `bg-gradient-to-r`; use `bg-linear-to-r` (Tailwind v4)`` / ``…; or declare `--color-nope` in noctis-theme.css`` | a v3 or misspelt class in `tw!`/`tw="…"`, or a theme token the crate's `noctis-theme.css` does not define | use the v4 name the error suggests, or declare the token in `noctis-theme.css` (`images.md` §4-§5) |
 | ``[TW-02] 3:5: …`` (from `tw!`, `view!` or `theme!()`, with `= note: in …/noctis-theme.css`) | the theme file breaks a rule (`ThemeErrorKind`) at that line:column | fix that line (`images.md` §5); `spin`/`ping`/`pulse`/`bounce` are built in and cannot be redefined |
 | ``Template data must serialize deterministically (it is part of the render cache key): `HashMap` …`` | a `HashMap`/`HashSet` in a `#[derive(Template)]` field | use `BTreeMap`, `BTreeSet` or `Vec` |
-| ``` `#[asset]` remote images are planned (Story 10.8)``` / ``` `<img>`/`<svg>` are planned (Story 10.7)``` | not shipped yet | leave them out until their release |
+| ``` `#[asset]` remote images are planned (Story 10.8)``` | not shipped yet | leave it out until its release; static images use `StaticImage` and `<img src={..} />` |
+| ``[IMG-01] no font is registered: add one with `ImageConfig::font(..)` or enable the `default-font` feature`` (a `TemplateRejected` build error) | the App registers a Template but no font, and `default-font` is off | enable `default-font`, or `.image(ImageConfig::new().font(Font::from_static(include_bytes!(..))))` (`images.md` §6) |
+| ``[IMG-01] font #<i> …`` (plugin violation) | the `<i>`-th `.font(..)` (from 0) has an inverted `unicode_range`, a bad `family` name, or bytes that are not TTF/OTF/TTC/WOFF2 | fix that font |
+| `ResourceConflict` naming `FontRegistry` | two Apps on one `Runtime` register different fonts (or a different order, or none) | give every App the same font list, or a separate `Runtime` |
+| ``[IMG-02] static image id must match …`` (compile error in a `const`) | a `StaticImage::new` id with uppercase, spaces, a leading/trailing `.`/`_`/`-`, or over 64 bytes | use a lowercase id such as `logo.v2` |
+| ``[IMG-02] static image `<id>` …`` (plugin violation) | the image is not PNG/JPEG/WebP, is corrupt, is over 16 MP, or its id is registered twice with different bytes | convert or shrink it, or rename one id |
+| `RenderError::UnknownImage { id, image }` | the Template drew a `StaticImage` the App did not pass to `ImageConfig::image` | register it with `.image(LOGO)` |
+| ``` `<svg>` is not supported …``` / ``` `<img>` needs `src={..}` …``` / ``` `<img>` has no children …``` | `view!` `<img>` grammar | write `<img src={LOGO} tw=".." />` with a PNG/JPEG/WebP `StaticImage` |
 
 ## App build errors (`BuildError`, all violations listed at once)
 

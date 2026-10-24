@@ -1,6 +1,8 @@
-//! The takumi [`Renderer`]: one per App, bound to its Theme, rendering stills
-//! and animations within its per-job caps ([`RenderCaps`]), fitted to the
-//! size budget (`crate::budget`), on the process-scoped [`RenderPool`].
+//! The takumi [`Renderer`]: one per App, bound to its Theme and static
+//! images, drawing with the process-scoped [`FontRegistry`], rendering
+//! stills and animations within its per-job caps ([`RenderCaps`]), fitted
+//! to the size budget (`crate::budget`), on the process-scoped
+//! [`RenderPool`].
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -16,12 +18,13 @@ use noctis_ports::{
 #[cfg(feature = "gif")]
 use takumi::prelude::{AnimatedGifOptions, AnimatedPngOptions};
 use takumi::prelude::{
-    AnimatedWebpOptions, AnimationFrame, Bitmap, Fonts, Quality, RenderOptions, StyleSheet,
-    Viewport,
+    AnimatedWebpOptions, AnimationFrame, Bitmap, Quality, RenderOptions, StyleSheet, Viewport,
 };
 
+use crate::assets::StaticImages;
 use crate::budget::{self, Attempt};
 use crate::caps::RenderCaps;
+use crate::fonts::FontRegistry;
 use crate::lower::lower;
 use crate::pool::{Lane, RenderPool, Requester};
 use crate::tw::Theme;
@@ -43,8 +46,10 @@ struct Shared {
     /// The `@theme { … }` stylesheet built once from `theme`.
     stylesheet: Arc<StyleSheet>,
     check: ClassCheck,
-    /// No fonts are registered yet (Story 10.7).
-    fonts: Fonts,
+    /// The Runtime's fonts and their fallback chain.
+    fonts: Arc<FontRegistry>,
+    /// The App's decoded static images.
+    images: StaticImages,
     /// The App's `ImageConfig::size_target`.
     size_target: u64,
     /// Whether an animation that does not fit may fall back to a still.
@@ -107,28 +112,50 @@ fn theme_css(theme: &Theme) -> String {
     css
 }
 
+/// Everything a [`TakumiRenderer`] is built from.
+pub(crate) struct RendererConfig {
+    /// The Runtime's render pool.
+    pub(crate) pool: Arc<RenderPool>,
+    /// The Runtime's fonts.
+    pub(crate) fonts: Arc<FontRegistry>,
+    /// The App's static images, decoded.
+    pub(crate) images: StaticImages,
+    /// The App's Theme.
+    pub(crate) theme: Theme,
+    /// `theme` parsed into takumi's stylesheet.
+    pub(crate) stylesheet: StyleSheet,
+    /// Deny on test Runtimes, Warn otherwise.
+    pub(crate) mode: ClassCheckMode,
+    /// Each output fits `min(job.upload_budget, size_target)`.
+    pub(crate) size_target: u64,
+    /// Whether an animation that does not fit may fall back to a still.
+    pub(crate) still_fallback: bool,
+    /// A job over one of them fails before admission.
+    pub(crate) caps: RenderCaps,
+}
+
 impl TakumiRenderer {
-    /// A Renderer drawing with `theme` (already parsed into `stylesheet`)
-    /// on `pool`; `mode` is Deny on test Runtimes, Warn otherwise. Each
-    /// output fits `min(job.upload_budget, size_target)`, an animation
-    /// falling back to a still frame when `still_fallback` is on; a job
-    /// over one of `caps` fails before admission.
-    pub(crate) fn new(
-        pool: Arc<RenderPool>,
-        theme: Theme,
-        stylesheet: StyleSheet,
-        mode: ClassCheckMode,
-        size_target: u64,
-        still_fallback: bool,
-        caps: RenderCaps,
-    ) -> Self {
+    /// A Renderer built from `config`.
+    pub(crate) fn new(config: RendererConfig) -> Self {
+        let RendererConfig {
+            pool,
+            fonts,
+            images,
+            theme,
+            stylesheet,
+            mode,
+            size_target,
+            still_fallback,
+            caps,
+        } = config;
         Self {
             pool,
             shared: Arc::new(Shared {
                 theme,
                 stylesheet: Arc::new(stylesheet),
                 check: ClassCheck::new(mode),
-                fonts: Fonts::default(),
+                fonts,
+                images,
                 size_target,
                 still_fallback,
                 caps,
@@ -206,7 +233,12 @@ impl Renderer for TakumiRenderer {
         })
     }
 
+    /// Fails with [`RenderError::NoFont`] (IMG-01) when `templates` is not
+    /// empty but no font is registered: their text would draw nothing.
     fn register(&self, templates: &[TemplateDescriptor]) -> Result<(), RenderError> {
+        if !templates.is_empty() && self.shared.fonts.is_empty() {
+            return Err(RenderError::NoFont);
+        }
         let mut views = Views::with_capacity(templates.len());
         for descriptor in templates {
             let Some(view) = descriptor.view.downcast_ref::<ViewFn>() else {
@@ -303,14 +335,15 @@ impl Shared {
         self.check
             .check(&node, &self.theme)
             .map_err(RenderError::failed)?;
-        let root = lower(&node)?;
+        let root = lower(&node, &self.images, job.template_id)?;
         let (width, height) = (job.size.width(), job.size.height());
         let options = RenderOptions::builder()
             .viewport(Viewport::new((width, height)))
-            .fonts(&self.fonts)
+            .fonts(self.fonts.fonts())
             .node(root)
             .stylesheet(Arc::clone(&self.stylesheet))
             .time_ms(time_ms)
+            .font_families(self.fonts.chain().cloned())
             .build();
         let bitmap = takumi::render(options).map_err(RenderError::failed)?;
         if (bitmap.width(), bitmap.height()) != (width, height) {

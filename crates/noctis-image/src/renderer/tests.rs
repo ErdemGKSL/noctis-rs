@@ -10,7 +10,9 @@ use noctis_ports::{AnimatedFormat, AnimationSpec, ErasedView, Size, Template};
 use serde::{Deserialize, Serialize};
 
 use super::*;
+use crate::Font;
 use crate::budget::Attempt;
+use crate::fonts::FontsConfig;
 use crate::pool::PoolConfig;
 use crate::{Classes, Node, Style, TemplateView, div, erased_view};
 
@@ -177,6 +179,18 @@ impl Template for Foreign {
 const THEME: &str = "@theme { --color-brand: #5865f2; --animate-fade: fade 1s linear infinite; } \
      @keyframes fade { from { opacity: 0 } to { opacity: 1 } }";
 
+static INTER: &[u8] = include_bytes!("../../fonts/InterVariable.woff2");
+
+/// A font registry of `fonts`, on its own test Runtime.
+fn test_fonts(fonts: Vec<Font>) -> Arc<FontRegistry> {
+    Runtime::for_test()
+        .resource_or_init::<FontRegistry>(FontsConfig {
+            fonts,
+            bundled: false,
+        })
+        .unwrap()
+}
+
 fn theme() -> Theme {
     Theme::parse(THEME).unwrap()
 }
@@ -199,15 +213,17 @@ fn renderer_budget(
         .unwrap();
     let theme = theme();
     let stylesheet = theme_stylesheet(&theme).unwrap();
-    let renderer = TakumiRenderer::new(
+    let renderer = TakumiRenderer::new(RendererConfig {
         pool,
+        fonts: test_fonts(vec![Font::from_static(INTER)]),
+        images: StaticImages::default(),
         theme,
         stylesheet,
         mode,
-        crate::plugin::DEFAULT_SIZE_TARGET,
+        size_target: crate::plugin::DEFAULT_SIZE_TARGET,
         still_fallback,
-        RenderCaps::new(),
-    );
+        caps: RenderCaps::new(),
+    });
     renderer
         .register(&[
             TemplateDescriptor::of::<Card>(),
@@ -1427,4 +1443,36 @@ async fn a_still_is_not_size_checked() {
         .await
         .unwrap();
     assert_eq!(out.settings_used.size, Size::new(8, 8));
+}
+
+#[test]
+fn img_01_register_without_font_fails() {
+    let pool = Runtime::for_test()
+        .resource_or_init::<RenderPool>(PoolConfig {
+            threads: 1,
+            queue_capacity: 4,
+        })
+        .unwrap();
+    let theme = theme();
+    let stylesheet = theme_stylesheet(&theme).unwrap();
+    let renderer = TakumiRenderer::new(RendererConfig {
+        pool,
+        fonts: test_fonts(Vec::new()),
+        images: StaticImages::default(),
+        theme,
+        stylesheet,
+        mode: ClassCheckMode::Deny,
+        size_target: crate::plugin::DEFAULT_SIZE_TARGET,
+        still_fallback: true,
+        caps: RenderCaps::new(),
+    });
+    assert!(renderer.register(&[]).is_ok());
+    let err = renderer
+        .register(&[TemplateDescriptor::of::<Card>()])
+        .unwrap_err();
+    assert!(matches!(err, RenderError::NoFont), "{err:?}");
+    assert!(
+        err.to_string()
+            .starts_with("[IMG-01] no font is registered")
+    );
 }

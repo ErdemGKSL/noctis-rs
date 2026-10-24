@@ -47,3 +47,81 @@ fn caps_default_and_stay_out_of_the_pool_config() {
     assert_ne!(changed, config);
     assert_eq!(changed.pool_config(), config.pool_config());
 }
+
+static INTER: &[u8] = include_bytes!("../../fonts/InterVariable.woff2");
+static JP400: &[u8] =
+    include_bytes!("../../tests/fixtures/fonts/noto-sans-jp-119-400-normal.woff2");
+
+fn fonts_config(fonts: Vec<Font>) -> FontsConfig {
+    FontsConfig {
+        fonts,
+        bundled: cfg!(feature = "default-font"),
+    }
+}
+
+fn build(
+    runtime: &noctis_core::Runtime,
+    config: ImageConfig,
+) -> Result<(), noctis_core::BuildError> {
+    let mut builder = noctis_core::App::builder();
+    builder.runtime(runtime).image(config.threads(1));
+    builder.build().map(drop)
+}
+
+#[test]
+fn fonts_and_images_setters_append_in_order() {
+    const LOGO: StaticImage = StaticImage::new("logo", b"");
+    let a = Font::from_static(INTER);
+    let b = Font::from_static(JP400);
+    let config = ImageConfig::new().font(a.clone()).font(b.clone());
+    assert_eq!(config.fonts, [a.clone(), b.clone()]);
+    assert_ne!(config, ImageConfig::new().font(b).font(a));
+    // Fonts are not part of the pool config.
+    assert_eq!(config.pool_config(), ImageConfig::new().pool_config());
+    assert_eq!(ImageConfig::new().image(LOGO).images, [LOGO]);
+}
+
+#[tokio::test]
+async fn img_01_equal_fonts_share_one_registry() {
+    let runtime = noctis_core::Runtime::for_test();
+    let config = || ImageConfig::new().font(Font::from_static(INTER));
+    build(&runtime, config()).unwrap();
+    build(&runtime, config()).unwrap();
+    let first = runtime
+        .resource_or_init::<FontRegistry>(fonts_config(vec![Font::from_static(INTER)]))
+        .unwrap();
+    let second = runtime
+        .resource_or_init::<FontRegistry>(fonts_config(vec![Font::from_bytes(INTER.to_vec())]))
+        .unwrap();
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(first.families().len(), 1);
+}
+
+#[tokio::test]
+async fn img_01_other_fonts_conflict_on_one_runtime() {
+    let runtime = noctis_core::Runtime::for_test();
+    build(&runtime, ImageConfig::new().font(Font::from_static(INTER))).unwrap();
+    let err = build(&runtime, ImageConfig::new().font(Font::from_static(JP400))).unwrap_err();
+    assert!(
+        matches!(
+            err.violations(),
+            [BuildViolation::ResourceConflict(c)] if c.resource.ends_with("FontRegistry")
+        ),
+        "{err}"
+    );
+}
+
+#[tokio::test]
+async fn img_01_test_runtimes_get_their_own_registry() {
+    let one = noctis_core::Runtime::for_test();
+    let two = noctis_core::Runtime::for_test();
+    build(&one, ImageConfig::new().font(Font::from_static(INTER))).unwrap();
+    build(&two, ImageConfig::new().font(Font::from_static(JP400))).unwrap();
+    let a = one
+        .resource_or_init::<FontRegistry>(fonts_config(vec![Font::from_static(INTER)]))
+        .unwrap();
+    let b = two
+        .resource_or_init::<FontRegistry>(fonts_config(vec![Font::from_static(JP400)]))
+        .unwrap();
+    assert!(!Arc::ptr_eq(&a, &b));
+}

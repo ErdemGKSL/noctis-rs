@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use noctis::image::{
-    AnimatedFormat, AnimationSpec, Frame, Node, RenderError, RenderOptions, Template, TemplateView,
-    theme, view,
+    AnimatedFormat, AnimationSpec, Font, Frame, ImageConfig, Node, RenderError, RenderOptions,
+    Template, TemplateView, theme, view,
 };
 use noctis::prelude::*;
 use noctis::testkit::{Response, TestApp, TestError};
@@ -137,6 +137,9 @@ async fn start(reports: &Arc<Reports>) -> TestApp {
     let mut builder = App::builder();
     builder
         .theme(theme!())
+        .image(ImageConfig::new().font(Font::from_static(include_bytes!(
+            "../../noctis-image/fonts/InterVariable.woff2"
+        ))))
         .error_sink(ErrorOrigin::Render, Arc::clone(reports))
         .module(
             Module::new("cards")

@@ -4,7 +4,8 @@ description = "Image rendering for Noctis. Internal; use `noctis`."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# The package ships the bundled Inter font files (see NOTICE).
+license = "(MIT OR Apache-2.0) AND OFL-1.1"
 repository.workspace = true
 
 [features]
@@ -25,20 +26,33 @@ render = [
 # GIF and APNG output (the facade's `image-gif`). takumi-raster always links
 # its GIF/PNG encoders, so this gates Noctis code only.
 gif = ["render"]
+# Bundles Inter 4.1 (OFL-1.1, see NOTICE) as the last-resort family "Inter"
+# (the facade's `default-font`).
+default-font = ["render"]
 
 [dependencies]
 # `tw` and `tw::theme` (takumi-free, ungated): the theme parser and its digest.
 blake3.workspace = true
 bytes = { workspace = true, optional = true }
 cssparser.workspace = true
-# `render`: resamples rendered frames for the size budget's size steps.
-image = { workspace = true, optional = true }
+# `render`: resamples rendered frames for the size budget's size steps, and
+# reads static image headers (PNG, JPEG, WebP) before they are decoded.
+image = { workspace = true, optional = true, features = ["png", "jpeg", "webp"] }
 noctis-core = { workspace = true, optional = true }
 noctis-ports = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
 # `rayon`: takumi's internal parallelism runs on whichever pool executes the
-# job, which is the render pool.
-takumi = { workspace = true, optional = true, features = ["raster-backend", "rayon"] }
+# job, which is the render pool. `woff2` loads WOFF2 fonts (the bundled Inter);
+# `png`, `jpeg` and `webp` decode static images. No `woff`, `gif` or
+# `svg-source`.
+takumi = { workspace = true, optional = true, features = [
+  "raster-backend",
+  "rayon",
+  "woff2",
+  "png",
+  "jpeg",
+  "webp",
+] }
 takumi-core = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["sync"] }

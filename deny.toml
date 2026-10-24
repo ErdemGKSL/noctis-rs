@@ -31,10 +31,12 @@ allow = [
     "MPL-2.0",
     "CC0-1.0",
 ]
-# Crate-scoped exceptions, both reached through takumi.
+# Crate-scoped exceptions: the first two are reached through takumi.
 exceptions = [
     { crate = "xxhash-rust", allow = ["BSL-1.0"] },
     { crate = "jpeg-encoder", allow = ["IJG"] },
+    # noctis-image ships the bundled Inter font (`default-font`); see its NOTICE.
+    { crate = "noctis-image", allow = ["OFL-1.1"] },
 ]
 # The allowlist and exceptions are policy for crates later stories add.
 unused-allowed-license = "allow"

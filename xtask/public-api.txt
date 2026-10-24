@@ -2659,6 +2659,19 @@ impl core::hash::Hash for noctis::image::EncodeSettings
 pub fn noctis::image::EncodeSettings::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::EncodeSettings
 impl core::marker::StructuralPartialEq for noctis::image::EncodeSettings
+pub struct noctis::image::Font
+impl noctis::image::Font
+pub fn noctis::image::Font::family(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::image::Font::from_bytes(impl core::convert::Into<alloc::rcs::arc::Arc<[u8]>>) -> Self
+pub fn noctis::image::Font::from_static(&'static [u8]) -> Self
+pub fn noctis::image::Font::unicode_range(self, core::ops::range::RangeInclusive<char>) -> Self
+impl core::clone::Clone for noctis::image::Font
+pub fn noctis::image::Font::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::Font
+impl core::cmp::PartialEq for noctis::image::Font
+pub fn noctis::image::Font::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::Font
+pub fn noctis::image::Font::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub enum noctis::image::Format
 pub noctis::image::Format::Jpeg
 pub noctis::image::Format::Jpeg::quality: u8
@@ -2696,6 +2709,8 @@ impl core::marker::StructuralPartialEq for noctis::image::Frame
 pub struct noctis::image::ImageConfig
 impl noctis::image::ImageConfig
 pub fn noctis::image::ImageConfig::caps(self, noctis::image::RenderCaps) -> Self
+pub fn noctis::image::ImageConfig::font(self, noctis::image::Font) -> Self
+pub fn noctis::image::ImageConfig::image(self, noctis::image::StaticImage) -> Self
 pub fn noctis::image::ImageConfig::new() -> Self
 pub fn noctis::image::ImageConfig::queue_capacity(self, usize) -> Self
 pub fn noctis::image::ImageConfig::size_target(self, u64) -> Self
@@ -2738,6 +2753,7 @@ pub fn noctis::image::Node::child(self, impl noctis::image::IntoNodes) -> Self
 pub fn noctis::image::Node::children<I>(self, I) -> Self where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: noctis::image::IntoNodes
 pub fn noctis::image::Node::classes(self, noctis::image::Classes) -> Self
 pub fn noctis::image::Node::element(noctis::image::Tag) -> Self
+pub fn noctis::image::Node::image(noctis::image::StaticImage) -> Self
 pub fn noctis::image::Node::style(self, noctis::image::Style) -> Self
 pub fn noctis::image::Node::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
 impl core::clone::Clone for noctis::image::Node
@@ -2815,6 +2831,7 @@ impl core::marker::Copy for noctis::image::RenderCaps
 impl core::marker::StructuralPartialEq for noctis::image::RenderCaps
 #[non_exhaustive] pub enum noctis::image::RenderError
 pub noctis::image::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::image::RenderError::NoFont
 pub noctis::image::RenderError::NoRenderer
 pub noctis::image::RenderError::OverBudget
 pub noctis::image::RenderError::OverBudget::budget: u64
@@ -2832,6 +2849,9 @@ pub noctis::image::RenderError::SizeMismatch::declared: (u32, u32)
 pub noctis::image::RenderError::SizeMismatch::expected: noctis::image::Size
 pub noctis::image::RenderError::SizeMismatch::frame: u32
 pub noctis::image::RenderError::SizeMismatch::id: alloc::string::String
+pub noctis::image::RenderError::UnknownImage
+pub noctis::image::RenderError::UnknownImage::id: alloc::string::String
+pub noctis::image::RenderError::UnknownImage::image: alloc::string::String
 pub noctis::image::RenderError::UnknownTemplate
 pub noctis::image::RenderError::UnknownTemplate::id: alloc::string::String
 pub noctis::image::RenderError::UnknownTemplate::version: u32
@@ -2918,6 +2938,18 @@ impl core::hash::Hash for noctis::image::Size
 pub fn noctis::image::Size::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for noctis::image::Size
 impl core::marker::StructuralPartialEq for noctis::image::Size
+pub struct noctis::image::StaticImage
+impl noctis::image::StaticImage
+pub const fn noctis::image::StaticImage::id(&self) -> &'static str
+pub const fn noctis::image::StaticImage::new(&'static str, &'static [u8]) -> Self
+impl core::clone::Clone for noctis::image::StaticImage
+pub fn noctis::image::StaticImage::clone(&self) -> Self
+impl core::cmp::Eq for noctis::image::StaticImage
+impl core::cmp::PartialEq for noctis::image::StaticImage
+pub fn noctis::image::StaticImage::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::image::StaticImage
+pub fn noctis::image::StaticImage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::image::StaticImage
 pub struct noctis::image::Style
 impl noctis::image::Style
 pub const fn noctis::image::Style::bg_rgb(self, u32) -> Self
@@ -3175,6 +3207,7 @@ impl core::fmt::Display for noctis::image::UnknownClass
 pub fn noctis::image::UnknownClass::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for noctis::image::UnknownClass
 pub fn noctis::image::div(noctis::image::Classes) -> noctis::image::Node
+pub fn noctis::image::img(noctis::image::StaticImage, noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::span(noctis::image::Classes) -> noctis::image::Node
 pub fn noctis::image::text(impl core::convert::Into<alloc::borrow::Cow<'static, str>>, noctis::image::Classes) -> noctis::image::Node
 pub proc macro noctis::image::theme!()
@@ -3544,6 +3577,7 @@ impl core::marker::Copy for noctis::ports::RenderCap
 impl core::marker::StructuralPartialEq for noctis::ports::RenderCap
 #[non_exhaustive] pub enum noctis::ports::RenderError
 pub noctis::ports::RenderError::Failed(alloc::boxed::Box<(dyn core::error::Error + core::marker::Send + core::marker::Sync)>)
+pub noctis::ports::RenderError::NoFont
 pub noctis::ports::RenderError::NoRenderer
 pub noctis::ports::RenderError::OverBudget
 pub noctis::ports::RenderError::OverBudget::budget: u64
@@ -3561,6 +3595,9 @@ pub noctis::ports::RenderError::SizeMismatch::declared: (u32, u32)
 pub noctis::ports::RenderError::SizeMismatch::expected: noctis::image::Size
 pub noctis::ports::RenderError::SizeMismatch::frame: u32
 pub noctis::ports::RenderError::SizeMismatch::id: alloc::string::String
+pub noctis::ports::RenderError::UnknownImage
+pub noctis::ports::RenderError::UnknownImage::id: alloc::string::String
+pub noctis::ports::RenderError::UnknownImage::image: alloc::string::String
 pub noctis::ports::RenderError::UnknownTemplate
 pub noctis::ports::RenderError::UnknownTemplate::id: alloc::string::String
 pub noctis::ports::RenderError::UnknownTemplate::version: u32
@@ -5092,6 +5129,8 @@ pub const noctis::rules::RuleId::GW_04: noctis::rules::RuleId
 pub const noctis::rules::RuleId::GW_05: noctis::rules::RuleId
 pub const noctis::rules::RuleId::GW_06: noctis::rules::RuleId
 pub const noctis::rules::RuleId::GW_07: noctis::rules::RuleId
+pub const noctis::rules::RuleId::IMG_01: noctis::rules::RuleId
+pub const noctis::rules::RuleId::IMG_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_01: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_02: noctis::rules::RuleId
 pub const noctis::rules::RuleId::INT_03: noctis::rules::RuleId

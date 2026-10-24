@@ -20,8 +20,8 @@ use noctis::ports::{RenderError, RenderJob, ValueError};
 use noctis::{App, BuildViolation, Module};
 use serde::{Deserialize, Serialize};
 
-/// The project template's profile card without the planned `avatar` /
-/// `<img>` (Stories 10.7, 10.8).
+/// The project template's profile card without the planned remote
+/// `avatar` (Story 10.8).
 #[derive(Template, Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[template(id = "profile.card", version = 1, size = (934, 282), format = Png)]
 struct ProfileCard {
@@ -253,7 +253,7 @@ fn tw_literals() {
     assert_eq!(CARD.as_str(), "flex p-4 bg-brand sm:!p-2");
     assert_eq!(tw!("").as_str(), "");
     assert_eq!(tw!("  \t").as_str(), "  \t");
-    // The project template's planned `<img>` classes (Story 10.7) validate too.
+    // The project template's avatar `<img>` classes validate too.
     assert!(
         !tw!("w-40 h-40 rounded-full border-4 border-brand")
             .as_str()

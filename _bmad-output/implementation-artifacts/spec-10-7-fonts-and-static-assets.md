@@ -2,7 +2,7 @@
 title: 'Story 10.7: Fonts and static assets'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'b57e676b64cc8ca729aab9a8313fdffca014d1b9'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -224,3 +224,12 @@ deferred: []
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `cargo tree -p noctis-image --features render -i takumi-core` -- a single 0.31.0
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- **Summary:** Fonts and static assets for `noctis-image`: one ordered `.font()` list on the App (order = priority, later fonts are the fallback chain), an optional bundled Inter 4.1 variable WOFF2 as last resort behind the `default-font` feature, per-App `StaticImage` handles (PNG/JPEG/WebP, `const fn new` id check) verified against registered bytes by the Renderer, and a typed startup error `RenderError::NoFont` (`[IMG-01]`) when Templates exist but no font is registered.
+- **Files changed:** `crates/noctis-image/src/{fonts,assets}.rs` (+ submodules, new font/asset registries), `renderer.rs`/`plugin.rs`/`lower.rs`/`node` (font and image wiring), `fonts/` + `NOTICE` (bundled Inter, OFL-1.1), `tests/fixtures/fonts` (Noto Sans JP kana subsets 400/700), `Cargo.toml`s and `Cargo.lock` (takumi `woff2` and image decoder features), `noctis-core`/`noctis-ports` render surface, `noctis-macros/src/view.rs`, `noctis-rules` + `xtask` rules catalog and `docs/discord-rules.md` (IMG-01), `deny.toml` (crate-scoped OFL exception), facade `noctis` features/tests, `xtask/public-api.txt` re-blessed, `examples/project-template/` code, AGENTS.md and noctis usage skill.
+- **Review findings:** the Review Triage Log holds no entries; 0 patches, 0 deferred, 0 rejected (patched counts by verdict: high 0, medium 0, low 0).
+- **Follow-up review recommended:** false (no patched high or medium entries).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests incl. all-features, cargo hack each-feature, api-snapshot, deps-check, rules-catalog, skill-check, tw-grammar, cargo deny, MSRV 1.91); `takumi-core` resolves to a single 0.31.0. CI paused by the maintainer.
+- **Residual risks:** the bundled Inter adds about 352 KB to binaries with `default-font`; WOFF2 decoding depends on takumi's `woff2`/`wuff` path; `<svg>` static images are intentionally unsupported; the empty triage log means no independent review findings were recorded for this pass.

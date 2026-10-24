@@ -513,7 +513,9 @@ macro_rules! ctx_methods {
             /// (`RenderCap::Fps`: GIF 50, WebP and APNG 90); `OverBudget`
             /// when no encoding fits the Upload Budget; `SizeMismatch` when
             /// a frame of an animation declares a root size other than the
-            /// Template's; `Failed` for a render, encode or class-check
+            /// Template's; `UnknownImage` when the view draws a
+            /// `StaticImage` the App did not register with
+            /// `ImageConfig::image`; `Failed` for a render, encode or class-check
             /// failure; `Panicked` when the view panicked. Every one except
             /// `NoRenderer` and `QueueFull` is also reported to the Render
             /// Error Sink.

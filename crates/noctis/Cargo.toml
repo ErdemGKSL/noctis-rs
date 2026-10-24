@@ -21,8 +21,9 @@ image = ["dep:noctis-image", "noctis-image/render", "noctis-macros/image"]
 image-gif = ["image", "noctis-image/gif"]
 # Twemoji colour emoji in image Templates.
 image-emoji = []
-# Bundled default font for image Templates.
-default-font = []
+# Bundles Inter 4.1 (OFL-1.1) as the last-resort font of image Templates
+# (implies `image`).
+default-font = ["image", "noctis-image/default-font"]
 # Localization runtime (noctis-i18n).
 i18n = ["noctis-macros/i18n"]
 # Opt-in prefix commands (noctis-prefix, P2).

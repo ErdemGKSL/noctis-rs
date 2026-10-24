@@ -1,7 +1,7 @@
 //! The node tree a Template view returns: Noctis-owned and takumi-free.
 //!
-//! A [`Node`] is an element ([`Tag`], [`Classes`], [`Style`] and children) or
-//! a text node. User data enters a tree only as text: text children are never
+//! A [`Node`] is an element ([`Tag`], [`Classes`], [`Style`] and children),
+//! a text node or an image node (a registered [`StaticImage`]). User data enters a tree only as text: text children are never
 //! parsed, [`Classes`] come from `tw!` literals or [`Classes::dynamic`], and no
 //! constructor turns a string into markup. Dynamic values (widths, colours,
 //! percentages) use the typed [`Style`] setters, which override class values
@@ -30,6 +30,8 @@ use std::borrow::Cow;
 
 use noctis_ports::Size;
 
+use crate::StaticImage;
+
 pub use classes::Classes;
 pub use into_nodes::IntoNodes;
 pub(crate) use style::Dimension;
@@ -56,7 +58,7 @@ pub enum Tag {
     H3,
 }
 
-/// One node of a view tree: an element or a text node.
+/// One node of a view tree: an element, a text node or an image.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Node {
     kind: Kind,
@@ -68,6 +70,7 @@ pub struct Node {
 pub(crate) enum Kind {
     Element { tag: Tag, children: Vec<Node> },
     Text(Cow<'static, str>),
+    Image(StaticImage),
 }
 
 impl Node {
@@ -92,15 +95,28 @@ impl Node {
         }
     }
 
-    /// Sets the classes; a later call replaces them. Applies to text nodes
-    /// too.
+    /// An image node drawing `src`, which the App must register with
+    /// `ImageConfig::image` (else the render fails with
+    /// `RenderError::UnknownImage`). Without a size it takes the image's
+    /// own; classes and [`Style`] size it like any node.
+    pub fn image(src: StaticImage) -> Self {
+        Self {
+            kind: Kind::Image(src),
+            classes: Classes::default(),
+            style: Style::new(),
+        }
+    }
+
+    /// Sets the classes; a later call replaces them. Applies to text and
+    /// image nodes too.
     #[must_use]
     pub fn classes(mut self, classes: Classes) -> Self {
         self.classes = classes;
         self
     }
 
-    /// Sets the style; a later call replaces it. Applies to text nodes too.
+    /// Sets the style; a later call replaces it. Applies to text and image
+    /// nodes too.
     #[must_use]
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
@@ -108,7 +124,7 @@ impl Node {
     }
 
     /// Appends `child` (0..n nodes, see [`IntoNodes`]). A no-op on a text
-    /// node.
+    /// or image node.
     #[must_use]
     pub fn child(mut self, child: impl IntoNodes) -> Self {
         if let Kind::Element { children, .. } = &mut self.kind {
@@ -117,7 +133,8 @@ impl Node {
         self
     }
 
-    /// Appends every item of `children`, in order. A no-op on a text node.
+    /// Appends every item of `children`, in order. A no-op on a text or
+    /// image node.
     #[must_use]
     pub fn children<I>(mut self, children: I) -> Self
     where
@@ -144,7 +161,8 @@ impl Node {
         &self.classes
     }
 
-    /// Whether the node is an element (with its tag and children) or text.
+    /// Whether the node is an element (with its tag and children), text or
+    /// an image.
     pub(crate) fn kind(&self) -> &Kind {
         &self.kind
     }
@@ -154,13 +172,14 @@ impl Node {
         &self.style
     }
 
-    /// The element's children; empty for a text node.
+    /// The element's children; empty for a text or image node.
     pub(crate) fn child_nodes(&self) -> &[Node] {
         match &self.kind {
             Kind::Element { children, .. } => children,
-            Kind::Text(_) => &[],
+            Kind::Text(_) | Kind::Image(_) => &[],
         }
     }
+
     /// The explicit root size this node declares that differs from
     /// `expected`, as `(width, height)` with `expected`'s side where only
     /// the other one differs; `None` when every declared side matches.
@@ -237,4 +256,10 @@ pub fn span(classes: Classes) -> Node {
 /// A text node with `classes`; `text` is never parsed.
 pub fn text(text: impl Into<Cow<'static, str>>, classes: Classes) -> Node {
     Node::text(text).classes(classes)
+}
+
+/// An `<img>` drawing the static image `src` with `classes`; what `view!`
+/// expands `<img src={..} />` to.
+pub fn img(src: StaticImage, classes: Classes) -> Node {
+    Node::image(src).classes(classes)
 }

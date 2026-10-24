@@ -1,6 +1,8 @@
 //! Lowering: a Noctis [`Node`] tree becomes a takumi node tree.
 //!
-//! An element becomes a container, a text node a takumi text node. Tags set
+//! An element becomes a container, a text node a takumi text node, an image
+//! node a takumi image node over the App's already decoded source (takumi
+//! never fetches). Tags set
 //! no tag name and no preset (tags carry no default styles). Non-blank
 //! classes become takumi Tailwind values; a non-default [`Style`] becomes
 //! inline style declarations, which takumi's cascade applies after the
@@ -13,21 +15,44 @@ use std::str::FromStr;
 use noctis_ports::RenderError;
 use takumi_core::style::TailwindValues;
 
+use takumi::prelude::{ImageData, ImageSourceInput};
+
+use crate::assets::StaticImages;
 use crate::node::{Dimension, Kind};
 use crate::{Classes, Node, Style};
 
-/// The takumi tree of `node`.
+/// The takumi tree of `node`, a view of the Template `template` drawing the
+/// App's static `images`.
 ///
 /// # Errors
 ///
 /// [`RenderError::Failed`] when takumi rejects the classes or style of a
-/// node.
-pub(crate) fn lower(node: &Node) -> Result<takumi::prelude::Node, RenderError> {
+/// node; [`RenderError::UnknownImage`] for an image node whose image is not
+/// in `images` (or is, with other bytes).
+pub(crate) fn lower(
+    node: &Node,
+    images: &StaticImages,
+    template: &str,
+) -> Result<takumi::prelude::Node, RenderError> {
     let lowered = match node.kind() {
         Kind::Element { children, .. } => takumi::prelude::Node::container(
-            children.iter().map(lower).collect::<Result<Vec<_>, _>>()?,
+            children
+                .iter()
+                .map(|child| lower(child, images, template))
+                .collect::<Result<Vec<_>, _>>()?,
         ),
         Kind::Text(text) => takumi::prelude::Node::text(text.as_ref()),
+        Kind::Image(src) => {
+            let source = images.get(src).ok_or_else(|| RenderError::UnknownImage {
+                id: template.to_owned(),
+                image: src.id().to_owned(),
+            })?;
+            takumi::prelude::Node::image(ImageData {
+                src: ImageSourceInput::Loaded(source.clone()),
+                width: None,
+                height: None,
+            })
+        }
     };
     let lowered = match tailwind(node.class_list())? {
         Some(values) => lowered.with_tw(values),

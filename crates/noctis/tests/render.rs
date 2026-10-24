@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use noctis::image::{
-    AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Format, Frame, ImageConfig,
+    AnimatedFormat, AnimationSpec, AppBuilderImageExt, Classes, Font, Format, Frame, ImageConfig,
     ImagePlugin, Node, RenderCap, RenderCaps, RenderError, Style, Template, TemplateView, Theme,
     ThemeErrorKind, div, theme, view,
 };
@@ -229,13 +229,21 @@ fn cards() -> Module {
         .template::<Rise>()
 }
 
-/// A builder on `runtime` with the test theme, `config` and [`cards`].
+/// The font every App registering a Template here adds (IMG-01).
+fn inter() -> Font {
+    Font::from_static(include_bytes!(
+        "../../noctis-image/fonts/InterVariable.woff2"
+    ))
+}
+
+/// A builder on `runtime` with the test theme, `config` plus [`inter`] and
+/// [`cards`].
 fn builder(runtime: &Runtime, config: ImageConfig) -> AppBuilder {
     let mut builder = App::builder();
     builder
         .runtime(runtime)
         .theme(theme!())
-        .image(config)
+        .image(config.font(inter()))
         .module(cards());
     builder
 }
@@ -735,7 +743,10 @@ async fn test_runtimes_deny_unknown_dynamic_classes() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_global_runtime_warns_on_unknown_dynamic_classes() {
     let mut builder = App::builder();
-    builder.theme(theme!()).module(cards());
+    builder
+        .theme(theme!())
+        .image(ImageConfig::new().font(inter()))
+        .module(cards());
     let app = builder.build().unwrap();
     let flx = Dynamic {
         classes: "flx".to_owned(),
