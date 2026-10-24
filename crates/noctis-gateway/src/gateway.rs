@@ -13,7 +13,7 @@ use twilight_gateway::{CloseFrame, EventTypeFlags, Intents, ShardId};
 
 use crate::inbound::{InboundSink, ShardEvent};
 use crate::queue::PortQueue;
-use crate::shard::Lane;
+use crate::shard::{Lane, SessionStart};
 use crate::{ShardConfigError, shard, shard_config};
 
 /// How [`Gateway::close_all`] closes the shards.
@@ -63,6 +63,7 @@ impl CloseMode {
 ///     event_types: EventTypeFlags::INTERACTION_CREATE,
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
 ///     session_store: Arc::new(MemorySessionStore::new()),
+///     resume: true,
 ///     shards: 0..1,
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
@@ -89,6 +90,10 @@ pub struct GatewayOptions {
     /// resumable close, and deleted when the gateway rejects the stored
     /// session or on a fresh close. Core passes the App's namespaced port.
     pub session_store: Arc<dyn SessionStore>,
+    /// `true` loads the stored session at shard start; `false` deletes it
+    /// instead and identifies (`--no-resume`). Only this Gateway's shards
+    /// (`shards`, under the current `total`) are touched.
+    pub resume: bool,
     /// The shard ids this process runs, within `0..total` (half-open, never
     /// empty): `0..total` for a single process, one Cluster process's Shard
     /// Range otherwise. Ids are global, so a shard's bucket is always
@@ -112,6 +117,7 @@ impl fmt::Debug for GatewayOptions {
             .field("gateway_url", &self.gateway_url)
             .field("event_types", &self.event_types)
             .field("session_store", &"..")
+            .field("resume", &self.resume)
             .field("shards", &self.shards)
             .field("total", &self.total)
             .field("max_concurrency", &self.max_concurrency)
@@ -148,6 +154,7 @@ impl fmt::Debug for GatewayOptions {
 ///     event_types: EventTypeFlags::INTERACTION_CREATE,
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
 ///     session_store: Arc::new(MemorySessionStore::new()),
+///     resume: true,
 ///     shards: 0..1,
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
@@ -197,6 +204,7 @@ impl Gateway {
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+    /// #     resume: true,
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -241,7 +249,10 @@ impl Gateway {
             tasks.spawn(shard::run(
                 id,
                 config.clone(),
-                Arc::clone(&options.session_store),
+                SessionStart {
+                    store: Arc::clone(&options.session_store),
+                    resume: options.resume,
+                },
                 Arc::clone(&options.app),
                 lane,
                 close_rx.clone(),
@@ -276,6 +287,7 @@ impl Gateway {
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+    /// #     resume: true,
     /// #     shards: 2..4,
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -305,6 +317,7 @@ impl Gateway {
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+    /// #     resume: true,
     /// #     shards: 2..4,
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -344,6 +357,7 @@ impl Gateway {
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+    /// #     resume: true,
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -387,6 +401,7 @@ impl Gateway {
     /// #     event_types: EventTypeFlags::all(),
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+    /// #     resume: true,
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -436,6 +451,7 @@ mod tests {
             event_types: EventTypeFlags::INTERACTION_CREATE,
             identify_queue: Arc::new(MemoryIdentifyQueue::default()),
             session_store: Arc::new(MemorySessionStore::new()),
+            resume: true,
             shards,
             total: NonZeroU32::new(total).unwrap(),
             max_concurrency: NonZeroU16::MIN,

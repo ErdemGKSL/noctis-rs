@@ -182,6 +182,14 @@ pub(crate) struct Lane {
     pub(crate) events: UnboundedSender<ShardEvent>,
 }
 
+/// How a shard task uses the `SessionStore` at start.
+pub(crate) struct SessionStart {
+    /// The session port.
+    pub(crate) store: Arc<dyn SessionStore>,
+    /// `true` loads the stored session; `false` deletes it and identifies.
+    pub(crate) resume: bool,
+}
+
 /// The shard's entry in the `SessionStore`.
 struct Stored {
     store: Arc<dyn SessionStore>,
@@ -191,14 +199,17 @@ struct Stored {
 /// Runs shard `id` until its stream ends or a close is requested, in span
 /// `noctis.shard`.
 ///
-/// It first loads the shard's stored session: a valid one makes twilight
-/// resume it (RESUME at HELLO, no IDENTIFY and no identify lease); otherwise
-/// the shard identifies. A close requested while loading stops the task
-/// before it connects.
+/// With `session.resume`, it first loads the shard's stored session: a
+/// valid one makes twilight resume it (RESUME at HELLO, no IDENTIFY and no
+/// identify lease); otherwise the shard identifies. Without it, the stored
+/// entry is deleted instead (bounded by `STORE_TIMEOUT`) and the shard
+/// identifies; the delete finishes before the shard connects, so it
+/// precedes IDENTIFY. A close requested while loading or deleting stops the
+/// task before it connects.
 pub(crate) async fn run(
     id: ShardId,
     config: Config<PortQueue>,
-    store: Arc<dyn SessionStore>,
+    session: SessionStart,
     app: Arc<str>,
     lane: Lane,
     mut close: watch::Receiver<Option<CloseMode>>,
@@ -208,8 +219,9 @@ pub(crate) async fn run(
     async move {
         let stored = Stored {
             key: session::key(id),
-            store,
+            store: session.store,
         };
+        let resume = session.resume;
         let loaded = tokio::select! {
             biased;
             mode = close_requested(&mut close) => {
@@ -224,7 +236,15 @@ pub(crate) async fn run(
                 let _ = lane.events.send(ShardEvent::Closed { shard: id.number() });
                 return;
             }
-            loaded = session::load(&*stored.store, &stored.key) => loaded,
+            loaded = async {
+                if resume {
+                    session::load(&*stored.store, &stored.key).await
+                } else {
+                    let deadline = Instant::now() + STORE_TIMEOUT;
+                    session::clear(&*stored.store, &stored.key, deadline).await;
+                    None
+                }
+            } => loaded,
         };
         let resume = ResumeState::new(loaded.is_some());
         let config = match loaded {

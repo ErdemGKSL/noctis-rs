@@ -1,7 +1,9 @@
 //! Session resume through the `SessionStore` (Story 12.2): `Gateway::start`
 //! against `FakeGateway` (R1-R3, W1-W7, L11, the stored resume URL) and
-//! whole Apps sharing one store (A1-A5). A6 (log redaction) lives in `session_log_redaction.rs`, which
-//! installs a global subscriber.
+//! whole Apps sharing one store (A1-A5). A6 (log redaction) lives in
+//! `session_log_redaction.rs`, which installs a global subscriber. Story
+//! 12.3 F1-F6: a start with `GatewayOptions::resume == false` clears the
+//! stored entry instead of loading it.
 
 #![allow(
     clippy::unwrap_used,
@@ -61,11 +63,20 @@ enum PutMode {
     Hang,
 }
 
+/// How `delete` behaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeleteMode {
+    Delete,
+    Fail,
+    Hang,
+}
+
 /// A `MemorySessionStore` recording every call.
 struct Recording {
     inner: MemorySessionStore,
     ops: Mutex<Vec<(Op, String, Option<Duration>)>>,
     put: Mutex<PutMode>,
+    delete: Mutex<DeleteMode>,
     /// Whether `get` never answers.
     get_hangs: Mutex<bool>,
 }
@@ -76,6 +87,7 @@ impl Recording {
             inner: MemorySessionStore::new(),
             ops: Mutex::new(Vec::new()),
             put: Mutex::new(PutMode::Store),
+            delete: Mutex::new(DeleteMode::Delete),
             get_hangs: Mutex::new(false),
         })
     }
@@ -152,7 +164,11 @@ impl SessionStore for Recording {
 
     fn delete<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<(), PortError>> {
         self.record(Op::Delete, key, None);
-        self.inner.delete(key)
+        match *self.delete.lock().unwrap() {
+            DeleteMode::Delete => self.inner.delete(key),
+            DeleteMode::Fail => Box::pin(async { Err(PortError::backend("down")) }),
+            DeleteMode::Hang => Box::pin(std::future::pending()),
+        }
     }
 }
 
@@ -222,6 +238,7 @@ fn options(
     close_timeout: Duration,
     store: Arc<dyn SessionStore>,
     queue: Arc<dyn IdentifyQueue>,
+    resume: bool,
 ) -> GatewayOptions {
     GatewayOptions {
         app: Arc::from("default"),
@@ -231,6 +248,7 @@ fn options(
         event_types: EventTypeFlags::all(),
         identify_queue: queue,
         session_store: store,
+        resume,
         shards: 0..total,
         total: NonZeroU32::new(total).unwrap(),
         max_concurrency: NonZeroU16::new(16).unwrap(),
@@ -259,10 +277,21 @@ fn start_with_queue(
     close_timeout: Duration,
     queue: Arc<dyn IdentifyQueue>,
 ) -> Running {
+    start_mode(url, store, close_timeout, queue, true)
+}
+
+/// Starts shard 0 of 1 with `resume` as `GatewayOptions::resume`.
+fn start_mode(
+    url: String,
+    store: &Arc<Recording>,
+    close_timeout: Duration,
+    queue: Arc<dyn IdentifyQueue>,
+    resume: bool,
+) -> Running {
     let sink = Arc::new(Counting::default());
     let store: Arc<dyn SessionStore> = Arc::clone(store) as Arc<dyn SessionStore>;
     let (gateway, events) = Gateway::start(
-        options(url, 1, close_timeout, store, queue),
+        options(url, 1, close_timeout, store, queue, resume),
         Arc::clone(&sink) as Arc<dyn InboundSink>,
     )
     .unwrap();
@@ -702,6 +731,209 @@ async fn w7_fatal_close_and_reconnect_touch_nothing() {
         .await
         .unwrap();
     assert_eq!(store.ops(), [Op::Get]);
+}
+
+// ---- Story 12.3 F1-F6: start with `resume: false` ----
+
+/// A recording identify queue and the buckets it was asked for.
+fn recording_queue() -> (Arc<dyn IdentifyQueue>, Arc<Mutex<Vec<u32>>>) {
+    let buckets = Arc::new(Mutex::new(Vec::new()));
+    let queue = Arc::new(RecordingQueue {
+        inner: MemoryIdentifyQueue::new(NonZeroU16::new(16).unwrap()),
+        buckets: Arc::clone(&buckets),
+    });
+    (queue, buckets)
+}
+
+/// F1: a stored entry the gateway would resume is deleted first, and the
+/// shard identifies through the queue.
+#[tokio::test(flavor = "multi_thread")]
+async fn f1_fresh_start_deletes_a_stored_entry_and_identifies() {
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    first_run(&gw, &store, 2).await;
+    assert!(store.stored(KEY).await.is_some(), "seeded");
+    gw.clear_frames();
+    store.clear_ops();
+
+    let (queue, buckets) = recording_queue();
+    let mut running = start_mode(gw.url(), &store, Duration::from_secs(5), queue, false);
+    until(&mut running.events, is_ready).await;
+    assert_eq!(store.ops(), [Op::Delete]);
+    assert_eq!(store.keys(), [KEY]);
+    let frames = gw.frames();
+    assert!(ops_of(&frames, 6).is_empty(), "no RESUME");
+    assert_eq!(ops_of(&frames, 2).len(), 1, "one IDENTIFY");
+    assert_eq!(buckets.lock().unwrap().len(), 1, "through the queue");
+    assert_eq!(store.stored(KEY).await, None, "entry gone");
+    close(&mut running, CloseMode::Fresh).await;
+}
+
+/// F2: deleting a missing entry is fine.
+#[tokio::test(flavor = "multi_thread")]
+async fn f2_fresh_start_without_an_entry_identifies() {
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    let mut running = start_mode(gw.url(), &store, Duration::from_secs(5), queue(), false);
+    until(&mut running.events, is_ready).await;
+    assert_eq!(store.ops(), [Op::Delete]);
+    assert_eq!(ops_of(&gw.frames(), 2).len(), 1);
+    close(&mut running, CloseMode::Fresh).await;
+}
+
+/// Captures every log line of the current thread while the guard lives.
+#[derive(Clone, Default)]
+struct Lines(Arc<Mutex<Vec<u8>>>);
+
+impl Lines {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl std::io::Write for Lines {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// A thread-local capturing subscriber; the test runs on one thread so
+/// the shard task logs into it.
+fn capture_lines() -> (Lines, impl Sized) {
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let lines = Lines::default();
+    let guard = tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .with_ansi(false)
+        .with_writer(lines.clone())
+        .finish()
+        .set_default();
+    (lines, guard)
+}
+
+/// F3: a failing delete identifies at once.
+#[tokio::test(flavor = "current_thread")]
+async fn f3_failing_start_delete_identifies_at_once() {
+    let (lines, _guard) = capture_lines();
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    *store.delete.lock().unwrap() = DeleteMode::Fail;
+    let started = Instant::now();
+    let mut running = start_mode(gw.url(), &store, Duration::from_secs(5), queue(), false);
+    gw.wait_for_frame(WAIT, |f| f.op() == Some(2))
+        .await
+        .expect("an IDENTIFY");
+    assert!(started.elapsed() < Duration::from_secs(4), "at once");
+    until(&mut running.events, is_ready).await;
+    assert_eq!(store.ops(), [Op::Delete], "no retry");
+    let text = lines.text();
+    assert!(
+        text.lines()
+            .any(|l| l.contains("WARN") && l.contains("session store delete failed")),
+        "{text}"
+    );
+    *store.delete.lock().unwrap() = DeleteMode::Delete;
+    close(&mut running, CloseMode::Resumable).await;
+}
+
+/// F3: a hanging delete is given up after `STORE_TIMEOUT` (5 s).
+#[tokio::test(flavor = "current_thread")]
+async fn f3_hanging_start_delete_times_out() {
+    let (lines, _guard) = capture_lines();
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    *store.delete.lock().unwrap() = DeleteMode::Hang;
+    let started = Instant::now();
+    let mut running = start_mode(gw.url(), &store, Duration::from_secs(5), queue(), false);
+    gw.wait_for_frame(WAIT, |f| f.op() == Some(2))
+        .await
+        .expect("an IDENTIFY");
+    let elapsed = started.elapsed();
+    assert!(elapsed >= Duration::from_millis(4900), "{elapsed:?}");
+    assert!(elapsed <= WAIT, "{elapsed:?}");
+    until(&mut running.events, is_ready).await;
+    assert_eq!(store.ops(), [Op::Delete], "no retry");
+    let text = lines.text();
+    assert!(
+        text.lines()
+            .any(|l| l.contains("WARN") && l.contains("session store delete timed out")),
+        "{text}"
+    );
+    close(&mut running, CloseMode::Resumable).await;
+}
+
+/// F4: a close while the start-time delete hangs ends the task without a
+/// connection.
+#[tokio::test(flavor = "multi_thread")]
+async fn f4_close_during_start_delete_ends_without_connecting() {
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    *store.delete.lock().unwrap() = DeleteMode::Hang;
+    let mut running = start_mode(gw.url(), &store, Duration::from_millis(500), queue(), false);
+    let deadline = Instant::now() + WAIT;
+    while store.ops().is_empty() {
+        assert!(Instant::now() < deadline, "no delete");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let elapsed = close(&mut running, CloseMode::Fresh).await;
+    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+    assert!(gw.frames().is_empty(), "no frame");
+    assert_eq!(gw.live_sessions(), 0, "no connection");
+    assert!(store.ops().iter().all(|op| *op == Op::Delete));
+}
+
+/// F5: only this run's key (current total) is cleared.
+#[tokio::test(flavor = "multi_thread")]
+async fn f5_fresh_start_leaves_other_totals_untouched() {
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    let other = Stored {
+        session_id: "other".to_owned(),
+        sequence: 4,
+        resume_url: gw.url(),
+    };
+    store.seed("shard:0:2", &other).await;
+    let mut running = start_mode(gw.url(), &store, Duration::from_secs(5), queue(), false);
+    until(&mut running.events, is_ready).await;
+    assert_eq!(store.keys(), [KEY]);
+    close(&mut running, CloseMode::Fresh).await;
+    assert_eq!(store.stored("shard:0:2").await, Some(other));
+}
+
+/// F6: `resume: true` keeps the 12.2 behaviour.
+#[tokio::test(flavor = "multi_thread")]
+async fn f6_resume_on_loads_first() {
+    install_provider();
+    let gw = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    first_run(&gw, &store, 0).await;
+    gw.clear_frames();
+    store.clear_ops();
+    let mut running = start_mode(gw.url(), &store, Duration::from_secs(5), queue(), true);
+    until(&mut running.events, is_resumed).await;
+    assert_eq!(store.ops().first(), Some(&Op::Get));
+    assert_eq!(ops_of(&gw.frames(), 6).len(), 1);
+    close(&mut running, CloseMode::Resumable).await;
 }
 
 // ---- App level ----

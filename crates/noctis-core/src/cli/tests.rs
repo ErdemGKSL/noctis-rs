@@ -20,7 +20,18 @@ fn rejected(args: &[&str]) -> CliError {
 }
 
 fn mode(mode: Option<CliMode>, dry_run: bool) -> NoctisArgs {
-    NoctisArgs { mode, dry_run }
+    NoctisArgs {
+        mode,
+        dry_run,
+        no_resume: false,
+    }
+}
+
+fn no_resume() -> NoctisArgs {
+    NoctisArgs {
+        no_resume: true,
+        ..NoctisArgs::default()
+    }
 }
 
 /// Matrix 24.
@@ -250,4 +261,103 @@ fn into_iter_round_trips() {
         .into_iter()
         .collect();
     assert_eq!(flags, ["--publish-clear", "--guild", "42", "--dry-run"]);
+}
+
+/// Story 12.3 P1, P2, P10: `--no-resume` runs the bot and round-trips.
+#[test]
+fn no_resume_runs_the_bot() {
+    let none: [&str; 0] = [];
+    let default = NoctisArgs::parse(none).unwrap();
+    assert!(!default.no_resume());
+    assert_eq!(default.mode(), None);
+
+    let args = parsed(&["--no-resume"]);
+    assert!(args.no_resume());
+    assert_eq!(args.mode(), None);
+    assert!(!args.dry_run());
+    let flags: Vec<OsString> = args.clone().into_iter().collect();
+    assert_eq!(flags, ["--no-resume"]);
+
+    for value in [NoctisArgs::default(), no_resume()] {
+        assert_eq!(NoctisArgs::parse(value.clone()), Ok(value));
+    }
+}
+
+/// Story 12.3 P3-P7.
+#[test]
+fn no_resume_rejects_malformed_lines() {
+    assert_eq!(
+        rejected(&["--no-resume", "--no-resume"]),
+        CliError::DuplicateFlag {
+            flag: "--no-resume"
+        }
+    );
+    for line in ["--no-resume=", "--no-resume=1", "--no-resume=ü"] {
+        assert_eq!(
+            rejected(&[line]),
+            CliError::UnexpectedValue {
+                flag: "--no-resume"
+            },
+            "{line}"
+        );
+    }
+    let publishing: [&[&str]; 4] = [
+        &["--no-resume", "--publish"],
+        &["--publish", "--no-resume"],
+        &["--publish-guild", "5", "--no-resume"],
+        &["--publish-clear", "--guild", "5", "--no-resume"],
+    ];
+    for line in publishing {
+        assert_eq!(rejected(line), CliError::NoResumeWithPublish, "{line:?}");
+    }
+    assert_eq!(
+        rejected(&["--dry-run", "--no-resume"]),
+        CliError::DryRunWithoutPublish
+    );
+    for text in ["--no-resum", "--NO-RESUME", "-no-resume", "--no-resume-x"] {
+        assert_eq!(
+            rejected(&[text]),
+            CliError::UnknownFlag { flag: text.into() },
+            "{text}"
+        );
+    }
+}
+
+/// Story 12.3 P8.
+#[test]
+fn split_reserves_no_resume() {
+    let (args, rest) =
+        NoctisArgs::split(["bot", "--no-resume", "--x", "--", "--no-resume"]).unwrap();
+    assert!(args.no_resume());
+    assert_eq!(rest, ["bot", "--x", "--", "--no-resume"]);
+}
+
+/// Story 12.3 P9.
+#[cfg(unix)]
+#[test]
+fn no_resume_next_to_non_utf8() {
+    use std::os::unix::ffi::OsStringExt;
+
+    let raw = OsString::from_vec(vec![0xff]);
+    let (args, rest) = NoctisArgs::split([OsString::from("--no-resume"), raw.clone()]).unwrap();
+    assert!(args.no_resume());
+    assert_eq!(rest, std::slice::from_ref(&raw));
+    assert_eq!(
+        NoctisArgs::parse([OsString::from("--no-resume"), raw]),
+        Err(CliError::UnknownFlag {
+            flag: "\u{fffd}".into()
+        })
+    );
+}
+
+/// Story 12.3 P11.
+#[test]
+fn no_resume_messages_name_the_flag() {
+    for error in [
+        CliError::NoResumeWithPublish,
+        CliError::UnknownFlag { flag: "x".into() },
+    ] {
+        let text = error.to_string();
+        assert!(text.contains("--no-resume"), "{text}");
+    }
 }

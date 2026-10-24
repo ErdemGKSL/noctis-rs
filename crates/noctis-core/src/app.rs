@@ -148,6 +148,8 @@ pub struct App {
     shutdown_grace: Duration,
     /// Whether a normal run publishes globally at startup.
     publisher: bool,
+    /// Whether shards resume stored sessions and shut down resumably.
+    resume_sessions: bool,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
     /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
@@ -359,6 +361,20 @@ impl App {
     /// ```
     pub fn is_publisher(&self) -> bool {
         self.publisher
+    }
+
+    /// Whether shards resume stored sessions at start and shut down
+    /// resumably ([`AppBuilder::resume_sessions`]; `true` when unset,
+    /// `false` for a run with `--no-resume`).
+    ///
+    /// ```
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().resume_sessions(false).build().unwrap();
+    /// assert!(!app.resume_sessions());
+    /// # }
+    /// ```
+    pub fn resume_sessions(&self) -> bool {
+        self.resume_sessions
     }
 
     /// The default guild of `--publish-guild` without an id
@@ -626,7 +642,9 @@ impl App {
     /// [`CliError::MissingDevGuild`]), writes the
     /// [`PublishReport`](crate::publish::PublishReport) to stdout and
     /// returns, without installing signal handlers or connecting a shard.
-    /// Without a mode it installs the signal handlers and runs
+    /// Without a mode, `--no-resume` sets
+    /// [`resume_sessions`](AppBuilder::resume_sessions) to `false` for this
+    /// run (logged at `info`), and it installs the signal handlers and runs
     /// [`run_until`](Self::run_until) with the first signal as the shutdown
     /// trigger.
     ///
@@ -650,15 +668,20 @@ impl App {
     {
         // Parsed before the future exists: the iterator need not be `Send`.
         let parsed = NoctisArgs::parse(args);
+        let mut app = self;
         async move {
             let args = parsed?;
             check_runtime(true)?;
             ensure_crypto_provider().map_err(|_| StartError::CryptoProvider)?;
             if let Some(mode) = args.mode() {
-                return self.run_mode(mode, args.dry_run()).await;
+                return app.run_mode(mode, args.dry_run()).await;
+            }
+            if args.no_resume() {
+                app.resume_sessions = false;
+                tracing::info!(target: "noctis::app", "session resume disabled (--no-resume)");
             }
             let signals = Signals::install()?;
-            self.run_with(signals.recv(), "signal").await
+            app.run_with(signals.recv(), "signal").await
         }
     }
 
@@ -718,7 +741,9 @@ impl App {
     /// whose session is stored in the `SessionStore` (left by a graceful,
     /// resumable shutdown of a previous run sharing that store) resumes it
     /// instead of identifying; a rejected stored session falls back to
-    /// IDENTIFY. Startup finishes once every shard of this process has
+    /// IDENTIFY. With [`resume_sessions`](AppBuilder::resume_sessions)
+    /// `false` (`--no-resume`) each shard deletes its stored entry instead
+    /// and identifies. Startup finishes once every shard of this process has
     /// received READY or RESUMED.
     ///
     /// A shard that closes fatally after startup is logged at `error`
@@ -727,15 +752,27 @@ impl App {
     ///
     /// When `shutdown` resolves (also during startup), or every shard has
     /// ended, the shutdown runs in this order (AD-21): log `shutdown
-    /// started`; close every shard with code 4000 (resumable); drain both
+    /// started`; close every shard with code 4000 (resumable: once the
+    /// gateway acknowledges the close, its session id, last received
+    /// sequence and resume URL are written to the `SessionStore`), or with
+    /// code 1000 and the stored entry deleted when
+    /// [`resume_sessions`](AppBuilder::resume_sessions) is `false`; drain both
     /// lanes and wait for the running handlers for at most
     /// [`shutdown_grace`](AppBuilder::shutdown_grace), with the HTTP client
     /// still working; cancel what is left (each cancelled handler is
     /// reported to the `Event` Error Sink as
     /// [`ReportKind::Cancelled`](crate::ReportKind::Cancelled), queued lane
     /// items are discarded with one warning) and wait up to 1 s more; wait
-    /// up to 6 s for the shards to close; log `shutdown complete`. Dropping
-    /// the returned future cancels every handler too.
+    /// up to 6 s for the shards to close; log `shutdown complete`. Every
+    /// session write has finished when this returns. A shutdown that
+    /// resolves before `GET /gateway/bot` answered has no shard plan, so it
+    /// writes and clears nothing. Dropping the returned future cancels every
+    /// handler too.
+    ///
+    /// Delivery is at-most-once: the stored sequence is the last one
+    /// received, so events the event lane dropped under back-pressure (or
+    /// discarded at shutdown) count as seen and a resume never replays
+    /// them.
     ///
     /// # Errors
     ///
@@ -823,6 +860,7 @@ impl App {
             event_types: self.registry.event_types(),
             identify_queue,
             session_store: Arc::clone(&self.ports().session_store) as Arc<dyn SessionStore>,
+            resume: self.resume_sessions,
             shards: shards.clone(),
             total: plan.total,
             max_concurrency: plan.max_concurrency,
@@ -894,7 +932,11 @@ impl App {
         let grace = self.shutdown_grace;
         tracing::info!(target: "noctis::app", reason, grace = ?grace, "shutdown started");
         self.lifecycle.send(LifecycleEvent::ShutdownStarted);
-        gateway.close_all(CloseMode::Resumable);
+        gateway.close_all(if self.resume_sessions {
+            CloseMode::Resumable
+        } else {
+            CloseMode::Fresh
+        });
         wind_down(grace, controls, drain, &mut watch).await;
         let closed = watch
             .during(tokio::time::timeout(
@@ -1315,6 +1357,7 @@ impl fmt::Debug for App {
             .field("ref_ttl", &self.shared.ref_ttl)
             .field("payload_key", &self.shared.payload_keys.is_some())
             .field("publisher", &self.publisher)
+            .field("resume_sessions", &self.resume_sessions)
             .field("dev_guild", &self.dev_guild)
             .finish_non_exhaustive()
     }
@@ -1381,6 +1424,8 @@ pub struct AppBuilder {
     ref_ttl: Duration,
     /// Whether a normal run publishes globally at startup.
     publisher: bool,
+    /// Whether shards resume stored sessions and shut down resumably.
+    resume_sessions: bool,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
     /// The current payload key (never printed).
@@ -1475,6 +1520,7 @@ impl AppBuilder {
             ack_deadline: DEFAULT_ACK_DEADLINE,
             ref_ttl: DEFAULT_REF_TTL,
             publisher: false,
+            resume_sessions: true,
             dev_guild: None,
             payload_key: None,
             previous_payload_key: None,
@@ -2027,6 +2073,23 @@ impl AppBuilder {
         self
     }
 
+    /// Whether shards resume the sessions stored in the `SessionStore`.
+    /// Default `true`: each shard resumes its stored session at start and a
+    /// graceful shutdown closes it with code 4000 and stores it again.
+    /// `false` starts fresh: each shard deletes its stored entry before it
+    /// identifies, and the shutdown closes with code 1000 and deletes the
+    /// entry. A run with `--no-resume` sets it to `false`; the last call
+    /// wins.
+    ///
+    /// ```
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.resume_sessions(false);
+    /// ```
+    pub fn resume_sessions(&mut self, resume: bool) -> &mut Self {
+        self.resume_sessions = resume;
+        self
+    }
+
     /// The guild `--publish-guild` without an id publishes to (your test
     /// guild). Env `NOCTIS_DEV_GUILD`; the last call wins.
     ///
@@ -2448,6 +2511,7 @@ impl AppBuilder {
             handler_concurrency: config.handler_concurrency,
             shutdown_grace: config.shutdown_grace,
             publisher: config.publisher,
+            resume_sessions: config.resume_sessions,
             dev_guild: config.dev_guild,
             lifecycle: Lifecycle::new(),
         })
@@ -2548,6 +2612,7 @@ impl fmt::Debug for AppBuilder {
             .field("ack_deadline", &self.ack_deadline)
             .field("ref_ttl", &self.ref_ttl)
             .field("publisher", &self.publisher)
+            .field("resume_sessions", &self.resume_sessions)
             .field("dev_guild", &self.dev_guild)
             .field("payload_key", &self.payload_key.is_some())
             .field("previous_payload_key", &self.previous_payload_key.is_some())

@@ -1,6 +1,6 @@
 //! The built-in command line (spine Conventions, FR-13): `--publish`,
-//! `--publish-guild [<id>]`, `--publish-clear [--guild <id>]` and
-//! `--dry-run`, parsed without clap.
+//! `--publish-guild [<id>]`, `--publish-clear [--guild <id>]`,
+//! `--dry-run` and `--no-resume`, parsed without clap.
 //!
 //! [`App::run`](crate::App::run) parses the process arguments with
 //! [`NoctisArgs::parse`]; [`App::run_with_args`](crate::App::run_with_args)
@@ -17,6 +17,7 @@ const PUBLISH_GUILD: &str = "--publish-guild";
 const PUBLISH_CLEAR: &str = "--publish-clear";
 const GUILD: &str = "--guild";
 const DRY_RUN: &str = "--dry-run";
+const NO_RESUME: &str = "--no-resume";
 /// The end-of-options marker: it and everything after it are never parsed.
 const END: &str = "--";
 
@@ -54,8 +55,8 @@ impl CliMode {
     }
 }
 
-/// The Noctis part of a command line: an optional [`CliMode`] and
-/// `--dry-run`.
+/// The Noctis part of a command line: an optional [`CliMode`],
+/// `--dry-run` and `--no-resume`.
 ///
 /// The default value (no mode) runs the bot. Iterating it renders the
 /// canonical flags, so `NoctisArgs::parse(args.clone())` gives `args` back.
@@ -74,6 +75,7 @@ impl CliMode {
 pub struct NoctisArgs {
     mode: Option<CliMode>,
     dry_run: bool,
+    no_resume: bool,
 }
 
 /// Why a command line was rejected. Each message names the flag and a fix.
@@ -90,7 +92,7 @@ pub enum CliError {
     /// An argument Noctis does not know reached `parse` (or `App::run`).
     #[error(
         "unknown argument `{flag}`: Noctis accepts --publish, --publish-guild [<id>], \
-         --publish-clear [--guild <id>] and --dry-run; split your own flags off first with \
+         --publish-clear [--guild <id>], --dry-run and --no-resume; split your own flags off first with \
          `NoctisArgs::split`"
     )]
     UnknownFlag {
@@ -143,6 +145,9 @@ pub enum CliError {
          one guild"
     )]
     GuildWithoutClear,
+    /// `--no-resume` with a publish flag (publish modes never start shards).
+    #[error("`--no-resume` only applies to running the bot: drop it or the publish flag")]
+    NoResumeWithPublish,
     /// `--publish-guild` without an id and no dev guild set.
     #[error(
         "`--publish-guild` has no guild id and no dev guild is set: pass \
@@ -174,6 +179,7 @@ fn guild_id(flag: &'static str, value: &str) -> Result<Id<GuildMarker>, CliError
 struct Parser {
     mode: Option<CliMode>,
     dry_run: bool,
+    no_resume: bool,
     guild: Option<Id<GuildMarker>>,
 }
 
@@ -225,6 +231,13 @@ impl Parser {
                 }
                 self.dry_run = true;
             }
+            NO_RESUME => {
+                no_value(NO_RESUME)?;
+                if self.no_resume {
+                    return Err(CliError::DuplicateFlag { flag: NO_RESUME });
+                }
+                self.no_resume = true;
+            }
             PUBLISH_GUILD => {
                 let id = match value {
                     Some(value) => Some(guild_id(PUBLISH_GUILD, value)?),
@@ -254,6 +267,9 @@ impl Parser {
         if self.dry_run && self.mode.is_none() {
             return Err(CliError::DryRunWithoutPublish);
         }
+        if self.no_resume && self.mode.is_some() {
+            return Err(CliError::NoResumeWithPublish);
+        }
         let mode = match (self.mode, self.guild) {
             (Some(CliMode::PublishClear(_)), guild) => Some(CliMode::PublishClear(guild)),
             (_, Some(_)) => return Err(CliError::GuildWithoutClear),
@@ -262,6 +278,7 @@ impl Parser {
         Ok(NoctisArgs {
             mode,
             dry_run: self.dry_run,
+            no_resume: self.no_resume,
         })
     }
 }
@@ -323,8 +340,9 @@ impl NoctisArgs {
     /// arguments, and `--` with everything after it.
     ///
     /// Before `--`, the flag names `--publish`, `--publish-guild`,
-    /// `--publish-clear`, `--guild` and `--dry-run` are reserved by Noctis
-    /// and always claimed (rename a flag of your own that uses one), and
+    /// `--publish-clear`, `--guild`, `--dry-run` and `--no-resume` are
+    /// reserved by Noctis and always claimed (rename a flag of your own that
+    /// uses one), and
     /// `--publish-guild` also consumes the next argument when it does not
     /// start with `-`.
     ///
@@ -386,13 +404,20 @@ impl NoctisArgs {
     pub fn dry_run(&self) -> bool {
         self.dry_run
     }
+
+    /// Whether `--no-resume` was given (only without a mode): the run
+    /// closes its shards fresh and clears their stored sessions.
+    pub fn no_resume(&self) -> bool {
+        self.no_resume
+    }
 }
 
 impl IntoIterator for NoctisArgs {
     type Item = OsString;
     type IntoIter = std::vec::IntoIter<OsString>;
 
-    /// The canonical flags: the mode flag (with its id), then `--dry-run`.
+    /// The canonical flags: the mode flag (with its id), then `--dry-run`,
+    /// then `--no-resume` (which never co-occurs with the other two).
     fn into_iter(self) -> Self::IntoIter {
         let mut out: Vec<OsString> = Vec::new();
         match self.mode {
@@ -412,6 +437,9 @@ impl IntoIterator for NoctisArgs {
         }
         if self.dry_run {
             out.push(DRY_RUN.into());
+        }
+        if self.no_resume {
+            out.push(NO_RESUME.into());
         }
         out.into_iter()
     }

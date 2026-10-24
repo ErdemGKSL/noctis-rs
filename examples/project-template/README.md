@@ -107,7 +107,12 @@ Other CLI modes of the same binary:
 | `--publish-clear [--guild <id>]` | Remove this App's commands globally or from a guild. |
 | `--dry-run` | With a publish flag: print the JSON and the diff, write nothing. |
 | `--features a,b` / `--features all` | [planned] Boot Flags: register only Modules carrying these flags. |
-| `--no-resume` | [planned] Shut down without keeping sessions resumable; clears stored sessions. |
+| `--no-resume` | Close shards fresh (1000) and clear this process's stored sessions at start and at shutdown; the next start identifies. Not combinable with a publish flag. |
+
+By default a graceful shutdown closes each shard with 4000 and stores its session, so the
+next start resumes instead of identifying. Delivery is at-most-once: the stored sequence
+is the last event received, so events dropped under back-pressure (a full event lane) are
+never replayed by the resume.
 
 `--publish` writes only to the global target and the guilds your Registry names, so the
 `--publish-guild` copy stays in your test guild (every command shows twice) and a guild

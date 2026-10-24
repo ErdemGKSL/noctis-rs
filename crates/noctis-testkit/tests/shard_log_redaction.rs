@@ -87,6 +87,7 @@ async fn shard_warnings_omit_the_payload() {
         event_types: EventTypeFlags::all(),
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+        resume: true,
         shards: 0..1,
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,

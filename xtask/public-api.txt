@@ -86,6 +86,7 @@ pub fn noctis::App::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::App::ref_ttl(&self) -> core::time::Duration
 pub fn noctis::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
+pub fn noctis::App::resume_sessions(&self) -> bool
 pub fn noctis::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -135,6 +136,7 @@ pub fn noctis::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
 pub fn noctis::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
 pub fn noctis::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
+pub fn noctis::AppBuilder::resume_sessions(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
 pub fn noctis::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::SessionStore>) -> &mut Self
 pub fn noctis::AppBuilder::shard_range(&mut self, core::ops::range::Range<u32>) -> &mut Self
@@ -1778,6 +1780,7 @@ pub noctis::cli::CliError::InvalidGuildId::value: alloc::string::String
 pub noctis::cli::CliError::MissingDevGuild
 pub noctis::cli::CliError::MissingValue
 pub noctis::cli::CliError::MissingValue::flag: &'static str
+pub noctis::cli::CliError::NoResumeWithPublish
 pub noctis::cli::CliError::UnexpectedValue
 pub noctis::cli::CliError::UnexpectedValue::flag: &'static str
 pub noctis::cli::CliError::UnknownFlag
@@ -1810,6 +1813,7 @@ pub struct noctis::cli::NoctisArgs
 impl noctis::cli::NoctisArgs
 pub fn noctis::cli::NoctisArgs::dry_run(&self) -> bool
 pub fn noctis::cli::NoctisArgs::mode(&self) -> core::option::Option<noctis::cli::CliMode>
+pub fn noctis::cli::NoctisArgs::no_resume(&self) -> bool
 pub fn noctis::cli::NoctisArgs::parse<I, A>(I) -> core::result::Result<Self, noctis::cli::CliError> where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
 pub fn noctis::cli::NoctisArgs::split<I, A>(I) -> core::result::Result<(Self, alloc::vec::Vec<std::ffi::os_str::OsString>), noctis::cli::CliError> where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
 impl core::clone::Clone for noctis::cli::NoctisArgs
@@ -4029,6 +4033,7 @@ pub fn noctis::prelude::App::limits(&self) -> &noctis::rules::Limits
 pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::prelude::App::ref_ttl(&self) -> core::time::Duration
 pub fn noctis::prelude::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
+pub fn noctis::prelude::App::resume_sessions(&self) -> bool
 pub fn noctis::prelude::App::run(self) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send
 pub async fn noctis::prelude::App::run_until(self, impl core::future::future::Future<Output = ()> + core::marker::Send) -> core::result::Result<(), noctis::Error>
 pub fn noctis::prelude::App::run_with_args<I, A>(self, I) -> impl core::future::future::Future<Output = core::result::Result<(), noctis::Error>> + core::marker::Send where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -4078,6 +4083,7 @@ pub fn noctis::prelude::AppBuilder::ref_ttl(&mut self, core::time::Duration) -> 
 pub fn noctis::prelude::AppBuilder::render_cache(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RenderCache>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::renderer(&mut self, alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::report(&mut self, noctis::BuildViolation) -> &mut Self
+pub fn noctis::prelude::AppBuilder::resume_sessions(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::runtime(&mut self, &noctis::Runtime) -> &mut Self
 pub fn noctis::prelude::AppBuilder::session_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::SessionStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::shard_range(&mut self, core::ops::range::Range<u32>) -> &mut Self

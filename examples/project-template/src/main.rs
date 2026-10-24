@@ -36,8 +36,9 @@ async fn main() -> anyhow::Result<()> {
     // `run` returns `Ok(())`. It returns `RunError::AllShardsEnded` if every shard closed
     // fatally. It also handles the CLI modes, which publish and exit without connecting:
     // --publish, --publish-guild [<id>] (NOCTIS_DEV_GUILD without an id),
-    // --publish-clear [--guild <id>], each with optional --dry-run.
-    // [planned] --features a,b|all, --no-resume.
+    // --publish-clear [--guild <id>], each with optional --dry-run. --no-resume runs the bot
+    // with fresh sessions: shards clear their stored sessions at start and close with 1000.
+    // [planned] --features a,b|all.
     let app = noctis_bot_template::configure(&mut App::from_env()?).build()?;
     app.run().await?;
     Ok(())

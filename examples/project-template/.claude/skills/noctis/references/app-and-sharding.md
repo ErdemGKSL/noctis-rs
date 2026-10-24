@@ -92,6 +92,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 `app.state::<T>()` (`Option<State<T>>`), `app.limits()` (`&Limits`), `app.has_renderer()`
 (whether a Plugin or `.renderer(..)` set a `Renderer`), `app.renderer()`
 (`Option<&Arc<dyn Renderer>>`, the one `ctx.render` uses), `app.is_publisher()`,
+`app.resume_sessions()` (`bool`, default `true`; `false` for a `--no-resume` run),
 `app.dev_guild()` (`Option<Id<GuildMarker>>`) and `app.publish(scope)` (§3).
 
 ### AppBuilder methods
@@ -122,6 +123,7 @@ Implemented:
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
 | `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
 | `.publisher(bool)` | env `NOCTIS_PUBLISHER`, else `false` | a normal run publishes globally once at startup, before any shard connects (never on READY); a failed Publish is one `error` log (target `noctis::publish`) and the App keeps starting; set it on exactly one process; the last call wins; see §3 |
+| `.resume_sessions(bool)` | `true` | `true`: each shard resumes its stored session at start and a graceful shutdown closes with 4000 and stores it. `false`: each shard deletes its stored entry before it identifies, and the shutdown closes with 1000 and deletes it. `--no-resume` sets `false` for that run; no env variable; the last call wins; see §4 Session resume |
 | `.dev_guild(Id<GuildMarker>)` | env `NOCTIS_DEV_GUILD`, else none | the guild `--publish-guild` without an id publishes to; the last call wins |
 | `.payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY`, else none | the key that signs and verifies `signed` Routes (`noctis::codec::PayloadKey`, 32 bytes: `PayloadKey::from_hex(..)` takes exactly **64 hex digits**, e.g. `openssl rand -hex 32`; `KeyError::Length`/`InvalidChar` otherwise, naming a length or a position, never a character); required when a `signed` Route is mounted (``BuildViolation::MissingPayloadKey``: ``[CID-06] Route `x` is `signed`, but no payload key is configured: set NOCTIS_PAYLOAD_KEY (64 hex digits) or call `.payload_key(..)` ``); identical on every process of a Cluster; never logged (`Debug` shows `payload_key: true`); the last call wins |
 | `.previous_payload_key(PayloadKey)` | env `NOCTIS_PAYLOAD_KEY_PREVIOUS`, else none | the previous key during a rotation: ids it signed still verify, new ids use the current key; without a current key it is ``BuildViolation::PreviousKeyWithoutKey`` (``[CID-06] a previous payload key is set without a current one: set NOCTIS_PAYLOAD_KEY (or call `.payload_key(..)`) too``); the last call wins |
@@ -308,7 +310,7 @@ explicitly). Built-in parser, no clap:
 | `--publish-clear [--guild <id>]` | publish an empty list globally (or to that guild): deletes this App's commands there |
 | `--dry-run` | with a publish flag: read, diff and check everything, print the JSON, the diff and the create count, write nothing |
 | `--features a,b` / `all` [planned, Story 13.2] | Boot Flags (an unknown flag today) |
-| `--no-resume` [planned, Story 12.3] | non-resumable shutdown (an unknown flag today) |
+| `--no-resume` | run the bot with fresh sessions: `.resume_sessions(false)` for this run (`info` log `session resume disabled (--no-resume)`): each shard deletes its stored entry before it identifies, the shutdown closes with 1000 and deletes it. With a publish flag it is `CliError::NoResumeWithPublish` |
 
 Parsing rules: `--publish-guild=<id>` and `--guild=<id>` also work; `--publish-guild`
 takes the next argument as its id only when it does not start with `-`; an id is 1-20
@@ -321,7 +323,8 @@ stdout, or `Err(noctis::Error::Publish(..))`; it installs no signal handler, sen
 `MissingValue { flag }` (`--guild` without a value), `UnexpectedValue { flag }`
 (`--publish=1`, `--dry-run=yes`), `InvalidGuildId { flag, value }`, `DuplicateFlag { flag }`,
 `ConflictingModes { first, second }`, `DryRunWithoutPublish`, `GuildWithoutClear`
-(`--guild` without `--publish-clear`), `MissingDevGuild`.
+(`--guild` without `--publish-clear`), `MissingDevGuild`, `NoResumeWithPublish`
+(`--no-resume` with `--publish`, `--publish-guild` or `--publish-clear`).
 
 Stale guild commands: `--publish` writes only the global target and the guilds the
 Registry names, so a `--publish-guild` dev copy stays in that guild after you go global
@@ -330,7 +333,7 @@ commands. Clean such a guild with `cargo run --release -- --publish-clear --guil
 
 **Your own flags.** Split first; the rest keeps its order untouched (program name, your
 flags, positional and non-UTF-8 arguments, `--` and everything after it). Before `--`,
-`--publish`, `--publish-guild`, `--publish-clear`, `--guild` and `--dry-run` are reserved
+`--publish`, `--publish-guild`, `--publish-clear`, `--guild`, `--dry-run` and `--no-resume` are reserved
 by Noctis and always claimed (a bot flag named `--guild` or `--dry-run` gets
 `GuildWithoutClear`/`DryRunWithoutPublish`; rename yours), and `--publish-guild` also
 consumes the next argument that does not start with `-`:
@@ -345,7 +348,8 @@ app.run_with_args(noctis_args).await?;                              // NoctisArg
 
 `NoctisArgs::parse(args)` parses a line of Noctis flags only; `args.mode()` is
 `Option<CliMode>` (`Publish`, `PublishGuild(Option<Id<GuildMarker>>)`,
-`PublishClear(Option<Id<GuildMarker>>)`) and `args.dry_run()` a `bool`. Iterating a
+`PublishClear(Option<Id<GuildMarker>>)`), `args.dry_run()` a `bool` and
+`args.no_resume()` a `bool` (`--no-resume`, only without a mode). Iterating a
 `NoctisArgs` renders its canonical flags, so it round-trips through `parse`.
 
 **Publish** (`noctis::publish`) never burns the create quota (REG-05: 200 creates per
@@ -546,13 +550,22 @@ last event received.
 - **Deleted** when Discord rejects the stored session (op 9 `d: false`, or a READY
   replaces it): the Shard then identifies with no operator action. A fresh (1000) close
   deletes it too.
+- **Cleared** at start, instead of read, with `.resume_sessions(false)` / `--no-resume`:
+  the delete (bounded by 5 s; a failure only warns) finishes before the Shard connects,
+  so it precedes IDENTIFY and no RESUME is sent. Only this process's Shards under the
+  current total are cleared. A shutdown that resolves before `GET /gateway/bot`
+  answered has no shard plan and clears nothing; the next `--no-resume` start does.
 
 A different shard total never resumes an old layout's session (the total is in the
 key). GW-02's boot check still counts resumed Shards, because a rejected resume falls
 back to identify. The memory default resumes only when the same store instance reaches
 the next App (`Arc::clone(&store)` into both builders); to resume across process
-restarts, use a `SessionStore` that persists (see `adapters.md`). Events dropped under
-back-pressure are not replayed (at-most-once).
+restarts, use a `SessionStore` that persists (see `adapters.md`).
+
+Delivery is at-most-once: the stored sequence is the last event **received**, so an
+event the event lane dropped under back-pressure (or discarded at shutdown) counts as
+seen, and a resume never replays it. Nothing buffers or deduplicates dropped events;
+every session write has finished when `run()` / `run_until` returns.
 
 With `.gateway_url(..)` (or `NOCTIS_GATEWAY_URL`) set, shards connect to that URL
 instead of Discord's gateway, but **resumes go to the `resume_gateway_url` that READY
@@ -656,9 +669,10 @@ resolves, and both also when every shard has ended (then they return
 1. `info` log `shutdown started` (`reason = "signal"` from `run()`,
    `"requested"` from `run_until` or `"all shards ended"`, `grace`). [planned, Story 13.5: the `ShutdownStarted` Lifecycle Hook fires here]
 2. Every shard closes with code 4000 (resumable; Discord keeps the session); once
-   Discord acknowledges the close, the shard's session is written to the
-   `SessionStore` (§4 Session resume). [planned, Story 12.3: `--no-resume` closes with
-   1000 and clears the stored sessions] From here no new gateway event enters the lanes.
+   Discord acknowledges the close, the shard's session id, last received sequence and
+   resume URL are written to the `SessionStore` (§4 Session resume). With
+   `.resume_sessions(false)` / `--no-resume` every shard closes with 1000 instead and its
+   stored entry is deleted. From here no new gateway event enters the lanes.
 3. Both lanes drain (interactions first) and running handlers finish, for at most
    `shutdown_grace` (default 10 s). `ctx.http()` keeps working the whole time.
 4. At the deadline every handler still running, or queued behind one (ordered

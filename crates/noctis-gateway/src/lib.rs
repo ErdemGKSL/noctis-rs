@@ -34,6 +34,10 @@
 //!   shard send RESUME instead of IDENTIFY, without an `IdentifyQueue`
 //!   lease; a miss, a store error or a timeout makes it identify. An entry
 //!   that does not decode or fails validation is deleted.
+//! - **Cleared** at start, instead of read, when [`GatewayOptions::resume`]
+//!   is `false` (`--no-resume`): the delete is bounded by 5 s and finishes
+//!   before the shard connects, so it precedes IDENTIFY. Only this
+//!   Gateway's shards under the current total are cleared.
 //! - **Written** only after a requested [`CloseMode::Resumable`] close of an
 //!   identified shard is acknowledged by the gateway's close frame, within
 //!   the same [`GatewayOptions::close_timeout`]; the entry has no TTL.

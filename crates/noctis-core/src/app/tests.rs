@@ -1606,6 +1606,24 @@ async fn publisher_and_dev_guild_setters() {
     assert_eq!(app.dev_guild(), None);
 }
 
+/// Story 12.3 S7: default `true`, the setter, the last call wins.
+#[tokio::test]
+async fn resume_sessions_setter() {
+    assert!(App::builder().build().unwrap().resume_sessions());
+    let mut builder = App::builder();
+    builder.resume_sessions(false);
+    assert!(format!("{builder:?}").contains("resume_sessions: false"));
+    let app = builder.build().unwrap();
+    assert!(!app.resume_sessions());
+    assert!(format!("{app:?}").contains("resume_sessions: false"));
+    let app = App::builder()
+        .resume_sessions(false)
+        .resume_sessions(true)
+        .build()
+        .unwrap();
+    assert!(app.resume_sessions());
+}
+
 // ---- gateway_url (Story 5.3 Matrix 10-12) ----
 
 #[tokio::test]
@@ -2543,6 +2561,7 @@ async fn shutdown_sequence_order() {
         event_types: EventTypeFlags::INTERACTION_CREATE,
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+        resume: true,
         shards: 0..2,
         total: NonZeroU32::new(2).unwrap(),
         max_concurrency: NonZeroU16::MIN,
