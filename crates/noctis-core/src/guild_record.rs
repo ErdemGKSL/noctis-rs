@@ -24,8 +24,9 @@ pub(crate) struct GuildRecord {
     pub(crate) locale: Locale,
 }
 
-/// The size bound of one [`GuildRecord`] (NFR-1: at most 1 KiB of framework
-/// memory per idle guild, map overhead included).
+/// The size bound of one [`GuildRecord`] value; the map entry's key and
+/// hash-table overhead are not included (the `memory_per_guild` bench
+/// measures the whole per-guild cost against NFR-1's 1 KiB).
 pub(crate) const GUILD_RECORD_MAX_BYTES: usize = 64;
 
 const _: () = assert!(size_of::<GuildRecord>() <= GUILD_RECORD_MAX_BYTES);

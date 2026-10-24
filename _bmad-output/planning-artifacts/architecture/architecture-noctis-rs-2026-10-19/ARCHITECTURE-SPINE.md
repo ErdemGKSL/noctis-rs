@@ -1279,7 +1279,11 @@ list in CI.
   `deps-check` rule `keyed-map` rejects any framework map or set keyed by a guild,
   user, channel, message or interaction `Id` unless its line states the bound as
   `// keyed-map: <why it is bounded>` (test files and `noctis-testkit` exempt; raw
-  `u64` keys are not detected).
+  `u64` keys, key types spanning lines, turbofish construction
+  (`HashMap::<Id<GuildMarker>, _>::new()`), path-qualified keys
+  (`HashMap<twilight_model::id::Id<GuildMarker>, _>`), keys behind a type alias
+  or inferred by the compiler, and map types outside the opener list
+  (`DashSet`, `FxHashMap`, `AHashMap`, ...) are not detected).
 
 ### AD-26 — Declarative, tescord-like authoring surface
 - **Binds:** `noctis-macros`, `noctis-core`, facade, Usage Skill; FR-7, FR-8,

@@ -35,7 +35,7 @@ fn main() -> ExitCode {
 /// Measures, prints and returns the report; an error is the message of why
 /// nothing was measured.
 fn bench() -> Result<budget::Report, String> {
-    let guilds_arg = parse_args(std::env::args().skip(1))?;
+    let guilds_arg = budget::parse_args(std::env::args().skip(1))?;
     let budgets = budget::load(Path::new(BUDGETS)).map_err(|error| error.to_string())?;
     let guilds = guilds_arg.unwrap_or_else(|| budgets.guilds());
     let profiler = measure::start_profiler().map_err(|error| error.to_string())?;
@@ -71,27 +71,4 @@ fn bench() -> Result<budget::Report, String> {
 #[expect(clippy::print_stdout, reason = "the bench reports on stdout")]
 fn print_report(text: &str) {
     print!("{text}");
-}
-
-/// The `--guilds N` override; cargo's `--bench` and other arguments are
-/// ignored.
-fn parse_args(args: impl Iterator<Item = String>) -> Result<Option<u32>, String> {
-    let mut args = args;
-    let mut guilds = None;
-    while let Some(arg) = args.next() {
-        let value = if arg == "--guilds" {
-            args.next()
-                .ok_or_else(|| "--guilds needs a guild count".to_owned())?
-        } else if let Some(value) = arg.strip_prefix("--guilds=") {
-            value.to_owned()
-        } else {
-            continue;
-        };
-        let count: u64 = value
-            .parse()
-            .map_err(|_| format!("--guilds expects an integer, got `{value}`"))?;
-        budget::check_guilds(count).map_err(|error| error.to_string())?;
-        guilds = Some(u32::try_from(count).map_err(|_| "--guilds is out of range".to_owned())?);
-    }
-    Ok(guilds)
 }

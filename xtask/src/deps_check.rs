@@ -49,7 +49,11 @@
 //! `// keyed-map: <why it is bounded>` marker. Comment lines, files named
 //! `tests.rs` and files under a `tests` directory are exempt. Known limit:
 //! maps keyed by raw `u64` ids, or whose key type spans lines, are not
-//! detected.
+//! detected; neither are turbofish construction
+//! (`HashMap::<Id<GuildMarker>, _>::new()`), path-qualified keys
+//! (`HashMap<twilight_model::id::Id<GuildMarker>, _>`), keys behind a type
+//! alias or inferred by the compiler, and map types outside the opener list
+//! (`DashSet`, `FxHashMap`, `AHashMap`, ...).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

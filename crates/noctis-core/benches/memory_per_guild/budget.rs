@@ -356,3 +356,26 @@ fn default_cache() -> String {
         format!("{resources} ({})", absent.join(", "))
     }
 }
+
+/// The `--guilds N` override; cargo's `--bench` and other arguments are
+/// ignored.
+pub(crate) fn parse_args(args: impl Iterator<Item = String>) -> Result<Option<u32>, String> {
+    let mut args = args;
+    let mut guilds = None;
+    while let Some(arg) = args.next() {
+        let value = if arg == "--guilds" {
+            args.next()
+                .ok_or_else(|| "--guilds needs a guild count".to_owned())?
+        } else if let Some(value) = arg.strip_prefix("--guilds=") {
+            value.to_owned()
+        } else {
+            continue;
+        };
+        let count: u64 = value
+            .parse()
+            .map_err(|_| format!("--guilds expects an integer, got `{value}`"))?;
+        check_guilds(count).map_err(|error| error.to_string())?;
+        guilds = Some(u32::try_from(count).map_err(|_| "--guilds is out of range".to_owned())?);
+    }
+    Ok(guilds)
+}

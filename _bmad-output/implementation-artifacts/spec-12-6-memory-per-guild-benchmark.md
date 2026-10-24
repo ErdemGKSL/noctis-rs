@@ -2,7 +2,7 @@
 title: 'Story 12.6: Memory-per-guild benchmark'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '94952ba0b09759a4e9b1688de93c69f90f7d09ff'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,21 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-12-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      noctis-core's new versioned dev-dependency on the `noctis` facade forms a dev-dependency cycle that may block `cargo publish -p noctis-core` before `noctis` is on crates.io.
+    evidence: |-
+      Unverified (maybe-false). The workspace entry carries `version = "0.1.0"`, so the dev-dependency is kept in the published manifest; noctis-testkit already has the same cycle (`noctis.workspace = true` under dev-dependencies). Settle with `cargo publish --dry-run --workspace` (multi-package publish) or `cargo publish --dry-run -p noctis-core` in the Epic 14 publish story; if it fails, strip the version or publish with a staged order.
+    location: >-
+      crates/noctis-core/Cargo.toml:43
+    severity: medium (unverified)
+  - summary: >-
+      The NFR-1 1 KiB framework-per-guild budget is checked by no executed gate until Story 14.3 turns `gate = true` on.
+    evidence: |-
+      `budgets.toml` has `gate = false` (report only, the intent and a recorded maintainer decision); the smoke test S4 only bounds per-guild growth at 16384 bytes and the bench runs only in the disabled CI workflow, so a 1-16 KiB per-guild regression passes every local gate. Story 14.3 owns gating; tightening S4 toward the budget is the cheap interim option if 200-guild noise allows.
+    location: >-
+      crates/noctis-core/benches/budgets.toml:7
+    severity: medium
 ---
 
 <intent-contract>
@@ -180,6 +194,35 @@ keyed-map (`xtask/src/deps_check.rs` tests, predicate and scan):
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 25 findings — high 0, medium 3, low 10, false 11, maybe-false 1
+- findings:
+  - `[maybe-false]` `[defer]` (blind) dev-dependency `noctis-core -> noctis` creates a publish cycle — the spec chose this edge citing the noctis-testkit precedent, which has the same cycle; settle with `cargo publish --dry-run --workspace` in Epic 14 (deferred, medium unverified).
+  - `[false]` `[reject]` (blind) `keyed-map` omits `RoleMarker`, `EmojiMarker` and other per-guild markers — the intent/AC name exactly guild, user, channel, message and interaction ids and K5 specifies `Id<RoleMarker>` as no hit; no such map exists.
+  - `[low]` `[patch]` (blind) `keys_by_discord_id` misses turbofish, aliased/inferred keys and unlisted map types, while only raw `u64` and multi-line keys are documented — grouped with the undocumented-blind-spot entry; patch: list these limits in the `deps_check.rs` module docs and the spine AD-25 amendment.
+  - `[false]` `[reject]` (blind) inline `#[cfg(test)]` modules are scanned although "test files" are exempt — the module docs state precisely "files named `tests.rs` and files under a `tests` directory", which is the implemented behavior; an inline fixture fails loudly and takes a marker.
+  - `[medium]` `[patch]` (blind) `parse_args` in the bench's `main.rs` has no tests — same root as the verification-gap entry; patch: move `parse_args` into `budget.rs` and add argument cases to `memory_bench_budget.rs`.
+  - `[false]` `[reject]` (blind) the Renderer cache metric is always 0 — idle guilds render nothing, which the spec settles (S3, the row's note "idle guilds render nothing"); the intent asks for the weigher bytes of idle guilds, and 0 is the correct value.
+  - `[false]` `[reject]` (blind) framework bytes include testkit per-guild retention and miss real-shard state — `FakeGateway::dispatch` (`crates/noctis-testkit/src/fake/gateway.rs:567-590`) sends each frame and keeps nothing; the twilight shard keeps no per-guild set outside the Discord cache, which is measured separately.
+  - `[low]` `[reject]` (blind) per-guild framework bytes step with `HashMap` capacity doubling — real but the swing (about 30 B per guild at most) is under 1% of the per-guild total the Usage Skill reports; not worth extra report or Skill text.
+  - `[false]` `[reject]` (blind) README marks Epic 12 done while the spec is `in-progress` and sprint status is not updated — the story loop's finalize sets `status: done` and `tools/story-loop/finish.sh` updates `sprint-status.yaml` in the same finishing commit as the README refresh.
+  - `[false]` `[reject]` (blind) README API-preview names were not checked — spot check: `AppBuilder::ref_store`, `App::from_env`, `ActionRow::buttons`, `HandlerError`, `Responded`, `CommandCtx`, `ComponentCtx`, `PayloadEnum` all exist in `xtask/public-api.txt` or the sources.
+  - `[low]` `[patch]` (blind) `GUILD_RECORD_MAX_BYTES`'s doc claims "map overhead included" though the const assert bounds only `size_of::<GuildRecord>()` — patch: reword the doc to say it bounds the record size only (map overhead is measured by the bench).
+  - `[false]` `[reject]` (blind) the CI bench job cannot fail and keeps no artifact — report-only until Story 14.3 is the intent and a maintainer decision; the step summary is the specified report sink and `budgets.toml`'s content is spec-mandated.
+  - `[low]` `[patch]` (edge) turbofish `HashMap::<Id<GuildMarker>, _>::new()` bypasses `keyed-map` — grouped with the undocumented-blind-spot entry; documented as a known limit (the predicate is spec-exact).
+  - `[low]` `[patch]` (edge) a path-qualified key `HashMap<twilight_model::id::Id<GuildMarker>, X>` bypasses `keyed-map` (`strip_prefix("Id<")` fails) — grouped with the undocumented-blind-spot entry; documented as a known limit.
+  - `[low]` `[reject]` (edge) a per-guild value in (max, max + 0.05) prints `1024.0 | <= 1024 | over` — real but a 0.05-byte window on a value measured near 30 B; the spec defines `Over` as value > max, so changing the comparison or format is not a direct correction.
+  - `[low]` `[reject]` (edge) the `budgets.toml` Discord-cache note hardcodes `GUILD | CHANNEL | ROLE` and can drift from the real default — only on a future default change, the report header follows the real default, and the file content is spec-exact.
+  - `[low]` `[reject]` (edge) nothing checks the counter equals N after the last batch (S1 "exactly") — each dispatch is checked to reach exactly one session (`!= 1` is `NoSession`), so extra handling needs a fake-gateway bug; a post-check adds a branch and error path for an unlikely case.
+  - `[medium]` `[patch]` (vgap) `parse_args` (`--guilds N`/`--guilds=N`, ignoring cargo's `--bench`) is compiled but never executed by any gate — pre-verified; patch: move it into `budget.rs` and add a test case covering `--bench`, both override forms, 0, 100001, a non-integer and a trailing `--guilds`.
+  - `[medium]` `[defer]` (vgap) the 1 KiB budget is enforced by no executed gate — report-only until Story 14.3 is in the intent; deferred to 14.3 with the S4-tightening option.
+  - `[false]` `[reject]` (intent) `GuildRecord` has no Module bitset — the spec deliberately settles that Story 13.3 (per-guild Module enablement, not yet implemented) adds the field; there is no bitset to store today.
+  - `[low]` `[patch]` (intent) `keyed-map` is a line heuristic with blind spots and the marker is unverified — the blind-spot part groups with the documentation patch; the marked `GuildRecords` bound is covered by existing `locale/tests.rs` cases (delete removes, refresh never inserts, 10 000 records then 0).
+  - `[false]` `[reject]` (intent) the tests never run the 10k bench against the budget — the spec settles that pure logic and a 200-guild smoke run are tested through `#[path]` and the bench reports (gating in 14.3); the budget-gap part is the deferred vgap entry.
+  - `[false]` `[reject]` (intent) "reports on every push" lives in a disabled workflow — the maintainer's CI pause (AGENTS.md) puts every workflow in `.github/workflows-disabled/`; `actions/checkout@v7` matches `ci.yml`.
+  - `[false]` `[reject]` (intent) the Renderer cache measurement is trivially zero — same refutation as the blind-layer entry: 0 is the correct value for idle guilds.
+  - `[low]` `[reject]` (intent) the default cache configuration is stated in the header, the `budgets.toml` note and the Usage Skill, which can drift — same as the edge entry; the Skill numbers are measured values that any later re-measure updates.
+
 ## Design Notes
 
 - **Four runs in one process** (decision): dhat allows one profiler per process, so the runs are sequential and each measures its own `after − before`; a warm-up run first absorbs lazy globals (rustls provider, tracing/metrics statics, OnceLocks) that would otherwise inflate the baseline. Batches of 250 with a wait keep lane queues small, so retained `VecDeque` capacity from a burst does not pose as per-guild memory.
@@ -220,3 +263,12 @@ Notes:
 - Discord cache bytes per guild: reported only: NFR-1 sets no Discord cache target; default configuration GUILD | CHANNEL | ROLE (no members, no messages)
 - Renderer cache bytes: MemoryRenderCache::DEFAULT_LIMITS byte budget (64 MiB); idle guilds render nothing
 ```
+
+## Auto Run Result
+
+- Summary: added the `memory_per_guild` dhat bench in noctis-core (10 000 idle guilds through FakeGateway, four sequential runs after a warm-up) reporting framework bytes per guild (28.5 B vs 1 KiB NFR-1 goal), Discord cache bytes (reported only, ~9.7 KB/guild with GUILD|CHANNEL|ROLE) and Renderer cache bytes (0 for idle guilds); `benches/budgets.toml` with `gate = false` until Story 14.3; `GuildRecord` with a const-asserted size bound as the home for Story 13.3's Module bitset; new `keyed-map` deps-check rule flagging maps keyed by Discord ids without a bound marker; report-only CI bench job in `.github/workflows-disabled/main.yml`; spine AD-25 amendment; Usage Skill and README (Epic 12) updates.
+- Files changed: `crates/noctis-core/benches/memory_per_guild/{main,budget,measure}.rs` (bench, budget logic, measurement); `crates/noctis-core/benches/budgets.toml` (budgets); `crates/noctis-core/src/guild_record.rs`, `locale.rs`, `lib.rs` (GuildRecord, bounded guild locale map); `crates/noctis-core/tests/memory_bench_budget.rs`, `memory_bench_smoke.rs` (budget/arg tests, 200-guild smoke); `crates/noctis-core/Cargo.toml`, `Cargo.lock` (dhat, bench target); `xtask/src/deps_check.rs` (keyed-map rule); `ARCHITECTURE-SPINE.md`, `.memlog.md` (AD-25 amendment); Usage Skill `app-and-sharding.md`; `README.md`; workflow file.
+- Review findings: 25 total (high 0, medium 3, low 10, false 11, maybe-false 1). Patched: 2 medium (`parse_args` untested -> moved into `budget.rs` with argument tests), 4 low grouped into keyed-map blind-spot documentation (turbofish, path-qualified, aliased keys, raw u64) plus the `GUILD_RECORD_MAX_BYTES` doc rewording. Deferred: publish cycle from the `noctis-core -> noctis` dev-dependency (verify with `cargo publish --dry-run --workspace` in Epic 14); 1 KiB budget not gated (Story 14.3). Rejected: missing per-guild markers, inline test modules, Renderer metric 0, testkit retention, HashMap capacity steps, README/sprint status timing, API-preview names, CI job non-failing, 0.05-byte Over window, hardcoded cache note drift, post-batch counter check, missing Module bitset (13.3), 10k bench untested, disabled workflow, default-config drift — reasons in the Review Triage Log.
+- Follow-up review recommended: false (patched by verdict: high 0, medium 2, low 5; first pass, no high patched; the two medium patches share one root and are covered by new tests).
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, deps-check, tw-grammar, tw_crosscheck, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91); bench run exit 0 with no `dhat-heap.json` left; CI paused by maintainer.
+- Residual risks: possible crates.io publish cycle via the dev-dependency (Epic 14); NFR-1 budget is report-only until 14.3; `keyed-map` is a line heuristic with documented blind spots.

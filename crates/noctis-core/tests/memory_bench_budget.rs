@@ -1,6 +1,6 @@
-//! Story 12.6: the `memory_per_guild` bench's budget logic (U1-U16) and its
-//! allocator check without dhat's allocator (S0), through the bench modules
-//! included by path.
+//! Story 12.6: the `memory_per_guild` bench's budget logic and arguments
+//! (U1-U17) and its allocator check without dhat's allocator (S0), through
+//! the bench modules included by path.
 
 #![allow(
     clippy::unwrap_used,
@@ -305,6 +305,23 @@ fn u16_extreme_deltas_do_not_overflow() {
         )
         .unwrap();
         let _ = report.markdown();
+    }
+}
+
+#[test]
+fn u17_args() {
+    let parse = |args: &[&str]| budget::parse_args(args.iter().map(|&arg| arg.to_owned()));
+    assert_eq!(parse(&["--bench"]), Ok(None));
+    assert_eq!(parse(&["--bench", "--guilds", "5"]), Ok(Some(5)));
+    assert_eq!(parse(&["--guilds=5"]), Ok(Some(5)));
+    assert_eq!(parse(&["--guilds", "5", "--guilds=7"]), Ok(Some(7)));
+    for bad in [
+        &["--guilds", "0"][..],
+        &["--guilds", "100001"],
+        &["--guilds", "x"],
+        &["--bench", "--guilds"],
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
     }
 }
 
