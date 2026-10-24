@@ -268,7 +268,7 @@ mod module_ids {
     use crate::ModuleIdError::{self, Empty, InvalidChar, NotUnderParent, PathAtRoot};
 
     fn fold(roots: &[Module]) -> Vec<BuildViolation> {
-        Registry::fold(roots, Intents::empty(), None).1
+        Registry::fold(roots, Intents::empty(), None, &BootFlags::all()).1
     }
 
     fn invalid(id: &'static str, reason: ModuleIdError) -> BuildViolation {
@@ -293,7 +293,8 @@ mod module_ids {
                     .__add(noop::<MessageCreate>("h2"))
                     .module(Module::new("ops/audit/log").__add(noop::<MessageCreate>("h3"))),
             );
-        let (registry, violations) = Registry::fold(&[tree], Intents::empty(), None);
+        let (registry, violations) =
+            Registry::fold(&[tree], Intents::empty(), None, &BootFlags::all());
         assert_eq!(violations, []);
         let modules: Vec<&str> = registry.entries().iter().map(|e| e.module).collect();
         assert_eq!(modules, ["ops", "ops/audit", "ops/audit/log"]);
@@ -774,6 +775,7 @@ fn every_parsed_type_has_a_slot() {
                     &[Module::new("m").__add(noop::<$ty>(stringify!($ty)))],
                     Intents::all(),
                     None,
+                    &BootFlags::all(),
                 );
                 let slots: Vec<EventType> = TABLE
                     .iter()
@@ -974,7 +976,7 @@ mod routes {
     use crate::test_support::{TBuy, button, modal};
 
     fn fold(roots: &[Module]) -> (Registry, Vec<BuildViolation>) {
-        Registry::fold(roots, Intents::empty(), None)
+        Registry::fold(roots, Intents::empty(), None, &BootFlags::all())
     }
 
     fn duplicate(
@@ -1164,7 +1166,7 @@ mod extensions {
     }
 
     fn fold(roots: &[Module]) -> Vec<BuildViolation> {
-        Registry::fold(roots, Intents::empty(), None).1
+        Registry::fold(roots, Intents::empty(), None, &BootFlags::all()).1
     }
 
     fn missing(module: &'static str, handler: &'static str, ty: &'static str) -> BuildViolation {
@@ -1308,7 +1310,8 @@ mod extensions {
                     .__add(noop::<MessageCreate>("bot::child")),
             );
         assert!(format!("{tree:?}").contains("before: [\""));
-        let (registry, violations) = Registry::fold(&[tree], Intents::empty(), None);
+        let (registry, violations) =
+            Registry::fold(&[tree], Intents::empty(), None, &BootFlags::all());
         assert_eq!(violations, []);
         let names = |entry: &Entry| -> Vec<&str> {
             entry
@@ -1394,6 +1397,7 @@ mod templates {
             &[Module::new("a").template::<CardA>().template::<CardA>()],
             Intents::empty(),
             None,
+            &BootFlags::all(),
         );
         let name = std::any::type_name::<CardA>();
         assert_eq!(
@@ -1428,6 +1432,7 @@ mod templates {
             ],
             Intents::empty(),
             None,
+            &BootFlags::all(),
         );
         assert!(violations.is_empty());
         assert_eq!(ids(&registry), [("card", 1), ("badge", 1)]);
@@ -1437,5 +1442,346 @@ mod templates {
     fn module_debug_names_templates() {
         let module = Module::new("m").template::<Badge>();
         assert!(format!("{module:?}").contains("templates: [\"badge\"]"));
+    }
+
+    /// Story 13.2: a pruned Module's Templates stay registered (App-wide).
+    #[test]
+    fn pruned_module_keeps_templates() {
+        let (registry, violations) = Registry::fold(
+            &[
+                Module::new("a").flags(["beta"]).template::<CardA>(),
+                Module::new("b").template::<Badge>(),
+            ],
+            Intents::empty(),
+            None,
+            &BootFlags::none(),
+        );
+        assert_eq!(violations, []);
+        assert_eq!(ids(&registry), [("card", 1), ("badge", 1)]);
+    }
+}
+
+// --- Story 13.2: Boot Flags -------------------------------------------------
+
+mod boot_flags {
+    use super::*;
+    use crate::BootFlagError;
+    use crate::metadata::BaseMeta;
+    use crate::test_support::{TBuy, button, command, modal, user_menu};
+
+    fn only(flags: &[&str]) -> BootFlags {
+        BootFlags::only(flags).expect("valid flags")
+    }
+
+    fn fold(roots: &[Module], selection: &BootFlags) -> (Registry, Vec<BuildViolation>) {
+        Registry::fold(roots, Intents::empty(), None, selection)
+    }
+
+    /// The Module ids of the folded event handlers.
+    fn modules(registry: &Registry) -> Vec<&'static str> {
+        registry.entries().iter().map(|e| e.module).collect()
+    }
+
+    fn eco() -> Module {
+        Module::new("eco")
+            .flags(["economy"])
+            .__add(noop::<MessageCreate>("eco"))
+    }
+
+    /// B1: a flagged Module under {economy}, {beta}, all and none.
+    #[test]
+    fn module_selection() {
+        let roots = [eco(), Module::new("beta").flags(["beta"])];
+        let cases = [
+            (only(&["economy"]), vec!["eco"]),
+            (only(&["beta"]), vec![]),
+            (BootFlags::all(), vec!["eco"]),
+            (BootFlags::none(), vec![]),
+        ];
+        for (selection, expected) in cases {
+            let (registry, violations) = fold(&roots, &selection);
+            assert_eq!(violations, [], "{selection}");
+            assert_eq!(modules(&registry), expected, "{selection}");
+        }
+    }
+
+    /// B2: any of a Module's flags keeps it.
+    #[test]
+    fn any_of() {
+        let m = Module::new("m")
+            .flags(["a", "b"])
+            .__add(noop::<MessageCreate>("h"));
+        let (registry, violations) = fold(&[m], &only(&["b"]));
+        assert_eq!(violations, []);
+        assert_eq!(modules(&registry), ["m"]);
+    }
+
+    /// B3, B4: nesting is AND.
+    #[test]
+    fn nesting_is_and() {
+        let tree = || {
+            Module::new("p")
+                .flags(["a"])
+                .__add(noop::<MessageCreate>("p"))
+                .module(
+                    Module::new("p/c")
+                        .__add(noop::<MessageCreate>("c"))
+                        .module(Module::new("p/c/g").__add(noop::<MessageCreate>("g"))),
+                )
+                .module(
+                    Module::new("p/d")
+                        .flags(["b"])
+                        .__add(noop::<MessageCreate>("d"))
+                        .module(Module::new("p/d/e").__add(noop::<MessageCreate>("e"))),
+                )
+        };
+        let (registry, violations) = fold(&[tree()], &only(&["b"]));
+        assert_eq!(violations, []);
+        assert!(modules(&registry).is_empty());
+        let (registry, violations) = fold(&[tree()], &only(&["a"]));
+        assert_eq!(violations, []);
+        assert_eq!(modules(&registry), ["p", "p/c", "p/c/g"]);
+        let (registry, _) = fold(&[tree()], &only(&["a", "b"]));
+        assert_eq!(modules(&registry), ["p", "p/c", "p/c/g", "p/d", "p/d/e"]);
+    }
+
+    /// B5, B6, B7: flagged registrations in an unflagged Module.
+    #[test]
+    fn flagged_registrations() {
+        let core = Module::new("core")
+            .__add(command("ping", &["ping"], "Ping"))
+            .__add_flagged(&["beta"], command("stats", &["beta stats"], "Stats"))
+            .__add_flagged(&["beta"], noop::<MessageDelete>("gone"))
+            .__add_flagged(&["beta"], button("buy", "shop.buy"))
+            .__add_flagged(
+                &["beta"],
+                user_menu("inspect", "Inspect", crate::CommandMetadata::new()),
+            );
+        let (registry, violations) = fold(std::slice::from_ref(&core), &BootFlags::none());
+        assert_eq!(violations, []);
+        let tree = registry.commands().render();
+        assert!(tree.contains("/ping"), "{tree}");
+        assert!(!tree.contains("beta"), "{tree}");
+        assert!(!tree.contains("Inspect"), "{tree}");
+        assert!(registry.entries().is_empty());
+        assert!(registry.handlers(EventType::MessageDelete).is_none());
+        assert!(!registry.intents().contains(Intents::GUILD_MESSAGES));
+        assert!(registry.route("shop.buy").is_none());
+
+        let (registry, violations) = fold(&[core], &only(&["beta"]));
+        assert_eq!(violations, []);
+        let tree = registry.commands().render();
+        assert!(tree.contains("/beta"), "{tree}");
+        assert!(tree.contains("Inspect"), "{tree}");
+        assert!(registry.handlers(EventType::MessageDelete).is_some());
+        assert!(registry.intents().contains(Intents::GUILD_MESSAGES));
+        assert!(registry.route("shop.buy").is_some());
+    }
+
+    /// B7: a kept Module that `uses` a pruned Route is CID-04.
+    #[test]
+    fn uses_of_a_pruned_route() {
+        let roots = [
+            Module::new("shop")
+                .flags(["shop"])
+                .__add(modal("buy", "shop.buy")),
+            Module::new("dash").uses::<TBuy>(),
+        ];
+        let (_, violations) = fold(&roots, &BootFlags::none());
+        assert_eq!(
+            violations,
+            [BuildViolation::UnmountedRoute {
+                module: "dash",
+                route: "shop.buy",
+                route_type: std::any::type_name::<TBuy>(),
+            }]
+        );
+        let (_, violations) = fold(&roots, &only(&["shop"]));
+        assert_eq!(violations, []);
+        // A pruned Module's own `uses` goes with it.
+        let roots = [Module::new("dash").flags(["dash"]).uses::<TBuy>()];
+        let (_, violations) = fold(&roots, &BootFlags::none());
+        assert_eq!(violations, []);
+    }
+
+    /// B8, B9: an emptied `base` is dropped; one that never had a Command
+    /// is still REG-04.
+    #[test]
+    fn emptied_base_is_dropped() {
+        let core = Module::new("core")
+            .base("beta", BaseMeta::new().description("Beta tools"))
+            .group("beta x", "Group")
+            .__add(command("ping", &["ping"], "Ping"))
+            .__add_flagged(&["beta"], command("stats", &["beta stats"], "Stats"))
+            .__add_flagged(&["beta"], command("x", &["beta x y"], "Y"));
+        let (registry, violations) = fold(std::slice::from_ref(&core), &BootFlags::none());
+        assert_eq!(violations, []);
+        assert!(!registry.commands().render().contains("beta"));
+        let (registry, violations) = fold(&[core], &BootFlags::all());
+        assert_eq!(violations, []);
+        assert!(registry.commands().render().contains("Beta tools"));
+
+        let ghost = Module::new("core")
+            .flags(["core"])
+            .base("ghost", BaseMeta::new().description("Nothing"))
+            .__add(command("ping", &["ping"], "Ping"));
+        let (_, violations) = fold(&[ghost], &only(&["core"]));
+        assert!(
+            matches!(
+                violations.as_slice(),
+                [BuildViolation::Command(v)] if v.rule == noctis_rules::RuleId::REG_04
+            ),
+            "{violations:?}"
+        );
+    }
+
+    /// B10, B11, B12: `Module::flags` grammar and repeats.
+    #[test]
+    fn module_flag_grammar() {
+        let invalid = |module, flag, reason| BuildViolation::InvalidBootFlag {
+            module,
+            flag,
+            reason,
+        };
+        let (_, violations) = fold(&[Module::new("m").flags(["Beta"])], &BootFlags::all());
+        assert_eq!(
+            violations,
+            [invalid(
+                "m",
+                "Beta",
+                BootFlagError::InvalidChar { index: 0, ch: 'B' }
+            )]
+        );
+        for m in [
+            Module::new("m").flags(["a", "a"]),
+            Module::new("m").flags(["a"]).flags(["a"]),
+            Module::new("m").flags(["a", "a", "a"]),
+        ] {
+            let (_, violations) = fold(&[m], &BootFlags::all());
+            assert_eq!(violations, [invalid("m", "a", BootFlagError::Duplicate)]);
+        }
+        let long: &'static str = "x".repeat(33).leak();
+        let (_, violations) = fold(
+            &[Module::new("m")
+                .flags(["", "all"])
+                .module(Module::new("m/c").flags([long]))],
+            &BootFlags::all(),
+        );
+        assert_eq!(
+            violations,
+            [
+                invalid("m", "", BootFlagError::Empty),
+                invalid("m", "all", BootFlagError::Reserved { flag: "all" }),
+                invalid("m/c", long, BootFlagError::TooLong { len: 33 }),
+            ]
+        );
+        // B12: no flags is unflagged.
+        let m = Module::new("m").flags([]).__add(noop::<MessageCreate>("h"));
+        let (registry, violations) = fold(&[m], &BootFlags::none());
+        assert_eq!(violations, []);
+        assert_eq!(modules(&registry), ["m"]);
+    }
+
+    /// B13, B14, B15: the typo guard over the full trees.
+    #[test]
+    fn unknown_selected_flags() {
+        let roots = [
+            eco(),
+            Module::new("core").__add_flagged(&["beta"], command("s", &["stats"], "S")),
+        ];
+        let (_, violations) = fold(&roots, &only(&["ecnomy", "beta", "zzz"]));
+        assert_eq!(
+            violations,
+            [
+                BuildViolation::UnknownBootFlag {
+                    flag: "ecnomy".to_owned(),
+                    declared: vec!["beta", "economy"],
+                },
+                BuildViolation::UnknownBootFlag {
+                    flag: "zzz".to_owned(),
+                    declared: vec!["beta", "economy"],
+                },
+            ]
+        );
+        let (_, violations) = fold(&[Module::new("m")], &only(&["x"]));
+        assert_eq!(
+            violations,
+            [BuildViolation::UnknownBootFlag {
+                flag: "x".to_owned(),
+                declared: vec![],
+            }]
+        );
+        // B15: declared only inside a pruned subtree still counts.
+        let tree = Module::new("p")
+            .flags(["a"])
+            .module(Module::new("p/c").flags(["deep"]));
+        let (registry, violations) = fold(&[tree], &only(&["deep"]));
+        assert_eq!(violations, []);
+        assert_eq!(registry.len(), 0);
+    }
+
+    /// B16: Module ids are checked on the full trees.
+    #[test]
+    fn duplicate_module_in_pruned_subtree() {
+        let roots = [
+            Module::new("a").flags(["x"]).module(Module::new("a/b")),
+            Module::new("c").module(Module::new("c/d").flags(["x"]).module(Module::new("a"))),
+        ];
+        let (_, violations) = fold(&roots, &BootFlags::none());
+        assert!(violations.contains(&BuildViolation::DuplicateModule { id: "a" }));
+    }
+
+    /// B17, B18: flagged alternatives of one Command.
+    #[test]
+    fn alternative_commands() {
+        let roots = [
+            Module::new("shop-a")
+                .flags(["a"])
+                .__add(command("shop_a", &["shop"], "Shop")),
+            Module::new("shop-b")
+                .flags(["b"])
+                .__add(command("shop_b", &["shop"], "Shop")),
+        ];
+        let (registry, violations) = fold(&roots, &only(&["a"]));
+        assert_eq!(violations, []);
+        let tree = registry.commands().render();
+        assert_eq!(tree.matches("/shop").count(), 1, "{tree}");
+        assert!(tree.contains("shop_a"), "{tree}");
+        let (_, violations) = fold(&roots, &BootFlags::all());
+        assert!(
+            violations
+                .iter()
+                .any(|v| matches!(v, BuildViolation::Command(_))),
+            "{violations:?}"
+        );
+    }
+
+    /// Selected registrations keep their fold order.
+    #[test]
+    fn order_is_kept() {
+        let m = Module::new("m")
+            .__add(noop::<MessageCreate>("1"))
+            .__add_flagged(&["x"], noop::<MessageCreate>("2"))
+            .__add(noop::<MessageCreate>("3"))
+            .__add_flagged(&["y"], noop::<MessageCreate>("4"))
+            .__add_flagged(&["x", "y"], noop::<MessageCreate>("5"));
+        let (registry, violations) = fold(&[m], &only(&["y"]));
+        assert_eq!(violations, []);
+        let names: Vec<&str> = registry
+            .entries()
+            .iter()
+            .map(|e| e.handler.name())
+            .collect();
+        assert_eq!(names, ["1", "3", "4", "5"]);
+    }
+
+    #[test]
+    fn module_debug_shows_flags() {
+        let m = Module::new("m")
+            .flags(["eco"])
+            .__add_flagged(&["beta"], noop::<MessageCreate>("h"));
+        let text = format!("{m:?}");
+        assert!(text.contains("flags: [\"eco\"]"), "{text}");
+        assert!(text.contains("flagged: [(\"h\", [\"beta\"])]"), "{text}");
     }
 }

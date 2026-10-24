@@ -222,6 +222,7 @@ pub mod gateway {
     #[doc(hidden)]
     pub use noctis_gateway::__bounds;
 }
+mod boot_flags;
 mod gateway_url;
 mod guard;
 mod handler;
@@ -268,6 +269,7 @@ pub use autocomplete::{
     AutocompleteChoice, AutocompleteCtx, AutocompleteError, AutocompleteValue, Focused, Partial,
     PartialOptions, SuggestionLabel, SuggestionValue, Suggestions,
 };
+pub use boot_flags::{BootFlagError, BootFlags};
 pub use command::{CommandCtx, CommandHandler, CommandPath, UnknownCommandPath};
 #[doc(hidden)]
 pub use component::{__Absent, __ExpiredHook, __HookCtx, __StaleHook};
@@ -574,6 +576,7 @@ pub mod __testing {
             modules,
             twilight_model::gateway::Intents::empty(),
             None,
+            &crate::BootFlags::all(),
         );
         if violations.is_empty() {
             Ok(RouteTable(registry))

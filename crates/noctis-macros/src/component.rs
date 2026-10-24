@@ -126,7 +126,12 @@ pub(crate) fn derive(component: Component, input: &DeriveInput) -> syn::Result<T
     let variant = component.variant();
     let build = build_fn(component, &declared);
     let response = attr.args.response.variant();
-    let scaffolding = scaffolding(ident, Family::Component, !attr.args.auto_defer);
+    let scaffolding = scaffolding(
+        ident,
+        Family::Component,
+        !attr.args.auto_defer,
+        &attr.args.flags,
+    );
     Ok(quote! {
         #route
 
@@ -504,5 +509,102 @@ mod tests {
             ),
         );
         assert!(e.contains("`defaults` is given twice"), "{e}");
+    }
+
+    /// Story 13.2 M1-M8 on `#[button]` and the five select attributes.
+    #[test]
+    fn boot_flags() {
+        let kinds = [
+            (
+                Component::Button,
+                quote!(button),
+                quote!(style = Primary, label = "Buy"),
+            ),
+            (
+                Component::StringSelect,
+                quote!(string_select),
+                quote!(placeholder = "P"),
+            ),
+            (
+                Component::UserSelect,
+                quote!(user_select),
+                quote!(placeholder = "P"),
+            ),
+            (
+                Component::RoleSelect,
+                quote!(role_select),
+                quote!(placeholder = "P"),
+            ),
+            (
+                Component::MentionableSelect,
+                quote!(mentionable_select),
+                quote!(placeholder = "P"),
+            ),
+            (
+                Component::ChannelSelect,
+                quote!(channel_select),
+                quote!(placeholder = "P"),
+            ),
+        ];
+        for (component, attr, defaults) in kinds {
+            let out = run(
+                component,
+                quote! {
+                    #[#attr("shop.buy", flags = ["beta", "eco"], defaults(#defaults))]
+                    struct Buy;
+                },
+            );
+            assert!(
+                out.contains("__add_flagged (& [\"beta\" , \"eco\"]"),
+                "{attr}: {out}"
+            );
+            let plain = run(
+                component,
+                quote! {
+                    #[#attr("shop.buy", defaults(#defaults))]
+                    struct Buy;
+                },
+            );
+            assert!(!plain.contains("__add_flagged"), "{attr}: {plain}");
+            for (flags, expected) in [
+                (quote!(flags = []), crate::flags::EMPTY),
+                (quote!(flags = "beta"), crate::flags::NOT_A_LIST),
+                (quote!(flags = [beta]), crate::flags::NOT_A_LIST),
+                (quote!(flags = [1]), crate::flags::NOT_A_LIST),
+                (quote!(flags), crate::flags::NOT_A_LIST),
+                (
+                    quote!(flags = ["Beta"]),
+                    "invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-`",
+                ),
+                (
+                    quote!(flags = ["all"]),
+                    "invalid Boot Flag `all` in `flags`: `all` is reserved: write `all` or `none` alone, never in a list or as a declared flag",
+                ),
+                (
+                    quote!(flags = ["a", "a"]),
+                    "invalid Boot Flag `a` in `flags`: a Boot Flag is given twice: keep one",
+                ),
+            ] {
+                let out = run(
+                    component,
+                    quote! {
+                        #[#attr("shop.buy", #flags, defaults(#defaults))]
+                        struct Buy;
+                    },
+                );
+                assert_eq!(out, expected, "{attr}: {flags}");
+            }
+            let out = run(
+                component,
+                quote! {
+                    #[#attr("shop.buy", flags = ["a"], flags = ["b"], defaults(#defaults))]
+                    struct Buy;
+                },
+            );
+            assert!(
+                out.contains("argument `flags` is given twice"),
+                "{attr}: {out}"
+            );
+        }
     }
 }

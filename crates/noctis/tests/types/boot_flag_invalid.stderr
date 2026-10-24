@@ -1,0 +1,5 @@
+error: invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-`
+ --> tests/types/boot_flag_invalid.rs:4:53
+  |
+4 | #[command("beta stats", description = "d", flags = ["Beta"])]
+  |                                                     ^^^^^^

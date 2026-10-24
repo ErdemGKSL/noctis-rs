@@ -9,12 +9,12 @@
 //! simulated interaction through the real pipeline. It needs a multi-thread runtime.
 //! The memory check lives in `tests/memory.rs` (its own binary, dhat allocator).
 
-use noctis::Permissions;
+use noctis::{BootFlags, Permissions};
 use noctis::prelude::*;
 use std::sync::{Arc, Mutex};
 
 use noctis::testkit::fake::{FakeResponse, Method, RecordedRequest, StatusCode};
-use noctis::testkit::{Response, ResponseKind, TestApp, TestGuild, TestUser};
+use noctis::testkit::{Response, ResponseKind, TestApp, TestError, TestGuild, TestUser};
 use noctis::twilight::model::id::Id;
 use noctis::twilight::model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 use noctis_bot_template::configure;
@@ -254,3 +254,25 @@ async fn edit_bio_opens_pre_filled() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Boot Flags: `profile/badges` carries `badges`, so `none` drops `/badge` and the
+/// default (`all`) keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn badges_follow_the_boot_flags() -> anyhow::Result<()> {
+    let mut builder = App::builder();
+    configure(&mut builder).boot_flags(BootFlags::none());
+    let app = TestApp::build(&mut builder)
+        .await?
+        .guild(TestGuild::new(GUILD, "Test Guild"))
+        .user(TestUser::new(MEMBER));
+    let missing =
+        app.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await;
+    assert!(matches!(missing, Err(TestError::UnknownCommand { .. })), "{missing:?}");
+    app.stop().await?;
+
+    let app = app().await?;
+    let badge =
+        app.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await?;
+    assert_eq!(badge.kind(), ResponseKind::Reply);
+    app.stop().await?;
+    Ok(())
+}

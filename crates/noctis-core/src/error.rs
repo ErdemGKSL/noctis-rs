@@ -15,8 +15,8 @@ use noctis_ports::PortError;
 use noctis_rules::Locale;
 
 use crate::{
-    AppIdError, GatewayUrlError, HttpConfigError, HttpProxyError, ModuleIdError, Plugin,
-    ResourceConflict, TokenError,
+    AppIdError, BootFlagError, GatewayUrlError, HttpConfigError, HttpProxyError, ModuleIdError,
+    Plugin, ResourceConflict, TokenError,
 };
 
 /// Every error `App::from_env`, `build` and `run` return.
@@ -334,6 +334,63 @@ pub enum BuildViolation {
     DuplicateModule {
         /// The shared id.
         id: &'static str,
+    },
+    /// A `Module::flags` entry is not a valid Boot Flag, or repeats a flag
+    /// the Module already declares (one per repeated flag); in pre-order
+    /// over every mounted tree.
+    ///
+    /// ```
+    /// use noctis_core::{BootFlagError, BuildViolation};
+    ///
+    /// let v = BuildViolation::InvalidBootFlag {
+    ///     module: "eco",
+    ///     flag: "Beta",
+    ///     reason: BootFlagError::InvalidChar { index: 0, ch: 'B' },
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "invalid Boot Flag `Beta` on Module `eco`: `B` at index 0 is not allowed in a Boot \
+    ///      Flag: use only a-z, 0-9, `_` and `-`"
+    /// );
+    /// ```
+    #[error("invalid Boot Flag `{flag}` on Module `{module}`: {reason}")]
+    InvalidBootFlag {
+        /// The Module's id.
+        module: &'static str,
+        /// The rejected flag.
+        flag: &'static str,
+        /// Why it was rejected.
+        reason: BootFlagError,
+    },
+    /// A selected Boot Flag (`--features`, `NOCTIS_FEATURES` or
+    /// `AppBuilder::boot_flags`) that no mounted Module or registration
+    /// declares, a typo guard; one per such flag, sorted.
+    ///
+    /// ```
+    /// use noctis_core::BuildViolation;
+    ///
+    /// let v = BuildViolation::UnknownBootFlag {
+    ///     flag: "ecnomy".to_owned(),
+    ///     declared: vec!["beta", "economy"],
+    /// };
+    /// assert_eq!(
+    ///     v.to_string(),
+    ///     "Boot Flag `ecnomy` is selected, but no mounted Module or registration declares it: \
+    ///      declared flags are `beta`, `economy`"
+    /// );
+    /// let none = BuildViolation::UnknownBootFlag { flag: "x".to_owned(), declared: vec![] };
+    /// assert!(none.to_string().ends_with("declared flags are none"));
+    /// ```
+    #[error(
+        "Boot Flag `{flag}` is selected, but no mounted Module or registration declares it: \
+         declared flags are {}",
+        DeclaredFlags(declared)
+    )]
+    UnknownBootFlag {
+        /// The selected flag.
+        flag: String,
+        /// Every flag the mounted trees declare, sorted and deduplicated.
+        declared: Vec<&'static str>,
     },
     /// `shard_total(0)`: a fixed shard total must be at least 1.
     #[error("shard total must be at least 1: omit shard_total to use Discord's recommendation")]
@@ -937,6 +994,25 @@ impl fmt::Display for IntentName {
 }
 
 /// `" (HTTP {status})"`, or nothing.
+/// `` `a`, `b` `` or `none`: the declared flags of
+/// [`BuildViolation::UnknownBootFlag`].
+struct DeclaredFlags<'a>(&'a [&'static str]);
+
+impl fmt::Display for DeclaredFlags<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
+            return f.write_str("none");
+        }
+        for (i, flag) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "`{flag}`")?;
+        }
+        Ok(())
+    }
+}
+
 struct StatusSuffix(Option<u16>);
 
 impl fmt::Display for StatusSuffix {
@@ -1024,6 +1100,26 @@ pub enum EnvError {
     InvalidDevGuild {
         /// The variable's name.
         var: &'static str,
+    },
+    /// The variable is not a Boot Flag selection (`all`, `none` or
+    /// `a,b,..`; see [`BootFlags`](crate::BootFlags)).
+    ///
+    /// ```
+    /// use noctis_core::{BootFlagError, EnvError};
+    ///
+    /// let err = EnvError::InvalidBootFlags { var: "NOCTIS_FEATURES", reason: BootFlagError::Empty };
+    /// assert_eq!(
+    ///     err.to_string(),
+    ///     "environment variable `NOCTIS_FEATURES` is not a Boot Flag selection: a Boot Flag is \
+    ///      empty: write flags such as `beta`, separated by single commas"
+    /// );
+    /// ```
+    #[error("environment variable `{var}` is not a Boot Flag selection: {reason}")]
+    InvalidBootFlags {
+        /// The variable's name.
+        var: &'static str,
+        /// Why the selection was rejected.
+        reason: BootFlagError,
     },
     /// The variable is not a payload key (exactly 64 ASCII hex digits).
     /// Neither the message nor the source shows a key character.

@@ -14,6 +14,7 @@ use quote::{quote, quote_spanned};
 use syn::{Ident, LitStr};
 
 use crate::common::plain;
+use crate::flags::Flags;
 
 /// What a kind derive declares for its struct.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -110,7 +111,7 @@ pub(crate) fn fallback(
     family_impl: &TokenStream,
     errors: &TokenStream,
 ) -> TokenStream {
-    let items = items(ident, family, false);
+    let items = items(ident, family, false, &Flags::default());
     quote! {
         #errors
         #items
@@ -186,9 +187,15 @@ pub(crate) fn or_fallback(
 }
 
 /// The `__Kind` impl, the `Register` impl and the missing-handler check of
-/// the struct `ident`; `manual` is a declared `auto_defer = false`.
-pub(crate) fn scaffolding(ident: &Ident, family: Family, manual: bool) -> TokenStream {
-    let items = items(ident, family, manual);
+/// the struct `ident`; `manual` is a declared `auto_defer = false`, `flags`
+/// the attribute's Boot Flags (`flags = [..]`).
+pub(crate) fn scaffolding(
+    ident: &Ident,
+    family: Family,
+    manual: bool,
+    flags: &Flags,
+) -> TokenStream {
+    let items = items(ident, family, manual, flags);
     let check = missing_handler_check(ident, family);
     quote! {
         #items
@@ -210,8 +217,9 @@ fn missing_handler_check(ident: &Ident, family: Family) -> TokenStream {
     }
 }
 
-/// The `__Kind` and `Register` impls.
-fn items(ident: &Ident, family: Family, manual: bool) -> TokenStream {
+/// The `__Kind` and `Register` impls; a flagged registration registers with
+/// `Module::__add_flagged`.
+fn items(ident: &Ident, family: Family, manual: bool, flags: &Flags) -> TokenStream {
     let core = core();
     let name = plain(ident);
     let name_lit = LitStr::new(&name, Span::call_site());
@@ -221,6 +229,12 @@ fn items(ident: &Ident, family: Family, manual: bool) -> TokenStream {
         quote!(#core::Manual)
     } else {
         quote!(#core::AutoDefer)
+    };
+    let add = if flags.is_empty() {
+        quote!(module.__add(<#ident>::descriptor()))
+    } else {
+        let flags = flags.slice();
+        quote!(module.__add_flagged(#flags, <#ident>::descriptor()))
     };
     quote! {
         #[automatically_derived]
@@ -236,7 +250,7 @@ fn items(ident: &Ident, family: Family, manual: bool) -> TokenStream {
             #[allow(unused_imports)]
             fn __register(module: #core::Module) -> #core::Module {
                 use ::noctis::__private::core::__NoHandler as _;
-                module.__add(<#ident>::descriptor())
+                #add
             }
         }
     }
@@ -269,13 +283,33 @@ mod tests {
             &Ident::new("Buy", Span::call_site()),
             Family::Component,
             false,
+            &Flags::default(),
         )
         .to_string();
+        assert!(out.contains("__add (<"), "{out}");
         assert!(out.contains("__ComponentKind"), "{out}");
         assert!(out.contains("AutoDefer"), "{out}");
         assert!(out.contains("Register for Buy"), "{out}");
         assert!(out.contains("__NOCTIS_HAS_HANDLER"), "{out}");
-        let manual = scaffolding(&Ident::new("P", Span::call_site()), Family::Slash, true);
+        let manual = scaffolding(
+            &Ident::new("P", Span::call_site()),
+            Family::Slash,
+            true,
+            &Flags::default(),
+        );
         assert!(manual.to_string().contains("Manual"));
+        let flags =
+            Flags::parse(&quote!(flags = ["beta"]).into_iter().collect::<Vec<_>>()).unwrap();
+        let flagged = scaffolding(
+            &Ident::new("P", Span::call_site()),
+            Family::Slash,
+            false,
+            &flags,
+        )
+        .to_string();
+        assert!(
+            flagged.contains("__add_flagged (& [\"beta\"] , <"),
+            "{flagged}"
+        );
     }
 }

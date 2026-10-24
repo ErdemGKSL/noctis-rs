@@ -24,6 +24,8 @@
 //!   non-empty bodies, webhook names and threads, and the non-interactive
 //!   components of foreign webhooks (MSG-01, MSG-03..06, MSG-09, WH-02, WH-04,
 //!   WH-05).
+//! - [`boot_flag`]: the Boot Flag grammar of `flags = [..]`, `Module::flags`
+//!   and `--features` (a framework convention, no rule id).
 //! - [`attachment`]: file sizes, counts, alt text and `attachment://`
 //!   references (ATT-01..03, ATT-05, ATT-06).
 //! - [`cid`]: the route id grammar ([`cid::validate_route_id`]) and the
@@ -33,6 +35,7 @@
 //! The crate is sync and does no I/O.
 
 pub mod attachment;
+pub mod boot_flag;
 mod check;
 pub mod cid;
 pub mod command;

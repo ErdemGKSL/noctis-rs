@@ -475,7 +475,7 @@ From the maintainer's production bot; full list, pitfalls and complete code in
 | `*.interactions.yaml` `names:` | `cmdword.<word>` and `cmd.<path>.*` keys in the same locale files |
 | `beforeInteraction` returning `false`/object | Middleware returning `Flow::Stop` / inserting an `Ext<T>` |
 | `--publish [--guildId]` | `--publish`, `--publish-guild [<id>]`, `--publish-clear`, `--dry-run`; in code `app.publish(PublishScope::..)`; `--no-resume` (run without resuming, fresh shutdown) |
-| `--features a,b` | Boot Flags: `Module::flags([..])` + `--features a,b` |
+| `--features a,b` | Boot Flags: `Module::flags([..])` / `flags = [..]` on a kind attribute, selected with `--features a,b\|all\|none` or `NOCTIS_FEATURES` (read by `App::from_env()`) or `.boot_flags(BootFlags)` |
 | inline listeners | not supported (UD-7): Route + `one_shot` Ref |
 
 ## 7. Reference index (progressive disclosure)

@@ -33,6 +33,7 @@ mod components;
 mod defaults;
 mod duration;
 mod event;
+mod flags;
 mod guard;
 mod handler;
 mod hook;

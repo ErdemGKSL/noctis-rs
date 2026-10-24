@@ -71,6 +71,7 @@ pub struct noctis::App
 impl noctis::App
 pub fn noctis::App::ack_deadline(&self) -> core::time::Duration
 pub fn noctis::App::app_id(&self) -> &noctis::AppId
+pub fn noctis::App::boot_flags(&self) -> &noctis::BootFlags
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
@@ -105,6 +106,7 @@ impl noctis::AppBuilder
 pub fn noctis::AppBuilder::ack_deadline(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::app_id(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::AppBuilder::asset_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::AssetStore>) -> &mut Self
+pub fn noctis::AppBuilder::boot_flags(&mut self, noctis::BootFlags) -> &mut Self
 pub fn noctis::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
 pub fn noctis::AppBuilder::cache_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::CacheStore>) -> &mut Self
 pub fn noctis::AppBuilder::current_runtime(&self) -> &noctis::Runtime
@@ -319,6 +321,29 @@ impl core::clone::Clone for noctis::BeforeMiddleware
 pub fn noctis::BeforeMiddleware::clone(&self) -> Self
 impl core::fmt::Debug for noctis::BeforeMiddleware
 pub fn noctis::BeforeMiddleware::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub use noctis::BootFlagError
+pub struct noctis::BootFlags(_)
+impl noctis::BootFlags
+pub fn noctis::BootFlags::all() -> Self
+pub fn noctis::BootFlags::is_all(&self) -> bool
+pub fn noctis::BootFlags::none() -> Self
+pub fn noctis::BootFlags::only<I>(I) -> core::result::Result<Self, noctis::rules::boot_flag::BootFlagError> where I: core::iter::traits::collect::IntoIterator, <I as core::iter::traits::collect::IntoIterator>::Item: core::convert::AsRef<str>
+pub fn noctis::BootFlags::selects(&self, &[&str]) -> bool
+impl core::clone::Clone for noctis::BootFlags
+pub fn noctis::BootFlags::clone(&self) -> Self
+impl core::cmp::Eq for noctis::BootFlags
+impl core::cmp::PartialEq for noctis::BootFlags
+pub fn noctis::BootFlags::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::BootFlags
+pub fn noctis::BootFlags::default() -> Self
+impl core::fmt::Debug for noctis::BootFlags
+pub fn noctis::BootFlags::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::BootFlags
+pub fn noctis::BootFlags::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::BootFlags
+impl core::str::traits::FromStr for noctis::BootFlags
+pub type noctis::BootFlags::Err = noctis::rules::boot_flag::BootFlagError
+pub fn noctis::BootFlags::from_str(&str) -> core::result::Result<Self, Self::Err>
 pub struct noctis::BuildError
 impl noctis::BuildError
 pub fn noctis::BuildError::into_violations(self) -> alloc::vec::Vec<noctis::BuildViolation>
@@ -376,6 +401,10 @@ pub noctis::BuildViolation::InvalidAckDeadline
 pub noctis::BuildViolation::InvalidAckDeadline::actual: core::time::Duration
 pub noctis::BuildViolation::InvalidAppId
 pub noctis::BuildViolation::InvalidAppId::reason: noctis::AppIdError
+pub noctis::BuildViolation::InvalidBootFlag
+pub noctis::BuildViolation::InvalidBootFlag::flag: &'static str
+pub noctis::BuildViolation::InvalidBootFlag::module: &'static str
+pub noctis::BuildViolation::InvalidBootFlag::reason: noctis::rules::boot_flag::BootFlagError
 pub noctis::BuildViolation::InvalidEventLane
 pub noctis::BuildViolation::InvalidEventLane::capacity: usize
 pub noctis::BuildViolation::InvalidEventLane::overflow: usize
@@ -423,6 +452,9 @@ pub noctis::BuildViolation::ShardRangeWithoutTotal::end: u32
 pub noctis::BuildViolation::ShardRangeWithoutTotal::start: u32
 pub noctis::BuildViolation::TemplateRejected
 pub noctis::BuildViolation::TemplateRejected::message: alloc::string::String
+pub noctis::BuildViolation::UnknownBootFlag
+pub noctis::BuildViolation::UnknownBootFlag::declared: alloc::vec::Vec<&'static str>
+pub noctis::BuildViolation::UnknownBootFlag::flag: alloc::string::String
 pub noctis::BuildViolation::UnmountedRoute
 pub noctis::BuildViolation::UnmountedRoute::module: &'static str
 pub noctis::BuildViolation::UnmountedRoute::route: &'static str
@@ -714,6 +746,9 @@ pub fn noctis::Dispatcher::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Dispatcher
 pub fn noctis::Dispatcher::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::EnvError
+pub noctis::EnvError::InvalidBootFlags
+pub noctis::EnvError::InvalidBootFlags::reason: noctis::rules::boot_flag::BootFlagError
+pub noctis::EnvError::InvalidBootFlags::var: &'static str
 pub noctis::EnvError::InvalidDevGuild
 pub noctis::EnvError::InvalidDevGuild::var: &'static str
 pub noctis::EnvError::InvalidPayloadKey
@@ -1365,6 +1400,7 @@ pub fn noctis::Module::add<T: noctis::Register>(self) -> Self
 pub fn noctis::Module::after(self, noctis::AfterMiddleware) -> Self
 pub fn noctis::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::Module::before(self, noctis::BeforeMiddleware) -> Self
+pub fn noctis::Module::flags<I: core::iter::traits::collect::IntoIterator<Item = &'static str>>(self, I) -> Self
 pub fn noctis::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::Module::id(&self) -> &'static str
 pub fn noctis::Module::locales(self, noctis::i18n::Catalog) -> Self
@@ -1862,6 +1898,9 @@ pub mod noctis::bytes
 pub use noctis::bytes::Bytes
 pub mod noctis::cli
 #[non_exhaustive] pub enum noctis::cli::CliError
+pub noctis::cli::CliError::BootFlagsMismatch
+pub noctis::cli::CliError::BootFlagsMismatch::built: noctis::BootFlags
+pub noctis::cli::CliError::BootFlagsMismatch::given: noctis::BootFlags
 pub noctis::cli::CliError::ConflictingModes
 pub noctis::cli::CliError::ConflictingModes::first: &'static str
 pub noctis::cli::CliError::ConflictingModes::second: &'static str
@@ -1869,10 +1908,14 @@ pub noctis::cli::CliError::DryRunWithoutPublish
 pub noctis::cli::CliError::DuplicateFlag
 pub noctis::cli::CliError::DuplicateFlag::flag: &'static str
 pub noctis::cli::CliError::GuildWithoutClear
+pub noctis::cli::CliError::InvalidFeatures
+pub noctis::cli::CliError::InvalidFeatures::reason: noctis::rules::boot_flag::BootFlagError
+pub noctis::cli::CliError::InvalidFeatures::value: alloc::string::String
 pub noctis::cli::CliError::InvalidGuildId
 pub noctis::cli::CliError::InvalidGuildId::flag: &'static str
 pub noctis::cli::CliError::InvalidGuildId::value: alloc::string::String
 pub noctis::cli::CliError::MissingDevGuild
+pub noctis::cli::CliError::MissingFeatures
 pub noctis::cli::CliError::MissingValue
 pub noctis::cli::CliError::MissingValue::flag: &'static str
 pub noctis::cli::CliError::NoResumeWithPublish
@@ -1907,6 +1950,7 @@ impl core::marker::StructuralPartialEq for noctis::cli::CliMode
 pub struct noctis::cli::NoctisArgs
 impl noctis::cli::NoctisArgs
 pub fn noctis::cli::NoctisArgs::dry_run(&self) -> bool
+pub fn noctis::cli::NoctisArgs::features(&self) -> core::option::Option<&noctis::BootFlags>
 pub fn noctis::cli::NoctisArgs::mode(&self) -> core::option::Option<noctis::cli::CliMode>
 pub fn noctis::cli::NoctisArgs::no_resume(&self) -> bool
 pub fn noctis::cli::NoctisArgs::parse<I, A>(I) -> core::result::Result<Self, noctis::cli::CliError> where I: core::iter::traits::collect::IntoIterator<Item = A>, A: core::convert::Into<std::ffi::os_str::OsString>
@@ -4495,6 +4539,7 @@ pub struct noctis::prelude::App
 impl noctis::prelude::App
 pub fn noctis::prelude::App::ack_deadline(&self) -> core::time::Duration
 pub fn noctis::prelude::App::app_id(&self) -> &noctis::AppId
+pub fn noctis::prelude::App::boot_flags(&self) -> &noctis::BootFlags
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
@@ -4529,6 +4574,7 @@ impl noctis::prelude::AppBuilder
 pub fn noctis::prelude::AppBuilder::ack_deadline(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::app_id(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::asset_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::AssetStore>) -> &mut Self
+pub fn noctis::prelude::AppBuilder::boot_flags(&mut self, noctis::BootFlags) -> &mut Self
 pub fn noctis::prelude::AppBuilder::build(&mut self) -> core::result::Result<noctis::App, noctis::BuildError>
 pub fn noctis::prelude::AppBuilder::cache_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::CacheStore>) -> &mut Self
 pub fn noctis::prelude::AppBuilder::current_runtime(&self) -> &noctis::Runtime
@@ -5013,6 +5059,7 @@ pub fn noctis::prelude::Module::add<T: noctis::Register>(self) -> Self
 pub fn noctis::prelude::Module::after(self, noctis::AfterMiddleware) -> Self
 pub fn noctis::prelude::Module::base(self, &'static str, noctis::BaseMeta) -> Self
 pub fn noctis::prelude::Module::before(self, noctis::BeforeMiddleware) -> Self
+pub fn noctis::prelude::Module::flags<I: core::iter::traits::collect::IntoIterator<Item = &'static str>>(self, I) -> Self
 pub fn noctis::prelude::Module::group(self, &'static str, &'static str) -> Self
 pub fn noctis::prelude::Module::id(&self) -> &'static str
 pub fn noctis::prelude::Module::locales(self, noctis::i18n::Catalog) -> Self
@@ -5723,6 +5770,31 @@ pub fn noctis::rules::attachment::validate_attachment_ref(&str, &[noctis::rules:
 pub fn noctis::rules::attachment::validate_attachments(&[noctis::rules::attachment::AttachmentDecl<'_>], usize, core::option::Option<usize>, &noctis::rules::Limits) -> core::result::Result<(), alloc::vec::Vec<noctis::rules::Violation>>
 pub fn noctis::rules::attachment::validate_file_size(usize, core::option::Option<usize>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
 pub fn noctis::rules::attachment::validate_rendered_image_alt(core::option::Option<&str>, &noctis::rules::Limits) -> alloc::vec::Vec<noctis::rules::Violation>
+pub mod noctis::rules::boot_flag
+#[non_exhaustive] pub enum noctis::rules::boot_flag::BootFlagError
+pub noctis::rules::boot_flag::BootFlagError::Duplicate
+pub noctis::rules::boot_flag::BootFlagError::Empty
+pub noctis::rules::boot_flag::BootFlagError::InvalidChar
+pub noctis::rules::boot_flag::BootFlagError::InvalidChar::ch: char
+pub noctis::rules::boot_flag::BootFlagError::InvalidChar::index: usize
+pub noctis::rules::boot_flag::BootFlagError::Reserved
+pub noctis::rules::boot_flag::BootFlagError::Reserved::flag: &'static str
+pub noctis::rules::boot_flag::BootFlagError::TooLong
+pub noctis::rules::boot_flag::BootFlagError::TooLong::len: usize
+impl core::clone::Clone for noctis::rules::boot_flag::BootFlagError
+pub fn noctis::rules::boot_flag::BootFlagError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::rules::boot_flag::BootFlagError
+impl core::cmp::PartialEq for noctis::rules::boot_flag::BootFlagError
+pub fn noctis::rules::boot_flag::BootFlagError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::rules::boot_flag::BootFlagError
+impl core::fmt::Debug for noctis::rules::boot_flag::BootFlagError
+pub fn noctis::rules::boot_flag::BootFlagError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::rules::boot_flag::BootFlagError
+pub fn noctis::rules::boot_flag::BootFlagError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for noctis::rules::boot_flag::BootFlagError
+impl core::marker::StructuralPartialEq for noctis::rules::boot_flag::BootFlagError
+pub const noctis::rules::boot_flag::MAX_LEN: usize
+pub fn noctis::rules::boot_flag::check(&str) -> core::result::Result<(), noctis::rules::boot_flag::BootFlagError>
 pub mod noctis::rules::command
 pub enum noctis::rules::command::ChoiceValue<'a>
 pub noctis::rules::command::ChoiceValue::Float(f64)

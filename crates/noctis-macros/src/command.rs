@@ -15,6 +15,7 @@ use syn::{Attribute, DeriveInput, Ident, LitInt, LitStr, Meta, Type};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 use crate::common::combine;
+use crate::flags::Flags;
 use crate::meta::{self, MetaArgs};
 
 mod locale;
@@ -30,9 +31,9 @@ const CAP_LITERAL: &str =
 const CAP_ZERO: &str = "`max_expansions` must be at least 1";
 
 /// `#[command]` arguments that later stories add.
-const PLANNED: [&str; 3] = ["rate_limit", "flags", "apps"];
+const PLANNED: [&str; 2] = ["rate_limit", "apps"];
 
-const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `locales` or `default_locale`";
+const EXPECTED: &str = "expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`";
 
 /// The hidden flag of Noctis's own trybuild fixtures: `locales` is relative
 /// to the invoking source file.
@@ -52,6 +53,8 @@ struct Args {
     handler: HandlerArgs,
     meta: MetaArgs,
     locales: LocaleArgs,
+    /// `flags = [..]`: the Boot Flags.
+    flags: Flags,
 }
 
 /// The handler arguments every Command macro shares: `response` and
@@ -215,6 +218,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         handler: HandlerArgs::default(),
         meta: MetaArgs::default(),
         locales: LocaleArgs::default(),
+        flags: Flags::default(),
     };
     let mut seen: Vec<String> = Vec::new();
     for segment in iter {
@@ -229,29 +233,7 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         if let Some(error) = withdrawn("#[command]", &name, span) {
             return Err(error);
         }
-        match name.as_str() {
-            "locales" | "default_locale" | FROM_SOURCE_FILE if !cfg!(feature = "i18n") => {
-                return Err(syn::Error::new(
-                    span,
-                    format!("`{name}` needs the `i18n` feature of `noctis`"),
-                ));
-            }
-            "description" | "max_expansions" | "response" | "auto_defer" | "locales"
-            | "default_locale" | FROM_SOURCE_FILE => {}
-            other if meta::is_meta(other) => {}
-            planned if PLANNED.contains(&planned) => {
-                return Err(syn::Error::new(
-                    span,
-                    format!("`#[command]` argument `{name}` is planned and not supported yet"),
-                ));
-            }
-            _ => {
-                return Err(syn::Error::new(
-                    span,
-                    format!("unknown `#[command]` argument `{name}`: {EXPECTED}"),
-                ));
-            }
-        }
+        check_arg_name(&name, span)?;
         if seen.contains(&name) {
             return Err(syn::Error::new(
                 span,
@@ -265,6 +247,10 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         }
         if let Some(result) = parsed.handler.parse(&name, &segment) {
             result?;
+            continue;
+        }
+        if name == "flags" {
+            parsed.flags = Flags::parse(&segment)?;
             continue;
         }
         if matches!(
@@ -294,6 +280,30 @@ fn parse_args(args: TokenStream) -> syn::Result<Args> {
         }
     }
     Ok(parsed)
+}
+
+/// Rejects an argument name `#[command]` does not take (here, or without
+/// the `i18n` feature).
+fn check_arg_name(name: &str, span: Span) -> syn::Result<()> {
+    match name {
+        "locales" | "default_locale" | FROM_SOURCE_FILE if !cfg!(feature = "i18n") => {
+            Err(syn::Error::new(
+                span,
+                format!("`{name}` needs the `i18n` feature of `noctis`"),
+            ))
+        }
+        "description" | "max_expansions" | "response" | "auto_defer" | "locales"
+        | "default_locale" | "flags" | FROM_SOURCE_FILE => Ok(()),
+        other if meta::is_meta(other) => Ok(()),
+        planned if PLANNED.contains(&planned) => Err(syn::Error::new(
+            span,
+            format!("`#[command]` argument `{name}` is planned and not supported yet"),
+        )),
+        _ => Err(syn::Error::new(
+            span,
+            format!("unknown `#[command]` argument `{name}`: {EXPECTED}"),
+        )),
+    }
 }
 
 /// Parses one of `locales = "<dir>"`, `default_locale = "<code>"` and the
@@ -783,8 +793,12 @@ fn expand(
         args.meta.tokens()
     };
     let ephemerality = args.handler.ephemerality();
-    let scaffolding =
-        crate::kind::scaffolding(ident, crate::kind::Family::Slash, args.handler.manual);
+    let scaffolding = crate::kind::scaffolding(
+        ident,
+        crate::kind::Family::Slash,
+        args.handler.manual,
+        &args.flags,
+    );
     Ok(quote! {
         #options
 
@@ -1126,7 +1140,7 @@ mod tests {
             ),
             (
                 quote!("ping", foo = 1),
-                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `foo`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", ephemeral),
@@ -1150,7 +1164,7 @@ mod tests {
             ),
             (
                 quote!("ping", default_member_permissions = X),
-                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `locales` or `default_locale`",
+                "unknown `#[command]` argument `default_member_permissions`: expected `description`, `max_expansions`, `response`, `auto_defer`, `permissions`, `contexts`, `integration_types`, `nsfw`, `guilds`, `flags`, `locales` or `default_locale`",
             ),
             (
                 quote!("ping", rate_limit(user, 3)),
@@ -1220,13 +1234,62 @@ mod tests {
         ] {
             assert_eq!(error(args.clone(), PING), expected, "{args}");
         }
-        for planned in ["rate_limit", "flags", "apps"] {
+        for planned in ["rate_limit", "apps"] {
             let ident = quote::format_ident!("{planned}");
             assert_eq!(
                 error(quote!("ping", #ident), PING),
                 format!("`#[command]` argument `{planned}` is planned and not supported yet")
             );
         }
+    }
+
+    /// Story 13.2 M1-M8: `flags = [..]`.
+    #[test]
+    fn boot_flags() {
+        let out = expand(
+            quote!("beta stats", description = "d", flags = ["beta", "eco"]),
+            item(PING),
+        )
+        .unwrap()
+        .to_string();
+        assert!(
+            out.contains("__add_flagged (& [\"beta\" , \"eco\"]"),
+            "{out}"
+        );
+        let plain = expand(quote!("ping", description = "d"), item(PING))
+            .unwrap()
+            .to_string();
+        assert!(!plain.contains("__add_flagged"), "{plain}");
+        for (args, expected) in [
+            (quote!("ping", flags = []), crate::flags::EMPTY.to_owned()),
+            (quote!("ping", flags = "beta"), crate::flags::NOT_A_LIST.to_owned()),
+            (quote!("ping", flags = [beta]), crate::flags::NOT_A_LIST.to_owned()),
+            (quote!("ping", flags = [1]), crate::flags::NOT_A_LIST.to_owned()),
+            (quote!("ping", flags), crate::flags::NOT_A_LIST.to_owned()),
+            (
+                quote!("ping", flags = ["Beta"]),
+                "invalid Boot Flag `Beta` in `flags`: `B` at index 0 is not allowed in a Boot Flag: use only a-z, 0-9, `_` and `-`".to_owned(),
+            ),
+            (
+                quote!("ping", flags = ["all"]),
+                "invalid Boot Flag `all` in `flags`: `all` is reserved: write `all` or `none` alone, never in a list or as a declared flag".to_owned(),
+            ),
+            (
+                quote!("ping", flags = ["a", "a"]),
+                "invalid Boot Flag `a` in `flags`: a Boot Flag is given twice: keep one".to_owned(),
+            ),
+            (
+                quote!("ping", flags = ["a"], flags = ["b"]),
+                "duplicate `#[command]` argument `flags`".to_owned(),
+            ),
+        ] {
+            assert_eq!(error(args.clone(), PING), expected, "{args}");
+        }
+        let long = "a".repeat(33);
+        assert!(
+            error(quote!("ping", flags = [#long]), PING)
+                .contains("the Boot Flag has 33 characters: shorten it to at most 32")
+        );
     }
 
     /// Story 11.4 Matrix M16, M17: the locale arguments.

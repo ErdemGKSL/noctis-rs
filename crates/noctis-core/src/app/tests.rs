@@ -37,6 +37,7 @@ fn lookup_var(name: &'static str, value: Option<OsString>) -> impl Fn(&str) -> O
                     | "NOCTIS_SHUTDOWN_GRACE"
                     | "NOCTIS_PUBLISHER"
                     | "NOCTIS_DEV_GUILD"
+                    | "NOCTIS_FEATURES"
                     | "NOCTIS_PAYLOAD_KEY"
                     | "NOCTIS_PAYLOAD_KEY_PREVIOUS"
                     | "NOCTIS_APP_ID"
@@ -1620,6 +1621,7 @@ fn from_env_reads_token_first() {
             "NOCTIS_SHUTDOWN_GRACE",
             "NOCTIS_PUBLISHER",
             "NOCTIS_DEV_GUILD",
+            "NOCTIS_FEATURES",
             "NOCTIS_PAYLOAD_KEY",
             "NOCTIS_PAYLOAD_KEY_PREVIOUS",
             "NOCTIS_APP_ID",
@@ -4249,4 +4251,170 @@ async fn rl_02_app_warns_without_proxy() {
 async fn default_http_timeout_is_ten_seconds() {
     let app = App::builder().build().unwrap();
     assert_eq!(app.http_timeout(), Duration::from_secs(10));
+}
+
+// ---- Story 13.2: Boot Flags at the CLI surface ----
+
+mod boot_flags {
+    use super::*;
+    use crate::BootFlagError;
+    use crate::edge::test_support::TestServer;
+    use crate::test_support::command;
+
+    fn only(flags: &[&str]) -> BootFlags {
+        BootFlags::only(flags).expect("valid flags")
+    }
+
+    fn features(value: Option<&str>) -> impl Fn(&str) -> Option<OsString> {
+        lookup_var("NOCTIS_FEATURES", value.map(OsString::from))
+    }
+
+    fn selection(value: Option<&str>, args: &[&str]) -> Result<BootFlags, Error> {
+        let builder = AppBuilder::from_sources(features(value), args.iter().copied())?;
+        Ok(builder.boot_flags.clone())
+    }
+
+    /// E1-E5: sources and precedence.
+    #[test]
+    fn env_and_argv() {
+        assert_eq!(
+            selection(Some(" a,b "), &["bot"]).unwrap(),
+            only(&["a", "b"])
+        );
+        assert_eq!(selection(Some(""), &["bot"]).unwrap(), BootFlags::all());
+        assert_eq!(selection(None, &["bot"]).unwrap(), BootFlags::all());
+        assert_eq!(
+            selection(Some("none"), &["bot"]).unwrap(),
+            BootFlags::none()
+        );
+        let err = selection(Some("a,,b"), &["bot"]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::Env(EnvError::InvalidBootFlags {
+                    var: "NOCTIS_FEATURES",
+                    reason: BootFlagError::Empty
+                })
+            ),
+            "{err:?}"
+        );
+        assert_eq!(
+            selection(Some("a"), &["bot", "--features", "b"]).unwrap(),
+            only(&["b"])
+        );
+        assert_eq!(
+            selection(None, &["bot", "--mine", "--features=all"]).unwrap(),
+            BootFlags::all()
+        );
+        let err = selection(None, &["bot", "--features", "A"]).unwrap_err();
+        assert!(
+            matches!(err, Error::Cli(CliError::InvalidFeatures { .. })),
+            "{err:?}"
+        );
+        // E5: a setter afterwards wins.
+        let mut builder =
+            AppBuilder::from_sources(features(Some("a")), ["bot", "--features", "b"]).unwrap();
+        builder.boot_flags(BootFlags::none());
+        assert_eq!(builder.boot_flags, BootFlags::none());
+    }
+
+    /// A remote holding `bravo` (pruned by `{a}`), answering every
+    /// `GET .../commands` with it.
+    async fn server() -> TestServer {
+        TestServer::start_with(
+            false,
+            Arc::new(|seen| {
+                let body: &'static [u8] = if seen.path.ends_with("/applications/@me") {
+                    br#"{"id": "7", "integration_types_config": {"0": {}}}"#
+                } else {
+                    br#"[{"id": "9", "application_id": "7", "version": "1", "type": 1, "name": "bravo", "description": "Bravo", "options": []}]"#
+                };
+                (hyper::StatusCode::OK, Bytes::from_static(body))
+            }),
+        )
+        .await
+    }
+
+    fn modules(builder: &mut AppBuilder, server: &TestServer) {
+        builder
+            .runtime(&Runtime::for_test())
+            .token(token())
+            .http_proxy(server.authority())
+            .module(Module::new("m").__add(command("m::ping", &["ping"], "Pong")))
+            .module(Module::new("alpha").flags(["a"]).__add(command(
+                "alpha::alpha",
+                &["alpha"],
+                "Alpha",
+            )))
+            .module(Module::new("bravo").flags(["b"]).__add(command(
+                "bravo::bravo",
+                &["bravo"],
+                "Bravo",
+            )));
+    }
+
+    /// R3: `from_env`-style build with `--publish --dry-run --features a`.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn dry_run_reflects_the_selection() {
+        let server = server().await;
+        let args = ["bot", "--publish", "--dry-run", "--features", "a"];
+        let mut builder = AppBuilder::from_sources(features(None), args).unwrap();
+        modules(&mut builder, &server);
+        let app = builder.build().unwrap();
+        assert_eq!(app.boot_flags(), &only(&["a"]));
+
+        let mut out = Vec::new();
+        app.run_mode_to(CliMode::Publish, true, &mut out)
+            .await
+            .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("\"name\": \"ping\""), "{text}");
+        assert!(text.contains("\"name\": \"alpha\""), "{text}");
+        assert!(!text.contains("\"name\": \"bravo\""), "{text}");
+        assert!(text.contains("- delete chat_input `bravo`"), "{text}");
+        assert!(server.seen().iter().all(|s| s.method != hyper::Method::PUT));
+
+        // R1: an equal `--features` proceeds.
+        let args = NoctisArgs::split(args).unwrap().0;
+        app.run_with_args(args).await.unwrap();
+        assert!(server.seen().iter().all(|s| s.method != hyper::Method::PUT));
+    }
+
+    /// R2: a differing `--features` fails before any request.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn mismatch_fails_first() {
+        let server = server().await;
+        let mut builder = App::builder();
+        modules(&mut builder, &server);
+        let app = builder.build().unwrap();
+        let err = app
+            .run_with_args(["--publish", "--dry-run", "--features", "a"])
+            .await
+            .unwrap_err();
+        match err {
+            Error::Cli(CliError::BootFlagsMismatch { given, built }) => {
+                assert_eq!(given, only(&["a"]));
+                assert_eq!(built, BootFlags::all());
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(server.seen().is_empty());
+    }
+
+    /// An unknown selected flag fails `build()`.
+    #[tokio::test]
+    async fn unknown_flag_fails_build() {
+        let err = App::builder()
+            .module(Module::new("eco").flags(["economy"]))
+            .boot_flags(only(&["ecnomy"]))
+            .build()
+            .unwrap_err();
+        assert_eq!(
+            err.violations(),
+            [BuildViolation::UnknownBootFlag {
+                flag: "ecnomy".to_owned(),
+                declared: vec!["economy"],
+            }]
+        );
+    }
 }
