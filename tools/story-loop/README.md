@@ -104,6 +104,9 @@ args: { root, w, date, lanes: [
   takes the file lock `lane.sh lock` (in the common git dir; `push-main` releases it, a lock
   older than 4 h is stale). Push to main by hand only while holding it:
   `tools/story-loop/lane.sh lock manual`, push, `tools/story-loop/lane.sh unlock manual`.
+- Run each lane in its own workflow run (`lanes: [<one lane>]`): a run caps concurrent agents
+  at CPUs - 2 (2 on a 4-CPU container), so three lanes in one run advance only two at a time.
+  The merge lock serializes their merges across runs.
 - Pick lanes from story dependencies: stories in one lane may depend on each other; stories
   in different lanes must not (they may touch the same files; the merge step handles that).
 - After a restart, rerun with the same lanes: `lane.sh setup` reuses the worktrees, and an
