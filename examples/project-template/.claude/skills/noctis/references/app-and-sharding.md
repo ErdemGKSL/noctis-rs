@@ -125,7 +125,8 @@ Implemented:
 | `.renderer(Arc<dyn Renderer>)` | none | usually set by the image plugin |
 | `.error_sink(ErrorOrigin, impl ErrorSink)` | `LogSink` (logs at `error`) | route one origin's handler errors, panics (and, for `Event`, overflow drops) to your sink; the last call per origin wins; see `modules-middleware-ratelimits.md` §6 |
 | `.ref_store(..)`, `.session_store(..)`, `.identify_queue(..)`, `.module_state_store(..)`, `.rate_limit_store(..)`, `.cache_store(..)`, `.render_cache(..)`, `.asset_store(..)`, `.locale_source(..)`, `.guild_access(..)` | bounded memory defaults | each takes `impl Port`; the last call wins; see `adapters.md` |
-| `.discord_cache_backend(impl DiscordCache)` | in-memory, nothing cached | replace the Discord cache's storage (e.g. one shared by a Cluster) |
+| `.discord_cache(DiscordCacheConfig)` | `DiscordCacheConfig::default()`: `GUILD \| CHANNEL \| ROLE` | which Discord resources are cached for `ctx.cache()` (`noctis::DiscordCacheConfig`/`DiscordCacheResources`; `none()` turns it off); adds their event types to the gateway filter and their intents; `MEMBER` needs `.intents(Intents::GUILD_MEMBERS)` (else `BuildViolation::MissingCacheIntent`, GW-05); no env variable; the last call wins; read back with `app.discord_cache()`; see `adapters.md` §1.2 |
+| `.discord_cache_backend(impl DiscordCache)` | a `MemoryDiscordCache` of the `.discord_cache(..)` resources and message cap | replace the Discord cache's storage (an `Arc` shares one across the Apps of a Cluster; never namespaced); the configuration still decides what is fed and read |
 | `.publisher(bool)` | env `NOCTIS_PUBLISHER`, else `false` | a normal run publishes globally once at startup, before any shard connects (never on READY); a failed Publish is one `error` log (target `noctis::publish`) and the App keeps starting; set it on exactly one process; the last call wins; see §3 |
 | `.resume_sessions(bool)` | `true` | `true`: each shard resumes its stored session at start and a graceful shutdown closes with 4000 and stores it. `false`: each shard deletes its stored entry before it identifies, and the shutdown closes with 1000 and deletes it. `--no-resume` sets `false` for that run; no env variable; the last call wins; see §4 Session resume |
 | `.dev_guild(Id<GuildMarker>)` | env `NOCTIS_DEV_GUILD`, else none | the guild `--publish-guild` without an id publishes to; the last call wins |
@@ -145,7 +146,6 @@ Planned (signatures may change):
 | `.locale_resolver(impl LocaleResolver)` | none | sync `Fn(&LocaleRequest) -> Locales`, called once per run at pipeline stage 4, result used verbatim; a panic keeps the built-in resolution; see `i18n.md` §7 |
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` | none | from `AppBuilderImageExt` (`image` feature, in the prelude); installs the `ImagePlugin` and with it the Renderer; the last call of each kind wins (see `images.md` §8) |
 | `.limits(Limits)` | `Limits::default()` (Strict) | the Limits every Responder validates outgoing messages against before any request; `LimitMode::Lenient` truncates over-long texts with `…` instead of failing with `ResponderError::Invalid`; the last call wins. Read back with `app.limits() -> &Limits`; see `limits-cheatsheet.md` |
-| `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |
 | `.presence(Presence)` | none (Discord shows online, no activity) | the presence every shard identifies with; the last call wins; change it at run time with `app.presence()` (§6) |
 | `.large_threshold(LargeThreshold)` | `LargeThreshold::default()` (50) | the IDENTIFY `large_threshold`; `LargeThreshold::new::<N>()` compiles only for 50..=250 (GW-06, §6); the last call wins |
 | `.boot_flags(BootFlags)` | `all`; `App::from_env()` reads `NOCTIS_FEATURES`, then `--features` (wins) | which flagged Modules and registrations exist this run; `build()` prunes the trees with it before the fold; a selected flag nothing declares is `BuildViolation::UnknownBootFlag`; the last call wins; read back with `app.boot_flags()` (`modules-middleware-ratelimits.md` §2) |
@@ -499,7 +499,21 @@ max_concurrency` on every process.
   privileged intent you didn't request is `BuildViolation::MissingIntent` (GW-05).
   Privileged intents (`GUILD_MEMBERS`, `MESSAGE_CONTENT`, `GUILD_PRESENCES`) also need
   enabling in the Developer Portal; close code 4014 at connect is a fatal Shard close.
-  Cache-driven filters [planned, Story 12.5].
+- The **Discord cache** (`.discord_cache(..)`, `adapters.md` §1.2) adds the event types
+  that keep its resources current to the filter (they are never droppable) and their
+  intents. An interaction-only App with the default cache identifies with exactly
+  `Intents::GUILDS`; with `DiscordCacheConfig::none()` it parses only interactions.
+
+  | Resource | Event types fed | Intents added | Privileged (request it) |
+  | --- | --- | --- | --- |
+  | `GUILD` | `GUILD_CREATE/UPDATE/DELETE`, `UNAVAILABLE_GUILD` | `GUILDS` | — |
+  | `CHANNEL` | `GUILD_CREATE/DELETE`, `UNAVAILABLE_GUILD`, `CHANNEL_CREATE/UPDATE/DELETE`, `CHANNEL_PINS_UPDATE`, `THREAD_CREATE/UPDATE/DELETE`, `THREAD_LIST_SYNC` | `GUILDS` | — |
+  | `ROLE` | `GUILD_CREATE/DELETE`, `UNAVAILABLE_GUILD`, `GUILD_ROLE_CREATE/UPDATE/DELETE` | `GUILDS` | — |
+  | `MEMBER` | `GUILD_CREATE/DELETE`, `UNAVAILABLE_GUILD`, `GUILD_MEMBER_ADD/UPDATE/REMOVE`, `GUILD_MEMBERS_CHUNK` | — | `GUILD_MEMBERS` (else `BuildViolation::MissingCacheIntent`, GW-05) |
+  | `USER` | `GUILD_CREATE` | `GUILDS` | — |
+  | `MESSAGE` | `MESSAGE_CREATE/UPDATE/DELETE`, `MESSAGE_DELETE_BULK` | `GUILD_MESSAGES`, `DIRECT_MESSAGES` | — |
+
+  Interactions feed the cache when `MEMBER`, `USER` or `ROLE` is cached.
 
 ### Clusters (several processes)
 
@@ -940,6 +954,7 @@ label carries a user, guild, channel or message id or free text):
 | `noctis_render_duration_seconds` | histogram | `app`, `template` | successful `ctx.render` time, queue wait included, by Template id |
 | `noctis_render_queue_depth` | gauge | `app` | this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and its job is skipped while queued or stops before its next frame |
 | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full` \| `unknown_template` \| `unsupported` \| `over_cap`) | renders rejected before drawing |
+| `noctis_discord_cache_update_errors_total` | counter | `app` | Discord cache updates that failed or exceeded 1 s; the event or interaction still reaches its handlers (one `noctis::cache` warning per outage) |
 
 `kind` is the handler kind (`ErrorOrigin::as_str()`): `event`, `command` and
 `autocomplete` are emitted today; `component` and `render` join with their handlers.

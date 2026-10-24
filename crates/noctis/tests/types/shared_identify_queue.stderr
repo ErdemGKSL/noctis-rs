@@ -1,8 +1,8 @@
-error[E0277]: the trait bound `Shared<MemoryIdentifyQueue>: IdentifyQueue` is not satisfied
+error[E0277]: the trait bound `noctis::ports::Shared<MemoryIdentifyQueue>: IdentifyQueue` is not satisfied
  --> tests/types/shared_identify_queue.rs:8:28
   |
 8 |     builder.identify_queue(Shared::new(MemoryIdentifyQueue::default()));
-  |             -------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `IdentifyQueue` is not implemented for `Shared<MemoryIdentifyQueue>`
+  |             -------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `IdentifyQueue` is not implemented for `noctis::ports::Shared<MemoryIdentifyQueue>`
   |             |
   |             required by a bound introduced by this call
   |

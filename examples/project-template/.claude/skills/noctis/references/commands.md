@@ -903,8 +903,11 @@ message's (or the submit's) components Noctis does not model, verbatim
 (`components-v2.md` §11a); empty when there are none.
 `AutocompleteCtx` has none of them: return `Suggestions<T>`.
 
+Every context also has `cache() -> DiscordCacheReader`, the Discord resource cache
+(owned values; `adapters.md` §1.2).
+
 [planned] Shared accessors (trait `Ctx`, also on every other context): `user()`,
-`cache()` (Discord resources), `modules()`,
+`modules()`,
 `rate_limits()`, `render(..)`, `gateway()`, `app_permissions()`, `member()`.
 Command-only: `attachment_size_limit()`.
 

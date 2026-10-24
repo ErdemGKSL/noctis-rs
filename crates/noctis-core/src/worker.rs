@@ -131,7 +131,8 @@ impl Workers {
     /// autocomplete interaction to the autocomplete stage and one component
     /// click or modal submit to the component pipeline, each as one task on
     /// the tracker (never taking a permit); any other interaction (a ping)
-    /// is traced and dropped.
+    /// is traced and dropped. Each task first feeds the interaction to the
+    /// Discord cache (pings are not fed).
     fn interaction(&self, inbound: Inbound) {
         let (kind, id) = match &inbound.kind {
             InboundKind::Interaction(interaction, _) => {
@@ -155,19 +156,28 @@ impl Workers {
         match kind {
             Some(InteractionType::ApplicationCommand) => {
                 self.shutdown.tracker.spawn(observe(
-                    run_interaction(registry, app, inbound, cancel),
+                    async move {
+                        feed_interaction(&app, &inbound).await;
+                        run_interaction(registry, app, inbound, cancel).await;
+                    },
                     observed,
                 ));
             }
             Some(InteractionType::ApplicationCommandAutocomplete) => {
                 self.shutdown.tracker.spawn(observe(
-                    run_autocomplete(registry, app, inbound, cancel),
+                    async move {
+                        feed_interaction(&app, &inbound).await;
+                        run_autocomplete(registry, app, inbound, cancel).await;
+                    },
                     observed,
                 ));
             }
             Some(InteractionType::MessageComponent | InteractionType::ModalSubmit) => {
                 self.shutdown.tracker.spawn(observe(
-                    run_component(registry, app, inbound, cancel),
+                    async move {
+                        feed_interaction(&app, &inbound).await;
+                        run_component(registry, app, inbound, cancel).await;
+                    },
                     observed,
                 ));
             }
@@ -204,6 +214,15 @@ impl Workers {
             // A closed sub-queue only happens during runtime shutdown.
             let _ = tx.send(job);
         }
+    }
+}
+
+/// Feeds `inbound`'s interaction to the Discord cache when the configured
+/// resources read interactions (inside the interaction's task, before its
+/// pipeline; the ack deadline still counts from `received_at`).
+async fn feed_interaction(app: &AppShared, inbound: &Inbound) {
+    if let InboundKind::Interaction(interaction, _) = &inbound.kind {
+        app.discord_cache.interaction(&app.app, interaction).await;
     }
 }
 
@@ -265,6 +284,13 @@ pub(crate) async fn drain(mut receiver: LaneReceiver, workers: Workers) {
             InboundKind::Event(event) => {
                 // The guild record follows every event, handled or not.
                 workers.app.locales.observe(&event);
+                // The Discord cache sees a cached event type before any of
+                // its handlers (bounded; a failure never stops the event).
+                workers
+                    .app
+                    .discord_cache
+                    .event(&workers.app.app, &event)
+                    .await;
                 // An unhandled event never waits on a permit.
                 if workers.registry.handlers(event.kind()).is_none() {
                     let kind = event.kind();

@@ -117,6 +117,13 @@ list in CI.
     `twilight-cache-inmemory`, limited to the resource types the App needs (AD-21)
     and to twilight's per-channel message cap; its memory is reported apart from
     framework memory (NFR-1). Handlers read it through `ctx.cache()`.
+    Amended (2026-10-24, Story 12.5): the default resources are
+    `GUILD | CHANNEL | ROLE` (`DiscordCacheConfig::default()`, `none()` turns the
+    cache off); core feeds the backend in the drain loop before an event's
+    dispatch and inside each interaction task before its pipeline; cache-fed
+    event types join the gateway filter and are never droppable; a failed or
+    timed-out (1 s) update is counted (`noctis_discord_cache_update_errors_total`)
+    and never blocks the event or interaction.
   - Framework code may hold such data only through a port. A new concern adds a new
     port; it doesn't extend an unrelated one.
   - Exempt: twilight-http's transport rate-limiter state, per-connection gateway

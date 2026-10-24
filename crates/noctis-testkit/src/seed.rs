@@ -3,8 +3,11 @@
 
 use std::collections::BTreeMap;
 
+use serde_json::{Value, json};
 use twilight_model::channel::ChannelType;
-use twilight_model::guild::Permissions;
+use twilight_model::gateway::event::Event;
+use twilight_model::gateway::payload::incoming::GuildCreate;
+use twilight_model::guild::{Guild, Permissions};
 use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMarker};
 
@@ -24,10 +27,6 @@ use twilight_model::id::marker::{ChannelMarker, GuildMarker, RoleMarker, UserMar
 #[derive(Debug, Clone)]
 pub struct TestGuild {
     pub(crate) id: Id<GuildMarker>,
-    #[expect(
-        dead_code,
-        reason = "interactions carry no guild name; kept for Debug output and Discord-cache seeding (Story 12.5)"
-    )]
     pub(crate) name: String,
     pub(crate) channels: Vec<(Id<ChannelMarker>, String, ChannelType)>,
     pub(crate) roles: Vec<(Id<RoleMarker>, String)>,
@@ -78,6 +77,74 @@ impl TestGuild {
     pub fn locale(mut self, locale: &str) -> Self {
         locale.clone_into(&mut self.locale);
         self
+    }
+
+    /// The seed as an available `GUILD_CREATE`: id, name, Guild Locale,
+    /// channels (position 0) and roles (position = seed index, no
+    /// permissions), owner 1, every other required field at Discord's zero
+    /// value.
+    pub(crate) fn create_event(&self) -> Result<Event, serde_json::Error> {
+        let guild_id = self.id.to_string();
+        let channels: Vec<Value> = self
+            .channels
+            .iter()
+            .map(|(id, name, kind)| {
+                json!({
+                    "id": id.to_string(),
+                    "guild_id": guild_id,
+                    "type": u8::from(*kind),
+                    "name": name,
+                    "position": 0,
+                    "permission_overwrites": [],
+                })
+            })
+            .collect();
+        let roles: Vec<Value> = self
+            .roles
+            .iter()
+            .enumerate()
+            .map(|(position, (id, name))| {
+                json!({
+                    "id": id.to_string(),
+                    "name": name,
+                    "color": 0,
+                    "colors": {"primary_color": 0, "secondary_color": null, "tertiary_color": null},
+                    "hoist": false,
+                    "managed": false,
+                    "mentionable": false,
+                    "permissions": "0",
+                    "position": position,
+                    "flags": 0,
+                })
+            })
+            .collect();
+        let guild: Guild = serde_json::from_value(json!({
+            "id": guild_id,
+            "name": self.name,
+            "owner_id": "1",
+            "preferred_locale": self.locale,
+            "afk_timeout": 300,
+            "default_message_notifications": 0,
+            "explicit_content_filter": 0,
+            "features": [],
+            "mfa_level": 0,
+            "nsfw_level": 0,
+            "premium_progress_bar_enabled": false,
+            "premium_tier": 0,
+            "system_channel_flags": 0,
+            "verification_level": 0,
+            "emojis": [],
+            "stickers": [],
+            "channels": channels,
+            "roles": roles,
+            "threads": [],
+            "members": [],
+            "voice_states": [],
+            "presences": [],
+            "stage_instances": [],
+            "guild_scheduled_events": [],
+        }))?;
+        Ok(Event::GuildCreate(Box::new(GuildCreate::Available(guild))))
     }
 
     pub(crate) fn find_channel(&self, id: Id<ChannelMarker>) -> Option<(&str, ChannelType)> {
@@ -328,6 +395,29 @@ mod tests {
     #![allow(clippy::unwrap_used, reason = "tests panic with the failing case")]
 
     use super::*;
+
+    /// A guild seed becomes an available `GUILD_CREATE` with its channels
+    /// and roles.
+    #[test]
+    fn guild_seed_is_a_guild_create() {
+        let guild = TestGuild::new(Id::new(10), "G")
+            .text_channel(Id::new(20), "logs")
+            .role(Id::new(30), "Mods")
+            .role(Id::new(31), "Admins")
+            .locale("tr");
+        let Event::GuildCreate(create) = guild.create_event().unwrap() else {
+            panic!("not a GUILD_CREATE");
+        };
+        let GuildCreate::Available(guild) = *create else {
+            panic!("unavailable");
+        };
+        assert_eq!(guild.name, "G");
+        assert_eq!(guild.preferred_locale, "tr");
+        assert_eq!(guild.channels[0].guild_id, Some(Id::new(10)));
+        assert_eq!(guild.channels[0].name.as_deref(), Some("logs"));
+        assert_eq!(guild.roles[1].name, "Admins");
+        assert_eq!(guild.roles[1].position, 1);
+    }
 
     /// A guild run never resolves another guild's channels or roles.
     #[test]

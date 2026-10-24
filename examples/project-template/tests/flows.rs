@@ -163,15 +163,13 @@ async fn setup_rejects_other_users() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "planned, Story 12.5: ctx.cache() seeding"]
 async fn dashboard_roles_tab_pages_within_limits() -> anyhow::Result<()> {
     let app = app().await?;
     let overview = app.command("dashboard").by(ADMIN).in_guild(GUILD).run().await?;
     assert!(overview.button("Overview")?.is_disabled());
 
-    // [planned, Story 12.5] The Roles tab reads `ctx.cache().roles(..)`; seeding the
-    // Discord cache from `TestGuild` arrives with that story, so this flow runs once
-    // `ctx.cache()` is seedable.
+    // The Roles tab reads `ctx.cache().roles(..)`: every `TestGuild` seed is fed to the
+    // Discord cache as a GUILD_CREATE before the first run.
     let roles = app.click(overview.button("Roles")?).by(ADMIN).run().await?;
     // The tab row stays on every page, the active tab is disabled, prev is disabled on
     // the first page, and no page breaks a Limit (UD-5, UD-6, FR-62).

@@ -290,3 +290,62 @@ fn resource_set_ops() {
     let debug = format!("{:?}", MemoryDiscordCache::new(set));
     assert!(debug.contains("MemoryDiscordCache"), "{debug}");
 }
+
+#[test]
+fn resource_set_display_and_without() {
+    assert_eq!(R::empty().to_string(), "none");
+    assert_eq!(R::GUILD.to_string(), "GUILD");
+    assert_eq!((R::ROLE | R::GUILD).to_string(), "GUILD | ROLE");
+    assert_eq!(
+        R::all().to_string(),
+        "GUILD | CHANNEL | ROLE | MEMBER | USER | MESSAGE"
+    );
+    assert_eq!((R::GUILD | R::ROLE).without(R::ROLE), R::GUILD);
+    assert!(R::all().without(R::all()).is_empty());
+}
+
+#[test]
+fn arc_forwards_every_method() {
+    let shared = Arc::new(MemoryDiscordCache::new(R::all()));
+    let forwarded: Arc<dyn DiscordCache> = Arc::new(Arc::clone(&shared));
+    if let Err(err) = now(forwarded.update(&event("guild_create"))) {
+        panic!("update failed: {err}");
+    }
+    assert!(now(shared.guild(GUILD)).unwrap().is_some());
+    assert_eq!(
+        now(forwarded.guild(GUILD)).unwrap(),
+        now(shared.guild(GUILD)).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.channel_ids(GUILD)).unwrap(),
+        now(shared.channel_ids(GUILD)).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.role_ids(GUILD)).unwrap(),
+        now(shared.role_ids(GUILD)).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.member_ids(GUILD)).unwrap(),
+        now(shared.member_ids(GUILD)).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.member(GUILD, USER)).unwrap(),
+        now(shared.member(GUILD, USER)).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.user(USER)).unwrap(),
+        now(shared.user(USER)).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.channel(Id::new(10))).unwrap(),
+        now(shared.channel(Id::new(10))).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.role(Id::new(20))).unwrap(),
+        now(shared.role(Id::new(20))).unwrap()
+    );
+    assert_eq!(
+        now(forwarded.message(Id::new(40))).unwrap(),
+        now(shared.message(Id::new(40))).unwrap()
+    );
+}

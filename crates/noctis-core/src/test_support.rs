@@ -554,3 +554,59 @@ impl noctis_ports::RefStore for TestRefs {
         })
     }
 }
+
+/// An available `GUILD_CREATE` of guild `id` named `name`, with `channels`
+/// and `roles` as `(id, name)` pairs.
+pub(crate) fn guild_create_with(
+    id: u64,
+    name: &str,
+    channels: &[(u64, &str)],
+    roles: &[(u64, &str)],
+) -> Event {
+    let mut json = guild_json(id, "en-US");
+    json["name"] = name.into();
+    json["channels"] = channels
+        .iter()
+        .map(|(channel, name)| {
+            serde_json::json!({
+                "id": channel.to_string(),
+                "guild_id": id.to_string(),
+                "type": 0,
+                "name": name,
+                "position": 0,
+            })
+        })
+        .collect();
+    json["roles"] = roles
+        .iter()
+        .map(|(role, name)| role_json(*role, name))
+        .collect();
+    let guild = serde_json::from_value(json).expect("a valid guild");
+    Event::GuildCreate(Box::new(
+        twilight_model::gateway::payload::incoming::GuildCreate::Available(guild),
+    ))
+}
+
+/// The JSON of role `id` named `name`.
+pub(crate) fn role_json(id: u64, name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id.to_string(),
+        "name": name,
+        "color": 0,
+        "colors": {"primary_color": 0, "secondary_color": null, "tertiary_color": null},
+        "hoist": false,
+        "managed": false,
+        "mentionable": false,
+        "permissions": "0",
+        "position": 0,
+        "flags": 0,
+    })
+}
+
+/// A `GUILD_ROLE_CREATE` of role `id` named `name` in guild `guild`.
+pub(crate) fn role_create(guild: u64, id: u64, name: &str) -> Event {
+    Event::RoleCreate(twilight_model::gateway::payload::incoming::RoleCreate {
+        guild_id: Id::new(guild),
+        role: serde_json::from_value(role_json(id, name)).expect("a valid role"),
+    })
+}

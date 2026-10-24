@@ -205,6 +205,9 @@ pub(crate) struct AppShared {
     pub(crate) app: Arc<str>,
     /// The App's namespaced `CacheStore`, behind every `ctx.kv()`.
     pub(crate) kv: Arc<dyn noctis_ports::CacheStore>,
+    /// The App's Discord cache feed, behind every `ctx.cache()`: fed by the
+    /// drain and the interaction tasks (`AppBuilder::discord_cache`).
+    pub(crate) discord_cache: Arc<crate::discord_cache::CacheFeed>,
     pub(crate) sinks: ErrorSinks,
     pub(crate) http: Arc<twilight_http::Client>,
     pub(crate) states: StateMap,
@@ -354,6 +357,14 @@ impl EventCtx {
     /// (a cheap clone).
     pub fn kv(&self) -> crate::Kv {
         crate::Kv::of(Some(&self.0.app))
+    }
+
+    /// The App's Discord resource cache (a cheap clone): owned values,
+    /// `Ok(None)` when not cached, [`CacheError::Disabled`](crate::CacheError::Disabled)
+    /// when the resource is not configured. An event of a cached resource
+    /// is applied before its handlers run.
+    pub fn cache(&self) -> crate::DiscordCacheReader {
+        crate::DiscordCacheReader::of(Some(&self.0.app))
     }
 
     /// The App's webhook factory: create a webhook the App owns, or wrap

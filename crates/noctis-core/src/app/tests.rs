@@ -2986,6 +2986,7 @@ fn ack_deadline_missed_message() {
 }
 
 mod commands;
+mod discord_cache;
 
 // ---- ack_deadline (Story 6.6 Matrix 14 and 15) ----
 

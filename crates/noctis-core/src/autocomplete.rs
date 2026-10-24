@@ -328,6 +328,13 @@ impl AutocompleteCtx {
         crate::Kv::of(self.parts.app.as_ref())
     }
 
+    /// The App's Discord resource cache (a cheap clone): owned values,
+    /// `Ok(None)` when not cached, [`CacheError::Disabled`](crate::CacheError::Disabled)
+    /// when the resource is not configured or without an App.
+    pub fn cache(&self) -> crate::DiscordCacheReader {
+        crate::DiscordCacheReader::of(self.parts.app.as_ref())
+    }
+
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns).
     pub fn http(&self) -> &Arc<twilight_http::Client> {
         match &self.parts.app {

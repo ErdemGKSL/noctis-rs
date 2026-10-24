@@ -1,0 +1,5 @@
+error[E0599]: no method named `value` found for struct `noctis::twilight::twilight_model::guild::Guild` in the current scope
+  --> tests/types/discord_cache_no_guard.rs:15:19
+   |
+15 |         let _ = g.value();
+   |                   ^^^^^ method not found in `noctis::twilight::twilight_model::guild::Guild`

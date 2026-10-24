@@ -98,6 +98,7 @@ const fn row(
 /// | `noctis_render_duration_seconds` | histogram | `app`, `template` (the Template id) |
 /// | `noctis_render_queue_depth` | gauge | `app` (this App's `ctx.render` calls awaiting a render; a cancelled call stops counting, and its job is skipped while queued or stops before its next frame) |
 /// | `noctis_render_rejected_total` | counter | `app`, `reason` (`queue_full`, `unknown_template`, `unsupported`, `over_cap`) |
+/// | `noctis_discord_cache_update_errors_total` | counter | `app` (failed or timed-out Discord cache updates; the event or interaction still runs) |
 ///
 /// ```
 /// assert!(noctis_core::observe::METRICS.iter().all(|m| m.labels[0] == "app"));
@@ -230,6 +231,13 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Counter,
         &["app", "reason"],
         "Renders rejected by reason: queue_full, unknown_template, unsupported or over_cap.",
+    ),
+    row(
+        "noctis_discord_cache_update_errors_total",
+        MetricType::Counter,
+        &["app"],
+        "Discord cache updates that failed or exceeded 1 s; the event or interaction still \
+         reaches its handlers.",
     ),
 ];
 

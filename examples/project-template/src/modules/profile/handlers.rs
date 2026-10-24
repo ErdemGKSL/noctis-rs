@@ -197,6 +197,7 @@ fn is_update_unavailable(err: &HandlerError) -> bool {
 /// handler, so the auto-defer covers a slow render (AD-22, FR-34).
 async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<ProfileData> {
     let guild = guild_of(ctx)?;
+    // `Option<User>`: a user the cache has not seen yet (USER is filled from interactions).
     let user = ctx.cache().user(user_id).await?;
     let stored: StoredProfile =
         ctx.kv().get(&profile_key(guild, user_id)).await?.unwrap_or_default();
@@ -207,7 +208,10 @@ async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<ProfileD
     let s = Strings::of(locale);
     #[expect(clippy::cast_precision_loss, reason = "remainder is < 100")]
     let progress = (xp % XP_PER_LEVEL) as f32 / XP_PER_LEVEL as f32;
-    let name = user.global_name.clone().unwrap_or_else(|| user.name.clone());
+    let name = user.as_ref().map_or_else(
+        || user_id.to_string(),
+        |u| u.global_name.clone().unwrap_or_else(|| u.name.clone()),
+    );
 
     let card = ctx
         .render(ProfileCard {
@@ -216,7 +220,9 @@ async fn load(ctx: &impl Ctx, user_id: Id<UserMarker>) -> HandlerResult<ProfileD
             level_label: s.profile.card.level(xp / XP_PER_LEVEL),
             xp_label: s.profile.card.xp(xp % XP_PER_LEVEL, XP_PER_LEVEL),
             progress,
-            avatar: RemoteImage::avatar(&user, 256),
+            avatar: user
+                .as_ref()
+                .map_or_else(RemoteImage::placeholder, |u| RemoteImage::avatar(u, 256)),
         })
         .await?;
     Ok(ProfileData { user: user_id, name, bio: stored.bio, card })

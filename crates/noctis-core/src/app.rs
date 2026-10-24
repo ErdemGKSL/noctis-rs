@@ -13,10 +13,11 @@ use std::time::Duration;
 
 use noctis_codec::{PayloadKey, PayloadKeys};
 use noctis_gateway::{
-    CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayHandle,
-    GatewayOptions, LaneConfig, LargeThreshold, Presence, PresenceHandle, ShardEvent,
+    CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, EventTypeFlags, Gateway,
+    GatewayHandle, GatewayOptions, LaneConfig, LargeThreshold, Presence, PresenceHandle,
+    ShardEvent,
 };
-use noctis_ports::memory::MemoryIdentifyQueue;
+use noctis_ports::memory::{MemoryDiscordCache, MemoryIdentifyQueue};
 use noctis_ports::{
     AssetStore, CacheStore, DiscordCache, GuildAccessList, IdentifyQueue, LocaleSource,
     ModuleStateStore, RateLimitStore, RefStore, RenderCache, Renderer, RendererPorts, SessionStore,
@@ -49,9 +50,9 @@ use crate::startup::{Signals, check_runtime, ensure_crypto_provider};
 use crate::state::StateMap;
 use crate::worker::{AbortOnDrop, Shutdown, Workers, drain};
 use crate::{
-    BuildError, BuildViolation, Component, EnvError, Error, ErrorOrigin, ErrorSink, HandlerResult,
-    IntoResponse, LocaleOverlayError, LocaleOwner, ModalSubmit, Plugin, RateLimited, RunError,
-    Runtime, StartError, State, Token,
+    BuildError, BuildViolation, Component, DiscordCacheConfig, EnvError, Error, ErrorOrigin,
+    ErrorSink, HandlerResult, IntoResponse, LocaleOverlayError, LocaleOwner, ModalSubmit, Plugin,
+    RateLimited, RunError, Runtime, StartError, State, Token,
 };
 
 /// The environment variable [`App::from_env`] reads the token from.
@@ -420,6 +421,32 @@ impl App {
         self.resume_sessions
     }
 
+    /// The Discord cache configuration ([`AppBuilder::discord_cache`];
+    /// [`DiscordCacheConfig::default`] when unset).
+    ///
+    /// ```
+    /// use noctis_core::DiscordCacheConfig;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// assert_eq!(app.discord_cache(), DiscordCacheConfig::default());
+    /// # }
+    /// ```
+    pub fn discord_cache(&self) -> DiscordCacheConfig {
+        self.shared.discord_cache.config()
+    }
+
+    /// The event types the Discord cache configuration feeds on.
+    fn cache_event_types(&self) -> EventTypeFlags {
+        crate::discord_cache::event_types(self.discord_cache().resources())
+    }
+
+    /// The gateway event filter: the handlers' event types (interactions
+    /// included) and the Discord cache's (FR-6).
+    pub(crate) fn event_types(&self) -> EventTypeFlags {
+        self.registry.event_types() | self.cache_event_types()
+    }
+
     /// The App's gateway command handle (cheap to clone; the one
     /// `ctx.gateway()` returns): presence updates and Request Guild Members
     /// sent to the owning shard. Live while [`run`](Self::run) runs the
@@ -587,7 +614,7 @@ impl App {
 
     /// The gateway intents the App identifies with: the requested ones (at
     /// least `GUILDS`) plus the non-privileged intents its event handlers
-    /// derive.
+    /// and its [Discord cache resources](AppBuilder::discord_cache) derive.
     ///
     /// ```
     /// use twilight_model::gateway::Intents;
@@ -685,7 +712,11 @@ impl App {
             app: Arc::clone(&self.shared.app),
             event_capacity: self.event_capacity,
             overflow_capacity: self.overflow_capacity,
-            droppable: self.registry.droppable(),
+            // A cache-fed event type is never dropped.
+            droppable: self
+                .registry
+                .droppable()
+                .difference(self.cache_event_types()),
             drop_observer: Some(Arc::new(EventDropObserver {
                 app: Arc::clone(&self.shared.app),
                 sinks: self.shared.sinks.clone(),
@@ -1037,7 +1068,7 @@ impl App {
             token: token.expose().to_owned(),
             intents: self.intents,
             gateway_url: self.gateway_url.clone(),
-            event_types: self.registry.event_types(),
+            event_types: self.event_types(),
             identify_queue,
             session_store: Arc::clone(&self.ports().session_store) as Arc<dyn SessionStore>,
             resume: self.resume_sessions,
@@ -1578,6 +1609,7 @@ impl fmt::Debug for App {
             .field("payload_key", &self.shared.payload_keys.is_some())
             .field("publisher", &self.publisher)
             .field("resume_sessions", &self.resume_sessions)
+            .field("discord_cache", &self.discord_cache())
             .field("presence", &self.presence)
             .field("large_threshold", &self.large_threshold)
             .field("dev_guild", &self.dev_guild)
@@ -1648,6 +1680,8 @@ pub struct AppBuilder {
     publisher: bool,
     /// Whether shards resume stored sessions and shut down resumably.
     resume_sessions: bool,
+    /// The Discord cache configuration (`discord_cache`).
+    discord_cache: DiscordCacheConfig,
     /// The presence every shard identifies with.
     presence: Option<Presence>,
     /// The IDENTIFY `large_threshold`.
@@ -1678,10 +1712,21 @@ pub struct AppBuilder {
 /// Generates the port setters, each with its rustdoc and doctest: the
 /// byte-store setters take [`IntoPort`] (a port or a `Shared` one), the
 /// plain ones `impl Port`.
+/// The default text of a plain port setter: its explicit `default`, else
+/// its example in backticks.
+macro_rules! port_default {
+    ($example:literal) => {
+        concat!("`", $example, "`")
+    };
+    ($example:literal, $default:literal) => {
+        $default
+    };
+}
+
 macro_rules! port_setters {
     (
         namespaced { $($ns_method:ident($ns_port:ident) = $ns_import:literal, $ns_example:literal $(, $ns_note:literal)?;)* }
-        plain { $($method:ident($port:ident) = $import:literal, $example:literal;)* }
+        plain { $($method:ident($port:ident) = $import:literal, $example:literal $(, default = $default:literal)? $(, $note:literal)?;)* }
     ) => {
         $(
             #[doc = concat!(
@@ -1707,8 +1752,10 @@ macro_rules! port_setters {
         )*
         $(
             #[doc = concat!(
-                "Sets the [`", stringify!($port), "`] port (default: `", $example, "`); ",
+                "Sets the [`", stringify!($port), "`] port (default: ",
+                port_default!($example $(, $default)?), "); ",
                 "the last call wins.\n\n",
+                $($note, "\n\n",)?
                 "```\n",
                 "use noctis_ports::memory::", $import, ";\n\n",
                 "let mut builder = noctis_core::App::builder();\n",
@@ -1749,6 +1796,7 @@ impl AppBuilder {
             ref_ttl: DEFAULT_REF_TTL,
             publisher: false,
             resume_sessions: true,
+            discord_cache: DiscordCacheConfig::default(),
             presence: None,
             large_threshold: LargeThreshold::default(),
             dev_guild: None,
@@ -2355,6 +2403,30 @@ impl AppBuilder {
         self
     }
 
+    /// Sets which Discord resources the App caches (default
+    /// [`DiscordCacheConfig::default`]: `GUILD | CHANNEL | ROLE`); the last
+    /// call wins. [`DiscordCacheConfig::none`] turns the cache off.
+    ///
+    /// Core feeds the backend ([`discord_cache_backend`](Self::discord_cache_backend),
+    /// by default a `MemoryDiscordCache` of these resources and message cap)
+    /// before handlers see an event: the event types that keep each resource
+    /// current join the gateway filter, are never dropped by the event lane,
+    /// and their non-privileged intents are added. A resource needing a
+    /// privileged intent that [`intents`](Self::intents) did not request is a
+    /// [`BuildViolation::MissingCacheIntent`] (GW-05; `MEMBER` needs
+    /// `GUILD_MEMBERS`). Handlers read it with `ctx.cache()`.
+    ///
+    /// ```
+    /// use noctis_core::{DiscordCacheConfig, DiscordCacheResources};
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.discord_cache(DiscordCacheConfig::default().with_resources(DiscordCacheResources::USER));
+    /// ```
+    pub fn discord_cache(&mut self, config: DiscordCacheConfig) -> &mut Self {
+        self.discord_cache = config;
+        self
+    }
+
     /// The presence every shard identifies with (default: none, which
     /// Discord shows as online without an activity); the last call wins.
     /// Change it at run time with [`App::presence`] or `ctx.gateway()`.
@@ -2598,7 +2670,16 @@ impl AppBuilder {
             locale_source(LocaleSource) = "NoLocaleOverlay", "NoLocaleOverlay";
             guild_access(GuildAccessList) = "AllowAllGuilds", "AllowAllGuilds";
             discord_cache_backend(DiscordCache) = "{DiscordCacheResources, MemoryDiscordCache}",
-                "MemoryDiscordCache::new(DiscordCacheResources::empty())";
+                "MemoryDiscordCache::new(DiscordCacheResources::all())",
+                default = "a `MemoryDiscordCache` of the [`discord_cache`](Self::discord_cache) \
+                    configuration's resources and message cap",
+                "The configuration, not the backend, decides what is fed and read: core feeds \
+                only the configured resources' event types and every `ctx.cache()` getter of an \
+                unconfigured resource returns `CacheError::Disabled`. With \
+                `DiscordCacheConfig::none()` the backend is never fed nor read. The backend is \
+                never namespaced; one instance can serve several Apps of a Cluster as an `Arc` \
+                (`Arc::clone(&cache)`), and an out-of-process backend serializes the values \
+                itself.";
         }
     }
 
@@ -2638,6 +2719,7 @@ impl AppBuilder {
     /// the value sent for its owner catalog's default locale, CMD-04, sorted
     /// by key), then every [`BuildViolation::CommandLocalization`] (sorted by
     /// key, locale and rule; skipped when the catalogs do not merge), then
+    /// every [`BuildViolation::MissingCacheIntent`] (GW-05), then
     /// every [`BuildViolation::DuplicateLocaleKey`], then the
     /// crypto provider and the runtime.
     ///
@@ -2785,6 +2867,11 @@ impl AppBuilder {
         );
         let registry = Arc::new(registry);
         self.violations.extend(missing);
+        self.violations.extend(
+            crate::discord_cache::missing_intents(self.discord_cache, self.intents)
+                .into_iter()
+                .map(|(resource, intent)| BuildViolation::MissingCacheIntent { resource, intent }),
+        );
         self.register_templates(&registry);
         let payload_keys = self.key_ring(&registry);
         self.violations.extend(duplicate_keys);
@@ -2815,7 +2902,8 @@ impl AppBuilder {
             &app,
         );
         let http = http_client(&config, &edge, http_proxy.is_some());
-        let ports = Ports::resolve(config.ports, &app_id);
+        let mut ports = Ports::resolve(config.ports, &app_id);
+        let discord_cache = discord_cache_feed(&mut ports, config.discord_cache);
         if let Some(renderer) = &config.renderer {
             let asset_store: Arc<dyn AssetStore> = ports.asset_store.clone();
             renderer.bind(RendererPorts::new(asset_store));
@@ -2829,6 +2917,7 @@ impl AppBuilder {
             shared: Arc::new(AppShared {
                 app,
                 kv,
+                discord_cache,
                 sinks: config.error_sinks,
                 http: Arc::new(http),
                 states: config.states,
@@ -2853,7 +2942,9 @@ impl AppBuilder {
             gateway_url,
             shard_total,
             shard_range,
-            intents: config.intents | registry.intents(),
+            intents: config.intents
+                | registry.intents()
+                | crate::discord_cache::intents(config.discord_cache.resources()),
             ports,
             registry,
             event_capacity,
@@ -2966,6 +3057,7 @@ impl fmt::Debug for AppBuilder {
             .field("ref_ttl", &self.ref_ttl)
             .field("publisher", &self.publisher)
             .field("resume_sessions", &self.resume_sessions)
+            .field("discord_cache", &self.discord_cache)
             .field("presence", &self.presence)
             .field("large_threshold", &self.large_threshold)
             .field("dev_guild", &self.dev_guild)
@@ -3078,8 +3170,34 @@ fn read_var(
     Ok((!trimmed.is_empty()).then(|| trimmed.to_owned()))
 }
 
+/// The App's Discord cache feed: the `DiscordCache` slot's backend, or,
+/// when the slot took its default, a `MemoryDiscordCache` of `config`'s
+/// resources and message cap (installed into `ports`). A custom backend with
+/// the cache off is warned about once.
+fn discord_cache_feed(
+    ports: &mut Ports,
+    config: DiscordCacheConfig,
+) -> Arc<crate::discord_cache::CacheFeed> {
+    if ports.is_default(PortSlot::DiscordCache) {
+        ports.discord_cache_backend = Arc::new(MemoryDiscordCache::with_message_cap(
+            config.resources(),
+            config.message_cap(),
+        ));
+    } else if !config.is_enabled() {
+        tracing::warn!(
+            target: "noctis::app",
+            "a DiscordCache backend is set but the Discord cache is disabled \
+             (DiscordCacheConfig::none()); it is never read or fed"
+        );
+    }
+    Arc::new(crate::discord_cache::CacheFeed::new(
+        Arc::clone(&ports.discord_cache_backend),
+        config,
+    ))
+}
+
 /// `error` and its source chain, joined by `": "`.
-fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+pub(crate) fn error_chain(error: &(dyn std::error::Error + 'static)) -> String {
     let mut message = error.to_string();
     let mut source = error.source();
     while let Some(cause) = source {

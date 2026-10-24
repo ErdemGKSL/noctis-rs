@@ -607,7 +607,9 @@ async fn recorded_set_matches_catalog() {
     // interaction, so the auto-defer and ack-latency rows are covered by
     // noctis-core's `int_01_auto_defer_at_deadline`; Ref lookups need a
     // click, covered by noctis-core's Ref dispatch tests and `refs.rs`;
-    // render rows need a Renderer, covered by noctis-core's `render` tests.
+    // render rows need a Renderer, covered by noctis-core's `render` tests;
+    // Discord cache update errors need a failing backend, covered by
+    // noctis-core's `discord_cache` tests and `discord_cache.rs`.
     let covered_elsewhere = |name: &str| {
         name.starts_with("noctis_http_")
             || name.starts_with("noctis_interaction_")
@@ -615,6 +617,7 @@ async fn recorded_set_matches_catalog() {
             || name == "noctis_autodefer_total"
             || name == "noctis_ack_latency_seconds"
             || name == "noctis_ref_lookups_total"
+            || name == "noctis_discord_cache_update_errors_total"
     };
     let mut all: Vec<_> = METRICS
         .iter()
