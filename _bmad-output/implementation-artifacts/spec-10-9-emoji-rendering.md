@@ -2,7 +2,7 @@
 title: 'Story 10.9: Emoji rendering'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '012de2288f5eba6af9fc04d0f03250c3c2bf2fd7'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -15,7 +15,14 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/macros.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      Text-only utilities (truncate, line-clamp, text-ellipsis, whitespace-nowrap) may stop working on a text node once it holds a custom emoji and lowers to an inline container of runs.
+    evidence: |-
+      lower.rs inline_text moves the text node's classes onto a display: inline container whose children are separate text and image nodes; whether takumi 0.31 applies overflow ellipsis and line clamping across such inline children is untested. A pixel test of a truncate / line-clamp-1 text node holding a token (ink must stop at the box edge) would settle it.
+    location: >-
+      crates/noctis-image/src/lower.rs:68
+    severity: medium (unverified)
 ---
 
 <intent-contract>
@@ -207,6 +214,37 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 27 findings — high 0, medium 0, low 15, false 11, maybe-false 1
+- findings:
+  - `[low]` `[reject]` Blind: inline-style `display: inline` on an emoji-holding text node overrides a display class (`hidden`, `block`) — real (inline style beats the Tailwind layer, as the spec prescribes), but display classes on text nodes are rare and flex parents blockify anyway; the fix needs class inspection guards.
+  - `[maybe-false]` `[defer]` Blind: truncate / line-clamp / ellipsis may not carry over to the inline container — needs a pixel test of a truncated text node holding a token; deferred as medium (unverified).
+  - `[false]` `[reject]` Blind: `UndeclaredImage` for view-built tokens contradicts "never fail a render" — the "never fail" wording sits in the cap context (config.rs:44, images.md:508) about data emoji, and the same section documents the view-built `UndeclaredImage` the spec mandates.
+  - `[low]` `[reject]` Blind: the emoji `UndeclaredImage` message carries the IMG-03 `#[asset]` wording — real, but troubleshooting.md:106 gives the emoji-specific cause and fix; a new variant or branch in noctis-ports for a rare author error is not worth it.
+  - `[low]` `[patch]` Blind: undrawn data fields consume `max_emoji` slots and fetches without the trade-off being stated — the scan covers every string field by design (spec Design Notes); images.md "Found automatically" should say undrawn fields count; doc clause added.
+  - `[low]` `[reject]` Blind: the IMG-04 startup warning fires even when the author registers an own COLRv0 font — spec mandates `!has_emoji()`, troubleshooting says it may be ignored; detecting COLR tables adds logic for a rare setup.
+  - `[low]` `[reject]` Blind: double `emoji::split` and per-node `Style::from_str` per frame — split allocates nothing and only token-holding text nodes parse the style; negligible cost.
+  - `[false]` `[reject]` Blind: emoji plan entries name field `text` — the spec prescribes that label for data-text emoji and every warning also names `image = emoji/<id>`; nothing points at a wrong declared field.
+  - `[low]` `[reject]` Blind: braced `{"…"}` literals escape the `view!` check — real, rare, and it fails loudly at render with `UndeclaredImage`; the spec scopes the check to literal text children.
+  - `[low]` `[patch]` Blind: images.md says `to_uppercase()` on data text is fine, but `<a:..>` becomes `<A:..>`, which is not a token and draws as raw markup — doc correction.
+  - `[false]` `[reject]` Blind: missing property tests / non-ASCII digit lookalikes — `token_at` uses `is_ascii_alphanumeric`/`is_ascii_digit` and `split`/`scan` share `next_token` (emoji.rs:117-164); no defect shown.
+  - `[false]` `[reject]` Blind: spec status and decisions not logged — `in-progress` is the correct mid-loop status, the values are settled in the spec itself and the planner memlog; the fix would edit this spec.
+  - `[false]` `[reject]` Blind: a required `#[asset]` emoji also in text fails the render on fetch failure — the required field alone already fails the render; the text occurrence changes nothing.
+  - `[low]` `[reject]` Edge: `display: inline` overrides display classes (same root as the first Blind row) — same reasoning.
+  - `[low]` `[reject]` Edge: a still job with `<:x:ID>` and `<a:x:ID>` fetches the same URL twice — real (both target `emojis/ID.webp?size=128`, key `:s`), but both forms of one id in one job is rare and the scan row keeps both pairs by spec; dedup by target adds logic.
+  - `[low]` `[patch]` Edge: undrawn tokens use `max_emoji` slots (same root as the Blind undrawn-fields row) — covered by the same doc clause.
+  - `[low]` `[reject]` Edge: postcard length-prefix bytes can form phantom tokens across fields — needs a field ending in a token prefix plus a length byte in `0x30..=0x39`/`0x3E`; the spec accepts the harmless superset (one extra capped, allow-listed fetch).
+  - `[low]` `[patch]` Edge: `to_uppercase` turns `<a:` into `<A:` (same root as the Blind to_uppercase row) — same doc correction.
+  - `[low]` `[reject]` Edge: an author font with family override `Twemoji` merges with the bundled emoji family — same pre-existing pattern as the bundled Inter family; rare, and the fix adds a reserved-name check.
+  - `[low]` `[reject]` Edge: static and animated variants share the `emoji/<id>` display — the spec prescribes it; the cosmetic log ambiguity is rare.
+  - `[low]` `[reject]` Edge: "fetched once" claim broken for mixed static/animated in a still job (same root as the double-fetch row) — same reasoning.
+  - `[false]` `[reject]` Intent D1: only data tokens are fetched, literals and view-built tokens are rejected — the spec deliberately settles this (Never: "never fetch emoji named only in view-built text"; compile time first, maintainer decision 4).
+  - `[false]` `[reject]` Intent D2: discovered rather than declared emoji — the Design Notes settle the data as the declaration, which AD-15's "declared by the Template, including custom emoji" admits; tokens are known before admission.
+  - `[false]` `[reject]` Intent D3: warning not asserted at the App surface — `renderer.register` has one call site in `App::build` (noctis-core app.rs:2719), so the unit test covers the once-per-build behavior.
+  - `[false]` `[reject]` Intent D4: NOTICE only in noctis-image — the spec settles it: noctis-image is the published crate that ships the font file, and the facade feature docs carry the attribution.
+  - `[false]` `[reject]` Intent D5: strict grammar leaves non-token markup literal — the spec adopts Discord's own markdown rule; strings Discord itself does not treat as emoji are not emoji.
+  - `[false]` `[reject]` Intent D6: new public surface (`max_emoji`, `custom_emoji`, IMG-04) — all specified by the spec, snapshot and skill updated per AGENTS.md.
+
 ## Design Notes
 
 - **Why a byte scan of `job.data`.** The scan needs no decode, no ViewFn change and no derive change. Every string in the data is covered automatically, so authors annotate nothing, and the emoji are known before admission, as AD-15 requires ("declared by the Template, including custom emoji"). Token-shaped bytes outside strings only add capped, allow-listed fetches. Text the view builds itself is never fetched, and drawing it is a typed `UndeclaredImage`.
@@ -228,3 +266,12 @@ deferred: []
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `git diff --stat Cargo.lock` -- no new `[[package]]`
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- **Summary:** Discord custom emoji (`<:name:id>`, `<a:name:id>`) in template data text are found by a byte scan of `job.data`, fetched through the AssetFetcher (size 128, separate `max_emoji` cap with fallback overflow) and drawn inline (`1.375em`); bundled Twemoji Mozilla (COLRv0) registered as last-resort emoji font behind the `emoji` feature; `view!` rejects literal custom-emoji text at compile time (IMG-04), view-built tokens fail with `UndeclaredImage`; IMG-04 startup warning when no emoji font is available.
+- **Files changed:** `crates/noctis-image/src/emoji.rs` (token grammar, split/scan); `fonts.rs` + `fonts/TwemojiMozilla.woff2`, `LICENSE-Twemoji.txt` (bundled emoji font); `lower.rs` (inline emoji lowering); `remote*.rs`, `remote/config.rs` (emoji fetch, `max_emoji`); `renderer.rs` (+ `tests/emoji.rs` pixel tests); `noctis-macros/src/view.rs` (IMG-04 check); `noctis-rules`, `xtask` catalog, `docs/discord-rules.md` (IMG-04 rule); `crates/noctis` feature + tests + trybuild case; `deny.toml`; project-template skill/AGENTS.md; `xtask/public-api.txt`.
+- **Review findings:** 27 (high 0, medium 0, low 15, false 11, maybe-false 1). Patched 4 low (2 roots, doc-only in images.md: undrawn data fields consume `max_emoji` slots; `to_uppercase()` breaks `<a:` tokens). Deferred 1 (truncate/line-clamp on inline emoji container, needs pixel test). Rejected 22 with reasons recorded in the spec triage log (display-class override, IMG-03 wording reuse, COLRv0 author-font warning, double split cost, braced literals, double fetch static/animated, postcard phantom tokens, Twemoji family merge, shared display name, and 11 false/intent items settled by the spec).
+- **Follow-up review recommended:** false (patched: high 0, medium 0, low 4).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, workspace tests, trybuild, api-snapshot, deps-check, rules-catalog, skill-check, tw-grammar, tw_crosscheck, cargo deny, MSRV 1.91); CI paused by maintainer.
+- **Residual risks:** truncate/ellipsis behaviour with emoji tokens unverified (deferred); token-shaped bytes outside strings may add one capped, allow-listed fetch; mixed static/animated forms of one id fetch twice.

@@ -496,7 +496,10 @@ impl TemplateView for QuoteCard {
   same fetcher as `#[asset]` images (allow-list, timeout, byte and pixel caps,
   concurrency, `AssetStore` cache) from `<cdn>/emojis/<id>.webp?size=128`, plus
   `&animated=true` for an `<a:..>` emoji in an animated job (it then animates). Cache
-  key: `img:v1:emoji:<id>:128:<a|s>`. Nothing is annotated.
+  key: `img:v1:emoji:<id>:128:<a|s>`. Nothing is annotated. Every token in the data
+  counts, drawn or not: one in a field the view never draws is still fetched and takes a
+  `max_emoji` slot (which can push drawn emoji to the fallback), so keep raw markup out
+  of undrawn fields or raise `max_emoji`.
 - **Drawn inline.** A text node holding a token draws as an inline run: the text around
   it, and each emoji as a `1.375em` square image (Discord's inline size) on the same
   line, vertically aligned like Discord. The markup itself is never drawn. Size the text
@@ -518,8 +521,10 @@ impl TemplateView for QuoteCard {
   (`RemoteImage::custom_emoji(id, animated)`) and draw `<img src={&self.e} />` ``.
 - **Text the view builds itself** (`format!("<:x:{id}>")` with an id that is not in the
   data) is never fetched: drawing it fails with `RenderError::UndeclaredImage { id, image:
-  "emoji/<id>" }`. Transforming data text (`to_uppercase()`, trimming) is fine: the
-  lookup uses only the id and the `a` flag.
+  "emoji/<id>" }`. Transforming data text in ways that keep the markup intact (trimming,
+  slicing around tokens) is fine: the lookup uses only the id and the `a` flag. Uppercasing
+  (`to_uppercase()`) breaks animated tokens: `<a:..>` becomes `<A:..>`, which is not a
+  token and draws as raw text.
 - **An emoji as an image.** `RemoteImage::custom_emoji(id: Id<EmojiMarker>, animated)`
   in an `#[asset]` field, drawn with `<img src={&self.emoji} tw="w-16 h-16" />`, e.g. a
   big reaction emoji. Its display (in logs and errors) is `emoji/<id>`.
