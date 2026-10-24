@@ -2,7 +2,8 @@
 title: 'Story 15.2: Multiple Apps per process'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: 'f9fff1c222785e2da6e5c174fa5bcf9582acf27c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
