@@ -508,7 +508,9 @@ macro_rules! ctx_methods {
             /// without a Renderer; `QueueFull` when the render queue is full
             /// (show a "busy" notice and retry later); `UnknownTemplate` for
             /// a Template the App did not register; `Unsupported`;
-            /// `OverBudget` when no encoding fits the Upload Budget; `Failed`
+            /// `OverCap` when the job is over one of the per-job caps
+            /// (`RenderCaps`); `OverBudget` when no encoding fits the Upload
+            /// Budget; `Failed`
             /// for a render, encode or class-check failure; `Panicked` when
             /// the view panicked. Every one except `NoRenderer` and
             /// `QueueFull` is also reported to the Render Error Sink.

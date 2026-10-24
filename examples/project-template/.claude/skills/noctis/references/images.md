@@ -295,8 +295,8 @@ let card: Attachment = match ctx.render(ProfileCard { .. }).await {   // by valu
 - Admission is weighted: a still weighs 1 unit, an animation `ceil(frames / 8)` units
   (at least 1, at most the animation share). A quarter of `queue_capacity`, floored, is
   reserved for stills, so animations hold at most the other three quarters (default 64:
-  16 reserved, 48 for animations, so a 90-frame animation weighs 12 and four run at
-  once). A free pool thread always takes a queued still before any animation. A job
+  16 reserved, 48 for animations, so a 90-frame animation weighs 12 and four are admitted
+  at once). A free pool thread always takes a queued still before any animation. A job
   that does not fit fails at once with `QueueFull`; there is no waiting queue.
 - Per-job caps per App: `ImageConfig::new().caps(RenderCaps::new().frames(120))`.
   `RenderCaps::new()` (= `default()`) is 4 MP (`job_pixels`, 4_000_000, `w*h` of every

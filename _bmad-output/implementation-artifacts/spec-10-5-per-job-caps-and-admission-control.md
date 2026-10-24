@@ -2,7 +2,7 @@
 title: 'Story 10.5: Per-job caps and admission control'
 type: 'feature'
 created: '2026-10-23'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '838a3815611456132544c5dcaa8bc7ec4d66d931'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -15,7 +15,35 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/async-and-concurrency.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      tools/story-loop/gates.sh now runs cargo hack only for the last open story of an epic, citing a maintainer decision that is recorded neither in maintainer-decisions.md nor in AGENTS.md (which still lists cargo hack as a gate), and the change was swept into the Story 10.5 implementation commit.
+    evidence: |-
+      git diff 838a381..HEAD -- tools/story-loop/gates.sh shows the nohack selection; grep finds no "hack" entry in maintainer-decisions.md; AGENTS.md "Running and verifying" lists cargo hack test --each-feature. The fix edits agent-context files (AGENTS.md, maintainer-decisions.md) and story-loop tooling, outside Story 10.5's intent.
+    location: >-
+      tools/story-loop/gates.sh:28-42
+    severity: medium
+  - summary: >-
+      The gates.sh epic selection collects every in-progress epic, so a parallel lane's in-progress story in another epic with open stories suppresses cargo hack for the last story of this lane's epic.
+    evidence: |-
+      epics = {e for e, s in st.values() if s == "in-progress"} spans all lanes; any(e in epics and s not in ("done", "in-progress")) then matches the other epic's backlog stories. The selection should use the epic of this lane's story.
+    location: >-
+      tools/story-loop/gates.sh:37-38
+    severity: medium
+  - summary: >-
+      The gates.sh status parsing treats any status other than done/in-progress (review, blocked, a typo) as not done and drops a story in review from the epic set; a missing sprint-status.yaml prints a bare traceback.
+    evidence: |-
+      The inline Python only recognises "done" and "in-progress"; no status allow-list and no log line say why hack was skipped.
+    location: >-
+      tools/story-loop/gates.sh:30-41
+    severity: low
+  - summary: >-
+      The once-per-epic cargo hack selection in gates.sh has no check against fixture sprint-status contents.
+    evidence: |-
+      Verification-gap layer: no test harness exists for story-loop shell tooling; cover it when the snippet moves into tools/story-loop/stories.py.
+    location: >-
+      tools/story-loop/gates.sh:30-42
+    severity: low
 ---
 
 <intent-contract>
@@ -203,6 +231,39 @@ R is a renderer from `renderer/tests.rs`, built with `RenderCaps::new()` unless 
 
 ## Review Triage Log
 
+### 2026-10-23 — Review pass
+- verdicts: 29 findings — high 0, medium 6, low 13, false 10, maybe-false 0
+- findings:
+  - `[low]` `[reject]` blind: still-first dispatch can starve animations under a steady still stream — accepted deliberately in Design Notes (stills are cheap); continuous still saturation is unlikely in everyday use and the fix adds aging logic.
+  - `[false]` `[reject]` blind: Arc cycle between Queue and queued Tasks; a lost spawn hangs the caller — every push is paired with one `pool.spawn` on a pool that cannot be dropped while `&self` is borrowed, and rayon workers drain spawned jobs before exiting, so every task runs (or is skipped) and drops its sender.
+  - `[low]` `[reject]` blind: `frame_pixels` above `job_pixels` still trips `JobPixels` on animations — the `RenderCaps` docs and the skill state `job_pixels` bounds every job's canvas; rare config, and the fix adds a new validation.
+  - `[false]` `[reject]` blind: admission weight ignores canvas size — AD-15 and the epics AC specify a frame-count weight; canvas size is bounded per job by the pixel caps.
+  - `[false]` `[reject]` blind: reserve silently vanishes for capacities below 4 — the `ImageConfig::queue_capacity` rustdoc and `references/images.md` both say "a quarter, floored", which states the caveat.
+  - `[false]` `[reject]` blind: docs overstate cancellation of a still or single encode — `references/images.md`, `Renderer::render` docs and the `noctis` lib docs say a running render stops before its next frame or encode attempt / between frames.
+  - `[false]` `[reject]` blind: `fit` cannot tell a cancelled run from a failed one — the error is only produced when `tx.is_closed()`, so `run`'s send is discarded and nothing observes it; no bad outcome exists today.
+  - `[low]` `[reject]` blind: skipped and cancelled jobs are not observable — the spec's Never forbids new metrics, and the intent does not ask for one.
+  - `[low]` `[reject]` blind: the lane frame count is computed twice — both sites call the same pure `span_count` on the same inputs, so they cannot diverge without a code change; the refactor is more than a direct correction.
+  - `[low]` `[reject]` blind: `RenderCaps` has no getters — the author holds the caps value it configured; getters add public surface for a rare need.
+  - `[medium]` `[defer]` blind: gates.sh weakens the documented cargo hack gate without a recorded maintainer decision — story-loop tooling swept into the story commit; the fix edits AGENTS.md / maintainer-decisions.md (agent context) and loop tooling outside the story intent; deferred.
+  - `[low]` `[defer]` blind: gates.sh epic parser fails open and treats unknown statuses as not done — real in the inline Python; story-loop tooling outside the story intent; deferred.
+  - `[low]` `[reject]` blind: no test for maximal caps after the u32 guard was removed; huge span lists with `frames(u32::MAX)` — reachable only when the author explicitly configures absurd caps, which the spec lists as valid; a total-pixel ceiling adds a new guard.
+  - `[low]` `[reject]` edge: caps up to `u32::MAX` frames with a long duration exhaust memory — same root and reasoning as the maximal-caps row above.
+  - `[medium]` `[defer]` edge: gates.sh epic set spans every in-progress epic, so another lane's epic suppresses hack — verified in the inline Python; loop tooling outside the story intent; deferred.
+  - `[low]` `[defer]` edge: gates.sh ignores a story in `review` status — grouped with the parser row above (same status-parsing root); deferred.
+  - `[low]` `[patch]` edge: `ctx.render` `# Errors` docs omit `OverCap` — verified at `noctis-core/src/responder/ergonomics.rs:505-514`; patch adds `OverCap` to the list.
+  - `[low]` `[patch]` edge: images.md says four 90-frame animations "run at once" — admission is not execution (threads bound concurrency); patch rewords to "are admitted at once".
+  - `[false]` `[reject]` edge: probe tag 0 frame 0 drawn again by a second encode attempt — a 2×2 probe never exceeds the upload budget, so no second attempt or fps step runs; the ordering test's log `[0, 9, 1, 2, 3]` proves a single draw.
+  - `[medium]` `[patch]` vgap: the renderer's animation weight handed to the pool is never observed — pre-verified; patch adds a renderer test asserting `admitted() == 12` for a 90-frame animation on capacity 16, `QueueFull` for a second, and a still admitted from the reserve.
+  - `[low]` `[defer]` vgap: the once-per-epic cargo hack selection has no check — pre-verified, filed as defer; no harness for story-loop shell tooling.
+  - `[medium]` `[defer]` vgap (other): gates.sh skips cargo hack with an undocumented decision — same root as the blind gates.sh policy row; deferred with it.
+  - `[false]` `[reject]` intent: AC3 interaction-expiry trigger not implemented — tokens live 15 minutes while admission is fail-fast and animations are capped at 6 s, so no queued job can outlive its token; the spec settled this with maintainer decision §2 (post-expiry delivery still works).
+  - `[low]` `[reject]` intent: AC3 tested at the Renderer, not at `ctx.render` — `render_job` awaits the Renderer future inline, so dropping `ctx.render` drops it structurally; the Renderer tests cover the behaviour.
+  - `[false]` `[reject]` intent: weight `ceil(frames/8)` differs from AD-15's literal "frame count" — a monotone frame-count weight satisfies "weighted by frame count"; the spec settled it in Design Notes so every capped job stays admissible.
+  - `[medium]` `[patch]` intent: AC2's many-animations-then-a-still scenario is untested above the pool — grouped with the vgap animation-weight row; the same renderer test covers it.
+  - `[false]` `[reject]` intent: the canvas reading of "4 MP per job" leaves memory per animation at ~360 MiB — the spec chose and justified this reading (Design Notes); memory stays bounded and configurable.
+  - `[false]` `[reject]` intent: the 90-frame default changes behaviour for existing Templates — consistent with the intent and documented in the Usage Skill; not a defect.
+  - `[medium]` `[defer]` intent: out-of-intent gates.sh change — same root as the blind gates.sh policy row; deferred with it.
+
 ## Design Notes
 
 - **What "4 MP per job, 1 MP per frame" means.** The 4 MP cap limits the canvas (`w*h`) of every job: the research text calls it "viewport sanity … per job", because takumi itself accepts up to 64 MP. The 1 MP cap limits each frame of an animation. A still is a single frame and is bounded only by the job cap, which is why the two values differ. Reading 4 MP as a total over all frames was rejected: a 934×282 animated card could then hold only 15 frames, which would cripple FR-69. Worst-case memory per animated job is about 90 × 1 MP × 4 B, roughly 360 MiB of frames (plus at most one resampled set), bounded and configurable.
@@ -225,3 +286,12 @@ R is a renderer from `renderer/tests.rs`, built with `RenderCaps::new()` unless 
 - `cargo run --release -p xtask -- api-snapshot --bless`, then `-- api-snapshot`, `-- deps-check`, `-- rules-catalog`, `-- skill-check`, `-- tw-grammar --check` -- pass
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- **Summary:** Per-job render caps (`RenderCaps`: 4 MP canvas per job, 1 MP per animation frame, 90 frames, duration cap) checked after `Unsupported` checks and before rendering (`RenderError::OverCap`); weighted fail-fast admission in the bounded render pool (weight `ceil(frames/8)` clamped to the animation share, a quarter of capacity reserved for stills, still-first dispatch lane); dropping the `Renderer::render` future cancels the job between frames/encode attempts.
+- **Files changed:** `noctis-image` caps.rs (new caps + validation), pool.rs (weighted admission, reserve, still lane, cancellation), renderer.rs (caps + weight wiring), plugin.rs (config); `noctis-ports` render.rs (`OverCap`, caps types); `noctis-core` render.rs / responder/ergonomics.rs (error mapping, docs); `noctis` lib.rs + tests/render.rs; project-template skill (SKILL.md, images.md, limits-cheatsheet.md, app-and-sharding.md) and AGENTS.md; `xtask/public-api.txt` re-blessed; `tools/story-loop/gates.sh`.
+- **Review findings:** 29 total (high 0, medium 6, low 13, false 10). Patched 4 entries (2 medium, 2 low): renderer test for animation weight / QueueFull / still-from-reserve (covers AC2 above the pool), `OverCap` added to `ctx.render` `# Errors`, images.md "admitted at once" wording. Deferred 6 (gates.sh hack-gate policy, epic parser fail-open, cross-lane epic set, `review` status, no harness for hack selection) - all story-loop tooling outside intent. Rejected 19 with reasons in the triage log (e.g. still-first starvation accepted by design, frame-count weight per AD-15, no token-expiry abort per maintainer decision 2).
+- **Follow-up review recommended:** false (patched: high 0, medium 2, low 2; no patched high).
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, tests, cargo hack, deps-check, rules-catalog, api-snapshot, skill-check, cargo deny, MSRV 1.91). CI paused by maintainer.
+- **Residual risks:** absurd author-configured caps (e.g. `u32::MAX` frames) can exhaust memory; animations can wait behind a continuous still stream; deferred gates.sh issues may skip `cargo hack` across lanes.

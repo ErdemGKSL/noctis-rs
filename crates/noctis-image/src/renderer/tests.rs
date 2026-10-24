@@ -221,6 +221,7 @@ fn renderer_budget(
             TemplateDescriptor::of::<FirstProbe>(),
             TemplateDescriptor::of::<StopProbe>(),
             TemplateDescriptor::of::<DropProbe>(),
+            TemplateDescriptor::of::<ShareProbe>(),
         ])
         .unwrap();
     renderer
@@ -1063,6 +1064,13 @@ probe!(
 );
 probe!(StopProbe, "stop-probe", STOP_LOG, STOP_STARTED, STOP_GATE);
 probe!(DropProbe, "drop-probe", DROP_LOG, DROP_STARTED, DROP_GATE);
+probe!(
+    ShareProbe,
+    "share-probe",
+    SHARE_LOG,
+    SHARE_STARTED,
+    SHARE_GATE
+);
 
 /// Arms a probe: returns (open the gate, wait for frame 0 of tag 0).
 fn arm(
@@ -1139,4 +1147,29 @@ async fn a_future_dropped_before_its_job_runs_is_skipped() {
     blocker.await.unwrap();
     drained(&r).await;
     assert_eq!(*DROP_LOG.lock().unwrap(), [(0, 0)]);
+}
+
+#[tokio::test]
+async fn animations_fill_their_share_and_a_still_is_still_admitted() {
+    let r = renderer_with(1, 16, ClassCheckMode::Deny);
+    let (open, started) = arm(&SHARE_STARTED, &SHARE_GATE);
+    let job = |tag| RenderJob::of(&ShareProbe { tag }).unwrap();
+    // 6000 ms at 15 fps: 90 frames, weighing ceil(90 / 8) = 12 units.
+    let ninety = |tag| RenderJob {
+        animation: Some(AnimationSpec::new(Duration::from_secs(6), 15, WEBP80)),
+        ..job(tag)
+    };
+    let first = r.render(ninety(0));
+    started.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(r.pool.admitted(), 12);
+    assert!(matches!(
+        r.render(ninety(1)).await,
+        Err(RenderError::QueueFull)
+    ));
+    let still = r.render(job(2));
+    assert_eq!(r.pool.admitted(), 13);
+    open.send(()).unwrap();
+    first.await.unwrap();
+    still.await.unwrap();
+    drained(&r).await;
 }
