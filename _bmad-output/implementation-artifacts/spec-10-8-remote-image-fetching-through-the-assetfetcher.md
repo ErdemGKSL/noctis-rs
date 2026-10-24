@@ -2,8 +2,8 @@
 title: 'Story 10.8: Remote image fetching through the AssetFetcher'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
-baseline_revision: '3f08cf6f3aa8c7179751a83947c937ea4f6ee265'
+status: 'in-progress'
+baseline_revision: '26c6132c5481cc1c56875d31609fe1901d10db8c'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
