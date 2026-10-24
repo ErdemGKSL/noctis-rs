@@ -17,7 +17,7 @@ Let a bot author scale from one process to a Cluster by configuration alone: eac
 
 ## Requirements & Constraints
 
-- Shard Range set via builder or `NOCTIS_SHARD_RANGE`; process runs only its shards. A range not aligned to `max_concurrency` is accepted with a warning.
+- Shard Range is half-open `start..end`, set via `AppBuilder::shard_range(Range<u32>)` or `NOCTIS_SHARD_RANGE=32..64` (no `NOCTIS_SHARDS`); it requires a fixed `shard_total` and is validated at `build()` (empty, without total, out of bounds are typed violations). Process runs only its shards; readiness and shard-status gauges cover only the range. Aligned iff `max_concurrency == 1` or start and end (or end == total) are multiples of it; misaligned only warns. `IdentifyQueue` is implemented for `Arc<P>` so in-process Apps can share one queue.
 - Identify concurrency: one identify per bucket per 5 s, held across processes sharing an `IdentifyQueue` (test with two in-process Apps, paused clock).
 - Exactly one process with `publisher = true` runs Publish on start; Publish never runs on Shard ready.
 - Resume within Discord's window must not consume identify budget; a rejected stored session falls back to fresh identify and clears the stale entry, without operator action.
