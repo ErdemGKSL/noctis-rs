@@ -3795,3 +3795,294 @@ fn shard_gauges_cover_only_the_range() {
     shards.sort();
     assert_eq!(shards, ["2", "3"]);
 }
+
+// ---- runtime locale overlays (Story 11.5) ----
+
+mod overlays {
+    use std::sync::Mutex;
+
+    use noctis_i18n::{Catalog, OverlaySlot, OverlayViolation};
+    use noctis_ports::{BoxFuture, LocaleSource, PortError};
+    use noctis_rules::Locale;
+    use tokio::sync::Notify;
+
+    use super::*;
+
+    type Answer =
+        Box<dyn Fn(&str) -> Option<Result<Vec<(String, String)>, PortError>> + Send + Sync>;
+
+    /// A `LocaleSource` recording its calls; `answer` returns `None` to
+    /// never resolve.
+    struct Stub {
+        calls: Arc<Mutex<Vec<String>>>,
+        called: Arc<Notify>,
+        answer: Answer,
+    }
+
+    impl LocaleSource for Stub {
+        fn load<'a>(
+            &'a self,
+            locale: &'a str,
+        ) -> BoxFuture<'a, Result<Vec<(String, String)>, PortError>> {
+            self.calls.lock().unwrap().push(locale.to_owned());
+            self.called.notify_one();
+            let answer = (self.answer)(locale);
+            Box::pin(async move {
+                match answer {
+                    Some(result) => result,
+                    None => std::future::pending().await,
+                }
+            })
+        }
+    }
+
+    fn stub(
+        answer: impl Fn(&str) -> Option<Result<Vec<(String, String)>, PortError>>
+        + Send
+        + Sync
+        + 'static,
+    ) -> (Stub, Arc<Mutex<Vec<String>>>, Arc<Notify>) {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let called = Arc::new(Notify::new());
+        let stub = Stub {
+            calls: Arc::clone(&calls),
+            called: Arc::clone(&called),
+            answer: Box::new(answer),
+        };
+        (stub, calls, called)
+    }
+
+    fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        list.iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    }
+
+    const FILES: &[(Locale, &[(&str, &str)])] = &[
+        (
+            Locale::EnUs,
+            &[("greet.hello", "Hello"), ("cmd.greet.description", "Greet")],
+        ),
+        (Locale::Tr, &[("greet.hello", "Merhaba")]),
+        (Locale::Uk, &[]),
+    ];
+    const PLACEHOLDERS: &[(&str, &[&str])] = &[("greet.hello", &[])];
+    const CONTENT: &[&str] = &["greet.hello"];
+
+    /// Defines a catalog with its own process-wide slot.
+    macro_rules! catalog {
+        ($name:ident) => {
+            static $name: Catalog = {
+                static SLOT: OverlaySlot = OverlaySlot::new();
+                Catalog::__new("bot/locales", Locale::EnUs, FILES, PLACEHOLDERS)
+                    .__with_overlay(&SLOT, CONTENT)
+            };
+        };
+    }
+
+    fn app(catalog: Option<Catalog>, source: Option<Stub>) -> App {
+        let mut builder = App::builder();
+        builder.runtime(&Runtime::for_test()).token(token());
+        if let Some(catalog) = catalog {
+            builder.locales(catalog);
+        }
+        if let Some(source) = source {
+            builder.locale_source(source);
+        }
+        builder.build().unwrap()
+    }
+
+    /// Story 11.5 Matrix 6
+    #[tokio::test(flavor = "multi_thread")]
+    async fn one_load_per_available_locale_in_order() {
+        static PLAIN: Catalog = Catalog::__new("plain/locales", Locale::EnUs, FILES, PLACEHOLDERS);
+        let (source, calls, _) = stub(|_| Some(Ok(Vec::new())));
+        let app = app(Some(PLAIN), Some(source));
+        app.load_locale_overlays().await.unwrap();
+        assert_eq!(*calls.lock().unwrap(), ["en-US", "tr", "uk"]);
+    }
+
+    /// Story 11.5 Matrix 7
+    #[tokio::test(flavor = "multi_thread")]
+    async fn no_catalogs_never_load() {
+        let (source, calls, _) = stub(|_| Some(Ok(pairs(&[("cmd.x", "y")]))));
+        let app = app(None, Some(source));
+        app.load_locale_overlays().await.unwrap();
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    /// Story 11.5 Matrix 8
+    #[tokio::test(flavor = "multi_thread")]
+    async fn default_port_touches_nothing() {
+        catalog!(C);
+        let capture = crate::test_support::Capture::default();
+        let _logs = tracing::subscriber::set_default(capture.subscriber());
+        let app = app(Some(C), None);
+        app.load_locale_overlays().await.unwrap();
+        assert_eq!(C.__overlay_row(Locale::Tr), None);
+        assert!(!capture.text().contains("locale overlays installed"));
+    }
+
+    /// Story 11.5: a valid load installs and logs once.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn valid_overlays_install_and_log() {
+        catalog!(C);
+        let capture = crate::test_support::Capture::default();
+        let _logs = tracing::subscriber::set_default(capture.subscriber());
+        let (source, _, _) = stub(|code| {
+            Some(Ok(if code == "tr" {
+                pairs(&[("greet.hello", "Selam")])
+            } else {
+                Vec::new()
+            }))
+        });
+        let app = app(Some(C), Some(source));
+        app.load_locale_overlays().await.unwrap();
+        assert_eq!(
+            app.shared()
+                .strings
+                .translate(
+                    Locale::Tr,
+                    noctis_rules::MessageKey::new("greet.hello"),
+                    &[]
+                )
+                .as_deref(),
+            Some("Selam")
+        );
+        let text = capture.text();
+        assert_eq!(
+            text.matches("locale overlays installed").count(),
+            1,
+            "{text}"
+        );
+        assert!(text.contains("values=1"), "{text}");
+        assert!(text.contains("catalogs=1"), "{text}");
+    }
+
+    /// Story 11.5 Matrix 23
+    #[tokio::test(flavor = "multi_thread")]
+    async fn load_failure_stops_loading() {
+        catalog!(C);
+        let (source, calls, _) = stub(|code| {
+            Some(if code == "tr" {
+                Err(PortError::unavailable("offline"))
+            } else {
+                Ok(pairs(&[("greet.hello", "Hi")]))
+            })
+        });
+        let app = app(Some(C), Some(source));
+        let err = app.load_locale_overlays().await.unwrap_err();
+        assert!(
+            matches!(
+                err,
+                LocaleOverlayError::Load {
+                    locale: Locale::Tr,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        let source = std::error::Error::source(&err).expect("the PortError");
+        assert!(source.downcast_ref::<PortError>().is_some());
+        assert_eq!(*calls.lock().unwrap(), ["en-US", "tr"]);
+        assert_eq!(C.__overlay_row(Locale::EnUs), None);
+    }
+
+    /// Story 11.5 Matrix 27
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shutdown_during_load_returns_ok() {
+        catalog!(C);
+        let (source, _, called) = stub(|_| None);
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .token(token())
+            .http_proxy("127.0.0.1:1")
+            .locales(C)
+            .locale_source(source);
+        let app = builder.build().unwrap();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(15),
+            app.run_until(async move { called.notified().await }),
+        )
+        .await;
+        assert!(matches!(outcome, Ok(Ok(()))), "{outcome:?}");
+    }
+
+    fn server_answer() -> crate::edge::test_support::Answer {
+        Arc::new(|seen| {
+            let body: &'static [u8] = if seen.path.ends_with("/applications/@me") {
+                br#"{"id": "7", "integration_types_config": {"0": {}}}"#
+            } else {
+                b"[]"
+            };
+            (hyper::StatusCode::OK, Bytes::from_static(body))
+        })
+    }
+
+    /// Story 11.5 Matrix 30
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cli_publish_never_loads() {
+        use crate::edge::test_support::TestServer;
+
+        catalog!(C);
+        let server = TestServer::start_with(false, server_answer()).await;
+        let (source, calls, _) = stub(|_| Some(Ok(pairs(&[("cmd.greet.description", "x")]))));
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .token(token())
+            .http_proxy(server.authority())
+            .locales(C)
+            .locale_source(source);
+        let app = builder.build().unwrap();
+        let mut out = Vec::new();
+        app.run_mode_to(CliMode::Publish, true, &mut out)
+            .await
+            .unwrap();
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    /// Story 11.5 Matrix 31
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invalid_overlay_fails_before_any_discord_request() {
+        use crate::edge::test_support::TestServer;
+
+        catalog!(C);
+        let server = TestServer::start_with(false, server_answer()).await;
+        let (source, _, _) = stub(|code| {
+            Some(Ok(if code == "tr" {
+                pairs(&[("cmd.greet.description", "Selamla")])
+            } else {
+                Vec::new()
+            }))
+        });
+        let mut builder = App::builder();
+        builder
+            .runtime(&Runtime::for_test())
+            .token(token())
+            .http_proxy(server.authority())
+            .publisher(true)
+            .locales(C)
+            .locale_source(source);
+        let app = builder.build().unwrap();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(15),
+            app.run_until(std::future::pending()),
+        )
+        .await
+        .expect("startup fails fast");
+        let Err(Error::LocaleOverlay(LocaleOverlayError::Invalid(violations))) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(
+            violations,
+            [OverlayViolation::ReservedKey {
+                locale: Locale::Tr,
+                key: "cmd.greet.description".into(),
+            }]
+        );
+        assert!(server.seen().is_empty(), "{:?}", server.seen().len());
+        assert_eq!(C.__overlay_row(Locale::Tr), None);
+    }
+}

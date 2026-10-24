@@ -22,7 +22,9 @@
 //!   [`ModalHandler`], [`ComponentKind`], [`Expired`], [`ExpiredCtx`],
 //!   [`HandlerError`], [`HandlerResult`], [`HttpConfig`] (the Discord HTTP
 //!   edge's tuning) and the errors ([`Error`], [`BuildError`],
-//!   [`BuildViolation`], [`StartError`], [`RunError`], [`EnvError`],
+//!   [`BuildViolation`], [`StartError`], [`RunError`],
+//!   [`LocaleOverlayError`] and [`OverlayViolation`] (runtime locale
+//!   overlays rejected at startup), [`EnvError`],
 //!   [`TokenError`], [`ResourceConflict`], [`HttpConfigError`],
 //!   [`AckDeadlineMissed`]).
 //! - [`events`]: the gateway event payloads `#[derive(EventHandler)]`
@@ -596,13 +598,14 @@ pub use noctis_core::{
     ErrorSink, Expired, ExpiredCtx, Ext, ExtensionMissing, Extensions, Flow, Focused,
     FollowupHandle, GatewayUrlError, HandlerError, HandlerResult, HttpConfig, HttpConfigError,
     HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
-    Invocation, Kv, LocaleOwner, LocaleRequest, LocaleResolver, Locales, LogSink, Manual, MenuKind,
-    MenuTargetError, Middleware, ModalHandler, ModalResponder, ModalSubmit, ModalSubmitCtx, Module,
-    NoticeText, OptionError, OptionValue, Options, OutgoingMessage, Partial, PartialOptions,
-    Pending, Permissions, Plugin, RefOps, Register, ReplyText, ReportKind, Resource,
-    ResourceConflict, Responded, Responder, ResponderError, ResponderKind, ResponderState,
-    RunError, RunOutcome, Runtime, SelectedValues, StartError, State, SuggestionLabel,
-    SuggestionValue, Suggestions, Token, TokenError, UnknownCommandPath, Visibility,
+    Invocation, Kv, LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales,
+    LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder,
+    ModalSubmit, ModalSubmitCtx, Module, NoticeText, OptionError, OptionValue, Options,
+    OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions, Plugin,
+    RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
+    ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
+    StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
+    UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its

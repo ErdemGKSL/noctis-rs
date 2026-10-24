@@ -19,7 +19,7 @@ data that must outlive one call goes through a port, never a `static` map.
 | `DiscordCache` | Discord resources: guilds, channels, roles, members, users, messages (`ctx.cache()`) | `update(&Event)`, typed owned getters | wraps `twilight-cache-inmemory`, only the resources the App needs | `.discord_cache_backend(..)` |
 | `RenderCache` | encoded images by render key | `get`, `put` | byte-bounded memory | `.render_cache(..)` |
 | `AssetStore` | fetched remote images (avatars, icons, emoji) | `get`, `put` | byte-bounded memory | `.asset_store(..)` |
-| `LocaleSource` | runtime overlays of content strings | `load(locale)` | none | `.locale_source(..)` |
+| `LocaleSource` | runtime overlays of content strings, loaded once at startup (one `load` per locale with a file, content keys only; a failure or a rejected pair stops startup with `Error::LocaleOverlay`; see i18n §8) | `load(locale)` | none | `.locale_source(..)` |
 | `GuildAccessList` | per-App guild allow/deny lists (white-label) | `allows(guild)` | allow all | `.guild_access(..)` |
 | `Renderer` (driven port, not a store) | turns a `RenderJob` into `RenderOutput` | `render(job)` | `noctis-image` local pool | `.renderer(..)` |
 
@@ -205,7 +205,8 @@ impl Lease { pub const fn new(bucket: u32) -> Lease; pub const fn bucket(&self) 
 
 pub trait LocaleSource: Send + Sync + 'static {
     // `locale` is a Discord code such as "en-US"; pairs are (message key, value);
-    // an empty Vec means no overlay.
+    // an empty Vec means no overlay. Called once per locale with a file at startup;
+    // only content keys with the compiled placeholders are accepted (i18n §8).
     fn load<'a>(&'a self, locale: &'a str) -> BoxFuture<'a, Result<Vec<(String, String)>, PortError>>;
 }
 

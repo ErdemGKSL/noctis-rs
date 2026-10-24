@@ -11,6 +11,8 @@
 //! - [`Catalog`], the compiled locale files of one `i18n!` invocation;
 //! - [`AppStrings`], an App's catalogs layered over [`Builtin`], which
 //!   rejects a key that two catalogs define ([`DuplicateKey`]);
+//! - [`OverlayViolation`], why a runtime locale overlay (loaded through
+//!   the `LocaleSource` port at startup) was rejected;
 //! - [`format`], the placeholder substitution every lookup uses.
 //!
 //! ```
@@ -26,8 +28,12 @@ use std::fmt::{Display, Write as _};
 use noctis_rules::{Locale, MessageKey, Translate};
 
 mod catalog;
+mod overlay;
 
 pub use catalog::{AppStrings, Catalog, DuplicateKey};
+#[doc(hidden)]
+pub use overlay::OverlaySlot;
+pub use overlay::OverlayViolation;
 
 /// The reserved `noctis.*` notice keys the framework renders (AD-16).
 ///

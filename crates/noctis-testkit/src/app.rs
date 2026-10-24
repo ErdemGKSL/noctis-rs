@@ -141,7 +141,8 @@ impl TestApp {
     /// [`TestError::Runtime`] without a multi-thread runtime,
     /// [`TestError::Io`] when a fake cannot start, [`TestError::Build`] with
     /// the App's `BuildError`, [`TestError::Start`] when the App stops while
-    /// starting, [`TestError::Timeout`] when its shard does not connect
+    /// starting (such as `Error::LocaleOverlay` for a rejected runtime
+    /// locale overlay), [`TestError::Timeout`] when its shard does not connect
     /// within 10 s.
     pub async fn build(builder: &mut AppBuilder) -> Result<Self, TestError> {
         let multi_thread = Handle::try_current()

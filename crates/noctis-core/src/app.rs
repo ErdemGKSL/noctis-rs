@@ -49,7 +49,8 @@ use crate::state::StateMap;
 use crate::worker::{AbortOnDrop, Shutdown, Workers, drain};
 use crate::{
     BuildError, BuildViolation, Component, EnvError, Error, ErrorOrigin, ErrorSink, HandlerResult,
-    IntoResponse, LocaleOwner, ModalSubmit, Plugin, RunError, Runtime, StartError, State, Token,
+    IntoResponse, LocaleOverlayError, LocaleOwner, ModalSubmit, Plugin, RunError, Runtime,
+    StartError, State, Token,
 };
 
 /// The environment variable [`App::from_env`] reads the token from.
@@ -132,6 +133,9 @@ pub struct App {
     id: AppId,
     /// The HTTP client and the state, shared with every `EventCtx`.
     shared: Arc<AppShared>,
+    /// The merged strings (`shared.strings` as its concrete type), for the
+    /// startup overlay install.
+    strings: Arc<noctis_i18n::AppStrings>,
     http_timeout: Duration,
     http_proxy: Option<String>,
     http_config: HttpConfig,
@@ -724,8 +728,15 @@ impl App {
     ///
     /// Checks, in order, that a multi-thread tokio runtime is current, that a
     /// rustls crypto provider is installed (installing `ring`'s when none is
-    /// set) and that a token is set. It then reads `GET /gateway/bot` with
-    /// the App's HTTP client, plans the shard total (the fixed
+    /// set) and that a token is set. It then loads the runtime locale
+    /// overlays: with merged locale catalogs, one
+    /// [`LocaleSource::load`](noctis_ports::LocaleSource::load) per locale
+    /// that has a file (in `Locale::ALL` order, with codes such as
+    /// `"en-US"`), validated against the compiled catalogs and installed
+    /// process-wide, so `Text::Key`s, `reply_text` and `Strings::of(..)`
+    /// render them (Publish keeps the compiled command texts). Then, with
+    /// [`publisher`](AppBuilder::publisher), it runs the startup Publish,
+    /// reads `GET /gateway/bot` with the App's HTTP client, plans the shard total (the fixed
     /// [`shard_total`](AppBuilder::shard_total) or Discord's recommendation)
     /// and the identify buckets (`max_concurrency`), and starts one task per
     /// shard of the [`shard_range`](AppBuilder::shard_range) (every shard
@@ -787,6 +798,12 @@ impl App {
     /// startup ([`StartError::InvalidIntents`],
     /// [`StartError::DisallowedIntents`], [`StartError::FatalClose`],
     /// [`StartError::ShardEnded`], [`StartError::GatewayStopped`]).
+    /// [`Error::LocaleOverlay`] when the `LocaleSource` fails
+    /// ([`LocaleOverlayError::Load`]) or a loaded overlay breaks a rule
+    /// ([`LocaleOverlayError::Invalid`]: a reserved `cmd.*`, `cmdword.*`,
+    /// `ctxcmd.*` or `noctis.*` key, an unknown or duplicate key, a
+    /// placeholder mismatch, or other overlays already installed in this
+    /// process), before any Discord request.
     /// [`Error::Run`] with [`RunError::AllShardsEnded`] when every shard
     /// ended on its own after startup (after the shutdown sequence ran).
     ///
@@ -839,9 +856,12 @@ impl App {
                 return Ok(());
             }
             info = async {
+                // Overlays first: a bad one stops startup before any
+                // Discord request.
+                self.load_locale_overlays().await?;
                 self.publish_at_startup().await;
                 self.warm_up(warmed).await;
-                self.gateway_info().await
+                Ok::<_, Error>(self.gateway_info().await?)
             } => info?,
         };
         let plan = plan(info, self.shard_total, self.shard_range.clone())?;
@@ -952,6 +972,51 @@ impl App {
         drop(gateway);
         watch.flush();
         tracing::info!(target: "noctis::app", "shutdown complete");
+    }
+
+    /// Loads the runtime locale overlays through the `LocaleSource` port,
+    /// one `load` per available locale in [`Locale::ALL`] order (none
+    /// without catalogs), validates them against the merged strings and
+    /// installs them process-wide (Story 11.5).
+    ///
+    /// [`Locale::ALL`]: noctis_rules::Locale::ALL
+    pub(crate) async fn load_locale_overlays(&self) -> Result<(), LocaleOverlayError> {
+        if self.strings.catalogs().is_empty() {
+            return Ok(());
+        }
+        let available = self.shared.locales.available();
+        let source = &self.ports().locale_source;
+        let mut overlays = Vec::new();
+        for locale in noctis_rules::Locale::ALL
+            .into_iter()
+            .filter(|l| available.contains(*l))
+        {
+            let code = locale.to_string();
+            let pairs = source
+                .load(&code)
+                .await
+                .map_err(|source| LocaleOverlayError::Load { locale, source })?;
+            overlays.push((locale, pairs));
+        }
+        let values: usize = overlays.iter().map(|(_, pairs)| pairs.len()).sum();
+        self.strings
+            .install_overlays(&overlays)
+            .map_err(LocaleOverlayError::Invalid)?;
+        if values > 0 {
+            let catalogs: HashSet<&str> = overlays
+                .iter()
+                .flat_map(|(_, pairs)| pairs.iter())
+                .filter_map(|(key, _)| self.strings.owner(key))
+                .map(noctis_i18n::Catalog::origin)
+                .collect();
+            tracing::info!(
+                target: "noctis::i18n",
+                values,
+                catalogs = catalogs.len(),
+                "locale overlays installed"
+            );
+        }
+        Ok(())
     }
 
     /// The publisher's global Publish (only with `publisher`), before any
@@ -2468,6 +2533,7 @@ impl AppBuilder {
         ) else {
             return Err(BuildError::new(config.violations));
         };
+        let strings = Arc::new(strings);
         let app_id = explicit_app_id.unwrap_or_else(|| default_app_id(config.token.as_ref()));
         let app: Arc<str> = Arc::from(app_id.as_str());
         let upstream = Upstream::for_proxy(http_proxy.as_deref(), config.http_config.upstream_h2c);
@@ -2493,12 +2559,13 @@ impl AppBuilder {
                 refs,
                 ref_ttl: config.ref_ttl,
                 locales: crate::locale::AppLocales::new(strings.catalogs(), config.locale_resolver),
-                strings: Arc::new(strings),
+                strings: Arc::clone(&strings) as Arc<dyn noctis_rules::Translate>,
                 payload_keys,
                 renderer: config.renderer,
                 expired_handler: config.expired_handler,
                 run_observer: config.run_observer,
             }),
+            strings,
             http_timeout: config.http_timeout,
             http_proxy,
             http_config: config.http_config,

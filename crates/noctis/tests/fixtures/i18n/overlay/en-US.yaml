@@ -1,0 +1,10 @@
+# Story 11.5: the default (en-US) file of tests/i18n_overlays.rs.
+greet:
+  hello: Hello
+shop:
+  left: "{n} left"
+pos:
+  x: "{0}/{1}"
+cmd:
+  greet:
+    description: Greet

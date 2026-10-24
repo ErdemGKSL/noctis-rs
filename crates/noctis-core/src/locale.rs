@@ -235,7 +235,6 @@ impl AppLocales {
     }
 
     /// Which locales have a file.
-    #[cfg(test)]
     pub(crate) fn available(&self) -> LocaleSet {
         self.available
     }

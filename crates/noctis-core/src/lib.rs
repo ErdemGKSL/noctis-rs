@@ -227,8 +227,8 @@ pub use component::{
 };
 pub use edge::config::{HttpConfig, HttpConfigError};
 pub use error::{
-    AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, LocaleOwner, RunError,
-    StartError,
+    AckDeadlineMissed, BuildError, BuildViolation, EnvError, Error, LocaleOverlayError,
+    LocaleOwner, RunError, StartError,
 };
 pub use events::{EventCtx, EventHandler, EventPayload};
 pub use gateway_url::GatewayUrlError;
@@ -266,6 +266,7 @@ pub use middleware::{
 pub use module::Descriptor;
 pub use module::{Module, Register};
 pub use namespace::{AppId, AppIdError, IntoPort, Namespaced, NamespacedPort, Shared};
+pub use noctis_i18n::OverlayViolation;
 #[doc(hidden)]
 pub use options::__options;
 pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, OptionValue, Options};

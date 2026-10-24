@@ -48,7 +48,11 @@ takes and returns `&mut AppBuilder`, so you can chain, or call setters one by on
   Ctrl-C/SIGTERM handlers can be installed (SIGINT and SIGTERM on unix, Ctrl-C
   elsewhere; a runtime without an IO driver is `StartError::SignalHandler`, so build it
   with `enable_all()` as `#[tokio::main]` does), and a token is set
-  (`StartError::MissingToken`). Typed errors, never panics. It then warms one upstream
+  (`StartError::MissingToken`). Typed errors, never panics. It then loads the runtime
+  locale overlays of the `LocaleSource` port (one `load` per locale with a file, none
+  without catalogs; a failed load or a rejected overlay returns
+  `Err(noctis::Error::LocaleOverlay(..))` before any Discord request; see i18n §8),
+  runs the startup Publish when `.publisher(true)` (§3), warms one upstream
   HTTP connection (§5; at most `connect_timeout` + 6 s, a failure only warns), reads
   `GET /gateway/bot`, plans the shard total and identify buckets (§4) and starts one
   task per shard. It returns an error if startup fails (see Errors). Once every shard
@@ -153,8 +157,11 @@ token.
 
 - `noctis::Error`: `Env(EnvError)`, `Build(BuildError)`, `Start(StartError)`,
   `Run(RunError)`, `Cli(noctis::cli::CliError)` (a rejected command line, before
-  anything else runs) and `Publish(noctis::publish::PublishError)` (a CLI mode's
-  Publish failed) (`From` for each, so `?` works in `main`).
+  anything else runs), `Publish(noctis::publish::PublishError)` (a CLI mode's
+  Publish failed) and `LocaleOverlay(noctis::LocaleOverlayError)` (the startup
+  overlay load failed, `Load { locale, source }`, or rejected overlays,
+  `Invalid(Vec<OverlayViolation>)`; see i18n §8) (`From` for each, so `?` works in
+  `main`).
 - `RunError` (`Copy`): `AllShardsEnded`: every shard ended on its own after startup
   (fatal closes; see the `shard closed fatally` logs); the shutdown ran, then `run`
   returned this instead of `Ok(())`. Fix the cause, then restart.

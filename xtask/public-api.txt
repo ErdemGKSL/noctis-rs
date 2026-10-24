@@ -756,6 +756,7 @@ pub fn noctis::Error::from(noctis::EnvError) -> Self
 pub noctis::Error::Build(noctis::BuildError)
 pub noctis::Error::Cli(noctis::cli::CliError)
 pub noctis::Error::Env(noctis::EnvError)
+pub noctis::Error::LocaleOverlay(noctis::LocaleOverlayError)
 pub noctis::Error::Publish(noctis::publish::PublishError)
 pub noctis::Error::Run(noctis::RunError)
 pub noctis::Error::Start(noctis::StartError)
@@ -763,6 +764,8 @@ impl core::convert::From<noctis::BuildError> for noctis::Error
 pub fn noctis::Error::from(noctis::BuildError) -> Self
 impl core::convert::From<noctis::EnvError> for noctis::Error
 pub fn noctis::Error::from(noctis::EnvError) -> Self
+impl core::convert::From<noctis::LocaleOverlayError> for noctis::Error
+pub fn noctis::Error::from(noctis::LocaleOverlayError) -> Self
 impl core::convert::From<noctis::RunError> for noctis::Error
 pub fn noctis::Error::from(noctis::RunError) -> Self
 impl core::convert::From<noctis::StartError> for noctis::Error
@@ -777,6 +780,8 @@ impl core::fmt::Debug for noctis::Error
 pub fn noctis::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::fmt::Display for noctis::Error
 pub fn noctis::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::convert::From<noctis::LocaleOverlayError> for noctis::Error
+pub fn noctis::Error::from(noctis::LocaleOverlayError) -> Self
 impl core::convert::From<noctis::RunError> for noctis::Error
 pub fn noctis::Error::from(noctis::RunError) -> Self
 impl core::convert::From<noctis::StartError> for noctis::Error
@@ -1142,6 +1147,19 @@ impl core::clone::Clone for noctis::Kv
 pub fn noctis::Kv::clone(&self) -> Self
 impl core::fmt::Debug for noctis::Kv
 pub fn noctis::Kv::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::LocaleOverlayError
+pub noctis::LocaleOverlayError::Invalid(alloc::vec::Vec<noctis::OverlayViolation>)
+pub noctis::LocaleOverlayError::Load
+pub noctis::LocaleOverlayError::Load::locale: noctis::rules::Locale
+pub noctis::LocaleOverlayError::Load::source: noctis::ports::PortError
+impl noctis::LocaleOverlayError
+pub fn noctis::LocaleOverlayError::violations(&self) -> &[noctis::OverlayViolation]
+impl core::error::Error for noctis::LocaleOverlayError
+pub fn noctis::LocaleOverlayError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for noctis::LocaleOverlayError
+pub fn noctis::LocaleOverlayError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::LocaleOverlayError
+pub fn noctis::LocaleOverlayError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 #[non_exhaustive] pub enum noctis::LocaleOwner
 pub noctis::LocaleOwner::App
 pub noctis::LocaleOwner::Module(&'static str)
@@ -1428,6 +1446,34 @@ impl core::fmt::Debug for noctis::OutgoingMessage
 pub fn noctis::OutgoingMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl noctis::IntoEdit<noctis::Command> for noctis::OutgoingMessage
 impl noctis::IntoEdit<noctis::Command> for noctis::OutgoingMessage
+#[non_exhaustive] pub enum noctis::OverlayViolation
+pub noctis::OverlayViolation::AlreadyInstalled
+pub noctis::OverlayViolation::AlreadyInstalled::origin: &'static str
+pub noctis::OverlayViolation::DuplicateKey
+pub noctis::OverlayViolation::DuplicateKey::key: alloc::string::String
+pub noctis::OverlayViolation::DuplicateKey::locale: noctis::rules::Locale
+pub noctis::OverlayViolation::Placeholders
+pub noctis::OverlayViolation::Placeholders::expected: alloc::vec::Vec<alloc::string::String>
+pub noctis::OverlayViolation::Placeholders::found: alloc::vec::Vec<alloc::string::String>
+pub noctis::OverlayViolation::Placeholders::key: alloc::string::String
+pub noctis::OverlayViolation::Placeholders::locale: noctis::rules::Locale
+pub noctis::OverlayViolation::ReservedKey
+pub noctis::OverlayViolation::ReservedKey::key: alloc::string::String
+pub noctis::OverlayViolation::ReservedKey::locale: noctis::rules::Locale
+pub noctis::OverlayViolation::UnknownKey
+pub noctis::OverlayViolation::UnknownKey::key: alloc::string::String
+pub noctis::OverlayViolation::UnknownKey::locale: noctis::rules::Locale
+impl core::clone::Clone for noctis::OverlayViolation
+pub fn noctis::OverlayViolation::clone(&self) -> Self
+impl core::cmp::Eq for noctis::OverlayViolation
+impl core::cmp::PartialEq for noctis::OverlayViolation
+pub fn noctis::OverlayViolation::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::OverlayViolation
+impl core::fmt::Debug for noctis::OverlayViolation
+pub fn noctis::OverlayViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::OverlayViolation
+pub fn noctis::OverlayViolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::OverlayViolation
 pub type noctis::Partial<O> = <O as noctis::Options>::Partial
 pub trait noctis::PartialOptions: core::default::Default + core::marker::Send + 'static
 pub type noctis::PartialOptions::Options: noctis::Options

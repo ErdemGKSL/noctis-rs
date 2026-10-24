@@ -168,6 +168,23 @@ fn docs(model: &Model, dir: &str) -> (String, String, String) {
     (strings, keys, catalog)
 }
 
+/// The `keys::*` constants: one `MessageKey` per content key.
+fn key_consts(model: &Model, rules: &TokenStream) -> Vec<TokenStream> {
+    model
+        .content
+        .iter()
+        .map(|leaf| {
+            let name = Ident::new(&leaf.const_name, Span::call_site());
+            let key = &leaf.key;
+            let doc = format!("`{key}` ({})", shown_text(model.default, &leaf.value));
+            quote! {
+                #[doc = #doc]
+                pub const #name: #rules::MessageKey = #rules::MessageKey::new(#key);
+            }
+        })
+        .collect()
+}
+
 /// Every generated item of a checked model.
 pub(crate) fn expand(model: &Model, dir: &str, read: &[PathBuf]) -> TokenStream {
     let i18n = i18n();
@@ -202,15 +219,8 @@ pub(crate) fn expand(model: &Model, dir: &str, read: &[PathBuf]) -> TokenStream 
         .iter()
         .map(|(key, names)| quote!((#key, &[#(#names),*])));
     let default = locale_path(model.default);
-    let consts = model.content.iter().map(|leaf| {
-        let name = Ident::new(&leaf.const_name, Span::call_site());
-        let key = &leaf.key;
-        let doc = format!("`{key}` ({})", shown_text(model.default, &leaf.value));
-        quote! {
-            #[doc = #doc]
-            pub const #name: #rules::MessageKey = #rules::MessageKey::new(#key);
-        }
-    });
+    let content_keys = model.content.iter().map(|leaf| &leaf.key);
+    let consts = key_consts(model, &rules);
     let includes = read.iter().map(|path| {
         let path = path.to_string_lossy().into_owned();
         quote!(
@@ -260,8 +270,16 @@ pub(crate) fn expand(model: &Model, dir: &str, read: &[PathBuf]) -> TokenStream 
             /// The resolved rows, one per file.
             pub static ROWS: [[&str; #k]; #f] = [#(#rows),*];
 
-            /// The row of `locale`: its file's, its sibling's, else the default's.
+            /// The row of `locale`: its runtime overlay row once overlays
+            /// are installed, else its file's, its sibling's, else the
+            /// default's.
             pub fn row(locale: #rules::Locale) -> #row_ty {
+                if let ::core::option::Option::Some(row) = CATALOG
+                    .__overlay_row(locale)
+                    .and_then(|row| <#row_ty as ::core::convert::TryFrom<&'static [&'static str]>>::try_from(row).ok())
+                {
+                    return row;
+                }
                 match locale {
                     #(#arms,)*
                 }
@@ -273,13 +291,20 @@ pub(crate) fn expand(model: &Model, dir: &str, read: &[PathBuf]) -> TokenStream 
             /// The placeholder names of every content and `noctis.*` key.
             const PLACEHOLDERS: &[(&str, &[&str])] = &[#(#placeholders),*];
 
+            /// The content keys, sorted: the overlay row order.
+            const CONTENT: &[&str] = &[#(#content_keys),*];
+
+            /// The process-wide runtime overlays of this catalog.
+            static SLOT: #i18n::OverlaySlot = #i18n::OverlaySlot::new();
+
             /// The catalog.
             pub static CATALOG: #i18n::Catalog = #i18n::Catalog::__new(
                 ::core::concat!(::core::env!("CARGO_PKG_NAME"), "/", #dir),
                 #default,
                 FILES,
                 PLACEHOLDERS,
-            );
+            )
+            .__with_overlay(&SLOT, CONTENT);
 
             #(#includes)*
         }
@@ -394,5 +419,27 @@ mod tests {
         let t = tokens(&[("en-US.yaml", "q: 'say \"hi\"'")]);
         assert!(t.contains(r#""`en-US`: \"say \\\"hi\\\"\"""#), "{t}");
         assert!(t.contains(r#""`q` (`en-US`: \"say \\\"hi\\\"\")""#), "{t}");
+    }
+
+    /// Story 11.5: the slot, the content list and the overlay-first row.
+    #[test]
+    fn overlay_slot_and_row() {
+        let t = tokens(&[(
+            "en-US.yaml",
+            "shop: {left: \"{n} left\"}\ngreet: {hello: Hello}\ncmd: {greet: {description: d}}",
+        )]);
+        assert!(
+            t.contains("const CONTENT : & [& str] = & [\"greet.hello\" , \"shop.left\"] ;"),
+            "{t}"
+        );
+        assert!(
+            t.contains("static SLOT : :: noctis :: __private :: i18n :: OverlaySlot = :: noctis :: __private :: i18n :: OverlaySlot :: new () ;"),
+            "{t}"
+        );
+        assert!(t.contains(". __with_overlay (& SLOT , CONTENT) ;"), "{t}");
+        assert!(
+            t.contains("if let :: core :: option :: Option :: Some (row) = CATALOG . __overlay_row (locale) . and_then (| row | < & 'static [& 'static str ; 2] as :: core :: convert :: TryFrom < & 'static [& 'static str] >> :: try_from (row) . ok ()) { return row ; }"),
+            "{t}"
+        );
     }
 }

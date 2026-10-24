@@ -6,6 +6,7 @@ use std::fmt::Display;
 
 use noctis_rules::{Locale, MessageKey, Translate};
 
+use crate::overlay::{self, OverlaySlot, OverlayViolation};
 use crate::{Builtin, format};
 
 /// The entries of one locale file: `(key, template)`, sorted by key bytes.
@@ -49,6 +50,10 @@ pub struct Catalog {
     default: Locale,
     files: &'static [(Locale, Entries)],
     placeholders: &'static [(&'static str, &'static [&'static str])],
+    /// The process-wide overlay slot (`None`: takes no overlays).
+    overlay: Option<&'static OverlaySlot>,
+    /// The content keys, sorted by key bytes: the overlay row order.
+    content: &'static [&'static str],
 }
 
 impl Catalog {
@@ -68,7 +73,47 @@ impl Catalog {
             default,
             files,
             placeholders,
+            overlay: None,
+            content: &[],
         }
+    }
+
+    /// Links the catalog to its process-wide overlay `slot`; `content` is
+    /// the content keys sorted by key bytes (the overlay row order). Only
+    /// `i18n!`'s generated code and tests call it.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn __with_overlay(
+        self,
+        slot: &'static OverlaySlot,
+        content: &'static [&'static str],
+    ) -> Self {
+        Self {
+            overlay: Some(slot),
+            content,
+            ..self
+        }
+    }
+
+    /// The overlay row of `locale` (one value per content key, in
+    /// content order) once overlays are installed and `locale`'s
+    /// fallback chain holds one; `None` keeps the compiled text.
+    #[doc(hidden)]
+    pub fn __overlay_row(&self, locale: Locale) -> Option<&'static [&'static str]> {
+        self.overlay?.row(locale)
+    }
+
+    /// The content keys that take overlays, sorted by key bytes.
+    pub(crate) fn content(&self) -> &'static [&'static str] {
+        self.content
+    }
+
+    /// The overlay row index of content key `key`.
+    pub(crate) fn content_row(&self, key: &str) -> Option<u32> {
+        self.content
+            .binary_search_by(|k| k.as_bytes().cmp(key.as_bytes()))
+            .ok()
+            .and_then(|i| u32::try_from(i).ok())
     }
 
     /// Where the catalog comes from: `<crate name>/<dir as written>`, such
@@ -125,8 +170,16 @@ impl Catalog {
             .map(|(_, entries)| *entries)
     }
 
-    /// The template of `key` along the fallback chain.
+    /// The template of `key` along the fallback chain: the overlay row of
+    /// `locale` for a content key once overlays apply, else the locale's
+    /// file, its sibling's, then the default locale's.
     fn template(&self, locale: Locale, key: &str) -> Option<&'static str> {
+        if let Some(text) = self.content_row(key).and_then(|i| {
+            self.__overlay_row(locale)
+                .and_then(|row| row.get(i as usize).copied())
+        }) {
+            return Some(text);
+        }
         self.get(locale, key)
             .or_else(|| locale.sibling().and_then(|s| self.get(s, key)))
             .or_else(|| self.get(self.default, key))
@@ -278,6 +331,65 @@ impl AppStrings {
     /// ```
     pub fn get(&self, locale: Locale, key: &str) -> Option<&'static str> {
         self.owner(key)?.get(locale, key)
+    }
+
+    /// Validates the loaded runtime `overlays` (one `(locale, pairs)` per
+    /// loaded locale, each pair `(key, value)`) and installs them into
+    /// their owner catalogs' process-wide slots (Story 11.5).
+    ///
+    /// A pair is checked in this order, the first match wins: a key twice
+    /// in one locale ([`OverlayViolation::DuplicateKey`]), a reserved
+    /// family `cmd`, `cmdword`, `ctxcmd` or `noctis` as first segment
+    /// ([`OverlayViolation::ReservedKey`]), not a content key of an
+    /// overlay-taking catalog ([`OverlayViolation::UnknownKey`]), a
+    /// placeholder set other than the compiled one
+    /// ([`OverlayViolation::Placeholders`]). Nothing is installed unless
+    /// every pair passes. A catalog whose slot already holds the same
+    /// values is left as it is; one holding other values is
+    /// [`OverlayViolation::AlreadyInstalled`].
+    ///
+    /// # Errors
+    ///
+    /// Every violation, sorted by [`Locale::ALL`] position, then key bytes,
+    /// then the `AlreadyInstalled` ones in catalog registration order.
+    #[doc(hidden)]
+    pub fn install_overlays(
+        &self,
+        overlays: &[(Locale, Vec<(String, String)>)],
+    ) -> Result<(), Vec<OverlayViolation>> {
+        let valid = overlay::validate(overlays, |key| {
+            self.owners.get(key).map(|&i| (i, &self.catalogs[i]))
+        })?;
+        let mut groups: Vec<Vec<overlay::Entry>> = vec![Vec::new(); self.catalogs.len()];
+        for (index, entry) in valid {
+            groups[index].push(entry);
+        }
+        let mut installs = Vec::new();
+        let mut taken = Vec::new();
+        for (catalog, mut group) in self.catalogs.iter().zip(groups) {
+            // Only a catalog with an overlay slot owns validated content keys.
+            let Some(slot) = catalog.overlay else {
+                continue;
+            };
+            if group.is_empty() {
+                continue;
+            }
+            group.sort_by_key(|(l, i, _)| (*l as usize, *i));
+            match slot.entries() {
+                Some(existing) if existing == group.as_slice() => {}
+                Some(_) => taken.push(OverlayViolation::AlreadyInstalled {
+                    origin: catalog.origin,
+                }),
+                None => installs.push((catalog, slot, group)),
+            }
+        }
+        if !taken.is_empty() {
+            return Err(taken);
+        }
+        for (catalog, slot, group) in installs {
+            slot.install(catalog, group.into_boxed_slice());
+        }
+        Ok(())
     }
 }
 
@@ -475,5 +587,533 @@ mod tests {
             let found: Vec<&str> = noctis_rules::placeholder_names(template).collect();
             assert_eq!(found, *names, "{key}");
         }
+    }
+
+    // Story 11.5: runtime overlays. Every installing test owns its catalog
+    // (and so its process-wide slot): tests run in parallel.
+
+    const C_EN_US: Entries = &[
+        ("cmd.greet.description", "Greet"),
+        ("greet.hello", "Hello"),
+        ("pos.x", "{0}/{1}"),
+        ("shop.left", "{n} left"),
+    ];
+    const C_TR: Entries = &[("greet.hello", "Merhaba")];
+    const C_FILES: &[(Locale, Entries)] = &[(Locale::EnUs, C_EN_US), (Locale::Tr, C_TR)];
+    const C_PLACEHOLDERS: &[(&str, &[&str])] = &[
+        ("greet.hello", &[]),
+        ("pos.x", &["0", "1"]),
+        ("shop.left", &["n"]),
+    ];
+    const C_CONTENT: &[&str] = &["greet.hello", "pos.x", "shop.left"];
+
+    /// Defines a static copy of the Matrix's catalog `C` with its own slot.
+    macro_rules! catalog_c {
+        ($name:ident) => {
+            catalog_c!($name, C_FILES);
+        };
+        ($name:ident, $files:expr) => {
+            static $name: Catalog = {
+                static SLOT: OverlaySlot = OverlaySlot::new();
+                Catalog::__new("bot/locales", Locale::EnUs, $files, C_PLACEHOLDERS)
+                    .__with_overlay(&SLOT, C_CONTENT)
+            };
+        };
+    }
+
+    fn ov(locale: Locale, pairs: &[(&str, &str)]) -> (Locale, Vec<(String, String)>) {
+        (
+            locale,
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+        )
+    }
+
+    fn text(strings: &AppStrings, locale: Locale, key: &'static str) -> Option<String> {
+        strings.translate(
+            locale,
+            MessageKey::new(key),
+            &[("n", d(&3)), ("0", d(&"a")), ("1", d(&"b"))],
+        )
+    }
+
+    fn strings(catalogs: &[Catalog]) -> AppStrings {
+        AppStrings::new(catalogs).unwrap_or_else(|e| panic!("{e:?}"))
+    }
+
+    /// The validation error of `pairs` in `locale` on a fresh catalog `C`
+    /// that installs nothing.
+    fn rejected(catalog: Catalog, locale: Locale, pairs: &[(&str, &str)]) -> Vec<OverlayViolation> {
+        let app = strings(&[catalog]);
+        let err = app
+            .install_overlays(&[ov(locale, pairs)])
+            .expect_err("the overlay is invalid");
+        assert_eq!(catalog.__overlay_row(locale), None, "nothing is installed");
+        err
+    }
+
+    fn placeholders(key: &str, expected: &[&str], found: &[&str]) -> OverlayViolation {
+        OverlayViolation::Placeholders {
+            locale: Locale::Tr,
+            key: key.to_owned(),
+            expected: expected.iter().map(|n| (*n).to_owned()).collect(),
+            found: found.iter().map(|n| (*n).to_owned()).collect(),
+        }
+    }
+
+    fn reserved(locale: Locale, key: &str) -> OverlayViolation {
+        OverlayViolation::ReservedKey {
+            locale,
+            key: key.to_owned(),
+        }
+    }
+
+    fn unknown(locale: Locale, key: &str) -> OverlayViolation {
+        OverlayViolation::UnknownKey {
+            locale,
+            key: key.to_owned(),
+        }
+    }
+
+    /// Story 11.5 Matrix 1
+    #[test]
+    fn overlay_fixes_a_translation() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("greet.hello", "Selam")])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("Selam")
+        );
+        assert_eq!(
+            text(&app, Locale::EnUs, "greet.hello").as_deref(),
+            Some("Hello")
+        );
+        assert_eq!(
+            C.__overlay_row(Locale::Tr),
+            Some(&["Selam", "{0}/{1}", "{n} left"][..])
+        );
+        // en-US's chain (en-US, en-GB, en-US) holds no overlay.
+        assert_eq!(C.__overlay_row(Locale::EnUs), None);
+    }
+
+    /// Story 11.5 Matrix 2
+    #[test]
+    fn overlay_adds_a_missing_translation() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("shop.left", "{n} kaldı")])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "shop.left").as_deref(),
+            Some("3 kaldı")
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("Merhaba")
+        );
+        assert_eq!(C.__overlay_row(Locale::Tr).map(|r| r[2]), Some("{n} kaldı"));
+    }
+
+    /// Story 11.5 Matrix 3
+    #[test]
+    fn default_locale_overlay_reaches_fallbacks_but_not_own_files() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::EnUs, &[("greet.hello", "Hi")])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::EnUs, "greet.hello").as_deref(),
+            Some("Hi")
+        );
+        assert_eq!(text(&app, Locale::De, "greet.hello").as_deref(), Some("Hi"));
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("Merhaba")
+        );
+        assert_eq!(C.__overlay_row(Locale::De).map(|r| r[0]), Some("Hi"));
+        assert_eq!(C.__overlay_row(Locale::Tr).map(|r| r[0]), Some("Merhaba"));
+    }
+
+    /// Story 11.5 Matrix 4
+    #[test]
+    fn sibling_chain_reaches_the_overlay() {
+        catalog_c!(
+            C,
+            &[
+                (Locale::EnUs, C_EN_US),
+                (Locale::EnGb, &[]),
+                (Locale::Tr, C_TR)
+            ]
+        );
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::EnUs, &[("greet.hello", "Hi")])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::EnGb, "greet.hello").as_deref(),
+            Some("Hi")
+        );
+        assert_eq!(C.__overlay_row(Locale::EnGb).map(|r| r[0]), Some("Hi"));
+    }
+
+    /// Story 11.5 Matrix 5
+    #[test]
+    fn overlay_for_a_locale_without_a_file_in_its_owner() {
+        catalog_c!(C);
+        static D: Catalog = Catalog::__new(
+            "other/locales",
+            Locale::EnUs,
+            &[
+                (Locale::EnUs, &[("d.x", "x")]),
+                (Locale::De, &[("d.x", "X")]),
+            ],
+            &[("d.x", &[])],
+        );
+        let app = strings(&[C, D]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::De, &[("greet.hello", "Hallo")])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::De, "greet.hello").as_deref(),
+            Some("Hallo")
+        );
+        assert_eq!(text(&app, Locale::De, "d.x").as_deref(), Some("X"));
+    }
+
+    /// Story 11.5 Matrix 9
+    #[test]
+    fn empty_value_is_accepted() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("greet.hello", "")])]),
+            Ok(())
+        );
+        assert_eq!(text(&app, Locale::Tr, "greet.hello").as_deref(), Some(""));
+    }
+
+    /// Story 11.5 Matrix 10
+    #[test]
+    fn unicode_and_long_values_are_accepted_verbatim() {
+        catalog_c!(C);
+        let long = "ç".repeat(10_000);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[
+                ov(Locale::Tr, &[("greet.hello", "😀 Çağ")]),
+                ov(Locale::EnUs, &[("greet.hello", &long)]),
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("😀 Çağ")
+        );
+        assert_eq!(text(&app, Locale::EnUs, "greet.hello"), Some(long));
+    }
+
+    /// Story 11.5 Matrix 11
+    #[test]
+    fn repeated_placeholder_is_accepted() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("shop.left", "{n}-{n}")])]),
+            Ok(())
+        );
+        assert_eq!(
+            app.translate(Locale::Tr, MessageKey::new("shop.left"), &[("n", d(&2))])
+                .as_deref(),
+            Some("2-2")
+        );
+    }
+
+    /// Story 11.5 Matrix 12
+    #[test]
+    fn positional_placeholders() {
+        catalog_c!(OK);
+        let app = strings(&[OK]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("pos.x", "{1} / {0}")])]),
+            Ok(())
+        );
+        assert_eq!(text(&app, Locale::Tr, "pos.x").as_deref(), Some("b / a"));
+        catalog_c!(BAD);
+        let cases: [(&str, &[&str]); 3] = [
+            ("{0}", &["0"]),
+            ("{00}/{1}", &["00", "1"]),
+            ("{0}/{1}/{2}", &["0", "1", "2"]),
+        ];
+        for (value, found) in cases {
+            assert_eq!(
+                rejected(BAD, Locale::Tr, &[("pos.x", value)]),
+                [placeholders("pos.x", &["0", "1"], found)],
+                "{value}"
+            );
+        }
+        assert_eq!(
+            placeholders("pos.x", &["0", "1"], &["00", "1"]).to_string(),
+            "locale `tr`: overlay of `pos.x` must use the placeholders `{0}`, `{1}`; missing `{0}`, extra `{00}`"
+        );
+    }
+
+    /// Story 11.5 Matrix 13
+    #[test]
+    fn missing_placeholder_is_rejected() {
+        catalog_c!(C);
+        let err = rejected(C, Locale::Tr, &[("shop.left", "kaldı")]);
+        assert_eq!(err, [placeholders("shop.left", &["n"], &[])]);
+        assert_eq!(
+            err[0].to_string(),
+            "locale `tr`: overlay of `shop.left` must use the placeholders `{n}`; missing `{n}`"
+        );
+    }
+
+    /// Story 11.5 Matrix 14
+    #[test]
+    fn extra_or_renamed_placeholder_is_rejected() {
+        catalog_c!(C);
+        let cases: [(&str, &str, &[&str], &[&str]); 3] = [
+            ("greet.hello", "Hi {name}", &[], &["name"]),
+            ("shop.left", "{count}", &["n"], &["count"]),
+            ("shop.left", "{N}", &["n"], &["N"]),
+        ];
+        for (key, value, expected, found) in cases {
+            assert_eq!(
+                rejected(C, Locale::Tr, &[(key, value)]),
+                [placeholders(key, expected, found)],
+                "{value}"
+            );
+        }
+        assert_eq!(
+            placeholders("greet.hello", &[], &["name"]).to_string(),
+            "locale `tr`: overlay of `greet.hello` must use the placeholders (none); extra `{name}`"
+        );
+        assert_eq!(
+            placeholders("shop.left", &["n"], &["N"]).to_string(),
+            "locale `tr`: overlay of `shop.left` must use the placeholders `{n}`; missing `{n}`, extra `{N}`"
+        );
+    }
+
+    /// Story 11.5 Matrix 15
+    #[test]
+    fn literal_braces_are_accepted() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("greet.hello", "a {} {a b} {x")])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("a {} {a b} {x")
+        );
+    }
+
+    /// Story 11.5 Matrix 16
+    #[test]
+    fn reserved_families_are_rejected() {
+        catalog_c!(C);
+        let keys = [
+            "cmd.greet.description",
+            "cmdword.greet",
+            "ctxcmd.k.name",
+            "noctis.expired",
+            "cmd",
+            "noctis",
+        ];
+        let pairs: Vec<(&str, &str)> = keys.iter().map(|k| (*k, "x")).collect();
+        let mut sorted = keys;
+        sorted.sort_unstable();
+        let expected: Vec<OverlayViolation> =
+            sorted.iter().map(|k| reserved(Locale::Tr, k)).collect();
+        assert_eq!(rejected(C, Locale::Tr, &pairs), expected);
+    }
+
+    /// Story 11.5 Matrix 17, 18
+    #[test]
+    fn unknown_keys_are_rejected() {
+        catalog_c!(C);
+        let mut keys = [
+            "cmdx.y",
+            "CMD.greet",
+            "shop.titel",
+            "",
+            " greet.hello",
+            "greet",
+            "greet.hello.x",
+            "çay.x",
+        ];
+        let pairs: Vec<(&str, &str)> = keys.iter().map(|k| (*k, "x")).collect();
+        keys.sort_unstable();
+        let expected: Vec<OverlayViolation> = keys.iter().map(|k| unknown(Locale::Tr, k)).collect();
+        assert_eq!(rejected(C, Locale::Tr, &pairs), expected);
+    }
+
+    /// Story 11.5 Matrix 19
+    #[test]
+    fn catalog_without_slot_takes_no_overlays() {
+        static PLAIN: Catalog =
+            Catalog::__new("bot/locales", Locale::EnUs, C_FILES, C_PLACEHOLDERS);
+        assert_eq!(
+            rejected(PLAIN, Locale::Tr, &[("greet.hello", "Selam")]),
+            [unknown(Locale::Tr, "greet.hello")]
+        );
+    }
+
+    /// Story 11.5 Matrix 20
+    #[test]
+    fn duplicate_key_in_one_locale() {
+        catalog_c!(C);
+        for pairs in [
+            &[("greet.hello", "a"), ("greet.hello", "a")][..],
+            &[("greet.hello", "a"), ("greet.hello", "b")],
+            &[
+                ("shop.left", "{n}"),
+                ("shop.left", "bad"),
+                ("shop.left", "{x}"),
+            ],
+        ] {
+            let key = pairs[0].0;
+            assert_eq!(
+                rejected(C, Locale::Tr, pairs),
+                [OverlayViolation::DuplicateKey {
+                    locale: Locale::Tr,
+                    key: key.to_owned()
+                }]
+            );
+        }
+    }
+
+    /// Story 11.5 Matrix 21
+    #[test]
+    fn same_key_in_two_locales() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(
+            app.install_overlays(&[
+                ov(Locale::EnUs, &[("greet.hello", "Hi")]),
+                ov(Locale::Tr, &[("greet.hello", "Selam")]),
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&app, Locale::EnUs, "greet.hello").as_deref(),
+            Some("Hi")
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("Selam")
+        );
+        assert_eq!(text(&app, Locale::Ja, "greet.hello").as_deref(), Some("Hi"));
+    }
+
+    /// Story 11.5 Matrix 22
+    #[test]
+    fn every_problem_is_reported_sorted_and_nothing_installs() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        let err = app
+            .install_overlays(&[
+                ov(
+                    Locale::Tr,
+                    &[
+                        ("shop.left", "x"),
+                        ("greet.hello", "Selam"),
+                        ("cmd.greet.description", "x"),
+                    ],
+                ),
+                ov(Locale::EnUs, &[("zz.nope", "x")]),
+            ])
+            .expect_err("invalid");
+        assert_eq!(
+            err,
+            [
+                unknown(Locale::EnUs, "zz.nope"),
+                reserved(Locale::Tr, "cmd.greet.description"),
+                placeholders("shop.left", &["n"], &[]),
+            ]
+        );
+        assert_eq!(
+            text(&app, Locale::Tr, "greet.hello").as_deref(),
+            Some("Merhaba")
+        );
+        assert_eq!(C.__overlay_row(Locale::Tr), None);
+    }
+
+    /// Story 11.5 Matrix 24, 25, 26
+    #[test]
+    fn overlays_install_once_per_process() {
+        catalog_c!(C);
+        let first = strings(&[C]);
+        let load = [ov(
+            Locale::Tr,
+            &[("greet.hello", "Selam"), ("shop.left", "{n} kaldı")],
+        )];
+        assert_eq!(first.install_overlays(&load), Ok(()));
+        // Matrix 24: equal overlays, in any order.
+        let second = strings(&[C]);
+        let reordered = [ov(
+            Locale::Tr,
+            &[("shop.left", "{n} kaldı"), ("greet.hello", "Selam")],
+        )];
+        assert_eq!(second.install_overlays(&reordered), Ok(()));
+        // Matrix 25: different overlays.
+        assert_eq!(
+            second.install_overlays(&[ov(Locale::Tr, &[("greet.hello", "Merhabalar")])]),
+            Err(vec![OverlayViolation::AlreadyInstalled {
+                origin: "bot/locales"
+            }])
+        );
+        assert_eq!(
+            text(&second, Locale::Tr, "greet.hello").as_deref(),
+            Some("Selam")
+        );
+        // Matrix 26: no overlays leaves the slot alone, and it is process-wide.
+        let third = strings(&[C]);
+        assert_eq!(
+            third.install_overlays(&[ov(Locale::Tr, &[]), ov(Locale::EnUs, &[])]),
+            Ok(())
+        );
+        assert_eq!(
+            text(&third, Locale::Tr, "greet.hello").as_deref(),
+            Some("Selam")
+        );
+    }
+
+    /// Story 11.5 Matrix 28, 29
+    #[test]
+    fn get_stays_compiled_and_rows_appear_after_install() {
+        catalog_c!(C);
+        let app = strings(&[C]);
+        assert_eq!(C.__overlay_row(Locale::Tr), None);
+        assert_eq!(
+            app.install_overlays(&[ov(Locale::Tr, &[("greet.hello", "Selam")])]),
+            Ok(())
+        );
+        assert!(C.__overlay_row(Locale::Tr).is_some());
+        assert_eq!(C.get(Locale::Tr, "greet.hello"), Some("Merhaba"));
+        assert_eq!(app.get(Locale::Tr, "greet.hello"), Some("Merhaba"));
+        assert_eq!(
+            app.get(Locale::EnUs, "cmd.greet.description"),
+            Some("Greet")
+        );
+        // Keys outside the content list keep the compiled chain.
+        assert_eq!(
+            text(&app, Locale::Tr, "cmd.greet.description").as_deref(),
+            Some("Greet")
+        );
     }
 }

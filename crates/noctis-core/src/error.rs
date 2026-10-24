@@ -10,6 +10,9 @@ use twilight_model::gateway::Intents;
 use crate::cli::CliError;
 use crate::publish::PublishError;
 use noctis_codec::KeyError;
+use noctis_i18n::OverlayViolation;
+use noctis_ports::PortError;
+use noctis_rules::Locale;
 
 use crate::{
     AppIdError, GatewayUrlError, HttpConfigError, HttpProxyError, Plugin, ResourceConflict,
@@ -47,6 +50,79 @@ pub enum Error {
     /// The Publish of a CLI mode (`--publish`, …) failed.
     #[error(transparent)]
     Publish(#[from] PublishError),
+    /// `App::run` could not load or rejected the runtime locale overlays
+    /// of the `LocaleSource` port (Story 11.5).
+    #[error(transparent)]
+    LocaleOverlay(#[from] LocaleOverlayError),
+}
+
+/// Why `App::run` stopped at the runtime locale overlays: the
+/// `LocaleSource` port failed, or a loaded overlay broke a rule. Nothing is
+/// installed either way, and no Discord request was made.
+///
+/// ```
+/// use noctis_core::{LocaleOverlayError, OverlayViolation};
+/// use noctis_ports::PortError;
+/// use noctis_rules::Locale;
+///
+/// let load = LocaleOverlayError::Load {
+///     locale: Locale::Tr,
+///     source: PortError::unavailable("offline"),
+/// };
+/// assert_eq!(load.to_string(), "the LocaleSource could not load the `tr` overlay");
+/// assert!(load.violations().is_empty());
+///
+/// let invalid = LocaleOverlayError::Invalid(vec![OverlayViolation::UnknownKey {
+///     locale: Locale::Tr,
+///     key: "shop.titel".into(),
+/// }]);
+/// assert_eq!(
+///     invalid.to_string(),
+///     "1 locale overlay violation(s)\n  - locale `tr`: overlay key `shop.titel` is not a \
+///      content key of any catalog",
+/// );
+/// assert_eq!(invalid.violations().len(), 1);
+/// ```
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum LocaleOverlayError {
+    /// `LocaleSource::load` failed for `locale`; later locales were not
+    /// loaded.
+    #[error("the LocaleSource could not load the `{locale}` overlay")]
+    Load {
+        /// The locale whose load failed.
+        locale: Locale,
+        /// The port's error.
+        #[source]
+        source: PortError,
+    },
+    /// Loaded overlays broke the rules (reserved or unknown keys,
+    /// duplicates, placeholder mismatches, other overlays already
+    /// installed in this process). Never empty.
+    #[error("{}", OverlayBullets(.0))]
+    Invalid(Vec<OverlayViolation>),
+}
+
+impl LocaleOverlayError {
+    /// The violations of [`Invalid`](Self::Invalid); empty for
+    /// [`Load`](Self::Load).
+    pub fn violations(&self) -> &[OverlayViolation] {
+        match self {
+            Self::Invalid(violations) => violations,
+            Self::Load { .. } => &[],
+        }
+    }
+}
+
+/// `"{n} locale overlay violation(s)"`, then one `"\n  - {violation}"` per
+/// entry.
+struct OverlayBullets<'a>(&'a [OverlayViolation]);
+
+impl fmt::Display for OverlayBullets<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} locale overlay violation(s)", self.0.len())?;
+        self.0.iter().try_for_each(|v| write!(f, "\n  - {v}"))
+    }
 }
 
 /// Why a started `App::run` stopped without a shutdown request.
@@ -388,7 +464,7 @@ pub enum BuildViolation {
         rule: noctis_rules::RuleId,
         /// The locale whose file holds the value (never a sibling-derived
         /// code).
-        locale: noctis_rules::Locale,
+        locale: Locale,
         /// The locale key, such as `cmdword.ban` or `cmd.ban.opt.user.name`.
         key: &'static str,
         /// The [`Catalog::origin`](noctis_i18n::Catalog::origin) of the

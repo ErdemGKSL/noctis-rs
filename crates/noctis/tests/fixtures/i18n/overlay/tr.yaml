@@ -1,0 +1,3 @@
+# Story 11.5: the tr file of tests/i18n_overlays.rs.
+greet:
+  hello: Merhaba
