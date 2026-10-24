@@ -2,7 +2,8 @@
 title: 'Story 15.4: Prefix commands'
 type: 'feature'
 created: '2026-10-24'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_revision: '10675ec451c684adbc8bf3183eb3a99e2066b0c0'
 review_loop_iteration: 0
 followup_review_recommended: false
 context:
