@@ -2,10 +2,10 @@
 title: 'Story 12.2: Session resume through the SessionStore'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: 'a52191427b308cb41899738066968e35f3769e42'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/AGENTS.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-12-context.md'
@@ -132,6 +132,43 @@ App level (testkit, `FakeDiscordHttp` + `FakeGateway`, one `Arc` store shared by
 
 ## Review Triage Log
 
+### 2026-10-23 — Review pass
+- verdicts: 33 findings — high 0, medium 5, low 19, false 8, maybe-false 1
+- findings:
+  - `[medium]` `[patch]` (blind) A resumed entry is kept, so "a crash leaves no entry" is false and a crash can replay handled events — verified: `ResumeState::on_frame` keeps the entry on RESUMED (R1, intent), lib.rs/app-and-sharding.md/adapters.md claim a crash leaves nothing; a crash after a resume leaves the old-seq entry and the next start resumes from it. R1 settles keeping, so the fix corrects the three doc claims.
+  - `[false]` `[reject]` (blind) An unreachable stored `resume_url` has no fallback and startup hangs — twilight 0.17.1 `poll_connect` sets `self.resume_url = None` on a failed connect and reconnects to `proxy_url`/default, so the shard resumes (or is rejected) on the configured URL.
+  - `[low]` `[reject]` (blind) The inline reject-time `clear` blocks the shard loop up to 5 s, delaying a close — real only with a hanging store at the moment of a rejection plus a concurrent shutdown; the fix adds a select branch and a cancelled-delete path; rare, not worth the complexity.
+  - `[medium]` `[patch]` (blind) The early-close branch in `run` (close while `load` pending) has no test — same gap as the vgap L11 finding; L11 is in the matrix and no test has a `get` outstanding at close. Patch: Gateway-level test with a hanging `get`, both modes.
+  - `[low]` `[reject]` (blind) The `session-store` deps-check rule is lexical and easy to bypass — true (bindings, wrapped chains), but the spec fixed exactly these patterns and AD-21 holds in today's code; making it token-aware is new machinery for a lint developers rarely trip.
+  - `[false]` `[reject]` (blind) A new pub field on `GatewayOptions` breaks `noctis-gateway`'s public API — AD-2: only the facade `noctis` is public API; the spec states "`GatewayOptions` (internal crate) gains one required field"; `public-api.txt` does not cover it.
+  - `[low]` `[patch]` (blind) No TTL, so a reshard orphans old-total entries forever — real (nothing ever reads or deletes `shard:{id}:{old}`), TTL `None` is intent; the fix documents the orphaned keys in adapters.md.
+  - `[false]` `[reject]` (blind) A6 checks only `noctis::` lines — the spec's guarantee is scoped to noctis's own targets ("Logs (target `noctis::gateway` ...)"), and A6 asserts exactly that; twilight's own debug logs are outside the claim.
+  - `[maybe-false]` `[reject]` (blind) Timing assertions in integration tests are likely flaky — the negative checks run after a concrete `wait_for_frame`/`wait_sessions`, and W6's bound is spec-mandated; only repeated runs under load would settle it; if true it is a low test flake.
+  - `[low]` `[reject]` (blind) No test shows the reject-time delete finishes before IDENTIFY — grouped with the vgap ordering finding; the inline await is correct today and pinning the order needs delay plumbing in the recording store (fits Story 12.3's shutdown-order proofs).
+  - `[low]` `[reject]` (blind) The Superseded path has no test above unit level — `ResumeState` unit tests cover R4; an integration test needs a FakeGateway mode answering RESUME with READY; little risk for new test machinery.
+  - `[low]` `[patch]` (blind) GW-02 How text cites "(FR-4)" twice; `noctis-rules` not updated — the duplicate is real (cosmetic); no limit or id changed, so `noctis-rules` needs no edit (rules-catalog is a verification gate). Patch: drop the second `FR-4`.
+  - `[low]` `[patch]` (blind) app-and-sharding.md names `LifecycleEvent::ShardResumed`, a crate-private type — `noctis-core/src/lifecycle.rs` declares `pub(crate) enum LifecycleEvent`; the Skill must not name it. Patch: name the event only.
+  - `[low]` `[patch]` (blind) `await_startup` matches `Ready | Resumed` and then `matches!` again — real double match at app.rs:1091-1096; direct restructuring into two arms.
+  - `[low]` `[patch]` (blind) `startup_completes_on_resumed` ends with a stray `drop(tx)` — dead statement; delete it.
+  - `[false]` `[reject]` (blind) Spec frontmatter still says `status: 'in-progress'` — correct mid-review; the finalize step sets `done`; fixing would edit this build's spec.
+  - `[low]` `[reject]` (edge) Close requested during the inline reject/supersede clear is delayed up to 5 s — same root cause as the blind inline-clear finding; rejected with it.
+  - `[low]` `[reject]` (edge) Fresh close whose ack wait used the whole `close_timeout` polls the delete at an expired deadline — real for a non-instant store, but the cost is one rejected RESUME at the next start (self-heals) and a minimum budget would break the spec's single-deadline bound; Fresh is not used by core until 12.3.
+  - `[low]` `[reject]` (edge) Any gateway Close counts as the ack, so a racing 4009/4007 stores an invalidated session — twilight skips `disconnect` once we initiated, so the session is stored; needs a gateway close racing our 4000 and costs one rejected RESUME; a code comparison depends on Discord's unverified echo code and could drop every real ack.
+  - `[low]` `[reject]` (edge) Close during `load`'s delete of an unreadable entry cancels it — real; the entry is still unreadable next start and is deleted then; a guard is not worth it.
+  - `[low]` `[reject]` (edge) deps-check misses bindings, accessors, UFCS and wrapped chains — same root cause as the blind deps-check finding; rejected with it.
+  - `[medium]` `[patch]` (edge) Claim "a crash leaves no entry" is false after a resumed run — same root cause as the blind crash-claim finding; fixed by the same doc correction.
+  - `[low]` `[reject]` (edge) Claim "`Closed` still comes within `close_timeout`" is broken by the inline reject-time clear — same root cause as the blind inline-clear finding; the close path itself honours the bound.
+  - `[medium]` `[patch]` (vgap) The stored `resume_url` being applied is never observed by a test — pre-verified: every seeded URL equals `gateway_url`; removing `.resume_url(..)` passes all tests. Patch: two-FakeGateway test asserting the RESUME lands on the stored URL.
+  - `[medium]` `[patch]` (vgap) A close requested while the start-time `get` is pending is never exercised — pre-verified (L11); grouped with the blind early-close finding. Patch: `get` hang mode in `Recording` plus a both-modes Gateway-level test.
+  - `[low]` `[reject]` (vgap) The inline reject-time delete ordering is not observable by R2/A2 — pre-verified gap, filed `defer`; caused by this story, so not deferrable; low (code correct) and needs new delay plumbing; grouped with the blind ordering finding; candidate for 12.3's shutdown-order proofs.
+  - `[low]` `[reject]` (vgap) The `session-store` rule is never run against real workspace metadata — pre-verified gap, filed `defer`; caused by this story; low (the gate passes and the sibling `http-client` wiring has the same shape) and the fix is a new wiring test, better done for both scanners in one xtask change.
+  - `[false]` `[reject]` (intent) Scope taken from Story 12.3 (the write ships in 12.2) — the spec and memlog deliberately settled it ("Write in 12.2, not 12.3" decision); 12.3 keeps `--no-resume`, start-time clearing and the order proof.
+  - `[false]` `[reject]` (intent) App-level tests run two Apps in one process, not a real restart — matches the AC's "(`FakeGateway`)" qualifier and the spec's A1 design with one shared `Arc` store.
+  - `[low]` `[patch]` (intent) GW-02: R-C vs R-D and the How-text wording mismatch — R-C is deliberately settled ("GW-02 unchanged" decision); the wording is real: "below the number of shards this process identifies" contradicts "the check still counts it". Patch: "shards this process runs".
+  - `[low]` `[reject]` (intent) "Only reader and writer" is enforced by a lexical lint, not an invariant — same root cause as the blind deps-check finding; rejected with it.
+  - `[false]` `[reject]` (intent) "Within the resume window" is delegated to Discord, no local TTL/timestamp — the intent fixes TTL `None` ("a stale entry costs one rejected RESUME and is then deleted"); deliberate and correct.
+  - `[false]` `[reject]` (intent) The delete trigger is wider than the AC's (READY-supersede, unreadable entry, Fresh close) — all three are intent rows (R4, L4, W5), settled deliberately.
+
 ## Design Notes
 
 - **Write in 12.2, not 12.3** (decision): the restart AC needs a session written by the first process, and core already closes with `CloseMode::Resumable`; 12.3 keeps `--no-resume`, start-time clearing and the shutdown-order proof. Fresh close deleting the entry is the inverse of the write and needs no flag.
@@ -159,3 +196,42 @@ Run from `/home/claude/lanes/c/noctis-rs`, release only:
 - `cargo run --release -p xtask -- deps-check` / `-- rules-catalog` / `-- api-snapshot` / `-- skill-check` -- expected: exit 0, API hash unchanged
 - `cargo deny check` -- expected: exit 0
 - `cargo +1.91 check --release --workspace` -- expected: exit 0
+
+## Auto Run Result
+
+- **Summary:** shards now resume through the `SessionStore` port. At start each shard loads `shard:{id}:{total}` and RESUMEs with the stored session id, sequence and `resume_url`. A resumable close writes the session only once the gateway has acked the close. A rejected resume (INVALID_SESSION), a READY that supersedes the resume, an unreadable entry and a Fresh close each delete the entry. Core completes startup on READY or RESUMED. The session id and resume URL never show up in logs.
+- **Files changed:**
+  - `crates/noctis-gateway/src/session.rs`: new; session key, codec, load/store/clear with timeouts, `ResumeState`.
+  - `crates/noctis-gateway/src/shard.rs`, `gateway.rs`, `lib.rs`, `shard_config.rs`: resume wiring, reject/supersede clears, ack-only write on close, `GatewayOptions` store field, crate docs.
+  - `crates/noctis-core/src/app.rs`, `app/tests.rs`: passes the store to the gateway; startup completes on READY or RESUMED.
+  - `crates/noctis-testkit/tests/session_resume.rs`, `session_log_redaction.rs` (new) and the updated `gateway_close`/`lanes`/`sharding`/`shard_log_redaction` tests: restart, reject, supersede, stored-URL, early-close and redaction tests.
+  - `xtask/src/deps_check.rs`: `session-store` rule (only the gateway reads or writes the port).
+  - `docs/discord-rules.md`: GW-02 wording.
+  - `examples/project-template/.claude/skills/noctis/references/adapters.md`, `app-and-sharding.md`: Usage Skill docs for resume.
+- **Review findings:** 33 in total: 0 high, 5 medium, 19 low, 8 false, 1 maybe-false.
+  - Patched, 5 medium entries (3 root causes) and 6 low:
+    - "a crash leaves no entry" was false after a resumed run; the doc claims are corrected.
+    - Gateway-level test for a close while the start-time `get` hangs, in both modes.
+    - Two-FakeGateway test that proves the stored `resume_url` is used.
+    - Orphaned old-total keys after a reshard are documented.
+    - Duplicate FR-4 and the wording in GW-02 are fixed.
+    - The private `LifecycleEvent` name is removed from the Skill.
+    - The double match in `await_startup` is gone.
+    - A stray `drop(tx)` is removed.
+  - Deferred: none.
+  - Rejected, with reasons:
+    - The inline reject-time clear can delay a close by up to 5 s (rare, needs a hanging store; not worth the complexity).
+    - The deps-check lint is lexical (it covers the patterns the spec named, and AD-21 holds).
+    - Delete-before-IDENTIFY ordering and the Superseded path at integration level have no test (the code is correct; candidates for the 12.3 order proofs).
+    - A Fresh close at an expired deadline, and a racing 4009 treated as the ack (each costs at most one rejected RESUME, which self-heals).
+    - A close can cancel the delete of an unreadable entry (deleted next start).
+    - The `session-store` rule is never run against real metadata (low; better as one xtask change).
+    - False: the unreachable `resume_url` hang (twilight falls back), the GatewayOptions API break (internal crate, AD-2), A6 scope, the spec status, the scope taken from 12.3 (a decision), the two Apps in one process (matches the AC), no TTL (intent), the wider delete trigger (intent rows).
+    - Maybe-false: timing flakes in the tests.
+- **Follow-up review recommended: true.** Patched counts: high 0, medium 5, low 6. The named risk is that the new early-close test (hanging `get`) and the stored-`resume_url` test went in after review and no independent pass has checked that they observe the behaviour they claim.
+- **Verification:** all local gates in `tools/story-loop/gates.sh` passed (fmt, clippy -D warnings, test, hack each-feature, deps-check, rules-catalog, api-snapshot with the API hash unchanged, skill-check, cargo deny, MSRV 1.91). CI is paused by the maintainer.
+- **Residual risks:**
+  - A hanging store at a rejection can delay a concurrent close by up to 5 s.
+  - Entries keyed to an old shard total are never deleted after a reshard.
+  - The deps-check rule is lexical.
+  - Story 12.3 must add `--no-resume`, start-time clearing and the shutdown-order proof.

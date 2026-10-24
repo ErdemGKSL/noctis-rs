@@ -1089,11 +1089,11 @@ pub(crate) async fn await_startup(
         lifecycle.shard(&event);
         match event {
             ShardEvent::Ready { shard } | ShardEvent::Resumed { shard } => {
-                if matches!(event, ShardEvent::Ready { .. }) {
-                    tracing::debug!(target: "noctis::app", shard, "shard ready");
-                } else {
-                    tracing::debug!(target: "noctis::app", shard, "shard resumed");
-                }
+                let message = match event {
+                    ShardEvent::Resumed { .. } => "shard resumed",
+                    _ => "shard ready",
+                };
+                tracing::debug!(target: "noctis::app", shard, "{message}");
                 if let Some(seen) = status.slot(&mut ready, shard)
                     && !*seen
                 {

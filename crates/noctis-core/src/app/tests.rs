@@ -1884,7 +1884,6 @@ async fn startup_completes_on_resumed() {
         await_startup(&mut rx, &status(1), &Lifecycle::new()).await,
         Ok(())
     );
-    drop(tx);
 }
 
 #[tokio::test]

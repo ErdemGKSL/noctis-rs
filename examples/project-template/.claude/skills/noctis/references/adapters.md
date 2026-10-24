@@ -522,8 +522,12 @@ on process B), `RateLimitStore`, `ModuleStateStore`, `IdentifyQueue`, and usuall
 `CacheStore`/`RenderCache`/`AssetStore`. `SessionStore` must persist across restarts to
 resume: the gateway reads each shard's entry at start, writes it after Discord
 acknowledges the shutdown's 4000 close and deletes it when Discord rejects it or on a
-fresh close; a crash leaves no entry. The stored bytes are opaque: return them verbatim
-(no TTL is set). Official Redis/SQL adapters are planned for v1.x; until then write them as
+fresh close. A crash removes nothing: an entry kept after a resumed start, or an older
+one left by an unacknowledged close, stays, and the next start resumes from its older
+sequence (Discord replays events already handled, or rejects it and the shard
+identifies). The stored bytes are opaque: return them verbatim (no TTL is set). After
+the shard total changes, old `<app>:session:shard:<id>:<old total>` entries are never
+read again; the operator may delete them. Official Redis/SQL adapters are planned for v1.x; until then write them as
 above and run the conformance suites.
 
 `MemoryIdentifyQueue` does not cover several processes. A Cluster `IdentifyQueue` must

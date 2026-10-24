@@ -42,7 +42,11 @@
 //!   close.
 //!
 //! Nothing is written on READY, on in-process reconnects or periodically,
-//! so a crash leaves no entry. A resume replays only what Discord still
+//! so a crash removes nothing: an entry kept after a resumed start, or an
+//! older one left by an unacknowledged close, stays, and the next start
+//! resumes from its older sequence (Discord replays events already
+//! handled, or rejects it and the shard identifies). A resume replays only
+//! what Discord still
 //! holds; events dropped under back-pressure are not replayed
 //! (at-most-once).
 //!

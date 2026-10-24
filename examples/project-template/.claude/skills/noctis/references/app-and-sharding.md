@@ -535,12 +535,14 @@ last event received.
 
 - **Read** once when the Shard starts (bounded by 5 s). A valid entry makes it send
   RESUME instead of IDENTIFY, with no `IdentifyQueue` lease, and startup counts its
-  RESUMED like a READY (`LifecycleEvent::ShardResumed`). A miss, a store error or a
+  RESUMED like a READY (the `ShardResumed` lifecycle event). A miss, a store error or a
   timeout makes it identify; an unreadable or invalid entry is deleted first.
 - **Written** after a graceful shutdown's 4000 close is acknowledged by Discord's close
   frame, within the shard close timeout; no TTL. Nothing is written on READY, on
-  in-process reconnects or periodically, so a crash leaves no entry and the next start
-  identifies.
+  in-process reconnects or periodically, so a crash removes nothing: an entry kept
+  after a resumed start, or an older one left by an unacknowledged close, stays, and
+  the next start resumes from its older sequence (Discord replays events already
+  handled, or rejects it and the Shard identifies).
 - **Deleted** when Discord rejects the stored session (op 9 `d: false`, or a READY
   replaces it): the Shard then identifies with no operator action. A fresh (1000) close
   deletes it too.

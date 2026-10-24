@@ -1,6 +1,6 @@
 //! Session resume through the `SessionStore` (Story 12.2): `Gateway::start`
-//! against `FakeGateway` (R1-R3, W1-W7) and whole Apps sharing one store
-//! (A1-A5). A6 (log redaction) lives in `session_log_redaction.rs`, which
+//! against `FakeGateway` (R1-R3, W1-W7, L11, the stored resume URL) and
+//! whole Apps sharing one store (A1-A5). A6 (log redaction) lives in `session_log_redaction.rs`, which
 //! installs a global subscriber.
 
 #![allow(
@@ -66,6 +66,8 @@ struct Recording {
     inner: MemorySessionStore,
     ops: Mutex<Vec<(Op, String, Option<Duration>)>>,
     put: Mutex<PutMode>,
+    /// Whether `get` never answers.
+    get_hangs: Mutex<bool>,
 }
 
 impl Recording {
@@ -74,6 +76,7 @@ impl Recording {
             inner: MemorySessionStore::new(),
             ops: Mutex::new(Vec::new()),
             put: Mutex::new(PutMode::Store),
+            get_hangs: Mutex::new(false),
         })
     }
 
@@ -127,6 +130,9 @@ impl Recording {
 impl SessionStore for Recording {
     fn get<'a>(&'a self, key: &'a str) -> BoxFuture<'a, Result<Option<Bytes>, PortError>> {
         self.record(Op::Get, key, None);
+        if *self.get_hangs.lock().unwrap() {
+            return Box::pin(std::future::pending());
+        }
         self.inner.get(key)
     }
 
@@ -347,6 +353,60 @@ async fn first_run(gw: &FakeGateway, store: &Arc<Recording>, dispatches: usize) 
     let mut running = start(gw.url(), store, Duration::from_secs(5));
     until(&mut running.events, is_ready).await;
     dispatch(gw, &running, dispatches).await;
+    close(&mut running, CloseMode::Resumable).await;
+}
+
+// ---- L11: close while the start-time get is pending ----
+
+#[tokio::test(flavor = "multi_thread")]
+async fn l11_close_during_pending_get_ends_without_connecting() {
+    install_provider();
+    for (mode, ops) in [
+        (CloseMode::Fresh, &[Op::Get, Op::Delete][..]),
+        (CloseMode::Resumable, &[Op::Get][..]),
+    ] {
+        let gw = FakeGateway::start().await.unwrap();
+        let store = Recording::new();
+        *store.get_hangs.lock().unwrap() = true;
+        let mut running = start(gw.url(), &store, Duration::from_secs(5));
+        let deadline = Instant::now() + WAIT;
+        while store.ops().is_empty() {
+            assert!(Instant::now() < deadline, "{mode:?}: no get");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let elapsed = close(&mut running, mode).await;
+        assert!(elapsed < Duration::from_secs(2), "{mode:?}: {elapsed:?}");
+        assert!(gw.frames().is_empty(), "{mode:?}: no frame");
+        assert_eq!(gw.live_sessions(), 0, "{mode:?}: no connection");
+        assert_eq!(store.ops(), ops, "{mode:?}");
+    }
+}
+
+// ---- the stored resume URL decides where the shard connects ----
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stored_resume_url_is_where_the_shard_resumes() {
+    install_provider();
+    let a = FakeGateway::start().await.unwrap();
+    let b = FakeGateway::start().await.unwrap();
+    let store = Recording::new();
+    // Stores B's session with `resume_url = B.url()`.
+    first_run(&b, &store, 0).await;
+    let seeded = store.stored(KEY).await.unwrap();
+    assert_eq!(seeded.resume_url, b.url());
+    b.clear_frames();
+
+    let mut running = start(a.url(), &store, Duration::from_secs(5));
+    until(&mut running.events, is_resumed).await;
+    let resumes = ops_of(&b.frames(), 6);
+    assert_eq!(resumes.len(), 1);
+    let d = resumes[0].json().unwrap()["d"].clone();
+    assert_eq!(d["session_id"], seeded.session_id.as_str());
+    assert_eq!(d["seq"], seeded.sequence);
+    assert!(
+        ops_of(&a.frames(), 6).is_empty(),
+        "no RESUME to gateway_url"
+    );
     close(&mut running, CloseMode::Resumable).await;
 }
 
