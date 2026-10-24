@@ -301,10 +301,12 @@ impl Origin {
         let Some((scheme, rest)) = text.split_once("://") else {
             return Err("it must start with `https://`");
         };
-        let scheme = match scheme {
-            "https" => Scheme::Https,
-            "http" => Scheme::Http,
-            _ => return Err("the scheme must be `https` (or `http` for a loopback host)"),
+        let scheme = if scheme.eq_ignore_ascii_case("https") {
+            Scheme::Https
+        } else if scheme.eq_ignore_ascii_case("http") {
+            Scheme::Http
+        } else {
+            return Err("the scheme must be `https` (or `http` for a loopback host)");
         };
         let rest = rest.strip_suffix('/').unwrap_or(rest);
         if rest.contains('/') {

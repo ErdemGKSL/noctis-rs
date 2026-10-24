@@ -96,6 +96,8 @@ twilight-model = { workspace = true, optional = true }
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Captures the `noctis::image` warnings in the fetcher tests.
+tracing-subscriber = { workspace = true, features = ["fmt", "std"] }
 tokio = { workspace = true, features = [
   "macros",
   "rt",

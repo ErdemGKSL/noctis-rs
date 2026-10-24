@@ -378,10 +378,12 @@ let card = ProfileCard {
   - `RemoteImage::guild_icon(&guild, size)`: `<cdn>/icons/<id>/<hash>.webp?size=<size>`;
     a guild without an icon gives `RemoteImage::placeholder()`.
   - `RemoteImage::url(text) -> Result<RemoteImage, RemoteUrlError>`: at most 2048
-    printable ASCII bytes, `https://` (or `http://` for a loopback host), no user info
-    or fragment (`RemoteUrlError::{Empty, TooLong, InvalidCharacter, Scheme, UserInfo,
+    printable ASCII bytes (also after canonicalization), `https://` or `http://`, no
+    user info or fragment (`RemoteUrlError::{Empty, TooLong, InvalidCharacter, Scheme, UserInfo,
     Fragment, NoHost, Malformed, InvalidHost}`). The scheme and host are lowercased;
-    the path and query are kept. Its origin must be allow-listed when it renders.
+    the path and query are kept. Its origin must be allow-listed when it renders;
+    plain `http://` can be allow-listed only for a loopback host, so any other
+    `http://` URL draws the fallback (with a warning).
   - `RemoteImage::placeholder()`: always draws the fallback, with no fetch and no log,
     even in a required field.
   - `size` is normalized to a Discord CDN size: the next power of two, clamped to

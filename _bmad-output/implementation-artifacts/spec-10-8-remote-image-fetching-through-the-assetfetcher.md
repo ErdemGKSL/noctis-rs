@@ -2,10 +2,10 @@
 title: 'Story 10.8: Remote image fetching through the AssetFetcher'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '26c6132c5481cc1c56875d31609fe1901d10db8c'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -17,7 +17,42 @@ context:
   - '{project-root}/.claude/skills/rust-best-practices/references/testing.md'
   - '{project-root}/.claude/skills/rust-best-practices/references/macros.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      The story-loop harness change to AGENTS.md allows debug builds, contradicting maintainer decision 6 (release builds only) without updating maintainer-decisions.md.
+    evidence: |-
+      Commit 8fed800 rewrites the AGENTS.md "Running and verifying" bullet to "Debug builds are allowed (maintainer, 2026-10-24)"; maintainer-decisions.md section 6 still says every build, test, check and run uses --release, and that page requires the contradicting document to be fixed in the same change.
+    location: >-
+      AGENTS.md (Running and verifying); _bmad-output/planning-artifacts/maintainer-decisions.md section 6
+    severity: medium
+  - summary: >-
+      Unrelated story-loop tooling, AGENTS.md and noctis-testkit changes were swept into the Story 10.8 implementation commit.
+    evidence: |-
+      git diff 26c6132..HEAD touches tools/story-loop/{README.md,bg.sh,cargo-queue.sh,env.sh,epic-last.py,gates.sh,lane.sh,tree-sync.py}, AGENTS.md and crates/noctis-testkit/tests/session_resume.rs, none of which Story 10.8's intent covers.
+    location: >-
+      tools/story-loop/, AGENTS.md, crates/noctis-testkit/tests/session_resume.rs
+    severity: low
+  - summary: >-
+      gates.sh no longer fails on a target/debug directory and dates the cargo-hack rule 2026-10-24 while AGENTS.md cites 2026-10-23.
+    evidence: |-
+      The line `test ! -d target/debug || { echo "FAIL:debug-dir"; exit 1; }` was removed and the cargo-queue comment dropped; harness change, not story code.
+    location: >-
+      tools/story-loop/gates.sh
+    severity: low
+  - summary: >-
+      epic-last.py ignores a failed git fetch or git show of origin/main, so stories finished in other lanes count as open and cargo hack can be skipped for an epic's real last story.
+    evidence: |-
+      Both subprocess.run calls discard their return codes; an empty stdout yields an empty `main` map.
+    location: >-
+      tools/story-loop/epic-last.py
+    severity: low
+  - summary: >-
+      bg.sh can exit with an empty status when two attached callers race on consuming the job directory.
+    evidence: |-
+      The first caller moves $J away about 1 s after seeing status; a second caller that checked later then runs `cat "$J/status"` on a moved directory, gets an empty `st`, and `exit ""` fails with a non-numeric-argument error.
+    location: >-
+      tools/story-loop/bg.sh
+    severity: low
 ---
 
 <intent-contract>
@@ -245,6 +280,49 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+
+- verdicts: 38 findings — high 0, medium 5, low 22, false 11, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `RemoteImage::url` accepts a 2048-byte URL with an empty path whose canonical form gains a `/` (2049 bytes), so `target()` re-parses it as `TooLong` and it always draws the fallback — verified in `ParsedUrl::canonical` and `RemoteImage::target`; patch queued: enforce the limit on the canonical form in `url()` and test the boundary.
+  - `[low]` `[reject]` (blind) `AssetStore` `get`/`put` run outside the deadline while the permit is held — real only with a stalling custom adapter (the only shipped adapter is `MemoryAssetStore`); the spec bounds permit wait, request and body only, and adding store timeouts is new guarding for a state not demonstrated.
+  - `[false]` `[reject]` (blind) decode (and cache-hit decode) runs outside the deadline — the spec states the timeout does not cover the decode and `RemoteConfig::timeout`'s doc says the same; takumi decodes one frame at `from_bytes`, and the pixel cap bounds it.
+  - `[low]` `[reject]` (blind) the warning says "drawing the fallback" also for required images — the message text is the one the spec prescribes for every failed image, and the render error reported to the sink disambiguates; changing it adds a branch for a cosmetic log wording.
+  - `[low]` `[reject]` (blind) `join_all` waits for the other fetches after a required image failed — every fetch is bounded by `timeout`; a short-circuit adds abort logic for a latency-only gain.
+  - `[low]` `[patch]` (blind) `RemoteImage::url` docs say `http://` only on a loopback host but the constructor accepts any http host — verified in `ParsedUrl::parse` (only `Scheme::split`); a non-loopback http origin can never be allow-listed, so it draws the fallback; patch queued: correct the rustdoc and the skill's `images.md` line.
+  - `[low]` `[reject]` (blind) `RemoteUrlError::Malformed` names the bad-port case — the spec's URL-parts matrix row prescribes `Malformed` for `https://h:99999/x`; the fix edits this build's spec.
+  - `[low]` `[reject]` (blind) the host grammar accepts `.`, `-`, `a..b`, trailing dots and decimal hosts — the spec's origin grammar (`[a-z0-9.-]+`) settles this; matching is exact, so a nonsense URL host is simply not allow-listed, and a nonsense `allow_origin` is the operator's own config; extra label rules are new guards.
+  - `[low]` `[patch]` (blind) `Origin::parse` matches the scheme case-sensitively while `Scheme::split` for URLs ignores case — verified (`match scheme { "https" | "http" }` vs `eq_ignore_ascii_case`); patch queued: compare the origin scheme case-insensitively and test `HTTPS://i.imgur.com`.
+  - `[low]` `[reject]` (blind) loopback is compared as exact strings and IPv6 literals are not canonicalized — the spec lists exactly `127.0.0.1`, `[::1]` and `localhost`; a differently written loopback is refused at build or not matched (safe failure), rare in practice, and normalization adds parsing branches.
+  - `[low]` `[reject]` (blind) an explicit default port (`:443`) keeps its own cache key and dedup entry — only a duplicate fetch/cache entry when one job mixes both spellings, which constructors never do; dropping default ports adds canonicalization branches.
+  - `[low]` `[reject]` (blind) `plan` dedups on the `RemoteImage` value, not on the resolved target — differing unnormalized sizes only arise from hand-crafted job data (constructors normalize); worst case a duplicate fetch counted against `max_per_job`.
+  - `[low]` `[reject]` (blind) an `#[asset]` Template decodes its postcard data once more — a small struct decode per render; no named harm.
+  - `[false]` `[reject]` (blind) a fallback render could be served from the core `RenderCache` — `noctis-core/src/render.rs` does not consult `RenderCache` yet; the render cache and its key (which includes asset pairs) are Story 10.10, which the intent excludes.
+  - `[false]` `[reject]` (blind) hand-written Templates need `impl TemplateAssets` and the skill does not say so — the derive always emits the impl; the Usage Skill never shows a hand-written `impl Template`, only `#[derive(Template)]` plus `impl TemplateView`.
+  - `[low]` `[defer]` (blind) `gates.sh` drops the `target/debug` guard and dates the hack rule 2026-10-24 — story-loop harness change swept into the story commit (consistent with the harness's new AGENTS.md text allowing debug builds); not this story's implementation.
+  - `[low]` `[defer]` (blind) `epic-last.py` ignores a failed `git fetch`/`git show`, so `cargo hack` can be skipped for the real last story — harness tooling, not this story's code.
+  - `[low]` `[reject]` (edge) store `get`/`put` not bounded by a timeout — same root cause as the blind finding above; same reason.
+  - `[medium]` `[patch]` (edge) a dropped render future releases the semaphore permit while the `spawn_blocking` decode keeps running — verified: `_permit` lives in `fetch`'s future and `decode` awaits a detached blocking task, so cancellations let decodes exceed `concurrency`, against the spec's "one permit is held for … decode"; patch queued: `Arc<Semaphore>` with `acquire_owned`, permit moved into the blocking closure.
+  - `[false]` `[reject]` (edge) animated WebP with many frames exhausts memory — takumi-core 0.31.0 `AnimatedSource::from_bytes` decodes only one frame (`Some(1)`) and never holds decoded frames; each frame is decoded per draw and bounded by the pixel cap.
+  - `[false]` `[reject]` (edge) images are fetched before a `QueueFull` rejection — the spec's Design Notes deliberately admit asset Templates after their fetches and document the late `QueueFull`.
+  - `[low]` `[reject]` (edge) one Renderer handed to two Apps keeps the first App's store (`bind` first-wins) — the spec prescribes first-call-wins; the plugin builds one Renderer per App, sharing one is unusual, and a warning is a new guard.
+  - `[low]` `[reject]` (edge) required failure logs "drawing the fallback" — same root cause as the blind log-wording finding; same reason.
+  - `[low]` `[patch]` (edge) `RemoteImage::url` doc vs. any-host http — same root cause as the blind doc finding; same patch.
+  - `[medium]` `[patch]` (vgap) the fallback warning and its query-free `image` field are never asserted — pre-verified; AC 3 and the no-query display rule are unguarded; patch queued: a capturing-subscriber test in `remote/fetch/tests.rs`.
+  - `[medium]` `[patch]` (vgap) the timeout is verified only for a stalled response head, not for a stalled body or the permit wait — pre-verified; patch queued: `img_03_timeout_covers_body_and_permit`.
+  - `[low]` `[patch]` (vgap) a configured `RemoteConfig::fallback` is never drawn in a test — pre-verified; patch queued: a renderer test with a custom fallback for a 404 and for the placeholder.
+  - `[low]` `[defer]` (vgap other) `bg.sh` can `exit ""` when two attached callers race on consuming the job directory — harness tooling swept into the story commit, not this story's code.
+  - `[false]` `[reject]` (intent D1) origin allow-list on `RemoteConfig` instead of a host list on `ImageConfig` — the intent contract deliberately settles origins, their grammar and the default list; the skill was rewritten to match.
+  - `[false]` `[reject]` (intent D2) `RemoteImage::emoji` dropped — the intent's Never list excludes a custom-emoji constructor (Story 10.9).
+  - `[false]` `[reject]` (intent D3) the fetch runs as async I/O on the runtime — non-blocking I/O does not block the runtime; the intent puts the decode on the blocking pool, which the code does.
+  - `[false]` `[reject]` (intent D4) a not-allow-listed image in a required field fails the render — the intent's matrix row "Not allow-listed" says "fallback, or `RemoteImage` when required".
+  - `[medium]` `[patch]` (intent D5) "with a log" is not verified — same root cause as the vgap warning finding; same patch.
+  - `[low]` `[reject]` (intent D6) e2e tests call `app.renderer().render` rather than `ctx.render` — `ctx.render` delegates to the same Renderer; the spec prescribes this e2e shape; a handler-level test adds harness for no new path.
+  - `[false]` `[reject]` (intent D7) `hyper-rustls` is a caret requirement, not `=0.27.10` — the spec prescribes `version = "0.27.10"`, and `Cargo.lock` fixes the version as everywhere in the workspace.
+  - `[false]` `[reject]` (intent D8) new port API (`Renderer::bind`, `RendererPorts`, new errors) — the intent names `Renderer::bind(RendererPorts)` and the spec designs the rest; API snapshot and skill are updated.
+  - `[low]` `[defer]` (intent D9) unrelated story-loop tooling, `AGENTS.md` and testkit changes are bundled into the story diff — harness changes made outside the story's implementation and swept into its commit.
+  - `[medium]` `[defer]` (intent D10) the bundled `AGENTS.md` change allows debug builds, contradicting maintainer decision §6 ("Release builds only") without updating `maintainer-decisions.md` — real; its fix edits agent-context files (AGENTS.md / the decisions page), so it is deferred to the maintainer's harness owner.
+
 ## Design Notes
 
 - **Why hyper-util + hyper-rustls, not reqwest.**
@@ -270,3 +348,12 @@ deferred: []
 - `cargo deny check`; `cargo +1.91 check --release --workspace` -- pass
 - `git diff --stat Cargo.lock` adds no `[[package]]`; `cargo tree -p noctis-image --features render -i takumi-core` shows a single 0.31.0; `cargo tree -p noctis-image --features render -i hyper-rustls` shows 0.27.10
 - `bash tools/story-loop/gates.sh` -- ALL-OK
+
+## Auto Run Result
+
+- **Summary:** `#[asset]` Template fields of type `RemoteImage` are fetched by the `noctis-image` AssetFetcher (hyper-util + hyper-rustls, no redirects) against an origin allow-list on `RemoteConfig` (Discord CDN by default, loopback-only plain http), under a semaphore (`concurrency`), a per-image `timeout` covering permit wait, request and body, a byte cap, a 4 MP pixel cap, and `max_per_job`. Decoding runs on the blocking pool; results are cached in the namespaced `AssetStore` bound through `Renderer::bind(RendererPorts)`. Optional images that fail draw `RemoteConfig::fallback` with a `noctis::image` warning (query-free URL); required ones fail the render with a typed error.
+- **Files changed (review pass):** `crates/noctis-image/src/remote.rs` (URL length enforced on the canonical form, doc fix for http hosts); `remote/config.rs` (case-insensitive origin scheme); `remote/fetch.rs` (`Arc<Semaphore>` + `acquire_owned`, permit moved into the blocking decode); `remote/fetch/tests.rs` (warning capture, body/permit timeout tests); `remote/config/tests.rs`, `remote/tests.rs`, `renderer/tests/remote.rs` (boundary, scheme-case and custom-fallback tests); `crates/noctis-image/Cargo.toml` + `Cargo.lock` (dev-dep `tracing-subscriber`); `examples/project-template/.claude/skills/noctis/references/images.md` (http wording). Implementation files are in commit 8fed800.
+- **Review findings:** 38 total (high 0, medium 5, low 22, false 11). Patched: 4 medium (permit released on cancellation; warning not asserted; timeout not verified for body/permit; "with a log" unverified — same patch as warning) and 5 low (canonical-URL length, http doc x2, origin scheme case, custom fallback test). Deferred: 5 (story-loop harness: gates.sh debug guard, epic-last.py fetch errors, bg.sh exit race, bundled harness changes, AGENTS.md debug-build text vs maintainer decision §6). Rejected: 24, each with its reason in the Review Triage Log (spec-prescribed behavior, out of scope for 10.9/10.10, or new guards without demonstrated harm).
+- **Follow-up review recommended: true** (first pass, 4 medium patched, 0 high). Named risk: the semaphore change (owned permit moved into the `spawn_blocking` decode) alters cancellation/concurrency semantics and is verified only by the new tests, not by an independent review.
+- **Verification:** local gates via `tools/story-loop/gates.sh` all green (fmt, clippy, workspace tests, api-snapshot, deps-check, rules-catalog, skill-check, tw-grammar, tw_crosscheck, cargo deny, MSRV 1.91). CI paused by the maintainer.
+- **Residual risks:** `AssetStore` get/put are not deadline-bounded (only matters for a stalling custom adapter); loopback/IPv6 and default-port spellings are not canonicalized; asset Templates may get `QueueFull` after fetch time (documented); harness AGENTS.md debug-build text conflicts with maintainer decision §6 (deferred).

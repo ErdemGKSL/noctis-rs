@@ -175,18 +175,25 @@ impl RemoteImage {
         Self { source }
     }
 
-    /// The image at `url`: `https://` (or `http://` on a loopback host), at
-    /// most 2048 printable ASCII bytes, no user info or fragment. Its origin
-    /// must be allow-listed ([`RemoteConfig::allow_origin`]) when it is
-    /// resolved, else it draws the fallback.
+    /// The image at `url`: `https://` or `http://`, at most 2048 printable
+    /// ASCII bytes (also after canonicalization), no user info or fragment.
+    /// Its origin must be allow-listed ([`RemoteConfig::allow_origin`]) when
+    /// it is resolved, else it draws the fallback; plain `http://` can be
+    /// allow-listed only for a loopback host, so any other `http://` URL
+    /// draws the fallback.
     ///
     /// # Errors
     ///
     /// A [`RemoteUrlError`] naming the first rule `url` breaks.
     pub fn url(url: &str) -> Result<Self, RemoteUrlError> {
-        let parsed = ParsedUrl::parse(url)?;
+        let canonical = ParsedUrl::parse(url)?.canonical();
+        if canonical.len() > MAX_URL_BYTES {
+            return Err(RemoteUrlError::TooLong {
+                len: canonical.len(),
+            });
+        }
         Ok(Self {
-            source: Source::Url(parsed.canonical()),
+            source: Source::Url(canonical),
         })
     }
 

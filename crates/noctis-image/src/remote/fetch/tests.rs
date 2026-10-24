@@ -2,7 +2,7 @@
 //! caps, statuses, redirects, timeouts, bodies, the allow-list, the cache,
 //! concurrency and cancellation.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant as StdInstant};
 
 use noctis_ports::PortError;
@@ -146,6 +146,35 @@ async fn img_03_timeout() {
 }
 
 #[tokio::test]
+async fn img_03_timeout_covers_body_and_permit() {
+    // The head arrives at once; the body (10 bytes claimed) never does.
+    let server = Server::start(|_| Reply::Claim(10)).await;
+    let fetcher = fetcher_for(
+        &server,
+        RemoteConfig::new().timeout(Duration::from_millis(100)),
+    );
+    let started = StdInstant::now();
+    assert_eq!(
+        reason(&fetcher, &image(&server, "/body")).await,
+        "timed out after 100ms"
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+    // With one permit, the second image times out waiting for it.
+    let fetcher = fetcher_for(
+        &server,
+        RemoteConfig::new()
+            .timeout(Duration::from_millis(100))
+            .concurrency(1),
+    );
+    let (stalled, waiting) = (image(&server, "/stall"), image(&server, "/wait"));
+    let started = StdInstant::now();
+    let (first, second) = tokio::join!(reason(&fetcher, &stalled), reason(&fetcher, &waiting));
+    assert_eq!(first, "timed out after 100ms");
+    assert_eq!(second, "timed out after 100ms");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[tokio::test]
 async fn img_03_bad_bodies() {
     let truncated = {
         let mut body = png(8, 8, RED);
@@ -250,6 +279,111 @@ async fn img_03_resolve_draws_the_fallback_or_fails_required() {
         (id.as_str(), image, reason.as_str()),
         ("card", format!("{}/missing", server.origin()), "HTTP 404")
     );
+}
+
+/// Every log line of the current thread while the guard lives.
+#[derive(Clone, Default)]
+struct Lines(Arc<Mutex<Vec<u8>>>);
+
+impl Lines {
+    fn warnings(&self) -> Vec<String> {
+        String::from_utf8(self.0.lock().unwrap().clone())
+            .unwrap()
+            .lines()
+            .filter(|line| line.contains("WARN") && line.contains("noctis::image"))
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+impl std::io::Write for Lines {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Lines {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// A thread-local capturing subscriber. A second registered dispatcher
+/// keeps tracing-core from caching a callsite's interest from whichever
+/// subscriber saw it first (as in noctis-testkit's `capture_lines`).
+fn capture_lines() -> (Lines, impl Sized) {
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    let lines = Lines::default();
+    let second = tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
+    let guard = tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .with_ansi(false)
+        .with_writer(lines.clone())
+        .finish()
+        .set_default();
+    tracing::callsite::rebuild_interest_cache();
+    (lines, (guard, second))
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn img_03_each_fallback_logs_one_warning() {
+    let (lines, _guard) = capture_lines();
+    let server = Server::start(|_| Reply::Status(404)).await;
+    let fetcher = fetcher(&server);
+    let unlisted = RemoteImage::url("https://example.com/x.png").unwrap();
+    let missing = image(&server, "/missing?token=1");
+    fetcher
+        .resolve(
+            None,
+            "card",
+            vec![
+                declared("a", false, unlisted),
+                declared("b", false, missing),
+            ],
+            false,
+        )
+        .await
+        .unwrap();
+    let warnings = lines.warnings();
+    assert_eq!(warnings.len(), 2, "{warnings:#?}");
+    let unlisted_line = &warnings[0];
+    assert!(unlisted_line.contains("field=a"), "{unlisted_line}");
+    assert!(
+        unlisted_line.contains("origin `https://example.com` is not allow-listed"),
+        "{unlisted_line}"
+    );
+    assert!(
+        unlisted_line.contains("image=https://example.com/x.png"),
+        "{unlisted_line}"
+    );
+    let missing_line = &warnings[1];
+    assert!(missing_line.contains("field=b"), "{missing_line}");
+    assert!(missing_line.contains("HTTP 404"), "{missing_line}");
+    assert!(
+        missing_line.contains(&format!("image={}/missing", server.origin())),
+        "{missing_line}"
+    );
+    for line in &warnings {
+        assert!(!line.contains("token="), "{line}");
+    }
+    // The placeholder never fetches and never logs.
+    let before = lines.warnings().len();
+    let plan = fetcher
+        .plan(
+            "card",
+            vec![declared("p", false, RemoteImage::placeholder())],
+        )
+        .unwrap();
+    fetcher.resolve(None, "card", plan, false).await.unwrap();
+    assert_eq!(lines.warnings().len(), before);
 }
 
 #[tokio::test]

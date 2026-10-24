@@ -65,6 +65,21 @@ fn img_03_origins_accepted_and_deduped() {
 }
 
 #[test]
+fn img_03_origin_scheme_ignores_case() {
+    assert_eq!(
+        Origin::parse("HTTPS://i.imgur.com"),
+        Origin::parse("https://i.imgur.com")
+    );
+    assert!(Origin::parse("HTTPS://i.imgur.com").is_ok());
+    assert!(
+        RemoteConfig::new()
+            .allow_origin("HTTPS://i.imgur.com")
+            .validate()
+            .is_empty()
+    );
+}
+
+#[test]
 fn img_03_invalid_origins_are_violations() {
     let cases = [
         ("", "it is empty"),

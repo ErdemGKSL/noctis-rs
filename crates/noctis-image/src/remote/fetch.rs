@@ -26,7 +26,7 @@ use hyper_util::rt::{TokioExecutor, TokioTimer};
 use image::{ExtendedColorType, ImageEncoder};
 use noctis_ports::{AssetStore, RenderCap, RenderError};
 use takumi::prelude::ImageSource;
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout_at};
 
 use super::{Declared, Origin, ParsedUrl, RemoteConfig, RemoteImage};
@@ -50,7 +50,7 @@ pub(crate) struct AssetFetcher {
     max_pixels: u64,
     max_per_job: usize,
     cache_ttl: Duration,
-    permits: Semaphore,
+    permits: Arc<Semaphore>,
     fallback: ImageSource,
 }
 
@@ -137,7 +137,7 @@ impl AssetFetcher {
             max_pixels: config.max_pixels_value(),
             max_per_job: config.max_per_job_value(),
             cache_ttl: config.cache_ttl_value(),
-            permits: Semaphore::new(config.concurrency_value()),
+            permits: Arc::new(Semaphore::new(config.concurrency_value())),
             fallback,
         })
     }
@@ -260,15 +260,19 @@ impl AssetFetcher {
         }
         let deadline = Instant::now() + self.timeout;
         let timed_out = || format!("timed out after {:?}", self.timeout);
-        let _permit = timeout_at(deadline, self.permits.acquire())
-            .await
-            .map_err(|_| timed_out())?
-            .map_err(|_| "the fetcher is closed".to_owned())?;
+        // Shared with every decode on the blocking pool, so a cancelled
+        // render releases the permit only when its decode ends.
+        let permit = Arc::new(
+            timeout_at(deadline, Arc::clone(&self.permits).acquire_owned())
+                .await
+                .map_err(|_| timed_out())?
+                .map_err(|_| "the fetcher is closed".to_owned())?,
+        );
         if let Some(store) = store {
             match store.get(&target.key).await {
                 Ok(Some(bytes)) => {
                     // Bytes that no longer pass the checks count as a miss.
-                    if let Ok(source) = self.decode(bytes).await {
+                    if let Ok(source) = self.decode(bytes, &permit).await {
                         return Ok(source);
                     }
                 }
@@ -285,7 +289,7 @@ impl AssetFetcher {
         let bytes = timeout_at(deadline, self.get(&target.url))
             .await
             .map_err(|_| timed_out())??;
-        let source = self.decode(bytes.clone()).await?;
+        let source = self.decode(bytes.clone(), &permit).await?;
         if let Some(store) = store
             && let Err(error) = store.put(&target.key, bytes, Some(self.cache_ttl)).await
         {
@@ -339,12 +343,22 @@ impl AssetFetcher {
         Ok(body.to_bytes())
     }
 
-    /// Sniffs, size-checks and decodes `bytes` on tokio's blocking pool.
-    async fn decode(&self, bytes: Bytes) -> Result<ImageSource, String> {
+    /// Sniffs, size-checks and decodes `bytes` on tokio's blocking pool,
+    /// holding `permit` until the decode ends (even when this future is
+    /// dropped).
+    async fn decode(
+        &self,
+        bytes: Bytes,
+        permit: &Arc<OwnedSemaphorePermit>,
+    ) -> Result<ImageSource, String> {
         let max_pixels = self.max_pixels;
-        tokio::task::spawn_blocking(move || check_and_decode(&bytes, max_pixels))
-            .await
-            .map_err(|_| "could not be decoded: the decoder panicked".to_owned())?
+        let permit = Arc::clone(permit);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            check_and_decode(&bytes, max_pixels)
+        })
+        .await
+        .map_err(|_| "could not be decoded: the decoder panicked".to_owned())?
     }
 }
 

@@ -90,6 +90,21 @@ fn img_03_url_bounds_and_bytes() {
 }
 
 #[test]
+fn img_03_url_canonical_form_respects_the_length_limit() {
+    // An empty path gains a `/`, so a 2048-byte input becomes 2049 bytes.
+    let base = "https://h?q=";
+    let input = format!("{base}{}", "a".repeat(2048 - base.len()));
+    assert_eq!(input.len(), 2048);
+    assert_eq!(
+        RemoteImage::url(&input),
+        Err(RemoteUrlError::TooLong { len: 2049 })
+    );
+    let fits = &input[..2047];
+    let image = RemoteImage::url(fits).unwrap();
+    assert_eq!(target(&image, false).url.len(), 2048);
+}
+
+#[test]
 fn img_03_url_shape_and_parts() {
     for url in [
         "ftp://x/y",

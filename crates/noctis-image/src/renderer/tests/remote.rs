@@ -256,6 +256,30 @@ async fn img_03_the_placeholder_always_draws_the_fallback() {
 }
 
 #[tokio::test]
+async fn img_03_a_configured_fallback_is_drawn() {
+    const BLUE: [u8; 4] = [0, 0, 255, 255];
+    let server = Server::start(|_| Reply::Status(404)).await;
+    let bytes: &'static [u8] = png(1, 1, BLUE).leak();
+    let r = remote_renderer(
+        &RemoteConfig::new()
+            .discord_cdn(server.origin())
+            .fallback(crate::StaticImage::new("fb", bytes)),
+    );
+    let a = RemoteImage::url(&server.url("/a.png")).unwrap();
+    let out = r
+        .render(pic(vec![a.clone()], vec![a], false))
+        .await
+        .unwrap();
+    assert_eq!(corner(&out.bytes), BLUE, "a failed image");
+    let p = RemoteImage::placeholder();
+    let out = r
+        .render(pic(vec![p.clone()], vec![p], false))
+        .await
+        .unwrap();
+    assert_eq!(corner(&out.bytes), BLUE, "the placeholder");
+}
+
+#[tokio::test]
 async fn img_03_duplicates_are_fetched_once_and_option_vec_shapes() {
     let server = Server::start(|_| Reply::Ok(png(2, 2, RED))).await;
     let r = for_server(&server);
