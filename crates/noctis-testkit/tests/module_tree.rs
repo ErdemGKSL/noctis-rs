@@ -306,9 +306,12 @@ async fn three_level_tree_end_to_end() {
     }
 
     // Spans: the leaf's full path is the `module` field of both.
+    let field = format!("module=\"{LEAF}\"");
     until("the spans", || {
-        !capture.lines_with(&["noctis.interaction", LEAF]).is_empty()
-            && !capture.lines_with(&["noctis.event", LEAF]).is_empty()
+        !capture
+            .lines_with(&["noctis.interaction", &field])
+            .is_empty()
+            && !capture.lines_with(&["noctis.event", &field]).is_empty()
     })
     .await;
     run.abort();

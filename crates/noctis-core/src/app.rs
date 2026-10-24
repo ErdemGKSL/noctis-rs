@@ -2481,8 +2481,10 @@ impl AppBuilder {
     /// # Errors
     ///
     /// One [`BuildError`] with every violation: setters', plugins' reports
-    /// and the checks', in that order; among the checks, missing intents
-    /// (GW-05), then every [`BuildViolation::Command`] (in the rule engine's
+    /// and the checks', in that order; among the checks, every
+    /// [`BuildViolation::InvalidModuleId`] and
+    /// [`BuildViolation::DuplicateModule`], then missing intents (GW-05),
+    /// then every [`BuildViolation::Command`] (in the rule engine's
     /// order, then each declared or fallback description that differs from
     /// the value sent for its owner catalog's default locale, CMD-04, sorted
     /// by key), then every [`BuildViolation::CommandLocalization`] (sorted by

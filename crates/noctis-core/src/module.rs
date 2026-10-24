@@ -609,7 +609,7 @@ pub enum ModuleIdError {
     ///     "the id has 65 characters: shorten it to at most 64"
     /// );
     /// ```
-    #[error("the id has {len} characters: shorten it to at most 64")]
+    #[error("the id has {len} characters: shorten it to at most {MAX_ID_LEN}")]
     TooLong {
         /// The number of characters.
         len: usize,

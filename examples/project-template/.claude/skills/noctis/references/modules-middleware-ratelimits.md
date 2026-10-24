@@ -90,7 +90,8 @@ Module::new("profile")
   once per App (mounting the same tree on two Apps is fine). A reusable library Module
   is a root with its own one-segment id; it cannot be re-parented without changing ids.
 - `Module::new` never fails; `build()` (and `--publish --dry-run`) checks every mounted
-  id and lists every problem, before the other build checks:
+  id and lists every problem, after the setter and plugin violations and first among
+  the Registry checks:
   - ``invalid Module id `…`: <reason>`` is `BuildViolation::InvalidModuleId { id,
     reason: ModuleIdError }`. `ModuleIdError` is `Empty`, `TooLong { len }`,
     `InvalidChar { index, ch }` or `EmptySegment { index }` (grammar; character

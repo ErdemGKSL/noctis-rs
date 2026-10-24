@@ -2,7 +2,7 @@
 title: 'Story 13.1: Module trees with unique path ids'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '82229f55fc10f5cea0d727a2e9724ad1956f9d2b'
 review_loop_iteration: 0
 followup_review_recommended: false
@@ -11,7 +11,42 @@ context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-13-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
 warnings: ['oversized']
-deferred: []
+deferred:
+  - summary: >-
+      epic-last.py keeps an epic open while a maintainer-gated or never-done story remains, and silently ignores failed git fetch/show, so cargo hack can be skipped for a whole epic.
+    evidence: |-
+      tools/story-loop/epic-last.py counts every non-done story of the epic (locally and on origin/main) and does not check the return codes of git fetch or git show; [Maintainer-gated] stories never reach done in unattended runs. Pre-existing tooling from commit 2defad7, not Story 13.1.
+    location: >-
+      tools/story-loop/epic-last.py:19-32
+    severity: medium
+  - summary: >-
+      gates.sh treats an epic-last.py crash as "not last" and still prints ALL-OK, and epic-last.py picks any in-progress/review row instead of the story being gated.
+    evidence: |-
+      gates.sh only tests epic-last.py's exit status for zero; a Python traceback (exit 1) skips cargo hack silently. With several lanes, an in-progress story of another epic can decide the hack step. Pre-existing tooling from commit 2defad7.
+    location: >-
+      tools/story-loop/gates.sh:27
+    severity: medium
+  - summary: >-
+      epic-last.py has no fixture test for its last-story branch, so a regression can stop cargo hack for whole epics with no gate failing.
+    evidence: |-
+      Verification-gap layer: a repo search for epic-last finds only gates.sh, README.md and AGENTS.md; no test runs the script. Pre-existing tooling from commit 2defad7.
+    location: >-
+      tools/story-loop/epic-last.py
+    severity: medium
+  - summary: >-
+      The debug-builds-allowed policy (AGENTS.md "Running and verifying", dropped FAIL:debug-dir gate) contradicts maintainer-decisions.md section 6 "Release builds only", and AGENTS.md still says to run cargo hack before calling work done while also saying agents never run it.
+    evidence: |-
+      Commit 2defad7 rewrote AGENTS.md and removed `test ! -d target/debug` from gates.sh without updating maintainer-decisions.md section 6; the template troubleshooting text still says release only. The fix edits agent-context files and the decisions page, so it is deferred to the maintainer.
+    location: >-
+      AGENTS.md; tools/story-loop/gates.sh; _bmad-output/planning-artifacts/maintainer-decisions.md
+    severity: medium
+  - summary: >-
+      bg.sh has job-lifecycle races: two attached callers race on cleanup (second gets exit ""), a killed job leaves callers waiting forever, a command that changes the tree gets a new key on rerun, and tail -f is killed after a fixed sleep.
+    evidence: |-
+      tools/story-loop/bg.sh moves and removes the job directory after the first waiter reads status, has no liveness check on the job pid, and keys jobs on the tree state. Pre-existing tooling from commit 2defad7.
+    location: >-
+      tools/story-loop/bg.sh:8-30
+    severity: low
 ---
 
 <intent-contract>
@@ -142,6 +177,41 @@ Display strings (exact, tested):
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 31 findings — high 0, medium 9, low 14, false 8, maybe-false 0
+- findings:
+  - `[false]` `[reject]` (blind) NotUnderParent for a child of a grammar-invalid parent gives advice that is itself invalid — matrix row T8 in the intent contract settles exactly this output.
+  - `[false]` `[reject]` (blind) a repeated invalid id yields one InvalidModuleId per occurrence plus DuplicateModule — matrix row T12 settles this interleaving.
+  - `[low]` `[reject]` (blind) DuplicateModule names no location of the first occurrence — real, but the variant shape and exact Display text are fixed by the intent contract; the fix is a spec edit plus new public surface.
+  - `[low]` `[reject]` (blind) "mounted twice" text for three occurrences — the exact Display string is pinned by the intent contract; fix is a spec edit.
+  - `[low]` `[patch]` (blind) TooLong hard-codes 64 in its `#[error]` text while check_id uses MAX_ID_LEN — interpolate the constant so the text cannot drift; same rendered string.
+  - `[false]` `[reject]` (blind) length checked before characters (65 x `ü` gives TooLong) — matrix row G7 settles this order deliberately.
+  - `[low]` `[patch]` (blind) module_tree span assertion only checks substrings, not the `module` field — the test is weaker than the AC "span `module` field is ops/mod/audit"; match the rendered `module=` field.
+  - `[low]` `[reject]` (blind) no test for a plugin-mounted multi-segment root or for dry-run reporting — plugin roots go into the same `self.modules` and dry run calls the same `Registry::fold` (lib.rs:518), already covered by T14 and the fold unit tests; extra tests add no defect fix.
+  - `[medium]` `[defer]` (blind) epic-last.py keeps epics with maintainer-gated stories open forever and ignores git failures — pre-existing tooling from commit 2defad7; deferred.
+  - `[medium]` `[defer]` (blind) AGENTS.md contradicts itself on cargo hack and on debug builds; gates.sh dropped the debug-dir check — pre-existing commit 2defad7 and fix edits agent-context files; deferred (grouped with the debug-build policy entry).
+  - `[false]` `[reject]` (blind) the diff bundles unrelated tooling and policy changes — those are separate earlier commits (2defad7 and before) that appear only because the baseline predates them; the story commit 3417063 touches only story files plus a test-isolation fix in session_resume.rs needed by the new capturing-subscriber test.
+  - `[low]` `[defer]` (blind) bg.sh cleanup race between two attached callers and log truncation — pre-existing tooling from 2defad7; deferred.
+  - `[false]` `[reject]` (blind) `tracing.workspace = true` out of alphabetical order and needs a comment — the list already has `tracing-subscriber` after `twilight-gateway`, and session_resume.rs's KEEPER doc comment explains why the dependency exists.
+  - `[low]` `[reject]` (blind) template move of `/badge` into `profile/badges` lacks guidance on when to nest — the move is what the spec's task asked for; the skill's root `BadgesList` is a subcommand sample, not a conflict; documentation nuance, not a defect.
+  - `[low]` `[defer]` (edge) bg.sh second waiter exits with `exit ""` after the first moves the job dir — pre-existing tooling; deferred with the bg.sh entry.
+  - `[low]` `[defer]` (edge) bg.sh waits forever when the detached job is killed — pre-existing tooling; deferred with the bg.sh entry.
+  - `[low]` `[defer]` (edge) bg.sh rerun after a tree-changing command starts a second run — pre-existing tooling; deferred with the bg.sh entry.
+  - `[medium]` `[defer]` (edge) gates.sh treats an epic-last.py crash as "not last" and prints ALL-OK — pre-existing tooling; deferred.
+  - `[medium]` `[defer]` (edge) epic-last.py ignores failed git fetch/show — pre-existing tooling; deferred with the epic-last entry.
+  - `[medium]` `[defer]` (edge) epic-last.py picks any in-progress/review row across epics — pre-existing tooling; deferred with the gates.sh entry.
+  - `[false]` `[reject]` (edge) NotUnderParent suggests an invalid `A/<name>` under an invalid parent — matrix row T8 settles this.
+  - `[low]` `[patch]` (edge) skill says id violations come "before the other build checks" — false for AppBuilder::build, which pushes setter/plugin violations (DuplicateState, InvalidShardTotal, ...) before the fold's; reword to "first among the Registry checks".
+  - `[medium]` `[patch]` (vgap) the template's new `profile` -> `profile/badges` tree is never built by any gate — run the template's own tests once for this story and fix any failure.
+  - `[medium]` `[defer]` (vgap) gates.sh no longer fails on target/debug — pre-existing commit 2defad7 policy change; deferred with the debug-build policy entry.
+  - `[medium]` `[defer]` (vgap) epic-last.py untested — pre-existing tooling; deferred as filed.
+  - `[low]` `[patch]` (vgap other) skill's "before the other build checks" claim — same root cause as the edge-layer row; same fix.
+  - `[low]` `[patch]` (vgap other) AppBuilder::build `# Errors` doc lists the checks' order without the new Module-id violations — add InvalidModuleId/DuplicateModule as first among the checks.
+  - `[false]` `[reject]` (intent D1) author-written path (R2) instead of composed path (R1) — the intent contract's Approach and Never clause ("no id rewriting at `.module(..)`") select R2 deliberately.
+  - `[false]` `[reject]` (intent D2) grammar, 64-char cap and one-segment roots go beyond "path-like, unique" — the intent contract's Always clauses set exactly these rules.
+  - `[low]` `[patch]` (intent D3) AC3 span proof only checks substrings — grouped with the blind span-assertion row; same fix.
+  - `[medium]` `[defer]` (intent D4) out-of-scope AGENTS.md debug-build policy contradicts maintainer-decisions section 6 — pre-existing commit 2defad7 and fix edits agent-context/decision files; deferred to the maintainer.
+
 ## Design Notes
 
 - (decision) Ids are author-written full paths, validated, not relative segments joined at nest time. Joining would change `Module::id()` after nesting and force owned ids through `BuildViolation`'s public `&'static str` fields and every registry entry; the spine (`Module::new("a/b")`) and the existing doc example (`Module::new("profile").module(Module::new("profile/badges"))`) already use full paths. Cost: a reusable library Module cannot be re-parented without changing its id; it exposes a root-level Module with its own single segment instead.
@@ -171,3 +241,14 @@ Run from `/home/claude/lanes/b/noctis-rs`, release only:
 - `cargo +1.91 check --release --workspace` -- expected: exit 0
 - `cargo hack test --release --workspace --each-feature` -- only in the epic's last story per the story loop (`tools/story-loop/gates.sh`); not required here
 - Optional: `cargo check --release --manifest-path examples/project-template/Cargo.toml --target-dir target/template` -- template compiles (delete `target/template` if disk is tight)
+
+## Auto Run Result
+
+- Summary: Module ids are author-written full tree paths (`profile`, `profile/badges`), validated at App build: grammar, 64-char cap (MAX_ID_LEN), one-segment roots, each child adds exactly one segment under its parent, and uniqueness across all trees. New BuildViolation variants InvalidModuleId and DuplicateModule are reported first among the Registry checks. Middleware order and the span/report `module` field proven at depth 3.
+- Files changed: `crates/noctis-core/src/module.rs` (id grammar, check_id, tree fold), `crates/noctis-core/src/app.rs` (violations, `# Errors` doc order), `crates/noctis-macros/src/command.rs`, `crates/noctis/src/lib.rs`, existing tests updated to valid ids; `crates/noctis-testkit/tests/module_tree.rs` (new depth-3 test); `crates/noctis-testkit/tests/session_resume.rs` (subscriber isolation); template `profile/badges` nesting, AGENTS.md and noctis skill references; `xtask/public-api.txt` re-blessed with SKILL.md API hash.
+- Review findings: 31 (high 0, medium 9, low 14, false 8). Patched 7 entries (medium 1, low 6): TooLong text interpolates MAX_ID_LEN; span assertion matches the `module=` field; skill wording "first among the Registry checks" (2 rows); `# Errors` doc lists module-id violations; template tests run for the new tree; AC3 span proof (grouped).
+- Deferred 11: pre-existing story-loop tooling from commit 2defad7 (epic-last.py git-failure handling and untested, gates.sh crash-as-not-last, bg.sh races/hangs) and the AGENTS.md debug-build/cargo-hack policy contradiction (maintainer).
+- Rejected 13: matrix rows T8/T12/G7 settle advice, interleaving and check order; DuplicateModule location and "mounted twice" text pinned by the intent contract; plugin-root/dry-run tests redundant (same fold); bundled-tooling diff is earlier commits; dependency order fine; template nesting guidance is a nuance; R2 path ids and grammar rules chosen by the intent contract.
+- Follow-up review recommended: false (patched: high 0, medium 1, low 6).
+- Verification: local gates via `tools/story-loop/gates.sh` all green (fmt, clippy -D warnings, workspace tests, xtask deps-check/tw-grammar/rules-catalog/api-snapshot/skill-check, tw_crosscheck, cargo deny, MSRV 1.91); cargo hack not run (not epic-last). CI paused by maintainer.
+- Residual risks: reusable library Modules cannot be re-parented without changing their ids; deferred story-loop tooling issues remain.

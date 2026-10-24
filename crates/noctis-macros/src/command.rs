@@ -1386,10 +1386,13 @@ mod tests {
             #[command("mod ban", locales = "../noctis/tests/fixtures/i18n/cmd")]
             struct Ban;
         });
-        let file = std::fs::canonicalize(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../noctis/tests/fixtures/i18n/cmd/en-US.yaml"
-        ))
+        // The macro resolves `locales` against the runtime
+        // `CARGO_MANIFEST_DIR`, which can differ from the compile-time one
+        // when the test binary is built in another checkout.
+        let dir = std::env::var_os("CARGO_MANIFEST_DIR").unwrap();
+        let file = std::fs::canonicalize(
+            std::path::Path::new(&dir).join("../noctis/tests/fixtures/i18n/cmd/en-US.yaml"),
+        )
         .unwrap();
         let expected = format!("include_bytes ! ({:?})", file.to_str().unwrap());
         assert!(out.contains(&expected), "{expected} in {out}");
