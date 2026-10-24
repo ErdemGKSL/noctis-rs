@@ -64,6 +64,8 @@ fn options(url: String, total: u32, close_timeout: Duration) -> GatewayOptions {
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::new(16).unwrap())),
         session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
         resume: true,
+        presence: None,
+        large_threshold: noctis_gateway::LargeThreshold::default(),
         shards: 0..total,
         total: NonZeroU32::new(total).unwrap(),
         max_concurrency: NonZeroU16::new(16).unwrap(),

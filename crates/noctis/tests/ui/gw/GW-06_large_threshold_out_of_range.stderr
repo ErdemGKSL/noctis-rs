@@ -1,0 +1,51 @@
+error[E0277]: [GW-06] `LargeThreshold::new::<N>()` takes 50..=250 (Discord's `large_threshold` range)
+ --> tests/ui/gw/GW-06_large_threshold_out_of_range.rs:4:35
+  |
+4 |     let _ = LargeThreshold::new::<49>();
+  |                                   ^^ outside 50..=250
+  |
+  = help: the trait `noctis_gateway::presence::ValidLargeThreshold` is not implemented for `noctis_gateway::presence::Threshold<49>`
+  = help: the following other types implement trait `noctis_gateway::presence::ValidLargeThreshold`:
+            noctis_gateway::presence::Threshold<100>
+            noctis_gateway::presence::Threshold<101>
+            noctis_gateway::presence::Threshold<102>
+            noctis_gateway::presence::Threshold<103>
+            noctis_gateway::presence::Threshold<104>
+            noctis_gateway::presence::Threshold<105>
+            noctis_gateway::presence::Threshold<106>
+            noctis_gateway::presence::Threshold<107>
+          and $N others
+note: required by a bound in `LargeThreshold::new`
+ --> $WORKSPACE/crates/noctis-gateway/src/presence.rs
+  |
+  |     pub const fn new<const N: u16>() -> Self
+  |                  --- required by a bound in this associated function
+  |     where
+  |         Threshold<N>: ValidLargeThreshold,
+  |                       ^^^^^^^^^^^^^^^^^^^ required by this bound in `LargeThreshold::new`
+
+error[E0277]: [GW-06] `LargeThreshold::new::<N>()` takes 50..=250 (Discord's `large_threshold` range)
+ --> tests/ui/gw/GW-06_large_threshold_out_of_range.rs:5:35
+  |
+5 |     let _ = LargeThreshold::new::<251>();
+  |                                   ^^^ outside 50..=250
+  |
+  = help: the trait `noctis_gateway::presence::ValidLargeThreshold` is not implemented for `noctis_gateway::presence::Threshold<251>`
+  = help: the following other types implement trait `noctis_gateway::presence::ValidLargeThreshold`:
+            noctis_gateway::presence::Threshold<100>
+            noctis_gateway::presence::Threshold<101>
+            noctis_gateway::presence::Threshold<102>
+            noctis_gateway::presence::Threshold<103>
+            noctis_gateway::presence::Threshold<104>
+            noctis_gateway::presence::Threshold<105>
+            noctis_gateway::presence::Threshold<106>
+            noctis_gateway::presence::Threshold<107>
+          and $N others
+note: required by a bound in `LargeThreshold::new`
+ --> $WORKSPACE/crates/noctis-gateway/src/presence.rs
+  |
+  |     pub const fn new<const N: u16>() -> Self
+  |                  --- required by a bound in this associated function
+  |     where
+  |         Threshold<N>: ValidLargeThreshold,
+  |                       ^^^^^^^^^^^^^^^^^^^ required by this bound in `LargeThreshold::new`

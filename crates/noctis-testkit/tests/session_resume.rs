@@ -249,6 +249,8 @@ fn options(
         identify_queue: queue,
         session_store: store,
         resume,
+        presence: None,
+        large_threshold: noctis_gateway::LargeThreshold::default(),
         shards: 0..total,
         total: NonZeroU32::new(total).unwrap(),
         max_concurrency: NonZeroU16::new(16).unwrap(),

@@ -243,6 +243,9 @@ pub(crate) struct AppShared {
     /// ends (the testkit's hidden seam, `__testing::observe_runs`); `None`
     /// in production. It only observes.
     pub(crate) run_observer: Option<RunObserver>,
+    /// The App's gateway command handle: attached while `run` runs the
+    /// shards, detached otherwise (`App::gateway`, `ctx.gateway()`).
+    pub(crate) gateway: noctis_gateway::GatewayHandle,
 }
 
 /// The hidden run-end observer of [`AppShared::run_observer`].
@@ -333,6 +336,12 @@ impl EventCtx {
     /// The App's one Discord HTTP client (the `Arc` `App::http` returns).
     pub fn http(&self) -> &Arc<twilight_http::Client> {
         &self.0.app.http
+    }
+
+    /// The App's gateway command handle (the one `App::gateway` returns):
+    /// set the presence, request guild members from the owning shard.
+    pub fn gateway(&self) -> noctis_gateway::GatewayHandle {
+        self.0.app.gateway.clone()
     }
 
     /// The App's Command [`Dispatcher`]: runs a registered Command from

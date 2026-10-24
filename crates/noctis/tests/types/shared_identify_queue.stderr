@@ -25,7 +25,7 @@ note: required by a bound in `AppBuilder::identify_queue`
   | /     port_setters! {
   | |         namespaced {
   | |             ref_store(RefStore) = "MemoryRefStore", "MemoryRefStore::new()";
-  | |             session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()";
+  | |             session_store(SessionStore) = "MemorySessionStore", "MemorySessionStore::new()",
 ... |
   | |             identify_queue(IdentifyQueue) = "MemoryIdentifyQueue", "MemoryIdentifyQueue::default()";
   | |             -------------- required by a bound in this associated function

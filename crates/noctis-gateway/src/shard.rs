@@ -15,8 +15,14 @@ use tokio::time::Instant;
 use tracing::Instrument;
 use twilight_gateway::error::{ReceiveMessageError, ReceiveMessageErrorType};
 use twilight_gateway::{Config, ConfigBuilder, Event, EventTypeFlags, Message, Shard, ShardId};
+use twilight_model::gateway::OpCode;
 use twilight_model::gateway::event::{GatewayEvent, GatewayEventDeserializer};
+use twilight_model::gateway::payload::incoming::RateLimited;
+use twilight_model::gateway::payload::incoming::rate_limited::RateLimitMetadata;
+use twilight_model::id::Id;
+use twilight_model::id::marker::GuildMarker;
 
+use crate::command::{Pending, ShardInbox, answer_nonce, last_presence};
 use crate::gateway::CloseMode;
 use crate::inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 use crate::queue::PortQueue;
@@ -26,6 +32,10 @@ use crate::session::{self, ResumeState, STORE_TIMEOUT, Stale};
 const DISPATCH: u8 = 0;
 /// The invalid session opcode.
 const INVALID_SESSION: u8 = 9;
+/// Event types every shard task parses whether or not a handler wants
+/// them: the answers of member requests.
+const INTERCEPTED: EventTypeFlags =
+    EventTypeFlags::MEMBER_CHUNK.union(EventTypeFlags::RATE_LIMITED);
 
 /// What one text frame produced.
 #[derive(Debug, Default)]
@@ -55,7 +65,9 @@ struct Envelope<'a> {
 
 /// Turns one text frame into a status change and/or an [`Inbound`].
 ///
-/// Never logs the payload: parse failures name only the event type.
+/// Dispatches of `wanted` types become items, and so do the
+/// [`INTERCEPTED`] types ([`route`] decides where those go). Never logs the
+/// payload: parse failures name only the event type.
 pub(crate) fn classify(
     text: String,
     wanted: EventTypeFlags,
@@ -108,7 +120,19 @@ pub(crate) fn classify(
         None
     };
 
-    let kind = match twilight_gateway::parse(text, wanted) {
+    if op == DISPATCH && event_type.as_deref() == Some("RATE_LIMITED") {
+        return Classified {
+            status,
+            inbound: rate_limited(&text).map(|event| Inbound {
+                shard,
+                received_at,
+                kind: InboundKind::Event(Box::new(event)),
+            }),
+            invalid_session: None,
+        };
+    }
+
+    let kind = match twilight_gateway::parse(text, wanted | INTERCEPTED) {
         Ok(Some(GatewayEvent::Dispatch(_, event))) => match (Event::from(event), raw) {
             (Event::InteractionCreate(create), Some(raw)) => Some(InboundKind::Interaction(
                 Box::new(create.0),
@@ -137,6 +161,65 @@ pub(crate) fn classify(
             kind,
         }),
         invalid_session: None,
+    }
+}
+
+/// A `RATE_LIMITED` dispatch's `d` as Discord sends it: twilight 0.17.1
+/// expects an externally tagged `meta`, so it cannot parse the real
+/// payload.
+#[derive(Deserialize)]
+struct RateLimitedDispatch {
+    d: RateLimitedData,
+}
+
+#[derive(Deserialize)]
+struct RateLimitedData {
+    opcode: u8,
+    retry_after: f32,
+    meta: RateLimitedMeta,
+}
+
+#[derive(Deserialize)]
+struct RateLimitedMeta {
+    guild_id: Id<GuildMarker>,
+    #[serde(default)]
+    nonce: Option<String>,
+}
+
+/// The opcode of Request Guild Members.
+const REQUEST_GUILD_MEMBERS: u8 = 8;
+
+/// Parses a `RATE_LIMITED` dispatch into twilight's event; `None` (with a
+/// `warn`) for an unreadable payload or an opcode other than Request Guild
+/// Members, the only one Discord rate limits this way.
+fn rate_limited(text: &str) -> Option<Event> {
+    match serde_json::from_str::<RateLimitedDispatch>(text) {
+        Ok(RateLimitedDispatch { d }) if d.opcode == REQUEST_GUILD_MEMBERS => {
+            Some(Event::RateLimited(RateLimited {
+                opcode: OpCode::RequestGuildMembers,
+                retry_after: d.retry_after,
+                meta: RateLimitMetadata::RequestGuildMembers {
+                    guild_id: d.meta.guild_id,
+                    nonce: d.meta.nonce,
+                },
+            }))
+        }
+        Ok(RateLimitedDispatch { d }) => {
+            tracing::warn!(
+                target: "noctis::gateway",
+                opcode = d.opcode,
+                "RATE_LIMITED for an unknown opcode; ignored"
+            );
+            None
+        }
+        Err(_) => {
+            tracing::warn!(
+                target: "noctis::gateway",
+                event_type = "RATE_LIMITED",
+                "gateway payload could not be parsed; ignored"
+            );
+            None
+        }
     }
 }
 
@@ -180,6 +263,44 @@ pub(crate) struct Lane {
     pub(crate) sink: Arc<dyn InboundSink>,
     /// Where status changes go.
     pub(crate) events: UnboundedSender<ShardEvent>,
+    /// The commands to send and the latest runtime presence.
+    pub(crate) inbox: ShardInbox,
+    /// The member requests awaiting answers (every shard's).
+    pub(crate) pending: Arc<Pending>,
+}
+
+/// Hands one parsed item on: a member chunk or `RATE_LIMITED` answering a
+/// pending request goes to its waiter, and to the sink only when a handler
+/// wants its type (cloned when both); anything else goes to the sink.
+fn route(inbound: Inbound, lane: &Lane) {
+    let InboundKind::Event(event) = &inbound.kind else {
+        lane.sink.push(inbound);
+        return;
+    };
+    let flag = match &**event {
+        Event::MemberChunk(_) => EventTypeFlags::MEMBER_CHUNK,
+        Event::RateLimited(_) => EventTypeFlags::RATE_LIMITED,
+        _ => {
+            lane.sink.push(inbound);
+            return;
+        }
+    };
+    let delivered = answer_nonce(event).is_some_and(|nonce| lane.pending.deliver(nonce, event));
+    if !delivered && let Event::RateLimited(limited) = &**event {
+        let guild = match &limited.meta {
+            RateLimitMetadata::RequestGuildMembers { guild_id, .. } => Some(guild_id.get()),
+            _ => None,
+        };
+        tracing::warn!(
+            target: "noctis::gateway",
+            guild,
+            retry_after = limited.retry_after,
+            "gateway command rate limited (RATE_LIMITED) with no pending request"
+        );
+    }
+    if lane.wanted.contains(flag) {
+        lane.sink.push(inbound);
+    }
 }
 
 /// How a shard task uses the `SessionStore` at start.
@@ -272,7 +393,7 @@ async fn close_requested(close: &mut watch::Receiver<Option<CloseMode>>) -> Clos
 
 async fn drive(
     mut shard: Shard<PortQueue>,
-    lane: Lane,
+    mut lane: Lane,
     stored: Stored,
     mut resume: ResumeState,
     mut close: watch::Receiver<Option<CloseMode>>,
@@ -284,6 +405,12 @@ async fn drive(
         let item = tokio::select! {
             biased;
             mode = close_requested(&mut close) => break Some(mode),
+            Some(command) = lane.inbox.commands.recv() => {
+                // Twilight holds it until the shard is identified and paces
+                // it with its own ratelimiter.
+                shard.send(command);
+                continue;
+            }
             item = shard.next() => item,
         };
         let Some(item) = item else { break None };
@@ -300,11 +427,18 @@ async fn drive(
                 let received_at = Instant::now();
                 let classified = classify(text, lane.wanted, id, received_at);
                 let stale = resume.on_frame(classified.status.as_ref(), classified.invalid_session);
+                if matches!(classified.status, Some(ShardEvent::Ready { .. }))
+                    && let Some(presence) = last_presence(&lane.inbox.presence)
+                {
+                    // A new session identified with the initial presence:
+                    // restore the one set at run time (not on RESUMED).
+                    shard.send(presence);
+                }
                 if let Some(status) = classified.status {
                     let _ = lane.events.send(status);
                 }
                 if let Some(inbound) = classified.inbound {
-                    lane.sink.push(inbound);
+                    route(inbound, &lane);
                 }
                 if let Some(stale) = stale {
                     match stale {
@@ -700,6 +834,132 @@ mod tests {
         }
         let ready = dispatch("RESUMED", "null");
         assert_eq!(run(&ready, EventTypeFlags::all()).invalid_session, None);
+    }
+
+    /// Records what reaches the sink.
+    #[derive(Default)]
+    struct Recorder(std::sync::Mutex<Vec<Inbound>>);
+
+    impl InboundSink for Recorder {
+        fn push(&self, inbound: Inbound) {
+            self.0.lock().unwrap().push(inbound);
+        }
+    }
+
+    fn lane(wanted: EventTypeFlags) -> (Lane, Arc<Recorder>) {
+        let recorder = Arc::new(Recorder::default());
+        let (events, _) = tokio::sync::mpsc::unbounded_channel();
+        let (_tx, commands) = tokio::sync::mpsc::unbounded_channel();
+        let lane = Lane {
+            wanted,
+            sink: Arc::clone(&recorder) as Arc<dyn InboundSink>,
+            events,
+            inbox: ShardInbox {
+                commands,
+                presence: Arc::default(),
+            },
+            pending: Arc::default(),
+        };
+        (lane, recorder)
+    }
+
+    fn chunk_frame(nonce: &str) -> String {
+        dispatch(
+            "GUILD_MEMBERS_CHUNK",
+            &format!(
+                r#"{{"guild_id":"5","members":[],"chunk_index":0,"chunk_count":1,"not_found":["9"],"nonce":"{nonce}"}}"#
+            ),
+        )
+    }
+
+    fn rate_limited_frame(nonce: &str) -> String {
+        dispatch(
+            "RATE_LIMITED",
+            &format!(
+                r#"{{"opcode":8,"retry_after":2.5,"meta":{{"guild_id":"5","nonce":"{nonce}"}}}}"#
+            ),
+        )
+    }
+
+    /// Discord's wire form of `RATE_LIMITED`; other opcodes are ignored.
+    #[test]
+    fn gw_07_rate_limited_wire_form_parses() {
+        let out = run(&rate_limited_frame("n"), EventTypeFlags::empty());
+        let Some(Inbound {
+            kind: InboundKind::Event(event),
+            ..
+        }) = out.inbound
+        else {
+            panic!("no event");
+        };
+        let Event::RateLimited(limited) = *event else {
+            panic!("not RATE_LIMITED");
+        };
+        assert!((limited.retry_after - 2.5).abs() < f32::EPSILON);
+        assert_eq!(
+            limited.meta,
+            RateLimitMetadata::RequestGuildMembers {
+                guild_id: Id::new(5),
+                nonce: Some("n".to_owned()),
+            }
+        );
+        let other = dispatch(
+            "RATE_LIMITED",
+            r#"{"opcode":3,"retry_after":1,"meta":{"guild_id":"5"}}"#,
+        );
+        assert!(run(&other, EventTypeFlags::all()).inbound.is_none());
+        let broken = dispatch("RATE_LIMITED", r#"{"opcode":8}"#);
+        assert!(run(&broken, EventTypeFlags::all()).inbound.is_none());
+    }
+
+    fn deliver(text: &str, lane: &Lane) {
+        let out = classify(text.to_owned(), lane.wanted, ShardId::ONE, Instant::now());
+        route(out.inbound.expect("parsed"), lane);
+    }
+
+    /// M12: chunks and `RATE_LIMITED` with a foreign nonce reach the sink
+    /// only when a handler wants them.
+    #[test]
+    fn gw_07_foreign_answers_follow_wanted() {
+        let (unwanted, recorder) = lane(EventTypeFlags::INTERACTION_CREATE);
+        deliver(&chunk_frame("x"), &unwanted);
+        deliver(&rate_limited_frame("x"), &unwanted);
+        assert!(recorder.0.lock().unwrap().is_empty());
+
+        let wanted = EventTypeFlags::MEMBER_CHUNK | EventTypeFlags::RATE_LIMITED;
+        let (wanting, recorder) = lane(wanted);
+        deliver(&chunk_frame("x"), &wanting);
+        deliver(&rate_limited_frame("x"), &wanting);
+        let kinds: Vec<_> = recorder
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|inbound| match &inbound.kind {
+                InboundKind::Event(event) => event.kind(),
+                InboundKind::Interaction(..) => panic!("an interaction"),
+            })
+            .collect();
+        assert_eq!(kinds, [EventType::MemberChunk, EventType::RateLimited]);
+    }
+
+    /// M17 (unit): a pending answer reaches its waiter, and the sink too
+    /// only when a handler wants it.
+    #[test]
+    fn pending_answers_reach_the_waiter() {
+        for (wanted, sunk) in [
+            (EventTypeFlags::INTERACTION_CREATE, 0),
+            (EventTypeFlags::MEMBER_CHUNK, 1),
+        ] {
+            let (lane, recorder) = lane(wanted);
+            let (_registration, mut answers) = lane.pending.register("n".to_owned());
+            deliver(&chunk_frame("n"), &lane);
+            assert!(answers.try_recv().is_ok(), "{wanted:?}");
+            assert_eq!(recorder.0.lock().unwrap().len(), sunk, "{wanted:?}");
+            deliver(&rate_limited_frame("n"), &lane);
+            assert!(answers.try_recv().is_ok(), "{wanted:?}");
+            assert_eq!(recorder.0.lock().unwrap().len(), sunk, "{wanted:?}");
+        }
     }
 
     #[test]

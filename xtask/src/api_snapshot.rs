@@ -63,7 +63,8 @@ const TARGET_DIR: &str = "target/public-api";
 /// traits (CV2-05), which nothing outside `noctis-ui` can name, and the sealed
 /// supertraits of `EventPayload`, `Descriptor`, the Responder traits,
 /// `SuggestionValue`, `NamespacedPort`, `IntoPort`, `RawHttp`, the static
-/// placement traits, `Ownership`, `IntoNodes` and `AppBuilderImageExt`.
+/// placement traits, `Ownership`, `IntoNodes` and `AppBuilderImageExt`, and
+/// the const-generic bounds of `LargeThreshold::new` and `MemberRequest::users`.
 const HIDDEN: &[(&str, &str)] = &[
     ("noctis_ui::Handled", "noctis::__private::ui::Handled"),
     (
@@ -120,6 +121,24 @@ const HIDDEN: &[(&str, &str)] = &[
     (
         "noctis_core::raw_http::sealed",
         "noctis::__private::core::raw_http::sealed",
+    ),
+    // The compile-time bounds of `LargeThreshold::new` (GW-06) and
+    // `MemberRequest::users` (GW-07), hidden in `noctis_gateway::__bounds`.
+    (
+        "noctis_gateway::presence::Threshold",
+        "noctis::__private::core::gateway::__bounds::Threshold",
+    ),
+    (
+        "noctis_gateway::presence::ValidLargeThreshold",
+        "noctis::__private::core::gateway::__bounds::ValidLargeThreshold",
+    ),
+    (
+        "noctis_gateway::command::UserIds",
+        "noctis::__private::core::gateway::__bounds::UserIds",
+    ),
+    (
+        "noctis_gateway::command::UserIdCount",
+        "noctis::__private::core::gateway::__bounds::UserIdCount",
     ),
 ];
 

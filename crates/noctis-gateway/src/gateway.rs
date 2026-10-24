@@ -9,12 +9,13 @@ use std::time::Duration;
 use noctis_ports::{IdentifyQueue, SessionStore};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
-use twilight_gateway::{CloseFrame, EventTypeFlags, Intents, ShardId};
+use twilight_gateway::{CloseFrame, ConfigBuilder, EventTypeFlags, Intents, ShardId};
 
+use crate::command::Commands;
 use crate::inbound::{InboundSink, ShardEvent};
 use crate::queue::PortQueue;
 use crate::shard::{Lane, SessionStart};
-use crate::{ShardConfigError, shard, shard_config};
+use crate::{GatewayHandle, LargeThreshold, Presence, ShardConfigError, shard, shard_config};
 
 /// How [`Gateway::close_all`] closes the shards.
 ///
@@ -64,6 +65,8 @@ impl CloseMode {
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
 ///     session_store: Arc::new(MemorySessionStore::new()),
 ///     resume: true,
+///     presence: None,
+///     large_threshold: Default::default(),
 ///     shards: 0..1,
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
@@ -94,6 +97,12 @@ pub struct GatewayOptions {
     /// instead and identifies (`--no-resume`). Only this Gateway's shards
     /// (`shards`, under the current `total`) are touched.
     pub resume: bool,
+    /// The presence every shard identifies with (`None`: Discord's
+    /// default, online without an activity). Change it at run time with
+    /// [`GatewayHandle::presence`].
+    pub presence: Option<Presence>,
+    /// The IDENTIFY `large_threshold` (GW-06; 50 by default).
+    pub large_threshold: LargeThreshold,
     /// The shard ids this process runs, within `0..total` (half-open, never
     /// empty): `0..total` for a single process, one Cluster process's Shard
     /// Range otherwise. Ids are global, so a shard's bucket is always
@@ -118,6 +127,8 @@ impl fmt::Debug for GatewayOptions {
             .field("event_types", &self.event_types)
             .field("session_store", &"..")
             .field("resume", &self.resume)
+            .field("presence", &self.presence)
+            .field("large_threshold", &self.large_threshold)
             .field("shards", &self.shards)
             .field("total", &self.total)
             .field("max_concurrency", &self.max_concurrency)
@@ -155,6 +166,8 @@ impl fmt::Debug for GatewayOptions {
 ///     identify_queue: Arc::new(MemoryIdentifyQueue::default()),
 ///     session_store: Arc::new(MemorySessionStore::new()),
 ///     resume: true,
+///     presence: None,
+///     large_threshold: Default::default(),
 ///     shards: 0..1,
 ///     total: NonZeroU32::MIN,
 ///     max_concurrency: NonZeroU16::MIN,
@@ -172,6 +185,8 @@ pub struct Gateway {
     total: u32,
     /// The requested close; `None` until [`Gateway::close_all`].
     close: watch::Sender<Option<CloseMode>>,
+    /// The command side of every shard.
+    commands: Arc<Commands>,
 }
 
 impl Gateway {
@@ -205,6 +220,8 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     resume: true,
+    /// #     presence: None,
+    /// #     large_threshold: Default::default(),
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -234,17 +251,30 @@ impl Gateway {
             options.gateway_url.as_deref(),
             queue,
         )?;
+        // `LargeThreshold` is within 50..=250, so twilight's assert holds.
+        let mut config =
+            ConfigBuilder::from(config).large_threshold(u64::from(options.large_threshold.get()));
+        if let Some(presence) = &options.presence {
+            config = config.presence(presence.to_payload());
+        }
+        let config = config.build();
         let (tx, rx) = mpsc::unbounded_channel();
         let (close, close_rx) = watch::channel(None);
+        let (commands, inboxes) =
+            Commands::new(shards.clone(), total, options.intents, close_rx.clone());
+        let commands = Arc::new(commands);
         let mut tasks = JoinSet::new();
-        for id in shards
+        for (id, inbox) in shards
             .clone()
             .filter_map(|number| ShardId::new_checked(number, total))
+            .zip(inboxes)
         {
             let lane = Lane {
                 wanted: options.event_types,
                 sink: Arc::clone(&sink),
                 events: tx.clone(),
+                inbox,
+                pending: Arc::clone(commands.pending()),
             };
             tasks.spawn(shard::run(
                 id,
@@ -265,9 +295,46 @@ impl Gateway {
                 shards,
                 total,
                 close,
+                commands,
             },
             rx,
         ))
+    }
+
+    /// A [`GatewayHandle`] on these shards: presence updates and Request
+    /// Guild Members go to the owning shard's task. Once
+    /// [`close_all`](Self::close_all) was called, every command is
+    /// [`GatewayError::NotRunning`](crate::GatewayError::NotRunning).
+    ///
+    /// ```no_run
+    /// # use std::{num::{NonZeroU16, NonZeroU32}, sync::Arc};
+    /// # use noctis_gateway::{EventTypeFlags, Gateway, GatewayOptions, Inbound, InboundSink};
+    /// use noctis_gateway::Presence;
+    /// # struct Discard;
+    /// # impl InboundSink for Discard { fn push(&self, _: Inbound) {} }
+    /// # #[tokio::main] async fn main() -> Result<(), noctis_gateway::ShardConfigError> {
+    /// # let options = GatewayOptions {
+    /// #     app: Arc::from("default"),
+    /// #     token: "token".to_owned(),
+    /// #     intents: twilight_gateway::Intents::GUILDS,
+    /// #     gateway_url: None,
+    /// #     event_types: EventTypeFlags::all(),
+    /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
+    /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
+    /// #     resume: true,
+    /// #     presence: None,
+    /// #     large_threshold: Default::default(),
+    /// #     shards: 0..1,
+    /// #     total: NonZeroU32::MIN,
+    /// #     max_concurrency: NonZeroU16::MIN,
+    /// #     close_timeout: std::time::Duration::from_secs(5),
+    /// # };
+    /// let (gateway, _events) = Gateway::start(options, Arc::new(Discard))?;
+    /// gateway.handle().presence().set(Presence::idle()).unwrap();
+    /// # Ok(()) }
+    /// ```
+    pub fn handle(&self) -> GatewayHandle {
+        GatewayHandle::live(Arc::clone(&self.commands))
     }
 
     /// The shard total every shard identifies with (`[id, total]`), which
@@ -288,6 +355,8 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     resume: true,
+    /// #     presence: None,
+    /// #     large_threshold: Default::default(),
     /// #     shards: 2..4,
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -318,6 +387,8 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     resume: true,
+    /// #     presence: None,
+    /// #     large_threshold: Default::default(),
     /// #     shards: 2..4,
     /// #     total: NonZeroU32::new(4).unwrap(),
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -358,6 +429,8 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     resume: true,
+    /// #     presence: None,
+    /// #     large_threshold: Default::default(),
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -402,6 +475,8 @@ impl Gateway {
     /// #     identify_queue: Arc::new(noctis_ports::memory::MemoryIdentifyQueue::default()),
     /// #     session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
     /// #     resume: true,
+    /// #     presence: None,
+    /// #     large_threshold: Default::default(),
     /// #     shards: 0..1,
     /// #     total: NonZeroU32::MIN,
     /// #     max_concurrency: NonZeroU16::MIN,
@@ -425,7 +500,7 @@ impl fmt::Debug for Gateway {
             .field("total", &self.total)
             .field("running", &self.tasks.len())
             .field("closing", &*self.close.borrow())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -452,6 +527,8 @@ mod tests {
             identify_queue: Arc::new(MemoryIdentifyQueue::default()),
             session_store: Arc::new(MemorySessionStore::new()),
             resume: true,
+            presence: None,
+            large_threshold: LargeThreshold::default(),
             shards,
             total: NonZeroU32::new(total).unwrap(),
             max_concurrency: NonZeroU16::MIN,

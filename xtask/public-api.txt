@@ -74,6 +74,7 @@ pub fn noctis::App::app_id(&self) -> &noctis::AppId
 pub fn noctis::App::builder() -> noctis::AppBuilder
 pub fn noctis::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
+pub fn noctis::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::App::has_renderer(&self) -> bool
 pub fn noctis::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -83,6 +84,7 @@ pub fn noctis::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub fn noctis::App::is_publisher(&self) -> bool
 pub fn noctis::App::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::App::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::App::ref_ttl(&self) -> core::time::Duration
 pub fn noctis::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
@@ -119,6 +121,7 @@ pub fn noctis::AppBuilder::http_proxy(&mut self, impl core::convert::Into<alloc:
 pub fn noctis::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
+pub fn noctis::AppBuilder::large_threshold(&mut self, noctis::gateway::LargeThreshold) -> &mut Self
 pub fn noctis::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::AppBuilder::locale_resolver(&mut self, impl noctis::LocaleResolver) -> &mut Self
 pub fn noctis::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
@@ -128,6 +131,7 @@ pub fn noctis::AppBuilder::module_state_store(&mut self, impl noctis::ports::Int
 pub fn noctis::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::AppBuilder::presence(&mut self, noctis::gateway::Presence) -> &mut Self
 pub fn noctis::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
@@ -466,6 +470,7 @@ impl noctis::CommandCtx
 pub fn noctis::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::CommandCtx::command_path(&self) -> &'static str
 pub fn noctis::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
+pub fn noctis::CommandCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::CommandCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -614,6 +619,7 @@ pub struct noctis::ComponentCtx(_)
 impl noctis::ComponentCtx
 pub fn noctis::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::ComponentCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -851,6 +857,7 @@ pub struct noctis::ExpiredCtx(_)
 impl noctis::ExpiredCtx
 pub fn noctis::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::ExpiredCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -1316,6 +1323,7 @@ pub struct noctis::ModalSubmitCtx(_)
 impl noctis::ModalSubmitCtx
 pub fn noctis::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::ModalSubmitCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -2350,6 +2358,7 @@ pub use noctis::events::EntitlementDelete
 pub use noctis::events::EntitlementUpdate
 impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
+pub fn noctis::events::EventCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -2365,6 +2374,7 @@ pub fn noctis::events::EventCtx::fmt(&self, &mut core::fmt::Formatter<'_>) -> co
 pub struct noctis::events::EventCtx(_)
 impl noctis::events::EventCtx
 pub fn noctis::events::EventCtx::dispatcher(&self) -> &noctis::Dispatcher
+pub fn noctis::events::EventCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::events::EventCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::events::EventCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::events::EventCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -2566,6 +2576,176 @@ pub use noctis::events::UserUpdate
 pub use noctis::events::VoiceServerUpdate
 pub use noctis::events::VoiceStateUpdate
 pub use noctis::events::WebhooksUpdate
+pub mod noctis::gateway
+pub struct noctis::gateway::Activity
+impl noctis::gateway::Activity
+pub fn noctis::gateway::Activity::competing(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Activity::custom(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Activity::listening(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Activity::playing(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Activity::state(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Activity::streaming(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Activity::watching(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for noctis::gateway::Activity
+pub fn noctis::gateway::Activity::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::Activity
+impl core::cmp::PartialEq for noctis::gateway::Activity
+pub fn noctis::gateway::Activity::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::gateway::Activity
+pub fn noctis::gateway::Activity::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::gateway::Activity
+pub fn noctis::gateway::Activity::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for noctis::gateway::Activity
+#[non_exhaustive] pub enum noctis::gateway::GatewayError
+pub noctis::gateway::GatewayError::EmptyQuery
+pub noctis::gateway::GatewayError::GuildNotInRange
+pub noctis::gateway::GatewayError::GuildNotInRange::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::gateway::GatewayError::GuildNotInRange::range: core::ops::range::Range<u32>
+pub noctis::gateway::GatewayError::GuildNotInRange::shard: u32
+pub noctis::gateway::GatewayError::InvalidLimit
+pub noctis::gateway::GatewayError::InvalidLimit::limit: u16
+pub noctis::gateway::GatewayError::MissingIntent
+pub noctis::gateway::GatewayError::MissingIntent::intent: &'static str
+pub noctis::gateway::GatewayError::NoUserIds
+pub noctis::gateway::GatewayError::NotRunning
+pub noctis::gateway::GatewayError::RateLimited
+pub noctis::gateway::GatewayError::RateLimited::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::gateway::GatewayError::RateLimited::retry_after: core::time::Duration
+pub noctis::gateway::GatewayError::SendLimit
+pub noctis::gateway::GatewayError::SendLimit::retry_after: core::time::Duration
+pub noctis::gateway::GatewayError::SendLimit::shard: u32
+pub noctis::gateway::GatewayError::ShardClosed
+pub noctis::gateway::GatewayError::ShardClosed::shard: u32
+pub noctis::gateway::GatewayError::ShardNotInRange
+pub noctis::gateway::GatewayError::ShardNotInRange::range: core::ops::range::Range<u32>
+pub noctis::gateway::GatewayError::ShardNotInRange::shard: u32
+pub noctis::gateway::GatewayError::Timeout
+pub noctis::gateway::GatewayError::Timeout::guild: twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub noctis::gateway::GatewayError::TooManyUserIds
+pub noctis::gateway::GatewayError::TooManyUserIds::len: usize
+impl core::clone::Clone for noctis::gateway::GatewayError
+pub fn noctis::gateway::GatewayError::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::GatewayError
+impl core::cmp::PartialEq for noctis::gateway::GatewayError
+pub fn noctis::gateway::GatewayError::eq(&self, &Self) -> bool
+impl core::error::Error for noctis::gateway::GatewayError
+impl core::fmt::Debug for noctis::gateway::GatewayError
+pub fn noctis::gateway::GatewayError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for noctis::gateway::GatewayError
+pub fn noctis::gateway::GatewayError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::gateway::GatewayError
+pub struct noctis::gateway::GatewayHandle
+impl noctis::gateway::GatewayHandle
+pub fn noctis::gateway::GatewayHandle::detached() -> Self
+pub fn noctis::gateway::GatewayHandle::presence(&self) -> noctis::gateway::PresenceHandle
+pub fn noctis::gateway::GatewayHandle::request_guild_members(&self, noctis::gateway::MemberRequest) -> impl core::future::future::Future<Output = core::result::Result<noctis::gateway::GuildMembers, noctis::gateway::GatewayError>> + core::marker::Send + 'static
+pub fn noctis::gateway::GatewayHandle::shard_for_guild(&self, twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> core::result::Result<u32, noctis::gateway::GatewayError>
+impl core::clone::Clone for noctis::gateway::GatewayHandle
+pub fn noctis::gateway::GatewayHandle::clone(&self) -> Self
+impl core::default::Default for noctis::gateway::GatewayHandle
+pub fn noctis::gateway::GatewayHandle::default() -> Self
+impl core::fmt::Debug for noctis::gateway::GatewayHandle
+pub fn noctis::gateway::GatewayHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct noctis::gateway::GuildMembers
+pub noctis::gateway::GuildMembers::members: alloc::vec::Vec<twilight_model::guild::member::Member>
+pub noctis::gateway::GuildMembers::not_found: alloc::vec::Vec<twilight_model::id::Id<twilight_model::id::marker::UserMarker>>
+pub noctis::gateway::GuildMembers::presences: alloc::vec::Vec<twilight_model::gateway::presence::Presence>
+impl core::clone::Clone for noctis::gateway::GuildMembers
+pub fn noctis::gateway::GuildMembers::clone(&self) -> Self
+impl core::cmp::PartialEq for noctis::gateway::GuildMembers
+pub fn noctis::gateway::GuildMembers::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::gateway::GuildMembers
+pub fn noctis::gateway::GuildMembers::default() -> Self
+impl core::fmt::Debug for noctis::gateway::GuildMembers
+pub fn noctis::gateway::GuildMembers::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::gateway::GuildMembers
+pub struct noctis::gateway::LargeThreshold(_)
+impl noctis::gateway::LargeThreshold
+pub const fn noctis::gateway::LargeThreshold::get(self) -> u16
+pub const fn noctis::gateway::LargeThreshold::new<const N: u16>() -> Self where noctis::__private::core::gateway::__bounds::Threshold<N>: noctis::__private::core::gateway::__bounds::ValidLargeThreshold
+impl core::clone::Clone for noctis::gateway::LargeThreshold
+pub fn noctis::gateway::LargeThreshold::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::LargeThreshold
+impl core::cmp::PartialEq for noctis::gateway::LargeThreshold
+pub fn noctis::gateway::LargeThreshold::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::gateway::LargeThreshold
+pub fn noctis::gateway::LargeThreshold::default() -> Self
+impl core::fmt::Debug for noctis::gateway::LargeThreshold
+pub fn noctis::gateway::LargeThreshold::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::gateway::LargeThreshold
+pub fn noctis::gateway::LargeThreshold::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::gateway::LargeThreshold
+impl core::marker::StructuralPartialEq for noctis::gateway::LargeThreshold
+pub struct noctis::gateway::MemberRequest
+impl noctis::gateway::MemberRequest
+pub fn noctis::gateway::MemberRequest::all(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>) -> Self
+pub const fn noctis::gateway::MemberRequest::guild(&self) -> twilight_model::id::Id<twilight_model::id::marker::GuildMarker>
+pub fn noctis::gateway::MemberRequest::prefix(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, impl core::convert::Into<alloc::string::String>, u16) -> core::result::Result<Self, noctis::gateway::GatewayError>
+pub const fn noctis::gateway::MemberRequest::presences(self, bool) -> Self
+pub fn noctis::gateway::MemberRequest::user_list(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, impl core::iter::traits::collect::IntoIterator<Item = twilight_model::id::Id<twilight_model::id::marker::UserMarker>>) -> core::result::Result<Self, noctis::gateway::GatewayError>
+pub fn noctis::gateway::MemberRequest::users<const N: usize>(twilight_model::id::Id<twilight_model::id::marker::GuildMarker>, [twilight_model::id::Id<twilight_model::id::marker::UserMarker>; N]) -> Self where noctis::__private::core::gateway::__bounds::UserIds<N>: noctis::__private::core::gateway::__bounds::UserIdCount
+impl core::clone::Clone for noctis::gateway::MemberRequest
+pub fn noctis::gateway::MemberRequest::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::MemberRequest
+impl core::cmp::PartialEq for noctis::gateway::MemberRequest
+pub fn noctis::gateway::MemberRequest::eq(&self, &Self) -> bool
+impl core::fmt::Debug for noctis::gateway::MemberRequest
+pub fn noctis::gateway::MemberRequest::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for noctis::gateway::MemberRequest
+pub struct noctis::gateway::Presence
+impl noctis::gateway::Presence
+pub fn noctis::gateway::Presence::activity(self, noctis::gateway::Activity) -> Self
+pub const fn noctis::gateway::Presence::afk(self, bool) -> Self
+pub fn noctis::gateway::Presence::competing(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Presence::custom(impl core::convert::Into<alloc::string::String>) -> Self
+pub const fn noctis::gateway::Presence::dnd() -> Self
+pub const fn noctis::gateway::Presence::idle() -> Self
+pub const fn noctis::gateway::Presence::invisible() -> Self
+pub fn noctis::gateway::Presence::listening(impl core::convert::Into<alloc::string::String>) -> Self
+pub const fn noctis::gateway::Presence::new(noctis::gateway::Status) -> Self
+pub const fn noctis::gateway::Presence::online() -> Self
+pub fn noctis::gateway::Presence::playing(impl core::convert::Into<alloc::string::String>) -> Self
+pub const fn noctis::gateway::Presence::status(self, noctis::gateway::Status) -> Self
+pub fn noctis::gateway::Presence::streaming(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn noctis::gateway::Presence::watching(impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for noctis::gateway::Presence
+pub fn noctis::gateway::Presence::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::Presence
+impl core::cmp::PartialEq for noctis::gateway::Presence
+pub fn noctis::gateway::Presence::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::gateway::Presence
+pub fn noctis::gateway::Presence::default() -> Self
+impl core::fmt::Debug for noctis::gateway::Presence
+pub fn noctis::gateway::Presence::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::gateway::Presence
+pub fn noctis::gateway::Presence::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for noctis::gateway::Presence
+pub struct noctis::gateway::PresenceHandle
+impl noctis::gateway::PresenceHandle
+pub fn noctis::gateway::PresenceHandle::set(&self, noctis::gateway::Presence) -> core::result::Result<(), noctis::gateway::GatewayError>
+pub fn noctis::gateway::PresenceHandle::set_shard(&self, u32, noctis::gateway::Presence) -> core::result::Result<(), noctis::gateway::GatewayError>
+impl core::clone::Clone for noctis::gateway::PresenceHandle
+pub fn noctis::gateway::PresenceHandle::clone(&self) -> Self
+impl core::fmt::Debug for noctis::gateway::PresenceHandle
+pub fn noctis::gateway::PresenceHandle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum noctis::gateway::Status
+pub noctis::gateway::Status::DoNotDisturb
+pub noctis::gateway::Status::Idle
+pub noctis::gateway::Status::Invisible
+pub noctis::gateway::Status::Online
+impl core::clone::Clone for noctis::gateway::Status
+pub fn noctis::gateway::Status::clone(&self) -> Self
+impl core::cmp::Eq for noctis::gateway::Status
+impl core::cmp::PartialEq for noctis::gateway::Status
+pub fn noctis::gateway::Status::eq(&self, &Self) -> bool
+impl core::default::Default for noctis::gateway::Status
+pub fn noctis::gateway::Status::default() -> Self
+impl core::fmt::Debug for noctis::gateway::Status
+pub fn noctis::gateway::Status::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for noctis::gateway::Status
+pub fn noctis::gateway::Status::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for noctis::gateway::Status
+impl core::marker::StructuralPartialEq for noctis::gateway::Status
 pub mod noctis::http
 pub use noctis::http::Method
 pub trait noctis::http::RawHttp: noctis::__private::core::raw_http::sealed::Sealed
@@ -4104,6 +4284,7 @@ pub fn noctis::prelude::App::app_id(&self) -> &noctis::AppId
 pub fn noctis::prelude::App::builder() -> noctis::AppBuilder
 pub fn noctis::prelude::App::dev_guild(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::App::from_env() -> core::result::Result<noctis::AppBuilder, noctis::Error>
+pub fn noctis::prelude::App::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::App::gateway_url(&self) -> core::option::Option<&str>
 pub fn noctis::prelude::App::has_renderer(&self) -> bool
 pub fn noctis::prelude::App::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -4113,6 +4294,7 @@ pub fn noctis::prelude::App::http_timeout(&self) -> core::time::Duration
 pub fn noctis::prelude::App::intents(&self) -> twilight_model::gateway::intents::Intents
 pub fn noctis::prelude::App::is_publisher(&self) -> bool
 pub fn noctis::prelude::App::limits(&self) -> &noctis::rules::Limits
+pub fn noctis::prelude::App::presence(&self) -> noctis::gateway::PresenceHandle
 pub fn noctis::prelude::App::publish(&self, noctis::publish::PublishScope) -> noctis::publish::Publish<'_>
 pub fn noctis::prelude::App::ref_ttl(&self) -> core::time::Duration
 pub fn noctis::prelude::App::renderer(&self) -> core::option::Option<&alloc::rcs::arc::Arc<dyn noctis::ports::Renderer>>
@@ -4149,6 +4331,7 @@ pub fn noctis::prelude::AppBuilder::http_proxy(&mut self, impl core::convert::In
 pub fn noctis::prelude::AppBuilder::http_timeout(&mut self, core::time::Duration) -> &mut Self
 pub fn noctis::prelude::AppBuilder::identify_queue(&mut self, impl noctis::ports::IdentifyQueue) -> &mut Self
 pub fn noctis::prelude::AppBuilder::intents(&mut self, twilight_model::gateway::intents::Intents) -> &mut Self
+pub fn noctis::prelude::AppBuilder::large_threshold(&mut self, noctis::gateway::LargeThreshold) -> &mut Self
 pub fn noctis::prelude::AppBuilder::limits(&mut self, noctis::rules::Limits) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_resolver(&mut self, impl noctis::LocaleResolver) -> &mut Self
 pub fn noctis::prelude::AppBuilder::locale_source(&mut self, impl noctis::ports::LocaleSource) -> &mut Self
@@ -4158,6 +4341,7 @@ pub fn noctis::prelude::AppBuilder::module_state_store(&mut self, impl noctis::p
 pub fn noctis::prelude::AppBuilder::payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin<P: noctis::Plugin>(&mut self, P) -> &mut Self
 pub fn noctis::prelude::AppBuilder::plugin_mut<P: noctis::Plugin>(&mut self) -> core::option::Option<&mut P>
+pub fn noctis::prelude::AppBuilder::presence(&mut self, noctis::gateway::Presence) -> &mut Self
 pub fn noctis::prelude::AppBuilder::previous_payload_key(&mut self, noctis::codec::PayloadKey) -> &mut Self
 pub fn noctis::prelude::AppBuilder::publisher(&mut self, bool) -> &mut Self
 pub fn noctis::prelude::AppBuilder::rate_limit_store(&mut self, impl noctis::ports::IntoPort<dyn noctis::ports::RateLimitStore>) -> &mut Self
@@ -4257,6 +4441,7 @@ impl noctis::prelude::CommandCtx
 pub fn noctis::prelude::CommandCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::CommandCtx::command_path(&self) -> &'static str
 pub fn noctis::prelude::CommandCtx::ephemerality(&self) -> noctis::Ephemerality
+pub fn noctis::prelude::CommandCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::CommandCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::CommandCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::CommandCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -4324,6 +4509,7 @@ pub struct noctis::prelude::ComponentCtx(_)
 impl noctis::prelude::ComponentCtx
 pub fn noctis::prelude::ComponentCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ComponentCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::prelude::ComponentCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::ComponentCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ComponentCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ComponentCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -4417,6 +4603,7 @@ pub struct noctis::prelude::ExpiredCtx(_)
 impl noctis::prelude::ExpiredCtx
 pub fn noctis::prelude::ExpiredCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ExpiredCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::prelude::ExpiredCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::ExpiredCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ExpiredCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ExpiredCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>
@@ -4578,6 +4765,7 @@ pub struct noctis::prelude::ModalSubmitCtx(_)
 impl noctis::prelude::ModalSubmitCtx
 pub fn noctis::prelude::ModalSubmitCtx::channel_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::ChannelMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::current_ref(&self) -> core::option::Option<noctis::codec::Ref>
+pub fn noctis::prelude::ModalSubmitCtx::gateway(&self) -> noctis::gateway::GatewayHandle
 pub fn noctis::prelude::ModalSubmitCtx::guild_id(&self) -> core::option::Option<twilight_model::id::Id<twilight_model::id::marker::GuildMarker>>
 pub fn noctis::prelude::ModalSubmitCtx::guild_locale(&self) -> noctis::rules::Locale
 pub fn noctis::prelude::ModalSubmitCtx::http(&self) -> &alloc::rcs::arc::Arc<twilight_http::client::Client>

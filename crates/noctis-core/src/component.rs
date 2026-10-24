@@ -257,6 +257,19 @@ macro_rules! ctx_accessors {
                 }
             }
 
+            /// The App's gateway command handle (the one `App::gateway`
+            /// returns): set the presence, request guild members from the
+            /// owning shard; a detached handle (every call
+            /// `GatewayError::NotRunning`) in the detached test seams.
+            pub fn gateway(&self) -> noctis_gateway::GatewayHandle {
+                self.0
+                    .app
+                    .as_ref()
+                    .map_or_else(noctis_gateway::GatewayHandle::detached, |app| {
+                        app.gateway.clone()
+                    })
+            }
+
             /// A detached context (the `__testing` seams): no App, shard 0,
             /// user 1.
             #[allow(dead_code, reason = "`ExpiredCtx` has no detached seam outside the tests")]

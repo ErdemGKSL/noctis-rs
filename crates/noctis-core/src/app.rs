@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use noctis_codec::{PayloadKey, PayloadKeys};
 use noctis_gateway::{
-    CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayOptions,
-    LaneConfig, ShardEvent,
+    CloseMode, DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, Gateway, GatewayHandle,
+    GatewayOptions, LaneConfig, LargeThreshold, Presence, PresenceHandle, ShardEvent,
 };
 use noctis_ports::memory::MemoryIdentifyQueue;
 use noctis_ports::{
@@ -154,10 +154,32 @@ pub struct App {
     publisher: bool,
     /// Whether shards resume stored sessions and shut down resumably.
     resume_sessions: bool,
+    /// The presence every shard identifies with.
+    presence: Option<Presence>,
+    /// The IDENTIFY `large_threshold`.
+    large_threshold: LargeThreshold,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
     /// The crate-internal lifecycle broadcast (Lifecycle Hooks, Story 13.5).
     lifecycle: Lifecycle,
+}
+
+/// Keeps the App's [`GatewayHandle`] attached to a running [`Gateway`];
+/// detaches it on drop, on every return path of `run_with` (after the
+/// shutdown sequence waited for the shards to close).
+struct Attached<'a>(&'a GatewayHandle);
+
+impl<'a> Attached<'a> {
+    fn new(handle: &'a GatewayHandle, gateway: &Gateway) -> Self {
+        handle.attach(&gateway.handle());
+        Self(handle)
+    }
+}
+
+impl Drop for Attached<'_> {
+    fn drop(&mut self) {
+        self.0.detach();
+    }
 }
 
 /// Why the supervised App stopped.
@@ -381,6 +403,43 @@ impl App {
     /// ```
     pub fn resume_sessions(&self) -> bool {
         self.resume_sessions
+    }
+
+    /// The App's gateway command handle (cheap to clone; the one
+    /// `ctx.gateway()` returns): presence updates and Request Guild Members
+    /// sent to the owning shard. Live while [`run`](Self::run) runs the
+    /// shards (from right after they start until they closed); before, after
+    /// and in a publish run every call is
+    /// [`GatewayError::NotRunning`](noctis_gateway::GatewayError::NotRunning).
+    /// Take it before `run` consumes the App.
+    ///
+    /// ```
+    /// use noctis_gateway::{GatewayError, Presence};
+    ///
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// let gateway = app.gateway();
+    /// assert_eq!(gateway.presence().set(Presence::idle()), Err(GatewayError::NotRunning));
+    /// # }
+    /// ```
+    pub fn gateway(&self) -> GatewayHandle {
+        self.shared.gateway.clone()
+    }
+
+    /// The App's presence handle (`app.gateway().presence()`): set the
+    /// presence of every shard or of one at run time.
+    ///
+    /// ```
+    /// use noctis_gateway::{GatewayError, Presence};
+    ///
+    /// # #[tokio::main(flavor = "current_thread")] async fn main() {
+    /// let app = noctis_core::App::builder().build().unwrap();
+    /// let presence = app.presence();
+    /// assert_eq!(presence.set(Presence::watching("/help")), Err(GatewayError::NotRunning));
+    /// # }
+    /// ```
+    pub fn presence(&self) -> PresenceHandle {
+        self.shared.gateway.presence()
     }
 
     /// The default guild of `--publish-guild` without an id
@@ -869,26 +928,7 @@ impl App {
         let total = plan.total.get();
         let shards = plan.shards.clone();
         log_plan(&plan);
-        let identify_queue: Arc<dyn IdentifyQueue> =
-            if self.ports().is_default(PortSlot::IdentifyQueue) {
-                Arc::new(MemoryIdentifyQueue::new(plan.max_concurrency))
-            } else {
-                Arc::clone(&self.ports().identify_queue)
-            };
-        let options = GatewayOptions {
-            app: Arc::clone(&self.shared.app),
-            token: token.expose().to_owned(),
-            intents: self.intents,
-            gateway_url: self.gateway_url.clone(),
-            event_types: self.registry.event_types(),
-            identify_queue,
-            session_store: Arc::clone(&self.ports().session_store) as Arc<dyn SessionStore>,
-            resume: self.resume_sessions,
-            shards: shards.clone(),
-            total: plan.total,
-            max_concurrency: plan.max_concurrency,
-            close_timeout: SHARD_CLOSE_TIMEOUT,
-        };
+        let options = self.gateway_options(token, &plan);
         describe_metrics();
         let (sender, receiver) = noctis_gateway::lanes(self.lane_config());
         let mut drain = AbortOnDrop(tokio::spawn(drain(
@@ -899,6 +939,7 @@ impl App {
             tracing::error!(target: "noctis::app", %error, "the shards could not be configured");
             StartError::GatewayStopped
         })?;
+        let _attached = Attached::new(&self.shared.gateway, &gateway);
         let status = ShardStatus {
             app: Arc::clone(&self.shared.app),
             shards,
@@ -935,6 +976,32 @@ impl App {
         match stop {
             Stop::Requested => Ok(()),
             Stop::AllEnded => Err(RunError::AllShardsEnded.into()),
+        }
+    }
+
+    /// The [`GatewayOptions`] of this App's shards under `plan`.
+    fn gateway_options(&self, token: &Token, plan: &ShardPlan) -> GatewayOptions {
+        let identify_queue: Arc<dyn IdentifyQueue> =
+            if self.ports().is_default(PortSlot::IdentifyQueue) {
+                Arc::new(MemoryIdentifyQueue::new(plan.max_concurrency))
+            } else {
+                Arc::clone(&self.ports().identify_queue)
+            };
+        GatewayOptions {
+            app: Arc::clone(&self.shared.app),
+            token: token.expose().to_owned(),
+            intents: self.intents,
+            gateway_url: self.gateway_url.clone(),
+            event_types: self.registry.event_types(),
+            identify_queue,
+            session_store: Arc::clone(&self.ports().session_store) as Arc<dyn SessionStore>,
+            resume: self.resume_sessions,
+            presence: self.presence.clone(),
+            large_threshold: self.large_threshold,
+            shards: plan.shards.clone(),
+            total: plan.total,
+            max_concurrency: plan.max_concurrency,
+            close_timeout: SHARD_CLOSE_TIMEOUT,
         }
     }
 
@@ -1426,6 +1493,8 @@ impl fmt::Debug for App {
             .field("payload_key", &self.shared.payload_keys.is_some())
             .field("publisher", &self.publisher)
             .field("resume_sessions", &self.resume_sessions)
+            .field("presence", &self.presence)
+            .field("large_threshold", &self.large_threshold)
             .field("dev_guild", &self.dev_guild)
             .finish_non_exhaustive()
     }
@@ -1494,6 +1563,10 @@ pub struct AppBuilder {
     publisher: bool,
     /// Whether shards resume stored sessions and shut down resumably.
     resume_sessions: bool,
+    /// The presence every shard identifies with.
+    presence: Option<Presence>,
+    /// The IDENTIFY `large_threshold`.
+    large_threshold: LargeThreshold,
     /// The default guild of `--publish-guild` without an id.
     dev_guild: Option<Id<GuildMarker>>,
     /// The current payload key (never printed).
@@ -1589,6 +1662,8 @@ impl AppBuilder {
             ref_ttl: DEFAULT_REF_TTL,
             publisher: false,
             resume_sessions: true,
+            presence: None,
+            large_threshold: LargeThreshold::default(),
             dev_guild: None,
             payload_key: None,
             previous_payload_key: None,
@@ -2158,6 +2233,37 @@ impl AppBuilder {
         self
     }
 
+    /// The presence every shard identifies with (default: none, which
+    /// Discord shows as online without an activity); the last call wins.
+    /// Change it at run time with [`App::presence`] or `ctx.gateway()`.
+    ///
+    /// ```
+    /// use noctis_gateway::Presence;
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.presence(Presence::watching("/help"));
+    /// ```
+    pub fn presence(&mut self, presence: Presence) -> &mut Self {
+        self.presence = Some(presence);
+        self
+    }
+
+    /// The IDENTIFY `large_threshold` (GW-06; default 50): the member count
+    /// above which `GUILD_CREATE` leaves out offline members.
+    /// [`LargeThreshold::new`] only compiles for 50..=250. The last call
+    /// wins.
+    ///
+    /// ```
+    /// use noctis_gateway::LargeThreshold;
+    ///
+    /// let mut builder = noctis_core::App::builder();
+    /// builder.large_threshold(LargeThreshold::new::<100>());
+    /// ```
+    pub fn large_threshold(&mut self, threshold: LargeThreshold) -> &mut Self {
+        self.large_threshold = threshold;
+        self
+    }
+
     /// The guild `--publish-guild` without an id publishes to (your test
     /// guild). Env `NOCTIS_DEV_GUILD`; the last call wins.
     ///
@@ -2565,6 +2671,7 @@ impl AppBuilder {
                 renderer: config.renderer,
                 expired_handler: config.expired_handler,
                 run_observer: config.run_observer,
+                gateway: GatewayHandle::detached(),
             }),
             strings,
             http_timeout: config.http_timeout,
@@ -2582,6 +2689,8 @@ impl AppBuilder {
             shutdown_grace: config.shutdown_grace,
             publisher: config.publisher,
             resume_sessions: config.resume_sessions,
+            presence: config.presence,
+            large_threshold: config.large_threshold,
             dev_guild: config.dev_guild,
             lifecycle: Lifecycle::new(),
         })
@@ -2683,6 +2792,8 @@ impl fmt::Debug for AppBuilder {
             .field("ref_ttl", &self.ref_ttl)
             .field("publisher", &self.publisher)
             .field("resume_sessions", &self.resume_sessions)
+            .field("presence", &self.presence)
+            .field("large_threshold", &self.large_threshold)
             .field("dev_guild", &self.dev_guild)
             .field("payload_key", &self.payload_key.is_some())
             .field("previous_payload_key", &self.previous_payload_key.is_some())

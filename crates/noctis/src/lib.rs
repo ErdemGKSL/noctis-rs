@@ -29,6 +29,8 @@
 //!   [`AckDeadlineMissed`]).
 //! - [`events`]: the gateway event payloads `#[derive(EventHandler)]`
 //!   handlers take, and [`events::EventCtx`].
+//! - [`gateway`]: the bot's presence (identify and run time), the
+//!   `large_threshold`, and Request Guild Members sent to the owning shard.
 //! - [`twilight`]: the twilight crates Noctis builds on, [`twilight::http`]
 //!   and [`twilight::model`].
 //! - [`rules`]: Discord limits, rule ids, text length and locales.
@@ -1635,6 +1637,66 @@ pub mod http {
     //! ```
 
     pub use noctis_core::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
+}
+
+pub mod gateway {
+    //! Presence and gateway commands (FR-53): what the bot shows and what
+    //! it asks the gateway for.
+    //!
+    //! - [`AppBuilder::presence`](crate::AppBuilder::presence) sets the
+    //!   [`Presence`] every shard identifies with: a [`Status`] and at most
+    //!   one [`Activity`] (`Presence::watching("/help")`,
+    //!   `Presence::custom("☕ brewing")`, `Presence::dnd()`, ...).
+    //!   [`AppBuilder::large_threshold`](crate::AppBuilder::large_threshold)
+    //!   takes a [`LargeThreshold`]: `LargeThreshold::new::<N>()` compiles only
+    //!   for 50..=250 (GW-06, a `[GW-06]` compile error otherwise).
+    //! - [`App::presence`](crate::App::presence) (or
+    //!   `ctx.gateway().presence()`) is a [`PresenceHandle`]:
+    //!   [`set`](PresenceHandle::set) changes the presence on every shard of
+    //!   this process, all or none, [`set_shard`](PresenceHandle::set_shard)
+    //!   on one. Both are synchronous and never block; a shard sends the
+    //!   latest presence again after it re-identifies.
+    //! - `ctx.gateway()` / [`App::gateway`](crate::App::gateway) is a
+    //!   [`GatewayHandle`]:
+    //!   [`request_guild_members`](GatewayHandle::request_guild_members) sends
+    //!   a [`MemberRequest`] (one guild; [`users`](MemberRequest::users) takes
+    //!   1..=100 ids at compile time, [`user_list`](MemberRequest::user_list)
+    //!   and [`prefix`](MemberRequest::prefix) check at run time,
+    //!   [`all`](MemberRequest::all) needs `GUILD_MEMBERS`) to the guild's
+    //!   owning shard and returns the collected [`GuildMembers`].
+    //!
+    //! Every refusal is a [`GatewayError`], never a silent drop: the App is
+    //! not running, a shard or guild outside this process's Shard Range, a
+    //! shard over its budget of 110 commands per 60 s (`SendLimit`, GW-04),
+    //! `RATE_LIMITED` from Discord (`RateLimited`, GW-07), a missing intent,
+    //! or no answer within 10 s (`Timeout`). No cargo feature is needed.
+    //!
+    //! ```no_run
+    //! use noctis::gateway::{GatewayError, GuildMembers, LargeThreshold, MemberRequest, Presence};
+    //! use noctis::prelude::*;
+    //! use noctis::twilight::model::id::Id;
+    //!
+    //! async fn lookup(ctx: &CommandCtx) -> Result<GuildMembers, GatewayError> {
+    //!     ctx.gateway().presence().set(Presence::custom("looking up members"))?;
+    //!     let guild = Id::new(1);
+    //!     let request = MemberRequest::prefix(guild, "ab", 10)?;
+    //!     ctx.gateway().request_guild_members(request).await
+    //! }
+    //!
+    //! # fn main() -> Result<(), noctis::Error> {
+    //! let mut builder = noctis::App::from_env()?;
+    //! builder
+    //!     .presence(Presence::watching("/help"))
+    //!     .large_threshold(LargeThreshold::new::<100>());
+    //! let _ = MemberRequest::users(Id::new(1), [Id::new(2), Id::new(3)]);
+    //! # let _ = lookup;
+    //! # Ok(()) }
+    //! ```
+
+    pub use noctis_core::gateway::{
+        Activity, GatewayError, GatewayHandle, GuildMembers, LargeThreshold, MemberRequest,
+        Presence, PresenceHandle, Status,
+    };
 }
 
 pub mod webhook {

@@ -88,6 +88,8 @@ async fn shard_warnings_omit_the_payload() {
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
         resume: true,
+        presence: None,
+        large_threshold: noctis_gateway::LargeThreshold::default(),
         shards: 0..1,
         total: NonZeroU32::MIN,
         max_concurrency: NonZeroU16::MIN,

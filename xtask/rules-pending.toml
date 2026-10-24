@@ -42,23 +42,3 @@ story = "12.4"
 id = "RL-04"
 evidence = "unit"
 story = "12.4"
-
-[[rule]]
-id = "GW-04"
-evidence = "unit"
-story = "15.3"
-
-[[rule]]
-id = "GW-06"
-evidence = "diagnosed"
-story = "15.3"
-
-[[rule]]
-id = "GW-07"
-evidence = "by-construction"
-story = "15.3"
-
-[[rule]]
-id = "GW-07"
-evidence = "unit"
-story = "15.3"

@@ -54,6 +54,45 @@
 //! holds; events dropped under back-pressure are not replayed
 //! (at-most-once).
 //!
+//! # Presence and gateway commands
+//!
+//! [`GatewayOptions::presence`] and [`GatewayOptions::large_threshold`]
+//! ([`LargeThreshold`], 50..=250 at compile time, GW-06) go into every
+//! IDENTIFY. [`Gateway::handle`] returns a [`GatewayHandle`] that sends
+//! commands to the shard task that owns them, over a channel per shard:
+//!
+//! - [`PresenceHandle::set`] / [`set_shard`](PresenceHandle::set_shard)
+//!   send a [`Presence`] (op 3) to every shard of this Gateway or to one;
+//!   each shard remembers the latest one and sends it again after a new
+//!   session's READY (not after RESUMED), so a re-identify keeps it.
+//! - [`GatewayHandle::request_guild_members`] sends a [`MemberRequest`]
+//!   (op 8, GW-07) to the guild's owning shard (`(guild_id >> 22) % total`)
+//!   with a Noctis nonce and collects the matching `GUILD_MEMBERS_CHUNK`
+//!   events into [`GuildMembers`]; a matching `RATE_LIMITED` is
+//!   [`GatewayError::RateLimited`], 10 s without an answer is
+//!   [`GatewayError::Timeout`]. Chunks and `RATE_LIMITED` events still
+//!   reach the sink when a handler wants them.
+//!
+//! Each shard admits at most 110 commands per 60 s (GW-04, Discord's 120
+//! minus twilight's heartbeat reserve): one more is
+//! [`GatewayError::SendLimit`] and nothing is queued. A guild or shard
+//! outside [`GatewayOptions::shards`] is a typed error; nothing is ever
+//! dropped silently.
+//!
+//! ```
+//! use noctis_gateway::{GatewayHandle, MemberRequest, Presence};
+//! use twilight_model::id::Id;
+//!
+//! # #[tokio::main(flavor = "current_thread")] async fn main() {
+//! let gateway = GatewayHandle::detached();
+//! let _ = gateway.presence().set(Presence::watching("/help"));
+//! let members = gateway
+//!     .request_guild_members(MemberRequest::users(Id::new(1), [Id::new(2)]))
+//!     .await;
+//! assert!(members.is_err()); // detached: `NotRunning`
+//! # }
+//! ```
+//!
 //! # Lanes
 //!
 //! [`lanes`] builds the two queues between the shard tasks and core
@@ -99,21 +138,39 @@
 //! # Ok(()) }
 //! ```
 
+mod command;
 mod gateway;
 mod inbound;
 mod lanes;
+mod presence;
 mod queue;
 mod session;
 mod shard;
 mod shard_config;
 
+pub use command::{GatewayError, GatewayHandle, GuildMembers, MemberRequest, PresenceHandle};
 pub use gateway::{CloseMode, Gateway, GatewayOptions};
 pub use inbound::{Inbound, InboundKind, InboundSink, RawJson, ShardEvent};
 pub use lanes::{
     DEFAULT_EVENT_CAPACITY, DEFAULT_OVERFLOW_CAPACITY, DROPPABLE_EVENTS, DropObserver, LaneConfig,
     LaneDepths, LaneReceiver, LaneSender, lanes,
 };
+pub use presence::{Activity, LargeThreshold, Presence, Status};
 pub use shard_config::{ShardConfigError, shard_config};
+
+/// The compile-time bounds of [`LargeThreshold::new`] (GW-06) and
+/// [`MemberRequest::users`] (GW-07). Not part of the API.
+#[doc(hidden)]
+pub mod __bounds {
+    pub use crate::command::{UserIdCount, UserIds};
+    pub use crate::presence::{Threshold, ValidLargeThreshold};
+}
+
+/// Seals the bound traits of [`__bounds`].
+mod sealed {
+    /// Implemented only by this crate.
+    pub trait Sealed {}
+}
 /// Which gateway event types shard tasks parse (twilight's flags,
 /// re-exported so core needs no `twilight-gateway` dependency).
 ///

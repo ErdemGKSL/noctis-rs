@@ -50,6 +50,11 @@ pub fn configure(builder: &mut AppBuilder) -> &mut AppBuilder {
         // hedged interaction acks); this call is optional. Never poll an API endpoint to
         // keep HTTP warm.
         .http(noctis::HttpConfig::default())
+        // Every shard identifies with this presence. Change it at run time with
+        // `app.presence().set(..)` (every shard) or `.set_shard(n, ..)`, and send gateway
+        // commands such as Request Guild Members through `ctx.gateway()`; each shard sends
+        // at most 110 per 60 s (`GatewayError::SendLimit`, GW-04).
+        .presence(noctis::gateway::Presence::watching("/help"))
         .state(BotMeta {
             started_at: SystemTime::now(),
             version: env!("CARGO_PKG_VERSION"),

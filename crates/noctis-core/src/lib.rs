@@ -173,6 +173,46 @@ mod component;
 mod edge;
 mod error;
 pub mod events;
+pub mod gateway {
+    //! Presence and gateway commands (FR-53, GW-04, GW-06, GW-07).
+    //!
+    //! [`AppBuilder::presence`](crate::AppBuilder::presence) and
+    //! [`AppBuilder::large_threshold`](crate::AppBuilder::large_threshold)
+    //! go into every shard's IDENTIFY. [`App::gateway`](crate::App::gateway),
+    //! [`App::presence`](crate::App::presence) and `ctx.gateway()` return a
+    //! [`GatewayHandle`] that sends commands to the shard owning them:
+    //! [`PresenceHandle::set`] / [`set_shard`](PresenceHandle::set_shard)
+    //! (op 3) and [`GatewayHandle::request_guild_members`] (op 8, collected
+    //! into [`GuildMembers`]). Every refusal is a [`GatewayError`]: a shard
+    //! or guild outside this process's Shard Range, the per-shard budget of
+    //! 110 commands per 60 s (GW-04), `RATE_LIMITED` (GW-07), a missing
+    //! intent or a 10 s timeout.
+    //!
+    //! ```
+    //! use noctis_core::gateway::{LargeThreshold, MemberRequest, Presence};
+    //! use twilight_model::id::Id;
+    //!
+    //! # #[tokio::main(flavor = "current_thread")] async fn main() {
+    //! let mut builder = noctis_core::App::builder();
+    //! builder
+    //!     .presence(Presence::watching("/help"))
+    //!     .large_threshold(LargeThreshold::new::<100>());
+    //! let app = builder.build().unwrap();
+    //! let request = MemberRequest::users(Id::new(1), [Id::new(2)]);
+    //! assert!(app.gateway().request_guild_members(request).await.is_err()); // not running
+    //! # }
+    //! ```
+
+    pub use noctis_gateway::{
+        Activity, GatewayError, GatewayHandle, GuildMembers, LargeThreshold, MemberRequest,
+        Presence, PresenceHandle, Status,
+    };
+
+    /// The compile-time bounds of [`LargeThreshold::new`] and
+    /// [`MemberRequest::users`]. Not part of the API.
+    #[doc(hidden)]
+    pub use noctis_gateway::__bounds;
+}
 mod gateway_url;
 mod guard;
 mod handler;

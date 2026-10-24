@@ -314,6 +314,19 @@ impl CommandCtx {
         }
     }
 
+    /// The App's gateway command handle (the one `App::gateway` returns):
+    /// set the presence, request guild members from the owning shard; a
+    /// detached handle (every call `GatewayError::NotRunning`) in the
+    /// detached test seams.
+    pub fn gateway(&self) -> noctis_gateway::GatewayHandle {
+        self.0
+            .app
+            .as_ref()
+            .map_or_else(noctis_gateway::GatewayHandle::detached, |app| {
+                app.gateway.clone()
+            })
+    }
+
     /// The App's Limits (`AppBuilder::limits`), what the Responder
     /// validates against; pass it to render functions that size pages with
     /// `noctis::ui::Budget`. [`Limits::default`] in the detached test

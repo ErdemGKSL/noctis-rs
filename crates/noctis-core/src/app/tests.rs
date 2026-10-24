@@ -2562,6 +2562,8 @@ async fn shutdown_sequence_order() {
         identify_queue: Arc::new(MemoryIdentifyQueue::new(NonZeroU16::MIN)),
         session_store: Arc::new(noctis_ports::memory::MemorySessionStore::new()),
         resume: true,
+        presence: None,
+        large_threshold: LargeThreshold::default(),
         shards: 0..2,
         total: NonZeroU32::new(2).unwrap(),
         max_concurrency: NonZeroU16::MIN,

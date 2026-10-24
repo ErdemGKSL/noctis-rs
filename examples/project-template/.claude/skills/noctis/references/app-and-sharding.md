@@ -97,7 +97,7 @@ The built `App` exposes: `app.runtime()` (its `Runtime`), `app.http()` (its one
 (whether a Plugin or `.renderer(..)` set a `Renderer`), `app.renderer()`
 (`Option<&Arc<dyn Renderer>>`, the one `ctx.render` uses), `app.is_publisher()`,
 `app.resume_sessions()` (`bool`, the builder value, default `true`; `--no-resume` overrides it for that run only, never through this getter),
-`app.dev_guild()` (`Option<Id<GuildMarker>>`) and `app.publish(scope)` (§3).
+`app.dev_guild()` (`Option<Id<GuildMarker>>`), `app.gateway()` (`GatewayHandle`) and `app.presence()` (`PresenceHandle`, both §6) and `app.publish(scope)` (§3).
 
 ### AppBuilder methods
 
@@ -146,7 +146,8 @@ Planned (signatures may change):
 | `.theme(noctis::image::theme!())` / `.image(ImageConfig)` | none | from `AppBuilderImageExt` (`image` feature, in the prelude); installs the `ImagePlugin` and with it the Renderer; the last call of each kind wins (see `images.md` §8) |
 | `.limits(Limits)` | `Limits::default()` (Strict) | the Limits every Responder validates outgoing messages against before any request; `LimitMode::Lenient` truncates over-long texts with `…` instead of failing with `ResponderError::Invalid`; the last call wins. Read back with `app.limits() -> &Limits`; see `limits-cheatsheet.md` |
 | `.discord_cache(DiscordCacheConfig)` [planned] | only what features need | read with `ctx.cache()` |
-| `.presence(Presence)` [planned] | none | initial presence |
+| `.presence(Presence)` | none (Discord shows online, no activity) | the presence every shard identifies with; the last call wins; change it at run time with `app.presence()` (§6) |
+| `.large_threshold(LargeThreshold)` | `LargeThreshold::default()` (50) | the IDENTIFY `large_threshold`; `LargeThreshold::new::<N>()` compiles only for 50..=250 (GW-06, §6); the last call wins |
 | `.boot_flags(BootFlags)` [planned] | env/CLI | which flagged Modules exist this run |
 
 ### Errors
@@ -630,16 +631,95 @@ model go through the same client:
 `RawHttp` is in the prelude) — still rate limited / proxied, with the bot token and the
 timeout (`components-v2.md` §11b).
 
-## 6. Presence and gateway commands [planned]
+## 6. Presence and gateway commands
+
+Everything lives in `noctis::gateway` and is always compiled (no cargo feature).
 
 ```rust
-builder.presence(Presence::watching("the servers"));
-ctx.gateway().set_presence(Presence::playing("v2"), ShardScope::All).await?;
-ctx.gateway().request_members(guild_id, MemberQuery::user_ids([id])).await?;
+use noctis::gateway::{
+    Activity, GatewayError, GuildMembers, LargeThreshold, MemberRequest, Presence, Status,
+};
+
+// Identify: every shard identifies with this presence and `large_threshold`.
+builder
+    .presence(Presence::watching("/help"))                 // default: none (online, no activity)
+    .large_threshold(LargeThreshold::new::<100>());       // default 50; 50..=250 at compile time
+
+// Run time: take the handles before `run` consumes the App, or use `ctx.gateway()`.
+let presence = app.presence();                            // == app.gateway().presence()
+presence.set(Presence::custom("☕ brewing"))?;            // every shard of this process
+presence.set_shard(0, Presence::dnd())?;                  // one shard
+
+async fn lookup(ctx: &CommandCtx, guild: Id<GuildMarker>) -> Result<GuildMembers, GatewayError> {
+    let request = MemberRequest::users(guild, [Id::new(7), Id::new(8)]); // 1..=100 ids
+    let members = ctx.gateway().request_guild_members(request).await?;
+    Ok(members) // members.members, members.presences, members.not_found
+}
 ```
 
-A guild outside this process's Shard Range → `GatewayError::NotInRange`; a gateway rate
-limit (GW-04, 120/60 s per shard) → `GatewayError::RateLimited`.
+**Presence.** `Presence::new(Status)` or the shortcuts `Presence::online()`, `idle()`,
+`dnd()`, `invisible()`, and `Presence::playing(name)`, `listening(name)`,
+`watching(name)`, `competing(name)`, `streaming(name, url)`, `custom(state)` (status
+`Online` plus that activity). Setters: `.status(Status)`, `.activity(Activity)` (one
+activity; a later call replaces it), `.afk(bool)`. `Status` is `Online` (the default),
+`Idle`, `DoNotDisturb` or `Invisible`. `Activity::playing`, `listening`, `watching`,
+`competing`, `streaming(name, url)` and `custom(state)` (a custom status: type 4, name
+"Custom Status") build one activity; `.state(text)` adds the second line. Only `name`,
+`type`, `state` and `url` are sent; texts are sent as given (Discord documents no limit).
+
+**`LargeThreshold` (GW-06).** `LargeThreshold::new::<N>()` compiles only for
+`N` in 50..=250 (`[GW-06]` compile error otherwise); `.get()` reads it back;
+`LargeThreshold::default()` is 50.
+
+**Handles.** `app.gateway()` and `ctx.gateway()` (on `EventCtx`, `CommandCtx`,
+`ComponentCtx`, `ModalCtx` and the other component contexts; not on autocomplete) return
+the App's `GatewayHandle` (cheap clone); `app.presence()` / `gateway.presence()` a
+`PresenceHandle`. They are live while `run`/`run_until` runs the shards, from shard start
+until the shards closed; before, after, during the shutdown and in a publish run every
+call is `GatewayError::NotRunning`, as is every call on `GatewayHandle::detached()` (what
+the detached test contexts return). `GatewayHandle::attach` and `detach` are internal (core
+calls them); never call them.
+
+- `PresenceHandle::set(Presence)`: op 3 to every shard of this process, all or none: the
+  budget of every shard is checked first, and if one cannot send, nothing is sent.
+  `PresenceHandle::set_shard(shard, Presence)`: one shard. Both are synchronous and never
+  block. Each shard remembers the latest presence set at run time and sends it again after
+  a new session's READY, so a re-identify keeps it (a resume needs nothing).
+- `gateway.shard_for_guild(guild)`: the owning shard, `(guild_id >> 22) % total`.
+- `gateway.request_guild_members(MemberRequest)`: Request Guild Members (op 8, GW-07) to the
+  guild's owning shard; Noctis sets the nonce and collects every `GUILD_MEMBERS_CHUNK` into
+  `GuildMembers { members, presences, not_found }` (chunk order). Cancel-safe: dropping the
+  future forgets the request. A `MemberChunk` event handler still sees the chunks.
+
+**`MemberRequest`** (one guild by construction; `.guild()` reads it):
+`MemberRequest::users(guild, [ids; N])` takes 1..=100 ids at compile time (`[GW-07]`
+error for 0 or 101); `MemberRequest::user_list(guild, iter)` checks at run time
+(duplicates kept); `MemberRequest::prefix(guild, "ab", limit)` matches names starting with
+the query, `limit` 1..=100; `MemberRequest::all(guild)` asks for every member and needs
+the `GUILD_MEMBERS` intent; `.presences(true)` adds presences and needs
+`GUILD_PRESENCES` (request privileged intents with `.intents(..)`).
+
+**Budget (GW-04).** Each shard accepts at most 110 commands (presence sets plus member
+requests) per sliding 60 s: Discord allows 120 per connection and twilight reserves up
+to 10 for heartbeats. The next one is `GatewayError::SendLimit { shard, retry_after }`
+and is not queued; retry after `retry_after`. Noctis's own presence re-send after
+READY is not counted.
+
+**Errors** (`GatewayError`, `#[non_exhaustive]`, `Clone + PartialEq`; messages never
+carry the token, nonce or payloads):
+
+| Variant | When |
+| --- | --- |
+| `NotRunning` | the App is not running the shards (see above) |
+| `ShardNotInRange { shard, range }` | `set_shard` outside this process's Shard Range |
+| `GuildNotInRange { guild, shard, range }` | the guild's owning shard runs in another Cluster process; nothing is sent (ask that process, e.g. through your own queue) |
+| `ShardClosed { shard }` | that shard's task ended (a fatal close code) |
+| `SendLimit { shard, retry_after }` | `[GW-04]` the shard's budget of 110 per 60 s is used up |
+| `RateLimited { guild, retry_after }` | `[GW-07]` Discord answered the member request with `RATE_LIMITED` |
+| `NoUserIds`, `TooManyUserIds { len }` | `[GW-07]` `user_list` with 0 or more than 100 ids |
+| `EmptyQuery`, `InvalidLimit { limit }` | `[GW-07]` `prefix` with `""` (use `all`) or a limit outside 1..=100 |
+| `MissingIntent { intent }` | `[GW-07]` `all()` without `"GUILD_MEMBERS"`, `.presences(true)` without `"GUILD_PRESENCES"` |
+| `Timeout { guild }` | no chunk for 10 s since the request or the last chunk (for example a reconnect lost the answer) |
 
 ## 7. Lifecycle Hooks
 
