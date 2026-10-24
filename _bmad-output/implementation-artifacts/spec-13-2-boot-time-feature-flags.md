@@ -197,6 +197,37 @@ Display strings (exact, tested):
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 27 findings — high 2, medium 0, low 17, false 8, maybe-false 0
+- findings:
+  - `[low]` `[patch]` (blind) `error.rs`: `DeclaredFlags` inserted under `StatusSuffix`'s doc line, so `DeclaredFlags` gets a wrong first doc line and `StatusSuffix` none — confirmed at error.rs L996-999; move the `" (HTTP {status})"` line back above `struct StatusSuffix`.
+  - `[false]` `[reject]` (blind) subset Publish deletes unselected live Commands without a guard — intended behaviour: spec R3 requires the `- delete` diff line, and the Usage Skill §2 "Publish" documents it; a guard would be new behaviour outside the spec.
+  - `[low]` `[reject]` (blind) `from_env` validates the whole Noctis CLI from argv, so any malformed Noctis flag surfaces as `Error::Cli` there — the spec Code Map mandates `NoctisArgs::split(std::env::args_os())` with "a malformed Noctis flag → `Error::Cli`"; such a command line fails at `run()` anyway, so only a rare multi-App process notices, and the fix reshapes a spec-chosen design.
+  - `[low]` `[patch]` (blind) `check_boot_flags` puts invalid Module flags (`Beta`, `all`, ``) into `UnknownBootFlag.declared` — confirmed (registry.rs L421 extends `declared` with every `module.boot_flags()`); add only Module flags that pass `noctis_rules::boot_flag::check`.
+  - `[low]` `[reject]` (blind) `Duplicate`/`TooLong` and `EnvError::InvalidBootFlags` do not name the failing item — the spec fixes these variants and their exact Display strings, and `EnvError` keeps the existing "the message never contains the value" convention; the fix edits the spec's contract.
+  - `[false]` `[reject]` (blind) a pruned Module's `base`/`group` declarations are dropped even when kept Modules hold the Commands, undocumented — spec "Nesting is AND: a pruned Module drops its whole subtree (... `base`/`group` declarations)" and the Usage Skill §2 "Semantics" says exactly this.
+  - `[low]` `[reject]` (blind) no test asserts the reply a user gets for a stale pruned command/button; negative dispatch check uses a 300 ms sleep — the unknown-command/unknown-Route reply is pre-existing behaviour of a registry miss, already tested; a late handler run beyond 300 ms on an in-memory FakeGateway is implausible; fix is test restructuring.
+  - `[low]` `[reject]` (blind) `BootFlags` has no public `iter()`/`Hash` — spec defines `BootFlags` as opaque with a fixed method list; adding public surface is outside patch scope and no caller needs it today.
+  - `[low]` `[reject]` (blind) `Module::flags` takes only `&'static str` — spec fixes this signature; runtime-config flags are not a requirement and the change would add public surface.
+  - `[low]` `[patch]` (blind) Usage Skill `app-and-sharding.md` "Your own flags" / Parsing rules do not say `--features` consumes its next argument or accepts `--features=<v>` — confirmed at L323-353 (only `--publish-guild` is named); add `--features` to both sentences.
+  - `[low]` `[patch]` (blind) `event.rs` `Args::has_flags` duplicates `!flags.is_empty()` — confirmed (`Flags::parse` rejects an empty list, M2); drop the field and test `!parsed.flags.is_empty()`.
+  - `[low]` `[patch]` (blind) `boot_flag.rs` declares `pub const MAX_LEN` above its `use` lines — confirmed; move the const below the imports next to `RESERVED`.
+  - `[low]` `[reject]` (blind) registration flags passed to doc-hidden `Module::__add_flagged` are never validated at build — only macros (which compile-check flags) call it; a hand-written call is not everyday use and the fix adds a validation pass.
+  - `[high]` `[patch]` (edge) `examples/project-template/tests/flows.rs:272` `let app = app().await?` calls the earlier local `app: TestApp`, which shadows `fn app` — E0618, the template test crate does not compile; rename the first binding (e.g. `pruned`).
+  - `[false]` `[reject]` (edge) `from_env` + differing `.boot_flags(x)` then `run()` fails with `BootFlagsMismatch` although "setters win" — intended: spec E5 (setter wins for the build) plus R2 (run rejects a differing `--features`), and the `AppBuilder::boot_flags` rustdoc states the mismatch rule.
+  - `[low]` `[reject]` (edge) `from_sources` runs `NoctisArgs::split` over the whole argv — same root cause and route as the blind `from_env` finding above.
+  - `[low]` `[reject]` (edge) `Module::flags(["Beta","Beta"])` reports `InvalidBootFlag` once per occurrence — real (registry.rs L404-419 checks grammar before the seen-check), but spec B11 covers only valid duplicates and the `Module::flags` doc promises no once-per-invalid-flag rule; cosmetic extra violation for a rare input.
+  - `[low]` `[patch]` (edge) `error.rs` L996-998 `StatusSuffix` doc line misplaced — same root cause as the first blind finding; same fix.
+  - `[high]` `[patch]` (edge) claim: the template test `badges_follow_the_boot_flags` never runs because it does not compile — same root cause as the flows.rs shadowing finding; same fix.
+  - `[low]` `[patch]` (vgap) typo guard's `declared` set is untested for flags declared only on menu, component or modal registrations — pre-verified gap; add fold cases in `registry/tests.rs` `mod boot_flags` selecting a flag declared only by a button, a modal and a user menu, asserting no violation and the item kept.
+  - `[low]` `[patch]` (vgap) no test pins that a pruned Module's locale catalogs stay App-wide — pre-verified gap; add an `app/tests.rs` `mod boot_flags` test building a flagged Module with `.locales(..)` under `BootFlags::none()` and asserting its key still resolves.
+  - `[false]` `[reject]` (intent D1) `--features` is read by `App::from_env()` before build, `run` only verifies it (R2 not R1) — the spec settled this deliberately (Design Notes decision 1) following AD-7's filter-before-fold; R1 would need a re-fold the spec forbids.
+  - `[false]` `[reject]` (intent D2) AC2 path not exercised through the real `App::from_env()` + `run()` — the spec's Tasks deliberately prescribe R3 through `from_sources` + `run_mode_to` (process argv cannot be injected into a test); `from_env` is a one-line delegation to `from_sources`.
+  - `[low]` `[reject]` (intent D3) facade dispatch test does not cover menus, selects and modals — fold-level tests prove those registrations leave the registry, and dispatch only reads the registry; no observed defect, test-only breadth.
+  - `[false]` `[reject]` (intent D4) "not published" read as delete-remote — spec R3 and the Usage Skill settle P-a explicitly.
+  - `[false]` `[reject]` (intent D5) catalogs/Templates of pruned Modules kept — spec Always rule and memlog 11.2/13.2 decision settle D-b.
+  - `[false]` `[reject]` (intent D6) unknown selected flag is a build error — spec Always rule (typo guard) and Design Notes decision settle it.
+
 ## Design Notes
 
 - (decision) The selection must exist before `build()`, because the fold of the full set can fail where a subset builds (two flagged alternatives of `/shop`, B17). `App::from_env()` (the "process environment" entry point the template uses) therefore reads `--features` from argv as well as `NOCTIS_FEATURES`; `run`/`run_with_args` keep parsing `--features` (spine Conventions) and only verify it matches. Rejected: re-folding inside `run_with_args` (would need to rebuild `AppShared`, intents and Renderer registration after build, and still fails on B18-style conflicts at build time).

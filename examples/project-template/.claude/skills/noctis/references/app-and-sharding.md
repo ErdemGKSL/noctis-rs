@@ -320,8 +320,9 @@ explicitly). Built-in parser, no clap:
 | `--features a,b` / `all` / `none` | Boot Flags. `App::from_env()` reads it from the process command line before `build()` (it wins over `NOCTIS_FEATURES`); `run` only checks that it equals `app.boot_flags()`, else `CliError::BootFlagsMismatch`. Combines with every mode, `--dry-run` and `--no-resume` |
 | `--no-resume` | run the bot with fresh sessions: `.resume_sessions(false)` for this run (`info` log `session resume disabled (--no-resume)`): each shard deletes its stored entry before it identifies, the shutdown closes with 1000 and deletes it. With a publish flag it is `CliError::NoResumeWithPublish` |
 
-Parsing rules: `--publish-guild=<id>` and `--guild=<id>` also work; `--publish-guild`
-takes the next argument as its id only when it does not start with `-`; an id is 1-20
+Parsing rules: `--publish-guild=<id>`, `--guild=<id>` and `--features=<v>` also work;
+`--publish-guild` takes the next argument as its id, and `--features` as its value, only
+when it does not start with `-`; an id is 1-20
 ASCII digits of a non-zero `u64`. A mode returns `Ok(())` after printing the report to
 stdout, or `Err(noctis::Error::Publish(..))`; it installs no signal handler, sends no
 `GET /gateway/bot` and starts no shard.
@@ -349,8 +350,8 @@ commands. Clean such a guild with `cargo run --release -- --publish-clear --guil
 flags, positional and non-UTF-8 arguments, `--` and everything after it). Before `--`,
 `--publish`, `--publish-guild`, `--publish-clear`, `--guild`, `--dry-run`, `--no-resume` and `--features` are reserved
 by Noctis and always claimed (a bot flag named `--guild` or `--dry-run` gets
-`GuildWithoutClear`/`DryRunWithoutPublish`; rename yours), and `--publish-guild` also
-consumes the next argument that does not start with `-`:
+`GuildWithoutClear`/`DryRunWithoutPublish`; rename yours), and `--publish-guild` and `--features` also
+consume the next argument that does not start with `-` (`--features=<v>` works too):
 
 ```rust
 use noctis::cli::NoctisArgs;

@@ -4417,4 +4417,28 @@ mod boot_flags {
             }]
         );
     }
+
+    /// A pruned Module's locale catalogs stay App-wide.
+    #[tokio::test]
+    async fn pruned_module_keeps_locales() {
+        use noctis_i18n::Catalog;
+        use noctis_rules::{Locale, MessageKey};
+
+        static SHOP: Catalog = Catalog::__new(
+            "bot/pruned_shop",
+            Locale::EnUs,
+            &[(Locale::EnUs, &[("shop.title", "Shop")])],
+            &[("shop.title", &[])],
+        );
+        let app = App::builder()
+            .module(Module::new("shop").flags(["shop"]).locales(SHOP))
+            .boot_flags(BootFlags::none())
+            .build()
+            .unwrap();
+        let text = app
+            .shared()
+            .strings
+            .translate(Locale::EnUs, MessageKey::new("shop.title"), &[]);
+        assert_eq!(text.as_deref(), Some("Shop"));
+    }
 }

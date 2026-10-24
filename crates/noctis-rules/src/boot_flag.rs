@@ -6,11 +6,11 @@
 //! Boot Flags are a framework convention, not a Discord rule, so they have
 //! no rule id.
 
-/// The most characters a Boot Flag may have.
-pub const MAX_LEN: usize = 32;
-
 use std::error::Error;
 use std::fmt;
+
+/// The most characters a Boot Flag may have.
+pub const MAX_LEN: usize = 32;
 
 /// The selection words a Boot Flag may never be.
 const RESERVED: [&str; 2] = ["all", "none"];

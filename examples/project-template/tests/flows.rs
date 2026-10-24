@@ -260,14 +260,14 @@ async fn edit_bio_opens_pre_filled() -> anyhow::Result<()> {
 async fn badges_follow_the_boot_flags() -> anyhow::Result<()> {
     let mut builder = App::builder();
     configure(&mut builder).boot_flags(BootFlags::none());
-    let app = TestApp::build(&mut builder)
+    let pruned = TestApp::build(&mut builder)
         .await?
         .guild(TestGuild::new(GUILD, "Test Guild"))
         .user(TestUser::new(MEMBER));
     let missing =
-        app.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await;
+        pruned.command("badge").option("name", "Helper").by(MEMBER).in_guild(GUILD).run().await;
     assert!(matches!(missing, Err(TestError::UnknownCommand { .. })), "{missing:?}");
-    app.stop().await?;
+    pruned.stop().await?;
 
     let app = app().await?;
     let badge =
