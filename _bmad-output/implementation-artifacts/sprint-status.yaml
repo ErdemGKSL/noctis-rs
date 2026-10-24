@@ -155,7 +155,7 @@ development_status:
   epic-12-retrospective: optional
 
   epic-13: backlog
-  13-1-module-trees-with-unique-path-ids: backlog
+  13-1-module-trees-with-unique-path-ids: in-progress
   13-2-boot-time-feature-flags: backlog
   13-3-runtime-module-enable-and-disable: backlog
   13-4-rate-limits-on-commands-and-routes: backlog
