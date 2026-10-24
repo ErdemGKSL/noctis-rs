@@ -2,10 +2,10 @@
 title: 'Story 10.10: Render cache and single-flight deduplication'
 type: 'feature'
 created: '2026-10-24'
-status: 'in-progress'
+status: 'done'
 baseline_revision: '4cab7fd8ec79cc64076d4940ed9bf1694ca8d6b4'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-10-context.md'
   - '{project-root}/_bmad-output/planning-artifacts/maintainer-decisions.md'
@@ -199,6 +199,32 @@ deferred: []
 
 ## Review Triage Log
 
+### 2026-10-24 — Review pass
+- verdicts: 22 findings — high 0, medium 5, low 13, false 4, maybe-false 0
+- findings:
+  - `[medium]` `[patch]` (blind) A degraded render and a later complete render of one key share the attachment name `<key16>.png`, so `AttachmentSet::add` keeps the first one in a message — verified: `Flight::run` sets `output.digest = key.0` also when `degraded`, and `AttachmentSet::add` keeps the first entry under a name. Grouped with intent D4 (same root cause). Patch: a degraded (uncached) output is named by its content (`blake3(bytes)`); the epics AC only requires the key name for cached results.
+  - `[low]` `[reject]` (blind) The cache `put` is awaited before waiters get the output and is lost if every caller drops during it — real, but the in-memory default is ready at once and the spec settled the order; a detached put adds spawning and lifetime handling.
+  - `[medium]` `[patch]` (blind) Entries are written with `ttl = None` — verified: the store contract says `None` means no expiry; only `MemoryRenderCache` caps it at 1 day, so a swapped adapter (the skill suggests Redis) keeps every render forever, and §9's "until the entry expires" never ends. Patch: document in `images.md` §9 (and the `adapters.md` render_cache row) that the Renderer writes with no TTL and a swapped adapter must bound lifetime itself.
+  - `[medium]` `[patch]` (blind) `RemoteImage::url(..)` content that changes under the same URL is served stale — verified: remote images are keyed by identity only (Design Notes), which holds for CDN hashes but not for a mutable allow-listed URL. Grouped with intent D1. Patch: §9 states that a URL image must change its URL (e.g. a version query) when its content changes.
+  - `[low]` `[reject]` (blind) The NRC1 entry has no payload length or hash, so a truncated backend value decodes — needs a corrupting backend; the fix is a new format version plus checks.
+  - `[low]` `[reject]` (blind) The eager noop poll runs the cache get and `resolve` (tokio timers) inside `render()`, panicking outside a runtime — real only for a call outside tokio; such a future would hit the same panic on its first poll before this change, and `ctx.render` always runs in the runtime. Grouped with edge E1.
+  - `[low]` `[reject]` (blind) `share_error` silently maps a future `RenderError` variant to `Failed`, and which waiter keeps the source depends on drop order — the wildcard is forced by `#[non_exhaustive]`, drop-order behaviour is the spec's design; harm only on a future variant, and the fix is a new test harness or a ports API change.
+  - `[low]` `[reject]` (blind) `draw`'s placeholder `digest: [0; 32]` would leak through any future path that skips the flight — the flight is the only caller today; a hypothetical future path, and the fix is a signature refactor.
+  - `[low]` `[reject]` (blind) The `raced` branch of `Flights::join` has no multi-threaded test — read and verified correct: the losing body is dropped unpolled outside the lock and its guard's generation does not match the winner's, so it never removes the winner; adding a threaded harness is more than a direct correction.
+  - `[low]` `[reject]` (blind) The TAKUMI_VERSION pin test reads `../../Cargo.lock` and panics in a packaged crate — tests are not run from the tarball in this project (publish verification only builds); the fix adds a skip branch.
+  - `[low]` `[reject]` (blind) `ClassCheckMode` is not keyed, so a hit skips a Deny-mode class error — the spec excludes the mode on purpose (it only changes errors); the image served is identical and only a cache shared across differently configured Apps reaches it.
+  - `[low]` `[reject]` (blind) `RenderOutput::digest` changed meaning without a release note — the repo has no changelog before launch (Epic 14); the ports doc, `adapters.md` and the skill were updated; the "same digest, same bytes" guarantee is restored by the degraded-naming patch above.
+  - `[low]` `[reject]` (edge E1) Eager poll outside a tokio runtime panics in `resolve` — same root cause and reasoning as the blind eager-poll row.
+  - `[low]` `[reject]` (edge E2) A panicking user `RenderCache` adapter poisons the `Shared` flight for every joiner until all clones drop — needs a panicking adapter (a user bug that panicked the caller before this change too); the fix wraps the body in `catch_unwind`.
+  - `[low]` `[patch]` (vgap) `KeyInputs::of`'s mapping of template version, format, animation and still_fallback is pinned by no test (the digest tests are circular) — pre-verified gap; the mapping reads correctly today. Patch: add `fr_36_format_animation_and_version_changes_miss_the_cache` to `renderer/tests/cache.rs`.
+  - `[medium]` `[patch]` (intent D1) Asset pairs are App-wide, not per job; remote content changing behind one identity is served stale — the App-wide invalidation is documented and only costs re-renders after a deploy; the stale-URL part is real and grouped with the blind stale-URL row (same patch).
+  - `[false]` `[reject]` (intent D2) Concurrent dedup is tested only at the Renderer level — `ctx.render` (`noctis-core/src/render.rs:130`) calls `renderer.render(job)` directly, so the Renderer-level tests cover the bot-visible path.
+  - `[low]` `[reject]` (intent D3) Dedup is per Renderer, not per process — two Apps in one process also have separately namespaced caches, so cross-App dedup is not a cache-consistent goal; the cost is one extra render per App, and moving `Flights` into a Runtime resource is more than a direct correction.
+  - `[medium]` `[patch]` (intent D4) Editing a message holding a degraded card into the complete card keeps the old fallback file, because both are `<key16>.png` and the edit diff keeps a known name — verified in `noctis-core/src/responder/files.rs` (`KnownFiles`); grouped with the blind degraded-naming row (same patch).
+  - `[false]` `[reject]` (intent D5) Output `EncodeSettings` are not keyed — they are a deterministic function of the keyed pre-render inputs (format, quality, animation, effective budget, still_fallback), so no request pair differs only in them.
+  - `[false]` `[reject]` (intent D6) `Attachment::rendered` instead of `with_digest` — AD-22 makes `rendered` the call for rendered images; it names by digest exactly like `with_digest`.
+  - `[false]` `[reject]` (intent D7) `RenderOutput::digest` changes meaning in a public contract — FR-36 requires the key-derived name, and the doc, `adapters.md` and skill were updated in the same change.
+
 ## Design Notes
 
 - **Why the Renderer owns the cache.** The key needs the takumi version, the Theme digest, fonts and static images, which only `noctis-image` knows. Core stays image-free (AD-22), and a remote Renderer (FR-37) may cache its own way. `RendererPorts` was left `#[non_exhaustive]` in 10.8 for this purpose.
@@ -220,3 +246,12 @@ deferred: []
 - `cargo deny check` and `cargo +1.91 check --release --workspace`: pass.
 - `git diff --exit-code Cargo.lock`: no change.
 - `bash tools/story-loop/gates.sh`: ALL-OK.
+
+## Auto Run Result
+
+- **Summary:** `noctis-image`'s Renderer now owns a render cache (FR-36) keyed by blake3 over template id/version, postcard(data), format, animation, still_fallback, takumi version, Theme digest and App-wide font/asset pairs, behind the `RenderCache` port (`MemoryRenderCache` default, 1-day cap), plus per-Renderer single-flight deduplication (`Flights`, shared future polled once eagerly so admission still happens at the call). Cached outputs are named `<key16>.png` via `Attachment::rendered`; degraded (fallback) renders are not stored.
+- **Files changed:** `noctis-image/src/cache.rs` (+tests: key derivation, NRC1 entry encoding); `flight.rs` (+tests: single-flight join/race/cancel); `renderer.rs` and `renderer/tests/cache.rs` (cache + flight wiring, FR-36 tests); `fonts.rs`, `assets.rs`, `remote/fetch.rs` (digest pairs for the key); `noctis-ports/src/render.rs` (`RenderOutput::digest` = key digest, docs); `noctis-core/src/app.rs` (+tests), `noctis/src/lib.rs`, `noctis/tests/render*.rs` (wiring, re-exports); project-template skill (`SKILL.md`, `images.md` section 9, `adapters.md`), `AGENTS.md`, `xtask/public-api.txt` (re-blessed).
+- **Review findings:** 22 findings (high 0, medium 5, low 13, false 4). Patched: 5 medium (grouped into 3 patches: degraded outputs named by content blake3 instead of key; no-TTL writes documented for swapped adapters; mutable remote URLs must change URL on content change) and 1 low (test `fr_36_format_animation_and_version_changes_miss_the_cache`). Deferred: none. Rejected: 12 low (detached put, NRC1 integrity, eager poll outside runtime x2, share_error wildcard, draw placeholder digest, raced-branch threaded test, Cargo.lock pin test in package, ClassCheckMode not keyed, no changelog, panicking adapter poisons flight, per-Renderer dedup) and 4 false (Renderer-level dedup tests cover ctx.render; EncodeSettings derived from keyed inputs; `rendered` is AD-22's call; digest meaning change required by FR-36), each with its reason in the triage log.
+- **Follow-up review recommended: true** (first pass, 5 medium patched; high 0). Named risk: the degraded-naming patch changes attachment naming for fallback renders and its interaction with the edit-diff `KnownFiles` path in `noctis-core/src/responder/files.rs` is verified by reasoning, not by an end-to-end edit test.
+- **Verification:** fmt, clippy -D warnings, workspace and per-crate tests, xtask api-snapshot/deps-check/rules-catalog/skill-check/tw-grammar, tw_crosscheck, cargo deny, MSRV 1.91 check; `tools/story-loop/gates.sh` all green. CI paused by the maintainer.
+- **Residual risks:** swapped RenderCache adapters without own TTL grow unbounded; mutable URL images served stale until the URL changes; cache put lost if all callers drop mid-put; a panicking user adapter poisons a shared flight.

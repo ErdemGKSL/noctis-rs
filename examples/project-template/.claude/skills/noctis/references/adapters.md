@@ -405,7 +405,9 @@ App's namespaced `AssetStore`, where the takumi Renderer caches fetched remote i
 and `pub render_cache: Option<Arc<dyn RenderCache>>` (the App's namespaced
 `RenderCache`, where the takumi Renderer stores rendered images under
 `render:v1:<64 hex>`, i.e. `<app>:render_cache:render:v1:…` in the backing store;
-`images.md` §9). Build it with `RendererPorts::new(asset_store)` (no render cache) and
+`images.md` §9). It writes entries with no TTL (`None`, "no expiry"), so a swapped
+`RenderCache` Adapter must bound their lifetime itself (its own default expiry or LRU
+eviction, e.g. Redis `maxmemory-policy allkeys-lru`). Build it with `RendererPorts::new(asset_store)` (no render cache) and
 `.with_render_cache(cache)`; `App::build` binds both. Its `Debug` hides the ports. A
 replacement `Renderer` may cache its own way or ignore the render cache.
 
@@ -421,7 +423,7 @@ replacement `Renderer` may cache its own way or ignore the render cache.
 | `AnimatedFormat` | `Webp { quality: u8 }`, `Gif`, `Apng` |
 | `Frame` | `{ index: u32, count: u32 }`; `Frame::STILL` = `{ index: 0, count: 1 }` |
 | `OutputFormat` | `Png`, `Jpeg`, `Webp`, `Gif`, `Apng`; `extension()` → `"png"`, `"jpg"`, `"webp"`, `"gif"`, `"png"` (Discord shows APNG as `.png`); `From<Format>`, `From<AnimatedFormat>` |
-| `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }`; `digest` names the attachment (the takumi Renderer uses its render cache key) |
+| `RenderOutput` | `{ bytes: Bytes, digest: [u8; 32], format: OutputFormat, settings_used: EncodeSettings }`; `digest` names the attachment (the takumi Renderer uses its render cache key, except a degraded (uncached) render, which is named by its bytes) |
 | `EncodeSettings` | `{ size: Size, quality: Option<u8>, fps: Option<u16>, frames: u32 }` |
 | `RenderError` | `#[non_exhaustive]`: `UnknownTemplate { id, version }`, `Unsupported { id, why }`, `QueueFull`, `Failed(source)`, …, `RemoteImage { id, image, reason }`, `UndeclaredImage { id, image }` (IMG-03); `RenderError::failed(err)` |
 

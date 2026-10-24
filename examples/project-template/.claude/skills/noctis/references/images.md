@@ -769,8 +769,14 @@ What that means for a bot:
   `AppBuilder::render_cache(..)`, e.g. a shared Redis Adapter, or size it with
   `MemoryRenderCache::with_limits(MemoryLimits::new(max_bytes, max_ttl))` and watch it
   with `usage()`). A hit fetches no remote image, takes no queue slot and draws nothing.
+  Entries are written with no TTL, so a swapped `RenderCache` Adapter must bound their
+  lifetime itself (its own default expiry or LRU eviction, e.g. Redis
+  `maxmemory-policy allkeys-lru`); only `MemoryRenderCache` caps them at 1 day.
   Remote images are keyed by identity (user id, avatar hash, URL, emoji id), never by
-  their bytes: a user's new avatar has a new hash, so it is a new key.
+  their bytes: a user's new avatar has a new hash, so it is a new key. A
+  `RemoteImage::url(..)` whose content can change must change its URL (e.g. a version
+  or hash query parameter), as Discord CDN hashes already do; otherwise the old render
+  is served until its entry expires.
 - **Errors and degraded renders are never cached.** A render that drew the remote-image
   fallback (a failed fetch, emoji over `max_emoji`) or failed is rendered again next
   time; a transient 404 is never pinned for a day.
@@ -781,7 +787,9 @@ What that means for a bot:
   cache** (every key changes), and so does a Theme change.
 - **Attachment names come from the key**: `ctx.render` names the file
   `<first 16 hex of the key>.<ext>`, so the same request always uploads under the same
-  name, and `RenderOutput::digest` is the key (not a hash of the bytes).
+  name, and `RenderOutput::digest` is the key (not a hash of the bytes), except a
+  degraded (uncached) render, which is named by its bytes, so a later complete render
+  of the same request never reuses the fallback file.
 - A cache read or write failure (or an unreadable entry) logs one `noctis::image`
   warning and renders as if there were no cache; it never fails a render.
 

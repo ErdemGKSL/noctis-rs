@@ -69,6 +69,7 @@ counted!(GetFails, "get-fails", GET_FAILS_VIEWS, GET_FAILS_GATE);
 counted!(PutFails, "put-fails", PUT_FAILS_VIEWS, PUT_FAILS_GATE);
 counted!(Corrupt, "corrupt", CORRUPT_VIEWS, CORRUPT_GATE);
 counted!(Pends, "pends", PENDS_VIEWS, PENDS_GATE);
+counted!(Varies, "varies", VARIES_VIEWS, VARIES_GATE);
 
 /// A still Template declaring and drawing `images`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +164,7 @@ impl Setup {
                 TemplateDescriptor::of::<PutFails>(),
                 TemplateDescriptor::of::<Corrupt>(),
                 TemplateDescriptor::of::<Pends>(),
+                TemplateDescriptor::of::<Varies>(),
                 TemplateDescriptor::of::<Avatar>(),
                 TemplateDescriptor::of::<Card>(),
             ])
@@ -335,6 +337,73 @@ async fn fr_36_the_digest_is_the_render_key() {
     let out = r.render(card).await.unwrap();
     assert_eq!(out.digest, key.0);
     assert_ne!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+}
+
+#[tokio::test]
+async fn fr_36_a_degraded_render_is_named_by_its_bytes() {
+    let server = Server::start(|_| Reply::Status(404)).await;
+    let r = Setup {
+        remote: RemoteConfig::new().discord_cdn(server.origin()),
+        ..Setup::new()
+    }
+    .build();
+    let degraded = job(&Avatar {
+        images: vec![RemoteImage::url(&server.url("/a.png")).unwrap()],
+        required: false,
+    });
+    let key = r.key(&degraded);
+    let out = r.render(degraded).await.unwrap();
+    assert_ne!(out.digest, key.0);
+    assert_eq!(out.digest, *blake3::hash(&out.bytes).as_bytes());
+    let complete = card("Ada");
+    let key = r.key(&complete);
+    assert_eq!(r.render(complete).await.unwrap().digest, key.0);
+}
+
+#[tokio::test]
+async fn fr_36_format_animation_and_version_changes_miss_the_cache() {
+    let r = Setup::new().build();
+    let cache = bound(&r);
+    let still = job(&Varies { tag: 1 });
+    let jpeg = RenderJob {
+        format: Format::Jpeg { quality: 80 },
+        ..still.clone()
+    };
+    let animated = RenderJob {
+        animation: Some(AnimationSpec::new(
+            Duration::from_millis(500),
+            2,
+            AnimatedFormat::Webp { quality: 80 },
+        )),
+        ..still.clone()
+    };
+    let mut digests = Vec::new();
+    for (i, job) in [still, jpeg, animated].into_iter().enumerate() {
+        digests.push(r.render(job).await.unwrap().digest);
+        assert_eq!(cache.puts(), i + 1, "job {i} misses");
+    }
+    assert_ne!(digests[0], digests[1]);
+    assert_ne!(digests[1], digests[2]);
+    assert_ne!(digests[0], digests[2]);
+
+    let shared = Arc::new(TestCache::default());
+    let v1 = Setup::new().build();
+    bind(&v1, &shared);
+    let v2 = Setup::new().build();
+    bind(&v2, &shared);
+    v2.register(&[TemplateDescriptor {
+        version: 2,
+        ..TemplateDescriptor::of::<Varies>()
+    }])
+    .unwrap();
+    v1.render(job(&Varies { tag: 2 })).await.unwrap();
+    assert_eq!(shared.puts(), 1);
+    let second = RenderJob {
+        template_version: 2,
+        ..job(&Varies { tag: 2 })
+    };
+    v2.render(second).await.unwrap();
+    assert_eq!(shared.puts(), 2, "version 2 misses");
 }
 
 #[tokio::test]

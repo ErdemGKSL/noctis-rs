@@ -391,7 +391,14 @@ impl Flight {
         let mut output = submit(&pool, &shared, view, job, resolved)?
             .await
             .map_err(|_| RenderError::failed("render pool dropped the job"))??;
-        output.digest = key.0;
+        // A degraded render is not cached, so it is named by its bytes:
+        // sharing the key's name would let a later complete render of the
+        // same key be deduplicated against the fallback file (FR-36).
+        output.digest = if degraded {
+            *blake3::hash(&output.bytes).as_bytes()
+        } else {
+            key.0
+        };
         if let Some(cache) = &cache
             && !degraded
             && let Err(error) = cache

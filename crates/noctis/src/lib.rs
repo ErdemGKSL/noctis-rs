@@ -2223,7 +2223,8 @@ pub mod image {
     //!   by default, `MemoryRenderCache::with_limits`), so an identical later
     //!   render fetches, queues and draws nothing. Errors and renders that
     //!   drew a remote-image fallback are never stored. The attachment is
-    //!   named by the key (`<first 16 hex>.<ext>`). The view's code is not in
+    //!   named by the key (`<first 16 hex>.<ext>`), except a degraded
+    //!   (uncached) render, which is named by its bytes. The view's code is not in
     //!   the key: bump the Template's `version` when its look changes.
     //! - [`unstable`]: renderer-facing items outside semver.
     //!

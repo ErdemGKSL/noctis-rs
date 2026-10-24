@@ -348,7 +348,9 @@ pub struct RenderOutput {
     /// The encoded bytes.
     pub bytes: Bytes,
     /// The render's digest, which names the attachment; the takumi
-    /// Renderer uses its render cache key (AD-15, AD-22).
+    /// Renderer uses its render cache key, except for a degraded
+    /// (uncached) render, which is named by the blake3 hash of its bytes
+    /// (AD-15, AD-22).
     pub digest: [u8; 32],
     /// The encoded format.
     pub format: OutputFormat,
