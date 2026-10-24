@@ -7,15 +7,28 @@
 #        lane.sh sync           (in a lane) fast-forward the lane to origin/main before a story starts
 #        lane.sh merge          (in a lane) rebase the lane's commits onto origin/main; FAIL:conflict leaves the rebase open
 #        lane.sh push-main      (in a lane) push the rebased lane to main, then to its own branch; releases the merge lock
-#        lane.sh lock [owner]   take the cross-run merge lock (waits up to 9 min; WAIT:<holder> when still held)
-#        lane.sh unlock [owner] release it if [owner] holds it. Owner defaults to the lane name (branch story-loop/<name>).
-#                               Anyone pushing to main by hand takes it first (lane.sh lock manual), so no lane's
-#                               merge is rejected halfway; a lock older than 4 h is stale and is broken.
+#        lane.sh lock [owner]   take the merge lock (waits up to 9 min; WAIT:<holder> when still held)
+#        lane.sh unlock [owner] release it if [owner] holds it. Owner defaults to the lane name (branch story-loop/<name>),
+#                               which must be unique across machines. The lock is the remote branch story-loop/merge-lock
+#                               (a commit whose message names the owner), so lanes on different machines and clones
+#                               share it; creating a ref with a plain push is atomic. Anyone pushing to main by hand
+#                               takes it first (lane.sh lock manual), so no lane's merge is rejected halfway; a lock
+#                               older than 4 h is stale and is broken.
 source "$(dirname "$0")/env.sh"
 LANES=${NOCTIS_LANES_DIR:-$(dirname "$ROOT")/lanes}
-LOCK=$(cd "$(git rev-parse --git-common-dir)" && pwd)/story-loop-merge.lock
+LREF=refs/heads/story-loop/merge-lock
 owner=${2:-$(git branch --show-current | sed 's|^story-loop/||')}
-release(){ [ "$(cat "$LOCK/owner" 2>/dev/null)" = "$owner" ] && rm -rf "$LOCK"; return 0; }
+# The lock branch only moves forward: each take or release pushes a child commit of its tip (subject: the owner, or
+# "free"). A plain push fails unless it fast-forwards, so two machines can never both take the lock.
+tip(){ # prints "<sha> <subject> <unix time>" of the lock branch's tip, or nothing before its first use
+  git fetch -q origin "+$LREF:refs/story-loop/merge-lock" 2>/dev/null || return 0
+  git log -1 --format='%H %s %ct' refs/story-loop/merge-lock
+}
+move(){ # move(<parent sha or empty>, <subject>): push a child of the tip; fails if the tip moved meanwhile
+  local c; c=$(git commit-tree "$(git hash-object -w -t tree /dev/null)" ${1:+-p "$1"} -m "$2")
+  git push -q origin "$c:$LREF" 2>/dev/null
+}
+release(){ local t; t=$(tip); set -- $t; [ "$2" = "$owner" ] && move "$1" free; return 0; }
 case "$1" in
 setup)
   name=$2; [ -n "$name" ] || { echo "FAIL: lane name missing"; exit 1; }
@@ -65,10 +78,13 @@ push-main)
 lock)
   end=$((SECONDS + 540))
   while :; do
-    if mkdir "$LOCK" 2>/dev/null; then echo "$owner" > "$LOCK/owner"; echo "locked by $owner"; exit 0; fi
-    [ "$(cat "$LOCK/owner" 2>/dev/null)" = "$owner" ] && { echo "locked by $owner"; exit 0; }
-    [ -n "$(find "$LOCK" -maxdepth 0 -mmin +240 2>/dev/null)" ] && { rm -rf "$LOCK"; continue; }
-    [ $SECONDS -ge $end ] && { echo "WAIT:$(cat "$LOCK/owner" 2>/dev/null)"; exit 1; }
+    t=$(tip); set -- $t
+    [ "$2" = "$owner" ] && { echo "locked by $owner"; exit 0; }
+    if [ -z "$1" ] || [ "$2" = free ] || [ $(( $(date +%s) - ${3:-0} )) -gt 14400 ]; then
+      move "$1" "$owner" && { echo "locked by $owner"; exit 0; }
+      continue
+    fi
+    [ $SECONDS -ge $end ] && { echo "WAIT:$2"; exit 1; }
     sleep 20
   done
   ;;
