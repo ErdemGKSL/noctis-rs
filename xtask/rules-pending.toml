@@ -14,34 +14,9 @@
 # empty by Story 14.4, except entries for Epic 15 stories.
 
 [[rule]]
-id = "INT-13"
-evidence = "unit"
-story = "12.4"
-
-[[rule]]
 id = "CID-04"
 evidence = "unit"
 story = "7.1"
-
-[[rule]]
-id = "RL-01"
-evidence = "unit"
-story = "12.4"
-
-[[rule]]
-id = "RL-02"
-evidence = "unit"
-story = "12.4"
-
-[[rule]]
-id = "RL-03"
-evidence = "unit"
-story = "12.4"
-
-[[rule]]
-id = "RL-04"
-evidence = "unit"
-story = "12.4"
 
 [[rule]]
 id = "GW-04"

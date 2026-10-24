@@ -600,7 +600,8 @@ let msg: serde_json::Value = sent.json()?;            // RawResponse: status(), 
   `RawResponse`: `.status()`, `.header(name)` (case-insensitive, first value),
   `.bytes()`, `.into_bytes()` (`bytes::Bytes`) and `.json::<T>()`.
 - Errors (`RawHttpError`, converts into `HandlerError` with `?`): `InvalidPath`,
-  `Encode`, `Status { status, body }` for any non-2xx, `Body`, `Decode` (from
+  `Encode`, `RateLimited(RateLimited)` for a 429 (never retried; RL-04),
+  `Status { status, body }` for any other non-2xx, `Body`, `Decode` (from
   `.json()`), `Http` (timeout, transport).
 - The Responder never sees raw requests: never answer an interaction (callbacks,
   `@original`, follow-ups) through `.raw(..)`; use `ctx.respond`/`ctx.update`.

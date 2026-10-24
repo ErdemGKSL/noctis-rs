@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::RateLimitScope;
+
 /// `noctis_http_phase_seconds{phase}`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Phase {
@@ -90,6 +92,39 @@ impl EdgeMetrics {
             "noctis_http_requests_total",
             "app" => Arc::clone(&self.app),
             "status_class" => status_class(status)
+        )
+        .increment(1);
+    }
+
+    /// Counts an upstream 401, 403 or 429 (RL-03, RL-04):
+    /// `noctis_http_rate_limited_total{scope}` for every 429 (`scope` is its
+    /// [`RateLimitScope`], `unknown` when not given) and
+    /// `noctis_http_invalid_requests_total{status}` for every 401, 403 and
+    /// 429 except a `shared` one, which Discord does not count. Other
+    /// statuses record nothing.
+    pub(crate) fn upstream_status(&self, status: u16, scope: Option<RateLimitScope>) {
+        let invalid = match status {
+            401 => "401",
+            403 => "403",
+            429 => {
+                let scope = scope.unwrap_or(RateLimitScope::Unknown);
+                metrics::counter!(
+                    "noctis_http_rate_limited_total",
+                    "app" => Arc::clone(&self.app),
+                    "scope" => scope.as_str()
+                )
+                .increment(1);
+                if scope == RateLimitScope::Shared {
+                    return;
+                }
+                "429"
+            }
+            _ => return,
+        };
+        metrics::counter!(
+            "noctis_http_invalid_requests_total",
+            "app" => Arc::clone(&self.app),
+            "status" => invalid
         )
         .increment(1);
     }

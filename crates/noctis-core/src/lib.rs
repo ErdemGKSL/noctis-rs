@@ -111,6 +111,12 @@
 //! when it closes, a PING goes unanswered or a shard loses the network.
 //! [`AppBuilder::http`] tunes it with an [`HttpConfig`]. A twilight
 //! `Arc<Client>` kept after the App is dropped gets connection errors.
+//! [`AppBuilder::http_timeout`] bounds every request, interaction callbacks
+//! included. An upstream 429 twilight's limiter cannot wait out (every one
+//! behind a proxy) is surfaced once, never retried, as [`RateLimited`]
+//! (`ResponderError::RateLimited` and friends, or
+//! [`RateLimited::from_http_error`] for a raw twilight call); a Cluster
+//! process without a proxy logs an RL-02 warning at `run`.
 //!
 //! # Publishing commands
 //!
@@ -193,6 +199,7 @@ mod plugin;
 mod ports;
 mod proxy;
 pub mod publish;
+mod rate_limit;
 mod raw_http;
 mod refs;
 mod registry;
@@ -272,6 +279,7 @@ pub use options::{CommandInput, CommandOption, InvalidOption, OptionError, Optio
 pub use pipeline::{CommandInvocation, DispatchError, Dispatcher};
 pub use plugin::Plugin;
 pub use proxy::HttpProxyError;
+pub use rate_limit::{RateLimitScope, RateLimited};
 pub use raw_http::{Method, RawHttp, RawHttpError, RawRequest, RawResponse};
 pub use refs::RefOps;
 pub use render::{RenderOptions, RenderReport};

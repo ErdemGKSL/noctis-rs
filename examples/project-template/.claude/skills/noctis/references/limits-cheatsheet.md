@@ -215,7 +215,7 @@ locale returns `None`.
 | INT-10 | ephemerality fixed at creation | C |
 | INT-11 | ≤ 5 follow-ups for user-installed apps outside the guild | R |
 | INT-12 | Noctis always edits the original explicitly after a defer | R |
-| INT-13 | interaction endpoints exempt from the global HTTP limit | R |
+| INT-13 | interaction endpoints exempt from the global HTTP limit; every request, callbacks included, goes through the proxy when set | R |
 
 ## `custom_id` and Routes
 
@@ -319,10 +319,10 @@ of this shape still fit" against CV2-03 (`limits.components`, 40) and CV2-04
 | GW-05 | privileged intents enabled in the portal and requested | B |
 | GW-06 | `large_threshold` 50–250 | C |
 | GW-07 | request members: one guild, ≤ 100 user ids | C / R |
-| RL-01 | per-route buckets, obey `Retry-After` | R |
-| RL-02 | 50 req/s global per token across processes → shared proxy | startup / R |
-| RL-03 | 10,000 invalid requests / 10 min → Cloudflare ban | R |
-| RL-04 | undocumented per-resource limits (e.g. channel renames) | R |
+| RL-01 | per-route buckets, obey `Retry-After` (twilight's limiter, direct mode, `user` 429s) | R |
+| RL-02 | 50 req/s global per token across processes → shared proxy; a Cluster without one warns at `run` | startup / R |
+| RL-03 | 10,000 invalid requests / 10 min → Cloudflare ban; `noctis_http_invalid_requests_total` (shared 429s excluded) | R |
+| RL-04 | undocumented per-resource limits (e.g. channel renames): typed `RateLimited`, never retried | R |
 
 ## Image Templates
 

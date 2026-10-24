@@ -388,6 +388,10 @@ pub enum ResponderError {
     /// The initial response missed the ack deadline (INT-01).
     #[error(transparent)]
     AckDeadlineMissed(#[from] AckDeadlineMissed),
+    /// Discord rate limited the request and Noctis did not retry it
+    /// (RL-04): wait at least its `retry_after` before trying again.
+    #[error(transparent)]
+    RateLimited(#[from] crate::RateLimited),
     /// Discord answered with an error status.
     #[error("Discord rejected the response with HTTP {status}{}", code.map(|c| format!(" (code {c})")).unwrap_or_default())]
     Rejected {

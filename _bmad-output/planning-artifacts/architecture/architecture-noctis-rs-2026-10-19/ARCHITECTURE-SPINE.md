@@ -1145,7 +1145,11 @@ list in CI.
     pre-warmed at startup and after each close. Interaction callbacks skip twilight's
     RateLimiter and go directly over that client, with one hedged attempt on a fresh
     connection after a budget (Discord 40060 counts as success). Liveness never polls
-    API endpoints. The edge is crate-internal; only its config and metrics are public.
+    API endpoints. An upstream 429 twilight's limiter cannot wait out is answered as an
+    edge rate-limit response (503, noctis body, Discord headers kept) and surfaced as
+    `RateLimited`; only a direct-mode `user` 429 with valid bucket headers reaches the
+    limiter unchanged. The request timeout bounds every forwarded request and callback.
+    The edge is crate-internal; only its config and metrics are public.
   - **Discord fakes for tests** live in `noctis-testkit` (`noctis_testkit::fake`):
     `FakeDiscordHttp`, a local `hyper` server with per-test routes and a request
     log, and `FakeGateway`, a local `tokio-websockets` server speaking HELLO,

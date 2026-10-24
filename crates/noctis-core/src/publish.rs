@@ -39,7 +39,7 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 
 use crate::App;
-use crate::edge::EDGE_BODY_PREFIX;
+use crate::edge::is_edge_failure;
 use crate::registry::commands::Commands;
 use diff::{Defaults, canonical, diff};
 
@@ -716,14 +716,20 @@ async fn send(
     })
 }
 
-/// Maps a twilight error: an error status to [`PublishError::Rejected`]
-/// (the edge's own 502, upstream unreachable, and anything else to
-/// [`PublishError::Transport`]).
+/// Maps a twilight error: the edge's rate-limit response to
+/// [`PublishError::Rejected`] with the original 429, another error status to
+/// [`PublishError::Rejected`] (the edge's own 502/504, upstream unreachable
+/// or timed out, and anything else to [`PublishError::Transport`]).
 fn http_error(error: &twilight_http::Error, label: &str) -> PublishError {
+    if let Some(limited) = crate::RateLimited::from_http_error(error) {
+        return PublishError::Rejected {
+            route: label.to_owned(),
+            status: 429,
+            code: limited.discord_code,
+        };
+    }
     match error.kind() {
-        ErrorType::Response { body, status, .. }
-            if !(status.get() == 502 && body.starts_with(EDGE_BODY_PREFIX.as_bytes())) =>
-        {
+        ErrorType::Response { body, status, .. } if !is_edge_failure(status.get(), body) => {
             PublishError::Rejected {
                 route: label.to_owned(),
                 status: status.get(),

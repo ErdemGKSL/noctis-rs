@@ -87,6 +87,8 @@ const fn row(
 /// | `noctis_ref_lookups_total` | counter | `app`, `result` (`hit`, `miss`, `stale`, `forged`) |
 /// | `noctis_shard_status` | gauge | `app`, `shard` (1 up, 0 down) |
 /// | `noctis_http_requests_total` | counter | `app`, `status_class` (`1xx`..`5xx`, `error`) |
+/// | `noctis_http_rate_limited_total` | counter | `app`, `scope` (`user`, `global`, `shared`, `unknown`) |
+/// | `noctis_http_invalid_requests_total` | counter | `app`, `status` (`401`, `403`, `429`; a `shared` 429 is not counted) |
 /// | `noctis_http_phase_seconds` | histogram | `app`, `phase` (`dns`, `connect`, `tls`, `ttfb`, `total`) |
 /// | `noctis_http_connections_total` | counter | `app`, `reason` (`warmup`, `redial`, `hedge`, `demand`) |
 /// | `noctis_http_conn_reused_total` | counter | `app`, `reused` (`true`, `false`) |
@@ -160,6 +162,19 @@ pub const METRICS: &[MetricInfo] = &[
         MetricType::Counter,
         &["app", "status_class"],
         "Discord HTTP upstream attempts by status class (error: no response).",
+    ),
+    row(
+        "noctis_http_rate_limited_total",
+        MetricType::Counter,
+        &["app", "scope"],
+        "Discord HTTP upstream 429 answers by X-RateLimit-Scope (RL-04).",
+    ),
+    row(
+        "noctis_http_invalid_requests_total",
+        MetricType::Counter,
+        &["app", "status"],
+        "Discord HTTP upstream 401, 403 and non-shared 429 answers, which count against \
+         Discord's invalid-request limit of 10,000 per 10 minutes per IP (RL-03).",
     ),
     row(
         "noctis_http_phase_seconds",

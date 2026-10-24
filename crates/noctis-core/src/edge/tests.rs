@@ -9,6 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::test_support::{TestServer, get, raw};
 use super::*;
+use crate::RateLimitScope;
 
 fn start(upstream: Upstream) -> Edge {
     start_config(upstream, HttpConfig::default())
@@ -19,6 +20,7 @@ fn start_config(upstream: Upstream, config: HttpConfig) -> Edge {
         Edge::bind().unwrap(),
         upstream,
         config,
+        Duration::from_secs(10),
         &Arc::from("default"),
     )
 }
@@ -587,4 +589,253 @@ async fn h1_idle_reuse() {
     let seen = server.seen();
     assert_eq!(seen.len(), 2);
     assert_eq!(seen[0].conn, seen[1].conn);
+}
+
+// ---- Story 12.4: 429 relay and surfacing, timeouts, invalid requests ----
+
+/// An edge in front of an h2c `server` with an explicit `proxied` and
+/// request timeout.
+fn start_limited(server: &TestServer, proxied: bool, request_timeout: Duration) -> Edge {
+    let (listener, addr) = Edge::bind().unwrap();
+    Edge::start_with(
+        listener,
+        addr,
+        h2c(server),
+        EdgeOptions {
+            config: HttpConfig::default(),
+            request_timeout,
+            proxied,
+        },
+        Arc::from("default"),
+        Arc::new(SystemResolver::default()),
+    )
+}
+
+fn header_map(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
+    let mut map = HeaderMap::new();
+    for (name, value) in pairs {
+        map.append(*name, HeaderValue::from_static(value));
+    }
+    map
+}
+
+/// A server answering every request with `status`, `headers` and `body`.
+async fn answering(status: StatusCode, headers: HeaderMap, body: Bytes) -> TestServer {
+    TestServer::start_replying(
+        true,
+        Arc::new(move |_| test_support::Reply::new(status, headers.clone(), body.clone())),
+    )
+    .await
+}
+
+const USER_429: [(&str, &str); 6] = [
+    ("x-ratelimit-scope", "user"),
+    ("x-ratelimit-bucket", "abcd"),
+    ("x-ratelimit-limit", "5"),
+    ("x-ratelimit-remaining", "0"),
+    ("x-ratelimit-reset-after", "0.5"),
+    ("retry-after", "1"),
+];
+
+fn find<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.as_str())
+}
+
+/// D1 (RL-01): in direct mode a `user` 429 with valid bucket headers
+/// reaches twilight's limiter unchanged.
+#[tokio::test]
+async fn rl_01_direct_user_429_relayed_byte_for_byte() {
+    let body = Bytes::from_static(
+        br#"{"message":"You are being rate limited.","retry_after":0.5,"global":false}"#,
+    );
+    let server = answering(
+        StatusCode::TOO_MANY_REQUESTS,
+        header_map(&USER_429),
+        body.clone(),
+    )
+    .await;
+    let edge = start_limited(&server, false, Duration::from_secs(10));
+    let (status, headers, got) =
+        test_support::raw_full(edge.local_addr(), &get("/api/v10/channels/1")).await;
+    assert_eq!(status, 429);
+    assert_eq!(got, body.to_vec());
+    for (name, value) in USER_429 {
+        assert_eq!(find(&headers, name), Some(value), "{name}");
+    }
+    assert_eq!(server.seen().len(), 1);
+}
+
+/// D2, D3: a direct `shared` 429 and a proxied `user` 429 are surfaced as
+/// the edge rate-limit response, Discord's headers kept.
+#[tokio::test]
+async fn surfaced_429_keeps_headers() {
+    let shared = [
+        ("x-ratelimit-scope", "shared"),
+        ("x-ratelimit-bucket", "abcd"),
+        ("retry-after", "600"),
+    ];
+    for (pairs, proxied, scope) in [
+        (&shared[..], false, RateLimitScope::Shared),
+        (&USER_429[..], true, RateLimitScope::User),
+    ] {
+        let server = answering(
+            StatusCode::TOO_MANY_REQUESTS,
+            header_map(pairs),
+            Bytes::from_static(
+                br#"{"message":"limited","retry_after":600.0,"global":false,"code":20028}"#,
+            ),
+        )
+        .await;
+        let edge = start_limited(&server, proxied, Duration::from_secs(10));
+        let (status, headers, body) =
+            test_support::raw_full(edge.local_addr(), &get("/api/v10/channels/1")).await;
+        assert_eq!(status, 503, "{scope}");
+        for (name, value) in pairs {
+            assert_eq!(find(&headers, name), Some(*value), "{name}");
+        }
+        assert_eq!(find(&headers, "content-type"), Some("application/json"));
+        let limited = rate_limit::parse_edge_body(503, &body).expect("an edge body");
+        assert_eq!(limited.scope, scope);
+        assert_eq!(limited.retry_after, Some(Duration::from_mins(10)));
+        assert_eq!(limited.discord_code, Some(20028));
+        assert_eq!(server.seen().len(), 1);
+    }
+}
+
+/// A surfaced 429 never hands twilight an invalid reset-after.
+#[tokio::test]
+async fn surfaced_429_drops_invalid_reset_after() {
+    let server = answering(
+        StatusCode::TOO_MANY_REQUESTS,
+        header_map(&[
+            ("x-ratelimit-scope", "user"),
+            ("x-ratelimit-bucket", "abcd"),
+            ("x-ratelimit-limit", "5"),
+            ("x-ratelimit-remaining", "0"),
+            ("x-ratelimit-reset-after", "-1"),
+        ]),
+        Bytes::new(),
+    )
+    .await;
+    let edge = start_limited(&server, false, Duration::from_secs(10));
+    let (status, headers, _) =
+        test_support::raw_full(edge.local_addr(), &get("/api/v10/channels/1")).await;
+    assert_eq!(status, 503);
+    assert_eq!(find(&headers, "x-ratelimit-reset-after"), None);
+    assert_eq!(find(&headers, "x-ratelimit-bucket"), Some("abcd"));
+}
+
+/// D4: a 429 body above 64 KiB is read only up to the cap; the wait comes
+/// from the header.
+#[tokio::test]
+async fn huge_429_body_is_capped() {
+    let mut body = br#"{"retry_after":5,"pad":""#.to_vec();
+    body.resize(200 * 1024, b'x');
+    body.extend_from_slice(br#""}"#);
+    let server = answering(
+        StatusCode::TOO_MANY_REQUESTS,
+        header_map(&[("x-ratelimit-scope", "shared"), ("retry-after", "7")]),
+        Bytes::from(body),
+    )
+    .await;
+    let edge = start_limited(&server, false, Duration::from_secs(10));
+    let (status, body) = tokio::time::timeout(
+        Duration::from_secs(10),
+        raw(edge.local_addr(), &get("/api/v10/channels/1")),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, 503);
+    let limited = rate_limit::parse_edge_body(503, &body).unwrap();
+    assert_eq!(limited.retry_after, Some(Duration::from_secs(7)));
+}
+
+/// D5: a forwarded request is bounded by the request timeout (504).
+#[tokio::test]
+async fn forward_times_out() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _guard = ::metrics::set_default_local_recorder(&recorder);
+    let server = TestServer::start_replying(
+        true,
+        Arc::new(|_| {
+            let mut reply = test_support::Reply::new(StatusCode::OK, HeaderMap::new(), "late");
+            reply.delay = Some(Duration::from_secs(2));
+            reply
+        }),
+    )
+    .await;
+    let edge = start_limited(&server, true, Duration::from_millis(300));
+    let started = Instant::now();
+    let (status, body) = raw(edge.local_addr(), &get("/api/v10/channels/1")).await;
+    let elapsed = started.elapsed();
+    assert_eq!(status, 504);
+    assert_eq!(body, EDGE_TIMEOUT_BODY.as_bytes());
+    assert!(
+        (Duration::from_millis(300)..Duration::from_secs(1)).contains(&elapsed),
+        "{elapsed:?}"
+    );
+    assert!(is_edge_failure(504, &body));
+    assert_eq!(
+        count(
+            &samples(&snapshotter),
+            "noctis_http_requests_total",
+            Some(("status_class", "error"))
+        ),
+        1
+    );
+}
+
+/// D6 (RL-03): upstream 401, 403 and non-shared 429 answers feed the
+/// invalid-request counter; every 429 the rate-limited one.
+#[tokio::test]
+async fn rl_03_invalid_requests_counted() {
+    let recorder = DebuggingRecorder::new();
+    let snapshotter = recorder.snapshotter();
+    let _guard = ::metrics::set_default_local_recorder(&recorder);
+    let invalid = "noctis_http_invalid_requests_total";
+    let limited = "noctis_http_rate_limited_total";
+    for (status, pairs, expected_invalid, expected_limited) in [
+        (StatusCode::UNAUTHORIZED, &[][..], Some("401"), None),
+        (StatusCode::FORBIDDEN, &[][..], Some("403"), None),
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            &[("x-ratelimit-scope", "shared")][..],
+            None,
+            Some("shared"),
+        ),
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            &[("x-ratelimit-scope", "global")][..],
+            Some("429"),
+            Some("global"),
+        ),
+        (StatusCode::OK, &[][..], None, None),
+        (StatusCode::NOT_FOUND, &[][..], None, None),
+        (StatusCode::INTERNAL_SERVER_ERROR, &[][..], None, None),
+    ] {
+        let server = answering(status, header_map(pairs), Bytes::from_static(b"{}")).await;
+        let edge = start_limited(&server, true, Duration::from_secs(10));
+        raw(edge.local_addr(), &get("/api/v10/channels/1")).await;
+        let samples = samples(&snapshotter);
+        assert_eq!(
+            count(&samples, invalid, None),
+            usize::from(expected_invalid.is_some()),
+            "{status}"
+        );
+        if let Some(value) = expected_invalid {
+            assert_eq!(count(&samples, invalid, Some(("status", value))), 1);
+        }
+        assert_eq!(
+            count(&samples, limited, None),
+            usize::from(expected_limited.is_some()),
+            "{status}"
+        );
+        if let Some(value) = expected_limited {
+            assert_eq!(count(&samples, limited, Some(("scope", value))), 1);
+        }
+    }
 }

@@ -30,7 +30,7 @@ use twilight_model::id::marker::GuildMarker;
 
 use crate::cli::{CliError, CliMode, NoctisArgs, parse_guild_id};
 use crate::component::{AppExpiredFn, Expired, ExpiredCtx, app_expired};
-use crate::edge::{EDGE_BODY_PREFIX, Edge, HttpConfig, KeeperHandle, Upstream};
+use crate::edge::{Edge, HttpConfig, KeeperHandle, Upstream, is_edge_failure};
 use crate::gateway_url::normalize_gateway_url;
 use crate::handler::AppShared;
 use crate::lifecycle::{Lifecycle, LifecycleEvent};
@@ -49,7 +49,8 @@ use crate::state::StateMap;
 use crate::worker::{AbortOnDrop, Shutdown, Workers, drain};
 use crate::{
     BuildError, BuildViolation, Component, EnvError, Error, ErrorOrigin, ErrorSink, HandlerResult,
-    IntoResponse, LocaleOwner, ModalSubmit, Plugin, RunError, Runtime, StartError, State, Token,
+    IntoResponse, LocaleOwner, ModalSubmit, Plugin, RateLimited, RunError, Runtime, StartError,
+    State, Token,
 };
 
 /// The environment variable [`App::from_env`] reads the token from.
@@ -818,6 +819,7 @@ impl App {
         let Some(token) = &self.token else {
             return Err(StartError::MissingToken.into());
         };
+        self.warn_cluster_without_proxy();
         let controls = Shutdown::default();
         // Cancels every handler on every return path, including a dropped
         // `run_until` future, so no handler outlives it.
@@ -986,6 +988,15 @@ impl App {
         }
     }
 
+    /// Logs the RL-02 warning once when this process runs part of a
+    /// Cluster without a shared rate-limit proxy.
+    fn warn_cluster_without_proxy(&self) {
+        let range = self.shard_range.as_ref();
+        if cluster_without_proxy(range, self.shard_total(), self.http_proxy()) {
+            warn_cluster_without_proxy(range, self.shard_total());
+        }
+    }
+
     /// Reads `GET /gateway/bot`; every failure is logged with its `Display`
     /// (twilight never prints the token). The edge's own 502 (upstream
     /// unreachable) counts as no status.
@@ -999,10 +1010,11 @@ impl App {
                 ErrorType::Response { status, .. } if status.get() == 401 => {
                     StartError::InvalidToken
                 }
-                ErrorType::Response { status, body, .. }
-                    if status.get() == 502 && body.starts_with(EDGE_BODY_PREFIX.as_bytes()) =>
-                {
+                ErrorType::Response { status, body, .. } if is_edge_failure(status.get(), body) => {
                     StartError::GatewayInfo { status: None }
+                }
+                ErrorType::Response { .. } if RateLimited::from_http_error(&error).is_some() => {
+                    StartError::GatewayInfo { status: Some(429) }
                 }
                 ErrorType::Response { status, .. } => StartError::GatewayInfo {
                     status: Some(status.get()),
@@ -1016,6 +1028,36 @@ impl App {
         })?;
         Ok(GatewayInfo::from(&info))
     }
+}
+
+/// Whether this process runs part of a Cluster (a Shard Range smaller than
+/// the shard total) without a shared rate-limit proxy (RL-02).
+pub(crate) fn cluster_without_proxy(
+    range: Option<&Range<u32>>,
+    total: Option<u32>,
+    proxy: Option<&str>,
+) -> bool {
+    match (range, total, proxy) {
+        (Some(range), Some(total), None) => {
+            range.len() < usize::try_from(total).unwrap_or(usize::MAX)
+        }
+        _ => false,
+    }
+}
+
+/// The RL-02 warning: processes sharing one bot token without one shared
+/// rate-limit proxy can exceed Discord's global limit.
+pub(crate) fn warn_cluster_without_proxy(range: Option<&Range<u32>>, total: Option<u32>) {
+    let (start, end) = range.map_or((0, 0), |r| (r.start, r.end));
+    tracing::warn!(
+        target: "noctis::app",
+        start,
+        end,
+        total = total.unwrap_or(0),
+        "this process runs a Shard Range of a Cluster without an HTTP proxy: processes sharing one \
+         bot token can exceed Discord's global limit of 50 requests/s per token (RL-02); point every \
+         process at one shared rate-limit proxy with NOCTIS_HTTP_PROXY or AppBuilder::http_proxy"
+    );
 }
 
 /// Logs the plan's alignment warnings and the shards this process starts.
@@ -2471,7 +2513,13 @@ impl AppBuilder {
         let app_id = explicit_app_id.unwrap_or_else(|| default_app_id(config.token.as_ref()));
         let app: Arc<str> = Arc::from(app_id.as_str());
         let upstream = Upstream::for_proxy(http_proxy.as_deref(), config.http_config.upstream_h2c);
-        let edge = Edge::start((listener, edge_addr), upstream, config.http_config, &app);
+        let edge = Edge::start(
+            (listener, edge_addr),
+            upstream,
+            config.http_config,
+            config.http_timeout,
+            &app,
+        );
         let http = http_client(&config, &edge, http_proxy.is_some());
         let ports = Ports::resolve(config.ports, &app_id);
         let kv: Arc<dyn CacheStore> = ports.cache_store.clone();

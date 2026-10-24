@@ -28,7 +28,7 @@ const USER: u64 = 1_222_222_222_222_222_222;
 const FIXTURES: [u64; 3] = [GA, CHANNEL, USER];
 
 /// Every label name a catalog row may use.
-const ALLOWED_LABELS: [&str; 12] = [
+const ALLOWED_LABELS: [&str; 14] = [
     "app",
     "lane",
     "event_type",
@@ -41,6 +41,8 @@ const ALLOWED_LABELS: [&str; 12] = [
     "outcome",
     "result",
     "template",
+    "scope",
+    "status",
 ];
 /// Substrings no label name may contain.
 const FORBIDDEN_IN_NAMES: [&str; 8] = [
@@ -58,9 +60,9 @@ fn kind_of(metric_type: MetricType) -> MetricKind {
 /// Matrix 32: the static catalog obeys the label policy.
 #[test]
 fn catalog_static() {
-    assert_eq!(METRICS.len(), 19);
+    assert_eq!(METRICS.len(), 21);
     let names: HashSet<_> = METRICS.iter().map(|m| m.name).collect();
-    assert_eq!(names.len(), 19);
+    assert_eq!(names.len(), 21);
     for info in METRICS {
         assert!(info.name.starts_with("noctis_"), "{}", info.name);
         assert_eq!(info.labels.first(), Some(&"app"), "{}", info.name);
@@ -92,6 +94,8 @@ fn catalog_static() {
             ("noctis_ref_lookups_total", &["app", "result"][..]),
             ("noctis_shard_status", &["app", "shard"][..]),
             ("noctis_http_requests_total", &["app", "status_class"][..]),
+            ("noctis_http_rate_limited_total", &["app", "scope"][..]),
+            ("noctis_http_invalid_requests_total", &["app", "status"][..]),
             ("noctis_http_phase_seconds", &["app", "phase"][..]),
             ("noctis_http_connections_total", &["app", "reason"][..]),
             ("noctis_http_conn_reused_total", &["app", "reused"][..]),
@@ -152,6 +156,11 @@ fn check_value(metric: &str, label: &str, value: &str, total: u32) {
             "{metric}: {value}"
         ),
         "reused" => assert!(["true", "false"].contains(&value), "{metric}: {value}"),
+        "scope" => assert!(
+            ["user", "global", "shared", "unknown"].contains(&value),
+            "{metric}: {value}"
+        ),
+        "status" => assert!(["401", "403", "429"].contains(&value), "{metric}: {value}"),
         "result" => assert!(
             ["hit", "miss", "stale", "forged"].contains(&value),
             "{metric}: {value}"
