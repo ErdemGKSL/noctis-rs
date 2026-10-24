@@ -46,7 +46,7 @@ async fn no_modules() {
 /// Matrix 2: an empty module changes nothing.
 #[tokio::test]
 async fn empty_module() {
-    let app = builder().module(Module::new("a/b")).build().unwrap();
+    let app = builder().module(Module::new("a")).build().unwrap();
     assert_eq!(app.intents(), Intents::GUILDS);
     assert_eq!(
         app.registry().event_types(),
@@ -111,8 +111,8 @@ async fn guild_lifecycle_follows_event_handlers() {
 /// Matrix 4: pre-order fold with ancestor paths.
 #[tokio::test]
 async fn fold_order_and_ancestors() {
-    let g = Module::new("g").__add(noop::<MessageDelete>("h4"));
-    let c = Module::new("c")
+    let g = Module::new("p/c/g").__add(noop::<MessageDelete>("h4"));
+    let c = Module::new("p/c")
         .__add(noop::<MessageDelete>("h2"))
         .__add(noop::<MessageCreate>("h3"))
         .module(g);
@@ -128,10 +128,10 @@ async fn fold_order_and_ancestors() {
         .collect();
     assert_eq!(
         ancestors,
-        [vec![], vec!["p"], vec!["p"], vec!["p", "c"], vec![]]
+        [vec![], vec!["p"], vec!["p"], vec!["p", "p/c"], vec![]]
     );
     let modules: Vec<&str> = registry.entries().iter().map(|e| e.module).collect();
-    assert_eq!(modules, ["p", "c", "c", "g", "r"]);
+    assert_eq!(modules, ["p", "p/c", "p/c", "p/c/g", "r"]);
     let deletes: Vec<&str> = registry
         .handlers(EventType::MessageDelete)
         .unwrap()
@@ -145,7 +145,7 @@ async fn fold_order_and_ancestors() {
 /// Matrix 5: `module` before `add` still folds the parent first.
 #[tokio::test]
 async fn call_order_irrelevant() {
-    let c = Module::new("c").__add(noop::<MessageDelete>("h2"));
+    let c = Module::new("p/c").__add(noop::<MessageDelete>("h2"));
     let p = Module::new("p")
         .module(c)
         .__add(noop::<MessageDelete>("h1"));
@@ -177,15 +177,211 @@ async fn tree_on_two_apps() {
     assert!(!Arc::ptr_eq(a.registry(), b.registry()));
 }
 
-/// Matrix 8: ids are not validated yet.
-#[tokio::test]
-async fn ids_unvalidated() {
-    for id in ["", "A B", "ü/🙂"] {
-        let app = builder()
-            .module(Module::new(id).__add(noop::<MessageDelete>("h")))
+/// Story 13.1 G1-G19: the Module id grammar.
+#[test]
+fn id_grammar() {
+    use crate::ModuleIdError::{Empty, EmptySegment, InvalidChar, TooLong};
+    let a64 = "a".repeat(64);
+    let a65 = "a".repeat(65);
+    let u65 = "ü".repeat(65);
+    let cases: [(&str, Result<(), crate::ModuleIdError>); 22] = [
+        ("profile", Ok(())),
+        ("a/b/c", Ok(())),
+        ("_", Ok(())),
+        ("-", Ok(())),
+        ("0", Ok(())),
+        ("a_b-9", Ok(())),
+        ("", Err(Empty)),
+        (&a64, Ok(())),
+        (&a65, Err(TooLong { len: 65 })),
+        (&u65, Err(TooLong { len: 65 })),
+        ("Profile", Err(InvalidChar { index: 0, ch: 'P' })),
+        ("a b", Err(InvalidChar { index: 1, ch: ' ' })),
+        ("shop.admin", Err(InvalidChar { index: 4, ch: '.' })),
+        ("a:b", Err(InvalidChar { index: 1, ch: ':' })),
+        ("ü/🙂", Err(InvalidChar { index: 0, ch: 'ü' })),
+        (
+            "a/🙂",
+            Err(InvalidChar {
+                index: 2, ch: '🙂'
+            }),
+        ),
+        ("/", Err(EmptySegment { index: 0 })),
+        ("/a", Err(EmptySegment { index: 0 })),
+        ("a/", Err(EmptySegment { index: 2 })),
+        ("a//b", Err(EmptySegment { index: 2 })),
+        ("a//B", Err(EmptySegment { index: 2 })),
+        ("A//b", Err(InvalidChar { index: 0, ch: 'A' })),
+    ];
+    for (id, expected) in cases {
+        assert_eq!(module::check_id(id), expected, "{id:?}");
+    }
+}
+
+/// Story 13.1: the exact text of each id violation and reason.
+#[test]
+fn id_violation_texts() {
+    use crate::ModuleIdError;
+    let invalid = |id, reason| BuildViolation::InvalidModuleId { id, reason }.to_string();
+    assert_eq!(
+        invalid("", ModuleIdError::Empty),
+        "invalid Module id ``: the id is empty: use segments of a-z, 0-9, `_` and `-` joined \
+         by `/`, such as `profile/badges`"
+    );
+    assert_eq!(
+        invalid("x", ModuleIdError::TooLong { len: 65 }),
+        "invalid Module id `x`: the id has 65 characters: shorten it to at most 64"
+    );
+    assert_eq!(
+        invalid(
+            "shop.admin",
+            ModuleIdError::InvalidChar { index: 4, ch: '.' }
+        ),
+        "invalid Module id `shop.admin`: `.` at index 4 is not allowed: use only a-z, 0-9, `_` \
+         and `-`, with `/` between segments"
+    );
+    assert_eq!(
+        invalid("a//b", ModuleIdError::EmptySegment { index: 2 }),
+        "invalid Module id `a//b`: empty segment at index 2: separate segments with exactly one \
+         `/`, with none at the start or end"
+    );
+    assert_eq!(
+        invalid("a/b", ModuleIdError::PathAtRoot { segments: 2 }),
+        "invalid Module id `a/b`: it is mounted at the root with 2 segments: a root id is one \
+         segment, so nest it with `.module(..)` in its parent Module"
+    );
+    assert_eq!(
+        invalid("c1", ModuleIdError::NotUnderParent { parent: "r1" }),
+        "invalid Module id `c1`: it is nested in Module `r1`, so it must be `r1/<name>` with \
+         exactly one segment after `r1/`"
+    );
+    assert_eq!(
+        BuildViolation::DuplicateModule { id: "shop" }.to_string(),
+        "Module id `shop` is mounted twice: give each Module its own id (a Module tree is \
+         mounted at most once per App)"
+    );
+}
+
+/// Story 13.1 T1-T12: tree position and uniqueness, through the fold.
+mod module_ids {
+    use super::*;
+    use crate::ModuleIdError::{self, Empty, InvalidChar, NotUnderParent, PathAtRoot};
+
+    fn fold(roots: &[Module]) -> Vec<BuildViolation> {
+        Registry::fold(roots, Intents::empty(), None).1
+    }
+
+    fn invalid(id: &'static str, reason: ModuleIdError) -> BuildViolation {
+        BuildViolation::InvalidModuleId { id, reason }
+    }
+
+    fn dup(id: &'static str) -> BuildViolation {
+        BuildViolation::DuplicateModule { id }
+    }
+
+    fn nest(parent: &'static str, child: &'static str) -> Module {
+        Module::new(parent).module(Module::new(child))
+    }
+
+    /// T1: a valid 3-level tree folds every level.
+    #[test]
+    fn valid_tree() {
+        let tree = Module::new("ops")
+            .__add(noop::<MessageCreate>("h1"))
+            .module(
+                Module::new("ops/audit")
+                    .__add(noop::<MessageCreate>("h2"))
+                    .module(Module::new("ops/audit/log").__add(noop::<MessageCreate>("h3"))),
+            );
+        let (registry, violations) = Registry::fold(&[tree], Intents::empty(), None);
+        assert_eq!(violations, []);
+        let modules: Vec<&str> = registry.entries().iter().map(|e| e.module).collect();
+        assert_eq!(modules, ["ops", "ops/audit", "ops/audit/log"]);
+    }
+
+    /// T2-T5: tree positions.
+    #[test]
+    fn positions() {
+        assert_eq!(
+            fold(&[Module::new("a/b")]),
+            [invalid("a/b", PathAtRoot { segments: 2 })]
+        );
+        assert_eq!(
+            fold(&[nest("r1", "c1")]),
+            [invalid("c1", NotUnderParent { parent: "r1" })]
+        );
+        assert_eq!(
+            fold(&[nest("a", "a/b/c")]),
+            [invalid("a/b/c", NotUnderParent { parent: "a" })]
+        );
+        assert_eq!(
+            fold(&[nest("a", "ab")]),
+            [invalid("ab", NotUnderParent { parent: "a" })]
+        );
+    }
+
+    /// T6-T8: a child equal to its parent, and invalid parents.
+    #[test]
+    fn invalid_parents() {
+        assert_eq!(
+            fold(&[nest("a", "a")]),
+            [invalid("a", NotUnderParent { parent: "a" }), dup("a")]
+        );
+        let bad = InvalidChar { index: 0, ch: 'A' };
+        assert_eq!(
+            fold(&[nest("A", "A/b")]),
+            [invalid("A", bad), invalid("A/b", bad)]
+        );
+        assert_eq!(
+            fold(&[nest("A", "a/b")]),
+            [
+                invalid("A", bad),
+                invalid("a/b", NotUnderParent { parent: "A" })
+            ]
+        );
+    }
+
+    /// T9-T12: duplicates, one per later occurrence in fold pre-order.
+    #[test]
+    fn duplicates() {
+        assert_eq!(
+            fold(&[Module::new("shop"), Module::new("shop")]),
+            [dup("shop")]
+        );
+        let m = nest("p", "p/c");
+        assert_eq!(fold(&[m.clone(), m]), [dup("p"), dup("p/c")]);
+        let twins = Module::new("p")
+            .module(Module::new("p/x"))
+            .module(Module::new("p/x"));
+        assert_eq!(fold(&[twins]), [dup("p/x")]);
+        assert_eq!(
+            fold(&[Module::new(""), Module::new("")]),
+            [invalid("", Empty), invalid("", Empty), dup("")]
+        );
+    }
+
+    /// T15: id violations come first; every other check still runs.
+    #[tokio::test]
+    async fn id_violations_first() {
+        let err = builder()
+            .module(Module::new("Ops").__add(noop::<MemberAdd>("greet")))
+            .module(Module::new("Ops"))
             .build()
-            .unwrap();
-        assert_eq!(app.registry().entries()[0].module, id);
+            .unwrap_err();
+        let v = violations(&err);
+        assert_eq!(
+            v[..2],
+            [
+                invalid("Ops", InvalidChar { index: 0, ch: 'O' }),
+                invalid("Ops", InvalidChar { index: 0, ch: 'O' })
+            ]
+        );
+        assert_eq!(v[2], dup("Ops"));
+        assert!(
+            matches!(v[3], BuildViolation::MissingIntent { module: "Ops", .. }),
+            "{v:?}"
+        );
+        assert_eq!(v.len(), 4, "{v:?}");
     }
 }
 
@@ -970,11 +1166,11 @@ mod extensions {
             .before(provides_a())
             .__add(cmd("bot::own", NEEDS_A));
         assert_eq!(fold(&[own]), []);
-        let grandchild =
-            Module::new("g").__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
+        let grandchild = Module::new("root/c/g")
+            .__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
         let tree = Module::new("root")
             .before(provides_a())
-            .module(Module::new("c").module(grandchild));
+            .module(Module::new("root/c").module(grandchild));
         assert_eq!(fold(&[tree]), []);
         let optional = Module::new("m").__add(cmd("bot::opt", &[]));
         assert_eq!(fold(&[optional]), []);
@@ -1042,15 +1238,20 @@ mod extensions {
         );
     }
 
-    /// Matrix 20: one Module mounted under a providing root and a bare one
-    /// fails on the bare path only.
+    /// Matrix 20: one handler in a Module under a providing root and in
+    /// one under a bare root fails on the bare path only.
     #[test]
     fn two_mounts() {
         let shared =
-            Module::new("shared").__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
-        let provided = Module::new("p").before(provides_a()).module(shared.clone());
-        let bare = Module::new("b").module(shared);
-        assert_eq!(fold(&[provided, bare]), [missing("shared", "bot::ev", a())]);
+            |id| Module::new(id).__add(noop::<MessageCreate>("bot::ev").__with_requires(NEEDS_A));
+        let provided = Module::new("p")
+            .before(provides_a())
+            .module(shared("p/shared"));
+        let bare = Module::new("b").module(shared("b/shared"));
+        assert_eq!(
+            fold(&[provided, bare]),
+            [missing("b/shared", "bot::ev", a())]
+        );
     }
 
     /// Matrix 21's chain: parent before child, registration order; the
@@ -1071,7 +1272,7 @@ mod extensions {
             .before(Middleware::before(r2))
             .__add(noop::<MessageCreate>("bot::root"))
             .module(
-                Module::new("child")
+                Module::new("root/child")
                     .before(Middleware::before(c1))
                     .__add(noop::<MessageCreate>("bot::child")),
             );

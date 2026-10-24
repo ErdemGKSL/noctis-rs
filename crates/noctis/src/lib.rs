@@ -600,12 +600,12 @@ pub use noctis_core::{
     HttpProxyError, IntegrationType, InteractionContext, IntoEdit, IntoResponse, InvalidOption,
     Invocation, Kv, LocaleOverlayError, LocaleOwner, LocaleRequest, LocaleResolver, Locales,
     LogSink, Manual, MenuKind, MenuTargetError, Middleware, ModalHandler, ModalResponder,
-    ModalSubmit, ModalSubmitCtx, Module, NoticeText, OptionError, OptionValue, Options,
-    OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions, Plugin,
-    RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded, Responder,
-    ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime, SelectedValues,
-    StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token, TokenError,
-    UnknownCommandPath, Visibility,
+    ModalSubmit, ModalSubmitCtx, Module, ModuleIdError, NoticeText, OptionError, OptionValue,
+    Options, OutgoingMessage, OverlayViolation, Partial, PartialOptions, Pending, Permissions,
+    Plugin, RefOps, Register, ReplyText, ReportKind, Resource, ResourceConflict, Responded,
+    Responder, ResponderError, ResponderKind, ResponderState, RunError, RunOutcome, Runtime,
+    SelectedValues, StartError, State, SuggestionLabel, SuggestionValue, Suggestions, Token,
+    TokenError, UnknownCommandPath, Visibility,
 };
 
 /// Derives a slash Command from a struct: the struct's named fields are its

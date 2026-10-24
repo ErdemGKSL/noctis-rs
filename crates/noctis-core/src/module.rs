@@ -105,7 +105,21 @@ pub(crate) enum NodeDecl {
 /// matter. `build()` folds every mounted tree once, parent before child:
 /// a Module's own registrations in `add` order, then each child in
 /// `module` order. The same tree can be mounted on several Apps (it is
-/// `Clone`). Ids are not validated yet.
+/// `Clone`).
+///
+/// # Ids
+///
+/// The id is the Module's full path in its tree (`"profile"`,
+/// `"profile/badges"`): one or more segments of `a-z`, `0-9`, `_` and `-`
+/// joined by single `/`, 1 to 64 characters. A root Module (mounted with
+/// `AppBuilder::module`, plugins included) has one segment, and a child's
+/// id is its parent's id plus one segment. Ids are unique per App across
+/// every mounted tree. `build()` checks all three and reports each broken
+/// id as [`BuildViolation::InvalidModuleId`](crate::BuildViolation::InvalidModuleId)
+/// (with a [`ModuleIdError`] reason) and each repeated id as
+/// [`BuildViolation::DuplicateModule`](crate::BuildViolation::DuplicateModule).
+/// The id is the `module` field of every span and `ErrorReport` of its
+/// registrations.
 ///
 /// Every interaction is one struct with a kind derive and a `#[handler]`
 /// method (`#[derive(SlashCommand)]`, `#[derive(EventHandler)]`,
@@ -168,7 +182,10 @@ pub(crate) struct UsedRoute {
 }
 
 impl Module {
-    /// An empty Module named `id`.
+    /// An empty Module named `id`, its full path (see [Ids](Module#ids)).
+    ///
+    /// Never fails: `build()` checks the id's grammar, tree position and
+    /// uniqueness once the Module is mounted.
     ///
     /// ```
     /// assert_eq!(noctis_core::Module::new("a/b").id(), "a/b");
@@ -282,6 +299,11 @@ impl Module {
 
     /// Nests `child` under this Module; it folds after this Module's own
     /// registrations, with this Module in its ancestor path.
+    ///
+    /// The child's id must be this Module's id plus one segment
+    /// (`"ops"` → `"ops/audit"`); `build()` reports any other id as
+    /// [`BuildViolation::InvalidModuleId`](crate::BuildViolation::InvalidModuleId)
+    /// with [`ModuleIdError::NotUnderParent`]. The id is not rewritten.
     ///
     /// ```
     /// use noctis_core::Module;
@@ -534,5 +556,186 @@ impl fmt::Debug for Module {
             .field("locales", &locales)
             .field("children", &self.children)
             .finish()
+    }
+}
+
+/// The most characters a Module id may have.
+const MAX_ID_LEN: usize = 64;
+
+/// Why a Module id was rejected: the reason of
+/// [`BuildViolation::InvalidModuleId`](crate::BuildViolation::InvalidModuleId).
+///
+/// The grammar reasons ([`Empty`](Self::Empty), [`TooLong`](Self::TooLong),
+/// [`InvalidChar`](Self::InvalidChar), [`EmptySegment`](Self::EmptySegment))
+/// apply to every mounted Module; the tree-position reasons
+/// ([`PathAtRoot`](Self::PathAtRoot), [`NotUnderParent`](Self::NotUnderParent))
+/// only when the id's grammar is valid. Indexes count characters.
+///
+/// ```
+/// use noctis_core::ModuleIdError;
+///
+/// let err = ModuleIdError::InvalidChar { index: 4, ch: '.' };
+/// assert_eq!(
+///     err.to_string(),
+///     "`.` at index 4 is not allowed: use only a-z, 0-9, `_` and `-`, with `/` between segments"
+/// );
+/// ```
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ModuleIdError {
+    /// The id is empty.
+    ///
+    /// ```
+    /// use noctis_core::ModuleIdError;
+    ///
+    /// assert_eq!(
+    ///     ModuleIdError::Empty.to_string(),
+    ///     "the id is empty: use segments of a-z, 0-9, `_` and `-` joined by `/`, such as \
+    ///      `profile/badges`"
+    /// );
+    /// ```
+    #[error(
+        "the id is empty: use segments of a-z, 0-9, `_` and `-` joined by `/`, such as \
+         `profile/badges`"
+    )]
+    Empty,
+    /// The id has more than 64 characters.
+    ///
+    /// ```
+    /// use noctis_core::ModuleIdError;
+    ///
+    /// assert_eq!(
+    ///     ModuleIdError::TooLong { len: 65 }.to_string(),
+    ///     "the id has 65 characters: shorten it to at most 64"
+    /// );
+    /// ```
+    #[error("the id has {len} characters: shorten it to at most 64")]
+    TooLong {
+        /// The number of characters.
+        len: usize,
+    },
+    /// The id has a character outside `a-z`, `0-9`, `_`, `-` and the `/`
+    /// separator.
+    #[error(
+        "`{ch}` at index {index} is not allowed: use only a-z, 0-9, `_` and `-`, with `/` \
+         between segments"
+    )]
+    InvalidChar {
+        /// The character index of the first invalid character.
+        index: usize,
+        /// The invalid character.
+        ch: char,
+    },
+    /// A segment is empty: the id starts or ends with `/`, or has `//`.
+    ///
+    /// ```
+    /// use noctis_core::ModuleIdError;
+    ///
+    /// assert_eq!(
+    ///     ModuleIdError::EmptySegment { index: 2 }.to_string(),
+    ///     "empty segment at index 2: separate segments with exactly one `/`, with none at the \
+    ///      start or end"
+    /// );
+    /// ```
+    #[error(
+        "empty segment at index {index}: separate segments with exactly one `/`, with none at \
+         the start or end"
+    )]
+    EmptySegment {
+        /// The character index where the empty segment starts.
+        index: usize,
+    },
+    /// A root Module (mounted with `AppBuilder::module`) has more than one
+    /// segment.
+    ///
+    /// ```
+    /// use noctis_core::ModuleIdError;
+    ///
+    /// assert_eq!(
+    ///     ModuleIdError::PathAtRoot { segments: 2 }.to_string(),
+    ///     "it is mounted at the root with 2 segments: a root id is one segment, so nest it \
+    ///      with `.module(..)` in its parent Module"
+    /// );
+    /// ```
+    #[error(
+        "it is mounted at the root with {segments} segments: a root id is one segment, so nest \
+         it with `.module(..)` in its parent Module"
+    )]
+    PathAtRoot {
+        /// The number of segments of the id.
+        segments: usize,
+    },
+    /// A nested Module's id is not its parent's id plus one segment.
+    ///
+    /// ```
+    /// use noctis_core::ModuleIdError;
+    ///
+    /// assert_eq!(
+    ///     ModuleIdError::NotUnderParent { parent: "profile" }.to_string(),
+    ///     "it is nested in Module `profile`, so it must be `profile/<name>` with exactly one \
+    ///      segment after `profile/`"
+    /// );
+    /// ```
+    #[error(
+        "it is nested in Module `{parent}`, so it must be `{parent}/<name>` with exactly one \
+         segment after `{parent}/`"
+    )]
+    NotUnderParent {
+        /// The id of the Module it is nested in.
+        parent: &'static str,
+    },
+}
+
+/// Checks the Module id grammar: 1..=64 characters, segments of `a-z`,
+/// `0-9`, `_` and `-` joined by single `/`. The first problem left to right
+/// wins, after the empty and length checks.
+pub(crate) fn check_id(id: &str) -> Result<(), ModuleIdError> {
+    if id.is_empty() {
+        return Err(ModuleIdError::Empty);
+    }
+    let len = id.chars().count();
+    if len > MAX_ID_LEN {
+        return Err(ModuleIdError::TooLong { len });
+    }
+    // Whether the previous character was `/` (true before the first one, so
+    // a leading `/` is an empty segment).
+    let mut after_separator = true;
+    for (index, ch) in id.chars().enumerate() {
+        match ch {
+            '/' if after_separator => return Err(ModuleIdError::EmptySegment { index }),
+            '/' => after_separator = true,
+            'a'..='z' | '0'..='9' | '_' | '-' => after_separator = false,
+            _ => return Err(ModuleIdError::InvalidChar { index, ch }),
+        }
+    }
+    if after_separator {
+        return Err(ModuleIdError::EmptySegment { index: len });
+    }
+    Ok(())
+}
+
+/// Checks a grammar-valid id's tree position: a root (`parent` is `None`)
+/// has one segment, a child is `<parent>/<one segment>`.
+pub(crate) fn check_position(id: &str, parent: Option<&'static str>) -> Result<(), ModuleIdError> {
+    match parent {
+        None => {
+            let segments = id.split('/').count();
+            if segments == 1 {
+                Ok(())
+            } else {
+                Err(ModuleIdError::PathAtRoot { segments })
+            }
+        }
+        Some(parent) => {
+            let under = id
+                .strip_prefix(parent)
+                .and_then(|rest| rest.strip_prefix('/'))
+                .is_some_and(|name| !name.is_empty() && !name.contains('/'));
+            if under {
+                Ok(())
+            } else {
+                Err(ModuleIdError::NotUnderParent { parent })
+            }
+        }
     }
 }

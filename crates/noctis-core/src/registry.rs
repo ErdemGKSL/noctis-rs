@@ -18,7 +18,7 @@ use crate::component::{ComponentHandler, ModalHandler};
 use crate::events::EventHandler;
 use crate::kind::__ExtType;
 use crate::middleware::Chain;
-use crate::module::Module;
+use crate::module::{self, Module};
 
 use self::commands::{Commands, Folded};
 
@@ -131,7 +131,12 @@ pub(crate) struct Registry {
 
 impl Registry {
     /// Folds `roots` pre-order: a Module's own registrations in `add`
-    /// order, then each child. Returns the Registry and its violations: one
+    /// order, then each child. Returns the Registry and its violations:
+    /// first the Module-id checks of every folded Module, in fold order
+    /// (per Module, a [`BuildViolation::InvalidModuleId`] for a broken
+    /// grammar or, when the grammar holds, for a wrong tree position, then
+    /// a [`BuildViolation::DuplicateModule`] when an earlier Module had the
+    /// id), then one
     /// [`BuildViolation::MissingIntent`] per handler whose privileged intent
     /// is not in `requested`, in fold order, then one
     /// [`BuildViolation::Command`] per command rule broken after merging
@@ -158,7 +163,15 @@ impl Registry {
             .rev()
             .map(|root| (root, Arc::from([]), Chain::default()))
             .collect();
+        let mut violations = Vec::new();
+        let mut ids = HashSet::new();
         while let Some((module, ancestors, parent_chain)) = stack.pop() {
+            check_module_id(
+                module.id(),
+                ancestors.last().copied(),
+                &mut ids,
+                &mut violations,
+            );
             let chain = parent_chain.extend(module.before_middleware(), module.after_middleware());
             folded.push(Folded {
                 module,
@@ -203,7 +216,6 @@ impl Registry {
         let mut by_dispatch: HashMap<EventType, Handlers> = HashMap::new();
         let mut event_types = base_event_types(!entries.is_empty());
         let mut intents = Intents::empty();
-        let mut violations = Vec::new();
         for entry in &entries {
             let handler = &entry.handler;
             event_types |= handler.parse();
@@ -308,6 +320,23 @@ impl Registry {
     /// Whether any handler is ordered (the sub-queues exist only then).
     pub(crate) fn has_ordered(&self) -> bool {
         self.handlers.values().any(|h| !h.ordered.is_empty())
+    }
+}
+
+/// Checks one folded Module's id (FR-44): its grammar, then (only when the
+/// grammar holds) its position under `parent` (`None` for a root), then its
+/// uniqueness against `seen`, pushing one violation per broken check.
+fn check_module_id(
+    id: &'static str,
+    parent: Option<&'static str>,
+    seen: &mut HashSet<&'static str>,
+    violations: &mut Vec<BuildViolation>,
+) {
+    if let Err(reason) = module::check_id(id).and_then(|()| module::check_position(id, parent)) {
+        violations.push(BuildViolation::InvalidModuleId { id, reason });
+    }
+    if !seen.insert(id) {
+        violations.push(BuildViolation::DuplicateModule { id });
     }
 }
 

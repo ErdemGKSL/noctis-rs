@@ -876,7 +876,8 @@ async fn pipeline_ctx_contents() {
             },
         )
     };
-    let p = Pipeline::start_with(Module::new("profile/xp").__add(handler), |b| {
+    let module = Module::new("profile").module(Module::new("profile/xp").__add(handler));
+    let p = Pipeline::start_with(module, |b| {
         b.state(7_u32);
     })
     .await;

@@ -233,7 +233,7 @@ impl Options for Colors {
 }
 
 fn colors(path: &'static [&'static str]) -> Module {
-    Module::new("m").__add(crate::CommandHandler::__new_plain_with_options(
+    Module::new("colors").__add(crate::CommandHandler::__new_plain_with_options(
         "m::color",
         path,
         "Pick a color",

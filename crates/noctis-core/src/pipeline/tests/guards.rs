@@ -340,7 +340,7 @@ struct A;
 fn module(log: &Log) -> Module {
     Module::new("root")
         .module(
-            Module::new("g")
+            Module::new("root/g")
                 .before(
                     Middleware::before(|ctx: BeforeCtx| async move {
                         ctx.insert(A);
@@ -361,7 +361,7 @@ fn module(log: &Log) -> Module {
                 .__add(once_modal(log)),
         )
         .module(
-            Module::new("stop")
+            Module::new("root/stop")
                 .before(Middleware::before(|_: BeforeCtx| async {
                     Ok(Flow::Stop(Some(keys::GUARD_FAILED)))
                 }))

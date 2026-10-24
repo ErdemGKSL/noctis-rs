@@ -25,14 +25,17 @@ pub fn module() -> Module {
         .add::<handlers::Profile>()
         .add::<handlers::Bio>()
         .add::<handlers::ShowProfile>()
-        // Registers `/badge` and its `#[autocomplete(name)]` method together.
-        .add::<handlers::Badge>()
         .add::<RefreshProfile>()
         .add::<EditBio>()
         .add::<BioForm>()
         .add::<events::AwardXp>()
         // Registers the card for the Renderer; App build rejects a Template id used twice.
         .template::<ProfileCard>()
+        // A child's id is its parent's id plus one segment (checked at App build).
+        .module(
+            // Registers `/badge` and its `#[autocomplete(name)]` method together.
+            Module::new("profile/badges").add::<handlers::Badge>(),
+        )
 }
 
 // ---------------------------------------------------------------------------------------

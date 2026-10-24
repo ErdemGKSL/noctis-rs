@@ -24,16 +24,18 @@ fn handler(path: String, description: &'static str) -> CommandHandler {
 
 /// `count` handlers, the first `split` in Module `a`, the rest in `b`.
 fn split(count: usize, split: usize, path: impl Fn(usize) -> String) -> Vec<Module> {
-    split_with(count, split, path, CommandMetadata::new())
+    split_with(["a", "b"], count, split, path, CommandMetadata::new())
 }
 
+/// [`split`] into the Modules `ids` (Module ids are unique per App).
 fn split_with(
+    ids: [&'static str; 2],
     count: usize,
     split: usize,
     path: impl Fn(usize) -> String,
     metadata: CommandMetadata,
 ) -> Vec<Module> {
-    let (mut a, mut b) = (Module::new("a"), Module::new("b"));
+    let (mut a, mut b) = (Module::new(ids[0]), Module::new(ids[1]));
     for i in 0..count {
         let h = handler(path(i), "d").__with_metadata(metadata);
         if i < split {
@@ -103,6 +105,7 @@ async fn reg_02_guild_counts_separately() {
     const GUILD_1: &[Id<GuildMarker>] = &[Id::new(1)];
     let mut modules = split(100, 50, |i| format!("c{i}"));
     modules.extend(split_with(
+        ["c", "d"],
         100,
         50,
         |i| format!("c{i}"),

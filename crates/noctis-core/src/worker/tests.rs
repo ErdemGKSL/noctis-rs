@@ -685,14 +685,15 @@ async fn event_ctx_contents() {
             }
         })
     };
-    let h =
-        Harness::start(
-            App::builder().state(7_u32).module(
-                Module::new("profile/xp")
-                    .__add(probe)
-                    .__add(noop::<MessageDelete>("x")),
-            ),
-        );
+    let h = Harness::start(
+        App::builder().state(7_u32).module(
+            Module::new("profile").module(Module::new("profile/xp").__add(probe).__add(noop::<
+                MessageDelete,
+            >(
+                "x"
+            ))),
+        ),
+    );
     h.push_on(
         ShardId::new(2, 4),
         InboundKind::Event(Box::new(message_create(GA))),
