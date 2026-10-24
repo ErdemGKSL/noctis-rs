@@ -40,7 +40,10 @@ setup)
   fi
   git fetch -q origin main || { echo "FAIL: fetch"; exit 1; }
   if [ ! -d "$wt" ]; then
-    git worktree add -q -B "story-loop/$name" "$wt" origin/main || { echo "FAIL: worktree add"; exit 1; }
+    # A lane continued from another machine or clone starts from its pushed branch (lane.sh sync rebases it later).
+    base=origin/main
+    git fetch -q origin "+refs/heads/story-loop/$name:refs/remotes/origin/story-loop/$name" 2>/dev/null && base=origin/story-loop/$name
+    git worktree add -q -B "story-loop/$name" "$wt" "$base" || { echo "FAIL: worktree add"; exit 1; }
   fi
   mkdir -p "$wt/target/story-loop"
   [ -s "$OUT/trailers" ] && cp "$OUT/trailers" "$wt/target/story-loop/trailers"
